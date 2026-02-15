@@ -33,7 +33,14 @@ import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
@@ -229,6 +236,53 @@ interface NewsSourceRetryLatestResponse {
   status: string;
   retried: boolean;
 }
+
+interface NewsSourceOpmlPresetSummary {
+  id: string;
+  name: string;
+  description: string;
+  defaultLanguage: string;
+  entryCount: number;
+}
+
+interface NewsSourceOpmlPreviewEntry {
+  name: string;
+  url: string;
+  feedUrl: string;
+  language: string;
+  enabled: boolean;
+  valid: boolean;
+  alreadyExists: boolean;
+  errors: string[];
+}
+
+interface NewsSourceOpmlPreviewResponse {
+  presetId: string | null;
+  title: string | null;
+  entries: NewsSourceOpmlPreviewEntry[];
+  summary: {
+    total: number;
+    valid: number;
+    invalid: number;
+    duplicates: number;
+    enabled: number;
+  };
+}
+
+interface NewsSourceOpmlImportReport {
+  summary: {
+    total: number;
+    enabled: number;
+    created: number;
+    skipped: number;
+    failed: number;
+  };
+  created: Array<{ id: string; name: string; url: string }>;
+  skipped: Array<{ name: string; url: string; reason: string }>;
+  failed: Array<{ name: string; url: string; error: string }>;
+}
+
+type NewsSourceOpmlMode = "preset" | "upload";
 
 interface NewsSourceScheduleValues {
   nextRunAt: Dayjs;
@@ -771,6 +825,22 @@ export function NewsSourcesContent() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [opmlModalOpen, setOpmlModalOpen] = useState(false);
+  const [opmlMode, setOpmlMode] = useState<NewsSourceOpmlMode>("preset");
+  const [opmlPresets, setOpmlPresets] = useState<NewsSourceOpmlPresetSummary[]>(
+    [],
+  );
+  const [opmlPresetId, setOpmlPresetId] = useState<string>("");
+  const [opmlDefaultLanguage, setOpmlDefaultLanguage] = useState("zh");
+  const [opmlContent, setOpmlContent] = useState("");
+  const [opmlFileName, setOpmlFileName] = useState<string | null>(null);
+  const [opmlPreview, setOpmlPreview] =
+    useState<NewsSourceOpmlPreviewResponse | null>(null);
+  const [opmlLoadingPresets, setOpmlLoadingPresets] = useState(false);
+  const [opmlPreviewing, setOpmlPreviewing] = useState(false);
+  const [opmlImporting, setOpmlImporting] = useState(false);
+  const [opmlImportReport, setOpmlImportReport] =
+    useState<NewsSourceOpmlImportReport | null>(null);
   const [editingSource, setEditingSource] = useState<NewsSourceRecord | null>(
     null,
   );
@@ -893,6 +963,31 @@ export function NewsSourcesContent() {
       captureClientError("Failed to load crawl templates", error);
     }
   }, [apiClient]);
+
+  const loadOpmlPresets = useCallback(async () => {
+    setOpmlLoadingPresets(true);
+    try {
+      const response = await apiClient.get<NewsSourceOpmlPresetSummary[]>(
+        "admin/news-sources/opml-presets",
+      );
+      const presets = response.data ?? [];
+      setOpmlPresets(presets);
+      const firstPresetId = presets[0]?.id ?? "";
+      const firstDefaultLanguage = presets[0]?.defaultLanguage ?? "zh";
+      setOpmlPresetId((prev) => prev || firstPresetId);
+      setOpmlDefaultLanguage((prev) => prev || firstDefaultLanguage);
+    } catch (error) {
+      captureClientError("Failed to load OPML presets", error);
+      messageApi.error(
+        extractApiErrorMessage(error) ??
+          t("newsSources.opml.errors.loadPresets", {
+            defaultValue: "Failed to load OPML presets.",
+          }),
+      );
+    } finally {
+      setOpmlLoadingPresets(false);
+    }
+  }, [apiClient, messageApi, t]);
 
   const loadCrawlQueueStats = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -1336,6 +1431,19 @@ export function NewsSourcesContent() {
     setModalOpen(false);
     createDrawerForm.resetFields();
     setCreateDrawerOpen(true);
+  };
+
+  const openOpmlImport = async () => {
+    setOpmlImportReport(null);
+    setOpmlPreview(null);
+    setOpmlContent("");
+    setOpmlFileName(null);
+    setOpmlMode("preset");
+    setOpmlDefaultLanguage("zh");
+    setOpmlModalOpen(true);
+    if (opmlPresets.length === 0) {
+      await loadOpmlPresets();
+    }
   };
 
   const openEdit = (source: NewsSourceRecord) => {
@@ -2181,6 +2289,179 @@ export function NewsSourcesContent() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOpmlModeChange = (mode: NewsSourceOpmlMode) => {
+    setOpmlMode(mode);
+    setOpmlPreview(null);
+    setOpmlImportReport(null);
+  };
+
+  const handleOpmlFileChange = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      setOpmlContent(text);
+      setOpmlFileName(file.name);
+      setOpmlPreview(null);
+      setOpmlImportReport(null);
+      setOpmlMode("upload");
+    } catch (error) {
+      captureClientError("Failed to read OPML file", error);
+      messageApi.error(
+        error instanceof Error
+          ? error.message
+          : t("newsSources.opml.errors.readFile", {
+              defaultValue: "Failed to read OPML file.",
+            }),
+      );
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handlePreviewOpml = async () => {
+    setOpmlPreviewing(true);
+    setOpmlImportReport(null);
+    try {
+      const payload =
+        opmlMode === "preset"
+          ? {
+              presetId: opmlPresetId,
+              defaultLanguage: opmlDefaultLanguage,
+            }
+          : {
+              opmlContent,
+              defaultLanguage: opmlDefaultLanguage,
+            };
+      const response = await apiClient.post<NewsSourceOpmlPreviewResponse>(
+        "admin/news-sources/opml/preview",
+        payload,
+      );
+      setOpmlPreview(response.data ?? null);
+    } catch (error) {
+      captureClientError("Failed to preview OPML", error);
+      messageApi.error(
+        extractApiErrorMessage(error) ??
+          (error instanceof Error
+            ? error.message
+            : t("newsSources.opml.errors.preview", {
+                defaultValue: "Failed to preview OPML.",
+              })),
+      );
+    } finally {
+      setOpmlPreviewing(false);
+    }
+  };
+
+  const handleApplyOpmlDefaultLanguage = () => {
+    const language = opmlDefaultLanguage.trim();
+    if (!language) {
+      return;
+    }
+    setOpmlPreview((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      return {
+        ...prev,
+        entries: prev.entries.map((entry) =>
+          entry.enabled
+            ? {
+                ...entry,
+                language,
+              }
+            : entry,
+        ),
+      };
+    });
+  };
+
+  const updateOpmlPreviewEntry = (
+    index: number,
+    patch: Partial<NewsSourceOpmlPreviewEntry>,
+  ) => {
+    setOpmlPreview((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      if (index < 0 || index >= prev.entries.length) {
+        return prev;
+      }
+      const nextEntries = [...prev.entries];
+      const current = nextEntries[index];
+      if (!current) {
+        return prev;
+      }
+      nextEntries[index] = {
+        ...current,
+        ...patch,
+      };
+      return {
+        ...prev,
+        entries: nextEntries,
+      };
+    });
+  };
+
+  const handleImportOpml = async () => {
+    if (!opmlPreview) {
+      messageApi.warning(
+        t("newsSources.opml.errors.previewFirst", {
+          defaultValue: "Preview OPML before importing.",
+        }),
+      );
+      return;
+    }
+    setOpmlImporting(true);
+    try {
+      const payload = {
+        entries: opmlPreview.entries.map((entry) => ({
+          name: entry.name,
+          url: entry.url,
+          feedUrl: entry.feedUrl,
+          language: entry.language,
+          enabled: entry.enabled,
+          siteType: "general",
+        })),
+        conflictPolicy: "skip",
+        runtimeProfile: "steady",
+      };
+
+      const response = await apiClient.post<NewsSourceOpmlImportReport>(
+        "admin/news-sources/opml/import",
+        payload,
+      );
+      const report = response.data;
+      setOpmlImportReport(report);
+      messageApi.success(
+        t("newsSources.opml.messages.imported", {
+          defaultValue:
+            "OPML import finished: {{created}} created, {{skipped}} skipped, {{failed}} failed.",
+          created: report?.summary?.created ?? 0,
+          skipped: report?.summary?.skipped ?? 0,
+          failed: report?.summary?.failed ?? 0,
+        }),
+      );
+      await loadSources();
+    } catch (error) {
+      captureClientError("Failed to import OPML", error);
+      messageApi.error(
+        extractApiErrorMessage(error) ??
+          (error instanceof Error
+            ? error.message
+            : t("newsSources.opml.errors.import", {
+                defaultValue: "Failed to import OPML.",
+              })),
+      );
+    } finally {
+      setOpmlImporting(false);
     }
   };
 
@@ -3727,9 +4008,18 @@ export function NewsSourcesContent() {
               ) : null}
             </Space>
             {canManage ? (
-              <Button type="primary" onClick={openCreate}>
-                {t("newsSources.actions.new", { defaultValue: "New source" })}
-              </Button>
+              <Space>
+                <Button onClick={() => void openOpmlImport()}>
+                  {t("newsSources.actions.importOpml", {
+                    defaultValue: "Import OPML",
+                  })}
+                </Button>
+                <Button type="primary" onClick={openCreate}>
+                  {t("newsSources.actions.new", {
+                    defaultValue: "New source",
+                  })}
+                </Button>
+              </Space>
             ) : null}
           </Space>
         }
@@ -5768,6 +6058,343 @@ export function NewsSourcesContent() {
           </Form.Item>
         </Modal>
       </Form>
+
+      <Modal
+        open={opmlModalOpen}
+        title={t("newsSources.opml.title", {
+          defaultValue: "Import RSS Sources from OPML",
+        })}
+        width={screens.md ? 1120 : "100%"}
+        onCancel={() => {
+          setOpmlModalOpen(false);
+          setOpmlImportReport(null);
+          setOpmlPreview(null);
+        }}
+        footer={
+          <Space>
+            <Button
+              onClick={() => {
+                setOpmlModalOpen(false);
+                setOpmlImportReport(null);
+                setOpmlPreview(null);
+              }}
+            >
+              {t("common.cancel", { defaultValue: "Cancel" })}
+            </Button>
+            <Button
+              onClick={() => void handlePreviewOpml()}
+              loading={opmlPreviewing}
+              disabled={
+                opmlMode === "preset"
+                  ? opmlPresetId.trim().length === 0
+                  : opmlContent.trim().length === 0
+              }
+            >
+              {t("newsSources.opml.actions.preview", {
+                defaultValue: "Preview",
+              })}
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => void handleImportOpml()}
+              loading={opmlImporting}
+              disabled={
+                !opmlPreview ||
+                opmlPreview.entries.filter((entry) => entry.enabled).length === 0
+              }
+            >
+              {t("newsSources.opml.actions.import", {
+                defaultValue: "Import",
+              })}
+            </Button>
+          </Space>
+        }
+        destroyOnHidden
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            message={t("newsSources.opml.hint.title", {
+              defaultValue: "How import works",
+            })}
+            description={t("newsSources.opml.hint.description", {
+              defaultValue:
+                "url uses OPML htmlUrl, RSS feed uses xmlUrl as seed.feedUrl, duplicates are skipped, and language drives downstream LLM translation in the news pipeline.",
+            })}
+          />
+
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Typography.Text strong>
+                {t("newsSources.opml.fields.mode", {
+                  defaultValue: "Import mode",
+                })}
+              </Typography.Text>
+              <Select<NewsSourceOpmlMode>
+                style={{ width: "100%", marginTop: 6 }}
+                value={opmlMode}
+                onChange={handleOpmlModeChange}
+                options={[
+                  {
+                    label: t("newsSources.opml.mode.preset", {
+                      defaultValue: "Built-in preset",
+                    }),
+                    value: "preset",
+                  },
+                  {
+                    label: t("newsSources.opml.mode.upload", {
+                      defaultValue: "Upload OPML file",
+                    }),
+                    value: "upload",
+                  },
+                ]}
+              />
+            </Col>
+            <Col xs={24} md={16}>
+              {opmlMode === "preset" ? (
+                <>
+                  <Typography.Text strong>
+                    {t("newsSources.opml.fields.preset", {
+                      defaultValue: "Preset",
+                    })}
+                  </Typography.Text>
+                  <Select
+                    style={{ width: "100%", marginTop: 6 }}
+                    loading={opmlLoadingPresets}
+                    value={opmlPresetId}
+                    onChange={(value) => {
+                      setOpmlPresetId(value);
+                      const preset = opmlPresets.find((item) => item.id === value);
+                      if (preset?.defaultLanguage) {
+                        setOpmlDefaultLanguage(preset.defaultLanguage);
+                      }
+                      setOpmlPreview(null);
+                      setOpmlImportReport(null);
+                    }}
+                    options={opmlPresets.map((preset) => ({
+                      label: `${preset.name} (${preset.entryCount})`,
+                      value: preset.id,
+                    }))}
+                  />
+                </>
+              ) : (
+                <>
+                  <Typography.Text strong>
+                    {t("newsSources.opml.fields.file", {
+                      defaultValue: "Upload .opml/.xml",
+                    })}
+                  </Typography.Text>
+                  <Input
+                    style={{ marginTop: 6 }}
+                    type="file"
+                    accept=".opml,.xml,text/xml,application/xml"
+                    onChange={(event) => void handleOpmlFileChange(event)}
+                  />
+                  {opmlFileName ? (
+                    <Typography.Text type="secondary">
+                      {t("newsSources.opml.fields.fileLoaded", {
+                        defaultValue: "Loaded file: {{name}}",
+                        name: opmlFileName,
+                      })}
+                    </Typography.Text>
+                  ) : null}
+                </>
+              )}
+            </Col>
+          </Row>
+
+          <Space wrap>
+            <Input
+              style={{ width: 220 }}
+              value={opmlDefaultLanguage}
+              onChange={(event) =>
+                setOpmlDefaultLanguage(event.target.value.trim())
+              }
+              placeholder={t("newsSources.opml.fields.language", {
+                defaultValue: "Target language (e.g. zh/en)",
+              })}
+            />
+            <Button onClick={handleApplyOpmlDefaultLanguage}>
+              {t("newsSources.opml.actions.applyLanguage", {
+                defaultValue: "Apply language to enabled",
+              })}
+            </Button>
+          </Space>
+
+          {opmlPreview ? (
+            <Card size="small">
+              <Space wrap>
+                <Tag color="blue">
+                  {t("newsSources.opml.summary.total", {
+                    defaultValue: "Total {{count}}",
+                    count: opmlPreview.summary.total,
+                  })}
+                </Tag>
+                <Tag color="green">
+                  {t("newsSources.opml.summary.valid", {
+                    defaultValue: "Valid {{count}}",
+                    count: opmlPreview.summary.valid,
+                  })}
+                </Tag>
+                <Tag color="gold">
+                  {t("newsSources.opml.summary.duplicates", {
+                    defaultValue: "Duplicates {{count}}",
+                    count: opmlPreview.summary.duplicates,
+                  })}
+                </Tag>
+                <Tag color="purple">
+                  {t("newsSources.opml.summary.enabled", {
+                    defaultValue: "Enabled {{count}}",
+                    count: opmlPreview.entries.filter((entry) => entry.enabled)
+                      .length,
+                  })}
+                </Tag>
+                {opmlPreview.title ? (
+                  <Typography.Text type="secondary">
+                    {t("newsSources.opml.summary.title", {
+                      defaultValue: "Title: {{title}}",
+                      title: opmlPreview.title,
+                    })}
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            </Card>
+          ) : null}
+
+          {opmlImportReport ? (
+            <Alert
+              type={
+                opmlImportReport.summary.failed > 0
+                  ? "warning"
+                  : "success"
+              }
+              showIcon
+              message={t("newsSources.opml.report.title", {
+                defaultValue: "Import completed",
+              })}
+              description={t("newsSources.opml.report.summary", {
+                defaultValue:
+                  "Created {{created}}, skipped {{skipped}}, failed {{failed}}.",
+                created: opmlImportReport.summary.created,
+                skipped: opmlImportReport.summary.skipped,
+                failed: opmlImportReport.summary.failed,
+              })}
+            />
+          ) : null}
+
+          {opmlPreview ? (
+            <Table
+              rowKey={(record, index) => `${record.url}-${record.feedUrl}-${index}`}
+              size="small"
+              pagination={{ pageSize: screens.md ? 12 : 6 }}
+              dataSource={opmlPreview.entries}
+              columns={[
+                {
+                  title: t("newsSources.opml.columns.import", {
+                    defaultValue: "Import",
+                  }),
+                  width: 80,
+                  render: (_value, record, index) => (
+                    <Checkbox
+                      checked={record.enabled}
+                      disabled={!record.valid || record.alreadyExists}
+                      onChange={(event) =>
+                        updateOpmlPreviewEntry(index, {
+                          enabled: event.target.checked,
+                        })
+                      }
+                    />
+                  ),
+                },
+                {
+                  title: t("newsSources.opml.columns.name", {
+                    defaultValue: "Name",
+                  }),
+                  dataIndex: "name",
+                  width: 220,
+                },
+                {
+                  title: t("newsSources.opml.columns.siteUrl", {
+                    defaultValue: "Site URL",
+                  }),
+                  dataIndex: "url",
+                  ellipsis: true,
+                },
+                {
+                  title: t("newsSources.opml.columns.feedUrl", {
+                    defaultValue: "Feed URL",
+                  }),
+                  dataIndex: "feedUrl",
+                  ellipsis: true,
+                },
+                {
+                  title: t("newsSources.opml.columns.language", {
+                    defaultValue: "Language",
+                  }),
+                  width: 130,
+                  render: (_value, record, index) => (
+                    <Input
+                      value={record.language}
+                      disabled={!record.enabled}
+                      onChange={(event) =>
+                        updateOpmlPreviewEntry(index, {
+                          language: event.target.value.trim(),
+                        })
+                      }
+                    />
+                  ),
+                },
+                {
+                  title: t("newsSources.opml.columns.status", {
+                    defaultValue: "Status",
+                  }),
+                  width: 260,
+                  render: (_value, record) => {
+                    if (record.alreadyExists) {
+                      return (
+                        <Tag color="gold">
+                          {t("newsSources.opml.status.duplicate", {
+                            defaultValue: "Duplicate",
+                          })}
+                        </Tag>
+                      );
+                    }
+                    if (!record.valid) {
+                      return (
+                        <Typography.Text type="danger">
+                          {record.errors.join("; ")}
+                        </Typography.Text>
+                      );
+                    }
+                    if (record.errors.length > 0) {
+                      return (
+                        <Typography.Text type="secondary">
+                          {record.errors.join("; ")}
+                        </Typography.Text>
+                      );
+                    }
+                    return (
+                      <Tag color="green">
+                        {t("newsSources.opml.status.ready", {
+                          defaultValue: "Ready",
+                        })}
+                      </Tag>
+                    );
+                  },
+                },
+              ]}
+            />
+          ) : (
+            <Typography.Text type="secondary">
+              {t("newsSources.opml.empty", {
+                defaultValue:
+                  "Choose a preset or upload an OPML file, then click Preview.",
+              })}
+            </Typography.Text>
+          )}
+        </Space>
+      </Modal>
 
       {canManage ? (
         <CreateCrawlTaskDrawer

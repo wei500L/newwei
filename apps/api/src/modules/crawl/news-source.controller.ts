@@ -11,13 +11,19 @@ import {
   ScheduleNewsSourceDto,
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
+import { ImportNewsSourcesFromOpmlDto } from "./dto/import-opml.dto";
+import { PreviewNewsSourceOpmlDto } from "./dto/preview-opml.dto";
+import { NewsSourceOpmlService } from "./news-source-opml.service";
 import { NewsSourceService } from "./news-source.service";
 
 @ApiTags("crawl")
 @ApiBearerAuth()
 @Controller("admin/news-sources")
 export class NewsSourceController {
-  constructor(private readonly newsSources: NewsSourceService) {}
+  constructor(
+    private readonly newsSources: NewsSourceService,
+    private readonly newsSourceOpml: NewsSourceOpmlService,
+  ) {}
 
   @Get()
   @Permissions("crawl.read")
@@ -29,6 +35,40 @@ export class NewsSourceController {
   @Permissions("crawl.write")
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateNewsSourceDto) {
     return this.newsSources.createSource(user.orgId, body);
+  }
+
+  @Get("opml-presets")
+  @Permissions("crawl.read")
+  async listOpmlPresets() {
+    return this.newsSourceOpml.listPresets();
+  }
+
+  @Post("opml/preview")
+  @Permissions("crawl.write")
+  async previewOpml(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: PreviewNewsSourceOpmlDto,
+  ) {
+    return this.newsSourceOpml.preview({
+      orgId: user.orgId,
+      presetId: body.presetId,
+      opmlContent: body.opmlContent,
+      defaultLanguage: body.defaultLanguage,
+    });
+  }
+
+  @Post("opml/import")
+  @Permissions("crawl.write")
+  async importOpml(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: ImportNewsSourcesFromOpmlDto,
+  ) {
+    return this.newsSourceOpml.import({
+      orgId: user.orgId,
+      entries: body.entries,
+      conflictPolicy: body.conflictPolicy,
+      runtimeProfile: body.runtimeProfile,
+    });
   }
 
   @Patch(":id")

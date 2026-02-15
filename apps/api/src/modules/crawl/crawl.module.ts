@@ -29,6 +29,7 @@ import { Crawl4aiQualityController } from "./crawl4ai-quality.controller";
 import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
 import { CrawlMediaAssetService } from "./crawl-media-asset.service";
+import { NewsSourceOpmlService } from "./news-source-opml.service";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
 import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
@@ -73,6 +74,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlMediaAssetService,
     CrawlQualityMetricsService,
     CrawlQualityStrategyService,
+    NewsSourceOpmlService,
     NewsSourceService,
     CrawlTemplateService,
     CrawlCleanupOutboxService,
