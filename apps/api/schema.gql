@@ -326,6 +326,7 @@ input CrawlCleanMarkdownInput {
 type CrawlClientSettingsModel {
   healthCheckTtlMs: Int!
   maxRetries: Int!
+  queueOverloadCooldownMs: Int!
   requestTimeoutMs: Int!
   retryBackoffMs: Int!
 }
@@ -1918,6 +1919,7 @@ input UpdateAuthCacheSettingsInput {
 input UpdateCrawlClientSettingsInput {
   healthCheckTtlMs: Int!
   maxRetries: Int!
+  queueOverloadCooldownMs: Int!
   requestTimeoutMs: Int!
   retryBackoffMs: Int!
 }

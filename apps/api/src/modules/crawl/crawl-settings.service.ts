@@ -10,13 +10,17 @@ export interface CrawlClientSettings {
   requestTimeoutMs: number;
   maxRetries: number;
   retryBackoffMs: number;
+  queueOverloadCooldownMs: number;
+  maxConcurrency: number;
 }
 
 export interface CrawlClientSettingsInput {
-  healthCheckTtlMs: number;
-  requestTimeoutMs: number;
-  maxRetries: number;
-  retryBackoffMs: number;
+  healthCheckTtlMs?: number;
+  requestTimeoutMs?: number;
+  maxRetries?: number;
+  retryBackoffMs?: number;
+  queueOverloadCooldownMs?: number;
+  maxConcurrency?: number;
 }
 
 const CRAWL_CLIENT_SETTINGS_KEY = "crawl_client_settings";
@@ -28,6 +32,11 @@ const MIN_RETRY_BACKOFF_MS = 500;
 const MAX_RETRY_BACKOFF_MS = 600_000;
 const MIN_RETRY_ATTEMPTS = 1;
 const MAX_RETRY_ATTEMPTS = 10;
+const MIN_QUEUE_OVERLOAD_COOLDOWN_MS = 5_000;
+const MAX_QUEUE_OVERLOAD_COOLDOWN_MS = 600_000;
+const DEFAULT_QUEUE_OVERLOAD_COOLDOWN_MS = 30_000;
+const MIN_CRAWL_MAX_CONCURRENCY = 1;
+const MAX_CRAWL_MAX_CONCURRENCY = 20;
 
 @Injectable()
 export class CrawlSettingsService {
@@ -42,7 +51,8 @@ export class CrawlSettingsService {
     actorId: string,
     input: CrawlClientSettingsInput
   ): Promise<CrawlClientSettings> {
-    const normalized = this.normalize(input);
+    const current = await this.loadSettings();
+    const normalized = this.normalize(input, current);
     await this.prisma.$transaction([
       this.prisma.systemSetting.upsert({
         where: { key: CRAWL_CLIENT_SETTINGS_KEY },
@@ -77,6 +87,10 @@ export class CrawlSettingsService {
     return normalized;
   }
 
+  async updateMaxConcurrency(orgId: string, actorId: string, maxConcurrency: number) {
+    return this.updateSettings(orgId, actorId, { maxConcurrency });
+  }
+
   private async loadSettings(): Promise<CrawlClientSettings> {
     const fallback = this.getFallbackSettings();
     const record = await this.prisma.systemSetting.findUnique({
@@ -87,7 +101,9 @@ export class CrawlSettingsService {
       healthCheckTtlMs: raw.healthCheckTtlMs,
       requestTimeoutMs: raw.requestTimeoutMs,
       maxRetries: raw.maxRetries,
-      retryBackoffMs: raw.retryBackoffMs
+      retryBackoffMs: raw.retryBackoffMs,
+      queueOverloadCooldownMs: raw.queueOverloadCooldownMs,
+      maxConcurrency: raw.maxConcurrency
     }, fallback);
   }
 
@@ -109,6 +125,16 @@ export class CrawlSettingsService {
         envConfig.retryBackoffMs ?? 5_000,
         MIN_RETRY_BACKOFF_MS,
         MAX_RETRY_BACKOFF_MS
+      ),
+      queueOverloadCooldownMs: this.clamp(
+        DEFAULT_QUEUE_OVERLOAD_COOLDOWN_MS,
+        MIN_QUEUE_OVERLOAD_COOLDOWN_MS,
+        MAX_QUEUE_OVERLOAD_COOLDOWN_MS
+      ),
+      maxConcurrency: this.clamp(
+        envConfig.maxConcurrency,
+        MIN_CRAWL_MAX_CONCURRENCY,
+        MAX_CRAWL_MAX_CONCURRENCY
       )
     };
   }
@@ -142,6 +168,18 @@ export class CrawlSettingsService {
         MIN_RETRY_BACKOFF_MS,
         MAX_RETRY_BACKOFF_MS,
         defaults.retryBackoffMs
+      ),
+      queueOverloadCooldownMs: this.clamp(
+        this.toInt(value.queueOverloadCooldownMs),
+        MIN_QUEUE_OVERLOAD_COOLDOWN_MS,
+        MAX_QUEUE_OVERLOAD_COOLDOWN_MS,
+        defaults.queueOverloadCooldownMs
+      ),
+      maxConcurrency: this.clamp(
+        this.toInt(value.maxConcurrency),
+        MIN_CRAWL_MAX_CONCURRENCY,
+        MAX_CRAWL_MAX_CONCURRENCY,
+        defaults.maxConcurrency
       )
     };
   }

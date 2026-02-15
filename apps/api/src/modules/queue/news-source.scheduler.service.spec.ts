@@ -287,6 +287,88 @@ describe("NewsSourceSchedulerService", () => {
     );
   });
 
+  it("filters stale path-dated URLs and prioritizes fresh articles", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T00:00:00.000Z"));
+    try {
+      const { service, prisma, metadataService, crawlQueue } = createService();
+      const now = new Date("2026-02-15T00:00:00.000Z");
+
+      (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
+        "https://example.com/news/2023/01/02/old-story",
+        "https://example.com/news/2026/02/14/new-story",
+      ]);
+
+      (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: "source-1",
+          orgId: "org-1",
+          name: "Example",
+          url: "https://example.com",
+          siteType: "general",
+          language: "en",
+          crawlTemplateId: null,
+          frequencySeconds: 3600,
+          priority: 0,
+          nextRunAt: now,
+          config: {
+            keywords: ["economy"],
+            seed: {
+              enabled: true,
+              maxUrls: 20,
+              maxNewUrlsPerRun: 10,
+              scoreThreshold: 0,
+              dedupeWindowHours: 24,
+              cacheTtlSeconds: 600,
+            },
+          },
+          crawlTemplate: null,
+        },
+      ]);
+
+      (prisma.membership.findFirst as jest.Mock).mockResolvedValue({
+        userId: "user-actor",
+      });
+      (prisma.article.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.pipelineJob.findMany as jest.Mock).mockResolvedValue([]);
+
+      let jobIndex = 0;
+      let taskIndex = 0;
+
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (fn: (tx: any) => Promise<any>) =>
+          fn({
+            pipelineJob: {
+              create: jest.fn(async () => ({
+                id: `job-${++jobIndex}`,
+                metadata: null,
+              })),
+              update: jest.fn(async () => ({})),
+            },
+            crawlTask: {
+              findFirst: jest.fn(async () => null),
+              create: jest.fn(async () => ({ id: `task-${++taskIndex}` })),
+              update: jest.fn(async (args: any) => ({
+                id: args?.where?.id ?? `task-${taskIndex}`,
+              })),
+            },
+          }),
+      );
+
+      (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+      (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
+
+      await (service as any).scheduleDueSources(now, 10);
+
+      expect(crawlQueue.enqueueTask).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      const txCallArg = (prisma.$transaction as jest.Mock).mock.calls[0]?.[0];
+      expect(typeof txCallArg).toBe("function");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("reschedules when a seed source is at in-flight capacity", async () => {
     const { service, prisma, metadataService, crawlQueue, env } =
       createService();

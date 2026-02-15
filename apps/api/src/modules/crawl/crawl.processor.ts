@@ -7,6 +7,7 @@ import { PrismaService } from "../config/prisma.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import { CrawlSettingsService } from "./crawl-settings.service";
 import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
@@ -14,6 +15,20 @@ const logger = createLogger({ name: "crawl-queue" });
 const RETRYABLE_STATUS_CODES = new Set([408, 423, 425, 429, 500, 502, 503, 504]);
 const MAX_ERROR_TEXT = 4000;
 const MYSQL_VARCHAR_191 = 191;
+const MEMORY_PRESSURE_COOLDOWN_MIN_MS = 5_000;
+const MEMORY_PRESSURE_COOLDOWN_MAX_MS = 10 * 60 * 1000;
+const MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS = 30_000;
+const MEMORY_PRESSURE_PERCENT_PATTERN = /memory\s+at\s+(\d+(?:\.\d+)?)%/i;
+
+const RETRYABLE_MESSAGE_HINTS = ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"];
+const MEMORY_PRESSURE_HINTS = [
+  "refusing new browser",
+  "memory at",
+  "insufficient memory",
+  "out of memory",
+  "not enough memory",
+  "cannot allocate memory"
+];
 
 function truncateText(value: string, maxLength: number): string {
   const trimmed = value.trim();
@@ -48,17 +63,136 @@ function isRetryableError(error: unknown): boolean {
       return true;
     }
     const normalized = error.message.toLowerCase();
-    return ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"].some((needle) =>
-      normalized.includes(needle)
-    );
+    return RETRYABLE_MESSAGE_HINTS.some((needle) => normalized.includes(needle));
   }
   if (error instanceof Error) {
     const normalized = error.message.toLowerCase();
-    return ["timeout", "temporarily", "rate limit", "connection reset", "connection refused"].some((needle) =>
-      normalized.includes(needle)
-    );
+    return RETRYABLE_MESSAGE_HINTS.some((needle) => normalized.includes(needle));
   }
   return false;
+}
+
+function extractErrorText(error: unknown): string {
+  if (!error) {
+    return "";
+  }
+
+  const parts = new Set<string>();
+  const addPart = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      parts.add(trimmed);
+    }
+  };
+
+  if (error instanceof Error) {
+    addPart(error.message);
+  }
+
+  if (typeof error === "object") {
+    const axiosLike = error as {
+      message?: unknown;
+      response?: { data?: unknown };
+    };
+    addPart(axiosLike.message);
+    const responseData = axiosLike.response?.data;
+    if (typeof responseData === "string") {
+      addPart(responseData);
+    } else if (
+      responseData &&
+      typeof responseData === "object" &&
+      !Array.isArray(responseData)
+    ) {
+      const record = responseData as Record<string, unknown>;
+      addPart(record.message);
+      addPart(record.detail);
+      addPart(record.error);
+      const nestedError = record.error;
+      if (
+        nestedError &&
+        typeof nestedError === "object" &&
+        !Array.isArray(nestedError)
+      ) {
+        const nestedRecord = nestedError as Record<string, unknown>;
+        addPart(nestedRecord.message);
+        addPart(nestedRecord.detail);
+        addPart(nestedRecord.error);
+      }
+    }
+  }
+
+  return Array.from(parts).join("\n").toLowerCase();
+}
+
+function extractMemoryPressurePercent(error: unknown): number | null {
+  const message = extractErrorText(error);
+  if (!message) {
+    return null;
+  }
+  const match = message.match(MEMORY_PRESSURE_PERCENT_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.min(100, parsed));
+}
+
+function isMemoryPressureError(error: unknown): boolean {
+  const normalized = extractErrorText(error);
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.includes("memory") && normalized.includes("refusing") && normalized.includes("browser")) {
+    return true;
+  }
+  return MEMORY_PRESSURE_HINTS.some((needle) => normalized.includes(needle));
+}
+
+function resolveQueueOverloadCooldownMs(configured: unknown, memoryPercent: number | null): number {
+  const fallback =
+    typeof configured === "number" && Number.isFinite(configured)
+      ? Math.round(configured)
+      : MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS;
+  const baseDelayMs = Math.max(
+    MEMORY_PRESSURE_COOLDOWN_MIN_MS,
+    Math.min(MEMORY_PRESSURE_COOLDOWN_MAX_MS, fallback)
+  );
+
+  let multiplier = 1;
+  if (typeof memoryPercent === "number") {
+    if (memoryPercent >= 98) {
+      multiplier = 4;
+    } else if (memoryPercent >= 96) {
+      multiplier = 3;
+    } else if (memoryPercent >= 94) {
+      multiplier = 2;
+    }
+  }
+
+  return Math.max(
+    MEMORY_PRESSURE_COOLDOWN_MIN_MS,
+    Math.min(MEMORY_PRESSURE_COOLDOWN_MAX_MS, Math.round(baseDelayMs * multiplier))
+  );
+}
+
+function resolveManualLimiterMax(concurrency: number): number {
+  return Math.max(1, Math.min(10_000, Math.round(concurrency) * 100));
+}
+
+function resolveInitialWorkerConcurrency(configured: number, fallback: number): number {
+  const normalizedConfigured = Math.max(1, Math.round(configured));
+  const normalizedFallback = Math.max(1, Math.round(fallback));
+  return Math.max(normalizedConfigured, normalizedFallback);
+}
+
+interface QueueWithGlobalConcurrencyApi {
+  setGlobalConcurrency?: (concurrency: number) => Promise<void>;
 }
 
 @Injectable()
@@ -67,6 +201,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly env: EnvService,
+    private readonly crawlSettings: CrawlSettingsService,
     private readonly crawlExecutionService: CrawlExecutionService,
     private readonly prisma: PrismaService,
     @Inject(CRAWL_QUEUE) private readonly queue: Queue<CrawlJobData>,
@@ -74,7 +209,27 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    this.worker = new Worker<CrawlJobData>(
+    let configuredConcurrency = Math.max(1, Math.round(this.env.crawl4aiConfig.maxConcurrency ?? 1));
+    try {
+      const settings = await this.crawlSettings.getSettings();
+      configuredConcurrency = Math.max(1, Math.round(settings.maxConcurrency));
+      const queueWithGlobalConcurrency = this.queue as Queue<CrawlJobData> & QueueWithGlobalConcurrencyApi;
+      if (typeof queueWithGlobalConcurrency.setGlobalConcurrency === "function") {
+        await queueWithGlobalConcurrency.setGlobalConcurrency(configuredConcurrency);
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Failed to apply configured crawl queue global concurrency; using worker-local concurrency fallback"
+      );
+    }
+
+    const concurrency = resolveInitialWorkerConcurrency(
+      configuredConcurrency,
+      this.env.crawl4aiConfig.maxConcurrency ?? 1
+    );
+
+    const worker = new Worker<CrawlJobData>(
       CRAWL_QUEUE_NAME,
       async (job) => {
         const traceId = ensureTraceId(job.data.traceId);
@@ -95,6 +250,48 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
               }
             );
           } catch (error) {
+            if (isMemoryPressureError(error)) {
+              let configuredCooldownMs: number = MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS;
+              try {
+                const settings = await this.crawlSettings.getSettings();
+                configuredCooldownMs = settings.queueOverloadCooldownMs;
+              } catch (settingsError) {
+                logger.warn(
+                  { err: settingsError },
+                  "Failed to load crawl settings for memory pressure cooldown; using default"
+                );
+              }
+
+              const memoryPercent = extractMemoryPressurePercent(error);
+              const cooldownMs = resolveQueueOverloadCooldownMs(configuredCooldownMs, memoryPercent);
+
+              try {
+                await worker.rateLimit(cooldownMs);
+              } catch (rateLimitError) {
+                logger.error(
+                  { jobId: job.id, taskId: job.data.taskId, cooldownMs, err: rateLimitError },
+                  "Failed to apply crawl queue rate limit during memory pressure fallback"
+                );
+                throw error;
+              }
+
+              logger.warn(
+                {
+                  jobId: job.id,
+                  taskId: job.data.taskId,
+                  cooldownMs,
+                  memoryPercent,
+                  error:
+                    error instanceof Error
+                      ? truncateText(error.message, 500)
+                      : truncateText(String(error), 500)
+                },
+                "crawl4ai memory pressure detected; re-queueing job with queue-wide cooldown"
+              );
+
+              throw Worker.RateLimitError();
+            }
+
             if (!isRetryableError(error)) {
               const unrecoverable = new UnrecoverableError(
                 error instanceof Error ? error.message : String(error)
@@ -108,9 +305,14 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       },
       {
         connection: this.queue.opts.connection,
-        concurrency: this.env.crawl4aiConfig.maxConcurrency
+        concurrency,
+        limiter: {
+          max: resolveManualLimiterMax(concurrency),
+          duration: 1000
+        }
       }
     );
+    this.worker = worker;
 
     this.worker.on("failed", (job, error) => {
       const traceId = job?.data?.traceId;
@@ -200,5 +402,12 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.worker?.close();
+  }
+
+  setWorkerConcurrency(maxConcurrency: number) {
+    if (!this.worker) {
+      return;
+    }
+    this.worker.concurrency = Math.max(1, Math.round(maxConcurrency));
   }
 }

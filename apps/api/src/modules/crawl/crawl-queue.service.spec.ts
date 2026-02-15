@@ -119,5 +119,49 @@ describe("CrawlQueueService.enqueueTask", () => {
     expect(typeof opts.jobId).toBe("string");
     expect(opts.jobId).toContain("task-1-");
     expect(opts.jobId).not.toContain(":");
+
+    expect(opts.deduplication).toEqual({
+      id: "crawl-task:task-1"
+    });
+  });
+});
+
+describe("CrawlQueueService queue controls", () => {
+  it("pauses and resumes queue processing", async () => {
+    const queue = {
+      pause: jest.fn().mockResolvedValue(undefined),
+      resume: jest.fn().mockResolvedValue(undefined),
+      isPaused: jest.fn().mockResolvedValue(false)
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
+    } as any;
+    const service = new CrawlQueueService(queue as any, settings);
+
+    await service.pauseQueue();
+    await service.resumeQueue();
+    await service.isPaused();
+
+    expect(queue.pause).toHaveBeenCalledTimes(1);
+    expect(queue.resume).toHaveBeenCalledTimes(1);
+    expect(queue.isPaused).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses queue global concurrency when available", async () => {
+    const queue = {
+      getGlobalConcurrency: jest.fn().mockResolvedValue(4),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
+    };
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
+    } as any;
+    const service = new CrawlQueueService(queue as any, settings);
+
+    await service.setGlobalConcurrency(5);
+    const effective = await service.getEffectiveConcurrency();
+
+    expect(queue.setGlobalConcurrency).toHaveBeenCalledWith(5);
+    expect(effective).toBe(4);
+    expect(settings.getSettings).not.toHaveBeenCalled();
   });
 });

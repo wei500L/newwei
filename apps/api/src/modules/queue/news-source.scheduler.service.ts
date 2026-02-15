@@ -32,6 +32,8 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.running,
   PipelineJobStatus.delayed,
 ];
+const DEFAULT_SEED_FRESHNESS_WINDOW_DAYS = 365;
+const MAX_SEED_FRESHNESS_WINDOW_DAYS = 3_650;
 
 type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
   include: {
@@ -1685,22 +1687,115 @@ export class NewsSourceSchedulerService {
       ),
     );
 
+    const freshnessWindowDays = this.getEnvValue(
+      "NEWS_SOURCE_SEED_FRESHNESS_WINDOW_DAYS",
+      DEFAULT_SEED_FRESHNESS_WINDOW_DAYS,
+      (value) => {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return undefined;
+        }
+        return Math.max(1, Math.min(MAX_SEED_FRESHNESS_WINDOW_DAYS, Math.floor(value)));
+      },
+    );
+    const freshnessCutoffTs = Date.now() - freshnessWindowDays * 24 * 60 * 60 * 1000;
+
     const scored = unique
       .map((url) => ({
         url,
         relevanceScore: this.scoreUrl(url, seed.queryTokens),
+        publishedAtTs: this.parsePublishedAtFromUrl(url),
       }))
       .filter((entry) =>
         seed.scoreThreshold > 0
           ? (entry.relevanceScore ?? 0) >= seed.scoreThreshold
           : true,
+      )
+      .filter((entry) =>
+        typeof entry.publishedAtTs === "number" && Number.isFinite(entry.publishedAtTs)
+          ? entry.publishedAtTs >= freshnessCutoffTs
+          : true,
       );
 
-    if (seed.queryTokens && seed.queryTokens.length > 0) {
-      scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-    }
+    scored.sort((a, b) => {
+      const aPublishedAtTs =
+        typeof a.publishedAtTs === "number" && Number.isFinite(a.publishedAtTs)
+          ? a.publishedAtTs
+          : -1;
+      const bPublishedAtTs =
+        typeof b.publishedAtTs === "number" && Number.isFinite(b.publishedAtTs)
+          ? b.publishedAtTs
+          : -1;
+      if (aPublishedAtTs !== bPublishedAtTs) {
+        return bPublishedAtTs - aPublishedAtTs;
+      }
+      const aScore = a.relevanceScore ?? 0;
+      const bScore = b.relevanceScore ?? 0;
+      if (aScore !== bScore) {
+        return bScore - aScore;
+      }
+      return a.url.localeCompare(b.url);
+    });
 
     return scored.slice(0, seed.maxUrls);
+  }
+
+  private parsePublishedAtFromUrl(url: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return undefined;
+    }
+    const path = parsed.pathname;
+
+    const toUtcTimestamp = (year: number, month: number, day: number) => {
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return undefined;
+      }
+      if (month < 1 || month > 12) {
+        return undefined;
+      }
+      if (day < 1 || day > 31) {
+        return undefined;
+      }
+      const ts = Date.UTC(year, month - 1, day);
+      if (!Number.isFinite(ts)) {
+        return undefined;
+      }
+      const check = new Date(ts);
+      if (
+        check.getUTCFullYear() !== year ||
+        check.getUTCMonth() !== month - 1 ||
+        check.getUTCDate() !== day
+      ) {
+        return undefined;
+      }
+      return ts;
+    };
+
+    const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
+    if (slashDate) {
+      const year = Number(slashDate[1]);
+      const month = Number(slashDate[2]);
+      const day = Number(slashDate[3]);
+      const ts = toUtcTimestamp(year, month, day);
+      if (ts) {
+        return ts;
+      }
+    }
+
+    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    if (dashedDate) {
+      const year = Number(dashedDate[1]);
+      const month = Number(dashedDate[2]);
+      const day = Number(dashedDate[3]);
+      const ts = toUtcTimestamp(year, month, day);
+      if (ts) {
+        return ts;
+      }
+    }
+
+    return undefined;
   }
 
   private async findRecentArticleUrls(

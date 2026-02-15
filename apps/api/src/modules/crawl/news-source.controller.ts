@@ -11,6 +11,7 @@ import {
   ScheduleNewsSourceDto,
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
+import { BatchUpdateNewsSourceFrequencyDto } from "./dto/news-source-batch.dto";
 import { ImportNewsSourcesFromOpmlDto } from "./dto/import-opml.dto";
 import { PreviewNewsSourceOpmlDto } from "./dto/preview-opml.dto";
 import { NewsSourceOpmlService } from "./news-source-opml.service";
@@ -35,6 +36,15 @@ export class NewsSourceController {
   @Permissions("crawl.write")
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: CreateNewsSourceDto) {
     return this.newsSources.createSource(user.orgId, body);
+  }
+
+  @Post("batch/frequency")
+  @Permissions("crawl.write")
+  async batchUpdateFrequency(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchUpdateNewsSourceFrequencyDto
+  ) {
+    return this.newsSources.updateFrequencyForAll(user.orgId, body.frequencySeconds);
   }
 
   @Get("opml-presets")

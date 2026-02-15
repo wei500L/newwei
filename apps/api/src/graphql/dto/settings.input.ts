@@ -70,7 +70,7 @@ export class UpdateCrawlClientSettingsInput {
 
   @Field(() => Int)
   @Min(5_000)
-  @Max(300_000)
+  @Max(900_000)
   requestTimeoutMs!: number;
 
   @Field(() => Int)
@@ -82,6 +82,11 @@ export class UpdateCrawlClientSettingsInput {
   @Min(500)
   @Max(600_000)
   retryBackoffMs!: number;
+
+  @Field(() => Int)
+  @Min(5_000)
+  @Max(600_000)
+  queueOverloadCooldownMs!: number;
 }
 
 @InputType()

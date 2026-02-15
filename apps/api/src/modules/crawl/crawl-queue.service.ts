@@ -7,6 +7,12 @@ import { CRAWL_QUEUE } from "./crawl.constants";
 import type { CrawlJobData } from "./crawl.types";
 
 const logger = createLogger({ name: "crawl-queue-service" });
+const GLOBAL_CONCURRENCY_FALLBACK = 1;
+
+interface QueueWithGlobalConcurrencyApi {
+  setGlobalConcurrency?: (concurrency: number) => Promise<void>;
+  getGlobalConcurrency?: () => Promise<number | null>;
+}
 
 function isJobLockedRemovalError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("locked by another worker");
@@ -19,15 +25,23 @@ export class CrawlQueueService {
     private readonly crawlSettings: CrawlSettingsService
   ) {}
 
+  private asQueueWithGlobalConcurrencyApi() {
+    return this.crawlQueue as Queue<CrawlJobData> & QueueWithGlobalConcurrencyApi;
+  }
+
   async enqueueTask(taskId: string, orgId: string, triggeredById?: string) {
     const settings = await this.crawlSettings.getSettings();
     const attempts = Math.max(1, settings.maxRetries);
     const traceId = ensureTraceId(getCurrentTraceId());
+    const deduplicationId = `crawl-task:${taskId}`;
     await this.crawlQueue.add(
       "crawl-task",
       { taskId, orgId, triggeredById, traceId },
       {
         jobId: `${taskId}-${Date.now()}`,
+        deduplication: {
+          id: deduplicationId
+        },
         removeOnComplete: true,
         removeOnFail: false,
         attempts,
@@ -181,5 +195,41 @@ export class CrawlQueueService {
 
   async getJobCounts() {
     return this.crawlQueue.getJobCounts("waiting", "active", "delayed", "failed", "paused");
+  }
+
+  async pauseQueue() {
+    await this.crawlQueue.pause();
+  }
+
+  async resumeQueue() {
+    await this.crawlQueue.resume();
+  }
+
+  async isPaused() {
+    return this.crawlQueue.isPaused();
+  }
+
+  async setGlobalConcurrency(maxConcurrency: number) {
+    const queueWithApi = this.asQueueWithGlobalConcurrencyApi();
+    if (typeof queueWithApi.setGlobalConcurrency === "function") {
+      await queueWithApi.setGlobalConcurrency(maxConcurrency);
+    }
+  }
+
+  async getGlobalConcurrency() {
+    const queueWithApi = this.asQueueWithGlobalConcurrencyApi();
+    if (typeof queueWithApi.getGlobalConcurrency !== "function") {
+      return null;
+    }
+    return queueWithApi.getGlobalConcurrency();
+  }
+
+  async getEffectiveConcurrency() {
+    const globalConcurrency = await this.getGlobalConcurrency();
+    if (typeof globalConcurrency === "number" && Number.isFinite(globalConcurrency) && globalConcurrency > 0) {
+      return Math.max(GLOBAL_CONCURRENCY_FALLBACK, Math.round(globalConcurrency));
+    }
+    const settings = await this.crawlSettings.getSettings();
+    return settings.maxConcurrency;
   }
 }

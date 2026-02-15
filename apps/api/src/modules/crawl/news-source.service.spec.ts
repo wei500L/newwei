@@ -259,6 +259,49 @@ describe("NewsSourceService.preview", () => {
   });
 });
 
+describe("NewsSourceService.updateFrequencyForAll", () => {
+  it("updates all frequencies and reschedules active sources", async () => {
+    const updateMany = jest
+      .fn()
+      .mockResolvedValueOnce({ count: 5 })
+      .mockResolvedValueOnce({ count: 3 });
+    const prisma = {
+      newsSource: {
+        updateMany,
+      },
+      $transaction: jest
+        .fn()
+        .mockImplementation(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+    } as any;
+    const metadataService = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+
+    const result = await service.updateFrequencyForAll("org-1", 3600);
+
+    expect(prisma.newsSource.updateMany).toHaveBeenCalledTimes(2);
+    expect(prisma.newsSource.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { orgId: "org-1" },
+      data: { frequencySeconds: 3600 },
+    });
+    expect(prisma.newsSource.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { orgId: "org-1", isActive: true },
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        orgId: "org-1",
+        frequencySeconds: 3600,
+        updatedCount: 5,
+        activeRescheduledCount: 3,
+      }),
+    );
+  });
+});
+
 describe("NewsSourceService.schedule", () => {
   it("throws when source is missing", async () => {
     const prisma = {

@@ -49,6 +49,9 @@ export class CrawlClientSettingsModel {
 
   @Field(() => Int)
   retryBackoffMs!: number;
+
+  @Field(() => Int)
+  queueOverloadCooldownMs!: number;
 }
 
 @ObjectType()

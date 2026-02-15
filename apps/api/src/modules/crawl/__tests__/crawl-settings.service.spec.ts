@@ -16,7 +16,8 @@ const envMock = {
     timeoutMs: 120_000,
     maxRetries: 3,
     healthCheckTtlMs: 60_000,
-    retryBackoffMs: 5_000
+    retryBackoffMs: 5_000,
+    maxConcurrency: 3
   }
 } as any;
 
@@ -39,6 +40,8 @@ describe("CrawlSettingsService", () => {
     expect(settings.healthCheckTtlMs).toBe(envMock.crawl4aiConfig.healthCheckTtlMs);
     expect(settings.requestTimeoutMs).toBe(envMock.crawl4aiConfig.timeoutMs);
     expect(settings.maxRetries).toBe(envMock.crawl4aiConfig.maxRetries);
+    expect(settings.queueOverloadCooldownMs).toBe(30_000);
+    expect(settings.maxConcurrency).toBe(envMock.crawl4aiConfig.maxConcurrency);
     expect(prismaMock.systemSetting.findUnique).toHaveBeenCalledWith({
       where: { key: "crawl_client_settings" }
     });
@@ -51,7 +54,9 @@ describe("CrawlSettingsService", () => {
         healthCheckTtlMs: 10_000,
         requestTimeoutMs: 1_500_000, // should clamp down
         maxRetries: 12, // should clamp down
-        retryBackoffMs: 200 // should clamp up
+        retryBackoffMs: 200, // should clamp up
+        queueOverloadCooldownMs: 1_000_000, // should clamp down
+        maxConcurrency: 999 // should clamp down
       }
     });
     const settings = await service.getSettings();
@@ -59,6 +64,8 @@ describe("CrawlSettingsService", () => {
     expect(settings.requestTimeoutMs).toBe(900_000);
     expect(settings.maxRetries).toBe(10);
     expect(settings.retryBackoffMs).toBe(500);
+    expect(settings.queueOverloadCooldownMs).toBe(600_000);
+    expect(settings.maxConcurrency).toBe(20);
   });
 
   it("updates settings and writes audit log", async () => {
@@ -66,7 +73,9 @@ describe("CrawlSettingsService", () => {
       healthCheckTtlMs: 90_000,
       requestTimeoutMs: 150_000,
       maxRetries: 2,
-      retryBackoffMs: 8_000
+      retryBackoffMs: 8_000,
+      queueOverloadCooldownMs: 45_000,
+      maxConcurrency: 6
     });
     expect(prismaMock.$transaction).toHaveBeenCalled();
     expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(
@@ -77,7 +86,9 @@ describe("CrawlSettingsService", () => {
             healthCheckTtlMs: 90_000,
             requestTimeoutMs: 150_000,
             maxRetries: 2,
-            retryBackoffMs: 8_000
+            retryBackoffMs: 8_000,
+            queueOverloadCooldownMs: 45_000,
+            maxConcurrency: 6
           }
         })
       })
@@ -98,12 +109,16 @@ describe("CrawlSettingsService", () => {
         healthCheckTtlMs: 90_000,
         requestTimeoutMs: 150_000,
         maxRetries: 2,
-        retryBackoffMs: 8_000
+        retryBackoffMs: 8_000,
+        queueOverloadCooldownMs: 45_000,
+        maxConcurrency: 6
       }
     });
 
     const refreshed = await service.getSettings();
     expect(refreshed.maxRetries).toBe(2);
+    expect(refreshed.queueOverloadCooldownMs).toBe(45_000);
+    expect(refreshed.maxConcurrency).toBe(6);
     expect(prismaMock.systemSetting.findUnique).toHaveBeenCalled();
   });
 });

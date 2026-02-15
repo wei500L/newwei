@@ -518,6 +518,31 @@ export class NewsSourceService {
     });
   }
 
+  async updateFrequencyForAll(orgId: string, frequencySeconds: number) {
+    const normalizedFrequency = Math.max(60, Math.min(2_592_000, Math.floor(frequencySeconds)));
+    const now = new Date();
+    const nextRunAt = new Date(now.getTime() + normalizedFrequency * 1000);
+
+    const [updated, activeRescheduled] = await this.prisma.$transaction([
+      this.prisma.newsSource.updateMany({
+        where: { orgId },
+        data: { frequencySeconds: normalizedFrequency },
+      }),
+      this.prisma.newsSource.updateMany({
+        where: { orgId, isActive: true },
+        data: { nextRunAt },
+      }),
+    ]);
+
+    return {
+      orgId,
+      frequencySeconds: normalizedFrequency,
+      updatedCount: updated.count,
+      activeRescheduledCount: activeRescheduled.count,
+      nextRunAt: nextRunAt.toISOString(),
+    };
+  }
+
   async schedule(orgId: string, id: string, input: ScheduleNewsSourceDto) {
     const existing = await this.prisma.newsSource.findUnique({ where: { id } });
     if (!existing || existing.orgId !== orgId) {
