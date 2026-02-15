@@ -20,10 +20,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { TFunction } from "i18next";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { resolveActiveItemKey } from "./action-rail-routing";
+import { estimateRailContentHeight, type NavMode } from "./nav-mode";
 
 export interface ActionItem {
   key: string;
@@ -35,6 +36,11 @@ export interface ActionItem {
 export interface ActionRailNavConfig {
   mainNavItems: ActionItem[];
   adminNavItems: ActionItem[];
+}
+
+interface ActionRailProps {
+  mode: NavMode;
+  onContentHeightChange?: (height: number) => void;
 }
 
 // Shared between the desktop ActionRail and the mobile Drawer in TopNav.
@@ -158,7 +164,7 @@ export function buildActionRailNavConfig(
   return { mainNavItems, adminNavItems };
 }
 
-export function ActionRail() {
+export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const { data: session } = useSession();
@@ -170,14 +176,36 @@ export function ActionRail() {
   );
   const allNavItems = useMemo(() => [...mainNavItems, ...adminNavItems], [adminNavItems, mainNavItems]);
   const activeKey = useMemo(() => resolveActiveItemKey(pathname, allNavItems), [allNavItems, pathname]);
+  const estimatedContentHeight = useMemo(
+    () => estimateRailContentHeight(mainNavItems.length, adminNavItems.length),
+    [adminNavItems.length, mainNavItems.length]
+  );
+
+  useEffect(() => {
+    onContentHeightChange?.(estimatedContentHeight);
+  }, [estimatedContentHeight, onContentHeightChange]);
+
+  if (mode === "drawer") {
+    return null;
+  }
+
+  const isScrollable = mode === "rail-scroll";
 
   return (
-    <aside className="hidden md:flex flex-col justify-center h-full px-3 shrink-0 relative z-20 pointer-events-auto">
-      <div className="
+    <aside
+      className={`
+        hidden md:flex flex-col h-full px-3 shrink-0 relative z-20 pointer-events-auto min-h-0
+        ${isScrollable ? "justify-start" : "justify-center"}
+      `}
+    >
+      <div
+        className={`
         flex flex-col items-center py-4 gap-2 w-[4.5rem]
         glass-panel rounded-2xl border border-[var(--border)]
         shadow-[0_10px_30px_rgba(15,23,42,0.08)]
-      ">
+        ${isScrollable ? "max-h-full overflow-y-auto overscroll-contain" : ""}
+      `}
+      >
         {/* Main Navigation */}
         <div className="flex flex-col gap-1.5 w-full px-2 pb-4 border-b border-white/5">
           {mainNavItems.map((item) => {
@@ -207,7 +235,7 @@ export function ActionRail() {
 
         {adminNavItems.length > 0 ? (
           <div className="flex flex-col gap-1.5 w-full px-2 pt-3">
-            <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+            <span className="px-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">
               {t("nav.adminGroup", { defaultValue: "Admin" })}
             </span>
             {adminNavItems.map((item) => {

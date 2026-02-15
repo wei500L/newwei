@@ -34,7 +34,11 @@ const formatLabel = (value: string): string =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-export function TopNav() {
+interface TopNavProps {
+  showDesktopMenuButton?: boolean;
+}
+
+export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
@@ -47,8 +51,11 @@ export function TopNav() {
     setMobileNavOpen(false);
   }, [pathname]);
 
-  // Close drawer when switching to desktop breakpoint
+  // Close drawer when switching to desktop breakpoint unless desktop drawer mode is enabled.
   useEffect(() => {
+    if (showDesktopMenuButton) {
+      return;
+    }
     const mediaQuery = window.matchMedia("(min-width: 768px)");
     const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
       if (e.matches) {
@@ -60,7 +67,7 @@ export function TopNav() {
     // Listen for changes
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
-  }, []);
+  }, [showDesktopMenuButton]);
 
   const handleLogout = useCallback(
     async (logoutAll: boolean) => {
@@ -108,6 +115,8 @@ export function TopNav() {
   const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
   const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
   const startNewCrawlLabel = t("nav.newCrawl", { defaultValue: "New Crawl" });
+  const menuButtonClassName = showDesktopMenuButton ? "" : "md:hidden";
+  const drawerClassName = showDesktopMenuButton ? "" : "md:hidden";
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">
@@ -123,7 +132,7 @@ export function TopNav() {
             size="large"
             icon={<MenuOutlined className="text-lg" aria-hidden />}
             onClick={() => setMobileNavOpen(true)}
-            className="md:hidden"
+            className={menuButtonClassName}
             aria-label={t("nav.openMenu", { defaultValue: "Open navigation menu" })}
             aria-expanded={mobileNavOpen}
             aria-controls="mobile-navigation-drawer"
@@ -224,7 +233,7 @@ export function TopNav() {
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
         destroyOnHidden
-        className="md:hidden"
+        className={drawerClassName}
       >
         <nav className="flex flex-col gap-6">
           <div className="flex flex-col gap-1">

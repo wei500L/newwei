@@ -2,9 +2,10 @@
 
 import { message } from "antd";
 import { usePathname } from "next/navigation";
-import type { PropsWithChildren } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 
 import { ActionRail } from "./action-rail";
+import { DESKTOP_RAIL_MIN_WIDTH, resolveNavMode, type NavMode } from "./nav-mode";
 import { TopNav } from "./top-nav";
 import { UrlStateSync } from "./url-state-sync";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
@@ -43,6 +44,62 @@ function useContainerClass(): string {
 export function ShellLayout({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const containerClass = useContainerClass();
+  const shellContentRef = useRef<HTMLDivElement | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(DESKTOP_RAIL_MIN_WIDTH);
+  const [availableRailHeight, setAvailableRailHeight] = useState(0);
+  const [railContentHeight, setRailContentHeight] = useState(0);
+
+  const updateViewportWidth = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setViewportWidth(window.innerWidth);
+  }, []);
+
+  useEffect(() => {
+    updateViewportWidth();
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, [updateViewportWidth]);
+
+  useEffect(() => {
+    const shellContent = shellContentRef.current;
+    if (!shellContent) {
+      return;
+    }
+
+    const updateAvailableRailHeight = () => {
+      const styles = window.getComputedStyle(shellContent);
+      const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+      setAvailableRailHeight(Math.max(shellContent.clientHeight - paddingTop, 0));
+    };
+
+    updateAvailableRailHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateAvailableRailHeight);
+      return () => window.removeEventListener("resize", updateAvailableRailHeight);
+    }
+
+    const observer = new ResizeObserver(updateAvailableRailHeight);
+    observer.observe(shellContent);
+    window.addEventListener("resize", updateAvailableRailHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateAvailableRailHeight);
+    };
+  }, []);
+
+  const navMode = useMemo<NavMode>(
+    () =>
+      resolveNavMode({
+        viewportWidth,
+        availableRailHeight,
+        railContentHeight
+      }),
+    [availableRailHeight, railContentHeight, viewportWidth]
+  );
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -52,10 +109,15 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
       <UserUiSettingsSync />
 
-      <TopNav />
+      <TopNav showDesktopMenuButton={navMode === "drawer"} />
 
-      <div className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate">
-        <ActionRail />
+      <div
+        ref={shellContentRef}
+        className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
+      >
+        <div className="relative z-20 h-full shrink-0 min-h-0">
+          <ActionRail mode={navMode} onContentHeightChange={setRailContentHeight} />
+        </div>
 
         <main className="relative z-0 flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent">
           <div className={`${containerClass} p-4 md:p-6`}>
