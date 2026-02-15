@@ -50,6 +50,8 @@ export function TodayContent() {
               initialView="feed"
               emptyStateVariant="today"
               sortMode="publishedDesc"
+              experiencePreset="reader"
+              density="compact"
               initialFilters={{
                 dateRange: [dayjs().startOf("day"), dayjs().endOf("day")]
               }}

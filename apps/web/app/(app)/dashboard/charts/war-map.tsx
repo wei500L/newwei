@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { resolveArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
@@ -436,6 +437,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       ingested: t("dashboard.charts.warMap.tooltip.ingested", {
         defaultValue: "Ingested",
       }),
+      publishedUnknown: t("items.time.publishedUnknown", {
+        defaultValue: "Published time unknown",
+      }),
       geo: t("dashboard.charts.warMap.tooltip.geo", {
         defaultValue: "Geo",
       }),
@@ -860,13 +864,16 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             typeof data.kind === "string" ? data.kind : undefined;
 
           if (kind === "news") {
-            const publishedAt =
-              typeof data.publishedAt === "string"
-                ? formatDateTime(data.publishedAt, locale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })
-                : tooltipLabels.notAvailable;
+            const publishedAt = resolveArticlePublishedTime({
+              publishedAt:
+                typeof data.publishedAt === "string" ? data.publishedAt : null,
+              locale,
+              formatOptions: {
+                dateStyle: "medium",
+                timeStyle: "short",
+              },
+              unknownText: tooltipLabels.publishedUnknown
+            });
             const ingestedAt =
               typeof data.ingestedAt === "string"
                 ? formatDateTime(data.ingestedAt, locale, {
@@ -908,7 +915,14 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="color: #94a3b8;">${tooltipLabels.published}:</span>
-                  <span>${publishedAt}</span>
+                  <span style="text-align: right;">
+                    <div>${publishedAt.primaryText}</div>
+                    ${
+                      publishedAt.relativeText
+                        ? `<div style="font-size: 0.82em; color: #94a3b8;">${publishedAt.relativeText}</div>`
+                        : ""
+                    }
+                  </span>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="color: #94a3b8;">${tooltipLabels.ingested}:</span>

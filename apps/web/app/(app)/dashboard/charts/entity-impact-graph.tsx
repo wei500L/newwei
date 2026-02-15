@@ -75,6 +75,14 @@ const resolveCategoryList = (input: string[] | undefined) => {
 const getCategoryConfig = (type: string) =>
   CATEGORY_CONFIG[normalizeEntityGraphCategory(type)] ?? DEFAULT_CATEGORY;
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 export function EntityImpactGraph() {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -113,6 +121,7 @@ export function EntityImpactGraph() {
   const [labelDensity, setLabelDensity] =
     useState<EntityGraphLabelDensity>("compact");
   const [settingsApplied, setSettingsApplied] = useState(false);
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [graphRenderSeed, setGraphRenderSeed] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -131,10 +140,7 @@ export function EntityImpactGraph() {
   const defaultMinConfidence = settings?.minEntityConfidence ?? 0.5;
 
   useEffect(() => {
-    if (settingsApplied) {
-      return;
-    }
-    if (settings) {
+    if (settings && !settingsHydrated) {
       const categoriesFromSettings = resolveCategoryList(settings.categories);
       setMinConfidence(settings.minEntityConfidence);
       setConfidenceDraft(settings.minEntityConfidence);
@@ -144,12 +150,19 @@ export function EntityImpactGraph() {
       setQueryCategories(categoriesFromSettings);
       setSelectedCategories(categoriesFromSettings);
       setSettingsApplied(true);
+      setSettingsHydrated(true);
       return;
     }
-    if (!settingsLoading && !settingsError) {
+    if (!settingsLoading && !settingsError && !settingsApplied) {
       setSettingsApplied(true);
     }
-  }, [settings, settingsApplied, settingsError, settingsLoading]);
+  }, [
+    settings,
+    settingsApplied,
+    settingsError,
+    settingsHydrated,
+    settingsLoading,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -457,15 +470,20 @@ export function EntityImpactGraph() {
               related.length > 0
                 ? `${t("dashboard.charts.entityGraph.relatedEntities", { defaultValue: "Related" })}: ${related.join(", ")}`
                 : "";
+            const safeNodeName = escapeHtml(data.name ?? "-");
+            const safeType = escapeHtml(original.type ?? "-");
+            const safeCategoryName = escapeHtml(categoryName);
+            const safeRelatedLabel = escapeHtml(relatedLabel);
+            const safeWindowLabel = escapeHtml(windowLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${data.name}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${original.type ?? "-"}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${categoryName}</div>`,
+              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeNodeName}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.type", { defaultValue: "Type" })}: ${safeType}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.category", { defaultValue: "Category" })}: ${safeCategoryName}</div>`,
               `<div>${t("dashboard.charts.entityGraph.weight", { defaultValue: "Weight" })}: ${Number(data.value ?? 0).toFixed(1)}</div>`,
               `<div>${t("dashboard.charts.entityGraph.connections", { defaultValue: "Connections" })}: ${original.connectionCount ?? 0}</div>`,
-              relatedLabel ? `<div>${relatedLabel}</div>` : "",
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${windowLabel}</div>`,
+              relatedLabel ? `<div>${safeRelatedLabel}</div>` : "",
+              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 
@@ -498,12 +516,16 @@ export function EntityImpactGraph() {
                 : t("dashboard.charts.entityGraph.coOccurrence", {
                     defaultValue: "Co-occurrence",
                   });
+            const safeSource = escapeHtml(source);
+            const safeTarget = escapeHtml(target);
+            const safeWindowLabel = escapeHtml(windowLabel);
+            const safeLinkTypeLabel = escapeHtml(linkTypeLabel);
 
             return [
-              `<div style=\"font-weight:600;margin-bottom:6px;\">${source} -> ${target}</div>`,
-              `<div>${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${linkTypeLabel}</div>`,
+              `<div style=\"font-weight:600;margin-bottom:6px;\">${safeSource} -> ${safeTarget}</div>`,
+              `<div>${t("dashboard.charts.entityGraph.linkType", { defaultValue: "Link Type" })}: ${safeLinkTypeLabel}</div>`,
               `<div>${t("dashboard.charts.entityGraph.strength", { defaultValue: "Strength" })}: ${Number(data.value ?? 0).toFixed(normalizedType === "correlation" ? 2 : 0)}</div>`,
-              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${windowLabel}</div>`,
+              `<div style=\"color:#94a3b8;margin-top:6px;\">${t("dashboard.charts.entityGraph.window", { defaultValue: "Window" })}: ${safeWindowLabel}</div>`,
             ].join("");
           }
 

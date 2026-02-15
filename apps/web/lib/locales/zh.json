@@ -1258,6 +1258,7 @@
     "rss": {
       "title": "RSS 阅读",
       "subtitle": "按 RSS 信源聚合阅读已处理文章。",
+      "readerHint": "已针对聚焦阅读与分层筛选优化。",
       "sourceLabel": "RSS 信源",
       "sourcePlaceholder": "选择 RSS 信源",
       "selectedCount": "已选 {{count}} 个信源",
@@ -4998,7 +4999,8 @@
   "items": {
     "time": {
       "published": "发布时间",
-      "ingested": "入库时间"
+      "ingested": "入库时间",
+      "publishedUnknown": "发布时间未知"
     },
     "detail": {
       "summaryTitle": "摘要",
@@ -5079,7 +5081,12 @@
       "topic": "主题",
       "sentiment": "情绪",
       "date": "日期范围",
-      "empty": "当前结果没有可用筛选项。"
+      "empty": "当前结果没有可用筛选项。",
+      "clearAll": "清空",
+      "selectedSummary": "已选条件",
+      "sectionSearchPlaceholder": "搜索{{label}}",
+      "selectedCountInline": "已选 {{count}} 项",
+      "more": "还有 {{count}} 项"
     },
     "stats": {
       "query": "查询",

@@ -26,6 +26,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import {
@@ -425,7 +426,6 @@ const EntitySentimentEvidence = ({
               const summary = toStringValue(record?.summary);
               const publishedAt = toStringValue(record?.publishedAt);
               const ingestedAt = toStringValue(record?.ingestedAt) ?? toStringValue(record?.createdAt);
-              const publishedLabel = t("items.time.published", { defaultValue: "Published" });
               const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
               const formatOptions = {
                 year: "numeric",
@@ -435,9 +435,6 @@ const EntitySentimentEvidence = ({
                 minute: "2-digit",
                 timeZoneName: "short"
               } as const;
-              const publishedText = publishedAt
-                ? formatDateTime(publishedAt, locale, formatOptions)
-                : t("common.notAvailable");
               const ingestedText = ingestedAt
                 ? formatDateTime(ingestedAt, locale, formatOptions)
                 : t("common.notAvailable");
@@ -451,9 +448,13 @@ const EntitySentimentEvidence = ({
                     <Space size="small" wrap>
                       {source ? <Tag>{source}</Tag> : null}
                       <Space direction="vertical" size={0}>
-                        <Typography.Text type="secondary">
-                          {publishedLabel}: {publishedText}
-                        </Typography.Text>
+                        <ArticlePublishedTime
+                          publishedAt={publishedAt}
+                          locale={locale}
+                          formatOptions={formatOptions}
+                          primaryStrong
+                          secondaryStyle={{ fontSize: 12 }}
+                        />
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {ingestedLabel}: {ingestedText}
                         </Typography.Text>

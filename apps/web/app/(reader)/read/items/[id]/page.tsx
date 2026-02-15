@@ -8,8 +8,9 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { resolveArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
-import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { resolveLocale } from "@/lib/i18n";
 import {
   isChineseLanguage,
   resolveDisplayContent,
@@ -210,6 +211,12 @@ export default function ReaderPage() {
   const languageLabel = resolveLanguageLabel(processedResult?.language);
   const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
   const hasContent = Boolean(articleContent);
+  const publishedTime = resolveArticlePublishedTime({
+    publishedAt: item?.publishedAt ?? null,
+    locale,
+    formatOptions: { dateStyle: "long" },
+    unknownText: t("items.time.publishedUnknown", { defaultValue: "Published time unknown" })
+  });
 
   const currentTheme = themeClasses[theme];
 
@@ -496,32 +503,20 @@ export default function ReaderPage() {
         <header className="mb-8">
           <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">{displayTitle}</h1>
 
-          <div className="flex items-center gap-4 text-sm text-gray-500">
-            {source && (
-              <>
-                <span>{source}</span>
-                <span>•</span>
-              </>
-            )}
-            {item.publishedAt && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+            {source ? <span>{source}</span> : null}
+            <span>
+              {t("items.time.published", { defaultValue: "Published" })}: {publishedTime.primaryText}
+            </span>
+            {publishedTime.relativeText ? <span>{publishedTime.relativeText}</span> : null}
+            {hasNonChineseContent ? (
               <span>
-                {formatDateTime(item.publishedAt, locale, {
-                  dateStyle: "long",
-                  timeStyle: undefined
+                {t("reader.languageNotice", {
+                  defaultValue: "Original language: {{language}}",
+                  language: languageLabel
                 })}
               </span>
-            )}
-            {hasNonChineseContent && (
-              <>
-                <span>•</span>
-                <span>
-                  {t("reader.languageNotice", {
-                    defaultValue: "Original language: {{language}}",
-                    language: languageLabel
-                  })}
-                </span>
-              </>
-            )}
+            ) : null}
           </div>
         </header>
 

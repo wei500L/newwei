@@ -30,6 +30,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -119,6 +120,14 @@ const limitOptions = [
 ];
 
 const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+const markdownPreviewStyle: CSSProperties = {
+  maxWidth: "100%",
+  overflowX: "auto",
+  whiteSpace: "pre-wrap",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+};
 
 function isLocalhostProxyUrl(value: string): boolean {
   const trimmed = value.trim();
@@ -2860,7 +2869,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         </Descriptions.Item>
         <Descriptions.Item label={t("crawl.detail.fields.configuration")}>
           {config ? (
-            <pre className="markdown-preview">
+            <pre className="markdown-preview" style={markdownPreviewStyle}>
               {JSON.stringify(config, null, 2)}
             </pre>
           ) : (
@@ -2911,7 +2920,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             expandable={{
               rowExpandable: (record) => Boolean(record.data || record.error),
               expandedRowRender: (record) => (
-                <pre className="markdown-preview" style={{ margin: 0 }}>
+                <pre
+                  className="markdown-preview"
+                  style={{ ...markdownPreviewStyle, margin: 0 }}
+                >
                   {JSON.stringify(
                     { data: record.data ?? null, error: record.error ?? null },
                     null,
@@ -3188,7 +3200,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                 },
               ].filter((entry) => entry.content && entry.content.length > 0);
               const defaultContent = (
-                <pre className="markdown-preview" style={{ marginTop: 8 }}>
+                <pre
+                  className="markdown-preview"
+                  style={{ ...markdownPreviewStyle, marginTop: 8 }}
+                >
                   {result.markdown}
                 </pre>
               );
@@ -3203,7 +3218,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                       children: (
                         <pre
                           className="markdown-preview"
-                          style={{ marginTop: 8 }}
+                          style={{ ...markdownPreviewStyle, marginTop: 8 }}
                         >
                           {entry.content}
                         </pre>

@@ -17,13 +17,18 @@ import {
   Card,
   Form,
   Input,
+  InputNumber,
+  Modal,
   Select,
+  Spin,
   Space,
   Table,
   Tag,
   Typography,
   List,
   Grid,
+  Row,
+  Col,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
@@ -38,15 +43,19 @@ import type {
   CrawlOptionsInput,
   CrawlTaskStatus,
   CrawlTasksQuery,
+  UpdateCrawlClientSettingsMutationVariables,
 } from "@/graphql/generated";
 import {
   CrawlAntiBotMode,
   CrawlWaitUntil,
   useCreateCrawlTaskMutation,
+  useCrawlClientSettingsQuery,
   useCrawlMetadataLazyQuery,
   useCrawlTasksLazyQuery,
   useRetryCrawlTaskMutation,
+  useUpdateCrawlClientSettingsMutation,
 } from "@/graphql/generated";
+import { createApiClient } from "@/lib/api-client";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -63,6 +72,8 @@ const statusColors: Record<CrawlTaskStatus, string> = {
   failed: "red",
   paused: "purple",
 };
+const MIN_CRAWL_REQUEST_TIMEOUT_MS = 5_000;
+const MAX_CRAWL_REQUEST_TIMEOUT_MS = 900_000;
 
 function safeParseJson<T>(input?: string | null): T | null {
   if (!input) {
@@ -147,6 +158,23 @@ interface CrawlTaskConfigSummary {
   autoExpandDetails: boolean;
 }
 
+interface CrawlQueueOpsStats {
+  queueName: string;
+  updatedAt: string;
+  pending: number;
+  paused: boolean;
+  counts: Record<string, number>;
+  maxConcurrency: number;
+  effectiveConcurrency: number;
+}
+
+interface BatchUpdateFrequencyResponse {
+  frequencySeconds: number;
+  updatedCount: number;
+  activeRescheduledCount: number;
+  nextRunAt: string;
+}
+
 function parseCrawlTaskConfigSummary(
   rawConfig?: string | null,
 ): CrawlTaskConfigSummary | null {
@@ -214,8 +242,14 @@ export function CrawlTasksView() {
   const canView =
     permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canManageSettings = permissions.includes("settings.manage");
+  const canManageQueueOps = canManageSettings;
   const canWriteItems = permissions.includes("items.write");
   const screens = Grid.useBreakpoint();
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const appliedSourceFilterRef = useRef<string | null>(null);
@@ -225,10 +259,20 @@ export function CrawlTasksView() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form] = Form.useForm<CreateCrawlTaskFormValues>();
   const [metadataForm] = Form.useForm<MetadataFormValues>();
+  const [clientSettingsForm] =
+    Form.useForm<UpdateCrawlClientSettingsMutationVariables["input"]>();
   const [pagination, setPagination] = useState<TablePaginationConfig>({
     current: 1,
     pageSize: 10,
   });
+  const [queueStats, setQueueStats] = useState<CrawlQueueOpsStats | null>(null);
+  const [queueStatsLoading, setQueueStatsLoading] = useState(false);
+  const [queueActionLoading, setQueueActionLoading] = useState<
+    "pause" | "resume" | "concurrency" | null
+  >(null);
+  const [maxConcurrencyInput, setMaxConcurrencyInput] = useState<number>(3);
+  const [batchFrequencySeconds, setBatchFrequencySeconds] = useState<number>(3600);
+  const [batchFrequencyLoading, setBatchFrequencyLoading] = useState(false);
 
   const pageSize = pagination.pageSize ?? 10;
   const current = pagination.current ?? 1;
@@ -257,6 +301,16 @@ export function CrawlTasksView() {
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
+  const {
+    data: crawlClientSettingsData,
+    loading: crawlClientSettingsLoading,
+    refetch: refetchCrawlClientSettings,
+  } = useCrawlClientSettingsQuery({
+    fetchPolicy: "network-only",
+    skip: !canManageSettings,
+  });
+  const [updateCrawlClientSettings, { loading: crawlClientSettingsSaving }] =
+    useUpdateCrawlClientSettingsMutation();
   const [fetchMetadata, { loading: metadataLoading, data: metadataData }] =
     useCrawlMetadataLazyQuery();
   const metadataResults = metadataData?.crawlMetadata ?? [];
@@ -278,6 +332,41 @@ export function CrawlTasksView() {
   useEffect(() => {
     pageInfoRef.current = pageInfo;
   }, [pageInfo]);
+
+  useEffect(() => {
+    if (!crawlClientSettingsData?.crawlClientSettings) {
+      return;
+    }
+    clientSettingsForm.setFieldsValue(crawlClientSettingsData.crawlClientSettings);
+  }, [clientSettingsForm, crawlClientSettingsData?.crawlClientSettings]);
+
+  const loadQueueStats = useCallback(async () => {
+    if (!canView) {
+      return;
+    }
+    setQueueStatsLoading(true);
+    try {
+      const response = await apiClient.get<CrawlQueueOpsStats>("admin/crawl4ai/queue");
+      setQueueStats(response.data);
+      if (
+        typeof response.data.maxConcurrency === "number" &&
+        Number.isFinite(response.data.maxConcurrency)
+      ) {
+        setMaxConcurrencyInput(response.data.maxConcurrency);
+      }
+    } catch (error: unknown) {
+      message.error(
+        (error as Error).message ??
+          t("common.failed", { defaultValue: "Failed" }),
+      );
+    } finally {
+      setQueueStatsLoading(false);
+    }
+  }, [apiClient, canView, message, t]);
+
+  useEffect(() => {
+    void loadQueueStats();
+  }, [loadQueueStats]);
 
   const resetTaskCache = useCallback(() => {
     taskEdgesRef.current = [];
@@ -634,6 +723,166 @@ export function CrawlTasksView() {
       message.error((error as Error).message ?? t("crawl.task.retryFailed"));
     }
   };
+
+  const handlePauseQueue = async () => {
+    setQueueActionLoading("pause");
+    try {
+      const response = await apiClient.post<CrawlQueueOpsStats>(
+        "admin/crawl4ai/queue/pause",
+      );
+      setQueueStats(response.data);
+      message.success(
+        t("crawl.ops.queuePaused", { defaultValue: "Crawl queue paused." }),
+      );
+    } catch (error: unknown) {
+      message.error(
+        (error as Error).message ??
+          t("crawl.ops.queuePauseFailed", {
+            defaultValue: "Failed to pause crawl queue.",
+          }),
+      );
+    } finally {
+      setQueueActionLoading(null);
+    }
+  };
+
+  const handleResumeQueue = async () => {
+    setQueueActionLoading("resume");
+    try {
+      const response = await apiClient.post<CrawlQueueOpsStats>(
+        "admin/crawl4ai/queue/resume",
+      );
+      setQueueStats(response.data);
+      message.success(
+        t("crawl.ops.queueResumed", { defaultValue: "Crawl queue resumed." }),
+      );
+    } catch (error: unknown) {
+      message.error(
+        (error as Error).message ??
+          t("crawl.ops.queueResumeFailed", {
+            defaultValue: "Failed to resume crawl queue.",
+          }),
+      );
+    } finally {
+      setQueueActionLoading(null);
+    }
+  };
+
+  const handleUpdateMaxConcurrency = async () => {
+    const nextConcurrency = Math.round(maxConcurrencyInput);
+    if (nextConcurrency < 1 || nextConcurrency > 20) {
+      message.error(
+        t("common.validation.numberRange", {
+          defaultValue: "Value must be between {{min}} and {{max}}.",
+          min: 1,
+          max: 20,
+        }),
+      );
+      return;
+    }
+
+    setQueueActionLoading("concurrency");
+    try {
+      await apiClient.post("admin/crawl4ai/queue/concurrency", {
+        maxConcurrency: nextConcurrency,
+      });
+      await loadQueueStats();
+      message.success(
+        t("crawl.ops.concurrencySaved", {
+          defaultValue: "Updated crawl concurrency limit.",
+        }),
+      );
+    } catch (error: unknown) {
+      message.error(
+        (error as Error).message ??
+          t("crawl.ops.concurrencySaveFailed", {
+            defaultValue: "Failed to update crawl concurrency limit.",
+          }),
+      );
+    } finally {
+      setQueueActionLoading(null);
+    }
+  };
+
+  const handleBatchFrequencySubmit = async () => {
+    const frequencySeconds = Math.round(batchFrequencySeconds);
+    if (frequencySeconds < 60 || frequencySeconds > 2_592_000) {
+      message.error(
+        t("common.validation.numberRange", {
+          defaultValue: "Value must be between {{min}} and {{max}}.",
+          min: 60,
+          max: 2_592_000,
+        }),
+      );
+      return;
+    }
+
+    Modal.confirm({
+      title: t("crawl.ops.batchFrequencyConfirmTitle", {
+        defaultValue: "Apply frequency to all News Sources?",
+      }),
+      content: t("crawl.ops.batchFrequencyConfirmDesc", {
+        defaultValue:
+          "This updates frequencySeconds for all News Sources in your org.",
+      }),
+      okText: t("common.confirm", { defaultValue: "Confirm" }),
+      cancelText: t("common.cancel", { defaultValue: "Cancel" }),
+      onOk: async () => {
+        setBatchFrequencyLoading(true);
+        try {
+          const response = await apiClient.post<BatchUpdateFrequencyResponse>(
+            "admin/news-sources/batch/frequency",
+            { frequencySeconds },
+          );
+          message.success(
+            t("crawl.ops.batchFrequencySaved", {
+              defaultValue:
+                "Updated {{count}} News Sources, active sources rescheduled: {{rescheduled}}.",
+              count: response.data.updatedCount,
+              rescheduled: response.data.activeRescheduledCount,
+            }),
+          );
+        } catch (error: unknown) {
+          message.error(
+            (error as Error).message ??
+              t("crawl.ops.batchFrequencySaveFailed", {
+                defaultValue:
+                  "Failed to batch update News Source frequency.",
+              }),
+          );
+          throw error;
+        } finally {
+          setBatchFrequencyLoading(false);
+        }
+      },
+    });
+  };
+
+  const handleCrawlClientSettingsSubmit = async (
+    values: UpdateCrawlClientSettingsMutationVariables["input"],
+  ) => {
+    try {
+      await updateCrawlClientSettings({
+        variables: {
+          input: values,
+        },
+      });
+      await refetchCrawlClientSettings();
+      message.success(
+        t("settings.crawlClient.saved", {
+          defaultValue: "Crawl client settings saved.",
+        }),
+      );
+    } catch (error) {
+      message.error(
+        (error as Error).message ??
+          t("settings.crawlClient.saveFailed", {
+            defaultValue: "Failed to save crawl client settings.",
+          }),
+      );
+    }
+  };
+
   const handleCreate = async (values: CreateCrawlTaskFormValues) => {
     const normalizedValues = normalizeCreateFormValues(values);
     const [from, to] = values.timeRange ?? [];
@@ -853,6 +1102,330 @@ export function CrawlTasksView() {
       <Crawl4aiHealthCard
         onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
       />
+
+      {canManage || canManageQueueOps ? (
+        <Card
+          style={{ marginTop: 12, marginBottom: 12 }}
+          title={t("crawl.ops.title", {
+            defaultValue: "Crawl Queue Ops",
+          })}
+          loading={queueStatsLoading}
+        >
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8}>
+              <Space direction="vertical" size={6}>
+                <Typography.Text strong>
+                  {t("crawl.ops.queueStatus", { defaultValue: "Queue status" })}
+                </Typography.Text>
+                <Space wrap>
+                  <Tag color={queueStats?.paused ? "volcano" : "green"}>
+                    {queueStats?.paused
+                      ? t("crawl.ops.paused", { defaultValue: "Paused" })
+                      : t("crawl.ops.running", { defaultValue: "Running" })}
+                  </Tag>
+                  <Typography.Text type="secondary">
+                    {t("crawl.ops.pending", {
+                      defaultValue: "Pending: {{count}}",
+                      count: queueStats?.pending ?? 0,
+                    })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("crawl.ops.active", {
+                      defaultValue: "Active: {{count}}",
+                      count: queueStats?.counts.active ?? 0,
+                    })}
+                  </Typography.Text>
+                </Space>
+                <Space>
+                  <Button
+                    onClick={handlePauseQueue}
+                    loading={queueActionLoading === "pause"}
+                    disabled={!canManageQueueOps || queueStats?.paused === true}
+                  >
+                    {t("crawl.ops.pauseQueue", { defaultValue: "Pause queue" })}
+                  </Button>
+                  <Button
+                    onClick={handleResumeQueue}
+                    loading={queueActionLoading === "resume"}
+                    disabled={!canManageQueueOps || queueStats?.paused === false}
+                  >
+                    {t("crawl.ops.resumeQueue", {
+                      defaultValue: "Resume queue",
+                    })}
+                  </Button>
+                </Space>
+              </Space>
+            </Col>
+
+            <Col xs={24} md={8}>
+              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                <Typography.Text strong>
+                  {t("crawl.ops.maxConcurrency", {
+                    defaultValue: "Global max concurrency",
+                  })}
+                </Typography.Text>
+                <Space.Compact style={{ width: "100%" }}>
+                  <InputNumber
+                    min={1}
+                    max={20}
+                    step={1}
+                    value={maxConcurrencyInput}
+                    disabled={!canManageQueueOps}
+                    style={{ width: "100%" }}
+                    onChange={(value) => setMaxConcurrencyInput(Number(value ?? 1))}
+                  />
+                  <Button
+                    type="primary"
+                    loading={queueActionLoading === "concurrency"}
+                    disabled={!canManageQueueOps}
+                    onClick={handleUpdateMaxConcurrency}
+                  >
+                    {t("common.saveChanges", { defaultValue: "Save Changes" })}
+                  </Button>
+                </Space.Compact>
+                <Typography.Text type="secondary">
+                  {t("crawl.ops.effectiveConcurrency", {
+                    defaultValue: "Effective",
+                  })}
+                  : {queueStats?.effectiveConcurrency ?? "-"}
+                </Typography.Text>
+              </Space>
+            </Col>
+
+            {canManage ? (
+              <Col xs={24} md={8}>
+                <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                  <Typography.Text strong>
+                    {t("crawl.ops.batchFrequency", {
+                      defaultValue: "Batch schedule interval (seconds)",
+                    })}
+                  </Typography.Text>
+                  <Space.Compact style={{ width: "100%" }}>
+                    <InputNumber
+                      min={60}
+                      max={2_592_000}
+                      step={60}
+                      value={batchFrequencySeconds}
+                      style={{ width: "100%" }}
+                      onChange={(value) =>
+                        setBatchFrequencySeconds(Number(value ?? 3600))
+                      }
+                    />
+                    <Button
+                      type="primary"
+                      loading={batchFrequencyLoading}
+                      onClick={handleBatchFrequencySubmit}
+                    >
+                      {t("crawl.ops.applyAll", { defaultValue: "Apply to all" })}
+                    </Button>
+                  </Space.Compact>
+                  <Typography.Text type="secondary">
+                    {t("crawl.ops.batchFrequencyHint", {
+                      defaultValue:
+                        "Updates frequencySeconds for all News Sources in this org.",
+                    })}
+                  </Typography.Text>
+                </Space>
+              </Col>
+            ) : null}
+          </Row>
+        </Card>
+      ) : null}
+
+      {canManageSettings ? (
+        <Card
+          style={{ marginTop: 12, marginBottom: 12 }}
+          title={t("settings.tabs.crawlClient", {
+            defaultValue: "Crawl Client",
+          })}
+        >
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+            {t("settings.crawlClient.description", {
+              defaultValue:
+                "Tune crawl4ai runtime parameters for health checks, request timeouts, and retry behavior.",
+            })}
+          </Typography.Paragraph>
+          {crawlClientSettingsLoading &&
+          !crawlClientSettingsData?.crawlClientSettings ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginTop: "0.5rem",
+                marginBottom: "0.5rem",
+              }}
+            >
+              <Spin />
+            </div>
+          ) : (
+            <Form
+              layout="vertical"
+              form={clientSettingsForm}
+              onFinish={handleCrawlClientSettingsSubmit}
+            >
+              <Row gutter={12}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.healthCheckTtl")}
+                    name="healthCheckTtlMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.healthCheckTtl"),
+                      },
+                      {
+                        type: "number",
+                        min: 5_000,
+                        max: 900_000,
+                        message: t("common.validation.numberRange", {
+                          min: 5_000,
+                          max: 900_000,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={5_000}
+                      max={900_000}
+                      step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.requestTimeout")}
+                    name="requestTimeoutMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.requestTimeout"),
+                      },
+                      {
+                        type: "number",
+                        min: MIN_CRAWL_REQUEST_TIMEOUT_MS,
+                        max: MAX_CRAWL_REQUEST_TIMEOUT_MS,
+                        message: t("common.validation.numberRange", {
+                          min: MIN_CRAWL_REQUEST_TIMEOUT_MS,
+                          max: MAX_CRAWL_REQUEST_TIMEOUT_MS,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={MIN_CRAWL_REQUEST_TIMEOUT_MS}
+                      max={MAX_CRAWL_REQUEST_TIMEOUT_MS}
+                      step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.maxAttempts")}
+                    name="maxRetries"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.maxAttempts"),
+                      },
+                      {
+                        type: "number",
+                        min: 1,
+                        max: 10,
+                        message: t("common.validation.numberRange", {
+                          min: 1,
+                          max: 10,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={1}
+                      max={10}
+                      step={1}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.retryBackoff")}
+                    name="retryBackoffMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.retryBackoff"),
+                      },
+                      {
+                        type: "number",
+                        min: 500,
+                        max: 600_000,
+                        message: t("common.validation.numberRange", {
+                          min: 500,
+                          max: 600_000,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={500}
+                      max={600_000}
+                      step={500}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.queueOverloadCooldown", {
+                      defaultValue: "Queue overload cooldown",
+                    })}
+                    name="queueOverloadCooldownMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t(
+                          "settings.crawlClient.validation.queueOverloadCooldown",
+                          {
+                            defaultValue:
+                              "Please enter queue overload cooldown.",
+                          },
+                        ),
+                      },
+                      {
+                        type: "number",
+                        min: 5_000,
+                        max: 600_000,
+                        message: t("common.validation.numberRange", {
+                          min: 5_000,
+                          max: 600_000,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={5_000}
+                      max={600_000}
+                      step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={crawlClientSettingsSaving}
+                >
+                  {t("common.saveChanges", { defaultValue: "Save Changes" })}
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
+        </Card>
+      ) : null}
 
       {!screens.md ? (
         <List

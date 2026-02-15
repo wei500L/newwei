@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
@@ -760,7 +761,6 @@ export function SpacetimeGeoHeatmap({
                   renderItem={(article) => {
                     const url = safeHttpUrl(article.url);
                     const title = article.title?.trim() ?? "";
-                    const ts = article.publishedAt ?? article.ingestedAt ?? article.processedAt ?? null;
                     return (
                       <List.Item key={article.id}>
                         <List.Item.Meta
@@ -774,14 +774,18 @@ export function SpacetimeGeoHeatmap({
                             )
                           }
                           description={
-                            <Space size="small" wrap>
-                              {article.sourceLabel ? <Tag color="blue">{article.sourceLabel}</Tag> : null}
-                              {article.sentiment ? <Tag>{article.sentiment}</Tag> : null}
-                              {ts ? (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
-                                </Typography.Text>
-                              ) : null}
+                            <Space direction="vertical" size={2}>
+                              <Space size="small" wrap>
+                                {article.sourceLabel ? <Tag color="blue">{article.sourceLabel}</Tag> : null}
+                                {article.sentiment ? <Tag>{article.sentiment}</Tag> : null}
+                              </Space>
+                              <ArticlePublishedTime
+                                publishedAt={article.publishedAt ?? null}
+                                locale={locale}
+                                formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                primaryStrong
+                                secondaryStyle={{ fontSize: 12 }}
+                              />
                             </Space>
                           }
                         />

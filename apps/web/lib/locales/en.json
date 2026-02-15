@@ -1255,6 +1255,7 @@
     "rss": {
       "title": "RSS Reader",
       "subtitle": "Read processed articles from RSS sources in a focused stream.",
+      "readerHint": "Optimized for focused scanning with layered filters.",
       "sourceLabel": "RSS Sources",
       "sourcePlaceholder": "Select RSS sources",
       "selectedCount": "{{count}} sources selected",
@@ -4995,7 +4996,8 @@
   "items": {
     "time": {
       "published": "Published",
-      "ingested": "Ingested"
+      "ingested": "Ingested",
+      "publishedUnknown": "Published time unknown"
     },
     "detail": {
       "summaryTitle": "Summary",
@@ -5076,7 +5078,12 @@
       "topic": "Topic",
       "sentiment": "Sentiment",
       "date": "Date Range",
-      "empty": "No filter options for current results."
+      "empty": "No filter options for current results.",
+      "clearAll": "Clear all",
+      "selectedSummary": "Selected",
+      "sectionSearchPlaceholder": "Search {{label}}",
+      "selectedCountInline": "{{count}} selected",
+      "more": "+{{count}} more"
     },
     "stats": {
       "query": "Query",

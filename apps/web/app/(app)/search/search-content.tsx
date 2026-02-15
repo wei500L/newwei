@@ -26,7 +26,7 @@ export function SearchContent() {
           defaultValue: "Searches titles, summaries, topics, entities, locations, and external IDs."
         })}
       />
-      <ItemsView initialView="list" emptyStateVariant="search" />
+      <ItemsView initialView="list" emptyStateVariant="search" filterBehavior="layered" />
     </div>
   );
 }

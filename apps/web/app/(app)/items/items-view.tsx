@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import type { ItemsQuery } from "@/graphql/generated";
@@ -32,6 +33,13 @@ import { useDebounceValue } from "@/lib/use-debounce-value";
 import { FacetedSearch, type FilterState } from "./components/faceted-search";
 import { NewsCard } from "./components/news-card";
 import { type ItemViewType, ViewSwitcher } from "./components/view-switcher";
+import {
+  countItemsFilterDimensions,
+  resolveItemsViewLayoutState,
+  type ItemsDensity,
+  type ItemsExperiencePreset,
+  type ItemsFilterBehavior
+} from "./items-view-layout";
 import {
   DEFAULT_ITEMS_PAGE_SIZE,
   ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
@@ -485,6 +493,9 @@ interface ItemsViewProps {
   lockedView?: ItemViewType;
   emptyStateVariant?: EmptyStateVariant;
   sortMode?: ItemsSortMode;
+  experiencePreset?: ItemsExperiencePreset;
+  density?: ItemsDensity;
+  filterBehavior?: ItemsFilterBehavior;
   initialData?: ItemsQuery | null;
   initialFilters?: FilterState;
   fixedSourceIds?: string[];
@@ -534,6 +545,9 @@ export function ItemsView({
   lockedView,
   emptyStateVariant = "default",
   sortMode = "default",
+  experiencePreset,
+  density,
+  filterBehavior,
   initialData = null,
   initialFilters = EMPTY_FILTERS_STATE,
   fixedSourceIds,
@@ -548,6 +562,11 @@ export function ItemsView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const screens = Grid.useBreakpoint();
+  const layoutState = resolveItemsViewLayoutState({
+    experiencePreset,
+    density,
+    filterBehavior
+  });
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
 
@@ -720,6 +739,10 @@ export function ItemsView({
 
   const filtersInput = useMemo(() => buildFiltersInput(effectiveFilters), [effectiveFilters]);
   const hasActiveFilters = filtersInput !== null;
+  const activeFilterDimensionCount = useMemo(
+    () => countItemsFilterDimensions(effectiveFilters),
+    [effectiveFilters]
+  );
   const isUnsearched =
     emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
   const listTableScroll =
@@ -1289,25 +1312,17 @@ export function ItemsView({
         key: "publishedAt",
         width: 240,
         render: (_: string | undefined, record) => {
-          const publishedLabel = t("items.time.published", { defaultValue: "Published" });
           const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
           const ingestedAt = record.ingestedAt ?? record.createdAt;
           return (
             <Space direction="vertical" size={0}>
-              <Typography.Text>
-                {publishedLabel}:{" "}
-                {record.publishedAt
-                  ? formatDateTime(record.publishedAt, locale, {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      timeZone,
-                      timeZoneName: "short"
-                    })
-                  : t("common.notAvailable")}
-              </Typography.Text>
+              <ArticlePublishedTime
+                publishedAt={record.publishedAt ?? null}
+                locale={locale}
+                timeZone={timeZone}
+                primaryStrong
+                secondaryStyle={{ fontSize: 12 }}
+              />
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {ingestedLabel}:{" "}
                 {formatDateTime(ingestedAt, locale, {
@@ -1531,6 +1546,7 @@ export function ItemsView({
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
           <List
+            className={layoutState.isReaderPreset ? "items-reader-feed-list" : undefined}
             grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
             dataSource={pageData}
             rowKey="id"
@@ -1551,6 +1567,8 @@ export function ItemsView({
                   <FinancialCard item={item} />
                 ) : (
                   <NewsCard
+                    variant={layoutState.isReaderPreset ? "reader" : "default"}
+                    density={layoutState.density}
                     item={{
                       ...item,
                       publishedAt: item.publishedAt,
@@ -1577,6 +1595,7 @@ export function ItemsView({
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
           <List
+            className={layoutState.isReaderPreset ? "items-reader-feed-list" : undefined}
             itemLayout="vertical"
             dataSource={pageData}
             rowKey="id"
@@ -1593,6 +1612,8 @@ export function ItemsView({
             renderItem={(item) => (
               <List.Item key={item.id}>
                 <NewsCard
+                  variant={layoutState.isReaderPreset ? "reader" : "default"}
+                  density={layoutState.density}
                   item={{
                     ...item,
                     publishedAt: item.publishedAt,
@@ -1616,8 +1637,17 @@ export function ItemsView({
     return null;
   };
 
+  const filterButtonLabel =
+    activeFilterDimensionCount > 0
+      ? `${t("items.filters.button", { defaultValue: "Filters" })} (${activeFilterDimensionCount})`
+      : t("items.filters.button", { defaultValue: "Filters" });
+
+  const containerClassName = layoutState.isReaderPreset
+    ? "content-card items-reader-shell"
+    : "content-card";
+
   return (
-    <div className="content-card" style={{ padding: "24px" }}>
+    <div className={containerClassName} style={{ padding: "24px" }}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
         
         {/* Header Controls */}
@@ -1649,9 +1679,7 @@ export function ItemsView({
                   />
                 </Space.Compact>
                 {!screens.lg && (
-                    <Button onClick={() => setShowFilters(true)}>
-                        {t("items.filters.button", { defaultValue: "Filters" })}
-                    </Button>
+                  <Button onClick={() => setShowFilters(true)}>{filterButtonLabel}</Button>
                 )}
              </Space>
            </Col>
@@ -1706,19 +1734,23 @@ export function ItemsView({
         ) : null}
 
         {/* Main Layout */}
-        <Row gutter={24}>
+        <Row gutter={24} align="top">
            {screens.lg && (
-             <Col flex="280px">
-                <FacetedSearch
-                  filters={filters}
-                  onFilterChange={handleFilterChange}
-                  regions={availableRegions}
-                  topics={availableTopics}
-                  sentiments={availableSentiments}
-                />
-              </Col>
+             <Col flex="300px">
+               <div className={layoutState.isLayeredFilters ? "items-filter-rail" : undefined}>
+                 <FacetedSearch
+                   behavior={layoutState.filterBehavior}
+                   stickySummary={layoutState.isLayeredFilters}
+                   filters={effectiveFilters}
+                   onFilterChange={handleFilterChange}
+                   regions={availableRegions}
+                   topics={availableTopics}
+                   sentiments={availableSentiments}
+                 />
+               </div>
+             </Col>
            )}
-           <Col flex="auto">
+           <Col flex="auto" className={layoutState.isReaderPreset ? "items-reader-main" : undefined}>
               {renderContent()}
            </Col>
         </Row>
@@ -1732,7 +1764,9 @@ export function ItemsView({
         open={showFilters}
       >
          <FacetedSearch
-           filters={filters}
+           behavior={layoutState.filterBehavior}
+           stickySummary={false}
+           filters={effectiveFilters}
            onFilterChange={handleFilterChange}
            regions={availableRegions}
            topics={availableTopics}

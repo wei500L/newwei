@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
@@ -491,9 +492,6 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
   }, [articlesQuery.data?.updatedAt, locale]);
 
-  const resolveArticleTimestamp = (article: SpacetimePropagationArticleDto) =>
-    article.publishedAt ?? article.ingestedAt ?? article.processedAt ?? null;
-
   const renderSentimentTag = (sentiment: SentimentLabel | undefined) => {
     if (!sentiment) return null;
     return <Tag color={resolveSentimentColor(sentiment, colors)}>{sentiment}</Tag>;
@@ -666,7 +664,6 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
                   renderItem={(article) => {
                     const url = safeHttpUrl(article.url);
                     const title = article.title?.trim() ?? "";
-                    const ts = resolveArticleTimestamp(article);
                     return (
                       <List.Item key={article.id}>
                         <List.Item.Meta
@@ -680,14 +677,18 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
                             )
                           }
                           description={
-                            <Space size="small" wrap>
-                              {article.sourceLabel ? <Tag color="geekblue">{article.sourceLabel}</Tag> : null}
-                              {renderSentimentTag(article.sentiment)}
-                              {ts ? (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {formatDateTime(ts, locale, { dateStyle: "medium", timeStyle: "short" })}
-                                </Typography.Text>
-                              ) : null}
+                            <Space direction="vertical" size={2}>
+                              <Space size="small" wrap>
+                                {article.sourceLabel ? <Tag color="geekblue">{article.sourceLabel}</Tag> : null}
+                                {renderSentimentTag(article.sentiment)}
+                              </Space>
+                              <ArticlePublishedTime
+                                publishedAt={article.publishedAt ?? null}
+                                locale={locale}
+                                formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                primaryStrong
+                                secondaryStyle={{ fontSize: 12 }}
+                              />
                             </Space>
                           }
                         />

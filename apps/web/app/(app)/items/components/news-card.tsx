@@ -6,12 +6,16 @@ import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { SentimentBadge } from "@/components/sentiment-badge";
-import { formatDateTime, formatRelativeTime, resolveLocale } from "@/lib/i18n";
+import { resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { safeHttpUrl } from "@/lib/url";
 
-const { Text, Title, Paragraph } = Typography;
+const { Title, Paragraph } = Typography;
+
+export type NewsCardVariant = "default" | "reader";
+export type NewsCardDensity = "compact" | "comfortable";
 
 export interface NewsCardProps {
   item: {
@@ -43,20 +47,25 @@ export interface NewsCardProps {
     url?: string;
     eventId?: string | null;
   };
+  variant?: NewsCardVariant;
+  density?: NewsCardDensity;
 }
 
-// Estimate reading time based on summary length
 function estimateReadingTime(summary?: string): number {
-  if (!summary) return 1;
+  if (!summary) {
+    return 1;
+  }
   const wordsPerMinute = 200;
   const wordCount = summary.split(/\s+/).length;
   return Math.max(1, Math.ceil(wordCount / wordsPerMinute));
 }
 
-export function NewsCard({ item }: NewsCardProps) {
+export function NewsCard({ item, variant = "default", density = "compact" }: NewsCardProps) {
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const locale = resolveLocale(i18n.language);
+
+  const isReaderVariant = variant === "reader";
 
   const openLabel = t("items.detail.openItem", { defaultValue: "Open item" });
   const readOriginalLabel = t("items.detail.readOriginal", { defaultValue: "Read original" });
@@ -79,7 +88,8 @@ export function NewsCard({ item }: NewsCardProps) {
       color: "purple" as const
     }));
   const allTags = [...topicTags, ...entityTags];
-  const displayTags = allTags.slice(0, 5);
+  const displayTagCount = isReaderVariant ? 4 : 5;
+  const displayTags = allTags.slice(0, displayTagCount);
   const extraTagCount = Math.max(allTags.length - displayTags.length, 0);
 
   const qualityScore = formatRatioAsPercent(item.qualityScore, locale);
@@ -101,6 +111,7 @@ export function NewsCard({ item }: NewsCardProps) {
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
 
   const summaryText = item.summary?.trim() ?? "";
+  const summaryRows = density === "comfortable" ? 4 : 3;
   const expandLabel = t("common.expand", { defaultValue: "Show more" });
   const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
@@ -137,7 +148,6 @@ export function NewsCard({ item }: NewsCardProps) {
     }
   };
 
-  // Technical metrics popover content
   const metricsContent = (
     <div className="flex flex-col gap-2 text-xs min-w-[220px]">
       <div className="font-semibold border-b pb-2 mb-1 text-gray-700 dark:text-gray-300">
@@ -172,51 +182,55 @@ export function NewsCard({ item }: NewsCardProps) {
           <span className="text-gray-600 dark:text-gray-400">{item.llm.promptVersion}</span>
         </div>
       )}
-      {llmSummary && (
-        <div className="border-t pt-2 mt-1 text-[10px] text-gray-400">
-          {llmSummary}
-        </div>
-      )}
+      {llmSummary && <div className="border-t pt-2 mt-1 text-[10px] text-gray-400">{llmSummary}</div>}
     </div>
   );
 
   return (
     <Card
       hoverable
-      className="glass-card"
+      className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
       styles={{
         body: {
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          padding: "16px"
+          padding: isReaderVariant ? "18px" : "16px"
         }
       }}
     >
-      {/* Header: Sentiment + Source + Time + Metrics Popover */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <SentimentBadge sentiment={item.sentiment} />
-          {item.source && (
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {item.source}
-            </span>
-          )}
-          <span className="text-xs text-gray-300 dark:text-gray-600">•</span>
-          <span className="text-xs text-gray-400">
-            {item.publishedAt
-              ? formatRelativeTime(item.publishedAt, locale)
-              : t("common.justNow", { defaultValue: "Just now" })}
-          </span>
+      <div className="flex items-start justify-between mb-3 gap-2">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <SentimentBadge sentiment={item.sentiment} />
+            {item.source ? (
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
+            ) : null}
+            {isReaderVariant && qualityScore ? <Tag className="items-compact-tag" color="blue">Q {qualityScore}</Tag> : null}
+            {isReaderVariant && duplicateScore ? (
+              <Tag className="items-compact-tag" color="gold">
+                {duplicateLabel} {duplicateScore}
+              </Tag>
+            ) : null}
+          </div>
+          <ArticlePublishedTime
+            publishedAt={item.publishedAt ?? null}
+            locale={locale}
+            showLabel={false}
+            primaryStrong={isReaderVariant}
+            formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+            primaryClassName={isReaderVariant ? "text-sm text-gray-600 dark:text-gray-300" : "text-xs text-gray-500 dark:text-gray-400"}
+            secondaryClassName="text-[11px]"
+            secondaryStyle={{ fontSize: 11 }}
+          />
         </div>
         <Popover content={metricsContent} trigger="hover" placement="bottomRight">
           <Button type="text" size="small" icon={<InfoCircleOutlined className="text-gray-400" />} />
         </Popover>
       </div>
 
-      {/* Thumbnail (if exists) */}
-      {thumbnailUrl && (
+      {thumbnailUrl ? (
         <div className="mb-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -227,13 +241,12 @@ export function NewsCard({ item }: NewsCardProps) {
             decoding="async"
           />
         </div>
-      )}
+      ) : null}
 
-      {/* Title */}
       <Title
-        level={5}
+        level={isReaderVariant ? 4 : 5}
         ellipsis={{ rows: 2 }}
-        style={{ margin: 0, lineHeight: 1.4, marginBottom: 8 }}
+        style={{ margin: 0, lineHeight: isReaderVariant ? 1.45 : 1.4, marginBottom: isReaderVariant ? 10 : 8 }}
         className="cursor-pointer hover:text-blue-500 transition-colors"
         role="button"
         tabIndex={0}
@@ -243,12 +256,11 @@ export function NewsCard({ item }: NewsCardProps) {
         {item.title}
       </Title>
 
-      {/* Summary */}
-      {summaryText && (
+      {summaryText ? (
         <Paragraph
           type="secondary"
           ellipsis={{
-            rows: 3,
+            rows: summaryRows,
             expandable: "collapsible",
             symbol: (expanded) => (expanded ? collapseLabel : expandLabel)
           }}
@@ -257,11 +269,10 @@ export function NewsCard({ item }: NewsCardProps) {
         >
           {summaryText}
         </Paragraph>
-      )}
+      ) : null}
 
-      {/* Tags */}
       <div className="flex flex-wrap gap-1 mb-3">
-        {locationText && (
+        {locationText ? (
           <Tag
             color="cyan"
             className="text-xs cursor-pointer"
@@ -272,7 +283,7 @@ export function NewsCard({ item }: NewsCardProps) {
           >
             {locationText}
           </Tag>
-        )}
+        ) : null}
         {displayTags.map((tag) => (
           <Tag
             key={`${tag.color}-${tag.label}`}
@@ -286,13 +297,10 @@ export function NewsCard({ item }: NewsCardProps) {
             {tag.label}
           </Tag>
         ))}
-        {extraTagCount > 0 && (
-          <Tag className="text-xs">+{extraTagCount}</Tag>
-        )}
+        {extraTagCount > 0 ? <Tag className="text-xs">+{extraTagCount}</Tag> : null}
       </div>
 
-      {/* Event Badge */}
-      {item.eventId && (
+      {item.eventId ? (
         <div className="mb-3">
           <Tag
             color="geekblue"
@@ -305,10 +313,9 @@ export function NewsCard({ item }: NewsCardProps) {
             {t("items.partOfEvent", { defaultValue: "Part of event" })}
           </Tag>
         </div>
-      )}
+      ) : null}
 
-      {/* Footer: Reading Time + Actions */}
-      <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-gray-400">
           <ClockCircleOutlined />
           <span>
@@ -316,49 +323,45 @@ export function NewsCard({ item }: NewsCardProps) {
           </span>
         </div>
 
-        <Space size="small">
-          <Tooltip title={readModeLabel}>
-            <Button
-              type="text"
-              size="small"
-              icon={<BookOutlined />}
-              onClick={handleOpenReadMode}
-            />
-          </Tooltip>
-          <Tooltip title={shareLabel}>
-            <Button
-              type="text"
-              size="small"
-              icon={<ShareAltOutlined />}
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: item.title,
-                    url: window.location.origin + `/items/${item.id}`
-                  });
-                }
-              }}
-            />
-          </Tooltip>
-          {originalUrl && (
-            <Button
-              type="link"
-              size="small"
-              href={originalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+        <Space size="small" wrap>
+          {isReaderVariant ? (
+            <Button type="text" size="small" onClick={handleOpenReadMode}>
+              {readModeLabel}
+            </Button>
+          ) : (
+            <Tooltip title={readModeLabel}>
+              <Button type="text" size="small" icon={<BookOutlined />} onClick={handleOpenReadMode} />
+            </Tooltip>
+          )}
+
+          {!isReaderVariant ? (
+            <Tooltip title={shareLabel}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ShareAltOutlined />}
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: item.title,
+                      url: window.location.origin + `/items/${item.id}`
+                    });
+                  }
+                }}
+              />
+            </Tooltip>
+          ) : null}
+
+          {originalUrl ? (
+            <Button type="link" size="small" href={originalUrl} target="_blank" rel="noopener noreferrer">
               {readOriginalLabel}
             </Button>
-          )}
-           <Button
-             type="primary"
-             size="small"
-             onClick={handleOpenItem}
-           >
-             {openLabel}
-           </Button>
-         </Space>
+          ) : null}
+
+          <Button type="primary" size="small" onClick={handleOpenItem}>
+            {openLabel}
+          </Button>
+        </Space>
       </div>
     </Card>
   );

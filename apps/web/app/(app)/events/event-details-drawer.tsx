@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import { useNewsEventBriefQuery, useProcessedItemByIdQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
@@ -670,11 +671,16 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                   <Space wrap size={[6, 6]}>
                                     <Tag>#{source.index}</Tag>
                                     <Typography.Text strong>{sourceName}</Typography.Text>
-                                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                      {source.publishedAt
-                                        ? formatDateTime(source.publishedAt, locale, { dateStyle: "medium", timeZone })
-                                        : t("common.notAvailable")}
-                                    </Typography.Text>
+                                    <ArticlePublishedTime
+                                      publishedAt={source.publishedAt ?? null}
+                                      locale={locale}
+                                      timeZone={timeZone}
+                                      showLabel={false}
+                                      formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                      primaryClassName="text-xs"
+                                      secondaryClassName="text-[11px]"
+                                      secondaryStyle={{ fontSize: 11 }}
+                                    />
                                   </Space>
                                 }
                                 description={
@@ -774,7 +780,6 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   const url = safeHttpUrl(processed.article.url);
                   const similarity = formatSimilarity(item.similarity);
                   const sourceLabel = processed.article.sourceLabel?.trim() ?? "";
-                  const publishedLabel = t("items.time.published", { defaultValue: "Published" });
                   const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
                   const publishedAt = processed.publishedAt ?? null;
                   const ingestedAt = processed.article.crawlAt ?? processed.processedAt ?? null;
@@ -814,26 +819,30 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                             <Tag color="default">{item.assignedBy}</Tag>
                             {similarity ? <Tag color="blue">{similarity}</Tag> : null}
                             {sourceLabel ? <Tag color="geekblue">{sourceLabel}</Tag> : null}
-                            <Tag>
-                              {publishedLabel}:{" "}
-                              {publishedAt
-                                ? formatDateTime(publishedAt, locale, { dateStyle: "medium", timeZone })
-                                : t("common.notAvailable")}
-                            </Tag>
-                            <Tag>
+                          </Space>
+                        }
+                        description={
+                          <Space direction="vertical" size={0}>
+                            <ArticlePublishedTime
+                              publishedAt={publishedAt}
+                              locale={locale}
+                              timeZone={timeZone}
+                              formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                              primaryStrong
+                              secondaryStyle={{ fontSize: 12 }}
+                            />
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {ingestedLabel}:{" "}
                               {ingestedAt
                                 ? formatDateTime(ingestedAt, locale, { dateStyle: "medium", timeZone })
                                 : t("common.notAvailable")}
-                            </Tag>
+                            </Typography.Text>
+                            {processed.summary ? (
+                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                                {processed.summary}
+                              </Typography.Paragraph>
+                            ) : null}
                           </Space>
-                        }
-                        description={
-                          processed.summary ? (
-                            <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
-                              {processed.summary}
-                            </Typography.Paragraph>
-                          ) : null
                         }
                       />
                     </List.Item>

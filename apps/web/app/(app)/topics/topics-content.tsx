@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState, type KeyboardEvent, type ReactNode } fr
 import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
+import { ArticlePublishedTime } from '@/components/article-published-time';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -689,7 +690,6 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                 })
               }}
               renderItem={(item) => {
-                const publishedLabel = t('items.time.published', { defaultValue: 'Published' });
                 const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
                 const publishedAt = item.publishedAt ?? null;
                 const ingestedAt = item.createdAt;
@@ -715,12 +715,13 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                       }
                       description={
                         <Space direction="vertical" size={0}>
-                          <Typography.Text type="secondary">
-                            {publishedLabel}:{' '}
-                            {publishedAt
-                              ? formatDateTime(publishedAt, locale, DATE_TIME_FORMAT)
-                              : t('common.notAvailable')}
-                          </Typography.Text>
+                          <ArticlePublishedTime
+                            publishedAt={publishedAt}
+                            locale={locale}
+                            formatOptions={DATE_TIME_FORMAT}
+                            primaryStrong
+                            secondaryStyle={{ fontSize: 12 }}
+                          />
                           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                             {ingestedLabel}: {formatDateTime(ingestedAt, locale, DATE_TIME_FORMAT)}
                           </Typography.Text>

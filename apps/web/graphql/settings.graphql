@@ -84,6 +84,7 @@ query CrawlClientSettings {
     requestTimeoutMs
     maxRetries
     retryBackoffMs
+    queueOverloadCooldownMs
   }
 }
 
@@ -93,6 +94,7 @@ mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
     requestTimeoutMs
     maxRetries
     retryBackoffMs
+    queueOverloadCooldownMs
   }
 }
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/rss-translation";
 
 import { ItemsView } from "../items/items-view";
+import { RSS_ITEMS_VIEW_PRESET } from "./rss-reader-preset";
 
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -144,6 +145,12 @@ export function RssContent() {
             <Typography.Text type="secondary">
               {t("pages.rss.subtitle", {
                 defaultValue: "Read processed articles from RSS sources in a focused stream."
+              })}
+            </Typography.Text>
+            <br />
+            <Typography.Text type="secondary">
+              {t("pages.rss.readerHint", {
+                defaultValue: "Optimized for focused scanning with layered filters."
               })}
             </Typography.Text>
           </div>
@@ -283,6 +290,7 @@ export function RssContent() {
           initialView="feed"
           lockedView="feed"
           sortMode="publishedDesc"
+          {...RSS_ITEMS_VIEW_PRESET}
           initialFilters={initialFilters}
           fixedSourceIds={selectedSourceIds}
           rssTranslationConfig={

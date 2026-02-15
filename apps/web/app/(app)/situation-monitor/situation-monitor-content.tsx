@@ -13,6 +13,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
+import { ArticlePublishedTime } from "@/components/article-published-time";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -2551,16 +2552,17 @@ export function SituationMonitorContent() {
 	                          </Typography.Paragraph>
 	                        ) : null}
 	                        <Space size={8} wrap>
-	                          {date ? (
-	                            <Typography.Text type="secondary">
-	                              {t("items.time.published", { defaultValue: "Published" })}:{" "}
-	                              {formatDateTime(date, locale, {
-	                                dateStyle: "medium",
-	                                timeStyle: "short",
-	                                timeZoneName: "short",
-	                              })}
-                            </Typography.Text>
-                          ) : null}
+	                          <ArticlePublishedTime
+	                            publishedAt={date?.toISOString() ?? null}
+	                            locale={locale}
+	                            formatOptions={{
+	                              dateStyle: "medium",
+	                              timeStyle: "short",
+	                              timeZoneName: "short"
+	                            }}
+	                            primaryStrong
+	                            secondaryStyle={{ fontSize: 12 }}
+	                          />
                           {item.isPowellRelated && item.type !== "powell" ? <Tag color="orange">POWELL</Tag> : null}
                         </Space>
                       </Space>

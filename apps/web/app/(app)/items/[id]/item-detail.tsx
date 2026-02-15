@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ArticlePublishedTime } from '@/components/article-published-time';
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { MarkdownViewer } from '@/components/markdown-viewer';
 import { useItemQuery } from '@/graphql/generated';
@@ -53,6 +54,15 @@ import { safeHttpUrl } from '@/lib/url';
 interface ItemDetailProps {
   itemId: string;
 }
+
+const ITEM_DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZoneName: 'short'
+};
 
 const parseJson = <T,>(value?: string | null): T | null => {
   if (!value) {
@@ -274,8 +284,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     }
     return bits.length > 0 ? bits.join(' | ') : null;
   }, [llm?.costUsd, llm?.latencyMs, llm?.model]);
-  const publishedLabel = t('items.time.published', { defaultValue: 'Published' });
   const ingestedLabel = t('items.time.ingested', { defaultValue: 'Ingested' });
+  const publishedUnknownLabel = t('items.time.publishedUnknown', { defaultValue: 'Published time unknown' });
   const handleSearch = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -283,15 +293,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   };
 
   const formattedPublishedAt = publishedAt
-    ? formatDateTime(publishedAt, locale, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZoneName: 'short'
-      })
-    : t('common.notAvailable');
+    ? formatDateTime(publishedAt, locale, ITEM_DATE_TIME_FORMAT)
+    : publishedUnknownLabel;
 
   useEffect(() => {
     setSummaryExpanded(false);
@@ -384,14 +387,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   }
 
   const ingestedAt = item.ingestedAt ?? item.createdAt;
-  const formattedIngestedAt = formatDateTime(ingestedAt, locale, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short'
-  });
+  const formattedIngestedAt = formatDateTime(ingestedAt, locale, ITEM_DATE_TIME_FORMAT);
 
   type CollapseItem = NonNullable<CollapseProps['items']>[number];
   const payloadPanels: CollapseItem[] = [];
@@ -632,9 +628,13 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               {source}
             </Typography.Text>
           ) : null}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {publishedLabel}: {formattedPublishedAt}
-          </Typography.Text>
+          <ArticlePublishedTime
+            publishedAt={publishedAt ?? null}
+            locale={locale}
+            formatOptions={ITEM_DATE_TIME_FORMAT}
+            primaryStrong
+            secondaryStyle={{ fontSize: 12 }}
+          />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {ingestedLabel}: {formattedIngestedAt}
           </Typography.Text>

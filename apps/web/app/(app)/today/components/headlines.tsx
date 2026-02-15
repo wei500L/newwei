@@ -7,7 +7,9 @@ import { Card, Skeleton } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
+import { resolveArticlePublishedTime } from "@/components/article-published-time";
 import dayjs from "@/lib/dayjs";
+import { resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 
 const HEADLINES_QUERY = gql`
@@ -49,8 +51,9 @@ interface HeadlineItem {
 }
 
 export function Headlines() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const router = useRouter();
+  const locale = resolveLocale(i18n.language);
 
   const { data, loading } = useQuery<{ items: { edges: { node: HeadlineItem }[] } }>(HEADLINES_QUERY, {
     variables: {
@@ -69,6 +72,9 @@ export function Headlines() {
   const items = data?.items?.edges?.map((e) => e.node) ?? [];
   const heroItem = items[0];
   const subItems = items.slice(1, 4);
+  const publishedUnknown = t("items.time.publishedUnknown", {
+    defaultValue: "Published time unknown"
+  });
 
   if (loading) {
     return (
@@ -83,6 +89,12 @@ export function Headlines() {
   }
 
   const heroThumbnail = safeHttpUrl(heroItem.rawPreview?.thumbnail);
+  const heroPublished = resolveArticlePublishedTime({
+    publishedAt: heroItem.publishedAt ?? null,
+    locale,
+    formatOptions: { dateStyle: "medium", timeStyle: "short" },
+    unknownText: publishedUnknown
+  });
 
   return (
     <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
@@ -120,6 +132,12 @@ export function Headlines() {
               {heroItem.processedPreview.summary}
             </p>
           )}
+          <div className="mb-3">
+            <p className="text-white/85 text-xs m-0">{heroPublished.primaryText}</p>
+            {heroPublished.relativeText ? (
+              <p className="text-white/65 text-[11px] m-0">{heroPublished.relativeText}</p>
+            ) : null}
+          </div>
           <div className="flex items-center text-blue-300 text-xs font-medium gap-1">
             {t("common.readMore", { defaultValue: "Read full story" })} <ArrowRightOutlined />
           </div>
@@ -129,24 +147,37 @@ export function Headlines() {
       {/* Sub Headlines */}
       {subItems.length > 0 && (
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
-          {subItems.map((item) => (
-            <div
-              key={item.id}
-              className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
-              onClick={() => router.push(`/items/${item.id}`)}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 m-0">
-                    {item.title}
-                  </h3>
-                  {item.rawPreview?.sourceName && (
-                    <p className="text-xs text-gray-500 mt-1">{item.rawPreview.sourceName}</p>
-                  )}
+          {subItems.map((item) => {
+            const itemPublished = resolveArticlePublishedTime({
+              publishedAt: item.publishedAt ?? null,
+              locale,
+              formatOptions: { dateStyle: "medium", timeStyle: "short" },
+              unknownText: publishedUnknown
+            });
+
+            return (
+              <div
+                key={item.id}
+                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                onClick={() => router.push(`/items/${item.id}`)}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 m-0">
+                      {item.title}
+                    </h3>
+                    {item.rawPreview?.sourceName ? (
+                      <p className="text-xs text-gray-500 mt-1 mb-0">{item.rawPreview.sourceName}</p>
+                    ) : null}
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 mb-0">{itemPublished.primaryText}</p>
+                    {itemPublished.relativeText ? (
+                      <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-0.5 mb-0">{itemPublished.relativeText}</p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Card>

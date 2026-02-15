@@ -678,7 +678,7 @@ export function DashboardChart({
 
       handleResize = () => {
         try {
-          chart.resize();
+          chartRef.current?.resize();
         } catch {
           // noop: avoid bubbling resize-time chart exceptions from other panels
         }
@@ -716,10 +716,30 @@ export function DashboardChart({
       if (!chart || cancelled) return;
       await ensureOptionModules(option);
       if (cancelled) return;
-      chart.clear();
-      try {
+      const hasGraphSeries = inferSeriesTypes(option).has("graph");
+      const applyOption = () => {
+        chart.clear();
         chart.setOption(option, { notMerge: true, lazyUpdate: false });
+      };
+      try {
+        applyOption();
       } catch {
+        // Graph charts are sensitive to module/init timing under heavy render churn.
+        // Retry once after yielding to the main loop before falling back to empty.
+        if (hasGraphSeries) {
+          try {
+            await yieldToMain();
+            if (cancelled) return;
+            chart.clear();
+            chart.setOption({}, { notMerge: true, lazyUpdate: false });
+            applyOption();
+            setReady(true);
+            return;
+          } catch {
+            // noop: use empty option fallback below
+          }
+        }
+
         chart.clear();
         chart.setOption({}, { notMerge: true, lazyUpdate: false });
       }
