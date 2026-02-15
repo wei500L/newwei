@@ -3,6 +3,7 @@
 import {
   AppstoreOutlined,
   BellOutlined,
+  BookOutlined,
   ClusterOutlined,
   DashboardOutlined,
   ExclamationCircleOutlined,
@@ -78,6 +79,12 @@ export function buildActionRailNavConfig(
       icon: <ClusterOutlined />,
       label: t("nav.main.events", { defaultValue: "News Events" }),
       path: "/events"
+    },
+    {
+      key: "/rss",
+      icon: <BookOutlined />,
+      label: t("nav.main.rss", { defaultValue: "RSS Reader" }),
+      path: "/rss"
     },
     {
       key: "/situation-monitor",

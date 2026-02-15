@@ -1,11 +1,11 @@
 "use client";
 
-import { gql, useQuery } from "@apollo/client";
+import { gql, useMutation, useQuery } from "@apollo/client";
 import { ArrowLeftOutlined, BgColorsOutlined, FontSizeOutlined, ShareAltOutlined } from "@ant-design/icons";
-import { Button, Skeleton, Space, Typography } from "antd";
+import { Alert, Button, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { MarkdownViewer } from "@/components/markdown-viewer";
@@ -17,6 +17,18 @@ import {
   resolveDisplayTitle,
   resolveLanguageLabel
 } from "@/lib/item-display";
+import {
+  isChineseTargetLanguage,
+  RSS_TRANSLATION_STATUS_QUERY,
+  RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS,
+  TRANSLATE_RSS_ITEMS_MUTATION,
+  type RssItemTranslation,
+  type RssTranslationProvider,
+  type RssTranslationStatusQuery,
+  type RssTranslationStatusQueryVariables,
+  type TranslateRssItemsMutation,
+  type TranslateRssItemsMutationVariables
+} from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 
 const READER_ITEM_QUERY = gql`
@@ -96,13 +108,42 @@ export default function ReaderPage() {
   const [fontSize, setFontSize] = useState<FontSize>("medium");
   const [theme, setTheme] = useState<Theme>("light");
   const [showToolbar, setShowToolbar] = useState(false);
+  const [translationEnabled, setTranslationEnabled] = useState(false);
+  const [translationProvider, setTranslationProvider] =
+    useState<RssTranslationProvider>("deeplx");
+  const [targetLanguage, setTargetLanguage] = useState("zh-CN");
+  const [showOriginalContent, setShowOriginalContent] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
 
   const { data, loading, error } = useQuery(READER_ITEM_QUERY, {
     variables: { id },
     fetchPolicy: "network-only"
   });
+  const { data: translationStatusData } = useQuery<
+    RssTranslationStatusQuery,
+    RssTranslationStatusQueryVariables
+  >(RSS_TRANSLATION_STATUS_QUERY, {
+    variables: { targetLanguage },
+    fetchPolicy: "cache-and-network"
+  });
+  const [translateRssItems, { loading: translationLoading }] = useMutation<
+    TranslateRssItemsMutation,
+    TranslateRssItemsMutationVariables
+  >(TRANSLATE_RSS_ITEMS_MUTATION);
 
   const item = data?.item;
+  const providerStatuses = translationStatusData?.rssTranslationStatus ?? [];
+  const selectedProviderStatus = providerStatuses.find(
+    (status) => status.provider === translationProvider
+  );
+  const translationProviderAvailable = Boolean(selectedProviderStatus?.available);
+  const translationTargetSupported = Boolean(
+    selectedProviderStatus?.targetLanguageSupported ?? true
+  );
+  const translationReady = Boolean(
+    translationEnabled && translationProviderAvailable && translationTargetSupported
+  );
 
   const processedResult = useMemo(
     () =>
@@ -132,20 +173,102 @@ export default function ReaderPage() {
     processedSummary: processedResult?.summary,
     rawSummary: rawPayload?.summary
   });
-  const displayTitle = resolveDisplayTitle({
+  const baseDisplayTitle = resolveDisplayTitle({
     processedTitle: processedResult?.title,
     itemTitle: item?.title,
     source,
     originalUrl
   });
-  const articleContent = resolveDisplayContent({
+  const baseArticleContent = resolveDisplayContent({
     cleanedMarkdown
   });
+  const translatedTitle = toNonEmptyString(translatedItem?.title);
+  const translatedSummary = toNonEmptyString(translatedItem?.summary);
+  const translatedArticleContent = toNonEmptyString(translatedItem?.cleanedMarkdown);
+  const translatedKeyPoints = Array.isArray(translatedItem?.keyPoints)
+    ? translatedItem.keyPoints.filter(
+        (point): point is string => typeof point === "string" && point.trim().length > 0
+      )
+    : [];
+  const displayTitle =
+    translationReady && !showOriginalContent && translatedTitle
+      ? translatedTitle
+      : baseDisplayTitle;
+  const resolvedSummary =
+    translationReady && !showOriginalContent && translatedSummary
+      ? translatedSummary
+      : summary;
+  const resolvedKeyPoints =
+    translationReady && !showOriginalContent && translatedKeyPoints.length > 0
+      ? translatedKeyPoints
+      : keyPoints;
+  const articleContent =
+    translationReady && !showOriginalContent && translatedArticleContent
+      ? translatedArticleContent
+      : baseArticleContent;
   const languageLabel = resolveLanguageLabel(processedResult?.language);
   const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
   const hasContent = Boolean(articleContent);
 
   const currentTheme = themeClasses[theme];
+
+  useEffect(() => {
+    if (translationProvider === "deeplx" && !isChineseTargetLanguage(targetLanguage)) {
+      setTargetLanguage("zh-CN");
+    }
+  }, [targetLanguage, translationProvider]);
+
+  useEffect(() => {
+    setTranslationError(null);
+    setTranslatedItem(null);
+    setShowOriginalContent(false);
+  }, [id, translationEnabled, translationProvider, targetLanguage]);
+
+  useEffect(() => {
+    if (!item?.id || !translationEnabled || !translationReady) {
+      return;
+    }
+
+    let active = true;
+    setTranslationError(null);
+
+    translateRssItems({
+      variables: {
+        input: {
+          itemIds: [item.id],
+          provider: translationProvider,
+          targetLanguage,
+          fields: ["title", "summary", "key_points", "cleaned_markdown"]
+        }
+      }
+    })
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        const next = response.data?.translateRssItems.translations?.[0] ?? null;
+        setTranslatedItem(next);
+      })
+      .catch((err) => {
+        if (!active) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : "Translation failed";
+        setTranslationError(message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    id,
+    item?.id,
+    targetLanguage,
+    translationEnabled,
+    translationProvider,
+    translationReady,
+    translateRssItems
+  ]);
 
   if (loading) {
     return (
@@ -267,6 +390,101 @@ export default function ReaderPage() {
       <article
         className={`max-w-3xl mx-auto px-6 py-10 ${fontFamilyClasses[fontFamily]} ${fontSizeClasses[fontSize]}`}
       >
+        <div className="mb-6 rounded-lg border border-gray-200/70 bg-white/70 p-4 dark:border-gray-700 dark:bg-black/40">
+          <Space direction="vertical" size="small" style={{ width: "100%" }}>
+            <Space wrap>
+              <Typography.Text strong>
+                {t("reader.translation.title", { defaultValue: "Translation" })}
+              </Typography.Text>
+              <Space>
+                <Typography.Text>
+                  {t("reader.translation.enable", { defaultValue: "Enable" })}
+                </Typography.Text>
+                <Switch
+                  checked={translationEnabled}
+                  onChange={(checked) => setTranslationEnabled(checked)}
+                />
+              </Space>
+              <Radio.Group
+                value={translationProvider}
+                onChange={(event) =>
+                  setTranslationProvider(event.target.value as RssTranslationProvider)
+                }
+                optionType="button"
+                buttonStyle="solid"
+                disabled={!translationEnabled}
+              >
+                <Radio.Button value="deeplx">DeepLX API</Radio.Button>
+                <Radio.Button value="llm">LLM</Radio.Button>
+              </Radio.Group>
+              <Select
+                style={{ minWidth: 160 }}
+                value={targetLanguage}
+                onChange={(value) => setTargetLanguage(value)}
+                disabled={!translationEnabled || translationProvider === "deeplx"}
+                options={RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS}
+              />
+              {translationEnabled ? (
+                <Space>
+                  <Typography.Text>
+                    {t("reader.translation.showOriginal", {
+                      defaultValue: "Show original"
+                    })}
+                  </Typography.Text>
+                  <Switch
+                    checked={showOriginalContent}
+                    onChange={(checked) => setShowOriginalContent(checked)}
+                  />
+                </Space>
+              ) : null}
+            </Space>
+
+            {translationEnabled && selectedProviderStatus && !translationProviderAvailable ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("reader.translation.unavailable", {
+                  defaultValue: "Selected translation source is unavailable."
+                })}
+                description={selectedProviderStatus.message ?? t("common.notAvailable")}
+              />
+            ) : null}
+
+            {translationEnabled &&
+            selectedProviderStatus &&
+            translationProviderAvailable &&
+            !translationTargetSupported ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("reader.translation.targetUnsupported", {
+                  defaultValue: "Target language is not supported by selected source."
+                })}
+                description={selectedProviderStatus.message ?? t("common.notAvailable")}
+              />
+            ) : null}
+
+            {translationEnabled && translationLoading ? (
+              <Typography.Text type="secondary">
+                {t("reader.translation.loading", {
+                  defaultValue: "Translating article content..."
+                })}
+              </Typography.Text>
+            ) : null}
+
+            {translationEnabled && translationError ? (
+              <Alert
+                type="error"
+                showIcon
+                message={t("reader.translation.failed", {
+                  defaultValue: "Translation failed."
+                })}
+                description={translationError}
+              />
+            ) : null}
+          </Space>
+        </div>
+
         {/* Header */}
         <header className="mb-8">
           <h1 className="text-3xl md:text-4xl font-bold leading-tight mb-4">{displayTitle}</h1>
@@ -301,23 +519,25 @@ export default function ReaderPage() {
         </header>
 
         {/* Summary */}
-        {summary && (
+        {resolvedSummary && (
           <div className="bg-slate-100/70 dark:bg-slate-800/40 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-semibold mb-2">
               {t("reader.summary", { defaultValue: "Summary" })}
             </h3>
-            <Typography.Paragraph style={{ marginBottom: 0 }}>{summary}</Typography.Paragraph>
+            <Typography.Paragraph style={{ marginBottom: 0 }}>
+              {resolvedSummary}
+            </Typography.Paragraph>
           </div>
         )}
 
         {/* Key Points */}
-        {keyPoints.length > 0 && (
+        {resolvedKeyPoints.length > 0 && (
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6">
             <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">
               {t("reader.keyPoints", { defaultValue: "Key Points" })}
             </h3>
             <ul className="space-y-1">
-              {keyPoints.map((point: string, index: number) => (
+              {resolvedKeyPoints.map((point: string, index: number) => (
                 <li key={index} className="text-sm text-blue-800 dark:text-blue-200 flex gap-2">
                   <span className="text-blue-400">•</span>
                   {point}

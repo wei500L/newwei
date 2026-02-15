@@ -2,6 +2,7 @@ import { Field, Float, GraphQLISODateTime, HideField, ID, Int, ObjectType } from
 import GraphQLJSONScalar from "graphql-type-json";
 
 import { HasPermission } from "../decorators/has-permission.decorator";
+import { RssTranslationProvider } from "../dto/item.input";
 
 import { PageInfo } from "./page-info.model";
 
@@ -311,6 +312,75 @@ export class ItemFacetOption {
 
   @Field(() => Int)
   count!: number;
+}
+
+@ObjectType()
+export class RssSourceOptionModel {
+  @Field()
+  id!: string;
+
+  @Field()
+  name!: string;
+
+  @Field(() => String, { nullable: true })
+  language?: string | null;
+
+  @Field()
+  siteUrl!: string;
+
+  @Field()
+  feedUrl!: string;
+
+  @Field(() => String, { nullable: true })
+  latestItemAt?: string | null;
+
+  @Field(() => Int)
+  itemCountWindow!: number;
+}
+
+@ObjectType()
+export class RssTranslationProviderStatusModel {
+  @Field(() => RssTranslationProvider)
+  provider!: RssTranslationProvider;
+
+  @Field(() => Boolean)
+  available!: boolean;
+
+  @Field(() => String, { nullable: true })
+  message?: string | null;
+
+  @Field(() => Boolean)
+  targetLanguageSupported!: boolean;
+}
+
+@ObjectType()
+export class RssItemTranslationModel {
+  @Field(() => String)
+  itemId!: string;
+
+  @Field(() => String, { nullable: true })
+  title?: string | null;
+
+  @Field(() => String, { nullable: true })
+  summary?: string | null;
+
+  @Field(() => [String], { nullable: true })
+  keyPoints?: string[] | null;
+
+  @Field(() => String, { nullable: true })
+  cleanedMarkdown?: string | null;
+}
+
+@ObjectType()
+export class TranslateRssItemsPayloadModel {
+  @Field(() => RssTranslationProvider)
+  provider!: RssTranslationProvider;
+
+  @Field(() => String)
+  targetLanguage!: string;
+
+  @Field(() => [RssItemTranslationModel])
+  translations!: RssItemTranslationModel[];
 }
 
 @ObjectType()

@@ -1,7 +1,24 @@
 'use client';
 
+import { useMutation, useQuery } from '@apollo/client';
 import { InfoCircleOutlined } from '@ant-design/icons';
-import { Alert, Card, Col, Collapse, Descriptions, List, Row, Skeleton, Space, Tag, Tooltip, Typography } from 'antd';
+import {
+  Alert,
+  Card,
+  Col,
+  Collapse,
+  Descriptions,
+  List,
+  Radio,
+  Row,
+  Select,
+  Skeleton,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography
+} from 'antd';
 import type { CollapseProps } from 'antd';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -19,6 +36,18 @@ import {
   resolveLanguageLabel
 } from '@/lib/item-display';
 import { formatRatioAsPercent } from '@/lib/metrics-format';
+import {
+  isChineseTargetLanguage,
+  RSS_TRANSLATION_STATUS_QUERY,
+  RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS,
+  TRANSLATE_RSS_ITEMS_MUTATION,
+  type RssItemTranslation,
+  type RssTranslationProvider,
+  type RssTranslationStatusQuery,
+  type RssTranslationStatusQueryVariables,
+  type TranslateRssItemsMutation,
+  type TranslateRssItemsMutationVariables
+} from '@/lib/rss-translation';
 import { safeHttpUrl } from '@/lib/url';
 
 interface ItemDetailProps {
@@ -84,6 +113,36 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   });
   const [showDelayHint, setShowDelayHint] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [translationEnabled, setTranslationEnabled] = useState(false);
+  const [translationProvider, setTranslationProvider] =
+    useState<RssTranslationProvider>('deeplx');
+  const [targetLanguage, setTargetLanguage] = useState('zh-CN');
+  const [showOriginalContent, setShowOriginalContent] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
+
+  const { data: translationStatusData } = useQuery<
+    RssTranslationStatusQuery,
+    RssTranslationStatusQueryVariables
+  >(RSS_TRANSLATION_STATUS_QUERY, {
+    variables: { targetLanguage },
+    fetchPolicy: 'cache-and-network'
+  });
+  const [translateRssItems, { loading: translationLoading }] = useMutation<
+    TranslateRssItemsMutation,
+    TranslateRssItemsMutationVariables
+  >(TRANSLATE_RSS_ITEMS_MUTATION);
+  const providerStatuses = translationStatusData?.rssTranslationStatus ?? [];
+  const selectedProviderStatus = providerStatuses.find(
+    (status) => status.provider === translationProvider
+  );
+  const translationProviderAvailable = Boolean(selectedProviderStatus?.available);
+  const translationTargetSupported = Boolean(
+    selectedProviderStatus?.targetLanguageSupported ?? true
+  );
+  const translationReady = Boolean(
+    translationEnabled && translationProviderAvailable && translationTargetSupported
+  );
 
   useEffect(() => {
     if (!loading) {
@@ -134,22 +193,38 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     processedSummary: processedResult?.summary,
     rawSummary: rawPayload?.summary
   });
-  const displayTitle = resolveDisplayTitle({
-    processedTitle: processedResult?.title,
-    itemTitle: item?.title,
-    source,
-    originalUrl,
-    fallbackTitle: t('common.notAvailable')
-  });
   const articleContent = resolveDisplayContent({
     cleanedMarkdown
   });
   const languageLabel = resolveLanguageLabel(processedResult?.language);
   const hasNonChineseContent = Boolean(languageLabel && !isChineseLanguage(languageLabel));
   const markdownFallbackUsed = cleanedMarkdownSource === 'crawl_fallback';
-  const hasSummaryContent = Boolean(summary) || keyPoints.length > 0;
-  const hasArticleContent = Boolean(articleContent);
-  const summaryText = summary?.trim();
+  const translatedTitle = toString(translatedItem?.title);
+  const translatedSummary = toString(translatedItem?.summary);
+  const translatedKeyPoints = toStringList(translatedItem?.keyPoints);
+  const translatedMarkdown = toString(translatedItem?.cleanedMarkdown);
+  const displayTitle = translationReady && !showOriginalContent && translatedTitle
+    ? translatedTitle
+    : resolveDisplayTitle({
+        processedTitle: processedResult?.title,
+        itemTitle: item?.title,
+        source,
+        originalUrl,
+        fallbackTitle: t('common.notAvailable')
+      });
+  const resolvedSummary =
+    translationReady && !showOriginalContent && translatedSummary ? translatedSummary : summary;
+  const resolvedKeyPoints =
+    translationReady && !showOriginalContent && translatedKeyPoints.length > 0
+      ? translatedKeyPoints
+      : keyPoints;
+  const resolvedArticleContent =
+    translationReady && !showOriginalContent && translatedMarkdown
+      ? translatedMarkdown
+      : articleContent;
+  const hasSummaryContent = Boolean(resolvedSummary) || resolvedKeyPoints.length > 0;
+  const hasArticleContent = Boolean(resolvedArticleContent);
+  const summaryText = resolvedSummary?.trim();
   const canExpandSummary = Boolean(summaryText && summaryText.length > 300);
   const displaySummary =
     summaryText && !summaryExpanded && canExpandSummary
@@ -157,8 +232,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       : summaryText;
   const expandLabel = t('common.expand', { defaultValue: 'Show more' });
   const collapseLabel = t('common.collapse', { defaultValue: 'Show less' });
-  const keyPointsDisplay = keyPoints.slice(0, 8);
-  const extraKeyPoints = Math.max(keyPoints.length - keyPointsDisplay.length, 0);
+  const keyPointsDisplay = resolvedKeyPoints.slice(0, 8);
+  const extraKeyPoints = Math.max(resolvedKeyPoints.length - keyPointsDisplay.length, 0);
   const topicsDisplay = topics.slice(0, 5);
   const entitiesDisplay = entities.slice(0, 5);
   const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
@@ -220,6 +295,63 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   useEffect(() => {
     setSummaryExpanded(false);
   }, [itemId]);
+
+  useEffect(() => {
+    if (translationProvider === 'deeplx' && !isChineseTargetLanguage(targetLanguage)) {
+      setTargetLanguage('zh-CN');
+    }
+  }, [targetLanguage, translationProvider]);
+
+  useEffect(() => {
+    setTranslationError(null);
+    setTranslatedItem(null);
+    setShowOriginalContent(false);
+  }, [itemId, translationEnabled, translationProvider, targetLanguage]);
+
+  useEffect(() => {
+    if (!item?.id || !translationEnabled || !translationReady) {
+      return;
+    }
+
+    let active = true;
+    setTranslationError(null);
+
+    translateRssItems({
+      variables: {
+        input: {
+          itemIds: [item.id],
+          provider: translationProvider,
+          targetLanguage,
+          fields: ['title', 'summary', 'key_points', 'cleaned_markdown']
+        }
+      }
+    })
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        const next = response.data?.translateRssItems.translations?.[0] ?? null;
+        setTranslatedItem(next);
+      })
+      .catch((err) => {
+        if (!active) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Translation failed';
+        setTranslationError(message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    item?.id,
+    targetLanguage,
+    translationEnabled,
+    translationProvider,
+    translationReady,
+    translateRssItems
+  ]);
 
   if (loading && !item) {
     return (
@@ -330,6 +462,106 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           description={processedErrorName ? `${processedErrorName}: ${processedErrorMessage}` : processedErrorMessage}
         />
       ) : null}
+      <Card className="content-card" size="small">
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          <Space wrap>
+            <Typography.Text strong>
+              {t('items.detail.translation.title', { defaultValue: 'Article translation' })}
+            </Typography.Text>
+            <Space>
+              <Typography.Text>
+                {t('items.detail.translation.enable', { defaultValue: 'Enable' })}
+              </Typography.Text>
+              <Switch
+                checked={translationEnabled}
+                onChange={(checked) => setTranslationEnabled(checked)}
+              />
+            </Space>
+            <Radio.Group
+              value={translationProvider}
+              onChange={(event) =>
+                setTranslationProvider(event.target.value as RssTranslationProvider)
+              }
+              optionType="button"
+              buttonStyle="solid"
+              disabled={!translationEnabled}
+            >
+              <Radio.Button value="deeplx">
+                {t('items.detail.translation.provider.deeplx', {
+                  defaultValue: 'DeepLX API'
+                })}
+              </Radio.Button>
+              <Radio.Button value="llm">
+                {t('items.detail.translation.provider.llm', {
+                  defaultValue: 'LLM'
+                })}
+              </Radio.Button>
+            </Radio.Group>
+            <Select
+              style={{ minWidth: 160 }}
+              value={targetLanguage}
+              onChange={(value) => setTargetLanguage(value)}
+              disabled={!translationEnabled || translationProvider === 'deeplx'}
+              options={RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS}
+            />
+            {translationEnabled ? (
+              <Space>
+                <Typography.Text>
+                  {t('items.detail.translation.showOriginal', { defaultValue: 'Show original' })}
+                </Typography.Text>
+                <Switch
+                  checked={showOriginalContent}
+                  onChange={(checked) => setShowOriginalContent(checked)}
+                />
+              </Space>
+            ) : null}
+          </Space>
+
+          {translationEnabled && selectedProviderStatus && !translationProviderAvailable ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t('items.detail.translation.unavailable', {
+                defaultValue: 'Selected translation source is unavailable.'
+              })}
+              description={selectedProviderStatus.message ?? t('common.notAvailable')}
+            />
+          ) : null}
+
+          {translationEnabled &&
+          selectedProviderStatus &&
+          translationProviderAvailable &&
+          !translationTargetSupported ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t('items.detail.translation.targetUnsupported', {
+                defaultValue: 'Target language is not supported by selected source.'
+              })}
+              description={selectedProviderStatus.message ?? t('common.notAvailable')}
+            />
+          ) : null}
+
+          {translationEnabled && translationLoading ? (
+            <Typography.Text type="secondary">
+              {t('items.detail.translation.loading', {
+                defaultValue: 'Translating article content...'
+              })}
+            </Typography.Text>
+          ) : null}
+
+          {translationEnabled && translationError ? (
+            <Alert
+              type="error"
+              showIcon
+              message={t('items.detail.translation.failed', {
+                defaultValue: 'Translation failed.'
+              })}
+              description={translationError}
+            />
+          ) : null}
+        </Space>
+      </Card>
       <Space direction="vertical" size={2}>
         <Typography.Title level={4} ellipsis={{ rows: 2 }} style={{ margin: 0 }}>
           {displayTitle}
@@ -531,7 +763,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                 })}
               />
             ) : null}
-            <MarkdownViewer markdown={articleContent!} />
+            <MarkdownViewer markdown={resolvedArticleContent!} />
           </Space>
         ) : (
           <ChartEmptyState

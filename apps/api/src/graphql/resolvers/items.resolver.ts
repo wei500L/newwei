@@ -1,5 +1,5 @@
 import { parseDateTime } from "@modular/utils";
-import { BadRequestException, UseGuards } from "@nestjs/common";
+import { BadRequestException, Optional, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
@@ -8,6 +8,7 @@ import {
   Query,
   ResolveField,
   Resolver,
+  Int,
 } from "@nestjs/graphql";
 import type DataLoader from "dataloader";
 import { Loader } from "nestjs-dataloader";
@@ -23,7 +24,8 @@ import {
   CreateItemInput,
   UpdateItemInput,
   ItemsFacetsArgs,
-  ItemsOrderBy
+  ItemsOrderBy,
+  TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
 import { ItemMetaLoader } from "../loaders/item-meta.loader";
@@ -44,11 +46,15 @@ import {
   ProcessedItemModelGraph,
   RawItemPreviewModelGraph,
   ProcessedItemPreviewModelGraph,
-  ItemFacets
+  ItemFacets,
+  RssSourceOptionModel,
+  RssTranslationProviderStatusModel,
+  TranslateRssItemsPayloadModel
 } from "../models/item.model";
 import { SearchSuggestionModel, SearchSuggestionType } from "../models/search-suggestion.model";
 import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
+import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
 
 interface ItemsCursorPayload {
   id: string;
@@ -247,7 +253,10 @@ function normalizeSeriesPoints(
 @Resolver(() => ItemModel)
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class ItemsResolver {
-  constructor(private readonly itemsService: ItemsService) {}
+  constructor(
+    private readonly itemsService: ItemsService,
+    @Optional() private readonly rssTranslationService?: ItemsRssTranslationService
+  ) {}
 
   @HasPermission("items.read")
   @Query(() => ItemConnection)
@@ -340,6 +349,74 @@ export class ItemsResolver {
     }
 
     return this.itemsService.getFacets(requester.orgId, args.search, args.filters);
+  }
+
+  @HasPermission("items.read")
+  @Query(() => [RssSourceOptionModel])
+  async rssSources(
+    @Context("req") req: GqlRequest,
+    @Args("windowDays", { nullable: true, type: () => Int }) windowDays?: number,
+    @Args("onlyWithItems", { nullable: true, type: () => Boolean }) onlyWithItems?: boolean
+  ): Promise<RssSourceOptionModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+
+    return this.itemsService.listRssSourcesForReading(requester.orgId, {
+      windowDays,
+      onlyWithItems
+    });
+  }
+
+  @HasPermission("items.read")
+  @Query(() => [RssTranslationProviderStatusModel])
+  async rssTranslationStatus(
+    @Context("req") req: GqlRequest,
+    @Args("targetLanguage", { nullable: true, type: () => String }) targetLanguage?: string
+  ): Promise<RssTranslationProviderStatusModel[]> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+    if (!this.rssTranslationService) {
+      return [];
+    }
+    const statuses = await this.rssTranslationService.getProviderStatuses(targetLanguage);
+    return statuses.map((status) => ({
+      provider: status.provider,
+      available: status.available,
+      message: status.message,
+      targetLanguageSupported: status.targetLanguageSupported
+    }));
+  }
+
+  @HasPermission("items.read")
+  @Mutation(() => TranslateRssItemsPayloadModel)
+  async translateRssItems(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: TranslateRssItemsInput
+  ): Promise<TranslateRssItemsPayloadModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new BadRequestException("Unauthenticated");
+    }
+    if (!this.rssTranslationService) {
+      throw new BadRequestException("RSS translation service is unavailable");
+    }
+
+    const translated = await this.rssTranslationService.translate(requester.orgId, input);
+    return {
+      provider: translated.provider,
+      targetLanguage: translated.targetLanguage,
+      translations: translated.translations.map((entry) => ({
+        itemId: entry.itemId,
+        title: entry.title,
+        summary: entry.summary,
+        keyPoints: entry.keyPoints,
+        cleanedMarkdown: entry.cleanedMarkdown
+      }))
+    };
   }
 
   @HasPermission("items.read")

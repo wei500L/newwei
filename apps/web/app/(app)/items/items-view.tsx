@@ -1,7 +1,7 @@
 "use client";
 
 import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
-import { gql, useQuery } from "@apollo/client";
+import { gql, useMutation, useQuery } from "@apollo/client";
 import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dynamic from "next/dynamic";
@@ -18,6 +18,14 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { resolveDisplaySummary, resolveDisplayTitle } from "@/lib/item-display";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
+import {
+  type RssItemTranslation,
+  type RssTranslationField,
+  type RssTranslationProvider,
+  TRANSLATE_RSS_ITEMS_MUTATION,
+  type TranslateRssItemsMutation,
+  type TranslateRssItemsMutationVariables
+} from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
 
@@ -125,6 +133,18 @@ function parsePositiveInt(value: string | null, fallback: number) {
     return fallback;
   }
   return parsed;
+}
+
+function normalizeRssTranslationFields(
+  fields?: RssTranslationField[]
+): RssTranslationField[] {
+  if (!fields || fields.length === 0) {
+    return ["title", "summary"] satisfies RssTranslationField[];
+  }
+  const normalized = fields
+    .map((field) => (typeof field === "string" ? field.trim() : ""))
+    .filter((field): field is RssTranslationField => Boolean(field));
+  return Array.from(new Set(normalized));
 }
 
 function normalizeFilterList(
@@ -295,6 +315,7 @@ interface ItemsDateRangeInput {
 }
 
 interface ItemsFiltersInput {
+  sourceIds?: string[];
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
@@ -418,6 +439,7 @@ const ITEM_FACETS_QUERY = gql`
 `;
 
 function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
+  const sourceIds = normalizeFilterList(filters.sourceIds);
   const regions = normalizeFilterList(filters.regions);
   const topics = normalizeFilterList(filters.topics);
   const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true });
@@ -431,11 +453,12 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
         }
       : undefined;
 
-  if (!regions && !topics && !sentiments && !dateRange) {
+  if (!sourceIds && !regions && !topics && !sentiments && !dateRange) {
     return null;
   }
 
   return {
+    ...(sourceIds ? { sourceIds } : {}),
     ...(regions ? { regions } : {}),
     ...(topics ? { topics } : {}),
     ...(sentiments ? { sentiments } : {}),
@@ -450,12 +473,23 @@ const EMPTY_EDGES: ItemEdge[] = [];
 type EmptyStateVariant = "default" | "today" | "search";
 type ItemsSortMode = "default" | "publishedDesc";
 
+interface ItemsRssTranslationConfig {
+  enabled: boolean;
+  provider: RssTranslationProvider;
+  targetLanguage: string;
+  fields?: RssTranslationField[];
+}
+
 interface ItemsViewProps {
   initialView?: ItemViewType;
+  lockedView?: ItemViewType;
   emptyStateVariant?: EmptyStateVariant;
   sortMode?: ItemsSortMode;
   initialData?: ItemsQuery | null;
   initialFilters?: FilterState;
+  fixedSourceIds?: string[];
+  rssTranslationConfig?: ItemsRssTranslationConfig;
+  onTranslationError?: (message: string | null) => void;
 }
 
 interface ParsedItem {
@@ -497,10 +531,14 @@ interface ParsedItem {
 
 export function ItemsView({
   initialView = "feed",
+  lockedView,
   emptyStateVariant = "default",
   sortMode = "default",
   initialData = null,
-  initialFilters = EMPTY_FILTERS_STATE
+  initialFilters = EMPTY_FILTERS_STATE,
+  fixedSourceIds,
+  rssTranslationConfig,
+  onTranslationError
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -527,7 +565,7 @@ export function ItemsView({
   // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [search, setSearch] = useState(urlSearch);
-  const [view, setView] = useState<ItemViewType>(initialView);
+  const [view, setView] = useState<ItemViewType>(lockedView ?? initialView);
   const [filters, setFilters] = useState<FilterState>(() =>
     parseFiltersFromSearchParams(searchParams, initialFilters)
   );
@@ -535,10 +573,31 @@ export function ItemsView({
   const [pageSize, setPageSize] = useState(urlPageSize);
   const [showFilters, setShowFilters] = useState(false);
   const [showDelayHint, setShowDelayHint] = useState(false);
+  const [translatedByItemId, setTranslatedByItemId] = useState<
+    Record<string, Omit<RssItemTranslation, "itemId">>
+  >({});
+  const translationRequestKeyRef = useRef("");
   const listTableContainerRef = useRef<HTMLDivElement | null>(null);
   const [listTableScrollX, setListTableScrollX] = useState<number | null>(null);
   const [listTableScrollY, setListTableScrollY] = useState<number | null>(null);
   const urlFiltersRef = useRef(urlFilters);
+  const [translateRssItems] = useMutation<
+    TranslateRssItemsMutation,
+    TranslateRssItemsMutationVariables
+  >(TRANSLATE_RSS_ITEMS_MUTATION);
+  const normalizedFixedSourceIds = useMemo(
+    () => normalizeFilterList(fixedSourceIds),
+    [fixedSourceIds]
+  );
+  const effectiveFilters = useMemo<FilterState>(() => {
+    if (!normalizedFixedSourceIds || normalizedFixedSourceIds.length === 0) {
+      return filters;
+    }
+    return {
+      ...filters,
+      sourceIds: normalizedFixedSourceIds
+    };
+  }, [filters, normalizedFixedSourceIds]);
 
   const updateListTableScroll = useCallback(() => {
     const container = listTableContainerRef.current;
@@ -568,6 +627,26 @@ export function ItemsView({
     setListTableScrollX((prev) => (prev === nextScrollX ? prev : nextScrollX));
     setListTableScrollY((prev) => (prev === nextScrollY ? prev : nextScrollY));
   }, []);
+
+  useEffect(() => {
+    if (!lockedView) {
+      return;
+    }
+    setView(lockedView);
+  }, [lockedView]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [normalizedFixedSourceIds]);
+
+  useEffect(() => {
+    setTranslatedByItemId({});
+    translationRequestKeyRef.current = "";
+  }, [
+    rssTranslationConfig?.enabled,
+    rssTranslationConfig?.provider,
+    rssTranslationConfig?.targetLanguage
+  ]);
 
   useEffect(() => {
     if (view !== "list") {
@@ -637,7 +716,7 @@ export function ItemsView({
     setPage(1);
   }, [debouncedSearchInput, search]);
 
-  const filtersInput = useMemo(() => buildFiltersInput(filters), [filters]);
+  const filtersInput = useMemo(() => buildFiltersInput(effectiveFilters), [effectiveFilters]);
   const hasActiveFilters = filtersInput !== null;
   const isUnsearched =
     emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
@@ -798,6 +877,11 @@ export function ItemsView({
   const totalCount = typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
+    if (filtersInput?.sourceIds?.length) {
+      parts.push(
+        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${filtersInput.sourceIds.length.toLocaleString(locale)}`
+      );
+    }
     if (filtersInput?.regions?.length) {
       parts.push(
         `${t("items.filters.region", { defaultValue: "Region" })}: ${filtersInput.regions.length.toLocaleString(locale)}`
@@ -845,7 +929,7 @@ export function ItemsView({
     }
   }, [error, isUnsearched, loading, page, pageSize, resolvedTotalCount, setQueryParams]);
 
-  const pageData = useMemo<ParsedItem[]>(() => {
+  const basePageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
       const processed = edge.node.processedPreview;
       const raw = edge.node.rawPreview;
@@ -944,6 +1028,100 @@ export function ItemsView({
       } as ParsedItem;
     });
   }, [edges]);
+
+  useEffect(() => {
+    if (!rssTranslationConfig?.enabled) {
+      onTranslationError?.(null);
+      return;
+    }
+    if (loading || error) {
+      return;
+    }
+    if (!basePageData || basePageData.length === 0) {
+      return;
+    }
+
+    const targetLanguage = rssTranslationConfig.targetLanguage?.trim() || "zh-CN";
+    const provider = rssTranslationConfig.provider;
+    const fields = normalizeRssTranslationFields(rssTranslationConfig.fields);
+    const itemIds = basePageData.map((item) => item.id);
+
+    const requestKey = JSON.stringify({ provider, targetLanguage, fields, itemIds });
+    if (translationRequestKeyRef.current === requestKey) {
+      return;
+    }
+    translationRequestKeyRef.current = requestKey;
+
+    translateRssItems({
+      variables: {
+        input: {
+          itemIds,
+          provider,
+          targetLanguage,
+          fields
+        }
+      }
+    })
+      .then((response) => {
+        onTranslationError?.(null);
+        const translations = response.data?.translateRssItems.translations ?? [];
+        if (translations.length === 0) {
+          return;
+        }
+        setTranslatedByItemId((prev) => {
+          const next = { ...prev };
+          translations.forEach((entry) => {
+            const existing = next[entry.itemId] ?? {};
+            next[entry.itemId] = {
+              ...existing,
+              ...(entry.title ? { title: entry.title } : {}),
+              ...(entry.summary ? { summary: entry.summary } : {}),
+              ...(entry.keyPoints ? { keyPoints: entry.keyPoints } : {}),
+              ...(entry.cleanedMarkdown ? { cleanedMarkdown: entry.cleanedMarkdown } : {})
+            };
+          });
+          return next;
+        });
+      })
+      .catch((err) => {
+        translationRequestKeyRef.current = "";
+        const message = err instanceof Error ? err.message : "Translation failed";
+        onTranslationError?.(message);
+      });
+  }, [
+    error,
+    loading,
+    onTranslationError,
+    basePageData,
+    rssTranslationConfig?.enabled,
+    rssTranslationConfig?.fields,
+    rssTranslationConfig?.provider,
+    rssTranslationConfig?.targetLanguage,
+    translateRssItems
+  ]);
+
+  const pageData = useMemo<ParsedItem[]>(() => {
+    if (!rssTranslationConfig?.enabled) {
+      return basePageData;
+    }
+    if (Object.keys(translatedByItemId).length === 0) {
+      return basePageData;
+    }
+    return basePageData.map((item) => {
+      const translated = translatedByItemId[item.id];
+      if (!translated) {
+        return item;
+      }
+      const title = toNonEmptyString(translated.title) ?? item.title;
+      const summary = toNonEmptyString(translated.summary) ?? item.summary;
+      return {
+        ...item,
+        title,
+        name: title,
+        summary
+      };
+    });
+  }, [basePageData, rssTranslationConfig?.enabled, translatedByItemId]);
 
   useEffect(() => {
     if (view !== "list") {
@@ -1469,7 +1647,7 @@ export function ItemsView({
            </Col>
            <Col>
               <Space>
-                <ViewSwitcher view={view} onChange={setView} />
+                {!lockedView ? <ViewSwitcher view={view} onChange={setView} /> : null}
                 <Button onClick={() => refetch()} loading={loading} disabled={isUnsearched}>
                   {t("common.refresh")}
                 </Button>

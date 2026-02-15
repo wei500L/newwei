@@ -1220,6 +1220,7 @@
       "today": "今日要闻",
       "topics": "专题/事件",
       "events": "新闻事件",
+      "rss": "RSS 阅读",
       "map": "地图态势",
       "finance": "金融面板",
       "alerts": "预警中心",
@@ -1253,6 +1254,15 @@
       "subtitle": "检索已处理内容。",
       "noticeTitle": "检索范围",
       "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。"
+    },
+    "rss": {
+      "title": "RSS 阅读",
+      "subtitle": "按 RSS 信源聚合阅读已处理文章。",
+      "sourceLabel": "RSS 信源",
+      "sourcePlaceholder": "选择 RSS 信源",
+      "selectedCount": "已选 {{count}} 个信源",
+      "loadFailed": "加载 RSS 信源失败。",
+      "emptySources": "当前没有包含近期文章的 RSS 信源。"
     },
     "topics": {
       "title": "专题/事件",
@@ -3549,7 +3559,7 @@
         "translationApiMaxRetries": "翻译重试次数"
       },
       "hints": {
-        "translationMaxConcurrency": "态势监控翻译器并行请求 DeepLX API 的最大数量。",
+        "translationMaxConcurrency": "态势监控翻译的最大并发请求数；同时影响 RSS 的 LLM 翻译并发（包含正文分块翻译）。",
         "translationApiEnabled": "关闭后，“翻译为简体中文”将不再发起 DeepLX 请求。",
         "translationApiBaseUrl": "请求地址前缀，例如 https://api.deeplx.org。系统会自动拼接 /<api-key>/translate。",
         "translationApiKey": "留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",

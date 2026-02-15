@@ -2,12 +2,20 @@ import { ItemStatus } from "../../common/pipeline-status";
 
 import { ItemsService } from "./items.service";
 
+const mockProcessedItemAggregate = jest.fn();
+
 jest.mock("@modular/mongo", () => ({
   RawItemModel: {
     create: jest.fn()
   },
-  ProcessedItemModel: {}
+  ProcessedItemModel: {
+    aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args)
+  }
 }));
+
+beforeEach(() => {
+  mockProcessedItemAggregate.mockReset();
+});
 
 describe("ItemsService.list", () => {
   it("returns total consistent with filtered item rows", async () => {
@@ -260,5 +268,109 @@ describe("ItemsService.createFromCrawlResult", () => {
       { pipelineJobId: undefined, sourceId: undefined }
     );
     expect(created.id).toBe("meta-1");
+  });
+});
+
+describe("ItemsService filters", () => {
+  it("applies sourceIds in processed filter aggregation", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0)
+      }
+    };
+
+    mockProcessedItemAggregate.mockResolvedValue([]);
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    await (service as any).resolveFilterIds("org-1", {
+      sourceIds: ["source-1", "source-2"]
+    });
+
+    expect(mockProcessedItemAggregate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            orgId: "org-1",
+            $and: expect.arrayContaining([{ sourceId: { $in: ["source-1", "source-2"] } }])
+          })
+        })
+      ])
+    );
+  });
+});
+
+describe("ItemsService.listRssSourcesForReading", () => {
+  it("returns rss sources with item stats and excludes non-rss configs", async () => {
+    const prisma = {
+      newsSource: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "rss-1",
+            name: "Feed One",
+            language: "en",
+            url: "https://example.com",
+            config: { seed: { mode: "rss", feedUrl: "https://example.com/rss.xml" } }
+          },
+          {
+            id: "rss-2",
+            name: "Feed Two",
+            language: "zh",
+            url: "https://example.org",
+            config: { seed: { mode: "rss", feedUrl: "https://example.org/feed" } }
+          },
+          {
+            id: "list-1",
+            name: "List Source",
+            language: "en",
+            url: "https://list.example.com",
+            config: { seed: { mode: "list" } }
+          }
+        ])
+      }
+    };
+
+    mockProcessedItemAggregate.mockResolvedValue([
+      {
+        _id: "rss-1",
+        itemCountWindow: 3,
+        latestItemAt: new Date("2026-02-10T00:00:00.000Z")
+      }
+    ]);
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const rows = await service.listRssSourcesForReading("org-1", {
+      windowDays: 7,
+      onlyWithItems: true
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "rss-1",
+        name: "Feed One",
+        language: "en",
+        siteUrl: "https://example.com",
+        feedUrl: "https://example.com/rss.xml",
+        latestItemAt: "2026-02-10T00:00:00.000Z",
+        itemCountWindow: 3
+      }
+    ]);
+    expect(mockProcessedItemAggregate).toHaveBeenCalledTimes(1);
   });
 });

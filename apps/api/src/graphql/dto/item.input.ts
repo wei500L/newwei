@@ -2,6 +2,7 @@ import { ArgsType, Field, GraphQLISODateTime, InputType, Int, registerEnumType }
 import {
   IsArray,
   IsDate,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -17,6 +18,22 @@ export enum ItemsOrderBy {
 }
 
 registerEnumType(ItemsOrderBy, { name: "ItemsOrderBy" });
+
+export enum RssTranslationProvider {
+  deeplx = "deeplx",
+  llm = "llm"
+}
+
+registerEnumType(RssTranslationProvider, { name: "RssTranslationProvider" });
+
+export enum RssTranslationField {
+  title = "title",
+  summary = "summary",
+  key_points = "key_points",
+  cleaned_markdown = "cleaned_markdown"
+}
+
+registerEnumType(RssTranslationField, { name: "RssTranslationField" });
 
 @InputType()
 export class CreateItemInput {
@@ -83,6 +100,12 @@ export class ItemsFiltersInput {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  sourceIds?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   regions?: string[];
 
   @Field(() => [String], { nullable: true })
@@ -100,6 +123,28 @@ export class ItemsFiltersInput {
   @Field(() => ItemsDateRangeInput, { nullable: true })
   @IsOptional()
   dateRange?: ItemsDateRangeInput;
+}
+
+@InputType()
+export class TranslateRssItemsInput {
+  @Field(() => [String])
+  @IsArray()
+  @IsString({ each: true })
+  itemIds!: string[];
+
+  @Field(() => RssTranslationProvider, { defaultValue: RssTranslationProvider.deeplx })
+  @IsEnum(RssTranslationProvider)
+  provider: RssTranslationProvider = RssTranslationProvider.deeplx;
+
+  @Field(() => [RssTranslationField], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(RssTranslationField, { each: true })
+  fields?: RssTranslationField[];
+
+  @Field(() => String, { defaultValue: "zh-CN" })
+  @IsString()
+  targetLanguage = "zh-CN";
 }
 
 @ArgsType()

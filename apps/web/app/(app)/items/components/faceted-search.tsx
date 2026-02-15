@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 const { RangePicker } = DatePicker;
 export interface FilterState {
   dateRange?: [Dayjs, Dayjs] | null;
+  sourceIds?: string[];
   regions?: string[];
   topics?: string[];
   sentiments?: string[];

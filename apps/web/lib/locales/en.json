@@ -1217,6 +1217,7 @@
       "today": "Today",
       "topics": "Topics & Events",
       "events": "News Events",
+      "rss": "RSS Reader",
       "map": "Situation Map",
       "finance": "Finance Panel",
       "alerts": "Alert Center",
@@ -1250,6 +1251,15 @@
       "subtitle": "Search across processed items.",
       "noticeTitle": "Search scope",
       "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs."
+    },
+    "rss": {
+      "title": "RSS Reader",
+      "subtitle": "Read processed articles from RSS sources in a focused stream.",
+      "sourceLabel": "RSS Sources",
+      "sourcePlaceholder": "Select RSS sources",
+      "selectedCount": "{{count}} sources selected",
+      "loadFailed": "Failed to load RSS sources.",
+      "emptySources": "No RSS sources with recent items were found."
     },
     "topics": {
       "title": "Topics & Events",
@@ -3546,7 +3556,7 @@
         "translationApiMaxRetries": "Translation max retries"
       },
       "hints": {
-        "translationMaxConcurrency": "Max concurrent DeepLX translation requests used by the situation monitor translator.",
+        "translationMaxConcurrency": "Max concurrent translation requests for Situation Monitor; this also affects RSS LLM translation concurrency (including article body chunk translation).",
         "translationApiEnabled": "When disabled, Translate to Simplified Chinese will not call DeepLX.",
         "translationApiBaseUrl": "Base URL such as https://api.deeplx.org. The API will append /<api-key>/translate automatically.",
         "translationApiKey": "Leave empty to keep current key. Stored encrypted when secret encryption is enabled in system security settings.",

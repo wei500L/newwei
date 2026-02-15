@@ -58,6 +58,7 @@ interface ItemDateRangeFilter {
 }
 
 interface ItemFilters {
+  sourceIds?: string[];
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
@@ -135,6 +136,16 @@ interface CachedEventGroup {
   topics: string[];
   entities: string[];
   items: (Omit<EventGroupItem, "createdAt"> & { createdAt: string })[];
+}
+
+export interface RssSourceOption {
+  id: string;
+  name: string;
+  language?: string | null;
+  siteUrl: string;
+  feedUrl: string;
+  latestItemAt?: string | null;
+  itemCountWindow: number;
 }
 
 @Injectable()
@@ -784,6 +795,134 @@ export class ItemsService {
     };
   }
 
+  async listRssSourcesForReading(
+    orgId: string,
+    options?: { windowDays?: number; onlyWithItems?: boolean }
+  ): Promise<RssSourceOption[]> {
+    const windowDaysRaw = options?.windowDays;
+    const windowDays =
+      typeof windowDaysRaw === "number" && Number.isFinite(windowDaysRaw)
+        ? Math.min(Math.max(Math.floor(windowDaysRaw), 1), 30)
+        : 7;
+    const onlyWithItems = options?.onlyWithItems ?? true;
+    const since = new Date(Date.now() - windowDays * DAY_MS);
+
+    const sources = await this.prisma.newsSource.findMany({
+      where: { orgId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        url: true,
+        config: true
+      },
+      orderBy: [{ priority: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }]
+    });
+
+    const rssSources = sources
+      .map((source) => {
+        const seed =
+          source.config && typeof source.config === "object" && !Array.isArray(source.config)
+            ? (source.config as { seed?: unknown }).seed
+            : null;
+        if (!seed || typeof seed !== "object" || Array.isArray(seed)) {
+          return null;
+        }
+        const rawMode = (seed as { mode?: unknown }).mode;
+        const mode = typeof rawMode === "string" ? rawMode.trim().toLowerCase() : "";
+        if (mode !== "rss") {
+          return null;
+        }
+        const feedUrlRaw = (seed as { feedUrl?: unknown }).feedUrl;
+        const feedUrl =
+          typeof feedUrlRaw === "string" && feedUrlRaw.trim().length > 0
+            ? feedUrlRaw.trim()
+            : source.url.trim();
+        if (!feedUrl || !source.url.trim()) {
+          return null;
+        }
+        return {
+          id: source.id,
+          name: source.name,
+          language: source.language,
+          siteUrl: source.url.trim(),
+          feedUrl
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+    if (rssSources.length === 0) {
+      return [];
+    }
+
+    const sourceIds = rssSources.map((source) => source.id);
+    const stats = await ProcessedItemModel.aggregate<{
+      _id: string;
+      itemCountWindow: number;
+      latestItemAt: Date | null;
+    }>([
+      {
+        $match: {
+          orgId,
+          status: PipelineStageStatus.Completed,
+          sourceId: { $in: sourceIds },
+          createdAt: { $gte: since }
+        }
+      },
+      {
+        $group: {
+          _id: "$sourceId",
+          itemCountWindow: { $sum: 1 },
+          latestItemAt: { $max: "$createdAt" }
+        }
+      }
+    ]);
+
+    const statsBySourceId = new Map<string, { itemCountWindow: number; latestItemAt: Date | null }>();
+    for (const row of stats) {
+      if (!row?._id) {
+        continue;
+      }
+      statsBySourceId.set(row._id, {
+        itemCountWindow: Math.max(0, Number(row.itemCountWindow ?? 0)),
+        latestItemAt: row.latestItemAt ?? null
+      });
+    }
+
+    const mapped = rssSources
+      .map<RssSourceOption>((source) => {
+        const sourceStats = statsBySourceId.get(source.id);
+        return {
+          id: source.id,
+          name: source.name,
+          language: source.language,
+          siteUrl: source.siteUrl,
+          feedUrl: source.feedUrl,
+          latestItemAt: sourceStats?.latestItemAt ? sourceStats.latestItemAt.toISOString() : null,
+          itemCountWindow: sourceStats?.itemCountWindow ?? 0
+        };
+      })
+      .filter((source) => (onlyWithItems ? source.itemCountWindow > 0 : true))
+      .sort((a, b) => {
+        if (b.itemCountWindow !== a.itemCountWindow) {
+          return b.itemCountWindow - a.itemCountWindow;
+        }
+        if (a.latestItemAt && b.latestItemAt) {
+          const delta = new Date(b.latestItemAt).getTime() - new Date(a.latestItemAt).getTime();
+          if (delta !== 0) {
+            return delta;
+          }
+        } else if (a.latestItemAt) {
+          return -1;
+        } else if (b.latestItemAt) {
+          return 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+    return mapped;
+  }
+
   /**
    * Search suggestions for auto-complete.
    * Returns matching topics, regions, sources, and sentiments based on prefix.
@@ -1428,14 +1567,16 @@ export class ItemsService {
       return undefined;
     }
     const input = raw as Record<string, unknown>;
+    const sourceIds = this.normalizeFilterList(input.sourceIds);
     const regions = this.normalizeFilterList(input.regions);
     const topics = this.normalizeFilterList(input.topics);
     const sentiments = this.normalizeFilterList(input.sentiments, { lowerCase: true });
     const dateRange = this.normalizeDateRange(input.dateRange);
-    if (!regions && !topics && !sentiments && !dateRange) {
+    if (!sourceIds && !regions && !topics && !sentiments && !dateRange) {
       return undefined;
     }
     return {
+      sourceIds,
       regions,
       topics,
       sentiments,
@@ -1489,6 +1630,7 @@ export class ItemsService {
       return false;
     }
     return Boolean(
+      (filters.sourceIds && filters.sourceIds.length > 0) ||
       (filters.regions && filters.regions.length > 0) ||
         (filters.topics && filters.topics.length > 0) ||
         (filters.sentiments && filters.sentiments.length > 0) ||
@@ -1771,6 +1913,11 @@ export class ItemsService {
 
   private async resolveFilterIds(orgId: string, filters: ItemFilters) {
     const matchFilters: Record<string, unknown>[] = [];
+    if (filters.sourceIds?.length) {
+      matchFilters.push({
+        sourceId: { $in: filters.sourceIds }
+      });
+    }
     if (filters.regions?.length) {
       matchFilters.push({
         $or: [
