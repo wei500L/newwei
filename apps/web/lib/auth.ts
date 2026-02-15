@@ -16,6 +16,8 @@ export interface OrganizationOption {
 export interface AuthenticatedUser {
   id: string;
   email: string;
+  emailVerified?: string | null;
+  pendingEmail?: string | null;
   firstName: string;
   lastName: string;
   orgId: string;
@@ -58,35 +60,43 @@ function normalizeOptionalId(value: unknown): string | undefined {
 async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
   let traceId: string | undefined;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REFRESH_TOKEN_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    REFRESH_TOKEN_TIMEOUT_MS,
+  );
 
   try {
     const response = await fetch(`${serverEnv.apiBaseUrl}/auth/refresh`, {
       method: "POST",
       headers: createTraceHeaders({
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       }),
-      body: JSON.stringify({ refreshToken: token.refreshToken, orgId: token.user.orgId }),
-      signal: controller.signal
+      body: JSON.stringify({
+        refreshToken: token.refreshToken,
+        orgId: token.user.orgId,
+      }),
+      signal: controller.signal,
     });
     traceId = response.headers.get("x-trace-id") ?? undefined;
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Failed to refresh token");
+      const errorText = await response
+        .text()
+        .catch(() => "Failed to refresh token");
       if (response.status === 401 || response.status === 403) {
         console.warn("Refresh token rejected", {
           traceId,
           meta: {
             userId: token.user.id,
-            status: response.status
-          }
+            status: response.status,
+          },
         });
         return {
           ...token,
           accessToken: "",
           refreshToken: "",
           accessTokenExpires: 0,
-          error: "RefreshAccessTokenError"
+          error: "RefreshAccessTokenError",
         };
       }
       throw new Error(errorText || "Failed to refresh token");
@@ -99,7 +109,8 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
       refreshToken: data.refreshToken ?? token.refreshToken,
       accessTokenExpires: Date.now() + data.expiresIn * 1000,
       user: data.user,
-      organizations: data.organizations ?? token.organizations ?? [{ id: data.user.orgId }]
+      organizations: data.organizations ??
+        token.organizations ?? [{ id: data.user.orgId }],
     };
   } catch (error) {
     const isAbortError = error instanceof Error && error.name === "AbortError";
@@ -112,14 +123,14 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
 
     logServerError("Refresh token error", error, {
       traceId,
-      meta
+      meta,
     });
     return {
       ...token,
       accessToken: "",
       refreshToken: "",
       accessTokenExpires: 0,
-      error: "RefreshAccessTokenError"
+      error: "RefreshAccessTokenError",
     };
   } finally {
     clearTimeout(timeoutId);
@@ -128,13 +139,14 @@ async function refreshAccessToken(token: TokenPayload): Promise<TokenPayload> {
 
 const config: NextAuthConfig = {
   trustHost: true,
-  debug: process.env.NEXTAUTH_DEBUG === "1" || process.env.NEXTAUTH_DEBUG === "true",
+  debug:
+    process.env.NEXTAUTH_DEBUG === "1" || process.env.NEXTAUTH_DEBUG === "true",
   secret: serverEnv.NEXTAUTH_SECRET,
   session: {
-    strategy: "jwt"
+    strategy: "jwt",
   },
   pages: {
-    signIn: "/login"
+    signIn: "/login",
   },
   providers: [
     Credentials({
@@ -142,14 +154,17 @@ const config: NextAuthConfig = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
-        orgId: { label: "Organization", type: "text", required: false }
+        orgId: { label: "Organization", type: "text", required: false },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          LOGIN_TIMEOUT_MS,
+        );
         const orgId = normalizeOptionalId(credentials.orgId);
         const loginUrl = `${serverEnv.apiBaseUrl}/auth/login`;
 
@@ -160,24 +175,30 @@ const config: NextAuthConfig = {
             body: JSON.stringify({
               email: credentials.email,
               password: credentials.password,
-              orgId
+              orgId,
             }),
-            signal: controller.signal
+            signal: controller.signal,
           });
 
           const traceId = response.headers.get("x-trace-id") ?? undefined;
 
           if (!response.ok) {
-            const errorText = await response.text().catch(() => "Backend login failed");
-            logServerError("Credentials sign-in rejected by backend", new Error(errorText), {
-              traceId,
-              meta: {
-                status: response.status,
-                url: loginUrl,
-                email: credentials.email,
-                orgId: orgId ?? null
-              }
-            });
+            const errorText = await response
+              .text()
+              .catch(() => "Backend login failed");
+            logServerError(
+              "Credentials sign-in rejected by backend",
+              new Error(errorText),
+              {
+                traceId,
+                meta: {
+                  status: response.status,
+                  url: loginUrl,
+                  email: credentials.email,
+                  orgId: orgId ?? null,
+                },
+              },
+            );
             return null;
           }
 
@@ -188,25 +209,106 @@ const config: NextAuthConfig = {
             email: data.user.email,
             name: `${data.user.firstName} ${data.user.lastName}`,
             ...data,
-            organizations
+            organizations,
           };
         } catch (error) {
-          const isAbortError = error instanceof Error && error.name === "AbortError";
+          const isAbortError =
+            error instanceof Error && error.name === "AbortError";
           logServerError("Credentials sign-in request failed", error, {
             meta: {
               reason: isAbortError ? "timeout" : "fetch_error",
               timeoutMs: LOGIN_TIMEOUT_MS,
               url: loginUrl,
               email: credentials.email,
-              orgId: orgId ?? null
-            }
+              orgId: orgId ?? null,
+            },
           });
           return null;
         } finally {
           clearTimeout(timeoutId);
         }
-      }
-    })
+      },
+    }),
+    Credentials({
+      id: "email-code",
+      name: "Email Code",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        code: { label: "Verification Code", type: "text" },
+        orgId: { label: "Organization", type: "text", required: false },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.code) {
+          return null;
+        }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          LOGIN_TIMEOUT_MS,
+        );
+        const orgId = normalizeOptionalId(credentials.orgId);
+        const loginUrl = `${serverEnv.apiBaseUrl}/auth/login-with-code`;
+
+        try {
+          const response = await fetch(loginUrl, {
+            method: "POST",
+            headers: createTraceHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+              email: credentials.email,
+              code: credentials.code,
+              orgId,
+            }),
+            signal: controller.signal,
+          });
+
+          const traceId = response.headers.get("x-trace-id") ?? undefined;
+          if (!response.ok) {
+            const errorText = await response
+              .text()
+              .catch(() => "Backend login-with-code failed");
+            logServerError(
+              "Email-code sign-in rejected by backend",
+              new Error(errorText),
+              {
+                traceId,
+                meta: {
+                  status: response.status,
+                  url: loginUrl,
+                  email: credentials.email,
+                  orgId: orgId ?? null,
+                },
+              },
+            );
+            return null;
+          }
+
+          const data = (await response.json()) as BackendLoginResponse;
+          const organizations = data.organizations ?? [{ id: data.user.orgId }];
+          return {
+            id: data.user.id,
+            email: data.user.email,
+            name: `${data.user.firstName} ${data.user.lastName}`,
+            ...data,
+            organizations,
+          };
+        } catch (error) {
+          const isAbortError =
+            error instanceof Error && error.name === "AbortError";
+          logServerError("Email-code sign-in request failed", error, {
+            meta: {
+              reason: isAbortError ? "timeout" : "fetch_error",
+              timeoutMs: LOGIN_TIMEOUT_MS,
+              url: loginUrl,
+              email: credentials.email,
+              orgId: orgId ?? null,
+            },
+          });
+          return null;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      },
+    }),
   ],
   callbacks: {
     authorized({ auth }) {
@@ -225,7 +327,9 @@ const config: NextAuthConfig = {
           refreshToken: typedUser.refreshToken,
           accessTokenExpires: Date.now() + typedUser.expiresIn * 1000,
           user: typedUser.user,
-          organizations: typedUser.organizations ?? [{ id: typedUser.user.orgId }]
+          organizations: typedUser.organizations ?? [
+            { id: typedUser.user.orgId },
+          ],
         } satisfies TokenPayload;
       }
 
@@ -242,7 +346,8 @@ const config: NextAuthConfig = {
           accessTokenExpires:
             updatedSession.accessTokenExpires ?? typedToken.accessTokenExpires,
           user: updatedSession.user ?? typedToken.user,
-          organizations: updatedSession.organizations ?? typedToken.organizations
+          organizations:
+            updatedSession.organizations ?? typedToken.organizations,
         } satisfies TokenPayload;
       }
 
@@ -251,7 +356,7 @@ const config: NextAuthConfig = {
           ...typedToken,
           accessToken: "",
           refreshToken: "",
-          accessTokenExpires: 0
+          accessTokenExpires: 0,
         };
       }
 
@@ -268,17 +373,19 @@ const config: NextAuthConfig = {
         user: {
           ...typedToken.user,
           organizations: typedToken.organizations,
-          image: typedToken.user.avatarUrl ?? null
+          image: typedToken.user.avatarUrl ?? null,
         },
         accessToken: typedToken.accessToken,
         accessTokenExpires: typedToken.accessTokenExpires,
         permissions: typedToken.user.permissions,
         orgId: typedToken.user.orgId,
-        organizations: typedToken.organizations ?? [{ id: typedToken.user.orgId }],
-        error: typedToken.error
+        organizations: typedToken.organizations ?? [
+          { id: typedToken.user.orgId },
+        ],
+        error: typedToken.error,
       };
-    }
-  }
+    },
+  },
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);

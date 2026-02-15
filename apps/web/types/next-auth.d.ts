@@ -19,6 +19,8 @@ declare module "next-auth" {
     user: {
       id: string;
       email: string;
+      emailVerified?: string | null;
+      pendingEmail?: string | null;
       firstName: string;
       lastName: string;
       orgId: string;

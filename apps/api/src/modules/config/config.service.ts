@@ -45,6 +45,12 @@ export interface SmtpConfig {
   tlsRejectUnauthorized: boolean;
 }
 
+export interface AuthEmailCodeConfig {
+  ttlSeconds: number;
+  cooldownSeconds: number;
+  maxAttempts: number;
+}
+
 export interface BullBoardConfig {
   username?: string;
   password?: string;
@@ -135,8 +141,12 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get bullBoardConfig(): BullBoardConfig {
     return {
-      username: this.get<string | undefined>("BULL_BOARD_USERNAME", { infer: true }),
-      password: this.get<string | undefined>("BULL_BOARD_PASSWORD", { infer: true })
+      username: this.get<string | undefined>("BULL_BOARD_USERNAME", {
+        infer: true,
+      }),
+      password: this.get<string | undefined>("BULL_BOARD_PASSWORD", {
+        infer: true,
+      }),
     };
   }
 
@@ -166,12 +176,16 @@ export class EnvService extends ConfigService<ApiEnv> {
       throw new Error("JWT_AUDIENCE is required");
     }
 
-    const accessExpiresIn = this.get<string>("JWT_ACCESS_EXPIRES_IN", { infer: true });
+    const accessExpiresIn = this.get<string>("JWT_ACCESS_EXPIRES_IN", {
+      infer: true,
+    });
     if (!accessExpiresIn) {
       throw new Error("JWT_ACCESS_EXPIRES_IN is required");
     }
 
-    const refreshExpiresIn = this.get<string>("JWT_REFRESH_EXPIRES_IN", { infer: true });
+    const refreshExpiresIn = this.get<string>("JWT_REFRESH_EXPIRES_IN", {
+      infer: true,
+    });
     if (!refreshExpiresIn) {
       throw new Error("JWT_REFRESH_EXPIRES_IN is required");
     }
@@ -208,28 +222,55 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get rateLimitSettingsCacheTtlSeconds() {
     return (
-      this.get<number>("RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS", { infer: true }) ?? 60
+      this.get<number>("RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS", {
+        infer: true,
+      }) ?? 60
     );
   }
 
   get authProfileCacheTtlSeconds() {
-    return this.get<number>("AUTH_PROFILE_CACHE_TTL_SECONDS", { infer: true }) ?? 600;
+    return (
+      this.get<number>("AUTH_PROFILE_CACHE_TTL_SECONDS", { infer: true }) ?? 600
+    );
   }
 
   get authProfileCacheLockTtlMs() {
-    return this.get<number>("AUTH_PROFILE_CACHE_LOCK_TTL_MS", { infer: true }) ?? 5_000;
+    return (
+      this.get<number>("AUTH_PROFILE_CACHE_LOCK_TTL_MS", { infer: true }) ??
+      5_000
+    );
   }
 
   get authProfileCacheMaxWaitMs() {
-    return this.get<number>("AUTH_PROFILE_CACHE_MAX_WAIT_MS", { infer: true }) ?? 5_000;
+    return (
+      this.get<number>("AUTH_PROFILE_CACHE_MAX_WAIT_MS", { infer: true }) ??
+      5_000
+    );
   }
 
   get authProfileCacheRetryDelayMs() {
-    return this.get<number>("AUTH_PROFILE_CACHE_RETRY_DELAY_MS", { infer: true }) ?? 50;
+    return (
+      this.get<number>("AUTH_PROFILE_CACHE_RETRY_DELAY_MS", { infer: true }) ??
+      50
+    );
   }
 
   get authRefreshGraceSeconds() {
-    return this.get<number>("AUTH_REFRESH_GRACE_SECONDS", { infer: true }) ?? 10;
+    return (
+      this.get<number>("AUTH_REFRESH_GRACE_SECONDS", { infer: true }) ?? 10
+    );
+  }
+
+  get authEmailCodeConfig(): AuthEmailCodeConfig {
+    return {
+      ttlSeconds:
+        this.get<number>("AUTH_EMAIL_CODE_TTL_SECONDS", { infer: true }) ?? 300,
+      cooldownSeconds:
+        this.get<number>("AUTH_EMAIL_CODE_COOLDOWN_SECONDS", { infer: true }) ??
+        90,
+      maxAttempts:
+        this.get<number>("AUTH_EMAIL_CODE_MAX_ATTEMPTS", { infer: true }) ?? 3,
+    };
   }
 
   get auditLogRetentionDays() {
@@ -243,7 +284,8 @@ export class EnvService extends ConfigService<ApiEnv> {
       introspection:
         this.get<boolean>("GRAPHQL_INTROSPECTION", { infer: true }) ?? false,
       subscriptionsEnabled:
-        this.get<boolean>("GRAPHQL_SUBSCRIPTIONS_ENABLED", { infer: true }) ?? true,
+        this.get<boolean>("GRAPHQL_SUBSCRIPTIONS_ENABLED", { infer: true }) ??
+        true,
       depthLimit: this.get<number>("GRAPHQL_DEPTH_LIMIT", { infer: true }) ?? 8,
       complexityLimit:
         this.get<number>("GRAPHQL_COMPLEXITY_LIMIT", { infer: true }) ?? 2000,
@@ -253,79 +295,133 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get webSocketSecurity(): WebSocketSecurityConfig {
     return {
-      maxConnectionsPerUser: this.get<number>("WS_MAX_CONNECTIONS_PER_USER", { infer: true }) ?? 5,
-      maxConnectionsPerIp: this.get<number>("WS_MAX_CONNECTIONS_PER_IP", { infer: true }) ?? 50,
-      connectRateLimitPerIp: this.get<number>("WS_CONNECT_RATE_LIMIT_PER_IP", { infer: true }) ?? 60,
-      connectRateLimitPerUser: this.get<number>("WS_CONNECT_RATE_LIMIT_PER_USER", { infer: true }) ?? 30,
+      maxConnectionsPerUser:
+        this.get<number>("WS_MAX_CONNECTIONS_PER_USER", { infer: true }) ?? 5,
+      maxConnectionsPerIp:
+        this.get<number>("WS_MAX_CONNECTIONS_PER_IP", { infer: true }) ?? 50,
+      connectRateLimitPerIp:
+        this.get<number>("WS_CONNECT_RATE_LIMIT_PER_IP", { infer: true }) ?? 60,
+      connectRateLimitPerUser:
+        this.get<number>("WS_CONNECT_RATE_LIMIT_PER_USER", { infer: true }) ??
+        30,
       connectRateLimitWindowSeconds:
-        this.get<number>("WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS", { infer: true }) ?? 60
+        this.get<number>("WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS", {
+          infer: true,
+        }) ?? 60,
     };
   }
 
   get webSocketRedisAdapter(): WebSocketRedisAdapterConfig {
     return {
-      enabled: this.get<boolean>("WS_REDIS_ADAPTER_ENABLED", { infer: true }) ?? true,
-      key: this.get<string>("WS_REDIS_ADAPTER_KEY", { infer: true }) ?? "socket.io"
+      enabled:
+        this.get<boolean>("WS_REDIS_ADAPTER_ENABLED", { infer: true }) ?? true,
+      key:
+        this.get<string>("WS_REDIS_ADAPTER_KEY", { infer: true }) ??
+        "socket.io",
     };
   }
 
   get systemSettingsEncryptionKey(): string | undefined {
-    return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", { infer: true });
+    return this.get<string | undefined>("SYSTEM_SETTINGS_ENCRYPTION_KEY", {
+      infer: true,
+    });
   }
 
   get storageConfig(): StorageConfig {
     return {
       accessKeyId: this.get<string>("S3_ACCESS_KEY_ID", { infer: true }) ?? "",
-      secretAccessKey: this.get<string>("S3_SECRET_ACCESS_KEY", { infer: true }) ?? "",
+      secretAccessKey:
+        this.get<string>("S3_SECRET_ACCESS_KEY", { infer: true }) ?? "",
       region: this.get<string>("S3_REGION", { infer: true }) ?? "us-east-1",
       bucket: this.get<string | undefined>("S3_BUCKET", { infer: true }) ?? "",
       endpoint: this.get<string | undefined>("S3_ENDPOINT", { infer: true }),
-      publicBaseUrl: this.get<string | undefined>("S3_PUBLIC_BASE_URL", { infer: true }) ?? "",
-      forcePathStyle: this.get<boolean>("S3_FORCE_PATH_STYLE", { infer: true }) ?? false,
+      publicBaseUrl:
+        this.get<string | undefined>("S3_PUBLIC_BASE_URL", { infer: true }) ??
+        "",
+      forcePathStyle:
+        this.get<boolean>("S3_FORCE_PATH_STYLE", { infer: true }) ?? false,
       presignedUrlTtlSeconds:
-        this.get<number>("S3_PRESIGNED_URL_TTL_SECONDS", { infer: true }) ?? 300
+        this.get<number>("S3_PRESIGNED_URL_TTL_SECONDS", { infer: true }) ??
+        300,
     };
   }
 
   get vectorServiceConfig(): VectorServiceConfig {
     return {
-      enabled: this.get<boolean>("VECTOR_SERVICE_ENABLED", { infer: true }) ?? false,
-      fallbackToMongo: this.get<boolean>("VECTOR_SERVICE_FALLBACK_TO_MONGO", { infer: true }) ?? true,
-      baseUrl: this.get<string | undefined>("VECTOR_SERVICE_BASE_URL", { infer: true }),
-      token: this.get<string | undefined>("VECTOR_INTERNAL_TOKEN", { infer: true }),
-      timeoutMs: this.get<number>("VECTOR_SERVICE_TIMEOUT_MS", { infer: true }) ?? 5_000,
-      maxRetries: this.get<number>("VECTOR_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
+      enabled:
+        this.get<boolean>("VECTOR_SERVICE_ENABLED", { infer: true }) ?? false,
+      fallbackToMongo:
+        this.get<boolean>("VECTOR_SERVICE_FALLBACK_TO_MONGO", {
+          infer: true,
+        }) ?? true,
+      baseUrl: this.get<string | undefined>("VECTOR_SERVICE_BASE_URL", {
+        infer: true,
+      }),
+      token: this.get<string | undefined>("VECTOR_INTERNAL_TOKEN", {
+        infer: true,
+      }),
+      timeoutMs:
+        this.get<number>("VECTOR_SERVICE_TIMEOUT_MS", { infer: true }) ?? 5_000,
+      maxRetries:
+        this.get<number>("VECTOR_SERVICE_MAX_RETRIES", { infer: true }) ?? 2,
     };
   }
 
   get modelServiceConfig(): ModelServiceConfig {
     return {
-      enabled: this.get<boolean>("MODEL_SERVICE_ENABLED", { infer: true }) ?? false,
-      baseUrl: this.get<string | undefined>("MODEL_SERVICE_BASE_URL", { infer: true }),
-      internalToken: this.get<string | undefined>("MODEL_SERVICE_INTERNAL_TOKEN", { infer: true }),
-      timeoutMs: this.get<number>("MODEL_SERVICE_TIMEOUT_MS", { infer: true }) ?? 15_000,
-      maxRetries: this.get<number>("MODEL_SERVICE_MAX_RETRIES", { infer: true }) ?? 2
+      enabled:
+        this.get<boolean>("MODEL_SERVICE_ENABLED", { infer: true }) ?? false,
+      baseUrl: this.get<string | undefined>("MODEL_SERVICE_BASE_URL", {
+        infer: true,
+      }),
+      internalToken: this.get<string | undefined>(
+        "MODEL_SERVICE_INTERNAL_TOKEN",
+        { infer: true },
+      ),
+      timeoutMs:
+        this.get<number>("MODEL_SERVICE_TIMEOUT_MS", { infer: true }) ?? 15_000,
+      maxRetries:
+        this.get<number>("MODEL_SERVICE_MAX_RETRIES", { infer: true }) ?? 2,
     };
   }
 
   get situationMonitorTranslationConfig(): SituationMonitorTranslationConfig {
     const rawBaseUrl =
-      this.get<string>("SITUATION_MONITOR_TRANSLATION_API_BASE_URL", { infer: true }) ??
-      "https://api.deeplx.org";
+      this.get<string>("SITUATION_MONITOR_TRANSLATION_API_BASE_URL", {
+        infer: true,
+      }) ?? "https://api.deeplx.org";
     const baseUrl = rawBaseUrl.trim().replace(/\/+$/, "");
-    const rawFallbackBaseUrl = this.get<string | undefined>("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL");
-    const fallbackBaseUrl = typeof rawFallbackBaseUrl === "string"
-      ? rawFallbackBaseUrl.trim().replace(/\/+$/, "")
-      : undefined;
+    const rawFallbackBaseUrl = this.get<string | undefined>(
+      "SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL",
+    );
+    const fallbackBaseUrl =
+      typeof rawFallbackBaseUrl === "string"
+        ? rawFallbackBaseUrl.trim().replace(/\/+$/, "")
+        : undefined;
 
     return {
-      enabled: this.get<boolean>("SITUATION_MONITOR_TRANSLATION_API_ENABLED", { infer: true }) ?? true,
+      enabled:
+        this.get<boolean>("SITUATION_MONITOR_TRANSLATION_API_ENABLED", {
+          infer: true,
+        }) ?? true,
       baseUrl,
-      timeoutMs: this.get<number>("SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS", { infer: true }) ?? 15_000,
-      maxRetries: this.get<number>("SITUATION_MONITOR_TRANSLATION_MAX_RETRIES", { infer: true }) ?? 2,
+      timeoutMs:
+        this.get<number>("SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS", {
+          infer: true,
+        }) ?? 15_000,
+      maxRetries:
+        this.get<number>("SITUATION_MONITOR_TRANSLATION_MAX_RETRIES", {
+          infer: true,
+        }) ?? 2,
       fallbackEnabled:
-        this.get<boolean>("SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED", { infer: true }) ?? false,
-      fallbackBaseUrl: fallbackBaseUrl && fallbackBaseUrl.length > 0 ? fallbackBaseUrl : undefined
+        this.get<boolean>(
+          "SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED",
+          { infer: true },
+        ) ?? false,
+      fallbackBaseUrl:
+        fallbackBaseUrl && fallbackBaseUrl.length > 0
+          ? fallbackBaseUrl
+          : undefined,
     };
   }
 
@@ -340,15 +436,19 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries:
         this.get<number>("CRAWL4AI_MAX_RETRIES", { infer: true }) ?? 3,
       healthCheckTtlMs:
-        this.get<number>("CRAWL4AI_HEALTH_CHECK_TTL_MS", { infer: true }) ?? 60_000,
+        this.get<number>("CRAWL4AI_HEALTH_CHECK_TTL_MS", { infer: true }) ??
+        60_000,
       retryBackoffMs:
         this.get<number>("CRAWL4AI_RETRY_BACKOFF_MS", { infer: true }) ?? 5_000,
       jsCodeEnabled:
         this.get<boolean>("CRAWL4AI_JSCODE_ENABLED", { infer: true }) ?? true,
       jsCodeAuditEnabled:
-        this.get<boolean>("CRAWL4AI_JSCODE_AUDIT_ENABLED", { infer: true }) ?? true,
+        this.get<boolean>("CRAWL4AI_JSCODE_AUDIT_ENABLED", { infer: true }) ??
+        true,
       jsCodeAuditRetentionDays:
-        this.get<number>("CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS", { infer: true }) ?? 90,
+        this.get<number>("CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS", {
+          infer: true,
+        }) ?? 90,
       jsCodeMaxLength:
         this.get<number>("CRAWL4AI_JSCODE_MAX_LENGTH", { infer: true }) ?? 2000,
       jsCodeMaxScripts:
@@ -368,17 +468,25 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get crawlTaskJanitorConfig(): CrawlTaskJanitorConfig {
     return {
-      enabled: this.get<boolean>("CRAWL_TASK_JANITOR_ENABLED", { infer: true }) ?? true,
+      enabled:
+        this.get<boolean>("CRAWL_TASK_JANITOR_ENABLED", { infer: true }) ??
+        true,
       runningTimeoutMs:
-        this.get<number>("CRAWL_TASK_RUNNING_TIMEOUT_MS", { infer: true }) ?? 1_800_000,
+        this.get<number>("CRAWL_TASK_RUNNING_TIMEOUT_MS", { infer: true }) ??
+        1_800_000,
       queuedTimeoutMs:
-        this.get<number>("CRAWL_TASK_QUEUED_TIMEOUT_MS", { infer: true }) ?? 43_200_000,
+        this.get<number>("CRAWL_TASK_QUEUED_TIMEOUT_MS", { infer: true }) ??
+        43_200_000,
       batchSize:
-        this.get<number>("CRAWL_TASK_JANITOR_BATCH_SIZE", { infer: true }) ?? 50,
+        this.get<number>("CRAWL_TASK_JANITOR_BATCH_SIZE", { infer: true }) ??
+        50,
       queueScanLimit:
-        this.get<number>("CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT", { infer: true }) ?? 5_000,
+        this.get<number>("CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT", {
+          infer: true,
+        }) ?? 5_000,
       lockTtlMs:
-        this.get<number>("CRAWL_TASK_JANITOR_LOCK_TTL_MS", { infer: true }) ?? 120_000
+        this.get<number>("CRAWL_TASK_JANITOR_LOCK_TTL_MS", { infer: true }) ??
+        120_000,
     };
   }
 
@@ -424,7 +532,9 @@ export class EnvService extends ConfigService<ApiEnv> {
   }
 
   get liteLlmConfigInternalToken(): string | undefined {
-    return this.get<string | undefined>("LITELLM_CONFIG_INTERNAL_TOKEN", { infer: true });
+    return this.get<string | undefined>("LITELLM_CONFIG_INTERNAL_TOKEN", {
+      infer: true,
+    });
   }
 
   get newsPipelineEnv(): NewsPipelineEnvConfig {
@@ -460,52 +570,65 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("NEWS_SOURCE_SCHEDULER_BATCH_SIZE", { infer: true }) ??
         20,
       lockTtlMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS", { infer: true }) ??
-        120_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS", {
+          infer: true,
+        }) ?? 120_000,
       inFlightLookbackMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS", { infer: true }) ??
-        21_600_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS", {
+          infer: true,
+        }) ?? 21_600_000,
       inFlightRescheduleDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS", { infer: true }) ??
-        300_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS", {
+          infer: true,
+        }) ?? 300_000,
       jitterMaxMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS", { infer: true }) ??
-        60_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS", {
+          infer: true,
+        }) ?? 60_000,
       maxEnqueuePerTick:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK", { infer: true }) ??
-        100,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK", {
+          infer: true,
+        }) ?? 100,
       backpressureMaxPendingJobs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS", { infer: true }) ??
-        100,
+        this.get<number>(
+          "NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS",
+          { infer: true },
+        ) ?? 100,
       backpressureDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS", { infer: true }) ??
-        300_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS", {
+          infer: true,
+        }) ?? 300_000,
       failureRecoveryDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS", { infer: true }) ??
-        600_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS", {
+          infer: true,
+        }) ?? 600_000,
       failureMaxDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS", { infer: true }) ??
-        21_600_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS", {
+          infer: true,
+        }) ?? 21_600_000,
       circuitBreakerThreshold:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD", { infer: true }) ??
-        3,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD", {
+          infer: true,
+        }) ?? 3,
       circuitBreakerBaseDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS", { infer: true }) ??
-        3_600_000,
+        this.get<number>(
+          "NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS",
+          { infer: true },
+        ) ?? 3_600_000,
       circuitBreakerMaxDelayMs:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS", { infer: true }) ??
-        86_400_000,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS", {
+          infer: true,
+        }) ?? 86_400_000,
       autoDisableThreshold:
-        this.get<number>("NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD", { infer: true }) ??
-        0,
+        this.get<number>("NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD", {
+          infer: true,
+        }) ?? 0,
     };
   }
 
   get akshareConfig() {
     return {
-      enabled:
-        this.get<boolean>("AKSHARE_ENABLED", { infer: true }) ??
-        true,
+      enabled: this.get<boolean>("AKSHARE_ENABLED", { infer: true }) ?? true,
       baseUrl:
         this.get<string>("AKSHARE_HTTP_BASE_URL", { infer: true }) ??
         "http://localhost:8081",
@@ -532,20 +655,27 @@ export class EnvService extends ConfigService<ApiEnv> {
       scanIntervalMs:
         this.get<number>("ALERT_SCAN_INTERVAL_MS", { infer: true }) ?? 300_000,
       notifyGlobalPerSecond:
-        this.get<number>("ALERT_NOTIFY_GLOBAL_PER_SECOND", { infer: true }) ?? 10,
+        this.get<number>("ALERT_NOTIFY_GLOBAL_PER_SECOND", { infer: true }) ??
+        10,
       notifyEmailPerSecond:
         this.get<number>("ALERT_NOTIFY_EMAIL_PER_SECOND", { infer: true }) ?? 2,
       notifyWebhookPerSecond:
-        this.get<number>("ALERT_NOTIFY_WEBHOOK_PER_SECOND", { infer: true }) ?? 10,
+        this.get<number>("ALERT_NOTIFY_WEBHOOK_PER_SECOND", { infer: true }) ??
+        10,
       notifyPerChannelPerSecond:
-        this.get<number>("ALERT_NOTIFY_PER_CHANNEL_PER_SECOND", { infer: true }) ?? 2,
+        this.get<number>("ALERT_NOTIFY_PER_CHANNEL_PER_SECOND", {
+          infer: true,
+        }) ?? 2,
       notifyLimiterTtlMs:
-        this.get<number>("ALERT_NOTIFY_LIMITER_TTL_MS", { infer: true }) ?? 60_000,
+        this.get<number>("ALERT_NOTIFY_LIMITER_TTL_MS", { infer: true }) ??
+        60_000,
     };
   }
 
   get assistantConfig() {
-    const guardrails = (this.get<string>("ASSISTANT_GUARDRAILS", { infer: true }) ?? "")
+    const guardrails = (
+      this.get<string>("ASSISTANT_GUARDRAILS", { infer: true }) ?? ""
+    )
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
@@ -555,14 +685,16 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries:
         this.get<number>("ASSISTANT_MAX_RETRIES", { infer: true }) ?? 3,
       llmTimeoutMs:
-        this.get<number>("ASSISTANT_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
+        this.get<number>("ASSISTANT_LLM_TIMEOUT_MS", { infer: true }) ??
+        300_000,
       streamFlushChars:
         this.get<number>("ASSISTANT_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
       streamFlushMs:
         this.get<number>("ASSISTANT_STREAM_FLUSH_MS", { infer: true }) ?? 250,
       guardrailsEnabled:
-        this.get<boolean>("ASSISTANT_GUARDRAILS_ENABLED", { infer: true }) ?? true,
-      guardrails
+        this.get<boolean>("ASSISTANT_GUARDRAILS_ENABLED", { infer: true }) ??
+        true,
+      guardrails,
     };
   }
 
@@ -573,22 +705,38 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries:
         this.get<number>("ANALYSIS_MAX_RETRIES", { infer: true }) ?? 3,
       autoTriggerEnabled:
-        this.get<boolean>("ANALYSIS_AUTOTRIGGER_ENABLED", { infer: true }) ?? false,
-      promptCorrelationSystem: this.get<string | undefined>("ANALYSIS_PROMPT_CORRELATION_SYSTEM", {
-        infer: true
-      }),
-      promptCorrelationUser: this.get<string | undefined>("ANALYSIS_PROMPT_CORRELATION_USER", {
-        infer: true
-      }),
-      promptAnomalySystem: this.get<string | undefined>("ANALYSIS_PROMPT_ANOMALY_SYSTEM", {
-        infer: true
-      }),
-      promptAnomalyUser: this.get<string | undefined>("ANALYSIS_PROMPT_ANOMALY_USER", {
-        infer: true
-      }),
-      llmTimeoutMs: this.get<number>("ANALYSIS_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
-      streamFlushChars: this.get<number>("ANALYSIS_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
-      streamFlushMs: this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250
+        this.get<boolean>("ANALYSIS_AUTOTRIGGER_ENABLED", { infer: true }) ??
+        false,
+      promptCorrelationSystem: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_CORRELATION_SYSTEM",
+        {
+          infer: true,
+        },
+      ),
+      promptCorrelationUser: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_CORRELATION_USER",
+        {
+          infer: true,
+        },
+      ),
+      promptAnomalySystem: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_ANOMALY_SYSTEM",
+        {
+          infer: true,
+        },
+      ),
+      promptAnomalyUser: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_ANOMALY_USER",
+        {
+          infer: true,
+        },
+      ),
+      llmTimeoutMs:
+        this.get<number>("ANALYSIS_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
+      streamFlushChars:
+        this.get<number>("ANALYSIS_STREAM_FLUSH_CHARS", { infer: true }) ?? 80,
+      streamFlushMs:
+        this.get<number>("ANALYSIS_STREAM_FLUSH_MS", { infer: true }) ?? 250,
     };
   }
 
@@ -600,15 +748,23 @@ export class EnvService extends ConfigService<ApiEnv> {
     const pass = this.getOrThrow<string>("SMTP_PASS", { infer: true });
     const from = this.get<string | undefined>("SMTP_FROM", { infer: true });
     const pool = this.get<boolean>("SMTP_POOL", { infer: true }) ?? false;
-    const maxConnections = this.get<number>("SMTP_MAX_CONNECTIONS", { infer: true }) ?? 5;
-    const maxMessages = this.get<number>("SMTP_MAX_MESSAGES", { infer: true }) ?? 100;
-    const rateDeltaMs = this.get<number>("SMTP_RATE_DELTA_MS", { infer: true }) ?? 1_000;
-    const rateLimit = this.get<number>("SMTP_RATE_LIMIT", { infer: true }) ?? 10;
-    const connectionTimeoutMs = this.get<number>("SMTP_CONNECTION_TIMEOUT_MS", { infer: true }) ?? 10_000;
-    const greetingTimeoutMs = this.get<number>("SMTP_GREETING_TIMEOUT_MS", { infer: true }) ?? 10_000;
-    const socketTimeoutMs = this.get<number>("SMTP_SOCKET_TIMEOUT_MS", { infer: true }) ?? 30_000;
+    const maxConnections =
+      this.get<number>("SMTP_MAX_CONNECTIONS", { infer: true }) ?? 5;
+    const maxMessages =
+      this.get<number>("SMTP_MAX_MESSAGES", { infer: true }) ?? 100;
+    const rateDeltaMs =
+      this.get<number>("SMTP_RATE_DELTA_MS", { infer: true }) ?? 1_000;
+    const rateLimit =
+      this.get<number>("SMTP_RATE_LIMIT", { infer: true }) ?? 10;
+    const connectionTimeoutMs =
+      this.get<number>("SMTP_CONNECTION_TIMEOUT_MS", { infer: true }) ?? 10_000;
+    const greetingTimeoutMs =
+      this.get<number>("SMTP_GREETING_TIMEOUT_MS", { infer: true }) ?? 10_000;
+    const socketTimeoutMs =
+      this.get<number>("SMTP_SOCKET_TIMEOUT_MS", { infer: true }) ?? 30_000;
     const tlsRejectUnauthorized =
-      this.get<boolean>("SMTP_TLS_REJECT_UNAUTHORIZED", { infer: true }) ?? true;
+      this.get<boolean>("SMTP_TLS_REJECT_UNAUTHORIZED", { infer: true }) ??
+      true;
     return {
       host,
       port,

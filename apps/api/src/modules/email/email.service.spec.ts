@@ -19,8 +19,8 @@ describe("EmailService templates", () => {
       connectionTimeoutMs: 10_000,
       greetingTimeoutMs: 10_000,
       socketTimeoutMs: 30_000,
-      tlsRejectUnauthorized: true
-    }
+      tlsRejectUnauthorized: true,
+    },
   } as unknown as EnvService;
 
   it("loads and renders alert.hbs from the module templates directory", () => {
@@ -32,7 +32,7 @@ describe("EmailService templates", () => {
       threshold: 90,
       triggeredAt: "2025-12-13 00:00:00",
       message: "超过阈值",
-      changePercent: 12.345
+      changePercent: 12.345,
     });
 
     expect(html).toContain("告警触发：CPU高");
@@ -52,7 +52,7 @@ describe("EmailService templates", () => {
       threshold: 90,
       triggeredAt: "2025-12-13 00:00:00",
       message: "超过阈值",
-      changePercent: 12.345
+      changePercent: 12.345,
     });
 
     expect(text).toContain("告警触发：CPU高");
@@ -61,6 +61,25 @@ describe("EmailService templates", () => {
     expect(text).toContain("阈值：90");
     expect(text).toContain("时间：2025-12-13 00:00:00");
     expect(text).toContain("详情：超过阈值");
+  });
+
+  it("loads and renders verification code templates", () => {
+    const service = new EmailService(envStub);
+    const html = service.buildVerificationCodeTemplate({
+      scene: "bind",
+      code: "12345678",
+      expiresMinutes: 5,
+    });
+    const text = service.buildVerificationCodeTextTemplate({
+      scene: "login",
+      code: "87654321",
+      expiresMinutes: 5,
+    });
+
+    expect(html).toContain("邮箱绑定验证码");
+    expect(html).toContain("12345678");
+    expect(text).toContain("登录验证码");
+    expect(text).toContain("87654321");
   });
 
   it("rejects path traversal attempts when resolving templates", () => {

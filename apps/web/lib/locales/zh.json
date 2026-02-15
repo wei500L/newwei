@@ -7,11 +7,15 @@
         "emailRequired": "请输入邮箱",
         "emailInvalid": "请输入有效的邮箱地址",
         "passwordRequired": "请输入密码",
-        "passwordMin": "密码至少 {{count}} 位"
+        "passwordMin": "密码至少 {{count}} 位",
+        "codeRequired": "请输入验证码",
+        "codeInvalid": "请输入 8 位数字验证码"
       },
       "error": {
         "invalidCredentials": "邮箱或密码错误",
-        "invalidCredentialsWithReason": "登录失败：{{reason}}"
+        "invalidCredentialsWithReason": "登录失败：{{reason}}",
+        "invalidCode": "验证码错误或已过期",
+        "invalidCodeWithReason": "验证码登录失败：{{reason}}"
       },
       "title": "欢迎回来",
       "subtitle": "登录后继续",
@@ -31,10 +35,26 @@
           "label": "组织",
           "tooltip": "使用管理员提供的组织标识",
           "placeholder": "请输入组织标识"
+        },
+        "code": {
+          "label": "验证码",
+          "required": "请输入验证码",
+          "placeholder": "请输入 8 位验证码"
         }
       },
       "submit": "登录",
-      "required": "请登录后查看此面板。"
+      "required": "请登录后查看此面板。",
+      "tabs": {
+        "password": "密码登录",
+        "code": "验证码登录"
+      },
+      "codeLogin": {
+        "send": "发送验证码",
+        "sendCooldown": "{{seconds}} 秒后可重发",
+        "sendSuccess": "若邮箱可用，验证码已发送。",
+        "sendFailed": "发送验证码失败，请稍后重试。",
+        "submit": "验证码登录"
+      }
     },
     "logoutFailed": "退出失败",
     "logoutThisDevice": "退出当前设备",
@@ -939,6 +959,36 @@
           "geocoded": "已地理编码",
           "fallbackCountry": "国家回退"
         },
+        "tooltip": {
+          "location": "位置",
+          "published": "发布时间",
+          "ingested": "入库时间",
+          "geo": "地理来源",
+          "clickOpenOriginal": "点击打开原文链接",
+          "clickOpenSearch": "点击打开搜索结果",
+          "severity": "严重程度",
+          "alerts": "预警",
+          "alertScore": "评分",
+          "derivedScore": "综合分数",
+          "datasetUpdated": "数据更新时间",
+          "notAvailable": "暂无",
+          "unknown": "未知"
+        },
+        "translation": {
+          "label": "中文覆盖",
+          "hint": "当前地图翻译字段的中文覆盖率。",
+          "localizedTotal": "已本地化",
+          "signals": "信号",
+          "newsTitles": "新闻标题",
+          "newsLocations": "新闻位置",
+          "layers": "图层文本",
+          "status": {
+            "complete": "完整",
+            "partial": "部分",
+            "missing": "缺失",
+            "none": "无数据"
+          }
+        },
         "empty": {
           "invalidGeo": "已返回数据，但所有记录都缺少有效坐标；看起来像数据源问题。",
           "hiddenLayers": "有可用的叠加图层，但被筛选隐藏了；可在“Layers”中开启。",
@@ -1208,10 +1258,7 @@
       "title": "专题/事件",
       "subtitle": "聚焦查看事件聚类与专题脉络，减少干扰并提升阅读效率。",
       "loadFailed": "加载专题与事件失败。",
-      "empty": "聚合不足，暂无法形成专题/事件。",
-      "eventsTitle": "事件聚合",
       "eventsEmpty": "聚合不足，暂无法形成事件。",
-      "topicsTitle": "专题",
       "topicsEmpty": "聚合不足，暂无法形成专题。",
       "tabs": {
         "events": "事件",
@@ -1233,7 +1280,6 @@
       },
       "eventDetail": {
         "title": "事件详情",
-        "action": "详情",
         "count": "{{count}} 篇报道",
         "openItem": "打开条目",
         "timelineTitle": "时间线",
@@ -1241,7 +1287,6 @@
       },
       "topicDetail": {
         "title": "专题详情",
-        "action": "预览",
         "relatedItemsTitle": "关联报道",
         "empty": "暂无关联报道。"
       },
@@ -3098,6 +3143,35 @@
         "invalidFile": "选择的文件无效。",
         "uploadFailed": "更新头像失败。"
       }
+    },
+    "emailBinding": {
+      "title": "绑定邮箱",
+      "description": "更换并验证你的主邮箱，后续可用验证码登录。",
+      "currentEmail": "当前邮箱：{{email}}",
+      "statusVerified": "邮箱已验证",
+      "statusUnverified": "邮箱未验证",
+      "pendingEmail": "待确认邮箱：{{email}}",
+      "sendCode": "发送验证码",
+      "sendCodeCooldown": "{{seconds}} 秒后可重发",
+      "sendSuccess": "验证码已发送到新邮箱。",
+      "sendFailed": "发送验证码失败，请稍后重试。",
+      "verify": "确认绑定",
+      "verifySuccess": "邮箱绑定成功。",
+      "verifyFailed": "邮箱绑定失败，请检查验证码后重试。",
+      "fields": {
+        "email": {
+          "label": "新邮箱",
+          "required": "请输入新邮箱",
+          "invalid": "请输入有效的邮箱地址",
+          "placeholder": "请输入要绑定的新邮箱"
+        },
+        "code": {
+          "label": "验证码",
+          "required": "请输入验证码",
+          "invalid": "请输入 8 位数字验证码",
+          "placeholder": "请输入收到的 8 位验证码"
+        }
+      }
     }
   },
   "systemSettings": {
@@ -3217,6 +3291,29 @@
           "rateLimit": "速率限制",
           "timeouts": "超时（毫秒）",
           "tlsRejectUnauthorized": "TLS 校验"
+        }
+      },
+      "authCode": {
+        "title": "邮箱验证码设置",
+        "description": "配置邮箱绑定与邮箱验证码登录的运行时限制参数。",
+        "fields": {
+          "ttlSeconds": "验证码有效期（秒）",
+          "cooldownSeconds": "发送冷却（秒）",
+          "maxAttempts": "最大错误次数"
+        },
+        "validation": {
+          "ttlSecondsRequired": "请填写验证码有效期",
+          "ttlSecondsRange": "验证码有效期需在 60 到 1800 秒之间",
+          "cooldownSecondsRequired": "请填写发送冷却时间",
+          "cooldownSecondsRange": "发送冷却需在 10 到 3600 秒之间",
+          "maxAttemptsRequired": "请填写最大错误次数",
+          "maxAttemptsRange": "最大错误次数需在 1 到 10 之间"
+        },
+        "messages": {
+          "saved": "已保存"
+        },
+        "errors": {
+          "saveFailed": "保存邮箱验证码设置失败"
         }
       },
       "test": {

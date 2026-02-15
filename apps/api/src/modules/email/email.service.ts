@@ -1,5 +1,9 @@
 import { createLogger, getCurrentTraceId } from "@modular/utils";
-import { BadRequestException, Injectable, OnModuleDestroy } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { isEmail } from "class-validator";
 import Handlebars, { TemplateDelegate } from "handlebars";
 import { existsSync, readFileSync } from "node:fs";
@@ -29,8 +33,18 @@ interface AlertTemplateContext {
   changePercentLabel?: string;
 }
 
+type VerificationCodeScene = "bind" | "login";
+
+interface VerificationCodeTemplateContext {
+  actionLabel: string;
+  code: string;
+  expiresMinutes: number;
+}
+
 const ALERT_TEMPLATE_NAME = "alert.hbs";
 const ALERT_TEXT_TEMPLATE_NAME = "alert.text.hbs";
+const VERIFICATION_CODE_TEMPLATE_NAME = "verification-code.hbs";
+const VERIFICATION_CODE_TEXT_TEMPLATE_NAME = "verification-code.text.hbs";
 const EMAIL_EXTRACT_REGEX =
   /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi;
 
@@ -44,6 +58,8 @@ export class EmailService implements OnModuleDestroy {
   private readonly templates: {
     alert: TemplateDelegate<AlertTemplateContext>;
     alertText: TemplateDelegate<AlertTemplateContext>;
+    verificationCode: TemplateDelegate<VerificationCodeTemplateContext>;
+    verificationCodeText: TemplateDelegate<VerificationCodeTemplateContext>;
   };
 
   constructor(private readonly env: EnvService) {
@@ -54,7 +70,7 @@ export class EmailService implements OnModuleDestroy {
       secure: config.secure,
       auth: {
         user: config.user,
-        pass: config.pass
+        pass: config.pass,
       },
       ...(config.pool
         ? {
@@ -62,20 +78,29 @@ export class EmailService implements OnModuleDestroy {
             maxConnections: config.maxConnections,
             maxMessages: config.maxMessages,
             rateDelta: config.rateDeltaMs,
-            rateLimit: config.rateLimit
+            rateLimit: config.rateLimit,
           }
         : {}),
       connectionTimeout: config.connectionTimeoutMs,
       greetingTimeout: config.greetingTimeoutMs,
       socketTimeout: config.socketTimeoutMs,
       tls: {
-        rejectUnauthorized: config.tlsRejectUnauthorized
-      }
+        rejectUnauthorized: config.tlsRejectUnauthorized,
+      },
     });
 
     this.templates = {
       alert: this.compileTemplate<AlertTemplateContext>(ALERT_TEMPLATE_NAME),
-      alertText: this.compileTemplate<AlertTemplateContext>(ALERT_TEXT_TEMPLATE_NAME)
+      alertText: this.compileTemplate<AlertTemplateContext>(
+        ALERT_TEXT_TEMPLATE_NAME,
+      ),
+      verificationCode: this.compileTemplate<VerificationCodeTemplateContext>(
+        VERIFICATION_CODE_TEMPLATE_NAME,
+      ),
+      verificationCodeText:
+        this.compileTemplate<VerificationCodeTemplateContext>(
+          VERIFICATION_CODE_TEXT_TEMPLATE_NAME,
+        ),
     };
 
     this.logger.debug(
@@ -84,9 +109,9 @@ export class EmailService implements OnModuleDestroy {
         port: config.port,
         secure: config.secure,
         pool: config.pool,
-        from: config.from
+        from: config.from,
       },
-      "SMTP transporter initialized"
+      "SMTP transporter initialized",
     );
   }
 
@@ -102,7 +127,9 @@ export class EmailService implements OnModuleDestroy {
     const from = options.from ?? this.env.smtpConfig.from;
     const to = this.normalizeEmailTarget(options.to);
     const cc = options.cc ? this.normalizeEmailTarget(options.cc) : undefined;
-    const bcc = options.bcc ? this.normalizeEmailTarget(options.bcc) : undefined;
+    const bcc = options.bcc
+      ? this.normalizeEmailTarget(options.bcc)
+      : undefined;
 
     const traceId = getCurrentTraceId();
     const headers = traceId ? { "x-trace-id": traceId } : undefined;
@@ -121,11 +148,15 @@ export class EmailService implements OnModuleDestroy {
         subject: options.subject,
         text: options.text,
         html: options.html,
-        ...(headers ? { headers } : {})
+        ...(headers ? { headers } : {}),
       });
       this.logger.info(
-        { messageId: result.messageId, accepted: result.accepted, rejected: result.rejected },
-        "Email sent"
+        {
+          messageId: result.messageId,
+          accepted: result.accepted,
+          rejected: result.rejected,
+        },
+        "Email sent",
       );
       return result;
     } catch (error) {
@@ -157,7 +188,8 @@ export class EmailService implements OnModuleDestroy {
         this.lastVerifyError = null;
       })
       .catch((error) => {
-        this.lastVerifyError = (error as Error)?.message ?? "SMTP verify failed";
+        this.lastVerifyError =
+          (error as Error)?.message ?? "SMTP verify failed";
         throw error;
       })
       .finally(() => {
@@ -171,8 +203,11 @@ export class EmailService implements OnModuleDestroy {
   getVerifyStatus() {
     return {
       ok: this.lastVerifyAtMs === null ? null : this.lastVerifyError === null,
-      checkedAt: this.lastVerifyAtMs === null ? null : new Date(this.lastVerifyAtMs).toISOString(),
-      error: this.lastVerifyError
+      checkedAt:
+        this.lastVerifyAtMs === null
+          ? null
+          : new Date(this.lastVerifyAtMs).toISOString(),
+      error: this.lastVerifyError,
     };
   }
 
@@ -185,9 +220,19 @@ export class EmailService implements OnModuleDestroy {
     message?: string;
     changePercent?: number | null;
   }) {
-    const { ruleName, metric, value, threshold, triggeredAt, message, changePercent } = params;
+    const {
+      ruleName,
+      metric,
+      value,
+      threshold,
+      triggeredAt,
+      message,
+      changePercent,
+    } = params;
     const changePercentLabel =
-      changePercent !== undefined && changePercent !== null ? changePercent.toFixed(2) : undefined;
+      changePercent !== undefined && changePercent !== null
+        ? changePercent.toFixed(2)
+        : undefined;
 
     return this.templates.alert({
       ruleName,
@@ -196,7 +241,7 @@ export class EmailService implements OnModuleDestroy {
       thresholdLabel: threshold ?? "未设置",
       triggeredAt,
       message,
-      changePercentLabel
+      changePercentLabel,
     });
   }
 
@@ -209,9 +254,19 @@ export class EmailService implements OnModuleDestroy {
     message?: string;
     changePercent?: number | null;
   }) {
-    const { ruleName, metric, value, threshold, triggeredAt, message, changePercent } = params;
+    const {
+      ruleName,
+      metric,
+      value,
+      threshold,
+      triggeredAt,
+      message,
+      changePercent,
+    } = params;
     const changePercentLabel =
-      changePercent !== undefined && changePercent !== null ? changePercent.toFixed(2) : undefined;
+      changePercent !== undefined && changePercent !== null
+        ? changePercent.toFixed(2)
+        : undefined;
 
     return this.templates.alertText({
       ruleName,
@@ -220,7 +275,33 @@ export class EmailService implements OnModuleDestroy {
       thresholdLabel: threshold ?? "未设置",
       triggeredAt,
       message,
-      changePercentLabel
+      changePercentLabel,
+    });
+  }
+
+  buildVerificationCodeTemplate(params: {
+    scene: VerificationCodeScene;
+    code: string;
+    expiresMinutes: number;
+  }) {
+    const { scene, code, expiresMinutes } = params;
+    return this.templates.verificationCode({
+      actionLabel: this.resolveVerificationActionLabel(scene),
+      code,
+      expiresMinutes,
+    });
+  }
+
+  buildVerificationCodeTextTemplate(params: {
+    scene: VerificationCodeScene;
+    code: string;
+    expiresMinutes: number;
+  }) {
+    const { scene, code, expiresMinutes } = params;
+    return this.templates.verificationCodeText({
+      actionLabel: this.resolveVerificationActionLabel(scene),
+      code,
+      expiresMinutes,
     });
   }
 
@@ -232,8 +313,8 @@ export class EmailService implements OnModuleDestroy {
         [
           `Email template not found: ${templateFile}`,
           `Expected under: ${expectedDir}`,
-          `Hint: make sure build copies templates into dist (apps/api/scripts/copy-email-templates.js)`
-        ].join("\n")
+          `Hint: make sure build copies templates into dist (apps/api/scripts/copy-email-templates.js)`,
+        ].join("\n"),
       );
     }
 
@@ -284,5 +365,12 @@ export class EmailService implements OnModuleDestroy {
       result.add(candidate);
     }
     return Array.from(result);
+  }
+
+  private resolveVerificationActionLabel(scene: VerificationCodeScene): string {
+    if (scene === "bind") {
+      return "邮箱绑定";
+    }
+    return "登录";
   }
 }

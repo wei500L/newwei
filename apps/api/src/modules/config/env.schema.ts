@@ -35,26 +35,69 @@ export const apiEnvSchema = baseEnvSchema.extend({
   RATE_LIMIT_LOGIN: z.coerce.number().int().positive().default(5),
   RATE_LIMIT_LOGIN_WINDOW: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_CRAWL_TASK_CREATE: z.coerce.number().int().positive().default(10),
-  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: z.coerce.number().int().positive().default(300),
+  RATE_LIMIT_CRAWL_TASK_CREATE_WINDOW: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300),
   RATE_LIMIT_RBAC_WRITE: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_RBAC_WRITE_WINDOW: z.coerce.number().int().positive().default(600),
-  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
-  AUTH_PROFILE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(600),
-  AUTH_PROFILE_CACHE_LOCK_TTL_MS: z.coerce.number().int().positive().default(5_000),
-  AUTH_PROFILE_CACHE_MAX_WAIT_MS: z.coerce.number().int().positive().default(5_000),
-  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: z.coerce.number().int().positive().default(50),
+  RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+  AUTH_PROFILE_CACHE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  AUTH_PROFILE_CACHE_LOCK_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5_000),
+  AUTH_PROFILE_CACHE_MAX_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5_000),
+  AUTH_PROFILE_CACHE_RETRY_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   AUTH_REFRESH_GRACE_SECONDS: z.coerce.number().int().positive().default(10),
+  AUTH_EMAIL_CODE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  AUTH_EMAIL_CODE_COOLDOWN_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(90),
+  AUTH_EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
-  GRAPHQL_PLAYGROUND: envBoolean.default(process.env.NODE_ENV === "production" ? false : true),
-  GRAPHQL_INTROSPECTION: envBoolean.default(process.env.NODE_ENV === "production" ? false : true),
+  GRAPHQL_PLAYGROUND: envBoolean.default(
+    process.env.NODE_ENV === "production" ? false : true,
+  ),
+  GRAPHQL_INTROSPECTION: envBoolean.default(
+    process.env.NODE_ENV === "production" ? false : true,
+  ),
   GRAPHQL_DEPTH_LIMIT: z.coerce.number().int().positive().default(8),
   GRAPHQL_COMPLEXITY_LIMIT: z.coerce.number().int().positive().default(2000),
   CORS_ORIGIN: z.string().optional(),
   WS_MAX_CONNECTIONS_PER_USER: z.coerce.number().int().positive().default(5),
   WS_MAX_CONNECTIONS_PER_IP: z.coerce.number().int().positive().default(50),
   WS_CONNECT_RATE_LIMIT_PER_IP: z.coerce.number().int().positive().default(60),
-  WS_CONNECT_RATE_LIMIT_PER_USER: z.coerce.number().int().positive().default(30),
-  WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  WS_CONNECT_RATE_LIMIT_PER_USER: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+  WS_CONNECT_RATE_LIMIT_WINDOW_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
   WS_REDIS_ADAPTER_ENABLED: envBoolean.default(true),
   WS_REDIS_ADAPTER_KEY: z.string().min(1).default("socket.io"),
   CRAWL4AI_BASE_URL: z.string().url(),
@@ -62,19 +105,43 @@ export const apiEnvSchema = baseEnvSchema.extend({
   CRAWL4AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   CRAWL4AI_MAX_CONCURRENCY: z.coerce.number().int().positive().default(3),
   CRAWL4AI_MAX_RETRIES: z.coerce.number().int().positive().default(3),
-  CRAWL4AI_HEALTH_CHECK_TTL_MS: z.coerce.number().int().positive().default(60_000),
+  CRAWL4AI_HEALTH_CHECK_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
   CRAWL4AI_RETRY_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
   CRAWL4AI_JSCODE_ENABLED: envBoolean.default(true),
   CRAWL4AI_JSCODE_AUDIT_ENABLED: envBoolean.default(true),
-  CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(90),
   CRAWL4AI_JSCODE_MAX_LENGTH: z.coerce.number().int().positive().default(2000),
   CRAWL4AI_JSCODE_MAX_SCRIPTS: z.coerce.number().int().positive().default(5),
   CRAWL_TASK_JANITOR_ENABLED: envBoolean.default(true),
-  CRAWL_TASK_RUNNING_TIMEOUT_MS: z.coerce.number().int().positive().default(1_800_000),
-  CRAWL_TASK_QUEUED_TIMEOUT_MS: z.coerce.number().int().positive().default(43_200_000),
+  CRAWL_TASK_RUNNING_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1_800_000),
+  CRAWL_TASK_QUEUED_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(43_200_000),
   CRAWL_TASK_JANITOR_BATCH_SIZE: z.coerce.number().int().positive().default(50),
-  CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT: z.coerce.number().int().positive().default(5_000),
-  CRAWL_TASK_JANITOR_LOCK_TTL_MS: z.coerce.number().int().positive().default(120_000),
+  CRAWL_TASK_JANITOR_QUEUE_SCAN_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5_000),
+  CRAWL_TASK_JANITOR_LOCK_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120_000),
   CRAWL_MEDIA_FETCH_TIMEOUT_MS: z.coerce
     .number()
     .int()
@@ -87,12 +154,14 @@ export const apiEnvSchema = baseEnvSchema.extend({
   LITELLM_API_URL: z.string().url().optional(),
   LITELLM_API_BASE: z.string().url().default("http://localhost:4001"),
   LITELLM_API_KEY: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
   ),
   LITELLM_CONFIG_INTERNAL_TOKEN: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(16).optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(16).optional(),
   ),
   LITELLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   LITELLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
@@ -106,23 +175,27 @@ export const apiEnvSchema = baseEnvSchema.extend({
   VECTOR_SERVICE_ENABLED: envBoolean.default(false),
   VECTOR_SERVICE_FALLBACK_TO_MONGO: envBoolean.default(true),
   VECTOR_SERVICE_BASE_URL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   VECTOR_INTERNAL_TOKEN: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
   ),
   VECTOR_SERVICE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   VECTOR_SERVICE_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   MODEL_SERVICE_ENABLED: envBoolean.default(false),
   MODEL_SERVICE_BASE_URL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   MODEL_SERVICE_INTERNAL_TOKEN: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(1).optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
   ),
   MODEL_SERVICE_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   MODEL_SERVICE_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
@@ -134,13 +207,25 @@ export const apiEnvSchema = baseEnvSchema.extend({
   AKSHARE_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   SITUATION_MONITOR_GDELT_ENABLED: envBoolean.default(true),
   SITUATION_MONITOR_TRANSLATION_API_ENABLED: envBoolean.default(true),
-  SITUATION_MONITOR_TRANSLATION_API_BASE_URL: z.string().url().default("https://api.deeplx.org"),
-  SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
-  SITUATION_MONITOR_TRANSLATION_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  SITUATION_MONITOR_TRANSLATION_API_BASE_URL: z
+    .string()
+    .url()
+    .default("https://api.deeplx.org"),
+  SITUATION_MONITOR_TRANSLATION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15_000),
+  SITUATION_MONITOR_TRANSLATION_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(2),
   SITUATION_MONITOR_TRANSLATION_FALLBACK_API_ENABLED: envBoolean.default(false),
   SITUATION_MONITOR_TRANSLATION_FALLBACK_API_BASE_URL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
@@ -160,36 +245,120 @@ export const apiEnvSchema = baseEnvSchema.extend({
   NEWS_CRAWL_QUEUE_RATE_LIMIT: z.coerce.number().int().positive().default(5),
   NEWS_PROCESS_QUEUE_RATE_LIMIT: z.coerce.number().int().positive().default(12),
   NEWS_SOURCE_SCHEDULER_ENABLED: envBoolean.default(true),
-  NEWS_SOURCE_SCHEDULER_BATCH_SIZE: z.coerce.number().int().positive().default(20),
-  NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS: z.coerce.number().int().positive().default(120_000),
-  NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS: z.coerce.number().int().positive().default(21_600_000),
-  NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS: z.coerce.number().int().positive().default(300_000),
-  NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS: z.coerce.number().int().nonnegative().default(60_000),
-  NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK: z.coerce.number().int().nonnegative().default(100),
-  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS: z.coerce.number().int().nonnegative().default(100),
-  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS: z.coerce.number().int().positive().default(300_000),
-  NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS: z.coerce.number().int().positive().default(600_000),
-  NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS: z.coerce.number().int().positive().default(21_600_000),
-  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().nonnegative().default(3),
-  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS: z.coerce.number().int().positive().default(3_600_000),
-  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS: z.coerce.number().int().positive().default(86_400_000),
-  NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD: z.coerce.number().int().nonnegative().default(0),
+  NEWS_SOURCE_SCHEDULER_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(20),
+  NEWS_SOURCE_SCHEDULER_LOCK_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120_000),
+  NEWS_SOURCE_SCHEDULER_INFLIGHT_LOOKBACK_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(21_600_000),
+  NEWS_SOURCE_SCHEDULER_INFLIGHT_RESCHEDULE_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000),
+  NEWS_SOURCE_SCHEDULER_JITTER_MAX_MS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(60_000),
+  NEWS_SOURCE_SCHEDULER_MAX_ENQUEUE_PER_TICK: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_MAX_PENDING_JOBS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
+  NEWS_SOURCE_SCHEDULER_BACKPRESSURE_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000),
+  NEWS_SOURCE_SCHEDULER_FAILURE_RECOVERY_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600_000),
+  NEWS_SOURCE_SCHEDULER_FAILURE_MAX_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(21_600_000),
+  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(3),
+  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_BASE_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3_600_000),
+  NEWS_SOURCE_SCHEDULER_CIRCUIT_BREAKER_MAX_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(86_400_000),
+  NEWS_SOURCE_SCHEDULER_AUTO_DISABLE_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(0),
   NEWS_SOURCE_CRAWL_QUALITY_PROFILE: z
     .enum(["balanced", "quality_first", "speed_first"])
     .default("quality_first"),
   NEWS_SOURCE_CRAWL_AUTO_EXPAND_DETAILS: envBoolean.default(true),
-  NEWS_SOURCE_CRAWL_DETAIL_MAX_URLS: z.coerce.number().int().positive().default(12),
-  NEWS_SOURCE_CRAWL_DETAIL_MIN_RELEVANCE_SCORE: z.coerce.number().min(0).max(1).default(0.35),
+  NEWS_SOURCE_CRAWL_DETAIL_MAX_URLS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(12),
+  NEWS_SOURCE_CRAWL_DETAIL_MIN_RELEVANCE_SCORE: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.35),
   NEWS_SOURCE_CRAWL_DETAIL_REQUIRE_SAME_DOMAIN: envBoolean.default(true),
   ALERT_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   ALERT_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   ALERT_SCAN_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
-  ALERT_NOTIFY_GLOBAL_PER_SECOND: z.coerce.number().int().nonnegative().default(10),
-  ALERT_NOTIFY_EMAIL_PER_SECOND: z.coerce.number().int().nonnegative().default(2),
-  ALERT_NOTIFY_WEBHOOK_PER_SECOND: z.coerce.number().int().nonnegative().default(10),
-  ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: z.coerce.number().int().nonnegative().default(2),
-  ALERT_NOTIFY_LIMITER_TTL_MS: z.coerce.number().int().positive().default(60_000),
+  ALERT_NOTIFY_GLOBAL_PER_SECOND: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
+  ALERT_NOTIFY_EMAIL_PER_SECOND: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(2),
+  ALERT_NOTIFY_WEBHOOK_PER_SECOND: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(10),
+  ALERT_NOTIFY_PER_CHANNEL_PER_SECOND: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(2),
+  ALERT_NOTIFY_LIMITER_TTL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
   GEO_NOMINATIM_BASE_URL: z
     .string()
     .url()
@@ -211,7 +380,11 @@ export const apiEnvSchema = baseEnvSchema.extend({
     .int()
     .positive()
     .default(86_400),
-  GEO_GEOCODE_RATE_LIMIT_PER_SECOND: z.coerce.number().int().positive().default(1),
+  GEO_GEOCODE_RATE_LIMIT_PER_SECOND: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1),
   ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
   ANALYSIS_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   ANALYSIS_AUTOTRIGGER_ENABLED: envBoolean.default(false),
@@ -222,8 +395,9 @@ export const apiEnvSchema = baseEnvSchema.extend({
   ASSISTANT_STREAM_FLUSH_MS: z.coerce.number().int().nonnegative().default(250),
   ASSISTANT_GUARDRAILS_ENABLED: envBoolean.default(true),
   ASSISTANT_GUARDRAILS: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().default("openai-moderation-pre")
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().default("openai-moderation-pre"),
   ),
   SYSTEM_SETTINGS_ENCRYPTION_KEY: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
@@ -231,12 +405,14 @@ export const apiEnvSchema = baseEnvSchema.extend({
   S3_REGION: z.string().default("us-east-1"),
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   S3_PUBLIC_BASE_URL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   S3_FORCE_PATH_STYLE: envBoolean.default(false),
   S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(300),

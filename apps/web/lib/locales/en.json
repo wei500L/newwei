@@ -7,11 +7,15 @@
         "emailRequired": "Email is required",
         "emailInvalid": "Enter a valid email address",
         "passwordRequired": "Password is required",
-        "passwordMin": "Password must be at least {{count}} characters"
+        "passwordMin": "Password must be at least {{count}} characters",
+        "codeRequired": "Verification code is required",
+        "codeInvalid": "Enter an 8-digit verification code"
       },
       "error": {
         "invalidCredentials": "Invalid email or password",
-        "invalidCredentialsWithReason": "Sign-in failed: {{reason}}"
+        "invalidCredentialsWithReason": "Sign-in failed: {{reason}}",
+        "invalidCode": "Verification code is invalid or expired",
+        "invalidCodeWithReason": "Code sign-in failed: {{reason}}"
       },
       "title": "Welcome back",
       "subtitle": "Sign in to continue",
@@ -31,10 +35,26 @@
           "label": "Organization",
           "tooltip": "Use the organization slug provided by your admin",
           "placeholder": "Enter organization slug"
+        },
+        "code": {
+          "label": "Verification code",
+          "required": "Verification code is required",
+          "placeholder": "Enter the 8-digit code"
         }
       },
       "submit": "Sign in",
-      "required": "Please sign in to view this panel."
+      "required": "Please sign in to view this panel.",
+      "tabs": {
+        "password": "Password",
+        "code": "Verification code"
+      },
+      "codeLogin": {
+        "send": "Send code",
+        "sendCooldown": "Resend in {{seconds}}s",
+        "sendSuccess": "If the email is eligible, a code has been sent.",
+        "sendFailed": "Failed to send verification code. Please try again.",
+        "submit": "Sign in with code"
+      }
     },
     "logoutFailed": "Sign out failed",
     "logoutThisDevice": "Sign out this device",
@@ -936,6 +956,36 @@
           "geocoded": "Geocoded",
           "fallbackCountry": "Fallback country"
         },
+        "tooltip": {
+          "location": "Location",
+          "published": "Published",
+          "ingested": "Ingested",
+          "geo": "Geo",
+          "clickOpenOriginal": "Click to open original link",
+          "clickOpenSearch": "Click to open search results",
+          "severity": "Severity",
+          "alerts": "Alerts",
+          "alertScore": "Score",
+          "derivedScore": "Derived score",
+          "datasetUpdated": "Dataset updated",
+          "notAvailable": "N/A",
+          "unknown": "Unknown"
+        },
+        "translation": {
+          "label": "CN coverage",
+          "hint": "Localized-text coverage for translated map fields.",
+          "localizedTotal": "Localized",
+          "signals": "Signals",
+          "newsTitles": "News titles",
+          "newsLocations": "News locations",
+          "layers": "Layer text",
+          "status": {
+            "complete": "Complete",
+            "partial": "Partial",
+            "missing": "Missing",
+            "none": "No data"
+          }
+        },
         "empty": {
           "invalidGeo": "Data was returned, but none of the records had valid coordinates. This looks like a data source issue.",
           "hiddenLayers": "Some overlay layers are available but hidden by filters. Enable them from Layers.",
@@ -1205,10 +1255,7 @@
       "title": "Topics & Events",
       "subtitle": "Track clustered events and topic momentum with a focused reading flow.",
       "loadFailed": "Failed to load topics and events.",
-      "empty": "Not enough items to build aggregations yet.",
-      "eventsTitle": "Events",
       "eventsEmpty": "Not enough items to form event clusters.",
-      "topicsTitle": "Topics",
       "topicsEmpty": "Not enough items to form topic clusters.",
       "tabs": {
         "events": "Events",
@@ -1230,7 +1277,6 @@
       },
       "eventDetail": {
         "title": "Event Details",
-        "action": "Details",
         "count": "{{count}} reports",
         "openItem": "Open item",
         "timelineTitle": "Timeline",
@@ -1238,7 +1284,6 @@
       },
       "topicDetail": {
         "title": "Topic Details",
-        "action": "Preview",
         "relatedItemsTitle": "Related reports",
         "empty": "No related reports."
       },
@@ -3095,6 +3140,35 @@
         "invalidFile": "The selected file is invalid.",
         "uploadFailed": "Failed to update avatar."
       }
+    },
+    "emailBinding": {
+      "title": "Bind email",
+      "description": "Change and verify your primary email for code sign-in.",
+      "currentEmail": "Current email: {{email}}",
+      "statusVerified": "Email verified",
+      "statusUnverified": "Email not verified",
+      "pendingEmail": "Pending email: {{email}}",
+      "sendCode": "Send verification code",
+      "sendCodeCooldown": "Resend in {{seconds}}s",
+      "sendSuccess": "Verification code sent to the new email.",
+      "sendFailed": "Failed to send verification code. Please try again.",
+      "verify": "Confirm binding",
+      "verifySuccess": "Email bound successfully.",
+      "verifyFailed": "Failed to bind email. Check the code and try again.",
+      "fields": {
+        "email": {
+          "label": "New email",
+          "required": "New email is required",
+          "invalid": "Enter a valid email address",
+          "placeholder": "Enter the new email to bind"
+        },
+        "code": {
+          "label": "Verification code",
+          "required": "Verification code is required",
+          "invalid": "Enter an 8-digit verification code",
+          "placeholder": "Enter the 8-digit code"
+        }
+      }
     }
   },
   "systemSettings": {
@@ -3214,6 +3288,29 @@
           "rateLimit": "Rate limit",
           "timeouts": "Timeouts (ms)",
           "tlsRejectUnauthorized": "TLS reject unauthorized"
+        }
+      },
+      "authCode": {
+        "title": "Email verification code settings",
+        "description": "Configure runtime limits for email binding and email-code login.",
+        "fields": {
+          "ttlSeconds": "Code TTL (seconds)",
+          "cooldownSeconds": "Send cooldown (seconds)",
+          "maxAttempts": "Max failed attempts"
+        },
+        "validation": {
+          "ttlSecondsRequired": "Code TTL is required",
+          "ttlSecondsRange": "Code TTL must be between 60 and 1800 seconds",
+          "cooldownSecondsRequired": "Send cooldown is required",
+          "cooldownSecondsRange": "Send cooldown must be between 10 and 3600 seconds",
+          "maxAttemptsRequired": "Max failed attempts is required",
+          "maxAttemptsRange": "Max failed attempts must be between 1 and 10"
+        },
+        "messages": {
+          "saved": "Saved"
+        },
+        "errors": {
+          "saveFailed": "Failed to save email verification code settings"
         }
       },
       "test": {

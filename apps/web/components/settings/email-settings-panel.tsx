@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Descriptions, Form, Input, Space, Spin, Tag, Typography, message } from "antd";
+import { Alert, Button, Descriptions, Form, Input, InputNumber, Space, Spin, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,11 +34,18 @@ interface SmtpConfigResponse {
 interface EmailSettingsResponse {
   smtp: SmtpConfigResponse;
   verify: EmailVerifyStatus;
+  authCode: AuthEmailCodeSettings;
 }
 
 interface EmailTestFormValues {
   to?: string;
   subject?: string;
+}
+
+interface AuthEmailCodeSettings {
+  ttlSeconds: number;
+  cooldownSeconds: number;
+  maxAttempts: number;
 }
 
 interface EmailTestResponse {
@@ -48,14 +55,22 @@ interface EmailTestResponse {
   rejected: string[];
 }
 
+const DEFAULT_AUTH_EMAIL_CODE_SETTINGS: AuthEmailCodeSettings = {
+  ttlSeconds: 300,
+  cooldownSeconds: 90,
+  maxAttempts: 3
+};
+
 export function EmailSettingsPanel() {
   const { t } = useTranslation();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<EmailTestFormValues>();
+  const [authCodeForm] = Form.useForm<AuthEmailCodeSettings>();
   const [settings, setSettings] = useState<EmailSettingsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [savingAuthCode, setSavingAuthCode] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const apiClient = useMemo(
@@ -75,13 +90,14 @@ export function EmailSettingsPanel() {
         to: defaultTo,
         subject: "Test email"
       });
+      authCodeForm.setFieldsValue(data?.authCode ?? DEFAULT_AUTH_EMAIL_CODE_SETTINGS);
     } catch (error) {
       captureClientError("Failed to load email settings", error);
       setErrorMessage(t("systemSettings.email.errors.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [apiClient, form, t]);
+  }, [apiClient, authCodeForm, form, t]);
 
   useEffect(() => {
     void loadSettings();
@@ -103,6 +119,20 @@ export function EmailSettingsPanel() {
       messageApi.error(t("systemSettings.email.errors.sendFailed"));
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleSaveAuthCodeSettings = async (values: AuthEmailCodeSettings) => {
+    setSavingAuthCode(true);
+    try {
+      await apiClient.put<AuthEmailCodeSettings>("system-settings/email/auth-code", values);
+      messageApi.success(t("systemSettings.email.authCode.messages.saved"));
+      await loadSettings();
+    } catch (error) {
+      captureClientError("Failed to save auth email code settings", error);
+      messageApi.error(t("systemSettings.email.authCode.errors.saveFailed"));
+    } finally {
+      setSavingAuthCode(false);
     }
   };
 
@@ -198,6 +228,62 @@ export function EmailSettingsPanel() {
           </Descriptions.Item>
         </Descriptions>
       ) : null}
+
+      <Typography.Title level={5} style={{ marginTop: 24 }}>
+        {t("systemSettings.email.authCode.title")}
+      </Typography.Title>
+
+      <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+        {t("systemSettings.email.authCode.description")}
+      </Typography.Paragraph>
+
+      <Form
+        layout="vertical"
+        form={authCodeForm}
+        onFinish={handleSaveAuthCodeSettings}
+        initialValues={settings?.authCode ?? DEFAULT_AUTH_EMAIL_CODE_SETTINGS}
+      >
+        <Form.Item
+          label={t("systemSettings.email.authCode.fields.ttlSeconds")}
+          name="ttlSeconds"
+          rules={[
+            { required: true, message: t("systemSettings.email.authCode.validation.ttlSecondsRequired") },
+            { type: "number", min: 60, max: 1_800, message: t("systemSettings.email.authCode.validation.ttlSecondsRange") }
+          ]}
+        >
+          <InputNumber min={60} max={1_800} step={10} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("systemSettings.email.authCode.fields.cooldownSeconds")}
+          name="cooldownSeconds"
+          rules={[
+            { required: true, message: t("systemSettings.email.authCode.validation.cooldownSecondsRequired") },
+            {
+              type: "number",
+              min: 10,
+              max: 3_600,
+              message: t("systemSettings.email.authCode.validation.cooldownSecondsRange")
+            }
+          ]}
+        >
+          <InputNumber min={10} max={3_600} step={5} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("systemSettings.email.authCode.fields.maxAttempts")}
+          name="maxAttempts"
+          rules={[
+            { required: true, message: t("systemSettings.email.authCode.validation.maxAttemptsRequired") },
+            { type: "number", min: 1, max: 10, message: t("systemSettings.email.authCode.validation.maxAttemptsRange") }
+          ]}
+        >
+          <InputNumber min={1} max={10} step={1} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit" loading={savingAuthCode}>
+            {t("common.saveChanges")}
+          </Button>
+        </Form.Item>
+      </Form>
 
       <Typography.Title level={5} style={{ marginTop: 24 }}>
         {t("systemSettings.email.test.title")}

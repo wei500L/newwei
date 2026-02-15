@@ -4,16 +4,17 @@ import { PassportModule } from "@nestjs/passport";
 import { CacheModule } from "../cache/cache.module";
 import { ConfigModule } from "../config/config.module";
 import { DatabaseModule } from "../config/database.module";
+import { EmailModule } from "../email/email.module";
 import { OrgModule } from "../org/org.module";
 import { StorageModule } from "../storage/storage.module";
 
 import { AccessTokenBlacklistService } from "./access-token-blacklist.service";
 import { AuthCacheSettingsService } from "./auth-cache-settings.service";
+import { AuthEmailCodeSettingsService } from "./auth-email-code-settings.service";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { RefreshTokenBlacklistService } from "./refresh-token-blacklist.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
-
 
 @Module({
   imports: [
@@ -21,8 +22,9 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     ConfigModule,
     DatabaseModule,
     CacheModule,
+    EmailModule,
     OrgModule,
-    StorageModule
+    StorageModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -30,13 +32,15 @@ import { JwtStrategy } from "./strategies/jwt.strategy";
     JwtStrategy,
     AccessTokenBlacklistService,
     RefreshTokenBlacklistService,
-    AuthCacheSettingsService
+    AuthCacheSettingsService,
+    AuthEmailCodeSettingsService,
   ],
   exports: [
     AuthService,
     AccessTokenBlacklistService,
     RefreshTokenBlacklistService,
-    AuthCacheSettingsService
-  ]
+    AuthCacheSettingsService,
+    AuthEmailCodeSettingsService,
+  ],
 })
 export class AuthModule {}
