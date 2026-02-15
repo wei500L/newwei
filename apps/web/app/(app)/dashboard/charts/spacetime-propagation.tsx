@@ -207,7 +207,23 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
       };
     });
 
-    const links = payload.edges.map((edge) => {
+    const nodeIndexById = new Map<string, number>();
+    nodes.forEach((node, index) => {
+      if (typeof node.id === "string") {
+        nodeIndexById.set(node.id, index);
+      }
+    });
+
+    const links = payload.edges.flatMap((edge) => {
+      const sourceIndex = nodeIndexById.get(edge.source);
+      const targetIndex = nodeIndexById.get(edge.target);
+      if (sourceIndex === undefined || targetIndex === undefined) {
+        return [];
+      }
+      if (sourceIndex === targetIndex) {
+        return [];
+      }
+
       const firstMs = safeParseTimeMs(edge.firstAt) ?? 0;
       const lastMs = safeParseTimeMs(edge.lastAt) ?? 0;
       const isSeen = cursorEndMs ? firstMs < cursorEndMs : true;
@@ -228,8 +244,8 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
       const width = Math.max(1, Math.min(7, edge.weight));
 
       return {
-        source: edge.source,
-        target: edge.target,
+        source: sourceIndex,
+        target: targetIndex,
         value: edge.weight,
         lineStyle: {
           width,
@@ -239,6 +255,8 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           type: edge.kind === "duplicate" ? "solid" : "dashed"
         },
         originalData: {
+          sourceId: edge.source,
+          targetId: edge.target,
           kind: edge.kind,
           weight: edge.weight,
           avgLagMs: edge.avgLagMs,
@@ -283,8 +301,21 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
                     dateStyle: "medium"
                   })}`
                 : null;
+            const sourceLabel =
+              typeof meta.sourceId === "string"
+                ? meta.sourceId
+                : typeof data.source === "string"
+                  ? data.source
+                  : String(data.source ?? "");
+            const targetLabel =
+              typeof meta.targetId === "string"
+                ? meta.targetId
+                : typeof data.target === "string"
+                  ? data.target
+                  : String(data.target ?? "");
+
             return [
-              `<div style="font-weight:600;margin-bottom:6px;">${data.source} -> ${data.target}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${sourceLabel} -> ${targetLabel}</div>`,
               `<div>kind: ${kind}</div>`,
               `<div>weight: ${meta.weight ?? data.value ?? 0}</div>`,
               `<div>avg lag: ${avgLagMin} min</div>`,

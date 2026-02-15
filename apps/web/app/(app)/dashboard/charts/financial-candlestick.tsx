@@ -105,8 +105,40 @@ export function FinancialCandlestick() {
     return formatted ? formatted : null;
   }, [data?.updatedAt, locale]);
 
+  const normalizedPoints = useMemo(() => {
+    if (!data) return [];
+    return data.points.flatMap((point) => {
+      const open = Number(point.open);
+      const close = Number(point.close);
+      const lowRaw = Number(point.low);
+      const highRaw = Number(point.high);
+      const volume = point.volume == null ? undefined : Number(point.volume);
+      if (
+        !dayjs(point.timestamp).isValid() ||
+        !Number.isFinite(open) ||
+        !Number.isFinite(close) ||
+        !Number.isFinite(lowRaw) ||
+        !Number.isFinite(highRaw)
+      ) {
+        return [];
+      }
+      const low = Math.min(lowRaw, highRaw, open, close);
+      const high = Math.max(lowRaw, highRaw, open, close);
+      return [
+        {
+          timestamp: point.timestamp,
+          open,
+          close,
+          low,
+          high,
+          volume: Number.isFinite(volume) ? volume : undefined
+        }
+      ];
+    });
+  }, [data]);
+
   const option = useMemo<EChartsOption>(() => {
-    if (!data || data.points.length === 0) return {};
+    if (!data || normalizedPoints.length === 0) return {};
     const parsedInterval = parseInterval(data.interval);
     const intervalGranularity = intervalToGranularity(parsedInterval);
     const intervalGranularityLabel = formatGranularityLabel(intervalGranularity);
@@ -115,15 +147,17 @@ export function FinancialCandlestick() {
       intervalGranularity === UiTimeGranularity.Minute ||
       intervalGranularity === UiTimeGranularity.Hour ||
       intervalGranularity === UiTimeGranularity.Realtime;
-    const timestamps = data.points.map((point) => point.timestamp);
-    const ohlc = data.points.map((point) => [
+    const useCandlestick = normalizedPoints.length >= 5;
+    const timestamps = normalizedPoints.map((point) => point.timestamp);
+    const ohlc = normalizedPoints.map((point) => [
       point.open,
       point.close,
       point.low,
       point.high
     ]);
+    const closeSeries = normalizedPoints.map((point) => point.close);
     const unitSuffix = data.unit ? ` ${data.unit}` : "";
-    const lastClose = data.points.at(-1)?.close;
+    const lastClose = normalizedPoints.at(-1)?.close;
 
     return {
       backgroundColor: "transparent",
@@ -142,7 +176,7 @@ export function FinancialCandlestick() {
         formatter: (params: any) => {
           const payload = Array.isArray(params) ? params[0] : params;
           const axisValue = payload?.axisValue as string | undefined;
-          const values = payload?.data as number[] | undefined;
+          const values = payload?.data as number[] | number | undefined;
           const startIso = typeof axisValue === "string" ? axisValue : "";
           const endIso = startIso ? addInterval(startIso, parsedInterval) : null;
           const startLabel = startIso
@@ -155,6 +189,23 @@ export function FinancialCandlestick() {
           const bucketLabel = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
           const fmt = (value: number | undefined) =>
             typeof value === "number" ? `${value}${unitSuffix}` : "N/A";
+          if (!useCandlestick) {
+            const closeValue =
+              typeof values === "number"
+                ? values
+                : typeof payload?.value === "number"
+                  ? payload.value
+                  : typeof payload?.data === "number"
+                    ? payload.data
+                    : undefined;
+            return [
+              `<div style="min-width:220px;">`,
+              `<div style="font-weight:600;margin-bottom:6px;">${bucketLabel}</div>`,
+              `<div style="display:flex;justify-content:space-between;"><span>Close</span><span>${fmt(closeValue)}</span></div>`,
+              `<div style="margin-top:8px;color:#64748b;">Bucket: ${intervalGranularityLabel}${intervalUnitSuffix}</div>`,
+              `</div>`
+            ].join("");
+          }
           const open = Array.isArray(values) ? values[0] : undefined;
           const close = Array.isArray(values) ? values[1] : undefined;
           const low = Array.isArray(values) ? values[2] : undefined;
@@ -209,55 +260,73 @@ export function FinancialCandlestick() {
         },
         axisLine: { show: false }
       },
-      dataZoom: [
-        {
-          type: "inside",
-          start: 50,
-          end: 100,
-        },
-      ],
       series: [
-        {
-          name: data.symbol ?? "Index",
-          type: "candlestick",
-          data: ohlc,
-          itemStyle: {
-            color: theme.colors.bullish,
-            color0: theme.colors.bearish,
-            borderColor: theme.colors.bullish,
-            borderColor0: theme.colors.bearish,
-            shadowBlur: 5,
-            shadowColor: "inherit" // Glow effect
-          },
-          markLine:
-            typeof lastClose === "number"
-              ? {
-                  symbol: ["none", "none"],
-                  data: [
-                    {
-                      yAxis: lastClose,
-                      label: {
-                        show: true,
-                        position: "end",
-                        backgroundColor: theme.colors.primary,
-                        color: "#ffffff",
-                        padding: [2, 4],
-                        borderRadius: 2,
-                        formatter: unitSuffix ? `{c}${unitSuffix}` : "{c}"
-                      },
-                      lineStyle: {
-                        color: theme.colors.primary,
-                        type: "dashed",
-                        opacity: 0.5
-                      }
+        useCandlestick
+          ? {
+              name: data.symbol ?? "Index",
+              type: "candlestick",
+              data: ohlc,
+              itemStyle: {
+                color: theme.colors.bullish,
+                color0: theme.colors.bearish,
+                borderColor: theme.colors.bullish,
+                borderColor0: theme.colors.bearish,
+                shadowBlur: 5,
+                shadowColor: "inherit"
+              },
+              markLine:
+                typeof lastClose === "number"
+                  ? {
+                      symbol: ["none", "none"],
+                      data: [
+                        {
+                          yAxis: lastClose,
+                          label: {
+                            show: true,
+                            position: "end",
+                            backgroundColor: theme.colors.primary,
+                            color: "#ffffff",
+                            padding: [2, 4],
+                            borderRadius: 2,
+                            formatter: unitSuffix ? `{c}${unitSuffix}` : "{c}"
+                          },
+                          lineStyle: {
+                            color: theme.colors.primary,
+                            type: "dashed",
+                            opacity: 0.5
+                          }
+                        }
+                      ]
                     }
+                  : undefined
+            }
+          : {
+              name: data.symbol ?? "Index",
+              type: "line",
+              data: closeSeries,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: {
+                color: theme.colors.primary,
+                width: 2
+              },
+              areaStyle: {
+                color: {
+                  type: "linear",
+                  x: 0,
+                  y: 0,
+                  x2: 0,
+                  y2: 1,
+                  colorStops: [
+                    { offset: 0, color: "rgba(31, 59, 123, 0.28)" },
+                    { offset: 1, color: "rgba(31, 59, 123, 0.02)" }
                   ]
                 }
-              : undefined
-        },
+              }
+            }
       ],
     };
-  }, [theme, data, locale]);
+  }, [theme, data, locale, normalizedPoints]);
 
   const parsedInterval = useMemo(() => parseInterval(data?.interval), [data?.interval]);
   const intervalGranularity = intervalToGranularity(parsedInterval);
@@ -270,10 +339,10 @@ export function FinancialCandlestick() {
   const intervalTagText = `Interval: ${intervalDescriptor}`;
 
   const handleCsvExport = useCallback(async () => {
-    if (!data || data.points.length === 0) return;
+    if (!data || normalizedPoints.length === 0) return;
     const rows = [
       ["Timestamp", "Open", "High", "Low", "Close", "Volume"],
-      ...data.points.map((point) => [
+      ...normalizedPoints.map((point) => [
         point.timestamp,
         point.open,
         point.high,
@@ -290,10 +359,10 @@ export function FinancialCandlestick() {
       extension: "csv"
     });
     await exportCsv({ rows, filename });
-  }, [data, endLabel, exportCsv, startLabel]);
+  }, [data, endLabel, exportCsv, normalizedPoints, startLabel]);
   // csvLabel handled by useCsvExport
 
-  const hasRenderableData = Boolean(data && data.points.length > 0);
+  const hasRenderableData = Boolean(data && normalizedPoints.length > 0);
   const showStaleErrorBanner = Boolean(isError && hasRenderableData);
 
   if (sessionStatus === "loading") {
@@ -321,7 +390,7 @@ export function FinancialCandlestick() {
     );
   }
 
-  if (!data || data.points.length === 0) {
+  if (!data || normalizedPoints.length === 0) {
     return (
       <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState title={emptyTitle} description={emptyHint} />
@@ -360,7 +429,6 @@ export function FinancialCandlestick() {
         ) : null}
       </div>
       <DashboardChart
-        group="dashboard-charts"
         option={option}
         height="100%"
         exportFilename={buildExportBaseName({
@@ -378,7 +446,7 @@ export function FinancialCandlestick() {
               type="default"
               onClick={handleCsvExport}
               loading={exportingCsv}
-              disabled={!data || data.points.length === 0}
+              disabled={!data || normalizedPoints.length === 0}
             >
               {csvLabel}
             </Button>

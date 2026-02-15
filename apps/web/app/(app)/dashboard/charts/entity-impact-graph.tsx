@@ -364,7 +364,17 @@ export function EntityImpactGraph() {
       };
     });
 
-    const transformedLinks = safeLinks.map((link) => {
+    const nodeIndexById = new Map<string, number>();
+    transformedNodes.forEach((node, index) => {
+      nodeIndexById.set(node.id, index);
+    });
+
+    const transformedLinks = safeLinks.flatMap((link) => {
+      const sourceIndex = nodeIndexById.get(link.source);
+      const targetIndex = nodeIndexById.get(link.target);
+      if (sourceIndex === undefined || targetIndex === undefined) {
+        return [];
+      }
       const normalizedType = normalizeEntityGraphEdgeType(link.type);
       const isSelectedAdjacency =
         selectedNode !== null &&
@@ -377,8 +387,8 @@ export function EntityImpactGraph() {
           : Math.max(0.9, Math.min(2.8, Math.sqrt(Math.max(rawValue, 0))));
 
       return {
-        source: link.source,
-        target: link.target,
+        source: sourceIndex,
+        target: targetIndex,
         value: rawValue,
         lineStyle: {
           width: isSelectedAdjacency ? baseWidth + 1.2 : baseWidth,
@@ -397,6 +407,8 @@ export function EntityImpactGraph() {
         originalData: {
           type: link.type,
           normalizedType,
+          sourceId: link.source,
+          targetId: link.target,
         },
       };
     });
@@ -450,8 +462,20 @@ export function EntityImpactGraph() {
               original.normalizedType === "correlation"
                 ? "correlation"
                 : "coOccurrence";
-            const source = nodeNameById.get(data.source) ?? data.source;
-            const target = nodeNameById.get(data.target) ?? data.target;
+            const sourceId =
+              typeof original.sourceId === "string"
+                ? original.sourceId
+                : typeof data.source === "string"
+                  ? data.source
+                  : "";
+            const targetId =
+              typeof original.targetId === "string"
+                ? original.targetId
+                : typeof data.target === "string"
+                  ? data.target
+                  : "";
+            const source = nodeNameById.get(sourceId) ?? sourceId;
+            const target = nodeNameById.get(targetId) ?? targetId;
             const linkTypeLabel =
               normalizedType === "correlation"
                 ? t("dashboard.charts.entityGraph.correlation", {

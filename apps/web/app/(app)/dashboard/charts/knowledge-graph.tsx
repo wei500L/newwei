@@ -119,7 +119,17 @@ export function KnowledgeGraph() {
     }
 
     const categories = Object.keys(NODE_TYPE_CONFIG).map((key) => ({ name: key }));
-    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    const normalizedNodes: Array<(typeof graph.nodes)[number]> = [];
+    const seenNodeIds = new Set<string>();
+    for (const node of graph.nodes) {
+      const id = typeof node.id === "string" ? node.id.trim() : "";
+      if (!id || seenNodeIds.has(id)) {
+        continue;
+      }
+      seenNodeIds.add(id);
+      normalizedNodes.push({ ...node, id });
+    }
+    const nodeIds = new Set(normalizedNodes.map((node) => node.id));
     const safeEdges = graph.edges.filter(
       (edge) =>
         nodeIds.has(edge.from) &&
@@ -128,7 +138,7 @@ export function KnowledgeGraph() {
     );
     const degreeMap = buildDegreeMap(safeEdges);
 
-    const nodes = graph.nodes.map((node) => {
+    const nodes = normalizedNodes.map((node) => {
       const cfg = getNodeTypeConfig(node.type);
       const degree = degreeMap.get(node.id) ?? 0;
       const symbolSize = Math.max(18, Math.min(60, 18 + degree * 6));
@@ -156,21 +166,36 @@ export function KnowledgeGraph() {
       };
     });
 
-    const links = safeEdges.map((edge) => ({
-      source: edge.from,
-      target: edge.to,
-      value: edge.weight,
-      lineStyle: {
-        width: Math.max(1, Math.min(5, edge.weight)),
-        opacity: Math.max(0.25, Math.min(0.9, 0.2 + edge.confidence * 0.7)),
-        color: getConfidenceColor(edge.confidence),
-        curveness: 0.15
-      },
-      originalData: {
-        type: edge.type,
-        confidence: edge.confidence
+    const nodeNameById = new Map(normalizedNodes.map((node) => [node.id, node.name]));
+    const nodeIndexById = new Map<string, number>();
+    nodes.forEach((node, index) => {
+      nodeIndexById.set(node.id, index);
+    });
+
+    const links = safeEdges.flatMap((edge) => {
+      const sourceIndex = nodeIndexById.get(edge.from);
+      const targetIndex = nodeIndexById.get(edge.to);
+      if (sourceIndex === undefined || targetIndex === undefined) {
+        return [];
       }
-    }));
+      return {
+        source: sourceIndex,
+        target: targetIndex,
+        value: edge.weight,
+        lineStyle: {
+          width: Math.max(1, Math.min(5, edge.weight)),
+          opacity: Math.max(0.25, Math.min(0.9, 0.2 + edge.confidence * 0.7)),
+          color: getConfidenceColor(edge.confidence),
+          curveness: 0.15
+        },
+        originalData: {
+          type: edge.type,
+          confidence: edge.confidence,
+          sourceId: edge.from,
+          targetId: edge.to
+        }
+      };
+    });
 
     return {
       tooltip: {
@@ -182,8 +207,23 @@ export function KnowledgeGraph() {
           const data = params?.data ?? {};
           if (params?.dataType === "edge") {
             const meta = data.originalData ?? {};
+            const sourceId =
+              typeof meta.sourceId === "string"
+                ? meta.sourceId
+                : typeof data.source === "number"
+                  ? nodes[data.source]?.id
+                  : "";
+            const targetId =
+              typeof meta.targetId === "string"
+                ? meta.targetId
+                : typeof data.target === "number"
+                  ? nodes[data.target]?.id
+                  : "";
+            const sourceName = sourceId ? nodeNameById.get(sourceId) ?? sourceId : "";
+            const targetName = targetId ? nodeNameById.get(targetId) ?? targetId : "";
             return [
-              `<div style="font-weight:600;margin-bottom:6px;">${meta.type ?? "edge"}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;">${sourceName && targetName ? `${sourceName} -> ${targetName}` : (meta.type ?? "edge")}</div>`,
+              `<div>type: ${meta.type ?? "edge"}</div>`,
               `<div>weight: ${Number(data.value ?? 0).toFixed(2)}</div>`,
               meta.confidence !== undefined ? `<div>confidence: ${Number(meta.confidence).toFixed(2)}</div>` : ""
             ].join("");

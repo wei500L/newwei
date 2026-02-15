@@ -336,7 +336,6 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           params: {
             start: start.toISOString(),
             end: end.toISOString(),
-            translate: translateTarget,
           },
         },
       );

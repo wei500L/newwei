@@ -97,11 +97,13 @@ export class DashboardController {
   @Get("war-map/events")
   async warMapEvents(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardWarMapQueryDto,
+    @Query("start") start?: string,
+    @Query("end") end?: string,
+    @Query("translate") translate?: string,
   ) {
-    const range = this.chartsService.resolveRange(query);
+    const range = this.chartsService.resolveRange({ start, end });
     return this.chartsService.getWarMapEvents(range, user.orgId, {
-      translateTarget: parseTranslateTarget(query.translate),
+      translateTarget: parseTranslateTarget(translate),
     });
   }
 

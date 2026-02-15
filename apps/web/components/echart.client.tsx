@@ -715,10 +715,10 @@ export function DashboardChart({
       if (cancelled) return;
       chart.clear();
       try {
-        chart.setOption(option, { notMerge: true, lazyUpdate: true });
+        chart.setOption(option, { notMerge: true, lazyUpdate: false });
       } catch {
         chart.clear();
-        chart.setOption({}, { notMerge: true, lazyUpdate: true });
+        chart.setOption({}, { notMerge: true, lazyUpdate: false });
       }
       setReady(true);
     })().catch(() => undefined);

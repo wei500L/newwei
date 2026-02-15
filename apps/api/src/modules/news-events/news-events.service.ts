@@ -453,42 +453,83 @@ export class NewsEventsService {
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
     const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-    // Aggregate metrics for all events in one query
-    const metrics = await this.prisma.$queryRaw<
-      Array<{
-        eventId: string;
-        itemsLast1h: bigint;
-        itemsLast4h: bigint;
-        uniqueSourcesLast4h: bigint;
-        lastAt: Date;
+    const [events, recentItems] = await Promise.all([
+      this.prisma.newsEvent.findMany({
+        where: {
+          orgId,
+          id: { in: eventIds },
+        },
+        select: {
+          id: true,
+          lastAt: true,
+        },
+      }),
+      this.prisma.newsEventItem.findMany({
+        where: {
+          orgId,
+          eventId: { in: eventIds },
+          createdAt: { gte: fourHoursAgo },
+        },
+        select: {
+          eventId: true,
+          createdAt: true,
+          processedArticle: {
+            select: {
+              article: {
+                select: {
+                  sourceId: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const eventLastAtById = new Map(events.map((event) => [event.id, event.lastAt]));
+    const aggregateByEventId = new Map<
+      string,
+      { itemsLast1h: number; itemsLast4h: number; sourceIds: Set<string> }
+    >();
+
+    for (const eventId of eventIds) {
+      aggregateByEventId.set(eventId, {
+        itemsLast1h: 0,
+        itemsLast4h: 0,
+        sourceIds: new Set<string>(),
+      });
+    }
+
+    for (const item of recentItems) {
+      const aggregate = aggregateByEventId.get(item.eventId);
+      if (!aggregate) {
+        continue;
       }
-    >`
-      SELECT
-        nei."eventId",
-        COUNT(CASE WHEN nei."createdAt" >= ${oneHourAgo} THEN 1 END) as "itemsLast1h",
-        COUNT(CASE WHEN nei."createdAt" >= ${fourHoursAgo} THEN 1 END) as "itemsLast4h",
-        COUNT(
-          DISTINCT CASE
-            WHEN nei."createdAt" >= ${fourHoursAgo} THEN a."sourceId"
-          END
-        ) as "uniqueSourcesLast4h",
-        MAX(ne."lastAt") as "lastAt"
-      FROM "NewsEventItem" nei
-      INNER JOIN "ProcessedArticle" pa ON pa.id = nei."processedArticleId"
-      INNER JOIN "Article" a ON a.id = pa."articleId"
-      INNER JOIN "NewsEvent" ne ON ne.id = nei."eventId"
-      WHERE nei."orgId" = ${orgId}
-        AND nei."eventId" IN (${Prisma.join(eventIds)})
-      GROUP BY nei."eventId"
-    `;
+
+      aggregate.itemsLast4h += 1;
+      if (item.createdAt >= oneHourAgo) {
+        aggregate.itemsLast1h += 1;
+      }
+
+      const sourceId = item.processedArticle.article.sourceId;
+      if (typeof sourceId === "string" && sourceId.trim()) {
+        aggregate.sourceIds.add(sourceId);
+      }
+    }
 
     const result = new Map<string, { breaking: boolean; heatScore: number }>();
 
-    for (const row of metrics) {
-      const itemsLast1h = Number(row.itemsLast1h);
-      const itemsLast4h = Number(row.itemsLast4h);
-      const uniqueSourcesLast4h = Number(row.uniqueSourcesLast4h);
-      const lastAt = row.lastAt;
+    for (const eventId of eventIds) {
+      const aggregate = aggregateByEventId.get(eventId);
+      const lastAt = eventLastAtById.get(eventId);
+      if (!aggregate || !lastAt || aggregate.itemsLast4h <= 0) {
+        result.set(eventId, { breaking: false, heatScore: 0 });
+        continue;
+      }
+
+      const itemsLast1h = aggregate.itemsLast1h;
+      const itemsLast4h = aggregate.itemsLast4h;
+      const uniqueSourcesLast4h = aggregate.sourceIds.size;
 
       // Calculate recency (hours since last update)
       const recencyHours = (now.getTime() - lastAt.getTime()) / (60 * 60 * 1000);
@@ -513,14 +554,10 @@ export class NewsEventsService {
 
       const breaking = isRecent && (hasFastGrowth || hasHighVolume || hasHighHeat);
 
-      result.set(row.eventId, { breaking, heatScore: Math.round(heatScore * 100) / 100 });
-    }
-
-    // Fill in defaults for events without metrics
-    for (const eventId of eventIds) {
-      if (!result.has(eventId)) {
-        result.set(eventId, { breaking: false, heatScore: 0 });
-      }
+      result.set(eventId, {
+        breaking,
+        heatScore: Math.round(heatScore * 100) / 100,
+      });
     }
 
     return result;

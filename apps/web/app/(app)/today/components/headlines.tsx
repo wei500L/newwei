@@ -72,7 +72,7 @@ export function Headlines() {
 
   if (loading) {
     return (
-      <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} bordered={false}>
+      <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
         <Skeleton active paragraph={{ rows: 6 }} className="p-6" />
       </Card>
     );
@@ -85,7 +85,7 @@ export function Headlines() {
   const heroThumbnail = safeHttpUrl(heroItem.rawPreview?.thumbnail);
 
   return (
-    <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} bordered={false}>
+    <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
       {/* Hero Section */}
       <div
         className="relative h-64 w-full group cursor-pointer"
