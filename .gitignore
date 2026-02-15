@@ -25,3 +25,4 @@ __pycache__/
 *.tsbuildinfo
 external/
 .ace-tool/
+.cache/
