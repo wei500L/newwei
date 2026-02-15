@@ -27,3 +27,10 @@ __pycache__/
 external/
 .ace-tool/
 .cache/
+
+# Local/temp directories
+.codex-local/
+.claude/settings.local.json
+
+# External data repositories (not project source)
+e6d2bf860ccc367fe37ff953ba6de66b/
