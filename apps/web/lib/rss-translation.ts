@@ -79,8 +79,7 @@ export const RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS: Array<{
   label: string;
 }> = [
   { value: "zh-CN", label: "中文（简体）" },
-  { value: "en", label: "English" },
-  { value: "ja", label: "日本語" }
+  { value: "en", label: "English" }
 ];
 
 export function isChineseTargetLanguage(value: string): boolean {

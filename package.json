@@ -21,6 +21,7 @@
     "docker:up:extras": "node infra/scripts/src/docker-up.js --profile extras",
     "docker:up:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml up --build",
     "docker:up:extras:build": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras up --build",
+    "docker:redis:repair": "node infra/scripts/src/redis-aof-repair.js",
     "docker:down": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras down",
     "docker:logs": "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile extras logs -f"
   },

@@ -45,6 +45,8 @@ const INSIGHTS_CACHE_KEY_PREFIX = "situation-monitor:insights:v2";
 const INSIGHTS_CACHE_TTL_SECONDS_CORE = 45;
 const INSIGHTS_CACHE_TTL_SECONDS_EXTERNAL = 300;
 const INSIGHTS_LEARNING_REV_KEY_PREFIX = "situation-monitor:insights:learning-rev:v1";
+const PLACEHOLDER_HEADLINE_TITLE_PATTERN =
+  /^(?:no\s*title|untitled|title\s*unavailable|headline\s*unavailable|n\/a|na|null|undefined|\u6682\u65e0\u6807\u9898|\u65e0\u6807\u9898|\u672a\u547d\u540d(?:\u6807\u9898)?)$/i;
 
 type SituationMonitorCategory = (typeof SITUATION_MONITOR_CATEGORIES)[number];
 
@@ -387,7 +389,7 @@ export class SituationMonitorService {
           : "";
       const trimmedTitle = typeof title === "string" ? title.trim() : "";
 
-      if (!trimmedTitle || !link) {
+      if (!trimmedTitle || this.isPlaceholderTitle(trimmedTitle) || !link) {
         continue;
       }
 
@@ -496,11 +498,20 @@ export class SituationMonitorService {
             if (byCategory[entry.value.category].length >= options.maxPerCategory) {
               break;
             }
-            if (existingLinks.has(headline.link)) {
+            const normalizedTitle = typeof headline.title === "string" ? headline.title.trim() : "";
+            const normalizedLink = typeof headline.link === "string" ? headline.link.trim() : "";
+            if (!normalizedTitle || this.isPlaceholderTitle(normalizedTitle) || !normalizedLink) {
               continue;
             }
-            existingLinks.add(headline.link);
-            byCategory[entry.value.category].push(headline);
+            if (existingLinks.has(normalizedLink)) {
+              continue;
+            }
+            existingLinks.add(normalizedLink);
+            byCategory[entry.value.category].push({
+              ...headline,
+              title: normalizedTitle,
+              link: normalizedLink,
+            });
           }
         }
       }
@@ -536,6 +547,14 @@ export class SituationMonitorService {
       }
     }
     return null;
+  }
+
+  private isPlaceholderTitle(title: string): boolean {
+    const normalized = title.trim().replace(/[。.!?！？]+$/gu, "").trim();
+    if (!normalized) {
+      return true;
+    }
+    return PLACEHOLDER_HEADLINE_TITLE_PATTERN.test(normalized);
   }
 
   private toDisplayHeadlines(

@@ -1259,7 +1259,20 @@
       "sourcePlaceholder": "Select RSS sources",
       "selectedCount": "{{count}} sources selected",
       "loadFailed": "Failed to load RSS sources.",
-      "emptySources": "No RSS sources with recent items were found."
+      "emptySources": "No RSS sources with recent items were found.",
+      "translation": {
+        "title": "Translation",
+        "enable": "Enable",
+        "provider": {
+          "deeplx": "DeepLX API",
+          "llm": "LLM"
+        },
+        "showOriginal": "Show original",
+        "unavailable": "Selected translation source is unavailable.",
+        "targetUnsupported": "Target language is not supported by selected source.",
+        "loading": "Translating article content...",
+        "failed": "Translation failed."
+      }
     },
     "topics": {
       "title": "Topics & Events",
@@ -1961,6 +1974,63 @@
     "scheduleMode": {
       "interval": "Interval",
       "cron": "Cron"
+    },
+    "opml": {
+      "title": "Import RSS Sources from OPML",
+      "actions": {
+        "preview": "Preview",
+        "import": "Import",
+        "applyLanguage": "Apply to enabled"
+      },
+      "fields": {
+        "mode": "Import mode",
+        "preset": "Preset",
+        "file": "Upload .opml/.xml",
+        "fileLoaded": "Loaded file: {{name}}",
+        "language": "Target language (e.g. zh/en)"
+      },
+      "mode": {
+        "preset": "Built-in preset",
+        "upload": "Upload OPML file"
+      },
+      "hint": {
+        "title": "How import works",
+        "description": "URL uses OPML htmlUrl, RSS feed uses xmlUrl as seed.feedUrl, duplicates are skipped, and language drives downstream LLM translation in the news pipeline."
+      },
+      "summary": {
+        "total": "Total {{count}}",
+        "valid": "Valid {{count}}",
+        "duplicates": "Duplicates {{count}}",
+        "enabled": "Enabled {{count}}",
+        "title": "Title: {{title}}"
+      },
+      "columns": {
+        "import": "Import",
+        "name": "Name",
+        "siteUrl": "Site URL",
+        "feedUrl": "Feed URL",
+        "language": "Language",
+        "status": "Status"
+      },
+      "status": {
+        "duplicate": "Duplicate",
+        "ready": "Ready"
+      },
+      "report": {
+        "title": "Import completed",
+        "summary": "Created {{created}}, skipped {{skipped}}, failed {{failed}}."
+      },
+      "empty": "Choose a preset or upload an OPML file, then click Preview.",
+      "errors": {
+        "loadPresets": "Failed to load OPML presets.",
+        "readFile": "Failed to read OPML file.",
+        "preview": "Failed to preview OPML.",
+        "previewFirst": "Preview OPML before importing.",
+        "import": "Failed to import OPML."
+      },
+      "messages": {
+        "imported": "OPML import finished: {{created}} created, {{skipped}} skipped, {{failed}} failed."
+      }
     }
   },
   "finance": {
@@ -3046,6 +3116,137 @@
         }
       }
     },
+    "rssTranslationMetrics": {
+      "title": "RSS translation metrics",
+      "window": "Window: {{from}} to {{to}}",
+      "filters": {
+        "lastDays": "Last {{days}} days",
+        "providers": {
+          "all": "All providers",
+          "deeplx": "DeepLX API",
+          "llm": "LLM small model"
+        },
+        "languages": {
+          "all": "All languages"
+        }
+      },
+      "summary": {
+        "requestCount": "Requests",
+        "translatedCount": "Translated texts",
+        "cacheHitRate": "Cache hit rate",
+        "failureRate": "Failure rate",
+        "avgLatencyMs": "Avg latency (ms)",
+        "maxLatencyMs": "Max latency (ms)",
+        "cacheOverview": "Cache hits: {{hits}} · misses: {{misses}} · failures: {{failures}} · skipped long texts: {{skipTooLong}}",
+        "rates": "Cache hit rate {{cacheHitRate}} · Failure rate {{failureRate}}"
+      },
+      "charts": {
+        "volume": "Requests and translated volume",
+        "quality": "Cache / failure / latency trends",
+        "empty": "No metrics in selected range.",
+        "series": {
+          "requests": "Requests",
+          "translated": "Translated texts",
+          "cacheHitRate": "Cache hit rate",
+          "failureRate": "Failure rate",
+          "avgLatency": "Avg latency (ms)"
+        }
+      },
+      "table": {
+        "title": "Daily details",
+        "empty": "No metrics found.",
+        "columns": {
+          "date": "Date",
+          "provider": "Provider",
+          "targetLanguage": "Language",
+          "requestCount": "Requests",
+          "textCount": "Texts",
+          "translatedCount": "Translated",
+          "cacheHitRate": "Cache hit rate",
+          "failureRate": "Failure rate",
+          "avgLatencyMs": "Avg latency",
+          "maxLatencyMs": "Max latency",
+          "failureCount": "Failures",
+          "skipTooLongCount": "Skipped long texts"
+        }
+      },
+      "errors": {
+        "loadFailed": "Failed to load RSS translation metrics."
+      }
+    },
+    "rssDiagnostics": {
+      "title": "RSS Chain Diagnostics",
+      "description": "Inspect RSS ingestion health and repair missing ProcessedItem.sourceId links.",
+      "controls": {
+        "windowDays": "Window Days",
+        "lookbackHours": "Lookback Hours"
+      },
+      "errors": {
+        "loadFailed": "Failed to load RSS diagnostics.",
+        "backfillFailed": "Failed to execute backfill."
+      },
+      "messages": {
+        "dryRunDone": "Backfill dry-run finished.",
+        "backfillDone": "Backfill completed."
+      },
+      "visibility": {
+        "processed": "Visible (Processed)",
+        "articleFallback": "Visible (Article Fallback)",
+        "hidden": "Hidden",
+        "articleFallbackShort": "Article Fallback"
+      },
+      "pipeline": {
+        "queued": "Queued",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "table": {
+        "title": "Per-source Diagnostics",
+        "source": "Source",
+        "visibility": "Visibility",
+        "processedCount": "Processed",
+        "articleCount": "Articles",
+        "jobs24h": "Jobs(24h)",
+        "issues": "Issues"
+      },
+      "backfill": {
+        "title": "sourceId Backfill",
+        "limit": "Scan Limit",
+        "dryRun": "Dry Run",
+        "execute": "Execute Backfill",
+        "dryRunSummary": "Dry-run finished.",
+        "executeSummary": "Backfill finished.",
+        "unresolved": {
+          "processedItemId": "Processed Item ID",
+          "itemMetaId": "Item Meta ID",
+          "reason": "Reason"
+        }
+      },
+      "schedulerDisabled": "NEWS source scheduler is disabled.",
+      "recommendations": "Recommendations",
+      "cards": {
+        "rssSources": "RSS Sources",
+        "visibleProcessed": "Visible (Processed)",
+        "visibleFallback": "Visible (Fallback)",
+        "hidden": "Hidden Sources",
+        "processedCoverage": "Processed sourceId coverage",
+        "articleCoverage": "Article sourceId coverage",
+        "totalCompleted": "Completed: {{value}}",
+        "missingSourceId": "Missing sourceId: {{value}}",
+        "totalArticle": "Articles: {{value}}",
+        "missingArticleSourceId": "Missing sourceId: {{value}}"
+      },
+      "charts": {
+        "visibility": "Source Visibility",
+        "pipeline": "Pipeline Jobs"
+      },
+      "meta": {
+        "generatedAt": "Generated at: {{value}}",
+        "pipelineLatest": "Latest pipeline job: {{value}}",
+        "crawlResultLatest": "Latest crawl result: {{value}}"
+      }
+    },
     "adminOnly": {
       "title": "Admin only",
       "description": "Admin only description"
@@ -3065,6 +3266,8 @@
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "assistantSafety": "Assistant safety",
+      "rssTranslationMetrics": "RSS translation metrics",
+      "rssDiagnostics": "RSS diagnostics",
       "roles": "Roles",
       "permissions": "Permissions",
       "members": "Members"
@@ -4809,6 +5012,19 @@
       "payloadMarkdown": "Cleaned Markdown",
       "markdownFallback": "Markdown fallback",
       "markdownFallbackTooltip": "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
+      "translation": {
+        "title": "Article translation",
+        "enable": "Enable",
+        "provider": {
+          "deeplx": "DeepLX API",
+          "llm": "LLM"
+        },
+        "showOriginal": "Show original",
+        "unavailable": "Selected translation source is unavailable.",
+        "targetUnsupported": "Target language is not supported by selected source.",
+        "loading": "Translating article content...",
+        "failed": "Translation failed."
+      },
       "readOriginal": "Read original",
       "openItem": "Open item",
       "empty": "Item not found.",
@@ -4911,6 +5127,17 @@
       "feed": "Feed",
       "grid": "Grid",
       "list": "List"
+    }
+  },
+  "reader": {
+    "translation": {
+      "title": "Translation",
+      "enable": "Enable",
+      "showOriginal": "Show original",
+      "unavailable": "Selected translation source is unavailable.",
+      "targetUnsupported": "Target language is not supported by selected source.",
+      "loading": "Translating article content...",
+      "failed": "Translation failed."
     }
   },
   "crawlTemplates": {

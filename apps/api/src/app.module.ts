@@ -1,4 +1,4 @@
-import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common";
+import { Module, RequestMethod, type MiddlewareConsumer, type NestModule } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
 import { WinstonModule } from "nest-winston";
@@ -106,6 +106,6 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TraceIdMiddleware).forRoutes("*");
+    consumer.apply(TraceIdMiddleware).forRoutes({ path: "*path", method: RequestMethod.ALL });
   }
 }

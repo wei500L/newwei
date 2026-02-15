@@ -877,6 +877,19 @@ export class ItemsService {
         }
       }
     ]);
+    const articleStats =
+      sourceIds.length > 0
+        ? await this.prisma.article.groupBy({
+            by: ["sourceId"],
+            where: {
+              orgId,
+              sourceId: { in: sourceIds },
+              crawlAt: { gte: since }
+            },
+            _count: { _all: true },
+            _max: { crawlAt: true }
+          })
+        : [];
 
     const statsBySourceId = new Map<string, { itemCountWindow: number; latestItemAt: Date | null }>();
     for (const row of stats) {
@@ -888,18 +901,39 @@ export class ItemsService {
         latestItemAt: row.latestItemAt ?? null
       });
     }
+    const articleStatsBySourceId = new Map<string, { itemCountWindow: number; latestItemAt: Date | null }>();
+    for (const row of articleStats) {
+      const sourceId = typeof row.sourceId === "string" ? row.sourceId.trim() : "";
+      if (!sourceId) {
+        continue;
+      }
+      const count = Math.max(0, Number(row._count?._all ?? 0));
+      const latest = row._max?.crawlAt ?? null;
+      articleStatsBySourceId.set(sourceId, {
+        itemCountWindow: count,
+        latestItemAt: latest ?? null
+      });
+    }
 
     const mapped = rssSources
       .map<RssSourceOption>((source) => {
-        const sourceStats = statsBySourceId.get(source.id);
+        const processedStats = statsBySourceId.get(source.id);
+        const articleStatsEntry = articleStatsBySourceId.get(source.id);
+        const itemCountWindow = Math.max(
+          processedStats?.itemCountWindow ?? 0,
+          articleStatsEntry?.itemCountWindow ?? 0
+        );
+        const latestItemAt = [processedStats?.latestItemAt ?? null, articleStatsEntry?.latestItemAt ?? null]
+          .filter((value): value is Date => value instanceof Date)
+          .sort((left, right) => right.getTime() - left.getTime())[0];
         return {
           id: source.id,
           name: source.name,
           language: source.language,
           siteUrl: source.siteUrl,
           feedUrl: source.feedUrl,
-          latestItemAt: sourceStats?.latestItemAt ? sourceStats.latestItemAt.toISOString() : null,
-          itemCountWindow: sourceStats?.itemCountWindow ?? 0
+          latestItemAt: latestItemAt ? latestItemAt.toISOString() : null,
+          itemCountWindow
         };
       })
       .filter((source) => (onlyWithItems ? source.itemCountWindow > 0 : true))
@@ -1989,7 +2023,82 @@ export class ItemsService {
     );
 
     const records = await ProcessedItemModel.aggregate<{ itemMetaId: string }>(pipeline);
-    return records.map((record) => record.itemMetaId).filter(Boolean);
+    const primaryIds = records.map((record) => record.itemMetaId).filter(Boolean);
+    if (!filters.sourceIds?.length) {
+      return primaryIds;
+    }
+
+    const fallbackIds = await this.resolveSourceFilterFallbackItemMetaIds(
+      orgId,
+      filters.sourceIds,
+      filters.dateRange
+    );
+    if (fallbackIds.length === 0) {
+      return primaryIds;
+    }
+    return Array.from(new Set([...primaryIds, ...fallbackIds]));
+  }
+
+  /**
+   * Fallback path when ProcessedItem.sourceId is missing:
+   * use ProcessedArticle -> Article(sourceId) -> cleanedMarkdownRef -> ProcessedItem.itemMetaId.
+   */
+  private async resolveSourceFilterFallbackItemMetaIds(
+    orgId: string,
+    sourceIds: string[],
+    dateRange?: ItemDateRangeFilter
+  ): Promise<string[]> {
+    if (!sourceIds.length) {
+      return [];
+    }
+
+    const articleWhere: Prisma.ArticleWhereInput = {
+      orgId,
+      sourceId: { in: sourceIds }
+    };
+    if (dateRange?.start || dateRange?.end) {
+      const crawlAt: Prisma.DateTimeFilter = {};
+      if (dateRange.start) {
+        crawlAt.gte = dateRange.start;
+      }
+      if (dateRange.end) {
+        crawlAt.lte = dateRange.end;
+      }
+      articleWhere.crawlAt = crawlAt;
+    }
+
+    const processedRows = await this.prisma.processedArticle.findMany({
+      where: {
+        status: "completed",
+        cleanedMarkdownRef: { not: null },
+        article: articleWhere
+      },
+      select: { cleanedMarkdownRef: true },
+      take: MAX_SEARCH_MATCHES
+    });
+
+    const processedIds = processedRows
+      .map((row) => (typeof row.cleanedMarkdownRef === "string" ? row.cleanedMarkdownRef.trim() : ""))
+      .filter((value): value is string => Boolean(value && Types.ObjectId.isValid(value)))
+      .map((value) => new Types.ObjectId(value));
+    if (processedIds.length === 0) {
+      return [];
+    }
+
+    const matched = await ProcessedItemModel.find(
+      {
+        _id: { $in: processedIds },
+        orgId,
+        status: PipelineStageStatus.Completed
+      },
+      { itemMetaId: 1 }
+    )
+      .limit(MAX_SEARCH_MATCHES)
+      .lean();
+
+    return matched
+      .map((row) => (typeof row.itemMetaId === "string" ? row.itemMetaId.trim() : ""))
+      .filter((value): value is string => Boolean(value));
   }
 
   private async resolveMetaSearchIds(orgId: string, strategy: SearchStrategy) {

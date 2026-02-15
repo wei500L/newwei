@@ -229,4 +229,106 @@ describe("ItemsRssTranslationService", () => {
     expect(maxActive).toBe(1);
     expect(acompletion).toHaveBeenCalledTimes(6);
   });
+
+  it("clamps LLM translation concurrency to service safety cap", async () => {
+    const points = Array.from({ length: 40 }).map((_, idx) => `p-${idx + 1}`);
+    mockProcessedRecords([
+      {
+        itemMetaId: "item-5",
+        result: {
+          key_points: points
+        }
+      }
+    ]);
+
+    const cache = createMemoryCache();
+    let active = 0;
+    let maxActive = 0;
+    const acompletion = jest.fn().mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      return { choices: [{ message: { content: "ok" } }] };
+    });
+
+    const service = new ItemsRssTranslationService(
+      cache as any,
+      { translateTextsToZhBestEffort: jest.fn() } as any,
+      {
+        getTranslationMaxConcurrency: jest.fn().mockResolvedValue(5_000),
+        getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
+          enabled: true,
+          baseUrl: "https://api.deeplx.org",
+          apiKey: "secret"
+        })
+      } as any,
+      { getActiveConfig: jest.fn().mockResolvedValue({ model: "test-model", enabled: true }) } as any,
+      { acompletion } as any
+    );
+
+    await service.translate("org-1", {
+      itemIds: ["item-5"],
+      provider: RssTranslationProvider.llm,
+      targetLanguage: "zh-CN",
+      fields: [RssTranslationField.key_points]
+    });
+
+    expect(maxActive).toBeLessThanOrEqual(20);
+  });
+
+  it("treats DeepLX as available when fallback translation API is configured", async () => {
+    const cache = createMemoryCache();
+    const service = new ItemsRssTranslationService(
+      cache as any,
+      { translateTextsToZhBestEffort: jest.fn() } as any,
+      {
+        getTranslationMaxConcurrency: jest.fn().mockResolvedValue(2),
+        getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
+          enabled: false,
+          baseUrl: "",
+          apiKey: "",
+          fallbackEnabled: true,
+          fallbackBaseUrl: "https://fallback.example/v1"
+        })
+      } as any,
+      { getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }) } as any,
+      { acompletion: jest.fn() } as any
+    );
+
+    const statuses = await service.getProviderStatuses("zh-CN");
+    const deepLx = statuses.find((status) => status.provider === RssTranslationProvider.deeplx);
+    expect(deepLx).toMatchObject({
+      available: true,
+      targetLanguageSupported: true
+    });
+  });
+
+  it("rejects translation request when itemIds exceed limit", async () => {
+    const cache = createMemoryCache();
+    const service = new ItemsRssTranslationService(
+      cache as any,
+      { translateTextsToZhBestEffort: jest.fn() } as any,
+      {
+        getTranslationMaxConcurrency: jest.fn().mockResolvedValue(2),
+        getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
+          enabled: true,
+          baseUrl: "https://api.deeplx.org",
+          apiKey: "secret"
+        })
+      } as any,
+      { getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }) } as any,
+      { acompletion: jest.fn() } as any
+    );
+
+    const ids = Array.from({ length: 51 }).map((_, idx) => `item-${idx}`);
+    await expect(
+      service.translate("org-1", {
+        itemIds: ids,
+        provider: RssTranslationProvider.deeplx,
+        targetLanguage: "zh-CN",
+        fields: [RssTranslationField.title]
+      })
+    ).rejects.toThrow("at most 50 itemIds");
+  });
 });

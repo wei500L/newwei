@@ -1,5 +1,6 @@
 import { ArgsType, Field, GraphQLISODateTime, InputType, Int, registerEnumType } from "@nestjs/graphql";
 import {
+  ArrayMaxSize,
   IsArray,
   IsDate,
   IsEnum,
@@ -129,6 +130,7 @@ export class ItemsFiltersInput {
 export class TranslateRssItemsInput {
   @Field(() => [String])
   @IsArray()
+  @ArrayMaxSize(50)
   @IsString({ each: true })
   itemIds!: string[];
 
@@ -139,11 +141,13 @@ export class TranslateRssItemsInput {
   @Field(() => [RssTranslationField], { nullable: true })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(4)
   @IsEnum(RssTranslationField, { each: true })
   fields?: RssTranslationField[];
 
   @Field(() => String, { defaultValue: "zh-CN" })
   @IsString()
+  @MaxLength(16)
   targetLanguage = "zh-CN";
 }
 

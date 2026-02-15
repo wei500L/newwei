@@ -1262,7 +1262,20 @@
       "sourcePlaceholder": "选择 RSS 信源",
       "selectedCount": "已选 {{count}} 个信源",
       "loadFailed": "加载 RSS 信源失败。",
-      "emptySources": "当前没有包含近期文章的 RSS 信源。"
+      "emptySources": "当前没有包含近期文章的 RSS 信源。",
+      "translation": {
+        "title": "翻译",
+        "enable": "启用",
+        "provider": {
+          "deeplx": "DeepLX API",
+          "llm": "LLM"
+        },
+        "showOriginal": "显示原文",
+        "unavailable": "所选翻译服务不可用。",
+        "targetUnsupported": "所选服务不支持目标语言。",
+        "loading": "正在翻译正文...",
+        "failed": "翻译失败。"
+      }
     },
     "topics": {
       "title": "专题/事件",
@@ -1964,6 +1977,63 @@
     "scheduleMode": {
       "interval": "间隔",
       "cron": "Cron"
+    },
+    "opml": {
+      "title": "从 OPML 导入 RSS 订阅源",
+      "actions": {
+        "preview": "预览",
+        "import": "导入",
+        "applyLanguage": "应用到已启用项"
+      },
+      "fields": {
+        "mode": "导入模式",
+        "preset": "预设",
+        "file": "上传 .opml/.xml",
+        "fileLoaded": "已加载文件：{{name}}",
+        "language": "目标语言（例如 zh/en）"
+      },
+      "mode": {
+        "preset": "内置预设",
+        "upload": "上传 OPML 文件"
+      },
+      "hint": {
+        "title": "导入说明",
+        "description": "URL 使用 OPML 的 htmlUrl，RSS 订阅源使用 xmlUrl 作为 seed.feedUrl，重复项会被跳过，语言设置会影响下游新闻流水线的 LLM 翻译。"
+      },
+      "summary": {
+        "total": "共 {{count}} 项",
+        "valid": "有效 {{count}} 项",
+        "duplicates": "重复 {{count}} 项",
+        "enabled": "已启用 {{count}} 项",
+        "title": "标题：{{title}}"
+      },
+      "columns": {
+        "import": "导入",
+        "name": "名称",
+        "siteUrl": "站点 URL",
+        "feedUrl": "订阅源 URL",
+        "language": "语言",
+        "status": "状态"
+      },
+      "status": {
+        "duplicate": "重复",
+        "ready": "就绪"
+      },
+      "report": {
+        "title": "导入完成",
+        "summary": "已创建 {{created}} 项，已跳过 {{skipped}} 项，失败 {{failed}} 项。"
+      },
+      "empty": "选择预设或上传 OPML 文件，然后点击预览。",
+      "errors": {
+        "loadPresets": "加载 OPML 预设失败。",
+        "readFile": "读取 OPML 文件失败。",
+        "preview": "预览 OPML 失败。",
+        "previewFirst": "请先预览再导入。",
+        "import": "导入 OPML 失败。"
+      },
+      "messages": {
+        "imported": "OPML 导入完成：已创建 {{created}} 项，已跳过 {{skipped}} 项，失败 {{failed}} 项。"
+      }
     }
   },
   "finance": {
@@ -3049,6 +3119,137 @@
         }
       }
     },
+    "rssTranslationMetrics": {
+      "title": "RSS 翻译指标",
+      "window": "时间窗口：{{from}} 至 {{to}}",
+      "filters": {
+        "lastDays": "最近 {{days}} 天",
+        "providers": {
+          "all": "全部来源",
+          "deeplx": "DeepLX API",
+          "llm": "LLM 小模型"
+        },
+        "languages": {
+          "all": "全部语言"
+        }
+      },
+      "summary": {
+        "requestCount": "请求数",
+        "translatedCount": "翻译文本数",
+        "cacheHitRate": "缓存命中率",
+        "failureRate": "失败率",
+        "avgLatencyMs": "平均耗时(ms)",
+        "maxLatencyMs": "最大耗时(ms)",
+        "cacheOverview": "缓存命中：{{hits}} · 缓存未命中：{{misses}} · 失败：{{failures}} · 超长跳过：{{skipTooLong}}",
+        "rates": "缓存命中率 {{cacheHitRate}} · 失败率 {{failureRate}}"
+      },
+      "charts": {
+        "volume": "请求量与翻译量趋势",
+        "quality": "缓存/失败/延迟趋势",
+        "empty": "当前筛选范围暂无指标数据。",
+        "series": {
+          "requests": "请求数",
+          "translated": "翻译文本数",
+          "cacheHitRate": "缓存命中率",
+          "failureRate": "失败率",
+          "avgLatency": "平均耗时(ms)"
+        }
+      },
+      "table": {
+        "title": "按日明细",
+        "empty": "未查询到指标数据。",
+        "columns": {
+          "date": "日期",
+          "provider": "来源",
+          "targetLanguage": "目标语言",
+          "requestCount": "请求数",
+          "textCount": "文本数",
+          "translatedCount": "翻译成功",
+          "cacheHitRate": "缓存命中率",
+          "failureRate": "失败率",
+          "avgLatencyMs": "平均耗时",
+          "maxLatencyMs": "最大耗时",
+          "failureCount": "失败数",
+          "skipTooLongCount": "超长跳过数"
+        }
+      },
+      "errors": {
+        "loadFailed": "加载 RSS 翻译指标失败。"
+      }
+    },
+    "rssDiagnostics": {
+      "title": "RSS 链路诊断",
+      "description": "检查 RSS 摄取健康状况并修复缺失的 ProcessedItem.sourceId 链接。",
+      "controls": {
+        "windowDays": "时间窗口（天）",
+        "lookbackHours": "回溯时间（小时）"
+      },
+      "errors": {
+        "loadFailed": "加载 RSS 诊断失败。",
+        "backfillFailed": "执行回填失败。"
+      },
+      "messages": {
+        "dryRunDone": "回填试运行完成。",
+        "backfillDone": "回填完成。"
+      },
+      "visibility": {
+        "processed": "可见（已处理）",
+        "articleFallback": "可见（文章回退）",
+        "hidden": "隐藏",
+        "articleFallbackShort": "文章回退"
+      },
+      "pipeline": {
+        "queued": "队列中",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败"
+      },
+      "table": {
+        "title": "按来源诊断",
+        "source": "来源",
+        "visibility": "可见性",
+        "processedCount": "已处理",
+        "articleCount": "文章数",
+        "jobs24h": "任务数(24小时)",
+        "issues": "问题"
+      },
+      "backfill": {
+        "title": "sourceId 回填",
+        "limit": "扫描限制",
+        "dryRun": "试运行",
+        "execute": "执行回填",
+        "dryRunSummary": "试运行完成。",
+        "executeSummary": "回填完成。",
+        "unresolved": {
+          "processedItemId": "已处理项目 ID",
+          "itemMetaId": "项目元数据 ID",
+          "reason": "原因"
+        }
+      },
+      "schedulerDisabled": "NEWS 源调度器已禁用。",
+      "recommendations": "建议",
+      "cards": {
+        "rssSources": "RSS 源总数",
+        "visibleProcessed": "可见（已处理）",
+        "visibleFallback": "可见（回退）",
+        "hidden": "隐藏来源",
+        "processedCoverage": "Processed sourceId 覆盖率",
+        "articleCoverage": "Article sourceId 覆盖率",
+        "totalCompleted": "已完成：{{value}}",
+        "missingSourceId": "缺失 sourceId：{{value}}",
+        "totalArticle": "文章数：{{value}}",
+        "missingArticleSourceId": "缺失 sourceId：{{value}}"
+      },
+      "charts": {
+        "visibility": "来源可见性分布",
+        "pipeline": "管道任务统计"
+      },
+      "meta": {
+        "generatedAt": "生成时间：{{value}}",
+        "pipelineLatest": "最新管道任务：{{value}}",
+        "crawlResultLatest": "最新抓取结果：{{value}}"
+      }
+    },
     "adminOnly": {
       "title": "管理员仅",
       "description": "管理员仅说明"
@@ -3068,6 +3269,8 @@
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "assistantSafety": "助手安全",
+      "rssTranslationMetrics": "RSS 翻译指标",
+      "rssDiagnostics": "RSS 诊断",
       "roles": "角色",
       "permissions": "权限",
       "members": "成员"
@@ -4812,6 +5015,19 @@
       "payloadMarkdown": "清洗后 Markdown",
       "markdownFallback": "Markdown 兜底",
       "markdownFallbackTooltip": "LLM 未返回 cleaned_markdown 字段，当前展示为抓取到的 Markdown 兜底内容。",
+      "translation": {
+        "title": "文章翻译",
+        "enable": "启用",
+        "provider": {
+          "deeplx": "DeepLX API",
+          "llm": "LLM"
+        },
+        "showOriginal": "显示原文",
+        "unavailable": "所选翻译服务不可用。",
+        "targetUnsupported": "所选服务不支持目标语言。",
+        "loading": "正在翻译正文...",
+        "failed": "翻译失败。"
+      },
       "readOriginal": "查看原文",
       "openItem": "打开条目",
       "empty": "未找到条目。",
@@ -4914,6 +5130,17 @@
       "feed": "信息流",
       "grid": "网格",
       "list": "列表"
+    }
+  },
+  "reader": {
+    "translation": {
+      "title": "翻译",
+      "enable": "启用",
+      "showOriginal": "显示原文",
+      "unavailable": "所选翻译服务不可用。",
+      "targetUnsupported": "所选服务不支持目标语言。",
+      "loading": "正在翻译正文...",
+      "failed": "翻译失败。"
     }
   },
   "crawlTemplates": {
@@ -5360,7 +5587,7 @@
       "locationNamePlaceholder": "例如：台北"
     },
     "feeds": {
-      "empty": "暂无标题。",
+      "empty": "暂无新闻。",
       "alert": "预警"
     },
     "alerts": {

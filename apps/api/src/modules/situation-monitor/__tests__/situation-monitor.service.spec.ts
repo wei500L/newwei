@@ -13,6 +13,20 @@ describe("SituationMonitorService", () => {
     jest.clearAllMocks();
   });
 
+  const createProcessedFindChain = (result: unknown[]) => ({
+    sort: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(result),
+  });
+
+  const createRawFindChain = (result: unknown[]) => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(result),
+  });
+
   it("uses sortAt (publishedAt-priority) windowing with ingestedAt/createdAt fallbacks for headline selection", async () => {
     const chain = {
       sort: jest.fn().mockReturnThis(),
@@ -50,5 +64,105 @@ describe("SituationMonitorService", () => {
 
     expect(chain.sort).toHaveBeenCalledWith({ sortAt: -1, ingestedAt: -1, createdAt: -1 });
     expect(chain.select).toHaveBeenCalledWith(expect.objectContaining({ ingestedAt: 1 }));
+  });
+
+  it("filters placeholder titles from processed headlines", async () => {
+    const processedChain = createProcessedFindChain([
+      {
+        _id: "processed-1",
+        rawItemId: "raw-1",
+        result: { title: "No title" },
+        tags: ["situation-monitor", "sm:tech"],
+        sortAt: new Date("2026-01-02T10:00:00.000Z"),
+        createdAt: new Date("2026-01-02T09:00:00.000Z"),
+      },
+      {
+        _id: "processed-2",
+        rawItemId: "raw-2",
+        result: { title: "AI chip export controls tighten" },
+        tags: ["situation-monitor", "sm:tech"],
+        sortAt: new Date("2026-01-02T11:00:00.000Z"),
+        createdAt: new Date("2026-01-02T10:00:00.000Z"),
+      },
+    ]);
+    processedFindMock.mockReturnValue(processedChain);
+
+    const rawChain = createRawFindChain([
+      { _id: "raw-1", payload: { url: "https://example.com/placeholder", sourceName: "Example" } },
+      { _id: "raw-2", payload: { url: "https://example.com/ai-chip", sourceName: "Example" } },
+    ]);
+    rawFindMock.mockReturnValue(rawChain);
+
+    const cache = {} as any;
+    const external = {} as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, feedback, {} as any);
+
+    const result = await (service as any).buildHeadlinesByCategory({
+      orgId: "org-1",
+      since: new Date("2026-01-01T00:00:00.000Z"),
+      maxItems: 20,
+      maxPerCategory: 5,
+      allowGdeltFallback: false,
+      scope: "tagged",
+      debug: false,
+    });
+
+    expect(result.tech).toHaveLength(1);
+    expect(result.tech[0]?.title).toBe("AI chip export controls tighten");
+  });
+
+  it("filters placeholder titles from gdelt fallback headlines", async () => {
+    const processedChain = createProcessedFindChain([]);
+    processedFindMock.mockReturnValue(processedChain);
+
+    const rawChain = createRawFindChain([]);
+    rawFindMock.mockReturnValue(rawChain);
+
+    const external = {
+      fetchGdeltCategoryHeadlines: jest.fn(async (category: string) => {
+        if (category !== "tech") {
+          return [];
+        }
+        return [
+          {
+            id: "gdelt-tech-placeholder",
+            title: "No title",
+            link: "https://example.com/no-title",
+            source: "GDELT",
+            timestamp: Date.now(),
+            category: "tech",
+            origin: "gdelt",
+            isAlert: false,
+          },
+          {
+            id: "gdelt-tech-valid",
+            title: "Semiconductor exports face new review",
+            link: "https://example.com/semiconductor-review",
+            source: "GDELT",
+            timestamp: Date.now(),
+            category: "tech",
+            origin: "gdelt",
+            isAlert: false,
+          },
+        ];
+      }),
+    } as any;
+    const cache = {} as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const service = new SituationMonitorService(cache, external, feedback, {} as any);
+
+    const result = await (service as any).buildHeadlinesByCategory({
+      orgId: "org-1",
+      since: new Date("2026-01-01T00:00:00.000Z"),
+      maxItems: 20,
+      maxPerCategory: 5,
+      allowGdeltFallback: true,
+      scope: "tagged",
+      debug: false,
+    });
+
+    expect(result.tech).toHaveLength(1);
+    expect(result.tech[0]?.title).toBe("Semiconductor exports face new review");
   });
 });

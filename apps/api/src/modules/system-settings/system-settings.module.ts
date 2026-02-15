@@ -28,6 +28,10 @@ import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
 import { RateLimitSettingsController } from "./rate-limit-settings.controller";
+import { RssDiagnosticsController } from "./rss-diagnostics.controller";
+import { RssDiagnosticsService } from "./rss-diagnostics.service";
+import { RssTranslationMetricsController } from "./rss-translation-metrics.controller";
+import { RssTranslationMetricsService } from "./rss-translation-metrics.service";
 import { SituationMonitorSettingsController } from "./situation-monitor-settings.controller";
 import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
 import { SystemSecuritySettingsController } from "./system-security-settings.controller";
@@ -54,6 +58,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     ModelServiceSettingsController,
     SituationMonitorSettingsController,
     VectorServiceSettingsController,
+    RssTranslationMetricsController,
+    RssDiagnosticsController,
   ],
   providers: [
     RateLimitConfigService,
@@ -72,6 +78,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     AssistantSafetyDiagnosticsService,
     AssistantSafetyMetricsService,
     OpenAiKeysSettingsService,
+    RssTranslationMetricsService,
+    RssDiagnosticsService,
   ],
   exports: [
     RateLimitConfigService,
@@ -87,6 +95,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     ModelServiceSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
+    RssTranslationMetricsService,
+    RssDiagnosticsService,
   ],
 })
 export class SystemSettingsModule {}

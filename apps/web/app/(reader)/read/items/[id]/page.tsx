@@ -5,7 +5,7 @@ import { ArrowLeftOutlined, BgColorsOutlined, FontSizeOutlined, ShareAltOutlined
 import { Alert, Button, Radio, Select, Skeleton, Space, Switch, Typography } from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { MarkdownViewer } from "@/components/markdown-viewer";
@@ -115,6 +115,7 @@ export default function ReaderPage() {
   const [showOriginalContent, setShowOriginalContent] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
+  const translationRequestSeqRef = useRef(0);
 
   const { data, loading, error } = useQuery(READER_ITEM_QUERY, {
     variables: { id },
@@ -219,6 +220,7 @@ export default function ReaderPage() {
   }, [targetLanguage, translationProvider]);
 
   useEffect(() => {
+    translationRequestSeqRef.current += 1;
     setTranslationError(null);
     setTranslatedItem(null);
     setShowOriginalContent(false);
@@ -229,7 +231,8 @@ export default function ReaderPage() {
       return;
     }
 
-    let active = true;
+    const requestSeq = translationRequestSeqRef.current + 1;
+    translationRequestSeqRef.current = requestSeq;
     setTranslationError(null);
 
     translateRssItems({
@@ -243,23 +246,19 @@ export default function ReaderPage() {
       }
     })
       .then((response) => {
-        if (!active) {
+        if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
         const next = response.data?.translateRssItems.translations?.[0] ?? null;
         setTranslatedItem(next);
       })
       .catch((err) => {
-        if (!active) {
+        if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
         const message = err instanceof Error ? err.message : "Translation failed";
         setTranslationError(message);
       });
-
-    return () => {
-      active = false;
-    };
   }, [
     id,
     item?.id,
@@ -414,8 +413,16 @@ export default function ReaderPage() {
                 buttonStyle="solid"
                 disabled={!translationEnabled}
               >
-                <Radio.Button value="deeplx">DeepLX API</Radio.Button>
-                <Radio.Button value="llm">LLM</Radio.Button>
+                <Radio.Button value="deeplx">
+                  {t('items.detail.translation.provider.deeplx', {
+                    defaultValue: 'DeepLX API'
+                  })}
+                </Radio.Button>
+                <Radio.Button value="llm">
+                  {t('items.detail.translation.provider.llm', {
+                    defaultValue: 'LLM'
+                  })}
+                </Radio.Button>
               </Radio.Group>
               <Select
                 style={{ minWidth: 160 }}

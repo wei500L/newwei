@@ -21,7 +21,7 @@ import {
 } from 'antd';
 import type { CollapseProps } from 'antd';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
@@ -120,6 +120,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const [showOriginalContent, setShowOriginalContent] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
+  const translationRequestSeqRef = useRef(0);
 
   const { data: translationStatusData } = useQuery<
     RssTranslationStatusQuery,
@@ -303,6 +304,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   }, [targetLanguage, translationProvider]);
 
   useEffect(() => {
+    translationRequestSeqRef.current += 1;
     setTranslationError(null);
     setTranslatedItem(null);
     setShowOriginalContent(false);
@@ -313,7 +315,8 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       return;
     }
 
-    let active = true;
+    const requestSeq = translationRequestSeqRef.current + 1;
+    translationRequestSeqRef.current = requestSeq;
     setTranslationError(null);
 
     translateRssItems({
@@ -327,23 +330,19 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       }
     })
       .then((response) => {
-        if (!active) {
+        if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
         const next = response.data?.translateRssItems.translations?.[0] ?? null;
         setTranslatedItem(next);
       })
       .catch((err) => {
-        if (!active) {
+        if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
         const message = err instanceof Error ? err.message : 'Translation failed';
         setTranslationError(message);
       });
-
-    return () => {
-      active = false;
-    };
   }, [
     item?.id,
     targetLanguage,

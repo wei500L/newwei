@@ -577,6 +577,7 @@ export function ItemsView({
     Record<string, Omit<RssItemTranslation, "itemId">>
   >({});
   const translationRequestKeyRef = useRef("");
+  const translationRequestSeqRef = useRef(0);
   const listTableContainerRef = useRef<HTMLDivElement | null>(null);
   const [listTableScrollX, setListTableScrollX] = useState<number | null>(null);
   const [listTableScrollY, setListTableScrollY] = useState<number | null>(null);
@@ -640,6 +641,7 @@ export function ItemsView({
   }, [normalizedFixedSourceIds]);
 
   useEffect(() => {
+    translationRequestSeqRef.current += 1;
     setTranslatedByItemId({});
     translationRequestKeyRef.current = "";
   }, [
@@ -1050,6 +1052,8 @@ export function ItemsView({
     if (translationRequestKeyRef.current === requestKey) {
       return;
     }
+    const requestSeq = translationRequestSeqRef.current + 1;
+    translationRequestSeqRef.current = requestSeq;
     translationRequestKeyRef.current = requestKey;
 
     translateRssItems({
@@ -1063,6 +1067,9 @@ export function ItemsView({
       }
     })
       .then((response) => {
+        if (translationRequestSeqRef.current !== requestSeq) {
+          return;
+        }
         onTranslationError?.(null);
         const translations = response.data?.translateRssItems.translations ?? [];
         if (translations.length === 0) {
@@ -1084,6 +1091,9 @@ export function ItemsView({
         });
       })
       .catch((err) => {
+        if (translationRequestSeqRef.current !== requestSeq) {
+          return;
+        }
         translationRequestKeyRef.current = "";
         const message = err instanceof Error ? err.message : "Translation failed";
         onTranslationError?.(message);

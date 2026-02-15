@@ -1,28 +1,76 @@
 const { spawnSync } = require('node:child_process');
+const { existsSync, readdirSync, readFileSync } = require('node:fs');
 const path = require('node:path');
 
+const formatCommand = (command, args) => [command, ...args].join(' ');
+const summarizeCommand = (command, args) => {
+  const singleLine = formatCommand(command, args).replace(/\s+/gu, ' ').trim();
+  if (singleLine.length <= 220) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, 220)}...`;
+};
+const nowIso = () => new Date().toISOString();
+const log = (message) => process.stdout.write(`${nowIso()} [docker-up] ${message}\n`);
+const logError = (message) => process.stderr.write(`${nowIso()} [docker-up] ${message}\n`);
+
 const run = (command, args, cwd) => {
+  const startedAt = Date.now();
   const result = spawnSync(command, args, {
     cwd,
     stdio: 'inherit',
     shell: false
   });
+  if (result.error) {
+    logError(`Failed to execute command: ${formatCommand(command, args)}`);
+    logError(`           ${result.error.message}`);
+  }
   if (result.status !== 0) {
+    logError(
+      `Command exited with code ${result.status ?? 1}: ${formatCommand(command, args)} (${Date.now() - startedAt}ms)`
+    );
     process.exit(result.status ?? 1);
   }
 };
 
 const runCapture = (command, args, cwd) => {
+  const startedAt = Date.now();
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     stdio: ['inherit', 'pipe', 'inherit'],
     shell: false
   });
+  if (result.error) {
+    logError(`Failed to execute command: ${formatCommand(command, args)}`);
+    logError(`           ${result.error.message}`);
+  }
   if (result.status !== 0) {
+    logError(
+      `Command exited with code ${result.status ?? 1}: ${formatCommand(command, args)} (${Date.now() - startedAt}ms)`
+    );
     process.exit(result.status ?? 1);
   }
   return (result.stdout ?? "").toString();
+};
+
+const runWithStatusCapture = (command, args, cwd) =>
+  spawnSync(command, args, {
+    cwd,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    encoding: 'utf8',
+    shell: false
+  });
+
+const printCapturedOutput = (result) => {
+  const stdout = (result.stdout ?? '').toString();
+  const stderr = (result.stderr ?? '').toString();
+  if (stdout.length > 0) {
+    process.stdout.write(stdout);
+  }
+  if (stderr.length > 0) {
+    process.stderr.write(stderr);
+  }
 };
 
 const isFlagWithValue = (flag, arg) => arg === flag || arg.startsWith(`${flag}=`);
@@ -92,6 +140,231 @@ const dockerImageExists = (imageRef, cwd) => {
   return result.status === 0;
 };
 
+const listRunningComposeServices = (composeBaseArgs, cwd) => {
+  const output = runCapture(
+    'docker',
+    [...composeBaseArgs, 'ps', '--status', 'running', '--services'],
+    cwd
+  );
+  return new Set(
+    output
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+};
+
+const collectRedisAofDiagnostics = (composeBaseArgs, cwd) => {
+  const diagnostics = [
+    {
+      title: 'Redis service status',
+      args: [...composeBaseArgs, 'ps', '--all', 'redis']
+    },
+    {
+      title: 'Latest persisted Redis AOF incident logs',
+      args: [
+        ...composeBaseArgs,
+        'run',
+        '--rm',
+        '--no-deps',
+        '--entrypoint',
+        'sh',
+        'redis',
+        '-ec',
+        [
+          'set -eu',
+          'BACKUP_ROOT="${REDIS_AOF_BACKUP_ROOT:-/data/aof-backups}"',
+          'INCIDENT_DIR="${REDIS_AOF_INCIDENT_DIR:-${BACKUP_ROOT}/incidents}"',
+          'TAIL_LINES="${REDIS_AOF_PREFLIGHT_LOG_TAIL:-40}"',
+          'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [docker-up][redis-preflight][INFO] Incident directory: $INCIDENT_DIR"',
+          'if [ ! -d "$INCIDENT_DIR" ]; then',
+          '  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [docker-up][redis-preflight][INFO] No incident directory found yet"',
+          '  exit 0',
+          'fi',
+          'latest="$(ls -1t "$INCIDENT_DIR" 2>/dev/null | head -n 3 || true)"',
+          'if [ -z "$latest" ]; then',
+          '  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [docker-up][redis-preflight][INFO] Incident directory is empty"',
+          '  exit 0',
+          'fi',
+          'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [docker-up][redis-preflight][INFO] Showing up to 3 latest incident logs"',
+          "printf '%s\\n' \"$latest\" | while IFS= read -r name; do",
+          '  file="$INCIDENT_DIR/$name"',
+          '  [ -f "$file" ] || continue',
+          '  echo "--- $file (tail=$TAIL_LINES) ---"',
+          '  tail -n "$TAIL_LINES" "$file" || true',
+          'done'
+        ].join('\n')
+      ]
+    }
+  ];
+
+  for (const diagnostic of diagnostics) {
+    log(`Collecting diagnostics: ${diagnostic.title}`);
+    const result = runWithStatusCapture('docker', diagnostic.args, cwd);
+    printCapturedOutput(result);
+    if (result.error) {
+      logError(`Failed to execute diagnostic command: ${summarizeCommand('docker', diagnostic.args)}`);
+      logError(`           ${result.error.message}`);
+      continue;
+    }
+    if (result.status !== 0) {
+      logError(
+        `Diagnostic command exited with code ${result.status ?? 1}: ${summarizeCommand('docker', diagnostic.args)}`
+      );
+    }
+  }
+};
+
+const redisPreflightErrorHint = (statusCode) => {
+  if (statusCode === 18) {
+    return [
+      'Redis AOF is corrupted and auto-repair is disabled by REDIS_AOF_PREFLIGHT_AUTO_REPAIR.',
+      'Set REDIS_AOF_PREFLIGHT_AUTO_REPAIR=true in infra/docker/.env or run `pnpm docker:redis:repair`.'
+    ];
+  }
+  if (statusCode === 19 || statusCode === 20) {
+    return [
+      'Redis AOF preflight attempted repair but validation still failed.',
+      'Run `pnpm docker:redis:repair` and inspect /data/aof-backups/incidents for root-cause diagnostics.'
+    ];
+  }
+  return [
+    'Redis AOF integrity check failed before startup.',
+    'Run `pnpm docker:redis:repair` and retry.',
+    'If repeated, inspect backup snapshots in the redis volume under /data/aof-backups.'
+  ];
+};
+
+const validateRedisAofForDockerUp = (composeBaseArgs, cwd) => {
+  const checkScript = [
+    'set -eu',
+    'AOF_DIR="${REDIS_AOF_DIR:-/data/appendonlydir}"',
+    'AOF_MANIFEST="$AOF_DIR/appendonly.aof.manifest"',
+    'LEGACY_AOF="$AOF_DIR/appendonly.aof"',
+    'CHECK_LOG="/tmp/redis-aof-check.log"',
+    'FIX_LOG="/tmp/redis-aof-fix.log"',
+    'BACKUP_ROOT="${REDIS_AOF_BACKUP_ROOT:-/data/aof-backups}"',
+    'BACKUP_KEEP="${REDIS_AOF_BACKUP_KEEP:-5}"',
+    'INCIDENT_DIR="${REDIS_AOF_INCIDENT_DIR:-${BACKUP_ROOT}/incidents}"',
+    'AUTO_REPAIR="${REDIS_AOF_PREFLIGHT_AUTO_REPAIR:-true}"',
+    'LOG_TAIL="${REDIS_AOF_PREFLIGHT_LOG_TAIL:-40}"',
+    'RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"',
+    'LAST_BACKUP_DIR=""',
+    'timestamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }',
+    'log() { level="$1"; shift; echo "$(timestamp) [docker-up][redis-preflight][$level][run:$RUN_ID] $*"; }',
+    'parse_positive_int_or_default() {',
+    '  value="$1"',
+    '  fallback="$2"',
+    '  case "$value" in',
+    "    '' | *[!0-9]*)",
+    '      echo "$fallback"',
+    '      return',
+    '      ;;',
+    '  esac',
+    '  if [ "$value" -le 0 ]; then',
+    '    echo "$fallback"',
+    '    return',
+    '  fi',
+    '  echo "$value"',
+    '}',
+    'persist_log() {',
+    '  source_file="$1"',
+    '  suffix="$2"',
+    '  [ -f "$source_file" ] || return',
+    '  mkdir -p "$INCIDENT_DIR"',
+    '  incident_file="$INCIDENT_DIR/$RUN_ID-$suffix.log"',
+    '  cp "$source_file" "$incident_file"',
+    '  log INFO "Saved diagnostic log: $incident_file"',
+    '}',
+    'prune_backups() {',
+    '  keep="$(parse_positive_int_or_default "$BACKUP_KEEP" 5)"',
+    '  [ -d "$BACKUP_ROOT" ] || return',
+    "  entries=\"$(find \"$BACKUP_ROOT\" -mindepth 1 -maxdepth 1 -type d -name 'appendonlydir-*' -printf '%f\\n' | sort || true)\"",
+    "  total=\"$(printf '%s\\n' \"$entries\" | sed '/^$/d' | wc -l | tr -d ' ')\"",
+    '  if [ "$total" -le "$keep" ]; then',
+    '    return',
+    '  fi',
+    '  remove_count=$((total - keep))',
+    "  printf '%s\\n' \"$entries\" | sed '/^$/d' | head -n \"$remove_count\" | while IFS= read -r name; do",
+    '    rm -rf "$BACKUP_ROOT/$name"',
+    '    log INFO "Pruned old AOF backup: $BACKUP_ROOT/$name"',
+    '  done',
+    '}',
+    'backup_aof_dir() {',
+    '  backup_ts="$(date -u +%Y%m%dT%H%M%SZ)-$$"',
+    '  backup_dir="$BACKUP_ROOT/appendonlydir-$backup_ts"',
+    '  mkdir -p "$BACKUP_ROOT"',
+    '  cp -a "$AOF_DIR" "$backup_dir"',
+    '  LAST_BACKUP_DIR="$backup_dir"',
+    '  log WARN "Backed up AOF data to $backup_dir"',
+    '  prune_backups',
+    '}',
+    "target=''",
+    'if [ -f "$AOF_MANIFEST" ]; then',
+    '  target="$AOF_MANIFEST"',
+    'elif [ -f "$LEGACY_AOF" ]; then',
+    '  target="$LEGACY_AOF"',
+    'fi',
+    'if [ -z "$target" ]; then',
+    '  log INFO "No AOF files found (fresh volume)"',
+    '  exit 0',
+    'fi',
+    'if redis-check-aof "$target" >"$CHECK_LOG" 2>&1; then',
+    '  log INFO "AOF integrity check passed for $target"',
+    '  exit 0',
+    'fi',
+    'persist_log "$CHECK_LOG" "check-failed"',
+    'log ERROR "Corrupted AOF detected at $target"',
+    'if [ -s "$CHECK_LOG" ]; then',
+    '  log WARN "redis-check-aof validation summary (tail=$LOG_TAIL):"',
+    '  tail -n "$LOG_TAIL" "$CHECK_LOG"',
+    'fi',
+    'if [ "$AUTO_REPAIR" != "true" ]; then',
+    '  log ERROR "REDIS_AOF_PREFLIGHT_AUTO_REPAIR=$AUTO_REPAIR, refusing automatic repair"',
+    '  exit 18',
+    'fi',
+    'backup_aof_dir',
+    'log WARN "Running redis-check-aof --fix for $target"',
+    "if ! printf 'y\\n' | redis-check-aof --fix \"$target\" >\"$FIX_LOG\" 2>&1; then",
+    '  persist_log "$FIX_LOG" "fix-failed"',
+    '  log ERROR "redis-check-aof --fix failed for $target"',
+    '  if [ -s "$FIX_LOG" ]; then',
+    '    tail -n "$LOG_TAIL" "$FIX_LOG"',
+    '  fi',
+    '  exit 19',
+    'fi',
+    'persist_log "$FIX_LOG" "fix"',
+    'if ! redis-check-aof "$target" >"$CHECK_LOG" 2>&1; then',
+    '  persist_log "$CHECK_LOG" "post-fix-check-failed"',
+    '  log ERROR "AOF remains invalid after repair for $target"',
+    '  if [ -s "$CHECK_LOG" ]; then',
+    '    tail -n "$LOG_TAIL" "$CHECK_LOG"',
+    '  fi',
+    '  exit 20',
+    'fi',
+    'persist_log "$CHECK_LOG" "post-fix-check"',
+    'log WARN "AOF repair completed and validation passed"',
+    'log WARN "Repair backup location: $LAST_BACKUP_DIR"',
+    'exit 0'
+  ].join('\n');
+
+  const args = [...composeBaseArgs, 'run', '--rm', '--no-deps', '--entrypoint', 'sh', 'redis', '-ec', checkScript];
+  const result = runWithStatusCapture('docker', args, cwd);
+  printCapturedOutput(result);
+
+  if (result.error) {
+    logError(`Failed to execute command: ${summarizeCommand('docker', args)}`);
+    logError(`           ${result.error.message}`);
+    process.exit(1);
+  }
+
+  if (result.status === 0) return;
+
+  collectRedisAofDiagnostics(composeBaseArgs, cwd);
+  logError(redisPreflightErrorHint(result.status ?? 1).join('\n'));
+  process.exit(result.status ?? 1);
+};
+
 const resolveUpServices = (upArgs, services) => {
   const serviceNames = new Set(Object.keys(services));
   const explicit = upArgs.filter((arg) => arg && !arg.startsWith('-') && serviceNames.has(arg));
@@ -122,8 +395,99 @@ const resolveUpServices = (upArgs, services) => {
   return resolved;
 };
 
+const collectMigrationSqlFiles = (dirPath) => {
+  if (!existsSync(dirPath)) return [];
+
+  const entries = readdirSync(dirPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.resolve(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectMigrationSqlFiles(fullPath));
+      continue;
+    }
+    if (entry.isFile() && entry.name === 'migration.sql') {
+      files.push(fullPath);
+    }
+  }
+  return files;
+};
+
+const lineNumberFromOffset = (source, offset) => {
+  let line = 1;
+  for (let index = 0; index < offset; index += 1) {
+    if (source.charCodeAt(index) === 10) line += 1;
+  }
+  return line;
+};
+
+const findMigrationIdentifierViolations = (migrationsDir, maxLength) => {
+  const sqlFiles = collectMigrationSqlFiles(migrationsDir);
+  const patterns = [/(?:UNIQUE\s+)?INDEX\s+`([^`]+)`/g, /CONSTRAINT\s+`([^`]+)`/g];
+  const violations = [];
+  const seen = new Set();
+
+  for (const filePath of sqlFiles) {
+    const sql = readFileSync(filePath, 'utf8');
+    for (const pattern of patterns) {
+      let match = pattern.exec(sql);
+      while (match) {
+        const identifier = match[1];
+        if (identifier && identifier.length > maxLength) {
+          const line = lineNumberFromOffset(sql, match.index);
+          const key = `${filePath}:${line}:${identifier}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({
+              filePath,
+              identifier,
+              length: identifier.length,
+              line
+            });
+          }
+        }
+        match = pattern.exec(sql);
+      }
+    }
+  }
+
+  return violations;
+};
+
+const validateMigrationIdentifiersForDockerUp = (repoRoot) => {
+  const maxLength = 64;
+  const migrationsDir = path.resolve(repoRoot, 'packages/db/prisma/migrations');
+  const violations = findMigrationIdentifierViolations(migrationsDir, maxLength);
+  if (violations.length === 0) return;
+
+  violations.sort(
+    (a, b) =>
+      b.length - a.length ||
+      a.filePath.localeCompare(b.filePath) ||
+      a.line - b.line ||
+      a.identifier.localeCompare(b.identifier)
+  );
+
+  const details = violations.map((violation) => {
+    const relativePath = path.relative(repoRoot, violation.filePath) || violation.filePath;
+    return `${violation.length}\t${violation.identifier}\t${relativePath}:${violation.line}`;
+  });
+
+  process.stderr.write(
+    [
+      `[docker-up] Found migration identifier(s) longer than ${maxLength} characters (MySQL limit).`,
+      '[docker-up] Fix by setting `map:` on @@index/@@unique in packages/db/prisma/schema.prisma',
+      '[docker-up] or shortening the identifier in migration.sql.',
+      '',
+      ...details
+    ].join('\n') + '\n'
+  );
+  process.exit(1);
+};
+
 const main = () => {
   const scriptsDir = path.resolve(__dirname, "..");
+  const repoRoot = path.resolve(scriptsDir, "../..");
   const dockerDir = path.resolve(scriptsDir, '../docker');
   const envFile = path.resolve(dockerDir, '.env');
   const composeFile = path.resolve(dockerDir, 'docker-compose.yml');
@@ -131,6 +495,9 @@ const main = () => {
   const userArgs = process.argv.slice(2);
   let { globalArgs, upArgs } = splitComposeArgs(userArgs);
   const requestedServices = upArgs.filter((arg) => arg && !arg.startsWith('-'));
+  log(
+    `Starting docker up with args: ${userArgs.length > 0 ? userArgs.join(' ') : '(default)'}`
+  );
 
   const wantsExtrasProfile = requestedServices.some((name) => knownExtrasServices.has(name));
   if (wantsExtrasProfile && !hasProfile(globalArgs, 'extras')) {
@@ -158,20 +525,35 @@ const main = () => {
   const serviceNames = new Set(Object.keys(services));
   const unknownServices = requestedServices.filter((name) => !serviceNames.has(name));
   if (unknownServices.length > 0) {
-    process.stderr.write(
-      `[docker-up] Unknown service(s): ${unknownServices.join(', ')}\n` +
-        `           Available: ${Array.from(serviceNames).sort().join(', ')}\n`
+    logError(
+      `Unknown service(s): ${unknownServices.join(', ')}\n` +
+        `           Available: ${Array.from(serviceNames).sort().join(', ')}`
     );
     const hints = unknownServices
       .map((name) => knownExtrasServices.get(name))
       .filter(Boolean);
     if (hints.length > 0) {
-      process.stderr.write(`           Hint: ${hints.join(' | ')}\n`);
+      logError(`           Hint: ${hints.join(' | ')}`);
     }
     process.exit(1);
   }
 
   const upServices = resolveUpServices(upArgs, services);
+
+  if (upServices.has('api')) {
+    log('Validating Prisma migration identifiers...');
+    validateMigrationIdentifiersForDockerUp(repoRoot);
+  }
+
+  if (upServices.has('redis')) {
+    const runningServices = listRunningComposeServices(composeBaseArgs, scriptsDir);
+    if (runningServices.has('redis')) {
+      log('Redis already running; skipping offline AOF preflight.');
+    } else {
+      log('Validating Redis AOF integrity...');
+      validateRedisAofForDockerUp(composeBaseArgs, scriptsDir);
+    }
+  }
 
   const buildServices = Object.entries(services)
     .filter(([name, service]) => upServices.has(name) && Boolean(service && service.build))

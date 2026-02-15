@@ -7,19 +7,21 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AssistantSafetySettingsPanel } from "@/components/settings/assistant-safety-settings-panel";
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
 import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
 import { NumberRangeExtra, TokenEstimateExtra, TotalTokenEstimateText } from "@/components/settings/form-field-feedback";
 import { GeoNominatimSettingsPanel } from "@/components/settings/geo-nominatim-settings-panel";
 import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph-review-panel";
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
-import { AssistantSafetySettingsPanel } from "@/components/settings/assistant-safety-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
+import { RssDiagnosticsPanel } from "@/components/settings/rss-diagnostics-panel";
+import { RssTranslationMetricsPanel } from "@/components/settings/rss-translation-metrics-panel";
 import { SituationMonitorSettingsPanel } from "@/components/settings/situation-monitor-settings-panel";
 import { SystemSecuritySettingsPanel } from "@/components/settings/system-security-settings-panel";
 import { UnitInputNumber } from "@/components/settings/unit-input-number";
@@ -767,6 +769,16 @@ export function SystemSettingsContent() {
           key: "situationMonitor",
           label: t("systemSettings.tabs.situationMonitor"),
           children: <SituationMonitorSettingsPanel />
+        },
+        {
+          key: "rssTranslationMetrics",
+          label: t("settings.tabs.rssTranslationMetrics"),
+          children: <RssTranslationMetricsPanel />
+        },
+        {
+          key: "rssDiagnostics",
+          label: t("settings.tabs.rssDiagnostics", { defaultValue: "RSS Diagnostics" }),
+          children: <RssDiagnosticsPanel />
         },
         { key: "vectorService", label: t("systemSettings.tabs.vectorService"), children: <VectorServiceSettingsPanel /> },
         { key: "modelService", label: t("systemSettings.tabs.modelService"), children: <ModelServiceSettingsPanel /> },

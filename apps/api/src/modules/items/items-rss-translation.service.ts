@@ -1,13 +1,17 @@
 import { ProcessedItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Optional } from "@nestjs/common";
 import { createHash } from "node:crypto";
 
 import { RssTranslationField, RssTranslationProvider, TranslateRssItemsInput } from "../../graphql/dto/item.input";
 import { CacheService } from "../cache/cache.service";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
-import { SituationMonitorSettingsService } from "../system-settings/situation-monitor-settings.service";
+import { RssTranslationMetricsService } from "../system-settings/rss-translation-metrics.service";
+import {
+  SituationMonitorSettingsService,
+  type SituationMonitorTranslationRuntimeConfig
+} from "../system-settings/situation-monitor-settings.service";
 import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
 const logger = createLogger({ name: "items-rss-translation" });
@@ -21,7 +25,12 @@ const DEFAULT_TRANSLATION_FIELDS: RssTranslationField[] = [
   RssTranslationField.key_points
 ];
 const MARKDOWN_CHUNK_MAX_CHARS = 1_600;
+const MAX_TRANSLATION_ITEM_IDS = 50;
+const MAX_TEXT_CHARS = 12_000;
+const MAX_MARKDOWN_CHARS = 120_000;
+const MAX_MARKDOWN_CHUNKS = 80;
 const DEFAULT_LLM_TRANSLATION_CONCURRENCY = 2;
+const MAX_LLM_TRANSLATION_CONCURRENCY = 20;
 
 interface ProcessedTranslationRecord {
   itemMetaId: string;
@@ -34,6 +43,17 @@ interface RssTranslationFieldsPayload {
   summary?: string;
   keyPoints: string[];
   cleanedMarkdown?: string;
+}
+
+interface RssTranslationMetricsAccumulator {
+  requestCount: number;
+  itemCount: number;
+  textCount: number;
+  cacheHitCount: number;
+  cacheMissCount: number;
+  translatedCount: number;
+  failureCount: number;
+  skipTooLongCount: number;
 }
 
 export interface RssTranslationProviderStatus {
@@ -117,7 +137,8 @@ export class ItemsRssTranslationService {
     private readonly situationMonitorTranslation: SituationMonitorTranslationService,
     private readonly situationMonitorSettings: SituationMonitorSettingsService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
-    private readonly liteLlm: LiteLlmService
+    private readonly liteLlm: LiteLlmService,
+    @Optional() private readonly metrics?: RssTranslationMetricsService
   ) {}
 
   async getProviderStatuses(targetLanguage?: string): Promise<RssTranslationProviderStatus[]> {
@@ -143,42 +164,61 @@ export class ItemsRssTranslationService {
       };
     }
 
-    await this.assertProviderAvailable(provider, targetLanguage);
+    const metrics = this.createMetricsAccumulator(itemIds.length);
+    const startedAt = Date.now();
 
-    const llmModel =
-      provider === RssTranslationProvider.llm
-        ? normalizeNonEmptyString((await this.llmGatewaySettings.getActiveConfig())?.model)
-        : undefined;
-    const llmConcurrency =
-      provider === RssTranslationProvider.llm
-        ? await this.resolveConfiguredLlmTranslationConcurrency()
-        : undefined;
+    try {
+      await this.assertProviderAvailable(provider, targetLanguage);
 
-    const records = await this.fetchLatestProcessedRecords(orgId, itemIds);
-    const translations: RssItemTranslation[] = [];
+      const llmModel =
+        provider === RssTranslationProvider.llm
+          ? normalizeNonEmptyString((await this.llmGatewaySettings.getActiveConfig())?.model)
+          : undefined;
+      const llmConcurrency =
+        provider === RssTranslationProvider.llm
+          ? await this.resolveConfiguredLlmTranslationConcurrency()
+          : undefined;
 
-    for (const itemId of itemIds) {
-      const result = records.get(itemId);
-      if (!result) {
-        translations.push({ itemId });
-        continue;
+      const records = await this.fetchLatestProcessedRecords(orgId, itemIds);
+      const translations: RssItemTranslation[] = [];
+
+      for (const itemId of itemIds) {
+        const result = records.get(itemId);
+        if (!result) {
+          translations.push({ itemId });
+          continue;
+        }
+        const translated = await this.translateRecordFields(result, {
+          itemId,
+          provider,
+          targetLanguage,
+          llmModel,
+          llmConcurrency,
+          fields,
+          metrics
+        });
+        translations.push(translated);
       }
-      const translated = await this.translateRecordFields(result, {
-        itemId,
+
+      return {
         provider,
         targetLanguage,
-        llmModel,
-        llmConcurrency,
-        fields
-      });
-      translations.push(translated);
+        translations
+      };
+    } catch (error) {
+      if (metrics.failureCount === 0) {
+        metrics.failureCount = 1;
+      }
+      throw error;
+    } finally {
+      await this.recordMetricsBestEffort(
+        orgId,
+        provider,
+        targetLanguage,
+        metrics,
+        Date.now() - startedAt
+      );
     }
-
-    return {
-      provider,
-      targetLanguage,
-      translations
-    };
   }
 
   private async getDeepLxStatus(targetLanguage: string): Promise<RssTranslationProviderStatus> {
@@ -192,38 +232,136 @@ export class ItemsRssTranslationService {
     }
 
     const runtime = await this.situationMonitorSettings.getTranslationRuntimeConfig();
-    if (!runtime.enabled) {
+    const deepLxReady = this.canUseDeepLx(runtime);
+    const fallbackReady = this.canUseFallback(runtime);
+
+    if (deepLxReady) {
       return {
         provider: RssTranslationProvider.deeplx,
-        available: false,
-        message: "DeepLX translation API is disabled in Situation Monitor settings.",
+        available: true,
         targetLanguageSupported: true
       };
     }
 
-    if (!normalizeNonEmptyString(runtime.baseUrl)) {
+    if (fallbackReady) {
       return {
         provider: RssTranslationProvider.deeplx,
-        available: false,
-        message: "DeepLX translation API base URL is not configured.",
+        available: true,
+        message:
+          "DeepLX primary endpoint is unavailable; fallback translation API is configured and will be used.",
         targetLanguageSupported: true
       };
     }
 
-    if (!normalizeNonEmptyString(runtime.apiKey)) {
-      return {
-        provider: RssTranslationProvider.deeplx,
-        available: false,
-        message: "DeepLX translation API key is not configured.",
-        targetLanguageSupported: true
-      };
+    const reasons: string[] = [];
+    const deepLxConfigError = this.buildDeepLxConfigError(runtime);
+    const fallbackConfigError = this.buildFallbackConfigError(runtime);
+    if (deepLxConfigError) {
+      reasons.push(deepLxConfigError);
+    }
+    if (fallbackConfigError) {
+      reasons.push(fallbackConfigError);
     }
 
     return {
       provider: RssTranslationProvider.deeplx,
-      available: true,
+      available: false,
+      message:
+        reasons.join(" ") || "DeepLX or fallback translation API is not available in Situation Monitor settings.",
       targetLanguageSupported: true
     };
+  }
+
+  private canUseDeepLx(runtime: SituationMonitorTranslationRuntimeConfig): boolean {
+    return Boolean(
+      runtime.enabled &&
+        normalizeNonEmptyString(runtime.baseUrl) &&
+        normalizeNonEmptyString(runtime.apiKey)
+    );
+  }
+
+  private canUseFallback(runtime: SituationMonitorTranslationRuntimeConfig): boolean {
+    return Boolean(runtime.fallbackEnabled && normalizeNonEmptyString(runtime.fallbackBaseUrl));
+  }
+
+  private buildDeepLxConfigError(
+    runtime: SituationMonitorTranslationRuntimeConfig
+  ): string | undefined {
+    if (!runtime.enabled) {
+      return "DeepLX translation API is disabled in Situation Monitor settings.";
+    }
+    if (!normalizeNonEmptyString(runtime.baseUrl)) {
+      return "DeepLX translation API base URL is not configured.";
+    }
+    if (!normalizeNonEmptyString(runtime.apiKey)) {
+      return "DeepLX translation API key is not configured.";
+    }
+    return undefined;
+  }
+
+  private buildFallbackConfigError(
+    runtime: SituationMonitorTranslationRuntimeConfig
+  ): string | undefined {
+    if (!runtime.fallbackEnabled) {
+      return "Fallback translation API is disabled in Situation Monitor settings.";
+    }
+    if (!normalizeNonEmptyString(runtime.fallbackBaseUrl)) {
+      return "Fallback translation API base URL is not configured.";
+    }
+    return undefined;
+  }
+
+  private toSafeInt(value: unknown): number {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return 0;
+    }
+    return Math.max(0, Math.trunc(numeric));
+  }
+
+  private createMetricsAccumulator(itemCount: number): RssTranslationMetricsAccumulator {
+    return {
+      requestCount: 1,
+      itemCount: this.toSafeInt(itemCount),
+      textCount: 0,
+      cacheHitCount: 0,
+      cacheMissCount: 0,
+      translatedCount: 0,
+      failureCount: 0,
+      skipTooLongCount: 0
+    };
+  }
+
+  private async recordMetricsBestEffort(
+    orgId: string,
+    provider: RssTranslationProvider,
+    targetLanguage: string,
+    metrics: RssTranslationMetricsAccumulator,
+    latencyMs: number
+  ) {
+    if (!this.metrics) {
+      return;
+    }
+
+    try {
+      await this.metrics.recordDaily({
+        orgId,
+        provider,
+        targetLanguage,
+        requestCount: this.toSafeInt(metrics.requestCount),
+        itemCount: this.toSafeInt(metrics.itemCount),
+        textCount: this.toSafeInt(metrics.textCount),
+        cacheHitCount: this.toSafeInt(metrics.cacheHitCount),
+        cacheMissCount: this.toSafeInt(metrics.cacheMissCount),
+        translatedCount: this.toSafeInt(metrics.translatedCount),
+        failureCount: this.toSafeInt(metrics.failureCount),
+        skipTooLongCount: this.toSafeInt(metrics.skipTooLongCount),
+        totalLatencyMs: this.toSafeInt(latencyMs),
+        maxLatencyMs: this.toSafeInt(latencyMs)
+      });
+    } catch (error) {
+      logger.warn({ error, orgId, provider, targetLanguage }, "Failed to record RSS translation metrics");
+    }
   }
 
   private async getLlmStatus(): Promise<RssTranslationProviderStatus> {
@@ -299,7 +437,13 @@ export class ItemsRssTranslationService {
     const normalized = itemIds
       .map((itemId) => itemId.trim())
       .filter((itemId) => itemId.length > 0);
-    return Array.from(new Set(normalized));
+    const deduplicated = Array.from(new Set(normalized));
+    if (deduplicated.length > MAX_TRANSLATION_ITEM_IDS) {
+      throw new BadRequestException(
+        `RSS translation accepts at most ${MAX_TRANSLATION_ITEM_IDS} itemIds per request.`
+      );
+    }
+    return deduplicated;
   }
 
   private normalizeFields(fields?: RssTranslationField[]): RssTranslationField[] {
@@ -316,6 +460,7 @@ export class ItemsRssTranslationService {
       llmModel?: string;
       llmConcurrency?: number;
       fields: RssTranslationField[];
+      metrics: RssTranslationMetricsAccumulator;
     }
   ): Promise<RssItemTranslation> {
     const translated: RssItemTranslation = { itemId: options.itemId };
@@ -349,9 +494,18 @@ export class ItemsRssTranslationService {
       targetLanguage: string;
       llmModel?: string;
       llmConcurrency?: number;
+      metrics: RssTranslationMetricsAccumulator;
     }
   ): Promise<string> {
+    if (markdown.length > MAX_MARKDOWN_CHARS) {
+      options.metrics.skipTooLongCount += 1;
+      return markdown;
+    }
     const chunks = this.splitMarkdownIntoChunks(markdown);
+    if (chunks.length > MAX_MARKDOWN_CHUNKS) {
+      options.metrics.skipTooLongCount += 1;
+      return markdown;
+    }
     const translated = await this.translateTextList(chunks, options);
     return translated.join("\n\n").trim();
   }
@@ -446,6 +600,7 @@ export class ItemsRssTranslationService {
       targetLanguage: string;
       llmModel?: string;
       llmConcurrency?: number;
+      metrics: RssTranslationMetricsAccumulator;
     }
   ): Promise<string> {
     const [translated] = await this.translateTextList([text], options);
@@ -459,6 +614,7 @@ export class ItemsRssTranslationService {
       targetLanguage: string;
       llmModel?: string;
       llmConcurrency?: number;
+      metrics: RssTranslationMetricsAccumulator;
     }
   ): Promise<string[]> {
     const normalizedInputs = texts
@@ -469,19 +625,36 @@ export class ItemsRssTranslationService {
       return [];
     }
 
-    const uniqueInputs = Array.from(new Set(normalizedInputs));
+    options.metrics.textCount += normalizedInputs.length;
+    const translatedByText = new Map<string, string>();
+    const inputsForTranslation: string[] = [];
+    normalizedInputs.forEach((text) => {
+      if (text.length <= MAX_TEXT_CHARS) {
+        inputsForTranslation.push(text);
+        return;
+      }
+      options.metrics.skipTooLongCount += 1;
+      translatedByText.set(text, text);
+    });
+
+    if (inputsForTranslation.length === 0) {
+      return normalizedInputs.map((text) => translatedByText.get(text) ?? text);
+    }
+
+    const uniqueInputs = Array.from(new Set(inputsForTranslation));
     const cacheKeys = uniqueInputs.map((text) =>
       this.buildCacheKey(options.provider, options.targetLanguage, text, options.llmModel)
     );
     const cached = await this.cache.getMany<string>(cacheKeys);
-    const translatedByText = new Map<string, string>();
     const missingTexts: string[] = [];
 
     uniqueInputs.forEach((text, index) => {
       const cachedValue = normalizeNonEmptyString(cached[index]);
       if (cachedValue) {
+        options.metrics.cacheHitCount += 1;
         translatedByText.set(text, cachedValue);
       } else {
+        options.metrics.cacheMissCount += 1;
         missingTexts.push(text);
       }
     });
@@ -502,10 +675,12 @@ export class ItemsRssTranslationService {
           const translated = normalizeNonEmptyString(translatedMissing.get(text));
           if (!translated) {
             // Best-effort: don't cache failures, so a later request can retry.
+            options.metrics.failureCount += 1;
             translatedByText.set(text, text);
             return;
           }
 
+          options.metrics.translatedCount += 1;
           translatedByText.set(text, translated);
           await this.cache.set(
             this.buildCacheKey(
@@ -595,7 +770,10 @@ export class ItemsRssTranslationService {
     if (!Number.isFinite(numeric)) {
       return DEFAULT_LLM_TRANSLATION_CONCURRENCY;
     }
-    return Math.max(1, Math.trunc(numeric));
+    return Math.max(
+      1,
+      Math.min(MAX_LLM_TRANSLATION_CONCURRENCY, Math.trunc(numeric))
+    );
   }
 
   private async translateSingleTextViaLlm(

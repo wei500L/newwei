@@ -7,10 +7,7 @@ node_modules
 !.env.example
 !infra/docker/.env.sample
 .next
-.next-*
-.next-docker
-.next.bak-*
-.next-check
+.next*/
 out
 dist
 build
@@ -30,7 +27,7 @@ external/
 
 # Local/temp directories
 .codex-local/
-.claude/settings.local.json
+.claude/
 
 # External data repositories (not project source)
 e6d2bf860ccc367fe37ff953ba6de66b/

@@ -3,18 +3,21 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { ItemsService } from "./items.service";
 
 const mockProcessedItemAggregate = jest.fn();
+const mockProcessedItemFind = jest.fn();
 
 jest.mock("@modular/mongo", () => ({
   RawItemModel: {
     create: jest.fn()
   },
   ProcessedItemModel: {
-    aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args)
+    aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args),
+    find: (...args: unknown[]) => mockProcessedItemFind(...args)
   }
 }));
 
 beforeEach(() => {
   mockProcessedItemAggregate.mockReset();
+  mockProcessedItemFind.mockReset();
 });
 
 describe("ItemsService.list", () => {
@@ -273,10 +276,18 @@ describe("ItemsService.createFromCrawlResult", () => {
 
 describe("ItemsService filters", () => {
   it("applies sourceIds in processed filter aggregation", async () => {
+    mockProcessedItemFind.mockReturnValue({
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([])
+    });
+
     const prisma = {
       itemMeta: {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0)
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([])
       }
     };
 
@@ -306,6 +317,45 @@ describe("ItemsService filters", () => {
       ])
     );
   });
+
+  it("falls back to ProcessedArticle links when ProcessedItem.sourceId is missing", async () => {
+    mockProcessedItemAggregate.mockResolvedValue([]);
+    mockProcessedItemFind.mockReturnValue({
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ itemMetaId: "meta-fallback-1" }])
+    });
+
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0)
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            cleanedMarkdownRef: "507f1f77bcf86cd799439011"
+          }
+        ])
+      }
+    };
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveFilterIds("org-1", {
+      sourceIds: ["rss-1"]
+    });
+
+    expect(ids).toEqual(["meta-fallback-1"]);
+    expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(1);
+    expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ItemsService.listRssSourcesForReading", () => {
@@ -333,6 +383,15 @@ describe("ItemsService.listRssSourcesForReading", () => {
             language: "en",
             url: "https://list.example.com",
             config: { seed: { mode: "list" } }
+          }
+        ])
+      },
+      article: {
+        groupBy: jest.fn().mockResolvedValue([
+          {
+            sourceId: "rss-2",
+            _count: { _all: 2 },
+            _max: { crawlAt: new Date("2026-02-09T00:00:00.000Z") }
           }
         ])
       }
@@ -369,8 +428,18 @@ describe("ItemsService.listRssSourcesForReading", () => {
         feedUrl: "https://example.com/rss.xml",
         latestItemAt: "2026-02-10T00:00:00.000Z",
         itemCountWindow: 3
+      },
+      {
+        id: "rss-2",
+        name: "Feed Two",
+        language: "zh",
+        siteUrl: "https://example.org",
+        feedUrl: "https://example.org/feed",
+        latestItemAt: "2026-02-09T00:00:00.000Z",
+        itemCountWindow: 2
       }
     ]);
     expect(mockProcessedItemAggregate).toHaveBeenCalledTimes(1);
+    expect(prisma.article.groupBy).toHaveBeenCalledTimes(1);
   });
 });

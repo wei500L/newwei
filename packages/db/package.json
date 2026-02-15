@@ -11,9 +11,11 @@
   "scripts": {
     "build": "rimraf dist && tsc -p tsconfig.build.json",
     "migrate": "tsx src/scripts/migrate.ts",
+    "validate:migration-identifiers": "tsx src/scripts/validate-migration-identifiers.ts",
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "eslint src --ext .ts",
+    "lint": "pnpm run validate:migration-identifiers && eslint src --ext .ts",
+    "test": "tsx --test src/**/*.spec.ts",
     "prisma:generate": "tsx src/scripts/generate.ts"
   },
   "dependencies": {

@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1091,6 +1089,7 @@ export type ItemsFiltersInput = {
   dateRange?: InputMaybe<ItemsDateRangeInput>;
   regions?: InputMaybe<Array<Scalars['String']['input']>>;
   sentiments?: InputMaybe<Array<Scalars['String']['input']>>;
+  sourceIds?: InputMaybe<Array<Scalars['String']['input']>>;
   topics?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
@@ -1256,6 +1255,7 @@ export type Mutation = {
   retryCrawlTask: CrawlTaskModel;
   reviewKnowledgeGraphEvidence?: Maybe<KnowledgeGraphEvidenceReviewItemModel>;
   setOrgActive: OrgModel;
+  translateRssItems: TranslateRssItemsPayloadModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
   updateAlertChannel: AlertChannelModel;
@@ -1385,6 +1385,11 @@ export type MutationReviewKnowledgeGraphEvidenceArgs = {
 
 export type MutationSetOrgActiveArgs = {
   input: SetOrgActiveInput;
+};
+
+
+export type MutationTranslateRssItemsArgs = {
+  input: TranslateRssItemsInput;
 };
 
 
@@ -1930,6 +1935,8 @@ export type Query = {
   queueStats: QueueStatsModel;
   rateLimitSettings: RateLimitSettingsModel;
   roles: Array<RoleModel>;
+  rssSources: Array<RssSourceOptionModel>;
+  rssTranslationStatus: Array<RssTranslationProviderStatusModel>;
   searchSuggestions: Array<SearchSuggestionModel>;
   topicGroups: Array<TopicGroupModel>;
   topicSentimentSeries: Array<TopicSentimentSnapshotModel>;
@@ -2147,6 +2154,17 @@ export type QueryRolesArgs = {
 };
 
 
+export type QueryRssSourcesArgs = {
+  onlyWithItems?: InputMaybe<Scalars['Boolean']['input']>;
+  windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryRssTranslationStatusArgs = {
+  targetLanguage?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type QuerySearchSuggestionsArgs = {
   limit?: InputMaybe<Scalars['Float']['input']>;
   prefix: Scalars['String']['input'];
@@ -2260,6 +2278,46 @@ export type RoleModel = {
   permissions: Array<PermissionModel>;
 };
 
+export type RssItemTranslationModel = {
+  __typename?: 'RssItemTranslationModel';
+  cleanedMarkdown?: Maybe<Scalars['String']['output']>;
+  itemId: Scalars['String']['output'];
+  keyPoints?: Maybe<Array<Scalars['String']['output']>>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type RssSourceOptionModel = {
+  __typename?: 'RssSourceOptionModel';
+  feedUrl: Scalars['String']['output'];
+  id: Scalars['String']['output'];
+  itemCountWindow: Scalars['Int']['output'];
+  language?: Maybe<Scalars['String']['output']>;
+  latestItemAt?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  siteUrl: Scalars['String']['output'];
+};
+
+export enum RssTranslationField {
+  CleanedMarkdown = 'cleaned_markdown',
+  KeyPoints = 'key_points',
+  Summary = 'summary',
+  Title = 'title'
+}
+
+export enum RssTranslationProvider {
+  Deeplx = 'deeplx',
+  Llm = 'llm'
+}
+
+export type RssTranslationProviderStatusModel = {
+  __typename?: 'RssTranslationProviderStatusModel';
+  available: Scalars['Boolean']['output'];
+  message?: Maybe<Scalars['String']['output']>;
+  provider: RssTranslationProvider;
+  targetLanguageSupported: Scalars['Boolean']['output'];
+};
+
 export type SearchSuggestionModel = {
   __typename?: 'SearchSuggestionModel';
   type: SearchSuggestionType;
@@ -2340,6 +2398,20 @@ export type TopicSentimentSnapshotModel = {
   scoreSum: Scalars['Int']['output'];
   topic: Scalars['String']['output'];
   totalDocs: Scalars['Int']['output'];
+};
+
+export type TranslateRssItemsInput = {
+  fields?: InputMaybe<Array<RssTranslationField>>;
+  itemIds: Array<Scalars['String']['input']>;
+  provider?: RssTranslationProvider;
+  targetLanguage?: Scalars['String']['input'];
+};
+
+export type TranslateRssItemsPayloadModel = {
+  __typename?: 'TranslateRssItemsPayloadModel';
+  provider: RssTranslationProvider;
+  targetLanguage: Scalars['String']['output'];
+  translations: Array<RssItemTranslationModel>;
 };
 
 export type TriggerDataFetchInput = {

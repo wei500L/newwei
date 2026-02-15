@@ -98,6 +98,7 @@ export function EntityImpactGraph() {
   } | null>(null);
 
   const [minConfidence, setMinConfidence] = useState(0.5);
+  const [confidenceDraft, setConfidenceDraft] = useState(0.5);
   const [minCorrelation, setMinCorrelation] = useState(0.3);
   const [minCoOccurrence, setMinCoOccurrence] = useState(2);
   const [maxNodes, setMaxNodes] = useState(100);
@@ -127,6 +128,7 @@ export function EntityImpactGraph() {
 
   const settings = settingsData?.entityImpactGraphSettings;
   const enabled = settings?.enabled ?? true;
+  const defaultMinConfidence = settings?.minEntityConfidence ?? 0.5;
 
   useEffect(() => {
     if (settingsApplied) {
@@ -135,6 +137,7 @@ export function EntityImpactGraph() {
     if (settings) {
       const categoriesFromSettings = resolveCategoryList(settings.categories);
       setMinConfidence(settings.minEntityConfidence);
+      setConfidenceDraft(settings.minEntityConfidence);
       setMinCorrelation(settings.minCorrelation);
       setMinCoOccurrence(settings.minCoOccurrence);
       setMaxNodes(settings.maxNodes);
@@ -706,11 +709,17 @@ export function EntityImpactGraph() {
   }, []);
 
   const handleConfidenceChange = useCallback((value: number) => {
-    setMinConfidence(value);
-    setSelectedNode(null);
-    setDrawerOpen(false);
-    setContextMenu(null);
+    setConfidenceDraft(value);
   }, []);
+
+  const handleConfidenceCommit = useCallback(
+    (value: number) => {
+      setConfidenceDraft(value);
+      setMinConfidence(value);
+      clearGraphFocus();
+    },
+    [clearGraphFocus],
+  );
 
   const toggleCategory = useCallback((category: string) => {
     const normalized = normalizeEntityGraphCategory(category);
@@ -756,8 +765,10 @@ export function EntityImpactGraph() {
     setSelectedCategories([...queryCategories]);
     setSelectedEdgeTypes([...EDGE_TYPE_OPTIONS]);
     setLabelDensity("compact");
+    setConfidenceDraft(defaultMinConfidence);
+    setMinConfidence(defaultMinConfidence);
     clearGraphFocus();
-  }, [clearGraphFocus, queryCategories]);
+  }, [clearGraphFocus, defaultMinConfidence, queryCategories]);
 
   if (sessionStatus === "loading") {
     return (
@@ -1019,15 +1030,16 @@ export function EntityImpactGraph() {
               min={0}
               max={1}
               step={0.1}
-              value={minConfidence}
+              value={confidenceDraft}
               onChange={handleConfidenceChange}
+              onChangeComplete={handleConfidenceCommit}
               style={{ width: 120 }}
               tooltip={{
                 formatter: (value) => `${((value ?? 0) * 100).toFixed(0)}%`,
               }}
             />
             <Text type="secondary" className="text-xs min-w-[34px] text-right">
-              {(minConfidence * 100).toFixed(0)}%
+              {(confidenceDraft * 100).toFixed(0)}%
             </Text>
           </div>
 

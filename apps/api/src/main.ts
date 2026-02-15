@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { createLogger } from "@modular/utils";
-import { ValidationPipe , RequestMethod } from "@nestjs/common";
+import { RequestMethod, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
@@ -32,7 +32,7 @@ async function bootstrap() {
   app.setGlobalPrefix("api", {
     exclude: [
       { path: "admin/queues", method: RequestMethod.ALL },
-      { path: "admin/queues/(.*)", method: RequestMethod.ALL }
+      { path: "admin/queues/*path", method: RequestMethod.ALL }
     ]
   });
   app.useGlobalPipes(

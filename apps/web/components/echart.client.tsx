@@ -2,6 +2,7 @@
 
 import { Button } from "antd";
 import * as echarts from "echarts/core";
+import { install as installGraphChart } from "echarts/lib/chart/graph/install.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -14,6 +15,10 @@ import {
 } from "@/lib/data-export";
 
 type Installer = Parameters<typeof echarts.use>[0];
+
+// Pre-register graph chart extension before any chart instance is created.
+// Graph depends on coordinate-system/layout hooks that must exist at init time.
+echarts.use(installGraphChart as unknown as Installer);
 
 interface EchartsRuntimeState {
   installed: Set<string>;
@@ -331,12 +336,8 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
         );
         break;
       case "graph":
-        promises.push(
-          installOnce("chart:graph", async () => {
-            const m = await import("echarts/lib/chart/graph/install.js");
-            return m.install;
-          }),
-        );
+        // Graph extension is pre-registered at module load to ensure
+        // coordinate-system/layout hooks are available before chart init.
         break;
       default:
         break;
@@ -505,6 +506,8 @@ export function DashboardChart({
     let handleResize: (() => void) | undefined;
     const initPromise = (async () => {
       await ensureRenderer(renderer);
+      if (cancelled) return;
+      await ensureOptionModules(option);
       if (cancelled) return;
 
       const runtime = getRuntimeState();

@@ -1061,6 +1061,7 @@ input ItemsFiltersInput {
   dateRange: ItemsDateRangeInput
   regions: [String!]
   sentiments: [String!]
+  sourceIds: [String!]
   topics: [String!]
 }
 
@@ -1222,6 +1223,7 @@ type Mutation {
   retryCrawlTask(id: String!): CrawlTaskModel!
   reviewKnowledgeGraphEvidence(input: ReviewKnowledgeGraphEvidenceInput!): KnowledgeGraphEvidenceReviewItemModel
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
+  translateRssItems(input: TranslateRssItemsInput!): TranslateRssItemsPayloadModel!
   triggerAlertRule(ruleId: String!): Boolean!
   triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
   updateAlertChannel(input: UpdateAlertChannelInput!): AlertChannelModel!
@@ -1665,6 +1667,8 @@ type Query {
   queueStats: QueueStatsModel!
   rateLimitSettings: RateLimitSettingsModel!
   roles(includeSystem: Boolean): [RoleModel!]!
+  rssSources(onlyWithItems: Boolean, windowDays: Int): [RssSourceOptionModel!]!
+  rssTranslationStatus(targetLanguage: String): [RssTranslationProviderStatusModel!]!
   searchSuggestions(limit: Float, prefix: String!): [SearchSuggestionModel!]!
   topicGroups(itemsPerGroup: Int, limit: Int, windowDays: Int): [TopicGroupModel!]!
   topicSentimentSeries(days: Int, topic: String!): [TopicSentimentSnapshotModel!]!
@@ -1756,6 +1760,43 @@ type RoleModel {
   permissions: [PermissionModel!]!
 }
 
+type RssItemTranslationModel {
+  cleanedMarkdown: String
+  itemId: String!
+  keyPoints: [String!]
+  summary: String
+  title: String
+}
+
+type RssSourceOptionModel {
+  feedUrl: String!
+  id: String!
+  itemCountWindow: Int!
+  language: String
+  latestItemAt: String
+  name: String!
+  siteUrl: String!
+}
+
+enum RssTranslationField {
+  cleaned_markdown
+  key_points
+  summary
+  title
+}
+
+enum RssTranslationProvider {
+  deeplx
+  llm
+}
+
+type RssTranslationProviderStatusModel {
+  available: Boolean!
+  message: String
+  provider: RssTranslationProvider!
+  targetLanguageSupported: Boolean!
+}
+
 type SearchSuggestionModel {
   type: SearchSuggestionType!
   value: String!
@@ -1830,6 +1871,19 @@ type TopicSentimentSnapshotModel {
   scoreSum: Int!
   topic: String!
   totalDocs: Int!
+}
+
+input TranslateRssItemsInput {
+  fields: [RssTranslationField!]
+  itemIds: [String!]!
+  provider: RssTranslationProvider! = deeplx
+  targetLanguage: String! = "zh-CN"
+}
+
+type TranslateRssItemsPayloadModel {
+  provider: RssTranslationProvider!
+  targetLanguage: String!
+  translations: [RssItemTranslationModel!]!
 }
 
 input TriggerDataFetchInput {

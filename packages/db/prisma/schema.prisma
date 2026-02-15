@@ -52,6 +52,7 @@ model Org {
   topicSentimentSnapshots TopicSentimentSnapshot[]
   newsIndicatorAssociations NewsIndicatorAssociation[]
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
+  rssTranslationMetricsDaily RssTranslationMetricsDaily[]
   userSettings UserSetting[]
 }
 
@@ -1081,6 +1082,30 @@ model NewsIndicatorAssociationBacktestRun {
 
   @@index([associationId, createdAt])
   @@index([orgId, createdAt])
+}
+
+model RssTranslationMetricsDaily {
+  id              String   @id @default(cuid())
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId           String
+  date            DateTime
+  provider        String
+  targetLanguage  String
+  requestCount    Int      @default(0)
+  itemCount       Int      @default(0)
+  textCount       Int      @default(0)
+  cacheHitCount   Int      @default(0)
+  cacheMissCount  Int      @default(0)
+  translatedCount Int      @default(0)
+  failureCount    Int      @default(0)
+  skipTooLongCount Int     @default(0)
+  totalLatencyMs  Int      @default(0)
+  maxLatencyMs    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([orgId, date, provider, targetLanguage], map: "RssTransMetricsDaily_org_date_provider_lang_uq")
+  @@index([orgId, date])
 }
 
 enum KnowledgeEntityType {

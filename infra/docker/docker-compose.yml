@@ -43,11 +43,18 @@ services:
   redis:
     image: redis:7.2
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "yes"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/redis-entrypoint.sh"]
+    environment:
+      REDIS_AOF_CHECK_ON_START: ${REDIS_AOF_CHECK_ON_START:-true}
+      REDIS_AOF_AUTO_FIX: ${REDIS_AOF_AUTO_FIX:-false}
+      REDIS_AOF_PREFLIGHT_AUTO_REPAIR: ${REDIS_AOF_PREFLIGHT_AUTO_REPAIR:-true}
+      REDIS_AOF_PREFLIGHT_LOG_TAIL: ${REDIS_AOF_PREFLIGHT_LOG_TAIL:-40}
+      REDIS_AOF_BACKUP_KEEP: ${REDIS_AOF_BACKUP_KEEP:-5}
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+      - ./scripts/redis-entrypoint.sh:/usr/local/bin/redis-entrypoint.sh:ro
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -84,26 +91,12 @@ services:
       - sh
       - -ec
       - |
-        until mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        until mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD >/dev/null 2>&1; do
           echo '[minio-init] waiting for minio...';
           sleep 1;
         done;
         mc mb --ignore-existing local/$$S3_BUCKET;
         mc anonymous set download local/$$S3_BUCKET;
-        cat > /tmp/cors.xml <<'EOF'
-        <CORSConfiguration>
-          <CORSRule>
-            <AllowedOrigin>*</AllowedOrigin>
-            <AllowedMethod>GET</AllowedMethod>
-            <AllowedMethod>PUT</AllowedMethod>
-            <AllowedMethod>HEAD</AllowedMethod>
-            <AllowedHeader>*</AllowedHeader>
-            <ExposeHeader>ETag</ExposeHeader>
-            <MaxAgeSeconds>3000</MaxAgeSeconds>
-          </CORSRule>
-        </CORSConfiguration>
-        EOF
-        mc cors set local/$$S3_BUCKET /tmp/cors.xml || echo '[minio-init] warning: failed to set bucket CORS (continuing anyway)';
         echo '[minio-init] bucket initialized';
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -387,6 +380,9 @@ services:
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN:-dev-token}
       HUSKY: "0"
+      COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     dns:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
