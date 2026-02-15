@@ -9,8 +9,10 @@ import {
   Slider,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
+import { WarningOutlined } from "@ant-design/icons";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -293,6 +295,15 @@ export function EntityImpactGraph() {
     () => new Map(visibleNodes.map((node) => [node.id, node.name] as const)),
     [visibleNodes],
   );
+
+  // 降级统计：计算被过滤的无效链接
+  const degradationStats = useMemo(() => {
+    if (visibleLinks.length === 0) {
+      return { filteredLinks: 0, totalLinks: 0 };
+    }
+    const filteredLinks = Math.max(0, visibleLinks.length - safeLinks.length);
+    return { filteredLinks, totalLinks: visibleLinks.length };
+  }, [safeLinks, visibleLinks]);
 
   const option = useMemo<EChartsOption>(() => {
     if (visibleNodes.length === 0) {
@@ -883,6 +894,26 @@ export function EntityImpactGraph() {
               defaultValue: "Aggregation: window graph",
             })}
           </Tag>
+          {degradationStats.filteredLinks > 0 ? (
+            <Tooltip
+              title={t("dashboard.charts.entityGraph.filteredLinksTooltip", {
+                filtered: degradationStats.filteredLinks,
+                total: degradationStats.totalLinks,
+                defaultValue: `${degradationStats.filteredLinks} 个链接在规范化过程中被隐藏（无效引用、自环、重复或异常值），以确保图表正常显示。`
+              })}
+            >
+              <Tag
+                color="orange"
+                icon={<WarningOutlined />}
+                className="text-xs cursor-help"
+              >
+                {t("dashboard.charts.entityGraph.filteredLinks", {
+                  count: degradationStats.filteredLinks,
+                  defaultValue: `已隐藏 ${degradationStats.filteredLinks} 个链接`
+                })}
+              </Tag>
+            </Tooltip>
+          ) : null}
         </div>
 
         <div className="entity-graph-toolbar">

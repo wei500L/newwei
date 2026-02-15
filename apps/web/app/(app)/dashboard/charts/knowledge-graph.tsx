@@ -1,7 +1,7 @@
 "use client";
 
-import { SearchOutlined } from "@ant-design/icons";
-import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Typography, message } from "antd";
+import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
+import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -26,6 +26,12 @@ const NODE_TYPE_CONFIG: Record<string, { color: string; symbol: string; index: n
 };
 
 const DEFAULT_NODE_TYPE = { color: "#94a3b8", symbol: "circle", index: 7 };
+const EMPTY_DEGRADATION_STATS = {
+  filteredNodes: 0,
+  totalNodes: 0,
+  filteredEdges: 0,
+  totalEdges: 0
+} as const;
 
 function getNodeTypeConfig(type: string) {
   const normalized = type.trim().toLowerCase();
@@ -113,29 +119,57 @@ export function KnowledgeGraph() {
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
 
-  const option = useMemo<EChartsOption>(() => {
+  const normalizedGraph = useMemo(() => {
     if (!graph) {
-      return {};
+      return null;
     }
 
-    const categories = Object.keys(NODE_TYPE_CONFIG).map((key) => ({ name: key }));
-    const normalizedNodes: Array<(typeof graph.nodes)[number]> = [];
+    // 预处理节点，同时统计重复/无效节点
+    const normalizedNodes: Array<(typeof graph.nodes)[number] & { id: string }> = [];
     const seenNodeIds = new Set<string>();
+    let filteredNodes = 0;
     for (const node of graph.nodes) {
       const id = typeof node.id === "string" ? node.id.trim() : "";
       if (!id || seenNodeIds.has(id)) {
+        filteredNodes++;
         continue;
       }
       seenNodeIds.add(id);
       normalizedNodes.push({ ...node, id });
     }
-    const nodeIds = new Set(normalizedNodes.map((node) => node.id));
-    const safeEdges = graph.edges.filter(
-      (edge) =>
-        nodeIds.has(edge.from) &&
-        nodeIds.has(edge.to) &&
-        edge.from !== edge.to
-    );
+
+    // 预处理链接，同时统计无效链接（引用不存在节点或自环）
+    const safeEdges: typeof graph.edges = [];
+    let filteredEdges = 0;
+    for (const edge of graph.edges) {
+      if (!seenNodeIds.has(edge.from) || !seenNodeIds.has(edge.to) || edge.from === edge.to) {
+        filteredEdges++;
+        continue;
+      }
+      safeEdges.push(edge);
+    }
+
+    return {
+      normalizedNodes,
+      safeEdges,
+      degradationStats: {
+        filteredNodes,
+        totalNodes: graph.nodes.length,
+        filteredEdges,
+        totalEdges: graph.edges.length
+      }
+    };
+  }, [graph]);
+
+  const degradationStats = normalizedGraph?.degradationStats ?? EMPTY_DEGRADATION_STATS;
+
+  const option = useMemo<EChartsOption>(() => {
+    if (!graph || !normalizedGraph) {
+      return {};
+    }
+
+    const { normalizedNodes, safeEdges } = normalizedGraph;
+    const categories = Object.keys(NODE_TYPE_CONFIG).map((key) => ({ name: key }));
     const degreeMap = buildDegreeMap(safeEdges);
 
     const nodes = normalizedNodes.map((node) => {
@@ -270,7 +304,7 @@ export function KnowledgeGraph() {
         }
       ]
     };
-  }, [colors, fontFamily, graph]);
+  }, [colors, fontFamily, graph, normalizedGraph]);
 
   if (sessionStatus === "loading") {
     return (
@@ -409,6 +443,29 @@ export function KnowledgeGraph() {
           ) : null}
           {settings.entityDisambiguationEnabled ? (
             <Tag color="geekblue">{t("settings.knowledgeGraph.fields.entityDisambiguationEnabled")}</Tag>
+          ) : null}
+          {degradationStats.filteredNodes > 0 || degradationStats.filteredEdges > 0 ? (
+            <Tooltip
+              title={t("dashboard.charts.knowledgeGraph.filteredTooltip", {
+                filteredNodes: degradationStats.filteredNodes,
+                totalNodes: degradationStats.totalNodes,
+                filteredEdges: degradationStats.filteredEdges,
+                totalEdges: degradationStats.totalEdges,
+                defaultValue: `${degradationStats.filteredNodes} 个重复/无效节点和 ${degradationStats.filteredEdges} 个无效链接已被隐藏，以确保图谱正常显示。`
+              })}
+            >
+              <Tag
+                color="orange"
+                icon={<WarningOutlined />}
+                className="text-xs cursor-help"
+              >
+                {t("dashboard.charts.knowledgeGraph.filtered", {
+                  nodes: degradationStats.filteredNodes,
+                  edges: degradationStats.filteredEdges,
+                  defaultValue: `已过滤 ${degradationStats.filteredNodes} 节点 / ${degradationStats.filteredEdges} 链接`
+                })}
+              </Tag>
+            </Tooltip>
           ) : null}
         </Space>
       ) : null}

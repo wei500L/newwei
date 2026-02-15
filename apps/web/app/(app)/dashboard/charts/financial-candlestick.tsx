@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Button, Skeleton, Space, Tag } from "antd";
+import { Button, Skeleton, Space, Tag, Tooltip } from "antd";
+import { LineChartOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo } from "react";
@@ -47,6 +48,8 @@ interface FinancialCandlestickResponse {
   sourceFields?: Record<string, string>;
   updatedAt?: string;
 }
+
+const MIN_CANDLESTICK_POINTS = 5;
 
 export function FinancialCandlestick() {
   const { t, i18n } = useTranslation();
@@ -147,7 +150,7 @@ export function FinancialCandlestick() {
       intervalGranularity === UiTimeGranularity.Minute ||
       intervalGranularity === UiTimeGranularity.Hour ||
       intervalGranularity === UiTimeGranularity.Realtime;
-    const useCandlestick = normalizedPoints.length >= 5;
+    const useCandlestick = normalizedPoints.length >= MIN_CANDLESTICK_POINTS;
     const timestamps = normalizedPoints.map((point) => point.timestamp);
     const ohlc = normalizedPoints.map((point) => [
       point.open,
@@ -200,9 +203,14 @@ export function FinancialCandlestick() {
                     : undefined;
             return [
               `<div style="min-width:220px;">`,
-              `<div style="font-weight:600;margin-bottom:6px;">${bucketLabel}</div>`,
+              `<div style="font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;">`,
+              `<span>${bucketLabel}</span>`,
+              `<span style="font-size:11px;font-weight:400;color:#fa8c16;background:#fff7e6;padding:2px 6px;border-radius:4px;">趋势视图</span>`,
+              `</div>`,
               `<div style="display:flex;justify-content:space-between;"><span>Close</span><span>${fmt(closeValue)}</span></div>`,
-              `<div style="margin-top:8px;color:#64748b;">Bucket: ${intervalGranularityLabel}${intervalUnitSuffix}</div>`,
+              `<div style="margin-top:8px;color:#64748b;font-size:11px;">`,
+              `Bucket: ${intervalGranularityLabel}${intervalUnitSuffix} · 数据点不足，已切换为折线图`,
+              `</div>`,
               `</div>`
             ].join("");
           }
@@ -365,6 +373,11 @@ export function FinancialCandlestick() {
   const hasRenderableData = Boolean(data && normalizedPoints.length > 0);
   const showStaleErrorBanner = Boolean(isError && hasRenderableData);
 
+  // 判断是否降级显示（数据点不足时使用折线图）
+  const isDegradedView =
+    normalizedPoints.length > 0 &&
+    normalizedPoints.length < MIN_CANDLESTICK_POINTS;
+
   if (sessionStatus === "loading") {
     return (
       <div className="h-[350px] flex items-center transition-all duration-300">
@@ -426,6 +439,25 @@ export function FinancialCandlestick() {
               defaultValue: "Updated: {{time}}"
             })}
           </Tag>
+        ) : null}
+        {isDegradedView ? (
+          <Tooltip
+            title={t("dashboard.candlestick.degradedTooltip", {
+              count: normalizedPoints.length,
+              defaultValue: `当前仅 ${normalizedPoints.length} 个数据点，已自动切换为趋势视图以优化显示效果。数据充足时将恢复为蜡烛图。`
+            })}
+          >
+            <Tag
+              color="orange"
+              icon={<LineChartOutlined />}
+              className="text-xs font-medium animate-pulse cursor-help"
+            >
+              {t("dashboard.candlestick.degraded", {
+                defaultValue: "趋势视图"
+              })}
+              <InfoCircleOutlined className="ml-1 opacity-70" />
+            </Tag>
+          </Tooltip>
         ) : null}
       </div>
       <DashboardChart

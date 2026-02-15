@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
+import { WarningOutlined } from "@ant-design/icons";
+import { Drawer, List, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo, useState } from "react";
@@ -110,6 +111,13 @@ const resolveSourceColor = (source: string) => {
   return `hsl(${hue} 70% 42%)`;
 };
 
+const EMPTY_DEGRADATION_STATS = {
+  filteredEdges: 0,
+  totalEdges: 0,
+  selfLoops: 0,
+  hiddenEdges: 0
+} as const;
+
 export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, loading }: SpacetimePropagationProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -152,11 +160,46 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     placeholderData: (previous) => previous ?? null
   });
 
-  const option = useMemo<EChartsOption>(() => {
+  const normalizedPropagation = useMemo(() => {
     const payload = propagationQuery.data;
     if (!payload) {
+      return null;
+    }
+    const nodeIds = new Set(payload.nodes.map((n) => n.id));
+    const safeEdges: SpacetimePropagationEdgeDto[] = [];
+    let filtered = 0;
+    let selfLoops = 0;
+    let hiddenEdges = 0;
+    for (const edge of payload.edges) {
+      const isInvalid = !nodeIds.has(edge.source) || !nodeIds.has(edge.target);
+      const isSelfLoop = edge.source === edge.target;
+      if (isInvalid) filtered++;
+      if (isSelfLoop) selfLoops++;
+      if (isInvalid || isSelfLoop) {
+        hiddenEdges++;
+        continue;
+      }
+      safeEdges.push(edge);
+    }
+    return {
+      payload,
+      safeEdges,
+      degradationStats: {
+        filteredEdges: filtered,
+        totalEdges: payload.edges.length,
+        selfLoops,
+        hiddenEdges
+      }
+    };
+  }, [propagationQuery.data]);
+
+  const degradationStats = normalizedPropagation?.degradationStats ?? EMPTY_DEGRADATION_STATS;
+
+  const option = useMemo<EChartsOption>(() => {
+    if (!normalizedPropagation) {
       return {};
     }
+    const { payload, safeEdges } = normalizedPropagation;
 
     const nodes = payload.nodes.map((node) => {
       const firstMs = safeParseTimeMs(node.firstAt) ?? 0;
@@ -214,13 +257,10 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
       }
     });
 
-    const links = payload.edges.flatMap((edge) => {
+    const links = safeEdges.flatMap((edge) => {
       const sourceIndex = nodeIndexById.get(edge.source);
       const targetIndex = nodeIndexById.get(edge.target);
       if (sourceIndex === undefined || targetIndex === undefined) {
-        return [];
-      }
-      if (sourceIndex === targetIndex) {
         return [];
       }
 
@@ -380,7 +420,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     cursorStartMs,
     fontFamily,
     locale,
-    propagationQuery.data,
+    normalizedPropagation,
     windowLabelShort,
   ]);
 
@@ -522,6 +562,30 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
             Cursor: {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}
             {formatDateTime(cursorEndIso, locale, { dateStyle: "medium" })}
           </Tag>
+        ) : null}
+        {degradationStats.hiddenEdges > 0 ? (
+          <Tooltip
+            title={t("dashboard.charts.spacetimePropagation.filteredTooltip", {
+              hidden: degradationStats.hiddenEdges,
+              filtered: degradationStats.filteredEdges,
+              selfLoops: degradationStats.selfLoops,
+              total: degradationStats.totalEdges,
+              defaultValue: `${degradationStats.hiddenEdges} 条传播链已被隐藏（无效引用 ${degradationStats.filteredEdges} / 自环 ${degradationStats.selfLoops}，两者可能重叠），以确保传播图正常显示。`
+            })}
+          >
+            <Tag
+              color="orange"
+              icon={<WarningOutlined />}
+              className="text-xs cursor-help"
+            >
+              {t("dashboard.charts.spacetimePropagation.filtered", {
+                hidden: degradationStats.hiddenEdges,
+                filtered: degradationStats.filteredEdges,
+                selfLoops: degradationStats.selfLoops,
+                defaultValue: `已隐藏 ${degradationStats.hiddenEdges} 条链（无效 ${degradationStats.filteredEdges} / 自环 ${degradationStats.selfLoops}）`
+              })}
+            </Tag>
+          </Tooltip>
         ) : null}
       </Space>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
