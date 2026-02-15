@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Post, Put } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags
+} from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -9,7 +15,8 @@ import { EnvService } from "../config/config.service";
 import { EmailService } from "../email/email.service";
 
 import { UpdateAuthEmailCodeSettingsDto } from "./dto/auth-email-code-settings.dto";
-import { EmailTestDto } from "./dto/email-test.dto";
+import { EmailSettingsStatusResponseDto } from "./dto/email-settings-status.dto";
+import { EmailTestDto, EmailTestResponseDto } from "./dto/email-test.dto";
 
 @ApiTags("system-settings")
 @ApiBearerAuth()
@@ -23,6 +30,12 @@ export class EmailSettingsController {
 
   @Get()
   @Permissions("settings.manage")
+  @ApiOperation({
+    summary: "Get email runtime settings",
+    description:
+      "Returns SMTP status plus effective email verification code settings used by email binding and code login."
+  })
+  @ApiOkResponse({ type: EmailSettingsStatusResponseDto })
   async getStatus() {
     try {
       await this.email.verifyCached(60_000);
@@ -55,6 +68,13 @@ export class EmailSettingsController {
 
   @Put("auth-code")
   @Permissions("settings.manage")
+  @ApiOperation({
+    summary: "Update email verification code settings",
+    description:
+      "Persists email verification code settings to MySQL system settings and applies them immediately."
+  })
+  @ApiBody({ type: UpdateAuthEmailCodeSettingsDto })
+  @ApiOkResponse({ type: UpdateAuthEmailCodeSettingsDto })
   async updateAuthCodeSettings(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: UpdateAuthEmailCodeSettingsDto
@@ -64,6 +84,13 @@ export class EmailSettingsController {
 
   @Post("test")
   @Permissions("settings.manage")
+  @ApiOperation({
+    summary: "Send SMTP test email",
+    description:
+      "Sends a test email via configured SMTP transport to validate runtime email delivery configuration."
+  })
+  @ApiBody({ type: EmailTestDto })
+  @ApiOkResponse({ type: EmailTestResponseDto })
   async test(@Body() body: EmailTestDto) {
     const recipient = body.to?.trim() || this.env.smtpConfig.user;
     const subject = body.subject?.trim() || "Test email";
