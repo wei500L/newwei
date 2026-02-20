@@ -8,6 +8,7 @@ import { CrawlModule } from "../crawl/crawl.module";
 import { QueueModule } from "../queue/queue.module";
 
 import { AdminErrorsController } from "./admin-errors.controller";
+import { ClientExceptionEventsController } from "./client-exception-events.controller";
 import { ExceptionEventsService } from "./exception-events.service";
 import { InternalExceptionEventsController } from "./internal-exception-events.controller";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
@@ -24,6 +25,7 @@ import { TaskLogsController } from "./task-logs.controller";
   imports: [QueueModule, CrawlModule, AnalysisModule, AssistantModule, AlertsModule, AuthModule],
   controllers: [
     AdminErrorsController,
+    ClientExceptionEventsController,
     InternalExceptionEventsController,
     PipelineQualityController,
     NewsSourceQualityController,

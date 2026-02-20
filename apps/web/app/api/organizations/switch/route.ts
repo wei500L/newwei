@@ -20,6 +20,7 @@ interface ReportSwitchExceptionEventInput {
   traceId: string;
   orgId: string;
   userId: string;
+  accessToken?: string;
   statusCode: number;
   message: string;
   error?: unknown;
@@ -28,14 +29,12 @@ interface ReportSwitchExceptionEventInput {
 const getErrorDetails = (error: unknown) => {
   if (error instanceof Error) {
     return {
-      errorName: error.name,
-      stack: error.stack
+      errorName: error.name
     };
   }
 
   return {
-    errorName: undefined,
-    stack: undefined
+    errorName: undefined
   };
 };
 
@@ -43,26 +42,38 @@ const reportSwitchExceptionEvent = async ({
   traceId,
   orgId,
   userId,
+  accessToken,
   statusCode,
   message,
   error
 }: ReportSwitchExceptionEventInput) => {
-  const internalToken = serverEnv.LITELLM_CONFIG_INTERNAL_TOKEN;
-  if (!internalToken) {
+  if (!accessToken) {
+    logServerError(
+      'Skipped organization switch error report because access token is missing',
+      new Error('Missing access token'),
+      {
+        traceId,
+        meta: {
+          orgId,
+          userId,
+          statusCode
+        }
+      }
+    );
     return;
   }
 
-  const reportUrl = `${serverEnv.apiBaseUrl}/internal/observability/exception-events`;
+  const reportUrl = `${serverEnv.apiBaseUrl}/observability/exception-events/client`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), SWITCH_ORG_REPORT_TIMEOUT_MS);
-  const { errorName, stack } = getErrorDetails(error);
+  const { errorName } = getErrorDetails(error);
 
   try {
     const response = await fetch(reportUrl, {
       method: 'POST',
       headers: createTraceHeaders({
         'Content-Type': 'application/json',
-        authorization: `Bearer ${internalToken}`,
+        authorization: `Bearer ${accessToken}`,
         'x-trace-id': traceId
       }),
       body: JSON.stringify({
@@ -74,10 +85,7 @@ const reportSwitchExceptionEvent = async ({
         method: 'POST',
         operation: SWITCH_ORG_EVENT_OPERATION,
         operationName: SWITCH_ORG_EVENT_OPERATION_NAME,
-        errorName,
-        stack,
-        orgId,
-        userId
+        errorName
       }),
       signal: controller.signal
     });
@@ -191,6 +199,7 @@ export async function POST(request: Request) {
       traceId,
       orgId,
       userId: token.user.id,
+      accessToken: token.accessToken,
       statusCode: 502,
       message: 'Auth service unavailable',
       error: lastError
