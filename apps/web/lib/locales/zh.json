@@ -1557,6 +1557,30 @@
   "adminConsole": {
     "title": "管理控制台",
     "subtitle": "管理运维、组织、仪表盘、预警与系统设置。",
+    "group": {
+      "itemCount": "{{count}} 项"
+    },
+    "card": {
+      "enter": "进入"
+    },
+    "groups": {
+      "operations": {
+        "title": "运维与交付",
+        "description": "管理抓取执行链路、仪表盘配置与预警路由。"
+      },
+      "monitoring": {
+        "title": "监控与质量",
+        "description": "跟踪错误事件、数据质量与知识图谱审核积压。"
+      },
+      "governance": {
+        "title": "治理与权限",
+        "description": "管理组织结构、访问控制与审计可追溯性。"
+      },
+      "platform": {
+        "title": "平台与基础设施",
+        "description": "维护存储后端、系统默认配置与运行参数。"
+      }
+    },
     "links": {
       "ops": {
         "title": "运维操作",

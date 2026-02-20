@@ -1554,6 +1554,30 @@
   "adminConsole": {
     "title": "Admin Console",
     "subtitle": "Manage operations, organizations, dashboards, alerts, and system settings.",
+    "group": {
+      "itemCount": "{{count}} items"
+    },
+    "card": {
+      "enter": "Open"
+    },
+    "groups": {
+      "operations": {
+        "title": "Operations & Delivery",
+        "description": "Run content pipelines, dashboards, and alert routing."
+      },
+      "monitoring": {
+        "title": "Monitoring & Quality",
+        "description": "Track failures, data quality, and knowledge-review backlogs."
+      },
+      "governance": {
+        "title": "Governance & Access",
+        "description": "Control organizations, permissions, and auditability."
+      },
+      "platform": {
+        "title": "Platform & Infrastructure",
+        "description": "Manage storage, runtime defaults, and core system behavior."
+      }
+    },
     "links": {
       "ops": {
         "title": "Operations",
