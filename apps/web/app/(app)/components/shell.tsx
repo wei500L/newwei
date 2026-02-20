@@ -29,6 +29,11 @@ const FLUID_LAYOUT_PATHS = [
 
 function useContainerClass(): string {
   const pathname = usePathname();
+  const isAdminHome = pathname === "/admin";
+  if (isAdminHome) {
+    return "w-full max-w-none mx-0";
+  }
+
   const isFluid = FLUID_LAYOUT_PATHS.some(path => pathname?.startsWith(path));
   if (isFluid) {
     return "w-full max-w-none mx-0";
