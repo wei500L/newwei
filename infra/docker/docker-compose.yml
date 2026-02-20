@@ -437,7 +437,7 @@ services:
         exit 1;
       fi;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web run dev
+      pnpm --filter @modular/web run dev:turbo
       "
     env_file:
       - ./.env
@@ -450,8 +450,8 @@ services:
       WATCHPACK_POLLING_INTERVAL: ${WEB_WATCHPACK_POLLING_INTERVAL:-1000}
       CHOKIDAR_USEPOLLING: ${WEB_CHOKIDAR_USEPOLLING:-false}
       CHOKIDAR_INTERVAL: ${WEB_CHOKIDAR_INTERVAL:-1000}
-      NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS: ${NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS:-900000}
-      NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH: ${NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH:-60}
+      NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS: ${NEXT_ON_DEMAND_MAX_INACTIVE_AGE_MS:-180000}
+      NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH: ${NEXT_ON_DEMAND_PAGES_BUFFER_LENGTH:-15}
       GRAPHQL_SCHEMA_URL: ${GRAPHQL_SCHEMA_URL:-http://api:4000/graphql}
       COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
@@ -474,12 +474,13 @@ services:
       - web-package-vector-client-node-modules:/workspace/packages/vector-client/node_modules
       - web-infra-scripts-node-modules:/workspace/infra/scripts/node_modules
       - web-pnpm-store:/root/.local/share/pnpm/store
+      - web-next-dist:/workspace/apps/web/.next-docker
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
-      interval: 15s
+      interval: ${WEB_HEALTHCHECK_INTERVAL:-30s}
       timeout: 5s
       retries: 20
       start_period: 300s
@@ -523,3 +524,4 @@ volumes:
   web-package-utils-node-modules:
   web-package-vector-client-node-modules:
   web-infra-scripts-node-modules:
+  web-next-dist:
