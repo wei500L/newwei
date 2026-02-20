@@ -2,13 +2,14 @@ import { Module } from "@nestjs/common";
 
 import { AlertsModule } from "../alerts/alerts.module";
 import { AnalysisModule } from "../analysis/analysis.module";
-import { AuthModule } from "../auth/auth.module";
 import { AssistantModule } from "../assistant/assistant.module";
+import { AuthModule } from "../auth/auth.module";
 import { CrawlModule } from "../crawl/crawl.module";
 import { QueueModule } from "../queue/queue.module";
 
 import { AdminErrorsController } from "./admin-errors.controller";
 import { ExceptionEventsService } from "./exception-events.service";
+import { InternalExceptionEventsController } from "./internal-exception-events.controller";
 import { NewsSourceQualityController } from "./news-source-quality.controller";
 import { NewsSourceQualityService } from "./news-source-quality.service";
 import { OpsGateway } from "./ops.gateway";
@@ -23,6 +24,7 @@ import { TaskLogsController } from "./task-logs.controller";
   imports: [QueueModule, CrawlModule, AnalysisModule, AssistantModule, AlertsModule, AuthModule],
   controllers: [
     AdminErrorsController,
+    InternalExceptionEventsController,
     PipelineQualityController,
     NewsSourceQualityController,
     PipelineRecoveryController,

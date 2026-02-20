@@ -7,12 +7,17 @@ import { logServerError } from "./server-logger";
 
 const serverSchema = z.object({
   NEXTAUTH_URL: z.string().url(),
-  NEXTAUTH_SECRET: z.string().min(16)
+  NEXTAUTH_SECRET: z.string().min(16),
+  LITELLM_CONFIG_INTERNAL_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(16).optional()
+  )
 });
 
 const parsed = serverSchema.safeParse({
   NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET
+  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+  LITELLM_CONFIG_INTERNAL_TOKEN: process.env.LITELLM_CONFIG_INTERNAL_TOKEN
 });
 
 if (!parsed.success) {
@@ -26,4 +31,3 @@ export const serverEnv = {
   ...env,
   ...parsed.data
 };
-
