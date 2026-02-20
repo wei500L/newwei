@@ -220,6 +220,19 @@ export class EnvService extends ConfigService<ApiEnv> {
     };
   }
 
+  get observabilityClientExceptionRateLimit() {
+    return {
+      userLimit:
+        this.get<number>("OBSERVABILITY_CLIENT_EXCEPTION_USER_RATE_LIMIT", {
+          infer: true,
+        }) ?? 30,
+      ipLimit:
+        this.get<number>("OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT", {
+          infer: true,
+        }) ?? 120,
+    };
+  }
+
   get rateLimitSettingsCacheTtlSeconds() {
     return (
       this.get<number>("RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS", {

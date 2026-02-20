@@ -18,18 +18,37 @@ describe("ClientExceptionEventsController", () => {
   const exceptionEvents = {
     record: jest.fn()
   };
+  const rateLimiter = {
+    consume: jest.fn().mockResolvedValue(true)
+  };
+  const env = {
+    observabilityClientExceptionRateLimit: {
+      userLimit: 30,
+      ipLimit: 120
+    }
+  };
+  const request = {
+    ip: "127.0.0.1",
+    headers: {}
+  };
 
   let controller: ClientExceptionEventsController;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    controller = new ClientExceptionEventsController(exceptionEvents as any);
+    rateLimiter.consume.mockResolvedValue(true);
+    controller = new ClientExceptionEventsController(
+      exceptionEvents as any,
+      rateLimiter as any,
+      env as any
+    );
   });
 
   it("throws when message is missing", async () => {
     await expect(
       controller.report(
         user,
+        request as any,
         "trace-1",
         {
           kind: "http"
@@ -41,7 +60,7 @@ describe("ClientExceptionEventsController", () => {
 
   it("records normalized event and uses current user context", async () => {
     await expect(
-      controller.report(user, "trace-from-header", {
+      controller.report(user, request as any, "trace-from-header", {
         kind: "http",
         traceId: "trace-from-body",
         timestamp: "2026-02-20T10:11:12.000Z",
@@ -73,10 +92,22 @@ describe("ClientExceptionEventsController", () => {
       orgId: "org-1",
       userId: "user-1"
     });
+    expect(rateLimiter.consume).toHaveBeenNthCalledWith(
+      1,
+      "observability:client-exception:user:org-1:user-1",
+      30,
+      60
+    );
+    expect(rateLimiter.consume).toHaveBeenNthCalledWith(
+      2,
+      "observability:client-exception:ip:org-1:127.0.0.1",
+      120,
+      60
+    );
   });
 
   it("falls back to body traceId when x-trace-id is absent", async () => {
-    await controller.report(user, undefined, {
+    await controller.report(user, request as any, undefined, {
       kind: "unknown",
       traceId: "trace-from-body",
       message: "something failed"
@@ -87,5 +118,31 @@ describe("ClientExceptionEventsController", () => {
         traceId: "trace-from-body"
       })
     );
+  });
+
+  it("throws when client event ingestion is rate limited", async () => {
+    rateLimiter.consume.mockResolvedValueOnce(false);
+
+    await expect(
+      controller.report(user, request as any, "trace-rate-limit", {
+        kind: "http",
+        message: "rate limited"
+      })
+    ).rejects.toMatchObject({ status: 429 });
+
+    expect(exceptionEvents.record).not.toHaveBeenCalled();
+  });
+
+  it("throws when message exceeds max length", async () => {
+    const longMessage = "x".repeat(1_001);
+
+    await expect(
+      controller.report(user, request as any, "trace-long", {
+        kind: "http",
+        message: longMessage
+      })
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(exceptionEvents.record).not.toHaveBeenCalled();
   });
 });

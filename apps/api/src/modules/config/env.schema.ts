@@ -42,6 +42,16 @@ export const apiEnvSchema = baseEnvSchema.extend({
     .default(300),
   RATE_LIMIT_RBAC_WRITE: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_RBAC_WRITE_WINDOW: z.coerce.number().int().positive().default(600),
+  OBSERVABILITY_CLIENT_EXCEPTION_USER_RATE_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+  OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120),
   RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()
