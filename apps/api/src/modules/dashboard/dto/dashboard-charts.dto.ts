@@ -82,6 +82,11 @@ export class DashboardSpacetimePropagationQueryDto extends DashboardTimeRangeQue
   @IsOptional()
   @IsString()
   maxEdges?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  maxPredecessorsPerSignal?: string;
 }
 
 export class DashboardSpacetimePropagationArticlesQueryDto extends DashboardTimeRangeQueryDto {

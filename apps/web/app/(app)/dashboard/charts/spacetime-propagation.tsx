@@ -118,6 +118,8 @@ const EMPTY_DEGRADATION_STATS = {
   selfLoops: 0,
   hiddenEdges: 0
 } as const;
+const MAX_PROPAGATION_WINDOW_HOURS = 24 * 31;
+const DEFAULT_PROPAGATION_WINDOW_HOURS = 24;
 
 export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, loading }: SpacetimePropagationProps) {
   const { t, i18n } = useTranslation();
@@ -137,11 +139,27 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const windowLabelShort = `${startIso.slice(0, 10)} - ${endIso.slice(0, 10)}`;
+  const propagationWindowHours = useMemo(() => {
+    const durationMs = Math.max(0, end.getTime() - start.getTime());
+    const durationHours = Math.ceil(durationMs / (60 * 60 * 1000));
+    return Math.max(
+      1,
+      Math.min(MAX_PROPAGATION_WINDOW_HOURS, durationHours || DEFAULT_PROPAGATION_WINDOW_HOURS)
+    );
+  }, [end, start]);
 
   const enabled = Boolean(session?.accessToken && eventId);
 
   const propagationQuery = useQuery({
-    queryKey: ["dashboard", "spacetime", "propagation", eventId ?? "none", startIso, endIso],
+    queryKey: [
+      "dashboard",
+      "spacetime",
+      "propagation",
+      eventId ?? "none",
+      startIso,
+      endIso,
+      propagationWindowHours
+    ],
     queryFn: async () => {
       if (!eventId) {
         return null;
@@ -150,7 +168,8 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
         params: {
           start: startIso,
           end: endIso,
-          eventId
+          eventId,
+          windowHours: propagationWindowHours
         }
       });
       return response.data;
@@ -195,6 +214,21 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
   }, [propagationQuery.data]);
 
   const degradationStats = normalizedPropagation?.degradationStats ?? EMPTY_DEGRADATION_STATS;
+  const edgeKindStats = useMemo(() => {
+    if (!normalizedPropagation) {
+      return { duplicate: 0, time: 0 };
+    }
+    let duplicate = 0;
+    let time = 0;
+    for (const edge of normalizedPropagation.safeEdges) {
+      if (edge.kind === "duplicate") {
+        duplicate += 1;
+      } else {
+        time += 1;
+      }
+    }
+    return { duplicate, time };
+  }, [normalizedPropagation]);
 
   const option = useMemo<EChartsOption>(() => {
     if (!normalizedPropagation) {
@@ -552,8 +586,17 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
         <Tag color="default" className="text-xs">
           Window: {windowLabelShort}
         </Tag>
+        <Tag color="blue" className="text-xs">
+          Link window: {propagation?.windowHours ?? propagationWindowHours}h
+        </Tag>
         <Tag color="geekblue" className="text-xs">
           Aggregation: window graph
+        </Tag>
+        <Tag color="green" className="text-xs">
+          Duplicate links: {edgeKindStats.duplicate}
+        </Tag>
+        <Tag color="gold" className="text-xs">
+          Time links: {edgeKindStats.time}
         </Tag>
         {cursorStartIso && cursorEndIso ? (
           <Tag color="purple" className="text-xs">
@@ -588,7 +631,8 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
       </Space>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         {t("dashboard.charts.spacetimePropagation.caption", {
-          defaultValue: "Directed source-to-source diffusion (duplicate-aware + time-lag fallback)."
+          defaultValue:
+            "Directed source diffusion: duplicate links are evidence-backed; time links are recency-inferred."
         })}
       </Typography.Text>
       {showStalePropagationErrorBanner ? (

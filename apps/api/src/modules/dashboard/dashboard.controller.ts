@@ -166,6 +166,7 @@ export class DashboardController {
       windowHours: query.windowHours,
       maxNodes: query.maxNodes,
       maxEdges: query.maxEdges,
+      maxPredecessorsPerSignal: query.maxPredecessorsPerSignal,
     });
   }
 

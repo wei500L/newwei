@@ -37,6 +37,10 @@ const MAX_SPACETIME_GEO_RECORDS = 2000;
 const MAX_SPACETIME_GEO_LOCATIONS = 500;
 const MAX_SPACETIME_GEO_POINTS = 300;
 const MAX_SPACETIME_GEO_GEOCODE_NETWORK = 6;
+const MAX_SPACETIME_PROPAGATION_WINDOW_HOURS = 24 * 31;
+const DEFAULT_SPACETIME_PROPAGATION_WINDOW_HOURS = 24;
+const MAX_SPACETIME_PROPAGATION_PREDECESSORS = 24;
+const DEFAULT_SPACETIME_PROPAGATION_PREDECESSORS = 8;
 const SPACETIME_GEO_CLUSTER_STEP_DEG = 0.5;
 const SPACETIME_GEO_HEAT_HALF_LIFE_DAYS = 7;
 const SPACETIME_GEO_SNAPSHOT_TTL_SECONDS = 60 * 60;
@@ -117,6 +121,67 @@ const normalizeMongoId = (value: unknown): string => {
     }
   }
   return "";
+};
+
+const MONGO_OBJECT_ID_TOKEN_REGEX =
+  /(?:^|[^a-fA-F0-9])([a-fA-F0-9]{24})(?=$|[^a-fA-F0-9])/g;
+
+const canonicalizeMongoLookupKey = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return /^[a-fA-F0-9]{24}$/.test(trimmed) ? trimmed.toLowerCase() : trimmed;
+};
+
+const isMongoObjectIdLookupKey = (value: string): boolean =>
+  /^[a-f0-9]{24}$/.test(value);
+
+const extractMongoObjectIdLookupKey = (value: unknown): string => {
+  const normalized = normalizeMongoId(value);
+  if (!normalized) {
+    return "";
+  }
+  const canonical = canonicalizeMongoLookupKey(normalized);
+  if (isMongoObjectIdLookupKey(canonical)) {
+    return canonical;
+  }
+
+  let last = "";
+  for (const match of normalized.matchAll(MONGO_OBJECT_ID_TOKEN_REGEX)) {
+    const candidate = canonicalizeMongoLookupKey(match[1] ?? "");
+    if (isMongoObjectIdLookupKey(candidate)) {
+      last = candidate;
+    }
+  }
+  return last;
+};
+
+const resolveProcessedItemLookupKeys = (...candidates: unknown[]): string[] => {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+
+  const append = (raw: string) => {
+    const canonical = canonicalizeMongoLookupKey(raw);
+    if (!canonical || seen.has(canonical)) {
+      return;
+    }
+    seen.add(canonical);
+    keys.push(canonical);
+  };
+
+  for (const candidate of candidates) {
+    const normalized = normalizeMongoId(candidate);
+    if (normalized) {
+      append(normalized);
+    }
+    const extractedObjectId = extractMongoObjectIdLookupKey(candidate);
+    if (extractedObjectId) {
+      append(extractedObjectId);
+    }
+  }
+
+  return keys;
 };
 
 interface DataVizConfig {
@@ -2269,6 +2334,7 @@ export class DashboardChartsService {
       windowHours?: string;
       maxNodes?: string;
       maxEdges?: string;
+      maxPredecessorsPerSignal?: string;
     },
   ): Promise<SpacetimePropagationResponse> {
     const eventId =
@@ -2293,9 +2359,20 @@ export class DashboardChartsService {
       return Math.max(min, Math.min(max, parsed));
     };
 
-    const windowHours = parseBoundedInt(options.windowHours?.trim(), 12, 1, 72);
+    const windowHours = parseBoundedInt(
+      options.windowHours?.trim(),
+      DEFAULT_SPACETIME_PROPAGATION_WINDOW_HOURS,
+      1,
+      MAX_SPACETIME_PROPAGATION_WINDOW_HOURS,
+    );
     const maxNodes = parseBoundedInt(options.maxNodes?.trim(), 140, 30, 600);
     const maxEdges = parseBoundedInt(options.maxEdges?.trim(), 320, 60, 2000);
+    const maxPredecessorsPerSignal = parseBoundedInt(
+      options.maxPredecessorsPerSignal?.trim(),
+      DEFAULT_SPACETIME_PROPAGATION_PREDECESSORS,
+      1,
+      MAX_SPACETIME_PROPAGATION_PREDECESSORS,
+    );
     const windowMs = windowHours * 60 * 60 * 1000;
 
     const resolveSourceKey = (sourceLabel: unknown, url: unknown): string => {
@@ -2371,6 +2448,7 @@ export class DashboardChartsService {
     interface Signal {
       processedArticleId: string;
       processedItemId: string | null;
+      processedItemLookupKeys: string[];
       source: string;
       timestampMs: number;
     }
@@ -2400,20 +2478,16 @@ export class DashboardChartsService {
       }
 
       const source = resolveSourceKey(article?.sourceLabel, article?.url);
-      const processedItemIdCandidate =
-        (typeof row.processedItemId === "string"
-          ? row.processedItemId.trim()
-          : "") ||
-        (typeof processed.cleanedMarkdownRef === "string"
-          ? processed.cleanedMarkdownRef.trim()
-          : "");
-      const processedItemId = processedItemIdCandidate
-        ? processedItemIdCandidate
-        : null;
+      const processedItemLookupKeys = resolveProcessedItemLookupKeys(
+        row.processedItemId,
+        processed.cleanedMarkdownRef,
+      );
+      const processedItemId = processedItemLookupKeys[0] ?? null;
 
       const signal: Signal = {
         processedArticleId: processed.id,
         processedItemId,
+        processedItemLookupKeys,
         source,
         timestampMs: tsMs,
       };
@@ -2428,10 +2502,12 @@ export class DashboardChartsService {
         existing.lastMs = Math.max(existing.lastMs, tsMs);
       }
 
-      if (processedItemId) {
-        const prior = signalByProcessedItemId.get(processedItemId);
-        if (!prior || tsMs < prior.timestampMs) {
-          signalByProcessedItemId.set(processedItemId, signal);
+      if (processedItemLookupKeys.length > 0) {
+        for (const lookupKey of processedItemLookupKeys) {
+          const prior = signalByProcessedItemId.get(lookupKey);
+          if (!prior || tsMs < prior.timestampMs) {
+            signalByProcessedItemId.set(lookupKey, signal);
+          }
         }
       }
 
@@ -2514,8 +2590,8 @@ export class DashboardChartsService {
     const processedItemIds = Array.from(
       new Set(
         signals
-          .map((signal) => signal.processedItemId ?? "")
-          .filter((id) => id.length > 0),
+          .flatMap((signal) => signal.processedItemLookupKeys)
+          .filter(isMongoObjectIdLookupKey),
       ),
     );
 
@@ -2534,8 +2610,8 @@ export class DashboardChartsService {
               continue;
             }
             const payload = doc as Record<string, unknown>;
-            const childId = normalizeMongoId(payload._id);
-            const parentId = normalizeMongoId(payload.duplicateOf);
+            const childId = extractMongoObjectIdLookupKey(payload._id);
+            const parentId = extractMongoObjectIdLookupKey(payload.duplicateOf);
             if (!childId || !parentId) {
               continue;
             }
@@ -2572,18 +2648,24 @@ export class DashboardChartsService {
     for (let idx = 0; idx < signals.length; idx += 1) {
       const signal = signals[idx]!;
       if (
-        signal.processedItemId &&
-        handledDuplicateChildren.has(signal.processedItemId)
+        signal.processedItemLookupKeys.length > 0 &&
+        signal.processedItemLookupKeys.some((lookupKey) =>
+          handledDuplicateChildren.has(lookupKey),
+        )
       ) {
         continue;
       }
+      const linkedSources = new Set<string>();
       for (let prevIdx = idx - 1; prevIdx >= 0; prevIdx -= 1) {
+        if (linkedSources.size >= maxPredecessorsPerSignal) {
+          break;
+        }
         const prev = signals[prevIdx]!;
         const deltaMs = signal.timestampMs - prev.timestampMs;
         if (deltaMs > windowMs) {
           break;
         }
-        if (prev.source === signal.source) {
+        if (prev.source === signal.source || linkedSources.has(prev.source)) {
           continue;
         }
         pushEdge(
@@ -2593,7 +2675,7 @@ export class DashboardChartsService {
           deltaMs,
           signal.timestampMs,
         );
-        break;
+        linkedSources.add(prev.source);
       }
     }
 
