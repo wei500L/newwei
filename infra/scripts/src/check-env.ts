@@ -2,8 +2,12 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { baseEnvSchema, loadAndValidateEnv } from "@modular/utils";
 
-const rootEnv = path.resolve(__dirname, "../../.env");
-const dockerEnv = path.resolve(__dirname, "../docker/.env");
+const scriptsDir = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(scriptsDir, "../..");
+const dockerDir = path.resolve(scriptsDir, "../docker");
+
+const rootEnv = path.resolve(repoRoot, ".env");
+const dockerEnv = path.resolve(dockerDir, ".env");
 
 const targets = [
   { label: "root", file: rootEnv },
