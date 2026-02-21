@@ -52,6 +52,11 @@ export const apiEnvSchema = baseEnvSchema.extend({
     .int()
     .positive()
     .default(120),
+  OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
   RATE_LIMIT_SETTINGS_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()

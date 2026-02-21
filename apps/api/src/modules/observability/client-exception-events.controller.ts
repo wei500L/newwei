@@ -12,7 +12,6 @@ import { EnvService } from "../config/config.service";
 
 import { ExceptionEventsService, type ExceptionEventKind } from "./exception-events.service";
 
-const CLIENT_EXCEPTION_WINDOW_SECONDS = 60;
 const TRACE_ID_MAX_LENGTH = 128;
 const TIMESTAMP_MAX_LENGTH = 64;
 const MESSAGE_MAX_LENGTH = 1_000;
@@ -56,31 +55,40 @@ export class ClientExceptionEventsController {
     @Headers("x-trace-id") incomingTraceId: string | undefined,
     @Body() body: ReportClientExceptionEventBody
   ) {
-    await this.enforceRateLimit(user, request);
-
     const message = this.normalizeString(body?.message, "message", MESSAGE_MAX_LENGTH);
     if (!message) {
       throw new BadRequestException("message is required");
     }
+    const traceId =
+      this.normalizeString(incomingTraceId, "x-trace-id", TRACE_ID_MAX_LENGTH) ??
+      this.normalizeString(body?.traceId, "traceId", TRACE_ID_MAX_LENGTH) ??
+      "";
+    const timestamp = this.normalizeString(body?.timestamp, "timestamp", TIMESTAMP_MAX_LENGTH);
+    const statusCode = this.normalizeStatusCode(body?.statusCode);
+    const path = this.normalizeString(body?.path, "path", PATH_MAX_LENGTH);
+    const method = this.normalizeMethod(body?.method);
+    const operation = this.normalizeString(body?.operation, "operation", OPERATION_MAX_LENGTH);
+    const operationName = this.normalizeString(
+      body?.operationName,
+      "operationName",
+      OPERATION_NAME_MAX_LENGTH
+    );
+    const errorName = this.normalizeString(body?.errorName, "errorName", ERROR_NAME_MAX_LENGTH);
+
+    // Validate first so invalid payloads do not consume ingest quota.
+    await this.enforceRateLimit(user, request);
 
     this.exceptionEvents.record({
       kind: this.normalizeKind(body?.kind),
-      traceId:
-        this.normalizeString(incomingTraceId, "x-trace-id", TRACE_ID_MAX_LENGTH) ??
-        this.normalizeString(body?.traceId, "traceId", TRACE_ID_MAX_LENGTH) ??
-        "",
-      timestamp: this.normalizeString(body?.timestamp, "timestamp", TIMESTAMP_MAX_LENGTH),
-      statusCode: this.normalizeStatusCode(body?.statusCode),
+      traceId,
+      timestamp,
+      statusCode,
       message,
-      path: this.normalizeString(body?.path, "path", PATH_MAX_LENGTH),
-      method: this.normalizeMethod(body?.method),
-      operation: this.normalizeString(body?.operation, "operation", OPERATION_MAX_LENGTH),
-      operationName: this.normalizeString(
-        body?.operationName,
-        "operationName",
-        OPERATION_NAME_MAX_LENGTH
-      ),
-      errorName: this.normalizeString(body?.errorName, "errorName", ERROR_NAME_MAX_LENGTH),
+      path,
+      method,
+      operation,
+      operationName,
+      errorName,
       // Do not persist client-side stack traces from user traffic to avoid leaking sensitive data.
       stack: undefined,
       orgId: user?.orgId,
@@ -91,12 +99,12 @@ export class ClientExceptionEventsController {
   }
 
   private async enforceRateLimit(user: AuthenticatedUser, request: Request) {
-    const { userLimit, ipLimit } = this.env.observabilityClientExceptionRateLimit;
+    const { userLimit, ipLimit, windowSeconds } = this.env.observabilityClientExceptionRateLimit;
 
     const userAllowed = await this.rateLimiter.consume(
       `observability:client-exception:user:${user.orgId}:${user.id}`,
       userLimit,
-      CLIENT_EXCEPTION_WINDOW_SECONDS
+      windowSeconds
     );
     if (!userAllowed) {
       throw new TooManyRequestsException(
@@ -112,7 +120,7 @@ export class ClientExceptionEventsController {
     const ipAllowed = await this.rateLimiter.consume(
       `observability:client-exception:ip:${user.orgId}:${ip}`,
       ipLimit,
-      CLIENT_EXCEPTION_WINDOW_SECONDS
+      windowSeconds
     );
     if (!ipAllowed) {
       throw new TooManyRequestsException(

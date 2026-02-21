@@ -24,7 +24,8 @@ describe("ClientExceptionEventsController", () => {
   const env = {
     observabilityClientExceptionRateLimit: {
       userLimit: 30,
-      ipLimit: 120
+      ipLimit: 120,
+      windowSeconds: 45
     }
   };
   const request = {
@@ -56,6 +57,7 @@ describe("ClientExceptionEventsController", () => {
       )
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(exceptionEvents.record).not.toHaveBeenCalled();
+    expect(rateLimiter.consume).not.toHaveBeenCalled();
   });
 
   it("records normalized event and uses current user context", async () => {
@@ -96,13 +98,13 @@ describe("ClientExceptionEventsController", () => {
       1,
       "observability:client-exception:user:org-1:user-1",
       30,
-      60
+      45
     );
     expect(rateLimiter.consume).toHaveBeenNthCalledWith(
       2,
       "observability:client-exception:ip:org-1:127.0.0.1",
       120,
-      60
+      45
     );
   });
 
@@ -144,5 +146,6 @@ describe("ClientExceptionEventsController", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(exceptionEvents.record).not.toHaveBeenCalled();
+    expect(rateLimiter.consume).not.toHaveBeenCalled();
   });
 });

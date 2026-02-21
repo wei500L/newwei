@@ -230,6 +230,10 @@ export class EnvService extends ConfigService<ApiEnv> {
         this.get<number>("OBSERVABILITY_CLIENT_EXCEPTION_IP_RATE_LIMIT", {
           infer: true,
         }) ?? 120,
+      windowSeconds:
+        this.get<number>("OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS", {
+          infer: true,
+        }) ?? 60,
     };
   }
 
