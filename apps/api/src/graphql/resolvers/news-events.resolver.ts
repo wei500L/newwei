@@ -7,9 +7,14 @@ import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { NewsEventBriefService } from "../../modules/news-events/news-event-brief.service";
 import {
+  NewsEventSourcePolicyService,
+  type NewsEventSourcePolicySyncStatus,
+} from "../../modules/news-events/news-event-source-policy.service";
+import { NewsEventsSettingsService } from "../../modules/news-events/news-events-settings.service";
+import {
   type NewsEventAuthorityProfile,
   type NewsEventSourceClassification,
-  NewsEventsService
+  NewsEventsService,
 } from "../../modules/news-events/news-events.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import type { GqlRequest } from "../graphql.types";
@@ -19,7 +24,10 @@ import {
   NewsEventSortBy,
   NewsEventSourceType,
   NewsEventItemModel,
-  NewsEventTimelineEntryModel
+  NewsEventTimelineEntryModel,
+  NewsEventReferencedArticleModel,
+  NewsEventSourceEvidenceModel,
+  NewsEventSourcePolicySyncStatusModel,
 } from "../models/news-events.model";
 
 const EVENT_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
@@ -27,7 +35,11 @@ const EVENT_DEDUPE_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
 interface EnrichedEvent {
   row: any;
   heat: { breaking: boolean; heatScore: number };
-  authority: { credibilityScore: number; sourceType: NewsEventSourceType };
+  authority: {
+    credibilityScore: number;
+    sourceType: NewsEventSourceType;
+    sourceEvidence: NewsEventSourceEvidenceModel;
+  };
 }
 
 @Resolver(() => NewsEventModel)
@@ -35,35 +47,65 @@ interface EnrichedEvent {
 export class NewsEventsResolver {
   constructor(
     private readonly events: NewsEventsService,
-    private readonly briefs: NewsEventBriefService
+    private readonly briefs: NewsEventBriefService,
+    private readonly newsEventSettings: NewsEventsSettingsService,
+    private readonly sourcePolicyService: NewsEventSourcePolicyService,
   ) {}
+
+  @HasPermission("items.read")
+  @Query(() => NewsEventSourcePolicySyncStatusModel)
+  async newsEventSourcePolicySyncStatus(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsEventSourcePolicySyncStatusModel> {
+    const user = this.requireUser(req);
+    const [status, orgSettings] = await Promise.all([
+      this.sourcePolicyService.getSyncStatus(user.orgId),
+      this.newsEventSettings.getSettings(user.orgId).catch(() => null),
+    ]);
+    return this.toSourcePolicySyncStatusModel(
+      status,
+      Boolean(orgSettings?.forceAuthoritativeMode),
+      this.clampInt(orgSettings?.forceMinAuthoritativeSources ?? 1, 1, 10),
+    );
+  }
 
   @HasPermission("items.read")
   @Query(() => [NewsEventModel])
   async newsEvents(
     @Context("req") req: GqlRequest,
     @Args("limit", { type: () => Int, nullable: true }) limit?: number,
-    @Args("windowDays", { type: () => Int, nullable: true }) windowDays?: number,
-    @Args("status", { type: () => NewsEventStatus, nullable: true }) status?: NewsEventStatus,
-    @Args("sourceType", { type: () => NewsEventSourceType, nullable: true }) sourceType?: NewsEventSourceType,
-    @Args("minHeatScore", { type: () => Float, nullable: true }) minHeatScore?: number,
-    @Args("minCredibilityScore", { type: () => Float, nullable: true }) minCredibilityScore?: number,
-    @Args("sortBy", { type: () => NewsEventSortBy, nullable: true }) sortBy?: NewsEventSortBy,
-    @Args("dedupeSimilar", { nullable: true }) dedupeSimilar?: boolean
+    @Args("windowDays", { type: () => Int, nullable: true })
+    windowDays?: number,
+    @Args("status", { type: () => NewsEventStatus, nullable: true })
+    status?: NewsEventStatus,
+    @Args("sourceType", { type: () => NewsEventSourceType, nullable: true })
+    sourceType?: NewsEventSourceType,
+    @Args("minHeatScore", { type: () => Float, nullable: true })
+    minHeatScore?: number,
+    @Args("minCredibilityScore", { type: () => Float, nullable: true })
+    minCredibilityScore?: number,
+    @Args("minAuthoritativeSources", { type: () => Int, nullable: true })
+    minAuthoritativeSources?: number,
+    @Args("sortBy", { type: () => NewsEventSortBy, nullable: true })
+    sortBy?: NewsEventSortBy,
+    @Args("dedupeSimilar", { nullable: true }) dedupeSimilar?: boolean,
   ): Promise<NewsEventModel[]> {
     const user = this.requireUser(req);
     const requestedLimit = this.clampInt(limit ?? 20, 1, 100);
-    const candidateLimit = Math.min(300, Math.max(requestedLimit, requestedLimit * 4));
+    const candidateLimit = Math.min(
+      300,
+      Math.max(requestedLimit, requestedLimit * 4),
+    );
     const rows = await this.events.listEvents(user.orgId, {
       limit: candidateLimit,
       windowDays,
-      status
+      status,
     });
 
     const eventIds = rows.map((row) => row.id);
     const [heatMap, authorityMap] = await Promise.all([
       this.events.getEventHeatMap(user.orgId, eventIds),
-      this.events.getEventAuthorityMap(user.orgId, eventIds, { windowDays })
+      this.events.getEventAuthorityMap(user.orgId, eventIds, { windowDays }),
     ]);
 
     let enriched: EnrichedEvent[] = rows.map((row) => {
@@ -77,19 +119,57 @@ export class NewsEventsResolver {
         ? Math.max(0, minHeatScore)
         : null;
     const credibilityThreshold =
-      typeof minCredibilityScore === "number" && Number.isFinite(minCredibilityScore)
+      typeof minCredibilityScore === "number" &&
+      Number.isFinite(minCredibilityScore)
         ? Math.max(0, Math.min(100, minCredibilityScore))
         : null;
-    const effectiveSourceType = sourceType ?? NewsEventSourceType.all;
+    const authoritativeSourcesThreshold =
+      typeof minAuthoritativeSources === "number" &&
+      Number.isFinite(minAuthoritativeSources)
+        ? this.clampInt(Math.round(minAuthoritativeSources), 0, 100)
+        : null;
+    let effectiveSourceType = sourceType ?? NewsEventSourceType.all;
+    let effectiveAuthoritativeSourcesThreshold = authoritativeSourcesThreshold;
+
+    try {
+      const orgSettings = await this.newsEventSettings.getSettings(user.orgId);
+      if (orgSettings.forceAuthoritativeMode) {
+        effectiveSourceType = NewsEventSourceType.authoritative;
+        const forcedThreshold = this.clampInt(
+          orgSettings.forceMinAuthoritativeSources,
+          1,
+          10,
+        );
+        effectiveAuthoritativeSourcesThreshold = Math.max(
+          forcedThreshold,
+          effectiveAuthoritativeSourcesThreshold ?? 0,
+        );
+      }
+    } catch {
+      // Ignore settings read failures and fall back to request-level filters.
+    }
 
     if (effectiveSourceType !== NewsEventSourceType.all) {
-      enriched = enriched.filter((entry) => entry.authority.sourceType === effectiveSourceType);
+      enriched = enriched.filter(
+        (entry) => entry.authority.sourceType === effectiveSourceType,
+      );
     }
     if (heatThreshold !== null) {
-      enriched = enriched.filter((entry) => entry.heat.heatScore >= heatThreshold);
+      enriched = enriched.filter(
+        (entry) => entry.heat.heatScore >= heatThreshold,
+      );
     }
     if (credibilityThreshold !== null) {
-      enriched = enriched.filter((entry) => entry.authority.credibilityScore >= credibilityThreshold);
+      enriched = enriched.filter(
+        (entry) => entry.authority.credibilityScore >= credibilityThreshold,
+      );
+    }
+    if (effectiveAuthoritativeSourcesThreshold !== null) {
+      enriched = enriched.filter(
+        (entry) =>
+          entry.authority.sourceEvidence.authoritativeSourceCount >=
+          effectiveAuthoritativeSourcesThreshold,
+      );
     }
 
     enriched = this.sortEvents(enriched, sortBy ?? NewsEventSortBy.latest);
@@ -103,7 +183,8 @@ export class NewsEventsResolver {
         breaking: heat.breaking,
         heatScore: heat.heatScore,
         credibilityScore: authority.credibilityScore,
-        sourceType: authority.sourceType
+        sourceType: authority.sourceType,
+        sourceEvidence: authority.sourceEvidence,
       });
     });
   }
@@ -113,18 +194,23 @@ export class NewsEventsResolver {
   async newsEvent(
     @Context("req") req: GqlRequest,
     @Args("id") id: string,
-    @Args("itemsLimit", { type: () => Int, nullable: true }) itemsLimit?: number,
-    @Args("timelineLimit", { type: () => Int, nullable: true }) timelineLimit?: number
+    @Args("itemsLimit", { type: () => Int, nullable: true })
+    itemsLimit?: number,
+    @Args("timelineLimit", { type: () => Int, nullable: true })
+    timelineLimit?: number,
   ): Promise<NewsEventModel | null> {
     const user = this.requireUser(req);
-    const row = await this.events.getEvent(user.orgId, id, { itemsLimit, timelineLimit });
+    const row = await this.events.getEvent(user.orgId, id, {
+      itemsLimit,
+      timelineLimit,
+    });
     if (!row) {
       return null;
     }
 
     const [heatMap, authorityMap] = await Promise.all([
       this.events.getEventHeatMap(user.orgId, [id]),
-      this.events.getEventAuthorityMap(user.orgId, [id])
+      this.events.getEventAuthorityMap(user.orgId, [id]),
     ]);
     const heat = heatMap.get(id) ?? { breaking: false, heatScore: 0 };
     const authority = this.toAuthorityScore(authorityMap.get(id));
@@ -133,14 +219,15 @@ export class NewsEventsResolver {
       row,
       {
         items: row.items.map((item) => this.toItemModel(item)),
-        timeline: row.timeline.map((entry) => this.toTimelineModel(entry))
+        timeline: row.timeline.map((entry) => this.toTimelineModel(entry)),
       },
       {
         breaking: heat.breaking,
         heatScore: heat.heatScore,
         credibilityScore: authority.credibilityScore,
-        sourceType: authority.sourceType
-      }
+        sourceType: authority.sourceType,
+        sourceEvidence: authority.sourceEvidence,
+      },
     );
   }
 
@@ -150,14 +237,15 @@ export class NewsEventsResolver {
     @Context("req") req: GqlRequest,
     @Args("eventId") eventId: string,
     @Args("language", { nullable: true }) language?: string,
-    @Args("maxSources", { type: () => Int, nullable: true }) maxSources?: number,
-    @Args("forceRefresh", { nullable: true }) forceRefresh?: boolean
+    @Args("maxSources", { type: () => Int, nullable: true })
+    maxSources?: number,
+    @Args("forceRefresh", { nullable: true }) forceRefresh?: boolean,
   ): Promise<NewsEventBriefModel | null> {
     const user = this.requireUser(req);
     const result = await this.briefs.getBrief(user.orgId, eventId, {
       language,
       maxSources,
-      forceRefresh
+      forceRefresh,
     });
     if (!result) {
       return null;
@@ -165,7 +253,7 @@ export class NewsEventsResolver {
 
     const toPoint = (point: { text: string; citations: number[] }) => ({
       text: point.text,
-      citations: point.citations ?? []
+      citations: point.citations ?? [],
     });
 
     const payload = result.payload;
@@ -176,12 +264,14 @@ export class NewsEventsResolver {
       tldr: payload.tldr,
       keyPoints: (payload.key_points ?? []).map(toPoint),
       whyItMatters: (payload.why_it_matters ?? []).map(toPoint),
-      latestUpdate: payload.latest_update ? toPoint(payload.latest_update) : null,
+      latestUpdate: payload.latest_update
+        ? toPoint(payload.latest_update)
+        : null,
       whatToWatch: (payload.what_to_watch ?? []).map(toPoint),
       comparison: payload.comparison
         ? {
             consensus: (payload.comparison.consensus ?? []).map(toPoint),
-            divergence: (payload.comparison.divergence ?? []).map(toPoint)
+            divergence: (payload.comparison.divergence ?? []).map(toPoint),
           }
         : null,
       limitations: payload.limitations ?? null,
@@ -192,20 +282,51 @@ export class NewsEventsResolver {
         title: source.title,
         publishedAt: source.publishedAt,
         processedItemId: source.processedItemId,
-        processedArticleId: source.processedArticleId
-      }))
+        processedArticleId: source.processedArticleId,
+      })),
     };
+  }
+
+  @HasPermission("items.read")
+  @Query(() => [NewsEventReferencedArticleModel])
+  async newsEventReferencedArticles(
+    @Context("req") req: GqlRequest,
+    @Args("eventId") eventId: string,
+    @Args("articleIds", { type: () => [String] }) articleIds: string[],
+    @Args("limit", { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<NewsEventReferencedArticleModel[]> {
+    const user = this.requireUser(req);
+    const rows = await this.events.listEventReferencedArticles(
+      user.orgId,
+      eventId,
+      articleIds,
+      { limit },
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      url: row.url,
+      sourceLabel: row.sourceLabel,
+      title: row.title,
+      crawlAt: row.crawlAt,
+      publishedAt: row.publishedAt,
+      processedAt: row.processedAt,
+      processedArticleId: row.processedArticleId,
+    }));
   }
 
   private toModel(
     row: any,
-    extras?: { items: NewsEventItemModel[]; timeline: NewsEventTimelineEntryModel[] },
+    extras?: {
+      items: NewsEventItemModel[];
+      timeline: NewsEventTimelineEntryModel[];
+    },
     score?: {
       breaking: boolean;
       heatScore: number;
       credibilityScore: number;
       sourceType: NewsEventSourceType;
-    }
+      sourceEvidence: NewsEventSourceEvidenceModel;
+    },
   ): NewsEventModel {
     return {
       id: row.id,
@@ -227,7 +348,13 @@ export class NewsEventsResolver {
       breaking: score?.breaking ?? false,
       heatScore: score?.heatScore ?? 0,
       credibilityScore: score?.credibilityScore ?? 0,
-      sourceType: score?.sourceType ?? NewsEventSourceType.unknown
+      sourceType: score?.sourceType ?? NewsEventSourceType.unknown,
+      sourceEvidence: score?.sourceEvidence ?? {
+        uniqueSourceCount: 0,
+        authoritativeSourceCount: 0,
+        blogSourceCount: 0,
+        corroborated: false,
+      },
     };
   }
 
@@ -252,9 +379,9 @@ export class NewsEventsResolver {
           id: item.processedArticle.article.id,
           url: item.processedArticle.article.url,
           sourceLabel: item.processedArticle.article.sourceLabel,
-          crawlAt: item.processedArticle.article.crawlAt
-        }
-      }
+          crawlAt: item.processedArticle.article.crawlAt,
+        },
+      },
     };
   }
 
@@ -268,29 +395,75 @@ export class NewsEventsResolver {
       keyPoints: entry.keyPoints ?? null,
       referencedArticleIds: entry.referencedArticleIds ?? null,
       createdAt: entry.createdAt,
-      updatedAt: entry.updatedAt
+      updatedAt: entry.updatedAt,
     };
   }
 
-  private toAuthorityScore(
-    profile: NewsEventAuthorityProfile | undefined
-  ): { credibilityScore: number; sourceType: NewsEventSourceType } {
+  private toAuthorityScore(profile: NewsEventAuthorityProfile | undefined): {
+    credibilityScore: number;
+    sourceType: NewsEventSourceType;
+    sourceEvidence: NewsEventSourceEvidenceModel;
+  } {
     if (!profile) {
       return {
         credibilityScore: 0,
-        sourceType: NewsEventSourceType.unknown
+        sourceType: NewsEventSourceType.unknown,
+        sourceEvidence: {
+          uniqueSourceCount: 0,
+          authoritativeSourceCount: 0,
+          blogSourceCount: 0,
+          corroborated: false,
+        },
       };
     }
     return {
       credibilityScore:
-        typeof profile.credibilityScore === "number" && Number.isFinite(profile.credibilityScore)
+        typeof profile.credibilityScore === "number" &&
+        Number.isFinite(profile.credibilityScore)
           ? profile.credibilityScore
           : 0,
-      sourceType: this.toGraphqlSourceType(profile.sourceType)
+      sourceType: this.toGraphqlSourceType(profile.sourceType),
+      sourceEvidence: {
+        uniqueSourceCount: this.clampInt(
+          profile.uniqueSourceCount ?? 0,
+          0,
+          10_000,
+        ),
+        authoritativeSourceCount: this.clampInt(
+          profile.authoritativeSourceCount ?? 0,
+          0,
+          10_000,
+        ),
+        blogSourceCount: this.clampInt(profile.blogSourceCount ?? 0, 0, 10_000),
+        corroborated: Boolean(profile.corroborated),
+      },
     };
   }
 
-  private toGraphqlSourceType(sourceType: NewsEventSourceClassification): NewsEventSourceType {
+  private toSourcePolicySyncStatusModel(
+    status: NewsEventSourcePolicySyncStatus,
+    forceAuthoritativeMode: boolean,
+    forceMinAuthoritativeSources: number,
+  ): NewsEventSourcePolicySyncStatusModel {
+    return {
+      degraded: Boolean(status.degraded),
+      policyCacheStale: Boolean(status.policyCacheStale),
+      presetCacheStale: Boolean(status.presetCacheStale),
+      forceAuthoritativeMode,
+      forceMinAuthoritativeSources: this.clampInt(
+        forceMinAuthoritativeSources,
+        1,
+        10,
+      ),
+      warningCodes: Array.isArray(status.warningCodes)
+        ? status.warningCodes
+        : [],
+    };
+  }
+
+  private toGraphqlSourceType(
+    sourceType: NewsEventSourceClassification,
+  ): NewsEventSourceType {
     switch (sourceType) {
       case "authoritative":
         return NewsEventSourceType.authoritative;
@@ -303,12 +476,18 @@ export class NewsEventsResolver {
     }
   }
 
-  private sortEvents(rows: EnrichedEvent[], sortBy: NewsEventSortBy): EnrichedEvent[] {
+  private sortEvents(
+    rows: EnrichedEvent[],
+    sortBy: NewsEventSortBy,
+  ): EnrichedEvent[] {
     const sorted = rows.slice();
     sorted.sort((a, b) => {
       const heatDelta = (b.heat.heatScore ?? 0) - (a.heat.heatScore ?? 0);
-      const credibilityDelta = (b.authority.credibilityScore ?? 0) - (a.authority.credibilityScore ?? 0);
-      const lastAtDelta = this.safeTimeMs(b.row.lastAt) - this.safeTimeMs(a.row.lastAt);
+      const credibilityDelta =
+        (b.authority.credibilityScore ?? 0) -
+        (a.authority.credibilityScore ?? 0);
+      const lastAtDelta =
+        this.safeTimeMs(b.row.lastAt) - this.safeTimeMs(a.row.lastAt);
       if (sortBy === NewsEventSortBy.heat) {
         return heatDelta || credibilityDelta || lastAtDelta;
       }
@@ -321,7 +500,12 @@ export class NewsEventsResolver {
   }
 
   private dedupeSimilarEvents(rows: EnrichedEvent[]): EnrichedEvent[] {
-    const kept: Array<{ entry: EnrichedEvent; tokens: Set<string>; startMs: number; lastMs: number }> = [];
+    const kept: Array<{
+      entry: EnrichedEvent;
+      tokens: Set<string>;
+      startMs: number;
+      lastMs: number;
+    }> = [];
     for (const entry of rows) {
       const tokens = this.buildEventTokenSet(entry.row);
       const startMs = this.safeTimeMs(entry.row.startAt);
@@ -358,7 +542,7 @@ export class NewsEventsResolver {
     const parts = [
       typeof row?.primaryEntity === "string" ? row.primaryEntity : "",
       typeof row?.primaryTopic === "string" ? row.primaryTopic : "",
-      typeof row?.title === "string" ? row.title : ""
+      typeof row?.title === "string" ? row.title : "",
     ];
     const normalized = parts
       .join(" ")

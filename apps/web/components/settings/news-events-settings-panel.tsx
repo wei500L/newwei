@@ -1,7 +1,17 @@
 "use client";
 
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Form, InputNumber, Space, Spin, Switch, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  InputNumber,
+  Space,
+  Spin,
+  Switch,
+  Typography,
+  message,
+} from "antd";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +21,8 @@ interface NewsEventSettingsModel {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  forceAuthoritativeMode: boolean;
+  forceMinAuthoritativeSources: number;
   maxBatchSize: number;
   backfillDays: number;
   lookbackDays: number;
@@ -32,6 +44,8 @@ interface FormValues {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  forceAuthoritativeMode: boolean;
+  forceMinAuthoritativeSources: number;
   maxBatchSize: number;
   backfillDays: number;
   lookbackDays: number;
@@ -47,6 +61,8 @@ const NEWS_EVENT_SETTINGS_QUERY = gql`
       enabled
       ingestionEnabled
       timelineEnabled
+      forceAuthoritativeMode
+      forceMinAuthoritativeSources
       maxBatchSize
       backfillDays
       lookbackDays
@@ -64,6 +80,8 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
       enabled
       ingestionEnabled
       timelineEnabled
+      forceAuthoritativeMode
+      forceMinAuthoritativeSources
       maxBatchSize
       backfillDays
       lookbackDays
@@ -80,11 +98,16 @@ export function NewsEventsSettingsPanel() {
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
 
-  const { data, loading, refetch, error } = useQuery<QueryData>(NEWS_EVENT_SETTINGS_QUERY, {
-    fetchPolicy: "cache-and-network"
-  });
+  const { data, loading, refetch, error } = useQuery<QueryData>(
+    NEWS_EVENT_SETTINGS_QUERY,
+    {
+      fetchPolicy: "cache-and-network",
+    },
+  );
 
-  const [updateSettings, { loading: saving }] = useMutation<MutationData>(UPDATE_NEWS_EVENT_SETTINGS_MUTATION);
+  const [updateSettings, { loading: saving }] = useMutation<MutationData>(
+    UPDATE_NEWS_EVENT_SETTINGS_MUTATION,
+  );
 
   useEffect(() => {
     if (data?.newsEventSettings) {
@@ -96,16 +119,24 @@ export function NewsEventsSettingsPanel() {
     try {
       await updateSettings({ variables: { input: values } });
       await refetch();
-      messageApi.success(t("settings.newsEvents.messages.saved", { defaultValue: "Saved" }));
+      messageApi.success(
+        t("settings.newsEvents.messages.saved", { defaultValue: "Saved" }),
+      );
     } catch (err) {
       captureClientError("Failed to save news event settings", err);
-      messageApi.error(t("settings.newsEvents.messages.saveFailed", { defaultValue: "Failed to save" }));
+      messageApi.error(
+        t("settings.newsEvents.messages.saveFailed", {
+          defaultValue: "Failed to save",
+        }),
+      );
     }
   };
 
   if (loading && !data?.newsEventSettings) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+      >
         <Spin />
       </div>
     );
@@ -116,16 +147,20 @@ export function NewsEventsSettingsPanel() {
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
         {t("settings.newsEvents.description", {
-          defaultValue: "Cluster processed news articles into events and generate timelines."
+          defaultValue:
+            "Cluster processed news articles into events and generate timelines.",
         })}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        message={t("settings.newsEvents.notice.title", { defaultValue: "Notes" })}
+        message={t("settings.newsEvents.notice.title", {
+          defaultValue: "Notes",
+        })}
         description={t("settings.newsEvents.notice.body", {
-          defaultValue: "Ingestion runs on a schedule. Disable timeline if you only need clustering."
+          defaultValue:
+            "Ingestion runs on a schedule. Disable timeline if you only need clustering.",
         })}
         style={{ marginBottom: "1rem" }}
       />
@@ -134,7 +169,9 @@ export function NewsEventsSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          message={t("settings.newsEvents.messages.loadFailed", { defaultValue: "Failed to load settings" })}
+          message={t("settings.newsEvents.messages.loadFailed", {
+            defaultValue: "Failed to load settings",
+          })}
           description={error.message}
           style={{ marginBottom: "1rem" }}
         />
@@ -142,7 +179,9 @@ export function NewsEventsSettingsPanel() {
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
-          label={t("settings.newsEvents.fields.enabled", { defaultValue: "Enabled" })}
+          label={t("settings.newsEvents.fields.enabled", {
+            defaultValue: "Enabled",
+          })}
           name="enabled"
           valuePropName="checked"
         >
@@ -150,49 +189,128 @@ export function NewsEventsSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.ingestionEnabled", { defaultValue: "Ingestion enabled" })}
+          label={t("settings.newsEvents.fields.ingestionEnabled", {
+            defaultValue: "Ingestion enabled",
+          })}
           name="ingestionEnabled"
           valuePropName="checked"
-          extra={t("settings.newsEvents.hints.ingestionEnabled", { defaultValue: "Controls scheduled ingestion jobs." })}
-        >
-          <Switch />
-        </Form.Item>
-
-        <Form.Item
-          label={t("settings.newsEvents.fields.timelineEnabled", { defaultValue: "Timeline enabled" })}
-          name="timelineEnabled"
-          valuePropName="checked"
-          extra={t("settings.newsEvents.hints.timelineEnabled", {
-            defaultValue: "Builds bucketed timeline entries for each event."
+          extra={t("settings.newsEvents.hints.ingestionEnabled", {
+            defaultValue: "Controls scheduled ingestion jobs.",
           })}
         >
           <Switch />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.maxBatchSize", { defaultValue: "Max batch size" })}
+          label={t("settings.newsEvents.fields.timelineEnabled", {
+            defaultValue: "Timeline enabled",
+          })}
+          name="timelineEnabled"
+          valuePropName="checked"
+          extra={t("settings.newsEvents.hints.timelineEnabled", {
+            defaultValue: "Builds bucketed timeline entries for each event.",
+          })}
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item
+          label={t("settings.newsEvents.fields.forceAuthoritativeMode", {
+            defaultValue: "Force authoritative mode",
+          })}
+          name="forceAuthoritativeMode"
+          valuePropName="checked"
+          extra={t("settings.newsEvents.hints.forceAuthoritativeMode", {
+            defaultValue:
+              "When enabled, all dashboard timeline event queries are forced to authoritative sources.",
+          })}
+        >
+          <Switch />
+        </Form.Item>
+
+        <Form.Item shouldUpdate noStyle>
+          {({ getFieldValue }) => (
+            <Form.Item
+              label={t(
+                "settings.newsEvents.fields.forceMinAuthoritativeSources",
+                {
+                  defaultValue: "Min authoritative sources",
+                },
+              )}
+              name="forceMinAuthoritativeSources"
+              extra={t(
+                "settings.newsEvents.hints.forceMinAuthoritativeSources",
+                {
+                  defaultValue:
+                    "Minimum unique authoritative sources required when force authoritative mode is enabled.",
+                },
+              )}
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.newsEvents.validation.required", {
+                    defaultValue: "Required",
+                  }),
+                },
+              ]}
+            >
+              <InputNumber
+                min={1}
+                max={5}
+                disabled={!getFieldValue("forceAuthoritativeMode")}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+          )}
+        </Form.Item>
+
+        <Form.Item
+          label={t("settings.newsEvents.fields.maxBatchSize", {
+            defaultValue: "Max batch size",
+          })}
           name="maxBatchSize"
-          rules={[{ required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={1} max={2000} style={{ width: "100%" }} />
         </Form.Item>
 
         <Space style={{ width: "100%" }} size="middle" direction="vertical">
           <Form.Item
-            label={t("settings.newsEvents.fields.backfillDays", { defaultValue: "Backfill days" })}
+            label={t("settings.newsEvents.fields.backfillDays", {
+              defaultValue: "Backfill days",
+            })}
             name="backfillDays"
             rules={[
-              { required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }
+              {
+                required: true,
+                message: t("settings.newsEvents.validation.required", {
+                  defaultValue: "Required",
+                }),
+              },
             ]}
           >
             <InputNumber min={1} max={365} style={{ width: "100%" }} />
           </Form.Item>
 
           <Form.Item
-            label={t("settings.newsEvents.fields.lookbackDays", { defaultValue: "Lookback days" })}
+            label={t("settings.newsEvents.fields.lookbackDays", {
+              defaultValue: "Lookback days",
+            })}
             name="lookbackDays"
             rules={[
-              { required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }
+              {
+                required: true,
+                message: t("settings.newsEvents.validation.required", {
+                  defaultValue: "Required",
+                }),
+              },
             ]}
           >
             <InputNumber min={1} max={365} style={{ width: "100%" }} />
@@ -200,43 +318,86 @@ export function NewsEventsSettingsPanel() {
         </Space>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.timelineMaxEventsPerRun", { defaultValue: "Timeline max events per run" })}
+          label={t("settings.newsEvents.fields.timelineMaxEventsPerRun", {
+            defaultValue: "Timeline max events per run",
+          })}
           name="timelineMaxEventsPerRun"
-          rules={[{ required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={1} max={5000} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.vectorMinScore", { defaultValue: "Vector min score" })}
+          label={t("settings.newsEvents.fields.vectorMinScore", {
+            defaultValue: "Vector min score",
+          })}
           name="vectorMinScore"
-          extra={t("settings.newsEvents.hints.vectorMinScore", { defaultValue: "Higher = stricter vector assignment." })}
-          rules={[{ required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }]}
+          extra={t("settings.newsEvents.hints.vectorMinScore", {
+            defaultValue: "Higher = stricter vector assignment.",
+          })}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.crossLanguagePenalty", { defaultValue: "Cross-language penalty" })}
+          label={t("settings.newsEvents.fields.crossLanguagePenalty", {
+            defaultValue: "Cross-language penalty",
+          })}
           name="crossLanguagePenalty"
           extra={t("settings.newsEvents.hints.crossLanguagePenalty", {
-            defaultValue: "Penalty applied when languages differ (0–1)."
+            defaultValue: "Penalty applied when languages differ (0–1).",
           })}
-          rules={[{ required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item
-          label={t("settings.newsEvents.fields.cacheTtlSeconds", { defaultValue: "Cache TTL (seconds)" })}
+          label={t("settings.newsEvents.fields.cacheTtlSeconds", {
+            defaultValue: "Cache TTL (seconds)",
+          })}
           name="cacheTtlSeconds"
-          rules={[{ required: true, message: t("settings.newsEvents.validation.required", { defaultValue: "Required" }) }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsEvents.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={0} max={3600} step={10} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item>
-          <Button type="primary" htmlType="submit" loading={saving} disabled={loading}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={saving}
+            disabled={loading}
+          >
             {t("common.saveChanges", { defaultValue: "Save changes" })}
           </Button>
         </Form.Item>

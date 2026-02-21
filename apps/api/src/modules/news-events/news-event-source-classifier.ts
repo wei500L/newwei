@@ -127,6 +127,31 @@ const DEFAULT_AUTHORITATIVE_DOMAINS = [
   "fca.org.uk",
   "esma.europa.eu",
   "europa.eu",
+  "upi.com",
+  "dpa.com",
+  "ansa.it",
+  "efe.com",
+  "euronews.com",
+  "bnnbloomberg.ca",
+  "morningstar.com",
+  "spglobal.com",
+  "moodys.com",
+  "fitchratings.com",
+  "argusmedia.com",
+  "icis.com",
+  "nhk.or.jp",
+  "xinhuanet.com",
+  "people.com.cn",
+  "chinadaily.com.cn",
+  "cgtn.com",
+  "rferl.org",
+  "voanews.com",
+  "aa.com.tr",
+  "cdc.gov",
+  "usgs.gov",
+  "noaa.gov",
+  "energy.gov",
+  "nasa.gov",
 ] as const;
 
 const DEFAULT_AUTHORITATIVE_LABELS = [
@@ -234,6 +259,37 @@ const DEFAULT_AUTHORITATIVE_LABELS = [
   "bank of japan",
   "fca",
   "esma",
+  "united press international",
+  "upi",
+  "deutsche presse agentur",
+  "dpa",
+  "ansa",
+  "efe",
+  "euronews",
+  "bnn bloomberg",
+  "morningstar",
+  "s p global",
+  "sp global",
+  "moody s",
+  "moodys",
+  "fitch ratings",
+  "argus media",
+  "icis",
+  "nhk",
+  "xinhua",
+  "people s daily",
+  "china daily",
+  "cgtn",
+  "radio free europe",
+  "voice of america",
+  "anadolu agency",
+  "u s centers for disease control",
+  "cdc",
+  "u s geological survey",
+  "usgs",
+  "noaa",
+  "u s department of energy",
+  "nasa",
 ] as const;
 
 const DEFAULT_BLOG_DOMAINS = [
@@ -270,6 +326,15 @@ const DEFAULT_BLOG_DOMAINS = [
   "linktr.ee",
   "mastodon.social",
   "pixelfed.social",
+  "zhihu.com",
+  "telegra.ph",
+  "mirror.xyz",
+  "notion.site",
+  "bilibili.com",
+  "vimeo.com",
+  "odysee.com",
+  "kuaishou.com",
+  "douyin.com",
 ] as const;
 
 const DEFAULT_BLOG_LABELS = [
@@ -293,6 +358,12 @@ const DEFAULT_BLOG_LABELS = [
   "patreon",
   "mastodon",
   "podcast",
+  "self media",
+  "op ed",
+  "commentary",
+  "personal blog",
+  "creator economy",
+  "livestream",
 ] as const;
 
 const MAX_LIST_SIZE = 1000;
@@ -589,11 +660,6 @@ export const resolveSourceKey = (
   sourceLabel: unknown,
   url: unknown,
 ): string => {
-  const label = typeof sourceLabel === "string" ? sourceLabel.trim() : "";
-  if (label) {
-    return label.slice(0, 120);
-  }
-
   const hostname = extractHostname(url);
   const registrableDomain = toRegistrableDomain(hostname);
   if (registrableDomain) {
@@ -601,6 +667,13 @@ export const resolveSourceKey = (
   }
   if (hostname) {
     return hostname.slice(0, 120);
+  }
+
+  const label = normalizeLabel(
+    typeof sourceLabel === "string" ? sourceLabel : "",
+  );
+  if (label) {
+    return label.slice(0, 120);
   }
 
   return "unknown";

@@ -1,5 +1,5 @@
 import { ForbiddenException, UseGuards } from "@nestjs/common";
-import { Args, Context, Mutation, Query, Resolver } from "@nestjs/graphql";
+import { Args, Context, Int, Mutation, Query, Resolver } from "@nestjs/graphql";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -17,7 +17,10 @@ import {
 } from "../../modules/news-events/news-events-settings.service";
 import {
   NewsEventSourcePolicyService,
+  type NewsEventSourcePolicyDetails,
   type NewsEventSourcePolicyInput,
+  type NewsEventSourcePolicyPreset,
+  type NewsEventSourcePolicyRevisionDiff,
 } from "../../modules/news-events/news-event-source-policy.service";
 import {
   NewsIndicatorSettingsService,
@@ -42,6 +45,9 @@ import {
   UpdateNewsPromptConfigInput,
   UpdateEntityImpactGraphSettingsInput,
   UpdateKnowledgeGraphSettingsInput,
+  ResetNewsEventSourcePolicyInput,
+  RollbackNewsEventSourcePolicyInput,
+  UpdateNewsEventSourcePolicyPresetInput,
   UpdateRateLimitSettingsInput,
   UpdateNewsEventSettingsInput,
   UpdateNewsEventSourcePolicyInput,
@@ -55,6 +61,9 @@ import {
   EntityImpactGraphSettingsModel,
   KnowledgeGraphSettingsModel,
   NewsEventSettingsModel,
+  NewsEventSourcePolicyPresetSettingsModel,
+  NewsEventSourcePolicyRevisionDiffModel,
+  NewsEventSourcePolicyRevisionOperation,
   NewsEventSourcePolicySettingsModel,
   NewsIndicatorSettingsModel,
   NewsDedupeSettingsModel,
@@ -217,10 +226,16 @@ export class SettingsResolver {
   ): Promise<NewsEventSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
+    const current = await this.newsEventSettingsService.getSettings(user.orgId);
     const settingsInput: NewsEventSettingsInput = {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
       timelineEnabled: input.timelineEnabled,
+      forceAuthoritativeMode:
+        input.forceAuthoritativeMode ?? current.forceAuthoritativeMode,
+      forceMinAuthoritativeSources:
+        input.forceMinAuthoritativeSources ??
+        current.forceMinAuthoritativeSources,
       maxBatchSize: input.maxBatchSize,
       backfillDays: input.backfillDays,
       lookbackDays: input.lookbackDays,
@@ -243,7 +258,24 @@ export class SettingsResolver {
   ): Promise<NewsEventSourcePolicySettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.newsEventSourcePolicyService.getPolicy(user.orgId);
+    const details = await this.newsEventSourcePolicyService.getPolicyDetails(
+      user.orgId,
+      { limit: 30 },
+    );
+    return this.toSourcePolicyModel(details);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsEventSourcePolicyPresetSettingsModel)
+  async newsEventSourcePolicyPresets(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsEventSourcePolicyPresetSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const preset = await this.newsEventSourcePolicyService.getPolicyPreset(
+      user.orgId,
+    );
+    return this.toSourcePolicyPresetModel(preset);
   }
 
   @HasPermission("settings.manage")
@@ -260,11 +292,116 @@ export class SettingsResolver {
       blogDomains: input.blogDomains,
       blogLabels: input.blogLabels,
     };
-    return this.newsEventSourcePolicyService.updatePolicy(
+    const updateOptions: {
+      note?: string | null;
+      expectedRevision?: number | null;
+    } = { note: input.note ?? null };
+    if (input.expectedRevision !== undefined) {
+      updateOptions.expectedRevision = input.expectedRevision;
+    }
+    const details = await this.newsEventSourcePolicyService.updatePolicy(
       user.orgId,
       user.id,
       policyInput,
+      updateOptions,
     );
+    return this.toSourcePolicyModel(details);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsEventSourcePolicyPresetSettingsModel)
+  async updateNewsEventSourcePolicyPresets(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsEventSourcePolicyPresetInput,
+  ): Promise<NewsEventSourcePolicyPresetSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const presetInput: NewsEventSourcePolicyInput = {
+      authoritativeDomains: input.authoritativeDomains,
+      authoritativeLabels: input.authoritativeLabels,
+      blogDomains: input.blogDomains,
+      blogLabels: input.blogLabels,
+    };
+    const updateOptions: {
+      note?: string | null;
+      expectedUpdatedAt?: string | null;
+    } = { note: input.note ?? null };
+    if (input.expectedUpdatedAt !== undefined) {
+      updateOptions.expectedUpdatedAt = input.expectedUpdatedAt;
+    }
+    const preset = await this.newsEventSourcePolicyService.updatePolicyPreset(
+      user.orgId,
+      user.id,
+      presetInput,
+      updateOptions,
+    );
+    return this.toSourcePolicyPresetModel(preset);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsEventSourcePolicySettingsModel)
+  async rollbackNewsEventSourcePolicy(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: RollbackNewsEventSourcePolicyInput,
+  ): Promise<NewsEventSourcePolicySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const updateOptions: {
+      note?: string | null;
+      expectedRevision?: number | null;
+    } = { note: input.note ?? null };
+    if (input.expectedRevision !== undefined) {
+      updateOptions.expectedRevision = input.expectedRevision;
+    }
+
+    const details = await this.newsEventSourcePolicyService.rollbackPolicy(
+      user.orgId,
+      user.id,
+      input.revision,
+      updateOptions,
+    );
+    return this.toSourcePolicyModel(details);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsEventSourcePolicySettingsModel)
+  async resetNewsEventSourcePolicy(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: ResetNewsEventSourcePolicyInput,
+  ): Promise<NewsEventSourcePolicySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const updateOptions: {
+      note?: string | null;
+      expectedRevision?: number | null;
+    } = { note: input.note ?? null };
+    if (input.expectedRevision !== undefined) {
+      updateOptions.expectedRevision = input.expectedRevision;
+    }
+
+    const details = await this.newsEventSourcePolicyService.resetPolicy(
+      user.orgId,
+      user.id,
+      updateOptions,
+    );
+    return this.toSourcePolicyModel(details);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsEventSourcePolicyRevisionDiffModel)
+  async newsEventSourcePolicyRevisionDiff(
+    @Context("req") req: GqlRequest,
+    @Args("baseRevision", { type: () => Int }) baseRevision: number,
+    @Args("targetRevision", { type: () => Int }) targetRevision: number,
+  ): Promise<NewsEventSourcePolicyRevisionDiffModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const diff = await this.newsEventSourcePolicyService.getRevisionDiff(
+      user.orgId,
+      baseRevision,
+      targetRevision,
+    );
+    return this.toSourcePolicyRevisionDiffModel(diff);
   }
 
   @HasPermission("settings.manage")
@@ -494,5 +631,91 @@ export class SettingsResolver {
     if (!adminRole) {
       throw new ForbiddenException("Admin access required");
     }
+  }
+
+  private toSourcePolicyModel(
+    details: NewsEventSourcePolicyDetails,
+  ): NewsEventSourcePolicySettingsModel {
+    return {
+      authoritativeDomains: details.authoritativeDomains,
+      authoritativeLabels: details.authoritativeLabels,
+      blogDomains: details.blogDomains,
+      blogLabels: details.blogLabels,
+      activeRevision: details.activeRevision,
+      updatedAt: details.updatedAt ? new Date(details.updatedAt) : null,
+      overrides: {
+        authoritativeDomainsAdd: details.overrides.authoritativeDomainsAdd,
+        authoritativeDomainsRemove:
+          details.overrides.authoritativeDomainsRemove,
+        authoritativeLabelsAdd: details.overrides.authoritativeLabelsAdd,
+        authoritativeLabelsRemove: details.overrides.authoritativeLabelsRemove,
+        blogDomainsAdd: details.overrides.blogDomainsAdd,
+        blogDomainsRemove: details.overrides.blogDomainsRemove,
+        blogLabelsAdd: details.overrides.blogLabelsAdd,
+        blogLabelsRemove: details.overrides.blogLabelsRemove,
+      },
+      warnings: {
+        domainConflicts: details.warnings.domainConflicts,
+        labelConflicts: details.warnings.labelConflicts,
+        hasConflicts: details.warnings.hasConflicts,
+      },
+      revisions: details.revisions.map((entry) => ({
+        revision: entry.revision,
+        operation:
+          entry.operation === "rollback"
+            ? NewsEventSourcePolicyRevisionOperation.rollback
+            : entry.operation === "reset"
+              ? NewsEventSourcePolicyRevisionOperation.reset
+              : NewsEventSourcePolicyRevisionOperation.update,
+        actorId: entry.actorId,
+        createdAt: new Date(entry.createdAt),
+        note: entry.note,
+        delta: {
+          authoritativeDomainsAdd: entry.delta.authoritativeDomainsAdd,
+          authoritativeDomainsRemove: entry.delta.authoritativeDomainsRemove,
+          authoritativeLabelsAdd: entry.delta.authoritativeLabelsAdd,
+          authoritativeLabelsRemove: entry.delta.authoritativeLabelsRemove,
+          blogDomainsAdd: entry.delta.blogDomainsAdd,
+          blogDomainsRemove: entry.delta.blogDomainsRemove,
+          blogLabelsAdd: entry.delta.blogLabelsAdd,
+          blogLabelsRemove: entry.delta.blogLabelsRemove,
+        },
+      })),
+      syncWarnings: Array.isArray(details.syncWarnings)
+        ? details.syncWarnings
+        : [],
+    };
+  }
+
+  private toSourcePolicyPresetModel(
+    preset: NewsEventSourcePolicyPreset,
+  ): NewsEventSourcePolicyPresetSettingsModel {
+    return {
+      authoritativeDomains: preset.authoritativeDomains,
+      authoritativeLabels: preset.authoritativeLabels,
+      blogDomains: preset.blogDomains,
+      blogLabels: preset.blogLabels,
+      updatedAt: preset.updatedAt ? new Date(preset.updatedAt) : null,
+      syncWarnings: Array.isArray(preset.syncWarnings)
+        ? preset.syncWarnings
+        : [],
+    };
+  }
+
+  private toSourcePolicyRevisionDiffModel(
+    diff: NewsEventSourcePolicyRevisionDiff,
+  ): NewsEventSourcePolicyRevisionDiffModel {
+    return {
+      baseRevision: diff.baseRevision,
+      targetRevision: diff.targetRevision,
+      authoritativeDomainsAdd: diff.authoritativeDomainsAdd,
+      authoritativeDomainsRemove: diff.authoritativeDomainsRemove,
+      authoritativeLabelsAdd: diff.authoritativeLabelsAdd,
+      authoritativeLabelsRemove: diff.authoritativeLabelsRemove,
+      blogDomainsAdd: diff.blogDomainsAdd,
+      blogDomainsRemove: diff.blogDomainsRemove,
+      blogLabelsAdd: diff.blogLabelsAdd,
+      blogLabelsRemove: diff.blogLabelsRemove,
+    };
   }
 }

@@ -250,6 +250,17 @@ export class UpdateNewsEventSettingsInput {
   @IsBoolean()
   timelineEnabled!: boolean;
 
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  forceAuthoritativeMode?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(5)
+  forceMinAuthoritativeSources?: number;
+
   @Field(() => Int)
   @Min(1)
   @Max(500)
@@ -315,6 +326,95 @@ export class UpdateNewsEventSourcePolicyInput {
   @IsString({ each: true })
   @MaxLength(180, { each: true })
   blogLabels!: string[];
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1_000_000)
+  expectedRevision?: number | null;
+}
+
+@InputType()
+export class UpdateNewsEventSourcePolicyPresetInput {
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  authoritativeDomains!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  authoritativeLabels!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  blogDomains!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  blogLabels!: string[];
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  expectedUpdatedAt?: string | null;
+}
+
+@InputType()
+export class RollbackNewsEventSourcePolicyInput {
+  @Field(() => Int)
+  @Min(1)
+  revision!: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1_000_000)
+  expectedRevision?: number | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+}
+
+@InputType()
+export class ResetNewsEventSourcePolicyInput {
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1_000_000)
+  expectedRevision?: number | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
 }
 
 @InputType()

@@ -8,6 +8,7 @@ const KEY_SITUATION_MONITOR_MONITORS = "ui:situation-monitor:monitors:v1";
 const KEY_SITUATION_MONITOR_LAYOUT = "ui:situation-monitor:layout:v1";
 const KEY_SITUATION_MONITOR_SETTINGS = "ui:situation-monitor:settings:v1";
 const KEY_WAR_MAP_SETTINGS = "ui:war-map:settings:v1";
+const KEY_SPACETIME_TIMELINE_SETTINGS = "ui:spacetime-timeline:settings:v1";
 
 const MAX_MONITORS = 20;
 const MAX_LAYOUT_ITEMS = 120;
@@ -46,6 +47,36 @@ export interface WarMapUiSettingsResponse {
     settings?: string;
   };
   settings: WarMapSettings | null;
+}
+
+export type SpacetimeTimelineSourceType =
+  | "all"
+  | "authoritative"
+  | "mixed"
+  | "blog";
+
+export type SpacetimeTimelineSortBy = "latest" | "heat" | "credibility";
+
+export type SpacetimeTimelineGranularity = "auto" | "day" | "week" | "month";
+
+export interface SpacetimeTimelineSettings {
+  authoritativeLock: boolean;
+  requireCorroborated: boolean;
+  sourceType: SpacetimeTimelineSourceType;
+  sortBy: SpacetimeTimelineSortBy;
+  minHeatScore: number;
+  minCredibilityScore: number;
+  timelineGranularity: SpacetimeTimelineGranularity;
+  speed: number;
+  syncStatusAutoRefresh: boolean;
+}
+
+export interface SpacetimeTimelineUiSettingsResponse {
+  version: 1;
+  updatedAt: {
+    settings?: string;
+  };
+  settings: SpacetimeTimelineSettings | null;
 }
 
 export interface SituationMonitorCustomMonitor {
@@ -113,20 +144,31 @@ function normalizeColor(value: unknown): string | undefined {
     return undefined;
   }
   const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
-  if (/^#[0-9a-fA-F]{6}$/.test(normalized) || /^#[0-9a-fA-F]{3}$/.test(normalized)) {
+  if (
+    /^#[0-9a-fA-F]{6}$/.test(normalized) ||
+    /^#[0-9a-fA-F]{3}$/.test(normalized)
+  ) {
     return normalized.toLowerCase();
   }
   return undefined;
 }
 
-function normalizeLocation(value: unknown): SituationMonitorCustomMonitor["location"] | undefined {
+function normalizeLocation(
+  value: unknown,
+): SituationMonitorCustomMonitor["location"] | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }
   const record = value as Record<string, unknown>;
   const name = normalizeName(record.name);
-  const lat = typeof record.lat === "number" && Number.isFinite(record.lat) ? record.lat : Number.NaN;
-  const lng = typeof record.lng === "number" && Number.isFinite(record.lng) ? record.lng : Number.NaN;
+  const lat =
+    typeof record.lat === "number" && Number.isFinite(record.lat)
+      ? record.lat
+      : Number.NaN;
+  const lng =
+    typeof record.lng === "number" && Number.isFinite(record.lng)
+      ? record.lng
+      : Number.NaN;
 
   if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
     return undefined;
@@ -156,7 +198,8 @@ function normalizeMonitors(value: unknown): SituationMonitorCustomMonitor[] {
     }
 
     const idRaw = typeof record.id === "string" ? record.id.trim() : "";
-    const id = idRaw.length > 0 ? idRaw.slice(0, 64) : `sm-${randomUUID().slice(0, 10)}`;
+    const id =
+      idRaw.length > 0 ? idRaw.slice(0, 64) : `sm-${randomUUID().slice(0, 10)}`;
 
     const enabled = typeof record.enabled === "boolean" ? record.enabled : true;
     const color = normalizeColor(record.color);
@@ -184,7 +227,9 @@ function normalizeMonitors(value: unknown): SituationMonitorCustomMonitor[] {
   return out;
 }
 
-function normalizeLayoutItem(value: unknown): SituationMonitorLayoutItem | null {
+function normalizeLayoutItem(
+  value: unknown,
+): SituationMonitorLayoutItem | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
@@ -195,16 +240,33 @@ function normalizeLayoutItem(value: unknown): SituationMonitorLayoutItem | null 
     return null;
   }
 
-  const x = typeof record.x === "number" && Number.isFinite(record.x) ? Math.max(0, Math.round(record.x)) : 0;
-  const y = typeof record.y === "number" && Number.isFinite(record.y) ? Math.max(0, Math.round(record.y)) : 0;
-  const w = typeof record.w === "number" && Number.isFinite(record.w) ? Math.max(1, Math.round(record.w)) : 1;
-  const h = typeof record.h === "number" && Number.isFinite(record.h) ? Math.max(1, Math.round(record.h)) : 1;
+  const x =
+    typeof record.x === "number" && Number.isFinite(record.x)
+      ? Math.max(0, Math.round(record.x))
+      : 0;
+  const y =
+    typeof record.y === "number" && Number.isFinite(record.y)
+      ? Math.max(0, Math.round(record.y))
+      : 0;
+  const w =
+    typeof record.w === "number" && Number.isFinite(record.w)
+      ? Math.max(1, Math.round(record.w))
+      : 1;
+  const h =
+    typeof record.h === "number" && Number.isFinite(record.h)
+      ? Math.max(1, Math.round(record.h))
+      : 1;
 
   const minW =
-    typeof record.minW === "number" && Number.isFinite(record.minW) ? Math.max(1, Math.round(record.minW)) : undefined;
+    typeof record.minW === "number" && Number.isFinite(record.minW)
+      ? Math.max(1, Math.round(record.minW))
+      : undefined;
   const minH =
-    typeof record.minH === "number" && Number.isFinite(record.minH) ? Math.max(1, Math.round(record.minH)) : undefined;
-  const staticValue = typeof record.static === "boolean" ? record.static : undefined;
+    typeof record.minH === "number" && Number.isFinite(record.minH)
+      ? Math.max(1, Math.round(record.minH))
+      : undefined;
+  const staticValue =
+    typeof record.static === "boolean" ? record.static : undefined;
 
   return {
     i: id,
@@ -235,8 +297,14 @@ function normalizeLayout(value: unknown): SituationMonitorLayout {
 
   const visibility: Record<string, boolean> = {};
   const rawVisibility = record.visibility;
-  if (rawVisibility && typeof rawVisibility === "object" && !Array.isArray(rawVisibility)) {
-    for (const [key, val] of Object.entries(rawVisibility as Record<string, unknown>)) {
+  if (
+    rawVisibility &&
+    typeof rawVisibility === "object" &&
+    !Array.isArray(rawVisibility)
+  ) {
+    for (const [key, val] of Object.entries(
+      rawVisibility as Record<string, unknown>,
+    )) {
       if (typeof val !== "boolean") {
         continue;
       }
@@ -302,19 +370,37 @@ const WAR_MAP_DEFAULT_LAYER_VISIBILITY: WarMapLayerVisibility = {
   monitors: true,
 } as const;
 
+const SPACETIME_TIMELINE_DEFAULT_SETTINGS: SpacetimeTimelineSettings = {
+  authoritativeLock: true,
+  requireCorroborated: true,
+  sourceType: "authoritative",
+  sortBy: "heat",
+  minHeatScore: 0.7,
+  minCredibilityScore: 48,
+  timelineGranularity: "auto",
+  speed: 2,
+  syncStatusAutoRefresh: true,
+} as const;
+
 function normalizeWarMapSettings(value: unknown): WarMapSettings {
-  const defaults: WarMapSettings = { layerVisibility: { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY } };
+  const defaults: WarMapSettings = {
+    layerVisibility: { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY },
+  };
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return defaults;
   }
   const record = value as Record<string, unknown>;
   const rawVisibility =
-    record.layerVisibility && typeof record.layerVisibility === "object" && !Array.isArray(record.layerVisibility)
+    record.layerVisibility &&
+    typeof record.layerVisibility === "object" &&
+    !Array.isArray(record.layerVisibility)
       ? (record.layerVisibility as Record<string, unknown>)
       : record;
 
   const next: WarMapLayerVisibility = { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY };
-  for (const key of Object.keys(WAR_MAP_DEFAULT_LAYER_VISIBILITY) as WarMapLayerId[]) {
+  for (const key of Object.keys(
+    WAR_MAP_DEFAULT_LAYER_VISIBILITY,
+  ) as WarMapLayerId[]) {
     const raw = rawVisibility[key];
     if (typeof raw === "boolean") {
       next[key] = raw;
@@ -323,11 +409,115 @@ function normalizeWarMapSettings(value: unknown): WarMapSettings {
   return { layerVisibility: next };
 }
 
+function normalizeSpacetimeTimelineSourceType(
+  value: unknown,
+): SpacetimeTimelineSourceType {
+  return value === "all" ||
+    value === "mixed" ||
+    value === "blog" ||
+    value === "authoritative"
+    ? value
+    : SPACETIME_TIMELINE_DEFAULT_SETTINGS.sourceType;
+}
+
+function normalizeSpacetimeTimelineSortBy(
+  value: unknown,
+): SpacetimeTimelineSortBy {
+  return value === "latest" || value === "heat" || value === "credibility"
+    ? value
+    : SPACETIME_TIMELINE_DEFAULT_SETTINGS.sortBy;
+}
+
+function normalizeSpacetimeTimelineGranularity(
+  value: unknown,
+): SpacetimeTimelineGranularity {
+  return value === "day" ||
+    value === "week" ||
+    value === "month" ||
+    value === "auto"
+    ? value
+    : SPACETIME_TIMELINE_DEFAULT_SETTINGS.timelineGranularity;
+}
+
+function clampFloat(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  const numeric =
+    typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  if (numeric < min) {
+    return min;
+  }
+  if (numeric > max) {
+    return max;
+  }
+  return numeric;
+}
+
+function normalizeSpacetimeTimelineSettings(
+  value: unknown,
+): SpacetimeTimelineSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ...SPACETIME_TIMELINE_DEFAULT_SETTINGS };
+  }
+
+  const record = value as Record<string, unknown>;
+  const authoritativeLock =
+    typeof record.authoritativeLock === "boolean"
+      ? record.authoritativeLock
+      : SPACETIME_TIMELINE_DEFAULT_SETTINGS.authoritativeLock;
+  const requireCorroborated =
+    typeof record.requireCorroborated === "boolean"
+      ? record.requireCorroborated
+      : SPACETIME_TIMELINE_DEFAULT_SETTINGS.requireCorroborated;
+
+  const sourceType = normalizeSpacetimeTimelineSourceType(record.sourceType);
+  return {
+    authoritativeLock,
+    requireCorroborated,
+    sourceType,
+    sortBy: normalizeSpacetimeTimelineSortBy(record.sortBy),
+    minHeatScore: clampFloat(
+      record.minHeatScore,
+      0,
+      12,
+      SPACETIME_TIMELINE_DEFAULT_SETTINGS.minHeatScore,
+    ),
+    minCredibilityScore: clampFloat(
+      record.minCredibilityScore,
+      0,
+      100,
+      SPACETIME_TIMELINE_DEFAULT_SETTINGS.minCredibilityScore,
+    ),
+    timelineGranularity: normalizeSpacetimeTimelineGranularity(
+      record.timelineGranularity,
+    ),
+    speed: clampFloat(
+      record.speed,
+      0.25,
+      16,
+      SPACETIME_TIMELINE_DEFAULT_SETTINGS.speed,
+    ),
+    syncStatusAutoRefresh: normalizeBoolean(
+      record.syncStatusAutoRefresh,
+      SPACETIME_TIMELINE_DEFAULT_SETTINGS.syncStatusAutoRefresh,
+    ),
+  };
+}
+
 @Injectable()
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSituationMonitorUiSettings(orgId: string, userId: string): Promise<SituationMonitorUiSettingsResponse> {
+  async getSituationMonitorUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<SituationMonitorUiSettingsResponse> {
     const records = await this.prisma.userSetting.findMany({
       where: {
         orgId,
@@ -343,9 +533,15 @@ export class UserSettingsService {
       select: { key: true, value: true, updatedAt: true },
     });
 
-    const byKey = new Map<string, { value: Prisma.JsonValue; updatedAt: Date }>();
+    const byKey = new Map<
+      string,
+      { value: Prisma.JsonValue; updatedAt: Date }
+    >();
     for (const record of records) {
-      byKey.set(record.key, { value: record.value, updatedAt: record.updatedAt });
+      byKey.set(record.key, {
+        value: record.value,
+        updatedAt: record.updatedAt,
+      });
     }
 
     const monitorsRecord = byKey.get(KEY_SITUATION_MONITOR_MONITORS);
@@ -355,9 +551,15 @@ export class UserSettingsService {
     return {
       version: 1,
       updatedAt: {
-        ...(monitorsRecord ? { monitors: monitorsRecord.updatedAt.toISOString() } : {}),
-        ...(layoutRecord ? { layout: layoutRecord.updatedAt.toISOString() } : {}),
-        ...(settingsRecord ? { settings: settingsRecord.updatedAt.toISOString() } : {}),
+        ...(monitorsRecord
+          ? { monitors: monitorsRecord.updatedAt.toISOString() }
+          : {}),
+        ...(layoutRecord
+          ? { layout: layoutRecord.updatedAt.toISOString() }
+          : {}),
+        ...(settingsRecord
+          ? { settings: settingsRecord.updatedAt.toISOString() }
+          : {}),
       },
       monitors: monitorsRecord ? normalizeMonitors(monitorsRecord.value) : null,
       layout: layoutRecord ? normalizeLayout(layoutRecord.value) : null,
@@ -368,26 +570,51 @@ export class UserSettingsService {
   async updateSituationMonitorUiSettings(
     orgId: string,
     userId: string,
-    input: { monitors?: unknown[]; layout?: Record<string, unknown>; settings?: Record<string, unknown> },
+    input: {
+      monitors?: unknown[];
+      layout?: Record<string, unknown>;
+      settings?: Record<string, unknown>;
+    },
   ): Promise<SituationMonitorUiSettingsResponse> {
-    const operations: Promise<{ key: string; value: Prisma.JsonValue; updatedAt: Date }>[] = [];
+    const operations: Promise<{
+      key: string;
+      value: Prisma.JsonValue;
+      updatedAt: Date;
+    }>[] = [];
 
     if (input.monitors !== undefined) {
       const monitors = normalizeMonitors(input.monitors);
       operations.push(
-        this.upsert(orgId, userId, KEY_SITUATION_MONITOR_MONITORS, this.toPrismaJson(monitors)),
+        this.upsert(
+          orgId,
+          userId,
+          KEY_SITUATION_MONITOR_MONITORS,
+          this.toPrismaJson(monitors),
+        ),
       );
     }
 
     if (input.layout !== undefined) {
       const layout = normalizeLayout(input.layout);
-      operations.push(this.upsert(orgId, userId, KEY_SITUATION_MONITOR_LAYOUT, this.toPrismaJson(layout)));
+      operations.push(
+        this.upsert(
+          orgId,
+          userId,
+          KEY_SITUATION_MONITOR_LAYOUT,
+          this.toPrismaJson(layout),
+        ),
+      );
     }
 
     if (input.settings !== undefined) {
       const settings = normalizeSettings(input.settings);
       operations.push(
-        this.upsert(orgId, userId, KEY_SITUATION_MONITOR_SETTINGS, this.toPrismaJson(settings)),
+        this.upsert(
+          orgId,
+          userId,
+          KEY_SITUATION_MONITOR_SETTINGS,
+          this.toPrismaJson(settings),
+        ),
       );
     }
 
@@ -398,7 +625,10 @@ export class UserSettingsService {
     return this.getSituationMonitorUiSettings(orgId, userId);
   }
 
-  async getWarMapUiSettings(orgId: string, userId: string): Promise<WarMapUiSettingsResponse> {
+  async getWarMapUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<WarMapUiSettingsResponse> {
     const record = await this.prisma.userSetting.findUnique({
       where: {
         orgId_userId_key: {
@@ -426,13 +656,67 @@ export class UserSettingsService {
   ): Promise<WarMapUiSettingsResponse> {
     if (input.settings !== undefined) {
       const settings = normalizeWarMapSettings(input.settings);
-      await this.upsert(orgId, userId, KEY_WAR_MAP_SETTINGS, this.toPrismaJson(settings));
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_WAR_MAP_SETTINGS,
+        this.toPrismaJson(settings),
+      );
     }
 
     return this.getWarMapUiSettings(orgId, userId);
   }
 
-  private async upsert(orgId: string, userId: string, key: string, value: Prisma.InputJsonValue) {
+  async getSpacetimeTimelineUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<SpacetimeTimelineUiSettingsResponse> {
+    const record = await this.prisma.userSetting.findUnique({
+      where: {
+        orgId_userId_key: {
+          orgId,
+          userId,
+          key: KEY_SPACETIME_TIMELINE_SETTINGS,
+        },
+      },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return {
+      version: 1,
+      updatedAt: {
+        ...(record ? { settings: record.updatedAt.toISOString() } : {}),
+      },
+      settings: record
+        ? normalizeSpacetimeTimelineSettings(record.value)
+        : null,
+    };
+  }
+
+  async updateSpacetimeTimelineUiSettings(
+    orgId: string,
+    userId: string,
+    input: { settings?: Record<string, unknown> },
+  ): Promise<SpacetimeTimelineUiSettingsResponse> {
+    if (input.settings !== undefined) {
+      const settings = normalizeSpacetimeTimelineSettings(input.settings);
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_SPACETIME_TIMELINE_SETTINGS,
+        this.toPrismaJson(settings),
+      );
+    }
+
+    return this.getSpacetimeTimelineUiSettings(orgId, userId);
+  }
+
+  private async upsert(
+    orgId: string,
+    userId: string,
+    key: string,
+    value: Prisma.InputJsonValue,
+  ) {
     const record = await this.prisma.userSetting.upsert({
       where: {
         orgId_userId_key: {

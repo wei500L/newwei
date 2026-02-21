@@ -1,4 +1,21 @@
-import { Field, Float, Int, ObjectType } from "@nestjs/graphql";
+import {
+  Field,
+  Float,
+  GraphQLISODateTime,
+  Int,
+  ObjectType,
+  registerEnumType,
+} from "@nestjs/graphql";
+
+export enum NewsEventSourcePolicyRevisionOperation {
+  update = "update",
+  rollback = "rollback",
+  reset = "reset",
+}
+
+registerEnumType(NewsEventSourcePolicyRevisionOperation, {
+  name: "NewsEventSourcePolicyRevisionOperation",
+});
 
 @ObjectType()
 export class RateLimitBucketModel {
@@ -158,6 +175,12 @@ export class NewsEventSettingsModel {
   @Field(() => Boolean)
   timelineEnabled!: boolean;
 
+  @Field(() => Boolean)
+  forceAuthoritativeMode!: boolean;
+
+  @Field(() => Int)
+  forceMinAuthoritativeSources!: number;
+
   @Field(() => Int)
   maxBatchSize!: number;
 
@@ -193,6 +216,138 @@ export class NewsEventSourcePolicySettingsModel {
 
   @Field(() => [String])
   blogLabels!: string[];
+
+  @Field(() => Int)
+  activeRevision!: number;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  updatedAt!: Date | null;
+
+  @Field(() => NewsEventSourcePolicyDeltaModel)
+  overrides!: NewsEventSourcePolicyDeltaModel;
+
+  @Field(() => NewsEventSourcePolicyConflictModel)
+  warnings!: NewsEventSourcePolicyConflictModel;
+
+  @Field(() => [NewsEventSourcePolicyRevisionModel])
+  revisions!: NewsEventSourcePolicyRevisionModel[];
+
+  @Field(() => [String])
+  syncWarnings!: string[];
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyPresetSettingsModel {
+  @Field(() => [String])
+  authoritativeDomains!: string[];
+
+  @Field(() => [String])
+  authoritativeLabels!: string[];
+
+  @Field(() => [String])
+  blogDomains!: string[];
+
+  @Field(() => [String])
+  blogLabels!: string[];
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  updatedAt!: Date | null;
+
+  @Field(() => [String])
+  syncWarnings!: string[];
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyDeltaModel {
+  @Field(() => [String])
+  authoritativeDomainsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeDomainsRemove!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsRemove!: string[];
+
+  @Field(() => [String])
+  blogDomainsAdd!: string[];
+
+  @Field(() => [String])
+  blogDomainsRemove!: string[];
+
+  @Field(() => [String])
+  blogLabelsAdd!: string[];
+
+  @Field(() => [String])
+  blogLabelsRemove!: string[];
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyConflictModel {
+  @Field(() => [String])
+  domainConflicts!: string[];
+
+  @Field(() => [String])
+  labelConflicts!: string[];
+
+  @Field(() => Boolean)
+  hasConflicts!: boolean;
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyRevisionModel {
+  @Field(() => Int)
+  revision!: number;
+
+  @Field(() => NewsEventSourcePolicyRevisionOperation)
+  operation!: NewsEventSourcePolicyRevisionOperation;
+
+  @Field(() => String, { nullable: true })
+  actorId!: string | null;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt!: Date;
+
+  @Field(() => String, { nullable: true })
+  note!: string | null;
+
+  @Field(() => NewsEventSourcePolicyDeltaModel)
+  delta!: NewsEventSourcePolicyDeltaModel;
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyRevisionDiffModel {
+  @Field(() => Int)
+  baseRevision!: number;
+
+  @Field(() => Int)
+  targetRevision!: number;
+
+  @Field(() => [String])
+  authoritativeDomainsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeDomainsRemove!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsRemove!: string[];
+
+  @Field(() => [String])
+  blogDomainsAdd!: string[];
+
+  @Field(() => [String])
+  blogDomainsRemove!: string[];
+
+  @Field(() => [String])
+  blogLabelsAdd!: string[];
+
+  @Field(() => [String])
+  blogLabelsRemove!: string[];
 }
 
 @ObjectType()

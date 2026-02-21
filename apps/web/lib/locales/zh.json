@@ -1089,6 +1089,24 @@
       },
       "spacetimeTimeline": {
         "title": "时间线播放器",
+        "degradedBadge": "降级中",
+        "degradedTooltip": "降级：来源策略同步存在异常（{{reasons}}）。",
+        "degradedReasonPolicyCacheStale": "策略缓存已过期",
+        "degradedReasonPresetCacheStale": "预设缓存已过期",
+        "degradedReasonPolicyCacheMiss": "策略缓存缺失",
+        "degradedReasonPresetCacheMiss": "预设缓存缺失",
+        "degradedReasonPolicyCacheReadFailed": "策略缓存读取失败",
+        "degradedReasonPresetCacheReadFailed": "预设缓存读取失败",
+        "degradedReasonPolicyDbReadFailed": "策略数据库读取失败",
+        "degradedReasonPresetDbReadFailed": "预设数据库读取失败",
+        "degradedReasonUnknown": "未知问题：{{code}}",
+        "degradedReasonUnknownShort": "未知",
+        "orgEnforcedTag": "组织强制",
+        "orgEnforcedTooltip": "由组织级设置强制执行。最小权威来源数：{{count}}。",
+        "syncStatusAutoRefresh": "自动刷新状态（{{seconds}}秒）",
+        "refreshStatus": "刷新状态",
+        "lastRefreshAt": "上次刷新：{{time}}",
+        "lastRefreshNever": "上次刷新：--",
         "event": "事件",
         "eventPlaceholder": "选择事件",
         "sourceType": "来源",
@@ -1098,6 +1116,8 @@
         "sourceTypeAll": "全部",
         "sourceTypeUnknown": "未知",
         "lockAuthoritative": "锁定权威模式",
+        "requireCorroborated": "要求交叉验证",
+        "authorityThreshold": "权威来源 >= {{count}}",
         "sortBy": "排序",
         "sortByHeat": "按热度",
         "sortByCredibility": "按可信度",
@@ -1122,11 +1142,15 @@
         "aggregatedBuckets": "{{count}} 个节点",
         "viewReferences": "引用",
         "linkedSources": "联动来源：{{count}}",
+        "corroboratedTag": "多源交叉验证",
+        "uncorroboratedTag": "单一来源倾向",
+        "sourceEvidenceSummary": "权威{{authoritative}} / 总{{unique}} / 博客{{blog}}",
         "detailsTitle": "时间线详情",
         "references": "引用：{{count}}",
         "noReferencesTitle": "无引用",
         "noReferencesDescription": "该时间线节点没有可用引用文章。",
-        "unresolvedReferences": "有 {{count}} 条引用超出当前文章窗口。",
+        "loadingReferences": "正在加载引用文章...",
+        "unresolvedReferences": "检索后仍有 {{count}} 条引用无法获取。",
         "publishedAt": "发布时间"
       },
       "knowledgeGraph3d": {
@@ -2529,6 +2553,8 @@
         "enabled": "启用",
         "ingestionEnabled": "入库任务启用",
         "timelineEnabled": "时间线启用",
+        "forceAuthoritativeMode": "强制权威模式",
+        "forceMinAuthoritativeSources": "最少权威来源数",
         "maxBatchSize": "单批处理上限",
         "backfillDays": "回填天数",
         "lookbackDays": "回看天数",
@@ -2540,6 +2566,8 @@
       "hints": {
         "ingestionEnabled": "控制定时入库任务。",
         "timelineEnabled": "为事件生成按时间分桶的时间线条目。",
+        "forceAuthoritativeMode": "开启后，Dashboard 时间线事件查询将统一强制为权威来源过滤。",
+        "forceMinAuthoritativeSources": "开启强制权威模式时，要求事件至少命中这么多个唯一权威来源。",
         "vectorMinScore": "越高越严格。",
         "crossLanguagePenalty": "当语种不一致时对相似度打折（0–1）。"
       },
@@ -2558,28 +2586,120 @@
         "title": "实时生效",
         "body": "保存后后端会立即刷新来源策略缓存，并用于后续拉取的事件。"
       },
+      "conflicts": {
+        "title": "检测到白名单/黑名单冲突",
+        "domainList": "域名冲突：{{value}}",
+        "labelList": "标签冲突：{{value}}"
+      },
       "fields": {
         "authoritativeDomains": "权威域名白名单",
         "authoritativeLabels": "权威来源标签白名单",
         "blogDomains": "博客/自媒体域名黑名单",
-        "blogLabels": "博客/自媒体标签黑名单"
+        "blogLabels": "博客/自媒体标签黑名单",
+        "note": "变更备注（可选）"
       },
       "hints": {
         "authoritativeDomains": "示例：reuters.com、bloomberg.com、ft.com",
         "authoritativeLabels": "示例：Reuters、Financial Times、Associated Press",
         "blogDomains": "示例：medium.com、substack.com、x.com",
-        "blogLabels": "示例：newsletter、creator、influencer"
+        "blogLabels": "示例：newsletter、creator、influencer",
+        "note": "备注会写入版本历史，便于追踪每次调整原因。"
       },
       "placeholders": {
         "authoritativeDomains": "输入域名",
         "authoritativeLabels": "输入来源标签",
         "blogDomains": "输入域名",
-        "blogLabels": "输入来源标签"
+        "blogLabels": "输入来源标签",
+        "note": "简要描述本次调整"
+      },
+      "presets": {
+        "title": "预设库",
+        "description": "在后台数据库中维护可复用的白名单/黑名单预设条目。",
+        "quickApplyTitle": "将预设库应用到当前策略",
+        "quickApplyHint": "下列条目来自后台预设库，可在下方编辑并保存。",
+        "authoritativeDomains": "追加权威域名",
+        "authoritativeLabels": "追加权威标签",
+        "blogDomains": "追加低可信域名",
+        "blogLabels": "追加低可信标签",
+        "updatedAt": "预设更新时间：{{value}}"
+      },
+      "actions": {
+        "resetDefaults": "恢复系统默认",
+        "savePresets": "保存预设"
+      },
+      "history": {
+        "title": "最近策略版本",
+        "empty": "暂无版本记录",
+        "activeRevision": "当前生效版本：#{{revision}}",
+        "updatedAt": "更新时间：{{value}}",
+        "activeTag": "当前",
+        "rollbackAction": "回滚",
+        "revisionLabel": "版本 #{{revision}}",
+        "deltaSummary": "新增：{{adds}}，移除：{{removes}}",
+        "note": "备注：{{note}}",
+        "rollbackConfirmTitle": "回滚来源策略",
+        "rollbackConfirmBody": "确认回滚到版本 #{{revision}}？",
+        "resetConfirmTitle": "重置来源策略",
+        "resetConfirmBody": "确认重置为系统默认并清空自定义覆盖？",
+        "notePlaceholder": "可选变更备注",
+        "operationUpdate": "更新",
+        "operationRollback": "回滚",
+        "operationReset": "重置",
+        "actor": "操作人：{{value}}",
+        "moreItems": "还有 {{count}} 项",
+        "deltaAuthoritativeDomainsAdd": "+ 权威域名",
+        "deltaAuthoritativeDomainsRemove": "- 权威域名",
+        "deltaAuthoritativeLabelsAdd": "+ 权威标签",
+        "deltaAuthoritativeLabelsRemove": "- 权威标签",
+        "deltaBlogDomainsAdd": "+ 博客/自媒体域名",
+        "deltaBlogDomainsRemove": "- 博客/自媒体域名",
+        "deltaBlogLabelsAdd": "+ 博客/自媒体标签",
+        "deltaBlogLabelsRemove": "- 博客/自媒体标签",
+        "diffTitle": "版本差异对比",
+        "diffDescription": "对比两个版本的有效策略列表，精确查看差异。",
+        "diffBase": "基准版本",
+        "diffTarget": "目标版本",
+        "diffSwap": "交换",
+        "diffLoadFailed": "加载版本差异失败",
+        "diffEmpty": "所选版本之间没有有效列表差异"
+      },
+      "syncWarnings": {
+        "title": "缓存同步告警",
+        "cacheWriteFailed": "配置已保存，但缓存刷新失败。新规则可能在缓存重试或 TTL 到期后生效。"
+      },
+      "degraded": {
+        "badge": "降级中",
+        "autoRefresh": "自动刷新状态（{{seconds}}秒）",
+        "refreshStatus": "刷新状态",
+        "lastRefreshAt": "上次刷新：{{time}}",
+        "lastRefreshNever": "上次刷新：--",
+        "tooltip": "降级：来源策略同步存在异常（{{reasons}}）。",
+        "reasonPolicyCacheStale": "策略缓存已过期",
+        "reasonPresetCacheStale": "预设缓存已过期",
+        "reasonPolicyCacheMiss": "策略缓存缺失",
+        "reasonPresetCacheMiss": "预设缓存缺失",
+        "reasonPolicyCacheReadFailed": "策略缓存读取失败",
+        "reasonPresetCacheReadFailed": "预设缓存读取失败",
+        "reasonPolicyDbReadFailed": "策略数据库读取失败",
+        "reasonPresetDbReadFailed": "预设数据库读取失败",
+        "reasonUnknown": "未知问题：{{code}}",
+        "reasonUnknownShort": "未知"
       },
       "messages": {
         "saved": "已保存",
+        "savedWithWarnings": "已保存，但缓存同步处于降级状态，请关注告警。",
         "saveFailed": "保存失败",
-        "loadFailed": "加载来源策略失败"
+        "loadFailed": "加载来源策略失败",
+        "concurrentUpdate": "策略已被其他管理员更新，已为你刷新到最新版本，请复核后重新保存。",
+        "concurrentPresetUpdate": "预设库已被其他管理员更新，已为你刷新到最新版本。",
+        "presetsSaved": "预设已保存",
+        "presetsSavedWithWarnings": "预设已保存，但缓存同步处于降级状态，请关注告警。",
+        "presetsSaveFailed": "保存预设失败",
+        "presetsLoadFailed": "加载预设失败",
+        "rollbackSaved": "回滚已应用",
+        "rollbackFailed": "回滚失败",
+        "resetSaved": "重置完成",
+        "resetFailed": "重置失败"
       }
     },
     "newsIndicator": {

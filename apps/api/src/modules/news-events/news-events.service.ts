@@ -41,6 +41,17 @@ export interface NewsEventAuthorityProfile {
   corroborated: boolean;
 }
 
+export interface NewsEventReferencedArticle {
+  id: string;
+  url: string;
+  sourceLabel: string | null;
+  crawlAt: Date;
+  title: string | null;
+  publishedAt: Date | null;
+  processedAt: Date;
+  processedArticleId: string;
+}
+
 @Injectable()
 export class NewsEventsService {
   constructor(
@@ -54,7 +65,7 @@ export class NewsEventsService {
     orgId: string,
     options?: { limit?: number; windowDays?: number; status?: NewsEventStatus },
   ) {
-    const limit = Math.min(Math.max(options?.limit ?? 20, 1), 100);
+    const limit = Math.min(Math.max(options?.limit ?? 20, 1), 300);
     const windowDays = Math.min(Math.max(options?.windowDays ?? 30, 1), 365);
     const since = new Date(Date.now() - windowDays * DAY_MS);
 
@@ -111,6 +122,69 @@ export class NewsEventsService {
         },
       },
     });
+  }
+
+  async listEventReferencedArticles(
+    orgId: string,
+    eventId: string,
+    articleIds: string[],
+    options?: { limit?: number },
+  ): Promise<NewsEventReferencedArticle[]> {
+    const normalizedArticleIds = Array.from(
+      new Set(
+        articleIds
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0),
+      ),
+    ).slice(0, 600);
+
+    if (normalizedArticleIds.length === 0) {
+      return [];
+    }
+
+    const limit = Math.min(Math.max(options?.limit ?? 300, 1), 2000);
+    const rows = await this.prisma.processedArticle.findMany({
+      where: {
+        articleId: { in: normalizedArticleIds },
+        newsEventItems: {
+          some: {
+            orgId,
+            eventId,
+          },
+        },
+      },
+      orderBy: [{ processedAt: "desc" }],
+      take: limit,
+      include: {
+        article: {
+          select: {
+            id: true,
+            url: true,
+            sourceLabel: true,
+            crawlAt: true,
+          },
+        },
+      },
+    });
+
+    const dedupedByArticleId = new Map<string, NewsEventReferencedArticle>();
+    for (const row of rows) {
+      if (!row.article?.id || dedupedByArticleId.has(row.article.id)) {
+        continue;
+      }
+      dedupedByArticleId.set(row.article.id, {
+        id: row.article.id,
+        url: row.article.url,
+        sourceLabel: row.article.sourceLabel ?? null,
+        crawlAt: row.article.crawlAt,
+        title: row.title ?? null,
+        publishedAt: row.publishedAt ?? null,
+        processedAt: row.processedAt,
+        processedArticleId: row.id,
+      });
+    }
+
+    return Array.from(dedupedByArticleId.values());
   }
 
   async getEventAuthorityMap(

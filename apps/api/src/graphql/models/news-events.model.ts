@@ -1,22 +1,31 @@
-import { Field, Float, GraphQLISODateTime, Int, ObjectType, registerEnumType } from "@nestjs/graphql";
+import {
+  Field,
+  Float,
+  GraphQLISODateTime,
+  Int,
+  ObjectType,
+  registerEnumType,
+} from "@nestjs/graphql";
 import { NewsEventAssignmentMethod, NewsEventStatus } from "@prisma/client";
 import GraphQLJSONScalar from "graphql-type-json";
 
 registerEnumType(NewsEventStatus, { name: "NewsEventStatus" });
-registerEnumType(NewsEventAssignmentMethod, { name: "NewsEventAssignmentMethod" });
+registerEnumType(NewsEventAssignmentMethod, {
+  name: "NewsEventAssignmentMethod",
+});
 
 export enum NewsEventSourceType {
   all = "all",
   authoritative = "authoritative",
   mixed = "mixed",
   blog = "blog",
-  unknown = "unknown"
+  unknown = "unknown",
 }
 
 export enum NewsEventSortBy {
   latest = "latest",
   heat = "heat",
-  credibility = "credibility"
+  credibility = "credibility",
 }
 
 registerEnumType(NewsEventSourceType, { name: "NewsEventSourceType" });
@@ -122,6 +131,69 @@ export class NewsEventTimelineEntryModel {
 }
 
 @ObjectType()
+export class NewsEventSourceEvidenceModel {
+  @Field(() => Int)
+  uniqueSourceCount!: number;
+
+  @Field(() => Int)
+  authoritativeSourceCount!: number;
+
+  @Field(() => Int)
+  blogSourceCount!: number;
+
+  @Field(() => Boolean)
+  corroborated!: boolean;
+}
+
+@ObjectType()
+export class NewsEventSourcePolicySyncStatusModel {
+  @Field(() => Boolean)
+  degraded!: boolean;
+
+  @Field(() => Boolean)
+  policyCacheStale!: boolean;
+
+  @Field(() => Boolean)
+  presetCacheStale!: boolean;
+
+  @Field(() => Boolean)
+  forceAuthoritativeMode!: boolean;
+
+  @Field(() => Int)
+  forceMinAuthoritativeSources!: number;
+
+  @Field(() => [String])
+  warningCodes!: string[];
+}
+
+@ObjectType()
+export class NewsEventReferencedArticleModel {
+  @Field(() => String)
+  id!: string;
+
+  @Field(() => String)
+  url!: string;
+
+  @Field(() => String, { nullable: true })
+  sourceLabel!: string | null;
+
+  @Field(() => String, { nullable: true })
+  title!: string | null;
+
+  @Field(() => GraphQLISODateTime)
+  crawlAt!: Date;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  publishedAt!: Date | null;
+
+  @Field(() => GraphQLISODateTime)
+  processedAt!: Date;
+
+  @Field(() => String)
+  processedArticleId!: string;
+}
+
+@ObjectType()
 export class NewsEventModel {
   @Field()
   id!: string;
@@ -174,15 +246,28 @@ export class NewsEventModel {
   @Field(() => [NewsEventTimelineEntryModel], { nullable: true })
   timeline?: NewsEventTimelineEntryModel[];
 
-  @Field(() => Boolean, { description: "Whether this event is considered breaking news" })
+  @Field(() => Boolean, {
+    description: "Whether this event is considered breaking news",
+  })
   breaking!: boolean;
 
-  @Field(() => Float, { description: "Heat score indicating event urgency (0-10+)" })
+  @Field(() => Float, {
+    description: "Heat score indicating event urgency (0-10+)",
+  })
   heatScore!: number;
 
-  @Field(() => Float, { description: "Credibility score based on source corroboration (0-100)" })
+  @Field(() => Float, {
+    description: "Credibility score based on source corroboration (0-100)",
+  })
   credibilityScore!: number;
 
-  @Field(() => NewsEventSourceType, { description: "Source classification for authority filtering" })
+  @Field(() => NewsEventSourceType, {
+    description: "Source classification for authority filtering",
+  })
   sourceType!: NewsEventSourceType;
+
+  @Field(() => NewsEventSourceEvidenceModel, {
+    description: "Source corroboration evidence for explainability",
+  })
+  sourceEvidence!: NewsEventSourceEvidenceModel;
 }

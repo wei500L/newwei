@@ -1086,6 +1086,24 @@
       },
       "spacetimeTimeline": {
         "title": "Timeline Player",
+        "degradedBadge": "Degraded",
+        "degradedTooltip": "Degraded: source policy synchronization has issues ({{reasons}}).",
+        "degradedReasonPolicyCacheStale": "policy cache is stale",
+        "degradedReasonPresetCacheStale": "preset cache is stale",
+        "degradedReasonPolicyCacheMiss": "policy cache is missing",
+        "degradedReasonPresetCacheMiss": "preset cache is missing",
+        "degradedReasonPolicyCacheReadFailed": "policy cache read failed",
+        "degradedReasonPresetCacheReadFailed": "preset cache read failed",
+        "degradedReasonPolicyDbReadFailed": "policy DB read failed",
+        "degradedReasonPresetDbReadFailed": "preset DB read failed",
+        "degradedReasonUnknown": "unknown issue: {{code}}",
+        "degradedReasonUnknownShort": "unknown",
+        "orgEnforcedTag": "Org enforced",
+        "orgEnforcedTooltip": "Forced by organization settings. Minimum authority sources: {{count}}.",
+        "syncStatusAutoRefresh": "Auto refresh status ({{seconds}}s)",
+        "refreshStatus": "Refresh status",
+        "lastRefreshAt": "Last refreshed: {{time}}",
+        "lastRefreshNever": "Last refreshed: --",
         "event": "Event",
         "eventPlaceholder": "Select an event",
         "sourceType": "Sources",
@@ -1095,6 +1113,8 @@
         "sourceTypeAll": "All",
         "sourceTypeUnknown": "Unknown",
         "lockAuthoritative": "Lock authoritative mode",
+        "requireCorroborated": "Require cross-verified",
+        "authorityThreshold": "Authority >= {{count}}",
         "sortBy": "Sort",
         "sortByHeat": "Heat",
         "sortByCredibility": "Credibility",
@@ -1119,11 +1139,15 @@
         "aggregatedBuckets": "{{count}} nodes",
         "viewReferences": "References",
         "linkedSources": "Linked sources: {{count}}",
+        "corroboratedTag": "Cross-verified",
+        "uncorroboratedTag": "Single-source leaning",
+        "sourceEvidenceSummary": "A{{authoritative}} / U{{unique}} / B{{blog}}",
         "detailsTitle": "Timeline Details",
         "references": "Refs: {{count}}",
         "noReferencesTitle": "No references",
         "noReferencesDescription": "No referenced articles were found for this timeline node.",
-        "unresolvedReferences": "{{count}} references are outside the current article window.",
+        "loadingReferences": "Loading referenced articles...",
+        "unresolvedReferences": "{{count}} references are still unavailable after lookup.",
         "publishedAt": "Published"
       },
       "knowledgeGraph3d": {
@@ -2526,6 +2550,8 @@
         "enabled": "Enabled",
         "ingestionEnabled": "Ingestion enabled",
         "timelineEnabled": "Timeline enabled",
+        "forceAuthoritativeMode": "Force authoritative mode",
+        "forceMinAuthoritativeSources": "Min authoritative sources",
         "maxBatchSize": "Max batch size",
         "backfillDays": "Backfill days",
         "lookbackDays": "Lookback days",
@@ -2537,6 +2563,8 @@
       "hints": {
         "ingestionEnabled": "Controls scheduled ingestion jobs.",
         "timelineEnabled": "Builds bucketed timeline entries for each event.",
+        "forceAuthoritativeMode": "When enabled, all dashboard timeline event queries are forced to authoritative sources.",
+        "forceMinAuthoritativeSources": "Minimum unique authoritative sources required when force authoritative mode is enabled.",
         "vectorMinScore": "Higher = stricter vector assignment.",
         "crossLanguagePenalty": "Penalty applied when languages differ (0–1)."
       },
@@ -2555,28 +2583,120 @@
         "title": "Real-time effect",
         "body": "After saving, backend source policy cache is refreshed immediately and applies to newly fetched events."
       },
+      "conflicts": {
+        "title": "Whitelist/blacklist conflicts detected",
+        "domainList": "Domain conflicts: {{value}}",
+        "labelList": "Label conflicts: {{value}}"
+      },
       "fields": {
         "authoritativeDomains": "Authoritative domains whitelist",
         "authoritativeLabels": "Authoritative source labels whitelist",
         "blogDomains": "Blog/Social domains blacklist",
-        "blogLabels": "Blog/Social source labels blacklist"
+        "blogLabels": "Blog/Social source labels blacklist",
+        "note": "Change note (optional)"
       },
       "hints": {
         "authoritativeDomains": "Examples: reuters.com, bloomberg.com, ft.com",
         "authoritativeLabels": "Examples: Reuters, Financial Times, Associated Press",
         "blogDomains": "Examples: medium.com, substack.com, x.com",
-        "blogLabels": "Examples: newsletter, creator, influencer"
+        "blogLabels": "Examples: newsletter, creator, influencer",
+        "note": "This note is stored in revision history to help track why a change was made."
       },
       "placeholders": {
         "authoritativeDomains": "Enter domains",
         "authoritativeLabels": "Enter source labels",
         "blogDomains": "Enter domains",
-        "blogLabels": "Enter source labels"
+        "blogLabels": "Enter source labels",
+        "note": "Describe this change briefly"
+      },
+      "presets": {
+        "title": "Preset library",
+        "description": "Manage reusable whitelist/blacklist preset entries in backend database.",
+        "quickApplyTitle": "Apply preset library to current policy",
+        "quickApplyHint": "These entries come from backend preset library and can be updated below.",
+        "authoritativeDomains": "Append authority domains",
+        "authoritativeLabels": "Append authority labels",
+        "blogDomains": "Append low-trust domains",
+        "blogLabels": "Append low-trust labels",
+        "updatedAt": "Preset updated at: {{value}}"
+      },
+      "actions": {
+        "resetDefaults": "Reset to defaults",
+        "savePresets": "Save presets"
+      },
+      "history": {
+        "title": "Recent policy revisions",
+        "empty": "No revisions yet",
+        "activeRevision": "Active revision: #{{revision}}",
+        "updatedAt": "Updated at: {{value}}",
+        "activeTag": "Active",
+        "rollbackAction": "Rollback",
+        "revisionLabel": "Revision #{{revision}}",
+        "deltaSummary": "Adds: {{adds}}, Removes: {{removes}}",
+        "note": "Note: {{note}}",
+        "rollbackConfirmTitle": "Rollback source policy",
+        "rollbackConfirmBody": "Rollback to revision #{{revision}}?",
+        "resetConfirmTitle": "Reset source policy",
+        "resetConfirmBody": "Reset to system defaults and clear custom overrides?",
+        "notePlaceholder": "Optional change note",
+        "operationUpdate": "Update",
+        "operationRollback": "Rollback",
+        "operationReset": "Reset",
+        "actor": "Actor: {{value}}",
+        "moreItems": "+{{count}} more",
+        "deltaAuthoritativeDomainsAdd": "+ Authoritative domains",
+        "deltaAuthoritativeDomainsRemove": "- Authoritative domains",
+        "deltaAuthoritativeLabelsAdd": "+ Authoritative labels",
+        "deltaAuthoritativeLabelsRemove": "- Authoritative labels",
+        "deltaBlogDomainsAdd": "+ Blog domains",
+        "deltaBlogDomainsRemove": "- Blog domains",
+        "deltaBlogLabelsAdd": "+ Blog labels",
+        "deltaBlogLabelsRemove": "- Blog labels",
+        "diffTitle": "Revision diff compare",
+        "diffDescription": "Compare effective policy lists between two revisions to review exactly what changed.",
+        "diffBase": "Base revision",
+        "diffTarget": "Target revision",
+        "diffSwap": "Swap",
+        "diffLoadFailed": "Failed to load revision diff",
+        "diffEmpty": "No effective list changes between selected revisions"
+      },
+      "syncWarnings": {
+        "title": "Cache synchronization warning",
+        "cacheWriteFailed": "Configuration is saved, but cache refresh failed. New rules may apply after cache retries or TTL expiration."
+      },
+      "degraded": {
+        "badge": "Degraded",
+        "autoRefresh": "Auto refresh status ({{seconds}}s)",
+        "refreshStatus": "Refresh status",
+        "lastRefreshAt": "Last refreshed: {{time}}",
+        "lastRefreshNever": "Last refreshed: --",
+        "tooltip": "Degraded: source policy synchronization has issues ({{reasons}}).",
+        "reasonPolicyCacheStale": "policy cache is stale",
+        "reasonPresetCacheStale": "preset cache is stale",
+        "reasonPolicyCacheMiss": "policy cache is missing",
+        "reasonPresetCacheMiss": "preset cache is missing",
+        "reasonPolicyCacheReadFailed": "policy cache read failed",
+        "reasonPresetCacheReadFailed": "preset cache read failed",
+        "reasonPolicyDbReadFailed": "policy DB read failed",
+        "reasonPresetDbReadFailed": "preset DB read failed",
+        "reasonUnknown": "unknown issue: {{code}}",
+        "reasonUnknownShort": "unknown"
       },
       "messages": {
         "saved": "Saved",
+        "savedWithWarnings": "Saved, but cache synchronization is degraded. Please check warnings.",
         "saveFailed": "Failed to save",
-        "loadFailed": "Failed to load source policy"
+        "loadFailed": "Failed to load source policy",
+        "concurrentUpdate": "Policy was changed by another admin. Latest version has been reloaded. Please review and save again.",
+        "concurrentPresetUpdate": "Preset library was changed by another admin. Latest presets have been reloaded.",
+        "presetsSaved": "Presets saved",
+        "presetsSavedWithWarnings": "Presets saved, but cache synchronization is degraded. Please check warnings.",
+        "presetsSaveFailed": "Failed to save presets",
+        "presetsLoadFailed": "Failed to load presets",
+        "rollbackSaved": "Rollback applied",
+        "rollbackFailed": "Failed to rollback",
+        "resetSaved": "Reset completed",
+        "resetFailed": "Failed to reset"
       }
     },
     "newsIndicator": {

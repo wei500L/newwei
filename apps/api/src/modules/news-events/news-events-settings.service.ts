@@ -10,6 +10,8 @@ export interface NewsEventSettings {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  forceAuthoritativeMode: boolean;
+  forceMinAuthoritativeSources: number;
   maxBatchSize: number;
   backfillDays: number;
   lookbackDays: number;
@@ -23,6 +25,8 @@ export interface NewsEventSettingsInput {
   enabled: boolean;
   ingestionEnabled: boolean;
   timelineEnabled: boolean;
+  forceAuthoritativeMode: boolean;
+  forceMinAuthoritativeSources: number;
   maxBatchSize: number;
   backfillDays: number;
   lookbackDays: number;
@@ -50,6 +54,8 @@ const MIN_CROSS_LANGUAGE_PENALTY = 0;
 const MAX_CROSS_LANGUAGE_PENALTY = 1;
 const MIN_CACHE_TTL_SECONDS = 0;
 const MAX_CACHE_TTL_SECONDS = 3600;
+const MIN_FORCE_MIN_AUTHORITATIVE_SOURCES = 1;
+const MAX_FORCE_MIN_AUTHORITATIVE_SOURCES = 5;
 
 @Injectable()
 export class NewsEventsSettingsService {
@@ -57,7 +63,7 @@ export class NewsEventsSettingsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
   ) {}
 
   async getSettings(orgId: string): Promise<NewsEventSettings> {
@@ -69,7 +75,7 @@ export class NewsEventsSettingsService {
     } catch (error) {
       this.logger.warn(
         { err: error, orgId },
-        "Failed to read news event settings from cache; falling back to database"
+        "Failed to read news event settings from cache; falling back to database",
       );
     }
 
@@ -84,20 +90,27 @@ export class NewsEventsSettingsService {
       settings = this.getFallbackSettings();
       this.logger.warn(
         { err: error, orgId },
-        "Failed to load news event settings from database; using defaults"
+        "Failed to load news event settings from database; using defaults",
       );
     }
 
     try {
       await this.cache.set(cacheKey, settings, SETTINGS_CACHE_TTL_SECONDS);
     } catch (error) {
-      this.logger.warn({ err: error, orgId }, "Failed to write news event settings to cache");
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to write news event settings to cache",
+      );
     }
 
     return settings;
   }
 
-  async updateSettings(orgId: string, actorId: string, input: NewsEventSettingsInput): Promise<NewsEventSettings> {
+  async updateSettings(
+    orgId: string,
+    actorId: string,
+    input: NewsEventSettingsInput,
+  ): Promise<NewsEventSettings> {
     const normalized = this.normalizeSettings(input);
     const key = this.systemSettingKey(orgId);
 
@@ -106,14 +119,14 @@ export class NewsEventsSettingsService {
       update: {
         value: toPrismaJsonValue(normalized),
         updatedById: actorId,
-        description: `News event settings (org=${orgId})`
+        description: `News event settings (org=${orgId})`,
       },
       create: {
         key,
         value: toPrismaJsonValue(normalized),
         updatedById: actorId,
-        description: `News event settings (org=${orgId})`
-      }
+        description: `News event settings (org=${orgId})`,
+      },
     });
 
     await writeAuditLogBestEffort(
@@ -124,13 +137,22 @@ export class NewsEventsSettingsService {
           actorId,
           resource: "system_settings",
           action: "news_event_settings_update",
-          metadata: toPrismaJsonValue(normalized)
-        }
+          metadata: toPrismaJsonValue(normalized),
+        },
       },
-      { orgId, actorId, resource: "system_settings", action: "news_event_settings_update" }
+      {
+        orgId,
+        actorId,
+        resource: "system_settings",
+        action: "news_event_settings_update",
+      },
     );
 
-    await this.cache.set(this.cacheKey(orgId), normalized, SETTINGS_CACHE_TTL_SECONDS);
+    await this.cache.set(
+      this.cacheKey(orgId),
+      normalized,
+      SETTINGS_CACHE_TTL_SECONDS,
+    );
     return normalized;
   }
 
@@ -141,7 +163,7 @@ export class NewsEventsSettingsService {
   private async loadSettings(orgId: string): Promise<NewsEventSettings> {
     const fallback = this.getFallbackSettings();
     const record = await this.prisma.systemSetting.findUnique({
-      where: { key: this.systemSettingKey(orgId) }
+      where: { key: this.systemSettingKey(orgId) },
     });
     const raw = record?.value as Partial<NewsEventSettingsInput> | undefined;
     return this.normalizeSettings(raw ?? {}, fallback);
@@ -152,53 +174,87 @@ export class NewsEventsSettingsService {
       enabled: false,
       ingestionEnabled: false,
       timelineEnabled: true,
+      forceAuthoritativeMode: false,
+      forceMinAuthoritativeSources: 1,
       maxBatchSize: 100,
       backfillDays: 30,
       lookbackDays: 30,
       timelineMaxEventsPerRun: 50,
       vectorMinScore: 0.82,
       crossLanguagePenalty: 0.1,
-      cacheTtlSeconds: 60
+      cacheTtlSeconds: 60,
     };
   }
 
   private normalizeSettings(
     value: Partial<NewsEventSettingsInput>,
-    fallback?: NewsEventSettings
+    fallback?: NewsEventSettings,
   ): NewsEventSettings {
     const defaults = fallback ?? this.getFallbackSettings();
 
     return {
-      enabled: typeof value.enabled === "boolean" ? value.enabled : defaults.enabled,
-      ingestionEnabled: typeof value.ingestionEnabled === "boolean" ? value.ingestionEnabled : defaults.ingestionEnabled,
-      timelineEnabled: typeof value.timelineEnabled === "boolean" ? value.timelineEnabled : defaults.timelineEnabled,
-      maxBatchSize: this.clampInt(value.maxBatchSize, MIN_MAX_BATCH_SIZE, MAX_MAX_BATCH_SIZE, defaults.maxBatchSize),
-      backfillDays: this.clampInt(value.backfillDays, MIN_BACKFILL_DAYS, MAX_BACKFILL_DAYS, defaults.backfillDays),
-      lookbackDays: this.clampInt(value.lookbackDays, MIN_LOOKBACK_DAYS, MAX_LOOKBACK_DAYS, defaults.lookbackDays),
+      enabled:
+        typeof value.enabled === "boolean" ? value.enabled : defaults.enabled,
+      ingestionEnabled:
+        typeof value.ingestionEnabled === "boolean"
+          ? value.ingestionEnabled
+          : defaults.ingestionEnabled,
+      timelineEnabled:
+        typeof value.timelineEnabled === "boolean"
+          ? value.timelineEnabled
+          : defaults.timelineEnabled,
+      forceAuthoritativeMode:
+        typeof value.forceAuthoritativeMode === "boolean"
+          ? value.forceAuthoritativeMode
+          : defaults.forceAuthoritativeMode,
+      forceMinAuthoritativeSources: this.clampInt(
+        value.forceMinAuthoritativeSources,
+        MIN_FORCE_MIN_AUTHORITATIVE_SOURCES,
+        MAX_FORCE_MIN_AUTHORITATIVE_SOURCES,
+        defaults.forceMinAuthoritativeSources,
+      ),
+      maxBatchSize: this.clampInt(
+        value.maxBatchSize,
+        MIN_MAX_BATCH_SIZE,
+        MAX_MAX_BATCH_SIZE,
+        defaults.maxBatchSize,
+      ),
+      backfillDays: this.clampInt(
+        value.backfillDays,
+        MIN_BACKFILL_DAYS,
+        MAX_BACKFILL_DAYS,
+        defaults.backfillDays,
+      ),
+      lookbackDays: this.clampInt(
+        value.lookbackDays,
+        MIN_LOOKBACK_DAYS,
+        MAX_LOOKBACK_DAYS,
+        defaults.lookbackDays,
+      ),
       timelineMaxEventsPerRun: this.clampInt(
         value.timelineMaxEventsPerRun,
         MIN_TIMELINE_MAX_EVENTS_PER_RUN,
         MAX_TIMELINE_MAX_EVENTS_PER_RUN,
-        defaults.timelineMaxEventsPerRun
+        defaults.timelineMaxEventsPerRun,
       ),
       vectorMinScore: this.clampFloat(
         value.vectorMinScore,
         MIN_VECTOR_MIN_SCORE,
         MAX_VECTOR_MIN_SCORE,
-        defaults.vectorMinScore
+        defaults.vectorMinScore,
       ),
       crossLanguagePenalty: this.clampFloat(
         value.crossLanguagePenalty,
         MIN_CROSS_LANGUAGE_PENALTY,
         MAX_CROSS_LANGUAGE_PENALTY,
-        defaults.crossLanguagePenalty
+        defaults.crossLanguagePenalty,
       ),
       cacheTtlSeconds: this.clampInt(
         value.cacheTtlSeconds,
         MIN_CACHE_TTL_SECONDS,
         MAX_CACHE_TTL_SECONDS,
-        defaults.cacheTtlSeconds
-      )
+        defaults.cacheTtlSeconds,
+      ),
     };
   }
 
@@ -240,7 +296,12 @@ export class NewsEventsSettingsService {
     return rounded;
   }
 
-  private clampFloat(value: unknown, min: number, max: number, fallback: number) {
+  private clampFloat(
+    value: unknown,
+    min: number,
+    max: number,
+    fallback: number,
+  ) {
     const numeric = this.toNumber(value);
     if (numeric === null || Number.isNaN(numeric)) {
       return fallback;

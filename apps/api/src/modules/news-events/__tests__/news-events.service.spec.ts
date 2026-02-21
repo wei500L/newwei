@@ -229,6 +229,35 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.update).not.toHaveBeenCalled();
   });
 
+  it("allows listEvents to fetch up to 300 candidates for downstream filtering", async () => {
+    const prisma = {
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    await service.listEvents("org-1", {
+      limit: 999,
+      windowDays: 21,
+      status: NewsEventStatus.active,
+    });
+
+    expect(prisma.newsEvent.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        status: NewsEventStatus.active,
+        lastAt: { gte: expect.any(Date) },
+      },
+      orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
+      take: 300,
+      include: {
+        _count: { select: { items: true } },
+      },
+    });
+  });
+
   it("calculates authority profile and credibility for events", async () => {
     const prisma = {
       newsEventItem: {
@@ -354,5 +383,79 @@ describe("NewsEventsService", () => {
         blogSourceCount: 1,
       }),
     );
+  });
+
+  it("resolves referenced articles by event membership without capped event-item prefetch", async () => {
+    const prisma = {
+      newsEventItem: {
+        findMany: jest.fn(),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "pa-2",
+            articleId: "article-2",
+            title: "Article 2",
+            publishedAt: new Date("2026-01-02T00:00:00.000Z"),
+            processedAt: new Date("2026-01-03T00:00:00.000Z"),
+            article: {
+              id: "article-2",
+              url: "https://example.com/2",
+              sourceLabel: "Example",
+              crawlAt: new Date("2026-01-02T00:00:00.000Z"),
+            },
+          },
+          {
+            id: "pa-1",
+            articleId: "article-1",
+            title: "Article 1",
+            publishedAt: new Date("2026-01-01T00:00:00.000Z"),
+            processedAt: new Date("2026-01-02T00:00:00.000Z"),
+            article: {
+              id: "article-1",
+              url: "https://example.com/1",
+              sourceLabel: null,
+              crawlAt: new Date("2026-01-01T00:00:00.000Z"),
+            },
+          },
+        ]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const rows = await service.listEventReferencedArticles(
+      "org-1",
+      "event-1",
+      [" article-2 ", "article-1", "article-1"],
+      { limit: 50 },
+    );
+
+    expect(prisma.processedArticle.findMany).toHaveBeenCalledWith({
+      where: {
+        articleId: { in: ["article-2", "article-1"] },
+        newsEventItems: {
+          some: {
+            orgId: "org-1",
+            eventId: "event-1",
+          },
+        },
+      },
+      orderBy: [{ processedAt: "desc" }],
+      take: 50,
+      include: {
+        article: {
+          select: {
+            id: true,
+            url: true,
+            sourceLabel: true,
+            crawlAt: true,
+          },
+        },
+      },
+    });
+    expect(prisma.newsEventItem.findMany).not.toHaveBeenCalled();
+    expect(rows.map((row) => row.id)).toEqual(["article-2", "article-1"]);
+    expect(rows.map((row) => row.processedArticleId)).toEqual(["pa-2", "pa-1"]);
   });
 });
