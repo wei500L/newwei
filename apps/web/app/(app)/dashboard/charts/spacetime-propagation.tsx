@@ -74,6 +74,7 @@ export interface SpacetimePropagationProps {
   eventId?: string | null;
   cursorStartIso?: string | null;
   cursorEndIso?: string | null;
+  linkedSources?: string[] | null;
   loading?: boolean;
 }
 
@@ -121,7 +122,13 @@ const EMPTY_DEGRADATION_STATS = {
 const MAX_PROPAGATION_WINDOW_HOURS = 24 * 31;
 const DEFAULT_PROPAGATION_WINDOW_HOURS = 24;
 
-export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, loading }: SpacetimePropagationProps) {
+export function SpacetimePropagation({
+  eventId,
+  cursorStartIso,
+  cursorEndIso,
+  linkedSources,
+  loading
+}: SpacetimePropagationProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
@@ -136,6 +143,15 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
 
   const cursorStartMs = useMemo(() => safeParseTimeMs(cursorStartIso ?? null), [cursorStartIso]);
   const cursorEndMs = useMemo(() => safeParseTimeMs(cursorEndIso ?? null), [cursorEndIso]);
+  const linkedSourceSet = useMemo(
+    () =>
+      new Set(
+        (linkedSources ?? [])
+          .map((entry) => (typeof entry === "string" ? entry.trim().toLowerCase() : ""))
+          .filter((entry) => entry.length > 0)
+      ),
+    [linkedSources]
+  );
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const windowLabelShort = `${startIso.slice(0, 10)} - ${endIso.slice(0, 10)}`;
@@ -239,6 +255,8 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     const nodes = payload.nodes.map((node) => {
       const firstMs = safeParseTimeMs(node.firstAt) ?? 0;
       const lastMs = safeParseTimeMs(node.lastAt) ?? 0;
+      const nodeKey = node.id.trim().toLowerCase();
+      const isLinked = linkedSourceSet.has(nodeKey);
       const isSeen = cursorEndMs ? firstMs < cursorEndMs : true;
       const isWindow =
         cursorStartMs && cursorEndMs
@@ -249,13 +267,15 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           ? firstMs >= cursorStartMs && firstMs < cursorEndMs
           : false;
 
-      const opacity = isWindow ? 1 : isSeen ? 0.3 : 0.14;
-      const borderColor = isNew
+      const opacity = isLinked ? 1 : isWindow ? 1 : isSeen ? 0.3 : 0.14;
+      const borderColor = isLinked
         ? (colors?.primary ?? "#1f3b7b")
-        : isWindow
-          ? (colors?.accent ?? "#f59e0b")
-          : (colors?.border ?? "#e2e8f0");
-      const borderWidth = isNew ? 4 : isWindow ? 3 : 2;
+        : isNew
+          ? (colors?.primary ?? "#1f3b7b")
+          : isWindow
+            ? (colors?.accent ?? "#f59e0b")
+            : (colors?.border ?? "#e2e8f0");
+      const borderWidth = isLinked ? 5 : isNew ? 4 : isWindow ? 3 : 2;
       const symbolSize = Math.max(14, Math.min(56, 14 + node.count * 3.5));
 
       return {
@@ -270,7 +290,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           borderWidth
         },
         label: {
-          show: symbolSize >= 26,
+          show: isLinked || symbolSize >= 26,
           color: colors?.foreground ?? "#0f172a",
           fontFamily
         },
@@ -278,6 +298,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           count: node.count,
           firstAt: node.firstAt,
           lastAt: node.lastAt,
+          isLinked,
           isSeen,
           isWindow,
           isNew
@@ -301,6 +322,9 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
 
       const firstMs = safeParseTimeMs(edge.firstAt) ?? 0;
       const lastMs = safeParseTimeMs(edge.lastAt) ?? 0;
+      const isLinkedEdge =
+        linkedSourceSet.has(edge.source.trim().toLowerCase()) ||
+        linkedSourceSet.has(edge.target.trim().toLowerCase());
       const isSeen = cursorEndMs ? firstMs < cursorEndMs : true;
       const isWindow =
         cursorStartMs && cursorEndMs
@@ -314,9 +338,10 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
       const baseColor =
         edge.kind === "duplicate" ? (colors?.primary ?? "#1f3b7b") : (colors?.border ?? "#94a3b8");
       const windowColor = colors?.accent ?? "#f59e0b";
-      const color = isNew ? (colors?.primary ?? baseColor) : isWindow ? windowColor : baseColor;
-      const opacity = isWindow ? 0.78 : isSeen ? 0.3 : 0.12;
-      const width = Math.max(1, Math.min(7, edge.weight));
+      const linkedColor = colors?.primary ?? "#1f3b7b";
+      const color = isLinkedEdge ? linkedColor : isNew ? (colors?.primary ?? baseColor) : isWindow ? windowColor : baseColor;
+      const opacity = isLinkedEdge ? 0.92 : isWindow ? 0.78 : isSeen ? 0.3 : 0.12;
+      const width = isLinkedEdge ? Math.max(2, Math.min(8, edge.weight + 1)) : Math.max(1, Math.min(7, edge.weight));
 
       return {
         source: sourceIndex,
@@ -338,6 +363,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
           avgDuplicateSimilarity: edge.avgDuplicateSimilarity,
           firstAt: edge.firstAt,
           lastAt: edge.lastAt,
+          isLinkedEdge,
           isSeen,
           isWindow,
           isNew
@@ -454,6 +480,7 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
     cursorStartIso,
     cursorStartMs,
     fontFamily,
+    linkedSourceSet,
     locale,
     normalizedPropagation,
     windowLabelShort,
@@ -598,6 +625,14 @@ export function SpacetimePropagation({ eventId, cursorStartIso, cursorEndIso, lo
         <Tag color="gold" className="text-xs">
           Time links: {edgeKindStats.time}
         </Tag>
+        {linkedSourceSet.size > 0 ? (
+          <Tag color="cyan" className="text-xs">
+            {t("dashboard.charts.spacetimePropagation.linkedSources", {
+              defaultValue: "Linked sources: {{count}}",
+              count: linkedSourceSet.size
+            })}
+          </Tag>
+        ) : null}
         {cursorStartIso && cursorEndIso ? (
           <Tag color="purple" className="text-xs">
             Cursor: {formatDateTime(cursorStartIso, locale, { dateStyle: "medium" })} -{" "}

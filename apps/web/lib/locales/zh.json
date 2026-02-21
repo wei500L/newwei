@@ -1084,12 +1084,32 @@
         "window": "窗口",
         "noArticles": "所选窗口内未找到该来源的文章。",
         "moreHint": "还有更多文章可用。请缩小时间范围以继续查看。",
+        "linkedSources": "联动来源：{{count}}",
         "title": "传播流"
       },
       "spacetimeTimeline": {
         "title": "时间线播放器",
         "event": "事件",
         "eventPlaceholder": "选择事件",
+        "sourceType": "来源",
+        "sourceTypeAuthoritative": "权威媒体",
+        "sourceTypeMixed": "混合",
+        "sourceTypeBlog": "博客/自媒体",
+        "sourceTypeAll": "全部",
+        "sourceTypeUnknown": "未知",
+        "lockAuthoritative": "锁定权威模式",
+        "sortBy": "排序",
+        "sortByHeat": "按热度",
+        "sortByCredibility": "按可信度",
+        "sortByLatest": "按最新",
+        "minHeat": "最低热度",
+        "minCredibility": "最低可信度",
+        "granularity": "粒度",
+        "granularityAuto": "自动",
+        "granularityDay": "日",
+        "granularityWeek": "周",
+        "granularityMonth": "月",
+        "playSpeed": "速度",
         "playing": "播放中",
         "paused": "已暂停",
         "emptyTitle": "无事件",
@@ -1097,7 +1117,17 @@
         "noTimelineTitle": "无时间线",
         "noTimelineDescription": "该事件没有时间线条目。",
         "step": "步骤",
-        "bucket": "分桶"
+        "bucket": "分桶",
+        "bucketGranularity": "分桶",
+        "aggregatedBuckets": "{{count}} 个节点",
+        "viewReferences": "引用",
+        "linkedSources": "联动来源：{{count}}",
+        "detailsTitle": "时间线详情",
+        "references": "引用：{{count}}",
+        "noReferencesTitle": "无引用",
+        "noReferencesDescription": "该时间线节点没有可用引用文章。",
+        "unresolvedReferences": "有 {{count}} 条引用超出当前文章窗口。",
+        "publishedAt": "发布时间"
       },
       "knowledgeGraph3d": {
         "title": "知识图谱（3D）"
@@ -2522,6 +2552,36 @@
         "required": "必填"
       }
     },
+    "newsEventSourcePolicy": {
+      "description": "管理时间线权威来源识别所使用的权威来源白名单与博客/自媒体黑名单。",
+      "notice": {
+        "title": "实时生效",
+        "body": "保存后后端会立即刷新来源策略缓存，并用于后续拉取的事件。"
+      },
+      "fields": {
+        "authoritativeDomains": "权威域名白名单",
+        "authoritativeLabels": "权威来源标签白名单",
+        "blogDomains": "博客/自媒体域名黑名单",
+        "blogLabels": "博客/自媒体标签黑名单"
+      },
+      "hints": {
+        "authoritativeDomains": "示例：reuters.com、bloomberg.com、ft.com",
+        "authoritativeLabels": "示例：Reuters、Financial Times、Associated Press",
+        "blogDomains": "示例：medium.com、substack.com、x.com",
+        "blogLabels": "示例：newsletter、creator、influencer"
+      },
+      "placeholders": {
+        "authoritativeDomains": "输入域名",
+        "authoritativeLabels": "输入来源标签",
+        "blogDomains": "输入域名",
+        "blogLabels": "输入来源标签"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "保存失败",
+        "loadFailed": "加载来源策略失败"
+      }
+    },
     "newsIndicator": {
       "description": "发现新闻信号与经济指标的领先-滞后关系，并提供回测护栏。",
       "notice": {
@@ -3405,6 +3465,7 @@
       "knowledgeGraph": "知识图谱",
       "knowledgeGraphReview": "知识图谱审核",
       "newsEvents": "新闻事件",
+      "newsEventSourcePolicy": "新闻来源策略",
       "newsIndicator": "新闻-指标",
       "newsDedupe": "新闻去重",
       "newsPrompts": "新闻提示词",

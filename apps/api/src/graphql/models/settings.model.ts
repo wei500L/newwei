@@ -181,6 +181,21 @@ export class NewsEventSettingsModel {
 }
 
 @ObjectType()
+export class NewsEventSourcePolicySettingsModel {
+  @Field(() => [String])
+  authoritativeDomains!: string[];
+
+  @Field(() => [String])
+  authoritativeLabels!: string[];
+
+  @Field(() => [String])
+  blogDomains!: string[];
+
+  @Field(() => [String])
+  blogLabels!: string[];
+}
+
+@ObjectType()
 export class NewsDedupeCategoryThresholdModel {
   @Field(() => String)
   category!: string;

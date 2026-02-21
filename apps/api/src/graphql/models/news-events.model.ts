@@ -5,6 +5,23 @@ import GraphQLJSONScalar from "graphql-type-json";
 registerEnumType(NewsEventStatus, { name: "NewsEventStatus" });
 registerEnumType(NewsEventAssignmentMethod, { name: "NewsEventAssignmentMethod" });
 
+export enum NewsEventSourceType {
+  all = "all",
+  authoritative = "authoritative",
+  mixed = "mixed",
+  blog = "blog",
+  unknown = "unknown"
+}
+
+export enum NewsEventSortBy {
+  latest = "latest",
+  heat = "heat",
+  credibility = "credibility"
+}
+
+registerEnumType(NewsEventSourceType, { name: "NewsEventSourceType" });
+registerEnumType(NewsEventSortBy, { name: "NewsEventSortBy" });
+
 @ObjectType()
 export class NewsEventArticleModel {
   @Field()
@@ -162,5 +179,10 @@ export class NewsEventModel {
 
   @Field(() => Float, { description: "Heat score indicating event urgency (0-10+)" })
   heatScore!: number;
-}
 
+  @Field(() => Float, { description: "Credibility score based on source corroboration (0-100)" })
+  credibilityScore!: number;
+
+  @Field(() => NewsEventSourceType, { description: "Source classification for authority filtering" })
+  sourceType!: NewsEventSourceType;
+}

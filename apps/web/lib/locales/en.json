@@ -1081,12 +1081,32 @@
         "window": "Window",
         "noArticles": "No articles found for this source in the selected window.",
         "moreHint": "More articles available. Narrow the time range to inspect further.",
+        "linkedSources": "Linked sources: {{count}}",
         "title": "Propagation Flow"
       },
       "spacetimeTimeline": {
         "title": "Timeline Player",
         "event": "Event",
         "eventPlaceholder": "Select an event",
+        "sourceType": "Sources",
+        "sourceTypeAuthoritative": "Authoritative",
+        "sourceTypeMixed": "Mixed",
+        "sourceTypeBlog": "Blog",
+        "sourceTypeAll": "All",
+        "sourceTypeUnknown": "Unknown",
+        "lockAuthoritative": "Lock authoritative mode",
+        "sortBy": "Sort",
+        "sortByHeat": "Heat",
+        "sortByCredibility": "Credibility",
+        "sortByLatest": "Latest",
+        "minHeat": "Min heat",
+        "minCredibility": "Min credibility",
+        "granularity": "Granularity",
+        "granularityAuto": "Auto",
+        "granularityDay": "Daily",
+        "granularityWeek": "Weekly",
+        "granularityMonth": "Monthly",
+        "playSpeed": "Speed",
         "playing": "Playing",
         "paused": "Paused",
         "emptyTitle": "No event",
@@ -1094,7 +1114,17 @@
         "noTimelineTitle": "No timeline",
         "noTimelineDescription": "This event has no timeline entries.",
         "step": "Step",
-        "bucket": "Bucket"
+        "bucket": "Bucket",
+        "bucketGranularity": "Bucket",
+        "aggregatedBuckets": "{{count}} nodes",
+        "viewReferences": "References",
+        "linkedSources": "Linked sources: {{count}}",
+        "detailsTitle": "Timeline Details",
+        "references": "Refs: {{count}}",
+        "noReferencesTitle": "No references",
+        "noReferencesDescription": "No referenced articles were found for this timeline node.",
+        "unresolvedReferences": "{{count}} references are outside the current article window.",
+        "publishedAt": "Published"
       },
       "knowledgeGraph3d": {
         "title": "Knowledge Graph (3D)"
@@ -2519,6 +2549,36 @@
         "required": "Required"
       }
     },
+    "newsEventSourcePolicy": {
+      "description": "Manage authoritative/news-source allowlist and blog/social denylist for timeline authority classification.",
+      "notice": {
+        "title": "Real-time effect",
+        "body": "After saving, backend source policy cache is refreshed immediately and applies to newly fetched events."
+      },
+      "fields": {
+        "authoritativeDomains": "Authoritative domains whitelist",
+        "authoritativeLabels": "Authoritative source labels whitelist",
+        "blogDomains": "Blog/Social domains blacklist",
+        "blogLabels": "Blog/Social source labels blacklist"
+      },
+      "hints": {
+        "authoritativeDomains": "Examples: reuters.com, bloomberg.com, ft.com",
+        "authoritativeLabels": "Examples: Reuters, Financial Times, Associated Press",
+        "blogDomains": "Examples: medium.com, substack.com, x.com",
+        "blogLabels": "Examples: newsletter, creator, influencer"
+      },
+      "placeholders": {
+        "authoritativeDomains": "Enter domains",
+        "authoritativeLabels": "Enter source labels",
+        "blogDomains": "Enter domains",
+        "blogLabels": "Enter source labels"
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save",
+        "loadFailed": "Failed to load source policy"
+      }
+    },
     "newsIndicator": {
       "description": "Discover lead-lag relationships between news signals and economic indicators with backtests.",
       "notice": {
@@ -3402,6 +3462,7 @@
       "knowledgeGraph": "Knowledge graph",
       "knowledgeGraphReview": "Knowledge graph review",
       "newsEvents": "News events",
+      "newsEventSourcePolicy": "News source policy",
       "newsIndicator": "News ↔ indicators",
       "newsDedupe": "News dedupe",
       "newsPrompts": "News prompts",

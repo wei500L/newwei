@@ -9,25 +9,29 @@ import { PrismaService } from "../../modules/config/prisma.service";
 import { CrawlSettingsService } from "../../modules/crawl/crawl-settings.service";
 import {
   KnowledgeGraphSettingsService,
-  type KnowledgeGraphSettingsInput
+  type KnowledgeGraphSettingsInput,
 } from "../../modules/knowledge-graph/knowledge-graph-settings.service";
 import {
   NewsEventsSettingsService,
-  type NewsEventSettingsInput
+  type NewsEventSettingsInput,
 } from "../../modules/news-events/news-events-settings.service";
 import {
+  NewsEventSourcePolicyService,
+  type NewsEventSourcePolicyInput,
+} from "../../modules/news-events/news-event-source-policy.service";
+import {
   NewsIndicatorSettingsService,
-  type NewsIndicatorAssociationSettingsInput
+  type NewsIndicatorAssociationSettingsInput,
 } from "../../modules/news-indicator/news-indicator-settings.service";
 import {
   NewsDedupeSettingsService,
-  type NewsDedupeSettingsInput
+  type NewsDedupeSettingsInput,
 } from "../../modules/news-pipeline/news-dedupe-settings.service";
 import { NewsPromptConfigService } from "../../modules/news-pipeline/news-prompt-config.service";
 import { AuditLogSettingsService } from "../../modules/system-settings/audit-log-settings.service";
 import {
   EntityImpactGraphSettingsService,
-  type EntityImpactGraphSettingsInput
+  type EntityImpactGraphSettingsInput,
 } from "../../modules/system-settings/entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
@@ -40,8 +44,9 @@ import {
   UpdateKnowledgeGraphSettingsInput,
   UpdateRateLimitSettingsInput,
   UpdateNewsEventSettingsInput,
+  UpdateNewsEventSourcePolicyInput,
   UpdateNewsIndicatorSettingsInput,
-  UpdateNewsDedupeSettingsInput
+  UpdateNewsDedupeSettingsInput,
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
 import {
@@ -50,11 +55,12 @@ import {
   EntityImpactGraphSettingsModel,
   KnowledgeGraphSettingsModel,
   NewsEventSettingsModel,
+  NewsEventSourcePolicySettingsModel,
   NewsIndicatorSettingsModel,
   NewsDedupeSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
-  RateLimitSettingsModel
+  RateLimitSettingsModel,
 } from "../models/settings.model";
 
 @Resolver()
@@ -65,18 +71,21 @@ export class SettingsResolver {
     private readonly entityImpactGraphSettingsService: EntityImpactGraphSettingsService,
     private readonly knowledgeGraphSettingsService: KnowledgeGraphSettingsService,
     private readonly newsEventSettingsService: NewsEventsSettingsService,
+    private readonly newsEventSourcePolicyService: NewsEventSourcePolicyService,
     private readonly newsIndicatorSettingsService: NewsIndicatorSettingsService,
     private readonly newsDedupeSettingsService: NewsDedupeSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly authCacheSettingsService: AuthCacheSettingsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
   @HasPermission("settings.manage")
   @Query(() => RateLimitSettingsModel)
-  async rateLimitSettings(@Context("req") req: GqlRequest): Promise<RateLimitSettingsModel> {
+  async rateLimitSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<RateLimitSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.rateLimitConfig.getRateLimitSettings();
@@ -86,17 +95,21 @@ export class SettingsResolver {
   @Mutation(() => RateLimitSettingsModel)
   async updateRateLimitSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateRateLimitSettingsInput
+    @Args("input") input: UpdateRateLimitSettingsInput,
   ): Promise<RateLimitSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.rateLimitConfig.updateRateLimitSettings(user.orgId, user.id, input);
+    return this.rateLimitConfig.updateRateLimitSettings(
+      user.orgId,
+      user.id,
+      input,
+    );
   }
 
   @HasPermission("dashboards.read")
   @Query(() => EntityImpactGraphSettingsModel)
   async entityImpactGraphSettings(
-    @Context("req") req: GqlRequest
+    @Context("req") req: GqlRequest,
   ): Promise<EntityImpactGraphSettingsModel> {
     const user = this.requireUser(req);
     return this.entityImpactGraphSettingsService.getSettings(user.orgId);
@@ -106,7 +119,7 @@ export class SettingsResolver {
   @Mutation(() => EntityImpactGraphSettingsModel)
   async updateEntityImpactGraphSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateEntityImpactGraphSettingsInput
+    @Args("input") input: UpdateEntityImpactGraphSettingsInput,
   ): Promise<EntityImpactGraphSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
@@ -116,15 +129,22 @@ export class SettingsResolver {
       minCorrelation: input.minCorrelation,
       minCoOccurrence: input.minCoOccurrence,
       maxNodes: input.maxNodes,
-      categories: input.categories as EntityImpactGraphSettingsInput["categories"],
-      cacheTtlSeconds: input.cacheTtlSeconds
+      categories:
+        input.categories as EntityImpactGraphSettingsInput["categories"],
+      cacheTtlSeconds: input.cacheTtlSeconds,
     };
-    return this.entityImpactGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+    return this.entityImpactGraphSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
   }
 
   @HasPermission("dashboards.read")
   @Query(() => KnowledgeGraphSettingsModel)
-  async knowledgeGraphSettings(@Context("req") req: GqlRequest): Promise<KnowledgeGraphSettingsModel> {
+  async knowledgeGraphSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<KnowledgeGraphSettingsModel> {
     const user = this.requireUser(req);
     return this.knowledgeGraphSettingsService.getSettings(user.orgId);
   }
@@ -133,11 +153,13 @@ export class SettingsResolver {
   @Mutation(() => KnowledgeGraphSettingsModel)
   async updateKnowledgeGraphSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateKnowledgeGraphSettingsInput
+    @Args("input") input: UpdateKnowledgeGraphSettingsInput,
   ): Promise<KnowledgeGraphSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    const current = await this.knowledgeGraphSettingsService.getSettings(user.orgId);
+    const current = await this.knowledgeGraphSettingsService.getSettings(
+      user.orgId,
+    );
     const settingsInput: KnowledgeGraphSettingsInput = {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
@@ -147,30 +169,42 @@ export class SettingsResolver {
       maxRelationsPerArticle: input.maxRelationsPerArticle,
       minEdgeConfidence: input.minEdgeConfidence ?? current.minEdgeConfidence,
       dynamicEdgeConfidenceEnabled:
-        input.dynamicEdgeConfidenceEnabled ?? current.dynamicEdgeConfidenceEnabled,
+        input.dynamicEdgeConfidenceEnabled ??
+        current.dynamicEdgeConfidenceEnabled,
       dynamicEdgeConfidenceQuantile:
-        input.dynamicEdgeConfidenceQuantile ?? current.dynamicEdgeConfidenceQuantile,
+        input.dynamicEdgeConfidenceQuantile ??
+        current.dynamicEdgeConfidenceQuantile,
       multiModelValidationEnabled:
-        input.multiModelValidationEnabled ?? current.multiModelValidationEnabled,
+        input.multiModelValidationEnabled ??
+        current.multiModelValidationEnabled,
       multiModelValidationModels:
         input.multiModelValidationModels ?? current.multiModelValidationModels,
       multiModelValidationModelCount:
-        input.multiModelValidationModelCount ?? current.multiModelValidationModelCount,
+        input.multiModelValidationModelCount ??
+        current.multiModelValidationModelCount,
       multiModelValidationMaxRelationsPerArticle:
         input.multiModelValidationMaxRelationsPerArticle ??
         current.multiModelValidationMaxRelationsPerArticle,
       entityDisambiguationEnabled:
-        input.entityDisambiguationEnabled ?? current.entityDisambiguationEnabled,
+        input.entityDisambiguationEnabled ??
+        current.entityDisambiguationEnabled,
       entityDisambiguationMaxCandidates:
-        input.entityDisambiguationMaxCandidates ?? current.entityDisambiguationMaxCandidates,
-      cacheTtlSeconds: input.cacheTtlSeconds
+        input.entityDisambiguationMaxCandidates ??
+        current.entityDisambiguationMaxCandidates,
+      cacheTtlSeconds: input.cacheTtlSeconds,
     };
-    return this.knowledgeGraphSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+    return this.knowledgeGraphSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
   }
 
   @HasPermission("dashboards.read")
   @Query(() => NewsEventSettingsModel)
-  async newsEventSettings(@Context("req") req: GqlRequest): Promise<NewsEventSettingsModel> {
+  async newsEventSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsEventSettingsModel> {
     const user = this.requireUser(req);
     return this.newsEventSettingsService.getSettings(user.orgId);
   }
@@ -179,7 +213,7 @@ export class SettingsResolver {
   @Mutation(() => NewsEventSettingsModel)
   async updateNewsEventSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateNewsEventSettingsInput
+    @Args("input") input: UpdateNewsEventSettingsInput,
   ): Promise<NewsEventSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
@@ -193,14 +227,51 @@ export class SettingsResolver {
       timelineMaxEventsPerRun: input.timelineMaxEventsPerRun,
       vectorMinScore: input.vectorMinScore,
       crossLanguagePenalty: input.crossLanguagePenalty,
-      cacheTtlSeconds: input.cacheTtlSeconds
+      cacheTtlSeconds: input.cacheTtlSeconds,
     };
-    return this.newsEventSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+    return this.newsEventSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsEventSourcePolicySettingsModel)
+  async newsEventSourcePolicy(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsEventSourcePolicySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    return this.newsEventSourcePolicyService.getPolicy(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsEventSourcePolicySettingsModel)
+  async updateNewsEventSourcePolicy(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsEventSourcePolicyInput,
+  ): Promise<NewsEventSourcePolicySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const policyInput: NewsEventSourcePolicyInput = {
+      authoritativeDomains: input.authoritativeDomains,
+      authoritativeLabels: input.authoritativeLabels,
+      blogDomains: input.blogDomains,
+      blogLabels: input.blogLabels,
+    };
+    return this.newsEventSourcePolicyService.updatePolicy(
+      user.orgId,
+      user.id,
+      policyInput,
+    );
   }
 
   @HasPermission("settings.manage")
   @Query(() => NewsDedupeSettingsModel)
-  async newsDedupeSettings(@Context("req") req: GqlRequest): Promise<NewsDedupeSettingsModel> {
+  async newsDedupeSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsDedupeSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.newsDedupeSettingsService.getSettings(user.orgId);
@@ -210,11 +281,13 @@ export class SettingsResolver {
   @Mutation(() => NewsDedupeSettingsModel)
   async updateNewsDedupeSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateNewsDedupeSettingsInput
+    @Args("input") input: UpdateNewsDedupeSettingsInput,
   ): Promise<NewsDedupeSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    const current = await this.newsDedupeSettingsService.getSettings(user.orgId);
+    const current = await this.newsDedupeSettingsService.getSettings(
+      user.orgId,
+    );
     const settingsInput: NewsDedupeSettingsInput = {
       defaultThreshold: input.defaultThreshold,
       useEmbeddings: input.useEmbeddings,
@@ -248,15 +321,21 @@ export class SettingsResolver {
           : input.llmJudgeUserPromptTemplate,
       categoryThresholds: input.categoryThresholds.map((entry) => ({
         category: entry.category,
-        threshold: entry.threshold
-      }))
+        threshold: entry.threshold,
+      })),
     };
-    return this.newsDedupeSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+    return this.newsDedupeSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
   }
 
   @HasPermission("dashboards.read")
   @Query(() => NewsIndicatorSettingsModel)
-  async newsIndicatorSettings(@Context("req") req: GqlRequest): Promise<NewsIndicatorSettingsModel> {
+  async newsIndicatorSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsIndicatorSettingsModel> {
     const user = this.requireUser(req);
     return this.newsIndicatorSettingsService.getSettings(user.orgId);
   }
@@ -265,7 +344,7 @@ export class SettingsResolver {
   @Mutation(() => NewsIndicatorSettingsModel)
   async updateNewsIndicatorSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateNewsIndicatorSettingsInput
+    @Args("input") input: UpdateNewsIndicatorSettingsInput,
   ): Promise<NewsIndicatorSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
@@ -285,15 +364,21 @@ export class SettingsResolver {
       backtestTriggerZScore: input.backtestTriggerZScore,
       backtestBaselineDays: input.backtestBaselineDays,
       backtestHoldoutDays: input.backtestHoldoutDays,
-      cacheTtlSeconds: input.cacheTtlSeconds
+      cacheTtlSeconds: input.cacheTtlSeconds,
     };
 
-    return this.newsIndicatorSettingsService.updateSettings(user.orgId, user.id, settingsInput);
+    return this.newsIndicatorSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
   }
 
   @HasPermission("settings.manage")
   @Query(() => AuthCacheSettingsModel)
-  async authCacheSettings(@Context("req") req: GqlRequest): Promise<AuthCacheSettingsModel> {
+  async authCacheSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<AuthCacheSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.authCacheSettingsService.getSettings();
@@ -303,16 +388,22 @@ export class SettingsResolver {
   @Mutation(() => AuthCacheSettingsModel)
   async updateAuthCacheSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateAuthCacheSettingsInput
+    @Args("input") input: UpdateAuthCacheSettingsInput,
   ): Promise<AuthCacheSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.authCacheSettingsService.updateSettings(user.orgId, user.id, input);
+    return this.authCacheSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      input,
+    );
   }
 
   @HasPermission("settings.manage")
   @Query(() => CrawlClientSettingsModel)
-  async crawlClientSettings(@Context("req") req: GqlRequest): Promise<CrawlClientSettingsModel> {
+  async crawlClientSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<CrawlClientSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.crawlSettings.getSettings();
@@ -322,7 +413,7 @@ export class SettingsResolver {
   @Mutation(() => CrawlClientSettingsModel)
   async updateCrawlClientSettings(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateCrawlClientSettingsInput
+    @Args("input") input: UpdateCrawlClientSettingsInput,
   ): Promise<CrawlClientSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
@@ -331,7 +422,9 @@ export class SettingsResolver {
 
   @HasPermission("settings.manage")
   @Query(() => AuditLogRetentionModel)
-  async auditLogRetention(@Context("req") req: GqlRequest): Promise<AuditLogRetentionModel> {
+  async auditLogRetention(
+    @Context("req") req: GqlRequest,
+  ): Promise<AuditLogRetentionModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return { retentionDays: await this.auditLogSettings.getRetentionDays() };
@@ -341,7 +434,7 @@ export class SettingsResolver {
   @Mutation(() => AuditLogRetentionModel)
   async updateAuditLogRetention(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateAuditLogRetentionInput
+    @Args("input") input: UpdateAuditLogRetentionInput,
   ): Promise<AuditLogRetentionModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
@@ -349,14 +442,16 @@ export class SettingsResolver {
       retentionDays: await this.auditLogSettings.updateRetentionDays(
         user.orgId,
         user.id,
-        input.retentionDays
-      )
+        input.retentionDays,
+      ),
     };
   }
 
   @HasPermission("settings.manage")
   @Query(() => NewsPromptConfigModel)
-  async newsPromptConfig(@Context("req") req: GqlRequest): Promise<NewsPromptConfigModel> {
+  async newsPromptConfig(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsPromptConfigModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
     return this.newsPromptConfigService.getConfig();
@@ -366,11 +461,15 @@ export class SettingsResolver {
   @Mutation(() => NewsPromptConfigModel)
   async updateNewsPromptConfig(
     @Context("req") req: GqlRequest,
-    @Args("input") input: UpdateNewsPromptConfigInput
+    @Args("input") input: UpdateNewsPromptConfigInput,
   ): Promise<NewsPromptConfigModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    return this.newsPromptConfigService.updateConfig(user.orgId, user.id, input);
+    return this.newsPromptConfigService.updateConfig(
+      user.orgId,
+      user.id,
+      input,
+    );
   }
 
   private requireUser(req: GqlRequest): AuthenticatedUser {
@@ -388,9 +487,9 @@ export class SettingsResolver {
     const adminRole = await this.prisma.role.findFirst({
       where: {
         id: { in: user.roleIds },
-        name: "admin"
+        name: "admin",
       },
-      select: { id: true }
+      select: { id: true },
     });
     if (!adminRole) {
       throw new ForbiddenException("Admin access required");

@@ -287,6 +287,37 @@ export class UpdateNewsEventSettingsInput {
 }
 
 @InputType()
+export class UpdateNewsEventSourcePolicyInput {
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  authoritativeDomains!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  authoritativeLabels!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  blogDomains!: string[];
+
+  @Field(() => [String])
+  @ArrayMinSize(0)
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(180, { each: true })
+  blogLabels!: string[];
+}
+
+@InputType()
 export class UpdateNewsIndicatorSettingsInput {
   @Field(() => Boolean)
   @IsBoolean()
