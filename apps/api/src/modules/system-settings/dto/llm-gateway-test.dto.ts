@@ -1,5 +1,17 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
+
+const MAX_MODEL_LENGTH = 256;
+const MAX_INPUT_LENGTH = 4_000;
+const MAX_RERANK_DOCUMENTS = 20;
 
 export class LlmGatewayTestDto {
   @ApiPropertyOptional({
@@ -15,7 +27,7 @@ export class LlmGatewayTestDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(256)
+  @MaxLength(MAX_MODEL_LENGTH)
   model?: string;
 
   @ApiPropertyOptional({
@@ -23,7 +35,7 @@ export class LlmGatewayTestDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(4_000)
+  @MaxLength(MAX_INPUT_LENGTH)
   prompt?: string;
 
   @ApiPropertyOptional({
@@ -39,7 +51,7 @@ export class LlmGatewayTestDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(256)
+  @MaxLength(MAX_MODEL_LENGTH)
   embeddingModel?: string;
 
   @ApiPropertyOptional({
@@ -47,8 +59,45 @@ export class LlmGatewayTestDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(4_000)
+  @MaxLength(MAX_INPUT_LENGTH)
   embeddingInput?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "When true, runs a rerank request using the rerank model and backup rerank models."
+  })
+  @IsOptional()
+  @IsBoolean()
+  includeRerank?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional override model for the rerank test. When omitted, uses profile rerank model + backup rerank models."
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_MODEL_LENGTH)
+  rerankModel?: string;
+
+  @ApiPropertyOptional({
+    description: "Query text used for rerank test requests."
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_INPUT_LENGTH)
+  rerankQuery?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "Documents used in rerank test requests. When omitted, defaults to built-in test documents."
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_RERANK_DOCUMENTS)
+  @IsString({ each: true })
+  @MaxLength(MAX_INPUT_LENGTH, { each: true })
+  rerankDocuments?: string[];
 
   @ApiPropertyOptional({
     description: "API surface for completion test: chat_completions (default) or responses."

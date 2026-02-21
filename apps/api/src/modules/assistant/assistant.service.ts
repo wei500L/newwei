@@ -393,7 +393,8 @@ export class AssistantService {
         limit,
         plan.topic,
         { sentiments: ["negative"], dateRange: { start, end } },
-        "PUBLISHED_DESC"
+        "PUBLISHED_DESC",
+        "RELEVANCE"
       );
 
       const renderedItems = await this.renderNewsItems(orgId, items);

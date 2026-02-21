@@ -6,6 +6,7 @@ import { Public } from "../../common/decorators/public.decorator";
 import { PrismaService } from "../config/prisma.service";
 
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
+import { LlmGatewayHealthIndicator } from "./llm-gateway.health";
 import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";
 
@@ -21,6 +22,7 @@ export class HealthController {
     private readonly diskIndicator: DiskHealthIndicator,
     private readonly redisIndicator: RedisHealthIndicator,
     private readonly crawl4aiIndicator: Crawl4aiHealthIndicator,
+    private readonly llmGatewayIndicator: LlmGatewayHealthIndicator,
     private readonly prisma: PrismaService
   ) {}
 
@@ -33,6 +35,7 @@ export class HealthController {
       () => this.redisIndicator.isHealthy("redis"),
       () => this.mongoIndicator.isHealthy("mongo"),
       () => this.crawl4aiIndicator.isHealthy("crawl4ai"),
+      () => this.llmGatewayIndicator.isHealthy("llmGateway"),
       () =>
         this.diskIndicator.checkStorage("disk", {
           path: process.cwd(),

@@ -187,6 +187,26 @@ export const apiEnvSchema = baseEnvSchema.extend({
   LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   LITELLM_FALLBACK_MODELS: z.string().optional(),
   LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  ITEMS_SEARCH_RERANK_ENABLED: envBoolean.default(true),
+  ITEMS_SEARCH_RECALL_MAX_CANDIDATES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120),
+  ITEMS_SEARCH_RERANK_MAX_CANDIDATES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(40),
+  ITEMS_SEARCH_RERANK_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300),
+  ITEMS_SEARCH_RECENCY_HALFLIFE_HOURS: z.coerce
+    .number()
+    .positive()
+    .default(48),
   VECTOR_SERVICE_ENABLED: envBoolean.default(false),
   VECTOR_SERVICE_FALLBACK_TO_MONGO: envBoolean.default(true),
   VECTOR_SERVICE_BASE_URL: z.preprocess(

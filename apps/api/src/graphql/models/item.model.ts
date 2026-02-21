@@ -254,6 +254,12 @@ export class ItemModel {
   @Field(() => String, { nullable: true, description: "Content published time (ISO8601)" })
   publishedAt?: string | null;
 
+  @Field(() => Float, {
+    nullable: true,
+    description: "Search relevance score (0-1) when rankingMode is RELEVANCE."
+  })
+  relevanceScore?: number | null;
+
   @Field()
   createdAt!: Date;
 

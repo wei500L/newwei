@@ -25,6 +25,7 @@ import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-set
 import {
   CreateLlmGatewayDto,
   SetEmbeddingActiveLlmGatewayDto,
+  SetRerankActiveLlmGatewayDto,
   SetActiveLlmGatewayDto,
   UpdateLlmGatewayDto,
 } from "./dto/llm-gateway.dto";
@@ -76,6 +77,20 @@ export class LlmGatewaySettingsController {
     @Body() body: SetEmbeddingActiveLlmGatewayDto,
   ) {
     return this.settings.setEmbeddingActiveProfile(
+      user.orgId,
+      user.id,
+      body.activeId ?? null,
+      body.mode,
+    );
+  }
+
+  @Put("rerank-active")
+  @Permissions("settings.manage")
+  async setRerankActive(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SetRerankActiveLlmGatewayDto,
+  ) {
+    return this.settings.setRerankActiveProfile(
       user.orgId,
       user.id,
       body.activeId ?? null,

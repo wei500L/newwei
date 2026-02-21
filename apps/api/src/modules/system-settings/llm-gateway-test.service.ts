@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import {
   BadGatewayException,
   BadRequestException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -31,6 +32,21 @@ import {
   LlmGatewaySettingsService,
   type LlmGatewayResponseFormatMode,
 } from "./llm-gateway-settings.service";
+import {
+  LLM_GATEWAY_ERROR_CODE_API_BASE_REQUIRED as ERROR_CODE_API_BASE_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_EMBEDDING_MODEL_REQUIRED as ERROR_CODE_EMBEDDING_MODEL_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_INVALID_EMBEDDING_RESPONSE as ERROR_CODE_INVALID_EMBEDDING_RESPONSE,
+  LLM_GATEWAY_ERROR_CODE_INVALID_RERANK_RESPONSE as ERROR_CODE_INVALID_RERANK_RESPONSE,
+  LLM_GATEWAY_ERROR_CODE_MODEL_REQUIRED as ERROR_CODE_MODEL_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_NOTHING_TO_TEST as ERROR_CODE_NOTHING_TO_TEST,
+  LLM_GATEWAY_ERROR_CODE_PROFILE_NOT_FOUND as ERROR_CODE_PROFILE_NOT_FOUND,
+  LLM_GATEWAY_ERROR_CODE_RERANK_DOCUMENTS_REQUIRED as ERROR_CODE_RERANK_DOCUMENTS_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_RERANK_MODEL_REQUIRED as ERROR_CODE_RERANK_MODEL_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_RERANK_QUERY_REQUIRED as ERROR_CODE_RERANK_QUERY_REQUIRED,
+  LLM_GATEWAY_ERROR_CODE_RERANK_TEST_FAILED as ERROR_CODE_RERANK_TEST_FAILED,
+  LLM_GATEWAY_ERROR_CODE_REQUEST_FAILED as ERROR_CODE_REQUEST_FAILED,
+  LLM_GATEWAY_ERROR_CODE_UNAVAILABLE as ERROR_CODE_UNAVAILABLE,
+} from "./llm-gateway-error-codes";
 
 interface ChatCompletionResponse {
   model?: string;
@@ -67,6 +83,21 @@ interface EmbeddingResponse {
   model?: string;
   data?: { embedding?: number[] }[];
   usage?: { prompt_tokens: number; total_tokens: number };
+  response_cost?: unknown;
+}
+
+interface RerankResponseResult {
+  index?: unknown;
+  relevance_score?: unknown;
+  relevanceScore?: unknown;
+  score?: unknown;
+  similarity?: unknown;
+}
+
+interface RerankResponse {
+  model?: string;
+  results?: RerankResponseResult[];
+  data?: RerankResponseResult[];
   response_cost?: unknown;
 }
 
@@ -107,7 +138,22 @@ export interface LlmGatewayEmbeddingTestResult {
   proxyVersion?: string;
 }
 
+export interface LlmGatewayRerankTestResult {
+  model: string;
+  topN: number;
+  latencyMs: number;
+  results: Array<{ index: number; score: number }>;
+  costUsd?: number;
+  keySpendUsd?: number;
+  callId?: string;
+  modelId?: string;
+  modelApiBase?: string;
+  modelGroup?: string;
+  proxyVersion?: string;
+}
+
 export interface LlmGatewayTestError {
+  code?: string;
   message: string;
   status?: number;
   axiosCode?: string;
@@ -125,6 +171,8 @@ export interface LlmGatewayTestResult {
   completionError?: LlmGatewayTestError;
   embedding?: LlmGatewayEmbeddingTestResult;
   embeddingError?: LlmGatewayTestError;
+  rerank?: LlmGatewayRerankTestResult;
+  rerankError?: LlmGatewayTestError;
 }
 
 export interface LlmGatewayModelsResult {
@@ -184,6 +232,8 @@ export interface LlmGatewayModelsConfigInput {
 export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
   model?: string;
   embeddingModel?: string;
+  rerankModel?: string;
+  rerankFallbackModels?: string[];
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;
@@ -192,6 +242,9 @@ export interface LlmGatewayTestConfigInput extends LlmGatewayModelsConfigInput {
   includeCompletion?: boolean;
   includeEmbeddings?: boolean;
   embeddingInput?: string;
+  includeRerank?: boolean;
+  rerankQuery?: string;
+  rerankDocuments?: string[];
   apiSurface?: "chat_completions" | "responses";
   responseFormatMode?: LlmGatewayResponseFormatMode;
   includeMetadataProbe?: boolean;
@@ -204,6 +257,10 @@ export interface LlmGatewayTestInput {
   includeEmbeddings?: boolean;
   embeddingModel?: string;
   embeddingInput?: string;
+  includeRerank?: boolean;
+  rerankModel?: string;
+  rerankQuery?: string;
+  rerankDocuments?: string[];
   apiSurface?: "chat_completions" | "responses";
   responseFormatMode?: LlmGatewayResponseFormatMode;
   includeMetadataProbe?: boolean;
@@ -211,6 +268,12 @@ export interface LlmGatewayTestInput {
 
 const DEFAULT_PROMPT = 'Say "OK" and nothing else.';
 const DEFAULT_EMBEDDING_INPUT = "hello";
+const DEFAULT_RERANK_QUERY = "latest US inflation outlook and Fed policy";
+const DEFAULT_RERANK_DOCUMENTS = [
+  "Federal Reserve officials signaled rates may stay higher for longer as inflation remains sticky.",
+  "Quarterly earnings beat estimates as cloud revenue accelerated and margins improved.",
+  "Oil prices rose after unexpected inventory draw, pressuring transportation and input costs.",
+];
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_TOP_P = 0.9;
@@ -228,6 +291,52 @@ export class LlmGatewayTestService {
     private readonly cache: CacheService,
   ) {}
 
+  private buildErrorPayload(
+    code: string,
+    message: string,
+    extras?: Record<string, unknown>,
+  ) {
+    return {
+      code,
+      message,
+      ...(extras ?? {}),
+    };
+  }
+
+  private badRequest(
+    code: string,
+    message: string,
+    extras?: Record<string, unknown>,
+  ) {
+    return new BadRequestException(this.buildErrorPayload(code, message, extras));
+  }
+
+  private badGateway(
+    code: string,
+    message: string,
+    extras?: Record<string, unknown>,
+  ) {
+    return new BadGatewayException(this.buildErrorPayload(code, message, extras));
+  }
+
+  private serviceUnavailable(
+    code: string,
+    message: string,
+    extras?: Record<string, unknown>,
+  ) {
+    return new ServiceUnavailableException(
+      this.buildErrorPayload(code, message, extras),
+    );
+  }
+
+  private notFound(
+    code: string,
+    message: string,
+    extras?: Record<string, unknown>,
+  ) {
+    return new NotFoundException(this.buildErrorPayload(code, message, extras));
+  }
+
   private buildProxyModelInfoCacheKey(profileId: string, apiBase: string) {
     const digest = createHash("sha256")
       .update(apiBase)
@@ -241,12 +350,18 @@ export class LlmGatewayTestService {
   ): Promise<LlmGatewayProxyHealthResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
 
     const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const timeoutMs = Math.min(cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS, 10_000);
@@ -280,12 +395,18 @@ export class LlmGatewayTestService {
   ): Promise<LlmGatewayProxyModelInfoResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
 
     const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const cacheTtlSeconds = 60;
@@ -367,19 +488,25 @@ export class LlmGatewayTestService {
   ): Promise<LlmGatewayProxyLoadBalancingTestResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
 
     const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const model =
       normalizeOptionalString(input.model) ??
       normalizeOptionalString(cfg.model);
     if (!model) {
-      throw new BadRequestException("model is not configured");
+      throw this.badRequest(ERROR_CODE_MODEL_REQUIRED, "model is not configured");
     }
 
     const attempts = clampInt(input.attempts, 1, 50, 8);
@@ -479,12 +606,18 @@ export class LlmGatewayTestService {
   async listModels(profileId: string): Promise<LlmGatewayModelsResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
 
     const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const client = axios.create({
@@ -518,7 +651,10 @@ export class LlmGatewayTestService {
       : null;
     const baseUrl = normalizeOpenAiApiBase(input.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const apiKey =
@@ -557,12 +693,18 @@ export class LlmGatewayTestService {
   ): Promise<LlmGatewayTestResult> {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
 
     const baseUrl = normalizeOpenAiApiBase(cfg.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const client = axios.create({
@@ -650,8 +792,53 @@ export class LlmGatewayTestService {
       }
     }
 
-    if (!completion && !completionError && !embedding && !embeddingError) {
-      throw new BadRequestException("Nothing to test");
+    const shouldTestRerank = input.includeRerank ?? false;
+    let rerank: LlmGatewayRerankTestResult | undefined;
+    let rerankError: LlmGatewayTestError | undefined;
+    if (shouldTestRerank) {
+      const rerankQuery =
+        input.rerankQuery?.trim() && input.rerankQuery.trim().length > 0
+          ? input.rerankQuery.trim()
+          : DEFAULT_RERANK_QUERY;
+      const rerankDocuments = normalizeRerankDocuments(input.rerankDocuments);
+      try {
+        rerank = await this.testRerank(
+          client,
+          {
+            model: cfg.model,
+            rerankModel: cfg.rerankModel,
+            rerankFallbackModels: cfg.rerankFallbackModels,
+            timeoutMs: cfg.timeoutMs,
+            apiKey: cfg.apiKey,
+          },
+          {
+            query: rerankQuery,
+            documents: rerankDocuments,
+            modelOverride: normalizeOptionalString(input.rerankModel),
+            includeMetadataProbe,
+          },
+        );
+      } catch (error) {
+        const info = this.toGatewayErrorInfo(error, {
+          apiKeyConfigured: Boolean(cfg.apiKey),
+        });
+        rerankError = info;
+        this.logger.warn(
+          { profileId, status: info.status, message: info.message },
+          "LLM gateway rerank test failed",
+        );
+      }
+    }
+
+    if (
+      !completion &&
+      !completionError &&
+      !embedding &&
+      !embeddingError &&
+      !rerank &&
+      !rerankError
+    ) {
+      throw this.badRequest(ERROR_CODE_NOTHING_TO_TEST, "Nothing to test");
     }
 
     return {
@@ -664,6 +851,8 @@ export class LlmGatewayTestService {
       ...(completionError ? { completionError } : {}),
       ...(embedding ? { embedding } : {}),
       ...(embeddingError ? { embeddingError } : {}),
+      ...(rerank ? { rerank } : {}),
+      ...(rerankError ? { rerankError } : {}),
     };
   }
 
@@ -675,7 +864,10 @@ export class LlmGatewayTestService {
       : null;
     const baseUrl = normalizeOpenAiApiBase(input.apiBase);
     if (!baseUrl) {
-      throw new BadRequestException("apiBase is not configured");
+      throw this.badRequest(
+        ERROR_CODE_API_BASE_REQUIRED,
+        "apiBase is not configured",
+      );
     }
 
     const shouldTestCompletion = input.includeCompletion ?? true;
@@ -692,7 +884,7 @@ export class LlmGatewayTestService {
     const model = input.model?.trim();
     const storedModel = stored?.model?.trim();
     if (shouldTestCompletion && !model && !storedModel) {
-      throw new BadRequestException("model is not configured");
+      throw this.badRequest(ERROR_CODE_MODEL_REQUIRED, "model is not configured");
     }
 
     const apiKey =
@@ -716,14 +908,22 @@ export class LlmGatewayTestService {
       normalizeOptionalString(input.embeddingModel) ?? stored?.embeddingModel;
     const shouldTestEmbeddings =
       input.includeEmbeddings ?? Boolean(embeddingModel);
+    const rerankModel =
+      normalizeOptionalString(input.rerankModel) ?? stored?.rerankModel;
+    const rerankFallbackModelsRaw =
+      input.rerankFallbackModels ?? stored?.rerankFallbackModels ?? [];
+    const rerankFallbackModels = normalizeStringList(rerankFallbackModelsRaw);
+    const shouldTestRerank = input.includeRerank ?? false;
 
-    if (!shouldTestCompletion && !shouldTestEmbeddings) {
-      throw new BadRequestException("Nothing to test");
+    if (!shouldTestCompletion && !shouldTestEmbeddings && !shouldTestRerank) {
+      throw this.badRequest(ERROR_CODE_NOTHING_TO_TEST, "Nothing to test");
     }
 
     const cfg = {
       model: model ?? stored?.model ?? embeddingModel ?? "unknown",
       embeddingModel,
+      rerankModel,
+      rerankFallbackModels,
       apiBase: baseUrl,
       apiKey,
       timeoutMs,
@@ -734,6 +934,8 @@ export class LlmGatewayTestService {
     } satisfies {
       model: string;
       embeddingModel?: string;
+      rerankModel?: string;
+      rerankFallbackModels: string[];
       apiBase: string;
       apiKey?: string;
       timeoutMs: number;
@@ -769,6 +971,8 @@ export class LlmGatewayTestService {
     const completionError = completionResult.error;
     let embedding: LlmGatewayEmbeddingTestResult | undefined;
     let embeddingError: LlmGatewayTestError | undefined;
+    let rerank: LlmGatewayRerankTestResult | undefined;
+    let rerankError: LlmGatewayTestError | undefined;
     if (shouldTestEmbeddings) {
       const embeddingInput = input.embeddingInput?.trim()
         ? input.embeddingInput.trim()
@@ -792,6 +996,39 @@ export class LlmGatewayTestService {
       }
     }
 
+    if (shouldTestRerank) {
+      const rerankQuery =
+        input.rerankQuery?.trim() && input.rerankQuery.trim().length > 0
+          ? input.rerankQuery.trim()
+          : DEFAULT_RERANK_QUERY;
+      const rerankDocuments = normalizeRerankDocuments(input.rerankDocuments);
+      try {
+        rerank = await this.testRerank(
+          client,
+          cfg,
+          {
+            query: rerankQuery,
+            documents: rerankDocuments,
+            modelOverride: normalizeOptionalString(input.rerankModel),
+            includeMetadataProbe,
+          },
+        );
+      } catch (error) {
+        const info = this.toGatewayErrorInfo(error, {
+          apiKeyConfigured: Boolean(apiKey),
+        });
+        rerankError = info;
+        this.logger.warn(
+          {
+            profileId: input.profileId,
+            status: info.status,
+            message: info.message,
+          },
+          "LLM gateway rerank test failed",
+        );
+      }
+    }
+
     return {
       apiBase: baseUrl,
       ...(shouldTestCompletion ? { apiSurfaceUsed: apiSurface } : {}),
@@ -802,6 +1039,8 @@ export class LlmGatewayTestService {
       ...(completionError ? { completionError } : {}),
       ...(embedding ? { embedding } : {}),
       ...(embeddingError ? { embeddingError } : {}),
+      ...(rerank ? { rerank } : {}),
+      ...(rerankError ? { rerankError } : {}),
     };
   }
 
@@ -840,7 +1079,12 @@ export class LlmGatewayTestService {
       ),
     );
     if (uniqueModels.length === 0) {
-      return { error: { message: "model is not configured" } };
+      return {
+        error: {
+          code: ERROR_CODE_MODEL_REQUIRED,
+          message: "model is not configured",
+        },
+      };
     }
 
     let lastError: unknown;
@@ -948,7 +1192,12 @@ export class LlmGatewayTestService {
       ),
     );
     if (uniqueModels.length === 0) {
-      return { error: { message: "model is not configured" } };
+      return {
+        error: {
+          code: ERROR_CODE_MODEL_REQUIRED,
+          message: "model is not configured",
+        },
+      };
     }
 
     let lastError: unknown;
@@ -1019,7 +1268,10 @@ export class LlmGatewayTestService {
     const model =
       modelOverride?.trim() || cfg.embeddingModel?.trim() || cfg.model?.trim();
     if (!model) {
-      throw new BadRequestException("embedding model is not configured");
+      throw this.badRequest(
+        ERROR_CODE_EMBEDDING_MODEL_REQUIRED,
+        "embedding model is not configured",
+      );
     }
 
     const payload = {
@@ -1037,7 +1289,8 @@ export class LlmGatewayTestService {
     const latencyMs = Date.now() - start;
     const firstEmbedding = response.data.data?.[0]?.embedding;
     if (!Array.isArray(firstEmbedding) || firstEmbedding.length === 0) {
-      throw new BadGatewayException(
+      throw this.badGateway(
+        ERROR_CODE_INVALID_EMBEDDING_RESPONSE,
         "Embedding response did not include an embedding vector",
       );
     }
@@ -1050,6 +1303,157 @@ export class LlmGatewayTestService {
       ...this.extractCosts(response),
       ...this.extractLiteLlmHeaders(response),
     };
+  }
+
+  private async testRerank(
+    client: ReturnType<typeof axios.create>,
+    cfg: {
+      model: string;
+      rerankModel?: string;
+      rerankFallbackModels?: string[];
+      timeoutMs: number;
+      apiKey?: string;
+    },
+    options: {
+      query: string;
+      documents: string[];
+      modelOverride?: string;
+      includeMetadataProbe?: boolean;
+    },
+  ): Promise<LlmGatewayRerankTestResult> {
+    const query = options.query.trim();
+    if (!query) {
+      throw this.badRequest(
+        ERROR_CODE_RERANK_QUERY_REQUIRED,
+        "rerank query is required",
+      );
+    }
+    const documents = options.documents
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (documents.length === 0) {
+      throw this.badRequest(
+        ERROR_CODE_RERANK_DOCUMENTS_REQUIRED,
+        "rerank documents are required",
+      );
+    }
+
+    const uniqueModels = Array.from(
+      new Set(
+        (
+          options.modelOverride
+            ? [options.modelOverride, ...(cfg.rerankFallbackModels ?? [])]
+            : [cfg.rerankModel, ...(cfg.rerankFallbackModels ?? [])]
+        )
+          .filter(
+            (model): model is string =>
+              typeof model === "string" && model.trim().length > 0,
+          )
+          .map((model) => model.trim()),
+      ),
+    );
+    if (uniqueModels.length === 0) {
+      throw this.badRequest(
+        ERROR_CODE_RERANK_MODEL_REQUIRED,
+        "rerank model is not configured",
+      );
+    }
+
+    let lastError: unknown;
+    for (const model of uniqueModels) {
+      try {
+        const payload = {
+          model,
+          query,
+          documents,
+          top_n: documents.length,
+          ...(options.includeMetadataProbe
+            ? { metadata: { source: "gateway-test" } }
+            : {}),
+        };
+        const start = Date.now();
+        const response = await postWithFallback<RerankResponse>(
+          client,
+          "/v1/rerank",
+          "/rerank",
+          payload,
+          { timeout: cfg.timeoutMs },
+        );
+        const latencyMs = Date.now() - start;
+        const results = this.normalizeRerankResults(response.data);
+        if (results.length === 0) {
+          throw this.badGateway(
+            ERROR_CODE_INVALID_RERANK_RESPONSE,
+            "Rerank response did not include scored results",
+          );
+        }
+
+        return {
+          model: normalizeOptionalString(response.data.model) ?? model,
+          topN: Math.min(documents.length, results.length),
+          latencyMs,
+          results,
+          ...this.extractCosts(response),
+          ...this.extractLiteLlmHeaders(response),
+        };
+      } catch (error) {
+        if (error instanceof LlmCompatibilityError) {
+          lastError = error;
+          break;
+        }
+        lastError = error;
+        this.logger.warn(
+          {
+            model,
+            message: error instanceof Error ? error.message : "unknown error",
+          },
+          "LLM gateway rerank test failed; evaluating backup model",
+        );
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : this.badGateway(ERROR_CODE_RERANK_TEST_FAILED, "LLM gateway rerank test failed");
+  }
+
+  private normalizeRerankResults(
+    payload: RerankResponse | undefined,
+  ): Array<{ index: number; score: number }> {
+    const rawResults = Array.isArray(payload?.results)
+      ? payload?.results
+      : Array.isArray(payload?.data)
+        ? payload?.data
+        : [];
+    return rawResults
+      .map((entry): { index: number; score: number } | null => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        const indexRaw = record.index;
+        const scoreRaw =
+          record.relevance_score ??
+          record.relevanceScore ??
+          record.score ??
+          record.similarity;
+        const index =
+          typeof indexRaw === "number" && Number.isInteger(indexRaw)
+            ? indexRaw
+            : Number.NaN;
+        const score =
+          typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
+            ? scoreRaw
+            : typeof scoreRaw === "string" && scoreRaw.trim().length > 0
+              ? Number(scoreRaw)
+              : Number.NaN;
+        if (!Number.isFinite(index) || !Number.isFinite(score)) {
+          return null;
+        }
+        return { index, score };
+      })
+      .filter((entry): entry is { index: number; score: number } => entry !== null)
+      .sort((a, b) => a.index - b.index);
   }
 
   private resolveResponseFormatProbe(
@@ -1198,10 +1602,6 @@ export class LlmGatewayTestService {
       apiSurface?: LlmApiSurface;
     },
   ): never {
-    if (error instanceof LlmCompatibilityError) {
-      throw new BadRequestException(error.message);
-    }
-
     if (
       error instanceof BadRequestException ||
       error instanceof NotFoundException
@@ -1209,47 +1609,40 @@ export class LlmGatewayTestService {
       throw error;
     }
 
-    if (error instanceof AxiosError) {
-      const status = error.response?.status;
-      let detail = extractAxiosDetail(error);
-      if (status === 401 && detail && detail.toLowerCase() === "unauthorized") {
-        detail = undefined;
-      }
-      if (status === 403 && detail && detail.toLowerCase() === "forbidden") {
-        detail = undefined;
-      }
-      if (status === 401 || status === 403) {
-        detail =
-          detail ?? buildAuthHint(status ?? 401, context?.apiKeyConfigured);
-      }
+    const info = this.toGatewayErrorInfo(error, context);
+    const metadata = {
+      ...(info.status ? { status: info.status } : {}),
+      ...(info.requestId ? { requestId: info.requestId } : {}),
+      ...(info.upstreamType ? { upstreamType: info.upstreamType } : {}),
+      ...(info.upstreamCode ? { upstreamCode: info.upstreamCode } : {}),
+      ...(info.compatibilityError
+        ? { compatibilityError: info.compatibilityError }
+        : {}),
+    };
 
-      const issue = detectOpenAiCompatibilityIssue({
-        status,
-        errorText: detail ?? "",
-        apiSurface: context?.apiSurface,
-      });
-      if (issue) {
-        throw new BadRequestException(
-          new LlmCompatibilityError(issue, { cause: error }).message,
-        );
-      }
-
-      const message = status
-        ? `LLM gateway request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`
-        : `LLM gateway request failed${detail ? `: ${detail}` : ""}`;
-
-      if (!status) {
-        throw new ServiceUnavailableException(message);
-      }
-      if (status >= 500) {
-        throw new BadGatewayException(message);
-      }
-      throw new BadRequestException(message);
+    if (info.code === "LLM_COMPATIBILITY_ERROR") {
+      throw this.badRequest(info.code, info.message, metadata);
     }
 
-    throw error instanceof Error
-      ? new BadRequestException(error.message)
-      : new BadRequestException("LLM gateway request failed");
+    if (typeof info.status !== "number") {
+      throw this.serviceUnavailable(
+        info.code ?? ERROR_CODE_UNAVAILABLE,
+        info.message,
+        metadata,
+      );
+    }
+    if (info.status >= 500) {
+      throw this.badGateway(
+        info.code ?? ERROR_CODE_REQUEST_FAILED,
+        info.message,
+        metadata,
+      );
+    }
+    throw this.badRequest(
+      info.code ?? ERROR_CODE_REQUEST_FAILED,
+      info.message,
+      metadata,
+    );
   }
 
   private toGatewayErrorInfo(
@@ -1259,8 +1652,39 @@ export class LlmGatewayTestService {
       apiSurface?: LlmApiSurface;
     },
   ): LlmGatewayTestError {
+    if (error instanceof HttpException) {
+      const status = error.getStatus();
+      const response = error.getResponse();
+      const responseRecord =
+        response && typeof response === "object"
+          ? (response as Record<string, unknown>)
+          : null;
+      const messageRaw = responseRecord?.message;
+      const messageFromArray = Array.isArray(messageRaw)
+        ? messageRaw.find((entry): entry is string => typeof entry === "string")
+        : undefined;
+      const message =
+        (typeof messageRaw === "string" ? messageRaw : undefined) ??
+        messageFromArray ??
+        error.message;
+      const codeFromResponse =
+        typeof responseRecord?.code === "string" ? responseRecord.code : undefined;
+      return {
+        code:
+          codeFromResponse ??
+          (status === 404
+            ? ERROR_CODE_PROFILE_NOT_FOUND
+            : status === 503
+              ? ERROR_CODE_UNAVAILABLE
+              : ERROR_CODE_REQUEST_FAILED),
+        message,
+        status,
+      };
+    }
+
     if (error instanceof LlmCompatibilityError) {
       return {
+        code: "LLM_COMPATIBILITY_ERROR",
         message: error.message,
         ...(typeof error.status === "number" ? { status: error.status } : {}),
         compatibilityError: toLlmCompatibilityErrorInfo(error),
@@ -1297,6 +1721,7 @@ export class LlmGatewayTestService {
           cause: error,
         });
         return {
+          code: "LLM_COMPATIBILITY_ERROR",
           message: compatibilityError.message,
           ...(status ? { status } : {}),
           ...(axiosCode ? { axiosCode } : {}),
@@ -1314,7 +1739,26 @@ export class LlmGatewayTestService {
       const message = status
         ? `LLM gateway request failed (HTTP ${status})${detail ? `: ${detail}` : ""}`
         : `LLM gateway request failed${detail ? `: ${detail}` : ""}`;
+      const code =
+        typeof status === "number"
+          ? status === 401
+            ? "UPSTREAM_UNAUTHORIZED"
+            : status === 403
+              ? "UPSTREAM_FORBIDDEN"
+              : status === 404
+                ? "UPSTREAM_NOT_FOUND"
+                : status === 405
+                  ? "UPSTREAM_METHOD_NOT_ALLOWED"
+                  : status === 408
+                    ? "UPSTREAM_TIMEOUT"
+                    : status === 429
+                      ? "UPSTREAM_RATE_LIMITED"
+                      : status >= 500
+                        ? "UPSTREAM_SERVER_ERROR"
+                        : "UPSTREAM_REQUEST_FAILED"
+          : ERROR_CODE_UNAVAILABLE;
       return {
+        code,
         message,
         ...(status ? { status } : {}),
         ...(axiosCode ? { axiosCode } : {}),
@@ -1329,16 +1773,25 @@ export class LlmGatewayTestService {
     }
 
     if (error instanceof Error) {
-      return { message: error.message };
+      return {
+        code: ERROR_CODE_REQUEST_FAILED,
+        message: error.message,
+      };
     }
 
-    return { message: "LLM gateway request failed" };
+    return {
+      code: ERROR_CODE_REQUEST_FAILED,
+      message: "LLM gateway request failed",
+    };
   }
 
   private async getStoredConfig(profileId: string) {
     const cfg = await this.settings.getProfileConfig(profileId);
     if (!cfg) {
-      throw new NotFoundException("LLM gateway profile not found");
+      throw this.notFound(
+        ERROR_CODE_PROFILE_NOT_FOUND,
+        "LLM gateway profile not found",
+      );
     }
     return cfg;
   }
@@ -1875,6 +2328,18 @@ function normalizeStringList(raw: unknown): string[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   return Array.from(new Set(entries));
+}
+
+function normalizeRerankDocuments(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return DEFAULT_RERANK_DOCUMENTS;
+  }
+  const entries = raw
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const unique = Array.from(new Set(entries));
+  return unique.length > 0 ? unique : DEFAULT_RERANK_DOCUMENTS;
 }
 
 function normalizeModels(raw: unknown): string[] {

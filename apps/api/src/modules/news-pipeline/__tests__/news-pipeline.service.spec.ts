@@ -53,6 +53,8 @@ const baseConfig: NewsPipelineConfig = {
   litellm: {
     model: "openai/gpt-4o-mini",
     embeddingModel: "openai/text-embedding-3-small",
+    rerankModel: "cohere/rerank-v3.5",
+    rerankFallbackModels: [],
     apiBase: "http://localhost:4001",
     apiKey: "test",
     timeoutMs: 60000,

@@ -16,6 +16,7 @@ import {
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
+export type LlmGatewayRerankMode = "follow_completion" | "use_default";
 export type LlmGatewayResponseFormatMode =
   | "json_schema"
   | "json_object"
@@ -49,16 +50,19 @@ export interface LlmGatewaySettingsPublic {
   activeId: string | null;
   embeddingActiveId: string | null;
   embeddingMode: LlmGatewayEmbeddingMode;
+  rerankActiveId: string | null;
+  rerankMode: LlmGatewayRerankMode;
   profiles: LlmGatewayProfilePublic[];
 }
 
 export type LlmGatewayProfileInput =
-  Partial<Omit<LiteLlmEnvConfig, "apiKey" | "embeddingModel">> &
+  Partial<Omit<LiteLlmEnvConfig, "apiKey" | "embeddingModel" | "rerankModel">> &
     Partial<LlmGatewayCompatibilityOptions> & {
       name?: string;
       enabled?: boolean;
       apiKey?: string | null;
       embeddingModel?: string | null;
+      rerankModel?: string | null;
       assistantModel?: string | null;
     };
 
@@ -78,6 +82,8 @@ interface StoredSettings {
   activeId: string | null;
   embeddingActiveId: string | null;
   embeddingMode: LlmGatewayEmbeddingMode;
+  rerankActiveId: string | null;
+  rerankMode: LlmGatewayRerankMode;
   profiles: StoredProfile[];
 }
 
@@ -108,6 +114,8 @@ export class LlmGatewaySettingsService {
       activeId: settings.activeId,
       embeddingActiveId: settings.embeddingActiveId,
       embeddingMode: settings.embeddingMode,
+      rerankActiveId: settings.rerankActiveId,
+      rerankMode: settings.rerankMode,
       profiles: settings.profiles.map((profile) => this.toPublicProfile(profile))
     };
   }
@@ -141,6 +149,8 @@ export class LlmGatewaySettingsService {
       apiBase: profile.apiBase,
       model: profile.model,
       assistantModel: profile.assistantModel,
+      rerankModel: profile.rerankModel,
+      rerankFallbackModels: profile.rerankFallbackModels,
       enabled: profile.enabled,
       hasApiKey: this.hasApiKey(profile),
       sendMetadata: profile.sendMetadata,
@@ -178,6 +188,9 @@ export class LlmGatewaySettingsService {
     if (settings.embeddingActiveId === id && (!updated.enabled || !updated.embeddingModel)) {
       settings.embeddingActiveId = null;
     }
+    if (settings.rerankActiveId === id && (!updated.enabled || !updated.rerankModel)) {
+      settings.rerankActiveId = null;
+    }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_update", {
       id,
@@ -185,6 +198,8 @@ export class LlmGatewaySettingsService {
       apiBase: updated.apiBase,
       model: updated.model,
       assistantModel: updated.assistantModel,
+      rerankModel: updated.rerankModel,
+      rerankFallbackModels: updated.rerankFallbackModels,
       enabled: updated.enabled,
       hasApiKey: this.hasApiKey(updated),
       sendMetadata: updated.sendMetadata,
@@ -207,6 +222,9 @@ export class LlmGatewaySettingsService {
     }
     if (settings.embeddingActiveId === id) {
       settings.embeddingActiveId = null;
+    }
+    if (settings.rerankActiveId === id) {
+      settings.rerankActiveId = null;
     }
 
     await this.saveSettings(orgId, actorId, settings, "llm_gateway_delete", { id });
@@ -267,71 +285,93 @@ export class LlmGatewaySettingsService {
     return this.list();
   }
 
+  async setRerankActiveProfile(
+    orgId: string,
+    actorId: string,
+    activeId: string | null,
+    mode?: LlmGatewayRerankMode
+  ): Promise<LlmGatewaySettingsPublic> {
+    const settings = await this.loadSettings();
+    if (activeId) {
+      const found = settings.profiles.find((profile) => profile.id === activeId);
+      if (!found) {
+        throw new NotFoundException("LLM gateway profile not found");
+      }
+      if (!found.enabled) {
+        throw new BadRequestException("Cannot activate a disabled LLM gateway profile");
+      }
+      if (!found.rerankModel) {
+        throw new BadRequestException("Rerank gateway profile must configure rerankModel");
+      }
+    }
+    settings.rerankActiveId = activeId;
+    if (!activeId) {
+      settings.rerankMode = mode ?? "follow_completion";
+    }
+
+    await this.saveSettings(orgId, actorId, settings, "llm_gateway_rerank_activate", {
+      rerankActiveId: activeId
+    });
+
+    return this.list();
+  }
+
   async getActiveConfig(): Promise<LlmGatewayResolvedConfig | null> {
     const settings = await this.loadSettings();
-    if (!settings.activeId) {
+    const activeProfile = settings.activeId
+      ? settings.profiles.find((candidate) => candidate.id === settings.activeId) ?? null
+      : null;
+    const profile =
+      activeProfile && activeProfile.enabled
+        ? activeProfile
+        : this.resolveDefaultProfile(settings, "completion");
+    if (!profile) {
       return null;
     }
 
-    const profile = settings.profiles.find(
-      (candidate) => candidate.id === settings.activeId
-    );
-    if (!profile || !profile.enabled) {
-      return null;
-    }
-
-    const apiKey = this.resolveApiKey(profile.apiKey);
-    return {
-      model: profile.model,
-      embeddingModel: profile.embeddingModel,
-      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
-      apiBase: profile.apiBase,
-      apiKey,
-      timeoutMs: profile.timeoutMs,
-      temperature: profile.temperature,
-      topP: profile.topP,
-      maxOutputTokens: profile.maxOutputTokens,
-      maxRetries: profile.maxRetries,
-      fallbackModels: profile.fallbackModels,
-      requestsPerMinute: profile.requestsPerMinute,
-      sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode,
-      apiSurface: profile.apiSurface
-    };
+    return this.toResolvedConfig(profile);
   }
 
   async getActiveEmbeddingConfig(): Promise<LlmGatewayResolvedConfig | null> {
     const settings = await this.loadSettings();
-    const activeId =
+    const resolvedId =
       settings.embeddingActiveId ??
       (settings.embeddingMode === "use_default" ? null : settings.activeId);
-    if (!activeId) {
+    const explicitProfile = resolvedId
+      ? settings.profiles.find((candidate) => candidate.id === resolvedId) ?? null
+      : null;
+    if (explicitProfile && explicitProfile.enabled && explicitProfile.embeddingModel) {
+      return this.toResolvedConfig(explicitProfile);
+    }
+    const fallbackProfile =
+      settings.embeddingMode === "use_default" || !resolvedId
+        ? this.resolveDefaultProfile(settings, "embedding")
+        : null;
+    if (!fallbackProfile) {
       return null;
     }
+    return this.toResolvedConfig(fallbackProfile);
+  }
 
-    const profile = settings.profiles.find((candidate) => candidate.id === activeId);
-    if (!profile || !profile.enabled) {
+  async getActiveRerankConfig(): Promise<LlmGatewayResolvedConfig | null> {
+    const settings = await this.loadSettings();
+    const resolvedId =
+      settings.rerankActiveId ??
+      (settings.rerankMode === "use_default" ? null : settings.activeId);
+    const explicitProfile = resolvedId
+      ? settings.profiles.find((candidate) => candidate.id === resolvedId) ?? null
+      : null;
+    if (explicitProfile && explicitProfile.enabled && explicitProfile.rerankModel) {
+      return this.toResolvedConfig(explicitProfile);
+    }
+    const fallbackProfile =
+      settings.rerankMode === "use_default" || !resolvedId
+        ? this.resolveDefaultProfile(settings, "rerank")
+        : null;
+    if (!fallbackProfile) {
       return null;
     }
-
-    const apiKey = this.resolveApiKey(profile.apiKey);
-    return {
-      model: profile.model,
-      embeddingModel: profile.embeddingModel,
-      ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
-      apiBase: profile.apiBase,
-      apiKey,
-      timeoutMs: profile.timeoutMs,
-      temperature: profile.temperature,
-      topP: profile.topP,
-      maxOutputTokens: profile.maxOutputTokens,
-      maxRetries: profile.maxRetries,
-      fallbackModels: profile.fallbackModels,
-      requestsPerMinute: profile.requestsPerMinute,
-      sendMetadata: profile.sendMetadata,
-      responseFormatMode: profile.responseFormatMode,
-      apiSurface: profile.apiSurface
-    };
+    return this.toResolvedConfig(fallbackProfile);
   }
 
   async getProfileConfig(id: string): Promise<LlmGatewayResolvedConfig | null> {
@@ -341,10 +381,15 @@ export class LlmGatewaySettingsService {
       return null;
     }
 
+    return this.toResolvedConfig(profile);
+  }
+
+  private toResolvedConfig(profile: StoredProfile): LlmGatewayResolvedConfig {
     const apiKey = this.resolveApiKey(profile.apiKey);
     return {
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      rerankModel: profile.rerankModel,
       ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       apiKey,
@@ -354,11 +399,33 @@ export class LlmGatewaySettingsService {
       maxOutputTokens: profile.maxOutputTokens,
       maxRetries: profile.maxRetries,
       fallbackModels: profile.fallbackModels,
+      rerankFallbackModels: profile.rerankFallbackModels,
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,
       apiSurface: profile.apiSurface
     };
+  }
+
+  private resolveDefaultProfile(
+    settings: StoredSettings,
+    kind: "completion" | "embedding" | "rerank"
+  ): StoredProfile | null {
+    for (const profile of settings.profiles) {
+      if (!profile.enabled) {
+        continue;
+      }
+      if (kind === "completion") {
+        return profile;
+      }
+      if (kind === "embedding" && profile.embeddingModel) {
+        return profile;
+      }
+      if (kind === "rerank" && profile.rerankModel) {
+        return profile;
+      }
+    }
+    return null;
   }
 
   private async loadSettings(): Promise<StoredSettings> {
@@ -442,9 +509,14 @@ export class LlmGatewaySettingsService {
     const activeIdRaw = this.normalizeString(record?.activeId) ?? null;
     const embeddingActiveIdRaw =
       this.normalizeString((record as unknown as { embeddingActiveId?: unknown })?.embeddingActiveId) ?? null;
+    const rerankActiveIdRaw =
+      this.normalizeString((record as unknown as { rerankActiveId?: unknown })?.rerankActiveId) ?? null;
     const embeddingModeRaw = this.normalizeString((record as { embeddingMode?: unknown } | null)?.embeddingMode);
+    const rerankModeRaw = this.normalizeString((record as { rerankMode?: unknown } | null)?.rerankMode);
     const embeddingMode: LlmGatewayEmbeddingMode =
       embeddingModeRaw === "use_default" ? "use_default" : "follow_completion";
+    const rerankMode: LlmGatewayRerankMode =
+      rerankModeRaw === "use_default" ? "use_default" : "follow_completion";
     const profiles = Array.isArray(record?.profiles) ? record?.profiles : [];
 
     const normalizedProfiles = profiles
@@ -463,11 +535,20 @@ export class LlmGatewaySettingsService {
       embeddingProfile && embeddingProfile.enabled && embeddingProfile.embeddingModel
         ? embeddingProfile.id
         : null;
+    const rerankProfile = rerankActiveIdRaw
+      ? normalizedProfiles.find((profile) => profile.id === rerankActiveIdRaw)
+      : null;
+    const rerankActiveId =
+      rerankProfile && rerankProfile.enabled && rerankProfile.rerankModel
+        ? rerankProfile.id
+        : null;
 
     return {
       activeId,
       embeddingActiveId,
       embeddingMode,
+      rerankActiveId,
+      rerankMode,
       profiles: normalizedProfiles
     };
   }
@@ -486,7 +567,10 @@ export class LlmGatewaySettingsService {
 
     const name = this.normalizeString(record.name) ?? id;
     const apiBase = this.normalizeString(record.apiBase) ?? fallback.apiBase;
-    const model = this.normalizeString(record.model) ?? fallback.model;
+    const model = this.normalizeString(record.model);
+    if (!model) {
+      return null;
+    }
 
     return {
       id,
@@ -495,13 +579,15 @@ export class LlmGatewaySettingsService {
       apiKey: record.apiKey,
       model,
       embeddingModel: this.normalizeOptionalString(record.embeddingModel),
+      rerankModel: this.normalizeOptionalString(record.rerankModel),
+      rerankFallbackModels: this.normalizeStringList(record.rerankFallbackModels, []),
       assistantModel: this.normalizeOptionalString(record.assistantModel),
       timeoutMs: this.asPositiveInt(record.timeoutMs, fallback.timeoutMs),
       temperature: this.clampNumber(record.temperature, fallback.temperature, 0, 2),
       topP: this.clampNumber(record.topP, fallback.topP, 0, 1),
       maxOutputTokens: this.asPositiveInt(record.maxOutputTokens, fallback.maxOutputTokens),
       maxRetries: this.asPositiveInt(record.maxRetries, fallback.maxRetries),
-      fallbackModels: this.normalizeStringList(record.fallbackModels, fallback.fallbackModels),
+      fallbackModels: this.normalizeStringList(record.fallbackModels, []),
       requestsPerMinute: this.asPositiveInt(record.requestsPerMinute, fallback.requestsPerMinute),
       sendMetadata: this.normalizeBoolean(record.sendMetadata, DEFAULT_SEND_METADATA),
       responseFormatMode: this.normalizeResponseFormatMode(
@@ -527,7 +613,7 @@ export class LlmGatewaySettingsService {
     }
 
     const apiBase = this.normalizeString(input.apiBase) ?? base.apiBase ?? fallback.apiBase;
-    const model = this.normalizeString(input.model) ?? base.model ?? fallback.model;
+    const model = this.normalizeString(input.model) ?? base.model;
     if (!apiBase || !model) {
       throw new BadRequestException("apiBase and model are required");
     }
@@ -543,7 +629,15 @@ export class LlmGatewaySettingsService {
       embeddingModel:
         input.embeddingModel !== undefined
           ? this.normalizeOptionalString(input.embeddingModel)
-          : base.embeddingModel ?? (fallback as StoredProfile).embeddingModel,
+          : base.embeddingModel,
+      rerankModel:
+        input.rerankModel !== undefined
+          ? this.normalizeOptionalString(input.rerankModel)
+          : base.rerankModel,
+      rerankFallbackModels:
+        input.rerankFallbackModels !== undefined
+          ? this.normalizeStringList(input.rerankFallbackModels, base.rerankFallbackModels ?? [])
+          : base.rerankFallbackModels ?? [],
       assistantModel:
         input.assistantModel !== undefined
           ? this.normalizeOptionalString(input.assistantModel)
@@ -570,8 +664,8 @@ export class LlmGatewaySettingsService {
           : base.maxRetries ?? fallback.maxRetries,
       fallbackModels:
         input.fallbackModels !== undefined
-          ? this.normalizeStringList(input.fallbackModels, fallback.fallbackModels)
-          : base.fallbackModels ?? fallback.fallbackModels,
+          ? this.normalizeStringList(input.fallbackModels, base.fallbackModels ?? [])
+          : base.fallbackModels ?? [],
       requestsPerMinute:
         input.requestsPerMinute !== undefined
           ? this.asPositiveInt(input.requestsPerMinute, fallback.requestsPerMinute)
@@ -658,6 +752,7 @@ export class LlmGatewaySettingsService {
       name: profile.name,
       model: profile.model,
       embeddingModel: profile.embeddingModel,
+      rerankModel: profile.rerankModel,
       ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
       apiBase: profile.apiBase,
       timeoutMs: profile.timeoutMs,
@@ -666,6 +761,7 @@ export class LlmGatewaySettingsService {
       maxOutputTokens: profile.maxOutputTokens,
       maxRetries: profile.maxRetries,
       fallbackModels: profile.fallbackModels,
+      rerankFallbackModels: profile.rerankFallbackModels,
       requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,

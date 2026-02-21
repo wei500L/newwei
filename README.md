@@ -38,6 +38,75 @@ pnpm dev
 - MinIO S3 Endpoint：http://localhost:9000
 - MinIO Console：http://localhost:9001
 
+### 健康检查运维说明
+
+- `GET /api/healthz/live`：仅用于存活探针（进程是否在线），不会校验依赖服务。
+- `GET /api/healthz`：用于就绪探针（依赖可用性 + 关键配置），会检查 `mysql`、`redis`、`mongo`、`crawl4ai`、`llmGateway`、`disk`。
+- `llmGateway` 关键字段（`/api/healthz` 的 `details.llmGateway`）：
+  - `completionReady`：是否存在可用的 Completion 模型（来自 MySQL 的 LLM gateway Profile）。
+  - `rerankRequired`：当前是否要求 Rerank（由 `ITEMS_SEARCH_RERANK_ENABLED` 决定）。
+  - `rerankReady`：是否存在可用的 Rerank 模型（来自 MySQL 的 LLM gateway Profile）。
+- 常见故障处理：
+  - `completionReady=false`：进入 `Settings -> LLM gateway`，为启用的 Profile 配置 `model` 并设置 Active。
+  - `rerankRequired=true` 且 `rerankReady=false`：为 Rerank Active Profile 配置 `rerankModel`；若业务临时不需要 Rerank，可将 `ITEMS_SEARCH_RERANK_ENABLED=false` 后重启 API。
+  - 本项目不会自动初始化模型配置，也不会对缺失模型做静默降级；必须通过 MySQL 中的 Profile 显式修复。
+- 运维排查示例：
+
+```bash
+curl -s http://localhost:4000/api/healthz | jq '.status, .details.llmGateway'
+curl -s http://localhost:4000/api/healthz/live | jq
+```
+
+- Kubernetes 探针配置示例（Deployment 片段）：
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modular-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: modular-api
+  template:
+    metadata:
+      labels:
+        app: modular-api
+    spec:
+      containers:
+        - name: api
+          image: your-registry/modular-api:latest
+          ports:
+            - containerPort: 4000
+          # 启动较慢时建议开启 startupProbe，避免冷启动阶段被过早重启
+          startupProbe:
+            httpGet:
+              path: /api/healthz/live
+              port: 4000
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /api/healthz/live
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+```
+
+- 若你的 API 关闭了全局前缀 `/api`，请将探针路径改为 `/healthz/live` 与 `/healthz`。
+
 首次运行前请在 `.env` 配置种子数据（用于创建你的组织与初始管理员）：
 
 - `SEED_ORG_SLUG` / `SEED_ORG_NAME`（可选：`SEED_ORG_DESCRIPTION`）
@@ -247,7 +316,8 @@ infra/
 
 - BullMQ `itemPipeline` 队列现已对接 `NewsPipelineService`：任意 `items` API/GraphQL 创建的原始 payload 只要包含 `url`，就会依次完成 Crawl4AI 去重抓取、LiteLLM 清洗、Zod 校验与 `ProcessedItemModel` 存储。抓取/LLM/持久化三个阶段的日志会写入 `TaskLogModel`，可在仪表盘查看。
 - LiteLLM 与 Crawl4AI 的高级参数集中在 `config/news-pipeline.config.yaml`。文件按照 `litellm_config` 与 `crawl4ai_config` 分区，支持模型 fallback、RPM 限流、virtual scroll、cleanMarkdown CSS 选择器等，修改后会被 `NewsPipelineConfigService` 热加载。若需多环境覆盖，可通过 `NEWS_PIPELINE_CONFIG_PATH` 指向自定义文件。
-- 新增环境变量：`LITELLM_MODEL`、`LITELLM_API_URL`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_TOKENS`、`LITELLM_RETRY_ATTEMPTS`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS`、`NEWS_PIPELINE_CONFIG_PATH`、`NEWS_CRAWL_QUEUE_CONCURRENCY`、`NEWS_PROCESS_QUEUE_CONCURRENCY`、`NEWS_CRAWL_QUEUE_RATE_LIMIT`、`NEWS_PROCESS_QUEUE_RATE_LIMIT`。`pnpm --filter infra-scripts run env:check` 会同时校验。
+- 新增环境变量（连接与运行参数）：`LITELLM_API_URL`、`LITELLM_API_KEY`、`LITELLM_TIMEOUT_MS`、`LITELLM_TEMPERATURE`、`LITELLM_TOP_P`、`LITELLM_MAX_TOKENS`、`LITELLM_RETRY_ATTEMPTS`、`LITELLM_FALLBACK_MODELS`、`LITELLM_REQUESTS_PER_MINUTE`、`NEWS_PIPELINE_CACHE_TTL_SECONDS`、`NEWS_PIPELINE_MAX_INPUT_CHARS`、`NEWS_PIPELINE_CONFIG_PATH`、`NEWS_CRAWL_QUEUE_CONCURRENCY`、`NEWS_PROCESS_QUEUE_CONCURRENCY`、`NEWS_CRAWL_QUEUE_RATE_LIMIT`、`NEWS_PROCESS_QUEUE_RATE_LIMIT`。`pnpm --filter infra-scripts run env:check` 会同时校验。
+- 运行时模型路由（completion/embedding/rerank）以 `Settings -> LLM gateway` 中存储到 MySQL 的 Profile 为准；若未配置对应模型会返回明确错误码，不会静默回退。`LITELLM_MODEL` / `LITELLM_EMBEDDING_MODEL` 仅作为初始/兼容默认值。
 - LiteLLM 调用走统一的 `LiteLlmService.acompletion`，包含 Redis RPM 限流、指数退避重试与模型级 fallback。模型输出由新版 `CleanedNewsSchema` 验证，字段涵盖标题、副标题、分类、主题、200~300 字摘要、要点、实体、噪声类型与质量分；同时以 [LiteLLM 成本追踪回调](https://docs.litellm.ai/docs/observability/custom_callback) 为参考记录 token 使用量、`costUsd` 与 `latencyMs`（相关缺陷修复见 [v1.74.0 release notes](https://docs.litellm.ai/release_notes/v1-74-0-stable)），方便后续预算/Guardrail。
 - 网关参数兼容现已启用**严格模式**：当上游不支持 `metadata`、`response_format` 或 `json_schema` 时，不再静默删字段重试，而是直接抛出结构化兼容错误（`LLM compatibility error`）并返回修复提示，便于排障。
 - `LiteLlmService` 额外支持 `aresponse`（`/v1/responses`，404 自动回退 `/responses`），用于接入外部 OpenAI-compatible 网关的 Responses API。

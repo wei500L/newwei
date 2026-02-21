@@ -52,6 +52,8 @@ describe("LiteLlmService", () => {
       apiKey: "test-api-key",
       model: "gpt-4o-mini",
       embeddingModel: "text-embedding-3-small",
+      rerankModel: "cohere/rerank-v3.5",
+      rerankFallbackModels: ["cohere/rerank-v3.0"],
       fallbackModels: ["gpt-3.5-turbo"],
       timeoutMs: 60000,
       temperature: 0.2,
@@ -113,14 +115,27 @@ describe("LiteLlmService", () => {
       consume: jest.fn().mockResolvedValue(true),
     } as unknown as jest.Mocked<RateLimiterService>;
 
-    llmGatewaySettings = {
-      getActiveConfig: jest.fn().mockResolvedValue(null),
-      getActiveEmbeddingConfig: jest.fn().mockResolvedValue(null),
-    } as unknown as jest.Mocked<LlmGatewaySettingsService>;
-
     configService = {
       config: mockConfig,
     } as unknown as jest.Mocked<NewsPipelineConfigService>;
+
+    const resolveActiveGatewayConfig = () => ({
+      ...configService.config.litellm,
+      sendMetadata: true,
+      responseFormatMode: "json_schema" as const,
+      apiSurface: "chat_completions" as const,
+    });
+    llmGatewaySettings = {
+      getActiveConfig: jest
+        .fn()
+        .mockImplementation(async () => ({ ...resolveActiveGatewayConfig() })),
+      getActiveEmbeddingConfig: jest
+        .fn()
+        .mockImplementation(async () => ({ ...resolveActiveGatewayConfig() })),
+      getActiveRerankConfig: jest
+        .fn()
+        .mockImplementation(async () => ({ ...resolveActiveGatewayConfig() })),
+    } as unknown as jest.Mocked<LlmGatewaySettingsService>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -143,6 +158,14 @@ describe("LiteLlmService", () => {
     const completionParams: LiteLlmCompletionParams = {
       messages: [{ role: "user", content: "Hello" }],
     };
+
+    it("throws clear error when MySQL completion profile is unavailable", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce(null);
+
+      await expect(service.acompletion(completionParams)).rejects.toThrow(
+        "LiteLLM completion model is not configured in MySQL gateway profiles",
+      );
+    });
 
     it("should complete successfully with default model", async () => {
       const result = await service.acompletion(completionParams);
@@ -1082,6 +1105,10 @@ describe("LiteLlmService", () => {
 
       // Change config
       llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
         apiBase: "http://new-api-base:4002",
       });
 
@@ -1160,36 +1187,24 @@ describe("LiteLlmService", () => {
       );
     });
 
-    it("should fallback to config.model when embeddingModel not configured", async () => {
-      configService.config = {
-        ...mockConfig,
-        litellm: {
-          ...mockConfig.litellm,
-          embeddingModel: undefined,
-        },
-      };
+    it("throws clear error when MySQL embedding profile is unavailable", async () => {
+      llmGatewaySettings.getActiveEmbeddingConfig.mockResolvedValueOnce(null);
 
-      await service.embedding(embeddingParams);
-
-      expect(mockAxiosPost).toHaveBeenCalledWith(
-        "/v1/embeddings",
-        expect.objectContaining({ model: "gpt-4o-mini" }),
-        expect.any(Object),
+      await expect(service.embedding(embeddingParams)).rejects.toThrow(
+        "LiteLLM embedding model is not configured in MySQL gateway profiles",
       );
     });
 
-    it("should throw when no model available", async () => {
-      configService.config = {
-        ...mockConfig,
-        litellm: {
-          ...mockConfig.litellm,
-          model: undefined,
-          embeddingModel: undefined,
-        },
-      };
-
+    it("should throw when MySQL embedding profile misses embeddingModel", async () => {
+      llmGatewaySettings.getActiveEmbeddingConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        embeddingModel: undefined,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
+      } as any);
       await expect(service.embedding(embeddingParams)).rejects.toThrow(
-        "LiteLLM embedding model is not configured",
+        "LiteLLM embedding model is not configured in MySQL gateway profiles",
       );
     });
 
@@ -1309,6 +1324,98 @@ describe("LiteLlmService", () => {
     });
   });
 
+  describe("rerank", () => {
+    it("throws clear error when MySQL rerank profile is unavailable", async () => {
+      llmGatewaySettings.getActiveRerankConfig.mockResolvedValueOnce(null);
+
+      await expect(
+        service.rerank({
+          query: "fed policy update",
+          documents: ["doc A", "doc B"],
+          maxRetries: 1,
+        }),
+      ).rejects.toThrow(
+        "LiteLLM rerank model is not configured in MySQL gateway profiles",
+      );
+    });
+
+    it("uses backup rerank model when primary rerank model fails", async () => {
+      const error400 = new AxiosError(
+        "Bad request",
+        "ERR_BAD_REQUEST",
+        undefined,
+        undefined,
+        {
+          status: 400,
+          data: {},
+          statusText: "Bad Request",
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        },
+      );
+      const rerankResponse: AxiosResponse = {
+        data: {
+          model: "cohere/rerank-v3.0",
+          results: [{ index: 0, relevance_score: 0.83 }],
+        },
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      };
+
+      mockAxiosPost
+        .mockRejectedValueOnce(error400)
+        .mockResolvedValueOnce(rerankResponse);
+
+      const result = await service.rerank({
+        query: "fed policy update",
+        documents: ["doc A", "doc B"],
+        maxRetries: 1,
+      });
+
+      expect(result.model).toBe("cohere/rerank-v3.0");
+      expect(mockAxiosPost).toHaveBeenNthCalledWith(
+        1,
+        "/v1/rerank",
+        expect.objectContaining({ model: "cohere/rerank-v3.5" }),
+        expect.any(Object),
+      );
+      expect(mockAxiosPost).toHaveBeenNthCalledWith(
+        2,
+        "/v1/rerank",
+        expect.objectContaining({ model: "cohere/rerank-v3.0" }),
+        expect.any(Object),
+      );
+    });
+
+    it("throws rerank unavailable when all rerank models fail", async () => {
+      const error500 = new AxiosError(
+        "Server error",
+        "ERR_BAD_RESPONSE",
+        undefined,
+        undefined,
+        {
+          status: 500,
+          data: {},
+          statusText: "Internal Server Error",
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+        },
+      );
+
+      mockAxiosPost.mockRejectedValue(error500);
+
+      await expect(
+        service.rerank({
+          query: "fed policy update",
+          documents: ["doc A", "doc B"],
+          maxRetries: 1,
+        }),
+      ).rejects.toThrow(/rerank unavailable/i);
+    });
+  });
+
   describe("getEmbeddingModel", () => {
     it("should return configured embeddingModel", async () => {
       const model = await service.getEmbeddingModel();
@@ -1317,13 +1424,7 @@ describe("LiteLlmService", () => {
     });
 
     it("should return undefined when embeddingModel not configured", async () => {
-      configService.config = {
-        ...mockConfig,
-        litellm: {
-          ...mockConfig.litellm,
-          embeddingModel: undefined,
-        },
-      };
+      llmGatewaySettings.getActiveEmbeddingConfig.mockResolvedValueOnce(null);
 
       const model = await service.getEmbeddingModel();
 
@@ -1446,6 +1547,10 @@ describe("LiteLlmService", () => {
     it("should be tested via client rebuild behavior", async () => {
       // Test trailing slash removal
       llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
         apiBase: "http://localhost:4001/",
       });
 
@@ -1462,6 +1567,10 @@ describe("LiteLlmService", () => {
 
     it("should strip /v1/chat/completions suffix", async () => {
       llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
         apiBase: "http://localhost:4001/v1/chat/completions",
       });
 
@@ -1478,6 +1587,10 @@ describe("LiteLlmService", () => {
 
     it("should strip /v1 suffix", async () => {
       llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "chat_completions",
         apiBase: "http://localhost:4001/v1",
       });
 

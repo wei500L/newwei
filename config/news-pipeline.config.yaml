@@ -1,6 +1,8 @@
 litellm_config:
   model: openai/gpt-4o-mini
   embedding_model: openai/text-embedding-3-small
+  rerank_model: ""
+  rerank_fallback_models: []
   api_url: http://localhost:4001
   api_key: ""
   timeout_ms: 60000

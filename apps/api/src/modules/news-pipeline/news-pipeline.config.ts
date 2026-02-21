@@ -248,6 +248,9 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
     return {
       model: raw?.model ?? envConfig.model,
       embeddingModel: raw?.embedding_model ?? envConfig.embeddingModel,
+      // Rerank routing comes from MySQL gateway profiles, not env/file defaults.
+      rerankModel: undefined,
+      rerankFallbackModels: [],
       apiBase,
       apiKey: envConfig.apiKey ?? raw?.api_key,
       timeoutMs: this.ensurePositive(raw?.timeout_ms, envConfig.timeoutMs),
@@ -333,15 +336,6 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
       }
       if (typeof scrollByRaw === "number" && Number.isFinite(scrollByRaw)) {
         return Math.max(1, Math.min(20000, Math.round(scrollByRaw)));
-      }
-      if (typeof scrollByRaw === "string") {
-        const trimmed = scrollByRaw.trim();
-        if (/^\d+$/.test(trimmed)) {
-          const parsed = Number.parseInt(trimmed, 10);
-          if (Number.isFinite(parsed)) {
-            return Math.max(1, Math.min(20000, parsed));
-          }
-        }
       }
       return undefined;
     })();

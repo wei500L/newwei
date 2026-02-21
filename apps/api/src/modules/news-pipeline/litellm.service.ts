@@ -101,6 +101,30 @@ export interface LiteLlmEmbeddingResponse {
   latencyMs?: number;
 }
 
+export interface LiteLlmRerankParams {
+  model?: string;
+  query: string;
+  documents: string[];
+  topN?: number;
+  metadata?: Record<string, unknown>;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export interface LiteLlmRerankResult {
+  index: number;
+  score: number;
+}
+
+export interface LiteLlmRerankResponse {
+  model: string;
+  results: LiteLlmRerankResult[];
+  response_cost?: number;
+  costUsd?: number;
+  keySpendUsd?: number;
+  latencyMs?: number;
+}
+
 export interface LiteLlmStreamChunk {
   model: string;
   raw: unknown;
@@ -166,6 +190,12 @@ export class LiteLlmGuardrailViolationError extends Error {
 const DEFAULT_SEND_METADATA = true;
 const DEFAULT_RESPONSE_FORMAT_MODE: LlmGatewayResponseFormatMode =
   "json_schema";
+const ERROR_COMPLETION_MODEL_NOT_CONFIGURED =
+  "LiteLLM completion model is not configured in MySQL gateway profiles";
+const ERROR_EMBEDDING_MODEL_NOT_CONFIGURED =
+  "LiteLLM embedding model is not configured in MySQL gateway profiles";
+const ERROR_RERANK_MODEL_NOT_CONFIGURED =
+  "LiteLLM rerank model is not configured in MySQL gateway profiles";
 
 @Injectable()
 export class LiteLlmService {
@@ -179,8 +209,18 @@ export class LiteLlmService {
   ) {}
 
   async getEmbeddingModel(): Promise<string | undefined> {
-    const cfg = await this.resolveEmbeddingConfig();
-    return cfg.embeddingModel;
+    try {
+      const cfg = await this.resolveEmbeddingConfig();
+      return cfg.embeddingModel;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === ERROR_EMBEDDING_MODEL_NOT_CONFIGURED
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   async getCompletionModels(): Promise<string[]> {
@@ -268,6 +308,69 @@ export class LiteLlmService {
       apiKeyConfigured,
       model,
       params,
+    );
+  }
+
+  async rerank(
+    params: LiteLlmRerankParams,
+  ): Promise<LiteLlmRerankResponse> {
+    if (!Array.isArray(params.documents) || params.documents.length === 0) {
+      throw new Error("LiteLLM rerank documents are required");
+    }
+    const query = params.query.trim();
+    if (!query) {
+      throw new Error("LiteLLM rerank query is required");
+    }
+
+    const { cfg, client, apiKeyConfigured } =
+      await this.prepareRequest("rerank");
+    const requestedModel =
+      typeof params.model === "string" && params.model.trim().length > 0
+        ? params.model.trim()
+        : undefined;
+    const models = requestedModel
+      ? [requestedModel, ...(cfg.rerankFallbackModels ?? [])]
+      : [cfg.rerankModel, ...(cfg.rerankFallbackModels ?? [])];
+    const uniqueModels = Array.from(
+      new Set(
+        models
+          .filter(
+            (model): model is string =>
+              typeof model === "string" && model.trim().length > 0,
+          )
+          .map((model) => model.trim()),
+      ),
+    );
+    if (uniqueModels.length === 0) {
+      throw new Error("LiteLLM rerank model is not configured");
+    }
+
+    let lastError: unknown;
+    for (const model of uniqueModels) {
+      try {
+        return await this.executeRerankWithRetry(
+          client,
+          cfg,
+          apiKeyConfigured,
+          model,
+          { ...params, query },
+        );
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(
+          {
+            model,
+            message: error instanceof Error ? error.message : "unknown error",
+          },
+          "LiteLLM rerank failed; evaluating backup model",
+        );
+      }
+    }
+
+    const lastMessage =
+      lastError instanceof Error ? lastError.message : "unknown upstream error";
+    throw new Error(
+      `LiteLLM rerank unavailable: all configured rerank models failed (${uniqueModels.join(", ")}). Last error: ${lastMessage}`,
     );
   }
 
@@ -1186,8 +1289,140 @@ export class LiteLlmService {
       : new Error("LiteLLM embedding exhausted retries");
   }
 
+  private async executeRerankWithRetry(
+    client: AxiosInstance,
+    cfg: { timeoutMs: number; maxRetries: number; sendMetadata: boolean },
+    apiKeyConfigured: boolean,
+    model: string,
+    params: LiteLlmRerankParams,
+  ): Promise<LiteLlmRerankResponse> {
+    const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
+    let attempt = 0;
+    let delayMs = 1_000;
+    let lastError: unknown;
+
+    while (attempt < maxAttempts) {
+      try {
+        const payload = {
+          model,
+          query: params.query,
+          documents: params.documents,
+          top_n: params.topN ?? params.documents.length,
+          metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+        };
+        const start = Date.now();
+        const response = await this.postWithFallback<Record<string, unknown>>(
+          client,
+          "/v1/rerank",
+          "/rerank",
+          payload,
+          { timeout: params.timeoutMs ?? cfg.timeoutMs },
+        );
+        const latencyMs = Date.now() - start;
+        const normalizedResults = this.normalizeRerankResults(response.data);
+        if (normalizedResults.length === 0) {
+          throw new Error("LiteLLM rerank returned no usable results");
+        }
+        const headerCost = this.extractHeaderCost(
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        );
+        const keySpendUsd = this.extractHeaderCost(
+          response.headers?.["x-litellm-key-spend"],
+        );
+        const payloadCost = this.extractHeaderCost(
+          (response.data as Record<string, unknown>).response_cost,
+        );
+        const costUsd = headerCost ?? payloadCost;
+        const responseModel = this.resolveRerankModel(response.data, model);
+        return {
+          model: responseModel,
+          results: normalizedResults,
+          ...(typeof payloadCost === "number"
+            ? { response_cost: payloadCost }
+            : {}),
+          ...(typeof costUsd === "number" ? { costUsd } : {}),
+          ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
+          latencyMs,
+        } satisfies LiteLlmRerankResponse;
+      } catch (error) {
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "chat_completions",
+        });
+        lastError = error;
+        attempt += 1;
+        if (attempt >= maxAttempts || !this.isRetryable(error)) {
+          throw error;
+        }
+        await sleep(delayMs);
+        delayMs = Math.min(delayMs * 2, 10_000);
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiteLLM rerank exhausted retries");
+  }
+
   private async *iterateSseData(stream: Readable): AsyncGenerator<string> {
     yield* iterateSseDataFromReadable(stream);
+  }
+
+  private resolveRerankModel(
+    payload: Record<string, unknown>,
+    fallbackModel: string,
+  ): string {
+    const candidate = payload.model;
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+    return fallbackModel;
+  }
+
+  private normalizeRerankResults(payload: unknown): LiteLlmRerankResult[] {
+    if (!payload || typeof payload !== "object") {
+      return [];
+    }
+    const record = payload as Record<string, unknown>;
+    const rawResults = Array.isArray(record.results)
+      ? record.results
+      : Array.isArray(record.data)
+        ? record.data
+        : [];
+
+    const normalized = rawResults
+      .map((entry): LiteLlmRerankResult | null => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const row = entry as Record<string, unknown>;
+        const indexRaw = row.index;
+        const scoreRaw =
+          row.relevance_score ??
+          row.relevanceScore ??
+          row.score ??
+          row.similarity;
+        const index =
+          typeof indexRaw === "number" && Number.isInteger(indexRaw)
+            ? indexRaw
+            : null;
+        const score =
+          typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
+            ? scoreRaw
+            : typeof scoreRaw === "string" && scoreRaw.trim().length > 0
+              ? Number(scoreRaw)
+              : Number.NaN;
+        if (index === null || !Number.isFinite(score)) {
+          return null;
+        }
+        return { index, score };
+      })
+      .filter((entry): entry is LiteLlmRerankResult => Boolean(entry))
+      .sort((a, b) => b.score - a.score);
+
+    return normalized;
   }
 
   private async postWithFallback<T = unknown>(
@@ -1359,11 +1594,13 @@ export class LiteLlmService {
     return { client, baseUrl, apiKeyConfigured };
   }
 
-  private async prepareRequest(kind: "completion" | "embedding") {
+  private async prepareRequest(kind: "completion" | "embedding" | "rerank") {
     const pipelineCfg = this.configService.config;
     const cfg =
       kind === "embedding"
         ? await this.resolveEmbeddingConfig()
+        : kind === "rerank"
+          ? await this.resolveRerankConfig()
         : await this.resolveCompletionConfig();
     const limitKey = `litellm:rpm:${kind}`;
     const allowed = await this.rateLimiter.consume(
@@ -1382,9 +1619,14 @@ export class LiteLlmService {
   private async resolveCompletionConfig() {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveConfig();
+    if (!overrides || !overrides.model?.trim()) {
+      throw new Error(ERROR_COMPLETION_MODEL_NOT_CONFIGURED);
+    }
     const merged = overrides
       ? { ...pipelineCfg.litellm, ...overrides }
       : { ...pipelineCfg.litellm };
+    merged.model = overrides.model.trim();
+    merged.fallbackModels = overrides.fallbackModels ?? [];
     return {
       ...merged,
       sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
@@ -1398,12 +1640,34 @@ export class LiteLlmService {
   private async resolveEmbeddingConfig() {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveEmbeddingConfig();
+    if (!overrides || !overrides.embeddingModel?.trim()) {
+      throw new Error(ERROR_EMBEDDING_MODEL_NOT_CONFIGURED);
+    }
     const merged = overrides
       ? { ...pipelineCfg.litellm, ...overrides }
       : { ...pipelineCfg.litellm };
-    if (overrides && overrides.embeddingModel === undefined) {
-      merged.embeddingModel = pipelineCfg.litellm.embeddingModel;
+    merged.embeddingModel = overrides.embeddingModel.trim();
+    return {
+      ...merged,
+      sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
+      responseFormatMode: this.resolveResponseFormatMode(
+        overrides?.responseFormatMode,
+      ),
+    };
+  }
+
+  private async resolveRerankConfig() {
+    const pipelineCfg = this.configService.config;
+    const overrides = await this.llmGatewaySettings.getActiveRerankConfig();
+    if (!overrides || !overrides.rerankModel?.trim()) {
+      throw new Error(ERROR_RERANK_MODEL_NOT_CONFIGURED);
     }
+    const merged = overrides
+      ? { ...pipelineCfg.litellm, ...overrides }
+      : { ...pipelineCfg.litellm };
+    merged.rerankModel = overrides.rerankModel.trim();
+    merged.rerankFallbackModels = overrides.rerankFallbackModels ?? [];
+
     return {
       ...merged,
       sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),

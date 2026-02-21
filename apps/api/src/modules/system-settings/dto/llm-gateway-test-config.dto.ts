@@ -9,6 +9,7 @@ import {
   IsString,
   IsUrl,
   Max,
+  MaxLength,
   Min
 } from "class-validator";
 
@@ -21,6 +22,8 @@ const MIN_TOP_P = 0;
 const MAX_TOP_P = 1;
 const MIN_OUTPUT_TOKENS = 1;
 const MAX_OUTPUT_TOKENS = 1_000_000;
+const MAX_TEST_INPUT_LENGTH = 4_000;
+const MAX_RERANK_DOCUMENTS = 20;
 
 export class LlmGatewayModelsConfigDto {
   @ApiPropertyOptional({
@@ -70,6 +73,24 @@ export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
   @IsString()
   embeddingModel?: string;
 
+  @ApiPropertyOptional({
+    description:
+      "Optional rerank model to use for rerank test requests."
+  })
+  @IsOptional()
+  @IsString()
+  rerankModel?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional backup rerank models used when rerank model request fails."
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MODEL_LIST)
+  @IsString({ each: true })
+  rerankFallbackModels?: string[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @Min(MIN_TEMPERATURE)
@@ -110,6 +131,29 @@ export class LlmGatewayTestConfigDto extends LlmGatewayModelsConfigDto {
   @IsOptional()
   @IsString()
   embeddingInput?: string;
+
+  @ApiPropertyOptional({ description: "Whether to also test rerank endpoint." })
+  @IsOptional()
+  @IsBoolean()
+  includeRerank?: boolean;
+
+  @ApiPropertyOptional({ description: "Optional rerank query override." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_TEST_INPUT_LENGTH)
+  rerankQuery?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "Optional rerank documents override. Defaults to built-in probe documents."
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_RERANK_DOCUMENTS)
+  @IsString({ each: true })
+  @MaxLength(MAX_TEST_INPUT_LENGTH, { each: true })
+  rerankDocuments?: string[];
 
   @ApiPropertyOptional({
     description: "API surface for completion test: chat_completions (default) or responses."

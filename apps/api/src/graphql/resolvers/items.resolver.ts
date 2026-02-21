@@ -25,6 +25,7 @@ import {
   UpdateItemInput,
   ItemsFacetsArgs,
   ItemsOrderBy,
+  ItemsRankingMode,
   TranslateRssItemsInput
 } from "../dto/item.input";
 import type { GqlRequest } from "../graphql.types";
@@ -60,6 +61,7 @@ interface ItemsCursorPayload {
   id: string;
   createdAt?: string;
   sortAt?: string;
+  offset?: number;
 }
 
 function encodeCursor(value: ItemsCursorPayload) {
@@ -88,7 +90,11 @@ function decodeCursor(cursor?: string | null): ItemsCursorPayload | undefined {
       return {
         id,
         createdAt: typeof payload.createdAt === "string" ? payload.createdAt : undefined,
-        sortAt: typeof payload.sortAt === "string" ? payload.sortAt : undefined
+        sortAt: typeof payload.sortAt === "string" ? payload.sortAt : undefined,
+        offset:
+          typeof payload.offset === "number" && Number.isFinite(payload.offset)
+            ? Math.floor(payload.offset)
+            : undefined
       };
     }
 
@@ -274,6 +280,10 @@ export class ItemsResolver {
     }
 
     const orderBy = args.orderBy === ItemsOrderBy.PUBLISHED_DESC ? "PUBLISHED_DESC" : "CREATED_DESC";
+    const normalizedSearch = typeof args.search === "string" ? args.search.trim() : "";
+    const rankingMode =
+      args.rankingMode ??
+      (normalizedSearch.length > 0 ? ItemsRankingMode.RELEVANCE : ItemsRankingMode.RECENCY);
 
     if (typeof args.page === "number") {
       const { items, total, page, pageSize } = await this.itemsService.list(
@@ -282,12 +292,15 @@ export class ItemsResolver {
         args.first,
         args.search,
         args.filters,
-        orderBy
+        orderBy,
+        rankingMode
       );
 
-      const edges: ItemEdge[] = items.map((item) => ({
+      const edges: ItemEdge[] = items.map((item, index) => ({
         cursor: encodeCursor(
-          orderBy === "PUBLISHED_DESC"
+          rankingMode === ItemsRankingMode.RELEVANCE
+            ? { id: item.id, offset: (page - 1) * pageSize + index }
+            : orderBy === "PUBLISHED_DESC"
             ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
             : { id: item.id, createdAt: item.createdAt.toISOString() }
         ),
@@ -313,17 +326,30 @@ export class ItemsResolver {
       cursor,
       args.search,
       args.filters,
-      orderBy
+      orderBy,
+      rankingMode
     );
 
-    const edges: ItemEdge[] = items.map((item) => ({
-      cursor: encodeCursor(
-        orderBy === "PUBLISHED_DESC"
-          ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
-          : { id: item.id, createdAt: item.createdAt.toISOString() }
-      ),
-      node: this.toItemModel(item)
-    }));
+    const edges: ItemEdge[] = items.map((item) => {
+      // `rankOffset` is only attached when rankingMode is RELEVANCE.
+      const rankOffset = (item as { rankOffset?: unknown }).rankOffset;
+      return {
+        cursor: encodeCursor(
+          rankingMode === ItemsRankingMode.RELEVANCE
+            ? {
+                id: item.id,
+                offset:
+                  typeof rankOffset === "number" && Number.isFinite(rankOffset)
+                    ? Math.floor(rankOffset)
+                    : undefined
+              }
+            : orderBy === "PUBLISHED_DESC"
+            ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
+            : { id: item.id, createdAt: item.createdAt.toISOString() }
+        ),
+        node: this.toItemModel(item)
+      };
+    });
 
     const pageInfo: PageInfo = {
       hasNextPage,
@@ -732,6 +758,7 @@ export class ItemsResolver {
     updatedAt: Date;
     orgId: string;
     publishedAt?: Date | null;
+    relevanceScore?: number | null;
   }): ItemModel {
     return {
       id: meta.id,
@@ -740,6 +767,10 @@ export class ItemsResolver {
       status: meta.status,
       ingestedAt: meta.createdAt,
       publishedAt: meta.publishedAt ? meta.publishedAt.toISOString() : null,
+      relevanceScore:
+        typeof meta.relevanceScore === "number" && Number.isFinite(meta.relevanceScore)
+          ? meta.relevanceScore
+          : null,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
       orgId: meta.orgId,

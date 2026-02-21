@@ -1,6 +1,7 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 
+import { LLM_GATEWAY_ERROR_CODE_UNAVAILABLE } from "./llm-gateway-error-codes";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
 
 const mockAxiosPost = jest.fn();
@@ -42,6 +43,8 @@ describe("LlmGatewayTestService", () => {
     apiKey: "sk-test",
     model: "openai/gpt-4o-mini",
     embeddingModel: "openai/text-embedding-3-small",
+    rerankModel: "cohere/rerank-v3.5",
+    rerankFallbackModels: ["cohere/rerank-v3.0"],
     timeoutMs: 60_000,
     temperature: 0.2,
     topP: 0.9,
@@ -79,6 +82,22 @@ describe("LlmGatewayTestService", () => {
     statusText: "OK",
     headers: {
       "x-litellm-response-cost": "0.00001",
+    },
+    config: { headers: new AxiosHeaders() },
+  };
+
+  const mockRerankResponse: AxiosResponse = {
+    data: {
+      model: "cohere/rerank-v3.5",
+      results: [
+        { index: 1, relevance_score: 0.92 },
+        { index: 0, relevance_score: 0.61 },
+      ],
+    },
+    status: 200,
+    statusText: "OK",
+    headers: {
+      "x-litellm-response-cost": "0.00003",
     },
     config: { headers: new AxiosHeaders() },
   };
@@ -166,6 +185,85 @@ describe("LlmGatewayTestService", () => {
       2,
       "/chat/completions",
       expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it("tests rerank probe when includeRerank is enabled", async () => {
+    mockAxiosPost.mockResolvedValueOnce(mockRerankResponse);
+
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: false,
+      includeEmbeddings: false,
+      includeRerank: true,
+      rerankQuery: "us inflation and fed policy",
+      rerankDocuments: [
+        "Fed comments suggest slower cuts.",
+        "Bank earnings beat expectations.",
+      ],
+    });
+
+    expect(result.rerank?.model).toBe("cohere/rerank-v3.5");
+    expect(result.rerank?.results).toEqual([
+      { index: 0, score: 0.61 },
+      { index: 1, score: 0.92 },
+    ]);
+    expect(result.rerankError).toBeUndefined();
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      "/v1/rerank",
+      expect.objectContaining({
+        model: "cohere/rerank-v3.5",
+        query: "us inflation and fed policy",
+        documents: [
+          "Fed comments suggest slower cuts.",
+          "Bank earnings beat expectations.",
+        ],
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("uses backup rerank model when primary rerank model fails", async () => {
+    const error400 = new AxiosError(
+      "Bad request",
+      "ERR_BAD_REQUEST",
+      undefined,
+      undefined,
+      {
+        status: 400,
+        data: {},
+        statusText: "Bad Request",
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      },
+    );
+    mockAxiosPost
+      .mockRejectedValueOnce(error400)
+      .mockResolvedValueOnce({
+        ...mockRerankResponse,
+        data: {
+          model: "cohere/rerank-v3.0",
+          results: [{ index: 0, relevance_score: 0.88 }],
+        },
+      });
+
+    const result = await service.testProfile("profile-1", {
+      includeCompletion: false,
+      includeEmbeddings: false,
+      includeRerank: true,
+    });
+
+    expect(result.rerank?.model).toBe("cohere/rerank-v3.0");
+    expect(mockAxiosPost).toHaveBeenNthCalledWith(
+      1,
+      "/v1/rerank",
+      expect.objectContaining({ model: "cohere/rerank-v3.5" }),
+      expect.any(Object),
+    );
+    expect(mockAxiosPost).toHaveBeenNthCalledWith(
+      2,
+      "/v1/rerank",
+      expect.objectContaining({ model: "cohere/rerank-v3.0" }),
       expect.any(Object),
     );
   });
@@ -265,6 +363,7 @@ describe("LlmGatewayTestService", () => {
 
     expect(result.completion.content).toBe("OK");
     expect(result.embedding).toBeUndefined();
+    expect(result.embeddingError?.code).toBe("UPSTREAM_REQUEST_FAILED");
     expect(result.embeddingError?.status).toBe(400);
     expect(result.embeddingError?.message).toContain("HTTP 400");
   });
@@ -515,8 +614,10 @@ describe("LlmGatewayTestService", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
       const response = (error as BadRequestException).getResponse() as {
+        code?: unknown;
         message?: unknown;
       };
+      expect(response.code).toBe("UPSTREAM_UNAUTHORIZED");
       expect(response.message).toContain("HTTP 401");
       expect(response.message).toContain("Incorrect API key provided.");
       expect(response.message).not.toContain("ERR_BAD_REQUEST");
@@ -546,8 +647,10 @@ describe("LlmGatewayTestService", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
       const response = (error as BadRequestException).getResponse() as {
+        code?: unknown;
         message?: unknown;
       };
+      expect(response.code).toBe("UPSTREAM_UNAUTHORIZED");
       expect(response.message).toContain("HTTP 401");
       expect(response.message).toContain("Unauthorized");
       expect(response.message).toContain("apiKey");
@@ -639,6 +742,24 @@ describe("LlmGatewayTestService", () => {
       "/models",
       expect.any(Object),
     );
+  });
+
+  it("returns explicit unavailable code for network errors without HTTP status", async () => {
+    const networkError = new AxiosError("connect ECONNREFUSED", "ECONNREFUSED");
+    mockAxiosGet.mockRejectedValueOnce(networkError);
+
+    try {
+      await service.listModels("profile-1");
+      throw new Error("Expected listModels to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      const response = (error as ServiceUnavailableException).getResponse() as {
+        code?: unknown;
+        message?: unknown;
+      };
+      expect(response.code).toBe(LLM_GATEWAY_ERROR_CODE_UNAVAILABLE);
+      expect(String(response.message)).toContain("LLM gateway request failed");
+    }
   });
 
   it("supports overriding completion + embedding models", async () => {

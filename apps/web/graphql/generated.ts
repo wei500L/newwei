@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1076,6 +1078,8 @@ export type ItemModel = {
   publishedAt?: Maybe<Scalars['String']['output']>;
   raw?: Maybe<RawItemModelGraph>;
   rawPreview?: Maybe<RawItemPreviewModelGraph>;
+  /** Search relevance score (0-1) when rankingMode is RELEVANCE. */
+  relevanceScore?: Maybe<Scalars['Float']['output']>;
   status: Scalars['String']['output'];
   title: Scalars['String']['output'];
   updatedAt: Scalars['DateTime']['output'];
@@ -1097,6 +1101,11 @@ export type ItemsFiltersInput = {
 export enum ItemsOrderBy {
   CreatedDesc = 'CREATED_DESC',
   PublishedDesc = 'PUBLISHED_DESC'
+}
+
+export enum ItemsRankingMode {
+  Recency = 'RECENCY',
+  Relevance = 'RELEVANCE'
 }
 
 export type KnowledgeGraphEdgeModel = {
@@ -2092,6 +2101,7 @@ export type QueryItemsArgs = {
   first?: Scalars['Int']['input'];
   orderBy?: ItemsOrderBy;
   page?: InputMaybe<Scalars['Int']['input']>;
+  rankingMode?: InputMaybe<ItemsRankingMode>;
   search?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -2856,10 +2866,11 @@ export type ItemsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
   filters?: InputMaybe<ItemsFiltersInput>;
   orderBy?: InputMaybe<ItemsOrderBy>;
+  rankingMode?: InputMaybe<ItemsRankingMode>;
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, relevanceScore?: number | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemFacetsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
@@ -4789,7 +4800,7 @@ export type GetEntityImpactGraphLazyQueryHookResult = ReturnType<typeof useGetEn
 export type GetEntityImpactGraphSuspenseQueryHookResult = ReturnType<typeof useGetEntityImpactGraphSuspenseQuery>;
 export type GetEntityImpactGraphQueryResult = Apollo.QueryResult<GetEntityImpactGraphQuery, GetEntityImpactGraphQueryVariables>;
 export const ItemsDocument = gql`
-    query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy = CREATED_DESC) {
+    query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy = CREATED_DESC, $rankingMode: ItemsRankingMode) {
   items(
     first: $first
     after: $after
@@ -4797,6 +4808,7 @@ export const ItemsDocument = gql`
     search: $search
     filters: $filters
     orderBy: $orderBy
+    rankingMode: $rankingMode
   ) {
     edges {
       node {
@@ -4806,6 +4818,7 @@ export const ItemsDocument = gql`
         createdAt
         ingestedAt
         publishedAt
+        relevanceScore
         processedPreview {
           id
           itemMetaId
@@ -4881,6 +4894,7 @@ export const ItemsDocument = gql`
  *      search: // value for 'search'
  *      filters: // value for 'filters'
  *      orderBy: // value for 'orderBy'
+ *      rankingMode: // value for 'rankingMode'
  *   },
  * });
  */

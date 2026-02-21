@@ -2,7 +2,23 @@
 
 import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Button, Col, Drawer, Grid, Input, List, Row, Skeleton, Space, Table, Tag, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Col,
+  Drawer,
+  Grid,
+  Input,
+  List,
+  Row,
+  Segmented,
+  Skeleton,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dynamic from "next/dynamic";
 import { type ReadonlyURLSearchParams, usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -141,6 +157,154 @@ function parsePositiveInt(value: string | null, fallback: number) {
     return fallback;
   }
   return parsed;
+}
+
+function collectRequestErrorMessages(error: unknown): string[] {
+  if (!error || typeof error !== "object") {
+    return [];
+  }
+
+  const messages = new Set<string>();
+  const pushMessage = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      messages.add(trimmed);
+    }
+  };
+
+  const record = error as Record<string, unknown>;
+  pushMessage(record.message);
+
+  const graphQLErrors = record.graphQLErrors;
+  if (Array.isArray(graphQLErrors)) {
+    graphQLErrors.forEach((entry) => {
+      if (entry && typeof entry === "object") {
+        pushMessage((entry as Record<string, unknown>).message);
+      }
+    });
+  }
+
+  const networkError = record.networkError;
+  if (networkError && typeof networkError === "object") {
+    const networkRecord = networkError as Record<string, unknown>;
+    pushMessage(networkRecord.message);
+
+    const result = networkRecord.result;
+    if (result && typeof result === "object") {
+      const resultErrors = (result as Record<string, unknown>).errors;
+      if (Array.isArray(resultErrors)) {
+        resultErrors.forEach((entry) => {
+          if (entry && typeof entry === "object") {
+            pushMessage((entry as Record<string, unknown>).message);
+          }
+        });
+      }
+    }
+  }
+
+  return Array.from(messages);
+}
+
+function collectRequestErrorCodes(error: unknown): string[] {
+  if (!error || typeof error !== "object") {
+    return [];
+  }
+
+  const codes = new Set<string>();
+  const pushCode = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const normalized = value.trim().toUpperCase();
+    if (normalized.length > 0) {
+      codes.add(normalized);
+    }
+  };
+
+  const pushExtensionsCodes = (extensions: unknown) => {
+    if (!extensions || typeof extensions !== "object") {
+      return;
+    }
+    const ext = extensions as Record<string, unknown>;
+    pushCode(ext.appCode);
+    pushCode(ext.code);
+    const originalError = ext.originalError;
+    if (originalError && typeof originalError === "object") {
+      pushCode((originalError as Record<string, unknown>).code);
+    }
+  };
+
+  const record = error as Record<string, unknown>;
+  const graphQLErrors = record.graphQLErrors;
+  if (Array.isArray(graphQLErrors)) {
+    graphQLErrors.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+      const gqlError = entry as Record<string, unknown>;
+      pushExtensionsCodes(gqlError.extensions);
+    });
+  }
+
+  const networkError = record.networkError;
+  if (networkError && typeof networkError === "object") {
+    const networkRecord = networkError as Record<string, unknown>;
+    const result = networkRecord.result;
+    if (result && typeof result === "object") {
+      const resultErrors = (result as Record<string, unknown>).errors;
+      if (Array.isArray(resultErrors)) {
+        resultErrors.forEach((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return;
+          }
+          const gqlError = entry as Record<string, unknown>;
+          pushExtensionsCodes(gqlError.extensions);
+        });
+      }
+    }
+  }
+
+  return Array.from(codes);
+}
+
+function extractRerankUnavailableMessage(error: unknown): string | null {
+  const errorCodes = collectRequestErrorCodes(error);
+  if (errorCodes.includes("RERANK_UNAVAILABLE")) {
+    return collectRequestErrorMessages(error)[0] ?? "Reranker unavailable";
+  }
+
+  const messages = collectRequestErrorMessages(error);
+  const matched = messages.find((message) => {
+    const lower = message.toLowerCase();
+    const mentionsRerank =
+      lower.includes("rerank") || lower.includes("reranker") || lower.includes("re-rank");
+    if (!mentionsRerank) {
+      return false;
+    }
+    return (
+      lower.includes("unavailable") ||
+      lower.includes("failed") ||
+      lower.includes("service unavailable")
+    );
+  });
+  return matched ?? null;
+}
+
+function resolveRankingModeFromParam(
+  value: string | null,
+  emptyStateVariant: EmptyStateVariant
+): ItemsRankingMode {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "relevance") {
+    return "RELEVANCE";
+  }
+  if (normalized === "recency") {
+    return "RECENCY";
+  }
+  return emptyStateVariant === "search" ? "RELEVANCE" : "RECENCY";
 }
 
 function normalizeRssTranslationFields(
@@ -331,6 +495,7 @@ interface ItemsFiltersInput {
 }
 
 type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
+type ItemsRankingMode = "RECENCY" | "RELEVANCE";
 
 interface ItemsQueryVariables {
   first: number;
@@ -339,6 +504,7 @@ interface ItemsQueryVariables {
   search?: string | null;
   filters?: ItemsFiltersInput | null;
   orderBy?: ItemsOrderBy | null;
+  rankingMode?: ItemsRankingMode | null;
 }
 
 interface ItemFacetOption {
@@ -360,8 +526,24 @@ interface ItemFacetsQueryVariables {
 }
 
 const ITEMS_QUERY = gql`
-  query Items($first: Int!, $after: String, $page: Int, $search: String, $filters: ItemsFiltersInput, $orderBy: ItemsOrderBy) {
-    items(first: $first, after: $after, page: $page, search: $search, filters: $filters, orderBy: $orderBy) {
+  query Items(
+    $first: Int!
+    $after: String
+    $page: Int
+    $search: String
+    $filters: ItemsFiltersInput
+    $orderBy: ItemsOrderBy
+    $rankingMode: ItemsRankingMode
+  ) {
+    items(
+      first: $first
+      after: $after
+      page: $page
+      search: $search
+      filters: $filters
+      orderBy: $orderBy
+      rankingMode: $rankingMode
+    ) {
       edges {
         node {
           id
@@ -370,6 +552,7 @@ const ITEMS_QUERY = gql`
           createdAt
           ingestedAt
           publishedAt
+          relevanceScore
           processedPreview {
             id
             itemMetaId
@@ -515,6 +698,7 @@ interface ParsedItem {
   summary?: string;
   thumbnail?: string;
   source?: string;
+  relevanceScore?: number;
   price?: number;
   change?: number;
   ticker?: string;
@@ -580,10 +764,14 @@ export function ItemsView({
   const urlPage = parsePositiveInt(searchParams.get("page"), 1);
   const urlRawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
   const urlPageSize = clampItemsPageSize(urlRawPageSize);
+  const urlRanking = searchParams.get("ranking");
 
   // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [search, setSearch] = useState(urlSearch);
+  const [rankingMode, setRankingMode] = useState<ItemsRankingMode>(() =>
+    resolveRankingModeFromParam(urlRanking, emptyStateVariant)
+  );
   const [view, setView] = useState<ItemViewType>(lockedView ?? initialView);
   const [filters, setFilters] = useState<FilterState>(() =>
     parseFiltersFromSearchParams(searchParams, initialFilters)
@@ -721,6 +909,11 @@ export function ItemsView({
     setPageSize(urlPageSize);
   }, [urlPageSize]);
 
+  useEffect(() => {
+    const nextRankingMode = resolveRankingModeFromParam(urlRanking, emptyStateVariant);
+    setRankingMode((current) => (current === nextRankingMode ? current : nextRankingMode));
+  }, [emptyStateVariant, urlRanking]);
+
   const debouncedSearchInput = useDebounceValue(searchInput, ITEMS_SEARCH_DEBOUNCE_MS);
   const debouncedFilters = useDebounceValue(filters, ITEMS_FILTERS_URL_DEBOUNCE_MS);
   const debouncedFiltersFingerprint = useMemo(
@@ -745,6 +938,14 @@ export function ItemsView({
   );
   const isUnsearched =
     emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
+  const defaultRankingMode: ItemsRankingMode =
+    emptyStateVariant === "search" ? "RELEVANCE" : "RECENCY";
+  const rankingModeQueryValue =
+    rankingMode === defaultRankingMode
+      ? null
+      : rankingMode === "RELEVANCE"
+        ? "relevance"
+        : "recency";
   const listTableScroll =
     typeof listTableScrollX === "number" && typeof listTableScrollY === "number"
       ? {
@@ -765,6 +966,7 @@ export function ItemsView({
       page?: number | null;
       pageSize?: number | null;
       filters?: FilterState | null;
+      ranking?: "relevance" | "recency" | null;
     }) => {
       const currentQuery = window.location.search.startsWith("?")
         ? window.location.search.slice(1)
@@ -797,6 +999,13 @@ export function ItemsView({
       if (updates.filters !== undefined) {
         applyFiltersToSearchParams(next, updates.filters);
       }
+      if (updates.ranking !== undefined) {
+        if (updates.ranking) {
+          next.set("ranking", updates.ranking);
+        } else {
+          next.delete("ranking");
+        }
+      }
       const nextQuery = next.toString();
       if (nextQuery === currentQuery) {
         return;
@@ -818,23 +1027,32 @@ export function ItemsView({
     );
 
     const nextSearchParam = search.length > 0 ? search : null;
+    const currentRankingRaw = (currentParams.get("ranking") ?? "").trim().toLowerCase();
+    const currentRankingParam =
+      currentRankingRaw === "relevance" || currentRankingRaw === "recency"
+        ? currentRankingRaw
+        : null;
+    const nextRankingParam = rankingModeQueryValue;
 
     const shouldUpdateSearch = nextSearchParam !== currentSearchParam;
     const shouldUpdateFilters = debouncedFiltersFingerprint !== currentFiltersFingerprint;
+    const shouldUpdateRanking = nextRankingParam !== currentRankingParam;
 
-    if (!shouldUpdateSearch && !shouldUpdateFilters) {
+    if (!shouldUpdateSearch && !shouldUpdateFilters && !shouldUpdateRanking) {
       return;
     }
 
     setQueryParams({
       ...(shouldUpdateSearch ? { q: nextSearchParam } : {}),
       ...(shouldUpdateFilters ? { filters: debouncedFilters } : {}),
+      ...(shouldUpdateRanking ? { ranking: nextRankingParam } : {}),
       page: 1
     });
   }, [
     debouncedFilters,
     debouncedFiltersFingerprint,
     initialFilters,
+    rankingModeQueryValue,
     search,
     setQueryParams,
   ]);
@@ -870,10 +1088,21 @@ export function ItemsView({
       page,
       search: search || null,
       filters: filtersInput,
-      orderBy
+      orderBy,
+      rankingMode
     },
     notifyOnNetworkStatusChange: true
   });
+  const rerankUnavailableMessage = useMemo(
+    () => extractRerankUnavailableMessage(error),
+    [error],
+  );
+  const relevanceRankingUnavailable = Boolean(rerankUnavailableMessage);
+
+  const handleSwitchToRecencyRanking = useCallback(() => {
+    setRankingMode("RECENCY");
+    setPage(1);
+  }, []);
 
   const { data: facetsData } = useQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ITEM_FACETS_QUERY, {
     variables: {
@@ -1040,6 +1269,10 @@ export function ItemsView({
         topics,
         entities,
         region,
+        relevanceScore:
+          typeof edge.node.relevanceScore === "number" && Number.isFinite(edge.node.relevanceScore)
+            ? edge.node.relevanceScore
+            : undefined,
         qualityScore: typeof processed?.qualityScore === "number" ? processed.qualityScore : undefined,
         duplicateSimilarity:
           typeof processed?.duplicateSimilarity === "number"
@@ -1433,6 +1666,39 @@ export function ItemsView({
   );
 
   const renderContent = () => {
+    const rerankUnavailableBanner = rerankUnavailableMessage ? (
+      <Alert
+        type="error"
+        showIcon
+        message={t("items.rerankUnavailable.title", {
+          defaultValue: "Reranker unavailable",
+        })}
+        description={
+          <div>
+            <div>
+              {t("items.rerankUnavailable.description", {
+                defaultValue:
+                  "Relevance reranking is currently unavailable. Retry later or switch to Recency ranking.",
+              })}
+            </div>
+            <div className="mt-1 text-xs opacity-80">
+              {t("items.rerankUnavailable.detailLabel", {
+                defaultValue: "Details",
+              })}
+              : {rerankUnavailableMessage}
+            </div>
+            <div className="mt-2">
+              <Button size="small" onClick={handleSwitchToRecencyRanking}>
+                {t("items.rerankUnavailable.switchToRecency", {
+                  defaultValue: "Switch to Recency ranking",
+                })}
+              </Button>
+            </div>
+          </div>
+        }
+      />
+    ) : null;
+
     if (loading && !pageData.length) {
       const skeleton =
         view === "list" ? (
@@ -1463,10 +1729,13 @@ export function ItemsView({
     if (error && pageData.length === 0) {
       const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
       return (
-        <ChartEmptyState
-          className="h-auto"
-          {...emptyState}
-        />
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {rerankUnavailableBanner}
+          <ChartEmptyState
+            className="h-auto"
+            {...emptyState}
+          />
+        </Space>
       );
     }
 
@@ -1507,11 +1776,14 @@ export function ItemsView({
 
     const shouldShowErrorBanner = Boolean(error && pageData.length > 0);
     const errorBanner = shouldShowErrorBanner ? (
-      <RequestErrorBanner
-        error={error}
-        onRetry={() => void refetch()}
-        showCachedDataHint
-      />
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        {rerankUnavailableBanner}
+        <RequestErrorBanner
+          error={error}
+          onRetry={() => void refetch()}
+          showCachedDataHint
+        />
+      </Space>
     ) : null;
 
 	    if (view === "list") {
@@ -1678,6 +1950,48 @@ export function ItemsView({
                     onClick={() => handleSearch(searchInput)}
                   />
                 </Space.Compact>
+                {emptyStateVariant === "search" || search.length > 0 ? (
+                  <Segmented
+                    size="small"
+                    value={rankingMode}
+                    options={[
+                      {
+                        label: relevanceRankingUnavailable ? (
+                          <Tooltip
+                            title={t(
+                              "items.rerankUnavailable.relevanceDisabledHint",
+                              {
+                                defaultValue:
+                                  "Relevance ranking is temporarily unavailable because reranker is down.",
+                              },
+                            )}
+                          >
+                            <span>
+                              {t("items.ranking.relevanceUnavailable", {
+                                defaultValue: "Relevance (Unavailable)",
+                              })}
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          t("items.ranking.relevance", { defaultValue: "Relevance" })
+                        ),
+                        value: "RELEVANCE",
+                        disabled: relevanceRankingUnavailable,
+                      },
+                      {
+                        label: t("items.ranking.recency", { defaultValue: "Recency" }),
+                        value: "RECENCY"
+                      }
+                    ]}
+                    onChange={(value) => {
+                      if (value === "RELEVANCE" && relevanceRankingUnavailable) {
+                        return;
+                      }
+                      setRankingMode(value as ItemsRankingMode);
+                      setPage(1);
+                    }}
+                  />
+                ) : null}
                 {!screens.lg && (
                   <Button onClick={() => setShowFilters(true)}>{filterButtonLabel}</Button>
                 )}

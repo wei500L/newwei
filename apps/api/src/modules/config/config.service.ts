@@ -6,6 +6,8 @@ import { ApiEnv } from "./env.schema";
 export interface LiteLlmEnvConfig {
   model: string;
   embeddingModel?: string;
+  rerankModel?: string;
+  rerankFallbackModels: string[];
   apiBase: string;
   apiKey?: string;
   timeoutMs: number;
@@ -114,6 +116,14 @@ export interface VectorServiceConfig {
   token?: string;
   timeoutMs: number;
   maxRetries: number;
+}
+
+export interface ItemsSearchRankingConfig {
+  rerankEnabled: boolean;
+  recallMaxCandidates: number;
+  rerankMaxCandidates: number;
+  rerankTimeoutMs: number;
+  recencyHalfLifeHours: number;
 }
 
 export interface ModelServiceConfig {
@@ -514,6 +524,9 @@ export class EnvService extends ConfigService<ApiEnv> {
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
+    // Rerank backup model routing is persisted in MySQL (LLM gateway profiles),
+    // not sourced from environment variables.
+    const rerankFallbackModels: string[] = [];
     const apiBase =
       this.get<string>("LITELLM_API_URL", { infer: true }) ??
       this.get<string>("LITELLM_API_BASE", { infer: true }) ??
@@ -533,6 +546,9 @@ export class EnvService extends ConfigService<ApiEnv> {
       embeddingModel: this.get<string | undefined>("LITELLM_EMBEDDING_MODEL", {
         infer: true,
       }),
+      // Rerank model selection is managed by MySQL-backed gateway profiles.
+      rerankModel: undefined,
+      rerankFallbackModels,
       apiBase,
       apiKey: this.get<string | undefined>("LITELLM_API_KEY", { infer: true }),
       timeoutMs:
@@ -545,6 +561,29 @@ export class EnvService extends ConfigService<ApiEnv> {
       fallbackModels,
       requestsPerMinute:
         this.get<number>("LITELLM_REQUESTS_PER_MINUTE", { infer: true }) ?? 60,
+    };
+  }
+
+  get itemsSearchRankingConfig(): ItemsSearchRankingConfig {
+    const recallMaxCandidates =
+      this.get<number>("ITEMS_SEARCH_RECALL_MAX_CANDIDATES", { infer: true }) ??
+      120;
+    const rerankMaxCandidates =
+      this.get<number>("ITEMS_SEARCH_RERANK_MAX_CANDIDATES", { infer: true }) ??
+      40;
+    return {
+      rerankEnabled:
+        this.get<boolean>("ITEMS_SEARCH_RERANK_ENABLED", { infer: true }) ??
+        true,
+      recallMaxCandidates,
+      rerankMaxCandidates: Math.min(recallMaxCandidates, rerankMaxCandidates),
+      rerankTimeoutMs:
+        this.get<number>("ITEMS_SEARCH_RERANK_TIMEOUT_MS", { infer: true }) ??
+        300,
+      recencyHalfLifeHours:
+        this.get<number>("ITEMS_SEARCH_RECENCY_HALFLIFE_HOURS", {
+          infer: true,
+        }) ?? 48,
     };
   }
 

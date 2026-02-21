@@ -1048,6 +1048,9 @@ type ItemModel {
   publishedAt: String
   raw: RawItemModelGraph
   rawPreview: RawItemPreviewModelGraph
+
+  """Search relevance score (0-1) when rankingMode is RELEVANCE."""
+  relevanceScore: Float
   status: String!
   title: String!
   updatedAt: DateTime!
@@ -1069,6 +1072,11 @@ input ItemsFiltersInput {
 enum ItemsOrderBy {
   CREATED_DESC
   PUBLISHED_DESC
+}
+
+enum ItemsRankingMode {
+  RECENCY
+  RELEVANCE
 }
 
 """
@@ -1647,7 +1655,7 @@ type Query {
   getPolicyEventImpact(input: PolicyEventImpactInput!): KnowledgeGraphImpactAnalysisModel
   item(id: String!): ItemModel
   itemFacets(filters: ItemsFiltersInput, search: String): ItemFacets!
-  items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, search: String): ItemConnection!
+  items(after: String, filters: ItemsFiltersInput, first: Int! = 10, orderBy: ItemsOrderBy! = CREATED_DESC, page: Int, rankingMode: ItemsRankingMode, search: String): ItemConnection!
   knowledgeGraphEvidenceReviewQueue(limit: Int, maxConfidence: Float, onlyUnreviewed: Boolean): [KnowledgeGraphEvidenceReviewItemModel!]!
   knowledgeGraphSettings: KnowledgeGraphSettingsModel!
   me: UserModel!

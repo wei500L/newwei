@@ -39,6 +39,8 @@ interface LlmGatewayProfile {
   model: string;
   assistantModel?: string | null;
   embeddingModel?: string | null;
+  rerankModel?: string | null;
+  rerankFallbackModels: string[];
   apiSurface: LlmGatewayApiSurface;
   timeoutMs: number;
   temperature: number;
@@ -56,11 +58,14 @@ interface LlmGatewayProfile {
 }
 
 type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
+type LlmGatewayRerankMode = "follow_completion" | "use_default";
 
 interface LlmGatewaySettingsResponse {
   activeId: string | null;
   embeddingActiveId: string | null;
   embeddingMode: LlmGatewayEmbeddingMode;
+  rerankActiveId: string | null;
+  rerankMode: LlmGatewayRerankMode;
   profiles: LlmGatewayProfile[];
 }
 
@@ -88,6 +93,7 @@ interface LlmGatewayTestResponse {
     keySpendUsd?: number;
   };
   completionError?: {
+    code?: string;
     message: string;
     status?: number;
     axiosCode?: string;
@@ -111,6 +117,31 @@ interface LlmGatewayTestResponse {
     keySpendUsd?: number;
   };
   embeddingError?: {
+    code?: string;
+    message: string;
+    status?: number;
+    axiosCode?: string;
+    requestId?: string;
+    upstreamType?: string;
+    upstreamCode?: string;
+    compatibilityError?: {
+      code: string;
+      incompatibleField: string;
+      hint: string;
+      upstreamMessage: string;
+      status?: number;
+    };
+  };
+  rerank?: {
+    model: string;
+    topN: number;
+    latencyMs: number;
+    results: Array<{ index: number; score: number }>;
+    costUsd?: number;
+    keySpendUsd?: number;
+  };
+  rerankError?: {
+    code?: string;
     message: string;
     status?: number;
     axiosCode?: string;
@@ -196,6 +227,10 @@ interface LlmGatewayTestFormValues {
   includeEmbeddings: boolean;
   embeddingModel?: string;
   embeddingInput?: string;
+  includeRerank: boolean;
+  rerankModel?: string;
+  rerankQuery?: string;
+  rerankDocuments?: string;
 }
 
 interface LlmGatewayFormValues {
@@ -205,6 +240,8 @@ interface LlmGatewayFormValues {
   model?: string;
   assistantModel?: string;
   embeddingModel?: string;
+  rerankModel?: string;
+  rerankFallbackModels?: string;
   apiSurface: LlmGatewayApiSurface;
   timeoutMs: number;
   temperature: number;
@@ -262,6 +299,8 @@ const EMPTY_SETTINGS: LlmGatewaySettingsResponse = {
   activeId: null,
   embeddingActiveId: null,
   embeddingMode: "follow_completion",
+  rerankActiveId: null,
+  rerankMode: "follow_completion",
   profiles: [],
 };
 const DRAFT_CREATE_KEY = "__draft_create__";
@@ -288,7 +327,22 @@ function toFallbackModelsText(models: string[]) {
   return (models ?? []).join(", ");
 }
 
+function toRerankDocuments(input: string | undefined) {
+  if (!input) {
+    return undefined;
+  }
+  const documents = input
+    .split(/\n+/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (documents.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set(documents));
+}
+
 function renderGatewayErrorMeta(error: {
+  code?: string;
   status?: number;
   axiosCode?: string;
   requestId?: string;
@@ -304,6 +358,7 @@ function renderGatewayErrorMeta(error: {
 }) {
   return (
     <Space wrap>
+      {error.code ? <Tag color="orange">code: {error.code}</Tag> : null}
       {typeof error.status === "number" ? (
         <Tag color="red">HTTP {error.status}</Tag>
       ) : null}
@@ -361,6 +416,7 @@ export function LlmGatewaySettingsPanel() {
     null,
   );
   const [embeddingActivating, setEmbeddingActivating] = useState(false);
+  const [rerankActivating, setRerankActivating] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState<string | null>(null);
   const [loadingProxyModelInfo, setLoadingProxyModelInfo] = useState<
@@ -440,6 +496,7 @@ export function LlmGatewaySettingsPanel() {
     Form.useWatch("includeCompletion", testForm) ?? true;
   const includeEmbeddings =
     Form.useWatch("includeEmbeddings", testForm) ?? false;
+  const includeRerank = Form.useWatch("includeRerank", testForm) ?? false;
   const editClearApiKey = Form.useWatch("clearApiKey", editForm) ?? false;
 
   const apiClient = useMemo(
@@ -522,6 +579,39 @@ export function LlmGatewaySettingsPanel() {
     );
   }, [embeddingResolved, settings.profiles]);
 
+  const rerankResolved = useMemo(() => {
+    if (settings.rerankActiveId) {
+      return { kind: "profile" as const, id: settings.rerankActiveId };
+    }
+    if (settings.rerankMode === "use_default") {
+      return { kind: "default" as const };
+    }
+    if (settings.activeId) {
+      return { kind: "follow_completion" as const, id: settings.activeId };
+    }
+    return { kind: "default" as const };
+  }, [settings.activeId, settings.rerankActiveId, settings.rerankMode]);
+
+  const rerankSelectValue = useMemo(() => {
+    if (settings.rerankActiveId) {
+      return settings.rerankActiveId;
+    }
+    return settings.rerankMode === "use_default"
+      ? USE_DEFAULT_KEY
+      : FOLLOW_COMPLETION_KEY;
+  }, [settings.rerankActiveId, settings.rerankMode]);
+
+  const rerankActiveProfile = useMemo(() => {
+    if (rerankResolved.kind === "default") {
+      return null;
+    }
+    return (
+      settings.profiles.find(
+        (profile) => profile.id === rerankResolved.id,
+      ) ?? null
+    );
+  }, [rerankResolved, settings.profiles]);
+
   const apiBaseRules = useMemo(
     () => [
       {
@@ -557,7 +647,17 @@ export function LlmGatewaySettingsPanel() {
       const response = await apiClient.get<LlmGatewaySettingsResponse>(
         "system-settings/llm-gateways",
       );
-      setSettings(response.data ?? EMPTY_SETTINGS);
+      const next = response.data;
+      const normalizedProfiles = (next?.profiles ?? []).map((profile) => ({
+        ...profile,
+        fallbackModels: profile.fallbackModels ?? [],
+        rerankFallbackModels: profile.rerankFallbackModels ?? [],
+      }));
+      setSettings({
+        ...EMPTY_SETTINGS,
+        ...(next ?? {}),
+        profiles: normalizedProfiles,
+      });
     } catch (error) {
       captureClientError("Failed to load LLM gateway settings", error);
       setErrorMessage(t("settings.llmGateway.errors.loadFailed"));
@@ -580,6 +680,10 @@ export function LlmGatewaySettingsPanel() {
       model: editing.model,
       assistantModel: editing.assistantModel ?? undefined,
       embeddingModel: editing.embeddingModel ?? undefined,
+      rerankModel: editing.rerankModel ?? undefined,
+      rerankFallbackModels: toFallbackModelsText(
+        editing.rerankFallbackModels ?? [],
+      ),
       apiSurface: editing.apiSurface ?? "chat_completions",
       timeoutMs: editing.timeoutMs,
       temperature: editing.temperature,
@@ -604,6 +708,9 @@ export function LlmGatewaySettingsPanel() {
     const templateFallbackModels = baselineProfile
       ? toFallbackModelsText(baselineProfile.fallbackModels)
       : "";
+    const templateRerankFallbackModels = baselineProfile
+      ? toFallbackModelsText(baselineProfile.rerankFallbackModels ?? [])
+      : "";
     const initialApiBase =
       baselineProfile?.apiBase ?? DEFAULT_LLM_GATEWAY_API_BASE;
 
@@ -613,6 +720,8 @@ export function LlmGatewaySettingsPanel() {
       model: baselineProfile?.model ?? "openai/gpt-4o-mini",
       assistantModel: baselineProfile?.assistantModel ?? "",
       embeddingModel: baselineProfile?.embeddingModel ?? "",
+      rerankModel: baselineProfile?.rerankModel ?? "",
+      rerankFallbackModels: templateRerankFallbackModels,
       apiSurface: baselineProfile?.apiSurface ?? "chat_completions",
       timeoutMs: baselineProfile?.timeoutMs ?? 60_000,
       temperature: baselineProfile?.temperature ?? 0.2,
@@ -944,6 +1053,10 @@ export function LlmGatewaySettingsPanel() {
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
+        rerankModel: values.rerankModel?.trim()
+          ? values.rerankModel.trim()
+          : null,
+        rerankFallbackModels: toFallbackModels(values.rerankFallbackModels),
         apiSurface: values.apiSurface ?? "chat_completions",
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
@@ -1001,6 +1114,10 @@ export function LlmGatewaySettingsPanel() {
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
+        rerankModel: values.rerankModel?.trim()
+          ? values.rerankModel.trim()
+          : null,
+        rerankFallbackModels: toFallbackModels(values.rerankFallbackModels),
         apiSurface: values.apiSurface ?? "chat_completions",
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,
@@ -1058,7 +1175,8 @@ export function LlmGatewaySettingsPanel() {
   ) => {
     const wasCompletionActive = settings.activeId === profile.id;
     const wasEmbeddingActive = settings.embeddingActiveId === profile.id;
-    if (!nextEnabled && (wasCompletionActive || wasEmbeddingActive)) {
+    const wasRerankActive = settings.rerankActiveId === profile.id;
+    if (!nextEnabled && (wasCompletionActive || wasEmbeddingActive || wasRerankActive)) {
       const shouldDisable = await new Promise<boolean>((resolve) => {
         Modal.confirm({
           title: t("settings.llmGateway.modal.disableTitle", {
@@ -1092,6 +1210,14 @@ export function LlmGatewaySettingsPanel() {
                   {t("settings.llmGateway.modal.disableEmbeddingHint", {
                     defaultValue:
                       "该 Profile 当前为 Embeddings 的 Active 配置。禁用后将自动取消 Embeddings Active，并回退到 follow_completion 或默认配置。",
+                  })}
+                </Typography.Text>
+              ) : null}
+              {wasRerankActive ? (
+                <Typography.Text type="secondary">
+                  {t("settings.llmGateway.modal.disableRerankHint", {
+                    defaultValue:
+                      "该 Profile 当前为 Reranker 的 Active 配置。禁用后将自动取消 Reranker Active，并回退到 follow_completion 或默认配置。",
                   })}
                 </Typography.Text>
               ) : null}
@@ -1196,9 +1322,55 @@ export function LlmGatewaySettingsPanel() {
     }
   };
 
+  const handleActivateRerank = async (
+    profileId: string | null,
+    mode?: LlmGatewayRerankMode,
+  ) => {
+    setRerankActivating(true);
+    try {
+      await apiClient.put("system-settings/llm-gateways/rerank-active", {
+        activeId: profileId,
+        ...(!profileId && mode ? { mode } : {}),
+      });
+      await loadSettings();
+      messageApi.success(
+        t("settings.llmGateway.rerankActive.messages.activated", {
+          defaultValue: "Reranker 配置已更新",
+        }),
+      );
+    } catch (error) {
+      captureClientError(
+        "Failed to activate rerank gateway profile",
+        error,
+      );
+      const statusCode =
+        typeof error === "object" && error && "response" in error
+          ? (error as { response?: { status?: number } }).response?.status
+          : undefined;
+      if (statusCode === 400) {
+        messageApi.error(
+          extractApiError(error).message ??
+            t("settings.llmGateway.errors.badRequest"),
+        );
+      } else {
+        const messageText = formatApiErrorMessage(error);
+        messageApi.error(
+          messageText
+            ? messageText
+            : t("settings.llmGateway.rerankActive.errors.activateFailed", {
+                defaultValue: "更新 Reranker 配置失败",
+              }),
+        );
+      }
+    } finally {
+      setRerankActivating(false);
+    }
+  };
+
   const handleDelete = async (profile: LlmGatewayProfile) => {
     const wasCompletionActive = settings.activeId === profile.id;
     const wasEmbeddingActive = settings.embeddingActiveId === profile.id;
+    const wasRerankActive = settings.rerankActiveId === profile.id;
     Modal.confirm({
       title: t("settings.llmGateway.modal.deleteTitle"),
       content: (
@@ -1208,7 +1380,7 @@ export function LlmGatewaySettingsPanel() {
               name: profile.name,
             })}
           </Typography.Text>
-          {wasCompletionActive || wasEmbeddingActive ? (
+          {wasCompletionActive || wasEmbeddingActive || wasRerankActive ? (
             <Typography.Text type="secondary">
               {t("settings.llmGateway.modal.deleteActiveHint", {
                 defaultValue:
@@ -1744,6 +1916,77 @@ export function LlmGatewaySettingsPanel() {
             ) : null}
           </>
         ) : null}
+
+        {result.rerank ? (
+          <>
+            <Typography.Title
+              level={5}
+              style={{ marginBottom: 0, marginTop: 8 }}
+            >
+              {t("settings.llmGateway.test.sections.rerank", {
+                defaultValue: "Rerank",
+              })}
+            </Typography.Title>
+            <Space wrap>
+              <Tag color="blue">{result.rerank.model}</Tag>
+              <Tag>{result.rerank.latencyMs}ms</Tag>
+              <Tag>
+                {t("settings.llmGateway.test.labels.topN", {
+                  defaultValue: "topN",
+                })}
+                : {result.rerank.topN}
+              </Tag>
+              {typeof result.rerank.costUsd === "number" ? (
+                <Tag color="geekblue">
+                  {t("settings.llmGateway.test.cost", {
+                    cost: result.rerank.costUsd.toFixed(6),
+                  })}
+                </Tag>
+              ) : null}
+            </Space>
+            <Typography.Paragraph
+              type="secondary"
+              style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
+            >
+              {result.rerank.results
+                .slice(0, 10)
+                .map(
+                  (entry) =>
+                    `#${entry.index} ${t("settings.llmGateway.test.labels.score", {
+                      defaultValue: "score",
+                    })}: ${entry.score.toFixed(4)}`,
+                )
+                .join("\n")}
+            </Typography.Paragraph>
+          </>
+        ) : result.rerankError ? (
+          <>
+            <Typography.Title
+              level={5}
+              style={{ marginBottom: 0, marginTop: 8 }}
+            >
+              {t("settings.llmGateway.test.sections.rerank", {
+                defaultValue: "Rerank",
+              })}
+            </Typography.Title>
+            {renderGatewayErrorMeta(result.rerankError)}
+            <Alert
+              type="error"
+              showIcon
+              message={result.rerankError.message}
+            />
+            {result.rerankError.compatibilityError ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={`${t("settings.llmGateway.test.labels.compatibility", {
+                  defaultValue: "Compatibility",
+                })}: ${result.rerankError.compatibilityError.code}`}
+                description={result.rerankError.compatibilityError.hint}
+              />
+            ) : null}
+          </>
+        ) : null}
       </Space>
     ),
     [t],
@@ -1962,6 +2205,8 @@ export function LlmGatewaySettingsPanel() {
                 "clearApiKey",
                 "model",
                 "embeddingModel",
+                "rerankModel",
+                "rerankFallbackModels",
                 "apiSurface",
                 "timeoutMs",
                 "temperature",
@@ -1976,6 +2221,8 @@ export function LlmGatewaySettingsPanel() {
                 "apiKey",
                 "model",
                 "embeddingModel",
+                "rerankModel",
+                "rerankFallbackModels",
                 "apiSurface",
                 "timeoutMs",
                 "temperature",
@@ -1994,8 +2241,13 @@ export function LlmGatewaySettingsPanel() {
 
         const completionModel = values.model?.trim();
         const embeddingModel = values.embeddingModel?.trim();
+        const rerankModel = values.rerankModel?.trim();
+        const rerankFallbackModels =
+          toFallbackModels(values.rerankFallbackModels) ?? [];
         const hasCompletionModel = Boolean(completionModel);
         const hasEmbeddingModel = Boolean(embeddingModel);
+        const hasRerankModel =
+          Boolean(rerankModel) || rerankFallbackModels.length > 0;
 
         const payload: Record<string, unknown> = {
           ...(profileId ? { profileId } : {}),
@@ -2010,6 +2262,11 @@ export function LlmGatewaySettingsPanel() {
           fallbackModels: toFallbackModels(values.fallbackModels),
           ...(embeddingModel ? { embeddingModel } : {}),
           includeEmbeddings: hasEmbeddingModel,
+          ...(rerankModel ? { rerankModel } : {}),
+          ...(rerankFallbackModels.length > 0
+            ? { rerankFallbackModels }
+            : {}),
+          includeRerank: hasRerankModel,
           includeMetadataProbe: values.sendMetadata !== false,
           responseFormatMode: values.responseFormatMode ?? "json_schema",
         };
@@ -2030,7 +2287,9 @@ export function LlmGatewaySettingsPanel() {
           (!result.completion &&
             !result.completionError &&
             !result.embedding &&
-            !result.embeddingError)
+            !result.embeddingError &&
+            !result.rerank &&
+            !result.rerankError)
         ) {
           messageApi.error(t("settings.llmGateway.testUnsaved.errors.failed"));
           return;
@@ -2157,6 +2416,16 @@ export function LlmGatewaySettingsPanel() {
         ...(values.embeddingInput?.trim()
           ? { embeddingInput: values.embeddingInput.trim() }
           : {}),
+        includeRerank: values.includeRerank,
+        ...(values.rerankModel?.trim()
+          ? { rerankModel: values.rerankModel.trim() }
+          : {}),
+        ...(values.rerankQuery?.trim()
+          ? { rerankQuery: values.rerankQuery.trim() }
+          : {}),
+        ...(values.rerankDocuments?.trim()
+          ? { rerankDocuments: toRerankDocuments(values.rerankDocuments) }
+          : {}),
       };
       const response = await apiClient.post<LlmGatewayTestResponse>(
         `system-settings/llm-gateways/${profileId}/test`,
@@ -2168,7 +2437,9 @@ export function LlmGatewaySettingsPanel() {
         (!result.completion &&
           !result.completionError &&
           !result.embedding &&
-          !result.embeddingError)
+          !result.embeddingError &&
+          !result.rerank &&
+          !result.rerankError)
       ) {
         setTestResult(null);
         setTestErrorMessage(t("settings.llmGateway.test.errors.failed"));
@@ -2178,6 +2449,7 @@ export function LlmGatewaySettingsPanel() {
       setTestErrorMessage(
         result.completionError?.message ??
           result.embeddingError?.message ??
+          result.rerankError?.message ??
           null,
       );
     } catch (error) {
@@ -2203,6 +2475,13 @@ export function LlmGatewaySettingsPanel() {
       includeEmbeddings: Boolean(profile.embeddingModel),
       embeddingModel: "",
       embeddingInput: "",
+      includeRerank: Boolean(
+        profile.rerankModel ||
+          (profile.rerankFallbackModels ?? []).length > 0,
+      ),
+      rerankModel: "",
+      rerankQuery: "",
+      rerankDocuments: "",
     };
 
     setTestProfile(profile);
@@ -2228,6 +2507,13 @@ export function LlmGatewaySettingsPanel() {
               <Tag color="purple">
                 {t("settings.llmGateway.embeddingActive.tag", {
                   defaultValue: "Embeddings",
+                })}
+              </Tag>
+            ) : null}
+            {settings.rerankActiveId === record.id && record.enabled ? (
+              <Tag color="gold">
+                {t("settings.llmGateway.rerankActive.tag", {
+                  defaultValue: "Reranker",
                 })}
               </Tag>
             ) : null}
@@ -2271,6 +2557,22 @@ export function LlmGatewaySettingsPanel() {
       dataIndex: "embeddingModel",
       key: "embeddingModel",
       responsive: ["lg"],
+      render: (value?: string | null) =>
+        value ? (
+          <Typography.Text code copyable>
+            {value}
+          </Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
+    },
+    {
+      title: t("settings.llmGateway.columns.rerankModel", {
+        defaultValue: "Rerank model",
+      }),
+      dataIndex: "rerankModel",
+      key: "rerankModel",
+      responsive: ["xl"],
       render: (value?: string | null) =>
         value ? (
           <Typography.Text code copyable>
@@ -2755,7 +3057,7 @@ export function LlmGatewaySettingsPanel() {
                 <Space size={6} wrap>
                   <Typography.Text>
                     {t("settings.llmGateway.embeddingActive.default", {
-                      defaultValue: "默认配置（config/env）",
+                      defaultValue: "默认 Profile（MySQL）",
                     })}
                   </Typography.Text>
                   <Tag>
@@ -2879,7 +3181,7 @@ export function LlmGatewaySettingsPanel() {
                             {t(
                               "settings.llmGateway.embeddingActive.useDefault",
                               {
-                                defaultValue: "使用默认配置（config/env）",
+                                defaultValue: "使用 MySQL 默认 Profile",
                               },
                             )}
                           </Typography.Text>
@@ -2981,6 +3283,248 @@ export function LlmGatewaySettingsPanel() {
                       "暂无可用的 Embeddings Profile：请先在某个 Profile 中填写 Embedding 模型并启用。",
                   },
                 )}
+              />
+            ) : null}
+          </Space>
+        </Card>
+
+        <Card
+          size="small"
+          title={t("settings.llmGateway.rerankActive.title", {
+            defaultValue: "Rerank 网关",
+          })}
+        >
+          <Space direction="vertical" size="small" style={{ display: "flex" }}>
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.rerankActive.hint", {
+                defaultValue:
+                  "用于 Rerank / 重排序请求（可与对话模型使用不同的网关和模型）。",
+              })}
+            </Typography.Text>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.rerankActive.currentCompletion", {
+                defaultValue: "当前对话模型配置",
+              })}
+              :{" "}
+              {completionActiveProfile ? (
+                <Typography.Text>
+                  {completionActiveProfile.name}{" "}
+                  <Typography.Text code copyable>
+                    {completionActiveProfile.model}
+                  </Typography.Text>
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              )}
+            </Typography.Text>
+
+            <Typography.Text type="secondary">
+              {t("settings.llmGateway.rerankActive.currentRerank", {
+                defaultValue: "当前 Rerank 配置",
+              })}
+              :{" "}
+              {rerankResolved.kind === "default" ? (
+                <Space size={6} wrap>
+                  <Typography.Text>
+                    {t("settings.llmGateway.rerankActive.default", {
+                      defaultValue: "默认 Profile（MySQL）",
+                    })}
+                  </Typography.Text>
+                  <Tag>
+                    {t("settings.llmGateway.rerankActive.defaultTag", {
+                      defaultValue: "默认",
+                    })}
+                  </Tag>
+                </Space>
+              ) : rerankActiveProfile ? (
+                <Space size={6} wrap>
+                  <Typography.Text>{rerankActiveProfile.name}</Typography.Text>
+                  {settings.rerankActiveId ? (
+                    settings.rerankActiveId === settings.activeId ? (
+                      <Tag color="gold">
+                        {t("settings.llmGateway.rerankActive.lockedSame", {
+                          defaultValue: "显式锁定（当前与对话一致）",
+                        })}
+                      </Tag>
+                    ) : (
+                      <Tag color="gold">
+                        {t("settings.llmGateway.rerankActive.independent", {
+                          defaultValue: "独立配置",
+                        })}
+                      </Tag>
+                    )
+                  ) : completionActiveProfile ? (
+                    <Tag>
+                      {t("settings.llmGateway.rerankActive.following", {
+                        defaultValue: "跟随对话模型",
+                      })}
+                    </Tag>
+                  ) : (
+                    <Tag>
+                      {t("settings.llmGateway.rerankActive.default", {
+                        defaultValue: "默认配置",
+                      })}
+                    </Tag>
+                  )}
+                  {rerankActiveProfile.rerankModel ? (
+                    <Typography.Text code copyable>
+                      {rerankActiveProfile.rerankModel}
+                    </Typography.Text>
+                  ) : (
+                    <Tag color="red">
+                      {t("settings.llmGateway.rerankActive.missingRerankModel", {
+                        defaultValue: "未配置 Rerank 模型",
+                      })}
+                    </Tag>
+                  )}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">-</Typography.Text>
+              )}
+            </Typography.Text>
+
+            <Form layout="inline" style={{ width: "100%" }}>
+              <Form.Item
+                label={t("settings.llmGateway.rerankActive.selectLabel", {
+                  defaultValue: "切换 Rerank 网关",
+                })}
+                style={{ flex: 1, minWidth: 260 }}
+              >
+                <Select
+                  value={rerankSelectValue}
+                  placeholder={t(
+                    "settings.llmGateway.rerankActive.selectPlaceholder",
+                    {
+                      defaultValue: "选择用于 Rerank 的网关 Profile",
+                    },
+                  )}
+                  loading={loading || rerankActivating}
+                  options={[
+                    {
+                      value: FOLLOW_COMPLETION_KEY,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>
+                            {completionActiveProfile
+                              ? t("settings.llmGateway.rerankActive.followCompletion", {
+                                  defaultValue: "跟随对话模型（{{name}}）",
+                                  name: completionActiveProfile.name,
+                                })
+                              : t(
+                                  "settings.llmGateway.rerankActive.followCompletionEmpty",
+                                  {
+                                    defaultValue: "跟随对话模型（当前未启用）",
+                                  },
+                                )}
+                          </Typography.Text>
+                          <Tag>
+                            {t("settings.llmGateway.rerankActive.followTag", {
+                              defaultValue: "跟随",
+                            })}
+                          </Tag>
+                        </Space>
+                      ),
+                    },
+                    {
+                      value: USE_DEFAULT_KEY,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>
+                            {t("settings.llmGateway.rerankActive.useDefault", {
+                              defaultValue: "使用 MySQL 默认 Profile",
+                            })}
+                          </Typography.Text>
+                          <Tag>
+                            {t("settings.llmGateway.rerankActive.defaultTag", {
+                              defaultValue: "默认",
+                            })}
+                          </Tag>
+                        </Space>
+                      ),
+                    },
+                    ...settings.profiles.map((profile) => ({
+                      value: profile.id,
+                      disabled: !profile.enabled || !profile.rerankModel,
+                      label: (
+                        <Space size={6} wrap>
+                          <Typography.Text>{profile.name}</Typography.Text>
+                          {!profile.enabled ? (
+                            <Tag color="red">{t("common.disabled")}</Tag>
+                          ) : !profile.rerankModel ? (
+                            <Tag color="red">
+                              {t(
+                                "settings.llmGateway.rerankActive.missingRerankModelShort",
+                                {
+                                  defaultValue: "缺少 Rerank 模型",
+                                },
+                              )}
+                            </Tag>
+                          ) : (
+                            <Tag color="gold">
+                              {t("settings.llmGateway.rerankActive.tag", {
+                                defaultValue: "Reranker",
+                              })}
+                            </Tag>
+                          )}
+                        </Space>
+                      ),
+                    })),
+                  ]}
+                  onChange={(value) => {
+                    if (value === FOLLOW_COMPLETION_KEY) {
+                      void handleActivateRerank(null, "follow_completion");
+                      return;
+                    }
+                    if (value === USE_DEFAULT_KEY) {
+                      void handleActivateRerank(null, "use_default");
+                      return;
+                    }
+                    void handleActivateRerank(value);
+                  }}
+                  style={{ width: "100%" }}
+                />
+              </Form.Item>
+            </Form>
+
+            {rerankActiveProfile ? (
+              <>
+                <Typography.Paragraph
+                  type="secondary"
+                  style={{ marginBottom: 0 }}
+                >
+                  {t("settings.llmGateway.fields.apiBase")}:{" "}
+                  <Typography.Text code copyable>
+                    {rerankActiveProfile.apiBase}
+                  </Typography.Text>
+                </Typography.Paragraph>
+                <Space wrap>
+                  <Tag color={rerankActiveProfile.enabled ? "green" : "red"}>
+                    {rerankActiveProfile.enabled
+                      ? t("common.enabled")
+                      : t("common.disabled")}
+                  </Tag>
+                  <Tag
+                    color={rerankActiveProfile.hasApiKey ? "green" : "default"}
+                  >
+                    {rerankActiveProfile.hasApiKey
+                      ? t("settings.llmGateway.keySet")
+                      : t("settings.llmGateway.keyMissing")}
+                  </Tag>
+                </Space>
+              </>
+            ) : null}
+
+            {!settings.profiles.some(
+              (profile) => profile.enabled && profile.rerankModel,
+            ) ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("settings.llmGateway.rerankActive.noEligibleProfiles", {
+                  defaultValue:
+                    "暂无可用的 Rerank Profile：请先在某个 Profile 中填写 Rerank 模型并启用。",
+                })}
               />
             ) : null}
           </Space>
@@ -3109,6 +3653,38 @@ export function LlmGatewaySettingsPanel() {
             name="embeddingModel"
           >
             <Input placeholder="openai/text-embedding-3-small" />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.rerankModel", {
+              defaultValue: "Rerank model",
+            })}
+            name="rerankModel"
+            extra={t("settings.llmGateway.hints.rerankModel", {
+              defaultValue:
+                "Optional: used by rerank endpoint (/v1/rerank). Required if this profile is explicitly activated for reranking.",
+            })}
+          >
+            <Input allowClear placeholder="cohere/rerank-v3.5" />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.rerankFallbackModels", {
+              defaultValue: "Rerank backup models",
+            })}
+            name="rerankFallbackModels"
+            extra={t("settings.llmGateway.hints.rerankFallbackModels", {
+              defaultValue:
+                "Tried in order when rerankModel fails.",
+            })}
+          >
+            <Input
+              placeholder={t(
+                "settings.llmGateway.placeholders.rerankFallbackModels",
+                {
+                  defaultValue:
+                    "comma-separated, e.g. cohere/rerank-v3.0,cohere/rerank-english-v3.0",
+                },
+              )}
+            />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.apiSurface", {
@@ -3440,6 +4016,38 @@ export function LlmGatewaySettingsPanel() {
             name="embeddingModel"
           >
             <Input allowClear />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.rerankModel", {
+              defaultValue: "Rerank model",
+            })}
+            name="rerankModel"
+            extra={t("settings.llmGateway.hints.rerankModel", {
+              defaultValue:
+                "Optional: used by rerank endpoint (/v1/rerank). Required if this profile is explicitly activated for reranking.",
+            })}
+          >
+            <Input allowClear />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.llmGateway.fields.rerankFallbackModels", {
+              defaultValue: "Rerank backup models",
+            })}
+            name="rerankFallbackModels"
+            extra={t("settings.llmGateway.hints.rerankFallbackModels", {
+              defaultValue:
+                "Tried in order when rerankModel fails.",
+            })}
+          >
+            <Input
+              placeholder={t(
+                "settings.llmGateway.placeholders.rerankFallbackModels",
+                {
+                  defaultValue:
+                    "comma-separated, e.g. cohere/rerank-v3.0,cohere/rerank-english-v3.0",
+                },
+              )}
+            />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.apiSurface", {
@@ -3846,6 +4454,73 @@ export function LlmGatewaySettingsPanel() {
               disabled={!includeEmbeddings}
               placeholder={t(
                 "settings.llmGateway.test.placeholders.embeddingInput",
+              )}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label={t("settings.llmGateway.test.fields.includeRerank", {
+              defaultValue: "Test rerank",
+            })}
+            name="includeRerank"
+            valuePropName="checked"
+            extra={t("settings.llmGateway.test.hints.includeRerank", {
+              defaultValue: "When enabled, runs /v1/rerank probe.",
+            })}
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            label={t("settings.llmGateway.test.fields.rerankModel", {
+              defaultValue: "Rerank model override",
+            })}
+            name="rerankModel"
+            extra={t("settings.llmGateway.test.hints.rerankModel", {
+              defaultValue:
+                "Leave empty to use the profile rerank model + backup rerank models.",
+            })}
+          >
+            <Input
+              allowClear
+              disabled={!includeRerank}
+              placeholder={testProfile?.rerankModel ?? ""}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label={t("settings.llmGateway.test.fields.rerankQuery", {
+              defaultValue: "Rerank query",
+            })}
+            name="rerankQuery"
+          >
+            <Input
+              disabled={!includeRerank}
+              placeholder={t(
+                "settings.llmGateway.test.placeholders.rerankQuery",
+                {
+                  defaultValue:
+                    "latest US inflation outlook and Fed policy",
+                },
+              )}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label={t("settings.llmGateway.test.fields.rerankDocuments", {
+              defaultValue: "Rerank documents",
+            })}
+            name="rerankDocuments"
+          >
+            <Input.TextArea
+              disabled={!includeRerank}
+              autoSize={{ minRows: 3, maxRows: 8 }}
+              placeholder={t(
+                "settings.llmGateway.test.placeholders.rerankDocuments",
+                {
+                  defaultValue:
+                    "One document per line. Leave empty to use default probe documents.",
+                },
               )}
             />
           </Form.Item>

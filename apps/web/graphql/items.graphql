@@ -5,8 +5,17 @@ query Items(
   $search: String
   $filters: ItemsFiltersInput
   $orderBy: ItemsOrderBy = CREATED_DESC
+  $rankingMode: ItemsRankingMode
 ) {
-  items(first: $first, after: $after, page: $page, search: $search, filters: $filters, orderBy: $orderBy) {
+  items(
+    first: $first
+    after: $after
+    page: $page
+    search: $search
+    filters: $filters
+    orderBy: $orderBy
+    rankingMode: $rankingMode
+  ) {
     edges {
       node {
         id
@@ -15,6 +24,7 @@ query Items(
         createdAt
         ingestedAt
         publishedAt
+        relevanceScore
         processedPreview {
           id
           itemMetaId

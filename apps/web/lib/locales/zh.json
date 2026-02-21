@@ -2786,6 +2786,7 @@
         "model": "模型",
         "assistantModel": "助手模型",
         "embeddingModel": "Embedding 模型",
+        "rerankModel": "Rerank 模型",
         "compatibility": "兼容策略",
         "metadataOn": "metadata:开",
         "metadataOff": "metadata:关",
@@ -2800,6 +2801,8 @@
         "model": "默认模型",
         "assistantModel": "助手专用模型",
         "embeddingModel": "Embedding 模型",
+        "rerankModel": "Rerank 模型",
+        "rerankFallbackModels": "Rerank 备用模型",
         "apiSurface": "API 接口面",
         "timeoutMs": "超时 (ms)",
         "temperature": "温度",
@@ -2816,15 +2819,18 @@
         "name": "例如：LiteLLM（生产）",
         "apiKey": "可选",
         "apiKeyEdit": "留空表示不变",
-        "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku"
+        "fallbackModels": "逗号分隔，例如 openai/gpt-4o-mini,anthropic/claude-3-haiku",
+        "rerankFallbackModels": "逗号分隔，例如 cohere/rerank-v3.0,cohere/rerank-english-v3.0"
       },
       "hints": {
         "apiBase": "此地址由后端 API 进程访问（不是浏览器）。Docker Compose 部署推荐填 http://litellm:4000；本机开发一般为 http://localhost:4001。支持填写 Base URL（例如 https://api.openai.com），也支持直接粘贴完整接口地址（例如 https://api.openai.com/v1/chat/completions），系统会自动规范化。",
         "apiKey": "写入系统设置；当在「系统设置 → 安全」开启“加密存储密钥/Token”且配置 SYSTEM_SETTINGS_ENCRYPTION_KEY 时，会加密存储；否则明文存储。支持直接粘贴 sk-... 或完整的 \"Bearer sk-...\"。如果网关是 LiteLLM Proxy 并启用了 master key，则此处填 master key；否则可留空。上游供应商的真实 Key（如 OPENAI_API_KEY）需要在 LiteLLM Proxy 的环境变量中配置。",
         "apiKeyEdit": "输入新 Key 用于轮换；也可以用下方开关清空。",
         "fallbackModels": "主模型失败时会按顺序尝试。",
+        "rerankFallbackModels": "Rerank 主模型失败时按顺序尝试。",
         "modelOptional": "可选：仅用于对话/补全请求；只配置 Embeddings 网关时可以留空。",
         "assistantModel": "可选：仅用于 AI 助手（/assistant）调用，不参与新闻链路模型路由。",
+        "rerankModel": "可选：用于重排序接口（/v1/rerank）。当该 Profile 被显式设为 Reranker Active 时必须填写。",
         "apiSurface": "选择运行时调用的补全端点：/v1/chat/completions 或 /v1/responses。",
         "sendMetadata": "关闭后，运行时请求将不再发送 metadata，以提高兼容性。",
         "responseFormatMode": "选择 response_format 的发送策略：json_schema、json_object 或 none。"
@@ -2849,7 +2855,8 @@
         "createTitle": "新增 LLM 网关",
         "editTitle": "编辑 LLM 网关",
         "deleteTitle": "删除 LLM 网关",
-        "deleteContent": "确认删除 {{name}}？此操作不可撤销。"
+        "deleteContent": "确认删除 {{name}}？此操作不可撤销。",
+        "disableRerankHint": "该 Profile 当前为 Reranker 的 Active 配置。禁用后将自动取消 Reranker Active，并回退到 follow_completion 或默认配置。"
       },
       "messages": {
         "created": "已创建",
@@ -2879,6 +2886,10 @@
           "includeEmbeddings": "测试 Embedding",
           "embeddingModel": "Embedding 模型覆盖",
           "embeddingInput": "Embedding 输入",
+          "includeRerank": "测试 Rerank",
+          "rerankModel": "Rerank 模型覆盖",
+          "rerankQuery": "Rerank 查询",
+          "rerankDocuments": "Rerank 文档",
           "includeCompletion": "测试对话/补全",
           "apiSurface": "API 接口面",
           "responseFormatMode": "response_format 探针",
@@ -2886,16 +2897,21 @@
         },
         "placeholders": {
           "prompt": "只回复 \"OK\"，不要输出其他内容。",
-          "embeddingInput": "hello"
+          "embeddingInput": "hello",
+          "rerankQuery": "latest US inflation outlook and Fed policy",
+          "rerankDocuments": "每行一条文档。留空则使用默认探针文档。"
         },
         "hints": {
           "model": "留空则使用网关配置的默认模型 + Fallback 模型。",
           "embeddingModel": "留空则使用网关配置的 Embedding 模型。",
-          "includeCompletion": "关闭后仅测试向量（Embeddings）。"
+          "includeCompletion": "关闭后仅测试向量（Embeddings）。",
+          "includeRerank": "开启后会调用 /v1/rerank 进行探针测试。",
+          "rerankModel": "留空则使用 Profile 的 Rerank 模型 + 备用模型。"
         },
         "sections": {
           "completion": "对话补全",
-          "embedding": "向量（Embedding）"
+          "embedding": "向量（Embedding）",
+          "rerank": "重排序（Rerank）"
         },
         "tokens": "Token：{{total}}",
         "dimensions": "{{n}} 维",
@@ -2906,7 +2922,9 @@
         "labels": {
           "apiSurface": "API 接口面",
           "compatibility": "兼容性",
-          "field": "字段"
+          "field": "字段",
+          "topN": "topN",
+          "score": "得分"
         }
       },
       "testUnsaved": {
@@ -2943,11 +2961,11 @@
         },
         "tag": "Embeddings",
         "title": "Embeddings 网关",
-        "hint": "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。",
+        "hint": "用于 Embeddings / 向量化请求（可与对话模型使用不同的网关和模型）。在 use_default 模式下，后端会使用 MySQL 中首个可用启用 Profile。",
         "currentCompletion": "当前对话模型配置",
         "currentEmbedding": "当前 Embeddings 配置",
-        "default": "默认配置（config/env）",
-        "defaultTag": "默认",
+        "default": "默认 Profile（MySQL）",
+        "defaultTag": "MySQL 默认",
         "lockedSame": "显式锁定（当前与对话一致）",
         "independent": "独立配置",
         "following": "跟随对话模型",
@@ -2958,9 +2976,36 @@
         "followCompletion": "跟随对话模型（{{name}}）",
         "followCompletionEmpty": "跟随对话模型（当前未启用）",
         "followTag": "跟随",
-        "useDefault": "使用默认配置（config/env）",
+        "useDefault": "使用 MySQL 默认 Profile",
         "missingEmbeddingModelShort": "缺少 Embedding 模型",
         "noEligibleProfiles": "暂无可用的 Embeddings Profile：请先在某个 Profile 中填写 Embedding 模型并启用。"
+      },
+      "rerankActive": {
+        "messages": {
+          "activated": "Reranker 配置已更新"
+        },
+        "errors": {
+          "activateFailed": "更新 Reranker 配置失败"
+        },
+        "tag": "Reranker",
+        "title": "Rerank 网关",
+        "hint": "用于 Rerank / 重排序请求（可与对话模型使用不同的网关和模型）。在 use_default 模式下，后端会使用 MySQL 中首个可用启用 Profile。",
+        "currentCompletion": "当前对话模型配置",
+        "currentRerank": "当前 Rerank 配置",
+        "default": "默认 Profile（MySQL）",
+        "defaultTag": "MySQL 默认",
+        "lockedSame": "显式锁定（当前与对话一致）",
+        "independent": "独立配置",
+        "following": "跟随对话模型",
+        "missingRerankModel": "未配置 Rerank 模型",
+        "selectLabel": "切换 Rerank 网关",
+        "selectPlaceholder": "选择用于 Rerank 的网关 Profile",
+        "followCompletion": "跟随对话模型（{{name}}）",
+        "followCompletionEmpty": "跟随对话模型（当前未启用）",
+        "followTag": "跟随",
+        "useDefault": "使用 MySQL 默认 Profile",
+        "missingRerankModelShort": "缺少 Rerank 模型",
+        "noEligibleProfiles": "暂无可用的 Rerank Profile：请先在某个 Profile 中填写 Rerank 模型并启用。"
       }
     },
     "assistantSafety": {
@@ -5097,6 +5142,18 @@
     },
     "search": {
       "placeholder": "搜索标题、摘要、专题、实体、地点"
+    },
+    "ranking": {
+      "relevance": "相关性",
+      "relevanceUnavailable": "相关性（不可用）",
+      "recency": "时效性"
+    },
+    "rerankUnavailable": {
+      "title": "Reranker 不可用",
+      "description": "当前相关性重排序服务不可用，请稍后重试或切换到“时效性”排序。",
+      "detailLabel": "详情",
+      "switchToRecency": "切换到“时效性”排序",
+      "relevanceDisabledHint": "由于 Reranker 当前不可用，暂时无法使用“相关性”排序。"
     },
     "filters": {
       "button": "筛选",

@@ -20,6 +20,13 @@ export enum ItemsOrderBy {
 
 registerEnumType(ItemsOrderBy, { name: "ItemsOrderBy" });
 
+export enum ItemsRankingMode {
+  RECENCY = "RECENCY",
+  RELEVANCE = "RELEVANCE"
+}
+
+registerEnumType(ItemsRankingMode, { name: "ItemsRankingMode" });
+
 export enum RssTranslationProvider {
   deeplx = "deeplx",
   llm = "llm"
@@ -181,6 +188,11 @@ export class ItemsQueryArgs {
   @Field(() => ItemsOrderBy, { defaultValue: ItemsOrderBy.CREATED_DESC })
   @IsOptional()
   orderBy: ItemsOrderBy = ItemsOrderBy.CREATED_DESC;
+
+  @Field(() => ItemsRankingMode, { nullable: true })
+  @IsOptional()
+  @IsEnum(ItemsRankingMode)
+  rankingMode?: ItemsRankingMode;
 }
 
 @ArgsType()

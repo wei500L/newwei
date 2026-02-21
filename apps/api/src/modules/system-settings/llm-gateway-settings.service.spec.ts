@@ -22,6 +22,8 @@ const envMock = {
   liteLlmConfig: {
     model: "openai/gpt-4o-mini",
     embeddingModel: "openai/text-embedding-3-small",
+    rerankModel: "cohere/rerank-v3.5",
+    rerankFallbackModels: ["cohere/rerank-v3.0"],
     apiBase: "http://localhost:4001",
     apiKey: undefined,
     timeoutMs: 60_000,
@@ -55,6 +57,7 @@ describe("LlmGatewaySettingsService", () => {
     cacheState = null;
     persistedValue = undefined;
     envMock.systemSettingsEncryptionKey = undefined;
+    envMock.liteLlmConfig.rerankModel = "cohere/rerank-v3.5";
     encryptionEnabled = false;
     securitySettingsMock.encodeSecretForStorage = jest.fn(async (plain: string) => {
       if (!encryptionEnabled) {
@@ -91,6 +94,7 @@ describe("LlmGatewaySettingsService", () => {
     const response = await service.list();
     expect(response.activeId).toBeNull();
     expect(response.embeddingMode).toBe("follow_completion");
+    expect(response.rerankMode).toBe("follow_completion");
     expect(response.profiles).toEqual([]);
   });
 
@@ -111,6 +115,8 @@ describe("LlmGatewaySettingsService", () => {
     expect(listed.activeId).toBe(created.id);
     expect(listed.embeddingActiveId).toBeNull();
     expect(listed.embeddingMode).toBe("follow_completion");
+    expect(listed.rerankActiveId).toBeNull();
+    expect(listed.rerankMode).toBe("follow_completion");
     expect(listed.profiles).toHaveLength(1);
   });
 
@@ -165,7 +171,7 @@ describe("LlmGatewaySettingsService", () => {
     expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
   });
 
-  it("supports using default config/env for embeddings even when completion profile is active", async () => {
+  it("supports using MySQL default profile for embeddings even when completion profile is active", async () => {
     const first = await service.createProfile("org-1", "actor-1", {
       name: "Gateway A",
       apiBase: "http://gateway-a:4001/v1",
@@ -186,7 +192,8 @@ describe("LlmGatewaySettingsService", () => {
     await service.setEmbeddingActiveProfile("org-1", "actor-1", null, "use_default");
 
     const embeddingCfg = await service.getActiveEmbeddingConfig();
-    expect(embeddingCfg).toBeNull();
+    expect(embeddingCfg?.apiBase).toBe("http://gateway-a:4001/v1");
+    expect(embeddingCfg?.embeddingModel).toBe("openai/text-embedding-3-small");
 
     const listed = await service.list();
     expect(listed.activeId).toBe(second.id);
@@ -218,6 +225,106 @@ describe("LlmGatewaySettingsService", () => {
     const listed = await service.list();
     expect(listed.activeId).toBe(second.id);
     expect(listed.embeddingActiveId).toBe(first.id);
+  });
+
+  it("uses active profile for rerank when rerankActiveId is unset", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+
+    const rerankCfg = await service.getActiveRerankConfig();
+    expect(rerankCfg?.apiBase).toBe("http://gateway-b:4001/v1");
+    expect(rerankCfg?.rerankModel).toBe("cohere/rerank-v3.5");
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.rerankActiveId).toBeNull();
+    expect(listed.rerankMode).toBe("follow_completion");
+    expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
+  });
+
+  it("supports using MySQL default profile for rerank even when completion profile is active", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+    await service.setRerankActiveProfile("org-1", "actor-1", null, "use_default");
+
+    const rerankCfg = await service.getActiveRerankConfig();
+    expect(rerankCfg?.apiBase).toBe("http://gateway-a:4001/v1");
+    expect(rerankCfg?.rerankModel).toBe("cohere/rerank-v3.5");
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.rerankActiveId).toBeNull();
+    expect(listed.rerankMode).toBe("use_default");
+    expect(listed.profiles.map((profile) => profile.id)).toEqual([first.id, second.id]);
+  });
+
+  it("persists rerankActiveId when explicitly set", async () => {
+    const first = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway A",
+      apiBase: "http://gateway-a:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    const second = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway B",
+      apiBase: "http://gateway-b:4001/v1",
+      model: "openai/gpt-4o-mini",
+      rerankModel: "cohere/rerank-v3.5",
+      enabled: true
+    });
+
+    await service.setActiveProfile("org-1", "actor-1", second.id);
+    await service.setRerankActiveProfile("org-1", "actor-1", first.id);
+
+    const listed = await service.list();
+    expect(listed.activeId).toBe(second.id);
+    expect(listed.rerankActiveId).toBe(first.id);
+  });
+
+  it("rejects explicitly activating rerank profile without rerankModel", async () => {
+    envMock.liteLlmConfig.rerankModel = undefined;
+    const profile = await service.createProfile("org-1", "actor-1", {
+      name: "Gateway Missing Rerank",
+      apiBase: "http://gateway:4001/v1",
+      model: "openai/gpt-4o-mini",
+      enabled: true
+    });
+
+    await expect(
+      service.setRerankActiveProfile("org-1", "actor-1", profile.id)
+    ).rejects.toThrow("Rerank gateway profile must configure rerankModel");
   });
 
   it("allows embeddingActiveId to match activeId when explicitly set", async () => {

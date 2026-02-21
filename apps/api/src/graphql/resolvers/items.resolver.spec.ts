@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import DataLoader from "dataloader";
 
-import { ItemsOrderBy } from "../dto/item.input";
+import { ItemsOrderBy, ItemsRankingMode } from "../dto/item.input";
 
 import { ItemsResolver } from "./items.resolver";
 
@@ -399,7 +399,8 @@ describe("ItemsResolver pagination", () => {
       10,
       undefined,
       undefined,
-      "CREATED_DESC"
+      "CREATED_DESC",
+      "RECENCY"
     );
     expect(itemsService.listWithCursor).not.toHaveBeenCalled();
     expect(result.totalCount).toBe(25);
@@ -441,7 +442,8 @@ describe("ItemsResolver pagination", () => {
       10,
       undefined,
       undefined,
-      "PUBLISHED_DESC"
+      "PUBLISHED_DESC",
+      "RECENCY"
     );
 
     const cursor = result.edges[0]?.cursor;
@@ -451,5 +453,32 @@ describe("ItemsResolver pagination", () => {
       sortAt?: string;
     };
     expect(decoded).toMatchObject({ id: "meta-1", sortAt: sortAt.toISOString() });
+  });
+
+  it("defaults to relevance ranking when search is present", async () => {
+    const itemsService = {
+      list: jest.fn().mockResolvedValue({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: 10
+      })
+    };
+    const resolver = new ItemsResolver(itemsService as any);
+
+    await resolver.items(
+      { user: { orgId: "org-1" } } as any,
+      { first: 10, page: 1, search: "fed rate", orderBy: ItemsOrderBy.CREATED_DESC } as any
+    );
+
+    expect(itemsService.list).toHaveBeenCalledWith(
+      "org-1",
+      1,
+      10,
+      "fed rate",
+      undefined,
+      "CREATED_DESC",
+      ItemsRankingMode.RELEVANCE
+    );
   });
 });

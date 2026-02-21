@@ -61,6 +61,24 @@ export class CreateLlmGatewayDto {
 
   @ApiPropertyOptional({
     description:
+      "Optional rerank model used by /v1/rerank calls. Required when this profile is explicitly activated for reranking."
+  })
+  @IsOptional()
+  @IsString()
+  rerankModel?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional backup rerank models (in order) for /v1/rerank calls when primary rerankModel fails."
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MODEL_LIST)
+  @IsString({ each: true })
+  rerankFallbackModels?: string[];
+
+  @ApiPropertyOptional({
+    description:
       "Optional assistant-only chat model override. Used by /assistant calls only and does not affect news pipelines."
   })
   @IsOptional()
@@ -177,6 +195,24 @@ export class UpdateLlmGatewayDto {
 
   @ApiPropertyOptional({
     description:
+      "Optional rerank model used by /v1/rerank calls. Required when this profile is explicitly activated for reranking."
+  })
+  @IsOptional()
+  @IsString()
+  rerankModel?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional backup rerank models (in order) for /v1/rerank calls when primary rerankModel fails."
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MODEL_LIST)
+  @IsString({ each: true })
+  rerankFallbackModels?: string[];
+
+  @ApiPropertyOptional({
+    description:
       "Optional assistant-only chat model override. Used by /assistant calls only and does not affect news pipelines."
   })
   @IsOptional()
@@ -262,7 +298,8 @@ export class UpdateLlmGatewayDto {
 
 export class SetActiveLlmGatewayDto {
   @ApiPropertyOptional({
-    description: "Set to null to disable DB overrides and fall back to config file/env."
+    description:
+      "Set to null to clear explicit active selection. Runtime then resolves to MySQL default profile when available."
   })
   @IsOptional()
   @IsString()
@@ -272,7 +309,7 @@ export class SetActiveLlmGatewayDto {
 export class SetEmbeddingActiveLlmGatewayDto {
   @ApiPropertyOptional({
     description:
-      "Set to null to use the active completion profile (or config file/env) for embeddings."
+      "Set to null to use the active completion profile (or MySQL default embedding profile in use_default mode)."
   })
   @IsOptional()
   @IsString()
@@ -280,7 +317,26 @@ export class SetEmbeddingActiveLlmGatewayDto {
 
   @ApiPropertyOptional({
     description:
-      "How to resolve embeddings gateway when activeId is null: follow_completion (default) or use_default (config/env)."
+      "How to resolve embeddings gateway when activeId is null: follow_completion (default) or use_default (MySQL default profile)."
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(["follow_completion", "use_default"])
+  mode?: "follow_completion" | "use_default";
+}
+
+export class SetRerankActiveLlmGatewayDto {
+  @ApiPropertyOptional({
+    description:
+      "Set to null to use the active completion profile (or MySQL default rerank profile in use_default mode)."
+  })
+  @IsOptional()
+  @IsString()
+  activeId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "How to resolve rerank gateway when activeId is null: follow_completion (default) or use_default (MySQL default profile)."
   })
   @IsOptional()
   @IsString()

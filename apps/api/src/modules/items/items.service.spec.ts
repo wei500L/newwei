@@ -1,3 +1,5 @@
+import { ServiceUnavailableException } from "@nestjs/common";
+
 import { ItemStatus } from "../../common/pipeline-status";
 
 import { ItemsService } from "./items.service";
@@ -79,6 +81,140 @@ describe("ItemsService.list", () => {
 
     expect(result.total).toBe(1);
     expect(result.items).toHaveLength(1);
+  });
+
+  it("returns relevance-ranked rows when ranking mode is RELEVANCE", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn(),
+        count: jest.fn()
+      }
+    };
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {
+        liteLlmConfig: {},
+        itemsSearchRankingConfig: {
+          rerankEnabled: false,
+          recallMaxCandidates: 120,
+          rerankMaxCandidates: 40,
+          rerankTimeoutMs: 300,
+          recencyHalfLifeHours: 48
+        }
+      } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).resolveScopedIds = jest.fn().mockResolvedValue(["meta-2", "meta-1"]);
+    (service as any).rankScopedIdsByRelevance = jest
+      .fn()
+      .mockResolvedValue([
+        { id: "meta-1", score: 0.91 },
+        { id: "meta-2", score: 0.77 }
+      ]);
+    (service as any).fetchItemMetaRowsByIds = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          "meta-1",
+          {
+            id: "meta-1",
+            name: "Item 1",
+            status: "active",
+            createdAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-02T00:00:00.000Z"),
+            sortAt: new Date("2024-01-02T00:00:00.000Z"),
+            orgId: "org-1"
+          }
+        ],
+        [
+          "meta-2",
+          {
+            id: "meta-2",
+            name: "Item 2",
+            status: "active",
+            createdAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-02T00:00:00.000Z"),
+            sortAt: new Date("2024-01-01T00:00:00.000Z"),
+            orgId: "org-1"
+          }
+        ]
+      ])
+    );
+
+    const result = await service.list(
+      "org-1",
+      1,
+      10,
+      "fed rate",
+      undefined,
+      "CREATED_DESC",
+      "RELEVANCE"
+    );
+
+    expect((service as any).rankScopedIdsByRelevance).toHaveBeenCalledWith(
+      "org-1",
+      "fed rate",
+      ["meta-2", "meta-1"]
+    );
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({ id: "meta-1", relevanceScore: 0.91 });
+    expect(result.items[1]).toMatchObject({ id: "meta-2", relevanceScore: 0.77 });
+  });
+
+  it("throws explicit RERANK_UNAVAILABLE code when rerank service fails", async () => {
+    const liteLlmMock = {
+      rerank: jest.fn().mockRejectedValue(new Error("upstream unavailable"))
+    };
+
+    const service = new ItemsService(
+      {
+        itemMeta: {
+          findMany: jest.fn(),
+          count: jest.fn()
+        }
+      } as any,
+      {} as any,
+      {} as any,
+      {
+        liteLlmConfig: {},
+        itemsSearchRankingConfig: {
+          rerankEnabled: true,
+          recallMaxCandidates: 120,
+          rerankMaxCandidates: 40,
+          rerankTimeoutMs: 300,
+          recencyHalfLifeHours: 48
+        }
+      } as any,
+      liteLlmMock as any,
+      {} as any
+    );
+
+    await expect(
+      (service as any).tryRerankCandidates({
+        orgId: "org-1",
+        query: "fed policy",
+        candidates: [{ id: "meta-1", document: "Fed signals higher for longer" }],
+        timeoutMs: 300
+      })
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+    try {
+      await (service as any).tryRerankCandidates({
+        orgId: "org-1",
+        query: "fed policy",
+        candidates: [{ id: "meta-1", document: "Fed signals higher for longer" }],
+        timeoutMs: 300
+      });
+    } catch (error) {
+      const response = (error as ServiceUnavailableException).getResponse() as {
+        code?: string;
+      };
+      expect(response.code).toBe("RERANK_UNAVAILABLE");
+    }
   });
 });
 

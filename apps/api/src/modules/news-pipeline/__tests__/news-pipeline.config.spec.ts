@@ -30,6 +30,8 @@ describe('NewsPipelineConfigService config watcher', () => {
     },
     liteLlmConfig: {
       model: 'model',
+      rerankModel: undefined,
+      rerankFallbackModels: [],
       apiBase: 'http://example.com',
       apiKey: undefined,
       timeoutMs: 30_000,

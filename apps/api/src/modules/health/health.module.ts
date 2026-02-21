@@ -8,6 +8,7 @@ import { DatabaseModule } from "../config/database.module";
 
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
 import { HealthController } from "./health.controller";
+import { LlmGatewayHealthIndicator } from "./llm-gateway.health";
 import { MongoHealthIndicator } from "./mongo.health";
 import { RedisHealthIndicator } from "./redis.health";
 
@@ -33,6 +34,11 @@ import { RedisHealthIndicator } from "./redis.health";
     })
   ],
   controllers: [HealthController],
-  providers: [RedisHealthIndicator, Crawl4aiHealthIndicator, MongoHealthIndicator]
+  providers: [
+    RedisHealthIndicator,
+    Crawl4aiHealthIndicator,
+    MongoHealthIndicator,
+    LlmGatewayHealthIndicator,
+  ]
 })
 export class HealthModule {}

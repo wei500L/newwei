@@ -2783,6 +2783,7 @@
         "model": "Model",
         "assistantModel": "Assistant model",
         "embeddingModel": "Embedding model",
+        "rerankModel": "Rerank model",
         "compatibility": "Compatibility",
         "metadataOn": "metadata:on",
         "metadataOff": "metadata:off",
@@ -2797,6 +2798,8 @@
         "model": "Default model",
         "assistantModel": "Assistant-only model",
         "embeddingModel": "Embedding model",
+        "rerankModel": "Rerank model",
+        "rerankFallbackModels": "Rerank backup models",
         "apiSurface": "API surface",
         "timeoutMs": "Timeout (ms)",
         "temperature": "Temperature",
@@ -2813,15 +2816,18 @@
         "name": "e.g. LiteLLM (prod)",
         "apiKey": "Optional",
         "apiKeyEdit": "Leave empty to keep unchanged",
-        "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku"
+        "fallbackModels": "comma-separated, e.g. openai/gpt-4o-mini,anthropic/claude-3-haiku",
+        "rerankFallbackModels": "comma-separated, e.g. cohere/rerank-v3.0,cohere/rerank-english-v3.0"
       },
       "hints": {
         "apiBase": "This base URL is used by the API server (not the browser). For Docker Compose, use http://litellm:4000; for local dev, use http://localhost:4001. Accepts either a base URL (e.g. https://api.openai.com) or a full endpoint URL (e.g. https://api.openai.com/v1/chat/completions). We normalize it automatically.",
         "apiKey": "Stored in system settings. Encrypted in MySQL when secret encryption is enabled (System Settings -> Security) and SYSTEM_SETTINGS_ENCRYPTION_KEY is configured; otherwise stored as plaintext. You can paste either sk-... or a full \"Bearer sk-...\" value. If your gateway is a LiteLLM Proxy protected by a master key, paste the master key here; otherwise leave it empty. Upstream provider keys (e.g. OPENAI_API_KEY) must be configured on the LiteLLM Proxy side.",
         "apiKeyEdit": "Provide a new key to rotate it. Use the toggle below to clear.",
         "fallbackModels": "Used when the primary model request fails.",
+        "rerankFallbackModels": "Used when the primary rerank model request fails.",
         "modelOptional": "Optional: used for chat completion requests. Leave empty when configuring embeddings-only gateway.",
         "assistantModel": "Optional: used only by AI Assistant (/assistant) and excluded from news pipeline model routing.",
+        "rerankModel": "Optional: used by rerank endpoint (/v1/rerank). Required if this profile is explicitly activated for reranking.",
         "apiSurface": "Select which completion endpoint runtime should call: /v1/chat/completions or /v1/responses.",
         "sendMetadata": "When disabled, runtime requests omit metadata for better compatibility.",
         "responseFormatMode": "Select how response_format is sent upstream: json_schema, json_object, or none."
@@ -2846,7 +2852,8 @@
         "createTitle": "New LLM gateway",
         "editTitle": "Edit LLM gateway",
         "deleteTitle": "Delete LLM gateway",
-        "deleteContent": "Delete {{name}}? This cannot be undone."
+        "deleteContent": "Delete {{name}}? This cannot be undone.",
+        "disableRerankHint": "This profile is currently active for Reranker. Disabling it will clear Reranker active selection and fall back to follow/default strategy."
       },
       "messages": {
         "created": "Created",
@@ -2876,6 +2883,10 @@
           "includeEmbeddings": "Test embeddings",
           "embeddingModel": "Embedding model override",
           "embeddingInput": "Embedding input",
+          "includeRerank": "Test rerank",
+          "rerankModel": "Rerank model override",
+          "rerankQuery": "Rerank query",
+          "rerankDocuments": "Rerank documents",
           "includeCompletion": "Test chat completion",
           "apiSurface": "API surface",
           "responseFormatMode": "response_format probe",
@@ -2883,16 +2894,21 @@
         },
         "placeholders": {
           "prompt": "Say \"OK\" and nothing else.",
-          "embeddingInput": "hello"
+          "embeddingInput": "hello",
+          "rerankQuery": "latest US inflation outlook and Fed policy",
+          "rerankDocuments": "One document per line. Leave empty to use default probe documents."
         },
         "hints": {
           "model": "Leave empty to use the profile default + fallback models.",
           "embeddingModel": "Leave empty to use the profile embedding model.",
-          "includeCompletion": "When disabled, only embeddings are tested."
+          "includeCompletion": "When disabled, only embeddings are tested.",
+          "includeRerank": "When enabled, runs a rerank probe against /v1/rerank.",
+          "rerankModel": "Leave empty to use the profile rerank model + backup rerank models."
         },
         "sections": {
           "completion": "Chat completion",
-          "embedding": "Embeddings"
+          "embedding": "Embeddings",
+          "rerank": "Rerank"
         },
         "tokens": "{{total}} tokens",
         "dimensions": "{{n}} dims",
@@ -2903,7 +2919,9 @@
         "labels": {
           "apiSurface": "API surface",
           "compatibility": "Compatibility",
-          "field": "field"
+          "field": "field",
+          "topN": "topN",
+          "score": "score"
         }
       },
       "testUnsaved": {
@@ -2940,11 +2958,11 @@
         },
         "tag": "Embeddings",
         "title": "Embeddings gateway",
-        "hint": "Used for embeddings/vectorization requests (can use a different gateway/model from chat completion).",
+        "hint": "Used for embeddings/vectorization requests (can use a different gateway/model from chat completion). In use_default mode, the backend resolves to the first eligible enabled profile stored in MySQL.",
         "currentCompletion": "Current chat completion profile",
         "currentEmbedding": "Current embeddings profile",
-        "default": "Default (config/env)",
-        "defaultTag": "Default",
+        "default": "Default profile (MySQL)",
+        "defaultTag": "MySQL default",
         "lockedSame": "Locked (same as chat completion)",
         "independent": "Independent",
         "following": "Following chat completion",
@@ -2955,9 +2973,36 @@
         "followCompletion": "Follow chat completion ({{name}})",
         "followCompletionEmpty": "Follow chat completion (none active)",
         "followTag": "Follow",
-        "useDefault": "Use default (config/env)",
+        "useDefault": "Use MySQL default profile",
         "missingEmbeddingModelShort": "Missing embedding model",
         "noEligibleProfiles": "No eligible embeddings profiles. Add an embedding model to a profile and enable it first."
+      },
+      "rerankActive": {
+        "messages": {
+          "activated": "Reranker profile updated."
+        },
+        "errors": {
+          "activateFailed": "Failed to update reranker profile."
+        },
+        "tag": "Reranker",
+        "title": "Rerank gateway",
+        "hint": "Used for rerank/reordering requests (can use a different gateway/model from chat completion). In use_default mode, the backend resolves to the first eligible enabled profile stored in MySQL.",
+        "currentCompletion": "Current chat completion profile",
+        "currentRerank": "Current rerank profile",
+        "default": "Default profile (MySQL)",
+        "defaultTag": "MySQL default",
+        "lockedSame": "Locked (same as chat completion)",
+        "independent": "Independent",
+        "following": "Following chat completion",
+        "missingRerankModel": "Rerank model not configured",
+        "selectLabel": "Switch rerank gateway",
+        "selectPlaceholder": "Select a gateway profile for reranking",
+        "followCompletion": "Follow chat completion ({{name}})",
+        "followCompletionEmpty": "Follow chat completion (none active)",
+        "followTag": "Follow",
+        "useDefault": "Use MySQL default profile",
+        "missingRerankModelShort": "Missing rerank model",
+        "noEligibleProfiles": "No eligible rerank profiles. Add a rerank model to a profile and enable it first."
       }
     },
     "assistantSafety": {
@@ -5094,6 +5139,18 @@
     },
     "search": {
       "placeholder": "Search titles, summaries, topics, entities, locations"
+    },
+    "ranking": {
+      "relevance": "Relevance",
+      "relevanceUnavailable": "Relevance (Unavailable)",
+      "recency": "Recency"
+    },
+    "rerankUnavailable": {
+      "title": "Reranker unavailable",
+      "description": "Relevance reranking is currently unavailable. Retry later or switch to Recency ranking.",
+      "detailLabel": "Details",
+      "switchToRecency": "Switch to Recency ranking",
+      "relevanceDisabledHint": "Relevance ranking is temporarily unavailable because reranker is down."
     },
     "filters": {
       "button": "Filters",
