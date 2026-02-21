@@ -206,6 +206,110 @@ input AnomalyAnalysisInput {
   value: Float!
 }
 
+type ArchiveCalendarDayModel {
+  count: Int!
+  date: String!
+}
+
+input ArchiveCalendarInput {
+  month: String!
+  region: ArchiveRegion
+  vertical: ArchiveVertical
+}
+
+type ArchiveDetailModel {
+  eventId: String
+  fullEntities: [String!]!
+  processedArticleId: String!
+  relatedArticles: [ArchiveRelatedArticleModel!]!
+  sourceLabel: String
+  sourceUrl: String
+  summary: String
+  timeline: [ArchiveTimelineEntryModel!]!
+  title: String
+}
+
+type ArchiveDigestModel {
+  anchorDate: DateTime!
+  groups: [ArchiveVerticalGroupModel!]!
+  region: ArchiveRegion!
+  totalCount: Int!
+}
+
+type ArchiveEventItemModel {
+  countryLabel: String
+  entityTags: [String!]!
+  eventId: String
+  keywordHighlights: [String!]!
+  processedArticleId: String!
+  publishedAt: DateTime
+  qualityScore: Float
+  region: ArchiveRegion!
+  sortAt: DateTime!
+  sourceLabel: String
+  sourceUrl: String
+  summary: String
+  title: String
+  vertical: ArchiveVertical!
+  weight: Int!
+}
+
+input ArchiveQueryInput {
+  anchorDate: DateTime!
+  limitPerVertical: Int
+  region: ArchiveRegion!
+  search: String
+  weights: [ArchiveWeight!]
+}
+
+enum ArchiveRegion {
+  AFRICA
+  AMERICAS
+  APAC
+  EUROPE
+  MIDDLE_EAST
+  OTHER
+}
+
+type ArchiveRelatedArticleModel {
+  processedArticleId: String!
+  publishedAt: DateTime
+  sourceLabel: String
+  sourceUrl: String
+  summary: String
+  title: String
+}
+
+type ArchiveTimelineEntryModel {
+  bucketStart: DateTime!
+  id: String!
+  summary: String
+  title: String
+}
+
+enum ArchiveVertical {
+  DOMESTIC_AFFAIRS
+  EAST_SEA
+  FOREIGN_AFFAIRS
+  SOUTH_SEA
+  WEST_FRONT
+}
+
+type ArchiveVerticalGroupModel {
+  displayName: String!
+  items: [ArchiveEventItemModel!]!
+  totalCount: Int!
+  vertical: ArchiveVertical!
+}
+
+enum ArchiveWeight {
+  FIVE
+  FOUR
+  ONE
+  THREE
+  TWO
+}
+
 type ArticleEntityLinkModel {
   articleId: String!
   confidence: Float
@@ -1626,6 +1730,9 @@ type Query {
   alertRuleTuningSuggestion(ruleId: String!, windowDays: Int): AlertRuleTuningSuggestionModel
   alertRules: [AlertRuleModel!]!
   analysisResults(limit: Int): [AnalysisResultModel!]!
+  archiveCalendar(input: ArchiveCalendarInput!): [ArchiveCalendarDayModel!]!
+  archiveDetail(processedArticleId: String!): ArchiveDetailModel
+  archiveDigest(input: ArchiveQueryInput!): ArchiveDigestModel!
   articleEntityLinks(articleId: String!, limit: Int): [ArticleEntityLinkModel!]!
   assistantEconomicSeriesSuggestions(limit: Int = 8, term: String!): [EconomicSeriesSuggestion!]!
   assistantRuns(limit: Int): [AssistantRunModel!]!

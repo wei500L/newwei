@@ -1217,6 +1217,7 @@
       "today": "Today",
       "topics": "Topics & Events",
       "events": "News Events",
+      "eventsArchive": "Events Archive",
       "rss": "RSS Reader",
       "map": "Situation Map",
       "finance": "Finance Panel",
@@ -1424,6 +1425,76 @@
         "articleLoadFailed": "Failed to load article.",
         "articleNotFound": "Processed item not found.",
         "articleEmpty": "No LLM content available."
+      }
+    },
+    "eventsArchive": {
+      "title": "Events Archive",
+      "subtitle": "Browse processed intelligence archives by date and domain.",
+      "regions": {
+        "APAC": "Asia-Pacific",
+        "MIDDLE_EAST": "Middle East",
+        "AMERICAS": "Americas",
+        "EUROPE": "Europe",
+        "AFRICA": "Africa",
+        "OTHER": "Other"
+      },
+      "sections": {
+        "geo": "Geopolitical Hotspots",
+        "macro": "Macro Affairs"
+      },
+      "verticals": {
+        "EAST_SEA": "[East Sea]",
+        "SOUTH_SEA": "[South Sea]",
+        "WEST_FRONT": "[West Front]",
+        "FOREIGN_AFFAIRS": "[Foreign Affairs]",
+        "DOMESTIC_AFFAIRS": "[Domestic Affairs]"
+      },
+      "weights": {
+        "FIVE": "⭐⭐⭐⭐⭐ Critical",
+        "FOUR": "⭐⭐⭐⭐ Important",
+        "THREE": "⭐⭐⭐ Normal",
+        "TWO": "⭐⭐ Minor",
+        "ONE": "⭐ Reference"
+      },
+      "dailyCount": "{{count}} updates today",
+      "loadFailed": "Failed to load archive.",
+      "empty": "No archive entries for this date.",
+      "emptySearchHint": "Try a more general keyword.",
+      "groupEmpty": "No updates.",
+      "unknownCountry": "Unknown",
+      "expand": "Expand more",
+      "collapse": "Collapse",
+      "filters": {
+        "weightPlaceholder": "All weights"
+      },
+      "errors": {
+        "searchFailedTitle": "Semantic search failed",
+        "digestFailedTitle": "Archive load failed",
+        "digestLoadFailed": "Failed to load archive data. Please retry.",
+        "embeddingUnavailable": "Embedding model is not configured. Contact an administrator.",
+        "embeddingFailed": "Failed to generate semantic embedding. Please retry.",
+        "embeddingInvalidResponse": "Embedding response was invalid. Please retry.",
+        "vectorUnavailable": "Vector retrieval service is unavailable. Please retry.",
+        "rerankFailed": "Rerank service failed. Please retry.",
+        "rerankInvalidResponse": "Rerank response was invalid. Please retry.",
+        "scanLimitExceeded": "Scan limit exceeded. Narrow filters and retry.",
+        "calendarFailedTitle": "Calendar load failed",
+        "calendarFailed": "Date markers and next-day navigation are unavailable. Please refresh and retry."
+      },
+      "detail": {
+        "title": "Event details",
+        "loadFailed": "Failed to load details.",
+        "notFound": "No details found.",
+        "untitled": "Untitled event",
+        "entities": "Countries / entities",
+        "entitiesEmpty": "No entity tags.",
+        "source": "Source",
+        "sourceUnknown": "Unknown source",
+        "openOriginal": "Open source link",
+        "timeline": "Timeline",
+        "timelineEmpty": "No related timeline entries.",
+        "related": "Related articles",
+        "relatedEmpty": "No related articles."
       }
     },
     "digest": {
@@ -3789,6 +3860,40 @@
         "cancel": "Cancel"
       }
     },
+    "newsSourceScheduler": {
+      "description": "Configure scheduler seed freshness filtering for news source URL discovery.",
+      "notice": {
+        "title": "Runtime effect",
+        "body": "Changes are stored in MySQL system settings and applied on the next scheduler run."
+      },
+      "status": {
+        "label": "Status",
+        "default": "Using system defaults",
+        "saved": "Saved override",
+        "unavailable": "Unavailable (settings load failed)"
+      },
+      "fields": {
+        "seedFreshnessWindowDays": "Seed freshness window (days)"
+      },
+      "hints": {
+        "seedFreshnessWindowDays": "URLs with publish dates older than this window are skipped during seed candidate filtering."
+      },
+      "validation": {
+        "seedFreshnessWindowDaysRequired": "Freshness window is required",
+        "seedFreshnessWindowDaysRange": "Freshness window must be between 1 and 3650 days"
+      },
+      "messages": {
+        "saved": "Saved"
+      },
+      "errors": {
+        "loadFailed": "Failed to load news source scheduler settings",
+        "saveFailed": "Failed to save news source scheduler settings",
+        "badRequest": "Invalid input",
+        "codes": {
+          "NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID": "Stored scheduler settings are invalid"
+        }
+      }
+    },
     "situationMonitor": {
       "description": "Configure situation monitor translation behavior (concurrency + DeepLX primary API + fallback endpoint).",
       "notice": {
@@ -3905,6 +4010,7 @@
       "email": "Email (SMTP)",
       "security": "Security",
       "situationMonitor": "Situation monitor",
+      "newsSourceScheduler": "News source scheduler",
       "vectorService": "Vector service",
       "modelService": "Model service",
       "akshare": "AKShare"

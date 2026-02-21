@@ -13,7 +13,12 @@ import { ItemsService } from "../items/items.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
-import type { CrawlIngestBatchSummary, CrawlMarkdownFilter, CrawlTaskView } from "./crawl.types";
+import type {
+  CrawlIngestBatchSummary,
+  CrawlMarkdownFilter,
+  CrawlTaskOptions,
+  CrawlTaskView,
+} from "./crawl.types";
 import { clampResultLimit, coerceDate, normalizeKeywords } from "./crawl.utils";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import { CreateCrawlTaskDto } from "./dto/create-crawl-task.dto";
@@ -84,7 +89,7 @@ export class CrawlTaskService {
     }
 
     const normalizedOptions = this.executionService.normalizeOptions({
-      ...(normalizedRawOptions as Partial<CreateCrawlTaskDto["options"]>),
+      ...(normalizedRawOptions as unknown as Partial<CrawlTaskOptions>),
       markdownFilter: this.normalizeMarkdownFilter(normalizedRawOptions?.markdownFilter)
     });
 

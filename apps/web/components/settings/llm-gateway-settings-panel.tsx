@@ -1104,6 +1104,10 @@ export function LlmGatewaySettingsPanel() {
     }
     setSaving(true);
     try {
+      const rerankFallbackModels =
+        values.rerankFallbackModels === undefined
+          ? undefined
+          : toFallbackModels(values.rerankFallbackModels) ?? [];
       const payload: Record<string, unknown> = {
         name: values.name.trim(),
         apiBase: values.apiBase.trim(),
@@ -1117,7 +1121,9 @@ export function LlmGatewaySettingsPanel() {
         rerankModel: values.rerankModel?.trim()
           ? values.rerankModel.trim()
           : null,
-        rerankFallbackModels: toFallbackModels(values.rerankFallbackModels),
+        ...(rerankFallbackModels !== undefined
+          ? { rerankFallbackModels }
+          : {}),
         apiSurface: values.apiSurface ?? "chat_completions",
         timeoutMs: values.timeoutMs,
         temperature: values.temperature,

@@ -81,6 +81,9 @@ describe("NewsSourceSchedulerService", () => {
 
     const crawlTaskService = {} as any;
     const notifications = { notify: jest.fn() } as any;
+    const schedulerSettings = {
+      getSeedFreshnessWindowDays: jest.fn().mockResolvedValue(365),
+    } as any;
 
     const service = new NewsSourceSchedulerService(
       prisma,
@@ -90,6 +93,7 @@ describe("NewsSourceSchedulerService", () => {
       env,
       crawlTaskService,
       notifications,
+      schedulerSettings,
     );
 
     return {
@@ -101,6 +105,7 @@ describe("NewsSourceSchedulerService", () => {
       env,
       crawlTaskService,
       notifications,
+      schedulerSettings,
     };
   };
 
@@ -369,6 +374,103 @@ describe("NewsSourceSchedulerService", () => {
     }
   });
 
+  it("uses MySQL-backed scheduler freshness window settings for seed filtering", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T00:00:00.000Z"));
+    try {
+      const {
+        service,
+        prisma,
+        metadataService,
+        crawlQueue,
+        schedulerSettings,
+      } =
+        createService();
+      const now = new Date("2026-02-15T00:00:00.000Z");
+      schedulerSettings.getSeedFreshnessWindowDays = jest
+        .fn()
+        .mockResolvedValue(30);
+
+      (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
+        "https://example.com/news/2025/12/01/stale-under-30-day-window",
+        "https://example.com/news/2026/02/14/fresh-under-30-day-window",
+      ]);
+
+      (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: "source-1",
+          orgId: "org-1",
+          name: "Example",
+          url: "https://example.com",
+          siteType: "general",
+          language: "en",
+          crawlTemplateId: null,
+          frequencySeconds: 3600,
+          priority: 0,
+          nextRunAt: now,
+          config: {
+            keywords: ["economy"],
+            seed: {
+              enabled: true,
+              maxUrls: 20,
+              maxNewUrlsPerRun: 10,
+              scoreThreshold: 0,
+              dedupeWindowHours: 24,
+              cacheTtlSeconds: 600,
+            },
+          },
+          crawlTemplate: null,
+        },
+      ]);
+
+      (prisma.membership.findFirst as jest.Mock).mockResolvedValue({
+        userId: "user-actor",
+      });
+      (prisma.article.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.pipelineJob.findMany as jest.Mock).mockResolvedValue([]);
+
+      let taskIndex = 0;
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (fn: (tx: any) => Promise<any>) =>
+          fn({
+            pipelineJob: {
+              create: jest.fn(async () => ({
+                id: "job-1",
+                metadata: null,
+              })),
+              update: jest.fn(async () => ({})),
+            },
+            crawlTask: {
+              findFirst: jest.fn(async () => null),
+              create: jest.fn(async () => ({ id: `task-${++taskIndex}` })),
+              update: jest.fn(async (args: any) => ({
+                id: args?.where?.id ?? `task-${taskIndex}`,
+              })),
+            },
+          }),
+      );
+
+      (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+      (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
+
+      await (service as any).scheduleDueSources(now, 10);
+
+      expect(schedulerSettings.getSeedFreshnessWindowDays).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(crawlQueue.enqueueTask).toHaveBeenCalledTimes(1);
+      expect(crawlQueue.enqueueTask).toHaveBeenCalledWith(
+        "task-1",
+        "org-1",
+        "user-actor",
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("reschedules when a seed source is at in-flight capacity", async () => {
     const { service, prisma, metadataService, crawlQueue, env } =
       createService();
@@ -430,6 +532,20 @@ describe("NewsSourceSchedulerService", () => {
     });
     expect(crawlQueue.enqueueTask).not.toHaveBeenCalled();
     expect(prisma.newsSource.update).not.toHaveBeenCalled();
+  });
+
+  it("fails scheduling when scheduler freshness settings cannot be loaded", async () => {
+    const { service, prisma, schedulerSettings } = createService();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+
+    schedulerSettings.getSeedFreshnessWindowDays = jest
+      .fn()
+      .mockRejectedValue(new Error("settings unavailable"));
+    (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([]);
+
+    await expect((service as any).scheduleDueSources(now, 10)).rejects.toThrow(
+      "settings unavailable",
+    );
   });
 
   it("injects hardened anti-bot defaults for list crawl options", () => {

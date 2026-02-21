@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -222,6 +220,117 @@ export type AnomalyAnalysisInput = {
   timestamp: Scalars['String']['input'];
   value: Scalars['Float']['input'];
 };
+
+export type ArchiveCalendarDayModel = {
+  __typename?: 'ArchiveCalendarDayModel';
+  count: Scalars['Int']['output'];
+  date: Scalars['String']['output'];
+};
+
+export type ArchiveCalendarInput = {
+  month: Scalars['String']['input'];
+  region?: InputMaybe<ArchiveRegion>;
+  vertical?: InputMaybe<ArchiveVertical>;
+};
+
+export type ArchiveDetailModel = {
+  __typename?: 'ArchiveDetailModel';
+  eventId?: Maybe<Scalars['String']['output']>;
+  fullEntities: Array<Scalars['String']['output']>;
+  processedArticleId: Scalars['String']['output'];
+  relatedArticles: Array<ArchiveRelatedArticleModel>;
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  sourceUrl?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  timeline: Array<ArchiveTimelineEntryModel>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type ArchiveDigestModel = {
+  __typename?: 'ArchiveDigestModel';
+  anchorDate: Scalars['DateTime']['output'];
+  groups: Array<ArchiveVerticalGroupModel>;
+  region: ArchiveRegion;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type ArchiveEventItemModel = {
+  __typename?: 'ArchiveEventItemModel';
+  countryLabel?: Maybe<Scalars['String']['output']>;
+  entityTags: Array<Scalars['String']['output']>;
+  eventId?: Maybe<Scalars['String']['output']>;
+  keywordHighlights: Array<Scalars['String']['output']>;
+  processedArticleId: Scalars['String']['output'];
+  publishedAt?: Maybe<Scalars['DateTime']['output']>;
+  qualityScore?: Maybe<Scalars['Float']['output']>;
+  region: ArchiveRegion;
+  sortAt: Scalars['DateTime']['output'];
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  sourceUrl?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  vertical: ArchiveVertical;
+  weight: Scalars['Int']['output'];
+};
+
+export type ArchiveQueryInput = {
+  anchorDate: Scalars['DateTime']['input'];
+  limitPerVertical?: InputMaybe<Scalars['Int']['input']>;
+  region: ArchiveRegion;
+  search?: InputMaybe<Scalars['String']['input']>;
+  weights?: InputMaybe<Array<ArchiveWeight>>;
+};
+
+export enum ArchiveRegion {
+  Africa = 'AFRICA',
+  Americas = 'AMERICAS',
+  Apac = 'APAC',
+  Europe = 'EUROPE',
+  MiddleEast = 'MIDDLE_EAST',
+  Other = 'OTHER'
+}
+
+export type ArchiveRelatedArticleModel = {
+  __typename?: 'ArchiveRelatedArticleModel';
+  processedArticleId: Scalars['String']['output'];
+  publishedAt?: Maybe<Scalars['DateTime']['output']>;
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  sourceUrl?: Maybe<Scalars['String']['output']>;
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export type ArchiveTimelineEntryModel = {
+  __typename?: 'ArchiveTimelineEntryModel';
+  bucketStart: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  summary?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+};
+
+export enum ArchiveVertical {
+  DomesticAffairs = 'DOMESTIC_AFFAIRS',
+  EastSea = 'EAST_SEA',
+  ForeignAffairs = 'FOREIGN_AFFAIRS',
+  SouthSea = 'SOUTH_SEA',
+  WestFront = 'WEST_FRONT'
+}
+
+export type ArchiveVerticalGroupModel = {
+  __typename?: 'ArchiveVerticalGroupModel';
+  displayName: Scalars['String']['output'];
+  items: Array<ArchiveEventItemModel>;
+  totalCount: Scalars['Int']['output'];
+  vertical: ArchiveVertical;
+};
+
+export enum ArchiveWeight {
+  Five = 'FIVE',
+  Four = 'FOUR',
+  One = 'ONE',
+  Three = 'THREE',
+  Two = 'TWO'
+}
 
 export type ArticleEntityLinkModel = {
   __typename?: 'ArticleEntityLinkModel';
@@ -1897,6 +2006,9 @@ export type Query = {
   alertRuleTuningSuggestion?: Maybe<AlertRuleTuningSuggestionModel>;
   alertRules: Array<AlertRuleModel>;
   analysisResults: Array<AnalysisResultModel>;
+  archiveCalendar: Array<ArchiveCalendarDayModel>;
+  archiveDetail?: Maybe<ArchiveDetailModel>;
+  archiveDigest: ArchiveDigestModel;
   articleEntityLinks: Array<ArticleEntityLinkModel>;
   assistantEconomicSeriesSuggestions: Array<EconomicSeriesSuggestion>;
   assistantRuns: Array<AssistantRunModel>;
@@ -1975,6 +2087,21 @@ export type QueryAlertRuleTuningSuggestionArgs = {
 
 export type QueryAnalysisResultsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryArchiveCalendarArgs = {
+  input: ArchiveCalendarInput;
+};
+
+
+export type QueryArchiveDetailArgs = {
+  processedArticleId: Scalars['String']['input'];
+};
+
+
+export type QueryArchiveDigestArgs = {
+  input: ArchiveQueryInput;
 };
 
 

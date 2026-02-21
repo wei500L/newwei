@@ -2362,13 +2362,15 @@ export class ItemsService {
       typeof options.cursor?.offset === "number" && Number.isFinite(options.cursor.offset)
         ? Math.floor(options.cursor.offset)
         : null;
-    const fallbackCursorId =
-      typeof options.cursor?.id === "string" ? options.cursor.id.trim() : "";
-    const fallbackOffset =
-      fallbackCursorId.length > 0
-        ? ranked.findIndex((entry) => entry.id === fallbackCursorId)
-        : -1;
-    const startOffset = cursorOffset !== null ? Math.max(0, cursorOffset + 1) : Math.max(0, fallbackOffset + 1);
+    const cursorId = typeof options.cursor?.id === "string" ? options.cursor.id.trim() : "";
+    const cursorIdOffset =
+      cursorId.length > 0 ? ranked.findIndex((entry) => entry.id === cursorId) : -1;
+    const startOffset =
+      cursorIdOffset >= 0
+        ? cursorIdOffset + 1
+        : cursorOffset !== null
+          ? Math.max(0, cursorOffset + 1)
+          : 0;
     const pageRows = ranked.slice(startOffset, startOffset + options.first + 1);
     const hasNextPage = pageRows.length > options.first;
     const slicedRows = hasNextPage ? pageRows.slice(0, options.first) : pageRows;

@@ -185,10 +185,78 @@ function resolveManualLimiterMax(concurrency: number): number {
   return Math.max(1, Math.min(10_000, Math.round(concurrency) * 100));
 }
 
-function resolveInitialWorkerConcurrency(configured: number, fallback: number): number {
-  const normalizedConfigured = Math.max(1, Math.round(configured));
-  const normalizedFallback = Math.max(1, Math.round(fallback));
-  return Math.max(normalizedConfigured, normalizedFallback);
+function normalizePositiveInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(1, Math.round(value));
+}
+
+function normalizeNonNegativeInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function resolveInitialWorkerConcurrency(configured: unknown, fallback: unknown): number {
+  const normalizedConfigured = normalizePositiveInteger(configured);
+  if (normalizedConfigured !== null) {
+    return normalizedConfigured;
+  }
+  return normalizePositiveInteger(fallback) ?? 1;
+}
+
+function resolveMaxAttempts(value: unknown): number {
+  return normalizePositiveInteger(value) ?? 1;
+}
+
+function resolveAttemptsStarted(job: { attemptsMade?: number; attemptsStarted?: unknown }): number {
+  const attemptsStarted = normalizePositiveInteger(job.attemptsStarted);
+  if (attemptsStarted !== null) {
+    return attemptsStarted;
+  }
+  if (typeof job.attemptsMade === "number" && Number.isFinite(job.attemptsMade)) {
+    return Math.max(1, Math.floor(job.attemptsMade) + 1);
+  }
+  return 1;
+}
+
+function resolveMemoryPressureRequeues(job: { data?: { memoryPressureRequeues?: unknown } }): number {
+  return normalizeNonNegativeInteger(job.data?.memoryPressureRequeues) ?? 0;
+}
+
+async function persistMemoryPressureRequeueCount(
+  job: {
+    data?: CrawlJobData;
+    attemptsStarted?: unknown;
+    updateData?: (data: CrawlJobData) => Promise<unknown>;
+  },
+  nextRequeues: number
+) {
+  if (!job.data) {
+    throw new Error("Crawl job payload is missing; cannot persist retry state");
+  }
+
+  const nextData: CrawlJobData = {
+    ...job.data,
+    memoryPressureRequeues: nextRequeues
+  };
+
+  if (typeof job.updateData === "function") {
+    await job.updateData(nextData);
+    return;
+  }
+
+  // Without updateData(), the counter cannot persist across retries.
+  // If attemptsStarted is unavailable, we cannot enforce a bounded requeue budget safely.
+  if (normalizePositiveInteger(job.attemptsStarted) !== null) {
+    return;
+  }
+
+  throw new Error(
+    "Cannot persist memory pressure retry state for crawl job (missing updateData and attemptsStarted)"
+  );
 }
 
 interface QueueWithGlobalConcurrencyApi {
@@ -235,9 +303,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         const traceId = ensureTraceId(job.data.traceId);
         return runWithTraceId(traceId, async () => {
           logger.info({ jobId: job.id, taskId: job.data.taskId }, "Processing crawl job");
-          const maxAttempts = job.opts.attempts ?? 1;
-          const attempt = (job.attemptsMade ?? 0) + 1;
-          const backoffDelayMs = resolveBackoffDelayMs(job.opts.backoff, attempt);
+          const maxAttempts = resolveMaxAttempts(job.opts?.attempts);
+          const attemptsStarted = resolveAttemptsStarted(job);
+          const attempt = Math.min(maxAttempts, attemptsStarted);
+          const backoffDelayMs = resolveBackoffDelayMs(job.opts?.backoff, attempt);
           try {
             return await this.crawlExecutionService.runTask(
               job.data.taskId,
@@ -251,6 +320,28 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
             );
           } catch (error) {
             if (isMemoryPressureError(error)) {
+              const memoryPressureRequeues = resolveMemoryPressureRequeues(job);
+              if (
+                attemptsStarted >= maxAttempts ||
+                memoryPressureRequeues >= maxAttempts - 1
+              ) {
+                logger.warn(
+                  {
+                    jobId: job.id,
+                    taskId: job.data.taskId,
+                    attemptsStarted,
+                    maxAttempts,
+                    memoryPressureRequeues
+                  },
+                  "crawl4ai memory pressure retry budget exhausted; failing job as unrecoverable"
+                );
+                const unrecoverable = new UnrecoverableError(
+                  error instanceof Error ? error.message : String(error)
+                );
+                (unrecoverable as Error & { cause?: unknown }).cause = error;
+                throw unrecoverable;
+              }
+
               let configuredCooldownMs: number = MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS;
               try {
                 const settings = await this.crawlSettings.getSettings();
@@ -275,12 +366,35 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
                 throw error;
               }
 
+              const nextMemoryPressureRequeues = memoryPressureRequeues + 1;
+              try {
+                await persistMemoryPressureRequeueCount(job, nextMemoryPressureRequeues);
+              } catch (persistError) {
+                logger.error(
+                  {
+                    jobId: job.id,
+                    taskId: job.data.taskId,
+                    nextMemoryPressureRequeues,
+                    maxAttempts,
+                    err: persistError
+                  },
+                  "Failed to persist memory pressure retry state; failing crawl job as unrecoverable"
+                );
+                const unrecoverable = new UnrecoverableError(
+                  error instanceof Error ? error.message : String(error)
+                );
+                (unrecoverable as Error & { cause?: unknown }).cause = error;
+                throw unrecoverable;
+              }
+
               logger.warn(
                 {
                   jobId: job.id,
                   taskId: job.data.taskId,
                   cooldownMs,
                   memoryPercent,
+                  memoryPressureRequeues: nextMemoryPressureRequeues,
+                  maxAttempts,
                   error:
                     error instanceof Error
                       ? truncateText(error.message, 500)

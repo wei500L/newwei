@@ -22,6 +22,7 @@ import {
   type DeepDiscoveryFailureStats24h,
 } from "../crawl/deep-discovery-failure";
 import { NotificationsService } from "../notifications/notifications.service";
+import { NewsSourceSchedulerSettingsService } from "../system-settings/news-source-scheduler-settings.service";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
 
@@ -98,6 +99,7 @@ export class NewsSourceSchedulerService {
     private readonly env: EnvService,
     private readonly crawlTaskService: CrawlTaskService,
     private readonly notifications: NotificationsService,
+    private readonly schedulerSettings: NewsSourceSchedulerSettingsService,
   ) {}
 
   private getEnvValue<T>(
@@ -125,11 +127,19 @@ export class NewsSourceSchedulerService {
       return;
     }
 
-    await this.cache.withLock(
-      "cron:news-source-scheduler",
-      config.lockTtlMs,
-      async () => this.scheduleDueSources(new Date(), config.batchSize),
-    );
+    try {
+      await this.cache.withLock(
+        "cron:news-source-scheduler",
+        config.lockTtlMs,
+        async () => this.scheduleDueSources(new Date(), config.batchSize),
+      );
+    } catch (error) {
+      logger.error(
+        { error, lockTtlMs: config.lockTtlMs, batchSize: config.batchSize },
+        "News source scheduler cron tick failed",
+      );
+      throw error;
+    }
   }
 
   async dispatchNow(orgId: string, sourceId: string, triggeredById: string) {
@@ -240,9 +250,16 @@ export class NewsSourceSchedulerService {
           const maxNewUrlsThisRun = seedConfig
             ? Math.max(0, remainingCapacity)
             : 1;
+          const seedFreshnessWindowDays = seedConfig
+            ? await this.resolveSeedFreshnessWindowDays()
+            : DEFAULT_SEED_FRESHNESS_WINDOW_DAYS;
 
           const jobsToSchedule = seedConfig
-            ? await this.resolveSeedCandidates(source, seedConfig)
+            ? await this.resolveSeedCandidates(
+                source,
+                seedConfig,
+                seedFreshnessWindowDays,
+              )
             : [{ url: source.url, relevanceScore: undefined }];
           if (seedConfig?.mode === "deep") {
             await this.clearDeepDiscoveryFailureState(source.id);
@@ -1599,6 +1616,7 @@ export class NewsSourceSchedulerService {
   private async resolveSeedCandidates(
     source: NewsSourceWithTemplate,
     seed: SeedConfig,
+    seedFreshnessWindowDays: number,
   ) {
     if (seed.mode === "sitemap" && !seed.domain) {
       return [];
@@ -1687,15 +1705,12 @@ export class NewsSourceSchedulerService {
       ),
     );
 
-    const freshnessWindowDays = this.getEnvValue(
-      "NEWS_SOURCE_SEED_FRESHNESS_WINDOW_DAYS",
-      DEFAULT_SEED_FRESHNESS_WINDOW_DAYS,
-      (value) => {
-        if (typeof value !== "number" || !Number.isFinite(value)) {
-          return undefined;
-        }
-        return Math.max(1, Math.min(MAX_SEED_FRESHNESS_WINDOW_DAYS, Math.floor(value)));
-      },
+    const freshnessWindowDays = Math.max(
+      1,
+      Math.min(
+        MAX_SEED_FRESHNESS_WINDOW_DAYS,
+        Math.floor(seedFreshnessWindowDays),
+      ),
     );
     const freshnessCutoffTs = Date.now() - freshnessWindowDays * 24 * 60 * 60 * 1000;
 
@@ -1737,6 +1752,10 @@ export class NewsSourceSchedulerService {
     });
 
     return scored.slice(0, seed.maxUrls);
+  }
+
+  private async resolveSeedFreshnessWindowDays() {
+    return this.schedulerSettings.getSeedFreshnessWindowDays();
   }
 
   private parsePublishedAtFromUrl(url: string) {
@@ -1995,6 +2014,7 @@ export class NewsSourceSchedulerService {
       0,
       Math.floor(schedulerConfig.maxEnqueuePerTick),
     );
+    const seedFreshnessWindowDays = await this.resolveSeedFreshnessWindowDays();
     let enqueuedThisTick = 0;
 
     for (const source of sources) {
@@ -2088,7 +2108,11 @@ export class NewsSourceSchedulerService {
       const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
       try {
         const jobsToSchedule = seedConfig
-          ? await this.resolveSeedCandidates(source, seedConfig)
+          ? await this.resolveSeedCandidates(
+              source,
+              seedConfig,
+              seedFreshnessWindowDays,
+            )
           : [{ url: source.url, relevanceScore: undefined }];
         if (seedConfig?.mode === "deep") {
           await this.clearDeepDiscoveryFailureState(source.id);

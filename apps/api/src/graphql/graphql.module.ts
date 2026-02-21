@@ -32,6 +32,7 @@ import { GqlPermissionsGuard } from "../common/guards/gql-permissions.guard";
 import { AkshareModule } from "../modules/akshare/akshare.module";
 import { AlertsModule } from "../modules/alerts/alerts.module";
 import { AnalysisModule } from "../modules/analysis/analysis.module";
+import { ArchiveModule } from "../modules/archive/archive.module";
 import { AssistantModule } from "../modules/assistant/assistant.module";
 import { AuthModule } from "../modules/auth/auth.module";
 import { CacheModule } from "../modules/cache/cache.module";
@@ -61,6 +62,7 @@ import { RoleLoader } from "./loaders/role.loader";
 import { UserLoader } from "./loaders/user.loader";
 import { AlertsResolver } from "./resolvers/alerts.resolver";
 import { AnalysisResolver } from "./resolvers/analysis.resolver";
+import { ArchiveResolver } from "./resolvers/archive.resolver";
 import { AssistantResolver } from "./resolvers/assistant.resolver";
 import { CrawlResolver } from "./resolvers/crawl.resolver";
 import { DashboardResolver } from "./resolvers/dashboard.resolver";
@@ -68,7 +70,10 @@ import { EconomicDataResolver } from "./resolvers/economic-data.resolver";
 import { EntityImpactGraphResolver } from "./resolvers/entity-impact-graph.resolver";
 import { ItemsResolver } from "./resolvers/items.resolver";
 import { ProcessedItemResolver } from "./resolvers/processed-item.resolver";
-import { ProcessedItemEventResolver, ProcessedItemPreviewEventResolver } from "./resolvers/processed-item-event.resolver";
+import {
+  ProcessedItemEventResolver,
+  ProcessedItemPreviewEventResolver,
+} from "./resolvers/processed-item-event.resolver";
 import { KnowledgeGraphImpactResolver } from "./resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphReviewResolver } from "./resolvers/knowledge-graph-review.resolver";
 import { KnowledgeGraphResolver } from "./resolvers/knowledge-graph.resolver";
@@ -93,7 +98,10 @@ interface GraphqlContextFactoryArgs {
   extra?: any;
 }
 
-const paginationComplexityEstimator: ComplexityEstimator = ({ args, childComplexity }) => {
+const paginationComplexityEstimator: ComplexityEstimator = ({
+  args,
+  childComplexity,
+}) => {
   const pageSize =
     typeof args.first === "number"
       ? args.first
@@ -116,7 +124,10 @@ const paginationComplexityEstimator: ComplexityEstimator = ({ args, childComplex
   return BASE_FIELD_COMPLEXITY + childComplexity * Math.max(0, pageSize);
 };
 
-const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childComplexity }) => {
+const compositeFieldComplexityEstimator: ComplexityEstimator = ({
+  field,
+  childComplexity,
+}) => {
   const namedType = getNamedType(field.type);
   if (isScalarType(namedType) || isEnumType(namedType)) {
     return;
@@ -134,12 +145,13 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     ItemsModule,
     RbacModule,
     DashboardModule,
-	    KnowledgeGraphModule,
-      NewsEventsModule,
-      NewsIndicatorModule,
-	    QueueModule,
-	    CacheModule,
-	    CrawlModule,
+    KnowledgeGraphModule,
+    NewsEventsModule,
+    NewsIndicatorModule,
+    QueueModule,
+    CacheModule,
+    CrawlModule,
+    ArchiveModule,
     AlertsModule,
     AnalysisModule,
     AssistantModule,
@@ -155,15 +167,21 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
         const cfg = env.graphqlConfig;
         const hasPermissionDirective = new GraphQLDirective({
           name: "hasPermission",
-          locations: [DirectiveLocation.FIELD_DEFINITION, DirectiveLocation.OBJECT],
+          locations: [
+            DirectiveLocation.FIELD_DEFINITION,
+            DirectiveLocation.OBJECT,
+          ],
           args: {
-            name: { type: new GraphQLNonNull(GraphQLString) }
-          }
+            name: { type: new GraphQLNonNull(GraphQLString) },
+          },
         });
         const complexityDirective = createComplexityDirective();
 
         const corsOrigin = cfg.corsOrigin
-          ? cfg.corsOrigin.split(",").map((entry) => entry.trim()).filter(Boolean)
+          ? cfg.corsOrigin
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean)
           : true;
 
         const estimators: ComplexityEstimator[] = [
@@ -171,7 +189,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
           directiveEstimator(),
           paginationComplexityEstimator,
           compositeFieldComplexityEstimator,
-          simpleEstimator({ defaultComplexity: BASE_FIELD_COMPLEXITY })
+          simpleEstimator({ defaultComplexity: BASE_FIELD_COMPLEXITY }),
         ];
 
         return {
@@ -181,44 +199,44 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
           playground: cfg.playground,
           introspection: cfg.introspection,
           context: ({ req, res, extra }: GraphqlContextFactoryArgs) => {
-            const request =
-              req ??
+            const request = req ??
               extra?.request ?? {
                 headers: extra?.connectionParams ?? {},
-                ip: extra?.socket?.remoteAddress
+                ip: extra?.socket?.remoteAddress,
               };
             return {
               req: request,
               res,
               user: request.user,
-              connectionParams: extra?.connectionParams
+              connectionParams: extra?.connectionParams,
             };
           },
           cors: {
             credentials: true,
-            origin: corsOrigin
+            origin: corsOrigin,
           },
           ...(cfg.subscriptionsEnabled
             ? {
                 subscriptions: {
                   "graphql-ws": {
-                    onConnect: (context: { connectionParams?: unknown; extra: any }) => {
+                    onConnect: (context: {
+                      connectionParams?: unknown;
+                      extra: any;
+                    }) => {
                       const { connectionParams, extra } = context;
                       extra.request = {
                         headers: connectionParams ?? {},
-                        ip: extra?.socket?.remoteAddress
+                        ip: extra?.socket?.remoteAddress,
                       } as { headers: Record<string, unknown>; ip?: string };
-                    }
-                  }
-                }
+                    },
+                  },
+                },
               }
             : {}),
           buildSchemaOptions: {
-            directives: [hasPermissionDirective, complexityDirective]
+            directives: [hasPermissionDirective, complexityDirective],
           },
-          validationRules: [
-            depthLimit(cfg.depthLimit)
-          ],
+          validationRules: [depthLimit(cfg.depthLimit)],
           plugins: [
             {
               async requestDidStart() {
@@ -229,25 +247,30 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
                       query: requestContext.document,
                       variables: requestContext.request.variables,
                       operationName: requestContext.request.operationName,
-                      estimators
+                      estimators,
                     });
 
-                    logger.debug({ complexity }, "GraphQL query complexity evaluated");
+                    logger.debug(
+                      { complexity },
+                      "GraphQL query complexity evaluated",
+                    );
 
                     if (complexity > cfg.complexityLimit) {
                       throw new GraphQLError(
                         `Query is too complex: ${complexity}. Maximum allowed complexity: ${cfg.complexityLimit}`,
-                        { extensions: { code: "QUERY_TOO_COMPLEX", complexity } }
+                        {
+                          extensions: { code: "QUERY_TOO_COMPLEX", complexity },
+                        },
                       );
                     }
-                  }
+                  },
                 };
-              }
-            } satisfies ApolloServerPlugin
-          ]
+              },
+            } satisfies ApolloServerPlugin,
+          ],
         };
-      }
-    })
+      },
+    }),
   ],
   providers: [
     UsersResolver,
@@ -268,6 +291,7 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     KnowledgeGraphReviewResolver,
     AlertsResolver,
     AnalysisResolver,
+    ArchiveResolver,
     AssistantResolver,
     NotificationResolver,
     SettingsResolver,
@@ -286,20 +310,20 @@ const compositeFieldComplexityEstimator: ComplexityEstimator = ({ field, childCo
     GraphqlRateLimitGuard,
     {
       provide: APP_INTERCEPTOR,
-      useClass: DataLoaderInterceptor
+      useClass: DataLoaderInterceptor,
     },
     {
       provide: APP_GUARD,
-      useExisting: GqlAuthGuard
+      useExisting: GqlAuthGuard,
     },
     {
       provide: APP_GUARD,
-      useExisting: GqlPermissionsGuard
+      useExisting: GqlPermissionsGuard,
     },
     {
       provide: APP_GUARD,
-      useExisting: GraphqlRateLimitGuard
-    }
-  ]
+      useExisting: GraphqlRateLimitGuard,
+    },
+  ],
 })
 export class ApiGraphqlModule {}

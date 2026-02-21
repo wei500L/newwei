@@ -9,12 +9,13 @@ import {
   ExclamationCircleOutlined,
   FundOutlined,
   GlobalOutlined,
+  HistoryOutlined,
   ReadOutlined,
   RobotOutlined,
   SearchOutlined,
   SettingOutlined,
   RadarChartOutlined,
-  UserOutlined
+  UserOutlined,
 } from "@ant-design/icons";
 import { Tooltip } from "antd";
 import Link from "next/link";
@@ -47,10 +48,13 @@ interface ActionRailProps {
 // Shared between the desktop ActionRail and the mobile Drawer in TopNav.
 export function buildActionRailNavConfig(
   t: TFunction,
-  permissions: readonly string[]
+  permissions: readonly string[],
 ): ActionRailNavConfig {
-  const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
-  const canUseAssistant = permissions.includes("assistant.read") || permissions.includes("assistant.run");
+  const canManageCrawl =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canUseAssistant =
+    permissions.includes("assistant.read") ||
+    permissions.includes("assistant.run");
   const canManageAdmin =
     permissions.includes("settings.manage") ||
     permissions.includes("org.write") ||
@@ -66,56 +70,64 @@ export function buildActionRailNavConfig(
       key: "/today",
       icon: <ReadOutlined />,
       label: t("nav.main.today", { defaultValue: "Today" }),
-      path: "/today"
+      path: "/today",
     },
     {
       key: "/topics",
       icon: <AppstoreOutlined />,
       label: t("nav.main.topics", { defaultValue: "Topics" }),
-      path: "/topics"
+      path: "/topics",
     },
     {
       key: "/events",
       icon: <ClusterOutlined />,
       label: t("nav.main.events", { defaultValue: "News Events" }),
-      path: "/events"
+      path: "/events",
+    },
+    {
+      key: "/events-archive",
+      icon: <HistoryOutlined />,
+      label: t("nav.main.eventsArchive", { defaultValue: "Events Archive" }),
+      path: "/events-archive",
     },
     {
       key: "/rss",
       icon: <BookOutlined />,
       label: t("nav.main.rss", { defaultValue: "RSS Reader" }),
-      path: "/rss"
+      path: "/rss",
     },
     {
       key: "/situation-monitor",
       icon: <RadarChartOutlined />,
-      label: t("nav.main.situationMonitor", { defaultValue: "Situation Monitor" }),
-      path: "/situation-monitor"
+      label: t("nav.main.situationMonitor", {
+        defaultValue: "Situation Monitor",
+      }),
+      path: "/situation-monitor",
     },
     {
       key: "/map",
       icon: <GlobalOutlined />,
       label: t("nav.main.map", { defaultValue: "Map" }),
-      path: "/map"
+      path: "/map",
     },
     {
       key: "/finance",
       icon: <FundOutlined />,
       label: t("nav.main.finance", { defaultValue: "Finance" }),
-      path: "/finance"
+      path: "/finance",
     },
     {
       key: "/alerts",
       icon: <ExclamationCircleOutlined />,
       label: t("nav.main.alerts", { defaultValue: "Alert Center" }),
-      path: "/alerts"
+      path: "/alerts",
     },
     {
       key: "/search",
       icon: <SearchOutlined />,
       label: t("nav.main.search", { defaultValue: "Search" }),
-      path: "/search"
-    }
+      path: "/search",
+    },
   ];
 
   if (canUseAssistant) {
@@ -123,7 +135,7 @@ export function buildActionRailNavConfig(
       key: "/assistant",
       icon: <RobotOutlined />,
       label: t("nav.main.assistant", { defaultValue: "Assistant" }),
-      path: "/assistant"
+      path: "/assistant",
     });
   }
 
@@ -132,14 +144,14 @@ export function buildActionRailNavConfig(
       key: "/subscriptions",
       icon: <BellOutlined />,
       label: t("nav.main.subscriptions", { defaultValue: "Subscriptions" }),
-      path: "/subscriptions"
+      path: "/subscriptions",
     },
     {
       key: "/profile",
       icon: <UserOutlined />,
       label: t("nav.main.profile", { defaultValue: "Profile" }),
-      path: "/profile"
-    }
+      path: "/profile",
+    },
   );
 
   const adminNavItems: ActionItem[] = [];
@@ -148,7 +160,7 @@ export function buildActionRailNavConfig(
       key: "/dashboard",
       icon: <DashboardOutlined />,
       label: t("nav.dashboard", { defaultValue: "Dashboard" }),
-      path: "/dashboard"
+      path: "/dashboard",
     });
   }
   if (canManageCrawl) {
@@ -156,7 +168,7 @@ export function buildActionRailNavConfig(
       key: "/admin/ops/crawl-tasks",
       icon: <RadarChartOutlined />,
       label: t("nav.crawlTasks", { defaultValue: "Crawl Tasks" }),
-      path: "/admin/ops/crawl-tasks"
+      path: "/admin/ops/crawl-tasks",
     });
   }
   if (canManageAdmin) {
@@ -164,7 +176,7 @@ export function buildActionRailNavConfig(
       key: "/admin",
       icon: <SettingOutlined />,
       label: t("nav.admin", { defaultValue: "Admin" }),
-      path: "/admin"
+      path: "/admin",
     });
   }
 
@@ -179,13 +191,19 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
 
   const { mainNavItems, adminNavItems } = useMemo(
     () => buildActionRailNavConfig(t, permissions),
-    [permissions, t]
+    [permissions, t],
   );
-  const allNavItems = useMemo(() => [...mainNavItems, ...adminNavItems], [adminNavItems, mainNavItems]);
-  const activeKey = useMemo(() => resolveActiveItemKey(pathname, allNavItems), [allNavItems, pathname]);
+  const allNavItems = useMemo(
+    () => [...mainNavItems, ...adminNavItems],
+    [adminNavItems, mainNavItems],
+  );
+  const activeKey = useMemo(
+    () => resolveActiveItemKey(pathname, allNavItems),
+    [allNavItems, pathname],
+  );
   const estimatedContentHeight = useMemo(
     () => estimateRailContentHeight(mainNavItems.length, adminNavItems.length),
-    [adminNavItems.length, mainNavItems.length]
+    [adminNavItems.length, mainNavItems.length],
   );
 
   useEffect(() => {
@@ -227,9 +245,10 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
                     w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
                     cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
                     active:scale-[0.97]
-                    ${isActive
-                      ? "bg-[var(--primary)] text-white shadow-sm"
-                      : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
+                    ${
+                      isActive
+                        ? "bg-[var(--primary)] text-white shadow-sm"
+                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
                     }
                   `}
                 >
@@ -257,9 +276,10 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
                       w-full h-11 flex items-center justify-center rounded-xl transition-all duration-150 select-none
                       cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white
                       active:scale-[0.97]
-                      ${isActive
-                        ? "bg-[var(--primary)] text-white shadow-sm"
-                        : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
+                      ${
+                        isActive
+                          ? "bg-[var(--primary)] text-white shadow-sm"
+                          : "text-slate-500 hover:text-[var(--primary)] hover:bg-slate-100 active:bg-slate-200"
                       }
                     `}
                   >

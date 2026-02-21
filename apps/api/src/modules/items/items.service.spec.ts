@@ -324,6 +324,64 @@ describe("ItemsService.listWithCursor", () => {
       })
     );
   });
+
+  it("anchors relevance cursor pagination to cursor id before offset", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn(),
+        count: jest.fn(),
+        findFirst: jest.fn()
+      }
+    };
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).resolveScopedIds = jest
+      .fn()
+      .mockResolvedValue(["meta-1", "meta-2", "meta-3", "meta-4"]);
+    (service as any).rankScopedIdsByRelevance = jest.fn().mockResolvedValue([
+      { id: "meta-1", score: 0.98 },
+      { id: "meta-2", score: 0.88 },
+      { id: "meta-3", score: 0.78 },
+      { id: "meta-4", score: 0.68 }
+    ]);
+    (service as any).fetchItemMetaRowsByIds = jest.fn().mockImplementation(async (_orgId: string, ids: string[]) => {
+      return new Map(
+        ids.map((id, index) => [
+          id,
+          {
+            id,
+            orgId: "org-1",
+            status: ItemStatus.Completed,
+            createdAt: new Date(`2024-01-0${index + 1}T00:00:00.000Z`),
+            updatedAt: new Date(`2024-01-0${index + 1}T01:00:00.000Z`)
+          }
+        ])
+      );
+    });
+
+    const result = await service.listWithCursor(
+      "org-1",
+      2,
+      { id: "meta-2", offset: 0 },
+      "fed rate",
+      undefined,
+      "PUBLISHED_DESC",
+      "RELEVANCE"
+    );
+
+    expect(result.items.map((item) => item.id)).toEqual(["meta-3", "meta-4"]);
+    expect(result.items[0]).toMatchObject({ rankOffset: 2 });
+    expect(result.items[1]).toMatchObject({ rankOffset: 3 });
+    expect(result.hasNextPage).toBe(false);
+  });
 });
 
 describe("ItemsService.createFromCrawlResult", () => {

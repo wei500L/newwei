@@ -5,6 +5,7 @@ export interface CrawlJobData {
   orgId: string;
   triggeredById?: string;
   traceId?: string;
+  memoryPressureRequeues?: number;
 }
 
 export interface CrawlExecutionSummary {

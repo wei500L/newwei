@@ -19,6 +19,7 @@ import { ModelServiceSettingsPanel } from "@/components/settings/model-service-s
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
+import { NewsSourceSchedulerSettingsPanel } from "@/components/settings/news-source-scheduler-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { RssDiagnosticsPanel } from "@/components/settings/rss-diagnostics-panel";
 import { RssTranslationMetricsPanel } from "@/components/settings/rss-translation-metrics-panel";
@@ -817,6 +818,11 @@ export function SystemSettingsContent() {
           children: <KnowledgeGraphReviewPanel />
         },
         { key: "newsEvents", label: t("settings.tabs.newsEvents"), children: <NewsEventsSettingsPanel /> },
+        {
+          key: "newsSourceScheduler",
+          label: t("systemSettings.tabs.newsSourceScheduler"),
+          children: <NewsSourceSchedulerSettingsPanel />
+        },
         { key: "newsIndicator", label: t("settings.tabs.newsIndicator"), children: <NewsIndicatorSettingsPanel /> },
         { key: "newsDedupe", label: t("settings.tabs.newsDedupe"), children: <NewsDedupeSettingsPanel /> },
         { key: "newsPrompts", label: t("settings.tabs.newsPrompts"), children: <NewsPromptSettingsPanel /> },

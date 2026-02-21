@@ -1,4 +1,5 @@
 import type { PubSubEngine } from "graphql-subscriptions";
+import { ServiceUnavailableException } from "@nestjs/common";
 
 import type { EnvService } from "../config/config.service";
 import type { PrismaService } from "../config/prisma.service";
@@ -162,5 +163,126 @@ describe("AssistantService.streamMessages", () => {
     expect((llm.stream as unknown as jest.Mock).mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ model: "openai/gpt-4.1-mini" })
     );
+  });
+});
+
+describe("AssistantService.runQuery", () => {
+  it("falls back to RECENCY ranking when rerank is unavailable", async () => {
+    const { service, llm } = createService({
+      stream: jest.fn() as unknown as LiteLlmService["stream"]
+    });
+
+    (service as any).prompts = {
+      buildQueryPlannerRequest: jest.fn().mockReturnValue({
+        messages: [{ role: "user", content: "negative news query" }],
+        responseFormat: {
+          type: "json_schema",
+          json_schema: { name: "assistant_query_plan", schema: {} }
+        }
+      }),
+      buildNewsListRendererMessages: jest.fn().mockReturnValue([{ role: "user", content: "rendered prompt" }])
+    };
+    (llm as any).acompletion = jest.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              kind: "news_negative_list",
+              topic: "gold",
+              lookbackDays: 7,
+              limit: 2
+            })
+          }
+        }
+      ]
+    });
+
+    const list = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new ServiceUnavailableException({
+          code: "RERANK_UNAVAILABLE",
+          message: "Reranker unavailable"
+        })
+      )
+      .mockResolvedValueOnce({ items: [{ id: "meta-1" }] });
+    (service as any).items = { list };
+    jest.spyOn(service as any, "renderNewsItems").mockResolvedValue([
+      {
+        itemMetaId: "meta-1",
+        title: "Gold downside pressure",
+        summary: "Risk-off sentiment persists"
+      }
+    ]);
+    const streamMessages = jest
+      .spyOn(service as any, "streamMessages")
+      .mockResolvedValue({ summary: "ok", raw: { tokens: 10 } });
+
+    const runQuery = (
+      service as unknown as {
+        runQuery: (
+          orgId: string,
+          runId: string,
+          createdAt: Date,
+          input: { message: string },
+          guardrails?: string[],
+          assistantModel?: string
+        ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
+      }
+    ).runQuery.bind(service);
+
+    const result = await runQuery(
+      "org-1",
+      "run-1",
+      new Date("2026-01-01T00:00:00.000Z"),
+      { message: "最近黄金的负面新闻有哪些？" },
+      ["openai-moderation-pre"],
+      "openai/gpt-4.1-mini"
+    );
+
+    expect(list).toHaveBeenNthCalledWith(
+      1,
+      "org-1",
+      1,
+      2,
+      "gold",
+      expect.objectContaining({
+        sentiments: ["negative"],
+        dateRange: {
+          start: expect.any(Date),
+          end: expect.any(Date)
+        }
+      }),
+      "PUBLISHED_DESC",
+      "RELEVANCE"
+    );
+    expect(list).toHaveBeenNthCalledWith(
+      2,
+      "org-1",
+      1,
+      2,
+      "gold",
+      expect.objectContaining({
+        sentiments: ["negative"],
+        dateRange: {
+          start: expect.any(Date),
+          end: expect.any(Date)
+        }
+      }),
+      "PUBLISHED_DESC",
+      "RECENCY"
+    );
+    expect(streamMessages).toHaveBeenCalledWith(
+      "org-1",
+      "run-1",
+      "query",
+      new Date("2026-01-01T00:00:00.000Z"),
+      [{ role: "user", content: "rendered prompt" }],
+      {
+        guardrails: ["openai-moderation-pre"],
+        assistantModel: "openai/gpt-4.1-mini"
+      }
+    );
+    expect(result.summary).toBe("ok");
   });
 });

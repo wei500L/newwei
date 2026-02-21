@@ -187,16 +187,27 @@ export function SectorHeatmap() {
 
   const option = useMemo<EChartsOption>(() => {
     if (!data || data.cells.length === 0) return {};
+    const hasSelection = Boolean(selectedSector);
+    const hasSelectionMatch = hasSelection
+      ? data.cells.some((cell) => cell.name === selectedSector)
+      : false;
     const heatmapData = data.cells.map((cell) => {
       const isSelected = selectedSector === cell.name;
       return {
         value: [cell.x, cell.y, cell.change, cell.name, cell.value] as HeatmapValue,
         unit: cell.unit ?? null,
         sourceField: cell.sourceField ?? null,
+        z: isSelected ? 3 : 1,
         itemStyle: {
           borderColor: isSelected ? (colors?.primary ?? "#1f3b7b") : (colors?.border ?? "#e2e8f0"),
-          borderWidth: isSelected ? 4 : 2,
-          borderRadius: 8
+          borderWidth: isSelected ? 5 : 2,
+          borderRadius: 8,
+          shadowBlur: isSelected ? 24 : 0,
+          shadowColor: isSelected ? (colors?.primary ?? "#1f3b7b") : "transparent",
+          opacity: hasSelectionMatch && !isSelected ? 0.62 : 1
+        },
+        label: {
+          fontWeight: isSelected ? 700 : 500
         }
       };
     });
@@ -247,12 +258,14 @@ export function SectorHeatmap() {
       visualMap: {
         min: -maxChange,
         max: maxChange,
+        dimension: 2,
+        seriesIndex: 0,
         calculable: false, // Cleaner look
         show: false, // Hide the bar, rely on color
         inRange: {
           color: [
             colors?.bearish ?? "#d95f02",
-            "#cbd5e1",
+            colors?.secondary ?? "#cbd5e1",
             colors?.bullish ?? "#1b9e77"
           ]
         }
@@ -262,6 +275,13 @@ export function SectorHeatmap() {
           name: "Market Sectors",
           type: "heatmap",
           data: heatmapData,
+          encode: {
+            x: 0,
+            y: 1,
+            value: 2
+          },
+          animationDurationUpdate: 220,
+          animationEasingUpdate: "cubicOut",
           label: {
             show: true,
             fontFamily,
@@ -276,13 +296,15 @@ export function SectorHeatmap() {
           },
           itemStyle: {
             borderColor: colors?.border ?? "#e2e8f0",
-            borderWidth: 2
+            borderWidth: 2,
+            borderRadius: 8
           },
           emphasis: {
             itemStyle: {
-              shadowBlur: 10,
-              shadowColor: '#fff',
-              borderColor: '#fff'
+              shadowBlur: 16,
+              shadowColor: colors?.primary ?? "#1f3b7b",
+              borderColor: colors?.primary ?? "#1f3b7b",
+              borderWidth: 3
             }
           }
         }
@@ -398,9 +420,9 @@ export function SectorHeatmap() {
   }
 
   return (
-    <div className="relative h-[300px] transition-all duration-300">
+    <div className="flex h-[300px] flex-col gap-2 transition-all duration-300">
       {showStaleErrorBanner ? (
-        <div className="absolute left-2 right-2 top-2 z-20">
+        <div className="px-2">
           <RequestErrorBanner
             error={error}
             onRetry={() => void refetch()}
@@ -408,7 +430,7 @@ export function SectorHeatmap() {
           />
         </div>
       ) : null}
-      <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 px-2">
         <Tag color="default" className="text-xs">
           Range: {range}
         </Tag>
@@ -454,51 +476,53 @@ export function SectorHeatmap() {
           </Tag>
         ) : null}
       </div>
-      <DashboardChart
-        option={option}
-        theme={echartsTheme}
-        height="100%"
-        exportFilename={buildExportBaseName({
-          base: "sector-heatmap",
-          suffixes: [selectedSector],
-          start: startLabel,
-          end: endLabel,
-          fallback: "chart"
-        })}
-        showExportImage
-        actions={
-          <Button
-            size="small"
-            type="default"
-            onClick={handleCsvExport}
-            loading={exportingCsv}
-            disabled={!data || data.cells.length === 0}
-          >
-            {csvLabel}
-          </Button>
-        }
-        onEvents={[
-          {
-            type: "click",
-            handler: (params: any) => {
-              const value = params.value as HeatmapValue | undefined;
-              if (Array.isArray(value)) {
-                const sectorName = value[3];
-                const newSelection = selectedSector === sectorName ? null : sectorName;
-                setSelectedSector(newSelection);
-                if (newSelection) {
-                  message.info(t("dashboard.charts.sectorSelected", { sector: newSelection, defaultValue: `Selected: ${newSelection}` }));
+      <div className="relative min-h-0 flex-1">
+        <DashboardChart
+          option={option}
+          theme={echartsTheme}
+          height="100%"
+          exportFilename={buildExportBaseName({
+            base: "sector-heatmap",
+            suffixes: [selectedSector],
+            start: startLabel,
+            end: endLabel,
+            fallback: "chart"
+          })}
+          showExportImage
+          actions={
+            <Button
+              size="small"
+              type="default"
+              onClick={handleCsvExport}
+              loading={exportingCsv}
+              disabled={!data || data.cells.length === 0}
+            >
+              {csvLabel}
+            </Button>
+          }
+          onEvents={[
+            {
+              type: "click",
+              handler: (params: any) => {
+                const value = params.value as HeatmapValue | undefined;
+                if (Array.isArray(value)) {
+                  const sectorName = value[3];
+                  const newSelection = selectedSector === sectorName ? null : sectorName;
+                  setSelectedSector(newSelection);
+                  if (newSelection) {
+                    message.info(t("dashboard.charts.sectorSelected", { sector: newSelection, defaultValue: `Selected: ${newSelection}` }));
+                  }
                 }
               }
             }
-          }
-        ]}
-      />
-      {isLoading ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Skeleton active paragraph={{ rows: 4 }} />
-        </div>
-      ) : null}
+          ]}
+        />
+        {isLoading ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <Skeleton active paragraph={{ rows: 4 }} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

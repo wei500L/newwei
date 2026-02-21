@@ -1,4 +1,9 @@
-import { Module, RequestMethod, type MiddlewareConsumer, type NestModule } from "@nestjs/common";
+import {
+  Module,
+  RequestMethod,
+  type MiddlewareConsumer,
+  type NestModule,
+} from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
 import { WinstonModule } from "nest-winston";
@@ -13,6 +18,7 @@ import { ApiGraphqlModule } from "./graphql/graphql.module";
 import { AkshareModule } from "./modules/akshare/akshare.module";
 import { AlertsModule } from "./modules/alerts/alerts.module";
 import { AnalysisModule } from "./modules/analysis/analysis.module";
+import { ArchiveModule } from "./modules/archive/archive.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -51,11 +57,11 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
           format: winston.format.combine(
             winston.format.timestamp(),
             nestWinstonModuleUtilities.format.nestLike("api", {
-              colors: process.env.NODE_ENV !== "production"
-            })
-          )
-        })
-      ]
+              colors: process.env.NODE_ENV !== "production",
+            }),
+          ),
+        }),
+      ],
     }),
     ...(scheduleEnabled ? [ScheduleModule.forRoot()] : []),
     ConfigModule,
@@ -71,6 +77,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     EmailModule,
     DashboardModule,
     CrawlModule,
+    ArchiveModule,
     AkshareModule,
     AlertsModule,
     AnalysisModule,
@@ -87,25 +94,27 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     NewsIndicatorModule,
     WebSocketModule,
     ApiGraphqlModule,
-    HealthModule
+    HealthModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
-      useClass: JwtAuthGuard
+      useClass: JwtAuthGuard,
     },
     {
       provide: APP_GUARD,
-      useClass: PermissionsGuard
+      useClass: PermissionsGuard,
     },
     {
       provide: APP_FILTER,
-      useClass: GlobalExceptionFilter
-    }
-  ]
+      useClass: GlobalExceptionFilter,
+    },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TraceIdMiddleware).forRoutes({ path: "*path", method: RequestMethod.ALL });
+    consumer
+      .apply(TraceIdMiddleware)
+      .forRoutes({ path: "*path", method: RequestMethod.ALL });
   }
 }

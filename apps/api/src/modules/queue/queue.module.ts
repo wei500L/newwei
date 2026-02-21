@@ -8,6 +8,7 @@ import { EnvService } from "../config/config.service";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { SystemSettingsModule } from "../system-settings/system-settings.module";
 
 import { NewsSourceDispatchController } from "./news-source-dispatch.controller";
 import { NewsSourceOpsController } from "./news-source-ops.controller";
@@ -28,7 +29,14 @@ import { QueueProcessor } from "./queue.processor";
 import { QueueService } from "./queue.service";
 
 @Module({
-  imports: [CacheModule, CrawlModule, NewsPipelineModule, NotificationsModule, AuthModule],
+  imports: [
+    CacheModule,
+    CrawlModule,
+    NewsPipelineModule,
+    NotificationsModule,
+    AuthModule,
+    SystemSettingsModule,
+  ],
   controllers: [NewsSourceDispatchController, NewsSourceOpsController],
   providers: [
     {

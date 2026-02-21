@@ -36,7 +36,7 @@ export class CrawlQueueService {
     const deduplicationId = `crawl-task:${taskId}`;
     await this.crawlQueue.add(
       "crawl-task",
-      { taskId, orgId, triggeredById, traceId },
+      { taskId, orgId, triggeredById, traceId, memoryPressureRequeues: 0 },
       {
         jobId: `${taskId}-${Date.now()}`,
         deduplication: {

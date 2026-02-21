@@ -976,12 +976,16 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     const inlineMarkdownLinks = Array.from(
       fragments.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)
-    ).map((match) => match[1]);
+    )
+      .map((match) => match[1])
+      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
     seedUrls.push(...inlineMarkdownLinks);
 
     const referenceDefinitions = Array.from(
       fragments.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm)
-    ).map((match) => match[1]);
+    )
+      .map((match) => match[1])
+      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
     seedUrls.push(...referenceDefinitions);
 
     const baseUrl = article.sourceUrl;

@@ -157,7 +157,8 @@ export class CrawlQualityMetricsService {
   async getSourceSnapshot(orgId: string, sourceId: string, lookbackHours = 24): Promise<CrawlQualityMetricsSnapshot> {
     const snapshot = await this.getSnapshot(orgId, lookbackHours);
     const filtered = snapshot.groupedBySource.filter((entry) => entry.sourceId === sourceId);
-    if (filtered.length === 0) {
+    const entry = filtered[0];
+    if (!entry) {
       return {
         ...snapshot,
         taskCount: 0,
@@ -169,7 +170,6 @@ export class CrawlQualityMetricsService {
         groupedBySource: []
       };
     }
-    const [entry] = filtered;
     return {
       ...snapshot,
       taskCount: entry.taskCount,
@@ -274,4 +274,3 @@ export class CrawlQualityMetricsService {
     return Number((Math.max(0, numerator) / denominator).toFixed(4));
   }
 }
-

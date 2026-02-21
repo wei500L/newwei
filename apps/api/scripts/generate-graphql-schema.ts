@@ -1,6 +1,9 @@
 import "reflect-metadata";
 
-import { GraphQLSchemaBuilderModule, GraphQLSchemaFactory } from "@nestjs/graphql";
+import {
+  GraphQLSchemaBuilderModule,
+  GraphQLSchemaFactory,
+} from "@nestjs/graphql";
 import { NestFactory } from "@nestjs/core";
 import {
   DirectiveLocation,
@@ -8,7 +11,7 @@ import {
   GraphQLNonNull,
   GraphQLString,
   lexicographicSortSchema,
-  printSchema
+  printSchema,
 } from "graphql";
 import { createComplexityDirective } from "graphql-query-complexity";
 import { writeFileSync } from "node:fs";
@@ -16,6 +19,7 @@ import { join } from "node:path";
 
 import { AlertsResolver } from "../src/graphql/resolvers/alerts.resolver";
 import { AnalysisResolver } from "../src/graphql/resolvers/analysis.resolver";
+import { ArchiveResolver } from "../src/graphql/resolvers/archive.resolver";
 import { AssistantResolver } from "../src/graphql/resolvers/assistant.resolver";
 import { CrawlResolver } from "../src/graphql/resolvers/crawl.resolver";
 import { DashboardResolver } from "../src/graphql/resolvers/dashboard.resolver";
@@ -25,7 +29,7 @@ import { ItemsResolver } from "../src/graphql/resolvers/items.resolver";
 import { ProcessedItemResolver } from "../src/graphql/resolvers/processed-item.resolver";
 import {
   ProcessedItemEventResolver,
-  ProcessedItemPreviewEventResolver
+  ProcessedItemPreviewEventResolver,
 } from "../src/graphql/resolvers/processed-item-event.resolver";
 import { KnowledgeGraphImpactResolver } from "../src/graphql/resolvers/knowledge-graph-impact.resolver";
 import { KnowledgeGraphResolver } from "../src/graphql/resolvers/knowledge-graph.resolver";
@@ -59,30 +63,34 @@ const resolvers = [
   KnowledgeGraphReviewResolver,
   AlertsResolver,
   AnalysisResolver,
+  ArchiveResolver,
   AssistantResolver,
   NotificationResolver,
   SettingsResolver,
   SentimentResolver,
-  OrgResolver
+  OrgResolver,
 ];
 
 async function main() {
-  const app = await NestFactory.createApplicationContext(GraphQLSchemaBuilderModule, {
-    logger: false
-  });
+  const app = await NestFactory.createApplicationContext(
+    GraphQLSchemaBuilderModule,
+    {
+      logger: false,
+    },
+  );
   const schemaFactory = app.get(GraphQLSchemaFactory);
 
   const hasPermissionDirective = new GraphQLDirective({
     name: "hasPermission",
     locations: [DirectiveLocation.FIELD_DEFINITION, DirectiveLocation.OBJECT],
     args: {
-      name: { type: new GraphQLNonNull(GraphQLString) }
-    }
+      name: { type: new GraphQLNonNull(GraphQLString) },
+    },
   });
   const complexityDirective = createComplexityDirective();
 
   const schema = await schemaFactory.create(resolvers, {
-    directives: [hasPermissionDirective, complexityDirective]
+    directives: [hasPermissionDirective, complexityDirective],
   });
 
   const sorted = lexicographicSortSchema(schema);

@@ -386,16 +386,27 @@ export class AssistantService {
       const limit = Math.min(50, Math.max(1, plan.limit ?? 20));
       const end = new Date();
       const start = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+      const filters = { sentiments: ["negative"], dateRange: { start, end } };
+      const listItems = (rankingMode: "RELEVANCE" | "RECENCY") =>
+        this.items.list(orgId, 1, limit, plan.topic, filters, "PUBLISHED_DESC", rankingMode);
 
-      const { items } = await this.items.list(
-        orgId,
-        1,
-        limit,
-        plan.topic,
-        { sentiments: ["negative"], dateRange: { start, end } },
-        "PUBLISHED_DESC",
-        "RELEVANCE"
-      );
+      let items;
+      try {
+        ({ items } = await listItems("RELEVANCE"));
+      } catch (error) {
+        if (!this.isRerankUnavailable(error)) {
+          throw error;
+        }
+        logger.warn(
+          {
+            orgId,
+            runId,
+            code: "RERANK_UNAVAILABLE",
+          },
+          "Assistant query rerank unavailable; falling back to RECENCY ranking",
+        );
+        ({ items } = await listItems("RECENCY"));
+      }
 
       const renderedItems = await this.renderNewsItems(orgId, items);
 
@@ -468,6 +479,31 @@ export class AssistantService {
       assistantModel
     });
     return { plan, summary: stream.summary, raw: stream.raw };
+  }
+
+  private isRerankUnavailable(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+    const candidate = error as {
+      getStatus?: () => number;
+      getResponse?: () => unknown;
+    };
+    if (typeof candidate.getStatus !== "function" || typeof candidate.getResponse !== "function") {
+      return false;
+    }
+    try {
+      if (candidate.getStatus() !== 503) {
+        return false;
+      }
+      const response = candidate.getResponse();
+      if (!response || typeof response !== "object") {
+        return false;
+      }
+      return (response as { code?: unknown }).code === "RERANK_UNAVAILABLE";
+    } catch {
+      return false;
+    }
   }
 
   private async runReport(

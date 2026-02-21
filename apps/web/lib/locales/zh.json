@@ -1220,6 +1220,7 @@
       "today": "今日要闻",
       "topics": "专题/事件",
       "events": "新闻事件",
+      "eventsArchive": "历史档案",
       "rss": "RSS 阅读",
       "map": "地图态势",
       "finance": "金融面板",
@@ -1427,6 +1428,76 @@
         "articleLoadFailed": "加载文章失败。",
         "articleNotFound": "未找到处理结果。",
         "articleEmpty": "暂无 AI 内容。"
+      }
+    },
+    "eventsArchive": {
+      "title": "历史档案日报",
+      "subtitle": "按日期与领域浏览已处理情报归档。",
+      "regions": {
+        "APAC": "亚太",
+        "MIDDLE_EAST": "中东",
+        "AMERICAS": "美洲",
+        "EUROPE": "欧洲",
+        "AFRICA": "非洲",
+        "OTHER": "其他"
+      },
+      "sections": {
+        "geo": "地缘热点组",
+        "macro": "宏观事务组"
+      },
+      "verticals": {
+        "EAST_SEA": "【东海】",
+        "SOUTH_SEA": "【南海】",
+        "WEST_FRONT": "【西面】",
+        "FOREIGN_AFFAIRS": "【外务】",
+        "DOMESTIC_AFFAIRS": "【内务】"
+      },
+      "weights": {
+        "FIVE": "⭐⭐⭐⭐⭐ 极重要",
+        "FOUR": "⭐⭐⭐⭐ 重要",
+        "THREE": "⭐⭐⭐ 一般",
+        "TWO": "⭐⭐ 次要",
+        "ONE": "⭐ 参考"
+      },
+      "dailyCount": "本日 {{count}} 条动态",
+      "loadFailed": "加载归档失败。",
+      "empty": "该日期暂无归档",
+      "emptySearchHint": "尝试使用更通用的关键词",
+      "groupEmpty": "暂无动态",
+      "unknownCountry": "未知",
+      "expand": "展开更多",
+      "collapse": "收起",
+      "filters": {
+        "weightPlaceholder": "所有权重"
+      },
+      "errors": {
+        "searchFailedTitle": "智能搜索失败",
+        "digestFailedTitle": "归档加载失败",
+        "digestLoadFailed": "归档数据加载失败，请稍后重试。",
+        "embeddingUnavailable": "语义检索模型未配置，请联系管理员。",
+        "embeddingFailed": "语义向量生成失败，请稍后重试。",
+        "embeddingInvalidResponse": "语义向量返回异常，请稍后重试。",
+        "vectorUnavailable": "向量召回服务不可用，请稍后重试。",
+        "rerankFailed": "结果精排失败，请稍后重试。",
+        "rerankInvalidResponse": "结果精排返回异常，请稍后重试。",
+        "scanLimitExceeded": "当前筛选范围过大，请缩小条件后重试。",
+        "calendarFailedTitle": "日历加载失败",
+        "calendarFailed": "日期标记与下一天导航暂不可用，请刷新后重试。"
+      },
+      "detail": {
+        "title": "事件详情",
+        "loadFailed": "加载详情失败。",
+        "notFound": "未找到详情。",
+        "untitled": "未命名事件",
+        "entities": "涉及国家/实体",
+        "entitiesEmpty": "暂无标签",
+        "source": "来源",
+        "sourceUnknown": "未知来源",
+        "openOriginal": "打开原文链接",
+        "timeline": "时间线",
+        "timelineEmpty": "暂无关联时间线",
+        "related": "关联原文",
+        "relatedEmpty": "暂无关联原文"
       }
     },
     "digest": {
@@ -3792,6 +3863,40 @@
         "cancel": "取消"
       }
     },
+    "newsSourceScheduler": {
+      "description": "配置新闻源调度中用于种子 URL 过滤的发布时间新鲜度窗口。",
+      "notice": {
+        "title": "生效方式",
+        "body": "配置将写入 MySQL 系统设置，并在下一轮调度执行时生效。"
+      },
+      "status": {
+        "label": "状态",
+        "default": "使用系统默认值",
+        "saved": "已保存覆盖配置",
+        "unavailable": "不可用（配置加载失败）"
+      },
+      "fields": {
+        "seedFreshnessWindowDays": "种子新鲜度窗口（天）"
+      },
+      "hints": {
+        "seedFreshnessWindowDays": "种子候选过滤时，发布时间早于该窗口的 URL 将被跳过。"
+      },
+      "validation": {
+        "seedFreshnessWindowDaysRequired": "新鲜度窗口必填",
+        "seedFreshnessWindowDaysRange": "新鲜度窗口必须在 1 到 3650 天之间"
+      },
+      "messages": {
+        "saved": "已保存"
+      },
+      "errors": {
+        "loadFailed": "加载新闻源调度配置失败",
+        "saveFailed": "保存新闻源调度配置失败",
+        "badRequest": "输入无效",
+        "codes": {
+          "NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID": "已保存的调度配置无效"
+        }
+      }
+    },
     "situationMonitor": {
       "description": "配置态势监控翻译能力（并发、DeepLX 主翻译与备用端点）。",
       "notice": {
@@ -3908,6 +4013,7 @@
       "email": "邮件（SMTP）",
       "security": "安全",
       "situationMonitor": "态势监控",
+      "newsSourceScheduler": "新闻源调度",
       "vectorService": "向量服务",
       "modelService": "模型服务",
       "akshare": "AKShare"

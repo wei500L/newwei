@@ -114,7 +114,8 @@ describe("CrawlQueueService.enqueueTask", () => {
       taskId: "task-1",
       orgId: "org-1",
       triggeredById: "user-1",
-      traceId: "test-trace-id"
+      traceId: "test-trace-id",
+      memoryPressureRequeues: 0
     });
     expect(typeof opts.jobId).toBe("string");
     expect(opts.jobId).toContain("task-1-");
