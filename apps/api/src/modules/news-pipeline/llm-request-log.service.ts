@@ -1,8 +1,12 @@
 import { type LlmRequestLog } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
 import type { FilterQuery, Model } from "mongoose";
+import { Readable } from "stream";
 
+import { toPrismaJsonValue } from "../../common/prisma-json";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { PrismaService } from "../config/prisma.service";
 import {
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
@@ -109,6 +113,15 @@ export interface LlmUsageSummary {
   byDay: LlmUsageSummaryByDayRow[];
 }
 
+export interface LlmRequestLogExportResult {
+  stream: Readable;
+  rowCount: number;
+}
+
+export interface LlmRequestLogExportOptions {
+  actorId?: string;
+}
+
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -122,6 +135,31 @@ const MAX_METADATA_SERIALIZED_LENGTH = 8_192;
 const WRITE_SUCCESS_LOG_INTERVAL = 500;
 const METADATA_NORMALIZATION_LOG_INTERVAL = 100;
 const METADATA_POLICY_CACHE_TTL_MS = 5_000;
+const EXPORT_MAX_ROWS = 50_000;
+const EXPORT_MAX_DATE_WINDOW_DAYS = 90;
+const EXPORT_MAX_DATE_WINDOW_MS = EXPORT_MAX_DATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const EXPORT_CSV_HEADERS = [
+  "timestamp",
+  "model",
+  "requestType",
+  "status",
+  "durationMs",
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "error",
+] as const;
+const EXPORT_PROJECTION = {
+  createdAt: 1,
+  model: 1,
+  requestType: 1,
+  status: 1,
+  latencyMs: 1,
+  promptTokens: 1,
+  completionTokens: 1,
+  totalTokens: 1,
+  error: 1,
+} as const;
 
 const METADATA_PRIORITY_KEYS = [
   "traceid",
@@ -182,11 +220,29 @@ interface CachedResolvedMetadataPolicy {
   value: ResolvedMetadataPolicy;
 }
 
+interface CursorLike<T> extends AsyncIterable<T> {
+  close?: () => Promise<void> | void;
+}
+
+interface LlmRequestLogExportRaw {
+  createdAt?: Date;
+  model?: unknown;
+  requestType?: unknown;
+  status?: unknown;
+  latencyMs?: unknown;
+  promptTokens?: unknown;
+  completionTokens?: unknown;
+  totalTokens?: unknown;
+  error?: unknown;
+}
+
 @Injectable()
 export class LlmRequestLogService {
   private readonly logger = createLogger({ name: "llm-request-log-service" });
   private writeSuccessTotal = 0;
   private writeFailureTotal = 0;
+  private exportSuccessTotal = 0;
+  private exportFailureTotal = 0;
   private metadataFilteredTotal = 0;
   private metadataTruncatedTotal = 0;
   private cachedResolvedMetadataPolicy: CachedResolvedMetadataPolicy | null = null;
@@ -194,6 +250,7 @@ export class LlmRequestLogService {
   constructor(
     @Inject(LLM_REQUEST_LOG_MODEL)
     private readonly llmRequestLogModel: Model<LlmRequestLog>,
+    private readonly prisma: PrismaService,
     @Optional()
     private readonly llmRequestLogSettings?: LlmRequestLogSettingsService,
   ) {}
@@ -243,23 +300,7 @@ export class LlmRequestLogService {
         .lean(),
     ]);
 
-    const items = (rows as LlmRequestLogRaw[]).map((row) => ({
-      id: row._id.toString(),
-      orgId: row.orgId,
-      requestType: row.requestType,
-      model: row.model,
-      status: row.status,
-      promptTokens: this.toNullableNumber(row.promptTokens),
-      completionTokens: this.toNullableNumber(row.completionTokens),
-      totalTokens: this.toNullableNumber(row.totalTokens),
-      costUsd: this.toNullableNumber(row.costUsd),
-      latencyMs: Math.max(0, Number(row.latencyMs ?? 0)),
-      error: typeof row.error === "string" ? row.error : null,
-      metadata: row.metadata ?? null,
-      apiSurface: this.toApiSurface(row.apiSurface),
-      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(0),
-      updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(0),
-    }));
+    const items = (rows as LlmRequestLogRaw[]).map((row) => this.toListItem(row));
 
     return {
       page,
@@ -270,11 +311,198 @@ export class LlmRequestLogService {
     };
   }
 
+  async exportLogsCsvStream(
+    filter: LlmRequestLogFilter,
+    options: LlmRequestLogExportOptions = {},
+  ): Promise<LlmRequestLogExportResult> {
+    const startedAt = Date.now();
+    const actorId =
+      typeof options.actorId === "string" && options.actorId.trim().length > 0
+        ? options.actorId.trim()
+        : null;
+    const normalizedFilter = this.normalizeFilterForExport(filter);
+    const orgId = normalizedFilter.orgId;
+    let rowCount = 0;
+
+    try {
+      this.validateExportDateWindow(normalizedFilter);
+      const where = this.buildWhere(normalizedFilter);
+      rowCount = await this.resolveExportRowCount(where);
+      const cursor = this.llmRequestLogModel
+        .find(where)
+        .sort({ createdAt: -1 })
+        .select(EXPORT_PROJECTION)
+        .lean()
+        .cursor() as CursorLike<LlmRequestLogExportRaw>;
+
+      const durationMs = Date.now() - startedAt;
+      this.exportSuccessTotal += 1;
+      this.logger.info(
+        {
+          metricName: "llm_request_log_export_total",
+          metricOutcome: "success",
+          exportSuccessTotal: this.exportSuccessTotal,
+          exportFailureTotal: this.exportFailureTotal,
+          rowCount,
+          durationMs,
+          orgId,
+          actorId,
+          model: normalizedFilter.model ?? null,
+          requestType: normalizedFilter.requestType ?? null,
+          status: normalizedFilter.status ?? null,
+          start: normalizedFilter.start?.toISOString(),
+          end: normalizedFilter.end?.toISOString(),
+        },
+        "Prepared LLM request log CSV export",
+      );
+      await this.writeExportAuditLog({
+        orgId,
+        actorId,
+        outcome: "success",
+        rowCount,
+        durationMs,
+        filter: normalizedFilter,
+      });
+
+      return {
+        stream: Readable.from(this.iterateExportCsvRows(cursor)),
+        rowCount,
+      };
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      this.exportFailureTotal += 1;
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to prepare CSV export";
+      this.logger.warn(
+        {
+          err: error,
+          metricName: "llm_request_log_export_total",
+          metricOutcome: "failure",
+          exportSuccessTotal: this.exportSuccessTotal,
+          exportFailureTotal: this.exportFailureTotal,
+          rowCount,
+          durationMs,
+          orgId,
+          actorId,
+          model: normalizedFilter.model ?? null,
+          requestType: normalizedFilter.requestType ?? null,
+          status: normalizedFilter.status ?? null,
+          start: normalizedFilter.start?.toISOString(),
+          end: normalizedFilter.end?.toISOString(),
+        },
+        "Failed to prepare LLM request log CSV export",
+      );
+      await this.writeExportAuditLog({
+        orgId,
+        actorId,
+        outcome: "failure",
+        rowCount,
+        durationMs,
+        filter: normalizedFilter,
+        errorMessage,
+      });
+      throw error;
+    }
+  }
+
+  private normalizeFilterForExport(filter: LlmRequestLogFilter): LlmRequestLogFilter {
+    return {
+      orgId: this.normalizeOrgId(filter.orgId),
+      model: typeof filter.model === "string" ? filter.model.trim() || undefined : undefined,
+      requestType: filter.requestType,
+      status: filter.status,
+      start: filter.start,
+      end: filter.end,
+    };
+  }
+
+  private validateExportDateWindow(filter: LlmRequestLogFilter): void {
+    const startMs = filter.start instanceof Date ? filter.start.getTime() : Number.NaN;
+    const endMs = filter.end instanceof Date ? filter.end.getTime() : Number.NaN;
+    if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+      if (startMs > endMs) {
+        throw new BadRequestException("start must be earlier than or equal to end");
+      }
+      if (endMs - startMs > EXPORT_MAX_DATE_WINDOW_MS) {
+        throw new BadRequestException(
+          `export date range cannot exceed ${EXPORT_MAX_DATE_WINDOW_DAYS} days`,
+        );
+      }
+    }
+  }
+
+  private async resolveExportRowCount(where: FilterQuery<LlmRequestLog>): Promise<number> {
+    const probeRows = await this.llmRequestLogModel
+      .find(where)
+      .select({ _id: 1 })
+      .limit(EXPORT_MAX_ROWS + 1)
+      .lean();
+    if (probeRows.length > EXPORT_MAX_ROWS) {
+      throw new BadRequestException(
+        `export row count exceeds ${EXPORT_MAX_ROWS}; narrow filters or date range`,
+      );
+    }
+    return probeRows.length;
+  }
+
+  private async writeExportAuditLog(args: {
+    orgId: string;
+    actorId: string | null;
+    outcome: "success" | "failure";
+    rowCount: number;
+    durationMs: number;
+    filter: LlmRequestLogFilter;
+    errorMessage?: string;
+  }): Promise<void> {
+    try {
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId: args.orgId,
+            actorId: args.actorId,
+            resource: "llm_request_logs",
+            action: "export_csv",
+            metadata: toPrismaJsonValue({
+              outcome: args.outcome,
+              rowCount: args.rowCount,
+              durationMs: args.durationMs,
+              model: args.filter.model ?? null,
+              requestType: args.filter.requestType ?? null,
+              status: args.filter.status ?? null,
+              start: args.filter.start?.toISOString() ?? null,
+              end: args.filter.end?.toISOString() ?? null,
+              errorMessage: args.errorMessage ?? null,
+            }),
+          },
+        },
+        {
+          orgId: args.orgId,
+          actorId: args.actorId,
+          resource: "llm_request_logs",
+          action: "export_csv",
+          outcome: args.outcome,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          orgId: args.orgId,
+          actorId: args.actorId,
+          metricName: "llm_request_log_export_audit_total",
+          metricOutcome: "failure",
+        },
+        "Failed to write LLM request log export audit",
+      );
+    }
+  }
+
   async getUsageSummary(
     orgId: string,
     dateRange?: { start?: Date; end?: Date },
   ): Promise<LlmUsageSummary> {
-    const where = this.buildWhere({
+    const usageWhere = this.buildWhere({
       orgId,
       start: dateRange?.start,
       end: dateRange?.end,
@@ -282,7 +510,7 @@ export class LlmRequestLogService {
 
     const [totalsAgg, byModelAgg, byDayAgg] = await Promise.all([
       this.llmRequestLogModel.aggregate<UsageAggRow>([
-        { $match: where },
+        { $match: usageWhere },
         {
           $group: {
             _id: null,
@@ -296,7 +524,7 @@ export class LlmRequestLogService {
         },
       ]),
       this.llmRequestLogModel.aggregate<UsageAggModelRow>([
-        { $match: where },
+        { $match: usageWhere },
         {
           $group: {
             _id: "$model",
@@ -311,7 +539,7 @@ export class LlmRequestLogService {
         { $sort: { requestCount: -1, _id: 1 } },
       ]),
       this.llmRequestLogModel.aggregate<UsageAggDayRow>([
-        { $match: where },
+        { $match: usageWhere },
         {
           $group: {
             _id: {
@@ -672,7 +900,94 @@ export class LlmRequestLogService {
     return this.writeFailureTotal;
   }
 
+  private toListItem(row: LlmRequestLogRaw): LlmRequestLogListItem {
+    return {
+      id: row._id.toString(),
+      orgId: row.orgId,
+      requestType: row.requestType,
+      model: row.model,
+      status: row.status,
+      promptTokens: this.toNullableNumber(row.promptTokens),
+      completionTokens: this.toNullableNumber(row.completionTokens),
+      totalTokens: this.toNullableNumber(row.totalTokens),
+      costUsd: this.toNullableNumber(row.costUsd),
+      latencyMs: Math.max(0, Number(row.latencyMs ?? 0)),
+      error: typeof row.error === "string" ? row.error : null,
+      metadata: row.metadata ?? null,
+      apiSurface: this.toApiSurface(row.apiSurface),
+      createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(0),
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(0),
+    };
+  }
+
+  private async *iterateExportCsvRows(
+    cursor: CursorLike<LlmRequestLogExportRaw>,
+  ): AsyncGenerator<string> {
+    yield `${EXPORT_CSV_HEADERS.join(",")}\n`;
+    try {
+      for await (const row of cursor) {
+        yield `${this.toExportCsvLine(row)}\n`;
+      }
+    } finally {
+      if (typeof cursor.close === "function") {
+        await cursor.close();
+      }
+    }
+  }
+
+  private toExportCsvLine(row: LlmRequestLogExportRaw): string {
+    const createdAt =
+      row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(0).toISOString();
+    const durationMs = Math.max(0, Number(row.latencyMs ?? 0));
+    const inputTokens = this.toCsvNullableNumber(row.promptTokens);
+    const outputTokens = this.toCsvNullableNumber(row.completionTokens);
+    const totalTokens = this.toCsvNullableNumber(row.totalTokens);
+    const error = typeof row.error === "string" ? row.error : "";
+    const model =
+      typeof row.model === "string" && row.model.trim().length > 0 ? row.model : "unknown";
+    const requestType = typeof row.requestType === "string" ? row.requestType : "";
+    const status = typeof row.status === "string" ? row.status : "";
+
+    return [
+      createdAt,
+      model,
+      requestType,
+      status,
+      durationMs,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      error,
+    ]
+      .map((value) => this.escapeCsvValue(value))
+      .join(",");
+  }
+
+  private escapeCsvValue(value: unknown): string {
+    const text = value === null || value === undefined ? "" : String(value);
+
+    if (typeof value === "string") {
+      const trimmedStart = text.replace(/^\s+/, "");
+      if (/^[=+\-@]/.test(trimmedStart) && !/^-?\d+(\.\d+)?$/.test(trimmedStart)) {
+        return this.escapeCsvValue(`'${text}`);
+      }
+    }
+
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+  }
+
   private toNullableNumber(value: unknown): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return numeric;
+  }
+
+  private toCsvNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
     const numeric = typeof value === "number" ? value : Number(value);
     if (!Number.isFinite(numeric)) {
       return null;

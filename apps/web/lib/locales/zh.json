@@ -3766,6 +3766,13 @@
         "settingsReset": "日志保留期设置已恢复默认。",
         "metadataPolicyReset": "metadata 白名单已恢复为推荐默认值。"
       },
+      "export": {
+        "button": "导出 CSV",
+        "exporting": "导出中...",
+        "noData": "当前筛选条件下暂无可导出数据。",
+        "success": "LLM 请求日志导出成功。",
+        "failed": "导出 LLM 请求日志失败。"
+      },
       "retention": {
         "title": "日志保留设置",
         "description": "配置 LLM 请求日志在 MongoDB 中的保留天数，超期后将自动清理。",

@@ -3763,6 +3763,13 @@
         "settingsReset": "Log retention settings reset to defaults.",
         "metadataPolicyReset": "Metadata allowlist reset to recommended defaults."
       },
+      "export": {
+        "button": "Export CSV",
+        "exporting": "Exporting...",
+        "noData": "No data to export for current filters.",
+        "success": "LLM request logs exported.",
+        "failed": "Failed to export LLM request logs."
+      },
       "retention": {
         "title": "Log retention settings",
         "description": "Configure how many days LLM request logs are retained in MongoDB before automatic cleanup.",

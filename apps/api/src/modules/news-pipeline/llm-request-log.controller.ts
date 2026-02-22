@@ -1,5 +1,18 @@
-import { BadRequestException, Controller, Get, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Query,
+  StreamableFile,
+} from "@nestjs/common";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiQuery,
+  ApiTags,
+} from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -13,6 +26,18 @@ import {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
+const EXPORT_FILENAME = "llm-logs-export.csv";
+
+interface ParsedDateRange {
+  start?: Date;
+  end?: Date;
+}
+
+interface ParsedLogFilter extends ParsedDateRange {
+  model?: string;
+  requestType?: LlmRequestType;
+  status?: LlmRequestStatus;
+}
 
 function parseDateQuery(name: string, value: string | undefined): Date | undefined {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -68,6 +93,40 @@ function normalizeStatus(raw: string | undefined): LlmRequestStatus | undefined 
   throw new BadRequestException("status must be one of success, error");
 }
 
+function parseDateRange(
+  startRaw: string | undefined,
+  endRaw: string | undefined,
+): ParsedDateRange {
+  const start = parseDateQuery("start", startRaw);
+  const end = parseDateQuery("end", endRaw);
+
+  if (start && end && start.getTime() > end.getTime()) {
+    throw new BadRequestException("start must be earlier than or equal to end");
+  }
+
+  return {
+    start,
+    end,
+  };
+}
+
+function parseLogFilter(
+  modelRaw: string | undefined,
+  requestTypeRaw: string | undefined,
+  statusRaw: string | undefined,
+  startRaw: string | undefined,
+  endRaw: string | undefined,
+): ParsedLogFilter {
+  const { start, end } = parseDateRange(startRaw, endRaw);
+  return {
+    model: typeof modelRaw === "string" && modelRaw.trim().length > 0 ? modelRaw.trim() : undefined,
+    requestType: normalizeRequestType(requestTypeRaw),
+    status: normalizeStatus(statusRaw),
+    start,
+    end,
+  };
+}
+
 @ApiTags("observability")
 @ApiBearerAuth()
 @Controller("llm-logs")
@@ -88,30 +147,88 @@ export class LlmRequestLogController {
   ) {
     const page = parsePositiveIntQuery("page", pageRaw, DEFAULT_PAGE);
     const pageSize = parsePositiveIntQuery("pageSize", pageSizeRaw, DEFAULT_PAGE_SIZE);
-    const model = typeof modelRaw === "string" && modelRaw.trim().length > 0 ? modelRaw.trim() : undefined;
-    const requestType = normalizeRequestType(requestTypeRaw);
-    const status = normalizeStatus(statusRaw);
-    const start = parseDateQuery("start", startRaw);
-    const end = parseDateQuery("end", endRaw);
-
-    if (start && end && start.getTime() > end.getTime()) {
-      throw new BadRequestException("start must be earlier than or equal to end");
-    }
+    const filter = parseLogFilter(
+      modelRaw,
+      requestTypeRaw,
+      statusRaw,
+      startRaw,
+      endRaw,
+    );
 
     return this.llmRequestLogService.queryLogs(
       {
         orgId: user.orgId,
-        model,
-        requestType,
-        status,
-        start,
-        end,
+        ...filter,
       },
       {
         page,
         pageSize,
       },
     );
+  }
+
+  @Get("export")
+  @Permissions("settings.manage")
+  @ApiOperation({
+    summary: "Export LLM request logs as CSV",
+    description:
+      "Exports all matched LLM request logs for current organization without pagination using the same filters as GET /llm-logs.",
+  })
+  @ApiProduces("text/csv")
+  @ApiOkResponse({
+    description: "CSV stream download",
+  })
+  @ApiQuery({ name: "model", required: false, type: String })
+  @ApiQuery({
+    name: "requestType",
+    required: false,
+    enum: ["completion", "embedding", "rerank", "stream", "responses"],
+  })
+  @ApiQuery({
+    name: "status",
+    required: false,
+    enum: ["success", "error"],
+  })
+  @ApiQuery({
+    name: "start",
+    required: false,
+    type: String,
+    description: "ISO 8601 datetime",
+  })
+  @ApiQuery({
+    name: "end",
+    required: false,
+    type: String,
+    description: "ISO 8601 datetime",
+  })
+  async export(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("model") modelRaw?: string,
+    @Query("requestType") requestTypeRaw?: string,
+    @Query("status") statusRaw?: string,
+    @Query("start") startRaw?: string,
+    @Query("end") endRaw?: string,
+  ): Promise<StreamableFile> {
+    const filter = parseLogFilter(
+      modelRaw,
+      requestTypeRaw,
+      statusRaw,
+      startRaw,
+      endRaw,
+    );
+    const exportResult = await this.llmRequestLogService.exportLogsCsvStream(
+      {
+        orgId: user.orgId,
+        ...filter,
+      },
+      {
+        actorId: user.id,
+      },
+    );
+    return new StreamableFile(exportResult.stream, {
+      type: "text/csv; charset=utf-8",
+      disposition: `attachment; filename="${EXPORT_FILENAME}"`,
+    });
   }
 
   @Get("summary")
@@ -121,12 +238,7 @@ export class LlmRequestLogController {
     @Query("start") startRaw?: string,
     @Query("end") endRaw?: string,
   ) {
-    const start = parseDateQuery("start", startRaw);
-    const end = parseDateQuery("end", endRaw);
-
-    if (start && end && start.getTime() > end.getTime()) {
-      throw new BadRequestException("start must be earlier than or equal to end");
-    }
+    const { start, end } = parseDateRange(startRaw, endRaw);
 
     return this.llmRequestLogService.getUsageSummary(user.orgId, {
       start,

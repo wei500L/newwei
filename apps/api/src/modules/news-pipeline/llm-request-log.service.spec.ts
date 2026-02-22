@@ -1,15 +1,33 @@
+import { BadRequestException } from "@nestjs/common";
+
 const mockLogger = {
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
   debug: jest.fn(),
 };
+const writeAuditLogBestEffortMock = jest.fn().mockResolvedValue(undefined);
 
 jest.mock("@modular/utils", () => ({
   createLogger: () => mockLogger,
 }));
+jest.mock("../audit/audit-log.writer", () => ({
+  writeAuditLogBestEffort: (...args: unknown[]) => writeAuditLogBestEffortMock(...args),
+}));
 
 import { LlmRequestLogService } from "./llm-request-log.service";
+
+async function readStream(stream: AsyncIterable<unknown>): Promise<string> {
+  const chunks: string[] = [];
+  for await (const chunk of stream) {
+    if (typeof chunk === "string") {
+      chunks.push(chunk);
+      continue;
+    }
+    chunks.push(Buffer.from(chunk as ArrayBufferLike).toString("utf-8"));
+  }
+  return chunks.join("");
+}
 
 describe("LlmRequestLogService", () => {
   const modelMock = {
@@ -22,6 +40,7 @@ describe("LlmRequestLogService", () => {
     getMetadataPolicySnapshot: jest.fn(),
     getMetadataPolicySummarySnapshot: jest.fn(),
   } as any;
+  const prismaMock = {} as any;
 
   let service: LlmRequestLogService;
 
@@ -37,7 +56,7 @@ describe("LlmRequestLogService", () => {
       allowedTopLevelKeys: ["traceid", "requestid"],
       allowedTopLevelPrefixes: ["x_", "meta_", "ctx_"],
     });
-    service = new LlmRequestLogService(modelMock, settingsServiceMock);
+    service = new LlmRequestLogService(modelMock, prismaMock, settingsServiceMock);
   });
 
   it("filters metadata with top-level allowlist and preserves safe fields", () => {
@@ -128,7 +147,7 @@ describe("LlmRequestLogService", () => {
 
   it("does not throw when async write fails", async () => {
     modelMock.create = jest.fn().mockRejectedValue(new Error("mongo write failed"));
-    service = new LlmRequestLogService(modelMock, settingsServiceMock);
+    service = new LlmRequestLogService(modelMock, prismaMock, settingsServiceMock);
 
     expect(() =>
       service.logRequest({
@@ -164,5 +183,212 @@ describe("LlmRequestLogService", () => {
       keyCount: 2,
       prefixCount: 3,
     });
+  });
+
+  it("exports CSV rows for matched logs", async () => {
+    const probeLean = jest.fn().mockResolvedValue([{ _id: "row-1" }, { _id: "row-2" }]);
+    const probeLimit = jest.fn().mockReturnValue({ lean: probeLean });
+    const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
+
+    const close = jest.fn().mockResolvedValue(undefined);
+    const cursor = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          requestType: "responses",
+          model: "gpt-4o-mini",
+          status: "success",
+          promptTokens: 11,
+          completionTokens: 22,
+          totalTokens: 33,
+          costUsd: 0.001,
+          latencyMs: 123,
+          error: null,
+          createdAt: new Date("2026-02-01T10:00:00.000Z"),
+        };
+        yield {
+          requestType: "responses",
+          model: "gpt-4o-mini",
+          status: "error",
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          latencyMs: -8,
+          error: 'bad, "quote"',
+          createdAt: new Date("2026-02-01T09:00:00.000Z"),
+        };
+      },
+      close,
+    };
+
+    const cursorFactory = jest.fn().mockReturnValue(cursor);
+    const exportLean = jest.fn().mockReturnValue({ cursor: cursorFactory });
+    const exportSelect = jest.fn().mockReturnValue({ lean: exportLean });
+    const exportSort = jest.fn().mockReturnValue({ select: exportSelect });
+    modelMock.find = jest
+      .fn()
+      .mockReturnValueOnce({ select: probeSelect })
+      .mockReturnValueOnce({ sort: exportSort });
+
+    const result = await service.exportLogsCsvStream(
+      { orgId: "org-1" },
+      { actorId: "user-1" },
+    );
+    const csv = await readStream(result.stream);
+
+    expect(result.rowCount).toBe(2);
+    expect(modelMock.find).toHaveBeenNthCalledWith(1, { orgId: "org-1" });
+    expect(modelMock.find).toHaveBeenNthCalledWith(2, { orgId: "org-1" });
+    expect(exportSelect).toHaveBeenCalledWith({
+      createdAt: 1,
+      model: 1,
+      requestType: 1,
+      status: 1,
+      latencyMs: 1,
+      promptTokens: 1,
+      completionTokens: 1,
+      totalTokens: 1,
+      error: 1,
+    });
+    expect(csv).toBe(
+      "timestamp,model,requestType,status,durationMs,inputTokens,outputTokens,totalTokens,error\n" +
+        "2026-02-01T10:00:00.000Z,gpt-4o-mini,responses,success,123,11,22,33,\n" +
+        "2026-02-01T09:00:00.000Z,gpt-4o-mini,responses,error,0,,,,\"bad, \"\"quote\"\"\"\n",
+    );
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(writeAuditLogBestEffortMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orgId: "org-1",
+          actorId: "user-1",
+          resource: "llm_request_logs",
+          action: "export_csv",
+        }),
+      }),
+      expect.objectContaining({
+        orgId: "org-1",
+        actorId: "user-1",
+        outcome: "success",
+      }),
+    );
+  });
+
+  it("reuses filter conditions when exporting CSV", async () => {
+    const probeLean = jest.fn().mockResolvedValue([{ _id: "row-1" }]);
+    const probeLimit = jest.fn().mockReturnValue({ lean: probeLean });
+    const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
+    const close = jest.fn().mockResolvedValue(undefined);
+    const cursor = {
+      async *[Symbol.asyncIterator]() {},
+      close,
+    };
+    const cursorFactory = jest.fn().mockReturnValue(cursor);
+    const exportLean = jest.fn().mockReturnValue({ cursor: cursorFactory });
+    const exportSelect = jest.fn().mockReturnValue({ lean: exportLean });
+    const exportSort = jest.fn().mockReturnValue({ select: exportSelect });
+    modelMock.find = jest
+      .fn()
+      .mockReturnValueOnce({ select: probeSelect })
+      .mockReturnValueOnce({ sort: exportSort });
+
+    const start = new Date("2026-02-01T00:00:00.000Z");
+    const end = new Date("2026-02-28T23:59:59.999Z");
+
+    const result = await service.exportLogsCsvStream({
+      orgId: " org-1 ",
+      model: " gpt-4.1-mini ",
+      requestType: "responses",
+      status: "error",
+      start,
+      end,
+    });
+    await readStream(result.stream);
+    expect(result.rowCount).toBe(1);
+
+    const expectedWhere = {
+      orgId: "org-1",
+      model: "gpt-4.1-mini",
+      requestType: "responses",
+      status: "error",
+      createdAt: {
+        $gte: start,
+        $lte: end,
+      },
+    };
+    expect(modelMock.find).toHaveBeenNthCalledWith(1, expectedWhere);
+    expect(modelMock.find).toHaveBeenNthCalledWith(2, expectedWhere);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects export when date range exceeds guardrail", async () => {
+    await expect(
+      service.exportLogsCsvStream({
+        orgId: "org-1",
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-06-01T00:00:00.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(modelMock.find).not.toHaveBeenCalled();
+    expect(writeAuditLogBestEffortMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.any(Object),
+      expect.objectContaining({ outcome: "failure" }),
+    );
+  });
+
+  it("rejects export when matched rows exceed maximum", async () => {
+    const probeLean = jest.fn().mockResolvedValue({ length: 50_001 });
+    const probeLimit = jest.fn().mockReturnValue({ lean: probeLean });
+    const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
+    modelMock.find = jest.fn().mockReturnValueOnce({ select: probeSelect });
+
+    await expect(
+      service.exportLogsCsvStream({ orgId: "org-1" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(modelMock.find).toHaveBeenCalledTimes(1);
+    expect(writeAuditLogBestEffortMock).toHaveBeenCalledWith(
+      prismaMock,
+      expect.any(Object),
+      expect.objectContaining({ outcome: "failure" }),
+    );
+  });
+
+  it("prevents CSV formula injection in exported string cells", async () => {
+    const probeLean = jest.fn().mockResolvedValue([{ _id: "row-1" }]);
+    const probeLimit = jest.fn().mockReturnValue({ lean: probeLean });
+    const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
+
+    const close = jest.fn().mockResolvedValue(undefined);
+    const cursor = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          requestType: "responses",
+          model: "=risky-model",
+          status: "success",
+          promptTokens: 1,
+          completionTokens: 2,
+          totalTokens: 3,
+          latencyMs: 18,
+          error: "@malicious",
+          createdAt: new Date("2026-02-03T10:00:00.000Z"),
+        };
+      },
+      close,
+    };
+    const cursorFactory = jest.fn().mockReturnValue(cursor);
+    const exportLean = jest.fn().mockReturnValue({ cursor: cursorFactory });
+    const exportSelect = jest.fn().mockReturnValue({ lean: exportLean });
+    const exportSort = jest.fn().mockReturnValue({ select: exportSelect });
+    modelMock.find = jest
+      .fn()
+      .mockReturnValueOnce({ select: probeSelect })
+      .mockReturnValueOnce({ sort: exportSort });
+
+    const result = await service.exportLogsCsvStream({ orgId: "org-1" });
+    const csv = await readStream(result.stream);
+
+    expect(csv).toContain("'=risky-model");
+    expect(csv).toContain(",'@malicious");
   });
 });

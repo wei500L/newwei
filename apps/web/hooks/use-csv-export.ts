@@ -8,6 +8,7 @@ import {
   buildCsv,
   type CsvBomMode,
   type CsvCellValue,
+  downloadBlobFile,
   downloadCsv,
   yieldToMain
 } from "@/lib/data-export";
@@ -22,6 +23,14 @@ export interface UseCsvExportResult {
   exporting: boolean;
   label: string;
   exportCsv: (args: CsvExportArgs) => Promise<void>;
+  exportCsvBlob: (args: CsvBlobExportArgs) => Promise<void>;
+}
+
+export interface CsvBlobExportArgs {
+  filename: string;
+  fetchBlob: () => Promise<Blob>;
+  successMessage?: string;
+  errorMessage?: string;
 }
 
 export function useCsvExport(): UseCsvExportResult {
@@ -54,10 +63,34 @@ export function useCsvExport(): UseCsvExportResult {
     [exporting, t]
   );
 
+  const exportCsvBlob = useCallback(
+    async ({ filename, fetchBlob, successMessage, errorMessage }: CsvBlobExportArgs) => {
+      if (exporting) return;
+      setExporting(true);
+      try {
+        await yieldToMain();
+        const blob = await fetchBlob();
+        downloadBlobFile(blob, filename);
+        toast.success(
+          successMessage ??
+            t("dashboard.charts.exportSuccess", { defaultValue: "Export completed" })
+        );
+      } catch {
+        toast.error(
+          errorMessage ??
+            t("dashboard.charts.exportFailed", { defaultValue: "Export failed" })
+        );
+      } finally {
+        setExporting(false);
+      }
+    },
+    [exporting, t]
+  );
+
   return {
     exporting,
     label,
-    exportCsv
+    exportCsv,
+    exportCsvBlob
   };
 }
-

@@ -17,6 +17,7 @@ import {
   Statistic,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -26,9 +27,11 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useCsvExport } from "@/hooks/use-csv-export";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatDateForFilename } from "@/lib/data-export";
 
 type LlmRequestType =
   | "completion"
@@ -257,6 +260,7 @@ export function LlmRequestLogsPanel() {
   const { t } = useTranslation();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
+  const { exporting: exportLogsLoading, exportCsvBlob } = useCsvExport();
   const [settingsForm] = Form.useForm<LlmRequestLogSettingsFormValues>();
 
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -300,6 +304,44 @@ export function LlmRequestLogsPanel() {
     };
   }, [appliedDateRange]);
 
+  const appliedFilterParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    const normalizedModel = appliedModelFilter.trim();
+    if (normalizedModel.length > 0) {
+      params.model = normalizedModel;
+    }
+    if (appliedRequestTypeFilter !== "all") {
+      params.requestType = appliedRequestTypeFilter;
+    }
+    if (appliedStatusFilter !== "all") {
+      params.status = appliedStatusFilter;
+    }
+    if (typeof sharedDateParams.start === "string") {
+      params.start = sharedDateParams.start;
+    }
+    if (typeof sharedDateParams.end === "string") {
+      params.end = sharedDateParams.end;
+    }
+    return params;
+  }, [
+    appliedModelFilter,
+    appliedRequestTypeFilter,
+    appliedStatusFilter,
+    sharedDateParams.end,
+    sharedDateParams.start,
+  ]);
+
+  const summaryFilterParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (typeof sharedDateParams.start === "string") {
+      params.start = sharedDateParams.start;
+    }
+    if (typeof sharedDateParams.end === "string") {
+      params.end = sharedDateParams.end;
+    }
+    return params;
+  }, [sharedDateParams.end, sharedDateParams.start]);
+
   const loadSettings = useCallback(async () => {
     setSettingsLoading(true);
     setSettingsErrorMessage(null);
@@ -339,23 +381,8 @@ export function LlmRequestLogsPanel() {
       const params: Record<string, string | number> = {
         page,
         pageSize,
+        ...appliedFilterParams,
       };
-      const normalizedModel = appliedModelFilter.trim();
-      if (normalizedModel.length > 0) {
-        params.model = normalizedModel;
-      }
-      if (appliedRequestTypeFilter !== "all") {
-        params.requestType = appliedRequestTypeFilter;
-      }
-      if (appliedStatusFilter !== "all") {
-        params.status = appliedStatusFilter;
-      }
-      if (typeof sharedDateParams.start === "string") {
-        params.start = sharedDateParams.start;
-      }
-      if (typeof sharedDateParams.end === "string") {
-        params.end = sharedDateParams.end;
-      }
 
       const response = await apiClient.get<LlmRequestLogListResponse>("llm-logs", {
         params,
@@ -382,30 +409,19 @@ export function LlmRequestLogsPanel() {
     }
   }, [
     apiClient,
-    appliedModelFilter,
-    appliedRequestTypeFilter,
-    appliedStatusFilter,
+    appliedFilterParams,
     refreshNonce,
     messageApi,
     page,
     pageSize,
-    sharedDateParams.end,
-    sharedDateParams.start,
     t,
   ]);
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (typeof sharedDateParams.start === "string") {
-        params.start = sharedDateParams.start;
-      }
-      if (typeof sharedDateParams.end === "string") {
-        params.end = sharedDateParams.end;
-      }
       const response = await apiClient.get<LlmUsageSummaryResponse>("llm-logs/summary", {
-        params,
+        params: summaryFilterParams,
       });
       setSummary(response.data ?? EMPTY_SUMMARY);
     } catch (error) {
@@ -423,8 +439,7 @@ export function LlmRequestLogsPanel() {
     apiClient,
     messageApi,
     refreshNonce,
-    sharedDateParams.end,
-    sharedDateParams.start,
+    summaryFilterParams,
     t,
   ]);
 
@@ -630,6 +645,35 @@ export function LlmRequestLogsPanel() {
       },
     });
   };
+
+  const handleExportLogs = useCallback(async () => {
+    const filename = `llm-logs-${formatDateForFilename(new Date())}.csv`;
+    await exportCsvBlob({
+      filename,
+      fetchBlob: async () => {
+        const response = await apiClient.get<Blob>("llm-logs/export", {
+          params: appliedFilterParams,
+          responseType: "blob",
+        });
+        const rawContentType = response.headers?.["content-type"];
+        const normalizedContentType = (
+          Array.isArray(rawContentType)
+            ? rawContentType.join(",")
+            : rawContentType ?? response.data?.type ?? ""
+        ).toLowerCase();
+        if (!normalizedContentType.includes("text/csv")) {
+          throw new Error("Unexpected export response content type");
+        }
+        return response.data;
+      },
+      successMessage: t("systemSettings.llmRequestLogs.export.success", {
+        defaultValue: "LLM request logs exported.",
+      }),
+      errorMessage: t("systemSettings.llmRequestLogs.export.failed", {
+        defaultValue: "Failed to export LLM request logs.",
+      }),
+    });
+  }, [apiClient, appliedFilterParams, exportCsvBlob, t]);
 
   const columns = useMemo<ColumnsType<LlmRequestLogRow>>(
     () => [
@@ -857,6 +901,7 @@ export function LlmRequestLogsPanel() {
     0,
     effectiveMetadataPolicy.keyCount - metadataPreviewKeys.length,
   );
+  const canExportLogs = logs.total > 0;
 
   return (
     <>
@@ -1333,6 +1378,33 @@ export function LlmRequestLogsPanel() {
         >
           {t("common.reset", { defaultValue: "Reset" })}
         </Button>
+        <Tooltip
+          title={
+            !canExportLogs
+              ? t("systemSettings.llmRequestLogs.export.noData", {
+                  defaultValue: "No data to export for current filters.",
+                })
+              : undefined
+          }
+        >
+          <span>
+            <Button
+              onClick={() => {
+                void handleExportLogs();
+              }}
+              loading={exportLogsLoading}
+              disabled={logsLoading || !canExportLogs}
+            >
+              {exportLogsLoading
+                ? t("systemSettings.llmRequestLogs.export.exporting", {
+                    defaultValue: "Exporting...",
+                  })
+                : t("systemSettings.llmRequestLogs.export.button", {
+                    defaultValue: "Export CSV",
+                  })}
+            </Button>
+          </span>
+        </Tooltip>
       </Space>
 
       {errorMessage ? (
