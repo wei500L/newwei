@@ -21,6 +21,9 @@
   "dependencies": {
     "@ant-design/icons": "^5.3.6",
     "@apollo/client": "^3.11.0",
+    "@dnd-kit/core": "^6.1.0",
+    "@dnd-kit/sortable": "^8.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@modular/utils": "workspace:*",
     "@tanstack/react-query": "^5.51.0",
     "antd": "^5.19.0",
