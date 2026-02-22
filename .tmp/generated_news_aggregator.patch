@@ -1,0 +1,4097 @@
+--- a/apps/api/package.json
++++ b/apps/api/package.json
+@@ -55,6 +55,7 @@
+     "cookie-parser": "^1.4.6",
+     "cron-parser": "^4.9.0",
+     "dataloader": "^2.2.2",
++    "dayjs": "^1.11.13",
+     "dotenv": "^16.4.5",
+     "express": "^4.19.2",
+     "fast-xml-parser": "^4.4.0",
+@@ -67,12 +68,14 @@
+     "graphql-ws": "^5.14.2",
+     "handlebars": "^4.7.8",
+     "helmet": "^7.1.0",
++    "iconv-lite": "^0.6.3",
+     "ioredis": "^5.4.1",
+     "jsonwebtoken": "^9.0.2",
+     "mongoose": "^8.3.2",
+     "nest-winston": "^1.9.6",
+     "nestjs-dataloader": "^9.0.0",
+     "nodemailer": "^7.0.7",
++    "ofetch": "^1.4.1",
+     "passport": "^0.6.0",
+     "passport-jwt": "^4.0.1",
+     "pino": "^8.19.0",
+--- a/apps/api/src/app.module.ts
++++ b/apps/api/src/app.module.ts
+@@ -31,6 +31,7 @@
+ import { HealthModule } from "./modules/health/health.module";
+ import { ItemsModule } from "./modules/items/items.module";
+ import { KnowledgeGraphModule } from "./modules/knowledge-graph/knowledge-graph.module";
++import { NewsAggregatorModule } from "./modules/news-aggregator/news-aggregator.module";
+ import { NewsEventsModule } from "./modules/news-events/news-events.module";
+ import { NewsIndicatorModule } from "./modules/news-indicator/news-indicator.module";
+ import { NotificationsModule } from "./modules/notifications/notifications.module";
+@@ -90,6 +91,7 @@
+     NotificationsModule,
+     ObservabilityModule,
+     KnowledgeGraphModule,
++    NewsAggregatorModule,
+     NewsEventsModule,
+     NewsIndicatorModule,
+     WebSocketModule,
+--- a/apps/api/src/modules/news-aggregator/data/metadata.ts
++++ b/apps/api/src/modules/news-aggregator/data/metadata.ts
+@@ -0,0 +1,65 @@
++import type { ColumnID, HiddenColumnID, Metadata, Source, SourceID } from "../news-aggregator.types"
++
++function typeSafeObjectFromEntries<
++  const T extends ReadonlyArray<readonly [PropertyKey, unknown]>,
++>(entries: T): { [K in T[number]as K[0]]: K[1] } {
++  return Object.fromEntries(entries) as { [K in T[number]as K[0]]: K[1] }
++}
++
++function typeSafeObjectEntries<T extends Record<PropertyKey, unknown>>(obj: T): { [K in keyof T]: [K, T[K]] }[keyof T][] {
++  return Object.entries(obj) as { [K in keyof T]: [K, T[K]] }[keyof T][]
++}
++
++export const columns = {
++  china: {
++    zh: "国内",
++  },
++  world: {
++    zh: "国际",
++  },
++  tech: {
++    zh: "科技",
++  },
++  finance: {
++    zh: "财经",
++  },
++  focus: {
++    zh: "关注",
++  },
++  realtime: {
++    zh: "实时",
++  },
++  hottest: {
++    zh: "最热",
++  },
++} as const
++
++export const fixedColumnIds = ["focus", "hottest", "realtime"] as const satisfies Partial<ColumnID>[]
++export const hiddenColumns = Object.keys(columns).filter(id => !fixedColumnIds.includes(id as any)) as HiddenColumnID[]
++
++export function genMetadata(sources: Record<SourceID, Source>): Metadata {
++  return typeSafeObjectFromEntries(typeSafeObjectEntries(columns).map(([k, v]) => {
++  switch (k) {
++    case "focus":
++      return [k, {
++        name: v.zh,
++        sources: [] as SourceID[],
++      }]
++    case "hottest":
++      return [k, {
++        name: v.zh,
++        sources: typeSafeObjectEntries(sources).filter(([, v]) => v.type === "hottest" && !v.redirect).map(([k]) => k),
++      }]
++    case "realtime":
++      return [k, {
++        name: v.zh,
++        sources: typeSafeObjectEntries(sources).filter(([, v]) => v.type === "realtime" && !v.redirect).map(([k]) => k),
++      }]
++    default:
++      return [k, {
++        name: v.zh,
++        sources: typeSafeObjectEntries(sources).filter(([, v]) => v.column === k && !v.redirect).map(([k]) => k),
++      }]
++  }
++}))
++}
+--- a/apps/api/src/modules/news-aggregator/data/pre-sources.ts
++++ b/apps/api/src/modules/news-aggregator/data/pre-sources.ts
+@@ -0,0 +1,526 @@
++import { Time } from "../news-aggregator.constants"
++import type { OriginSource, Source, SourceID } from "../news-aggregator.types"
++
++function typeSafeObjectFromEntries<
++  const T extends ReadonlyArray<readonly [PropertyKey, unknown]>,
++>(entries: T): { [K in T[number]as K[0]]: K[1] } {
++  return Object.fromEntries(entries) as { [K in T[number]as K[0]]: K[1] }
++}
++
++export const originSources = {
++  "v2ex": {
++    name: "V2EX",
++    color: "slate",
++    home: "https://v2ex.com/",
++    sub: {
++      share: {
++        title: "最新分享",
++        column: "tech",
++      },
++    },
++  },
++  "zhihu": {
++    name: "知乎",
++    type: "hottest",
++    column: "china",
++    color: "blue",
++    home: "https://www.zhihu.com",
++  },
++  "weibo": {
++    name: "微博",
++    title: "实时热搜",
++    type: "hottest",
++    column: "china",
++    color: "red",
++    interval: Time.Realtime,
++    home: "https://weibo.com",
++  },
++  "zaobao": {
++    name: "联合早报",
++    interval: Time.Common,
++    type: "realtime",
++    column: "world",
++    color: "red",
++    desc: "来自第三方网站: 早晨报",
++    home: "https://www.zaobao.com",
++  },
++  "coolapk": {
++    name: "酷安",
++    type: "hottest",
++    column: "tech",
++    color: "green",
++    title: "今日最热",
++    home: "https://coolapk.com",
++  },
++  "mktnews": {
++    name: "MKTNews",
++    column: "finance",
++    home: "https://mktnews.net",
++    color: "indigo",
++    interval: Time.Realtime,
++    sub: {
++      flash: {
++        title: "快讯",
++      },
++    },
++  },
++  "wallstreetcn": {
++    name: "华尔街见闻",
++    color: "blue",
++    column: "finance",
++    home: "https://wallstreetcn.com/",
++    sub: {
++      quick: {
++        type: "realtime",
++        interval: Time.Fast,
++        title: "快讯",
++      },
++      news: {
++        title: "最新",
++        interval: Time.Common,
++      },
++      hot: {
++        title: "最热",
++        type: "hottest",
++        interval: Time.Common,
++      },
++    },
++  },
++  "36kr": {
++    name: "36氪",
++    type: "realtime",
++    color: "blue",
++    home: "https://36kr.com",
++    column: "tech",
++    sub: {
++      quick: {
++        title: "快讯",
++      },
++      renqi: {
++        type: "hottest",
++        title: "人气榜",
++      },
++    },
++  },
++  "douyin": {
++    name: "抖音",
++    type: "hottest",
++    column: "china",
++    color: "gray",
++    home: "https://www.douyin.com",
++  },
++  "hupu": {
++    name: "虎扑",
++    home: "https://hupu.com",
++    column: "china",
++    title: "主干道热帖",
++    type: "hottest",
++    color: "red",
++  },
++  "tieba": {
++    name: "百度贴吧",
++    title: "热议",
++    column: "china",
++    type: "hottest",
++    color: "blue",
++    home: "https://tieba.baidu.com",
++  },
++  "toutiao": {
++    name: "今日头条",
++    type: "hottest",
++    column: "china",
++    color: "red",
++    home: "https://www.toutiao.com",
++  },
++  "ithome": {
++    name: "IT之家",
++    color: "red",
++    column: "tech",
++    type: "realtime",
++    home: "https://www.ithome.com",
++  },
++  "thepaper": {
++    name: "澎湃新闻",
++    interval: Time.Common,
++    type: "hottest",
++    column: "china",
++    title: "热榜",
++    color: "gray",
++    home: "https://www.thepaper.cn",
++  },
++  "sputniknewscn": {
++    name: "卫星通讯社",
++    color: "orange",
++    column: "world",
++    home: "https://sputniknews.cn",
++  },
++  "cankaoxiaoxi": {
++    name: "参考消息",
++    color: "red",
++    column: "world",
++    interval: Time.Common,
++    home: "https://china.cankaoxiaoxi.com",
++  },
++  "pcbeta": {
++    name: "远景论坛",
++    color: "blue",
++    column: "tech",
++    home: "https://bbs.pcbeta.com",
++    sub: {
++      windows11: {
++        title: "Win11",
++        type: "realtime",
++        interval: Time.Fast,
++      },
++      windows: {
++        title: "Windows 资源",
++        type: "realtime",
++        interval: Time.Fast,
++        disable: true,
++      },
++    },
++  },
++  "cls": {
++    name: "财联社",
++    color: "red",
++    column: "finance",
++    home: "https://www.cls.cn",
++    sub: {
++      telegraph: {
++        title: "电报",
++        interval: Time.Fast,
++        type: "realtime",
++      },
++      depth: {
++        title: "深度",
++      },
++      hot: {
++        title: "热门",
++        type: "hottest",
++      },
++    },
++  },
++  "xueqiu": {
++    name: "雪球",
++    color: "blue",
++    home: "https://xueqiu.com",
++    column: "finance",
++    sub: {
++      hotstock: {
++        title: "热门股票",
++        interval: Time.Realtime,
++        type: "hottest",
++      },
++    },
++  },
++  "gelonghui": {
++    name: "格隆汇",
++    color: "blue",
++    title: "事件",
++    column: "finance",
++    type: "realtime",
++    interval: Time.Realtime,
++    home: "https://www.gelonghui.com",
++  },
++  "fastbull": {
++    name: "法布财经",
++    color: "emerald",
++    home: "https://www.fastbull.cn",
++    column: "finance",
++    sub: {
++      express: {
++        title: "快讯",
++        type: "realtime",
++        interval: Time.Realtime,
++      },
++      news: {
++        title: "头条",
++        interval: Time.Common,
++      },
++    },
++  },
++  "solidot": {
++    name: "Solidot",
++    color: "teal",
++    column: "tech",
++    home: "https://solidot.org",
++    interval: Time.Slow,
++  },
++  "hackernews": {
++    name: "Hacker News",
++    color: "orange",
++    column: "tech",
++    type: "hottest",
++    home: "https://news.ycombinator.com/",
++  },
++  "producthunt": {
++    name: "Product Hunt",
++    color: "red",
++    column: "tech",
++    type: "hottest",
++    home: "https://www.producthunt.com/",
++  },
++  "github": {
++    name: "Github",
++    color: "gray",
++    home: "https://github.com/",
++    column: "tech",
++    sub: {
++      "trending-today": {
++        title: "Today",
++        type: "hottest",
++      },
++    },
++  },
++  "bilibili": {
++    name: "哔哩哔哩",
++    color: "blue",
++    home: "https://www.bilibili.com",
++    sub: {
++      "hot-search": {
++        title: "热搜",
++        column: "china",
++        type: "hottest",
++      },
++      "hot-video": {
++        title: "热门视频",
++        disable: "cf",
++        column: "china",
++        type: "hottest",
++      },
++      "ranking": {
++        title: "排行榜",
++        column: "china",
++        disable: "cf",
++        type: "hottest",
++        interval: Time.Common,
++      },
++    },
++  },
++  "kuaishou": {
++    name: "快手",
++    type: "hottest",
++    column: "china",
++    color: "orange",
++    // cloudflare pages cannot access
++    disable: "cf",
++    home: "https://www.kuaishou.com",
++  },
++  "kaopu": {
++    name: "靠谱新闻",
++    column: "world",
++    color: "gray",
++    interval: Time.Common,
++    desc: "不一定靠谱，多看多思考",
++    home: "https://kaopu.news/",
++  },
++  "jin10": {
++    name: "金十数据",
++    column: "finance",
++    color: "blue",
++    type: "realtime",
++    home: "https://www.jin10.com",
++  },
++  "baidu": {
++    name: "百度热搜",
++    column: "china",
++    color: "blue",
++    type: "hottest",
++    home: "https://www.baidu.com",
++  },
++  "linuxdo": {
++    name: "LINUX DO",
++    column: "tech",
++    color: "slate",
++    home: "https://linux.do/",
++    disable: true,
++    sub: {
++      latest: {
++        title: "最新",
++        home: "https://linux.do/latest",
++      },
++      hot: {
++        title: "今日最热",
++        type: "hottest",
++        interval: Time.Common,
++        home: "https://linux.do/hot",
++      },
++    },
++  },
++  "ghxi": {
++    name: "果核剥壳",
++    column: "china",
++    color: "yellow",
++    home: "https://www.ghxi.com/",
++    disable: true,
++  },
++  "smzdm": {
++    name: "什么值得买",
++    column: "china",
++    color: "red",
++    type: "hottest",
++    home: "https://www.smzdm.com",
++    disable: true,
++  },
++  "nowcoder": {
++    name: "牛客",
++    column: "china",
++    color: "blue",
++    type: "hottest",
++    home: "https://www.nowcoder.com",
++  },
++  "sspai": {
++    name: "少数派",
++    column: "tech",
++    color: "red",
++    type: "hottest",
++    home: "https://sspai.com",
++  },
++  "juejin": {
++    name: "稀土掘金",
++    column: "tech",
++    color: "blue",
++    type: "hottest",
++    home: "https://juejin.cn",
++  },
++  "ifeng": {
++    name: "凤凰网",
++    column: "china",
++    color: "red",
++    type: "hottest",
++    title: "热点资讯",
++    home: "https://www.ifeng.com",
++  },
++  "chongbuluo": {
++    name: "虫部落",
++    column: "china",
++    color: "green",
++    home: "https://www.chongbuluo.com",
++    sub: {
++      latest: {
++        title: "最新",
++        interval: Time.Common,
++        home: "https://www.chongbuluo.com/forum.php?mod=guide&view=newthread",
++      },
++      hot: {
++        title: "最热",
++        type: "hottest",
++        interval: Time.Common,
++        home: "https://www.chongbuluo.com/forum.php?mod=guide&view=hot",
++      },
++    },
++  },
++  "douban": {
++    name: "豆瓣",
++    column: "china",
++    title: "热门电影",
++    color: "green",
++    type: "hottest",
++    home: "https://www.douban.com",
++  },
++  "steam": {
++    name: "Steam",
++    column: "world",
++    title: "在线人数",
++    color: "blue",
++    type: "hottest",
++    home: "https://store.steampowered.com",
++  },
++  "tencent": {
++    name: "腾讯新闻",
++    column: "china",
++    color: "blue",
++    home: "https://news.qq.com",
++    sub: {
++      hot: {
++        title: "综合早报",
++        type: "hottest",
++        interval: Time.Common,
++        home: "https://news.qq.com/tag/aEWqxLtdgmQ=",
++      },
++    },
++  },
++  "freebuf": {
++    name: "Freebuf",
++    column: "china",
++    title: "网络安全",
++    color: "green",
++    type: "hottest",
++    home: "https://www.freebuf.com/",
++  },
++
++  "qqvideo": {
++    name: "腾讯视频",
++    column: "china",
++    color: "blue",
++    home: "https://v.qq.com/",
++    sub: {
++      "tv-hotsearch": {
++        title: "热搜榜",
++        type: "hottest",
++        interval: Time.Common,
++        home: "https://v.qq.com/channel/tv",
++
++      },
++    },
++  },
++  "iqiyi": {
++    name: "爱奇艺",
++    column: "china",
++    color: "green",
++    home: "https://www.iqiyi.com",
++    sub: {
++      "hot-ranklist": {
++        title: "热播榜",
++        type: "hottest",
++        interval: Time.Common,
++        home: "https://www.iqiyi.com",
++      },
++    },
++  },
++} as const satisfies Record<string, OriginSource>
++
++export function genSources() {
++  const _: [SourceID, Source][] = []
++
++  Object.entries(originSources).forEach(([id, source]: [any, OriginSource]) => {
++    const parent = {
++      name: source.name,
++      type: source.type,
++      disable: source.disable,
++      desc: source.desc,
++      column: source.column,
++      home: source.home,
++      color: source.color ?? "primary",
++      interval: source.interval ?? Time.Default,
++    }
++    if (source.sub && Object.keys(source.sub).length) {
++      Object.entries(source.sub).forEach(([subId, subSource], i) => {
++        if (i === 0) {
++          _.push([
++            id,
++            {
++              redirect: `${id}-${subId}`,
++              ...parent,
++              ...subSource,
++            },
++          ] as [any, Source])
++        }
++        _.push([`${id}-${subId}`, { ...parent, ...subSource }] as [
++          any,
++          Source,
++        ])
++      })
++    } else {
++      _.push([
++        id,
++        {
++          title: source.title,
++          ...parent,
++        },
++      ])
++    }
++  })
++
++  return typeSafeObjectFromEntries(_.filter(([_, v]) => v.disable !== true))
++}
+--- a/apps/api/src/modules/news-aggregator/news-aggregator-registry.service.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator-registry.service.ts
+@@ -0,0 +1,157 @@
++import { Injectable, Logger, OnModuleInit } from "@nestjs/common"
++
++import { genMetadata } from "./data/metadata"
++import { genSources } from "./data/pre-sources"
++import type { Metadata, Source, SourceGetter, SourceID } from "./news-aggregator.types"
++import source36kr from "./sources/_36kr"
++import baiduSource from "./sources/baidu"
++import bilibiliSource from "./sources/bilibili"
++import cankaoxiaoxiSource from "./sources/cankaoxiaoxi"
++import chongbuluoSource from "./sources/chongbuluo"
++import clsSource from "./sources/cls/index"
++import coolapkSource from "./sources/coolapk/index"
++import doubanSource from "./sources/douban"
++import douyinSource from "./sources/douyin"
++import fastbullSource from "./sources/fastbull"
++import freebufSource from "./sources/freebuf"
++import gelonghuiSource from "./sources/gelonghui"
++import ghxiSource from "./sources/ghxi"
++import githubSource from "./sources/github"
++import hackernewsSource from "./sources/hackernews"
++import hupuSource from "./sources/hupu"
++import ifengSource from "./sources/ifeng"
++import iqiyiSource from "./sources/iqiyi"
++import ithomeSource from "./sources/ithome"
++import jin10Source from "./sources/jin10"
++import juejinSource from "./sources/juejin"
++import kaopuSource from "./sources/kaopu"
++import kuaishouSource from "./sources/kuaishou"
++import linuxdoSource from "./sources/linuxdo"
++import mktnewsSource from "./sources/mktnews"
++import nowcoderSource from "./sources/nowcoder"
++import pcbetaSource from "./sources/pcbeta"
++import producthuntSource from "./sources/producthunt"
++import qqvideoSource from "./sources/qqvideo"
++import smzdmSource from "./sources/smzdm"
++import solidotSource from "./sources/solidot"
++import sputniknewscnSource from "./sources/sputniknewscn"
++import sspaiSource from "./sources/sspai"
++import steamSource from "./sources/steam"
++import tencentSource from "./sources/tencent"
++import thepaperSource from "./sources/thepaper"
++import tiebaSource from "./sources/tieba"
++import toutiaoSource from "./sources/toutiao"
++import v2exSource from "./sources/v2ex"
++import wallstreetcnSource from "./sources/wallstreetcn"
++import weiboSource from "./sources/weibo"
++import xueqiuSource from "./sources/xueqiu"
++import zaobaoSource from "./sources/zaobao"
++import zhihuSource from "./sources/zhihu"
++
++type SourceModuleExport = (() => Promise<unknown>) | Record<string, () => Promise<unknown>>
++
++@Injectable()
++export class NewsAggregatorRegistryService implements OnModuleInit {
++  private readonly logger = new Logger(NewsAggregatorRegistryService.name)
++
++  private sources: Record<SourceID, Source> = {} as Record<SourceID, Source>
++  private getters: Record<SourceID, SourceGetter> = {} as Record<SourceID, SourceGetter>
++  private columns: Metadata = {} as Metadata
++
++  onModuleInit() {
++    this.sources = genSources()
++    this.getters = this.buildGetters()
++    this.columns = genMetadata(this.sources)
++
++    this.logger.log(
++      `news-aggregator initialized: ${Object.keys(this.sources).length} sources, ${Object.keys(this.getters).length} getters`,
++    )
++  }
++
++  getSource(id: SourceID): Source | undefined {
++    return this.sources[id]
++  }
++
++  getSources(): Record<SourceID, Source> {
++    return this.sources
++  }
++
++  getGetter(id: SourceID): SourceGetter | undefined {
++    return this.getters[id]
++  }
++
++  getColumns(): Metadata {
++    return this.columns
++  }
++
++  getMetadata(): { sources: Record<SourceID, Source>, columns: Metadata } {
++    return {
++      sources: this.sources,
++      columns: this.columns,
++    }
++  }
++
++  private buildGetters(): Record<SourceID, SourceGetter> {
++    const modules: Record<string, SourceModuleExport> = {
++      "36kr": source36kr,
++      "baidu": baiduSource,
++      "bilibili": bilibiliSource,
++      "cankaoxiaoxi": cankaoxiaoxiSource,
++      "chongbuluo": chongbuluoSource,
++      "cls": clsSource,
++      "coolapk": coolapkSource,
++      "douban": doubanSource,
++      "douyin": douyinSource,
++      "fastbull": fastbullSource,
++      "freebuf": freebufSource,
++      "gelonghui": gelonghuiSource,
++      "ghxi": ghxiSource,
++      "github": githubSource,
++      "hackernews": hackernewsSource,
++      "hupu": hupuSource,
++      "ifeng": ifengSource,
++      "iqiyi": iqiyiSource,
++      "ithome": ithomeSource,
++      "jin10": jin10Source,
++      "juejin": juejinSource,
++      "kaopu": kaopuSource,
++      "kuaishou": kuaishouSource,
++      "linuxdo": linuxdoSource,
++      "mktnews": mktnewsSource,
++      "nowcoder": nowcoderSource,
++      "pcbeta": pcbetaSource,
++      "producthunt": producthuntSource,
++      "qqvideo": qqvideoSource,
++      "smzdm": smzdmSource,
++      "solidot": solidotSource,
++      "sputniknewscn": sputniknewscnSource,
++      "sspai": sspaiSource,
++      "steam": steamSource,
++      "tencent": tencentSource,
++      "thepaper": thepaperSource,
++      "tieba": tiebaSource,
++      "toutiao": toutiaoSource,
++      "v2ex": v2exSource,
++      "wallstreetcn": wallstreetcnSource,
++      "weibo": weiboSource,
++      "xueqiu": xueqiuSource,
++      "zaobao": zaobaoSource,
++      "zhihu": zhihuSource,
++    }
++
++    const getters: Partial<Record<SourceID, SourceGetter>> = {}
++
++    for (const [id, getterModule] of Object.entries(modules)) {
++      if (typeof getterModule === "function") {
++        getters[id as SourceID] = getterModule as SourceGetter
++        continue
++      }
++
++      Object.entries(getterModule).forEach(([sourceId, getter]) => {
++        getters[sourceId as SourceID] = getter as SourceGetter
++      })
++    }
++
++    return getters as Record<SourceID, SourceGetter>
++  }
++}
+--- a/apps/api/src/modules/news-aggregator/news-aggregator.constants.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator.constants.ts
+@@ -0,0 +1,13 @@
++export const Time = {
++  Realtime: 2 * 60 * 1000,
++  Fast: 5 * 60 * 1000,
++  Default: 10 * 60 * 1000,
++  Common: 30 * 60 * 1000,
++  Slow: 60 * 60 * 1000,
++} as const
++
++export const CACHE_PREFIX = "news-aggregator"
++export const MAX_ITEMS = 50
++export const BATCH_LIMIT = 100
++export const BATCH_CONCURRENCY = 10
++export const STALE_TTL = 24 * 60 * 60
+--- a/apps/api/src/modules/news-aggregator/news-aggregator.controller.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator.controller.ts
+@@ -0,0 +1,48 @@
++import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common"
++
++import { Public } from "../../common/decorators/public.decorator"
++
++import { NewsAggregatorService } from "./news-aggregator.service"
++
++interface BatchFetchDto {
++  sources?: string[]
++}
++
++@Controller("news-aggregator")
++export class NewsAggregatorController {
++  constructor(private readonly newsAggregatorService: NewsAggregatorService) {}
++
++  @Public()
++  @Get("source")
++  getSource(@Query("id") id: string, @Query("latest") latest?: string) {
++    if (!id) {
++      throw new BadRequestException("id query is required")
++    }
++
++    return this.newsAggregatorService.fetchSource(id, this.isTruthy(latest))
++  }
++
++  @Public()
++  @Post("sources/batch")
++  getSourcesBatch(@Body() body: BatchFetchDto) {
++    if (!Array.isArray(body?.sources)) {
++      throw new BadRequestException("sources must be an array of source ids")
++    }
++
++    return this.newsAggregatorService.fetchBatch(body.sources)
++  }
++
++  @Public()
++  @Get("metadata")
++  getMetadata() {
++    return this.newsAggregatorService.getMetadata()
++  }
++
++  private isTruthy(value?: string): boolean {
++    if (!value) {
++      return false
++    }
++
++    return ["1", "true", "yes", "latest"].includes(value.toLowerCase())
++  }
++}
+--- a/apps/api/src/modules/news-aggregator/news-aggregator.module.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator.module.ts
+@@ -0,0 +1,12 @@
++import { Module } from "@nestjs/common"
++
++import { NewsAggregatorController } from "./news-aggregator.controller"
++import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
++import { NewsAggregatorService } from "./news-aggregator.service"
++
++@Module({
++  controllers: [NewsAggregatorController],
++  providers: [NewsAggregatorRegistryService, NewsAggregatorService],
++  exports: [NewsAggregatorRegistryService, NewsAggregatorService],
++})
++export class NewsAggregatorModule {}
+--- a/apps/api/src/modules/news-aggregator/news-aggregator.service.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator.service.ts
+@@ -0,0 +1,183 @@
++import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common"
++
++import { CacheService } from "../cache/cache.service"
++
++import {
++  BATCH_CONCURRENCY,
++  BATCH_LIMIT,
++  CACHE_PREFIX,
++  MAX_ITEMS,
++  STALE_TTL,
++  Time,
++} from "./news-aggregator.constants"
++import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
++import type { NewsItem, SourceID, SourceResponse } from "./news-aggregator.types"
++
++@Injectable()
++export class NewsAggregatorService {
++  constructor(
++    private readonly cacheService: CacheService,
++    private readonly registryService: NewsAggregatorRegistryService,
++  ) {}
++
++  async fetchSource(id: string, forceRefresh: boolean = false): Promise<SourceResponse> {
++    const sourceId = id as SourceID
++    const source = this.registryService.getSource(sourceId)
++    if (!source) {
++      throw new NotFoundException(`Unknown source: ${id}`)
++    }
++
++    const resolvedId = this.resolveSourceId(sourceId)
++    const getter = this.registryService.getGetter(resolvedId)
++
++    if (!getter) {
++      throw new NotFoundException(`Source getter not found: ${resolvedId}`)
++    }
++
++    const cacheKey = this.buildCacheKey(sourceId)
++    const staleKey = this.buildStaleKey(sourceId)
++
++    if (!forceRefresh) {
++      const cached = await this.cacheService.get<SourceResponse>(cacheKey)
++      if (cached) {
++        return {
++          ...cached,
++          id: sourceId,
++          status: "cache",
++        }
++      }
++    }
++
++    const refresh = async (): Promise<SourceResponse> => {
++      const items = this.normalizeItems(await getter())
++      const response: SourceResponse = {
++        status: "success",
++        id: sourceId,
++        updatedTime: Date.now(),
++        items,
++      }
++
++      const ttlSeconds = Math.max(1, Math.floor((source.interval ?? Time.Default) / 1000))
++
++      await Promise.all([
++        this.cacheService.set(cacheKey, response, ttlSeconds),
++        this.cacheService.set(staleKey, response, STALE_TTL),
++      ])
++
++      return response
++    }
++
++    try {
++      const lockKey = `${cacheKey}:refresh`
++      const lockedResult = await this.cacheService.withLock(lockKey, 15_000, refresh)
++      if (lockedResult) {
++        return lockedResult
++      }
++
++      const afterLockCache = await this.cacheService.get<SourceResponse>(cacheKey)
++      if (afterLockCache) {
++        return {
++          ...afterLockCache,
++          id: sourceId,
++          status: "cache",
++        }
++      }
++
++      return await refresh()
++    } catch (error) {
++      const stale = await this.cacheService.get<SourceResponse>(staleKey)
++      if (stale) {
++        return {
++          ...stale,
++          id: sourceId,
++          status: "cache",
++        }
++      }
++
++      throw error
++    }
++  }
++
++  async fetchBatch(ids: string[]) {
++    if (!Array.isArray(ids)) {
++      throw new BadRequestException("sources must be an array")
++    }
++
++    const uniqueIds = [...new Set(ids.filter(Boolean))]
++    const batchIds = uniqueIds.slice(0, BATCH_LIMIT)
++    const settledResults: Array<PromiseSettledResult<SourceResponse>> = []
++
++    for (let index = 0; index < batchIds.length; index += BATCH_CONCURRENCY) {
++      const chunk = batchIds.slice(index, index + BATCH_CONCURRENCY)
++      const chunkResult = await Promise.allSettled(chunk.map((sourceId) => this.fetchSource(sourceId)))
++      settledResults.push(...chunkResult)
++    }
++
++    const results: SourceResponse[] = []
++    const errors: Array<{ id: string, message: string }> = []
++
++    settledResults.forEach((result, index) => {
++      const sourceId = batchIds[index]
++      if (result.status === "fulfilled") {
++        results.push(result.value)
++      } else {
++        errors.push({
++          id: sourceId,
++          message: result.reason instanceof Error ? result.reason.message : String(result.reason),
++        })
++      }
++    })
++
++    return {
++      requested: ids.length,
++      processed: batchIds.length,
++      results,
++      errors,
++    }
++  }
++
++  getMetadata() {
++    return this.registryService.getMetadata()
++  }
++
++  private resolveSourceId(sourceId: SourceID): SourceID {
++    const visited = new Set<SourceID>()
++    let current = sourceId
++
++    while (true) {
++      if (visited.has(current)) {
++        return sourceId
++      }
++      visited.add(current)
++
++      const currentSource = this.registryService.getSource(current)
++      if (!currentSource?.redirect) {
++        return current
++      }
++
++      current = currentSource.redirect
++    }
++  }
++
++  private normalizeItems(items: NewsItem[]): NewsItem[] {
++    const normalized = items.filter((item) => {
++      return Boolean(item)
++        && item.id !== undefined
++        && item.id !== null
++        && typeof item.title === "string"
++        && item.title.length > 0
++        && typeof item.url === "string"
++        && item.url.length > 0
++    })
++
++    return normalized.slice(0, MAX_ITEMS)
++  }
++
++  private buildCacheKey(sourceId: SourceID): string {
++    return `${CACHE_PREFIX}:source:${sourceId}`
++  }
++
++  private buildStaleKey(sourceId: SourceID): string {
++    return `${CACHE_PREFIX}:source:${sourceId}:stale`
++  }
++}
+--- a/apps/api/src/modules/news-aggregator/news-aggregator.types.ts
++++ b/apps/api/src/modules/news-aggregator/news-aggregator.types.ts
+@@ -0,0 +1,131 @@
++import type { columns, fixedColumnIds } from "./data/metadata"
++import type { originSources } from "./data/pre-sources"
++
++export type Color = string
++
++type ConstSources = typeof originSources
++type MainSourceID = keyof ConstSources
++
++export type SourceID = {
++  [Key in MainSourceID]: ConstSources[Key] extends { disable?: true } ? never :
++    ConstSources[Key] extends { sub?: infer SubSource } ? {
++      [SubKey in keyof SubSource]: SubSource[SubKey] extends { disable?: true } ? never : `${Key & string}-${SubKey & string}`
++    }[keyof SubSource] | (Key & string) : (Key & string)
++}[MainSourceID]
++
++export type AllSourceID = {
++  [Key in MainSourceID]: ConstSources[Key] extends { sub?: infer SubSource } ? keyof {
++    [SubKey in keyof SubSource as `${Key & string}-${SubKey & string}`]: never
++  } | (Key & string) : (Key & string)
++}[MainSourceID]
++
++export type ColumnID = keyof typeof columns
++export type Metadata = Record<ColumnID, Column>
++
++export interface PrimitiveMetadata {
++  updatedTime: number
++  data: Record<FixedColumnID, SourceID[]>
++  action: "init" | "manual" | "sync"
++}
++
++export type FixedColumnID = (typeof fixedColumnIds)[number]
++export type HiddenColumnID = Exclude<ColumnID, FixedColumnID>
++
++export interface OriginSource extends Partial<Omit<Source, "name" | "redirect">> {
++  name: string
++  sub?: Record<string, {
++    title: string
++  } & Partial<Omit<Source, "title" | "name" | "redirect">>>
++}
++
++export interface Source {
++  name: string
++  interval: number
++  color: Color
++  title?: string
++  desc?: string
++  type?: "hottest" | "realtime"
++  column?: HiddenColumnID
++  home?: string
++  disable?: boolean | "cf"
++  redirect?: SourceID
++}
++
++export interface Column {
++  name: string
++  sources: SourceID[]
++}
++
++export interface NewsItem {
++  id: string | number
++  title: string
++  url: string
++  mobileUrl?: string
++  pubDate?: number | string
++  extra?: {
++    hover?: string
++    date?: number | string
++    info?: false | string
++    diff?: number
++    icon?: false | string | {
++      url: string
++      scale: number
++    }
++    [key: string]: unknown
++  }
++}
++
++export interface SourceResponse {
++  status: "success" | "cache"
++  id: SourceID
++  updatedTime: number | string
++  items: NewsItem[]
++}
++
++export type SourceGetter = () => Promise<NewsItem[]>
++
++export interface CacheInfo {
++  id: SourceID
++  items: NewsItem[]
++  updated: number
++}
++
++export interface RSSInfo {
++  title: string
++  description: string
++  link: string
++  image: string
++  updatedTime: string
++  items: RSSItem[]
++}
++
++export interface RSSItem {
++  title: string
++  description: string
++  link: string
++  created?: string
++}
++
++export interface RSSHubInfo {
++  title: string
++  home_page_url: string
++  description: string
++  items: RSSHubItem[]
++}
++
++export interface RSSHubItem {
++  id: string
++  url: string
++  title: string
++  content_html: string
++  date_published: string
++}
++
++export interface RSSHubOption {
++  sorted?: boolean
++  limit?: number
++}
++
++export interface SourceOption {
++  hiddenDate?: boolean
++}
+--- a/apps/api/src/modules/news-aggregator/sources/_36kr.ts
++++ b/apps/api/src/modules/news-aggregator/sources/_36kr.ts
+@@ -0,0 +1,93 @@
++import type { NewsItem } from "../news-aggregator.types"
++import { load } from "cheerio"
++import dayjs from "dayjs"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++const quick = defineSource(async () => {
++  const baseURL = "https://www.36kr.com"
++  const url = `${baseURL}/newsflashes`
++  const response = await myFetch(url) as any
++  const $ = load(response)
++  const news: NewsItem[] = []
++  const $items = $(".newsflash-item")
++  $items.each((_, el) => {
++    const $el = $(el)
++    const $a = $el.find("a.item-title")
++    const url = $a.attr("href")
++    const title = $a.text()
++    const relativeDate = $el.find(".time").text()
++    if (url && title && relativeDate) {
++      news.push({
++        url: `${baseURL}${url}`,
++        title,
++        id: url,
++        extra: {
++          date: parseRelativeDate(relativeDate, "Asia/Shanghai").valueOf(),
++        },
++      })
++    }
++  })
++
++  return news
++})
++
++const renqi = defineSource(async () => {
++  const baseURL = "https://36kr.com"
++  const formatted = dayjs().format("YYYY-MM-DD")
++  const url = `${baseURL}/hot-list/renqi/${formatted}/1`
++
++  const response = await myFetch<any>(url, {
++    headers: {
++      "User-Agent":
++                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
++      "Referer": "https://www.freebuf.com/",
++      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
++    },
++  })
++
++  const $ = load(response)
++  const articles: NewsItem[] = []
++
++  // 单条新闻选择器
++  const $items = $(".article-item-info")
++
++  $items.each((_, el) => {
++    const $el = $(el)
++
++    // 标题和链接
++    const $a = $el.find("a.article-item-title.weight-bold")
++    const href = $a.attr("href") || ""
++    const title = $a.text().trim()
++
++    const description = $el.find("a.article-item-description.ellipsis-2").text().trim()
++
++    // 作者
++    const author = $el.find(".kr-flow-bar-author").text().trim()
++
++    // 热度
++    const hot = $el.find(".kr-flow-bar-hot span").text().trim()
++
++    if (href && title) {
++      articles.push({
++        url: href.startsWith("http") ? href : `${baseURL}${href}`,
++        title,
++        id: href.slice(3), // 简化处理
++        // url.slice(url.lastIndexOf("/") + 1)
++        extra: {
++          info: `${author}  |  ${hot}`,
++          hover: description,
++        },
++      })
++    }
++  })
++  return articles
++})
++
++export default defineSource({
++  "36kr": quick,
++  "36kr-quick": quick,
++  "36kr-renqi": renqi,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/baidu.ts
++++ b/apps/api/src/modules/news-aggregator/sources/baidu.ts
+@@ -0,0 +1,32 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    cards: {
++      content: {
++        isTop?: boolean
++        word: string
++        rawUrl: string
++        desc?: string
++      }[]
++    }[]
++  }
++}
++
++export default defineSource(async () => {
++  const rawData: string = await myFetch(`https://top.baidu.com/board?tab=realtime`)
++  const jsonStr = (rawData as string).match(/<!--s-data:(.*?)-->/s)
++  const data: Res = JSON.parse(jsonStr![1])
++
++  return data.data.cards[0].content.filter(k => !k.isTop).map((k) => {
++    return {
++      id: k.rawUrl,
++      title: k.word,
++      url: k.rawUrl,
++      extra: {
++        hover: k.desc,
++      },
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/bilibili.ts
++++ b/apps/api/src/modules/news-aggregator/sources/bilibili.ts
+@@ -0,0 +1,154 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface WapRes {
++  code: number
++  exp_str: string
++  list: {
++    hot_id: number
++    keyword: string
++    show_name: string
++    score: number
++    word_type: number
++    goto_type: number
++    goto_value: string
++    icon: string
++    live_id: any[]
++    call_reason: number
++    heat_layer: string
++    pos: number
++    id: number
++    status: string
++    name_type: string
++    resource_id: number
++    set_gray: number
++    card_values: any[]
++    heat_score: number
++    stat_datas: {
++      etime: string
++      stime: string
++      is_commercial: string
++    }
++  }[]
++  top_list: any[]
++  hotword_egg_info: string
++  seid: string
++  timestamp: number
++  total_count: number
++}
++
++// Interface for Bilibili Hot Video response
++interface HotVideoRes {
++  code: number
++  message: string
++  ttl: number
++  data: {
++    list: {
++      aid: number
++      videos: number
++      tid: number
++      tname: string
++      copyright: number
++      pic: string
++      title: string
++      pubdate: number
++      ctime: number
++      desc: string
++      state: number
++      duration: number
++      owner: {
++        mid: number
++        name: string
++        face: string
++      }
++      stat: {
++        view: number
++        danmaku: number
++        reply: number
++        favorite: number
++        coin: number
++        share: number
++        now_rank: number
++        his_rank: number
++        like: number
++        dislike: number
++      }
++      dynamic: string
++      cid: number
++      dimension: {
++        width: number
++        height: number
++        rotate: number
++      }
++      short_link: string
++      short_link_v2: string
++      bvid: string
++      rcmd_reason: {
++        content: string
++        corner_mark: number
++      }
++    }[]
++  }
++}
++
++const hotSearch = defineSource(async () => {
++  const url = "https://s.search.bilibili.com/main/hotword?limit=30"
++  const res: WapRes = await myFetch(url)
++
++  return res.list.map(k => ({
++    id: k.keyword,
++    title: k.show_name,
++    url: `https://search.bilibili.com/all?keyword=${encodeURIComponent(k.keyword)}`,
++    extra: {
++      icon: k.icon,
++    },
++  }))
++})
++
++const hotVideo = defineSource(async () => {
++  const url = "https://api.bilibili.com/x/web-interface/popular"
++  const res: HotVideoRes = await myFetch(url)
++
++  return res.data.list.map(video => ({
++    id: video.bvid,
++    title: video.title,
++    url: `https://www.bilibili.com/video/${video.bvid}`,
++    pubDate: video.pubdate * 1000,
++    extra: {
++      info: `${video.owner.name} · ${formatNumber(video.stat.view)}观看 · ${formatNumber(video.stat.like)}点赞`,
++      hover: video.desc,
++      icon: video.pic,
++    },
++  }))
++})
++
++const ranking = defineSource(async () => {
++  const url = "https://api.bilibili.com/x/web-interface/ranking/v2"
++  const res: HotVideoRes = await myFetch(url)
++
++  return res.data.list.map(video => ({
++    id: video.bvid,
++    title: video.title,
++    url: `https://www.bilibili.com/video/${video.bvid}`,
++    pubDate: video.pubdate * 1000,
++    extra: {
++      info: `${video.owner.name} · ${formatNumber(video.stat.view)}观看 · ${formatNumber(video.stat.like)}点赞`,
++      hover: video.desc,
++      icon: video.pic,
++    },
++  }))
++})
++
++function formatNumber(num: number): string {
++  if (num >= 10000) {
++    return `${Math.floor(num / 10000)}w+`
++  }
++  return num.toString()
++}
++
++export default defineSource({
++  "bilibili": hotSearch,
++  "bilibili-hot-search": hotSearch,
++  "bilibili-hot-video": hotVideo,
++  "bilibili-ranking": ranking,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/cankaoxiaoxi.ts
++++ b/apps/api/src/modules/news-aggregator/sources/cankaoxiaoxi.ts
+@@ -0,0 +1,27 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { tranformToUTC } from "../utils/date"
++
++interface Res {
++  list: {
++    data: {
++      id: string
++      title: string
++      // 北京时间
++      url: string
++      publishTime: string
++    }
++  }[]
++}
++
++export default defineSource(async () => {
++  const res = await Promise.all(["zhongguo", "guandian", "gj"].map(k => myFetch(`https://china.cankaoxiaoxi.com/json/channel/${k}/list.json`) as Promise<Res>))
++  return res.map(k => k.list).flat().map(k => ({
++    id: k.data.id,
++    title: k.data.title,
++    extra: {
++      date: tranformToUTC(k.data.publishTime),
++    },
++    url: k.data.url,
++  })).sort((m, n) => m.extra.date < n.extra.date ? 1 : -1)
++})
+--- a/apps/api/src/modules/news-aggregator/sources/chongbuluo.ts
++++ b/apps/api/src/modules/news-aggregator/sources/chongbuluo.ts
+@@ -0,0 +1,35 @@
++import type { NewsItem } from "../news-aggregator.types"
++import * as cheerio from "cheerio"
++
++import { defineSource, defineRSSSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++const hot = defineSource(async () => {
++  const baseUrl = "https://www.chongbuluo.com/"
++  const html: string = await myFetch(`${baseUrl}forum.php?mod=guide&view=hot`)
++  const $ = cheerio.load(html)
++  const news: NewsItem[] = []
++
++  $(".bmw table tr").each((_, elem) => {
++    const xst = $(elem).find(".common .xst").text()
++    const url = $(elem).find(".common a").attr("href")
++    news.push({
++      id: baseUrl + url,
++      url: baseUrl + url,
++      title: xst,
++      extra: {
++        hover: xst,
++      },
++    })
++  })
++
++  return news
++})
++
++const latest = defineRSSSource("https://www.chongbuluo.com/forum.php?mod=rss&view=newthread")
++
++export default defineSource({
++  "chongbuluo": hot,
++  "chongbuluo-hot": hot,
++  "chongbuluo-latest": latest,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/cls/index.ts
++++ b/apps/api/src/modules/news-aggregator/sources/cls/index.ts
+@@ -0,0 +1,85 @@
++import { getSearchParams } from "./utils"
++
++import { defineSource } from "../../utils/source"
++import { myFetch } from "../../utils/fetch"
++
++interface Item {
++  id: number
++  title?: string
++  brief: string
++  shareurl: string
++  // need *1000
++  ctime: number
++  // 1
++  is_ad: number
++}
++interface TelegraphRes {
++  data: {
++    roll_data: Item[]
++  }
++}
++
++interface Depthes {
++  data: {
++    top_article: Item[]
++    depth_list: Item[]
++  }
++}
++
++interface Hot {
++  data: Item[]
++}
++
++const depth = defineSource(async () => {
++  const apiUrl = `https://www.cls.cn/v3/depth/home/assembled/1000`
++  const res: Depthes = await myFetch(apiUrl, {
++    query: Object.fromEntries(await getSearchParams()),
++  })
++  return res.data.depth_list.sort((m, n) => n.ctime - m.ctime).map((k) => {
++    return {
++      id: k.id,
++      title: k.title || k.brief,
++      mobileUrl: k.shareurl,
++      pubDate: k.ctime * 1000,
++      url: `https://www.cls.cn/detail/${k.id}`,
++    }
++  })
++})
++
++const hot = defineSource(async () => {
++  const apiUrl = `https://www.cls.cn/v2/article/hot/list`
++  const res: Hot = await myFetch(apiUrl, {
++    query: Object.fromEntries(await getSearchParams()),
++  })
++  return res.data.map((k) => {
++    return {
++      id: k.id,
++      title: k.title || k.brief,
++      mobileUrl: k.shareurl,
++      url: `https://www.cls.cn/detail/${k.id}`,
++    }
++  })
++})
++
++const telegraph = defineSource(async () => {
++  const apiUrl = `https://www.cls.cn/nodeapi/updateTelegraphList`
++  const res: TelegraphRes = await myFetch(apiUrl, {
++    query: Object.fromEntries(await getSearchParams()),
++  })
++  return res.data.roll_data.filter(k => !k.is_ad).map((k) => {
++    return {
++      id: k.id,
++      title: k.title || k.brief,
++      mobileUrl: k.shareurl,
++      pubDate: k.ctime * 1000,
++      url: `https://www.cls.cn/detail/${k.id}`,
++    }
++  })
++})
++
++export default defineSource({
++  "cls": telegraph,
++  "cls-telegraph": telegraph,
++  "cls-depth": depth,
++  "cls-hot": hot,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/cls/utils.ts
++++ b/apps/api/src/modules/news-aggregator/sources/cls/utils.ts
+@@ -0,0 +1,15 @@
++import { md5, myCrypto } from "../../utils/crypto"
++
++// https://github.com/DIYgod/RSSHub/blob/master/lib/routes/cls/utils.ts
++const params = {
++  appName: "CailianpressWeb",
++  os: "web",
++  sv: "7.7.5",
++}
++
++export async function getSearchParams(moreParams?: any) {
++  const searchParams = new URLSearchParams({ ...params, ...moreParams })
++  searchParams.sort()
++  searchParams.append("sign", await md5(await myCrypto(searchParams.toString(), "SHA-1")))
++  return searchParams
++}
+--- a/apps/api/src/modules/news-aggregator/sources/coolapk/index.ts
++++ b/apps/api/src/modules/news-aggregator/sources/coolapk/index.ts
+@@ -0,0 +1,43 @@
++import { load } from "cheerio"
++import { genHeaders } from "./utils"
++
++import { defineSource } from "../../utils/source"
++import { myFetch } from "../../utils/fetch"
++
++interface Res {
++  data: {
++    id: string
++    // 多行
++    message: string
++    // 起的标题
++    editor_title: string
++    url: string
++    entityType: string
++    pubDate: string
++    // dayjs(dateline, 'X')
++    dateline: number
++    targetRow: {
++      // 374.4万热度
++      subTitle: string
++    }
++  }[]
++}
++
++export default defineSource({
++  coolapk: async () => {
++    const url = "https://api.coolapk.com/v6/page/dataList?url=%2Ffeed%2FstatList%3FcacheExpires%3D300%26statType%3Dday%26sortField%3Ddetailnum%26title%3D%E4%BB%8A%E6%97%A5%E7%83%AD%E9%97%A8&title=%E4%BB%8A%E6%97%A5%E7%83%AD%E9%97%A8&subTitle=&page=1"
++    const r: Res = await myFetch(url, {
++      headers: await genHeaders(),
++    })
++    if (!r.data.length) throw new Error("Failed to fetch")
++    return r.data.filter(k => k.id).map(i => ({
++      id: i.id,
++      title: i.editor_title || load(i.message).text().split("\n")[0],
++      url: `https://www.coolapk.com${i.url}`,
++      extra: {
++        info: i.targetRow?.subTitle,
++        // date: new Date(i.dateline * 1000).getTime(),
++      },
++    }))
++  },
++})
+--- a/apps/api/src/modules/news-aggregator/sources/coolapk/utils.ts
++++ b/apps/api/src/modules/news-aggregator/sources/coolapk/utils.ts
+@@ -0,0 +1,34 @@
++import { md5 } from "../../utils/crypto"
++import { encodeBase64 } from "../../utils/base64"
++
++// https://github.com/DIYgod/RSSHub/blob/master/lib/routes/coolapk/utils.ts
++function getRandomDEVICE_ID() {
++  const r = [10, 6, 6, 6, 14]
++  const id = r.map(i => Math.random().toString(36).substring(2, i))
++  return id.join("-")
++}
++
++async function get_app_token() {
++  const DEVICE_ID = getRandomDEVICE_ID()
++  const now = Math.round(Date.now() / 1000)
++  const hex_now = `0x${now.toString(16)}`
++  const md5_now = await md5(now.toString())
++  const s = `token://com.coolapk.market/c67ef5943784d09750dcfbb31020f0ab?${md5_now}$${DEVICE_ID}&com.coolapk.market`
++  const md5_s = await md5(encodeBase64(s))
++  const token = md5_s + DEVICE_ID + hex_now
++  return token
++}
++
++export async function genHeaders() {
++  return {
++    "X-Requested-With": "XMLHttpRequest",
++    "X-App-Id": "com.coolapk.market",
++    "X-App-Token": await get_app_token(),
++    "X-Sdk-Int": "29",
++    "X-Sdk-Locale": "zh-CN",
++    "X-App-Version": "11.0",
++    "X-Api-Version": "11",
++    "X-App-Code": "2101202",
++    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 10; Redmi K30 5G MIUI/V12.0.3.0.QGICMXM) (#Build; Redmi; Redmi K30 5G; QKQ1.191222.002 test-keys; 10) +CoolMarket/11.0-2101202",
++  }
++}
+--- a/apps/api/src/modules/news-aggregator/sources/douban.ts
++++ b/apps/api/src/modules/news-aggregator/sources/douban.ts
+@@ -0,0 +1,50 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface HotMoviesRes {
++  category: string
++  tags: []
++  items: MovieItem[]
++  recommend_tags: []
++  total: number
++  type: string
++}
++
++interface MovieItem {
++  rating: {
++    count: number
++    max: number
++    star_count: number
++    value: number
++  }
++  title: string
++  pic: {
++    large: string
++    normal: string
++  }
++  is_new: boolean
++  uri: string
++  episodes_info: string
++  card_subtitle: string
++  type: string
++  id: string
++}
++
++export default defineSource(async () => {
++  const baseURL = "https://m.douban.com/rexxar/api/v2/subject/recent_hot/movie"
++  const res: HotMoviesRes = await myFetch(baseURL, {
++    headers: {
++      Referer: "https://movie.douban.com/",
++      Accept: "application/json, text/plain, */*",
++    },
++  })
++  return res.items.map(movie => ({
++    id: movie.id,
++    title: movie.title,
++    url: `https://movie.douban.com/subject/${movie.id}`,
++    extra: {
++      info: movie.card_subtitle.split(" / ").slice(0, 3).join(" / "),
++      hover: movie.card_subtitle,
++    },
++  }))
++})
+--- a/apps/api/src/modules/news-aggregator/sources/douyin.ts
++++ b/apps/api/src/modules/news-aggregator/sources/douyin.ts
+@@ -0,0 +1,31 @@
++import { defineSource } from "../utils/source"
++import { myFetch, $fetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    word_list: {
++      sentence_id: string
++      word: string
++      event_time: string
++      hot_value: string
++    }[]
++  }
++}
++
++export default defineSource(async () => {
++  const url = "https://www.douyin.com/aweme/v1/web/hot/search/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&detail_list=1"
++  const cookieResponse = await $fetch.raw("https://login.douyin.com/")
++  const cookie = ((cookieResponse.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [])
++  const res: Res = await myFetch(url, {
++    headers: {
++      cookie: cookie.join("; "),
++    },
++  })
++  return res.data.word_list.map((k) => {
++    return {
++      id: k.sentence_id,
++      title: k.word,
++      url: `https://www.douyin.com/hot/${k.sentence_id}`,
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/fastbull.ts
++++ b/apps/api/src/modules/news-aggregator/sources/fastbull.ts
+@@ -0,0 +1,60 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++const express = defineSource(async () => {
++  const baseURL = "https://www.fastbull.com"
++  const html: any = await myFetch(`${baseURL}/cn/express-news`)
++  const $ = cheerio.load(html)
++  const $main = $(".news-list")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find(".title_name")
++    const url = a.attr("href")
++    const titleText = a.text()
++    const title = titleText.match(/【(.+)】/)?.[1] ?? titleText
++    const date = $(el).attr("data-date")
++    if (url && title && date) {
++      news.push({
++        url: baseURL + url,
++        title: title.length < 4 ? titleText : title,
++        id: url,
++        pubDate: Number(date),
++      })
++    }
++  })
++  return news
++})
++
++const news = defineSource(async () => {
++  const baseURL = "https://www.fastbull.com"
++  const html: any = await myFetch(`${baseURL}/cn/news`)
++  const $ = cheerio.load(html)
++  const $main = $(".trending_type")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el)
++    const url = a.attr("href")
++    const title = a.find(".title").text()
++    const date = a.find("[data-date]").attr("data-date")
++    if (url && title && date) {
++      news.push({
++        url: baseURL + url,
++        title,
++        id: url,
++        pubDate: Number(date),
++      })
++    }
++  })
++  return news
++})
++
++export default defineSource(
++  {
++    "fastbull": express,
++    "fastbull-express": express,
++    "fastbull-news": news,
++  },
++)
+--- a/apps/api/src/modules/news-aggregator/sources/freebuf.ts
++++ b/apps/api/src/modules/news-aggregator/sources/freebuf.ts
+@@ -0,0 +1,187 @@
++import * as cheerio from "cheerio"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++// 定义文章统计信息接口
++interface ArticleStats {
++  views: number
++  collections: number
++}
++
++// 定义作者信息接口
++interface AuthorInfo {
++  name: string
++  avatar?: string
++  profileUrl?: string
++}
++
++// 定义文章数据接口
++interface ArticleData {
++  title: string
++  url: string
++  description: string
++  publishTime: string
++  author: AuthorInfo
++  stats: ArticleStats
++  album?: string
++  image?: string
++  category?: string
++}
++
++// 辅助函数：安全提取文本
++function safeExtract($element: cheerio.Cheerio<any>, selector: string): string {
++  const result = $element.find(selector).first().text().trim()
++  return result || ""
++}
++
++// 辅助函数：安全提取属性
++function safeExtractAttribute($element: cheerio.Cheerio<any>, selector: string, attribute: string): string {
++  return $element.find(selector).first().attr(attribute) || ""
++}
++
++// 辅助函数：格式化URL
++function formatUrl(url: string | undefined, baseUrl: string = "https://www.freebuf.com"): string {
++  if (!url) return ""
++  return url.startsWith("http") ? url : `${baseUrl}${url}`
++}
++
++// 辅助函数：提取统计信息
++function extractStats($article: cheerio.Cheerio<any>): ArticleStats {
++  const stats: ArticleStats = { views: 0, collections: 0 }
++
++  // 提取围观数
++  const viewElement = $article.find("a:contains(\"围观\")")
++  if (viewElement.length) {
++    const viewText = viewElement.find("span").first().text()
++    stats.views = Number.parseInt(viewText) || 0
++  }
++
++  // 提取收藏数
++  const collectElement = $article.find("a:contains(\"收藏\")")
++  if (collectElement.length) {
++    const collectText = collectElement.find("span").first().text()
++    stats.collections = Number.parseInt(collectText) || 0
++  }
++
++  return stats
++}
++
++// 辅助函数：提取作者信息
++function extractAuthor($article: cheerio.Cheerio<any>): AuthorInfo {
++  const author: AuthorInfo = { name: "" }
++
++  const authorLink = $article.find(".item-bottom a").first()
++  if (authorLink.length) {
++    author.name = authorLink.find("span").last().text().trim()
++    author.profileUrl = formatUrl(authorLink.attr("href"))
++
++    const avatarImg = authorLink.find(".ant-avatar img")
++    if (avatarImg.length) {
++      author.avatar = avatarImg.attr("src")
++    }
++  }
++
++  return author
++}
++
++// 辅助函数：提取分类信息
++function extractCategory($article: cheerio.Cheerio<any>): string {
++  // 从URL路径推断分类
++  const articleUrl = $article.find(".title-left .title").parent().attr("href") || ""
++  if (articleUrl.includes("/articles/web/")) return "Web安全"
++  if (articleUrl.includes("/articles/database/")) return "数据安全"
++  if (articleUrl.includes("/articles/network/")) return "网络安全"
++  if (articleUrl.includes("/articles/mobile/")) return "移动安全"
++  if (articleUrl.includes("/articles/cloud/")) return "云安全"
++
++  return ""
++}
++
++// 通过截取freebuf的文章url获取新闻id
++function extractIdFromUrl(url: string): string {
++  // 找到最后一个斜杠
++  const lastPart = url.slice(url.lastIndexOf("/") + 1) // "460614.html"
++  // 去掉 .html，只保留数字
++  const match = lastPart.match(/\d+/)
++  return match ? match[0] : ""
++}
++
++export default defineSource(async () => {
++  const baseUrl = "https://www.freebuf.com"
++  const html = await myFetch<any>(baseUrl, {
++    headers: {
++      "User-Agent":
++                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
++      "Referer": "https://www.freebuf.com/",
++      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
++    },
++  })
++  const $ = cheerio.load(html)
++  const articles: ArticleData[] = []
++  // 遍历每个文章项
++  $(".article-item").each((index: number, articleElement) => {
++    const $article = $(articleElement)
++
++    try {
++      // 提取文章标题和URL
++      const titleLink = $article.find(".title-left .title").parent()
++      const title = titleLink.find(".title").text().trim()
++      const url = formatUrl(titleLink.attr("href"), baseUrl)
++
++      // 如果标题为空，跳过此项
++      if (!title) return
++
++      // 提取文章描述
++      const description = safeExtract($article, ".item-right .text-line-2")
++
++      // 提取发布时间
++      const publishTime = safeExtract($article, ".item-bottom span:last-child")
++
++      // 提取作者信息
++      const author = extractAuthor($article)
++
++      // 提取统计信息
++      const stats = extractStats($article)
++
++      // 提取专辑信息
++      const album = safeExtract($article, ".from-column span")
++
++      // 提取图片
++      const image = safeExtractAttribute($article, ".img-view img", "src")
++
++      // 提取分类
++      const category = extractCategory($article)
++
++      // 构建完整的文章对象
++      const article: ArticleData = {
++        title,
++        url,
++        description,
++        publishTime,
++        author,
++        stats,
++        album: album || undefined,
++        image: image || undefined,
++        category: category || undefined,
++      }
++
++      articles.push(article)
++    } catch (error) {
++      console.warn(`解析第${index + 1}篇文章时出错:`, error instanceof Error ? error.message : String(error))
++    }
++  })
++  // 转换数据格式
++  return articles.map(item => ({
++    id: extractIdFromUrl(item.url),
++    title: item.title,
++    url: item.url,
++    extra: {
++      hover: item.description,
++      time: item.publishTime,
++      author: item.author,
++      stats: item.stats,
++      album: item.album,
++    },
++  }))
++})
+--- a/apps/api/src/modules/news-aggregator/sources/gelonghui.ts
++++ b/apps/api/src/modules/news-aggregator/sources/gelonghui.ts
+@@ -0,0 +1,35 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++export default defineSource(async () => {
++  const baseURL = "https://www.gelonghui.com"
++  const html: any = await myFetch("https://www.gelonghui.com/news/")
++  const $ = cheerio.load(html)
++  const $main = $(".article-content")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find(".detail-right>a")
++    // https://www.kzaobao.com/shiju/20241002/170659.html
++    const url = a.attr("href")
++    const title = a.find("h2").text()
++    const info = $(el).find(".time > span:nth-child(1)").text()
++    // 第三个 p
++    const relatieveTime = $(el).find(".time > span:nth-child(3)").text()
++    if (url && title && relatieveTime) {
++      news.push({
++        url: baseURL + url,
++        title,
++        id: url,
++        extra: {
++          date: parseRelativeDate(relatieveTime, "Asia/Shanghai").valueOf(),
++          info,
++        },
++      })
++    }
++  })
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/ghxi.ts
++++ b/apps/api/src/modules/news-aggregator/sources/ghxi.ts
+@@ -0,0 +1,63 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++const relativeTimeToDate = function (timeStr: string) {
++  const units = {
++    秒: 1000,
++    分钟: 60 * 1000,
++    小时: 60 * 60 * 1000,
++    天: 24 * 60 * 60 * 1000,
++    周: 7 * 24 * 60 * 60 * 1000,
++    月: 30 * 24 * 60 * 60 * 1000,
++    年: 365 * 24 * 60 * 60 * 1000,
++  }
++
++  const match = timeStr.match(/^(\d+)\s*([秒天周月年]|分钟|小时)/)
++  if (!match) {
++    return ""
++  }
++
++  const num = Number.parseInt(match[1])
++  const unit = match[2] as keyof typeof units
++  const msAgo = num * units[unit]
++
++  return new Date(Date.now() - msAgo).valueOf()
++}
++
++const source = defineSource(async () => {
++  const html: any = await myFetch("https://www.ghxi.com/category/all")
++  const $ = cheerio.load(html)
++  const news: NewsItem[] = []
++  $(".sec-panel .sec-panel-body .post-loop li").each((_, elem) => {
++    let summary_title = $(elem).find(".item-content .item-title").text()
++    if (summary_title) {
++      summary_title = summary_title.trim()
++      summary_title = summary_title.replaceAll("'", "''")
++    }
++    let summary_description = $(elem).find(".item-content .item-excerpt").text()
++    if (summary_description) {
++      summary_description = summary_description.trim()
++      summary_description = summary_description.replaceAll("'", "''")
++    }
++    const date = $(elem).find(".item-content .date").text()
++    const url = $(elem).find(".item-content .item-title a").attr("href")
++    if (url) {
++      news.push({
++        id: url,
++        url,
++        title: summary_title,
++        extra: {
++          hover: summary_description,
++          date: relativeTimeToDate(date),
++        },
++      })
++    }
++  })
++
++  return news
++})
++
++export default source
+--- a/apps/api/src/modules/news-aggregator/sources/github.ts
++++ b/apps/api/src/modules/news-aggregator/sources/github.ts
+@@ -0,0 +1,37 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++const trending = defineSource(async () => {
++  const baseURL = "https://github.com"
++  const html: any = await myFetch("https://github.com/trending?spoken_language_code=")
++  const $ = cheerio.load(html)
++  const $main = $("main .Box div[data-hpc] > article")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find(">h2 a")
++    const title = a.text().replace(/\n+/g, "").trim()
++    const url = a.attr("href")
++    const star = $(el).find("[href$=stargazers]").text().replace(/\s+/g, "").trim()
++    const desc = $(el).find(">p").text().replace(/\n+/g, "").trim()
++    if (url && title) {
++      news.push({
++        url: `${baseURL}${url}`,
++        title,
++        id: url,
++        extra: {
++          info: `✰ ${star}`,
++          hover: desc,
++        },
++      })
++    }
++  })
++  return news
++})
++
++export default defineSource({
++  "github": trending,
++  "github-trending-today": trending,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/hackernews.ts
++++ b/apps/api/src/modules/news-aggregator/sources/hackernews.ts
+@@ -0,0 +1,32 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++export default defineSource(async () => {
++  const baseURL = "https://news.ycombinator.com"
++  const html: any = await myFetch(baseURL)
++  const $ = cheerio.load(html)
++  const $main = $(".athing")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find(".titleline a").first()
++    // const url = a.attr("href")
++    const title = a.text()
++    const id = $(el).attr("id")
++    const score = $(`#score_${id}`).text()
++    const url = `${baseURL}/item?id=${id}`
++    if (url && id && title) {
++      news.push({
++        url,
++        title,
++        id,
++        extra: {
++          info: score,
++        },
++      })
++    }
++  })
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/hupu.ts
++++ b/apps/api/src/modules/news-aggregator/sources/hupu.ts
+@@ -0,0 +1,40 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface HotItem {
++  id: string
++  title: string
++  url: string
++  mobileUrl: string
++}
++
++export default defineSource(async () => {
++  // 获取虎扑新热榜页面的HTML内容
++  const html = await myFetch(`https://bbs.hupu.com/topic-daily-hot`)
++
++  // 正则表达式匹配新的热榜项结构
++  const regex = /<li class="bbs-sl-web-post-body">[\s\S]*?<a href="(\/[^"]+?\.html)"[^>]*?class="p-title"[^>]*>([^<]+)<\/a>/g
++
++  const result: HotItem[] = []
++  let match
++
++  // 将赋值操作移到循环内部，修复no-cond-assign警告
++  while (true) {
++    match = regex.exec(html)
++    if (!match) break
++
++    const [, path, title] = match
++
++    // 构建完整URL
++    const url = `https://bbs.hupu.com${path}`
++
++    result.push({
++      id: path,
++      title: title.trim(),
++      url,
++      mobileUrl: url,
++    })
++  }
++
++  return result
++})
+--- a/apps/api/src/modules/news-aggregator/sources/ifeng.ts
++++ b/apps/api/src/modules/news-aggregator/sources/ifeng.ts
+@@ -0,0 +1,30 @@
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++export default defineSource(async () => {
++  const html: string = await myFetch("https://www.ifeng.com/")
++  const regex = /var\s+allData\s*=\s*(\{[\s\S]*?\});/
++  const match = regex.exec(html)
++  const news: NewsItem[] = []
++  if (match) {
++    const realData = JSON.parse(match[1])
++    const rawNews = realData.hotNews1 as {
++      url: string
++      title: string
++      newsTime: string
++    }[]
++    rawNews.forEach((hotNews) => {
++      news.push({
++        id: hotNews.url,
++        url: hotNews.url,
++        title: hotNews.title,
++        extra: {
++          date: hotNews.newsTime,
++        },
++      })
++    })
++  }
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/iqiyi.ts
++++ b/apps/api/src/modules/news-aggregator/sources/iqiyi.ts
+@@ -0,0 +1,64 @@
++import { myFetch } from "../utils/fetch"
++import { defineSource } from "../utils/source"
++
++interface WapResp {
++  code: number
++  items: {
++    order: number
++    temp: any
++    video: {
++      basisDataUrls: string
++      block_id: string
++      card_source: string
++      links: any[]
++      data: VideoInfo[]
++      adverts: any[]
++      config: any[]
++    }[]
++  }[]
++}
++
++interface VideoInfo {
++  creator: { id: number, name: string }[]
++  contributor: { id: number, name: string }[]
++  showDate: string
++  tag: string
++  description: string
++  entity_id: number
++  back_image: string
++  display_name: string
++  title: string
++  show_time: string
++  dq_updatestatus?: string
++  desc: string
++  rank_prefix: string
++  page_url: string
++}
++
++const hotRankList = defineSource(async () => {
++  const url
++        = "https://mesh.if.iqiyi.com/portal/lw/v7/channel/card/videoTab?channelName=recommend"
++          + "&data_source=v7_rec_sec_hot_rank_list&tempId=85&count=30&block_id=hot_ranklist"
++          + "&device=14a4b5ba98e790dce6dc07482447cf48&from=webapp" // 这里的device这个参数是必须的，没有的话会直接查询报错
++  const resp = await myFetch<WapResp>(url, {
++    headers: { Referer: "https://www.iqiyi.com" },
++  })
++
++  return resp?.items[0]?.video[0]?.data.map((item) => {
++    return {
++      id: item.entity_id,
++      title: item.title,
++      url: item.page_url,
++      pubDate: item?.showDate,
++      extra: {
++        info: item.desc,
++        hover: item.description,
++        tag: item.tag,
++      },
++    }
++  })
++})
++
++export default defineSource({
++  "iqiyi-hot-ranklist": hotRankList,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/ithome.ts
++++ b/apps/api/src/modules/news-aggregator/sources/ithome.ts
+@@ -0,0 +1,32 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++export default defineSource(async () => {
++  const response: any = await myFetch("https://www.ithome.com/list/")
++  const $ = cheerio.load(response)
++  const $main = $("#list > div.fl > ul > li")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const $el = $(el)
++    const $a = $el.find("a.t")
++    const url = $a.attr("href")
++    const title = $a.text()
++    const date = $(el).find("i").text()
++    if (url && title && date) {
++      const isAd = url?.includes("lapin") || ["神券", "优惠", "补贴", "京东"].find(k => title.includes(k))
++      if (!isAd) {
++        news.push({
++          url,
++          title,
++          id: url,
++          pubDate: parseRelativeDate(date, "Asia/Shanghai").valueOf(),
++        })
++      }
++    }
++  })
++  return news.sort((m, n) => n.pubDate! > m.pubDate! ? 1 : -1)
++})
+--- a/apps/api/src/modules/news-aggregator/sources/jin10.ts
++++ b/apps/api/src/modules/news-aggregator/sources/jin10.ts
+@@ -0,0 +1,52 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++interface Jin10Item {
++  id: string
++  time: string
++  type: number
++  data: {
++    pic?: string
++    title?: string
++    source?: string
++    content?: string
++    source_link?: string
++    vip_title?: string
++    lock?: boolean
++    vip_level?: number
++    vip_desc?: string
++  }
++  important: number
++  tags: string[]
++  channel: number[]
++  remark: any[]
++}
++
++export default defineSource(async () => {
++  const timestamp = Date.now()
++  const url = `https://www.jin10.com/flash_newest.js?t=${timestamp}`
++
++  const rawData: string = await myFetch(url)
++
++  const jsonStr = (rawData as string)
++    .replace(/^var\s+newest\s*=\s*/, "") // 移除开头的变量声明
++    .replace(/;*$/, "") // 移除末尾可能存在的分号
++    .trim() // 移除首尾空白字符
++  const data: Jin10Item[] = JSON.parse(jsonStr)
++
++  return data.filter(k => (k.data.title || k.data.content) && !k.channel?.includes(5)).map((k) => {
++    const text = (k.data.title || k.data.content)!.replace(/<\/?b>/g, "")
++    const [,title, desc] = text.match(/^【([^】]*)】(.*)$/) ?? []
++    return {
++      id: k.id,
++      title: title ?? text,
++      pubDate: parseRelativeDate(k.time, "Asia/Shanghai").valueOf(),
++      url: `https://flash.jin10.com/detail/${k.id}`,
++      extra: {
++        hover: desc,
++        info: !!k.important && "✰",
++      },
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/juejin.ts
++++ b/apps/api/src/modules/news-aggregator/sources/juejin.ts
+@@ -0,0 +1,24 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    content: {
++      title: string
++      content_id: string
++    }
++  }[]
++}
++
++export default defineSource(async () => {
++  const url = `https://api.juejin.cn/content_api/v1/content/article_rank?category_id=1&type=hot&spider=0`
++  const res: Res = await myFetch(url)
++  return res.data.map((k) => {
++    const url = `https://juejin.cn/post/${k.content.content_id}`
++    return {
++      id: k.content.content_id,
++      title: k.content.title,
++      url,
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/kaopu.ts
++++ b/apps/api/src/modules/news-aggregator/sources/kaopu.ts
+@@ -0,0 +1,27 @@
++import { defineSource } from "../utils/source"
++import { $fetch } from "../utils/fetch"
++
++type Res = {
++  description: string
++  link: string
++  // Date
++  pub_date: string
++  publisher: string
++  title: string
++}[]
++export default defineSource(async () => {
++  const res: Res = await $fetch("https://kaopustorage.blob.core.windows.net/news-prod/news_list_hans_0.json")
++  return res.filter(k => ["财新", "公视"].every(h => k.publisher !== h)).map((k) => {
++    return {
++      id: k.link,
++      title: k.title,
++      pubDate: k.pub_date,
++      extra: {
++        hover: k.description,
++        info: k.publisher,
++      },
++      url: k.link,
++    }
++  })
++},
++)
+--- a/apps/api/src/modules/news-aggregator/sources/kuaishou.ts
++++ b/apps/api/src/modules/news-aggregator/sources/kuaishou.ts
+@@ -0,0 +1,64 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface KuaishouRes {
++  defaultClient: {
++    ROOT_QUERY: {
++      "visionHotRank({\"page\":\"home\"})": {
++        type: string
++        id: string
++        typename: string
++      }
++      [key: string]: any
++    }
++    [key: string]: any
++  }
++}
++
++interface HotRankData {
++  result: number
++  pcursor: string
++  webPageArea: string
++  items: {
++    type: string
++    generated: boolean
++    id: string
++    typename: string
++  }[]
++}
++
++export default defineSource(async () => {
++  // 获取快手首页HTML
++  const html = await myFetch("https://www.kuaishou.com/?isHome=1")
++  // 提取window.__APOLLO_STATE__中的数据
++  const matches = (html as string).match(/window\.__APOLLO_STATE__\s*=\s*(\{.+?\});/)
++  if (!matches) {
++    throw new Error("无法获取快手热榜数据")
++  }
++
++  // 解析JSON数据
++  const data: KuaishouRes = JSON.parse(matches[1])
++
++  // 获取热榜数据ID
++  const hotRankId = data.defaultClient.ROOT_QUERY["visionHotRank({\"page\":\"home\"})"].id
++
++  // 获取热榜列表数据
++  const hotRankData = data.defaultClient[hotRankId] as HotRankData
++  // 转换数据格式
++  return hotRankData.items.filter(k => data.defaultClient[k.id].tagType !== "置顶").map((item) => {
++    // 从id中提取实际的热搜词
++    const hotSearchWord = item.id.replace("VisionHotRankItem:", "")
++
++    // 获取具体的热榜项数据
++    const hotItem = data.defaultClient[item.id]
++
++    return {
++      id: hotSearchWord,
++      title: hotItem.name,
++      url: `https://www.kuaishou.com/search/video?searchKey=${encodeURIComponent(hotItem.name)}`,
++      extra: {
++        icon: hotItem.iconUrl,
++      },
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/linuxdo.ts
++++ b/apps/api/src/modules/news-aggregator/sources/linuxdo.ts
+@@ -0,0 +1,64 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  topic_list: {
++    can_create_topic: boolean
++    more_topics_url: string
++    per_page: number
++    top_tags: string[]
++    topics: {
++      id: number
++      title: string
++      fancy_title: string
++      posts_count: number
++      reply_count: number
++      highest_post_number: number
++      image_url: null | string
++      created_at: Date
++      last_posted_at: Date
++      bumped: boolean
++      bumped_at: Date
++      unseen: boolean
++      pinned: boolean
++      excerpt?: string
++      visible: boolean
++      closed: boolean
++      archived: boolean
++      like_count: number
++      has_summary: boolean
++      last_poster_username: string
++      category_id: number
++      pinned_globally: boolean
++    }[]
++  }
++}
++
++const hot = defineSource(async () => {
++  const res = await myFetch<Res>("https://linux.do/top/daily.json")
++  return res.topic_list.topics
++    .filter(k => k.visible && !k.archived && !k.pinned)
++    .map(k => ({
++      id: k.id,
++      title: k.title,
++      url: `https://linux.do/t/topic/${k.id}`,
++    }))
++})
++
++const latest = defineSource(async () => {
++  const res = await myFetch<Res>("https://linux.do/latest.json?order=created")
++  return res.topic_list.topics
++    .filter(k => k.visible && !k.archived && !k.pinned)
++    .map(k => ({
++      id: k.id,
++      title: k.title,
++      pubDate: new Date(k.created_at).valueOf(),
++      url: `https://linux.do/t/topic/${k.id}`,
++    }))
++})
++
++export default defineSource({
++  "linuxdo": latest,
++  "linuxdo-latest": latest,
++  "linuxdo-hot": hot,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/mktnews.ts
++++ b/apps/api/src/modules/news-aggregator/sources/mktnews.ts
+@@ -0,0 +1,53 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Report {
++  id: string
++  type: number
++  time: string
++  important: number
++  data: {
++    content: string
++    pic: string
++    title: string
++  }
++  remark: any[]
++  hot: boolean
++  hot_start: string | null
++  hot_end: string | null
++  classify: {
++    id: number
++    pid: number
++    name: string
++    parent: string
++  }[]
++  impact: any[]
++}
++
++interface Res {
++  status: number
++  data: Report[]
++  message: string
++}
++
++const flash = defineSource(async () => {
++  const res: Res = await myFetch("https://api.mktnews.net/api/flash?type=0&limit=50")
++
++  return res.data
++    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
++    .map(item => ({
++      id: item.id,
++      title: item.data.title || item.data.content.match(/^【([^】]*)】(.*)$/)?.[1] || item.data.content,
++      pubDate: item.time,
++      extra: {
++        info: item.important === 1 ? "Important" : undefined,
++        hover: item.data.content,
++      },
++      url: `https://mktnews.net/flashDetail.html?id=${item.id}`,
++    }))
++})
++
++export default defineSource({
++  "mktnews": flash,
++  "mktnews-flash": flash,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/nowcoder.ts
++++ b/apps/api/src/modules/news-aggregator/sources/nowcoder.ts
+@@ -0,0 +1,35 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    result: {
++      id: string
++      title: string
++      type: number
++      uuid: string
++    }[]
++  }
++}
++
++export default defineSource(async () => {
++  const timestamp = Date.now()
++  const url = `https://gw-c.nowcoder.com/api/sparta/hot-search/top-hot-pc?size=20&_=${timestamp}&t=`
++  const res: Res = await myFetch(url)
++  return res.data.result
++    .map((k) => {
++      let url, id
++      if (k.type === 74) {
++        url = `https://www.nowcoder.com/feed/main/detail/${k.uuid}`
++        id = k.uuid
++      } else if (k.type === 0) {
++        url = `https://www.nowcoder.com/discuss/${k.id}`
++        id = k.id
++      }
++      return {
++        id,
++        title: k.title,
++        url,
++      }
++    })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/pcbeta.ts
++++ b/apps/api/src/modules/news-aggregator/sources/pcbeta.ts
+@@ -0,0 +1,6 @@
++import { defineSource, defineRSSSource } from "../utils/source"
++
++export default defineSource({
++  "pcbeta-windows11": defineRSSSource("https://bbs.pcbeta.com/forum.php?mod=rss&fid=563&auth=0"),
++  "pcbeta-windows": defineRSSSource("https://bbs.pcbeta.com/forum.php?mod=rss&fid=521&auth=0"),
++})
+--- a/apps/api/src/modules/news-aggregator/sources/producthunt.ts
++++ b/apps/api/src/modules/news-aggregator/sources/producthunt.ts
+@@ -0,0 +1,59 @@
++import process from "node:process"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++export default defineSource(async () => {
++  const apiToken = process.env.PRODUCTHUNT_API_TOKEN
++  const token = `Bearer ${apiToken}`
++  if (!apiToken) {
++    throw new Error("PRODUCTHUNT_API_TOKEN is not set")
++  }
++  const query = `
++    query {
++      posts(first: 30, order: VOTES) {
++        edges {
++          node {
++            id
++            name
++            tagline
++            votesCount
++            url
++            slug
++          }
++        }
++      }
++    }
++  `
++
++  const response: any = await myFetch("https://api.producthunt.com/v2/api/graphql", {
++    method: "POST",
++    headers: {
++      "Authorization": token,
++      "Content-Type": "application/json",
++      "Accept": "application/json",
++    },
++    body: JSON.stringify({ query }),
++  })
++
++  const news: NewsItem[] = []
++  const posts = response?.data?.posts?.edges || []
++
++  for (const edge of posts) {
++    const post = edge.node
++    if (post.id && post.name) {
++      news.push({
++        id: post.id,
++        title: post.name,
++        url: post.url || `https://www.producthunt.com/posts/${post.slug}`,
++        extra: {
++          info: ` △︎ ${post.votesCount || 0}`,
++          hover: post.tagline,
++        },
++      })
++    }
++  }
++
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/qqvideo.ts
++++ b/apps/api/src/modules/news-aggregator/sources/qqvideo.ts
+@@ -0,0 +1,163 @@
++import dayjs from "dayjs"
++import { myFetch } from "../utils/fetch"
++import { defineSource } from "../utils/source"
++
++interface WapResp {
++  data: {
++    card: {
++      id: string
++      type: string
++      params: any
++      children_list: {
++        list: { cards: CardRes[] }
++      }
++      report_infos: any
++      operations: any
++      flip_infos: any
++      static_conf: any
++      info_map: any
++      mix_data: any
++      data_type: number
++      data_style_type: number
++      data: any
++    }
++    has_next_page: boolean
++    page_context: any
++    has_pre_page: boolean
++    pre_page_context: any
++  }
++  ret: number
++  msg: string
++}
++
++interface CardRes {
++  id: string
++  type: string
++  params: CardParams
++  children_list: any
++  report_infos: any
++  operations: any
++  flip_infos: any
++  static_conf: any
++  info_map: any
++  mix_data: any
++  data_type: number
++  data_style_type: number
++  data: any
++}
++
++interface CardParams {
++  "attent_key": string
++  "card_render@item_idx": string
++  "card_render@item_idx_max": string
++  "card_render@item_source_type": string
++  "card_render@item_type": string
++  "cid": string
++  "comic_main_type_name"?: string
++  "cover_checkup_grade"?: string
++  "episode_updated"?: string
++  "cut_end_time": string
++  "cut_start_time": string
++  "cut_vid": string
++  "image_url": string
++  "item_datakey_info": string
++  "item_report": string
++  "item_score": string
++  "positive_content_id": string
++  "rank_num": string
++  "rec_normal_reason": string
++  "rec_subtitle": string
++  "recall_alg": string
++  "recall_item_type": string
++  "publish_date"?: string
++  "second_title"?: string
++  "sub_title": string
++  "title": string
++  "topic_color": string
++  "topic_label": string
++  "type": string
++  "uni_imgtag": string
++}
++
++/**
++ * 腾讯视频-电视剧-热搜榜
++ */
++const hotSearch = defineSource(async () => {
++  const url
++        = "https://pbaccess.video.qq.com/trpc.vector_layout.page_view.PageService/getCard?video_appid=3000010&vversion_platform=2"
++  const resp: WapResp = await myFetch<WapResp>(url, {
++    method: "POST",
++    headers: { Referer: "https://v.qq.com/" },
++    body: {
++      page_params: {
++        rank_channel_id: "100113",
++        rank_name: "HotSearch",
++        rank_page_size: "30",
++        tab_mvl_sub_mod_id: "792ac_19e77Sub_1b2",
++        tab_name: "热搜榜",
++        tab_type: "hot_rank",
++        tab_vl_data_src: "f5200deb4596bbf3",
++        page_id: "scms_shake",
++        page_type: "scms_shake",
++        source_key: "",
++        tag_id: "",
++        tag_type: "",
++        new_mark_label_enabled: "1",
++      },
++      page_context: {
++        page_index: "1",
++      },
++      flip_info: {
++        page_strategy_id: "",
++        page_module_id: "792ac_19e77",
++        module_strategy_id: {},
++        sub_module_id: "20251106065177",
++        flip_params: {
++          folding_screen_show_num: "",
++          is_mvl: "1",
++          mvl_strategy_info:
++                        "{\"default_strategy_id\":\"06755800b45b49238582a6fa1ad0f5c5\",\"default_version\":\"3836\",\"hit_page_uuid\":\"b5080d97dc694a5fb50eb9e7c99326ac\",\"hit_tab_info\":null,\"gray_status_info\":null,\"bypass_to_un_exp_id\":\"\"}",
++          mvl_sub_mod_id: "20251106065177",
++          pad_post_show_num: "",
++          pad_pro_post_show_num: "",
++          pad_pro_small_hor_pic_display_num: "",
++          pad_small_hor_pic_display_num: "",
++          page_id: "scms_shake",
++          page_num: "0",
++          page_type: "scms_shake",
++          post_show_num: "",
++          shake_size: "",
++          small_hor_pic_display_num: "",
++          source_key: "100113",
++          un_policy_id: "06755800b45b49238582a6fa1ad0f5c5",
++          un_strategy_id: "06755800b45b49238582a6fa1ad0f5c5",
++        },
++        relace_children_key: [],
++      },
++    },
++  })
++
++  return resp?.data?.card?.children_list?.list?.cards?.map((item) => {
++    return {
++      id: item?.id,
++      title: item?.params?.title,
++      url: getQqVideoUrl(item?.id),
++      pubDate: item?.params?.publish_date ?? getTodaySlash(),
++      extra: {
++        hover: item?.params?.sub_title,
++      },
++    }
++  })
++})
++
++function getQqVideoUrl(cid: string): string {
++  return `https://v.qq.com/x/cover/${cid}.html`
++}
++
++function getTodaySlash(): string {
++  return dayjs().format("YYYY-MM-DD")
++}
++
++export default defineSource({
++  "qqvideo-tv-hotsearch": hotSearch,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/smzdm.ts
++++ b/apps/api/src/modules/news-aggregator/sources/smzdm.ts
+@@ -0,0 +1,24 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++export default defineSource(async () => {
++  const baseURL = "https://post.smzdm.com/hot_1/"
++  const html: any = await myFetch(baseURL)
++  const $ = cheerio.load(html)
++  const $main = $("#feed-main-list .z-feed-title")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find("a")
++    const url = a.attr("href")!
++    const title = a.text()
++    news.push({
++      url,
++      title,
++      id: url,
++    })
++  })
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/solidot.ts
++++ b/apps/api/src/modules/news-aggregator/sources/solidot.ts
+@@ -0,0 +1,30 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++export default defineSource(async () => {
++  const baseURL = "https://www.solidot.org"
++  const html: any = await myFetch(baseURL)
++  const $ = cheerio.load(html)
++  const $main = $(".block_m")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el).find(".bg_htit a").last()
++    const url = a.attr("href")
++    const title = a.text()
++    const date_raw = $(el).find(".talk_time").text().match(/发表于(.*?分)/)?.[1]
++    const date = date_raw?.replace(/[年月]/g, "-").replace("时", ":").replace(/[分日]/g, "")
++    if (url && title && date) {
++      news.push({
++        url: baseURL + url,
++        title,
++        id: url,
++        pubDate: parseRelativeDate(date, "Asia/Shanghai").valueOf(),
++      })
++    }
++  })
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/sputniknewscn.ts
++++ b/apps/api/src/modules/news-aggregator/sources/sputniknewscn.ts
+@@ -0,0 +1,32 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++const source = defineSource(async () => {
++  const response: any = await myFetch("https://sputniknews.cn/services/widget/lenta/")
++  const $ = cheerio.load(response)
++  const $items = $(".lenta__item")
++  const news: NewsItem[] = []
++  $items.each((_, el) => {
++    const $el = $(el)
++    const $a = $el.find("a")
++    const url = $a.attr("href")
++    const title = $a.find(".lenta__item-text").text()
++    const date = $a.find(".lenta__item-date").attr("data-unixtime")
++    if (url && title && date) {
++      news.push({
++        url: `https://sputniknews.cn${url}`,
++        title,
++        id: url,
++        extra: {
++          date: new Date(Number(`${date}000`)).getTime(),
++        },
++      })
++    }
++  })
++  return news
++})
++
++export default source
+--- a/apps/api/src/modules/news-aggregator/sources/sspai.ts
++++ b/apps/api/src/modules/news-aggregator/sources/sspai.ts
+@@ -0,0 +1,24 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    id: number
++    title: string
++  }[]
++}
++
++export default defineSource(async () => {
++  const timestamp = Date.now()
++  const limit = 30
++  const url = `https://sspai.com/api/v1/article/tag/page/get?limit=${limit}&offset=0&created_at=${timestamp}&tag=%E7%83%AD%E9%97%A8%E6%96%87%E7%AB%A0&released=false`
++  const res: Res = await myFetch(url)
++  return res.data.map((k) => {
++    const url = `https://sspai.com/post/${k.id}`
++    return {
++      id: k.id,
++      title: k.title,
++      url,
++    }
++  })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/steam.ts
++++ b/apps/api/src/modules/news-aggregator/sources/steam.ts
+@@ -0,0 +1,35 @@
++import * as cheerio from "cheerio"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++export default defineSource(async () => {
++  const response: any = await myFetch("https://store.steampowered.com/stats/stats/")
++  const $ = cheerio.load(response)
++  const $rows = $("#detailStats tr.player_count_row")
++  const news: NewsItem[] = []
++
++  $rows.each((_, el) => {
++    const $el = $(el)
++    const $a = $el.find("a.gameLink")
++    const url = $a.attr("href")
++    const gameName = $a.text().trim()
++    const currentPlayers = $el.find("td:first-child .currentServers").text().trim()
++
++    if (url && gameName && currentPlayers) {
++      const title = gameName
++      news.push({
++        url,
++        title,
++        id: url,
++        pubDate: Date.now(),
++        extra: {
++          info: currentPlayers,
++        },
++      })
++    }
++  })
++
++  return news
++})
+--- a/apps/api/src/modules/news-aggregator/sources/tencent.ts
++++ b/apps/api/src/modules/news-aggregator/sources/tencent.ts
+@@ -0,0 +1,63 @@
++import { myFetch } from "../utils/fetch"
++import { defineSource } from "../utils/source"
++
++interface WapRes {
++  ret: number
++  msg: string
++  data: {
++    id: number
++    name: string
++    lead: string
++    cover?: string
++    shareTitle: string
++    shareAbstract: string
++    sharePic: string
++    is724: boolean
++    is724Paper: boolean
++    head_cmsid: string
++    feed_style: number
++    head_article: {
++      live_info: string
++      title: string
++      img: string
++      pub_time: string
++      media_name: string
++    }
++    paperInfo: any
++    tabs: {
++      id: string
++      channel_id: string
++      name: string
++      source: string
++      type: string
++      articleList: any[]
++      article_count: number
++      sub_tab: string
++    }[]
++    banner: string
++  }
++}
++
++/**
++ * 综合早报
++ */
++const comprehensiveNews = defineSource(async () => {
++  const url = "https://i.news.qq.com/web_backend/v2/getTagInfo?tagId=aEWqxLtdgmQ%3D"
++  const res = await myFetch<WapRes>(url, {
++    headers: {
++      Referer: "https://news.qq.com/",
++    },
++  })
++  return res.data.tabs[0].articleList.map(news => ({
++    id: news.id,
++    title: news.title,
++    url: news.link_info.url,
++    extra: {
++      hover: news.desc,
++    },
++  }))
++})
++
++export default defineSource({
++  "tencent-hot": comprehensiveNews,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/thepaper.ts
++++ b/apps/api/src/modules/news-aggregator/sources/thepaper.ts
+@@ -0,0 +1,26 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    hotNews: {
++      contId: string
++      name: string
++      pubTimeLong: string
++    }[]
++  }
++}
++
++export default defineSource(async () => {
++  const url = "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar"
++  const res: Res = await myFetch(url)
++  return res.data.hotNews
++    .map((k) => {
++      return {
++        id: k.contId,
++        title: k.name,
++        url: `https://www.thepaper.cn/newsDetail_forward_${k.contId}`,
++        mobileUrl: `https://m.thepaper.cn/newsDetail_forward_${k.contId}`,
++      }
++    })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/tieba.ts
++++ b/apps/api/src/modules/news-aggregator/sources/tieba.ts
+@@ -0,0 +1,29 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    bang_topic: {
++      topic_list: {
++        topic_id: string
++        topic_name: string
++        create_time: number
++        topic_url: string
++
++      }[]
++    }
++  }
++}
++
++export default defineSource(async () => {
++  const url = "https://tieba.baidu.com/hottopic/browse/topicList"
++  const res: Res = await myFetch(url)
++  return res.data.bang_topic.topic_list
++    .map((k) => {
++      return {
++        id: k.topic_id,
++        title: k.topic_name,
++        url: k.topic_url,
++      }
++    })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/toutiao.ts
++++ b/apps/api/src/modules/news-aggregator/sources/toutiao.ts
+@@ -0,0 +1,32 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    ClusterIdStr: string
++    Title: string
++    HotValue: string
++    Image: {
++      url: string
++    }
++    LabelUri?: {
++      url: string
++    }
++  }[]
++}
++
++export default defineSource(async () => {
++  const url = "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc"
++  const res: Res = await myFetch(url)
++  return res.data
++    .map((k) => {
++      return {
++        id: k.ClusterIdStr,
++        title: k.Title,
++        url: `https://www.toutiao.com/trending/${k.ClusterIdStr}/`,
++        extra: {
++          icon: k.LabelUri?.url,
++        },
++      }
++    })
++})
+--- a/apps/api/src/modules/news-aggregator/sources/v2ex.ts
++++ b/apps/api/src/modules/news-aggregator/sources/v2ex.ts
+@@ -0,0 +1,38 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  version: string
++  title: string
++  description: string
++  home_page_url: string
++  feed_url: string
++  icon: string
++  favicon: string
++  items: {
++    url: string
++    date_modified?: string
++    content_html: string
++    date_published: string
++    title: string
++    id: string
++  }[]
++}
++
++const share = defineSource(async () => {
++  const res = await Promise.all(["create", "ideas", "programmer", "share"]
++    .map(k => myFetch(`https://www.v2ex.com/feed/${k}.json`) as Promise<Res>))
++  return res.map(k => k.items).flat().map(k => ({
++    id: k.id,
++    title: k.title,
++    extra: {
++      date: k.date_modified ?? k.date_published,
++    },
++    url: k.url,
++  })).sort((m, n) => m.extra.date < n.extra.date ? 1 : -1)
++})
++
++export default defineSource({
++  "v2ex": share,
++  "v2ex-share": share,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/wallstreetcn.ts
++++ b/apps/api/src/modules/news-aggregator/sources/wallstreetcn.ts
+@@ -0,0 +1,90 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Item {
++  uri: string
++  id: number
++  title?: string
++  content_text: string
++  content_short: string
++  display_time: number
++  type?: string
++}
++interface LiveRes {
++  data: {
++    items: Item[]
++  }
++}
++
++interface NewsRes {
++  data: {
++    items: {
++      // ad
++      resource_type?: string
++      resource: Item
++    }[]
++  }
++}
++
++interface HotRes {
++  data: {
++    day_items: Item[]
++  }
++}
++
++// https://github.com/DIYgod/RSSHub/blob/master/lib/routes/wallstreetcn/live.ts
++const live = defineSource(async () => {
++  const apiUrl = `https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&limit=30`
++
++  const res: LiveRes = await myFetch(apiUrl)
++  return res.data.items
++    .map((k) => {
++      return {
++        id: k.id,
++        title: k.title || k.content_text,
++        extra: {
++          date: k.display_time * 1000,
++        },
++        url: k.uri,
++      }
++    })
++})
++
++const news = defineSource(async () => {
++  const apiUrl = `https://api-one.wallstcn.com/apiv1/content/information-flow?channel=global-channel&accept=article&limit=30`
++
++  const res: NewsRes = await myFetch(apiUrl)
++  return res.data.items
++    .filter(k => k.resource_type !== "theme" && k.resource_type !== "ad" && k.resource.type !== "live" && k.resource.uri)
++    .map(({ resource: h }) => {
++      return {
++        id: h.id,
++        title: h.title || h.content_short,
++        extra: {
++          date: h.display_time * 1000,
++        },
++        url: h.uri,
++      }
++    })
++})
++
++const hot = defineSource(async () => {
++  const apiUrl = `https://api-one.wallstcn.com/apiv1/content/articles/hot?period=all`
++
++  const res: HotRes = await myFetch(apiUrl)
++  return res.data.day_items
++    .map((h) => {
++      return {
++        id: h.id,
++        title: h.title!,
++        url: h.uri,
++      }
++    })
++})
++
++export default defineSource({
++  "wallstreetcn": live,
++  "wallstreetcn-quick": live,
++  "wallstreetcn-news": news,
++  "wallstreetcn-hot": hot,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/weibo.ts
++++ b/apps/api/src/modules/news-aggregator/sources/weibo.ts
+@@ -0,0 +1,57 @@
++import * as cheerio from "cheerio"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import type { NewsItem } from "../news-aggregator.types"
++
++export default defineSource(async () => {
++  const baseurl = "https://s.weibo.com"
++  const url = `${baseurl}/top/summary?cate=realtimehot`
++
++  const html = await myFetch(url, {
++    headers: {
++      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
++      // https://github.com/v5tech/weibo-trending-hot-search
++      "Cookie": "SUB=_2AkMWIuNSf8NxqwJRmP8dy2rhaoV2ygrEieKgfhKJJRMxHRl-yT9jqk86tRB6PaLNvQZR6zYUcYVT1zSjoSreQHidcUq7",
++      "referer": url,
++    },
++  })
++
++  const $ = cheerio.load(html)
++
++  const rows = $("#pl_top_realtimehot table tbody tr").slice(1)
++
++  const hotNews: NewsItem[] = []
++
++  rows.each((_, row) => {
++    const $row = $(row)
++    const $link = $row.find("td.td-02 a").filter((_, el) => {
++      const href = $(el).attr("href")
++      return !!(href && !href.includes("javascript:void(0);"))
++    }).first()
++
++    if ($link.length) {
++      const title = $link.text().trim()
++      const href = $link.attr("href")
++
++      if (title && href) {
++        const $flag = $row.find("td.td-03").text().trim()
++        const flagUrl = {
++          新: "https://simg.s.weibo.com/moter/flags/1_0.png",
++          热: "https://simg.s.weibo.com/moter/flags/2_0.png",
++          爆: "https://simg.s.weibo.com/moter/flags/4_0.png",
++        }[$flag]
++        hotNews.push({
++          id: title,
++          title,
++          url: `${baseurl}${href}`,
++          mobileUrl: `${baseurl}${href}`,
++          extra: {
++            icon: flagUrl ? { url: flagUrl, scale: 1.5 } : undefined,
++          },
++        })
++      }
++    }
++  })
++  return hotNews
++})
+--- a/apps/api/src/modules/news-aggregator/sources/xueqiu.ts
++++ b/apps/api/src/modules/news-aggregator/sources/xueqiu.ts
+@@ -0,0 +1,41 @@
++import { defineSource } from "../utils/source"
++import { myFetch, $fetch } from "../utils/fetch"
++
++interface StockRes {
++  data: {
++    items:
++    {
++      code: string
++      name: string
++      percent: number
++      exchange: string
++      // 1
++      ad: number
++    }[]
++
++  }
++}
++
++const hotstock = defineSource(async () => {
++  const url = "https://stock.xueqiu.com/v5/stock/hot_stock/list.json?size=30&_type=10&type=10"
++  const cookieResponse = await $fetch.raw("https://xueqiu.com/hq")
++  const cookie = ((cookieResponse.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [])
++  const res: StockRes = await myFetch(url, {
++    headers: {
++      cookie: cookie.join("; "),
++    },
++  })
++  return res.data.items.filter(k => !k.ad).map(k => ({
++    id: k.code,
++    url: `https://xueqiu.com/s/${k.code}`,
++    title: k.name,
++    extra: {
++      info: `${k.percent}% ${k.exchange}`,
++    },
++  }))
++})
++
++export default defineSource({
++  "xueqiu": hotstock,
++  "xueqiu-hotstock": hotstock,
++})
+--- a/apps/api/src/modules/news-aggregator/sources/zaobao.ts
++++ b/apps/api/src/modules/news-aggregator/sources/zaobao.ts
+@@ -0,0 +1,34 @@
++import { Buffer } from "node:buffer"
++import * as cheerio from "cheerio"
++import iconv from "iconv-lite"
++import type { NewsItem } from "../news-aggregator.types"
++
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++import { parseRelativeDate } from "../utils/date"
++
++export default defineSource(async () => {
++  const response: ArrayBuffer = await myFetch("https://www.zaochenbao.com/realtime/", {
++    responseType: "arrayBuffer",
++  })
++  const base = "https://www.zaochenbao.com"
++  const utf8String = iconv.decode(Buffer.from(response), "gb2312")
++  const $ = cheerio.load(utf8String)
++  const $main = $("div.list-block>a.item")
++  const news: NewsItem[] = []
++  $main.each((_, el) => {
++    const a = $(el)
++    const url = a.attr("href")
++    const title = a.find(".eps")?.text()
++    const date = a.find(".pdt10")?.text().replace(/-\s/g, " ")
++    if (url && title && date) {
++      news.push({
++        url: base + url,
++        title,
++        id: url,
++        pubDate: parseRelativeDate(date, "Asia/Shanghai").valueOf(),
++      })
++    }
++  })
++  return news.sort((m, n) => n.pubDate! > m.pubDate! ? 1 : -1)
++})
+--- a/apps/api/src/modules/news-aggregator/sources/zhihu.ts
++++ b/apps/api/src/modules/news-aggregator/sources/zhihu.ts
+@@ -0,0 +1,57 @@
++import { defineSource } from "../utils/source"
++import { myFetch } from "../utils/fetch"
++
++interface Res {
++  data: {
++    type: "hot_list_feed"
++    style_type: "1"
++    feed_specific: {
++      answer_count: 411
++    }
++    target: {
++      title_area: {
++        text: string
++      }
++      excerpt_area: {
++        text: string
++      }
++      image_area: {
++        url: string
++      }
++      metrics_area: {
++        text: string
++        font_color: string
++        background: string
++        weight: string
++      }
++      label_area: {
++        type: "trend"
++        trend: number
++        night_color: string
++        normal_color: string
++      }
++      link: {
++        url: string
++      }
++    }
++  }[]
++}
++
++export default defineSource({
++  zhihu: async () => {
++    const url = "https://www.zhihu.com/api/v3/feed/topstory/hot-list-web?limit=20&desktop=true"
++    const res: Res = await myFetch(url)
++    return res.data
++      .map((k) => {
++        return {
++          id: k.target.link.url.match(/(\d+)$/)?.[1] ?? k.target.link.url,
++          title: k.target.title_area.text,
++          extra: {
++            info: k.target.metrics_area.text,
++            hover: k.target.excerpt_area.text,
++          },
++          url: k.target.link.url,
++        }
++      })
++  },
++})
+--- a/apps/api/src/modules/news-aggregator/utils/base64.ts
++++ b/apps/api/src/modules/news-aggregator/utils/base64.ts
+@@ -0,0 +1,17 @@
++import { Buffer } from "node:buffer"
++
++export function decodeBase64URL(str: string) {
++  return new TextDecoder().decode(Buffer.from(decodeURIComponent(str), "base64"))
++}
++
++export function encodeBase64URL(str: string) {
++  return encodeURIComponent(Buffer.from(str).toString("base64"))
++}
++
++export function decodeBase64(str: string) {
++  return new TextDecoder().decode(Buffer.from(str, "base64"))
++}
++
++export function encodeBase64(str: string) {
++  return Buffer.from(str).toString("base64")
++}
+--- a/apps/api/src/modules/news-aggregator/utils/crypto.ts
++++ b/apps/api/src/modules/news-aggregator/utils/crypto.ts
+@@ -0,0 +1,19 @@
++import { createHash } from "node:crypto"
++
++type Algorithm = "MD5" | "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512"
++
++const algorithmMap: Record<Algorithm, string> = {
++  "MD5": "md5",
++  "SHA-1": "sha1",
++  "SHA-256": "sha256",
++  "SHA-384": "sha384",
++  "SHA-512": "sha512",
++}
++
++export async function md5(s: string) {
++  return createHash("md5").update(s).digest("hex")
++}
++
++export async function myCrypto(s: string, algorithm: Algorithm) {
++  return createHash(algorithmMap[algorithm]).update(s).digest("hex")
++}
+--- a/apps/api/src/modules/news-aggregator/utils/date.ts
++++ b/apps/api/src/modules/news-aggregator/utils/date.ts
+@@ -0,0 +1,197 @@
++import dayjs from "dayjs"
++import customParseFormat from "dayjs/plugin/customParseFormat"
++import duration from "dayjs/plugin/duration"
++import isSameOrBefore from "dayjs/plugin/isSameOrBefore"
++import timezonePlugin from "dayjs/plugin/timezone"
++import utcPlugin from "dayjs/plugin/utc"
++import weekday from "dayjs/plugin/weekday"
++
++dayjs.extend(utcPlugin)
++dayjs.extend(timezonePlugin)
++dayjs.extend(customParseFormat)
++dayjs.extend(duration)
++dayjs.extend(isSameOrBefore)
++dayjs.extend(weekday)
++
++export function tranformToUTC(date: string, format?: string, timezone: string = "Asia/Shanghai"): number {
++  if (!format) return dayjs.tz(date, timezone).valueOf()
++  return dayjs.tz(date, format, timezone).valueOf()
++}
++
++function words() {
++  return [
++    {
++      startAt: dayjs(),
++      regExp: /^(?:今[天日]|to?day?)(.*)/,
++    },
++    {
++      startAt: dayjs().subtract(1, "days"),
++      regExp: /^(?:昨[天日]|y(?:ester)?day?)(.*)/,
++    },
++    {
++      startAt: dayjs().subtract(2, "days"),
++      regExp: /^(?:前天|(?:the)?d(?:ay)?b(?:eforeyesterda)?y)(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(1)) ? dayjs().weekday(1).subtract(1, "week") : dayjs().weekday(1),
++      regExp: /^(?:周|星期)一(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(2)) ? dayjs().weekday(2).subtract(1, "week") : dayjs().weekday(2),
++      regExp: /^(?:周|星期)二(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(3)) ? dayjs().weekday(3).subtract(1, "week") : dayjs().weekday(3),
++      regExp: /^(?:周|星期)三(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(4)) ? dayjs().weekday(4).subtract(1, "week") : dayjs().weekday(4),
++      regExp: /^(?:周|星期)四(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(5)) ? dayjs().weekday(5).subtract(1, "week") : dayjs().weekday(5),
++      regExp: /^(?:周|星期)五(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(6)) ? dayjs().weekday(6).subtract(1, "week") : dayjs().weekday(6),
++      regExp: /^(?:周|星期)六(.*)/,
++    },
++    {
++      startAt: dayjs().isSameOrBefore(dayjs().weekday(7)) ? dayjs().weekday(7).subtract(1, "week") : dayjs().weekday(7),
++      regExp: /^(?:周|星期)[天日](.*)/,
++    },
++    {
++      startAt: dayjs().add(1, "days"),
++      regExp: /^(?:明[天日]|y(?:ester)?day?)(.*)/,
++    },
++    {
++      startAt: dayjs().add(2, "days"),
++      regExp: /^(?:[后後][天日]|(?:the)?d(?:ay)?a(?:fter)?t(?:omrrow)?)(.*)/,
++    },
++  ]
++}
++
++const patterns = [
++  {
++    unit: "years",
++    regExp: /(\d+)(?:年|y(?:ea)?rs?)/,
++  },
++  {
++    unit: "months",
++    regExp: /(\d+)(?:[个個]?月|months?)/,
++  },
++  {
++    unit: "weeks",
++    regExp: /(\d+)(?:周|[个個]?星期|weeks?)/,
++  },
++  {
++    unit: "days",
++    regExp: /(\d+)(?:天|日|d(?:ay)?s?)/,
++  },
++  {
++    unit: "hours",
++    regExp: /(\d+)(?:[个個]?(?:小?时|[時点點])|h(?:(?:ou)?r)?s?)/,
++  },
++  {
++    unit: "minutes",
++    regExp: /(\d+)(?:分[鐘钟]?|m(?:in(?:ute)?)?s?)/,
++  },
++  {
++    unit: "seconds",
++    regExp: /(\d+)(?:秒[鐘钟]?|s(?:ec(?:ond)?)?s?)/,
++  },
++] as const
++
++const patternSize = Object.keys(patterns).length
++
++function toDate(date: string) {
++  return date
++    .toLowerCase()
++    .replace(/(^an?\s)|(\san?\s)/g, "1")
++    .replace(/几|幾/g, "3")
++    .replace(/[\s,]/g, "")
++}
++
++function toDurations(matches: string[]) {
++  const durations: Record<string, string> = {}
++
++  let p = 0
++  for (const m of matches) {
++    for (; p <= patternSize; p++) {
++      const pattern = patterns[p]
++      if (!pattern) continue
++      const match = pattern.regExp.exec(m)
++      if (match) {
++        durations[pattern.unit] = match[1]
++        break
++      }
++    }
++  }
++  return durations
++}
++
++export const parseDate = (date: string | number, ...options: any[]) => dayjs(date, ...options).toDate()
++
++export function parseRelativeDate(date: string, timezone: string = "UTC") {
++  if (date === "刚刚") return new Date()
++
++  const theDate = toDate(date)
++
++  const matches = theDate.match(/\D*\d+(?![:\-/]|(a|p)m)\D+/g)
++  const offset = dayjs.duration({ hours: (dayjs().tz(timezone).utcOffset() - dayjs().utcOffset()) / 60 })
++
++  if (matches) {
++    const lastMatch = matches.pop()
++
++    if (lastMatch) {
++      const beforeMatches = /(.*)(?:前|ago)$/.exec(lastMatch)
++      if (beforeMatches) {
++        matches.push(beforeMatches[1])
++        return dayjs().subtract(dayjs.duration(toDurations(matches))).toDate()
++      }
++
++      const afterMatches = /(?:^in(.*)|(.*)[后後])$/.exec(lastMatch)
++      if (afterMatches) {
++        matches.push(afterMatches[1] ?? afterMatches[2])
++        return dayjs()
++          .add(dayjs.duration(toDurations(matches)))
++          .toDate()
++      }
++
++      matches.push(lastMatch)
++    }
++    const firstMatch = matches.shift()
++
++    if (firstMatch) {
++      for (const w of words()) {
++        const wordMatches = w.regExp.exec(firstMatch)
++        if (wordMatches) {
++          matches.unshift(wordMatches[1])
++
++          return dayjs.tz(
++            w.startAt
++              .set("hour", 0)
++              .set("minute", 0)
++              .set("second", 0)
++              .set("millisecond", 0)
++              .add(dayjs.duration(toDurations(matches)))
++              .add(offset),
++            timezone,
++          ).toDate()
++        }
++      }
++    }
++  } else {
++    for (const w of words()) {
++      const wordMatches = w.regExp.exec(theDate)
++      if (wordMatches) {
++        return dayjs.tz(
++          `${w.startAt.add(offset).format("YYYY-MM-DD")} ${/a|pm$/.test(wordMatches[1]) ? wordMatches[1].replace(/a|pm/, " $&") : wordMatches[1]}`,
++          timezone,
++        ).toDate()
++      }
++    }
++  }
++
++  return date
++}
+--- a/apps/api/src/modules/news-aggregator/utils/fetch.ts
++++ b/apps/api/src/modules/news-aggregator/utils/fetch.ts
+@@ -0,0 +1,11 @@
++import { $fetch } from "ofetch"
++
++export { $fetch }
++
++export const myFetch = $fetch.create({
++  headers: {
++    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
++  },
++  timeout: 10000,
++  retry: 3,
++})
+--- a/apps/api/src/modules/news-aggregator/utils/rss2json.ts
++++ b/apps/api/src/modules/news-aggregator/utils/rss2json.ts
+@@ -0,0 +1,95 @@
++import { XMLParser } from "fast-xml-parser"
++
++import type { RSSInfo } from "../news-aggregator.types"
++
++import { myFetch } from "./fetch"
++
++export async function rss2json(url: string): Promise<RSSInfo | undefined> {
++  if (!/^https?:\/\/[^\s$.?#].\S*/i.test(url)) return
++
++  const data = await myFetch(url)
++
++  const xml = new XMLParser({
++    attributeNamePrefix: "",
++    textNodeName: "$text",
++    ignoreAttributes: false,
++  })
++
++  const result = xml.parse(data as string)
++
++  let channel = result.rss && result.rss.channel ? result.rss.channel : result.feed
++  if (Array.isArray(channel)) channel = channel[0]
++
++  const rss = {
++    title: channel.title ?? "",
++    description: channel.description ?? "",
++    link: channel.link && channel.link.href ? channel.link.href : channel.link,
++    image: channel.image ? channel.image.url : channel["itunes:image"] ? channel["itunes:image"].href : "",
++    category: channel.category || [],
++    updatedTime: channel.lastBuildDate ?? channel.updated,
++    items: [],
++  }
++
++  let items = channel.item || channel.entry || []
++  if (items && !Array.isArray(items)) items = [items]
++
++  for (let i = 0; i < items.length; i++) {
++    const val = items[i]
++    const media = {}
++
++    const obj: Record<string, unknown> = {
++      id: val.guid && val.guid.$text ? val.guid.$text : val.id,
++      title: val.title && val.title.$text ? val.title.$text : val.title,
++      description: val.summary && val.summary.$text ? val.summary.$text : val.description,
++      link: val.link && val.link.href ? val.link.href : val.link,
++      author: val.author && val.author.name ? val.author.name : val["dc:creator"],
++      created: val.updated ?? val.pubDate ?? val.created,
++      category: val.category || [],
++      content: val.content && val.content.$text ? val.content.$text : val["content:encoded"],
++      enclosures: val.enclosure ? (Array.isArray(val.enclosure) ? val.enclosure : [val.enclosure]) : [],
++    }
++
++    const extraKeys = [
++      "content:encoded",
++      "podcast:transcript",
++      "itunes:summary",
++      "itunes:author",
++      "itunes:explicit",
++      "itunes:duration",
++      "itunes:season",
++      "itunes:episode",
++      "itunes:episodeType",
++      "itunes:image",
++    ]
++
++    extraKeys.forEach((s) => {
++      if (val[s]) obj[s.replace(":", "_")] = val[s]
++    })
++
++    if (val["media:thumbnail"]) {
++      Object.assign(media, { thumbnail: val["media:thumbnail"] })
++      ;(obj.enclosures as unknown[]).push(val["media:thumbnail"])
++    }
++
++    if (val["media:content"]) {
++      Object.assign(media, { thumbnail: val["media:content"] })
++      ;(obj.enclosures as unknown[]).push(val["media:content"])
++    }
++
++    if (val["media:group"]) {
++      if (val["media:group"]["media:title"]) obj.title = val["media:group"]["media:title"]
++
++      if (val["media:group"]["media:description"]) obj.description = val["media:group"]["media:description"]
++
++      if (val["media:group"]["media:thumbnail"]) (obj.enclosures as unknown[]).push(val["media:group"]["media:thumbnail"].url)
++
++      if (val["media:group"]["media:content"]) (obj.enclosures as unknown[]).push(val["media:group"]["media:content"])
++    }
++
++    Object.assign(obj, { media })
++
++    rss.items.push(obj)
++  }
++
++  return rss as RSSInfo
++}
+--- a/apps/api/src/modules/news-aggregator/utils/source.ts
++++ b/apps/api/src/modules/news-aggregator/utils/source.ts
+@@ -0,0 +1,62 @@
++import type {
++  AllSourceID,
++  NewsItem,
++  RSSHubInfo as RSSHubResponse,
++  RSSHubOption,
++  SourceGetter,
++  SourceOption,
++} from "../news-aggregator.types"
++
++import { myFetch } from "./fetch"
++import { rss2json } from "./rss2json"
++
++type AnySourceGetter = () => Promise<any[]>
++type SourceMap = Partial<Record<AllSourceID | string, AnySourceGetter>>
++
++export function defineSource<T extends AnySourceGetter>(source: T): T
++export function defineSource<T extends SourceMap>(source: T): T
++export function defineSource<T extends AnySourceGetter | SourceMap>(source: T): T {
++  return source
++}
++
++export function defineRSSSource(url: string, option?: SourceOption): SourceGetter {
++  return async () => {
++    const data = await rss2json(url)
++    if (!data?.items.length) throw new Error("Cannot fetch rss data")
++    return data.items.map((item) => ({
++      title: item.title,
++      url: item.link,
++      id: item.link,
++      pubDate: !option?.hiddenDate ? item.created : undefined,
++    }))
++  }
++}
++
++export function defineRSSHubSource(route: string, rssHubOptions?: RSSHubOption, sourceOption?: SourceOption): SourceGetter {
++  return async () => {
++    const RSSHubBase = "https://rsshub.rssforever.com"
++    const url = new URL(route, RSSHubBase)
++    url.searchParams.set("format", "json")
++
++    const mergedOptions: RSSHubOption = {
++      sorted: true,
++      ...rssHubOptions,
++    }
++
++    Object.entries(mergedOptions).forEach(([key, value]) => {
++      if (value !== undefined) {
++        url.searchParams.set(key, String(value))
++      }
++    })
++
++    const data: RSSHubResponse = await myFetch(url.toString())
++    const items = mergedOptions.limit ? data.items.slice(0, mergedOptions.limit) : data.items
++
++    return items.map((item) => ({
++      title: item.title,
++      url: item.url,
++      id: item.id ?? item.url,
++      pubDate: !sourceOption?.hiddenDate ? item.date_published : undefined,
++    }))
++  }
++}

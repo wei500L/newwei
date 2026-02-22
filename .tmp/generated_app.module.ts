@@ -31,8 +31,8 @@ import { EmailModule } from "./modules/email/email.module";
 import { HealthModule } from "./modules/health/health.module";
 import { ItemsModule } from "./modules/items/items.module";
 import { KnowledgeGraphModule } from "./modules/knowledge-graph/knowledge-graph.module";
-import { NewsEventsModule } from "./modules/news-events/news-events.module";
 import { NewsAggregatorModule } from "./modules/news-aggregator/news-aggregator.module";
+import { NewsEventsModule } from "./modules/news-events/news-events.module";
 import { NewsIndicatorModule } from "./modules/news-indicator/news-indicator.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { ObservabilityModule } from "./modules/observability/observability.module";
@@ -91,8 +91,8 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     NotificationsModule,
     ObservabilityModule,
     KnowledgeGraphModule,
-    NewsEventsModule,
     NewsAggregatorModule,
+    NewsEventsModule,
     NewsIndicatorModule,
     WebSocketModule,
     ApiGraphqlModule,
