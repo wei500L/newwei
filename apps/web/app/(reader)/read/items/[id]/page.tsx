@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { resolveArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
+import { NewsImage } from "@/components/news-image";
 import { resolveLocale } from "@/lib/i18n";
 import {
   isChineseLanguage,
@@ -159,6 +160,7 @@ export default function ReaderPage() {
   );
 
   const originalUrl = safeHttpUrl(rawPayload?.url);
+  const thumbnailUrl = safeHttpUrl(rawPayload?.thumbnail);
   const source =
     toNonEmptyString(processedResult?.source) ??
     toNonEmptyString(rawPayload?.sourceName) ??
@@ -519,6 +521,26 @@ export default function ReaderPage() {
             ) : null}
           </div>
         </header>
+
+        <div className="mb-8">
+          <NewsImage
+            src={thumbnailUrl}
+            alt={displayTitle}
+            aspectRatio="cinema"
+            fallback="gradient"
+            fallbackText={source ?? displayTitle}
+            className="w-full rounded-xl"
+            imgClassName="rounded-xl"
+          />
+          {source ? (
+            <p className="mt-2 text-xs text-gray-500">
+              {t("reader.coverCaption", {
+                defaultValue: "Cover image from {{source}}",
+                source
+              })}
+            </p>
+          ) : null}
+        </div>
 
         {/* Summary */}
         {resolvedSummary && (

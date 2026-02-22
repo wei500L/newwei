@@ -1202,22 +1202,28 @@ export class ClassificationQualityService {
       sourceCategory.set(key, (sourceCategory.get(key) ?? 0) + 1);
     }
 
-    const totalItems = methodCounters.llm_embedding_rerank + methodCounters.rule_fallback;
+    const methodDistributionTotal =
+      methodCounters.llm_embedding_rerank + methodCounters.rule_fallback;
+    const totalItems = totalMatchedItems;
     const methodDistribution: ClassificationQualitySummary["methodDistribution"] = [
       {
         group: "llm_embedding_rerank",
         count: methodCounters.llm_embedding_rerank,
         share:
-          totalItems > 0
-            ? Number((methodCounters.llm_embedding_rerank / totalItems).toFixed(4))
+          methodDistributionTotal > 0
+            ? Number(
+                (methodCounters.llm_embedding_rerank / methodDistributionTotal).toFixed(4),
+              )
             : 0,
       },
       {
         group: "rule_fallback",
         count: methodCounters.rule_fallback,
         share:
-          totalItems > 0
-            ? Number((methodCounters.rule_fallback / totalItems).toFixed(4))
+          methodDistributionTotal > 0
+            ? Number(
+                (methodCounters.rule_fallback / methodDistributionTotal).toFixed(4),
+              )
             : 0,
       },
     ];

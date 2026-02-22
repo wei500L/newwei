@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { resolveArticlePublishedTime } from "@/components/article-published-time";
+import { NewsImage } from "@/components/news-image";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -100,20 +101,20 @@ export function Headlines() {
     <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
       {/* Hero Section */}
       <div
-        className="relative h-64 w-full group cursor-pointer"
+        className="relative w-full group cursor-pointer"
         onClick={() => router.push(`/items/${heroItem.id}`)}
       >
+        <NewsImage
+          src={heroThumbnail}
+          alt={heroItem.title}
+          aspectRatio="video"
+          fallback="gradient"
+          fallbackText={heroItem.rawPreview?.sourceName ?? heroItem.title}
+          className="rounded-none"
+          imgClassName="rounded-none"
+          priority
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10" />
-        {heroThumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={heroThumbnail}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" />
-        )}
 
         <div className="absolute bottom-0 left-0 p-6 z-20 w-full">
           <div className="flex items-center gap-2 mb-2">
@@ -154,6 +155,7 @@ export function Headlines() {
               formatOptions: { dateStyle: "medium", timeStyle: "short" },
               unknownText: publishedUnknown
             });
+            const itemThumbnail = safeHttpUrl(item.rawPreview?.thumbnail);
 
             return (
               <div
@@ -162,6 +164,14 @@ export function Headlines() {
                 onClick={() => router.push(`/items/${item.id}`)}
               >
                 <div className="flex items-start gap-3">
+                  <NewsImage
+                    src={itemThumbnail}
+                    alt={item.title}
+                    aspectRatio="square"
+                    fallback="initials"
+                    fallbackText={item.rawPreview?.sourceName ?? item.title}
+                    className="w-12 shrink-0"
+                  />
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2 m-0">
                       {item.title}

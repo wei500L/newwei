@@ -332,4 +332,82 @@ describe("ClassificationQualityService", () => {
       }),
     );
   });
+
+  it("reports totalItems from matched facet count when sampled docs are fewer", async () => {
+    const { service, prisma } = createService();
+
+    (ProcessedItemModel.aggregate as jest.Mock).mockResolvedValue([
+      {
+        total: [{ count: 10 }],
+        sampled: [
+          {
+            _id: "processed-1",
+            sourceId: "source-1",
+            createdAt: new Date("2025-01-01T00:00:00.000Z"),
+            result: {
+              category_confidence: 0.25,
+              category_method: "llm-embedding-rerank",
+              category_path: "tech/ai",
+            },
+          },
+          {
+            _id: "processed-2",
+            sourceId: "source-2",
+            createdAt: new Date("2025-01-01T00:10:00.000Z"),
+            result: {
+              category_confidence: 0.75,
+              category_method: "rule-fallback",
+              category_path: "finance/regulation",
+            },
+          },
+        ],
+      },
+    ]);
+    (TaskLogModel.aggregate as jest.Mock)
+      .mockResolvedValueOnce([
+        {
+          total: [{ count: 1 }],
+          sampled: [{ data: { llmLatencyMs: 150, embeddingLatencyMs: 30, rerankLatencyMs: 45 } }],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          total: [{ count: 1 }],
+          sampled: [{ data: { decision: "accepted" } }],
+        },
+      ]);
+    (ClassificationReviewModel.countDocuments as jest.Mock).mockReturnValue({
+      exec: jest.fn().mockResolvedValue(0),
+    });
+
+    prisma.systemSetting.findUnique.mockResolvedValue(null);
+    prisma.newsSource.findMany.mockResolvedValue([]);
+
+    const summary = await service.getSummary({
+      orgId: "org-1",
+      window: "24h",
+    });
+
+    expect(summary.totalItems).toBe(10);
+    expect(summary.methodDistribution).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: "llm_embedding_rerank",
+          count: 1,
+          share: 0.5,
+        }),
+        expect.objectContaining({
+          group: "rule_fallback",
+          count: 1,
+          share: 0.5,
+        }),
+      ]),
+    );
+    expect(summary.sampling.classifiedItems).toEqual(
+      expect.objectContaining({
+        matched: 10,
+        scanned: 2,
+      }),
+    );
+  });
 });

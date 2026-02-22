@@ -46,6 +46,7 @@ import {
 } from "../../modules/system-settings/entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
+import { toNewsEventSourcePolicyInput } from "./settings.resolver.helpers";
 import {
   UpdateAuditLogRetentionInput,
   UpdateCrawlClientSettingsInput,
@@ -331,24 +332,8 @@ export class SettingsResolver {
   ): Promise<NewsEventSourcePolicySettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    const policyInput: NewsEventSourcePolicyInput = {
-      authoritativeDomains: input.authoritativeDomains,
-      authoritativeLabels: input.authoritativeLabels,
-      blogDomains: input.blogDomains,
-      blogLabels: input.blogLabels,
-      categoryAuthority: input.categoryAuthority?.map((entry) => ({
-        categoryPrefix: entry.categoryPrefix,
-        authoritativeBoost: entry.authoritativeBoost,
-        blogPenalty: entry.blogPenalty,
-        unknownPenalty: entry.unknownPenalty,
-        minConfidenceFloor: entry.minConfidenceFloor ?? 0,
-        mismatchPenalty: entry.mismatchPenalty ?? 0,
-        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
-          domain: boost.domain,
-          delta: boost.delta,
-        })),
-      })),
-    };
+    const policyInput: NewsEventSourcePolicyInput =
+      toNewsEventSourcePolicyInput(input);
     const updateOptions: {
       note?: string | null;
       expectedRevision?: number | null;
@@ -373,24 +358,8 @@ export class SettingsResolver {
   ): Promise<NewsEventSourcePolicyPresetSettingsModel> {
     const user = this.requireUser(req);
     await this.assertAdmin(user);
-    const presetInput: NewsEventSourcePolicyInput = {
-      authoritativeDomains: input.authoritativeDomains,
-      authoritativeLabels: input.authoritativeLabels,
-      blogDomains: input.blogDomains,
-      blogLabels: input.blogLabels,
-      categoryAuthority: input.categoryAuthority?.map((entry) => ({
-        categoryPrefix: entry.categoryPrefix,
-        authoritativeBoost: entry.authoritativeBoost,
-        blogPenalty: entry.blogPenalty,
-        unknownPenalty: entry.unknownPenalty,
-        minConfidenceFloor: entry.minConfidenceFloor ?? 0,
-        mismatchPenalty: entry.mismatchPenalty ?? 0,
-        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
-          domain: boost.domain,
-          delta: boost.delta,
-        })),
-      })),
-    };
+    const presetInput: NewsEventSourcePolicyInput =
+      toNewsEventSourcePolicyInput(input);
     const updateOptions: {
       note?: string | null;
       expectedUpdatedAt?: string | null;

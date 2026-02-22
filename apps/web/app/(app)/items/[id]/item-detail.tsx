@@ -27,6 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { ArticlePublishedTime } from '@/components/article-published-time';
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { MarkdownViewer } from '@/components/markdown-viewer';
+import { NewsImage } from '@/components/news-image';
 import { useItemQuery } from '@/graphql/generated';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 import {
@@ -198,6 +199,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const qualityScore = typeof processedResult?.quality_score === 'number' ? processedResult.quality_score : undefined;
   const qualityScoreLabel = formatRatioAsPercent(qualityScore, locale);
   const originalUrl = safeHttpUrl(rawPayload?.url);
+  const thumbnailUrl = safeHttpUrl(rawPayload?.thumbnail);
   const cleanedMarkdown = toString(processedResult?.cleaned_markdown);
   const cleanedMarkdownSource = toString(processedResult?.cleaned_markdown_source);
   const summary = resolveDisplaySummary({
@@ -671,6 +673,16 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           </Typography.Link>
         ) : null}
       </Space>
+
+      <NewsImage
+        src={thumbnailUrl}
+        alt={displayTitle}
+        aspectRatio='video'
+        fallback='gradient'
+        fallbackText={source ?? displayTitle}
+        className='w-full rounded-xl'
+        imgClassName='rounded-xl'
+      />
 
       <Card className="content-card" title={t('items.detail.summaryTitle', { defaultValue: 'Summary' })}>
         {hasSummaryContent ? (

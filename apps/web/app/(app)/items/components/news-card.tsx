@@ -7,6 +7,7 @@ import type { KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
+import { NewsImage } from "@/components/news-image";
 import { SentimentBadge } from "@/components/sentiment-badge";
 import { resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
@@ -111,9 +112,17 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   const llmSummary = llmBits.length > 0 ? llmBits.join(" | ") : null;
 
   const summaryText = item.summary?.trim() ?? "";
-  const summaryRows = density === "comfortable" ? 4 : 3;
+  const isCompactDensity = density === "compact";
+  const summaryRows = isCompactDensity ? 2 : 4;
   const expandLabel = t("common.expand", { defaultValue: "Show more" });
   const collapseLabel = t("common.collapse", { defaultValue: "Show less" });
+  const summaryEllipsis = isCompactDensity
+    ? { rows: summaryRows }
+    : {
+        rows: summaryRows,
+        expandable: "collapsible" as const,
+        symbol: (expanded: boolean) => (expanded ? collapseLabel : expandLabel)
+      };
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
   const locationText = item.location?.trim() ?? "";
@@ -186,67 +195,27 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
     </div>
   );
 
-  return (
-    <Card
-      hoverable
-      className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
-      style={{ height: "100%", display: "flex", flexDirection: "column" }}
-      styles={{
-        body: {
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          padding: isReaderVariant ? "18px" : "16px"
-        }
-      }}
-    >
-      <div className="flex items-start justify-between mb-3 gap-2">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <SentimentBadge sentiment={item.sentiment} />
-            {item.source ? (
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
-            ) : null}
-            {isReaderVariant && qualityScore ? <Tag className="items-compact-tag" color="blue">Q {qualityScore}</Tag> : null}
-            {isReaderVariant && duplicateScore ? (
-              <Tag className="items-compact-tag" color="gold">
-                {duplicateLabel} {duplicateScore}
-              </Tag>
-            ) : null}
-          </div>
-          <ArticlePublishedTime
-            publishedAt={item.publishedAt ?? null}
-            locale={locale}
-            showLabel={false}
-            primaryStrong={isReaderVariant}
-            formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
-            primaryClassName={isReaderVariant ? "text-sm text-gray-600 dark:text-gray-300" : "text-xs text-gray-500 dark:text-gray-400"}
-            secondaryClassName="text-[11px]"
-            secondaryStyle={{ fontSize: 11 }}
-          />
-        </div>
-        <Popover content={metricsContent} trigger="hover" placement="bottomRight">
-          <Button type="text" size="small" icon={<InfoCircleOutlined className="text-gray-400" />} />
-        </Popover>
-      </div>
+  const imageBlock = (
+    <NewsImage
+      src={thumbnailUrl}
+      alt={item.title}
+      aspectRatio={isCompactDensity ? "fourThree" : "video"}
+      fallback={isCompactDensity ? "initials" : "gradient"}
+      fallbackText={item.source ?? item.title}
+      showSkeleton
+    />
+  );
 
-      {thumbnailUrl ? (
-        <div className="mb-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={thumbnailUrl}
-            alt={item.title}
-            className="w-full h-32 object-cover rounded-lg"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-      ) : null}
-
+  const detailsBlock = (
+    <>
       <Title
         level={isReaderVariant ? 4 : 5}
         ellipsis={{ rows: 2 }}
-        style={{ margin: 0, lineHeight: isReaderVariant ? 1.45 : 1.4, marginBottom: isReaderVariant ? 10 : 8 }}
+        style={{
+          margin: 0,
+          lineHeight: isReaderVariant ? 1.45 : 1.4,
+          marginBottom: isReaderVariant ? 10 : 8
+        }}
         className="cursor-pointer hover:text-blue-500 transition-colors"
         role="button"
         tabIndex={0}
@@ -259,11 +228,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       {summaryText ? (
         <Paragraph
           type="secondary"
-          ellipsis={{
-            rows: summaryRows,
-            expandable: "collapsible",
-            symbol: (expanded) => (expanded ? collapseLabel : expandLabel)
-          }}
+          ellipsis={summaryEllipsis}
           className="text-sm mb-3 text-gray-600 dark:text-gray-300"
           style={{ lineHeight: 1.6 }}
         >
@@ -314,6 +279,76 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           </Tag>
         </div>
       ) : null}
+    </>
+  );
+
+  const metaBlock = (
+    <div className="flex items-start justify-between mb-3 gap-2">
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <SentimentBadge sentiment={item.sentiment} />
+          {item.source ? (
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
+          ) : null}
+          {isReaderVariant && qualityScore ? (
+            <Tag className="items-compact-tag" color="blue">
+              Q {qualityScore}
+            </Tag>
+          ) : null}
+          {isReaderVariant && duplicateScore ? (
+            <Tag className="items-compact-tag" color="gold">
+              {duplicateLabel} {duplicateScore}
+            </Tag>
+          ) : null}
+        </div>
+        <ArticlePublishedTime
+          publishedAt={item.publishedAt ?? null}
+          locale={locale}
+          showLabel={false}
+          primaryStrong={isReaderVariant}
+          formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+          primaryClassName={
+            isReaderVariant ? "text-sm text-gray-600 dark:text-gray-300" : "text-xs text-gray-500 dark:text-gray-400"
+          }
+          secondaryClassName="text-[11px]"
+          secondaryStyle={{ fontSize: 11 }}
+        />
+      </div>
+      <Popover content={metricsContent} trigger="hover" placement="bottomRight">
+        <Button type="text" size="small" icon={<InfoCircleOutlined className="text-gray-400" />} />
+      </Popover>
+    </div>
+  );
+
+  return (
+    <Card
+      hoverable
+      className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
+      style={{ height: "100%", display: "flex", flexDirection: "column" }}
+      styles={{
+        body: {
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          padding: isReaderVariant ? "18px" : "16px"
+        }
+      }}
+    >
+      {isCompactDensity ? (
+        <div className="mb-3 flex items-start gap-3">
+          <div className="w-24 shrink-0">{imageBlock}</div>
+          <div className="min-w-0 flex-1">
+            {metaBlock}
+            {detailsBlock}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mb-3">{imageBlock}</div>
+          {metaBlock}
+          {detailsBlock}
+        </>
+      )}
 
       <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-gray-400">
