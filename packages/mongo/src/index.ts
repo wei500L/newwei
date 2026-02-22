@@ -10,3 +10,8 @@ export * from "./models/exception-event";
 export * from "./models/situation-signal-feedback";
 export * from "./models/situation-signal-learning-state";
 export * from "./models/situation-signal.types";
+export * from "./models/classification-review";
+export * from "./models/classification-sample";
+export * from "./models/classification-annotation";
+export * from "./models/classification-report-job";
+export * from "./models/classification-report-result";

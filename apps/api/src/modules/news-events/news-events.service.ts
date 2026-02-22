@@ -1,4 +1,4 @@
-import { ProcessedItemModel } from "@modular/mongo";
+import { ProcessedItemModel, TaskLogModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import { Injectable, Optional } from "@nestjs/common";
 import {
@@ -761,7 +761,8 @@ export class NewsEventsService {
               event.language,
               settings,
             );
-            const categoryAdjusted = this.applyCategoryGate(
+            const categoryAdjusted = await this.applyCategoryGate(
+              orgId,
               adjusted,
               signal,
               event.metadata,
@@ -865,7 +866,8 @@ export class NewsEventsService {
         candidate.language,
         settings,
       );
-      const categoryAdjusted = this.applyCategoryGate(
+      const categoryAdjusted = await this.applyCategoryGate(
+        orgId,
         score,
         signal,
         candidate.metadata,
@@ -1026,13 +1028,17 @@ export class NewsEventsService {
     return score * (1 - penalty);
   }
 
-  private applyCategoryGate(
+  private async applyCategoryGate(
+    orgId: string,
     score: number,
     signal: NewsSignal,
     eventMetadata: Prisma.JsonValue | null,
     settings: NewsEventSettings,
-  ): number | null {
+  ): Promise<number | null> {
     if (!settings.classificationGateEnabled) {
+      await this.logCategoryGateDecision(orgId, signal, "skipped_disabled", {
+        score,
+      });
       return score;
     }
 
@@ -1043,33 +1049,117 @@ export class NewsEventsService {
         ? Math.max(0, Math.min(1, signal.categoryConfidence))
         : null;
     if (!signalCategory) {
+      await this.logCategoryGateDecision(orgId, signal, "skipped_no_signal_category", {
+        score,
+      });
       return score;
     }
     if (
       signalConfidence === null ||
       signalConfidence < settings.minCategoryConfidenceForGate
     ) {
+      await this.logCategoryGateDecision(
+        orgId,
+        signal,
+        "skipped_low_signal_confidence",
+        {
+          score,
+          signalConfidence,
+          minCategoryConfidenceForGate: settings.minCategoryConfidenceForGate,
+        },
+      );
       return score;
     }
 
     const eventClassification = this.extractEventClassification(eventMetadata);
     if (!eventClassification.legacyCategory) {
+      await this.logCategoryGateDecision(orgId, signal, "skipped_no_event_category", {
+        score,
+        signalCategory,
+      });
       return score;
     }
     if (eventClassification.legacyCategory !== signalCategory) {
       if (settings.categoryConflictReject) {
+        await this.logCategoryGateDecision(orgId, signal, "reject", {
+          score,
+          signalCategory,
+          eventCategory: eventClassification.legacyCategory,
+        });
         return null;
       }
-      return score * (1 - this.clamp01(settings.categorySoftPenalty));
+      const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty));
+      await this.logCategoryGateDecision(orgId, signal, "penalized", {
+        score,
+        adjustedScore: adjusted,
+        signalCategory,
+        eventCategory: eventClassification.legacyCategory,
+      });
+      return adjusted;
     }
 
     const signalPath = this.normalizeCategoryPath(signal.categoryPath);
     const eventPath = this.normalizeCategoryPath(eventClassification.categoryPath);
     if (!signalPath || !eventPath || signalPath === eventPath) {
+      await this.logCategoryGateDecision(orgId, signal, "accepted", {
+        score,
+        signalCategory,
+        signalPath,
+        eventPath,
+      });
       return score;
     }
 
-    return score * (1 - this.clamp01(settings.categorySoftPenalty * 0.5));
+    const adjusted = score * (1 - this.clamp01(settings.categorySoftPenalty * 0.5));
+    await this.logCategoryGateDecision(orgId, signal, "penalized", {
+      score,
+      adjustedScore: adjusted,
+      signalCategory,
+      signalPath,
+      eventPath,
+    });
+    return adjusted;
+  }
+
+  private async logCategoryGateDecision(
+    orgId: string,
+    signal: NewsSignal,
+    decision:
+      | "accepted"
+      | "penalized"
+      | "reject"
+      | "skipped_disabled"
+      | "skipped_no_signal_category"
+      | "skipped_low_signal_confidence"
+      | "skipped_no_event_category",
+    data: Record<string, unknown>,
+  ) {
+    try {
+      await TaskLogModel.create({
+        queue: "news_events",
+        jobId: signal.processedArticleId,
+        orgId,
+        stage: "category_gate",
+        status: "completed",
+        data: {
+          decision,
+          processedItemId: signal.processedItemId,
+          processedArticleId: signal.processedArticleId,
+          signalCategory: signal.legacyCategory ?? null,
+          signalCategoryPath: signal.categoryPath ?? null,
+          signalConfidence:
+            typeof signal.categoryConfidence === "number"
+              ? signal.categoryConfidence
+              : null,
+          ...data,
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, orgId, processedArticleId: signal.processedArticleId, decision },
+        "Failed to persist category gate task log",
+      );
+    }
   }
 
   private extractEventClassification(metadata: Prisma.JsonValue | null): {

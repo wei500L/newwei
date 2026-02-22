@@ -18,6 +18,8 @@ const TaskLogSchema = new Schema(
 
 TaskLogSchema.index({ queue: 1, jobId: 1, stage: 1 });
 TaskLogSchema.index({ orgId: 1, createdAt: -1 });
+TaskLogSchema.index({ orgId: 1, queue: 1, stage: 1, status: 1, createdAt: -1 });
+TaskLogSchema.index({ orgId: 1, stage: 1, status: 1, createdAt: -1 });
 
 export type TaskLog = InferSchemaType<typeof TaskLogSchema>;
 

@@ -253,6 +253,9 @@ export class NewsEventSourcePolicySettingsModel {
   @Field(() => [String])
   blogLabels!: string[];
 
+  @Field(() => [NewsEventSourceCategoryAuthorityRuleModel])
+  categoryAuthority!: NewsEventSourceCategoryAuthorityRuleModel[];
+
   @Field(() => Int)
   activeRevision!: number;
 
@@ -285,6 +288,9 @@ export class NewsEventSourcePolicyPresetSettingsModel {
 
   @Field(() => [String])
   blogLabels!: string[];
+
+  @Field(() => [NewsEventSourceCategoryAuthorityRuleModel])
+  categoryAuthority!: NewsEventSourceCategoryAuthorityRuleModel[];
 
   @Field(() => GraphQLISODateTime, { nullable: true })
   updatedAt!: Date | null;
@@ -387,6 +393,39 @@ export class NewsEventSourcePolicyRevisionDiffModel {
 }
 
 @ObjectType()
+export class NewsEventSourceCategoryAuthorityDomainBoostModel {
+  @Field(() => String)
+  domain!: string;
+
+  @Field(() => Float)
+  delta!: number;
+}
+
+@ObjectType()
+export class NewsEventSourceCategoryAuthorityRuleModel {
+  @Field(() => String)
+  categoryPrefix!: string;
+
+  @Field(() => Float)
+  authoritativeBoost!: number;
+
+  @Field(() => Float)
+  blogPenalty!: number;
+
+  @Field(() => Float)
+  unknownPenalty!: number;
+
+  @Field(() => Float)
+  minConfidenceFloor!: number;
+
+  @Field(() => Float)
+  mismatchPenalty!: number;
+
+  @Field(() => [NewsEventSourceCategoryAuthorityDomainBoostModel])
+  domainBoosts!: NewsEventSourceCategoryAuthorityDomainBoostModel[];
+}
+
+@ObjectType()
 export class NewsDedupeCategoryThresholdModel {
   @Field(() => String)
   category!: string;
@@ -486,6 +525,36 @@ export class NewsClassificationSettingsModel {
 
   @Field(() => [NewsClassificationTaxonomyNodeModel])
   taxonomy!: NewsClassificationTaxonomyNodeModel[];
+}
+
+@ObjectType()
+export class ClassificationQualitySettingsModel {
+  @Field(() => Float)
+  lowConfidenceThreshold!: number;
+
+  @Field(() => Int)
+  llmP95LatencyWarnMs!: number;
+
+  @Field(() => Int)
+  embeddingP95LatencyWarnMs!: number;
+
+  @Field(() => Int)
+  rerankP95LatencyWarnMs!: number;
+
+  @Field(() => Float)
+  gateRejectRateWarn!: number;
+
+  @Field(() => Float)
+  gatePenalizedRateWarn!: number;
+
+  @Field(() => Int)
+  reportMinPairCount!: number;
+
+  @Field(() => Float)
+  reportMinPairErrorRate!: number;
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
 }
 
 @ObjectType()

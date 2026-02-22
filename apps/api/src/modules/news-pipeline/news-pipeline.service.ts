@@ -570,7 +570,19 @@ export class NewsPipelineService implements OnModuleDestroy {
             job,
             "classify",
             async () =>
-              this.classifier!.classify(job.orgId, cleaned, { jobId: job.jobId }),
+              this.classifier!.classify(job.orgId, cleaned, {
+                jobId: job.jobId,
+                sourceId: this.extractSourceId(payload) ?? null,
+                sourceUrl:
+                  (typeof article.sourceUrl === "string" &&
+                  article.sourceUrl.trim().length > 0
+                    ? article.sourceUrl.trim()
+                    : payload.url) ?? null,
+                sourceLabel:
+                  cleaned.source ??
+                  payload.sourceName ??
+                  null,
+              }),
             {
               onProcessingData: () => ({
                 itemMetaId: job.itemMetaId,

@@ -567,6 +567,22 @@ export interface NewsEventSourcePolicy {
   authoritativeLabels: string[];
   blogDomains: string[];
   blogLabels: string[];
+  categoryAuthority?: NewsEventSourceCategoryAuthorityRule[];
+}
+
+export interface NewsEventSourceCategoryAuthorityDomainBoost {
+  domain: string;
+  delta: number;
+}
+
+export interface NewsEventSourceCategoryAuthorityRule {
+  categoryPrefix: string;
+  authoritativeBoost: number;
+  blogPenalty: number;
+  unknownPenalty: number;
+  minConfidenceFloor: number;
+  mismatchPenalty: number;
+  domainBoosts: NewsEventSourceCategoryAuthorityDomainBoost[];
 }
 
 export interface NewsEventSourcePolicyMatcher {
@@ -594,6 +610,23 @@ const copyPolicy = (value: NewsEventSourcePolicy): NewsEventSourcePolicy => ({
   authoritativeLabels: [...value.authoritativeLabels],
   blogDomains: [...value.blogDomains],
   blogLabels: [...value.blogLabels],
+  ...(Array.isArray(value.categoryAuthority) &&
+  value.categoryAuthority.length > 0
+    ? {
+        categoryAuthority: value.categoryAuthority.map((entry) => ({
+          categoryPrefix: entry.categoryPrefix,
+          authoritativeBoost: entry.authoritativeBoost,
+          blogPenalty: entry.blogPenalty,
+          unknownPenalty: entry.unknownPenalty,
+          minConfidenceFloor: entry.minConfidenceFloor,
+          mismatchPenalty: entry.mismatchPenalty,
+          domainBoosts: entry.domainBoosts.map((boost) => ({
+            domain: boost.domain,
+            delta: boost.delta,
+          })),
+        })),
+      }
+    : {}),
 });
 
 export const getDefaultNewsEventSourcePolicy = (): NewsEventSourcePolicy =>
@@ -605,8 +638,12 @@ export const normalizeSourcePolicy = (
 ): NewsEventSourcePolicy => {
   const defaults = fallback ?? DEFAULT_POLICY;
   const source = value ?? {};
+  const categoryAuthority = normalizeSourceCategoryAuthority(
+    source.categoryAuthority,
+    defaults.categoryAuthority,
+  );
 
-  return {
+  const normalized: NewsEventSourcePolicy = {
     authoritativeDomains: normalizeListOrFallback(
       source.authoritativeDomains,
       normalizeDomain,
@@ -628,6 +665,113 @@ export const normalizeSourcePolicy = (
       defaults.blogLabels,
     ),
   };
+
+  if (categoryAuthority.length > 0) {
+    normalized.categoryAuthority = categoryAuthority;
+  }
+
+  return normalized;
+};
+
+export const normalizeSourceCategoryAuthority = (
+  value: unknown,
+  fallback?: NewsEventSourceCategoryAuthorityRule[],
+): NewsEventSourceCategoryAuthorityRule[] => {
+  const input = Array.isArray(value) ? value : Array.isArray(fallback) ? fallback : [];
+  if (!Array.isArray(input) || input.length === 0) {
+    return [];
+  }
+
+  const normalized: NewsEventSourceCategoryAuthorityRule[] = [];
+  const seenPrefixes = new Set<string>();
+
+  for (const entry of input) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const categoryPrefix = normalizeCategoryPrefix(record.categoryPrefix);
+    if (!categoryPrefix || seenPrefixes.has(categoryPrefix)) {
+      continue;
+    }
+
+    const domainBoosts = normalizeDomainBoosts(record.domainBoosts);
+    normalized.push({
+      categoryPrefix,
+      authoritativeBoost: clampSignedUnit(record.authoritativeBoost, 0),
+      blogPenalty: clampSignedUnit(record.blogPenalty, 0),
+      unknownPenalty: clampSignedUnit(record.unknownPenalty, 0),
+      minConfidenceFloor: clampUnit(record.minConfidenceFloor, 0),
+      mismatchPenalty: clampUnit(record.mismatchPenalty, 0),
+      domainBoosts,
+    });
+    seenPrefixes.add(categoryPrefix);
+    if (normalized.length >= 200) {
+      break;
+    }
+  }
+
+  return normalized;
+};
+
+const normalizeCategoryPrefix = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, "")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  return normalized.length > 0 ? normalized.slice(0, 160) : null;
+};
+
+const normalizeDomainBoosts = (
+  value: unknown,
+): NewsEventSourceCategoryAuthorityDomainBoost[] => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+
+  const normalized: NewsEventSourceCategoryAuthorityDomainBoost[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const domain =
+      typeof record.domain === "string"
+        ? normalizeDomain(record.domain)
+        : null;
+    if (!domain || seen.has(domain)) {
+      continue;
+    }
+    normalized.push({
+      domain,
+      delta: clampSignedUnit(record.delta, 0),
+    });
+    seen.add(domain);
+    if (normalized.length >= 100) {
+      break;
+    }
+  }
+  return normalized;
+};
+
+const clampUnit = (value: unknown, fallback: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(1, Number(value.toFixed(4))));
+};
+
+const clampSignedUnit = (value: unknown, fallback: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(-1, Math.min(1, Number(value.toFixed(4))));
 };
 
 export const createSourcePolicyMatcher = (

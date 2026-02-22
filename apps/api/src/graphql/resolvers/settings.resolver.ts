@@ -31,6 +31,10 @@ import {
   type NewsClassificationSettingsInput,
 } from "../../modules/news-pipeline/news-classification-settings.service";
 import {
+  NewsClassificationQualitySettingsService,
+  type ClassificationQualitySettingsInput,
+} from "../../modules/news-pipeline/news-classification-quality-settings.service";
+import {
   NewsDedupeSettingsService,
   type NewsDedupeSettingsInput,
 } from "../../modules/news-pipeline/news-dedupe-settings.service";
@@ -57,6 +61,7 @@ import {
   UpdateNewsEventSourcePolicyInput,
   UpdateNewsIndicatorSettingsInput,
   UpdateNewsClassificationSettingsInput,
+  UpdateClassificationQualitySettingsInput,
   UpdateNewsDedupeSettingsInput,
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
@@ -71,6 +76,7 @@ import {
   NewsEventSourcePolicyRevisionOperation,
   NewsEventSourcePolicySettingsModel,
   NewsIndicatorSettingsModel,
+  ClassificationQualitySettingsModel,
   NewsClassificationSettingsModel,
   NewsDedupeSettingsModel,
   NewsPromptConfigModel,
@@ -89,6 +95,7 @@ export class SettingsResolver {
     private readonly newsEventSourcePolicyService: NewsEventSourcePolicyService,
     private readonly newsIndicatorSettingsService: NewsIndicatorSettingsService,
     private readonly newsClassificationSettingsService: NewsClassificationSettingsService,
+    private readonly newsClassificationQualitySettingsService: NewsClassificationQualitySettingsService,
     private readonly newsDedupeSettingsService: NewsDedupeSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
@@ -329,6 +336,18 @@ export class SettingsResolver {
       authoritativeLabels: input.authoritativeLabels,
       blogDomains: input.blogDomains,
       blogLabels: input.blogLabels,
+      categoryAuthority: input.categoryAuthority?.map((entry) => ({
+        categoryPrefix: entry.categoryPrefix,
+        authoritativeBoost: entry.authoritativeBoost,
+        blogPenalty: entry.blogPenalty,
+        unknownPenalty: entry.unknownPenalty,
+        minConfidenceFloor: entry.minConfidenceFloor ?? 0,
+        mismatchPenalty: entry.mismatchPenalty ?? 0,
+        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
+          domain: boost.domain,
+          delta: boost.delta,
+        })),
+      })),
     };
     const updateOptions: {
       note?: string | null;
@@ -359,6 +378,18 @@ export class SettingsResolver {
       authoritativeLabels: input.authoritativeLabels,
       blogDomains: input.blogDomains,
       blogLabels: input.blogLabels,
+      categoryAuthority: input.categoryAuthority?.map((entry) => ({
+        categoryPrefix: entry.categoryPrefix,
+        authoritativeBoost: entry.authoritativeBoost,
+        blogPenalty: entry.blogPenalty,
+        unknownPenalty: entry.unknownPenalty,
+        minConfidenceFloor: entry.minConfidenceFloor ?? 0,
+        mismatchPenalty: entry.mismatchPenalty ?? 0,
+        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
+          domain: boost.domain,
+          delta: boost.delta,
+        })),
+      })),
     };
     const updateOptions: {
       note?: string | null;
@@ -490,6 +521,42 @@ export class SettingsResolver {
     };
 
     return this.newsClassificationSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => ClassificationQualitySettingsModel)
+  async classificationQualitySettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<ClassificationQualitySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    return this.newsClassificationQualitySettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => ClassificationQualitySettingsModel)
+  async updateClassificationQualitySettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateClassificationQualitySettingsInput,
+  ): Promise<ClassificationQualitySettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    const settingsInput: ClassificationQualitySettingsInput = {
+      lowConfidenceThreshold: input.lowConfidenceThreshold,
+      llmP95LatencyWarnMs: input.llmP95LatencyWarnMs,
+      embeddingP95LatencyWarnMs: input.embeddingP95LatencyWarnMs,
+      rerankP95LatencyWarnMs: input.rerankP95LatencyWarnMs,
+      gateRejectRateWarn: input.gateRejectRateWarn,
+      gatePenalizedRateWarn: input.gatePenalizedRateWarn,
+      reportMinPairCount: input.reportMinPairCount,
+      reportMinPairErrorRate: input.reportMinPairErrorRate,
+      cacheTtlSeconds: input.cacheTtlSeconds,
+    };
+    return this.newsClassificationQualitySettingsService.updateSettings(
       user.orgId,
       user.id,
       settingsInput,
@@ -733,6 +800,18 @@ export class SettingsResolver {
       authoritativeLabels: details.authoritativeLabels,
       blogDomains: details.blogDomains,
       blogLabels: details.blogLabels,
+      categoryAuthority: (details.categoryAuthority ?? []).map((entry) => ({
+        categoryPrefix: entry.categoryPrefix,
+        authoritativeBoost: entry.authoritativeBoost,
+        blogPenalty: entry.blogPenalty,
+        unknownPenalty: entry.unknownPenalty,
+        minConfidenceFloor: entry.minConfidenceFloor,
+        mismatchPenalty: entry.mismatchPenalty,
+        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
+          domain: boost.domain,
+          delta: boost.delta,
+        })),
+      })),
       activeRevision: details.activeRevision,
       updatedAt: details.updatedAt ? new Date(details.updatedAt) : null,
       overrides: {
@@ -787,6 +866,18 @@ export class SettingsResolver {
       authoritativeLabels: preset.authoritativeLabels,
       blogDomains: preset.blogDomains,
       blogLabels: preset.blogLabels,
+      categoryAuthority: (preset.categoryAuthority ?? []).map((entry) => ({
+        categoryPrefix: entry.categoryPrefix,
+        authoritativeBoost: entry.authoritativeBoost,
+        blogPenalty: entry.blogPenalty,
+        unknownPenalty: entry.unknownPenalty,
+        minConfidenceFloor: entry.minConfidenceFloor,
+        mismatchPenalty: entry.mismatchPenalty,
+        domainBoosts: (entry.domainBoosts ?? []).map((boost) => ({
+          domain: boost.domain,
+          delta: boost.delta,
+        })),
+      })),
       updatedAt: preset.updatedAt ? new Date(preset.updatedAt) : null,
       syncWarnings: Array.isArray(preset.syncWarnings)
         ? preset.syncWarnings

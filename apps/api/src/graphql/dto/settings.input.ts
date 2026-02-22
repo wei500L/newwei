@@ -397,6 +397,14 @@ export class UpdateNewsEventSourcePolicyInput {
   @MaxLength(180, { each: true })
   blogLabels!: string[];
 
+  @Field(() => [NewsEventSourceCategoryAuthorityRuleInput], { nullable: true })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NewsEventSourceCategoryAuthorityRuleInput)
+  @ArrayMinSize(0)
+  @ArrayMaxSize(200)
+  categoryAuthority?: NewsEventSourceCategoryAuthorityRuleInput[];
+
   @Field(() => String, { nullable: true })
   @IsOptional()
   @IsString()
@@ -439,6 +447,14 @@ export class UpdateNewsEventSourcePolicyPresetInput {
   @IsString({ each: true })
   @MaxLength(180, { each: true })
   blogLabels!: string[];
+
+  @Field(() => [NewsEventSourceCategoryAuthorityRuleInput], { nullable: true })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NewsEventSourceCategoryAuthorityRuleInput)
+  @ArrayMinSize(0)
+  @ArrayMaxSize(200)
+  categoryAuthority?: NewsEventSourceCategoryAuthorityRuleInput[];
 
   @Field(() => String, { nullable: true })
   @IsOptional()
@@ -745,4 +761,119 @@ export class UpdateNewsClassificationSettingsInput {
   @ArrayMinSize(1)
   @ArrayMaxSize(512)
   taxonomy?: NewsClassificationTaxonomyNodeInput[];
+}
+
+@InputType()
+export class UpdateClassificationQualitySettingsInput {
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  lowConfidenceThreshold?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(100)
+  @Max(120_000)
+  llmP95LatencyWarnMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(100)
+  @Max(120_000)
+  embeddingP95LatencyWarnMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(100)
+  @Max(120_000)
+  rerankP95LatencyWarnMs?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  gateRejectRateWarn?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  gatePenalizedRateWarn?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(1000)
+  reportMinPairCount?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  reportMinPairErrorRate?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds?: number;
+}
+
+@InputType()
+export class NewsEventSourceCategoryAuthorityDomainBoostInput {
+  @Field(() => String)
+  @IsString()
+  @MaxLength(180)
+  domain!: string;
+
+  @Field(() => Float)
+  @Min(-1)
+  @Max(1)
+  delta!: number;
+}
+
+@InputType()
+export class NewsEventSourceCategoryAuthorityRuleInput {
+  @Field(() => String)
+  @IsString()
+  @MaxLength(160)
+  categoryPrefix!: string;
+
+  @Field(() => Float)
+  @Min(-1)
+  @Max(1)
+  authoritativeBoost!: number;
+
+  @Field(() => Float)
+  @Min(-1)
+  @Max(1)
+  blogPenalty!: number;
+
+  @Field(() => Float)
+  @Min(-1)
+  @Max(1)
+  unknownPenalty!: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minConfidenceFloor?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  mismatchPenalty?: number;
+
+  @Field(() => [NewsEventSourceCategoryAuthorityDomainBoostInput], {
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NewsEventSourceCategoryAuthorityDomainBoostInput)
+  @ArrayMinSize(0)
+  @ArrayMaxSize(100)
+  domainBoosts?: NewsEventSourceCategoryAuthorityDomainBoostInput[];
 }

@@ -4,6 +4,16 @@ import { z } from "zod";
 import { type JsonSchema7Type, zodToJsonSchema } from "zod-to-json-schema";
 
 import { safeJsonParseFromText } from "../../common/llm-json";
+import { CacheService } from "../cache/cache.service";
+import { PrismaService } from "../config/prisma.service";
+import {
+  classifySourceByLabelAndUrl,
+  getDefaultNewsEventSourcePolicy,
+  normalizeSourceCategoryAuthority,
+  normalizeSourcePolicy,
+  type NewsEventSourceCategoryAuthorityRule,
+  type NewsEventSourcePolicy,
+} from "../news-events/news-event-source-classifier";
 
 import { LiteLlmService } from "./litellm.service";
 import {
@@ -28,6 +38,12 @@ const LlmClassificationResponseSchema = z.object({
 });
 
 type LlmClassificationResponse = z.infer<typeof LlmClassificationResponseSchema>;
+
+const SOURCE_POLICY_SYSTEM_SETTING_KEY_PREFIX = "news_event_source_policy:";
+const SOURCE_POLICY_CATEGORY_AUTHORITY_KEY_PREFIX =
+  "news_event_source_policy_category_authority:";
+const SOURCE_POLICY_CACHE_KEY_PREFIX = "newsClassification:sourcePolicy:";
+const SOURCE_POLICY_CACHE_TTL_SECONDS = 60;
 
 const LLM_CLASSIFICATION_JSON_SCHEMA: JsonSchema7Type = zodToJsonSchema(
   LlmClassificationResponseSchema,
@@ -87,12 +103,19 @@ export class NewsClassifierService {
   constructor(
     private readonly settingsService: NewsClassificationSettingsService,
     private readonly liteLlm: LiteLlmService,
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
   ) {}
 
   async classify(
     orgId: string,
     cleaned: CleanedNews,
-    options?: { jobId?: string },
+    options?: {
+      jobId?: string;
+      sourceId?: string | null;
+      sourceUrl?: string | null;
+      sourceLabel?: string | null;
+    },
   ): Promise<NewsClassificationResult> {
     const settings = await this.settingsService.getSettings(orgId);
     if (!settings.enabled) {
@@ -273,19 +296,34 @@ export class NewsClassifierService {
       rerank: settings.enableRerank,
     });
 
-    metrics.candidateCount = weighted.length;
+    const weightedWithSource = await this.applySourceCategoryAuthority(
+      orgId,
+      weighted,
+      {
+        sourceId: options?.sourceId ?? null,
+        sourceUrl: options?.sourceUrl ?? null,
+        sourceLabel: options?.sourceLabel ?? cleaned.source ?? null,
+      },
+    );
 
-    if (weighted.length === 0 || weighted[0]!.score < settings.minConfidence) {
+    metrics.candidateCount = weightedWithSource.length;
+
+    if (
+      weightedWithSource.length === 0 ||
+      weightedWithSource[0]!.score < settings.minConfidence
+    ) {
       const fallback = this.classifyByRule(cleaned, settings.taxonomyVersion);
       return {
         ...fallback,
         method:
-          weighted.length === 0
+          weightedWithSource.length === 0
             ? "rule-fallback-empty"
             : "rule-fallback-low-confidence",
         candidates:
-          weighted.length > 0
-            ? weighted.slice(0, settings.rerankTopN).map((entry) => ({
+          weightedWithSource.length > 0
+            ? weightedWithSource
+                .slice(0, settings.rerankTopN)
+                .map((entry) => ({
                 path: entry.path,
                 score: entry.score,
                 legacy_category: entry.legacy_category,
@@ -296,7 +334,7 @@ export class NewsClassifierService {
       };
     }
 
-    const topCandidates = weighted
+    const topCandidates = weightedWithSource
       .slice(0, Math.max(settings.rerankTopN, 1))
       .map((entry) => ({
         path: entry.path,
@@ -547,6 +585,235 @@ export class NewsClassifierService {
     }
 
     return scoreList.sort((a, b) => b.score - a.score);
+  }
+
+  private async applySourceCategoryAuthority(
+    orgId: string,
+    candidates: NewsClassificationCandidate[],
+    sourceContext: {
+      sourceId: string | null;
+      sourceUrl: string | null;
+      sourceLabel: string | null;
+    },
+  ): Promise<NewsClassificationCandidate[]> {
+    if (candidates.length === 0) {
+      return candidates;
+    }
+
+    const sourceUrl =
+      typeof sourceContext.sourceUrl === "string"
+        ? sourceContext.sourceUrl.trim()
+        : "";
+    const sourceLabel =
+      typeof sourceContext.sourceLabel === "string"
+        ? sourceContext.sourceLabel.trim()
+        : "";
+
+    if (!sourceUrl && !sourceLabel) {
+      return candidates;
+    }
+
+    const policy = await this.getSourcePolicy(orgId);
+    const rules = normalizeSourceCategoryAuthority(policy.categoryAuthority);
+    if (rules.length === 0) {
+      return candidates;
+    }
+
+    const sourceType = classifySourceByLabelAndUrl(sourceLabel, sourceUrl, policy);
+    const hostname = this.extractHostname(sourceUrl);
+
+    const adjusted = candidates.map((candidate) => {
+      let nextScore = candidate.score;
+      let floor = 0;
+
+      for (const rule of rules) {
+        if (!this.pathStartsWithPrefix(candidate.path, rule.categoryPrefix)) {
+          continue;
+        }
+
+        if (sourceType === "authoritative") {
+          nextScore += rule.authoritativeBoost;
+          floor = Math.max(floor, rule.minConfidenceFloor);
+        } else if (sourceType === "blog") {
+          nextScore += rule.blogPenalty;
+          nextScore -= Math.max(0, rule.mismatchPenalty);
+        } else {
+          nextScore += rule.unknownPenalty;
+        }
+
+        for (const boost of rule.domainBoosts) {
+          if (this.hostnameMatchesDomain(hostname, boost.domain)) {
+            nextScore += boost.delta;
+          }
+        }
+      }
+
+      if (sourceType === "authoritative" && floor > 0) {
+        nextScore = Math.max(nextScore, floor);
+      }
+
+      return {
+        ...candidate,
+        score: this.clamp01(nextScore),
+      };
+    });
+
+    return adjusted.sort((a, b) => b.score - a.score);
+  }
+
+  private async getSourcePolicy(orgId: string): Promise<NewsEventSourcePolicy> {
+    const cacheKey = `${SOURCE_POLICY_CACHE_KEY_PREFIX}${orgId}`;
+    try {
+      const cached = await this.cache.get<NewsEventSourcePolicy>(cacheKey);
+      if (cached) {
+        return normalizeSourcePolicy(cached, getDefaultNewsEventSourcePolicy());
+      }
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to read source policy cache for classification; falling back to database",
+      );
+    }
+
+    const [policyRecord, categoryAuthorityRecord] = await Promise.all([
+      this.prisma.systemSetting.findUnique({
+        where: { key: `${SOURCE_POLICY_SYSTEM_SETTING_KEY_PREFIX}${orgId}` },
+        select: { value: true },
+      }),
+      this.prisma.systemSetting.findUnique({
+        where: {
+          key: `${SOURCE_POLICY_CATEGORY_AUTHORITY_KEY_PREFIX}${orgId}`,
+        },
+        select: { value: true },
+      }),
+    ]);
+
+    const base = this.parseSourcePolicyRecordValue(policyRecord?.value);
+    const categoryAuthority = normalizeSourceCategoryAuthority(
+      categoryAuthorityRecord?.value,
+      base.categoryAuthority,
+    );
+    const policy: NewsEventSourcePolicy =
+      categoryAuthority.length > 0 ? { ...base, categoryAuthority } : base;
+
+    try {
+      await this.cache.set(cacheKey, policy, SOURCE_POLICY_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to write source policy cache for classification",
+      );
+    }
+    return policy;
+  }
+
+  private parseSourcePolicyRecordValue(raw: unknown): NewsEventSourcePolicy {
+    const fallback = getDefaultNewsEventSourcePolicy();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return fallback;
+    }
+    const record = raw as Record<string, unknown>;
+
+    if (record.version === 2 && record.delta && typeof record.delta === "object") {
+      const delta = record.delta as Record<string, unknown>;
+      const effective = {
+        authoritativeDomains: this.applyDeltaList(
+          fallback.authoritativeDomains,
+          this.readStringArray(delta.authoritativeDomainsAdd),
+          this.readStringArray(delta.authoritativeDomainsRemove),
+        ),
+        authoritativeLabels: this.applyDeltaList(
+          fallback.authoritativeLabels,
+          this.readStringArray(delta.authoritativeLabelsAdd),
+          this.readStringArray(delta.authoritativeLabelsRemove),
+        ),
+        blogDomains: this.applyDeltaList(
+          fallback.blogDomains,
+          this.readStringArray(delta.blogDomainsAdd),
+          this.readStringArray(delta.blogDomainsRemove),
+        ),
+        blogLabels: this.applyDeltaList(
+          fallback.blogLabels,
+          this.readStringArray(delta.blogLabelsAdd),
+          this.readStringArray(delta.blogLabelsRemove),
+        ),
+      } satisfies Partial<NewsEventSourcePolicy>;
+      return normalizeSourcePolicy(effective, fallback);
+    }
+
+    return normalizeSourcePolicy(record as Partial<NewsEventSourcePolicy>, fallback);
+  }
+
+  private applyDeltaList(
+    base: string[],
+    adds: string[],
+    removes: string[],
+  ): string[] {
+    const next = new Set(base);
+    for (const entry of adds) {
+      if (entry) {
+        next.add(entry);
+      }
+    }
+    for (const entry of removes) {
+      if (entry) {
+        next.delete(entry);
+      }
+    }
+    return Array.from(next);
+  }
+
+  private readStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of value) {
+      if (typeof entry !== "string") {
+        continue;
+      }
+      const trimmed = entry.trim();
+      if (!trimmed || seen.has(trimmed)) {
+        continue;
+      }
+      seen.add(trimmed);
+      result.push(trimmed);
+      if (result.length >= 1000) {
+        break;
+      }
+    }
+    return result;
+  }
+
+  private pathStartsWithPrefix(path: string, prefix: string): boolean {
+    const normalizedPath = path.trim().toLowerCase();
+    const normalizedPrefix = prefix.trim().toLowerCase().replace(/\/+$/, "");
+    if (!normalizedPrefix) {
+      return false;
+    }
+    return (
+      normalizedPath === normalizedPrefix ||
+      normalizedPath.startsWith(`${normalizedPrefix}/`)
+    );
+  }
+
+  private hostnameMatchesDomain(hostname: string | null, domain: string): boolean {
+    if (!hostname) {
+      return false;
+    }
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+  }
+
+  private extractHostname(url: string): string | null {
+    if (!url) {
+      return null;
+    }
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
   }
 
   private classifyByRule(

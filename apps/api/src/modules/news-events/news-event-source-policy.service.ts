@@ -8,7 +8,9 @@ import { PrismaService } from "../config/prisma.service";
 
 import {
   getDefaultNewsEventSourcePolicy,
+  normalizeSourceCategoryAuthority,
   normalizeSourcePolicy,
+  type NewsEventSourceCategoryAuthorityRule,
   type NewsEventSourcePolicy,
 } from "./news-event-source-classifier";
 
@@ -17,6 +19,7 @@ export interface NewsEventSourcePolicyInput {
   authoritativeLabels: string[];
   blogDomains: string[];
   blogLabels: string[];
+  categoryAuthority?: NewsEventSourceCategoryAuthorityRule[];
 }
 
 export interface NewsEventSourcePolicyDelta {
@@ -106,9 +109,17 @@ export interface NewsEventSourcePolicyHistoryOptions {
 const SETTINGS_CACHE_TTL_SECONDS = 60;
 const CACHE_KEY_PREFIX = "newsEvents:sourcePolicy:";
 const SYSTEM_SETTING_KEY_PREFIX = "news_event_source_policy:";
+const CATEGORY_AUTHORITY_CACHE_KEY_PREFIX =
+  "newsEvents:sourcePolicyCategoryAuthority:";
+const CATEGORY_AUTHORITY_SYSTEM_SETTING_KEY_PREFIX =
+  "news_event_source_policy_category_authority:";
 const PRESET_CACHE_TTL_SECONDS = 30;
 const PRESET_CACHE_KEY_PREFIX = "newsEvents:sourcePolicyPreset:";
 const PRESET_SYSTEM_SETTING_KEY_PREFIX = "news_event_source_policy_preset:";
+const PRESET_CATEGORY_AUTHORITY_CACHE_KEY_PREFIX =
+  "newsEvents:sourcePolicyPresetCategoryAuthority:";
+const PRESET_CATEGORY_AUTHORITY_SYSTEM_SETTING_KEY_PREFIX =
+  "news_event_source_policy_preset_category_authority:";
 const HISTORY_LIMIT_DEFAULT = 20;
 const HISTORY_LIMIT_MIN = 1;
 const HISTORY_LIMIT_MAX = 100;
@@ -209,7 +220,11 @@ export class NewsEventSourcePolicyService {
 
   async getPolicy(orgId: string): Promise<NewsEventSourcePolicy> {
     const state = await this.getState(orgId);
-    return this.toEffectivePolicy(state.delta);
+    const effective = this.toEffectivePolicy(state.delta);
+    const categoryAuthority = await this.getCategoryAuthority(orgId);
+    return categoryAuthority.length > 0
+      ? { ...effective, categoryAuthority }
+      : effective;
   }
 
   async getPolicyDetails(
@@ -217,7 +232,8 @@ export class NewsEventSourcePolicyService {
     options?: NewsEventSourcePolicyHistoryOptions,
   ): Promise<NewsEventSourcePolicyDetails> {
     const state = await this.getState(orgId);
-    return this.toPolicyDetails(state, options);
+    const categoryAuthority = await this.getCategoryAuthority(orgId);
+    return this.toPolicyDetails(state, options, undefined, categoryAuthority);
   }
 
   async getSyncStatus(orgId: string): Promise<NewsEventSourcePolicySyncStatus> {
@@ -353,9 +369,16 @@ export class NewsEventSourcePolicyService {
     input: NewsEventSourcePolicyInput,
     options?: NewsEventSourcePolicyUpdateOptions,
   ): Promise<NewsEventSourcePolicyDetails> {
+    const hasCategoryAuthority = Object.prototype.hasOwnProperty.call(
+      input ?? {},
+      "categoryAuthority",
+    );
     const normalizedInput = normalizeSourcePolicy(
       input,
       this.getFallbackPolicy(),
+    );
+    const normalizedCategoryAuthority = normalizeSourceCategoryAuthority(
+      input.categoryAuthority,
     );
     const nextDelta = this.toDeltaFromEffectivePolicy(normalizedInput);
 
@@ -396,13 +419,30 @@ export class NewsEventSourcePolicyService {
       revisions: this.appendRevision(prevState.revisions, revision),
     };
 
-    const syncWarnings = await this.persistState(
+    let syncWarnings = await this.persistState(
       orgId,
       actorId,
       nextState,
       "news_event_source_policy_update",
     );
-    return this.toPolicyDetails(nextState, undefined, syncWarnings);
+    if (hasCategoryAuthority) {
+      const categoryWarnings = await this.persistCategoryAuthority(
+        orgId,
+        actorId,
+        normalizedCategoryAuthority,
+        false,
+      );
+      syncWarnings = [...syncWarnings, ...categoryWarnings];
+    }
+    const categoryAuthority = hasCategoryAuthority
+      ? normalizedCategoryAuthority
+      : await this.getCategoryAuthority(orgId);
+    return this.toPolicyDetails(
+      nextState,
+      undefined,
+      syncWarnings,
+      categoryAuthority,
+    );
   }
 
   async rollbackPolicy(
@@ -464,7 +504,13 @@ export class NewsEventSourcePolicyService {
       nextState,
       "news_event_source_policy_rollback",
     );
-    return this.toPolicyDetails(nextState, undefined, syncWarnings);
+    const categoryAuthority = await this.getCategoryAuthority(orgId);
+    return this.toPolicyDetails(
+      nextState,
+      undefined,
+      syncWarnings,
+      categoryAuthority,
+    );
   }
 
   async resetPolicy(
@@ -516,7 +562,13 @@ export class NewsEventSourcePolicyService {
       nextState,
       "news_event_source_policy_reset",
     );
-    return this.toPolicyDetails(nextState, undefined, syncWarnings);
+    const categoryAuthority = await this.getCategoryAuthority(orgId);
+    return this.toPolicyDetails(
+      nextState,
+      undefined,
+      syncWarnings,
+      categoryAuthority,
+    );
   }
 
   async getPolicyPreset(orgId: string): Promise<NewsEventSourcePolicyPreset> {
@@ -532,8 +584,10 @@ export class NewsEventSourcePolicyService {
       );
     }
     if (cached) {
+      const categoryAuthority = await this.getPresetCategoryAuthority(orgId);
       return {
         ...normalizeSourcePolicy(cached, this.getFallbackPreset()),
+        ...(categoryAuthority.length > 0 ? { categoryAuthority } : {}),
         updatedAt:
           typeof cached.updatedAt === "string" &&
           cached.updatedAt.trim().length > 0
@@ -566,7 +620,11 @@ export class NewsEventSourcePolicyService {
         "Failed to write news event source policy preset to cache",
       );
     }
-    return preset;
+    const categoryAuthority = await this.getPresetCategoryAuthority(orgId);
+    return {
+      ...preset,
+      ...(categoryAuthority.length > 0 ? { categoryAuthority } : {}),
+    };
   }
 
   async updatePolicyPreset(
@@ -575,6 +633,10 @@ export class NewsEventSourcePolicyService {
     input: NewsEventSourcePolicyInput,
     options?: NewsEventSourcePolicyUpdateOptions,
   ): Promise<NewsEventSourcePolicyPreset> {
+    const hasCategoryAuthority = Object.prototype.hasOwnProperty.call(
+      input ?? {},
+      "categoryAuthority",
+    );
     const shouldCheckExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(
       options ?? {},
       "expectedUpdatedAt",
@@ -601,6 +663,9 @@ export class NewsEventSourcePolicyService {
     }
 
     const normalized = normalizeSourcePolicy(input, this.getFallbackPreset());
+    const normalizedCategoryAuthority = normalizeSourceCategoryAuthority(
+      input.categoryAuthority,
+    );
     const settingKey = this.presetSystemSettingKey(orgId);
     const persistedSetting = await this.prisma.systemSetting.upsert({
       where: { key: settingKey },
@@ -667,6 +732,25 @@ export class NewsEventSourcePolicyService {
         "Failed to write source policy preset cache after persisting database state",
       );
       preset.syncWarnings = [SYNC_WARNING_CACHE_WRITE_FAILED];
+    }
+    if (hasCategoryAuthority) {
+      const warnings = await this.persistCategoryAuthority(
+        orgId,
+        actorId,
+        normalizedCategoryAuthority,
+        true,
+      );
+      if (warnings.length > 0) {
+        preset.syncWarnings = Array.from(
+          new Set([...(preset.syncWarnings ?? []), ...warnings]),
+        );
+      }
+    }
+    const categoryAuthority = hasCategoryAuthority
+      ? normalizedCategoryAuthority
+      : await this.getPresetCategoryAuthority(orgId);
+    if (categoryAuthority.length > 0) {
+      preset.categoryAuthority = categoryAuthority;
     }
     return preset;
   }
@@ -900,6 +984,7 @@ export class NewsEventSourcePolicyService {
     state: NewsEventSourcePolicyStateV2,
     options?: NewsEventSourcePolicyHistoryOptions,
     syncWarnings?: string[],
+    categoryAuthority?: NewsEventSourceCategoryAuthorityRule[],
   ): NewsEventSourcePolicyDetails {
     const effective = this.toEffectivePolicy(state.delta);
     const warnings = this.buildConflictWarnings(effective);
@@ -909,8 +994,14 @@ export class NewsEventSourcePolicyService {
       .sort((a, b) => b.revision - a.revision)
       .slice(0, historyLimit);
 
+    const normalizedCategoryAuthority = normalizeSourceCategoryAuthority(
+      categoryAuthority,
+    );
     return {
       ...effective,
+      ...(normalizedCategoryAuthority.length > 0
+        ? { categoryAuthority: normalizedCategoryAuthority }
+        : {}),
       activeRevision: state.activeRevision,
       updatedAt: state.updatedAt ?? null,
       overrides: this.cloneDelta(state.delta),
@@ -1321,6 +1412,124 @@ export class NewsEventSourcePolicyService {
     }
   }
 
+  private async getCategoryAuthority(
+    orgId: string,
+  ): Promise<NewsEventSourceCategoryAuthorityRule[]> {
+    const cacheKey = this.categoryAuthorityCacheKey(orgId);
+    try {
+      const cached =
+        await this.cache.get<NewsEventSourceCategoryAuthorityRule[]>(cacheKey);
+      if (Array.isArray(cached)) {
+        return normalizeSourceCategoryAuthority(cached);
+      }
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to read source policy category authority from cache; falling back to database",
+      );
+    }
+
+    const loaded = await this.loadCategoryAuthority(orgId, false);
+    try {
+      await this.cache.set(cacheKey, loaded, SETTINGS_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to write source policy category authority to cache",
+      );
+    }
+    return loaded;
+  }
+
+  private async getPresetCategoryAuthority(
+    orgId: string,
+  ): Promise<NewsEventSourceCategoryAuthorityRule[]> {
+    const cacheKey = this.presetCategoryAuthorityCacheKey(orgId);
+    try {
+      const cached =
+        await this.cache.get<NewsEventSourceCategoryAuthorityRule[]>(cacheKey);
+      if (Array.isArray(cached)) {
+        return normalizeSourceCategoryAuthority(cached);
+      }
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to read source policy preset category authority from cache; falling back to database",
+      );
+    }
+
+    const loaded = await this.loadCategoryAuthority(orgId, true);
+    try {
+      await this.cache.set(cacheKey, loaded, PRESET_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to write source policy preset category authority to cache",
+      );
+    }
+    return loaded;
+  }
+
+  private async loadCategoryAuthority(
+    orgId: string,
+    preset: boolean,
+  ): Promise<NewsEventSourceCategoryAuthorityRule[]> {
+    const record = await this.prisma.systemSetting.findUnique({
+      where: {
+        key: preset
+          ? this.presetCategoryAuthoritySystemSettingKey(orgId)
+          : this.categoryAuthoritySystemSettingKey(orgId),
+      },
+      select: { value: true },
+    });
+    return normalizeSourceCategoryAuthority(record?.value);
+  }
+
+  private async persistCategoryAuthority(
+    orgId: string,
+    actorId: string,
+    rules: NewsEventSourceCategoryAuthorityRule[],
+    preset: boolean,
+  ): Promise<string[]> {
+    const normalized = normalizeSourceCategoryAuthority(rules);
+    const key = preset
+      ? this.presetCategoryAuthoritySystemSettingKey(orgId)
+      : this.categoryAuthoritySystemSettingKey(orgId);
+    const cacheKey = preset
+      ? this.presetCategoryAuthorityCacheKey(orgId)
+      : this.categoryAuthorityCacheKey(orgId);
+    const ttl = preset ? PRESET_CACHE_TTL_SECONDS : SETTINGS_CACHE_TTL_SECONDS;
+    const descriptionPrefix = preset
+      ? "News event source policy preset category authority"
+      : "News event source policy category authority";
+
+    await this.prisma.systemSetting.upsert({
+      where: { key },
+      update: {
+        value: toPrismaJsonValue(normalized),
+        updatedById: actorId,
+        description: `${descriptionPrefix} (org=${orgId})`,
+      },
+      create: {
+        key,
+        value: toPrismaJsonValue(normalized),
+        updatedById: actorId,
+        description: `${descriptionPrefix} (org=${orgId})`,
+      },
+    });
+
+    try {
+      await this.cache.set(cacheKey, normalized, ttl);
+      return [];
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId, actorId },
+        "Failed to write source policy category authority cache after persisting database state",
+      );
+      return [SYNC_WARNING_CACHE_WRITE_FAILED];
+    }
+  }
+
   private looksLikeLegacyPolicy(
     raw: unknown,
   ): raw is Partial<NewsEventSourcePolicyInput> {
@@ -1348,15 +1557,31 @@ export class NewsEventSourcePolicyService {
     return `${SYSTEM_SETTING_KEY_PREFIX}${orgId}`;
   }
 
+  private categoryAuthoritySystemSettingKey(orgId: string) {
+    return `${CATEGORY_AUTHORITY_SYSTEM_SETTING_KEY_PREFIX}${orgId}`;
+  }
+
   private presetSystemSettingKey(orgId: string) {
     return `${PRESET_SYSTEM_SETTING_KEY_PREFIX}${orgId}`;
+  }
+
+  private presetCategoryAuthoritySystemSettingKey(orgId: string) {
+    return `${PRESET_CATEGORY_AUTHORITY_SYSTEM_SETTING_KEY_PREFIX}${orgId}`;
   }
 
   private cacheKey(orgId: string) {
     return `${CACHE_KEY_PREFIX}${orgId}`;
   }
 
+  private categoryAuthorityCacheKey(orgId: string) {
+    return `${CATEGORY_AUTHORITY_CACHE_KEY_PREFIX}${orgId}`;
+  }
+
   private presetCacheKey(orgId: string) {
     return `${PRESET_CACHE_KEY_PREFIX}${orgId}`;
+  }
+
+  private presetCategoryAuthorityCacheKey(orgId: string) {
+    return `${PRESET_CATEGORY_AUTHORITY_CACHE_KEY_PREFIX}${orgId}`;
   }
 }

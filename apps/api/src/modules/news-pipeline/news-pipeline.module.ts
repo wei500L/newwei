@@ -4,6 +4,7 @@ import { CrawlModule } from "../crawl/crawl.module";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsClassifierService } from "./news-classifier.service";
+import { NewsClassificationQualitySettingsService } from "./news-classification-quality-settings.service";
 import { NewsClassificationSettingsService } from "./news-classification-settings.service";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
@@ -19,6 +20,7 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPromptBuilder,
     NewsDedupeSettingsService,
     NewsClassificationSettingsService,
+    NewsClassificationQualitySettingsService,
     NewsClassifierService,
     LiteLlmService,
     NewsPipelineService
@@ -29,6 +31,7 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPromptConfigService,
     NewsDedupeSettingsService,
     NewsClassificationSettingsService,
+    NewsClassificationQualitySettingsService,
     NewsClassifierService,
     LiteLlmService
   ]
