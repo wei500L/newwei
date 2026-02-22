@@ -1514,6 +1514,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       180_000
     );
     const response = await this.liteLlm.acompletion({
+      orgId: job.orgId,
       messages: [
         {
           role: "system",
@@ -1776,6 +1777,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     try {
       const model = options.model?.trim() ? options.model.trim() : undefined;
       const response = await this.liteLlm.acompletion({
+        orgId: options.job.orgId,
         ...(model ? { model } : {}),
         messages: [
           {
@@ -1925,6 +1927,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     try {
       const response = await this.liteLlm.embedding({
+        orgId: job.orgId,
         model,
         input: summary,
         metadata: {

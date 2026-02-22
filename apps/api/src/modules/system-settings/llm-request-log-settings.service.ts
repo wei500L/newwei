@@ -102,6 +102,8 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   private readonly logger = createLogger({ name: "llm-request-log-settings" });
   private ttlApplySuccessTotal = 0;
   private ttlApplyFailureTotal = 0;
+  private ttlReconcileReady = false;
+  private lastAppliedRetentionDays: number | null = null;
 
   private cachedSettings: LlmRequestLogSettingsPublic = this.buildDefaultSettings();
   private cacheExpiresAt = 0;
@@ -123,6 +125,8 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
         },
         "Failed to apply LLM request log TTL index on startup",
       );
+    } finally {
+      this.ttlReconcileReady = true;
     }
   }
 
@@ -352,6 +356,7 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
             "Applied LLM request log TTL index",
           );
         }
+        this.lastAppliedRetentionDays = retentionDays;
         return;
       } catch (error) {
         lastError = error;
@@ -391,6 +396,28 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     throw lastError instanceof Error
       ? lastError
       : new Error("Failed to apply LLM request log TTL index");
+  }
+
+  private async reconcileRetentionTtlAfterRefresh(
+    settings: LlmRequestLogSettingsPublic,
+  ): Promise<void> {
+    if (!this.ttlReconcileReady) {
+      return;
+    }
+    if (this.lastAppliedRetentionDays === settings.retentionDays) {
+      return;
+    }
+    try {
+      await this.applyRetentionTtlIndex(settings.retentionDays);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          retentionDays: settings.retentionDays,
+        },
+        "Failed to reconcile LLM request log TTL index after settings refresh",
+      );
+    }
   }
 
   private async reconcileTtlIndexOnce(
@@ -531,8 +558,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   private async refreshSettingsCache(): Promise<LlmRequestLogSettingsPublic> {
     if (!this.cacheRefreshPromise) {
       this.cacheRefreshPromise = this.loadSettingsFromDb()
-        .then((settings) => {
+        .then(async (settings) => {
           this.setCachedSettings(settings);
+          await this.reconcileRetentionTtlAfterRefresh(settings);
           return settings;
         })
         .catch((error) => {

@@ -187,7 +187,7 @@ export class AnalysisService {
         buffer += initialChunk;
         await flush();
       }
-      for await (const chunk of this.llm.stream({ messages, timeoutMs: this.env.analysisConfig.llmTimeoutMs })) {
+      for await (const chunk of this.llm.stream({ orgId, messages, timeoutMs: this.env.analysisConfig.llmTimeoutMs })) {
         if (typeof chunk.model === "string") {
           lastModel = chunk.model;
         }

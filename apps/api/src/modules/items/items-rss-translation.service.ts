@@ -190,6 +190,7 @@ export class ItemsRssTranslationService {
         }
         const translated = await this.translateRecordFields(result, {
           itemId,
+          orgId,
           provider,
           targetLanguage,
           llmModel,
@@ -455,6 +456,7 @@ export class ItemsRssTranslationService {
     payload: RssTranslationFieldsPayload,
     options: {
       itemId: string;
+      orgId: string;
       provider: RssTranslationProvider;
       targetLanguage: string;
       llmModel?: string;
@@ -490,6 +492,7 @@ export class ItemsRssTranslationService {
   private async translateMarkdown(
     markdown: string,
     options: {
+      orgId: string;
       provider: RssTranslationProvider;
       targetLanguage: string;
       llmModel?: string;
@@ -596,6 +599,7 @@ export class ItemsRssTranslationService {
   private async translateText(
     text: string,
     options: {
+      orgId: string;
       provider: RssTranslationProvider;
       targetLanguage: string;
       llmModel?: string;
@@ -610,6 +614,7 @@ export class ItemsRssTranslationService {
   private async translateTextList(
     texts: string[],
     options: {
+      orgId: string;
       provider: RssTranslationProvider;
       targetLanguage: string;
       llmModel?: string;
@@ -667,7 +672,8 @@ export class ItemsRssTranslationService {
               missingTexts,
               options.targetLanguage,
               options.llmModel,
-              options.llmConcurrency
+              options.llmConcurrency,
+              options.orgId
             );
 
       await Promise.all(
@@ -715,7 +721,8 @@ export class ItemsRssTranslationService {
     texts: string[],
     targetLanguage: string,
     llmModel?: string,
-    configuredConcurrency?: number
+    configuredConcurrency?: number,
+    orgId?: string
   ): Promise<Map<string, string>> {
     const mapped = new Map<string, string>();
     const concurrency = Math.max(
@@ -732,7 +739,12 @@ export class ItemsRssTranslationService {
           continue;
         }
         try {
-          const translated = await this.translateSingleTextViaLlm(text, targetLanguage, llmModel);
+          const translated = await this.translateSingleTextViaLlm(
+            text,
+            targetLanguage,
+            llmModel,
+            orgId
+          );
           mapped.set(text, translated);
         } catch (error) {
           logger.warn(
@@ -779,9 +791,11 @@ export class ItemsRssTranslationService {
   private async translateSingleTextViaLlm(
     text: string,
     targetLanguage: string,
-    llmModel?: string
+    llmModel?: string,
+    orgId?: string
   ): Promise<string> {
     const response = await this.liteLlm.acompletion({
+      orgId,
       model: llmModel,
       messages: [
         {

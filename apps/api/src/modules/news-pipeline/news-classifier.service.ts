@@ -387,6 +387,7 @@ export class NewsClassifierService {
       .join("\n");
 
     const response = await this.liteLlm.acompletion({
+      orgId,
       ...(model ? { model } : {}),
       messages: [
         {
@@ -441,6 +442,7 @@ export class NewsClassifierService {
   ): Promise<{ path: string; score: number }[]> {
     const documents = taxonomy.map((entry) => this.taxonomyDocument(entry));
     const response = await this.liteLlm.embedding({
+      orgId,
       input: [queryText, ...documents],
       metadata: {
         source: "news-classifier",
@@ -508,6 +510,7 @@ export class NewsClassifierService {
     }
 
     const response = await this.liteLlm.rerank({
+      orgId,
       query: queryText,
       documents: docs,
       topN: Math.min(Math.max(1, topN), docs.length),

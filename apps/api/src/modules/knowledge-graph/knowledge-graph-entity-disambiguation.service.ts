@@ -67,6 +67,7 @@ export class KnowledgeGraphEntityDisambiguationService {
 
     try {
       const response = await this.liteLlm.acompletion({
+        orgId: input.orgId,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user }
@@ -135,4 +136,3 @@ export class KnowledgeGraphEntityDisambiguationService {
     return text.slice(start, end + 1);
   }
 }
-

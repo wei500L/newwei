@@ -49,7 +49,7 @@ function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
 
 describe("AnalysisService.streamMessages", () => {
   it("throws AnalysisStreamError with partial summary on stream failure", async () => {
-    const { service } = createService()
+    const { service, llm } = createService()
 
     const streamMessages = (
       service as unknown as {
@@ -74,5 +74,9 @@ describe("AnalysisService.streamMessages", () => {
       expect(streamError.partialSummary).toBe("init-foobar")
       expect(streamError.cause).toBeInstanceOf(Error)
     }
+
+    expect((llm.stream as unknown as jest.Mock).mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ orgId: "org" })
+    )
   })
 })

@@ -1866,6 +1866,7 @@ export class ItemsService {
 
     const loader = async () => {
       const response = await this.liteLlm.embedding({
+        orgId,
         model: embeddingModel,
         input: normalized,
         metadata: {
@@ -2542,6 +2543,7 @@ export class ItemsService {
 
     try {
       const response = await this.liteLlm.rerank({
+        orgId: options.orgId,
         query: options.query,
         documents,
         topN: documents.length,

@@ -27,13 +27,25 @@ jest.mock("axios", () => ({
 }));
 
 // Mock createLogger
+var mockLogger: {
+  info: jest.Mock;
+  warn: jest.Mock;
+  error: jest.Mock;
+  debug: jest.Mock;
+};
+
 jest.mock("@modular/utils", () => ({
-  createLogger: () => ({
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  }),
+  createLogger: () => {
+    if (!mockLogger) {
+      mockLogger = {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        debug: jest.fn(),
+      };
+    }
+    return mockLogger;
+  },
 }));
 
 // Mock sleep to speed up tests
@@ -46,6 +58,11 @@ describe("LiteLlmService", () => {
   let rateLimiterService: jest.Mocked<RateLimiterService>;
   let llmGatewaySettings: jest.Mocked<LlmGatewaySettingsService>;
   let configService: jest.Mocked<NewsPipelineConfigService>;
+  let llmRequestLogService: {
+    logRequest: jest.Mock;
+    queryLogs: jest.Mock;
+    getUsageSummary: jest.Mock;
+  };
 
   const mockConfig = {
     litellm: {
@@ -138,6 +155,12 @@ describe("LiteLlmService", () => {
         .mockImplementation(async () => ({ ...resolveActiveGatewayConfig() })),
     } as unknown as jest.Mocked<LlmGatewaySettingsService>;
 
+    llmRequestLogService = {
+      logRequest: jest.fn(),
+      queryLogs: jest.fn(),
+      getUsageSummary: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LiteLlmService,
@@ -146,11 +169,7 @@ describe("LiteLlmService", () => {
         { provide: NewsPipelineConfigService, useValue: configService },
         {
           provide: LlmRequestLogService,
-          useValue: {
-            logRequest: jest.fn(),
-            queryLogs: jest.fn(),
-            getUsageSummary: jest.fn(),
-          },
+          useValue: llmRequestLogService,
         },
       ],
     }).compile();
@@ -258,6 +277,48 @@ describe("LiteLlmService", () => {
 
       expect(result.latencyMs).toBeDefined();
       expect(typeof result.latencyMs).toBe("number");
+    });
+
+    it("logs request under explicit orgId when metadata.orgId is missing", async () => {
+      await service.acompletion({
+        ...completionParams,
+        orgId: "org-explicit",
+        metadata: { source: "jest" },
+      });
+
+      expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: "org-explicit",
+          metadata: { source: "jest" },
+        }),
+      );
+    });
+
+    it("warns and counts when explicit orgId differs from metadata.orgId", async () => {
+      await service.acompletion({
+        ...completionParams,
+        orgId: "org-explicit",
+        metadata: {
+          orgId: "org-metadata",
+          source: "jest",
+        },
+      });
+
+      expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: "org-explicit",
+        }),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          explicitOrgId: "org-explicit",
+          metadataOrgId: "org-metadata",
+          metricName: "llm_request_log_org_id_mismatch_total",
+          metricOutcome: "mismatch",
+          logOrgIdMismatchTotal: 1,
+        }),
+        "Explicit orgId differs from metadata.orgId for LLM request log",
+      );
     });
 
     it("should forward response_format to API payload", async () => {

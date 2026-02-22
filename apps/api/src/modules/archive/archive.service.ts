@@ -357,6 +357,7 @@ export class ArchiveService {
     let vectorModel = embeddingModel;
     try {
       const embeddingResponse = await this.liteLlm.embedding({
+        orgId,
         model: embeddingModel,
         input: query,
         metadata: {
@@ -474,6 +475,7 @@ export class ArchiveService {
     const rerankScoreByArticleId = new Map<string, number>();
     try {
       const rerankResponse = await this.liteLlm.rerank({
+        orgId,
         query,
         documents: rerankCandidates.map((row) => this.buildRerankDocument(row)),
         topN: rerankCandidates.length,

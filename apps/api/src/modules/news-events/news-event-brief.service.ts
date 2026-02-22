@@ -262,6 +262,7 @@ export class NewsEventBriefService {
 
     const generatedAt = new Date();
     const payload = await this.generateBriefWithLlm(
+      orgId,
       {
         title: row.title ?? row.primaryEntity ?? row.primaryTopic ?? row.id,
         summary: row.summary ?? null,
@@ -499,6 +500,7 @@ export class NewsEventBriefService {
   }
 
   private async generateBriefWithLlm(
+    orgId: string,
     event: { title: string; summary: string | null; startAt: Date; lastAt: Date; language: string | null },
     sources: BriefSource[],
     language: string
@@ -507,6 +509,7 @@ export class NewsEventBriefService {
     const userPrompt = this.buildUserPrompt(event, sources);
 
     const response = await this.litellm.acompletion({
+      orgId,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }

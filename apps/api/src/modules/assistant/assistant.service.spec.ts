@@ -161,7 +161,10 @@ describe("AssistantService.streamMessages", () => {
 
     expect(result.summary).toBe("ok");
     expect((llm.stream as unknown as jest.Mock).mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ model: "openai/gpt-4.1-mini" })
+      expect.objectContaining({
+        model: "openai/gpt-4.1-mini",
+        orgId: "org",
+      })
     );
   });
 });

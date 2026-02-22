@@ -273,6 +273,7 @@ export class KnowledgeGraphQualityService {
     const modelResults = await Promise.allSettled(
       input.models.map(async (model) => {
         const response = await this.liteLlm.acompletion({
+          orgId: input.orgId,
           model,
           messages: [
             { role: "system", content: system },
@@ -425,4 +426,3 @@ export class KnowledgeGraphQualityService {
     return rounded;
   }
 }
-

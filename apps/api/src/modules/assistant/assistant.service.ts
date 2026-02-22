@@ -370,6 +370,7 @@ export class AssistantService {
     const planner = this.prompts.buildQueryPlannerRequest(message);
     const planResponse = await this.llm.acompletion({
       model: assistantModel,
+      orgId,
       messages: planner.messages,
       response_format: planner.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -887,6 +888,7 @@ export class AssistantService {
     const selector = this.prompts.buildCorrelationFieldSelectorRequest(input);
     const selectionResponse = await this.llm.acompletion({
       model: assistantModel,
+      orgId,
       messages: selector.messages,
       response_format: selector.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -1030,6 +1032,7 @@ export class AssistantService {
 
       const selectionResponse = await this.llm.acompletion({
         model: assistantModel,
+        orgId,
         messages: selector.messages,
         response_format: selector.responseFormat,
         timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
@@ -1294,6 +1297,7 @@ export class AssistantService {
 
       for await (const chunk of this.llm.stream({
         model: assistantModel,
+        orgId,
         messages,
         timeoutMs: this.env.assistantConfig.llmTimeoutMs,
         guardrails

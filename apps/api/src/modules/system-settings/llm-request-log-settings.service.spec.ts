@@ -179,6 +179,39 @@ describe("LlmRequestLogSettingsService", () => {
     expect(ttlIndex?.expireAfterSeconds).toBe(30 * 24 * 60 * 60);
   });
 
+  it("reconciles TTL after startup fallback once settings refresh succeeds", async () => {
+    prismaMock.systemSetting.findUnique = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary outage"))
+      .mockResolvedValueOnce({
+        value: {
+          retentionDays: 45,
+          metadataAllowedTopLevelKeys: ["traceid"],
+          metadataAllowedTopLevelPrefixes: ["x_"],
+        },
+      });
+
+    await service.onModuleInit();
+
+    const ttlIndexAfterStartup = indexState.find(
+      (index) => index.name === "llm_request_log_created_at_ttl",
+    );
+    expect(ttlIndexAfterStartup?.expireAfterSeconds).toBe(30 * 24 * 60 * 60);
+
+    (service as unknown as { cacheExpiresAt: number }).cacheExpiresAt = 0;
+    const refreshed = await service.getSettings();
+
+    expect(refreshed).toMatchObject({
+      source: "db",
+      retentionDays: 45,
+    });
+
+    const ttlIndexAfterRefresh = indexState.find(
+      (index) => index.name === "llm_request_log_created_at_ttl",
+    );
+    expect(ttlIndexAfterRefresh?.expireAfterSeconds).toBe(45 * 24 * 60 * 60);
+  });
+
   it("updates settings and synchronizes TTL index", async () => {
     setIndexState([
       { name: "_id_", key: { _id: 1 } },

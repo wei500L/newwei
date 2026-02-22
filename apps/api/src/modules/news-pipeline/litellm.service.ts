@@ -41,6 +41,7 @@ export type LiteLlmMessage =
     };
 
 export interface LiteLlmCompletionParams {
+  orgId?: string;
   model?: string;
   messages: LiteLlmMessage[];
   temperature?: number;
@@ -85,6 +86,7 @@ export interface LiteLlmCompletionResponse {
 }
 
 export interface LiteLlmEmbeddingParams {
+  orgId?: string;
   model?: string;
   input: string | string[];
   metadata?: Record<string, unknown>;
@@ -103,6 +105,7 @@ export interface LiteLlmEmbeddingResponse {
 }
 
 export interface LiteLlmRerankParams {
+  orgId?: string;
   model?: string;
   query: string;
   documents: string[];
@@ -134,6 +137,7 @@ export interface LiteLlmStreamChunk {
 }
 
 export interface LiteLlmResponsesParams {
+  orgId?: string;
   model?: string;
   input: string;
   temperature?: number;
@@ -210,6 +214,7 @@ const MAX_LOG_ERROR_LENGTH = 1000;
 export class LiteLlmService {
   private readonly clients = new Map<string, AxiosInstance>();
   private readonly logger = createLogger({ name: "litellm-service" });
+  private logOrgIdMismatchTotal = 0;
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
@@ -510,6 +515,7 @@ export class LiteLlmService {
                 ? normalizedResponse.model.trim()
                 : model,
             status: "success",
+            orgId: params.orgId,
             metadata: params.metadata,
             latencyMs,
             usage: this.normalizeResponsesUsage(normalizedResponse),
@@ -533,6 +539,7 @@ export class LiteLlmService {
             requestType: "responses",
             model,
             status: "error",
+            orgId: params.orgId,
             metadata: params.metadata,
             latencyMs: Date.now() - attemptStartedAt,
             error: normalizedError,
@@ -645,6 +652,7 @@ export class LiteLlmService {
               ? normalizedResponse.model.trim()
               : model,
           status: "success",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs,
           usage: this.normalizeCompletionUsage(normalizedResponse.usage),
@@ -666,6 +674,7 @@ export class LiteLlmService {
           requestType: "completion",
           model,
           status: "error",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
@@ -754,6 +763,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "error",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         error: normalizedError,
@@ -796,6 +806,7 @@ export class LiteLlmService {
             requestType: "stream",
             model,
             status: "success",
+            orgId: params.orgId,
             metadata: params.metadata,
             latencyMs: Date.now() - requestStartedAt,
             usage: streamUsage,
@@ -862,6 +873,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "success",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         usage: streamUsage,
@@ -873,6 +885,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "error",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         error,
@@ -965,6 +978,7 @@ export class LiteLlmService {
               ? normalizedResponse.model.trim()
               : model,
           status: "success",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs,
           usage: this.normalizeCompletionUsage(normalizedResponse.usage),
@@ -981,6 +995,7 @@ export class LiteLlmService {
               requestType: "completion",
               model,
               status: "error",
+              orgId: params.orgId,
               metadata: params.metadata,
               latencyMs: Date.now() - attemptStartedAt,
               error: guardrailError,
@@ -1002,6 +1017,7 @@ export class LiteLlmService {
           requestType: "completion",
           model,
           status: "error",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
@@ -1084,6 +1100,7 @@ export class LiteLlmService {
             requestType: "stream",
             model,
             status: "error",
+            orgId: params.orgId,
             metadata: params.metadata,
             latencyMs: Date.now() - requestStartedAt,
             error: guardrailError,
@@ -1105,6 +1122,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "error",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         error: normalizedError,
@@ -1165,6 +1183,7 @@ export class LiteLlmService {
             requestType: "stream",
             model,
             status: "success",
+            orgId: params.orgId,
             metadata: params.metadata,
             latencyMs: Date.now() - requestStartedAt,
             usage: streamUsage,
@@ -1213,6 +1232,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "success",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         usage: streamUsage,
@@ -1224,6 +1244,7 @@ export class LiteLlmService {
         requestType: "stream",
         model,
         status: "error",
+        orgId: params.orgId,
         metadata: params.metadata,
         latencyMs: Date.now() - requestStartedAt,
         error,
@@ -1546,6 +1567,7 @@ export class LiteLlmService {
               ? normalizedResponse.model.trim()
               : model,
           status: "success",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs,
           usage: this.normalizeEmbeddingUsage(normalizedResponse.usage),
@@ -1567,6 +1589,7 @@ export class LiteLlmService {
           requestType: "embedding",
           model,
           status: "error",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
@@ -1656,6 +1679,7 @@ export class LiteLlmService {
               ? normalizedResponse.model.trim()
               : model,
           status: "success",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs,
           usage: { promptTokens: null, completionTokens: null, totalTokens: null },
@@ -1677,6 +1701,7 @@ export class LiteLlmService {
           requestType: "rerank",
           model,
           status: "error",
+          orgId: params.orgId,
           metadata: params.metadata,
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
@@ -2015,6 +2040,7 @@ export class LiteLlmService {
     requestType: LlmRequestType;
     model: string;
     status: "success" | "error";
+    orgId?: string;
     metadata: Record<string, unknown> | undefined;
     latencyMs: number;
     error?: unknown;
@@ -2023,7 +2049,7 @@ export class LiteLlmService {
     apiSurface?: LlmApiSurface;
   }) {
     this.llmRequestLogService.logRequest({
-      orgId: this.resolveLogOrgId(params.metadata),
+      orgId: this.resolveLogOrgId(params.orgId, params.metadata),
       requestType: params.requestType,
       model: params.model,
       status: params.status,
@@ -2038,12 +2064,37 @@ export class LiteLlmService {
     });
   }
 
-  private resolveLogOrgId(metadata: Record<string, unknown> | undefined): string {
-    if (!metadata || typeof metadata.orgId !== "string") {
-      return UNKNOWN_ORG_ID;
+  private resolveLogOrgId(
+    orgId: string | undefined,
+    metadata: Record<string, unknown> | undefined,
+  ): string {
+    const explicit = this.normalizeOrgId(orgId);
+    const metadataOrgId = this.normalizeOrgId(metadata?.orgId);
+    if (explicit) {
+      if (metadataOrgId && metadataOrgId !== explicit) {
+        this.logOrgIdMismatchTotal += 1;
+        this.logger.warn(
+          {
+            explicitOrgId: explicit,
+            metadataOrgId,
+            metricName: "llm_request_log_org_id_mismatch_total",
+            metricOutcome: "mismatch",
+            logOrgIdMismatchTotal: this.logOrgIdMismatchTotal,
+          },
+          "Explicit orgId differs from metadata.orgId for LLM request log",
+        );
+      }
+      return explicit;
     }
-    const normalized = metadata.orgId.trim();
-    return normalized.length > 0 ? normalized : UNKNOWN_ORG_ID;
+    return metadataOrgId ?? UNKNOWN_ORG_ID;
+  }
+
+  private normalizeOrgId(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
   }
 
   private normalizeLogError(error: unknown): string | null {
