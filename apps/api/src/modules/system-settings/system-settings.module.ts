@@ -17,6 +17,8 @@ import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
+import { LlmRequestLogSettingsController } from "./llm-request-log-settings.controller";
+import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
@@ -58,6 +60,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     OpenAiKeysInternalController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
+    LlmRequestLogSettingsController,
     NewsSourceSchedulerSettingsController,
     SituationMonitorSettingsController,
     VectorServiceSettingsController,
@@ -75,6 +78,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    LlmRequestLogSettingsService,
     NewsSourceSchedulerSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
@@ -97,6 +101,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    LlmRequestLogSettingsService,
     NewsSourceSchedulerSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,

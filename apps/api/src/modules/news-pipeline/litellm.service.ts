@@ -28,6 +28,7 @@ import {
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 import { iterateSseDataFromReadable } from "./sse";
+import { LlmRequestLogService, type LlmApiSurface, type LlmRequestType } from "./llm-request-log.service";
 
 export type LiteLlmMessage =
   | {
@@ -154,6 +155,12 @@ export interface LiteLlmResponsesResponse {
   [key: string]: unknown;
 }
 
+interface LiteLlmTokenUsageSnapshot {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+}
+
 export type LiteLlmGuardrailViolationCode =
   | "GUARDRAIL_MISCONFIG"
   | "PROMPT_INJECTION"
@@ -196,6 +203,8 @@ const ERROR_EMBEDDING_MODEL_NOT_CONFIGURED =
   "LiteLLM embedding model is not configured in MySQL gateway profiles";
 const ERROR_RERANK_MODEL_NOT_CONFIGURED =
   "LiteLLM rerank model is not configured in MySQL gateway profiles";
+const UNKNOWN_ORG_ID = "_unknown_";
+const MAX_LOG_ERROR_LENGTH = 1000;
 
 @Injectable()
 export class LiteLlmService {
@@ -206,6 +215,7 @@ export class LiteLlmService {
     private readonly configService: NewsPipelineConfigService,
     private readonly rateLimiter: RateLimiterService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
+    private readonly llmRequestLogService: LlmRequestLogService,
   ) {}
 
   async getEmbeddingModel(): Promise<string | undefined> {
@@ -454,6 +464,7 @@ export class LiteLlmService {
       let attempt = 0;
       let delayMs = 1_000;
       while (attempt < maxAttempts) {
+        const attemptStartedAt = Date.now();
         try {
           const payload = {
             model,
@@ -485,24 +496,55 @@ export class LiteLlmService {
             (response.data as Record<string, unknown>).response_cost,
           );
           const costUsd = headerCost ?? payloadCost;
-          return {
+          const normalizedResponse = {
             ...response.data,
             ...(typeof costUsd === "number" ? { costUsd } : {}),
             ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
             latencyMs,
           };
-        } catch (error) {
-          if (error instanceof LlmCompatibilityError) {
-            throw error;
-          }
-          this.decorateAxiosError(error, {
-            apiKeyConfigured,
+          this.logRequest({
+            requestType: "responses",
+            model:
+              typeof normalizedResponse.model === "string" &&
+              normalizedResponse.model.trim().length > 0
+                ? normalizedResponse.model.trim()
+                : model,
+            status: "success",
+            metadata: params.metadata,
+            latencyMs,
+            usage: this.normalizeResponsesUsage(normalizedResponse),
+            costUsd,
             apiSurface: "responses",
           });
-          lastError = error;
+          return normalizedResponse;
+        } catch (error) {
+          let normalizedError: unknown = error;
+          if (!(error instanceof LlmCompatibilityError)) {
+            try {
+              this.decorateAxiosError(error, {
+                apiKeyConfigured,
+                apiSurface: "responses",
+              });
+            } catch (decoratedError) {
+              normalizedError = decoratedError;
+            }
+          }
+          this.logRequest({
+            requestType: "responses",
+            model,
+            status: "error",
+            metadata: params.metadata,
+            latencyMs: Date.now() - attemptStartedAt,
+            error: normalizedError,
+            apiSurface: "responses",
+          });
+          if (normalizedError instanceof LlmCompatibilityError) {
+            throw normalizedError;
+          }
+          lastError = normalizedError;
           attempt += 1;
-          if (attempt >= maxAttempts || !this.isRetryable(error)) {
-            throw error;
+          if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+            throw normalizedError;
           }
           await sleep(delayMs);
           delayMs = Math.min(delayMs * 2, 10_000);
@@ -536,6 +578,7 @@ export class LiteLlmService {
     let lastError: unknown;
 
     while (attempt < maxAttempts) {
+      const attemptStartedAt = Date.now();
       try {
         const guardrails = this.normalizeGuardrails(params.guardrails);
         const textFormat = this.resolveResponsesTextFormat(
@@ -588,21 +631,53 @@ export class LiteLlmService {
           response.data,
           model,
         );
-        return {
+        const normalizedResponse = {
           ...normalized,
           costUsd: costUsd ?? undefined,
           keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
         } satisfies LiteLlmCompletionResponse;
-      } catch (error) {
-        this.decorateAxiosError(error, {
-          apiKeyConfigured,
+        this.logRequest({
+          requestType: "completion",
+          model:
+            typeof normalizedResponse.model === "string" &&
+            normalizedResponse.model.trim().length > 0
+              ? normalizedResponse.model.trim()
+              : model,
+          status: "success",
+          metadata: params.metadata,
+          latencyMs,
+          usage: this.normalizeCompletionUsage(normalizedResponse.usage),
+          costUsd,
           apiSurface: "responses",
         });
-        lastError = error;
+        return normalizedResponse;
+      } catch (error) {
+        let normalizedError: unknown = error;
+        try {
+          this.decorateAxiosError(error, {
+            apiKeyConfigured,
+            apiSurface: "responses",
+          });
+        } catch (decoratedError) {
+          normalizedError = decoratedError;
+        }
+        this.logRequest({
+          requestType: "completion",
+          model,
+          status: "error",
+          metadata: params.metadata,
+          latencyMs: Date.now() - attemptStartedAt,
+          error: normalizedError,
+          apiSurface: "responses",
+        });
+        if (normalizedError instanceof LlmCompatibilityError) {
+          throw normalizedError;
+        }
+        lastError = normalizedError;
         attempt += 1;
-        if (attempt >= maxAttempts || !this.isRetryable(error)) {
-          throw error;
+        if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+          throw normalizedError;
         }
         await sleep(delayMs);
         delayMs = Math.min(delayMs * 2, 10_000);
@@ -628,6 +703,13 @@ export class LiteLlmService {
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
+    const requestStartedAt = Date.now();
+    let streamUsage: LiteLlmTokenUsageSnapshot = {
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+    };
+    let streamCostUsd: number | null = null;
     const guardrails = this.normalizeGuardrails(params.guardrails);
     const textFormat = this.resolveResponsesTextFormat(
       params.response_format,
@@ -659,82 +741,146 @@ export class LiteLlmService {
         },
       );
     } catch (error) {
-      this.decorateAxiosError(error, {
-        apiKeyConfigured,
+      let normalizedError: unknown = error;
+      try {
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "responses",
+        });
+      } catch (decoratedError) {
+        normalizedError = decoratedError;
+      }
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "error",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        error: normalizedError,
         apiSurface: "responses",
       });
-      throw error;
+      throw normalizedError;
     }
 
     const stream = response.data as Readable;
+    streamCostUsd =
+      this.toNullableNumber(
+        this.extractHeaderCost(
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        ),
+      ) ?? streamCostUsd;
     const contentTypeRaw = response.headers?.["content-type"];
     const contentType =
       typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
-    if (contentType && !contentType.includes("text/event-stream")) {
-      const bodyText = await this.readReadableToString(stream, 128 * 1024);
-      this.logger.warn(
-        {
-          model,
-          contentType: contentTypeRaw,
-          bodyPreview: sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }),
-        },
-        "LiteLLM responses stream returned non-SSE response",
-      );
-      throw new Error(
-        `LiteLLM responses stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
-      );
-    }
-
-    for await (const data of this.iterateSseData(stream)) {
-      if (data.trim() === "[DONE]") {
-        return;
-      }
-      let parsed: unknown = null;
-      try {
-        parsed = JSON.parse(data) as unknown;
-      } catch {
-        continue;
+    try {
+      if (contentType && !contentType.includes("text/event-stream")) {
+        const bodyText = await this.readReadableToString(stream, 128 * 1024);
+        this.logger.warn(
+          {
+            model,
+            contentType: contentTypeRaw,
+            bodyPreview: sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }),
+          },
+          "LiteLLM responses stream returned non-SSE response",
+        );
+        throw new Error(
+          `LiteLLM responses stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
+        );
       }
 
-      const responsesChunk = this.extractResponsesStreamChunk(parsed);
-      if (responsesChunk?.error) {
-        throw new Error(responsesChunk.error);
-      }
-      if (responsesChunk?.delta || responsesChunk?.finishReason) {
-        yield {
-          model,
-          raw: parsed,
-          ...(responsesChunk.delta ? { delta: responsesChunk.delta } : {}),
-          ...(responsesChunk.finishReason
-            ? { finishReason: responsesChunk.finishReason }
-            : {}),
-        };
-        continue;
-      }
+      for await (const data of this.iterateSseData(stream)) {
+        if (data.trim() === "[DONE]") {
+          this.logRequest({
+            requestType: "stream",
+            model,
+            status: "success",
+            metadata: params.metadata,
+            latencyMs: Date.now() - requestStartedAt,
+            usage: streamUsage,
+            costUsd: streamCostUsd,
+            apiSurface: "responses",
+          });
+          return;
+        }
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(data) as unknown;
+        } catch {
+          continue;
+        }
 
-      // Fallback for gateways that still stream chat-completions style chunks.
-      if (parsed && typeof parsed === "object") {
-        const parsedRecord = parsed as {
-          choices?: {
-            delta?: { content?: string | null };
-            finish_reason?: string | null;
-          }[];
-        };
-        const choice = parsedRecord.choices?.[0];
-        const delta = choice?.delta?.content;
-        const finishReason =
-          typeof choice?.finish_reason === "string"
-            ? choice.finish_reason
-            : undefined;
-        if (typeof delta === "string" && delta.length > 0) {
-          yield { model, raw: parsed, delta, finishReason };
-        } else if (
-          typeof finishReason === "string" &&
-          finishReason.length > 0
-        ) {
-          yield { model, raw: parsed, finishReason };
+        const usageAndCost = this.extractStreamUsageAndCost(parsed);
+        streamUsage = this.mergeUsage(streamUsage, usageAndCost.usage);
+        if (usageAndCost.costUsd !== null) {
+          streamCostUsd = usageAndCost.costUsd;
+        }
+
+        const responsesChunk = this.extractResponsesStreamChunk(parsed);
+        if (responsesChunk?.error) {
+          throw new Error(responsesChunk.error);
+        }
+        if (responsesChunk?.delta || responsesChunk?.finishReason) {
+          yield {
+            model,
+            raw: parsed,
+            ...(responsesChunk.delta ? { delta: responsesChunk.delta } : {}),
+            ...(responsesChunk.finishReason
+              ? { finishReason: responsesChunk.finishReason }
+              : {}),
+          };
+          continue;
+        }
+
+        // Fallback for gateways that still stream chat-completions style chunks.
+        if (parsed && typeof parsed === "object") {
+          const parsedRecord = parsed as {
+            choices?: {
+              delta?: { content?: string | null };
+              finish_reason?: string | null;
+            }[];
+          };
+          const choice = parsedRecord.choices?.[0];
+          const delta = choice?.delta?.content;
+          const finishReason =
+            typeof choice?.finish_reason === "string"
+              ? choice.finish_reason
+              : undefined;
+          if (typeof delta === "string" && delta.length > 0) {
+            yield { model, raw: parsed, delta, finishReason };
+          } else if (
+            typeof finishReason === "string" &&
+            finishReason.length > 0
+          ) {
+            yield { model, raw: parsed, finishReason };
+          }
         }
       }
+
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "success",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        usage: streamUsage,
+        costUsd: streamCostUsd,
+        apiSurface: "responses",
+      });
+    } catch (error) {
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "error",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        error,
+        usage: streamUsage,
+        costUsd: streamCostUsd,
+        apiSurface: "responses",
+      });
+      throw error;
     }
   }
 
@@ -759,6 +905,7 @@ export class LiteLlmService {
     let lastError: unknown;
 
     while (attempt < maxAttempts) {
+      const attemptStartedAt = Date.now();
       try {
         const guardrails = this.normalizeGuardrails(params.guardrails);
         const payload = {
@@ -804,28 +951,69 @@ export class LiteLlmService {
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
         const normalized = this.normalizeCompletionResponse(response.data);
-        return {
+        const normalizedResponse = {
           ...normalized,
           costUsd: costUsd ?? undefined,
           keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
         } satisfies LiteLlmCompletionResponse;
+        this.logRequest({
+          requestType: "completion",
+          model:
+            typeof normalizedResponse.model === "string" &&
+            normalizedResponse.model.trim().length > 0
+              ? normalizedResponse.model.trim()
+              : model,
+          status: "success",
+          metadata: params.metadata,
+          latencyMs,
+          usage: this.normalizeCompletionUsage(normalizedResponse.usage),
+          costUsd,
+          apiSurface: "chat_completions",
+        });
+        return normalizedResponse;
       } catch (error) {
         if (error instanceof AxiosError) {
           const guardrailError =
             this.maybeConvertAxiosErrorToGuardrailViolation(error);
           if (guardrailError) {
+            this.logRequest({
+              requestType: "completion",
+              model,
+              status: "error",
+              metadata: params.metadata,
+              latencyMs: Date.now() - attemptStartedAt,
+              error: guardrailError,
+              apiSurface: "chat_completions",
+            });
             throw guardrailError;
           }
         }
-        this.decorateAxiosError(error, {
-          apiKeyConfigured,
+        let normalizedError: unknown = error;
+        try {
+          this.decorateAxiosError(error, {
+            apiKeyConfigured,
+            apiSurface: "chat_completions",
+          });
+        } catch (decoratedError) {
+          normalizedError = decoratedError;
+        }
+        this.logRequest({
+          requestType: "completion",
+          model,
+          status: "error",
+          metadata: params.metadata,
+          latencyMs: Date.now() - attemptStartedAt,
+          error: normalizedError,
           apiSurface: "chat_completions",
         });
-        lastError = error;
+        if (normalizedError instanceof LlmCompatibilityError) {
+          throw normalizedError;
+        }
+        lastError = normalizedError;
         attempt += 1;
-        if (attempt >= maxAttempts || !this.isRetryable(error)) {
-          throw error;
+        if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+          throw normalizedError;
         }
         await sleep(delayMs);
         delayMs = Math.min(delayMs * 2, 10_000);
@@ -851,6 +1039,13 @@ export class LiteLlmService {
     model: string,
     params: LiteLlmCompletionParams,
   ): AsyncGenerator<LiteLlmStreamChunk> {
+    const requestStartedAt = Date.now();
+    let streamUsage: LiteLlmTokenUsageSnapshot = {
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+    };
+    let streamCostUsd: number | null = null;
     const guardrails = this.normalizeGuardrails(params.guardrails);
     const payload = {
       model,
@@ -885,85 +1080,158 @@ export class LiteLlmService {
         const guardrailError =
           this.maybeConvertAxiosErrorToGuardrailViolation(error);
         if (guardrailError) {
+          this.logRequest({
+            requestType: "stream",
+            model,
+            status: "error",
+            metadata: params.metadata,
+            latencyMs: Date.now() - requestStartedAt,
+            error: guardrailError,
+            apiSurface: "chat_completions",
+          });
           throw guardrailError;
         }
       }
-      this.decorateAxiosError(error, {
-        apiKeyConfigured,
+      let normalizedError: unknown = error;
+      try {
+        this.decorateAxiosError(error, {
+          apiKeyConfigured,
+          apiSurface: "chat_completions",
+        });
+      } catch (decoratedError) {
+        normalizedError = decoratedError;
+      }
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "error",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        error: normalizedError,
         apiSurface: "chat_completions",
       });
-      throw error;
+      throw normalizedError;
     }
     const stream = response.data as Readable;
+    streamCostUsd =
+      this.toNullableNumber(
+        this.extractHeaderCost(
+          response.headers?.["x-litellm-response-cost"] ??
+            response.headers?.["x-litellm-cost"] ??
+            response.headers?.["litellm-cost"],
+        ),
+      ) ?? streamCostUsd;
     const contentTypeRaw = response.headers?.["content-type"];
     const contentType =
       typeof contentTypeRaw === "string" ? contentTypeRaw.toLowerCase() : "";
-    if (contentType && !contentType.includes("text/event-stream")) {
-      const bodyText = await this.readReadableToString(stream, 128 * 1024);
-      try {
-        const parsed = JSON.parse(bodyText) as unknown;
-        const message = this.extractGuardrailBlockedMessage(parsed);
-        if (message) {
-          const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
-            response.headers,
-          );
-          const normalized = this.buildUserFacingGuardrailMessage(message);
-          throw new LiteLlmGuardrailViolationError(normalized.message, {
-            code: normalized.code,
-            appliedGuardrails,
-            upstreamStatus: response.status,
-            detail:
-              sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }) ||
-              undefined,
+    try {
+      if (contentType && !contentType.includes("text/event-stream")) {
+        const bodyText = await this.readReadableToString(stream, 128 * 1024);
+        try {
+          const parsed = JSON.parse(bodyText) as unknown;
+          const message = this.extractGuardrailBlockedMessage(parsed);
+          if (message) {
+            const appliedGuardrails = this.getAppliedGuardrailsFromHeaders(
+              response.headers,
+            );
+            const normalized = this.buildUserFacingGuardrailMessage(message);
+            throw new LiteLlmGuardrailViolationError(normalized.message, {
+              code: normalized.code,
+              appliedGuardrails,
+              upstreamStatus: response.status,
+              detail:
+                sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }) ||
+                undefined,
+            });
+          }
+        } catch (error) {
+          if (error instanceof LiteLlmGuardrailViolationError) {
+            throw error;
+          }
+        }
+
+        this.logger.warn(
+          { model, contentType: contentTypeRaw },
+          "LiteLLM stream returned non-SSE response",
+        );
+        throw new Error(
+          `LiteLLM stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
+        );
+      }
+
+      for await (const data of this.iterateSseData(stream)) {
+        if (data.trim() === "[DONE]") {
+          this.logRequest({
+            requestType: "stream",
+            model,
+            status: "success",
+            metadata: params.metadata,
+            latencyMs: Date.now() - requestStartedAt,
+            usage: streamUsage,
+            costUsd: streamCostUsd,
+            apiSurface: "chat_completions",
           });
+          return;
         }
-      } catch (error) {
-        if (error instanceof LiteLlmGuardrailViolationError) {
-          throw error;
-        }
-      }
-
-      this.logger.warn(
-        { model, contentType: contentTypeRaw },
-        "LiteLLM stream returned non-SSE response",
-      );
-      throw new Error(
-        `LiteLLM stream returned non-SSE response (${typeof contentTypeRaw === "string" ? contentTypeRaw : "unknown content-type"})`,
-      );
-    }
-
-    for await (const data of this.iterateSseData(stream)) {
-      if (data.trim() === "[DONE]") {
-        return;
-      }
-      let parsed: {
-        choices?: {
-          delta?: { content?: string | null };
-          finish_reason?: string | null;
-        }[];
-      } | null = null;
-      try {
-        parsed = JSON.parse(data) as {
+        let parsed: {
           choices?: {
             delta?: { content?: string | null };
             finish_reason?: string | null;
           }[];
-        };
-      } catch {
-        continue;
+        } | null = null;
+        try {
+          parsed = JSON.parse(data) as {
+            choices?: {
+              delta?: { content?: string | null };
+              finish_reason?: string | null;
+            }[];
+          };
+        } catch {
+          continue;
+        }
+
+        const usageAndCost = this.extractStreamUsageAndCost(parsed);
+        streamUsage = this.mergeUsage(streamUsage, usageAndCost.usage);
+        if (usageAndCost.costUsd !== null) {
+          streamCostUsd = usageAndCost.costUsd;
+        }
+
+        const choice = parsed?.choices?.[0];
+        const delta = choice?.delta?.content;
+        const finishReason =
+          typeof choice?.finish_reason === "string"
+            ? choice.finish_reason
+            : undefined;
+        if (typeof delta === "string" && delta.length > 0) {
+          yield { model, raw: parsed, delta, finishReason };
+        } else if (typeof finishReason === "string" && finishReason.length > 0) {
+          yield { model, raw: parsed, finishReason };
+        }
       }
 
-      const choice = parsed?.choices?.[0];
-      const delta = choice?.delta?.content;
-      const finishReason =
-        typeof choice?.finish_reason === "string"
-          ? choice.finish_reason
-          : undefined;
-      if (typeof delta === "string" && delta.length > 0) {
-        yield { model, raw: parsed, delta, finishReason };
-      } else if (typeof finishReason === "string" && finishReason.length > 0) {
-        yield { model, raw: parsed, finishReason };
-      }
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "success",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        usage: streamUsage,
+        costUsd: streamCostUsd,
+        apiSurface: "chat_completions",
+      });
+    } catch (error) {
+      this.logRequest({
+        requestType: "stream",
+        model,
+        status: "error",
+        metadata: params.metadata,
+        latencyMs: Date.now() - requestStartedAt,
+        error,
+        usage: streamUsage,
+        costUsd: streamCostUsd,
+        apiSurface: "chat_completions",
+      });
+      throw error;
     }
   }
 
@@ -1230,6 +1498,7 @@ export class LiteLlmService {
     let lastError: unknown;
 
     while (attempt < maxAttempts) {
+      const attemptStartedAt = Date.now();
       try {
         const payload = {
           model,
@@ -1263,21 +1532,53 @@ export class LiteLlmService {
             : undefined,
         );
         const costUsd = headerCost ?? payloadCost ?? usageCost;
-        return {
+        const normalizedResponse = {
           ...response.data,
           costUsd: costUsd ?? undefined,
           keySpendUsd: keySpendUsd ?? undefined,
           latencyMs,
         } satisfies LiteLlmEmbeddingResponse;
-      } catch (error) {
-        this.decorateAxiosError(error, {
-          apiKeyConfigured,
+        this.logRequest({
+          requestType: "embedding",
+          model:
+            typeof normalizedResponse.model === "string" &&
+            normalizedResponse.model.trim().length > 0
+              ? normalizedResponse.model.trim()
+              : model,
+          status: "success",
+          metadata: params.metadata,
+          latencyMs,
+          usage: this.normalizeEmbeddingUsage(normalizedResponse.usage),
+          costUsd,
           apiSurface: "embeddings",
         });
-        lastError = error;
+        return normalizedResponse;
+      } catch (error) {
+        let normalizedError: unknown = error;
+        try {
+          this.decorateAxiosError(error, {
+            apiKeyConfigured,
+            apiSurface: "embeddings",
+          });
+        } catch (decoratedError) {
+          normalizedError = decoratedError;
+        }
+        this.logRequest({
+          requestType: "embedding",
+          model,
+          status: "error",
+          metadata: params.metadata,
+          latencyMs: Date.now() - attemptStartedAt,
+          error: normalizedError,
+          apiSurface: "embeddings",
+        });
+        if (normalizedError instanceof LlmCompatibilityError) {
+          throw normalizedError;
+        }
+        lastError = normalizedError;
         attempt += 1;
-        if (attempt >= maxAttempts || !this.isRetryable(error)) {
-          throw error;
+        if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+          throw normalizedError;
         }
         await sleep(delayMs);
         delayMs = Math.min(delayMs * 2, 10_000);
@@ -1302,6 +1603,7 @@ export class LiteLlmService {
     let lastError: unknown;
 
     while (attempt < maxAttempts) {
+      const attemptStartedAt = Date.now();
       try {
         const payload = {
           model,
@@ -1336,7 +1638,7 @@ export class LiteLlmService {
         );
         const costUsd = headerCost ?? payloadCost;
         const responseModel = this.resolveRerankModel(response.data, model);
-        return {
+        const normalizedResponse = {
           model: responseModel,
           results: normalizedResults,
           ...(typeof payloadCost === "number"
@@ -1346,15 +1648,47 @@ export class LiteLlmService {
           ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
           latencyMs,
         } satisfies LiteLlmRerankResponse;
-      } catch (error) {
-        this.decorateAxiosError(error, {
-          apiKeyConfigured,
+        this.logRequest({
+          requestType: "rerank",
+          model:
+            typeof normalizedResponse.model === "string" &&
+            normalizedResponse.model.trim().length > 0
+              ? normalizedResponse.model.trim()
+              : model,
+          status: "success",
+          metadata: params.metadata,
+          latencyMs,
+          usage: { promptTokens: null, completionTokens: null, totalTokens: null },
+          costUsd,
           apiSurface: "chat_completions",
         });
-        lastError = error;
+        return normalizedResponse;
+      } catch (error) {
+        let normalizedError: unknown = error;
+        try {
+          this.decorateAxiosError(error, {
+            apiKeyConfigured,
+            apiSurface: "chat_completions",
+          });
+        } catch (decoratedError) {
+          normalizedError = decoratedError;
+        }
+        this.logRequest({
+          requestType: "rerank",
+          model,
+          status: "error",
+          metadata: params.metadata,
+          latencyMs: Date.now() - attemptStartedAt,
+          error: normalizedError,
+          apiSurface: "chat_completions",
+        });
+        if (normalizedError instanceof LlmCompatibilityError) {
+          throw normalizedError;
+        }
+        lastError = normalizedError;
         attempt += 1;
-        if (attempt >= maxAttempts || !this.isRetryable(error)) {
-          throw error;
+        if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+          throw normalizedError;
         }
         await sleep(delayMs);
         delayMs = Math.min(delayMs * 2, 10_000);
@@ -1674,6 +2008,195 @@ export class LiteLlmService {
       responseFormatMode: this.resolveResponseFormatMode(
         overrides?.responseFormatMode,
       ),
+    };
+  }
+
+  private logRequest(params: {
+    requestType: LlmRequestType;
+    model: string;
+    status: "success" | "error";
+    metadata: Record<string, unknown> | undefined;
+    latencyMs: number;
+    error?: unknown;
+    usage?: LiteLlmTokenUsageSnapshot;
+    costUsd?: number | null;
+    apiSurface?: LlmApiSurface;
+  }) {
+    this.llmRequestLogService.logRequest({
+      orgId: this.resolveLogOrgId(params.metadata),
+      requestType: params.requestType,
+      model: params.model,
+      status: params.status,
+      promptTokens: params.usage?.promptTokens ?? null,
+      completionTokens: params.usage?.completionTokens ?? null,
+      totalTokens: params.usage?.totalTokens ?? null,
+      costUsd: this.toNullableNumber(params.costUsd),
+      latencyMs: this.normalizeLatency(params.latencyMs),
+      error: params.status === "error" ? this.normalizeLogError(params.error) : null,
+      metadata: params.metadata ?? null,
+      apiSurface: params.apiSurface ?? null,
+    });
+  }
+
+  private resolveLogOrgId(metadata: Record<string, unknown> | undefined): string {
+    if (!metadata || typeof metadata.orgId !== "string") {
+      return UNKNOWN_ORG_ID;
+    }
+    const normalized = metadata.orgId.trim();
+    return normalized.length > 0 ? normalized : UNKNOWN_ORG_ID;
+  }
+
+  private normalizeLogError(error: unknown): string | null {
+    if (error instanceof Error) {
+      const message = error.message.trim();
+      if (!message) {
+        return null;
+      }
+      return message.slice(0, MAX_LOG_ERROR_LENGTH);
+    }
+    if (typeof error === "string") {
+      const message = error.trim();
+      if (!message) {
+        return null;
+      }
+      return message.slice(0, MAX_LOG_ERROR_LENGTH);
+    }
+    return null;
+  }
+
+  private normalizeLatency(value: unknown): number {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      return 0;
+    }
+    return Math.trunc(numeric);
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return numeric;
+  }
+
+  private normalizeCompletionUsage(
+    usage: LiteLlmCompletionResponse["usage"] | undefined,
+  ): LiteLlmTokenUsageSnapshot {
+    if (!usage) {
+      return { promptTokens: null, completionTokens: null, totalTokens: null };
+    }
+    const promptTokens = this.toNullableNumber(usage.prompt_tokens);
+    const completionTokens = this.toNullableNumber(usage.completion_tokens);
+    const totalTokens =
+      this.toNullableNumber(usage.total_tokens) ??
+      (promptTokens !== null && completionTokens !== null
+        ? promptTokens + completionTokens
+        : null);
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+    };
+  }
+
+  private normalizeEmbeddingUsage(
+    usage: LiteLlmEmbeddingResponse["usage"] | undefined,
+  ): LiteLlmTokenUsageSnapshot {
+    if (!usage) {
+      return { promptTokens: null, completionTokens: null, totalTokens: null };
+    }
+    const promptTokens = this.toNullableNumber(usage.prompt_tokens);
+    const totalTokens =
+      this.toNullableNumber(usage.total_tokens) ?? promptTokens;
+    return {
+      promptTokens,
+      completionTokens: null,
+      totalTokens,
+    };
+  }
+
+  private normalizeResponsesUsage(
+    payload: LiteLlmResponsesResponse,
+  ): LiteLlmTokenUsageSnapshot {
+    const record = payload as Record<string, unknown>;
+    const usage = this.extractUsageFromUnknown(record.usage);
+    if (usage.totalTokens !== null || usage.promptTokens !== null || usage.completionTokens !== null) {
+      return usage;
+    }
+    return this.extractUsageFromUnknown(record);
+  }
+
+  private extractUsageFromUnknown(raw: unknown): LiteLlmTokenUsageSnapshot {
+    if (!raw || typeof raw !== "object") {
+      return { promptTokens: null, completionTokens: null, totalTokens: null };
+    }
+    const record = raw as Record<string, unknown>;
+    const promptTokens = this.toNullableNumber(
+      record.prompt_tokens ?? record.input_tokens,
+    );
+    const completionTokens = this.toNullableNumber(
+      record.completion_tokens ?? record.output_tokens,
+    );
+    const totalTokens =
+      this.toNullableNumber(record.total_tokens) ??
+      (promptTokens !== null && completionTokens !== null
+        ? promptTokens + completionTokens
+        : promptTokens);
+    return {
+      promptTokens,
+      completionTokens,
+      totalTokens,
+    };
+  }
+
+  private mergeUsage(
+    current: LiteLlmTokenUsageSnapshot,
+    next: LiteLlmTokenUsageSnapshot,
+  ): LiteLlmTokenUsageSnapshot {
+    return {
+      promptTokens: next.promptTokens ?? current.promptTokens,
+      completionTokens: next.completionTokens ?? current.completionTokens,
+      totalTokens: next.totalTokens ?? current.totalTokens,
+    };
+  }
+
+  private extractStreamUsageAndCost(raw: unknown): {
+    usage: LiteLlmTokenUsageSnapshot;
+    costUsd: number | null;
+  } {
+    if (!raw || typeof raw !== "object") {
+      return {
+        usage: { promptTokens: null, completionTokens: null, totalTokens: null },
+        costUsd: null,
+      };
+    }
+
+    const record = raw as Record<string, unknown>;
+    const usageFromUsageField = this.extractUsageFromUnknown(record.usage);
+    const usageFromRoot = this.extractUsageFromUnknown(record);
+    const usage =
+      usageFromUsageField.promptTokens !== null ||
+      usageFromUsageField.completionTokens !== null ||
+      usageFromUsageField.totalTokens !== null
+        ? usageFromUsageField
+        : usageFromRoot;
+
+    const nestedUsageCost =
+      record.usage && typeof record.usage === "object"
+        ? this.extractHeaderCost(
+            (record.usage as Record<string, unknown>).response_cost,
+          )
+        : undefined;
+    const costUsd = this.toNullableNumber(
+      this.extractHeaderCost(record.response_cost) ??
+        this.extractHeaderCost(record.cost) ??
+        nestedUsageCost,
+    );
+
+    return {
+      usage,
+      costUsd,
     };
   }
 

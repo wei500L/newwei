@@ -3626,6 +3626,7 @@
       "newsDedupe": "News dedupe",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
+      "llmRequestLogs": "LLM request logs",
       "assistantSafety": "Assistant safety",
       "rssTranslationMetrics": "RSS translation metrics",
       "rssDiagnostics": "RSS diagnostics",
@@ -3746,6 +3747,129 @@
     }
   },
   "systemSettings": {
+    "llmRequestLogs": {
+      "description": "View centralized LLM gateway request logs for cost tracking, debugging, and usage analysis.",
+      "errors": {
+        "loadFailed": "Failed to load LLM request logs.",
+        "summaryFailed": "Failed to load usage summary.",
+        "settingsLoadFailed": "Failed to load log retention settings.",
+        "settingsSaveFailed": "Failed to save log retention settings.",
+        "settingsResetFailed": "Failed to reset log retention settings.",
+        "metadataPolicyResetFailed": "Failed to reset metadata allowlist.",
+        "settingsBadRequest": "Retention days or metadata allowlist settings are invalid."
+      },
+      "messages": {
+        "settingsSaved": "Log retention settings saved.",
+        "settingsReset": "Log retention settings reset to defaults.",
+        "metadataPolicyReset": "Metadata allowlist reset to recommended defaults."
+      },
+      "retention": {
+        "title": "Log retention settings",
+        "description": "Configure how many days LLM request logs are retained in MongoDB before automatic cleanup.",
+        "fields": {
+          "retentionDays": "Retention days",
+          "metadataAllowedTopLevelKeys": "Metadata top-level key allowlist",
+          "metadataAllowedTopLevelPrefixes": "Metadata top-level prefix allowlist"
+        },
+        "hints": {
+          "retentionDays": "Applied to MongoDB TTL index immediately after save and on server startup.",
+          "metadataAllowedTopLevelKeys": "Only these top-level metadata keys are retained. Values are normalized to lowercase and deduplicated.",
+          "metadataAllowedTopLevelPrefixes": "Top-level metadata keys with these prefixes are retained (for example: x_, meta_, ctx_)."
+        },
+        "placeholders": {
+          "metadataAllowedTopLevelKeys": "Add keys and press Enter",
+          "metadataAllowedTopLevelPrefixes": "Add prefixes and press Enter"
+        },
+        "validation": {
+          "retentionRequired": "Retention days is required.",
+          "retentionRange": "Retention must be between 1 and 3650 days.",
+          "metadataKeysInvalid": "Metadata keys must be an array.",
+          "metadataKeysMaxCount": "At most {{count}} keys are allowed.",
+          "metadataKeysPattern": "Use lowercase tokens with [a-z0-9_:. -], max {{max}} chars.",
+          "metadataPrefixesInvalid": "Metadata prefixes must be an array.",
+          "metadataPrefixesMaxCount": "At most {{count}} prefixes are allowed.",
+          "metadataPrefixesPattern": "Use lowercase prefixes with [a-z0-9_:. -], max {{max}} chars."
+        },
+        "actions": {
+          "reset": "Reset to default",
+          "resetMetadata": "Reset metadata allowlist"
+        },
+        "status": {
+          "label": "Source",
+          "db": "Database",
+          "default": "Default",
+          "currentDays": "Current: {{days}} days",
+          "currentKeyCount": "Keys: {{count}}",
+          "currentPrefixCount": "Prefixes: {{count}}"
+        },
+        "modal": {
+          "resetTitle": "Reset retention settings",
+          "resetContent": "Reset LLM request log retention settings to system defaults?",
+          "resetMetadataTitle": "Reset metadata allowlist",
+          "resetMetadataContent": "Reset metadata key/prefix allowlist to recommended defaults without changing retention days?",
+          "confirm": "Reset",
+          "cancel": "Cancel"
+        }
+      },
+      "metadataPolicy": {
+        "title": "Effective metadata policy",
+        "description": "This policy is returned by /api/llm-logs and determines which top-level metadata keys are persisted.",
+        "source": "Source",
+        "keysCount": "Keys: {{count}}",
+        "prefixesCount": "Prefixes: {{count}}",
+        "prefixesTitle": "Allowed prefixes",
+        "keysPreviewTitle": "Allowed keys (preview)",
+        "keysMore": "+{{count}} more",
+        "none": "None"
+      },
+      "filters": {
+        "model": "Model",
+        "requestTypeAll": "All request types",
+        "statusAll": "All statuses"
+      },
+      "status": {
+        "success": "Success",
+        "error": "Error"
+      },
+      "table": {
+        "time": "Time",
+        "model": "Model",
+        "requestType": "Type",
+        "status": "Status",
+        "tokens": "Tokens",
+        "totalTokens": "Total: {{value}}",
+        "promptCompletionTokens": "P/C: {{prompt}} / {{completion}}",
+        "cost": "Cost",
+        "latency": "Latency",
+        "error": "Error",
+        "empty": "No logs found."
+      },
+      "summary": {
+        "title": "Usage summary",
+        "totalRequests": "Total requests",
+        "totalTokens": "Total tokens",
+        "totalCost": "Total cost (USD)",
+        "avgLatency": "Avg latency",
+        "byModel": {
+          "title": "By model",
+          "model": "Model",
+          "requests": "Requests",
+          "tokens": "Tokens",
+          "cost": "Cost (USD)",
+          "avgLatency": "Avg latency",
+          "empty": "No model summary."
+        },
+        "byDay": {
+          "title": "By day (UTC)",
+          "date": "Date (UTC)",
+          "requests": "Requests",
+          "tokens": "Tokens",
+          "cost": "Cost (USD)",
+          "avgLatency": "Avg latency",
+          "empty": "No daily summary."
+        }
+      }
+    },
     "geoNominatim": {
       "description": "Configure Nominatim identification used by the API geocoding service for map news locations.",
       "notice": {

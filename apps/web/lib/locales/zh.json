@@ -3629,6 +3629,7 @@
       "newsDedupe": "新闻去重",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
+      "llmRequestLogs": "LLM 请求日志",
       "assistantSafety": "助手安全",
       "rssTranslationMetrics": "RSS 翻译指标",
       "rssDiagnostics": "RSS 诊断",
@@ -3749,6 +3750,129 @@
     }
   },
   "systemSettings": {
+    "llmRequestLogs": {
+      "description": "查看集中式 LLM 网关请求日志，用于成本追踪、调试排查和用量分析。",
+      "errors": {
+        "loadFailed": "加载 LLM 请求日志失败。",
+        "summaryFailed": "加载用量汇总失败。",
+        "settingsLoadFailed": "加载日志保留期设置失败。",
+        "settingsSaveFailed": "保存日志保留期设置失败。",
+        "settingsResetFailed": "重置日志保留期设置失败。",
+        "metadataPolicyResetFailed": "重置 metadata 白名单失败。",
+        "settingsBadRequest": "保留天数或 metadata 白名单设置不合法。"
+      },
+      "messages": {
+        "settingsSaved": "日志保留期设置已保存。",
+        "settingsReset": "日志保留期设置已恢复默认。",
+        "metadataPolicyReset": "metadata 白名单已恢复为推荐默认值。"
+      },
+      "retention": {
+        "title": "日志保留设置",
+        "description": "配置 LLM 请求日志在 MongoDB 中的保留天数，超期后将自动清理。",
+        "fields": {
+          "retentionDays": "保留天数",
+          "metadataAllowedTopLevelKeys": "Metadata 顶层键白名单",
+          "metadataAllowedTopLevelPrefixes": "Metadata 顶层前缀白名单"
+        },
+        "hints": {
+          "retentionDays": "保存后和服务启动时会立即同步到 MongoDB TTL 索引。",
+          "metadataAllowedTopLevelKeys": "仅保留这些顶层 metadata 键。保存时会自动转小写并去重。",
+          "metadataAllowedTopLevelPrefixes": "保留以这些前缀开头的顶层 metadata 键（例如 x_、meta_、ctx_）。"
+        },
+        "placeholders": {
+          "metadataAllowedTopLevelKeys": "输入键名后回车添加",
+          "metadataAllowedTopLevelPrefixes": "输入前缀后回车添加"
+        },
+        "validation": {
+          "retentionRequired": "请输入保留天数。",
+          "retentionRange": "保留天数必须在 1 到 3650 之间。",
+          "metadataKeysInvalid": "Metadata 键必须是数组。",
+          "metadataKeysMaxCount": "最多允许 {{count}} 个键。",
+          "metadataKeysPattern": "请使用小写 token（[a-z0-9_:. -]），长度不超过 {{max}}。",
+          "metadataPrefixesInvalid": "Metadata 前缀必须是数组。",
+          "metadataPrefixesMaxCount": "最多允许 {{count}} 个前缀。",
+          "metadataPrefixesPattern": "请使用小写前缀（[a-z0-9_:. -]），长度不超过 {{max}}。"
+        },
+        "actions": {
+          "reset": "恢复默认",
+          "resetMetadata": "重置 metadata 白名单"
+        },
+        "status": {
+          "label": "来源",
+          "db": "数据库",
+          "default": "默认值",
+          "currentDays": "当前：{{days}} 天",
+          "currentKeyCount": "键：{{count}}",
+          "currentPrefixCount": "前缀：{{count}}"
+        },
+        "modal": {
+          "resetTitle": "重置保留设置",
+          "resetContent": "确认将 LLM 请求日志保留设置恢复为系统默认值？",
+          "resetMetadataTitle": "重置 metadata 白名单",
+          "resetMetadataContent": "确认仅将 metadata 键/前缀白名单重置为推荐默认值（不改变保留天数）？",
+          "confirm": "重置",
+          "cancel": "取消"
+        }
+      },
+      "metadataPolicy": {
+        "title": "当前生效 metadata 策略",
+        "description": "该策略来自 /api/llm-logs 返回，用于决定哪些顶层 metadata 键会被持久化。",
+        "source": "来源",
+        "keysCount": "键：{{count}}",
+        "prefixesCount": "前缀：{{count}}",
+        "prefixesTitle": "允许的前缀",
+        "keysPreviewTitle": "允许的键（预览）",
+        "keysMore": "还有 {{count}} 个",
+        "none": "无"
+      },
+      "filters": {
+        "model": "模型",
+        "requestTypeAll": "全部请求类型",
+        "statusAll": "全部状态"
+      },
+      "status": {
+        "success": "成功",
+        "error": "失败"
+      },
+      "table": {
+        "time": "时间",
+        "model": "模型",
+        "requestType": "类型",
+        "status": "状态",
+        "tokens": "Token",
+        "totalTokens": "总量：{{value}}",
+        "promptCompletionTokens": "输入/输出：{{prompt}} / {{completion}}",
+        "cost": "成本",
+        "latency": "延迟",
+        "error": "错误",
+        "empty": "暂无日志。"
+      },
+      "summary": {
+        "title": "用量汇总",
+        "totalRequests": "请求总数",
+        "totalTokens": "Token 总量",
+        "totalCost": "总成本 (USD)",
+        "avgLatency": "平均延迟",
+        "byModel": {
+          "title": "按模型",
+          "model": "模型",
+          "requests": "请求数",
+          "tokens": "Token",
+          "cost": "成本 (USD)",
+          "avgLatency": "平均延迟",
+          "empty": "暂无模型汇总。"
+        },
+        "byDay": {
+          "title": "按天（UTC）",
+          "date": "日期（UTC）",
+          "requests": "请求数",
+          "tokens": "Token",
+          "cost": "成本 (USD)",
+          "avgLatency": "平均延迟",
+          "empty": "暂无按天汇总。"
+        }
+      }
+    },
     "geoNominatim": {
       "description": "配置 API 地理编码服务（用于新闻地图定位）的 Nominatim 标识信息。",
       "notice": {

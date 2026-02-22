@@ -11,6 +11,7 @@ import {
   LiteLlmCompletionParams,
   LiteLlmEmbeddingParams,
 } from "./litellm.service";
+import { LlmRequestLogService } from "./llm-request-log.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 
 // Mock axios
@@ -143,6 +144,14 @@ describe("LiteLlmService", () => {
         { provide: RateLimiterService, useValue: rateLimiterService },
         { provide: LlmGatewaySettingsService, useValue: llmGatewaySettings },
         { provide: NewsPipelineConfigService, useValue: configService },
+        {
+          provide: LlmRequestLogService,
+          useValue: {
+            logRequest: jest.fn(),
+            queryLogs: jest.fn(),
+            getUsageSummary: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
