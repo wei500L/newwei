@@ -280,4 +280,31 @@ describe('NewsEventsTimelineService', () => {
     expect(Array.isArray(timelineMeta.categoryDistribution)).toBe(true);
     expect(timelineMeta.categoryDistribution.length).toBeLessThanOrEqual(4);
   });
+
+  it('prunes expired timeline classification cache entries proactively', async () => {
+    mockProcessedItemFind.mockReturnValueOnce(makeMongoFindQuery([]));
+
+    const service = new NewsEventsTimelineService({} as any, {} as any);
+
+    (
+      (service as any).processedItemClassificationCache as Map<
+        string,
+        { expiresAt: number; value: unknown }
+      >
+    ).set('stale-id', {
+      expiresAt: Date.now() - 10_000,
+      value: null,
+    });
+
+    await (service as any).loadProcessedItemClassificationMap(['pi-new']);
+
+    expect(
+      ((service as any).processedItemClassificationCache as Map<string, unknown>).has(
+        'stale-id',
+      ),
+    ).toBe(false);
+    expect(mockProcessedItemFind).toHaveBeenCalledWith({
+      _id: { $in: ['pi-new'] },
+    });
+  });
 });

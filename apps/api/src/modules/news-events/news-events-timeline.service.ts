@@ -25,6 +25,7 @@ const DEFAULT_MAX_CATEGORY_DISTRIBUTION_ITEMS = 16;
 const DEFAULT_MAX_PHASE_SUMMARIES = 8;
 const KL_EPSILON = 1e-6;
 const CLASSIFICATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_PRUNE_INTERVAL_MS = 60 * 1000;
 const MIN_DRIFT_KL_THRESHOLD = 0;
 const MAX_DRIFT_KL_THRESHOLD = 5;
 const MIN_MAX_CATEGORY_DISTRIBUTION_ITEMS = 4;
@@ -157,6 +158,7 @@ export class NewsEventsTimelineService {
     string,
     { expiresAt: number; value: ProcessedItemClassification | null }
   >();
+  private processedItemClassificationCacheLastPruneAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1061,6 +1063,7 @@ export class NewsEventsTimelineService {
     }
 
     const now = Date.now();
+    this.pruneExpiredProcessedItemClassificationCache(now);
     const pendingIds: string[] = [];
     let cacheHits = 0;
 
@@ -1123,6 +1126,18 @@ export class NewsEventsTimelineService {
     }
 
     return { classificationById, cacheHits };
+  }
+
+  private pruneExpiredProcessedItemClassificationCache(now: number): void {
+    if (now - this.processedItemClassificationCacheLastPruneAt < CACHE_PRUNE_INTERVAL_MS) {
+      return;
+    }
+    for (const [key, entry] of this.processedItemClassificationCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.processedItemClassificationCache.delete(key);
+      }
+    }
+    this.processedItemClassificationCacheLastPruneAt = now;
   }
 
   private extractClassificationFromResult(

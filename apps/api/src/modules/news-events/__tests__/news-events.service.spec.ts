@@ -319,6 +319,90 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.create).toHaveBeenCalled();
   });
 
+  it("skips category gate when signal confidence is unavailable", async () => {
+    mockProcessedItemFindById.mockReturnValueOnce(
+      makeEmbeddingQuery({
+        summaryEmbedding: [0.1, 0.2],
+        summaryEmbeddingModel: "embed-1",
+      }),
+    );
+
+    const prisma = {
+      newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ eventId: "event-1", processedItemId: "pi-2" }]),
+      },
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "event-1",
+            language: "en",
+            metadata: { classification: { legacyCategory: "politics" } },
+            startAt: new Date("2026-01-01T00:00:00.000Z"),
+            lastAt: new Date("2026-01-02T00:00:00.000Z"),
+          },
+        ]),
+      },
+      runInTransaction: jest.fn(),
+    };
+
+    const tx = {
+      newsEventItem: {
+        create: jest.fn().mockResolvedValue(null),
+      },
+      newsEvent: {
+        findUnique: jest.fn().mockResolvedValue({
+          startAt: new Date("2026-01-01T00:00:00.000Z"),
+          lastAt: new Date("2026-01-02T00:00:00.000Z"),
+        }),
+        update: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
+    };
+
+    prisma.runInTransaction.mockImplementation(async (fn: any) => fn(tx));
+
+    const vectorClient = {
+      searchBestEffort: jest
+        .fn()
+        .mockResolvedValue([{ processedItemId: "pi-2", score: 0.95 }]),
+    };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.assignNewsSignalToEvent(
+      "org-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets/equities",
+      },
+      makeSettings(),
+    );
+
+    expect(result).toEqual({ eventId: "event-1", created: true });
+    expect(tx.newsEventItem.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventId: "event-1",
+          assignedBy: NewsEventAssignmentMethod.vector,
+        }),
+      }),
+    );
+    expect(tx.newsEvent.create).not.toHaveBeenCalled();
+  });
+
   it("allows listEvents to fetch up to 300 candidates for downstream filtering", async () => {
     const prisma = {
       newsEvent: {
@@ -489,6 +573,36 @@ describe("NewsEventsService", () => {
         share: 1,
       },
     ]);
+  });
+
+  it("prunes expired event distribution cache entries proactively", async () => {
+    const prisma = {
+      newsEventItem: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    (
+      (service as any).eventCategoryDistributionCache as Map<
+        string,
+        { expiresAt: number; value: Map<string, unknown> }
+      >
+    ).set("stale-entry", {
+      expiresAt: Date.now() - 10_000,
+      value: new Map([["event-stale", []]]),
+    });
+
+    await service.getEventCategoryDistributionMap("org-1", ["event-1"], {
+      windowDays: 30,
+    });
+
+    expect(
+      ((service as any).eventCategoryDistributionCache as Map<string, unknown>).has(
+        "stale-entry",
+      ),
+    ).toBe(false);
   });
 
   it("calculates authority profile and credibility for events", async () => {
