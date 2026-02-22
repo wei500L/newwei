@@ -291,6 +291,76 @@ export class UpdateNewsEventSettingsInput {
   @Max(1)
   crossLanguagePenalty!: number;
 
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  classificationGateEnabled?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  categoryConflictReject?: boolean;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  categorySoftPenalty?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minCategoryConfidenceForGate?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  timelineLowConfidenceThreshold?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  timelineHighConfidenceThreshold?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(5)
+  timelineDriftKlThreshold?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(50)
+  timelineMinBucketItemsForDrift?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  timelineCrossCategoryWarningShare?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(4)
+  @Max(64)
+  timelineMaxCategoryDistributionItems?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(20)
+  timelineMaxPhaseSummaries?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(7)
+  timelinePresetCustomDistanceThreshold?: number;
+
   @Field(() => Int)
   @Min(0)
   @Max(3600)
@@ -565,4 +635,114 @@ export class UpdateNewsDedupeSettingsInput {
   @ValidateNested({ each: true })
   @Type(() => NewsDedupeCategoryThresholdInput)
   categoryThresholds!: NewsDedupeCategoryThresholdInput[];
+}
+
+@InputType()
+export class NewsClassificationTaxonomyNodeInput {
+  @Field(() => String)
+  @IsString()
+  @MaxLength(160)
+  path!: string;
+
+  @Field(() => String)
+  @IsString()
+  @MaxLength(200)
+  displayName!: string;
+
+  @Field(() => String)
+  @IsString()
+  @MaxLength(500)
+  description!: string;
+
+  @Field(() => String)
+  @IsIn(["politics", "tech", "finance", "gov", "ai", "intel"])
+  legacyCategory!: string;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @ArrayMinSize(0)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  keywords?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @ArrayMinSize(0)
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  synonyms?: string[];
+}
+
+@InputType()
+export class UpdateNewsClassificationSettingsInput {
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  strictFail?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enableLlm?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enableEmbedding?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  enableRerank?: boolean;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  llmModel?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(1)
+  minConfidence?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(100)
+  embeddingTopK?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(30)
+  rerankTopN?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(3600)
+  cacheTtlSeconds?: number;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  taxonomyVersion?: string | null;
+
+  @Field(() => [NewsClassificationTaxonomyNodeInput], { nullable: true })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => NewsClassificationTaxonomyNodeInput)
+  @ArrayMinSize(1)
+  @ArrayMaxSize(512)
+  taxonomy?: NewsClassificationTaxonomyNodeInput[];
 }

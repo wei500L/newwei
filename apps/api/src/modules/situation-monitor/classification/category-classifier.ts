@@ -7,6 +7,7 @@ import {
 export enum SituationMonitorCategoryClassificationSource {
   Tag = "tag",
   ResultCategory = "result-category",
+  ResultCategoryPath = "result-category-path",
   ResultTopics = "result-topics",
   RawTags = "raw-tags",
   Heuristic = "heuristic",
@@ -15,6 +16,8 @@ export enum SituationMonitorCategoryClassificationSource {
 export interface SituationMonitorCategoryClassificationResult {
   category: SituationMonitorCategory | null;
   source: SituationMonitorCategoryClassificationSource | null;
+  confidence?: number;
+  reason?: string;
 }
 
 function normalizeText(value: string): string {
@@ -158,11 +161,48 @@ export function classifySituationMonitorCategory(input: {
   }
 
   const resultRecord = extractRecord(input.result);
+  const resultConfidence =
+    typeof resultRecord?.category_confidence === "number" &&
+    Number.isFinite(resultRecord.category_confidence)
+      ? Math.max(0, Math.min(1, resultRecord.category_confidence))
+      : null;
+  const resultReason =
+    typeof resultRecord?.category_reason === "string"
+      ? resultRecord.category_reason.trim() || null
+      : null;
   const rawCategory = typeof resultRecord?.category === "string" ? resultRecord.category : null;
   if (rawCategory) {
     const mapped = mapLabelToCategory(rawCategory);
     if (mapped) {
-      return { category: mapped, source: SituationMonitorCategoryClassificationSource.ResultCategory };
+      return {
+        category: mapped,
+        source: SituationMonitorCategoryClassificationSource.ResultCategory,
+        ...(resultConfidence !== null ? { confidence: resultConfidence } : {}),
+        ...(resultReason ? { reason: resultReason } : {}),
+      };
+    }
+  }
+
+  const rawCategoryPath =
+    typeof resultRecord?.category_path === "string"
+      ? resultRecord.category_path
+      : null;
+  if (rawCategoryPath) {
+    const pathParts = rawCategoryPath
+      .split("/")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    for (const part of pathParts) {
+      const mapped = mapLabelToCategory(part);
+      if (!mapped) {
+        continue;
+      }
+      return {
+        category: mapped,
+        source: SituationMonitorCategoryClassificationSource.ResultCategoryPath,
+        ...(resultConfidence !== null ? { confidence: resultConfidence } : {}),
+        ...(resultReason ? { reason: resultReason } : {}),
+      };
     }
   }
 
@@ -181,9 +221,13 @@ export function classifySituationMonitorCategory(input: {
   const text = `${input.title} ${input.summary ?? ""} ${input.source ?? ""}`;
   const heuristicCategory = classifyFromText(text);
   if (heuristicCategory) {
-    return { category: heuristicCategory, source: SituationMonitorCategoryClassificationSource.Heuristic };
+    return {
+      category: heuristicCategory,
+      source: SituationMonitorCategoryClassificationSource.Heuristic,
+      confidence: 0.35,
+      reason: "rule-heuristic",
+    };
   }
 
   return { category: null, source: null };
 }
-

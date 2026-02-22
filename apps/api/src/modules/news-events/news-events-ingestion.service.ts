@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus, Prisma } from "@prisma/client";
+import { ProcessedItemModel } from "@modular/mongo";
 
 import { PrismaService } from "../config/prisma.service";
 import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
@@ -77,6 +78,7 @@ export class NewsEventsIngestionService {
         language: true,
         title: true,
         summary: true,
+        category: true,
         topics: true,
         entities: true,
         qualityScore: true,
@@ -89,6 +91,45 @@ export class NewsEventsIngestionService {
 
     if (batch.length === 0) {
       return;
+    }
+
+    const processedItemIds = Array.from(
+      new Set(
+        batch
+          .map((entry) =>
+            typeof entry.cleanedMarkdownRef === "string"
+              ? entry.cleanedMarkdownRef.trim()
+              : "",
+          )
+          .filter((entry) => entry.length > 0),
+      ),
+    );
+
+    const processedItemResultById = new Map<string, unknown>();
+    if (processedItemIds.length > 0) {
+      try {
+        const docs = await ProcessedItemModel.find({
+          _id: { $in: processedItemIds },
+        })
+          .select({ _id: 1, result: 1 })
+          .lean()
+          .exec();
+        for (const doc of docs) {
+          const id = String((doc as { _id?: unknown })._id ?? "");
+          if (!id) {
+            continue;
+          }
+          processedItemResultById.set(
+            id,
+            (doc as { result?: unknown }).result ?? null,
+          );
+        }
+      } catch (error) {
+        logger.warn(
+          { err: error, orgId, ids: processedItemIds.length },
+          "Failed to load processed item results for event classification context",
+        );
+      }
     }
 
     let processedArticles = 0;
@@ -104,6 +145,7 @@ export class NewsEventsIngestionService {
           language: entry.language ?? null,
           title: entry.title ?? null,
           summary: entry.summary ?? null,
+          category: entry.category ?? null,
           topics: entry.topics,
           entities: entry.entities,
           qualityScore: entry.qualityScore ?? null,
@@ -111,7 +153,12 @@ export class NewsEventsIngestionService {
         },
         article: {
           crawlAt: entry.article?.crawlAt ?? null
-        }
+        },
+        processedItemResult:
+          typeof entry.cleanedMarkdownRef === "string"
+            ? processedItemResultById.get(entry.cleanedMarkdownRef.trim()) ??
+              null
+            : null,
       });
 
       const result = await this.events.assignNewsSignalToEvent(orgId, signal, settings);

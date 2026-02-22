@@ -34,6 +34,7 @@ import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-gra
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
+import { NewsClassificationSettingsPanel } from "@/components/settings/news-classification-settings-panel";
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsEventSourcePolicySettingsPanel } from "@/components/settings/news-event-source-policy-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
@@ -1268,6 +1269,13 @@ export function SystemSettingsContent() {
         key: "newsDedupe",
         label: t("settings.tabs.newsDedupe"),
         children: <NewsDedupeSettingsPanel />,
+      },
+      {
+        key: "newsClassification",
+        label: t("settings.tabs.newsClassification", {
+          defaultValue: "News Classification",
+        }),
+        children: <NewsClassificationSettingsPanel />,
       },
       {
         key: "newsPrompts",

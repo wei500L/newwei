@@ -46,6 +46,10 @@ interface TimelineEntry {
   summary?: string | null;
   keyPoints?: unknown;
   referencedArticleIds?: unknown;
+  categoryPath?: string | null;
+  categoryConfidence?: number | null;
+  tentative?: boolean | null;
+  anchor?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,6 +65,11 @@ interface NewsEvent {
   startAt: string;
   lastAt: string;
   itemCount: number;
+  categoryDistribution?: unknown;
+  topicDriftWarning?: boolean | null;
+  topicDriftSummary?: string | null;
+  timelinePhases?: unknown;
+  subEvents?: unknown;
   items?: EventItem[];
   timeline?: TimelineEntry[];
 }
@@ -78,6 +87,11 @@ const NEWS_EVENT_QUERY = gql`
       startAt
       lastAt
       itemCount
+      categoryDistribution
+      topicDriftWarning
+      topicDriftSummary
+      timelinePhases
+      subEvents
       items {
         id
         eventId
@@ -110,6 +124,10 @@ const NEWS_EVENT_QUERY = gql`
         summary
         keyPoints
         referencedArticleIds
+        categoryPath
+        categoryConfidence
+        tentative
+        anchor
         createdAt
         updatedAt
       }
@@ -173,6 +191,91 @@ function getResultObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+type CategoryDistributionEntry = {
+  categoryPath: string;
+  count: number;
+  share: number;
+};
+
+type TimelinePhaseSummary = {
+  phase: number;
+  label: string;
+  categoryPrefix: string;
+  startAt: string;
+  endAt: string;
+  itemCount: number;
+  bucketCount: number;
+  summary: string;
+};
+
+function normalizeCategoryDistribution(value: unknown): CategoryDistributionEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return null;
+      }
+      const record = entry as Record<string, unknown>;
+      const categoryPath = typeof record.categoryPath === "string" ? record.categoryPath.trim() : "";
+      const count = typeof record.count === "number" && Number.isFinite(record.count) ? record.count : 0;
+      const share = typeof record.share === "number" && Number.isFinite(record.share) ? record.share : 0;
+      if (!categoryPath || count <= 0) {
+        return null;
+      }
+      return {
+        categoryPath,
+        count,
+        share: Math.max(0, Math.min(1, share))
+      };
+    })
+    .filter((entry): entry is CategoryDistributionEntry => Boolean(entry));
+}
+
+function normalizeTimelinePhases(value: unknown): TimelinePhaseSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return null;
+      }
+      const record = entry as Record<string, unknown>;
+      const phase = typeof record.phase === "number" && Number.isFinite(record.phase) ? record.phase : 0;
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      const categoryPrefix = typeof record.categoryPrefix === "string" ? record.categoryPrefix.trim() : "";
+      const startAt = typeof record.startAt === "string" ? record.startAt : "";
+      const endAt = typeof record.endAt === "string" ? record.endAt : "";
+      const itemCount = typeof record.itemCount === "number" && Number.isFinite(record.itemCount) ? record.itemCount : 0;
+      const bucketCount = typeof record.bucketCount === "number" && Number.isFinite(record.bucketCount) ? record.bucketCount : 0;
+      const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+      if (!label || !categoryPrefix || !startAt || !endAt) {
+        return null;
+      }
+      return {
+        phase,
+        label,
+        categoryPrefix,
+        startAt,
+        endAt,
+        itemCount,
+        bucketCount,
+        summary
+      };
+    })
+    .filter((entry): entry is TimelinePhaseSummary => Boolean(entry));
+}
+
+function formatConfidencePercent(value: number | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  const clamped = Math.max(0, Math.min(1, value));
+  return `${Math.round(clamped * 100)}%`;
+}
+
 type CitationStats = {
   keyPoints: number;
   whyItMatters: number;
@@ -213,6 +316,14 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     const entries = event?.timeline ?? [];
     return [...entries].sort((a, b) => dayjs(a.bucketStart).valueOf() - dayjs(b.bucketStart).valueOf());
   }, [event?.timeline]);
+  const categoryDistribution = useMemo(
+    () => normalizeCategoryDistribution(event?.categoryDistribution),
+    [event?.categoryDistribution]
+  );
+  const timelinePhases = useMemo(
+    () => normalizeTimelinePhases(event?.timelinePhases ?? event?.subEvents),
+    [event?.timelinePhases, event?.subEvents]
+  );
   const items = useMemo(() => {
     const rows = event?.items ?? [];
     return [...rows].sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf());
@@ -712,56 +823,122 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           {
             key: "timeline",
             label: t("pages.events.drawer.tabs.timeline", { defaultValue: "Timeline" }),
-            children: timeline.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.events.drawer.timelineEmpty", {
-                  defaultValue: "No timeline entries yet. Enable timeline generation and wait for the scheduled job."
-                })}
-              />
-            ) : (
-              <List
-                dataSource={timeline}
-                renderItem={(entry) => {
-                  const keyPoints = normalizeStringArray(entry.keyPoints);
-                  const referencedIds = normalizeStringArray(entry.referencedArticleIds);
-                  return (
-                    <List.Item key={entry.id}>
-                      <List.Item.Meta
-                        title={
-                          <Space wrap size={[8, 6]}>
-                            <Typography.Text strong>
-                              {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium", timeZone })}
-                            </Typography.Text>
-                            {referencedIds.length > 0 ? (
-                              <Tag>{t("pages.events.drawer.references", { defaultValue: "Refs" })}: {referencedIds.length}</Tag>
-                            ) : null}
+            children: (
+              <div className="flex flex-col gap-3">
+                {event.topicDriftWarning ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message={t("pages.events.drawer.topicDrift", { defaultValue: "Topic drift detected" })}
+                    description={
+                      event.topicDriftSummary ??
+                      t("pages.events.drawer.topicDriftDescription", {
+                        defaultValue: "Category distribution changed significantly across timeline buckets."
+                      })
+                    }
+                  />
+                ) : null}
+
+                {timelinePhases.length > 0 ? (
+                  <Card
+                    size="small"
+                    className="content-card"
+                    title={t("pages.events.drawer.timelinePhases", { defaultValue: "Timeline phases" })}
+                  >
+                    <Space direction="vertical" size={8} className="w-full">
+                      {timelinePhases.map((phase) => (
+                        <div key={`${phase.phase}-${phase.startAt}`}>
+                          <Space wrap size={[6, 6]}>
+                            <Tag color="processing">P{phase.phase}</Tag>
+                            <Tag>{phase.categoryPrefix}</Tag>
+                            <Typography.Text strong>{phase.label}</Typography.Text>
                           </Space>
-                        }
-                        description={
-                          <div className="flex flex-col gap-1">
-                            {entry.title ? <Typography.Text>{entry.title}</Typography.Text> : null}
-                            {entry.summary ? (
-                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
-                                {entry.summary}
-                              </Typography.Paragraph>
-                            ) : null}
-                            {keyPoints.length > 0 ? (
-                              <Space wrap size={[6, 6]}>
-                                {keyPoints.slice(0, 10).map((point, idx) => (
-                                  <Tag key={`${entry.id}-${idx}`} color="default">
-                                    {point}
+                          <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+                            {phase.summary}
+                          </Typography.Paragraph>
+                        </div>
+                      ))}
+                    </Space>
+                  </Card>
+                ) : null}
+
+                {categoryDistribution.length > 0 ? (
+                  <Space wrap size={[6, 6]}>
+                    {categoryDistribution.slice(0, 8).map((entry) => (
+                      <Tag key={entry.categoryPath}>
+                        {entry.categoryPath} · {Math.round(entry.share * 100)}%
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : null}
+
+                {timeline.length === 0 ? (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={t("pages.events.drawer.timelineEmpty", {
+                      defaultValue: "No timeline entries yet. Enable timeline generation and wait for the scheduled job."
+                    })}
+                  />
+                ) : (
+                  <List
+                    dataSource={timeline}
+                    renderItem={(entry) => {
+                      const keyPoints = normalizeStringArray(entry.keyPoints);
+                      const referencedIds = normalizeStringArray(entry.referencedArticleIds);
+                      const confidence = formatConfidencePercent(entry.categoryConfidence);
+                      const isTentative = Boolean(entry.tentative);
+                      const isAnchor = Boolean(entry.anchor);
+                      return (
+                        <List.Item key={entry.id}>
+                          <List.Item.Meta
+                            title={
+                              <Space wrap size={[8, 6]}>
+                                <Typography.Text strong>
+                                  {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium", timeZone })}
+                                </Typography.Text>
+                                {referencedIds.length > 0 ? (
+                                  <Tag>{t("pages.events.drawer.references", { defaultValue: "Refs" })}: {referencedIds.length}</Tag>
+                                ) : null}
+                                {entry.categoryPath ? <Tag color="geekblue">{entry.categoryPath}</Tag> : null}
+                                {confidence ? (
+                                  <Tag color={isTentative ? "orange" : isAnchor ? "green" : "default"}>
+                                    {t("pages.events.drawer.confidence", { defaultValue: "Confidence" })}: {confidence}
                                   </Tag>
-                                ))}
+                                ) : null}
+                                {isAnchor ? <Tag color="success">{t("pages.events.drawer.anchor", { defaultValue: "Anchor" })}</Tag> : null}
+                                {isTentative ? (
+                                  <Tag color="warning">{t("pages.events.drawer.tentative", { defaultValue: "Tentative" })}</Tag>
+                                ) : null}
                               </Space>
-                            ) : null}
-                          </div>
-                        }
-                      />
-                    </List.Item>
-                  );
-                }}
-              />
+                            }
+                            description={
+                              <div
+                                className={`flex flex-col gap-1 rounded-md ${isTentative ? "border border-dashed border-amber-300 bg-amber-50/40 p-2 opacity-80" : ""}`}
+                              >
+                                {entry.title ? <Typography.Text>{entry.title}</Typography.Text> : null}
+                                {entry.summary ? (
+                                  <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                                    {entry.summary}
+                                  </Typography.Paragraph>
+                                ) : null}
+                                {keyPoints.length > 0 ? (
+                                  <Space wrap size={[6, 6]}>
+                                    {keyPoints.slice(0, 10).map((point, idx) => (
+                                      <Tag key={`${entry.id}-${idx}`} color="default">
+                                        {point}
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                ) : null}
+                              </div>
+                            }
+                          />
+                        </List.Item>
+                      );
+                    }}
+                  />
+                )}
+              </div>
             )
           },
           {

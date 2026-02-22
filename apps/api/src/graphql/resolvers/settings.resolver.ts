@@ -12,10 +12,6 @@ import {
   type KnowledgeGraphSettingsInput,
 } from "../../modules/knowledge-graph/knowledge-graph-settings.service";
 import {
-  NewsEventsSettingsService,
-  type NewsEventSettingsInput,
-} from "../../modules/news-events/news-events-settings.service";
-import {
   NewsEventSourcePolicyService,
   type NewsEventSourcePolicyDetails,
   type NewsEventSourcePolicyInput,
@@ -23,9 +19,17 @@ import {
   type NewsEventSourcePolicyRevisionDiff,
 } from "../../modules/news-events/news-event-source-policy.service";
 import {
+  NewsEventsSettingsService,
+  type NewsEventSettingsInput,
+} from "../../modules/news-events/news-events-settings.service";
+import {
   NewsIndicatorSettingsService,
   type NewsIndicatorAssociationSettingsInput,
 } from "../../modules/news-indicator/news-indicator-settings.service";
+import {
+  NewsClassificationSettingsService,
+  type NewsClassificationSettingsInput,
+} from "../../modules/news-pipeline/news-classification-settings.service";
 import {
   NewsDedupeSettingsService,
   type NewsDedupeSettingsInput,
@@ -52,6 +56,7 @@ import {
   UpdateNewsEventSettingsInput,
   UpdateNewsEventSourcePolicyInput,
   UpdateNewsIndicatorSettingsInput,
+  UpdateNewsClassificationSettingsInput,
   UpdateNewsDedupeSettingsInput,
 } from "../dto/settings.input";
 import type { GqlRequest } from "../graphql.types";
@@ -66,6 +71,7 @@ import {
   NewsEventSourcePolicyRevisionOperation,
   NewsEventSourcePolicySettingsModel,
   NewsIndicatorSettingsModel,
+  NewsClassificationSettingsModel,
   NewsDedupeSettingsModel,
   NewsPromptConfigModel,
   AuthCacheSettingsModel,
@@ -82,6 +88,7 @@ export class SettingsResolver {
     private readonly newsEventSettingsService: NewsEventsSettingsService,
     private readonly newsEventSourcePolicyService: NewsEventSourcePolicyService,
     private readonly newsIndicatorSettingsService: NewsIndicatorSettingsService,
+    private readonly newsClassificationSettingsService: NewsClassificationSettingsService,
     private readonly newsDedupeSettingsService: NewsDedupeSettingsService,
     private readonly newsPromptConfigService: NewsPromptConfigService,
     private readonly auditLogSettings: AuditLogSettingsService,
@@ -242,6 +249,37 @@ export class SettingsResolver {
       timelineMaxEventsPerRun: input.timelineMaxEventsPerRun,
       vectorMinScore: input.vectorMinScore,
       crossLanguagePenalty: input.crossLanguagePenalty,
+      classificationGateEnabled:
+        input.classificationGateEnabled ?? current.classificationGateEnabled,
+      categoryConflictReject:
+        input.categoryConflictReject ?? current.categoryConflictReject,
+      categorySoftPenalty:
+        input.categorySoftPenalty ?? current.categorySoftPenalty,
+      minCategoryConfidenceForGate:
+        input.minCategoryConfidenceForGate ??
+        current.minCategoryConfidenceForGate,
+      timelineLowConfidenceThreshold:
+        input.timelineLowConfidenceThreshold ??
+        current.timelineLowConfidenceThreshold,
+      timelineHighConfidenceThreshold:
+        input.timelineHighConfidenceThreshold ??
+        current.timelineHighConfidenceThreshold,
+      timelineDriftKlThreshold:
+        input.timelineDriftKlThreshold ?? current.timelineDriftKlThreshold,
+      timelineMinBucketItemsForDrift:
+        input.timelineMinBucketItemsForDrift ??
+        current.timelineMinBucketItemsForDrift,
+      timelineCrossCategoryWarningShare:
+        input.timelineCrossCategoryWarningShare ??
+        current.timelineCrossCategoryWarningShare,
+      timelineMaxCategoryDistributionItems:
+        input.timelineMaxCategoryDistributionItems ??
+        current.timelineMaxCategoryDistributionItems,
+      timelineMaxPhaseSummaries:
+        input.timelineMaxPhaseSummaries ?? current.timelineMaxPhaseSummaries,
+      timelinePresetCustomDistanceThreshold:
+        input.timelinePresetCustomDistanceThreshold ??
+        current.timelinePresetCustomDistanceThreshold,
       cacheTtlSeconds: input.cacheTtlSeconds,
     };
     return this.newsEventSettingsService.updateSettings(
@@ -402,6 +440,60 @@ export class SettingsResolver {
       targetRevision,
     );
     return this.toSourcePolicyRevisionDiffModel(diff);
+  }
+
+  @HasPermission("settings.manage")
+  @Query(() => NewsClassificationSettingsModel)
+  async newsClassificationSettings(
+    @Context("req") req: GqlRequest,
+  ): Promise<NewsClassificationSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+    return this.newsClassificationSettingsService.getSettings(user.orgId);
+  }
+
+  @HasPermission("settings.manage")
+  @Mutation(() => NewsClassificationSettingsModel)
+  async updateNewsClassificationSettings(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateNewsClassificationSettingsInput,
+  ): Promise<NewsClassificationSettingsModel> {
+    const user = this.requireUser(req);
+    await this.assertAdmin(user);
+
+    const settingsInput: NewsClassificationSettingsInput = {
+      enabled: input.enabled,
+      strictFail: input.strictFail,
+      enableLlm: input.enableLlm,
+      enableEmbedding: input.enableEmbedding,
+      enableRerank: input.enableRerank,
+      llmModel: input.llmModel,
+      minConfidence: input.minConfidence,
+      embeddingTopK: input.embeddingTopK,
+      rerankTopN: input.rerankTopN,
+      cacheTtlSeconds: input.cacheTtlSeconds,
+      taxonomyVersion: input.taxonomyVersion,
+      taxonomy: input.taxonomy?.map((entry) => ({
+        path: entry.path,
+        displayName: entry.displayName,
+        description: entry.description,
+        legacyCategory: entry.legacyCategory as
+          | "politics"
+          | "tech"
+          | "finance"
+          | "gov"
+          | "ai"
+          | "intel",
+        keywords: entry.keywords ?? [],
+        synonyms: entry.synonyms ?? [],
+      })),
+    };
+
+    return this.newsClassificationSettingsService.updateSettings(
+      user.orgId,
+      user.id,
+      settingsInput,
+    );
   }
 
   @HasPermission("settings.manage")

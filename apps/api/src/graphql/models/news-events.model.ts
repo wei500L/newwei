@@ -123,6 +123,18 @@ export class NewsEventTimelineEntryModel {
   @Field(() => GraphQLJSONScalar, { nullable: true })
   referencedArticleIds?: unknown;
 
+  @Field(() => String, { nullable: true })
+  categoryPath?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  categoryConfidence?: number | null;
+
+  @Field(() => Boolean, { nullable: true })
+  tentative?: boolean | null;
+
+  @Field(() => Boolean, { nullable: true })
+  anchor?: boolean | null;
+
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 
@@ -233,6 +245,21 @@ export class NewsEventModel {
 
   @Field(() => GraphQLJSONScalar, { nullable: true })
   metadata?: unknown;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  categoryDistribution?: unknown;
+
+  @Field(() => Boolean, { nullable: true })
+  topicDriftWarning?: boolean | null;
+
+  @Field(() => String, { nullable: true })
+  topicDriftSummary?: string | null;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  timelinePhases?: unknown;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  subEvents?: unknown;
 
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;

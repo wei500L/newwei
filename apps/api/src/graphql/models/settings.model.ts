@@ -199,6 +199,42 @@ export class NewsEventSettingsModel {
   @Field(() => Float)
   crossLanguagePenalty!: number;
 
+  @Field(() => Boolean)
+  classificationGateEnabled!: boolean;
+
+  @Field(() => Boolean)
+  categoryConflictReject!: boolean;
+
+  @Field(() => Float)
+  categorySoftPenalty!: number;
+
+  @Field(() => Float)
+  minCategoryConfidenceForGate!: number;
+
+  @Field(() => Float)
+  timelineLowConfidenceThreshold!: number;
+
+  @Field(() => Float)
+  timelineHighConfidenceThreshold!: number;
+
+  @Field(() => Float)
+  timelineDriftKlThreshold!: number;
+
+  @Field(() => Int)
+  timelineMinBucketItemsForDrift!: number;
+
+  @Field(() => Float)
+  timelineCrossCategoryWarningShare!: number;
+
+  @Field(() => Int)
+  timelineMaxCategoryDistributionItems!: number;
+
+  @Field(() => Int)
+  timelineMaxPhaseSummaries!: number;
+
+  @Field(() => Float)
+  timelinePresetCustomDistanceThreshold!: number;
+
   @Field(() => Int)
   cacheTtlSeconds!: number;
 }
@@ -390,6 +426,66 @@ export class NewsDedupeSettingsModel {
 
   @Field(() => String)
   llmJudgeUserPromptTemplate!: string;
+}
+
+@ObjectType()
+export class NewsClassificationTaxonomyNodeModel {
+  @Field(() => String)
+  path!: string;
+
+  @Field(() => String)
+  displayName!: string;
+
+  @Field(() => String)
+  description!: string;
+
+  @Field(() => String)
+  legacyCategory!: string;
+
+  @Field(() => [String])
+  keywords!: string[];
+
+  @Field(() => [String])
+  synonyms!: string[];
+}
+
+@ObjectType()
+export class NewsClassificationSettingsModel {
+  @Field(() => Boolean)
+  enabled!: boolean;
+
+  @Field(() => Boolean)
+  strictFail!: boolean;
+
+  @Field(() => Boolean)
+  enableLlm!: boolean;
+
+  @Field(() => Boolean)
+  enableEmbedding!: boolean;
+
+  @Field(() => Boolean)
+  enableRerank!: boolean;
+
+  @Field(() => String, { nullable: true })
+  llmModel!: string | null;
+
+  @Field(() => Float)
+  minConfidence!: number;
+
+  @Field(() => Int)
+  embeddingTopK!: number;
+
+  @Field(() => Int)
+  rerankTopN!: number;
+
+  @Field(() => Int)
+  cacheTtlSeconds!: number;
+
+  @Field(() => String)
+  taxonomyVersion!: string;
+
+  @Field(() => [NewsClassificationTaxonomyNodeModel])
+  taxonomy!: NewsClassificationTaxonomyNodeModel[];
 }
 
 @ObjectType()

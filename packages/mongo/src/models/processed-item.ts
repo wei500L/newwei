@@ -28,6 +28,22 @@ const ProcessedItemResultSchema = new Schema(
     language: { type: String, default: null },
     location: { type: String, default: null },
     category: { type: String, default: null },
+    category_path: { type: String, default: null },
+    category_labels: { type: [String], default: [] },
+    category_confidence: { type: Number, min: 0, max: 1, default: null },
+    category_reason: { type: String, default: null },
+    category_method: { type: String, default: null },
+    category_candidates: {
+      type: [
+        {
+          path: { type: String, required: true },
+          score: { type: Number, min: 0, max: 1, required: true },
+          legacy_category: { type: String, required: true },
+          reason: { type: String, default: null },
+        },
+      ],
+      default: [],
+    },
     sentiment: { type: String, default: null },
     sentiment_label: { type: String, default: null },
     topics: { type: [String], default: [] },

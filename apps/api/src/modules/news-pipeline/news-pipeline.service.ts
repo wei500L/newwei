@@ -30,6 +30,7 @@ import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
+import { NewsClassifierService } from "./news-classifier.service";
 import {
   buildNewsDedupeSystemPrompt,
   buildNewsDedupeUserPrompt,
@@ -192,6 +193,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly crawlExecution: CrawlExecutionService,
     @Optional() private readonly vectorClient?: VectorClientService,
+    @Optional() private readonly classifier?: NewsClassifierService,
   ) {
     this.outboxEventEmitter.on(
       OUTBOX_DELIVERY_REQUESTED_EVENT,
@@ -561,19 +563,51 @@ export class NewsPipelineService implements OnModuleDestroy {
       },
     );
 
+    const cleanedWithClassification = this.classifier
+      ? this.classifier.applyToCleanedNews(
+          cleaned,
+          await this.runStage(
+            job,
+            "classify",
+            async () =>
+              this.classifier!.classify(job.orgId, cleaned, { jobId: job.jobId }),
+            {
+              onProcessingData: () => ({
+                itemMetaId: job.itemMetaId,
+                taxonomyEnabled: true,
+              }),
+              onSuccessData: (result) => ({
+                category: result.legacyCategory ?? undefined,
+                categoryPath: result.categoryPath ?? undefined,
+                confidence: result.confidence ?? undefined,
+                method: result.method,
+                taxonomyVersion: result.metrics.taxonomyVersion,
+                llmLatencyMs: result.metrics.llmLatencyMs ?? undefined,
+                embeddingLatencyMs: result.metrics.embeddingLatencyMs ?? undefined,
+                rerankLatencyMs: result.metrics.rerankLatencyMs ?? undefined,
+                candidateCount: result.metrics.candidateCount,
+              }),
+              onErrorData: () => ({
+                itemMetaId: job.itemMetaId,
+              }),
+            },
+          ),
+        )
+      : cleaned;
+
     const dedupe = await this.runStage(
       job,
       "dedupe",
       async () =>
         this.evaluateSummaryDedupe({
           job,
-          cleaned,
+          cleaned: cleanedWithClassification,
           contentDuplicateOf,
         }),
       {
         onProcessingData: () => ({
           itemMetaId: job.itemMetaId,
-          summaryLength: cleaned.summary?.length ?? 0,
+          summaryLength: cleanedWithClassification.summary?.length ?? 0,
         }),
         onSuccessData: (result) => ({
           duplicateOf: result.duplicateOf ?? undefined,
@@ -593,7 +627,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           raw,
           payload,
           article,
-          cleaned,
+          cleaned: cleanedWithClassification,
           llm,
           contentHash,
           processedArticleId,

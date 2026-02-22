@@ -2558,6 +2558,19 @@
         "timelineMaxEventsPerRun": "Timeline max events per run",
         "vectorMinScore": "Vector min score",
         "crossLanguagePenalty": "Cross-language penalty",
+        "classificationGateEnabled": "Classification gate enabled",
+        "categoryConflictReject": "Reject category conflicts",
+        "categorySoftPenalty": "Category soft penalty",
+        "minCategoryConfidenceForGate": "Min category confidence",
+        "timelinePreset": "Recommended preset",
+        "timelineLowConfidenceThreshold": "Low confidence threshold",
+        "timelineHighConfidenceThreshold": "High confidence threshold",
+        "timelineDriftKlThreshold": "Drift KL threshold",
+        "timelineMinBucketItemsForDrift": "Min items per bucket for drift",
+        "timelineCrossCategoryWarningShare": "Cross-category warning share",
+        "timelineMaxCategoryDistributionItems": "Max category distribution items",
+        "timelineMaxPhaseSummaries": "Max phase summaries",
+        "timelinePresetCustomDistanceThreshold": "Preset custom distance threshold",
         "cacheTtlSeconds": "Cache TTL (seconds)"
       },
       "hints": {
@@ -2566,15 +2579,41 @@
         "forceAuthoritativeMode": "When enabled, all dashboard timeline event queries are forced to authoritative sources.",
         "forceMinAuthoritativeSources": "Minimum unique authoritative sources required when force authoritative mode is enabled.",
         "vectorMinScore": "Higher = stricter vector assignment.",
-        "crossLanguagePenalty": "Penalty applied when languages differ (0–1)."
+        "crossLanguagePenalty": "Penalty applied when languages differ (0–1).",
+        "classificationGateEnabled": "Use classification labels as a conservative gate during event assignment.",
+        "categoryConflictReject": "When enabled, conflicting category candidates are rejected from vector merge.",
+        "categorySoftPenalty": "Penalty multiplier (0-1) for partial category mismatch when hard rejection is off.",
+        "minCategoryConfidenceForGate": "Only enforce category gate when signal confidence reaches this threshold.",
+        "timelinePreset": "Apply a tuned template for timeline confidence and drift sensitivity.",
+        "closestPreset": "Closest match:",
+        "timelineLowConfidenceThreshold": "Entries below this confidence are marked tentative in timeline output.",
+        "timelineHighConfidenceThreshold": "Entries above this confidence are marked as timeline anchors.",
+        "timelineDriftKlThreshold": "Higher threshold means fewer topic drift splits between adjacent timeline buckets.",
+        "timelineMinBucketItemsForDrift": "Only compare drift when both adjacent buckets have at least this many signals.",
+        "timelineCrossCategoryWarningShare": "Trigger a cross-category warning when non-dominant categories exceed this share.",
+        "timelineMaxCategoryDistributionItems": "Limit of category slices returned by timeline/category-distribution metadata.",
+        "timelineMaxPhaseSummaries": "Upper bound for staged timeline summaries generated per event.",
+        "timelinePresetCustomDistanceThreshold": "When the closest preset distance is above this threshold, preset matching is shown as Custom."
       },
       "messages": {
         "saved": "Saved",
         "saveFailed": "Failed to save",
-        "loadFailed": "Failed to load settings"
+        "loadFailed": "Failed to load settings",
+        "presetApplied": "Preset applied. Save changes to persist."
       },
       "validation": {
-        "required": "Required"
+        "required": "Required",
+        "lowMustBeAtMostHigh": "Low confidence threshold must be less than or equal to high confidence threshold.",
+        "highMustBeAtLeastLow": "High confidence threshold must be greater than or equal to low confidence threshold."
+      },
+      "sections": {
+        "timelineClassification": "Timeline classification & drift"
+      },
+      "presets": {
+        "conservative": "Conservative",
+        "balanced": "Balanced",
+        "aggressive": "Aggressive",
+        "custom": "Custom"
       }
     },
     "newsEventSourcePolicy": {

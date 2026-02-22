@@ -3,6 +3,8 @@ import { Module } from "@nestjs/common";
 import { CrawlModule } from "../crawl/crawl.module";
 
 import { LiteLlmService } from "./litellm.service";
+import { NewsClassifierService } from "./news-classifier.service";
+import { NewsClassificationSettingsService } from "./news-classification-settings.service";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import { NewsPipelineService } from "./news-pipeline.service";
@@ -16,6 +18,8 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPromptConfigService,
     NewsPromptBuilder,
     NewsDedupeSettingsService,
+    NewsClassificationSettingsService,
+    NewsClassifierService,
     LiteLlmService,
     NewsPipelineService
   ],
@@ -24,6 +28,8 @@ import { NewsPromptBuilder } from "./news-prompt.builder";
     NewsPipelineConfigService,
     NewsPromptConfigService,
     NewsDedupeSettingsService,
+    NewsClassificationSettingsService,
+    NewsClassifierService,
     LiteLlmService
   ]
 })

@@ -22,6 +22,9 @@ export interface NewsSignal {
   entities: NewsSignalEntity[];
   sentiment: NewsSentimentLabel | null;
   qualityScore: number | null;
+  legacyCategory?: string | null;
+  categoryPath?: string | null;
+  categoryConfidence?: number | null;
 }
 
 export interface BuildNewsSignalFromProcessedArticleInput {
@@ -33,6 +36,7 @@ export interface BuildNewsSignalFromProcessedArticleInput {
     language: string | null;
     title: string | null;
     summary: string | null;
+    category?: string | null;
     topics: unknown;
     entities: unknown;
     qualityScore: number | null;
@@ -166,12 +170,77 @@ const normalizeQualityScore = (value: unknown): number | null => {
   return Math.max(0, Math.min(1, value));
 };
 
+const normalizeLegacyCategory = (value: unknown): string | null => {
+  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  const allowed = new Set(["politics", "tech", "finance", "gov", "ai", "intel"]);
+  return allowed.has(normalized) ? normalized : null;
+};
+
+const normalizeCategoryPath = (value: unknown): string | null => {
+  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  const cleaned = normalized
+    .replace(/\\/g, "/")
+    .replace(/\s+/g, "-")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  return cleaned || null;
+};
+
+const extractClassificationFromProcessedItemResult = (
+  value: unknown,
+): {
+  legacyCategory: string | null;
+  categoryPath: string | null;
+  categoryConfidence: number | null;
+} => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      legacyCategory: null,
+      categoryPath: null,
+      categoryConfidence: null,
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const rawConfidence =
+    typeof record.category_confidence === "number"
+      ? record.category_confidence
+      : typeof record.categoryConfidence === "number"
+        ? record.categoryConfidence
+        : null;
+  const categoryConfidence =
+    rawConfidence === null || !Number.isFinite(rawConfidence)
+      ? null
+      : Math.max(0, Math.min(1, rawConfidence));
+
+  return {
+    legacyCategory:
+      normalizeLegacyCategory(record.category) ??
+      normalizeLegacyCategory(record.legacy_category) ??
+      null,
+    categoryPath:
+      normalizeCategoryPath(record.category_path) ??
+      normalizeCategoryPath(record.categoryPath) ??
+      null,
+    categoryConfidence,
+  };
+};
+
 export function buildNewsSignalFromProcessedArticle(
   input: BuildNewsSignalFromProcessedArticleInput
 ): NewsSignal {
   const processedArticleId = input.processedArticle.id;
   const articleId = input.processedArticle.articleId;
   const processedItemId = normalizeOptionalString(input.processedArticle.cleanedMarkdownRef);
+
+  const extractedClassification = extractClassificationFromProcessedItemResult(
+    input.processedItemResult ?? null,
+  );
 
   return {
     articleId,
@@ -191,7 +260,12 @@ export function buildNewsSignalFromProcessedArticle(
     topics: normalizeTopics(input.processedArticle.topics),
     entities: normalizeEntities(input.processedArticle.entities),
     sentiment: extractSentimentFromProcessedItemResult(input.processedItemResult ?? null),
-    qualityScore: normalizeQualityScore(input.processedArticle.qualityScore)
+    qualityScore: normalizeQualityScore(input.processedArticle.qualityScore),
+    legacyCategory:
+      extractedClassification.legacyCategory ??
+      normalizeLegacyCategory(input.processedArticle.category) ??
+      null,
+    categoryPath: extractedClassification.categoryPath,
+    categoryConfidence: extractedClassification.categoryConfidence,
   };
 }
-

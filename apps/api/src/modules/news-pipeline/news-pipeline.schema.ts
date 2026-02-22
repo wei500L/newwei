@@ -159,6 +159,13 @@ const cleanedMarkdownSourceSchema = z.preprocess(
   z.enum(["llm", "crawl_fallback"]).optional(),
 );
 
+const ClassificationCandidateSchema = z.object({
+  path: z.string().min(1),
+  score: z.number().min(0).max(1),
+  legacy_category: z.string().min(1),
+  reason: z.string().nullable().optional(),
+});
+
 export const CleanedNewsSchema = z.object({
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
@@ -168,6 +175,12 @@ export const CleanedNewsSchema = z.object({
   language: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  category_path: z.string().nullable().optional(),
+  category_labels: z.array(z.string().min(1)).default([]),
+  category_confidence: z.number().min(0).max(1).nullable().optional(),
+  category_reason: z.string().nullable().optional(),
+  category_method: z.string().nullable().optional(),
+  category_candidates: z.array(ClassificationCandidateSchema).default([]),
   sentiment: optionalNullableSentimentLabel,
   sentiment_label: optionalNullableSentimentLabel,
   topics: z.array(z.string().min(1)).default([]),

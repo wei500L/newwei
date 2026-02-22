@@ -19,6 +19,8 @@ export interface SituationMonitorHeadline {
   keyPointsZh?: string[];
   topics?: string[];
   classificationSource?: SituationMonitorCategoryClassificationSource;
+  classificationConfidence?: number;
+  classificationReason?: string;
 }
 
 export interface SituationMonitorAlertHeadline extends SituationMonitorHeadline {

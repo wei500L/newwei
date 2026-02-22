@@ -18,6 +18,18 @@ export interface NewsEventSettings {
   timelineMaxEventsPerRun: number;
   vectorMinScore: number;
   crossLanguagePenalty: number;
+  classificationGateEnabled: boolean;
+  categoryConflictReject: boolean;
+  categorySoftPenalty: number;
+  minCategoryConfidenceForGate: number;
+  timelineLowConfidenceThreshold: number;
+  timelineHighConfidenceThreshold: number;
+  timelineDriftKlThreshold: number;
+  timelineMinBucketItemsForDrift: number;
+  timelineCrossCategoryWarningShare: number;
+  timelineMaxCategoryDistributionItems: number;
+  timelineMaxPhaseSummaries: number;
+  timelinePresetCustomDistanceThreshold: number;
   cacheTtlSeconds: number;
 }
 
@@ -33,6 +45,18 @@ export interface NewsEventSettingsInput {
   timelineMaxEventsPerRun: number;
   vectorMinScore: number;
   crossLanguagePenalty: number;
+  classificationGateEnabled: boolean;
+  categoryConflictReject: boolean;
+  categorySoftPenalty: number;
+  minCategoryConfidenceForGate: number;
+  timelineLowConfidenceThreshold: number;
+  timelineHighConfidenceThreshold: number;
+  timelineDriftKlThreshold: number;
+  timelineMinBucketItemsForDrift: number;
+  timelineCrossCategoryWarningShare: number;
+  timelineMaxCategoryDistributionItems: number;
+  timelineMaxPhaseSummaries: number;
+  timelinePresetCustomDistanceThreshold: number;
   cacheTtlSeconds: number;
 }
 
@@ -52,6 +76,26 @@ const MIN_VECTOR_MIN_SCORE = 0;
 const MAX_VECTOR_MIN_SCORE = 1;
 const MIN_CROSS_LANGUAGE_PENALTY = 0;
 const MAX_CROSS_LANGUAGE_PENALTY = 1;
+const MIN_CATEGORY_SOFT_PENALTY = 0;
+const MAX_CATEGORY_SOFT_PENALTY = 1;
+const MIN_CATEGORY_CONFIDENCE = 0;
+const MAX_CATEGORY_CONFIDENCE = 1;
+const MIN_TIMELINE_LOW_CONFIDENCE_THRESHOLD = 0;
+const MAX_TIMELINE_LOW_CONFIDENCE_THRESHOLD = 1;
+const MIN_TIMELINE_HIGH_CONFIDENCE_THRESHOLD = 0;
+const MAX_TIMELINE_HIGH_CONFIDENCE_THRESHOLD = 1;
+const MIN_TIMELINE_DRIFT_KL_THRESHOLD = 0;
+const MAX_TIMELINE_DRIFT_KL_THRESHOLD = 5;
+const MIN_TIMELINE_MIN_BUCKET_ITEMS_FOR_DRIFT = 1;
+const MAX_TIMELINE_MIN_BUCKET_ITEMS_FOR_DRIFT = 50;
+const MIN_TIMELINE_CROSS_CATEGORY_WARNING_SHARE = 0;
+const MAX_TIMELINE_CROSS_CATEGORY_WARNING_SHARE = 1;
+const MIN_TIMELINE_MAX_CATEGORY_DISTRIBUTION_ITEMS = 4;
+const MAX_TIMELINE_MAX_CATEGORY_DISTRIBUTION_ITEMS = 64;
+const MIN_TIMELINE_MAX_PHASE_SUMMARIES = 1;
+const MAX_TIMELINE_MAX_PHASE_SUMMARIES = 20;
+const MIN_TIMELINE_PRESET_CUSTOM_DISTANCE_THRESHOLD = 0;
+const MAX_TIMELINE_PRESET_CUSTOM_DISTANCE_THRESHOLD = 7;
 const MIN_CACHE_TTL_SECONDS = 0;
 const MAX_CACHE_TTL_SECONDS = 3600;
 const MIN_FORCE_MIN_AUTHORITATIVE_SOURCES = 1;
@@ -182,6 +226,18 @@ export class NewsEventsSettingsService {
       timelineMaxEventsPerRun: 50,
       vectorMinScore: 0.82,
       crossLanguagePenalty: 0.1,
+      classificationGateEnabled: true,
+      categoryConflictReject: true,
+      categorySoftPenalty: 0.15,
+      minCategoryConfidenceForGate: 0.4,
+      timelineLowConfidenceThreshold: 0.5,
+      timelineHighConfidenceThreshold: 0.8,
+      timelineDriftKlThreshold: 0.35,
+      timelineMinBucketItemsForDrift: 3,
+      timelineCrossCategoryWarningShare: 0.3,
+      timelineMaxCategoryDistributionItems: 16,
+      timelineMaxPhaseSummaries: 8,
+      timelinePresetCustomDistanceThreshold: 0.22,
       cacheTtlSeconds: 60,
     };
   }
@@ -191,6 +247,26 @@ export class NewsEventsSettingsService {
     fallback?: NewsEventSettings,
   ): NewsEventSettings {
     const defaults = fallback ?? this.getFallbackSettings();
+    const rawTimelineLowConfidenceThreshold = this.clampFloat(
+      value.timelineLowConfidenceThreshold,
+      MIN_TIMELINE_LOW_CONFIDENCE_THRESHOLD,
+      MAX_TIMELINE_LOW_CONFIDENCE_THRESHOLD,
+      defaults.timelineLowConfidenceThreshold,
+    );
+    const rawTimelineHighConfidenceThreshold = this.clampFloat(
+      value.timelineHighConfidenceThreshold,
+      MIN_TIMELINE_HIGH_CONFIDENCE_THRESHOLD,
+      MAX_TIMELINE_HIGH_CONFIDENCE_THRESHOLD,
+      defaults.timelineHighConfidenceThreshold,
+    );
+    const timelineLowConfidenceThreshold = Math.min(
+      rawTimelineLowConfidenceThreshold,
+      rawTimelineHighConfidenceThreshold,
+    );
+    const timelineHighConfidenceThreshold = Math.max(
+      rawTimelineLowConfidenceThreshold,
+      rawTimelineHighConfidenceThreshold,
+    );
 
     return {
       enabled:
@@ -248,6 +324,64 @@ export class NewsEventsSettingsService {
         MIN_CROSS_LANGUAGE_PENALTY,
         MAX_CROSS_LANGUAGE_PENALTY,
         defaults.crossLanguagePenalty,
+      ),
+      classificationGateEnabled:
+        typeof value.classificationGateEnabled === "boolean"
+          ? value.classificationGateEnabled
+          : defaults.classificationGateEnabled,
+      categoryConflictReject:
+        typeof value.categoryConflictReject === "boolean"
+          ? value.categoryConflictReject
+          : defaults.categoryConflictReject,
+      categorySoftPenalty: this.clampFloat(
+        value.categorySoftPenalty,
+        MIN_CATEGORY_SOFT_PENALTY,
+        MAX_CATEGORY_SOFT_PENALTY,
+        defaults.categorySoftPenalty,
+      ),
+      minCategoryConfidenceForGate: this.clampFloat(
+        value.minCategoryConfidenceForGate,
+        MIN_CATEGORY_CONFIDENCE,
+        MAX_CATEGORY_CONFIDENCE,
+        defaults.minCategoryConfidenceForGate,
+      ),
+      timelineLowConfidenceThreshold,
+      timelineHighConfidenceThreshold,
+      timelineDriftKlThreshold: this.clampFloat(
+        value.timelineDriftKlThreshold,
+        MIN_TIMELINE_DRIFT_KL_THRESHOLD,
+        MAX_TIMELINE_DRIFT_KL_THRESHOLD,
+        defaults.timelineDriftKlThreshold,
+      ),
+      timelineMinBucketItemsForDrift: this.clampInt(
+        value.timelineMinBucketItemsForDrift,
+        MIN_TIMELINE_MIN_BUCKET_ITEMS_FOR_DRIFT,
+        MAX_TIMELINE_MIN_BUCKET_ITEMS_FOR_DRIFT,
+        defaults.timelineMinBucketItemsForDrift,
+      ),
+      timelineCrossCategoryWarningShare: this.clampFloat(
+        value.timelineCrossCategoryWarningShare,
+        MIN_TIMELINE_CROSS_CATEGORY_WARNING_SHARE,
+        MAX_TIMELINE_CROSS_CATEGORY_WARNING_SHARE,
+        defaults.timelineCrossCategoryWarningShare,
+      ),
+      timelineMaxCategoryDistributionItems: this.clampInt(
+        value.timelineMaxCategoryDistributionItems,
+        MIN_TIMELINE_MAX_CATEGORY_DISTRIBUTION_ITEMS,
+        MAX_TIMELINE_MAX_CATEGORY_DISTRIBUTION_ITEMS,
+        defaults.timelineMaxCategoryDistributionItems,
+      ),
+      timelineMaxPhaseSummaries: this.clampInt(
+        value.timelineMaxPhaseSummaries,
+        MIN_TIMELINE_MAX_PHASE_SUMMARIES,
+        MAX_TIMELINE_MAX_PHASE_SUMMARIES,
+        defaults.timelineMaxPhaseSummaries,
+      ),
+      timelinePresetCustomDistanceThreshold: this.clampFloat(
+        value.timelinePresetCustomDistanceThreshold,
+        MIN_TIMELINE_PRESET_CUSTOM_DISTANCE_THRESHOLD,
+        MAX_TIMELINE_PRESET_CUSTOM_DISTANCE_THRESHOLD,
+        defaults.timelinePresetCustomDistanceThreshold,
       ),
       cacheTtlSeconds: this.clampInt(
         value.cacheTtlSeconds,

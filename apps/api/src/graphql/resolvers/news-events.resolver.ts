@@ -208,18 +208,22 @@ export class NewsEventsResolver {
       return null;
     }
 
-    const [heatMap, authorityMap] = await Promise.all([
+    const [heatMap, authorityMap, categoryDistributionMap] = await Promise.all([
       this.events.getEventHeatMap(user.orgId, [id]),
       this.events.getEventAuthorityMap(user.orgId, [id]),
+      this.events.getEventCategoryDistributionMap(user.orgId, [id]),
     ]);
     const heat = heatMap.get(id) ?? { breaking: false, heatScore: 0 };
     const authority = this.toAuthorityScore(authorityMap.get(id));
+    const categoryDistribution = categoryDistributionMap.get(id) ?? null;
 
     return this.toModel(
       row,
       {
         items: row.items.map((item) => this.toItemModel(item)),
-        timeline: row.timeline.map((entry) => this.toTimelineModel(entry)),
+        timeline: row.timeline.map((entry) =>
+          this.toTimelineModel(entry, row.metadata),
+        ),
       },
       {
         breaking: heat.breaking,
@@ -227,6 +231,9 @@ export class NewsEventsResolver {
         credibilityScore: authority.credibilityScore,
         sourceType: authority.sourceType,
         sourceEvidence: authority.sourceEvidence,
+      },
+      {
+        categoryDistribution,
       },
     );
   }
@@ -327,7 +334,36 @@ export class NewsEventsResolver {
       sourceType: NewsEventSourceType;
       sourceEvidence: NewsEventSourceEvidenceModel;
     },
+    classification?: {
+      categoryDistribution?: unknown;
+    },
   ): NewsEventModel {
+    const timelineMetadata = this.extractTimelineMetadata(row.metadata);
+    const metadataDistribution =
+      timelineMetadata &&
+      Array.isArray(timelineMetadata.categoryDistribution)
+        ? timelineMetadata.categoryDistribution
+        : null;
+    const categoryDistribution =
+      classification?.categoryDistribution ?? metadataDistribution ?? null;
+    const timelinePhases =
+      timelineMetadata && Array.isArray(timelineMetadata.phaseSummaries)
+        ? timelineMetadata.phaseSummaries
+        : null;
+    const subEvents =
+      timelineMetadata && Array.isArray(timelineMetadata.subEvents)
+        ? timelineMetadata.subEvents
+        : timelinePhases;
+    const topicDriftWarning =
+      timelineMetadata &&
+      typeof timelineMetadata.topicDriftWarning === "boolean"
+        ? timelineMetadata.topicDriftWarning
+        : null;
+    const topicDriftSummary =
+      timelineMetadata && typeof timelineMetadata.topicDriftSummary === "string"
+        ? timelineMetadata.topicDriftSummary
+        : null;
+
     return {
       id: row.id,
       status: row.status,
@@ -342,6 +378,11 @@ export class NewsEventsResolver {
       representativeProcessedArticleId: row.representativeProcessedArticleId,
       representativeProcessedItemId: row.representativeProcessedItemId,
       metadata: row.metadata ?? null,
+      categoryDistribution,
+      topicDriftWarning,
+      topicDriftSummary,
+      timelinePhases,
+      subEvents,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       ...(extras ? { items: extras.items, timeline: extras.timeline } : {}),
@@ -385,7 +426,14 @@ export class NewsEventsResolver {
     };
   }
 
-  private toTimelineModel(entry: any): NewsEventTimelineEntryModel {
+  private toTimelineModel(
+    entry: any,
+    eventMetadata?: unknown,
+  ): NewsEventTimelineEntryModel {
+    const metadata = this.extractTimelineEntryMetadata(
+      eventMetadata,
+      entry.bucketStart,
+    );
     return {
       id: entry.id,
       eventId: entry.eventId,
@@ -394,9 +442,109 @@ export class NewsEventsResolver {
       summary: entry.summary,
       keyPoints: entry.keyPoints ?? null,
       referencedArticleIds: entry.referencedArticleIds ?? null,
+      categoryPath: metadata.categoryPath,
+      categoryConfidence: metadata.categoryConfidence,
+      tentative: metadata.tentative,
+      anchor: metadata.anchor,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     };
+  }
+
+  private extractTimelineMetadata(
+    metadata: unknown,
+  ): Record<string, unknown> | null {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return null;
+    }
+    const record = metadata as Record<string, unknown>;
+    const timeline = record.timeline;
+    if (!timeline || typeof timeline !== "object" || Array.isArray(timeline)) {
+      return null;
+    }
+    return timeline as Record<string, unknown>;
+  }
+
+  private extractTimelineEntryMetadata(
+    metadata: unknown,
+    bucketStart: unknown,
+  ): {
+    categoryPath: string | null;
+    categoryConfidence: number | null;
+    tentative: boolean | null;
+    anchor: boolean | null;
+  } {
+    const timelineMetadata = this.extractTimelineMetadata(metadata);
+    if (!timelineMetadata) {
+      return {
+        categoryPath: null,
+        categoryConfidence: null,
+        tentative: null,
+        anchor: null,
+      };
+    }
+
+    const entries = timelineMetadata.entries;
+    if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+      return {
+        categoryPath: null,
+        categoryConfidence: null,
+        tentative: null,
+        anchor: null,
+      };
+    }
+
+    const key = this.toBucketKey(bucketStart);
+    if (!key) {
+      return {
+        categoryPath: null,
+        categoryConfidence: null,
+        tentative: null,
+        anchor: null,
+      };
+    }
+    const entry = (entries as Record<string, unknown>)[key];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return {
+        categoryPath: null,
+        categoryConfidence: null,
+        tentative: null,
+        anchor: null,
+      };
+    }
+
+    const record = entry as Record<string, unknown>;
+    const categoryPath =
+      typeof record.categoryPath === "string" && record.categoryPath.trim()
+        ? record.categoryPath.trim()
+        : null;
+    const rawConfidence =
+      typeof record.categoryConfidence === "number" &&
+      Number.isFinite(record.categoryConfidence)
+        ? record.categoryConfidence
+        : null;
+    const categoryConfidence =
+      rawConfidence === null ? null : Math.max(0, Math.min(1, rawConfidence));
+    return {
+      categoryPath,
+      categoryConfidence,
+      tentative:
+        typeof record.tentative === "boolean" ? record.tentative : null,
+      anchor: typeof record.anchor === "boolean" ? record.anchor : null,
+    };
+  }
+
+  private toBucketKey(value: unknown): string | null {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString();
+    }
+    if (typeof value === "string") {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString();
+      }
+    }
+    return null;
   }
 
   private toAuthorityScore(profile: NewsEventAuthorityProfile | undefined): {

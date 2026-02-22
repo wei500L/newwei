@@ -40,6 +40,30 @@ describe("situation monitor - category classifier", () => {
     ).toEqual({ category: "ai", source: "result-topics" });
   });
 
+  it("uses result.category_path with confidence/reason when available", () => {
+    expect(
+      classifySituationMonitorCategory({
+        tags: [],
+        result: {
+          category_path: "tech/ai/model-release",
+          category_confidence: 0.91,
+          category_reason: "model launch event"
+        },
+        rawTags: [],
+        title: "New model shipped",
+        summary: null,
+        source: null
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        category: "tech",
+        source: "result-category-path",
+        confidence: 0.91,
+        reason: "model launch event",
+      }),
+    );
+  });
+
   it("falls back to raw tags when needed", () => {
     expect(
       classifySituationMonitorCategory({
@@ -63,7 +87,9 @@ describe("situation monitor - category classifier", () => {
         summary: "",
         source: "newswire"
       })
-    ).toEqual({ category: "finance", source: "heuristic" });
+    ).toEqual(
+      expect.objectContaining({ category: "finance", source: "heuristic" }),
+    );
   });
 
   it("returns null when no rule matches", () => {
@@ -79,4 +105,3 @@ describe("situation monitor - category classifier", () => {
     ).toEqual({ category: null, source: null });
   });
 });
-

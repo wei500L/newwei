@@ -469,6 +469,14 @@ export class SituationMonitorService {
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topics: topics.length > 0 ? topics : undefined,
         classificationSource: options.debug ? classification.source ?? undefined : undefined,
+        classificationConfidence:
+          options.debug && typeof classification.confidence === "number"
+            ? classification.confidence
+            : undefined,
+        classificationReason:
+          options.debug && classification.reason
+            ? classification.reason
+            : undefined,
       });
     }
 

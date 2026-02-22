@@ -8,10 +8,12 @@ jest.mock("@modular/utils", () => ({
 }));
 
 const mockProcessedItemFindById = jest.fn();
+const mockProcessedItemFind = jest.fn();
 
 jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: {
     findById: (...args: unknown[]) => mockProcessedItemFindById(...args),
+    find: (...args: unknown[]) => mockProcessedItemFind(...args),
   },
 }));
 
@@ -25,6 +27,11 @@ describe("NewsEventsService", () => {
     lean: jest.fn().mockReturnThis(),
     exec: jest.fn().mockResolvedValue(doc),
   });
+  const makeFindQuery = (docs: unknown[]) => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue(docs),
+  });
 
   const makeSettings = (overrides: Partial<any> = {}) => ({
     enabled: true,
@@ -34,8 +41,17 @@ describe("NewsEventsService", () => {
     lookbackDays: 30,
     vectorMinScore: 0.82,
     crossLanguagePenalty: 0.1,
+    classificationGateEnabled: true,
+    categoryConflictReject: true,
+    categorySoftPenalty: 0.15,
+    minCategoryConfidenceForGate: 0.4,
     cacheTtlSeconds: 60,
     ...overrides,
+  });
+
+  beforeEach(() => {
+    mockProcessedItemFindById.mockReset();
+    mockProcessedItemFind.mockReset();
   });
 
   it("returns existing assignment without writes", async () => {
@@ -229,6 +245,80 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.update).not.toHaveBeenCalled();
   });
 
+  it("rejects vector merge when category conflicts under gate settings", async () => {
+    mockProcessedItemFindById.mockReturnValueOnce(
+      makeEmbeddingQuery({
+        summaryEmbedding: [0.1, 0.2],
+        summaryEmbeddingModel: "embed-1",
+      }),
+    );
+
+    const prisma = {
+      newsEventItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ eventId: "event-1", processedItemId: "pi-2" }]),
+      },
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "event-1",
+            language: "en",
+            metadata: { classification: { legacyCategory: "politics" } },
+            startAt: new Date("2026-01-01T00:00:00.000Z"),
+            lastAt: new Date("2026-01-02T00:00:00.000Z"),
+          },
+        ]),
+      },
+      runInTransaction: jest.fn(),
+    };
+
+    const tx = {
+      newsEventItem: {
+        create: jest.fn().mockResolvedValue(null),
+      },
+      newsEvent: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: "event-new" }),
+      },
+    };
+
+    prisma.runInTransaction.mockImplementation(async (fn: any) => fn(tx));
+
+    const vectorClient = {
+      searchBestEffort: jest
+        .fn()
+        .mockResolvedValue([{ processedItemId: "pi-2", score: 0.95 }]),
+    };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.assignNewsSignalToEvent(
+      "org-1",
+      {
+        articleId: "a-1",
+        processedArticleId: "pa-1",
+        processedItemId: "pi-1",
+        timestamp: new Date("2026-01-03T00:00:00.000Z"),
+        language: "en",
+        title: "t",
+        summary: "s",
+        topics: [],
+        entities: [],
+        sentiment: null,
+        qualityScore: null,
+        legacyCategory: "finance",
+        categoryPath: "finance/markets/equities",
+        categoryConfidence: 0.92,
+      },
+      makeSettings(),
+    );
+
+    expect(result).toEqual({ eventId: "event-new", created: true });
+    expect(tx.newsEvent.create).toHaveBeenCalled();
+  });
+
   it("allows listEvents to fetch up to 300 candidates for downstream filtering", async () => {
     const prisma = {
       newsEvent: {
@@ -256,6 +346,149 @@ describe("NewsEventsService", () => {
         _count: { select: { items: true } },
       },
     });
+  });
+
+  it("filters event timeline by settings window when loading event detail", async () => {
+    const prisma = {
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const settingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        backfillDays: 7,
+        lookbackDays: 30,
+      }),
+    };
+    const service = new NewsEventsService(
+      prisma as any,
+      vectorClient as any,
+      undefined,
+      settingsService as any,
+    );
+
+    await service.getEvent("org-1", "event-1", { timelineLimit: 50 });
+
+    expect(settingsService.getSettings).toHaveBeenCalledWith("org-1");
+    expect(prisma.newsEvent.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orgId: "org-1", id: "event-1" },
+        include: expect.objectContaining({
+          timeline: expect.objectContaining({
+            where: {
+              bucketStart: { gte: expect.any(Date) },
+            },
+            orderBy: [{ bucketStart: "asc" }],
+            take: 50,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("aggregates category distribution with processed-item category_path priority", async () => {
+    mockProcessedItemFind.mockReturnValueOnce(
+      makeFindQuery([
+        {
+          _id: "pi-1",
+          result: {
+            category: "tech",
+            category_path: "tech/ai/model-release",
+            category_confidence: 0.91,
+          },
+        },
+        {
+          _id: "pi-2",
+          result: {
+            category: "tech",
+            category_path: "tech/ai/model-release",
+            category_confidence: 0.84,
+          },
+        },
+        {
+          _id: "pi-3",
+          result: {
+            category: "gov",
+            category_path: "gov/regulation/sanctions",
+            category_confidence: 0.78,
+          },
+        },
+      ]),
+    );
+
+    const prisma = {
+      newsEventItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            eventId: "event-1",
+            processedItemId: "pi-1",
+            processedArticle: { category: "tech" },
+          },
+          {
+            eventId: "event-1",
+            processedItemId: "pi-2",
+            processedArticle: { category: "finance" },
+          },
+          {
+            eventId: "event-1",
+            processedItemId: null,
+            processedArticle: { category: "finance" },
+          },
+          {
+            eventId: "event-2",
+            processedItemId: "pi-3",
+            processedArticle: { category: "gov" },
+          },
+        ]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    const result = await service.getEventCategoryDistributionMap(
+      "org-1",
+      ["event-1", "event-2"],
+      { windowDays: 30 },
+    );
+
+    expect(prisma.newsEventItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          orgId: "org-1",
+          eventId: { in: ["event-1", "event-2"] },
+          processedArticle: {
+            processedAt: { gte: expect.any(Date) },
+          },
+        }),
+      }),
+    );
+    expect(mockProcessedItemFind).toHaveBeenCalledWith({
+      _id: { $in: ["pi-1", "pi-2", "pi-3"] },
+    });
+
+    expect(result.get("event-1")).toEqual([
+      {
+        categoryPath: "tech/ai/model-release",
+        legacyCategory: "tech",
+        count: 2,
+        share: 0.6667,
+      },
+      {
+        categoryPath: "finance",
+        legacyCategory: "finance",
+        count: 1,
+        share: 0.3333,
+      },
+    ]);
+    expect(result.get("event-2")).toEqual([
+      {
+        categoryPath: "gov/regulation/sanctions",
+        legacyCategory: "gov",
+        count: 1,
+        share: 1,
+      },
+    ]);
   });
 
   it("calculates authority profile and credibility for events", async () => {

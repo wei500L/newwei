@@ -5,9 +5,9 @@ import {
 } from "../news-event-source-classifier";
 
 describe("news-event-source-classifier", () => {
-  it("prefers source label when resolving source key", () => {
+  it("prefers registrable domain when resolving source key", () => {
     expect(resolveSourceKey("Reuters", "https://www.reuters.com/world/")).toBe(
-      "Reuters",
+      "reuters.com",
     );
   });
 

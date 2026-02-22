@@ -2561,6 +2561,19 @@
         "timelineMaxEventsPerRun": "每次时间线最大事件数",
         "vectorMinScore": "向量最小相似度",
         "crossLanguagePenalty": "跨语种惩罚",
+        "classificationGateEnabled": "分类门控启用",
+        "categoryConflictReject": "拒绝分类冲突",
+        "categorySoftPenalty": "分类软惩罚",
+        "minCategoryConfidenceForGate": "分类门控最小置信度",
+        "timelinePreset": "推荐模板",
+        "timelineLowConfidenceThreshold": "低置信度阈值",
+        "timelineHighConfidenceThreshold": "高置信度阈值",
+        "timelineDriftKlThreshold": "漂移 KL 阈值",
+        "timelineMinBucketItemsForDrift": "漂移检测最小桶样本数",
+        "timelineCrossCategoryWarningShare": "跨类别告警占比阈值",
+        "timelineMaxCategoryDistributionItems": "类别分布最大项数",
+        "timelineMaxPhaseSummaries": "阶段摘要最大数量",
+        "timelinePresetCustomDistanceThreshold": "模板自定义判定阈值",
         "cacheTtlSeconds": "缓存 TTL（秒）"
       },
       "hints": {
@@ -2569,15 +2582,41 @@
         "forceAuthoritativeMode": "开启后，Dashboard 时间线事件查询将统一强制为权威来源过滤。",
         "forceMinAuthoritativeSources": "开启强制权威模式时，要求事件至少命中这么多个唯一权威来源。",
         "vectorMinScore": "越高越严格。",
-        "crossLanguagePenalty": "当语种不一致时对相似度打折（0–1）。"
+        "crossLanguagePenalty": "当语种不一致时对相似度打折（0–1）。",
+        "classificationGateEnabled": "在事件分配时启用分类标签门控，减少错误归并。",
+        "categoryConflictReject": "开启后，分类冲突候选将被直接拒绝，不参与向量合并。",
+        "categorySoftPenalty": "当关闭硬拒绝时，对部分分类不一致施加惩罚系数（0-1）。",
+        "minCategoryConfidenceForGate": "仅当信号分类置信度达到该阈值时才启用分类门控。",
+        "timelinePreset": "应用一组调优后的时间线置信度和主题漂移灵敏度模板。",
+        "closestPreset": "最接近模板：",
+        "timelineLowConfidenceThreshold": "低于该值的时间线条目将标记为 tentative。",
+        "timelineHighConfidenceThreshold": "高于该值的时间线条目将标记为 anchor。",
+        "timelineDriftKlThreshold": "阈值越高，主题漂移分段越少。",
+        "timelineMinBucketItemsForDrift": "仅当相邻时间桶样本数都达到该值时才进行漂移比较。",
+        "timelineCrossCategoryWarningShare": "当非主导类别占比超过该阈值时触发跨类别告警。",
+        "timelineMaxCategoryDistributionItems": "限制时间线/分类分布元数据返回的类别项数量。",
+        "timelineMaxPhaseSummaries": "每个事件可生成的阶段化摘要上限。",
+        "timelinePresetCustomDistanceThreshold": "当最接近模板的距离超过该值时，模板识别结果显示为“自定义”。"
       },
       "messages": {
         "saved": "已保存",
         "saveFailed": "保存失败",
-        "loadFailed": "加载设置失败"
+        "loadFailed": "加载设置失败",
+        "presetApplied": "已应用模板。点击保存后生效。"
       },
       "validation": {
-        "required": "必填"
+        "required": "必填",
+        "lowMustBeAtMostHigh": "低置信度阈值必须小于或等于高置信度阈值。",
+        "highMustBeAtLeastLow": "高置信度阈值必须大于或等于低置信度阈值。"
+      },
+      "sections": {
+        "timelineClassification": "时间线分类与主题漂移"
+      },
+      "presets": {
+        "conservative": "保守",
+        "balanced": "平衡",
+        "aggressive": "激进",
+        "custom": "自定义"
       }
     },
     "newsEventSourcePolicy": {

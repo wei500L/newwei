@@ -11,7 +11,6 @@ import { PrismaService } from "../config/prisma.service";
 import type { NewsSignal, NewsSignalEntity } from "../news-signals/news-signal";
 import { VectorClientService } from "../vector/vector-client.service";
 
-import type { NewsEventSettings } from "./news-events-settings.service";
 import { NewsEventSourcePolicyService } from "./news-event-source-policy.service";
 import {
   classifySourceByLabelAndUrl,
@@ -19,12 +18,21 @@ import {
   getDefaultNewsEventSourcePolicy,
   resolveSourceKey,
 } from "./news-event-source-classifier";
+import {
+  NewsEventsSettingsService,
+  type NewsEventSettings,
+} from "./news-events-settings.service";
 
 const logger = createLogger({ name: "news-events" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_VECTOR_SEARCH_LIMIT = 50;
 const DEFAULT_CANDIDATE_EVENTS_LIMIT = 30;
+const DEFAULT_CATEGORY_DISTRIBUTION_WINDOW_DAYS = 90;
+const MAX_CATEGORY_DISTRIBUTION_WINDOW_DAYS = 365;
+const CATEGORY_DISTRIBUTION_CACHE_TTL_MS = 2 * 60 * 1000;
+const PROCESSED_ITEM_CLASSIFICATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CATEGORY_DISTRIBUTION_ITEMS = 16;
 
 export type NewsEventSourceClassification =
   | "authoritative"
@@ -52,13 +60,40 @@ export interface NewsEventReferencedArticle {
   processedArticleId: string;
 }
 
+export interface NewsEventCategoryDistributionEntry {
+  categoryPath: string;
+  legacyCategory: string | null;
+  count: number;
+  share: number;
+}
+
+interface ProcessedItemCategoryClassification {
+  legacyCategory: string | null;
+  categoryPath: string | null;
+  confidence: number | null;
+}
+
 @Injectable()
 export class NewsEventsService {
+  private readonly eventCategoryDistributionCache = new Map<
+    string,
+    {
+      expiresAt: number;
+      value: Map<string, NewsEventCategoryDistributionEntry[]>;
+    }
+  >();
+  private readonly processedItemCategoryCache = new Map<
+    string,
+    { expiresAt: number; value: ProcessedItemCategoryClassification | null }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly vectorClient: VectorClientService,
     @Optional()
     private readonly sourcePolicyService?: NewsEventSourcePolicyService,
+    @Optional()
+    private readonly settingsService?: NewsEventsSettingsService,
   ) {}
 
   async listEvents(
@@ -93,6 +128,7 @@ export class NewsEventsService {
       Math.max(options?.timelineLimit ?? 200, 1),
       2000,
     );
+    const timelineSince = await this.resolveTimelineSince(orgId);
 
     return this.prisma.newsEvent.findFirst({
       where: { orgId, id: eventId },
@@ -117,6 +153,9 @@ export class NewsEventsService {
           },
         },
         timeline: {
+          ...(timelineSince
+            ? { where: { bucketStart: { gte: timelineSince } } }
+            : {}),
           orderBy: [{ bucketStart: "asc" }],
           take: timelineLimit,
         },
@@ -185,6 +224,152 @@ export class NewsEventsService {
     }
 
     return Array.from(dedupedByArticleId.values());
+  }
+
+  async getEventCategoryDistributionMap(
+    orgId: string,
+    eventIds: string[],
+    options?: { windowDays?: number },
+  ): Promise<Map<string, NewsEventCategoryDistributionEntry[]>> {
+    const normalizedEventIds = Array.from(
+      new Set(
+        eventIds
+          .map((entry) => this.normalizeOptionalString(entry))
+          .filter((entry): entry is string => Boolean(entry)),
+      ),
+    );
+    if (normalizedEventIds.length === 0) {
+      return new Map();
+    }
+
+    const windowDays = Math.min(
+      Math.max(
+        options?.windowDays ?? DEFAULT_CATEGORY_DISTRIBUTION_WINDOW_DAYS,
+        1,
+      ),
+      MAX_CATEGORY_DISTRIBUTION_WINDOW_DAYS,
+    );
+    const cacheKey = `${orgId}:${windowDays}:${normalizedEventIds
+      .slice()
+      .sort()
+      .join(",")}`;
+    const now = Date.now();
+    const cached = this.eventCategoryDistributionCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return this.cloneCategoryDistributionMap(cached.value);
+    }
+    if (cached) {
+      this.eventCategoryDistributionCache.delete(cacheKey);
+    }
+
+    const since = new Date(Date.now() - windowDays * DAY_MS);
+    const rows = await this.prisma.newsEventItem.findMany({
+      where: {
+        orgId,
+        eventId: { in: normalizedEventIds },
+        processedArticle: {
+          processedAt: { gte: since },
+        },
+      },
+      select: {
+        eventId: true,
+        processedItemId: true,
+        processedArticle: {
+          select: {
+            category: true,
+          },
+        },
+      },
+    });
+
+    const processedItemIds = Array.from(
+      new Set(
+        rows
+          .map((row) => this.normalizeOptionalString(row.processedItemId))
+          .filter((entry): entry is string => Boolean(entry)),
+      ),
+    );
+    const classificationByProcessedItemId =
+      await this.loadProcessedItemCategoryClassification(processedItemIds);
+
+    const countsByEventId = new Map<string, Map<string, number>>();
+    for (const eventId of normalizedEventIds) {
+      countsByEventId.set(eventId, new Map<string, number>());
+    }
+
+    for (const row of rows) {
+      const eventAggregate = countsByEventId.get(row.eventId);
+      if (!eventAggregate) {
+        continue;
+      }
+      const processedItemId = this.normalizeOptionalString(row.processedItemId);
+      const classification = processedItemId
+        ? classificationByProcessedItemId.get(processedItemId) ?? null
+        : null;
+      const legacyCategory =
+        this.normalizeLegacyCategory(classification?.legacyCategory) ??
+        this.normalizeLegacyCategory(row.processedArticle.category);
+      const categoryPath =
+        this.normalizeCategoryPath(classification?.categoryPath) ??
+        legacyCategory ??
+        "uncategorized";
+      eventAggregate.set(
+        categoryPath,
+        (eventAggregate.get(categoryPath) ?? 0) + 1,
+      );
+    }
+
+    const result = new Map<string, NewsEventCategoryDistributionEntry[]>();
+    for (const eventId of normalizedEventIds) {
+      const aggregate = countsByEventId.get(eventId);
+      if (!aggregate || aggregate.size === 0) {
+        result.set(eventId, []);
+        continue;
+      }
+      const total = Array.from(aggregate.values()).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (total <= 0) {
+        result.set(eventId, []);
+        continue;
+      }
+      const entries = Array.from(aggregate.entries())
+        .map(([categoryPath, count]) => ({
+          categoryPath,
+          legacyCategory: this.normalizeLegacyCategory(
+            categoryPath.split("/")[0] ?? null,
+          ),
+          count,
+          share: Math.round((count / total) * 10_000) / 10_000,
+        }))
+        .sort((a, b) => b.count - a.count || a.categoryPath.localeCompare(b.categoryPath))
+        .slice(0, MAX_CATEGORY_DISTRIBUTION_ITEMS);
+      result.set(eventId, entries);
+    }
+
+    this.eventCategoryDistributionCache.set(cacheKey, {
+      expiresAt: now + CATEGORY_DISTRIBUTION_CACHE_TTL_MS,
+      value: this.cloneCategoryDistributionMap(result),
+    });
+    return result;
+  }
+
+  private async resolveTimelineSince(orgId: string): Promise<Date | null> {
+    if (!this.settingsService) {
+      return null;
+    }
+    try {
+      const settings = await this.settingsService.getSettings(orgId);
+      const windowDays = Math.max(settings.backfillDays, settings.lookbackDays);
+      return new Date(Date.now() - windowDays * DAY_MS);
+    } catch (error) {
+      logger.warn(
+        { err: error, orgId },
+        "Failed to resolve timeline window from settings; returning full timeline",
+      );
+      return null;
+    }
   }
 
   async getEventAuthorityMap(
@@ -551,7 +736,13 @@ export class NewsEventsService {
               id: { in: eventIds },
               status: NewsEventStatus.active,
             },
-            select: { id: true, language: true, startAt: true, lastAt: true },
+            select: {
+              id: true,
+              language: true,
+              startAt: true,
+              lastAt: true,
+              metadata: true,
+            },
           });
           const eventsById = new Map(events.map((event) => [event.id, event]));
 
@@ -567,8 +758,17 @@ export class NewsEventsService {
               event.language,
               settings,
             );
-            if (!best || adjusted > best.score) {
-              best = { eventId, score: adjusted };
+            const categoryAdjusted = this.applyCategoryGate(
+              adjusted,
+              signal,
+              event.metadata,
+              settings,
+            );
+            if (categoryAdjusted === null) {
+              continue;
+            }
+            if (!best || categoryAdjusted > best.score) {
+              best = { eventId, score: categoryAdjusted };
             }
           }
 
@@ -585,6 +785,7 @@ export class NewsEventsService {
 
     const overlapCandidate = await this.pickEventByOverlap(
       orgId,
+      signal,
       derived,
       settings,
     );
@@ -597,6 +798,7 @@ export class NewsEventsService {
 
   private async pickEventByOverlap(
     orgId: string,
+    signal: NewsSignal,
     derived: {
       timestamp: Date;
       language: string | null;
@@ -660,6 +862,16 @@ export class NewsEventsService {
         candidate.language,
         settings,
       );
+      const categoryAdjusted = this.applyCategoryGate(
+        score,
+        signal,
+        candidate.metadata,
+        settings,
+      );
+      if (categoryAdjusted === null) {
+        continue;
+      }
+      score = categoryAdjusted;
 
       if (!best || score > best.score) {
         best = {
@@ -693,6 +905,7 @@ export class NewsEventsService {
       primaryEntity: string | null;
     },
   ) {
+    const classificationMetadata = this.buildClassificationMetadata(signal);
     return tx.newsEvent.create({
       data: {
         orgId,
@@ -708,6 +921,9 @@ export class NewsEventsService {
         representativeProcessedItemId: this.normalizeOptionalString(
           signal.processedItemId,
         ),
+        metadata: classificationMetadata
+          ? ({ classification: classificationMetadata } as Prisma.InputJsonValue)
+          : undefined,
       },
     });
   }
@@ -805,6 +1021,246 @@ export class NewsEventsService {
     }
     const penalty = Math.min(Math.max(settings.crossLanguagePenalty, 0), 1);
     return score * (1 - penalty);
+  }
+
+  private applyCategoryGate(
+    score: number,
+    signal: NewsSignal,
+    eventMetadata: Prisma.JsonValue | null,
+    settings: NewsEventSettings,
+  ): number | null {
+    if (!settings.classificationGateEnabled) {
+      return score;
+    }
+
+    const signalCategory = this.normalizeLegacyCategory(signal.legacyCategory);
+    const signalConfidence =
+      typeof signal.categoryConfidence === "number" &&
+      Number.isFinite(signal.categoryConfidence)
+        ? Math.max(0, Math.min(1, signal.categoryConfidence))
+        : null;
+    if (!signalCategory) {
+      return score;
+    }
+    if (
+      signalConfidence !== null &&
+      signalConfidence < settings.minCategoryConfidenceForGate
+    ) {
+      return score;
+    }
+
+    const eventClassification = this.extractEventClassification(eventMetadata);
+    if (!eventClassification.legacyCategory) {
+      return score;
+    }
+    if (eventClassification.legacyCategory !== signalCategory) {
+      if (settings.categoryConflictReject) {
+        return null;
+      }
+      return score * (1 - this.clamp01(settings.categorySoftPenalty));
+    }
+
+    const signalPath = this.normalizeCategoryPath(signal.categoryPath);
+    const eventPath = this.normalizeCategoryPath(eventClassification.categoryPath);
+    if (!signalPath || !eventPath || signalPath === eventPath) {
+      return score;
+    }
+
+    return score * (1 - this.clamp01(settings.categorySoftPenalty * 0.5));
+  }
+
+  private extractEventClassification(metadata: Prisma.JsonValue | null): {
+    legacyCategory: string | null;
+    categoryPath: string | null;
+    confidence: number | null;
+  } {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return { legacyCategory: null, categoryPath: null, confidence: null };
+    }
+    const record = metadata as Record<string, unknown>;
+    const classification =
+      record.classification &&
+      typeof record.classification === "object" &&
+      !Array.isArray(record.classification)
+        ? (record.classification as Record<string, unknown>)
+        : null;
+    if (!classification) {
+      return { legacyCategory: null, categoryPath: null, confidence: null };
+    }
+    const rawConfidence =
+      typeof classification.confidence === "number"
+        ? classification.confidence
+        : null;
+    return {
+      legacyCategory: this.normalizeLegacyCategory(
+        classification.legacyCategory,
+      ),
+      categoryPath: this.normalizeCategoryPath(classification.categoryPath),
+      confidence:
+        rawConfidence !== null && Number.isFinite(rawConfidence)
+          ? Math.max(0, Math.min(1, rawConfidence))
+          : null,
+    };
+  }
+
+  private buildClassificationMetadata(signal: NewsSignal): {
+    legacyCategory: string;
+    categoryPath?: string | null;
+    confidence?: number | null;
+  } | null {
+    const legacyCategory = this.normalizeLegacyCategory(signal.legacyCategory);
+    if (!legacyCategory) {
+      return null;
+    }
+    const categoryPath = this.normalizeCategoryPath(signal.categoryPath);
+    const confidence =
+      typeof signal.categoryConfidence === "number" &&
+      Number.isFinite(signal.categoryConfidence)
+        ? Math.max(0, Math.min(1, signal.categoryConfidence))
+        : null;
+
+    return {
+      legacyCategory,
+      ...(categoryPath ? { categoryPath } : {}),
+      ...(confidence !== null ? { confidence } : {}),
+    };
+  }
+
+  private normalizeLegacyCategory(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    return new Set(["politics", "tech", "finance", "gov", "ai", "intel"]).has(
+      normalized,
+    )
+      ? normalized
+      : null;
+  }
+
+  private normalizeCategoryPath(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\\/g, "/")
+      .replace(/\s+/g, "-")
+      .replace(/\/+/g, "/")
+      .replace(/^\/+|\/+$/g, "");
+    return normalized || null;
+  }
+
+  private cloneCategoryDistributionMap(
+    input: Map<string, NewsEventCategoryDistributionEntry[]>,
+  ): Map<string, NewsEventCategoryDistributionEntry[]> {
+    return new Map(
+      Array.from(input.entries()).map(([eventId, entries]) => [
+        eventId,
+        entries.map((entry) => ({ ...entry })),
+      ]),
+    );
+  }
+
+  private async loadProcessedItemCategoryClassification(
+    processedItemIds: string[],
+  ): Promise<Map<string, ProcessedItemCategoryClassification | null>> {
+    const result = new Map<string, ProcessedItemCategoryClassification | null>();
+    if (processedItemIds.length === 0) {
+      return result;
+    }
+
+    const now = Date.now();
+    const pendingIds: string[] = [];
+    for (const id of processedItemIds) {
+      const cached = this.processedItemCategoryCache.get(id);
+      if (cached && cached.expiresAt > now) {
+        result.set(id, cached.value);
+        continue;
+      }
+      if (cached) {
+        this.processedItemCategoryCache.delete(id);
+      }
+      pendingIds.push(id);
+    }
+
+    if (pendingIds.length === 0) {
+      return result;
+    }
+
+    try {
+      const docs = await ProcessedItemModel.find({
+        _id: { $in: pendingIds },
+      })
+        .select({ _id: 1, result: 1 })
+        .lean()
+        .exec();
+      const found = new Set<string>();
+      for (const doc of docs) {
+        const id = String((doc as { _id?: unknown })._id ?? "").trim();
+        if (!id) {
+          continue;
+        }
+        found.add(id);
+        const classification = this.extractProcessedItemCategoryClassification(
+          (doc as { result?: unknown }).result,
+        );
+        result.set(id, classification);
+        this.processedItemCategoryCache.set(id, {
+          expiresAt: now + PROCESSED_ITEM_CLASSIFICATION_CACHE_TTL_MS,
+          value: classification,
+        });
+      }
+
+      for (const id of pendingIds) {
+        if (found.has(id)) {
+          continue;
+        }
+        result.set(id, null);
+        this.processedItemCategoryCache.set(id, {
+          expiresAt: now + PROCESSED_ITEM_CLASSIFICATION_CACHE_TTL_MS,
+          value: null,
+        });
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error, ids: pendingIds.length },
+        "Failed to load processed-item category classification for event distribution",
+      );
+    }
+
+    return result;
+  }
+
+  private extractProcessedItemCategoryClassification(
+    value: unknown,
+  ): ProcessedItemCategoryClassification {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { legacyCategory: null, categoryPath: null, confidence: null };
+    }
+    const record = value as Record<string, unknown>;
+    const rawConfidence =
+      typeof record.category_confidence === "number"
+        ? record.category_confidence
+        : typeof record.categoryConfidence === "number"
+          ? record.categoryConfidence
+          : null;
+    return {
+      legacyCategory:
+        this.normalizeLegacyCategory(record.category) ??
+        this.normalizeLegacyCategory(record.legacy_category),
+      categoryPath:
+        this.normalizeCategoryPath(record.category_path) ??
+        this.normalizeCategoryPath(record.categoryPath),
+      confidence:
+        typeof rawConfidence === "number" && Number.isFinite(rawConfidence)
+          ? this.clamp01(rawConfidence)
+          : null,
+    };
   }
 
   private isUniqueConstraintError(error: unknown): boolean {
