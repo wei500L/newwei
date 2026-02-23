@@ -131,7 +131,9 @@
         "sourceEventMissing": "No source event.",
         "targets": "Associated targets",
         "targetsEmpty": "No targets.",
-        "targetMeta": "weight {{weight}} · conf {{conf}}"
+        "targetMeta": "weight {{weight}} · conf {{conf}}",
+        "ciVisualization": "Confidence interval visualization",
+        "sentimentCompare": "Negative sentiment ratio comparison"
       },
       "detail": {
         "triggeredAt": "Triggered at",
@@ -191,6 +193,121 @@
         "tuningEmpty": "No tuning suggestion.",
         "tuningThreshold": "Suggested threshold {{value}}",
         "tuningRange": "Suggested range {{lower}} - {{upper}}"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "evidence": "Evidence",
+        "replay": "Replay",
+        "feedback": "Feedback",
+        "deliveries": "Deliveries"
+      },
+      "stats": {
+        "total": "Total alerts",
+        "pending": "Pending",
+        "confirmed": "Confirmed",
+        "ignored": "Ignored",
+        "falsePositiveRate": "False positive rate"
+      },
+      "filters": {
+        "title": "Filters",
+        "resultCount": "{{count}} / {{total}} alerts",
+        "severity": {
+          "label": "Severity",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        },
+        "status": {
+          "label": "Status",
+          "delivered": "Delivered",
+          "pending": "Pending",
+          "failed": "Failed",
+          "confirmed": "Confirmed",
+          "ignored": "Ignored"
+        },
+        "provider": {
+          "label": "Metric provider"
+        },
+        "ruleKeyword": {
+          "label": "Rule name search",
+          "placeholder": "Search by rule name"
+        },
+        "time": {
+          "label": "Time range",
+          "today": "Today",
+          "last7Days": "Last 7 days",
+          "last30Days": "Last 30 days",
+          "custom": "Custom"
+        }
+      },
+      "quickTags": {
+        "title": "Quick filters",
+        "economicAnomaly": "Economic anomaly",
+        "entitySentiment": "Entity sentiment",
+        "entityAssociation": "Entity association",
+        "last7Days": "Last 7 days",
+        "last30Days": "Last 30 days"
+      },
+      "trend": {
+        "title": "Alert trend",
+        "empty": "No trend data in current filter range.",
+        "followFilters": "Following current filters"
+      },
+      "batch": {
+        "selectVisible": "Select visible",
+        "selectedCount": "{{count}} selected",
+        "hiddenSelected": "{{count}} selected outside current filters",
+        "clearHidden": "Clear hidden selection",
+        "notePlaceholder": "Optional batch note",
+        "confirm": "Batch confirm",
+        "ignore": "Batch ignore",
+        "updateSuccess": "Updated {{count}} alerts to {{status}}.",
+        "updatePartial": "{{count}} alerts failed to update.",
+        "progress": "{{done}} / {{total}} processed",
+        "pageSummary": "Showing {{start}}-{{end}} of {{total}}"
+      },
+      "export": {
+        "csv": "Export CSV",
+        "json": "Export JSON",
+        "success": "Export completed.",
+        "failed": "Export failed.",
+        "includeRaw": "Include raw context",
+        "scopeSelected": "Selected alerts",
+        "scopePage": "Current page",
+        "scopeCount": "{{count}} rows ready"
+      },
+      "sampleWarning": {
+        "message": "Metrics and trends are based on the latest {{count}} alerts currently loaded.",
+        "loadMore": "Load more history",
+        "reachLimit": "Reached client-side history limit."
+      },
+      "analysis": {
+        "similarTitle": "Similar alerts",
+        "similarEmpty": "No similar alerts in current data window.",
+        "sameRule": "Same rule",
+        "sameMetric": "Same metric",
+        "ruleTrendTitle": "Rule frequency and FP trend",
+        "totalTriggers": "Total triggers",
+        "dailyAverage": "Daily average",
+        "falsePositiveRate": "False positive rate",
+        "ruleTrendEmpty": "No rule trend data in current time range.",
+        "triggerFrequency": "Trigger frequency",
+        "falsePositiveTrend": "False positive rate"
+      },
+      "actions": {
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "showAllContext": "Show all context ({{count}})",
+        "showLessContext": "Show less context",
+        "quickConfirm": "One-click confirm",
+        "previous": "Previous",
+        "next": "Next",
+        "copyMarkdown": "Copy Markdown",
+        "filteredOut": "Selected event is outside the current filters."
+      },
+      "markdown": {
+        "title": "Alert detail",
+        "copied": "Copied as Markdown."
       }
     },
     "streamError": "Alert stream error: {{error}}",

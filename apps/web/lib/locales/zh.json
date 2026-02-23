@@ -131,7 +131,9 @@
         "sourceEventMissing": "暂无源事件。",
         "targets": "关联目标",
         "targetsEmpty": "暂无目标。",
-        "targetMeta": "权重 {{weight}} · 置信度 {{conf}}"
+        "targetMeta": "权重 {{weight}} · 置信度 {{conf}}",
+        "ciVisualization": "置信区间可视化",
+        "sentimentCompare": "负面情绪占比对比"
       },
       "detail": {
         "triggeredAt": "触发时间",
@@ -191,6 +193,121 @@
         "tuningEmpty": "暂无调参建议。",
         "tuningThreshold": "建议阈值 {{value}}",
         "tuningRange": "建议范围 {{lower}} - {{upper}}"
+      },
+      "tabs": {
+        "overview": "概览",
+        "evidence": "证据",
+        "replay": "回放",
+        "feedback": "反馈",
+        "deliveries": "投递记录"
+      },
+      "stats": {
+        "total": "告警总数",
+        "pending": "待处理",
+        "confirmed": "已确认",
+        "ignored": "已忽略",
+        "falsePositiveRate": "误报率"
+      },
+      "filters": {
+        "title": "筛选器",
+        "resultCount": "{{count}} / {{total}} 条告警",
+        "severity": {
+          "label": "严重程度",
+          "low": "低",
+          "medium": "中",
+          "high": "高"
+        },
+        "status": {
+          "label": "状态",
+          "delivered": "已投递",
+          "pending": "待处理",
+          "failed": "失败",
+          "confirmed": "已确认",
+          "ignored": "已忽略"
+        },
+        "provider": {
+          "label": "指标提供方"
+        },
+        "ruleKeyword": {
+          "label": "规则名称搜索",
+          "placeholder": "按规则名称搜索"
+        },
+        "time": {
+          "label": "时间范围",
+          "today": "今天",
+          "last7Days": "最近 7 天",
+          "last30Days": "最近 30 天",
+          "custom": "自定义"
+        }
+      },
+      "quickTags": {
+        "title": "快捷筛选",
+        "economicAnomaly": "经济异常",
+        "entitySentiment": "实体情感",
+        "entityAssociation": "实体关联",
+        "last7Days": "最近 7 天",
+        "last30Days": "最近 30 天"
+      },
+      "trend": {
+        "title": "告警趋势",
+        "empty": "当前筛选范围内暂无趋势数据。",
+        "followFilters": "跟随当前筛选条件"
+      },
+      "batch": {
+        "selectVisible": "选择当前可见",
+        "selectedCount": "已选择 {{count}} 条",
+        "hiddenSelected": "有 {{count}} 条已选告警不在当前筛选中",
+        "clearHidden": "清除隐藏选择",
+        "notePlaceholder": "批量备注（可选）",
+        "confirm": "批量确认",
+        "ignore": "批量忽略",
+        "updateSuccess": "已将 {{count}} 条告警更新为 {{status}}。",
+        "updatePartial": "{{count}} 条告警更新失败。",
+        "progress": "已处理 {{done}} / {{total}}",
+        "pageSummary": "显示 {{start}}-{{end}} / 共 {{total}} 条"
+      },
+      "export": {
+        "csv": "导出 CSV",
+        "json": "导出 JSON",
+        "success": "导出完成。",
+        "failed": "导出失败。",
+        "includeRaw": "包含原始上下文",
+        "scopeSelected": "已选告警",
+        "scopePage": "当前页",
+        "scopeCount": "可导出 {{count}} 条"
+      },
+      "sampleWarning": {
+        "message": "当前指标与趋势基于最新 {{count}} 条已加载告警。",
+        "loadMore": "加载更多历史",
+        "reachLimit": "已达到前端历史加载上限。"
+      },
+      "analysis": {
+        "similarTitle": "相似告警",
+        "similarEmpty": "当前数据窗口内暂无相似告警。",
+        "sameRule": "同规则",
+        "sameMetric": "同指标",
+        "ruleTrendTitle": "规则触发频率与误报趋势",
+        "totalTriggers": "触发总数",
+        "dailyAverage": "日均触发",
+        "falsePositiveRate": "误报率",
+        "ruleTrendEmpty": "当前时间范围内暂无规则趋势数据。",
+        "triggerFrequency": "触发频率",
+        "falsePositiveTrend": "误报率趋势"
+      },
+      "actions": {
+        "expand": "展开",
+        "collapse": "收起",
+        "showAllContext": "查看全部上下文（{{count}}）",
+        "showLessContext": "收起上下文",
+        "quickConfirm": "一键确认",
+        "previous": "上一条",
+        "next": "下一条",
+        "copyMarkdown": "复制 Markdown",
+        "filteredOut": "当前选中的告警不在筛选结果内。"
+      },
+      "markdown": {
+        "title": "告警详情",
+        "copied": "已按 Markdown 复制。"
       }
     },
     "streamError": "告警流错误：{{error}}",
