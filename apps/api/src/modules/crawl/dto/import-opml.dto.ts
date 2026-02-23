@@ -37,6 +37,11 @@ export class ImportNewsSourceOpmlEntryDto {
   @IsOptional()
   @IsEnum(NewsSourceType)
   siteType?: NewsSourceType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  group?: string | null;
 }
 
 export class ImportNewsSourcesFromOpmlDto {

@@ -11,7 +11,7 @@ import {
   ScheduleNewsSourceDto,
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
-import { BatchUpdateNewsSourceFrequencyDto } from "./dto/news-source-batch.dto";
+import { BatchUpdateNewsSourceFrequencyDto, BatchUpdateNewsSourceGroupDto, BatchUpdateNewsSourceActiveDto, BatchDeleteNewsSourcesDto } from "./dto/news-source-batch.dto";
 import { ImportNewsSourcesFromOpmlDto } from "./dto/import-opml.dto";
 import { PreviewNewsSourceOpmlDto } from "./dto/preview-opml.dto";
 import { NewsSourceOpmlService } from "./news-source-opml.service";
@@ -79,6 +79,39 @@ export class NewsSourceController {
       conflictPolicy: body.conflictPolicy,
       runtimeProfile: body.runtimeProfile,
     });
+  }
+
+  @Get("groups")
+  @Permissions("crawl.read")
+  async listGroups(@CurrentUser() user: AuthenticatedUser) {
+    return this.newsSources.listGroups(user.orgId);
+  }
+
+  @Patch("batch/group")
+  @Permissions("crawl.write")
+  async batchUpdateGroup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchUpdateNewsSourceGroupDto,
+  ) {
+    return this.newsSources.updateGroupForMany(user.orgId, body);
+  }
+
+  @Patch("batch/active")
+  @Permissions("crawl.write")
+  async batchUpdateActive(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchUpdateNewsSourceActiveDto,
+  ) {
+    return this.newsSources.updateActiveForMany(user.orgId, body);
+  }
+
+  @Delete("batch")
+  @Permissions("crawl.write")
+  async batchDelete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BatchDeleteNewsSourcesDto,
+  ) {
+    return this.newsSources.deleteManyByIds(user.orgId, body);
   }
 
   @Patch(":id")

@@ -70,6 +70,7 @@ interface NewsSourceRecord {
   siteType: string;
   language?: string | null;
   crawlTemplateId?: string | null;
+  group?: string | null;
   frequencySeconds: number;
   priority: number;
   isActive: boolean;
@@ -250,6 +251,7 @@ interface NewsSourceOpmlPreviewEntry {
   url: string;
   feedUrl: string;
   language: string;
+  group?: string | null;
   enabled: boolean;
   valid: boolean;
   alreadyExists: boolean;
@@ -293,6 +295,7 @@ interface NewsSourceFormValues {
   url: string;
   siteType: string;
   language?: string;
+  group?: string[] | null;
   crawlTemplateId?: string;
   frequencySeconds: number;
   priority: number;
@@ -874,9 +877,11 @@ export function NewsSourcesContent() {
   const [scheduleTargets, setScheduleTargets] = useState<NewsSourceRecord[]>(
     [],
   );
+  const [groups, setGroups] = useState<string[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [batchRunLoading, setBatchRunLoading] = useState(false);
   const [batchToggleLoading, setBatchToggleLoading] = useState(false);
+  const [batchGroupLoading, setBatchGroupLoading] = useState(false);
   const [dispatchingSourceIds, setDispatchingSourceIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -912,6 +917,17 @@ export function NewsSourcesContent() {
   const selectedSources = useMemo(
     () => sources.filter((source) => selectedSourceIdSet.has(source.id)),
     [selectedSourceIdSet, sources],
+  );
+
+  const uniqueGroups = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...groups,
+          ...sources.map((s) => s.group).filter((g): g is string => Boolean(g)),
+        ]),
+      ).sort(),
+    [groups, sources],
   );
 
   const apiClient = useMemo(
@@ -961,6 +977,15 @@ export function NewsSourcesContent() {
       setTemplates(response.data ?? []);
     } catch (error) {
       captureClientError("Failed to load crawl templates", error);
+    }
+  }, [apiClient]);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      const response = await apiClient.get<string[]>("admin/news-sources/groups");
+      setGroups(response.data ?? []);
+    } catch (error) {
+      captureClientError("Failed to load news source groups", error);
     }
   }, [apiClient]);
 
@@ -1080,8 +1105,9 @@ export function NewsSourcesContent() {
     if (canView) {
       void refreshAll();
       void loadTemplates();
+      void loadGroups();
     }
-  }, [canView, loadTemplates, refreshAll]);
+  }, [canView, loadTemplates, loadGroups, refreshAll]);
 
   useEffect(() => {
     if (!canView || !autoRefreshEnabled) {
@@ -1708,6 +1734,7 @@ export function NewsSourcesContent() {
       url: source.url,
       siteType: source.siteType,
       language: source.language ?? "",
+      group: source.group ? [source.group] : null,
       crawlTemplateId: source.crawlTemplateId ?? undefined,
       frequencySeconds: source.frequencySeconds,
       priority: source.priority,
@@ -2248,6 +2275,7 @@ export function NewsSourcesContent() {
         url: values.url,
         siteType: values.siteType,
         language: values.language?.trim() ?? "",
+        group: Array.isArray(values.group) ? (values.group[0]?.trim() || null) : (values.group?.trim() || null),
         crawlTemplateId: values.crawlTemplateId?.trim()
           ? values.crawlTemplateId.trim()
           : null,
@@ -2428,6 +2456,7 @@ export function NewsSourcesContent() {
           feedUrl: entry.feedUrl,
           language: entry.language,
           enabled: entry.enabled,
+          group: entry.group ?? null,
           siteType: "general",
         })),
         conflictPolicy: "skip",
@@ -2702,6 +2731,36 @@ export function NewsSourcesContent() {
       );
     } finally {
       setBatchToggleLoading(false);
+    }
+  };
+
+  const handleBatchSetGroup = async (group: string | null) => {
+    const ids = selectedSourceIds;
+    if (ids.length === 0) {
+      return;
+    }
+    setBatchGroupLoading(true);
+    try {
+      await apiClient.patch("admin/news-sources/batch/group", { ids, group });
+      messageApi.success(
+        t("newsSources.messages.groupUpdatedBatch", {
+          defaultValue: "Group updated for {{count}} source(s).",
+          count: ids.length,
+        }),
+      );
+      setSelectedSourceIds([]);
+      await loadSources();
+      await loadGroups();
+    } catch (error) {
+      captureClientError("Failed to batch update group", error);
+      messageApi.error(
+        extractApiErrorMessage(error) ??
+          t("newsSources.errors.saveFailed", {
+            defaultValue: "Failed to save news source.",
+          }),
+      );
+    } finally {
+      setBatchGroupLoading(false);
     }
   };
 
@@ -3694,6 +3753,14 @@ export function NewsSourcesContent() {
       },
     },
     {
+      title: t("newsSources.columns.group", { defaultValue: "Group" }),
+      dataIndex: "group",
+      key: "group",
+      width: 140,
+      render: (group: string | null) =>
+        group ? <Tag>{group}</Tag> : null,
+    },
+    {
       title: t("common.actions"),
       key: "actions",
       width: 340,
@@ -4290,6 +4357,31 @@ export function NewsSourcesContent() {
                 >
                   {t("common.disable", { defaultValue: "Disable" })}
                 </Button>
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: "clear-group",
+                        label: t("newsSources.actions.clearGroup", {
+                          defaultValue: "Clear group",
+                        }),
+                        onClick: () => void handleBatchSetGroup(null),
+                      },
+                      ...uniqueGroups.map((g) => ({
+                        key: g,
+                        label: g,
+                        onClick: () => void handleBatchSetGroup(g),
+                      })),
+                    ],
+                  }}
+                  disabled={batchGroupLoading}
+                >
+                  <Button loading={batchGroupLoading}>
+                    {t("newsSources.actions.setGroup", {
+                      defaultValue: "Set group",
+                    })}
+                  </Button>
+                </Dropdown>
                 <Button onClick={() => setSelectedSourceIds([])}>
                   {t("common.clear", { defaultValue: "Clear" })}
                 </Button>
@@ -4396,6 +4488,27 @@ export function NewsSourcesContent() {
               allowClear
               options={templateOptions}
               placeholder={t("common.none", { defaultValue: "None" })}
+            />
+          </Form.Item>
+          <Form.Item
+            name="group"
+            label={t("newsSources.fields.group", { defaultValue: "Group" })}
+          >
+            <Select
+              showSearch
+              allowClear
+              mode="tags"
+              maxCount={1}
+              options={uniqueGroups.map((g) => ({ value: g, label: g }))}
+              placeholder={t("newsSources.fields.groupPlaceholder", {
+                defaultValue: "Select or type a group",
+              })}
+              notFoundContent={null}
+              filterOption={(input, option) =>
+                (option?.label as string ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
             />
           </Form.Item>
 
@@ -6344,6 +6457,15 @@ export function NewsSourcesContent() {
                       }
                     />
                   ),
+                },
+                {
+                  title: t("newsSources.opml.columns.group", {
+                    defaultValue: "Group",
+                  }),
+                  dataIndex: "group",
+                  width: 130,
+                  render: (group: string | null) =>
+                    group ? <Tag>{group}</Tag> : null,
                 },
                 {
                   title: t("newsSources.opml.columns.status", {

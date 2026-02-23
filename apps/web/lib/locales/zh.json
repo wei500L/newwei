@@ -1825,7 +1825,8 @@
       "strategyEmpty": "默认",
       "lastSuccess": "最近成功",
       "stats24h": "24h",
-      "latest": "最新"
+      "latest": "最新",
+      "group": "分组"
     },
     "types": {
       "general": "综合",
@@ -1846,7 +1847,9 @@
       "schedule": "调度",
       "ops": "运维",
       "scheduleBatch": "调度（{{count}}）",
-      "useDockerHostProxy": "使用 Docker 宿主机"
+      "useDockerHostProxy": "使用 Docker 宿主机",
+      "setGroup": "设置分组",
+      "clearGroup": "清除分组"
     },
     "fields": {
       "name": "名称",
@@ -1854,6 +1857,8 @@
       "type": "类型",
       "language": "语言",
       "languageHint": "例如 en, zh",
+      "group": "分组",
+      "groupPlaceholder": "选择或输入分组名称",
       "frequency": "频率（秒）",
       "priority": "优先级",
       "active": "启用",
@@ -1964,6 +1969,7 @@
       "batchTogglePartial": "已更新 {{ok}}/{{total}} 个数据源。",
       "enabledBatch": "已启用 {{count}} 个数据源。",
       "disabledBatch": "已禁用 {{count}} 个数据源。",
+      "groupUpdatedBatch": "已为 {{count}} 个数据源更新分组。",
       "batchDispatch": "已调度 {{sources}} 个数据源：入队 {{tasks}} 个任务，跳过 {{skipped}} 个，入队失败 {{enqueueFailures}} 个，冲突 {{conflicts}} 个，请求失败 {{failures}} 个。",
       "scheduledBatchPartial": "已为 {{ok}}/{{total}} 个数据源设置运行时间：{{time}}。",
       "scheduledBatch": "已为 {{count}} 个数据源设置运行时间：{{time}}。"
@@ -2163,6 +2169,7 @@
         "siteUrl": "站点 URL",
         "feedUrl": "订阅源 URL",
         "language": "语言",
+        "group": "分组",
         "status": "状态"
       },
       "status": {

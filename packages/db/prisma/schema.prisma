@@ -359,6 +359,7 @@ model NewsSource {
   priority         Int             @default(0)
   isActive         Boolean         @default(true)
   config           Json?
+  group            String?
   lastRunAt        DateTime?
   lastSuccessAt    DateTime?
   lastFailureAt    DateTime?
@@ -373,6 +374,7 @@ model NewsSource {
 
   @@index([isActive, nextRunAt])
   @@unique([orgId, url])
+  @@index([orgId, group])
 }
 
 model PipelineJob {

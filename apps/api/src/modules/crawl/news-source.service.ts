@@ -26,6 +26,11 @@ import {
   ScheduleNewsSourceDto,
   UpdateNewsSourceDto,
 } from "./dto/news-source.dto";
+import {
+  BatchDeleteNewsSourcesDto,
+  BatchUpdateNewsSourceActiveDto,
+  BatchUpdateNewsSourceGroupDto,
+} from "./dto/news-source-batch.dto";
 
 const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.pending,
@@ -114,6 +119,9 @@ export class NewsSourceService {
         { name: { contains: search } },
         { url: { contains: search } },
       ];
+    }
+    if (query?.group !== undefined) {
+      where.group = query.group.trim() || null;
     }
 
     const sources = await this.prisma.newsSource.findMany({
@@ -401,6 +409,7 @@ export class NewsSourceService {
           priority: input.priority,
           isActive,
           config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
+          group: input.group !== undefined ? (input.group?.trim() || null) : null,
           nextRunAt,
         },
       });
@@ -466,6 +475,9 @@ export class NewsSourceService {
       } else if (input.config) {
         data.config = toPrismaJsonValue(this.normalizeConfig(input.config));
       }
+    }
+    if (input.group !== undefined) {
+      data.group = input.group !== null ? (input.group.trim() || null) : null;
     }
 
     const isActivating = input.isActive === true && !existing.isActive;
@@ -756,6 +768,46 @@ export class NewsSourceService {
       deepPreviewError,
       deepFailureStats,
     };
+  }
+
+  async listGroups(orgId: string): Promise<string[]> {
+    const results = await this.prisma.newsSource.findMany({
+      where: { orgId, group: { not: null } },
+      select: { group: true },
+      distinct: ["group"],
+      orderBy: { group: "asc" },
+    });
+    return results.map((r) => r.group as string);
+  }
+
+  async updateGroupForMany(orgId: string, dto: BatchUpdateNewsSourceGroupDto) {
+    if (dto.group === undefined) {
+      throw new BadRequestException('group is required; pass null to clear');
+    }
+    const group = dto.group !== null ? (dto.group.trim() || null) : null;
+    const result = await this.prisma.newsSource.updateMany({
+      where: { orgId, id: { in: dto.ids } },
+      data: { group },
+    });
+    return { updatedCount: result.count, requestedCount: dto.ids.length };
+  }
+
+  async updateActiveForMany(orgId: string, dto: BatchUpdateNewsSourceActiveDto) {
+    const now = new Date();
+    const result = await this.prisma.newsSource.updateMany({
+      where: { orgId, id: { in: dto.ids } },
+      data: dto.isActive
+        ? { isActive: true, nextRunAt: now, circuitOpenUntil: null, consecutiveFailures: 0 }
+        : { isActive: false, nextRunAt: null },
+    });
+    return { updatedCount: result.count, requestedCount: dto.ids.length };
+  }
+
+  async deleteManyByIds(orgId: string, dto: BatchDeleteNewsSourcesDto) {
+    const result = await this.prisma.newsSource.deleteMany({
+      where: { orgId, id: { in: dto.ids } },
+    });
+    return { deletedCount: result.count, requestedCount: dto.ids.length };
   }
 
   private async readDeepDiscoveryFailureStats(sourceId: string) {

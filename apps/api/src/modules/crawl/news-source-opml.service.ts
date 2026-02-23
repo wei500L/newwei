@@ -23,6 +23,7 @@ export interface NewsSourceOpmlPreviewEntry {
   url: string;
   feedUrl: string;
   language: string;
+  group: string | null;
   enabled: boolean;
   valid: boolean;
   alreadyExists: boolean;
@@ -49,6 +50,7 @@ export interface ImportNewsSourceOpmlEntryInput {
   language?: string;
   enabled?: boolean;
   siteType?: NewsSourceType;
+  group?: string | null;
 }
 
 export interface ImportNewsSourceOpmlReport {
@@ -210,6 +212,7 @@ export class NewsSourceOpmlService {
         url: url ?? rawUrl,
         feedUrl: feedUrl ?? rawFeedUrl,
         language: defaultLanguage,
+        group: entry.group ?? null,
         enabled: valid,
         valid,
         alreadyExists: false,
@@ -296,6 +299,7 @@ export class NewsSourceOpmlService {
       const language = this.normalizeLanguage(entry?.language);
       const enabled = entry?.enabled !== false;
       const siteType = entry?.siteType ?? NewsSourceType.general;
+      const group = normalizeOptionalString(entry?.group) ?? null;
 
       const valid = Boolean(name) && Boolean(url) && Boolean(feedUrl) && errors.length === 0;
 
@@ -307,6 +311,7 @@ export class NewsSourceOpmlService {
         enabled,
         valid,
         siteType,
+        group,
         errors,
       };
     });
@@ -371,6 +376,7 @@ export class NewsSourceOpmlService {
             priority: 0,
             isActive: true,
             config: toPrismaJsonValue(this.buildDefaultRssSeedConfig(entry.feedUrl)),
+            group: normalizeOptionalString(entry.group) ?? null,
             nextRunAt: new Date(),
           },
           select: { id: true, name: true, url: true },
@@ -410,7 +416,7 @@ export class NewsSourceOpmlService {
 
   private parseOpml(opml: string): {
     title: string | null;
-    entries: Array<{ name: string; url: string; feedUrl: string }>;
+    entries: Array<{ name: string; url: string; feedUrl: string; group: string | null }>;
   } {
     let parsed: Record<string, unknown> | null = null;
     try {
@@ -427,14 +433,14 @@ export class NewsSourceOpmlService {
     const body = isRecord(opmlNode?.body) ? (opmlNode.body as Record<string, unknown>) : null;
     const outlines = body?.outline;
 
-    const collected: ParsedOpmlOutline[] = [];
-    const walk = (node: unknown) => {
+    const collected: Array<{ outline: ParsedOpmlOutline; group: string | null }> = [];
+    const walk = (node: unknown, parentGroup: string | null = null) => {
       if (!node) {
         return;
       }
       if (Array.isArray(node)) {
         for (const entry of node) {
-          walk(entry);
+          walk(entry, parentGroup);
         }
         return;
       }
@@ -449,29 +455,35 @@ export class NewsSourceOpmlService {
 
       const type = typeRaw ? typeRaw.toLowerCase() : '';
       const isFeed = type === 'rss' || Boolean(xmlUrl);
+      const label =
+        normalizeOptionalString(outline.text) ??
+        normalizeOptionalString(outline.title) ??
+        null;
       if (isFeed && (xmlUrl || htmlUrl)) {
-        collected.push(outline);
+        collected.push({ outline, group: parentGroup });
       }
+      const nextGroup = !isFeed && label ? label : parentGroup;
 
       if ('outline' in node) {
-        walk((node as ParsedOpmlOutline).outline);
+        walk((node as ParsedOpmlOutline).outline, nextGroup);
       }
     };
 
     walk(outlines);
 
     const entries = collected
-      .map((outline) => {
+      .map((item) => {
         const name =
-          normalizeOptionalString(outline.text) ??
-          normalizeOptionalString(outline.title) ??
+          normalizeOptionalString(item.outline.text) ??
+          normalizeOptionalString(item.outline.title) ??
           '';
-        const feedUrl = normalizeOptionalString(outline.xmlUrl) ?? '';
-        const url = normalizeOptionalString(outline.htmlUrl) ?? '';
+        const feedUrl = normalizeOptionalString(item.outline.xmlUrl) ?? '';
+        const url = normalizeOptionalString(item.outline.htmlUrl) ?? '';
         return {
           name: name || url || feedUrl,
           url,
           feedUrl,
+          group: item.group ?? null,
         };
       })
       .filter((entry) => entry.url.length > 0 || entry.feedUrl.length > 0);

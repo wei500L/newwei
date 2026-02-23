@@ -20,6 +20,11 @@ export class ListNewsSourceDto {
   @IsString()
   @MaxLength(200)
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  group?: string;
 }
 
 export class CreateNewsSourceDto {
@@ -67,6 +72,11 @@ export class CreateNewsSourceDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  group?: string | null;
 }
 
 export class UpdateNewsSourceDto {
@@ -116,6 +126,11 @@ export class UpdateNewsSourceDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  group?: string | null;
 }
 
 export class ScheduleNewsSourceDto {
