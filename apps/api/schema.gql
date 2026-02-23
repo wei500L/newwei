@@ -387,6 +387,18 @@ type AuthCacheSettingsModel {
   retryDelayMs: Int!
 }
 
+type ClassificationQualitySettingsModel {
+  cacheTtlSeconds: Int!
+  embeddingP95LatencyWarnMs: Int!
+  gatePenalizedRateWarn: Float!
+  gateRejectRateWarn: Float!
+  llmP95LatencyWarnMs: Int!
+  lowConfidenceThreshold: Float!
+  reportMinPairCount: Int!
+  reportMinPairErrorRate: Float!
+  rerankP95LatencyWarnMs: Int!
+}
+
 input CommodityMoveImpactInput {
   commodityName: String!
   maxCandidates: Int
@@ -1333,8 +1345,10 @@ type Mutation {
   requestAssistantQuery(input: AssistantQueryInput!): AssistantRunModel!
   requestAssistantReport(input: AssistantReportInput!): AssistantRunModel!
   requestCorrelationAnalysis(input: CorrelationAnalysisInput!): AnalysisResultModel!
+  resetNewsEventSourcePolicy(input: ResetNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   retryCrawlTask(id: String!): CrawlTaskModel!
   reviewKnowledgeGraphEvidence(input: ReviewKnowledgeGraphEvidenceInput!): KnowledgeGraphEvidenceReviewItemModel
+  rollbackNewsEventSourcePolicy(input: RollbackNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
   translateRssItems(input: TranslateRssItemsInput!): TranslateRssItemsPayloadModel!
   triggerAlertRule(ruleId: String!): Boolean!
@@ -1343,14 +1357,18 @@ type Mutation {
   updateAlertEventStatus(input: UpdateAlertEventStatusInput!): AlertEventModel!
   updateAuditLogRetention(input: UpdateAuditLogRetentionInput!): AuditLogRetentionModel!
   updateAuthCacheSettings(input: UpdateAuthCacheSettingsInput!): AuthCacheSettingsModel!
+  updateClassificationQualitySettings(input: UpdateClassificationQualitySettingsInput!): ClassificationQualitySettingsModel!
   updateCrawlClientSettings(input: UpdateCrawlClientSettingsInput!): CrawlClientSettingsModel!
   updateCrawlTaskIngestToItems(enabled: Boolean!, id: String!): CrawlTaskModel!
   updateEconomicDataFetchConfig(frequency: EconomicDataFrequency, isEnabled: Boolean, repeatCron: String, slug: String!): EconomicDataFetchConfigModel!
   updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
+  updateNewsClassificationSettings(input: UpdateNewsClassificationSettingsInput!): NewsClassificationSettingsModel!
   updateNewsDedupeSettings(input: UpdateNewsDedupeSettingsInput!): NewsDedupeSettingsModel!
   updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
+  updateNewsEventSourcePolicy(input: UpdateNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
+  updateNewsEventSourcePolicyPresets(input: UpdateNewsEventSourcePolicyPresetInput!): NewsEventSourcePolicyPresetSettingsModel!
   updateNewsIndicatorSettings(input: UpdateNewsIndicatorSettingsInput!): NewsIndicatorSettingsModel!
   updateNewsPromptConfig(input: UpdateNewsPromptConfigInput!): NewsPromptConfigModel!
   updateOrg(input: UpdateOrgInput!): OrgModel!
@@ -1358,6 +1376,39 @@ type Mutation {
   updateRole(input: UpdateRoleInput!): RoleModel!
   upsertAlertRule(input: UpsertAlertRuleInput!): AlertRuleModel!
   upsertDashboard(input: UpsertDashboardInput!): DashboardModel!
+}
+
+type NewsClassificationSettingsModel {
+  cacheTtlSeconds: Int!
+  embeddingTopK: Int!
+  enableEmbedding: Boolean!
+  enableLlm: Boolean!
+  enableRerank: Boolean!
+  enabled: Boolean!
+  llmModel: String
+  minConfidence: Float!
+  rerankTopN: Int!
+  strictFail: Boolean!
+  taxonomy: [NewsClassificationTaxonomyNodeModel!]!
+  taxonomyVersion: String!
+}
+
+input NewsClassificationTaxonomyNodeInput {
+  description: String!
+  displayName: String!
+  keywords: [String!]
+  legacyCategory: String!
+  path: String!
+  synonyms: [String!]
+}
+
+type NewsClassificationTaxonomyNodeModel {
+  description: String!
+  displayName: String!
+  keywords: [String!]!
+  legacyCategory: String!
+  path: String!
+  synonyms: [String!]!
 }
 
 input NewsDedupeCategoryThresholdInput {
@@ -1444,7 +1495,11 @@ type NewsEventItemModel {
 type NewsEventModel {
   """Whether this event is considered breaking news"""
   breaking: Boolean!
+  categoryDistribution: JSON
   createdAt: DateTime!
+
+  """Credibility score based on source corroboration (0-100)"""
+  credibilityScore: Float!
 
   """Heat score indicating event urgency (0-10+)"""
   heatScore: Float!
@@ -1458,11 +1513,21 @@ type NewsEventModel {
   primaryTopic: String
   representativeProcessedArticleId: String
   representativeProcessedItemId: String
+
+  """Source corroboration evidence for explainability"""
+  sourceEvidence: NewsEventSourceEvidenceModel!
+
+  """Source classification for authority filtering"""
+  sourceType: NewsEventSourceType!
   startAt: DateTime!
   status: NewsEventStatus!
+  subEvents: JSON
   summary: String
   timeline: [NewsEventTimelineEntryModel!]
+  timelinePhases: JSON
   title: String
+  topicDriftSummary: String
+  topicDriftWarning: Boolean
   updatedAt: DateTime!
 }
 
@@ -1477,17 +1542,171 @@ type NewsEventProcessedArticleModel {
   title: String
 }
 
+type NewsEventReferencedArticleModel {
+  crawlAt: DateTime!
+  id: String!
+  processedArticleId: String!
+  processedAt: DateTime!
+  publishedAt: DateTime
+  sourceLabel: String
+  title: String
+  url: String!
+}
+
 type NewsEventSettingsModel {
   backfillDays: Int!
   cacheTtlSeconds: Int!
+  categoryConflictReject: Boolean!
+  categorySoftPenalty: Float!
+  classificationGateEnabled: Boolean!
   crossLanguagePenalty: Float!
   enabled: Boolean!
+  forceAuthoritativeMode: Boolean!
+  forceMinAuthoritativeSources: Int!
   ingestionEnabled: Boolean!
   lookbackDays: Int!
   maxBatchSize: Int!
+  minCategoryConfidenceForGate: Float!
+  timelineCrossCategoryWarningShare: Float!
+  timelineDriftKlThreshold: Float!
   timelineEnabled: Boolean!
+  timelineHighConfidenceThreshold: Float!
+  timelineLowConfidenceThreshold: Float!
+  timelineMaxCategoryDistributionItems: Int!
   timelineMaxEventsPerRun: Int!
+  timelineMaxPhaseSummaries: Int!
+  timelineMinBucketItemsForDrift: Int!
+  timelinePresetCustomDistanceThreshold: Float!
   vectorMinScore: Float!
+}
+
+enum NewsEventSortBy {
+  credibility
+  heat
+  latest
+}
+
+input NewsEventSourceCategoryAuthorityDomainBoostInput {
+  delta: Float!
+  domain: String!
+}
+
+type NewsEventSourceCategoryAuthorityDomainBoostModel {
+  delta: Float!
+  domain: String!
+}
+
+input NewsEventSourceCategoryAuthorityRuleInput {
+  authoritativeBoost: Float!
+  blogPenalty: Float!
+  categoryPrefix: String!
+  domainBoosts: [NewsEventSourceCategoryAuthorityDomainBoostInput!]
+  minConfidenceFloor: Float
+  mismatchPenalty: Float
+  unknownPenalty: Float!
+}
+
+type NewsEventSourceCategoryAuthorityRuleModel {
+  authoritativeBoost: Float!
+  blogPenalty: Float!
+  categoryPrefix: String!
+  domainBoosts: [NewsEventSourceCategoryAuthorityDomainBoostModel!]!
+  minConfidenceFloor: Float!
+  mismatchPenalty: Float!
+  unknownPenalty: Float!
+}
+
+type NewsEventSourceEvidenceModel {
+  authoritativeSourceCount: Int!
+  blogSourceCount: Int!
+  corroborated: Boolean!
+  uniqueSourceCount: Int!
+}
+
+type NewsEventSourcePolicyConflictModel {
+  domainConflicts: [String!]!
+  hasConflicts: Boolean!
+  labelConflicts: [String!]!
+}
+
+type NewsEventSourcePolicyDeltaModel {
+  authoritativeDomainsAdd: [String!]!
+  authoritativeDomainsRemove: [String!]!
+  authoritativeLabelsAdd: [String!]!
+  authoritativeLabelsRemove: [String!]!
+  blogDomainsAdd: [String!]!
+  blogDomainsRemove: [String!]!
+  blogLabelsAdd: [String!]!
+  blogLabelsRemove: [String!]!
+}
+
+type NewsEventSourcePolicyPresetSettingsModel {
+  authoritativeDomains: [String!]!
+  authoritativeLabels: [String!]!
+  blogDomains: [String!]!
+  blogLabels: [String!]!
+  categoryAuthority: [NewsEventSourceCategoryAuthorityRuleModel!]!
+  syncWarnings: [String!]!
+  updatedAt: DateTime
+}
+
+type NewsEventSourcePolicyRevisionDiffModel {
+  authoritativeDomainsAdd: [String!]!
+  authoritativeDomainsRemove: [String!]!
+  authoritativeLabelsAdd: [String!]!
+  authoritativeLabelsRemove: [String!]!
+  baseRevision: Int!
+  blogDomainsAdd: [String!]!
+  blogDomainsRemove: [String!]!
+  blogLabelsAdd: [String!]!
+  blogLabelsRemove: [String!]!
+  targetRevision: Int!
+}
+
+type NewsEventSourcePolicyRevisionModel {
+  actorId: String
+  createdAt: DateTime!
+  delta: NewsEventSourcePolicyDeltaModel!
+  note: String
+  operation: NewsEventSourcePolicyRevisionOperation!
+  revision: Int!
+}
+
+enum NewsEventSourcePolicyRevisionOperation {
+  reset
+  rollback
+  update
+}
+
+type NewsEventSourcePolicySettingsModel {
+  activeRevision: Int!
+  authoritativeDomains: [String!]!
+  authoritativeLabels: [String!]!
+  blogDomains: [String!]!
+  blogLabels: [String!]!
+  categoryAuthority: [NewsEventSourceCategoryAuthorityRuleModel!]!
+  overrides: NewsEventSourcePolicyDeltaModel!
+  revisions: [NewsEventSourcePolicyRevisionModel!]!
+  syncWarnings: [String!]!
+  updatedAt: DateTime
+  warnings: NewsEventSourcePolicyConflictModel!
+}
+
+type NewsEventSourcePolicySyncStatusModel {
+  degraded: Boolean!
+  forceAuthoritativeMode: Boolean!
+  forceMinAuthoritativeSources: Int!
+  policyCacheStale: Boolean!
+  presetCacheStale: Boolean!
+  warningCodes: [String!]!
+}
+
+enum NewsEventSourceType {
+  all
+  authoritative
+  blog
+  mixed
+  unknown
 }
 
 enum NewsEventStatus {
@@ -1496,13 +1715,17 @@ enum NewsEventStatus {
 }
 
 type NewsEventTimelineEntryModel {
+  anchor: Boolean
   bucketStart: DateTime!
+  categoryConfidence: Float
+  categoryPath: String
   createdAt: DateTime!
   eventId: String!
   id: String!
   keyPoints: JSON
   referencedArticleIds: JSON
   summary: String
+  tentative: Boolean
   title: String
   updatedAt: DateTime!
 }
@@ -1738,6 +1961,7 @@ type Query {
   assistantRuns(limit: Int): [AssistantRunModel!]!
   auditLogRetention: AuditLogRetentionModel!
   authCacheSettings: AuthCacheSettingsModel!
+  classificationQualitySettings: ClassificationQualitySettingsModel!
   crawlClientSettings: CrawlClientSettingsModel!
   crawlMetadata(input: CrawlMetadataInput!): [CrawlMetadataResultModel!]!
   crawlTask(id: ID!, resultLimit: Int = 20, resultSearch: String): CrawlTaskModel
@@ -1768,11 +1992,17 @@ type Query {
   me: UserModel!
   memberships: [MembershipModel!]!
   myOrganizations: [OrgModel!]!
+  newsClassificationSettings: NewsClassificationSettingsModel!
   newsDedupeSettings: NewsDedupeSettingsModel!
   newsEvent(id: String!, itemsLimit: Int, timelineLimit: Int): NewsEventModel
   newsEventBrief(eventId: String!, forceRefresh: Boolean, language: String, maxSources: Int): NewsEventBriefModel
+  newsEventReferencedArticles(articleIds: [String!]!, eventId: String!, limit: Int): [NewsEventReferencedArticleModel!]!
   newsEventSettings: NewsEventSettingsModel!
-  newsEvents(limit: Int, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
+  newsEventSourcePolicy: NewsEventSourcePolicySettingsModel!
+  newsEventSourcePolicyPresets: NewsEventSourcePolicyPresetSettingsModel!
+  newsEventSourcePolicyRevisionDiff(baseRevision: Int!, targetRevision: Int!): NewsEventSourcePolicyRevisionDiffModel!
+  newsEventSourcePolicySyncStatus: NewsEventSourcePolicySyncStatusModel!
+  newsEvents(dedupeSimilar: Boolean, limit: Int, minAuthoritativeSources: Int, minCredibilityScore: Float, minHeatScore: Float, sortBy: NewsEventSortBy, sourceType: NewsEventSourceType, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
   newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel
   newsIndicatorAssociations(featureMetric: NewsIndicatorFeatureMetric, indicatorSlug: String, limit: Int, scopeKey: String, scopeType: NewsIndicatorScopeType): [NewsIndicatorAssociationModel!]!
   newsIndicatorSettings: NewsIndicatorSettingsModel!
@@ -1861,6 +2091,11 @@ type RawItemPreviewModelGraph {
   url: String
 }
 
+input ResetNewsEventSourcePolicyInput {
+  expectedRevision: Int
+  note: String
+}
+
 input ReviewKnowledgeGraphEvidenceInput {
   correctedRelation: JSON
   evidenceId: String!
@@ -1874,6 +2109,12 @@ type RoleModel {
   isSystem: Boolean!
   name: String!
   permissions: [PermissionModel!]!
+}
+
+input RollbackNewsEventSourcePolicyInput {
+  expectedRevision: Int
+  note: String
+  revision: Int!
 }
 
 type RssItemTranslationModel {
@@ -2031,6 +2272,18 @@ input UpdateAuthCacheSettingsInput {
   retryDelayMs: Int!
 }
 
+input UpdateClassificationQualitySettingsInput {
+  cacheTtlSeconds: Int
+  embeddingP95LatencyWarnMs: Int
+  gatePenalizedRateWarn: Float
+  gateRejectRateWarn: Float
+  llmP95LatencyWarnMs: Int
+  lowConfidenceThreshold: Float
+  reportMinPairCount: Int
+  reportMinPairErrorRate: Float
+  rerankP95LatencyWarnMs: Int
+}
+
 input UpdateCrawlClientSettingsInput {
   healthCheckTtlMs: Int!
   maxRetries: Int!
@@ -2075,6 +2328,21 @@ input UpdateKnowledgeGraphSettingsInput {
   seedSwIndustriesPerRun: Int!
 }
 
+input UpdateNewsClassificationSettingsInput {
+  cacheTtlSeconds: Int
+  embeddingTopK: Int
+  enableEmbedding: Boolean
+  enableLlm: Boolean
+  enableRerank: Boolean
+  enabled: Boolean
+  llmModel: String
+  minConfidence: Float
+  rerankTopN: Int
+  strictFail: Boolean
+  taxonomy: [NewsClassificationTaxonomyNodeInput!]
+  taxonomyVersion: String
+}
+
 input UpdateNewsDedupeSettingsInput {
   categoryThresholds: [NewsDedupeCategoryThresholdInput!]!
   defaultThreshold: Float!
@@ -2091,14 +2359,48 @@ input UpdateNewsDedupeSettingsInput {
 input UpdateNewsEventSettingsInput {
   backfillDays: Int!
   cacheTtlSeconds: Int!
+  categoryConflictReject: Boolean
+  categorySoftPenalty: Float
+  classificationGateEnabled: Boolean
   crossLanguagePenalty: Float!
   enabled: Boolean!
+  forceAuthoritativeMode: Boolean
+  forceMinAuthoritativeSources: Int
   ingestionEnabled: Boolean!
   lookbackDays: Int!
   maxBatchSize: Int!
+  minCategoryConfidenceForGate: Float
+  timelineCrossCategoryWarningShare: Float
+  timelineDriftKlThreshold: Float
   timelineEnabled: Boolean!
+  timelineHighConfidenceThreshold: Float
+  timelineLowConfidenceThreshold: Float
+  timelineMaxCategoryDistributionItems: Int
   timelineMaxEventsPerRun: Int!
+  timelineMaxPhaseSummaries: Int
+  timelineMinBucketItemsForDrift: Int
+  timelinePresetCustomDistanceThreshold: Float
   vectorMinScore: Float!
+}
+
+input UpdateNewsEventSourcePolicyInput {
+  authoritativeDomains: [String!]!
+  authoritativeLabels: [String!]!
+  blogDomains: [String!]!
+  blogLabels: [String!]!
+  categoryAuthority: [NewsEventSourceCategoryAuthorityRuleInput!]
+  expectedRevision: Int
+  note: String
+}
+
+input UpdateNewsEventSourcePolicyPresetInput {
+  authoritativeDomains: [String!]!
+  authoritativeLabels: [String!]!
+  blogDomains: [String!]!
+  blogLabels: [String!]!
+  categoryAuthority: [NewsEventSourceCategoryAuthorityRuleInput!]
+  expectedUpdatedAt: String
+  note: String
 }
 
 input UpdateNewsIndicatorSettingsInput {

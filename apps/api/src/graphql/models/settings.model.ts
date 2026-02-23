@@ -240,6 +240,45 @@ export class NewsEventSettingsModel {
 }
 
 @ObjectType()
+export class NewsEventSourcePolicyDeltaModel {
+  @Field(() => [String])
+  authoritativeDomainsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeDomainsRemove!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsAdd!: string[];
+
+  @Field(() => [String])
+  authoritativeLabelsRemove!: string[];
+
+  @Field(() => [String])
+  blogDomainsAdd!: string[];
+
+  @Field(() => [String])
+  blogDomainsRemove!: string[];
+
+  @Field(() => [String])
+  blogLabelsAdd!: string[];
+
+  @Field(() => [String])
+  blogLabelsRemove!: string[];
+}
+
+@ObjectType()
+export class NewsEventSourcePolicyConflictModel {
+  @Field(() => [String])
+  domainConflicts!: string[];
+
+  @Field(() => [String])
+  labelConflicts!: string[];
+
+  @Field(() => Boolean)
+  hasConflicts!: boolean;
+}
+
+@ObjectType()
 export class NewsEventSourcePolicySettingsModel {
   @Field(() => [String])
   authoritativeDomains!: string[];
@@ -297,45 +336,6 @@ export class NewsEventSourcePolicyPresetSettingsModel {
 
   @Field(() => [String])
   syncWarnings!: string[];
-}
-
-@ObjectType()
-export class NewsEventSourcePolicyDeltaModel {
-  @Field(() => [String])
-  authoritativeDomainsAdd!: string[];
-
-  @Field(() => [String])
-  authoritativeDomainsRemove!: string[];
-
-  @Field(() => [String])
-  authoritativeLabelsAdd!: string[];
-
-  @Field(() => [String])
-  authoritativeLabelsRemove!: string[];
-
-  @Field(() => [String])
-  blogDomainsAdd!: string[];
-
-  @Field(() => [String])
-  blogDomainsRemove!: string[];
-
-  @Field(() => [String])
-  blogLabelsAdd!: string[];
-
-  @Field(() => [String])
-  blogLabelsRemove!: string[];
-}
-
-@ObjectType()
-export class NewsEventSourcePolicyConflictModel {
-  @Field(() => [String])
-  domainConflicts!: string[];
-
-  @Field(() => [String])
-  labelConflicts!: string[];
-
-  @Field(() => Boolean)
-  hasConflicts!: boolean;
 }
 
 @ObjectType()

@@ -413,6 +413,19 @@ export type AuthCacheSettingsModel = {
   retryDelayMs: Scalars['Int']['output'];
 };
 
+export type ClassificationQualitySettingsModel = {
+  __typename?: 'ClassificationQualitySettingsModel';
+  cacheTtlSeconds: Scalars['Int']['output'];
+  embeddingP95LatencyWarnMs: Scalars['Int']['output'];
+  gatePenalizedRateWarn: Scalars['Float']['output'];
+  gateRejectRateWarn: Scalars['Float']['output'];
+  llmP95LatencyWarnMs: Scalars['Int']['output'];
+  lowConfidenceThreshold: Scalars['Float']['output'];
+  reportMinPairCount: Scalars['Int']['output'];
+  reportMinPairErrorRate: Scalars['Float']['output'];
+  rerankP95LatencyWarnMs: Scalars['Int']['output'];
+};
+
 export type CommodityMoveImpactInput = {
   commodityName: Scalars['String']['input'];
   maxCandidates?: InputMaybe<Scalars['Int']['input']>;
@@ -1371,8 +1384,10 @@ export type Mutation = {
   requestAssistantQuery: AssistantRunModel;
   requestAssistantReport: AssistantRunModel;
   requestCorrelationAnalysis: AnalysisResultModel;
+  resetNewsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
   retryCrawlTask: CrawlTaskModel;
   reviewKnowledgeGraphEvidence?: Maybe<KnowledgeGraphEvidenceReviewItemModel>;
+  rollbackNewsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
   setOrgActive: OrgModel;
   translateRssItems: TranslateRssItemsPayloadModel;
   triggerAlertRule: Scalars['Boolean']['output'];
@@ -1381,14 +1396,18 @@ export type Mutation = {
   updateAlertEventStatus: AlertEventModel;
   updateAuditLogRetention: AuditLogRetentionModel;
   updateAuthCacheSettings: AuthCacheSettingsModel;
+  updateClassificationQualitySettings: ClassificationQualitySettingsModel;
   updateCrawlClientSettings: CrawlClientSettingsModel;
   updateCrawlTaskIngestToItems: CrawlTaskModel;
   updateEconomicDataFetchConfig: EconomicDataFetchConfigModel;
   updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
   updateKnowledgeGraphSettings: KnowledgeGraphSettingsModel;
+  updateNewsClassificationSettings: NewsClassificationSettingsModel;
   updateNewsDedupeSettings: NewsDedupeSettingsModel;
   updateNewsEventSettings: NewsEventSettingsModel;
+  updateNewsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
+  updateNewsEventSourcePolicyPresets: NewsEventSourcePolicyPresetSettingsModel;
   updateNewsIndicatorSettings: NewsIndicatorSettingsModel;
   updateNewsPromptConfig: NewsPromptConfigModel;
   updateOrg: OrgModel;
@@ -1492,6 +1511,11 @@ export type MutationRequestCorrelationAnalysisArgs = {
 };
 
 
+export type MutationResetNewsEventSourcePolicyArgs = {
+  input: ResetNewsEventSourcePolicyInput;
+};
+
+
 export type MutationRetryCrawlTaskArgs = {
   id: Scalars['String']['input'];
 };
@@ -1499,6 +1523,11 @@ export type MutationRetryCrawlTaskArgs = {
 
 export type MutationReviewKnowledgeGraphEvidenceArgs = {
   input: ReviewKnowledgeGraphEvidenceInput;
+};
+
+
+export type MutationRollbackNewsEventSourcePolicyArgs = {
+  input: RollbackNewsEventSourcePolicyInput;
 };
 
 
@@ -1542,6 +1571,11 @@ export type MutationUpdateAuthCacheSettingsArgs = {
 };
 
 
+export type MutationUpdateClassificationQualitySettingsArgs = {
+  input: UpdateClassificationQualitySettingsInput;
+};
+
+
 export type MutationUpdateCrawlClientSettingsArgs = {
   input: UpdateCrawlClientSettingsInput;
 };
@@ -1576,6 +1610,11 @@ export type MutationUpdateKnowledgeGraphSettingsArgs = {
 };
 
 
+export type MutationUpdateNewsClassificationSettingsArgs = {
+  input: UpdateNewsClassificationSettingsInput;
+};
+
+
 export type MutationUpdateNewsDedupeSettingsArgs = {
   input: UpdateNewsDedupeSettingsInput;
 };
@@ -1583,6 +1622,16 @@ export type MutationUpdateNewsDedupeSettingsArgs = {
 
 export type MutationUpdateNewsEventSettingsArgs = {
   input: UpdateNewsEventSettingsInput;
+};
+
+
+export type MutationUpdateNewsEventSourcePolicyArgs = {
+  input: UpdateNewsEventSourcePolicyInput;
+};
+
+
+export type MutationUpdateNewsEventSourcePolicyPresetsArgs = {
+  input: UpdateNewsEventSourcePolicyPresetInput;
 };
 
 
@@ -1618,6 +1667,41 @@ export type MutationUpsertAlertRuleArgs = {
 
 export type MutationUpsertDashboardArgs = {
   input: UpsertDashboardInput;
+};
+
+export type NewsClassificationSettingsModel = {
+  __typename?: 'NewsClassificationSettingsModel';
+  cacheTtlSeconds: Scalars['Int']['output'];
+  embeddingTopK: Scalars['Int']['output'];
+  enableEmbedding: Scalars['Boolean']['output'];
+  enableLlm: Scalars['Boolean']['output'];
+  enableRerank: Scalars['Boolean']['output'];
+  enabled: Scalars['Boolean']['output'];
+  llmModel?: Maybe<Scalars['String']['output']>;
+  minConfidence: Scalars['Float']['output'];
+  rerankTopN: Scalars['Int']['output'];
+  strictFail: Scalars['Boolean']['output'];
+  taxonomy: Array<NewsClassificationTaxonomyNodeModel>;
+  taxonomyVersion: Scalars['String']['output'];
+};
+
+export type NewsClassificationTaxonomyNodeInput = {
+  description: Scalars['String']['input'];
+  displayName: Scalars['String']['input'];
+  keywords?: InputMaybe<Array<Scalars['String']['input']>>;
+  legacyCategory: Scalars['String']['input'];
+  path: Scalars['String']['input'];
+  synonyms?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
+export type NewsClassificationTaxonomyNodeModel = {
+  __typename?: 'NewsClassificationTaxonomyNodeModel';
+  description: Scalars['String']['output'];
+  displayName: Scalars['String']['output'];
+  keywords: Array<Scalars['String']['output']>;
+  legacyCategory: Scalars['String']['output'];
+  path: Scalars['String']['output'];
+  synonyms: Array<Scalars['String']['output']>;
 };
 
 export type NewsDedupeCategoryThresholdInput = {
@@ -1713,7 +1797,10 @@ export type NewsEventModel = {
   __typename?: 'NewsEventModel';
   /** Whether this event is considered breaking news */
   breaking: Scalars['Boolean']['output'];
+  categoryDistribution?: Maybe<Scalars['JSON']['output']>;
   createdAt: Scalars['DateTime']['output'];
+  /** Credibility score based on source corroboration (0-100) */
+  credibilityScore: Scalars['Float']['output'];
   /** Heat score indicating event urgency (0-10+) */
   heatScore: Scalars['Float']['output'];
   id: Scalars['String']['output'];
@@ -1726,11 +1813,19 @@ export type NewsEventModel = {
   primaryTopic?: Maybe<Scalars['String']['output']>;
   representativeProcessedArticleId?: Maybe<Scalars['String']['output']>;
   representativeProcessedItemId?: Maybe<Scalars['String']['output']>;
+  /** Source corroboration evidence for explainability */
+  sourceEvidence: NewsEventSourceEvidenceModel;
+  /** Source classification for authority filtering */
+  sourceType: NewsEventSourceType;
   startAt: Scalars['DateTime']['output'];
   status: NewsEventStatus;
+  subEvents?: Maybe<Scalars['JSON']['output']>;
   summary?: Maybe<Scalars['String']['output']>;
   timeline?: Maybe<Array<NewsEventTimelineEntryModel>>;
+  timelinePhases?: Maybe<Scalars['JSON']['output']>;
   title?: Maybe<Scalars['String']['output']>;
+  topicDriftSummary?: Maybe<Scalars['String']['output']>;
+  topicDriftWarning?: Maybe<Scalars['Boolean']['output']>;
   updatedAt: Scalars['DateTime']['output'];
 };
 
@@ -1746,19 +1841,184 @@ export type NewsEventProcessedArticleModel = {
   title?: Maybe<Scalars['String']['output']>;
 };
 
+export type NewsEventReferencedArticleModel = {
+  __typename?: 'NewsEventReferencedArticleModel';
+  crawlAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  processedArticleId: Scalars['String']['output'];
+  processedAt: Scalars['DateTime']['output'];
+  publishedAt?: Maybe<Scalars['DateTime']['output']>;
+  sourceLabel?: Maybe<Scalars['String']['output']>;
+  title?: Maybe<Scalars['String']['output']>;
+  url: Scalars['String']['output'];
+};
+
 export type NewsEventSettingsModel = {
   __typename?: 'NewsEventSettingsModel';
   backfillDays: Scalars['Int']['output'];
   cacheTtlSeconds: Scalars['Int']['output'];
+  categoryConflictReject: Scalars['Boolean']['output'];
+  categorySoftPenalty: Scalars['Float']['output'];
+  classificationGateEnabled: Scalars['Boolean']['output'];
   crossLanguagePenalty: Scalars['Float']['output'];
   enabled: Scalars['Boolean']['output'];
+  forceAuthoritativeMode: Scalars['Boolean']['output'];
+  forceMinAuthoritativeSources: Scalars['Int']['output'];
   ingestionEnabled: Scalars['Boolean']['output'];
   lookbackDays: Scalars['Int']['output'];
   maxBatchSize: Scalars['Int']['output'];
+  minCategoryConfidenceForGate: Scalars['Float']['output'];
+  timelineCrossCategoryWarningShare: Scalars['Float']['output'];
+  timelineDriftKlThreshold: Scalars['Float']['output'];
   timelineEnabled: Scalars['Boolean']['output'];
+  timelineHighConfidenceThreshold: Scalars['Float']['output'];
+  timelineLowConfidenceThreshold: Scalars['Float']['output'];
+  timelineMaxCategoryDistributionItems: Scalars['Int']['output'];
   timelineMaxEventsPerRun: Scalars['Int']['output'];
+  timelineMaxPhaseSummaries: Scalars['Int']['output'];
+  timelineMinBucketItemsForDrift: Scalars['Int']['output'];
+  timelinePresetCustomDistanceThreshold: Scalars['Float']['output'];
   vectorMinScore: Scalars['Float']['output'];
 };
+
+export enum NewsEventSortBy {
+  Credibility = 'credibility',
+  Heat = 'heat',
+  Latest = 'latest'
+}
+
+export type NewsEventSourceCategoryAuthorityDomainBoostInput = {
+  delta: Scalars['Float']['input'];
+  domain: Scalars['String']['input'];
+};
+
+export type NewsEventSourceCategoryAuthorityDomainBoostModel = {
+  __typename?: 'NewsEventSourceCategoryAuthorityDomainBoostModel';
+  delta: Scalars['Float']['output'];
+  domain: Scalars['String']['output'];
+};
+
+export type NewsEventSourceCategoryAuthorityRuleInput = {
+  authoritativeBoost: Scalars['Float']['input'];
+  blogPenalty: Scalars['Float']['input'];
+  categoryPrefix: Scalars['String']['input'];
+  domainBoosts?: InputMaybe<Array<NewsEventSourceCategoryAuthorityDomainBoostInput>>;
+  minConfidenceFloor?: InputMaybe<Scalars['Float']['input']>;
+  mismatchPenalty?: InputMaybe<Scalars['Float']['input']>;
+  unknownPenalty: Scalars['Float']['input'];
+};
+
+export type NewsEventSourceCategoryAuthorityRuleModel = {
+  __typename?: 'NewsEventSourceCategoryAuthorityRuleModel';
+  authoritativeBoost: Scalars['Float']['output'];
+  blogPenalty: Scalars['Float']['output'];
+  categoryPrefix: Scalars['String']['output'];
+  domainBoosts: Array<NewsEventSourceCategoryAuthorityDomainBoostModel>;
+  minConfidenceFloor: Scalars['Float']['output'];
+  mismatchPenalty: Scalars['Float']['output'];
+  unknownPenalty: Scalars['Float']['output'];
+};
+
+export type NewsEventSourceEvidenceModel = {
+  __typename?: 'NewsEventSourceEvidenceModel';
+  authoritativeSourceCount: Scalars['Int']['output'];
+  blogSourceCount: Scalars['Int']['output'];
+  corroborated: Scalars['Boolean']['output'];
+  uniqueSourceCount: Scalars['Int']['output'];
+};
+
+export type NewsEventSourcePolicyConflictModel = {
+  __typename?: 'NewsEventSourcePolicyConflictModel';
+  domainConflicts: Array<Scalars['String']['output']>;
+  hasConflicts: Scalars['Boolean']['output'];
+  labelConflicts: Array<Scalars['String']['output']>;
+};
+
+export type NewsEventSourcePolicyDeltaModel = {
+  __typename?: 'NewsEventSourcePolicyDeltaModel';
+  authoritativeDomainsAdd: Array<Scalars['String']['output']>;
+  authoritativeDomainsRemove: Array<Scalars['String']['output']>;
+  authoritativeLabelsAdd: Array<Scalars['String']['output']>;
+  authoritativeLabelsRemove: Array<Scalars['String']['output']>;
+  blogDomainsAdd: Array<Scalars['String']['output']>;
+  blogDomainsRemove: Array<Scalars['String']['output']>;
+  blogLabelsAdd: Array<Scalars['String']['output']>;
+  blogLabelsRemove: Array<Scalars['String']['output']>;
+};
+
+export type NewsEventSourcePolicyPresetSettingsModel = {
+  __typename?: 'NewsEventSourcePolicyPresetSettingsModel';
+  authoritativeDomains: Array<Scalars['String']['output']>;
+  authoritativeLabels: Array<Scalars['String']['output']>;
+  blogDomains: Array<Scalars['String']['output']>;
+  blogLabels: Array<Scalars['String']['output']>;
+  categoryAuthority: Array<NewsEventSourceCategoryAuthorityRuleModel>;
+  syncWarnings: Array<Scalars['String']['output']>;
+  updatedAt?: Maybe<Scalars['DateTime']['output']>;
+};
+
+export type NewsEventSourcePolicyRevisionDiffModel = {
+  __typename?: 'NewsEventSourcePolicyRevisionDiffModel';
+  authoritativeDomainsAdd: Array<Scalars['String']['output']>;
+  authoritativeDomainsRemove: Array<Scalars['String']['output']>;
+  authoritativeLabelsAdd: Array<Scalars['String']['output']>;
+  authoritativeLabelsRemove: Array<Scalars['String']['output']>;
+  baseRevision: Scalars['Int']['output'];
+  blogDomainsAdd: Array<Scalars['String']['output']>;
+  blogDomainsRemove: Array<Scalars['String']['output']>;
+  blogLabelsAdd: Array<Scalars['String']['output']>;
+  blogLabelsRemove: Array<Scalars['String']['output']>;
+  targetRevision: Scalars['Int']['output'];
+};
+
+export type NewsEventSourcePolicyRevisionModel = {
+  __typename?: 'NewsEventSourcePolicyRevisionModel';
+  actorId?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['DateTime']['output'];
+  delta: NewsEventSourcePolicyDeltaModel;
+  note?: Maybe<Scalars['String']['output']>;
+  operation: NewsEventSourcePolicyRevisionOperation;
+  revision: Scalars['Int']['output'];
+};
+
+export enum NewsEventSourcePolicyRevisionOperation {
+  Reset = 'reset',
+  Rollback = 'rollback',
+  Update = 'update'
+}
+
+export type NewsEventSourcePolicySettingsModel = {
+  __typename?: 'NewsEventSourcePolicySettingsModel';
+  activeRevision: Scalars['Int']['output'];
+  authoritativeDomains: Array<Scalars['String']['output']>;
+  authoritativeLabels: Array<Scalars['String']['output']>;
+  blogDomains: Array<Scalars['String']['output']>;
+  blogLabels: Array<Scalars['String']['output']>;
+  categoryAuthority: Array<NewsEventSourceCategoryAuthorityRuleModel>;
+  overrides: NewsEventSourcePolicyDeltaModel;
+  revisions: Array<NewsEventSourcePolicyRevisionModel>;
+  syncWarnings: Array<Scalars['String']['output']>;
+  updatedAt?: Maybe<Scalars['DateTime']['output']>;
+  warnings: NewsEventSourcePolicyConflictModel;
+};
+
+export type NewsEventSourcePolicySyncStatusModel = {
+  __typename?: 'NewsEventSourcePolicySyncStatusModel';
+  degraded: Scalars['Boolean']['output'];
+  forceAuthoritativeMode: Scalars['Boolean']['output'];
+  forceMinAuthoritativeSources: Scalars['Int']['output'];
+  policyCacheStale: Scalars['Boolean']['output'];
+  presetCacheStale: Scalars['Boolean']['output'];
+  warningCodes: Array<Scalars['String']['output']>;
+};
+
+export enum NewsEventSourceType {
+  All = 'all',
+  Authoritative = 'authoritative',
+  Blog = 'blog',
+  Mixed = 'mixed',
+  Unknown = 'unknown'
+}
 
 export enum NewsEventStatus {
   Active = 'active',
@@ -1767,13 +2027,17 @@ export enum NewsEventStatus {
 
 export type NewsEventTimelineEntryModel = {
   __typename?: 'NewsEventTimelineEntryModel';
+  anchor?: Maybe<Scalars['Boolean']['output']>;
   bucketStart: Scalars['DateTime']['output'];
+  categoryConfidence?: Maybe<Scalars['Float']['output']>;
+  categoryPath?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   eventId: Scalars['String']['output'];
   id: Scalars['String']['output'];
   keyPoints?: Maybe<Scalars['JSON']['output']>;
   referencedArticleIds?: Maybe<Scalars['JSON']['output']>;
   summary?: Maybe<Scalars['String']['output']>;
+  tentative?: Maybe<Scalars['Boolean']['output']>;
   title?: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['DateTime']['output'];
 };
@@ -2014,6 +2278,7 @@ export type Query = {
   assistantRuns: Array<AssistantRunModel>;
   auditLogRetention: AuditLogRetentionModel;
   authCacheSettings: AuthCacheSettingsModel;
+  classificationQualitySettings: ClassificationQualitySettingsModel;
   crawlClientSettings: CrawlClientSettingsModel;
   crawlMetadata: Array<CrawlMetadataResultModel>;
   crawlTask?: Maybe<CrawlTaskModel>;
@@ -2042,10 +2307,16 @@ export type Query = {
   me: UserModel;
   memberships: Array<MembershipModel>;
   myOrganizations: Array<OrgModel>;
+  newsClassificationSettings: NewsClassificationSettingsModel;
   newsDedupeSettings: NewsDedupeSettingsModel;
   newsEvent?: Maybe<NewsEventModel>;
   newsEventBrief?: Maybe<NewsEventBriefModel>;
+  newsEventReferencedArticles: Array<NewsEventReferencedArticleModel>;
   newsEventSettings: NewsEventSettingsModel;
+  newsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
+  newsEventSourcePolicyPresets: NewsEventSourcePolicyPresetSettingsModel;
+  newsEventSourcePolicyRevisionDiff: NewsEventSourcePolicyRevisionDiffModel;
+  newsEventSourcePolicySyncStatus: NewsEventSourcePolicySyncStatusModel;
   newsEvents: Array<NewsEventModel>;
   newsIndicatorAssociation?: Maybe<NewsIndicatorAssociationModel>;
   newsIndicatorAssociations: Array<NewsIndicatorAssociationModel>;
@@ -2255,8 +2526,27 @@ export type QueryNewsEventBriefArgs = {
 };
 
 
-export type QueryNewsEventsArgs = {
+export type QueryNewsEventReferencedArticlesArgs = {
+  articleIds: Array<Scalars['String']['input']>;
+  eventId: Scalars['String']['input'];
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryNewsEventSourcePolicyRevisionDiffArgs = {
+  baseRevision: Scalars['Int']['input'];
+  targetRevision: Scalars['Int']['input'];
+};
+
+
+export type QueryNewsEventsArgs = {
+  dedupeSimilar?: InputMaybe<Scalars['Boolean']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  minAuthoritativeSources?: InputMaybe<Scalars['Int']['input']>;
+  minCredibilityScore?: InputMaybe<Scalars['Float']['input']>;
+  minHeatScore?: InputMaybe<Scalars['Float']['input']>;
+  sortBy?: InputMaybe<NewsEventSortBy>;
+  sourceType?: InputMaybe<NewsEventSourceType>;
   status?: InputMaybe<NewsEventStatus>;
   windowDays?: InputMaybe<Scalars['Int']['input']>;
 };
@@ -2400,6 +2690,11 @@ export type RawItemPreviewModelGraph = {
   url?: Maybe<Scalars['String']['output']>;
 };
 
+export type ResetNewsEventSourcePolicyInput = {
+  expectedRevision?: InputMaybe<Scalars['Int']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type ReviewKnowledgeGraphEvidenceInput = {
   correctedRelation?: InputMaybe<Scalars['JSON']['input']>;
   evidenceId: Scalars['String']['input'];
@@ -2414,6 +2709,12 @@ export type RoleModel = {
   isSystem: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
   permissions: Array<PermissionModel>;
+};
+
+export type RollbackNewsEventSourcePolicyInput = {
+  expectedRevision?: InputMaybe<Scalars['Int']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+  revision: Scalars['Int']['input'];
 };
 
 export type RssItemTranslationModel = {
@@ -2581,6 +2882,18 @@ export type UpdateAuthCacheSettingsInput = {
   retryDelayMs: Scalars['Int']['input'];
 };
 
+export type UpdateClassificationQualitySettingsInput = {
+  cacheTtlSeconds?: InputMaybe<Scalars['Int']['input']>;
+  embeddingP95LatencyWarnMs?: InputMaybe<Scalars['Int']['input']>;
+  gatePenalizedRateWarn?: InputMaybe<Scalars['Float']['input']>;
+  gateRejectRateWarn?: InputMaybe<Scalars['Float']['input']>;
+  llmP95LatencyWarnMs?: InputMaybe<Scalars['Int']['input']>;
+  lowConfidenceThreshold?: InputMaybe<Scalars['Float']['input']>;
+  reportMinPairCount?: InputMaybe<Scalars['Int']['input']>;
+  reportMinPairErrorRate?: InputMaybe<Scalars['Float']['input']>;
+  rerankP95LatencyWarnMs?: InputMaybe<Scalars['Int']['input']>;
+};
+
 export type UpdateCrawlClientSettingsInput = {
   healthCheckTtlMs: Scalars['Int']['input'];
   maxRetries: Scalars['Int']['input'];
@@ -2625,6 +2938,21 @@ export type UpdateKnowledgeGraphSettingsInput = {
   seedSwIndustriesPerRun: Scalars['Int']['input'];
 };
 
+export type UpdateNewsClassificationSettingsInput = {
+  cacheTtlSeconds?: InputMaybe<Scalars['Int']['input']>;
+  embeddingTopK?: InputMaybe<Scalars['Int']['input']>;
+  enableEmbedding?: InputMaybe<Scalars['Boolean']['input']>;
+  enableLlm?: InputMaybe<Scalars['Boolean']['input']>;
+  enableRerank?: InputMaybe<Scalars['Boolean']['input']>;
+  enabled?: InputMaybe<Scalars['Boolean']['input']>;
+  llmModel?: InputMaybe<Scalars['String']['input']>;
+  minConfidence?: InputMaybe<Scalars['Float']['input']>;
+  rerankTopN?: InputMaybe<Scalars['Int']['input']>;
+  strictFail?: InputMaybe<Scalars['Boolean']['input']>;
+  taxonomy?: InputMaybe<Array<NewsClassificationTaxonomyNodeInput>>;
+  taxonomyVersion?: InputMaybe<Scalars['String']['input']>;
+};
+
 export type UpdateNewsDedupeSettingsInput = {
   categoryThresholds: Array<NewsDedupeCategoryThresholdInput>;
   defaultThreshold: Scalars['Float']['input'];
@@ -2641,14 +2969,48 @@ export type UpdateNewsDedupeSettingsInput = {
 export type UpdateNewsEventSettingsInput = {
   backfillDays: Scalars['Int']['input'];
   cacheTtlSeconds: Scalars['Int']['input'];
+  categoryConflictReject?: InputMaybe<Scalars['Boolean']['input']>;
+  categorySoftPenalty?: InputMaybe<Scalars['Float']['input']>;
+  classificationGateEnabled?: InputMaybe<Scalars['Boolean']['input']>;
   crossLanguagePenalty: Scalars['Float']['input'];
   enabled: Scalars['Boolean']['input'];
+  forceAuthoritativeMode?: InputMaybe<Scalars['Boolean']['input']>;
+  forceMinAuthoritativeSources?: InputMaybe<Scalars['Int']['input']>;
   ingestionEnabled: Scalars['Boolean']['input'];
   lookbackDays: Scalars['Int']['input'];
   maxBatchSize: Scalars['Int']['input'];
+  minCategoryConfidenceForGate?: InputMaybe<Scalars['Float']['input']>;
+  timelineCrossCategoryWarningShare?: InputMaybe<Scalars['Float']['input']>;
+  timelineDriftKlThreshold?: InputMaybe<Scalars['Float']['input']>;
   timelineEnabled: Scalars['Boolean']['input'];
+  timelineHighConfidenceThreshold?: InputMaybe<Scalars['Float']['input']>;
+  timelineLowConfidenceThreshold?: InputMaybe<Scalars['Float']['input']>;
+  timelineMaxCategoryDistributionItems?: InputMaybe<Scalars['Int']['input']>;
   timelineMaxEventsPerRun: Scalars['Int']['input'];
+  timelineMaxPhaseSummaries?: InputMaybe<Scalars['Int']['input']>;
+  timelineMinBucketItemsForDrift?: InputMaybe<Scalars['Int']['input']>;
+  timelinePresetCustomDistanceThreshold?: InputMaybe<Scalars['Float']['input']>;
   vectorMinScore: Scalars['Float']['input'];
+};
+
+export type UpdateNewsEventSourcePolicyInput = {
+  authoritativeDomains: Array<Scalars['String']['input']>;
+  authoritativeLabels: Array<Scalars['String']['input']>;
+  blogDomains: Array<Scalars['String']['input']>;
+  blogLabels: Array<Scalars['String']['input']>;
+  categoryAuthority?: InputMaybe<Array<NewsEventSourceCategoryAuthorityRuleInput>>;
+  expectedRevision?: InputMaybe<Scalars['Int']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateNewsEventSourcePolicyPresetInput = {
+  authoritativeDomains: Array<Scalars['String']['input']>;
+  authoritativeLabels: Array<Scalars['String']['input']>;
+  blogDomains: Array<Scalars['String']['input']>;
+  blogLabels: Array<Scalars['String']['input']>;
+  categoryAuthority?: InputMaybe<Array<NewsEventSourceCategoryAuthorityRuleInput>>;
+  expectedUpdatedAt?: InputMaybe<Scalars['String']['input']>;
+  note?: InputMaybe<Scalars['String']['input']>;
 };
 
 export type UpdateNewsIndicatorSettingsInput = {

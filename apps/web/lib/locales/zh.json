@@ -4802,6 +4802,31 @@
         "description": "用于排查问题的原始监控数据（尽力做兼容解析）。"
       }
     },
+    "ops": {
+      "title": "抓取队列运维",
+      "queueStatus": "队列状态",
+      "paused": "已暂停",
+      "running": "运行中",
+      "pending": "待处理：{{count}}",
+      "active": "执行中：{{count}}",
+      "pauseQueue": "暂停队列",
+      "resumeQueue": "恢复队列",
+      "maxConcurrency": "全局最大并发数",
+      "effectiveConcurrency": "生效并发",
+      "batchFrequency": "批量调度间隔（秒）",
+      "applyAll": "应用到全部",
+      "batchFrequencyHint": "会更新当前组织下所有新闻源的 frequencySeconds。",
+      "queuePaused": "抓取队列已暂停。",
+      "queuePauseFailed": "暂停抓取队列失败。",
+      "queueResumed": "抓取队列已恢复。",
+      "queueResumeFailed": "恢复抓取队列失败。",
+      "concurrencySaved": "已更新抓取并发上限。",
+      "concurrencySaveFailed": "更新抓取并发上限失败。",
+      "batchFrequencyConfirmTitle": "将频率应用到所有新闻源？",
+      "batchFrequencyConfirmDesc": "这会更新你所在组织全部新闻源的 frequencySeconds。",
+      "batchFrequencySaved": "已更新 {{count}} 个新闻源，已重新调度活跃来源：{{rescheduled}}。",
+      "batchFrequencySaveFailed": "批量更新新闻源频率失败。"
+    },
     "runtimeGuide": {
       "title": "Headed 模式与 Xvfb",
       "noAutoBootstrap": "控制台仅提供引导，不会自动为你拉起 Xvfb。",

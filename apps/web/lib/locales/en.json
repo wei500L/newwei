@@ -4799,6 +4799,31 @@
         "description": "Raw monitoring payload for debugging (best-effort normalization)."
       }
     },
+    "ops": {
+      "title": "Crawl Queue Ops",
+      "queueStatus": "Queue status",
+      "paused": "Paused",
+      "running": "Running",
+      "pending": "Pending: {{count}}",
+      "active": "Active: {{count}}",
+      "pauseQueue": "Pause queue",
+      "resumeQueue": "Resume queue",
+      "maxConcurrency": "Global max concurrency",
+      "effectiveConcurrency": "Effective",
+      "batchFrequency": "Batch schedule interval (seconds)",
+      "applyAll": "Apply to all",
+      "batchFrequencyHint": "Updates frequencySeconds for all News Sources in this org.",
+      "queuePaused": "Crawl queue paused.",
+      "queuePauseFailed": "Failed to pause crawl queue.",
+      "queueResumed": "Crawl queue resumed.",
+      "queueResumeFailed": "Failed to resume crawl queue.",
+      "concurrencySaved": "Updated crawl concurrency limit.",
+      "concurrencySaveFailed": "Failed to update crawl concurrency limit.",
+      "batchFrequencyConfirmTitle": "Apply frequency to all News Sources?",
+      "batchFrequencyConfirmDesc": "This updates frequencySeconds for all News Sources in your org.",
+      "batchFrequencySaved": "Updated {{count}} News Sources, active sources rescheduled: {{rescheduled}}.",
+      "batchFrequencySaveFailed": "Failed to batch update News Source frequency."
+    },
     "runtimeGuide": {
       "title": "Headed mode and Xvfb",
       "noAutoBootstrap": "This console only provides guidance and does not auto-start Xvfb for you.",

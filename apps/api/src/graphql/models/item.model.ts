@@ -106,6 +106,30 @@ export class ProcessedItemErrorModelGraph {
 }
 
 @ObjectType()
+export class ProcessedItemLlmModel {
+  @Field(() => String, { nullable: true })
+  model?: string | null;
+
+  @Field(() => String, { nullable: true })
+  promptVersion?: string | null;
+
+  @Field(() => Float, { nullable: true })
+  promptTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  completionTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  totalTokens?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  costUsd?: number | null;
+
+  @Field(() => Float, { nullable: true })
+  latencyMs?: number | null;
+}
+
+@ObjectType()
 export class ProcessedItemModelGraph {
   @Field(() => ID)
   id!: string;
@@ -208,30 +232,6 @@ export class ProcessedItemPreviewModelGraph {
 
   @Field(() => String, { nullable: true, description: "Associated news event ID" })
   eventId?: string | null;
-}
-
-@ObjectType()
-export class ProcessedItemLlmModel {
-  @Field(() => String, { nullable: true })
-  model?: string | null;
-
-  @Field(() => String, { nullable: true })
-  promptVersion?: string | null;
-
-  @Field(() => Float, { nullable: true })
-  promptTokens?: number | null;
-
-  @Field(() => Float, { nullable: true })
-  completionTokens?: number | null;
-
-  @Field(() => Float, { nullable: true })
-  totalTokens?: number | null;
-
-  @Field(() => Float, { nullable: true })
-  costUsd?: number | null;
-
-  @Field(() => Float, { nullable: true })
-  latencyMs?: number | null;
 }
 
 @ObjectType()

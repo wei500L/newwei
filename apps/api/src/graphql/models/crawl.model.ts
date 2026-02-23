@@ -68,51 +68,6 @@ export class CrawlIngestBatchModel {
 }
 
 @ObjectType()
-export class CrawlResultModel {
-  @Field(() => ID)
-  id!: string;
-
-  @Field()
-  sourceUrl!: string;
-
-  @Field(() => GraphQLISODateTime)
-  fetchedAt!: Date;
-
-  @Field(() => ID, { nullable: true })
-  itemId?: string | null;
-
-  @Field(() => String, { nullable: true })
-  itemStatus?: string | null;
-
-  @Field()
-  markdown!: string;
-
-  @Field(() => String, { nullable: true })
-  metadata?: string | null;
-
-  @Field(() => String, { nullable: true })
-  media?: string | null;
-
-  @Field(() => String, { nullable: true })
-  mediaAssets?: string | null;
-
-  @Field(() => String, { nullable: true })
-  markdownWithCitations?: string | null;
-
-  @Field(() => String, { nullable: true })
-  referencesMarkdown?: string | null;
-
-  @Field(() => String, { nullable: true })
-  fitMarkdown?: string | null;
-
-  @Field(() => CrawlLinkAnalysisModel, { nullable: true })
-  linkAnalysis?: CrawlLinkAnalysisModel | null;
-
-  @Field(() => GraphQLJSONScalar, { nullable: true })
-  tables?: unknown;
-}
-
-@ObjectType()
 export class CrawlLinkModel {
   @Field()
   href!: string;
@@ -185,6 +140,51 @@ export class CrawlLinkAnalysisModel {
 
   @Field(() => [CrawlLinkModel])
   lowQualityLinks!: CrawlLinkModel[];
+}
+
+@ObjectType()
+export class CrawlResultModel {
+  @Field(() => ID)
+  id!: string;
+
+  @Field()
+  sourceUrl!: string;
+
+  @Field(() => GraphQLISODateTime)
+  fetchedAt!: Date;
+
+  @Field(() => ID, { nullable: true })
+  itemId?: string | null;
+
+  @Field(() => String, { nullable: true })
+  itemStatus?: string | null;
+
+  @Field()
+  markdown!: string;
+
+  @Field(() => String, { nullable: true })
+  metadata?: string | null;
+
+  @Field(() => String, { nullable: true })
+  media?: string | null;
+
+  @Field(() => String, { nullable: true })
+  mediaAssets?: string | null;
+
+  @Field(() => String, { nullable: true })
+  markdownWithCitations?: string | null;
+
+  @Field(() => String, { nullable: true })
+  referencesMarkdown?: string | null;
+
+  @Field(() => String, { nullable: true })
+  fitMarkdown?: string | null;
+
+  @Field(() => CrawlLinkAnalysisModel, { nullable: true })
+  linkAnalysis?: CrawlLinkAnalysisModel | null;
+
+  @Field(() => GraphQLJSONScalar, { nullable: true })
+  tables?: unknown;
 }
 
 @ObjectType()
