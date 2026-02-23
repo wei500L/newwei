@@ -65,6 +65,7 @@ import {
   buildRuleTrendAnalysis,
   buildSimilarAlerts,
   filterAlertEvents,
+  resolveSelectedEventId,
   resolveFilterTimeWindow,
   type AlertDatePreset,
   type AlertFilterState
@@ -827,7 +828,6 @@ export function AlertCenterContent() {
   const [exportScope, setExportScope] = useState<AlertExportScope>('selected');
   const [expandMessage, setExpandMessage] = useState<boolean>(false);
   const [expandContext, setExpandContext] = useState<boolean>(false);
-  const preserveSelectionOnFilter = false;
 
   const pathname = usePathname();
   const router = useRouter();
@@ -938,30 +938,16 @@ export function AlertCenterContent() {
   );
 
   useEffect(() => {
-    if (sortedEvents.length === 0) {
-      setSelectedEventId(null);
-      return;
+    const nextSelectedEventId = resolveSelectedEventId({
+      eventParam,
+      selectedEventId,
+      sortedEvents,
+      filteredEvents
+    });
+    if (nextSelectedEventId !== selectedEventId) {
+      setSelectedEventId(nextSelectedEventId);
     }
-
-    const inFiltered = (eventId: string) => filteredEvents.some((event) => event.id === eventId);
-    if (
-      eventParam &&
-      sortedEvents.some((event) => event.id === eventParam) &&
-      (preserveSelectionOnFilter || inFiltered(eventParam))
-    ) {
-      setSelectedEventId(eventParam);
-      return;
-    }
-
-    if (
-      selectedEventId &&
-      sortedEvents.some((event) => event.id === selectedEventId) &&
-      (preserveSelectionOnFilter || inFiltered(selectedEventId))
-    ) {
-      return;
-    }
-    setSelectedEventId(filteredEvents[0]?.id ?? sortedEvents[0]?.id ?? null);
-  }, [eventParam, filteredEvents, preserveSelectionOnFilter, selectedEventId, sortedEvents]);
+  }, [eventParam, filteredEvents, selectedEventId, sortedEvents]);
 
   useEffect(() => {
     const existingIds = new Set(sortedEvents.map((event) => event.id));

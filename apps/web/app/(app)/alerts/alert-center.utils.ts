@@ -59,6 +59,13 @@ export interface AlertExportOptions {
   includeDeliveries?: boolean;
 }
 
+export interface ResolveSelectedEventIdOptions {
+  eventParam: string | null;
+  selectedEventId: string | null;
+  sortedEvents: AlertEventItem[];
+  filteredEvents: AlertEventItem[];
+}
+
 const PENDING_STATUSES = new Set(['pending', 'delivered', 'failed']);
 
 export const getEventTimestamp = (event: AlertEventItem): number => {
@@ -229,6 +236,29 @@ export function buildAlertTrend(
   return [...bucketByDate.values()];
 }
 
+export function resolveSelectedEventId({
+  eventParam,
+  selectedEventId,
+  sortedEvents,
+  filteredEvents
+}: ResolveSelectedEventIdOptions): string | null {
+  if (sortedEvents.length === 0) {
+    return null;
+  }
+
+  const sortedEventIds = new Set(sortedEvents.map((event) => event.id));
+
+  if (eventParam && sortedEventIds.has(eventParam)) {
+    return eventParam;
+  }
+
+  if (selectedEventId && sortedEventIds.has(selectedEventId)) {
+    return selectedEventId;
+  }
+
+  return filteredEvents[0]?.id ?? sortedEvents[0]?.id ?? null;
+}
+
 export function buildSimilarAlerts(
   selectedEvent: AlertEventItem | null,
   events: AlertEventItem[],
@@ -238,16 +268,21 @@ export function buildSimilarAlerts(
     return [];
   }
 
+  const selectedMetricSlug =
+    typeof selectedEvent.metricSlug === 'string' ? selectedEvent.metricSlug.trim() : '';
   const candidates = events
     .filter((event) => event.id !== selectedEvent.id)
     .map((event) => {
+      const eventMetricSlug = typeof event.metricSlug === 'string' ? event.metricSlug.trim() : '';
       const sameRule =
         Boolean(selectedEvent.ruleId) && Boolean(event.ruleId) && selectedEvent.ruleId === event.ruleId;
       const sameMetric =
         Boolean(selectedEvent.metricProvider) &&
         Boolean(event.metricProvider) &&
         selectedEvent.metricProvider === event.metricProvider &&
-        selectedEvent.metricSlug === event.metricSlug;
+        selectedMetricSlug.length > 0 &&
+        eventMetricSlug.length > 0 &&
+        selectedMetricSlug === eventMetricSlug;
       const timeDistance = Math.abs(getEventTimestamp(event) - getEventTimestamp(selectedEvent));
       return { event, sameRule, sameMetric, timeDistance };
     })
@@ -268,6 +303,28 @@ export function buildSimilarAlerts(
     reason: entry.sameRule ? 'same_rule' : 'same_metric'
   }));
 }
+
+const resolveRuleTrendDays = (window: AlertTimeWindow, points: AlertRuleTrendPoint[]): number => {
+  if (
+    typeof window.startMs === 'number' &&
+    Number.isFinite(window.startMs) &&
+    typeof window.endMs === 'number' &&
+    Number.isFinite(window.endMs) &&
+    window.endMs >= window.startMs
+  ) {
+    const startDay = dayjs(window.startMs).startOf('day');
+    const endDay = dayjs(window.endMs).startOf('day');
+    if (endDay.valueOf() >= startDay.valueOf()) {
+      return endDay.diff(startDay, 'day') + 1;
+    }
+  }
+
+  if (window.startMs !== null && window.endMs !== null && window.endMs < window.startMs) {
+    return 1;
+  }
+
+  return Math.max(points.length, 1);
+};
 
 export function buildRuleTrendAnalysis(
   ruleId: string | null | undefined,
@@ -343,7 +400,7 @@ export function buildRuleTrendAnalysis(
   });
 
   const totalTriggers = scopedEvents.length;
-  const days = Math.max(points.length, 1);
+  const days = resolveRuleTrendDays(window, points);
   const totalConfirmed = scopedEvents.filter((event) => event.status === 'confirmed').length;
   const totalIgnored = scopedEvents.filter((event) => event.status === 'ignored').length;
   const reviewed = totalConfirmed + totalIgnored;

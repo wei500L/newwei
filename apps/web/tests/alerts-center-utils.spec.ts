@@ -7,6 +7,7 @@ import {
   AlertMetricProvider,
   AlertSeverity
 } from '../graphql/generated';
+import dayjs from '../lib/dayjs';
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -15,6 +16,7 @@ import {
   buildRuleTrendAnalysis,
   buildSimilarAlerts,
   filterAlertEvents,
+  resolveSelectedEventId,
   resolveFilterTimeWindow,
   type AlertEventItem,
   type AlertFilterState
@@ -157,6 +159,33 @@ describe('alert-center utils', () => {
     expect(byDate.get('2026-01-03')).toMatchObject({ low: 0, medium: 1, high: 0, total: 1 });
   });
 
+  it('preserves explicit selection even when selected event is outside active filters', () => {
+    const newest = createEvent({
+      id: 'evt-1',
+      triggeredAt: '2026-01-02T00:00:00Z'
+    });
+    const older = createEvent({
+      id: 'evt-2',
+      triggeredAt: '2026-01-01T00:00:00Z'
+    });
+
+    const selectedFromUrl = resolveSelectedEventId({
+      eventParam: 'evt-2',
+      selectedEventId: 'evt-1',
+      sortedEvents: [newest, older],
+      filteredEvents: [newest]
+    });
+    expect(selectedFromUrl).toBe('evt-2');
+
+    const preservedCurrentSelection = resolveSelectedEventId({
+      eventParam: null,
+      selectedEventId: 'evt-2',
+      sortedEvents: [newest, older],
+      filteredEvents: [newest]
+    });
+    expect(preservedCurrentSelection).toBe('evt-2');
+  });
+
   it('ranks similar alerts by same rule then same metric', () => {
     const selected = createEvent({
       id: 'evt-1',
@@ -193,6 +222,26 @@ describe('alert-center utils', () => {
     expect(similar[1]?.reason).toBe('same_metric');
   });
 
+  it('does not treat missing metric slugs as same metric', () => {
+    const selected = createEvent({
+      id: 'evt-1',
+      triggeredAt: '2026-01-10T00:00:00Z',
+      ruleId: 'rule-1',
+      metricProvider: AlertMetricProvider.EconomicAnomaly,
+      metricSlug: null
+    });
+    const sameProviderMissingSlug = createEvent({
+      id: 'evt-2',
+      triggeredAt: '2026-01-09T00:00:00Z',
+      ruleId: 'rule-2',
+      metricProvider: AlertMetricProvider.EconomicAnomaly,
+      metricSlug: null
+    });
+
+    const similar = buildSimilarAlerts(selected, [selected, sameProviderMissingSlug], 5);
+    expect(similar).toEqual([]);
+  });
+
   it('builds rule trend analysis with frequency and false positive rate', () => {
     const events = [
       createEvent({
@@ -225,8 +274,8 @@ describe('alert-center utils', () => {
       'rule-1',
       events,
       {
-        startMs: new Date('2026-01-01T00:00:00Z').getTime(),
-        endMs: new Date('2026-01-02T23:59:59Z').getTime()
+        startMs: dayjs('2026-01-01').startOf('day').valueOf(),
+        endMs: dayjs('2026-01-02').endOf('day').valueOf()
       }
     );
 
@@ -234,7 +283,28 @@ describe('alert-center utils', () => {
     expect(analysis.points).toHaveLength(2);
     expect(analysis.points[0]).toMatchObject({ date: '2026-01-01', triggers: 2, falsePositiveRate: 0.5 });
     expect(analysis.points[1]).toMatchObject({ date: '2026-01-02', triggers: 1, falsePositiveRate: 1 });
+    expect(analysis.averageDailyTriggers).toBeCloseTo(1.5, 6);
     expect(analysis.falsePositiveRate).toBeCloseTo(2 / 3, 6);
+  });
+
+  it('uses full date window when computing average daily triggers', () => {
+    const events = [
+      createEvent({
+        id: 'evt-1',
+        triggeredAt: '2026-01-15T12:00:00Z',
+        ruleId: 'rule-1',
+        status: AlertEventStatus.Pending
+      })
+    ];
+
+    const analysis = buildRuleTrendAnalysis('rule-1', events, {
+      startMs: dayjs('2026-01-01').startOf('day').valueOf(),
+      endMs: dayjs('2026-01-30').endOf('day').valueOf()
+    });
+
+    expect(analysis.totalTriggers).toBe(1);
+    expect(analysis.points).toHaveLength(1);
+    expect(analysis.averageDailyTriggers).toBeCloseTo(1 / 30, 8);
   });
 
   it('builds export rows with stable headers', () => {
