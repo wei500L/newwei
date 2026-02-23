@@ -58,6 +58,7 @@ interface AssistantRun extends AssistantRunLike {
   type: AssistantRunType;
   status: AssistantRunStatus;
   createdAt: string;
+  conversationId?: string | null;
 }
 
 interface AssistantRunsQueryData {
@@ -69,11 +70,11 @@ interface AssistantRunsQueryVariables {
 }
 
 interface RequestAssistantQueryData {
-  requestAssistantQuery: Pick<AssistantRun, 'id' | 'type' | 'status' | 'createdAt'>;
+  requestAssistantQuery: Pick<AssistantRun, 'id' | 'type' | 'status' | 'createdAt' | 'conversationId'>;
 }
 
 interface RequestAssistantQueryVariables {
-  input: { message: string };
+  input: { message: string; conversationId?: string };
 }
 
 interface RequestAssistantReportData {
@@ -150,6 +151,7 @@ const ASSISTANT_RUNS_QUERY = gql`
       error
       input
       output
+      conversationId
       createdAt
     }
   }
@@ -174,6 +176,7 @@ const REQUEST_ASSISTANT_QUERY_MUTATION = gql`
       id
       type
       status
+      conversationId
       createdAt
     }
   }
@@ -259,6 +262,7 @@ export function AssistantContent() {
   const canViewAssistantJson = permissions.includes('settings.manage');
 
   const [queryDraft, setQueryDraft] = useState('');
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
@@ -282,6 +286,7 @@ export function AssistantContent() {
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<TextAreaRef | null>(null);
+  const conversationSessionRef = useRef(0);
   const composerCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldAutoScrollRef = useRef(true);
   const previousActiveRunIdRef = useRef<string | null>(null);
@@ -504,7 +509,7 @@ export function AssistantContent() {
   >(DELETE_ASSISTANT_RUN_MUTATION);
 
   const pushOptimisticRun = (
-    run: Pick<AssistantRun, 'id' | 'type' | 'status' | 'createdAt'>,
+    run: Pick<AssistantRun, 'id' | 'type' | 'status' | 'createdAt' | 'conversationId'>,
     input: AssistantRun['input'],
   ) => {
     setOptimisticRuns((prev) => ({
@@ -518,6 +523,7 @@ export function AssistantContent() {
         error: null,
         input,
         output: null,
+        conversationId: run.conversationId ?? null,
       },
     }));
     shouldAutoScrollRef.current = true;
@@ -727,8 +733,10 @@ export function AssistantContent() {
   }, [activeRunId, activeAssistantText, activeRun?.status]);
 
   const handleNewConversation = () => {
+    conversationSessionRef.current += 1;
     setActiveRunId(null);
     setQueryDraft('');
+    setConversationId(null);
   };
 
   const title = t('pages.assistant.title', { defaultValue: 'AI Assistant' });
@@ -763,16 +771,42 @@ export function AssistantContent() {
 
     try {
       shouldAutoScrollRef.current = true;
+      const sessionAtSend = conversationSessionRef.current;
+      const activeRunConversationId =
+        activeRun?.type === 'query' &&
+        typeof activeRun.conversationId === 'string' &&
+        activeRun.conversationId.trim().length > 0
+          ? activeRun.conversationId.trim()
+          : null;
+      const requestConversationId = activeRunConversationId ?? conversationId;
+      const requestInput: RequestAssistantQueryVariables['input'] = requestConversationId
+        ? { message: messageValue, conversationId: requestConversationId }
+        : { message: messageValue };
       const res = await requestAssistantQuery({
-        variables: { input: { message: messageValue } },
+        variables: { input: requestInput },
       });
 
       const created = res.data?.requestAssistantQuery;
-      if (created?.id) {
-        pushOptimisticRun(created, { message: messageValue });
+      const isCurrentSession = sessionAtSend === conversationSessionRef.current;
+      const createdConversationId =
+        typeof created?.conversationId === 'string' && created.conversationId.trim().length > 0
+          ? created.conversationId.trim()
+          : null;
+      if (createdConversationId && isCurrentSession) {
+        setConversationId(createdConversationId);
+      }
+      if (created?.id && isCurrentSession) {
+        pushOptimisticRun(
+          created,
+          createdConversationId
+            ? { message: messageValue, conversationId: createdConversationId }
+            : { message: messageValue },
+        );
       }
 
-      setQueryDraft('');
+      if (isCurrentSession) {
+        setQueryDraft('');
+      }
       void refetch();
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
@@ -984,7 +1018,7 @@ export function AssistantContent() {
               <Button
                 icon={<PlusOutlined />}
                 onClick={handleNewConversation}
-                disabled={!activeRun}
+                disabled={!activeRun || querySaving}
                 className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md"
               >
                 {t('assistant.chat.newConversation', { defaultValue: 'New' })}
@@ -1388,7 +1422,7 @@ export function AssistantContent() {
             <Button
               icon={<PlusOutlined />}
               onClick={handleNewConversation}
-              disabled={!activeRun}
+              disabled={!activeRun || querySaving}
               className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
             >
               {t('assistant.chat.newConversation', { defaultValue: 'New' })}

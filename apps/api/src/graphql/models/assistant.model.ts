@@ -40,6 +40,9 @@ export class AssistantRunModel {
   @Field(() => GraphQLJSONScalar, { nullable: true })
   output?: Record<string, unknown> | null;
 
+  @Field(() => String, { nullable: true })
+  conversationId?: string | null;
+
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 }

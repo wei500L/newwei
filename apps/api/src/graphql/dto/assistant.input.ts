@@ -1,5 +1,5 @@
 import { Field, Float, InputType, Int, registerEnumType } from "@nestjs/graphql";
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from "class-validator";
 
 import { AssistantRunType } from "../models/assistant.model";
 
@@ -8,6 +8,13 @@ export class AssistantQueryInput {
   @Field()
   @IsString()
   message!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^[A-Za-z0-9:_-]+$/)
+  conversationId?: string;
 }
 
 export enum AssistantReportPeriod {

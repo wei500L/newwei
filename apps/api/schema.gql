@@ -338,6 +338,7 @@ enum AssistantForecastModelKind {
 }
 
 input AssistantQueryInput {
+  conversationId: String
   message: String!
 }
 
@@ -353,6 +354,7 @@ enum AssistantReportPeriod {
 }
 
 type AssistantRunModel {
+  conversationId: String
   createdAt: DateTime!
   error: String
   id: String!
