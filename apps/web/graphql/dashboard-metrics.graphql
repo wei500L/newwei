@@ -21,10 +21,12 @@ query DashboardHeroMetrics($start: DateTime!, $end: DateTime!, $granularity: Tim
   ) {
     timestamp
     effectiveGranularity
+    sourceField
     value
     unit
     dataType
     item {
+      slug
       displayName
       defaultUnit
     }

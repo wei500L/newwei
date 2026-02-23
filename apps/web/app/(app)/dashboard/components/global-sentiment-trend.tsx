@@ -17,17 +17,27 @@ import {
   UiTimeGranularity,
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
-
-interface DataPoint {
-  timestamp: string;
-  effectiveGranularity?: string | null;
-  value: number;
-}
+import {
+  type GlobalSentimentTrendDataPoint,
+  prepareGlobalSentimentTrendSeries,
+} from "./global-sentiment-trend-utils";
 
 interface GlobalSentimentTrendProps {
-  data?: DataPoint[];
+  data?: GlobalSentimentTrendDataPoint[];
   loading?: boolean;
 }
+
+const resolveTooltipSeriesValue = (payload: any): number => {
+  const value = payload?.value;
+  if (Array.isArray(value)) {
+    const seriesValue = Number(value[1] ?? Number.NaN);
+    return Number.isFinite(seriesValue) ? seriesValue : 0;
+  }
+  const rawValue =
+    typeof value === "number" || typeof value === "string" ? value : payload?.data;
+  const numeric = Number(rawValue ?? Number.NaN);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
 
 export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProps) {
   const { t, i18n } = useTranslation();
@@ -35,12 +45,29 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
   const theme = useChartTheme();
   const { range, start, end } = useDashboardRangeStore();
   const windowLabel = formatDashboardWindowLabel(start, end);
+  const positiveLabel = t("items.sentiment.positive", { defaultValue: "Positive" });
+  const neutralLabel = t("items.sentiment.neutral", { defaultValue: "Neutral" });
+  const negativeLabel = t("items.sentiment.negative", { defaultValue: "Negative" });
+  const aggregateLabel = t("dashboard.sentiment.aggregateLabel", {
+    defaultValue: "Sentiment (aggregate)",
+  });
+  const preparedSeries = useMemo(
+    () => prepareGlobalSentimentTrendSeries(data ?? []),
+    [data]
+  );
+  const isFallbackMode =
+    preparedSeries.mode === "aggregate" && (data?.length ?? 0) > 0;
 
   const option = useMemo<EChartsOption>(() => {
-    if (!data || data.length === 0) return {};
+    if (!data || data.length === 0 || preparedSeries.timestamps.length === 0) {
+      return {};
+    }
 
-    const timestamps = data.map((d) => d.timestamp);
-    const values = data.map((d) => d.value);
+    const timestamps = preparedSeries.timestamps;
+    const splitSeries = preparedSeries.mode === "split" ? preparedSeries : null;
+    const aggregateSeries =
+      preparedSeries.mode === "aggregate" ? preparedSeries : null;
+    const splitMode = Boolean(splitSeries);
     const actualGranularity = pickCoarsestGranularity(
       data.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
     );
@@ -73,11 +100,11 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
           type: "line"
         },
         formatter: (params: any) => {
-          const payload = Array.isArray(params) ? params[0] : params;
+          const payloads = Array.isArray(params) ? params : [params];
+          const payload = payloads[0];
           const axisValue = payload?.axisValue as string | number | undefined;
           const value = payload?.value;
           const ts = Array.isArray(value) ? value[0] : axisValue;
-          const v = Array.isArray(value) ? value[1] : typeof value === "number" ? value : payload?.data;
 
           const startIso =
             typeof ts === "string"
@@ -98,18 +125,56 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
               : startIso
                 ? formatDateTime(startIso, locale, { dateStyle: "medium" })
                 : "";
+          const valueBySeries = new Map<string, number>();
+          for (const seriesPayload of payloads) {
+            if (!seriesPayload?.seriesName) {
+              continue;
+            }
+            valueBySeries.set(
+              String(seriesPayload.seriesName),
+              resolveTooltipSeriesValue(seriesPayload)
+            );
+          }
 
-          const valueText = typeof v === "number" ? v.toFixed(2) : String(v ?? "");
+          const positiveValue = valueBySeries.get(positiveLabel) ?? 0;
+          const neutralValue = valueBySeries.get(neutralLabel) ?? 0;
+          const negativeValue = valueBySeries.get(negativeLabel) ?? 0;
+          const aggregateValue = valueBySeries.get(aggregateLabel) ?? 0;
+          const formatValue = (v: number) => v.toFixed(2);
+          const rows = splitMode
+            ? [
+                `<div>${positiveLabel}: ${formatValue(positiveValue)}</div>`,
+                `<div>${neutralLabel}: ${formatValue(neutralValue)}</div>`,
+                `<div>${negativeLabel}: ${formatValue(negativeValue)}</div>`,
+              ]
+            : [
+                `<div>${aggregateLabel}: ${formatValue(aggregateValue)}</div>`,
+              ];
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${bucketText}</div>`,
-            `<div>${t("dashboard.sentiment.label", { defaultValue: "Sentiment" })}: ${valueText}</div>`,
+            ...rows,
             `<div style="color:#64748b;margin-top:6px;">Bucket: ${actualGranularityLabel}</div>`
           ].join("");
         },
       },
+      ...(splitMode
+        ? {
+            legend: {
+              top: 0,
+              right: 0,
+              data: [positiveLabel, neutralLabel, negativeLabel],
+              textStyle: {
+                color: theme.colors.foreground,
+                fontFamily: theme.fontFamily,
+                fontSize: 12
+              }
+            }
+          }
+        : {}),
       grid: {
         left: "3%",
         right: "4%",
+        top: splitMode ? "16%" : "8%",
         bottom: "3%",
         containLabel: true
       },
@@ -133,30 +198,89 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
         axisLabel: { color: theme.colors.foreground, fontFamily: theme.fontFamily }
       },
       series: [
-        {
-          name: t("dashboard.sentiment.label", { defaultValue: "Sentiment" }),
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          areaStyle: {
-            color: {
-              type: "linear",
-              x: 0, y: 0, x2: 0, y2: 1,
-              colorStops: [
-                { offset: 0, color: "rgba(217, 119, 6, 0.45)" },
-                { offset: 1, color: "rgba(217, 119, 6, 0)" }
-              ]
-            }
-          },
-          lineStyle: {
-            color: theme.colors.accent,
-            width: 3
-          },
-          data: values
-        }
+        ...(splitMode
+          ? [
+              {
+                name: positiveLabel,
+                type: "line" as const,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                  color: theme.colors.bullish,
+                  width: 2.5
+                },
+                itemStyle: {
+                  color: theme.colors.bullish
+                },
+                data: splitSeries?.positiveValues ?? []
+              },
+              {
+                name: neutralLabel,
+                type: "line" as const,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                  color: theme.colors.accent,
+                  width: 2.5
+                },
+                itemStyle: {
+                  color: theme.colors.accent
+                },
+                data: splitSeries?.neutralValues ?? []
+              },
+              {
+                name: negativeLabel,
+                type: "line" as const,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                  color: theme.colors.bearish,
+                  width: 2.5
+                },
+                itemStyle: {
+                  color: theme.colors.bearish
+                },
+                data: splitSeries?.negativeValues ?? []
+              }
+            ]
+          : [
+              {
+                name: aggregateLabel,
+                type: "line" as const,
+                smooth: true,
+                showSymbol: false,
+                lineStyle: {
+                  color: theme.colors.accent,
+                  width: 2.5
+                },
+                areaStyle: {
+                  color: {
+                    type: "linear",
+                    x: 0,
+                    y: 0,
+                    x2: 0,
+                    y2: 1,
+                    colorStops: [
+                      { offset: 0, color: "rgba(217, 119, 6, 0.35)" },
+                      { offset: 1, color: "rgba(217, 119, 6, 0)" }
+                    ]
+                  }
+                },
+                data: aggregateSeries?.aggregateValues ?? []
+              }
+            ])
       ]
     };
-  }, [data, locale, t, theme]);
+  }, [
+    aggregateLabel,
+    data,
+    locale,
+    negativeLabel,
+    neutralLabel,
+    positiveLabel,
+    preparedSeries,
+    theme
+  ]);
 
   const actualGranularity = useMemo(
     () =>
@@ -178,6 +302,13 @@ export function GlobalSentimentTrend({ data, loading }: GlobalSentimentTrendProp
       variant="borderless"
       extra={
         <Space size={6} wrap>
+          {isFallbackMode ? (
+            <Tag color="gold" className="text-xs">
+              {t("dashboard.sentiment.fallbackSeries", {
+                defaultValue: "Fallback: aggregated sentiment"
+              })}
+            </Tag>
+          ) : null}
           <Tag color="default" className="text-xs">
             Range: {range}
           </Tag>

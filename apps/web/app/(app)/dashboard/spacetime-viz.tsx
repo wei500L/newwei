@@ -1269,6 +1269,12 @@ export function SpacetimeViz() {
                   cursorBucketStartIso={
                     geoScope === "event" ? cursorStartIso : null
                   }
+                  cursorBucketEndIso={
+                    geoScope === "event" ? cursorEndIso : null
+                  }
+                  cursorBucketGranularity={
+                    geoScope === "event" ? timelineGranularity : null
+                  }
                 />
               </div>
             </div>

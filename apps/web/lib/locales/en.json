@@ -1178,11 +1178,25 @@
         "active": "Active",
         "inactive": "Inactive",
         "bucket": "Bucket",
+        "loadMore": "Load more",
         "caption": "Heat + dominant sentiment overlay (click a dot for details).",
         "emptyBucket": "No geo-tagged news in this bucket.",
         "empty": "No geo-tagged news in the selected range.",
         "noArticles": "No articles found for this point.",
         "moreHint": "More articles available. Narrow the time range to inspect further.",
+        "moreLimitHint": "Reached the backend page cap. Narrow the time range or bucket to inspect more.",
+        "granularity": {
+          "daily": "daily",
+          "weekly": "weekly",
+          "monthly": "monthly"
+        },
+        "tooltip": {
+          "window": "window",
+          "bucket": "bucket",
+          "articles": "articles",
+          "sentimentIndex": "sentiment index",
+          "sentimentFormula": "(pos-neg)/(pos+neu+neg)"
+        },
         "title": "Geo Sentiment Heatmap",
         "scope": "Scope",
         "scopeGlobal": "Global",
@@ -1357,7 +1371,9 @@
     },
     "sentiment": {
       "label": "Sentiment",
-      "title": "Global Sentiment Trend"
+      "title": "Global Sentiment Trend",
+      "aggregateLabel": "Sentiment (aggregate)",
+      "fallbackSeries": "Fallback: aggregated sentiment"
     },
     "dataLatest": {
       "label": "Latest"
