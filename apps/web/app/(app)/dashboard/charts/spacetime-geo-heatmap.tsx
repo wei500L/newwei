@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
+import { Button, Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,6 +17,16 @@ import { ensureEchartsMapRegistered } from "@/lib/echarts-map";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
+import {
+  canLoadMoreArticles,
+  CursorBucketGranularity,
+  inferBucketGranularityFromStarts,
+  resolveArticleLimit,
+  resolveBucketGranularityKey,
+  resolveTooltipBucketEndIso,
+  SPACETIME_GEO_ARTICLES_MAX_LIMIT,
+  SPACETIME_GEO_ARTICLES_PAGE_SIZE,
+} from "./spacetime-geo-heatmap-utils";
 
 type SentimentLabel = "positive" | "neutral" | "negative" | "unknown";
 
@@ -164,12 +174,15 @@ export interface SpacetimeGeoHeatmapProps {
   eventId?: string | null;
   followCursor?: boolean;
   cursorBucketStartIso?: string | null;
+  cursorBucketEndIso?: string | null;
+  cursorBucketGranularity?: CursorBucketGranularity | null;
 }
 
 export function SpacetimeGeoHeatmap({
   eventId,
   followCursor,
-  cursorBucketStartIso
+  cursorBucketStartIso,
+  cursorBucketEndIso
 }: SpacetimeGeoHeatmapProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -180,6 +193,13 @@ export function SpacetimeGeoHeatmap({
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [articlePageState, setArticlePageState] = useState<{
+    scopeKey: string;
+    page: number;
+  }>({
+    scopeKey: "",
+    page: 1
+  });
   const [selectedPoint, setSelectedPoint] = useState<{
     id: string;
     name: string;
@@ -213,6 +233,7 @@ export function SpacetimeGeoHeatmap({
   );
   const includeBuckets = Boolean(followCursor && cursorBucketStartIso);
   const cursorBucketIso = cursorBucketStartIso?.trim() ?? "";
+  const cursorBucketEnd = cursorBucketEndIso?.trim() ?? "";
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const windowLabel = `${formatDateTime(startIso, locale, { dateStyle: "medium" })} - ${formatDateTime(endIso, locale, {
@@ -267,11 +288,33 @@ export function SpacetimeGeoHeatmap({
   });
 
   const drilldownBucketStart = includeBuckets ? cursorBucketIso : "";
+  const articlePageScopeKey = useMemo(() => {
+    if (!selectedPoint || !drawerOpen) {
+      return "";
+    }
+    return [
+      selectedPoint.id,
+      selectedPoint.snapshotId ?? "none",
+      eventId ?? "global",
+      startIso,
+      endIso,
+      drilldownBucketStart || "all"
+    ].join("|");
+  }, [drawerOpen, drilldownBucketStart, endIso, eventId, selectedPoint, startIso]);
+  const articlePage =
+    articlePageScopeKey && articlePageState.scopeKey === articlePageScopeKey
+      ? articlePageState.page
+      : 1;
+  const currentArticlesLimit = resolveArticleLimit(
+    articlePage,
+    SPACETIME_GEO_ARTICLES_PAGE_SIZE,
+    SPACETIME_GEO_ARTICLES_MAX_LIMIT
+  );
   const articlesQueryKey = useMemo(() => {
     if (!selectedPoint) {
       return ["dashboard", "spacetime", "geo-heatmap", "articles", "none"] as const;
     }
-    const key: (string | null | undefined)[] = ["dashboard", "spacetime", "geo-heatmap", "articles", selectedPoint.id];
+    const key: (string | number | null | undefined)[] = ["dashboard", "spacetime", "geo-heatmap", "articles", selectedPoint.id];
     key.push("snapshot", selectedPoint.snapshotId ?? "none");
     if (eventId) {
       key.push("event", eventId);
@@ -282,8 +325,9 @@ export function SpacetimeGeoHeatmap({
     if (drilldownBucketStart) {
       key.push("bucket", drilldownBucketStart);
     }
+    key.push("limit", currentArticlesLimit);
     return key;
-  }, [drilldownBucketStart, endIso, eventId, selectedPoint, startIso]);
+  }, [currentArticlesLimit, drilldownBucketStart, endIso, eventId, selectedPoint, startIso]);
 
   const articlesQueryEnabled = Boolean(enabled && drawerOpen && selectedPoint?.id);
   const articlesQuery = useQuery({
@@ -302,7 +346,7 @@ export function SpacetimeGeoHeatmap({
             ...(selectedPoint.snapshotId ? { snapshotId: selectedPoint.snapshotId } : {}),
             ...(eventId ? { eventId } : {}),
             ...(drilldownBucketStart ? { bucketStart: drilldownBucketStart } : {}),
-            limit: 30
+            limit: currentArticlesLimit
           }
         }
       );
@@ -310,8 +354,7 @@ export function SpacetimeGeoHeatmap({
     },
     enabled: articlesQueryEnabled,
     staleTime: 10_000,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous ?? null
+    refetchOnWindowFocus: false
   });
 
   useEffect(() => {
@@ -341,6 +384,15 @@ export function SpacetimeGeoHeatmap({
   }, [enabled, geoQuery.data]);
 
   const rawPoints = heatmapQuery.data?.points ?? [];
+  const effectiveBucketGranularity = useMemo<Exclude<CursorBucketGranularity, "auto">>(() => {
+    if (!includeBuckets) {
+      return "day";
+    }
+    const bucketStarts = rawPoints.flatMap((point) =>
+      (point.buckets ?? []).map((bucket) => bucket.bucketStart)
+    );
+    return inferBucketGranularityFromStarts(bucketStarts);
+  }, [includeBuckets, rawPoints]);
 
   const viewPoints = useMemo(() => {
     if (!includeBuckets || !cursorBucketIso) {
@@ -439,16 +491,22 @@ export function SpacetimeGeoHeatmap({
       const bucketStartLabel = bucketStart
         ? formatDateTime(bucketStart, locale, { dateStyle: "medium" })
         : null;
-      const bucketEndIso = (() => {
-        if (!bucketStart) return null;
-        const startMs = new Date(bucketStart).getTime();
-        if (!Number.isFinite(startMs)) return null;
-        return new Date(startMs + 24 * 60 * 60 * 1000).toISOString();
-      })();
+      const bucketEndIso = bucketStart
+        ? resolveTooltipBucketEndIso({
+            bucketStart,
+            cursorBucketStartIso: cursorBucketIso,
+            cursorBucketEndIso: cursorBucketEnd,
+            granularity: effectiveBucketGranularity
+          })
+        : null;
       const bucketEndLabel =
         bucketEndIso ? formatDateTime(bucketEndIso, locale, { dateStyle: "medium" }) : null;
       const bucketLabel =
         bucketStartLabel && bucketEndLabel ? `${bucketStartLabel} - ${bucketEndLabel}` : bucketStartLabel;
+      const bucketGranularityLabel = t(
+        `dashboard.charts.spacetimeGeoHeatmap.granularity.${resolveBucketGranularityKey(effectiveBucketGranularity)}`,
+        { defaultValue: resolveBucketGranularityKey(effectiveBucketGranularity) }
+      );
       const sentiment = isRecord(meta?.sentiment)
         ? (meta.sentiment as Record<string, unknown>)
         : null;
@@ -457,21 +515,37 @@ export function SpacetimeGeoHeatmap({
       const neg = Number(sentiment?.negative ?? 0);
       const unk = Number(sentiment?.unknown ?? 0);
       const totalSentiment = pos + neu + neg + unk;
+      const normalizedSentimentBase = pos + neu + neg;
+      const normalizedSentiment =
+        normalizedSentimentBase > 0 ? (pos - neg) / normalizedSentimentBase : 0;
+      const normalizedSentimentText = `${normalizedSentiment >= 0 ? "+" : ""}${normalizedSentiment.toFixed(3)}`;
       const ratio = (value: number) => (totalSentiment > 0 ? Math.round((value / totalSentiment) * 100) : 0);
+      const windowText = t("dashboard.charts.spacetimeGeoHeatmap.tooltip.window", { defaultValue: "window" });
+      const bucketText = t("dashboard.charts.spacetimeGeoHeatmap.tooltip.bucket", { defaultValue: "bucket" });
+      const articlesText = t("dashboard.charts.spacetimeGeoHeatmap.tooltip.articles", { defaultValue: "articles" });
+      const sentimentIndexText = t("dashboard.charts.spacetimeGeoHeatmap.tooltip.sentimentIndex", { defaultValue: "sentiment index" });
+      const sentimentFormulaText = t("dashboard.charts.spacetimeGeoHeatmap.tooltip.sentimentFormula", {
+        defaultValue: "(pos-neg)/(pos+neu+neg)"
+      });
+      const positiveText = t("items.sentiment.positive", { defaultValue: "Positive" });
+      const neutralText = t("items.sentiment.neutral", { defaultValue: "Neutral" });
+      const negativeText = t("items.sentiment.negative", { defaultValue: "Negative" });
+      const unknownText = t("common.unknown", { defaultValue: "Unknown" });
 
       return [
         `<div style="min-width: 220px;">`,
         `<div style="font-weight: 600; margin-bottom: 6px; color: ${colors?.primary ?? "#1f3b7b"};">${name || "Location"}</div>`,
-        `<div style="margin-bottom: 6px;">window: <b>${windowLabel}</b></div>`,
+        `<div style="margin-bottom: 6px;">${windowText}: <b>${windowLabel}</b></div>`,
         bucketLabel
-          ? `<div style="margin-bottom: 6px;">bucket: <b>${bucketLabel}</b> <span style="color:#64748b;">(daily)</span></div>`
+          ? `<div style="margin-bottom: 6px;">${bucketText}: <b>${bucketLabel}</b> <span style="color:#64748b;">(${bucketGranularityLabel})</span></div>`
           : "",
-        total !== undefined ? `<div style="margin-bottom: 6px;">articles: <b>${total}</b></div>` : "",
+        total !== undefined ? `<div style="margin-bottom: 6px;">${articlesText}: <b>${total}</b></div>` : "",
+        `<div style="margin-bottom: 6px;">${sentimentIndexText}: <b>${normalizedSentimentText}</b> <span style="color:#64748b;">${sentimentFormulaText}</span></div>`,
         `<div style="display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px;">`,
-        `<div>positive</div><div>${pos} (${ratio(pos)}%)</div>`,
-        `<div>neutral</div><div>${neu} (${ratio(neu)}%)</div>`,
-        `<div>negative</div><div>${neg} (${ratio(neg)}%)</div>`,
-        `<div>unknown</div><div>${unk} (${ratio(unk)}%)</div>`,
+        `<div>${positiveText}</div><div>${pos} (${ratio(pos)}%)</div>`,
+        `<div>${neutralText}</div><div>${neu} (${ratio(neu)}%)</div>`,
+        `<div>${negativeText}</div><div>${neg} (${ratio(neg)}%)</div>`,
+        `<div>${unknownText}</div><div>${unk} (${ratio(unk)}%)</div>`,
         `</div>`,
         `</div>`
       ].join("");
@@ -549,7 +623,20 @@ export function SpacetimeGeoHeatmap({
         buildScatterSeries("unknown")
       ]
     };
-  }, [colors, enabled, fontFamily, geoQuery.data, locale, mapReady, viewPoints, windowLabel]);
+  }, [
+    colors,
+    cursorBucketEnd,
+    effectiveBucketGranularity,
+    cursorBucketIso,
+    enabled,
+    fontFamily,
+    geoQuery.data,
+    locale,
+    mapReady,
+    t,
+    viewPoints,
+    windowLabel
+  ]);
 
   const handleChartClick = useCallback(
     (params: unknown) => {
@@ -563,6 +650,7 @@ export function SpacetimeGeoHeatmap({
         return;
       }
       setSelectedPoint({ id: pointId, name, snapshotId: heatmapQuery.data?.snapshotId ?? null });
+      setArticlePageState({ scopeKey: "", page: 1 });
       setDrawerOpen(true);
     },
     [heatmapQuery.data?.snapshotId]
@@ -699,7 +787,10 @@ export function SpacetimeGeoHeatmap({
       <Drawer
         title={drilldownTitle}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setArticlePageState({ scopeKey: "", page: 1 });
+        }}
         width={520}
       >
         <Space size="small" wrap style={{ marginBottom: 12 }}>
@@ -721,7 +812,10 @@ export function SpacetimeGeoHeatmap({
           <Skeleton active paragraph={{ rows: 8 }} />
         ) : (() => {
             const payload = articlesQuery.data;
-            const articles = payload?.articles ?? [];
+            const rawArticles = payload?.articles ?? [];
+            const articles = Array.from(
+              new Map(rawArticles.map((article) => [article.id, article])).values()
+            );
             const hasArticles = articles.length > 0;
 
             if (articlesQuery.error && !hasArticles) {
@@ -793,11 +887,38 @@ export function SpacetimeGeoHeatmap({
                     );
                   }}
                 />
-                {payload?.hasMore ? (
+                {canLoadMoreArticles(Boolean(payload?.hasMore), currentArticlesLimit) ? (
+                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                    <Button
+                      block
+                      onClick={() => {
+                        if (currentArticlesLimit >= SPACETIME_GEO_ARTICLES_MAX_LIMIT) {
+                          return;
+                        }
+                        if (!articlePageScopeKey) {
+                          return;
+                        }
+                        setArticlePageState({
+                          scopeKey: articlePageScopeKey,
+                          page: articlePage + 1
+                        });
+                      }}
+                      loading={articlesQuery.isFetching}
+                    >
+                      {t("dashboard.charts.spacetimeGeoHeatmap.loadMore", { defaultValue: "Load more" })}
+                    </Button>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {t("dashboard.charts.spacetimeGeoHeatmap.moreHint", {
+                        defaultValue:
+                          "More articles available. Narrow the time range to inspect further."
+                      })}
+                    </Typography.Text>
+                  </Space>
+                ) : payload?.hasMore ? (
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {t("dashboard.charts.spacetimeGeoHeatmap.moreHint", {
+                    {t("dashboard.charts.spacetimeGeoHeatmap.moreLimitHint", {
                       defaultValue:
-                        "More articles available. Narrow the time range to inspect further."
+                        "Reached the backend page cap. Narrow the time range or bucket to inspect more."
                     })}
                   </Typography.Text>
                 ) : null}

@@ -1181,11 +1181,25 @@
         "active": "活跃",
         "inactive": "不活跃",
         "bucket": "分桶",
+        "loadMore": "加载更多",
         "caption": "热度 + 主导情绪叠加（点击点查看详情）。",
         "emptyBucket": "该分桶中没有带地理标记的新闻。",
         "empty": "所选范围内没有带地理标记的新闻。",
         "noArticles": "该点没有找到文章。",
         "moreHint": "还有更多文章可用。请缩小时间范围以继续查看。",
+        "moreLimitHint": "已达到后端分页上限。请缩小时间范围或分桶查看更多。",
+        "granularity": {
+          "daily": "日",
+          "weekly": "周",
+          "monthly": "月"
+        },
+        "tooltip": {
+          "window": "窗口",
+          "bucket": "分桶",
+          "articles": "文章",
+          "sentimentIndex": "情绪指数",
+          "sentimentFormula": "(pos-neg)/(pos+neu+neg)"
+        },
         "title": "地理情绪热力图",
         "scope": "范围",
         "scopeGlobal": "全球",
@@ -1360,7 +1374,9 @@
     },
     "sentiment": {
       "label": "情绪",
-      "title": "全球情绪趋势"
+      "title": "全球情绪趋势",
+      "aggregateLabel": "情绪（聚合）",
+      "fallbackSeries": "回退：使用聚合情绪"
     },
     "dataLatest": {
       "label": "最新"

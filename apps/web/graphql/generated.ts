@@ -3271,7 +3271,63 @@ export type DashboardHeroMetricsQueryVariables = Exact<{
 }>;
 
 
-export type DashboardHeroMetricsQuery = { __typename?: 'Query', conflict: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, market: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, resource: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }>, supply: Array<{ __typename?: 'EconomicDataPointModel', timestamp: any, effectiveGranularity: TimeGranularity, value: number, unit?: string | null, dataType: EconomicDataValueType, item: { __typename?: 'EconomicDataItemModel', displayName: string, defaultUnit?: string | null } }> };
+export type DashboardHeroMetricsQuery = {
+  __typename?: 'Query',
+  conflict: Array<{
+    __typename?: 'EconomicDataPointModel',
+    timestamp: any,
+    effectiveGranularity: TimeGranularity,
+    value: number,
+    unit?: string | null,
+    dataType: EconomicDataValueType,
+    item: {
+      __typename?: 'EconomicDataItemModel',
+      displayName: string,
+      defaultUnit?: string | null
+    }
+  }>,
+  market: Array<{
+    __typename?: 'EconomicDataPointModel',
+    timestamp: any,
+    effectiveGranularity: TimeGranularity,
+    sourceField?: string | null,
+    value: number,
+    unit?: string | null,
+    dataType: EconomicDataValueType,
+    item: {
+      __typename?: 'EconomicDataItemModel',
+      slug: string,
+      displayName: string,
+      defaultUnit?: string | null
+    }
+  }>,
+  resource: Array<{
+    __typename?: 'EconomicDataPointModel',
+    timestamp: any,
+    effectiveGranularity: TimeGranularity,
+    value: number,
+    unit?: string | null,
+    dataType: EconomicDataValueType,
+    item: {
+      __typename?: 'EconomicDataItemModel',
+      displayName: string,
+      defaultUnit?: string | null
+    }
+  }>,
+  supply: Array<{
+    __typename?: 'EconomicDataPointModel',
+    timestamp: any,
+    effectiveGranularity: TimeGranularity,
+    value: number,
+    unit?: string | null,
+    dataType: EconomicDataValueType,
+    item: {
+      __typename?: 'EconomicDataItemModel',
+      displayName: string,
+      defaultUnit?: string | null
+    }
+  }>
+};
 
 export type MetricDrillDownDetailsQueryVariables = Exact<{
   category: Scalars['String']['input'];
@@ -4701,10 +4757,12 @@ export const DashboardHeroMetricsDocument = gql`
   ) {
     timestamp
     effectiveGranularity
+    sourceField
     value
     unit
     dataType
     item {
+      slug
       displayName
       defaultUnit
     }
