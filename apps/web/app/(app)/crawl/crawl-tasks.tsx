@@ -271,7 +271,8 @@ export function CrawlTasksView() {
     "pause" | "resume" | "concurrency" | null
   >(null);
   const [maxConcurrencyInput, setMaxConcurrencyInput] = useState<number>(3);
-  const [batchFrequencySeconds, setBatchFrequencySeconds] = useState<number>(3600);
+  const [batchFrequencySeconds, setBatchFrequencySeconds] =
+    useState<number>(3600);
   const [batchFrequencyLoading, setBatchFrequencyLoading] = useState(false);
 
   const pageSize = pagination.pageSize ?? 10;
@@ -337,7 +338,9 @@ export function CrawlTasksView() {
     if (!crawlClientSettingsData?.crawlClientSettings) {
       return;
     }
-    clientSettingsForm.setFieldsValue(crawlClientSettingsData.crawlClientSettings);
+    clientSettingsForm.setFieldsValue(
+      crawlClientSettingsData.crawlClientSettings,
+    );
   }, [clientSettingsForm, crawlClientSettingsData?.crawlClientSettings]);
 
   const loadQueueStats = useCallback(async () => {
@@ -346,7 +349,9 @@ export function CrawlTasksView() {
     }
     setQueueStatsLoading(true);
     try {
-      const response = await apiClient.get<CrawlQueueOpsStats>("admin/crawl4ai/queue");
+      const response = await apiClient.get<CrawlQueueOpsStats>(
+        "admin/crawl4ai/queue",
+      );
       setQueueStats(response.data);
       if (
         typeof response.data.maxConcurrency === "number" &&
@@ -584,26 +589,37 @@ export function CrawlTasksView() {
       title: t("crawl.columns.task"),
       dataIndex: "displayName",
       key: "displayName",
+      width: screens.xl ? 440 : 360,
       render: (_: unknown, record) => {
         const configTags = buildTaskConfigTags(record);
+        const visibleConfigTags = configTags.slice(0, 4);
         return (
-          <div>
-            <div style={{ fontWeight: 600 }}>
+          <Space direction="vertical" size={4} style={{ width: "100%" }}>
+            <Typography.Text
+              strong
+              style={{ display: "block", maxWidth: "100%" }}
+              ellipsis
+            >
               {record.displayName ?? record.targetUrl}
-            </div>
-            {configTags.length ? (
-              <Space wrap size={[4, 4]} style={{ marginTop: 4 }}>
-                {configTags}
+            </Typography.Text>
+            {visibleConfigTags.length ? (
+              <Space wrap size={[4, 4]}>
+                {visibleConfigTags}
+                {configTags.length > visibleConfigTags.length ? (
+                  <Tag>{`+${configTags.length - visibleConfigTags.length}`}</Tag>
+                ) : null}
               </Space>
             ) : null}
             <Typography.Link
               href={record.targetUrl}
               target="_blank"
               rel="noreferrer"
+              style={{ display: "block", maxWidth: "100%", fontSize: 12 }}
+              ellipsis
             >
               {record.targetUrl}
             </Typography.Link>
-          </div>
+          </Space>
         );
       },
     },
@@ -611,6 +627,7 @@ export function CrawlTasksView() {
       title: t("crawl.columns.status"),
       dataIndex: "status",
       key: "status",
+      width: 140,
       render: (value: CrawlTaskStatus) => (
         <Tag color={statusColors[value]}>
           {t(`crawl.status.${value}`, { defaultValue: value })}
@@ -621,6 +638,7 @@ export function CrawlTasksView() {
       title: t("crawl.columns.runs"),
       dataIndex: "runCount",
       key: "runCount",
+      width: 170,
       render: (_, record) =>
         t("crawl.runsSummary", {
           runs: record.runCount,
@@ -631,6 +649,8 @@ export function CrawlTasksView() {
       title: t("crawl.columns.peakMemory"),
       dataIndex: "lastPeakMemoryMb",
       key: "lastPeakMemoryMb",
+      width: 140,
+      align: "right",
       render: (value?: number | null) =>
         value != null ? value.toFixed(0) : t("common.emptyValue"),
     },
@@ -638,6 +658,7 @@ export function CrawlTasksView() {
       title: t("crawl.columns.lastActivity"),
       dataIndex: "lastRunAt",
       key: "lastRunAt",
+      width: 200,
       render: (_, record) => {
         if (!record.lastRunAt && !record.createdAt) {
           return t("common.emptyValue");
@@ -656,8 +677,10 @@ export function CrawlTasksView() {
     {
       title: t("common.actions"),
       key: "actions",
+      width: 140,
+      fixed: "right",
       render: (_, record) => (
-        <Space>
+        <Space size={4}>
           <Link href={`/admin/ops/crawl-tasks/${record.id}`}>
             {t("common.view")}
           </Link>
@@ -846,8 +869,7 @@ export function CrawlTasksView() {
           message.error(
             (error as Error).message ??
               t("crawl.ops.batchFrequencySaveFailed", {
-                defaultValue:
-                  "Failed to batch update News Source frequency.",
+                defaultValue: "Failed to batch update News Source frequency.",
               }),
           );
           throw error;
@@ -997,127 +1019,170 @@ export function CrawlTasksView() {
   }
 
   return (
-    <div className="content-card">
-      {sourceIdFilter ? (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={t("crawl.filter.sourceId", {
-            defaultValue: "Filtered by NewsSource {{id}}",
-            id: sourceIdFilter,
-          })}
-          action={
-            <Button
-              size="small"
-              onClick={() => router.push("/admin/ops/crawl-tasks")}
-            >
-              {t("common.clear", { defaultValue: "Clear" })}
-            </Button>
-          }
-        />
-      ) : null}
-      {tasksError ? (
-        <Alert
-          type="error"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={t("common.failed", { defaultValue: "Failed" })}
-          description={tasksError}
-        />
-      ) : null}
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Space.Compact style={{ width: 260 }}>
-          <Input
-            id="crawl-task-search"
-            name="crawlTaskSearch"
-            placeholder={t("crawl.search.placeholder")}
-            allowClear={!sourceIdFilter}
-            disabled={Boolean(sourceIdFilter)}
-            value={searchInput}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSearchInput(value);
-              if (!value) {
-                setSearch("");
-                setPagination((prev) => ({ ...prev, current: 1 }));
+    <div className="flex flex-col gap-4">
+      <Card
+        className="content-card"
+        title={t("crawl.title", { defaultValue: "Crawl Tasks" })}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          {sourceIdFilter ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 0 }}
+              message={t("crawl.filter.sourceId", {
+                defaultValue: "Filtered by NewsSource {{id}}",
+                id: sourceIdFilter,
+              })}
+              action={
+                <Button
+                  size="small"
+                  onClick={() => router.push("/admin/ops/crawl-tasks")}
+                >
+                  {t("common.clear", { defaultValue: "Clear" })}
+                </Button>
               }
+            />
+          ) : null}
+          {tasksError ? (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 0 }}
+              message={t("common.failed", { defaultValue: "Failed" })}
+              description={tasksError}
+            />
+          ) : null}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: screens.md ? "row" : "column",
+              justifyContent: "space-between",
+              alignItems: screens.md ? "center" : "stretch",
+              gap: 12,
             }}
-            onPressEnter={() => {
-              const nextValue = searchInput.trim();
-              setPagination((prev) => ({ ...prev, current: 1 }));
-              setSearch(nextValue);
-              setSearchInput(nextValue);
-            }}
-          />
-          <Button
-            icon={<SearchOutlined />}
-            aria-label={t("crawl.search.placeholder")}
-            disabled={Boolean(sourceIdFilter)}
-            onClick={() => {
-              const nextValue = searchInput.trim();
-              setPagination((prev) => ({ ...prev, current: 1 }));
-              setSearch(nextValue);
-              setSearchInput(nextValue);
-            }}
-          />
-        </Space.Compact>
-        <Select<CrawlTaskStatus | null>
-          placeholder={t("crawl.filters.status")}
-          allowClear
-          style={{ width: 160 }}
-          value={statusFilter}
-          options={[
-            { value: "pending", label: t("crawl.status.pending") },
-            { value: "queued", label: t("crawl.status.queued") },
-            { value: "running", label: t("crawl.status.running") },
-            { value: "completed", label: t("crawl.status.completed") },
-            { value: "failed", label: t("crawl.status.failed") },
-            { value: "paused", label: t("crawl.status.paused") },
-          ]}
-          onChange={(value) => {
-            setStatusFilter(value ?? null);
-            setPagination((prev) => ({ ...prev, current: 1 }));
-          }}
-        />
-        <Button
-          icon={<DashboardOutlined />}
-          onClick={() => router.push("/admin/ops/crawl-monitor")}
-        >
-          {t("crawl.monitor.open", { defaultValue: "Monitor" })}
-        </Button>
-        <Button
-          icon={<GlobalOutlined />}
-          onClick={() => router.push("/admin/ops/news-sources")}
-        >
-          {t("newsSources.title", { defaultValue: "News Sources" })}
-        </Button>
-        {canManage ? (
-          <Button type="primary" onClick={() => setDrawerOpen(true)}>
-            {t("crawl.createTask")}
-          </Button>
-        ) : null}
-      </Space>
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                flex: 1,
+                gap: 12,
+              }}
+            >
+              <Space.Compact
+                style={{
+                  width: screens.md ? 320 : "100%",
+                  maxWidth: "100%",
+                }}
+              >
+                <Input
+                  id="crawl-task-search"
+                  name="crawlTaskSearch"
+                  placeholder={t("crawl.search.placeholder")}
+                  allowClear={!sourceIdFilter}
+                  disabled={Boolean(sourceIdFilter)}
+                  value={searchInput}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSearchInput(value);
+                    if (!value) {
+                      setSearch("");
+                      setPagination((prev) => ({ ...prev, current: 1 }));
+                    }
+                  }}
+                  onPressEnter={() => {
+                    const nextValue = searchInput.trim();
+                    setPagination((prev) => ({ ...prev, current: 1 }));
+                    setSearch(nextValue);
+                    setSearchInput(nextValue);
+                  }}
+                />
+                <Button
+                  icon={<SearchOutlined />}
+                  aria-label={t("crawl.search.placeholder")}
+                  disabled={Boolean(sourceIdFilter)}
+                  onClick={() => {
+                    const nextValue = searchInput.trim();
+                    setPagination((prev) => ({ ...prev, current: 1 }));
+                    setSearch(nextValue);
+                    setSearchInput(nextValue);
+                  }}
+                />
+              </Space.Compact>
+              <Select<CrawlTaskStatus | null>
+                placeholder={t("crawl.filters.status")}
+                allowClear
+                style={{
+                  width: screens.md ? 180 : "100%",
+                  maxWidth: "100%",
+                }}
+                value={statusFilter}
+                options={[
+                  { value: "pending", label: t("crawl.status.pending") },
+                  { value: "queued", label: t("crawl.status.queued") },
+                  { value: "running", label: t("crawl.status.running") },
+                  { value: "completed", label: t("crawl.status.completed") },
+                  { value: "failed", label: t("crawl.status.failed") },
+                  { value: "paused", label: t("crawl.status.paused") },
+                ]}
+                onChange={(value) => {
+                  setStatusFilter(value ?? null);
+                  setPagination((prev) => ({ ...prev, current: 1 }));
+                }}
+              />
+            </div>
+            <Space
+              wrap
+              size={8}
+              style={{
+                justifyContent: screens.md ? "flex-end" : "flex-start",
+                width: screens.md ? "auto" : "100%",
+              }}
+            >
+              <Button
+                icon={<DashboardOutlined />}
+                onClick={() => router.push("/admin/ops/crawl-monitor")}
+              >
+                {t("crawl.monitor.open", { defaultValue: "Monitor" })}
+              </Button>
+              <Button
+                icon={<GlobalOutlined />}
+                onClick={() => router.push("/admin/ops/news-sources")}
+              >
+                {t("newsSources.title", { defaultValue: "News Sources" })}
+              </Button>
+              {canManage ? (
+                <Button type="primary" onClick={() => setDrawerOpen(true)}>
+                  {t("crawl.createTask")}
+                </Button>
+              ) : null}
+            </Space>
+          </div>
+        </Space>
+      </Card>
 
       <Crawl4aiHealthCard
+        className="content-card"
+        style={{ marginBottom: 0 }}
         onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
       />
 
       {canManage || canManageQueueOps ? (
         <Card
-          style={{ marginTop: 12, marginBottom: 12 }}
+          className="content-card"
           title={t("crawl.ops.title", {
             defaultValue: "Crawl Queue Ops",
           })}
           loading={queueStatsLoading}
         >
-          <Row gutter={[12, 12]}>
+          <Row gutter={[16, 16]}>
             <Col xs={24} md={8}>
-              <Space direction="vertical" size={6}>
+              <Space direction="vertical" size={8}>
                 <Typography.Text strong>
                   {t("crawl.ops.queueStatus", { defaultValue: "Queue status" })}
                 </Typography.Text>
-                <Space wrap>
+                <Space wrap size={[8, 8]}>
                   <Tag color={queueStats?.paused ? "volcano" : "green"}>
                     {queueStats?.paused
                       ? t("crawl.ops.paused", { defaultValue: "Paused" })
@@ -1136,7 +1201,7 @@ export function CrawlTasksView() {
                     })}
                   </Typography.Text>
                 </Space>
-                <Space>
+                <Space wrap size={8}>
                   <Button
                     onClick={handlePauseQueue}
                     loading={queueActionLoading === "pause"}
@@ -1147,7 +1212,9 @@ export function CrawlTasksView() {
                   <Button
                     onClick={handleResumeQueue}
                     loading={queueActionLoading === "resume"}
-                    disabled={!canManageQueueOps || queueStats?.paused === false}
+                    disabled={
+                      !canManageQueueOps || queueStats?.paused === false
+                    }
                   >
                     {t("crawl.ops.resumeQueue", {
                       defaultValue: "Resume queue",
@@ -1158,7 +1225,7 @@ export function CrawlTasksView() {
             </Col>
 
             <Col xs={24} md={8}>
-              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Typography.Text strong>
                   {t("crawl.ops.maxConcurrency", {
                     defaultValue: "Global max concurrency",
@@ -1172,7 +1239,9 @@ export function CrawlTasksView() {
                     value={maxConcurrencyInput}
                     disabled={!canManageQueueOps}
                     style={{ width: "100%" }}
-                    onChange={(value) => setMaxConcurrencyInput(Number(value ?? 1))}
+                    onChange={(value) =>
+                      setMaxConcurrencyInput(Number(value ?? 1))
+                    }
                   />
                   <Button
                     type="primary"
@@ -1194,7 +1263,7 @@ export function CrawlTasksView() {
 
             {canManage ? (
               <Col xs={24} md={8}>
-                <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                <Space direction="vertical" size={8} style={{ width: "100%" }}>
                   <Typography.Text strong>
                     {t("crawl.ops.batchFrequency", {
                       defaultValue: "Batch schedule interval (seconds)",
@@ -1216,7 +1285,9 @@ export function CrawlTasksView() {
                       loading={batchFrequencyLoading}
                       onClick={handleBatchFrequencySubmit}
                     >
-                      {t("crawl.ops.applyAll", { defaultValue: "Apply to all" })}
+                      {t("crawl.ops.applyAll", {
+                        defaultValue: "Apply to all",
+                      })}
                     </Button>
                   </Space.Compact>
                   <Typography.Text type="secondary">
@@ -1234,7 +1305,7 @@ export function CrawlTasksView() {
 
       {canManageSettings ? (
         <Card
-          style={{ marginTop: 12, marginBottom: 12 }}
+          className="content-card"
           title={t("settings.tabs.crawlClient", {
             defaultValue: "Crawl Client",
           })}
@@ -1271,7 +1342,9 @@ export function CrawlTasksView() {
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.healthCheckTtl"),
+                        message: t(
+                          "settings.crawlClient.validation.healthCheckTtl",
+                        ),
                       },
                       {
                         type: "number",
@@ -1299,7 +1372,9 @@ export function CrawlTasksView() {
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.requestTimeout"),
+                        message: t(
+                          "settings.crawlClient.validation.requestTimeout",
+                        ),
                       },
                       {
                         type: "number",
@@ -1327,7 +1402,9 @@ export function CrawlTasksView() {
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.maxAttempts"),
+                        message: t(
+                          "settings.crawlClient.validation.maxAttempts",
+                        ),
                       },
                       {
                         type: "number",
@@ -1355,7 +1432,9 @@ export function CrawlTasksView() {
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.retryBackoff"),
+                        message: t(
+                          "settings.crawlClient.validation.retryBackoff",
+                        ),
                       },
                       {
                         type: "number",
@@ -1378,9 +1457,12 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.queueOverloadCooldown", {
-                      defaultValue: "Queue overload cooldown",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.queueOverloadCooldown",
+                      {
+                        defaultValue: "Queue overload cooldown",
+                      },
+                    )}
                     name="queueOverloadCooldownMs"
                     rules={[
                       {
@@ -1427,87 +1509,121 @@ export function CrawlTasksView() {
         </Card>
       ) : null}
 
-      {!screens.md ? (
-        <List
-          itemLayout="vertical"
-          dataSource={tableData}
-          loading={tasksLoading}
-          pagination={{
-            total: totalCount,
-            current,
-            pageSize,
-            align: "center",
-            onChange: (page, size) => {
-              setPagination({ current: page, pageSize: size });
-            },
-          }}
-          renderItem={(record) => {
-            const configTags = buildTaskConfigTags(record);
-            return (
-              <List.Item
-                actions={[
-                  <Link key="view" href={`/admin/ops/crawl-tasks/${record.id}`}>
-                    {t("common.view")}
-                  </Link>,
-                  canManage ? (
-                    <Button
-                      key="retry"
-                      size="small"
-                      type="link"
-                      onClick={() => handleRetry(record.id)}
-                      loading={retrying}
+      <Card
+        className="content-card"
+        title={t("crawl.taskList.title", { defaultValue: "Task List" })}
+        extra={
+          <Typography.Text type="secondary">
+            {t("crawl.taskList.total", {
+              defaultValue: "Total {{count}}",
+              count: totalCount,
+            })}
+          </Typography.Text>
+        }
+      >
+        {!screens.md ? (
+          <List
+            itemLayout="vertical"
+            dataSource={tableData}
+            loading={tasksLoading}
+            pagination={{
+              total: totalCount,
+              current,
+              pageSize,
+              align: "center",
+              onChange: (page, size) => {
+                setPagination({ current: page, pageSize: size });
+              },
+            }}
+            renderItem={(record) => {
+              const configTags = buildTaskConfigTags(record);
+              const visibleConfigTags = configTags.slice(0, 4);
+              return (
+                <List.Item
+                  actions={[
+                    <Link
+                      key="view"
+                      href={`/admin/ops/crawl-tasks/${record.id}`}
                     >
-                      {t("common.retry")}
-                    </Button>
-                  ) : null,
-                ].filter(Boolean)}
-              >
-                <List.Item.Meta
-                  title={
-                    <div>
-                      <div style={{ fontWeight: 600 }}>
-                        {record.displayName ?? record.targetUrl}
-                      </div>
-                      <Typography.Link
-                        href={record.targetUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-gray-400 break-all"
+                      {t("common.view")}
+                    </Link>,
+                    canManage ? (
+                      <Button
+                        key="retry"
+                        size="small"
+                        type="link"
+                        onClick={() => handleRetry(record.id)}
+                        loading={retrying}
                       >
-                        {record.targetUrl}
-                      </Typography.Link>
-                    </div>
-                  }
-                  description={
-                    <Space className="mt-2" wrap>
-                      <Tag color={statusColors[record.status]}>
-                        {t(`crawl.status.${record.status}`, {
-                          defaultValue: record.status,
-                        })}
-                      </Tag>
-                      {configTags}
-                    </Space>
-                  }
-                />
-              </List.Item>
-            );
-          }}
-        />
-      ) : (
-        <Table
-          rowKey="id"
-          loading={tasksLoading}
-          columns={columns}
-          dataSource={tableData}
-          pagination={{
-            total: totalCount,
-            current,
-            pageSize,
-            showSizeChanger: true,
-          }}
-          onChange={(pager) => setPagination(pager)}
-        />
-      )}
+                        {t("common.retry")}
+                      </Button>
+                    ) : null,
+                  ].filter(Boolean)}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space
+                        direction="vertical"
+                        size={2}
+                        style={{ width: "100%" }}
+                      >
+                        <Typography.Text
+                          strong
+                          style={{ maxWidth: "100%" }}
+                          ellipsis
+                        >
+                          {record.displayName ?? record.targetUrl}
+                        </Typography.Text>
+                        <Typography.Link
+                          href={record.targetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            maxWidth: "100%",
+                            display: "block",
+                            fontSize: 12,
+                          }}
+                          ellipsis
+                        >
+                          {record.targetUrl}
+                        </Typography.Link>
+                      </Space>
+                    }
+                    description={
+                      <Space className="mt-2" wrap size={[4, 4]}>
+                        <Tag color={statusColors[record.status]}>
+                          {t(`crawl.status.${record.status}`, {
+                            defaultValue: record.status,
+                          })}
+                        </Tag>
+                        {visibleConfigTags}
+                        {configTags.length > visibleConfigTags.length ? (
+                          <Tag>{`+${configTags.length - visibleConfigTags.length}`}</Tag>
+                        ) : null}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
+          />
+        ) : (
+          <Table
+            rowKey="id"
+            loading={tasksLoading}
+            columns={columns}
+            dataSource={tableData}
+            pagination={{
+              total: totalCount,
+              current,
+              pageSize,
+              showSizeChanger: true,
+            }}
+            scroll={{ x: 1100 }}
+            onChange={(pager) => setPagination(pager)}
+          />
+        )}
+      </Card>
       {canManage ? (
         <>
           <MetadataExtractionCard

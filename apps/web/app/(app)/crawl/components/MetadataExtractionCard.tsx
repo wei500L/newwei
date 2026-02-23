@@ -59,7 +59,7 @@ export function MetadataExtractionCard({
                 month: "short",
                 day: "numeric",
                 hour: "2-digit",
-                minute: "2-digit"
+                minute: "2-digit",
               })}
             </Typography.Text>
           ) : null}
@@ -74,7 +74,7 @@ export function MetadataExtractionCard({
       render: (_: unknown, record) => (
         <Tag color={record.status === "success" ? "green" : "red"}>
           {t(`crawl.metadata.status.${record.status}`, {
-            defaultValue: record.status.toUpperCase()
+            defaultValue: record.status.toUpperCase(),
           })}
         </Tag>
       ),
@@ -92,7 +92,9 @@ export function MetadataExtractionCard({
       key: "relevanceScore",
       width: 100,
       render: (value: number | undefined | null) =>
-        value !== null && value !== undefined ? value.toFixed(2) : t("common.emptyValue"),
+        value !== null && value !== undefined
+          ? value.toFixed(2)
+          : t("common.emptyValue"),
     },
     {
       title: t("crawl.metadata.columns.summary"),
@@ -159,10 +161,14 @@ export function MetadataExtractionCard({
             )}
             {record.jsonLd.length > 0 ? (
               <Tag color="geekblue">
-                {t("crawl.metadata.jsonLdCount", { count: record.jsonLd.length })}
+                {t("crawl.metadata.jsonLdCount", {
+                  count: record.jsonLd.length,
+                })}
               </Tag>
             ) : (
-              <Typography.Text type="secondary">{t("crawl.metadata.noJsonLd")}</Typography.Text>
+              <Typography.Text type="secondary">
+                {t("crawl.metadata.noJsonLd")}
+              </Typography.Text>
             )}
           </Space>
         );
@@ -172,12 +178,13 @@ export function MetadataExtractionCard({
       title: t("crawl.metadata.columns.error"),
       dataIndex: "error",
       key: "error",
-      render: (value: string | undefined | null) => value ?? t("common.emptyValue"),
+      render: (value: string | undefined | null) =>
+        value ?? t("common.emptyValue"),
     },
   ];
 
   return (
-    <Card title={t("crawl.metadata.title")} style={{ marginTop: 24 }}>
+    <Card className="content-card" title={t("crawl.metadata.title")}>
       <Typography.Paragraph type="secondary">
         {t("crawl.metadata.description")}{" "}
         <Typography.Link
@@ -196,12 +203,26 @@ export function MetadataExtractionCard({
         initialValues={{ source: "sitemap", maxUrls: 10 }}
         style={{ marginTop: 16 }}
       >
-        <Space align="end" wrap>
+        <Space
+          align={screens.md ? "end" : "start"}
+          direction={screens.md ? "horizontal" : "vertical"}
+          wrap={screens.md}
+          size={12}
+          style={{ width: "100%" }}
+        >
           <Form.Item
             label={t("crawl.metadata.fields.source")}
             name="source"
-            style={{ minWidth: 200 }}
-            rules={[{ required: true, message: t("crawl.metadata.errors.sourceRequired") }]}
+            style={{
+              minWidth: screens.md ? 200 : undefined,
+              width: screens.md ? undefined : "100%",
+            }}
+            rules={[
+              {
+                required: true,
+                message: t("crawl.metadata.errors.sourceRequired"),
+              },
+            ]}
           >
             <Select
               options={[
@@ -215,19 +236,34 @@ export function MetadataExtractionCard({
               <Form.Item
                 label={t("crawl.metadata.fields.domain")}
                 name="domain"
-                style={{ minWidth: 220 }}
-                rules={[{ required: true, message: t("crawl.metadata.errors.domainRequired") }]}
+                style={{
+                  minWidth: screens.md ? 220 : undefined,
+                  width: screens.md ? undefined : "100%",
+                }}
+                rules={[
+                  {
+                    required: true,
+                    message: t("crawl.metadata.errors.domainRequired"),
+                  },
+                ]}
               >
                 <Input placeholder={t("crawl.metadata.placeholders.domain")} />
               </Form.Item>
               <Form.Item
                 label={t("crawl.metadata.fields.pattern")}
                 name="pattern"
-                style={{ minWidth: 200 }}
+                style={{
+                  minWidth: screens.md ? 200 : undefined,
+                  width: screens.md ? undefined : "100%",
+                }}
               >
                 <Input placeholder={t("crawl.metadata.placeholders.pattern")} />
               </Form.Item>
-              <Form.Item label={t("crawl.metadata.fields.maxUrls")} name="maxUrls">
+              <Form.Item
+                label={t("crawl.metadata.fields.maxUrls")}
+                name="maxUrls"
+                style={{ width: screens.md ? undefined : "100%" }}
+              >
                 <InputNumber min={1} max={200} style={{ width: 120 }} />
               </Form.Item>
             </>
@@ -235,8 +271,16 @@ export function MetadataExtractionCard({
             <Form.Item
               label={t("crawl.metadata.fields.urls")}
               name="urls"
-              style={{ minWidth: 320 }}
-              rules={[{ required: true, message: t("crawl.metadata.errors.urlsRequired") }]}
+              style={{
+                minWidth: screens.md ? 320 : undefined,
+                width: screens.md ? undefined : "100%",
+              }}
+              rules={[
+                {
+                  required: true,
+                  message: t("crawl.metadata.errors.urlsRequired"),
+                },
+              ]}
             >
               <Input.TextArea
                 rows={4}
@@ -244,10 +288,21 @@ export function MetadataExtractionCard({
               />
             </Form.Item>
           )}
-          <Form.Item label={t("crawl.metadata.fields.query")} name="query" style={{ minWidth: 220 }}>
+          <Form.Item
+            label={t("crawl.metadata.fields.query")}
+            name="query"
+            style={{
+              minWidth: screens.md ? 220 : undefined,
+              width: screens.md ? undefined : "100%",
+            }}
+          >
             <Input placeholder={t("crawl.metadata.placeholders.query")} />
           </Form.Item>
-          <Form.Item label={t("crawl.metadata.fields.scoreThreshold")} name="scoreThreshold">
+          <Form.Item
+            label={t("crawl.metadata.fields.scoreThreshold")}
+            name="scoreThreshold"
+            style={{ width: screens.md ? undefined : "100%" }}
+          >
             <InputNumber
               min={0}
               max={1}
@@ -265,7 +320,7 @@ export function MetadataExtractionCard({
       </Form>
       {!screens.md ? (
         <List
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 16 }}
           dataSource={results}
           loading={loading}
           locale={{ emptyText: t("crawl.metadata.empty") }}
@@ -303,8 +358,7 @@ export function MetadataExtractionCard({
                       type="secondary"
                       ellipsis={{ rows: 2 }}
                     >
-                      {record.description ??
-                        t("crawl.metadata.noDescription")}
+                      {record.description ?? t("crawl.metadata.noDescription")}
                     </Typography.Paragraph>
                     {record.keywords && record.keywords.length > 0 && (
                       <Space wrap size={[0, 4]}>
@@ -323,7 +377,7 @@ export function MetadataExtractionCard({
         />
       ) : (
         <Table<MetadataResultRow>
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 16 }}
           rowKey={(record) =>
             `${record.url}-${record.fetchedAt ?? record.status}`
           }
