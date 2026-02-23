@@ -39,6 +39,7 @@ export class AssistantResolver {
       error: result.error ?? undefined,
       input: (result.input as Record<string, unknown> | null | undefined) ?? null,
       output: (result.output as Record<string, unknown> | null | undefined) ?? null,
+      conversationId: typeof result.conversationId === "string" ? result.conversationId : null,
       createdAt: result.createdAt ?? new Date()
     }));
   }
@@ -94,6 +95,7 @@ export class AssistantResolver {
       createdAt: record.createdAt ?? new Date(),
       summary: record.summary ?? undefined,
       input: (record.input as Record<string, unknown> | null | undefined) ?? null,
+      conversationId: typeof record.conversationId === "string" ? record.conversationId : null,
       output: null,
       error: null
     };

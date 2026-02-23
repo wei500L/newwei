@@ -4,6 +4,7 @@ const AssistantRunSchema = new Schema(
   {
     orgId: { type: String, required: true, index: true },
     type: { type: String, enum: ["query", "report", "forecast"], required: true },
+    conversationId: String,
     status: { type: String, enum: ["pending", "running", "completed", "failed"], default: "pending" },
     input: Schema.Types.Mixed,
     output: Schema.Types.Mixed,
@@ -19,6 +20,7 @@ const AssistantRunSchema = new Schema(
 
 AssistantRunSchema.index({ orgId: 1, createdAt: -1 });
 AssistantRunSchema.index({ orgId: 1, type: 1, createdAt: -1 });
+AssistantRunSchema.index({ orgId: 1, type: 1, conversationId: 1, createdAt: -1 });
 
 export type AssistantRun = InferSchemaType<typeof AssistantRunSchema>;
 

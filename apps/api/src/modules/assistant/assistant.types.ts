@@ -5,6 +5,7 @@ export type AssistantJobPayload =
 
 export interface AssistantQueryInput {
   message: string;
+  conversationId?: string;
 }
 
 export type AssistantReportPeriod = "daily" | "weekly";

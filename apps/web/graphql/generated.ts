@@ -361,6 +361,7 @@ export enum AssistantForecastModelKind {
 }
 
 export type AssistantQueryInput = {
+  conversationId?: InputMaybe<Scalars['String']['input']>;
   message: Scalars['String']['input'];
 };
 
@@ -377,6 +378,7 @@ export enum AssistantReportPeriod {
 
 export type AssistantRunModel = {
   __typename?: 'AssistantRunModel';
+  conversationId?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   error?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];

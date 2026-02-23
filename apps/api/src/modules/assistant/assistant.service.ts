@@ -4,7 +4,7 @@ import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { EconomicDataPoint } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { safeJsonParseFromText } from "../../common/llm-json";
 import { EnvService } from "../config/config.service";
@@ -104,6 +104,13 @@ function dateKeyUTC(value: Date): string {
 
 @Injectable()
 export class AssistantService {
+  private static readonly QUERY_HISTORY_LIMIT = 10;
+  private static readonly QUERY_PLANNER_HISTORY_MESSAGE_LIMIT = 8;
+  private static readonly QUERY_HISTORY_MESSAGE_MAX_CHARS = 1_000;
+  private static readonly QUERY_HISTORY_TOTAL_MAX_CHARS = 8_000;
+  private static readonly CONVERSATION_ID_MAX_LENGTH = 128;
+  private static readonly CONVERSATION_ID_PATTERN = /^[A-Za-z0-9:_-]+$/;
+
   constructor(
     private readonly llm: LiteLlmService,
     private readonly env: EnvService,
@@ -119,11 +126,19 @@ export class AssistantService {
   ) {}
 
   async submitQuery(orgId: string, input: AssistantQueryInput, triggeredById?: string) {
+    const normalizedConversationId = this.normalizeConversationId(input?.conversationId);
+    const conversationId = normalizedConversationId || randomUUID();
+    const queryInput: AssistantQueryInput = {
+      ...input,
+      conversationId
+    };
+
     const record = await AssistantRunModel.create({
       orgId,
       type: "query" satisfies AssistantRunType,
       status: "pending" satisfies AssistantRunStatus,
-      input,
+      conversationId,
+      input: queryInput,
       triggeredById
     });
     const traceId = ensureTraceId(getCurrentTraceId());
@@ -222,11 +237,17 @@ export class AssistantService {
 
     try {
       if (job.type === "query") {
+        const queryInput = (record.input as AssistantQueryInput | null | undefined) ?? { message: "" };
+        const runConversationId = this.normalizeConversationId(record.conversationId);
+        const mergedQueryInput: AssistantQueryInput = {
+          ...queryInput,
+          conversationId: this.normalizeConversationId(queryInput.conversationId) || runConversationId
+        };
         const output = await this.runQuery(
           record.orgId,
           record.id,
           createdAt,
-          record.input as AssistantQueryInput,
+          mergedQueryInput,
           guardrails,
           assistantModel
         );
@@ -366,12 +387,16 @@ export class AssistantService {
     if (!message) {
       throw new Error("Assistant query message is required");
     }
+    const conversationId = this.normalizeConversationId(input?.conversationId);
+    const historyMessages = await this.buildQueryConversationHistoryMessages(orgId, runId, createdAt, conversationId);
+    const plannerHistory = historyMessages.slice(-AssistantService.QUERY_PLANNER_HISTORY_MESSAGE_LIMIT);
 
     const planner = this.prompts.buildQueryPlannerRequest(message);
+    const plannerMessages = this.injectQueryHistory(planner.messages, plannerHistory);
     const planResponse = await this.llm.acompletion({
       model: assistantModel,
       orgId,
-      messages: planner.messages,
+      messages: plannerMessages,
       response_format: planner.responseFormat,
       timeoutMs: Math.min(120_000, this.env.assistantConfig.llmTimeoutMs),
       guardrails,
@@ -411,12 +436,13 @@ export class AssistantService {
 
       const renderedItems = await this.renderNewsItems(orgId, items);
 
-      const messages = this.prompts.buildNewsListRendererMessages({
+      const rendererMessages = this.prompts.buildNewsListRendererMessages({
         question: message,
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),
         items: renderedItems
       });
+      const messages = this.injectQueryHistory(rendererMessages, historyMessages);
 
       const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
         guardrails,
@@ -442,6 +468,7 @@ export class AssistantService {
           seriesA: "gold_futures_main",
           seriesB: "usd_index_history"
         },
+        historyMessages,
         guardrails,
         assistantModel
       );
@@ -459,12 +486,13 @@ export class AssistantService {
           seriesA: plan.seriesA,
           seriesB: plan.seriesB
         },
+        historyMessages,
         guardrails,
         assistantModel
       );
     }
 
-    const messages: LiteLlmMessage[] = [
+    const baseMessages: LiteLlmMessage[] = [
       {
         role: "system",
         content: [
@@ -475,11 +503,133 @@ export class AssistantService {
       },
       { role: "user", content: `User request: ${message}` }
     ];
+    const messages = this.injectQueryHistory(baseMessages, historyMessages);
     const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
       guardrails,
       assistantModel
     });
     return { plan, summary: stream.summary, raw: stream.raw };
+  }
+
+  private async buildQueryConversationHistoryMessages(
+    orgId: string,
+    runId: string,
+    createdAt: Date,
+    conversationId?: string
+  ): Promise<LiteLlmMessage[]> {
+    const normalizedConversationId = this.normalizeConversationId(conversationId);
+    if (!normalizedConversationId) {
+      return [];
+    }
+
+    const historyRuns = await AssistantRunModel.find(
+      {
+        orgId,
+        type: "query",
+        conversationId: normalizedConversationId,
+        createdAt: { $lt: createdAt },
+        _id: { $ne: runId }
+      },
+      { input: 1, output: 1, summary: 1, createdAt: 1 }
+    )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(AssistantService.QUERY_HISTORY_LIMIT)
+      .lean();
+
+    const historyMessages: LiteLlmMessage[] = [];
+    for (const run of [...historyRuns].reverse()) {
+      const runInput =
+        run.input && typeof run.input === "object" && !Array.isArray(run.input)
+          ? (run.input as Record<string, unknown>)
+          : null;
+      const userMessage = typeof runInput?.message === "string" ? runInput.message.trim() : "";
+      if (userMessage) {
+        historyMessages.push({ role: "user", content: this.clipHistoryMessageContent(userMessage) });
+      }
+
+      const runOutput =
+        run.output && typeof run.output === "object" && !Array.isArray(run.output)
+          ? (run.output as Record<string, unknown>)
+          : null;
+      const outputSummary = typeof runOutput?.summary === "string" ? runOutput.summary.trim() : "";
+      const runSummary = typeof run.summary === "string" ? run.summary.trim() : "";
+      const assistantSummary = outputSummary || runSummary;
+      if (assistantSummary) {
+        historyMessages.push({ role: "assistant", content: this.clipHistoryMessageContent(assistantSummary) });
+      }
+    }
+
+    return this.applyQueryHistoryCharBudget(historyMessages);
+  }
+
+  private injectQueryHistory(messages: LiteLlmMessage[], historyMessages: LiteLlmMessage[]): LiteLlmMessage[] {
+    if (historyMessages.length === 0) {
+      return messages;
+    }
+    if (messages.length === 0) {
+      return [...historyMessages];
+    }
+    const [firstMessage, ...remainingMessages] = messages;
+    if (firstMessage?.role === "system") {
+      return [firstMessage, ...historyMessages, ...remainingMessages];
+    }
+    return [...historyMessages, ...messages];
+  }
+
+  private normalizeConversationId(value: unknown): string {
+    if (typeof value !== "string") {
+      return "";
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return "";
+    }
+    if (normalized.length > AssistantService.CONVERSATION_ID_MAX_LENGTH) {
+      return "";
+    }
+    if (!AssistantService.CONVERSATION_ID_PATTERN.test(normalized)) {
+      return "";
+    }
+    return normalized;
+  }
+
+  private clipHistoryMessageContent(value: string): string {
+    if (value.length <= AssistantService.QUERY_HISTORY_MESSAGE_MAX_CHARS) {
+      return value;
+    }
+    return value.slice(0, AssistantService.QUERY_HISTORY_MESSAGE_MAX_CHARS);
+  }
+
+  private applyQueryHistoryCharBudget(messages: LiteLlmMessage[]): LiteLlmMessage[] {
+    if (messages.length === 0) {
+      return messages;
+    }
+
+    let remainingChars = AssistantService.QUERY_HISTORY_TOTAL_MAX_CHARS;
+    const bounded: LiteLlmMessage[] = [];
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const item = messages[index]!;
+      if (remainingChars <= 0) {
+        break;
+      }
+
+      const rawContent = typeof item.content === "string" ? item.content.trim() : "";
+      if (!rawContent) {
+        continue;
+      }
+
+      const clipped = this.clipHistoryMessageContent(rawContent);
+      const boundedContent = clipped.length > remainingChars ? clipped.slice(0, remainingChars) : clipped;
+      if (!boundedContent) {
+        continue;
+      }
+
+      bounded.unshift({ role: item.role, content: boundedContent });
+      remainingChars -= boundedContent.length;
+    }
+
+    return bounded;
   }
 
   private isRerankUnavailable(error: unknown): boolean {
@@ -712,6 +862,7 @@ export class AssistantService {
     createdAt: Date,
     question: string,
     input: { seriesA: string; seriesB: string; lookbackDays?: number; transform?: string | null },
+    historyMessages: LiteLlmMessage[],
     guardrails?: string[],
     assistantModel?: string
   ) {
@@ -807,7 +958,7 @@ export class AssistantService {
       ...(itemB.sourceDocUrl ? [{ label: "seriesB_doc", value: itemB.sourceDocUrl }] : [])
     ];
 
-    const messages = this.prompts.buildCorrelationRendererMessages({
+    const rendererMessages = this.prompts.buildCorrelationRendererMessages({
       question,
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
@@ -816,6 +967,7 @@ export class AssistantService {
       stats: { n: x.length, pearson },
       references
     });
+    const messages = this.injectQueryHistory(rendererMessages, historyMessages);
 
     const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
       guardrails,
