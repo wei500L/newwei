@@ -45,6 +45,7 @@ import {
   type BuildUserPromptStrings,
   type ResolveAssistantReplyStrings,
 } from '@/lib/assistant-chat';
+import { MarkdownViewer } from '@/components/markdown-viewer';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -1125,7 +1126,7 @@ export function AssistantContent() {
                   </div>
                 ) : (
                   <>
-                    <div className={`${styles.messageEnter} ml-auto max-w-[95%] sm:max-w-[88%] xl:max-w-[84%]`}>
+                    <div className={`${styles.messageEnter} ml-auto min-w-0 max-w-[95%] sm:max-w-[88%] xl:max-w-[84%]`}>
                       <div className={styles.userBubble}>
                         <div className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">
                           {activeUserPrompt}
@@ -1133,7 +1134,7 @@ export function AssistantContent() {
                       </div>
                     </div>
 
-                    <div className={`${styles.messageEnter} mr-auto max-w-[98%] sm:max-w-[96%] xl:max-w-[93%]`}>
+                    <div className={`${styles.messageEnter} mr-auto min-w-0 max-w-[98%] sm:max-w-[96%] xl:max-w-[93%]`}>
                       <div className={styles.assistantBubble}>
                         <Space size={8} align="center" style={{ marginBottom: 14 }}>
                           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white">
@@ -1145,9 +1146,13 @@ export function AssistantContent() {
                           {activeIsStreaming ? <Spin size="small" className="text-sky-600" /> : null}
                         </Space>
 
-                        <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
-                          {activeAssistantText}
-                        </div>
+                        <MarkdownViewer
+                          markdown={activeAssistantText}
+                          variant='chat'
+                          enableMermaid
+                          isStreaming={activeIsStreaming}
+                          className={styles.assistantMarkdown}
+                        />
 
                         {hasActiveModelInfo ? (
                           <div className={styles.modelInfoCard}>
