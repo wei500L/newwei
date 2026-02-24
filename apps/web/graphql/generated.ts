@@ -2761,9 +2761,17 @@ export type RssTranslationProviderStatusModel = {
 
 export type SearchSuggestionModel = {
   __typename?: 'SearchSuggestionModel';
+  origin: SearchSuggestionOrigin;
   type: SearchSuggestionType;
   value: Scalars['String']['output'];
 };
+
+/** How the suggestion was produced */
+export enum SearchSuggestionOrigin {
+  Hybrid = 'HYBRID',
+  Lexical = 'LEXICAL',
+  Semantic = 'SEMANTIC'
+}
 
 /** Type of search suggestion */
 export enum SearchSuggestionType {
@@ -3521,7 +3529,7 @@ export type SearchSuggestionsQueryVariables = Exact<{
 }>;
 
 
-export type SearchSuggestionsQuery = { __typename?: 'Query', searchSuggestions: Array<{ __typename?: 'SearchSuggestionModel', type: SearchSuggestionType, value: string }> };
+export type SearchSuggestionsQuery = { __typename?: 'Query', searchSuggestions: Array<{ __typename?: 'SearchSuggestionModel', type: SearchSuggestionType, value: string, origin: SearchSuggestionOrigin }> };
 
 export type RateLimitSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -6569,6 +6577,7 @@ export const SearchSuggestionsDocument = gql`
   searchSuggestions(prefix: $prefix, limit: $limit) {
     type
     value
+    origin
   }
 }
     `;

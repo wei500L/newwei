@@ -2157,8 +2157,16 @@ type RssTranslationProviderStatusModel {
 }
 
 type SearchSuggestionModel {
+  origin: SearchSuggestionOrigin!
   type: SearchSuggestionType!
   value: String!
+}
+
+"""How the suggestion was produced"""
+enum SearchSuggestionOrigin {
+  HYBRID
+  LEXICAL
+  SEMANTIC
 }
 
 """Type of search suggestion"""
