@@ -52,7 +52,11 @@ import {
   RssTranslationProviderStatusModel,
   TranslateRssItemsPayloadModel
 } from "../models/item.model";
-import { SearchSuggestionModel, SearchSuggestionType } from "../models/search-suggestion.model";
+import {
+  SearchSuggestionModel,
+  SearchSuggestionOrigin,
+  SearchSuggestionType
+} from "../models/search-suggestion.model";
 import { PageInfo } from "../models/page-info.model";
 import { normalizeProcessedResult } from "../utils/normalize-processed-result";
 import { ItemsRssTranslationService } from "../../modules/items/items-rss-translation.service";
@@ -460,7 +464,8 @@ export class ItemsResolver {
     const results = await this.itemsService.searchSuggestions(requester.orgId, prefix, limit);
     return results.map((r) => ({
       type: SearchSuggestionType[r.type],
-      value: r.value
+      value: r.value,
+      origin: SearchSuggestionOrigin[r.origin]
     }));
   }
 
