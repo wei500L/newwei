@@ -36,7 +36,19 @@ const getSystemTheme = (): ThemeMode => {
     : "light";
 };
 
-const resolveTheme = (): ThemeMode => getStoredTheme() ?? getSystemTheme();
+const getThemeFromDocument = (): ThemeMode | null => {
+  if (typeof document === "undefined") return null;
+
+  const root = document.documentElement;
+  if (root.classList.contains("dark")) return "dark";
+  if (root.style.colorScheme === "dark") return "dark";
+  if (root.style.colorScheme === "light") return "light";
+
+  return null;
+};
+
+const resolveTheme = (): ThemeMode =>
+  getThemeFromDocument() ?? getStoredTheme() ?? getSystemTheme();
 
 const applyThemeToDocument = (nextTheme: ThemeMode) => {
   if (typeof document === "undefined") return;
@@ -66,7 +78,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: PropsWithChildren) {
-  const [theme, setThemeState] = useState<ThemeMode>("light");
+  const [theme, setThemeState] = useState<ThemeMode>(() => resolveTheme());
 
   const setTheme = useCallback((nextTheme: ThemeMode) => {
     persistTheme(nextTheme);
@@ -85,7 +97,9 @@ export function ThemeProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     const initialTheme = resolveTheme();
-    setThemeState(initialTheme);
+    setThemeState((currentTheme) =>
+      currentTheme === initialTheme ? currentTheme : initialTheme
+    );
     applyThemeToDocument(initialTheme);
 
     if (typeof window === "undefined") return undefined;
