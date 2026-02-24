@@ -20,7 +20,7 @@ export function LanguageSwitcher() {
         { value: "en-US", label: t("language.english") }
       ]}
       aria-label={t("language.label")}
-      style={{ minWidth: 120 }}
+      style={{ width: 112 }}
     />
   );
 }

@@ -215,6 +215,9 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
   }
 
   const isScrollable = mode === "rail-scroll";
+  const scrollableRailClass = isScrollable
+    ? "rail-scrollbar max-h-full overflow-y-auto overscroll-contain pr-1"
+    : "";
 
   return (
     <aside
@@ -228,7 +231,7 @@ export function ActionRail({ mode, onContentHeightChange }: ActionRailProps) {
         flex flex-col items-center py-4 gap-2 w-[4.5rem]
         glass-panel rounded-2xl border border-[var(--border)]
         shadow-[0_10px_30px_rgba(15,23,42,0.08)]
-        ${isScrollable ? "max-h-full overflow-y-auto overscroll-contain" : ""}
+        ${scrollableRailClass}
       `}
       >
         {/* Main Navigation */}

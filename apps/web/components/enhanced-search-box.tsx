@@ -123,8 +123,14 @@ export function EnhancedSearchBox({
       return null;
     }
 
-    const field = fieldMatch[1].toLowerCase();
-    const typedPrefix = fieldMatch[2].trim();
+    const rawField = fieldMatch[1] ?? "";
+    const rawTypedPrefix = fieldMatch[2] ?? "";
+    if (!rawField) {
+      return null;
+    }
+
+    const field = rawField.toLowerCase();
+    const typedPrefix = rawTypedPrefix.trim();
 
     if (
       field === "topic" ||

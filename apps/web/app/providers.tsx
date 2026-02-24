@@ -16,6 +16,7 @@ import { Toaster } from "sonner";
 import { getApolloClient } from "@/lib/apollo-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
+import { useTheme } from "@/hooks/use-theme";
 import {
   changeLanguage,
   getStoredLanguage,
@@ -101,6 +102,7 @@ export function AppProviders({ children }: PropsWithChildren) {
   const [locale, setLocale] = useState<SupportedLocale>(() =>
     resolveLocale(i18nInstance.language)
   );
+  const { theme: themeMode } = useTheme();
 
   useEffect(() => {
     const handleChange = (language: string) => {
@@ -147,6 +149,7 @@ export function AppProviders({ children }: PropsWithChildren) {
   );
 
   const antdTheme = useMemo(() => {
+    const isDark = themeMode === "dark";
     const getVar = (name: string, fallback: string) => {
       if (typeof window === "undefined") return fallback;
       const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -159,19 +162,29 @@ export function AppProviders({ children }: PropsWithChildren) {
     const colorTextSecondary = getVar("--secondary-foreground", "#475569");
     const colorFillSecondary = getVar("--secondary", "#f1f5f9");
     const colorBorder = getVar("--border", "#e2e8f0");
+    const colorBgContainer = isDark ? "rgba(15, 23, 42, 0.82)" : "#ffffff";
+    const colorBgElevated = isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.98)";
+    const colorBgSpotlight = isDark ? "rgba(2, 6, 23, 0.98)" : "rgba(15, 23, 42, 0.95)";
+    const colorTextPlaceholder = isDark ? "#94a3b8" : "#64748b";
+    const cardShadow = isDark
+      ? "0 10px 24px rgba(2, 6, 23, 0.45)"
+      : "0 8px 20px rgba(15, 23, 42, 0.08)";
+    const modalShadow = isDark
+      ? "0 18px 42px rgba(2, 6, 23, 0.55)"
+      : "0 16px 40px rgba(15, 23, 42, 0.18)";
 
     return {
-      algorithm: theme.defaultAlgorithm,
+      algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
       token: {
         colorPrimary,
         colorBgBase,
         colorBgLayout: colorBgBase,
-        colorBgContainer: "#ffffff",
-        colorBgElevated: "rgba(255, 255, 255, 0.98)",
-        colorBgSpotlight: "rgba(15, 23, 42, 0.95)",
+        colorBgContainer,
+        colorBgElevated,
+        colorBgSpotlight,
         colorTextBase,
         colorTextSecondary,
-        colorTextPlaceholder: "#64748b",
+        colorTextPlaceholder,
         colorTextLightSolid: "#f8fafc",
         colorFillSecondary,
         borderRadius: 10,
@@ -182,8 +195,8 @@ export function AppProviders({ children }: PropsWithChildren) {
       components: {
         Card: {
           borderRadiusLG: 12,
-          colorBgContainer: "#ffffff",
-          boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+          colorBgContainer,
+          boxShadow: cardShadow,
         },
         Button: {
           borderRadius: 8,
@@ -191,7 +204,7 @@ export function AppProviders({ children }: PropsWithChildren) {
           primaryShadow: "none",
         },
         Table: {
-          colorBgContainer: "#ffffff",
+          colorBgContainer,
           borderColor: colorBorder,
         },
         Menu: {
@@ -199,12 +212,12 @@ export function AppProviders({ children }: PropsWithChildren) {
         },
         Modal: {
           borderRadiusLG: 12,
-          colorBgElevated: "#ffffff",
-          boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
+          colorBgElevated,
+          boxShadow: modalShadow,
         }
       }
     };
-  }, []);
+  }, [themeMode]);
 
   return (
     <I18nextProvider i18n={i18nInstance}>
@@ -221,7 +234,7 @@ export function AppProviders({ children }: PropsWithChildren) {
               <ForbiddenNotice />
               <ApolloAuthSync />
               <SessionErrorListener />
-              <Toaster position="top-right" theme="light" richColors />
+              <Toaster position="top-right" theme={themeMode} richColors />
               {children}
             </QueryClientProvider>
           </ApolloProvider>

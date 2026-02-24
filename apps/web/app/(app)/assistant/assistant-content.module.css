@@ -103,8 +103,39 @@
 }
 
 .historyScroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.75) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.historyScroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.historyDrawerBody {
+  /* Keep drawer history scrollable while hiding visual scrollbar chrome. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.historyDrawerBody::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.historyDrawerContent,
+.historyDrawerWrapper {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.historyDrawerContent::-webkit-scrollbar,
+.historyDrawerWrapper::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .chatStage {
@@ -144,9 +175,11 @@
 .assistantBubble {
   min-width: 0;
   border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  background: rgba(255, 255, 255, 0.92);
-  padding: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  color: #0f172a;
+  padding: 24px;
+  line-height: 1.85;
   box-shadow:
     0 14px 35px rgba(15, 23, 42, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -155,6 +188,8 @@
 .assistantMarkdown {
   min-width: 0;
   max-width: 100%;
+  color: #0f172a;
+  text-rendering: optimizeLegibility;
 }
 
 .assistantMarkdown :global(*) {
@@ -170,6 +205,14 @@
 
 .assistantMarkdown :global(a) {
   word-break: break-all;
+}
+
+.assistantMarkdown :global(strong) {
+  color: #0b1220;
+}
+
+.assistantMarkdown :global(li::marker) {
+  color: rgba(71, 85, 105, 0.9);
 }
 
 .assistantMarkdown :global(pre),

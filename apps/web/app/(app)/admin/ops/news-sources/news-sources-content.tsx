@@ -1292,7 +1292,10 @@ export function NewsSourcesContent() {
     }
 
     form.resetFields();
-    form.setFieldsValue(modalFormValues);
+    form.setFieldsValue({
+      ...modalFormValues,
+      group: modalFormValues.group ?? undefined,
+    });
   }, [form, modalFormValues, modalOpen]);
 
   const filteredSources = useMemo(() => {
@@ -2270,12 +2273,13 @@ export function NewsSourcesContent() {
     setSaving(true);
     try {
       const config = buildConfig(values);
+      const groupValue = values.group?.[0]?.trim() ?? "";
       const payload = {
         name: values.name,
         url: values.url,
         siteType: values.siteType,
         language: values.language?.trim() ?? "",
-        group: Array.isArray(values.group) ? (values.group[0]?.trim() || null) : (values.group?.trim() || null),
+        group: groupValue || null,
         crawlTemplateId: values.crawlTemplateId?.trim()
           ? values.crawlTemplateId.trim()
           : null,

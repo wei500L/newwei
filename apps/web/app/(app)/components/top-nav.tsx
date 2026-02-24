@@ -3,7 +3,9 @@
 import {
   LogoutOutlined,
   MenuOutlined,
+  MoonOutlined,
   PlusOutlined,
+  SunOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Drawer, Dropdown, Skeleton } from "antd";
@@ -16,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { buildActionRailNavConfig } from "./action-rail";
 
 import { captureClientError } from "@/lib/client-telemetry";
+import { useTheme } from "@/hooks/use-theme";
 import { createTraceHeaders } from "@/lib/trace";
 
 import { AvatarFallback } from "./avatar-fallback";
@@ -40,6 +43,7 @@ interface TopNavProps {
 
 export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const { t } = useTranslation();
+  const { isDark, toggleTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const { data: session, status } = useSession();
@@ -115,6 +119,8 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const statusLabel = subscriptionStatus ? formatLabel(subscriptionStatus) : null;
   const planBadgeLabel = statusLabel ? `${planLabel} · ${statusLabel}` : planLabel;
   const startNewCrawlLabel = t("nav.newCrawl", { defaultValue: "New Crawl" });
+  const brandShortLabel = t("brand.short", { defaultValue: "M" });
+  const brandFullLabel = t("brand.full", { defaultValue: "Modular" });
   const menuButtonClassName = showDesktopMenuButton ? "" : "md:hidden";
   const drawerClassName = showDesktopMenuButton ? "" : "md:hidden";
 
@@ -124,9 +130,9 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
       <TickerTape />
 
       {/* Main Navbar Layer */}
-      <header className="h-16 flex items-center justify-between px-6 border-b border-[var(--border)] shrink-0 glass relative">
+      <header className="relative flex h-16 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 glass sm:gap-3 sm:px-4 lg:gap-4 lg:px-6">
         {/* Left: Logo */}
-        <div className="flex items-center gap-3 md:gap-8 min-w-0 md:min-w-[200px]">
+        <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
           <Button
             type="text"
             size="large"
@@ -137,43 +143,64 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             aria-expanded={mobileNavOpen}
             aria-controls="mobile-navigation-drawer"
           />
-          <span className="text-[var(--foreground)] font-semibold text-lg tracking-tight whitespace-nowrap font-serif flex items-center gap-2">
-               <span className="w-2 h-2 bg-[var(--primary)] rounded-full" />
-               {t("brand.full")}
+          <span className="flex min-w-0 items-center gap-2 whitespace-nowrap font-serif text-lg font-semibold tracking-tight text-[var(--foreground)]">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]" />
+            <span className="sm:hidden">{brandShortLabel}</span>
+            <span className="hidden sm:inline">{brandFullLabel}</span>
           </span>
         </div>
 
         {/* Center: Command Bar (Replaces old nav links) */}
-        <div className="flex-1 flex justify-center">
-           <CommandBar />
+        <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex md:px-2 lg:px-4">
+          <div className="w-full max-w-[640px]">
+            <CommandBar />
+          </div>
         </div>
 
         {/* Right: Actions + User */}
-        <div className="flex items-center gap-4 min-w-0 md:min-w-[200px] justify-end">
-          <SystemDefcon />
-          
-          <div className="h-6 w-px bg-[var(--border)] mx-2" />
-          
-          {canStartCrawl && (
-              <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  size="small"
-                  onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
-                  className="shadow-none"
-              >
-                  {startNewCrawlLabel}
-              </Button>
-          )}
-          
-          <div className="flex items-center gap-3">
-              <NotificationCenter />
-              <LanguageSwitcher />
-              <OrganizationSwitcher />
-              <UserUiSettingsSyncIndicator />
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2 md:gap-3">
+          <div className="hidden 2xl:block">
+            <SystemDefcon />
           </div>
 
-          <div className="h-6 w-px bg-[var(--border)] mx-2" />
+          <div className="mx-1 hidden h-6 w-px bg-[var(--border)] 2xl:block" />
+
+          {canStartCrawl && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="small"
+              onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
+              className="hidden shadow-none xl:inline-flex"
+            >
+              {startNewCrawlLabel}
+            </Button>
+          )}
+
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+            <NotificationCenter />
+            <div className="hidden lg:block">
+              <LanguageSwitcher />
+            </div>
+            <div className="hidden xl:block">
+              <OrganizationSwitcher />
+            </div>
+            <div className="hidden xl:block">
+              <UserUiSettingsSyncIndicator />
+            </div>
+          </div>
+
+          <div className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block" />
+
+          <Button
+            type="text"
+            icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+            onClick={toggleTheme}
+            aria-pressed={isDark}
+            aria-label={isDark ? "切换到浅色主题" : "切换到深色主题"}
+            title={isDark ? "切换到浅色主题" : "切换到深色主题"}
+            className="flex items-center rounded-md !text-[var(--foreground)] opacity-70 transition-opacity hover:opacity-100"
+          />
 
           {isLoadingSession ? (
             <Skeleton.Avatar active size="default" />

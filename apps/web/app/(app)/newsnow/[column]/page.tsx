@@ -8,17 +8,18 @@ import { useNewsMetadata, useBatchPrefetch } from "../hooks/use-news-sources";
 import { useNewsnowStore } from "../store/newsnow-store";
 import { Skeleton, Empty, Button, Result } from "antd";
 import { StarOutlined } from "@ant-design/icons";
+import { useTheme } from "@/hooks/use-theme";
 
 function NewsnowAttribution() {
   return (
-    <footer className="mx-auto w-full max-w-[1880px] px-3 pb-5 pt-2 text-center text-xs text-zinc-500 md:px-4">
+    <footer className="mx-auto w-full max-w-[1880px] px-3 pb-5 pt-2 text-center text-xs text-slate-500 dark:text-zinc-500 md:px-4">
       <p className="leading-6">
         本页面基于{" "}
         <a
           href="https://github.com/ourongxing/newsnow"
           target="_blank"
           rel="noreferrer noopener"
-          className="text-zinc-300 underline-offset-2 hover:text-zinc-100 hover:underline"
+          className="text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline dark:text-zinc-300 dark:hover:text-zinc-100"
         >
           ourongxing/newsnow
         </a>{" "}
@@ -27,7 +28,7 @@ function NewsnowAttribution() {
           href="/licenses/newsnow-mit.txt"
           target="_blank"
           rel="noreferrer noopener"
-          className="text-zinc-300 underline-offset-2 hover:text-zinc-100 hover:underline"
+          className="text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline dark:text-zinc-300 dark:hover:text-zinc-100"
         >
           MIT License
         </a>
@@ -38,6 +39,7 @@ function NewsnowAttribution() {
 }
 
 export default function NewsnowColumnPage() {
+  const { isDark } = useTheme();
   const params = useParams<{ column?: string | string[] }>();
   const columnParam = params.column;
   const columnKey = Array.isArray(columnParam)
@@ -63,11 +65,17 @@ export default function NewsnowColumnPage() {
   }, [sourceIds, batchPrefetch]);
 
   const frameClass = "min-h-full";
-  const frameStyle = {
-    backgroundColor: "#04060b",
-    backgroundImage:
-      "radial-gradient(1100px 420px at 8% -12%, rgba(59,130,246,0.15), transparent 62%), radial-gradient(960px 360px at 96% -14%, rgba(20,184,166,0.11), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%), linear-gradient(180deg, #04060b 0%, #03050a 62%, #020409 100%)",
-  } as const;
+  const frameStyle = isDark
+    ? {
+        backgroundColor: "#04060b",
+        backgroundImage:
+          "radial-gradient(1100px 420px at 8% -12%, rgba(59,130,246,0.15), transparent 62%), radial-gradient(960px 360px at 96% -14%, rgba(20,184,166,0.11), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%), linear-gradient(180deg, #04060b 0%, #03050a 62%, #020409 100%)",
+      }
+    : {
+        backgroundColor: "#f5f8ff",
+        backgroundImage:
+          "radial-gradient(960px 380px at 8% -12%, rgba(59,130,246,0.16), transparent 62%), radial-gradient(900px 360px at 96% -14%, rgba(14,165,233,0.14), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.94), rgba(241,245,249,0.96) 40%, rgba(236,243,252,0.98) 100%)",
+      };
 
   if (isLoading) {
     return (
@@ -78,7 +86,11 @@ export default function NewsnowColumnPage() {
             {[...Array(10)].map((_, i) => (
               <div
                 key={i}
-                className="h-[500px] rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4"
+                className={`h-[500px] rounded-2xl border p-4 ${
+                  isDark
+                    ? "border-zinc-800 bg-zinc-900/80"
+                    : "border-slate-200 bg-white/85"
+                }`}
               >
                 <Skeleton active paragraph={{ rows: 10 }} />
               </div>
@@ -117,13 +129,19 @@ export default function NewsnowColumnPage() {
         <NewsnowHeader />
         <div className="flex min-h-[65vh] items-center justify-center p-8 text-center">
           <Empty
-            image={<StarOutlined className="text-6xl text-zinc-500" />}
+            image={
+              <StarOutlined
+                className={`text-6xl ${isDark ? "text-zinc-500" : "text-slate-400"}`}
+              />
+            }
             description={
               <div className="space-y-1">
-                <p className="text-lg font-medium text-zinc-100">
+                <p
+                  className={`text-lg font-medium ${isDark ? "text-zinc-100" : "text-slate-900"}`}
+                >
                   还没有关注的源
                 </p>
-                <p className="text-zinc-400">
+                <p className={isDark ? "text-zinc-400" : "text-slate-600"}>
                   点击搜索按钮或在其他列中点击星标来关注新闻源
                 </p>
               </div>

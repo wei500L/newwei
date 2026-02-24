@@ -1077,7 +1077,7 @@ export function AssistantContent() {
                 />
               </Space>
             </div>
-            <div className="min-h-0 flex-1 px-3 py-3">{renderRunHistory('h-full overflow-y-auto pr-1')}</div>
+            <div className="min-h-0 flex-1 px-3 py-3">{renderRunHistory('h-full overflow-y-auto')}</div>
           </aside>
 
           <section className={`${styles.panel} overflow-hidden`}>
@@ -1422,6 +1422,11 @@ export function AssistantContent() {
         open={historyDrawerOpen}
         destroyOnClose
         onClose={() => setHistoryDrawerOpen(false)}
+        classNames={{
+          body: styles.historyDrawerBody,
+          content: styles.historyDrawerContent,
+          wrapper: styles.historyDrawerWrapper,
+        }}
         extra={
           <Space size={8}>
             <Button
@@ -1443,7 +1448,7 @@ export function AssistantContent() {
         }
       >
         {renderRunHistory(
-          'scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent hover:scrollbar-thumb-slate-400 max-h-[calc(100svh-180px)] overflow-y-auto pr-1',
+          'max-h-[calc(100svh-180px)] overflow-y-auto',
           () => setHistoryDrawerOpen(false),
         )}
       </Drawer>

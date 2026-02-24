@@ -87,7 +87,11 @@ export function CommandBar() {
   };
 
   return (
-    <div className={`relative transition-all duration-300 ease-out z-50 w-full max-w-[420px] md:max-w-[600px] ${focused ? "md:max-w-[600px]" : ""}`}>
+    <div
+      className={`relative z-50 w-full min-w-0 max-w-[440px] transition-all duration-300 ease-out lg:max-w-[560px] 2xl:max-w-[640px] ${
+        focused ? "2xl:max-w-[700px]" : ""
+      }`}
+    >
       <div
         className={`
         flex items-center h-10 px-4 rounded-lg

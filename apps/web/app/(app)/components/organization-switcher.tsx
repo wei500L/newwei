@@ -127,7 +127,7 @@ export function OrganizationSwitcher() {
             allowClear
             id="topnav-organization"
             placeholder={t("orgSwitcher.placeholder")}
-            style={{ minWidth: 220 }}
+            className="w-[150px] xl:w-[180px] 2xl:w-[220px]"
             value={orgIdOrSlug}
             onChange={(value) => setOrgIdOrSlug(value ?? "")}
             options={options}
@@ -143,8 +143,10 @@ export function OrganizationSwitcher() {
           loading={loading}
           disabled={!orgIdOrSlug || isSelectedDisabled}
           onClick={handleSwitch}
+          aria-label={t("orgSwitcher.switch")}
+          className="!px-2 2xl:!px-3"
         >
-          {t("orgSwitcher.switch")}
+          <span className="hidden 2xl:inline">{t("orgSwitcher.switch")}</span>
         </Button>
       </Space.Compact>
       {error ? (

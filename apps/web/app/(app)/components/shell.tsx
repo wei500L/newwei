@@ -88,7 +88,7 @@ function useMainSurfaceClass(): string {
     pathname?.startsWith(path),
   );
   if (isEdgeToEdge) {
-    return "bg-[#04060b]";
+    return "";
   }
   return "";
 }
