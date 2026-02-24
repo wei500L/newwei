@@ -1438,7 +1438,28 @@
       "title": "Search",
       "subtitle": "Search across processed items.",
       "noticeTitle": "Search scope",
-      "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs."
+      "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs.",
+      "featuresTitle": "Active search capabilities",
+      "featureServerSuggestions": "Server suggestions",
+      "featureSemanticSuggestions": "Semantic suggestions (Embeddings + Vector recall)",
+      "featureLocalHistory": "Local history guidance",
+      "featureHotTopics": "Hot topics quick start",
+      "featureSemanticReady": "Semantic suggestions active",
+      "featureSemanticPending": "Keep typing to trigger semantic suggestions",
+      "featureSuggestionsLoading": "Suggestions loading...",
+      "featureSuggestionsEmpty": "No server suggestions for current prefix",
+      "featureSemanticBreakdown": "Semantic {{semantic}} + Hybrid {{hybrid}}",
+      "featureCurrentQuery": "Current query",
+      "featureRankingRelevance": "Result ranking: Relevance (rerank if available)",
+      "featureRankingRecency": "Result ranking: Recency",
+      "modeIdleHint": "No query detected. Use hot topics or recent searches to start quickly.",
+      "modeActiveHint": "Semantic and lexical suggestions are being used to guide your next query refinement.",
+      "hotTopics": "Hot topics",
+      "hotTopicsHint": "Click a topic to fill the query and start searching immediately.",
+      "hotTopicsEmpty": "No hot topics available yet.",
+      "hotTopicsLoadFailed": "Failed to load hot topics.",
+      "recentSearches": "Recent searches",
+      "clearHistory": "Clear history"
     },
     "rss": {
       "title": "RSS Reader",
@@ -6445,6 +6466,33 @@
         "name": "Everything",
         "description": "All panels enabled."
       }
+    }
+  },
+  "search": {
+    "recent": "Recent Searches",
+    "searchFor": "Search for",
+    "placeholder": "Search news, topics, or events...",
+    "suggestions": {
+      "server": "Semantic Suggestions",
+      "loading": "Loading semantic suggestions...",
+      "syntax": "Advanced Syntax",
+      "topics": "Topics",
+      "regions": "Regions",
+      "sentiments": "Sentiments",
+      "sources": "Sources",
+      "originLexical": "Lexical",
+      "originSemantic": "Semantic",
+      "originHybrid": "Hybrid"
+    },
+    "syntax": {
+      "description": "Use these operators for advanced search:",
+      "topic": "Filter by topic",
+      "region": "Filter by region",
+      "sentiment": "Filter by sentiment",
+      "from": "Start date",
+      "to": "End date",
+      "source": "Filter by source",
+      "phrase": "Exact phrase match"
     }
   }
 }

@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType, registerEnumType } from "@nestjs/graphql";
+import { Field, ObjectType, registerEnumType } from "@nestjs/graphql";
 
 export enum SearchSuggestionType {
   TOPIC = "TOPIC",
@@ -7,9 +7,20 @@ export enum SearchSuggestionType {
   SENTIMENT = "SENTIMENT"
 }
 
+export enum SearchSuggestionOrigin {
+  LEXICAL = "LEXICAL",
+  SEMANTIC = "SEMANTIC",
+  HYBRID = "HYBRID"
+}
+
 registerEnumType(SearchSuggestionType, {
   name: "SearchSuggestionType",
   description: "Type of search suggestion"
+});
+
+registerEnumType(SearchSuggestionOrigin, {
+  name: "SearchSuggestionOrigin",
+  description: "How the suggestion was produced"
 });
 
 @ObjectType()
@@ -19,4 +30,7 @@ export class SearchSuggestionModel {
 
   @Field()
   value!: string;
+
+  @Field(() => SearchSuggestionOrigin)
+  origin!: SearchSuggestionOrigin;
 }

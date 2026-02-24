@@ -637,3 +637,77 @@ describe("ItemsService.listRssSourcesForReading", () => {
     expect(prisma.article.groupBy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ItemsService.searchSuggestions", () => {
+  it("merges lexical + semantic scores and exposes hybrid origin", async () => {
+    const cacheMock = {
+      wrap: jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) =>
+        loader()
+      )
+    };
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      cacheMock as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).getFacets = jest.fn().mockResolvedValue({
+      topics: [{ value: "AI", count: 12 }],
+      regions: [{ value: "Asia", count: 5 }],
+      sentiments: [{ value: "positive", count: 6 }]
+    });
+    (service as any).resolveSourceSuggestionCounts = jest
+      .fn()
+      .mockResolvedValue(new Map([["Reuters", 4]]));
+    (service as any).resolveSemanticSuggestions = jest.fn().mockResolvedValue([
+      { type: "TOPIC", value: "AI", score: 88 },
+      { type: "SOURCE", value: "OpenAI", score: 66 }
+    ]);
+
+    const suggestions = await service.searchSuggestions("org-1", "ai", 6);
+
+    expect(cacheMock.wrap).toHaveBeenCalledTimes(1);
+    expect((service as any).resolveSemanticSuggestions).toHaveBeenCalledWith("org-1", "ai", 36);
+    expect(suggestions).toEqual(
+      expect.arrayContaining([
+        { type: "TOPIC", value: "AI", origin: "HYBRID" },
+        { type: "SOURCE", value: "OpenAI", origin: "SEMANTIC" },
+        { type: "SOURCE", value: "Reuters", origin: "LEXICAL" }
+      ])
+    );
+    expect(suggestions.filter((entry: { value: string }) => entry.value === "AI")).toHaveLength(1);
+  });
+
+  it("returns lexical-only origins when semantic suggestions are empty", async () => {
+    const cacheMock = {
+      wrap: jest.fn(async (_key: string, _ttlSeconds: number, loader: () => Promise<unknown>) =>
+        loader()
+      )
+    };
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      cacheMock as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).getFacets = jest.fn().mockResolvedValue({
+      topics: [],
+      regions: [],
+      sentiments: []
+    });
+    (service as any).resolveSourceSuggestionCounts = jest
+      .fn()
+      .mockResolvedValue(new Map([["Reuters", 3]]));
+    (service as any).resolveSemanticSuggestions = jest.fn().mockResolvedValue([]);
+
+    const suggestions = await service.searchSuggestions("org-1", "re", 3);
+
+    expect(suggestions).toEqual([{ type: "SOURCE", value: "Reuters", origin: "LEXICAL" }]);
+  });
+});

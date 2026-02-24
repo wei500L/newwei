@@ -28,6 +28,10 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import {
+  EnhancedSearchBox,
+  type SearchSuggestionStatus,
+} from "@/components/enhanced-search-box";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import type { ItemsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
@@ -71,7 +75,7 @@ const FinancialCard = dynamic(
 
 const EMPTY_FILTERS_STATE: FilterState = {};
 
-const ITEMS_SEARCH_DEBOUNCE_MS = 400;
+const ITEMS_SEARCH_DEBOUNCE_MS = 250;
 const ITEMS_FILTERS_URL_DEBOUNCE_MS = 200;
 const ITEMS_TABLE_MIN_SCROLL_X = 840;
 const ITEMS_TABLE_MIN_BODY_SCROLL_Y = 240;
@@ -684,6 +688,7 @@ interface ItemsViewProps {
   fixedSourceIds?: string[];
   rssTranslationConfig?: ItemsRssTranslationConfig;
   onTranslationError?: (message: string | null) => void;
+  onSearchSuggestionStatusChange?: (status: SearchSuggestionStatus) => void;
 }
 
 interface ParsedItem {
@@ -736,7 +741,8 @@ export function ItemsView({
   initialFilters = EMPTY_FILTERS_STATE,
   fixedSourceIds,
   rssTranslationConfig,
-  onTranslationError
+  onTranslationError,
+  onSearchSuggestionStatusChange
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -1926,15 +1932,12 @@ export function ItemsView({
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
            <Col flex="auto">
              <Space>
-                <Space.Compact>
-                  <Input
-                    id="items-search"
-                    name="itemsSearch"
+                {layoutState.filterBehavior === "layered" ? (
+                  <EnhancedSearchBox
+                    className="w-full min-w-[280px]"
                     placeholder={t("items.search.placeholder")}
-                    allowClear
                     value={searchInput}
-                    onChange={(event) => {
-                      const value = event.target.value;
+                    onChange={(value) => {
                       setSearchInput(value);
                       if (!value) {
                         setSearch("");
@@ -1942,14 +1945,36 @@ export function ItemsView({
                         setQueryParams({ q: null, page: 1 });
                       }
                     }}
-                    onPressEnter={() => handleSearch(searchInput)}
+                    onSearch={(query) => handleSearch(query)}
+                    navigateOnSearch={false}
+                    onSuggestionStatusChange={onSearchSuggestionStatusChange}
                   />
-                  <Button
-                    icon={<SearchOutlined />}
-                    aria-label={t("items.search.placeholder")}
-                    onClick={() => handleSearch(searchInput)}
-                  />
-                </Space.Compact>
+                ) : (
+                  <Space.Compact>
+                    <Input
+                      id="items-search"
+                      name="itemsSearch"
+                      placeholder={t("items.search.placeholder")}
+                      allowClear
+                      value={searchInput}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSearchInput(value);
+                        if (!value) {
+                          setSearch("");
+                          setPage(1);
+                          setQueryParams({ q: null, page: 1 });
+                        }
+                      }}
+                      onPressEnter={() => handleSearch(searchInput)}
+                    />
+                    <Button
+                      icon={<SearchOutlined />}
+                      aria-label={t("items.search.placeholder")}
+                      onClick={() => handleSearch(searchInput)}
+                    />
+                  </Space.Compact>
+                )}
                 {emptyStateVariant === "search" || search.length > 0 ? (
                   <Segmented
                     size="small"

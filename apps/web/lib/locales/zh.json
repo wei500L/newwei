@@ -1441,7 +1441,28 @@
       "title": "搜索",
       "subtitle": "检索已处理内容。",
       "noticeTitle": "检索范围",
-      "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。"
+      "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。",
+      "featuresTitle": "当前启用功能",
+      "featureServerSuggestions": "服务端建议",
+      "featureSemanticSuggestions": "语义建议（Embeddings + 向量召回）",
+      "featureLocalHistory": "本地历史引导",
+      "featureHotTopics": "热门话题快速入口",
+      "featureSemanticReady": "语义建议已激活",
+      "featureSemanticPending": "继续输入可触发语义建议",
+      "featureSuggestionsLoading": "建议加载中...",
+      "featureSuggestionsEmpty": "当前前缀暂无服务端建议",
+      "featureSemanticBreakdown": "语义 {{semantic}} + 混合 {{hybrid}}",
+      "featureCurrentQuery": "当前查询",
+      "featureRankingRelevance": "结果排序：相关性（可用时启用 rerank）",
+      "featureRankingRecency": "结果排序：时效性",
+      "modeIdleHint": "当前无查询词，可从热门话题或最近搜索快速开始。",
+      "modeActiveHint": "系统正在使用语义与词法建议辅助你优化下一步查询。",
+      "hotTopics": "热门话题",
+      "hotTopicsHint": "点击话题可直接填入查询并立刻搜索。",
+      "hotTopicsEmpty": "暂无可用热门话题。",
+      "hotTopicsLoadFailed": "热门话题加载失败。",
+      "recentSearches": "最近搜索",
+      "clearHistory": "清空历史"
     },
     "rss": {
       "title": "RSS 阅读",
@@ -6448,6 +6469,33 @@
         "name": "全部",
         "description": "启用全部面板。"
       }
+    }
+  },
+  "search": {
+    "recent": "最近搜索",
+    "searchFor": "搜索",
+    "placeholder": "搜索新闻、话题或事件...",
+    "suggestions": {
+      "server": "语义建议",
+      "loading": "正在加载语义建议...",
+      "syntax": "高级语法",
+      "topics": "话题",
+      "regions": "地区",
+      "sentiments": "情绪",
+      "sources": "来源",
+      "originLexical": "词法",
+      "originSemantic": "语义",
+      "originHybrid": "混合"
+    },
+    "syntax": {
+      "description": "可使用以下高级检索语法：",
+      "topic": "按话题过滤",
+      "region": "按地区过滤",
+      "sentiment": "按情绪过滤",
+      "from": "起始日期",
+      "to": "结束日期",
+      "source": "按来源过滤",
+      "phrase": "精确短语匹配"
     }
   }
 }

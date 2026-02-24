@@ -47,11 +47,18 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ITEMS_FILTERS_SEARCH_PREFIX = "__items_filters__:";
 const MAX_FACET_OPTIONS = 50;
 const ITEMS_VECTOR_SEARCH_PREFIX = "__items_vector_search__:";
+const ITEMS_SEARCH_SUGGESTIONS_PREFIX = "__items_search_suggestions__:";
+const ITEMS_SOURCE_SUGGESTIONS_PREFIX = "__items_source_suggestions__:";
 const VECTOR_SEARCH_CACHE_TTL_SECONDS = 300;
 const VECTOR_SEARCH_MIN_SIMILARITY = 0.78;
 const VECTOR_SEARCH_MAX_RESULTS = 300;
 const VECTOR_SEARCH_MAX_CANDIDATES = 1200;
 const VECTOR_SEARCH_LOOKBACK_DAYS = 30;
+const SEARCH_SUGGESTIONS_CACHE_TTL_SECONDS = 60;
+const SOURCE_SUGGESTIONS_CACHE_TTL_SECONDS = 180;
+const SEARCH_SUGGESTIONS_MAX_SEMANTIC_IDS = 120;
+const SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN = 1000;
+const SEARCH_SUGGESTIONS_MIN_SEMANTIC_CHARS = 6;
 const TOPIC_GROUPS_CACHE_TTL_SECONDS = 120;
 const EVENT_GROUPS_CACHE_TTL_SECONDS = 120;
 const DEFAULT_RECENCY_HALFLIFE_HOURS = 48;
@@ -1017,67 +1024,203 @@ export class ItemsService {
 
   /**
    * Search suggestions for auto-complete.
-   * Returns matching topics, regions, sources, and sentiments based on prefix.
+   * Mixes lexical facet suggestions with semantic vector-recalled suggestions.
    */
   async searchSuggestions(
     orgId: string,
     prefix: string,
     limit = 10
-  ): Promise<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string }[]> {
-    const normalizedPrefix = prefix.trim().toLowerCase();
+  ): Promise<
+    {
+      type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
+      value: string;
+      origin: "LEXICAL" | "SEMANTIC" | "HYBRID";
+    }[]
+  > {
+    const trimmedPrefix = prefix.trim();
+    const normalizedPrefix = trimmedPrefix.toLowerCase();
     if (!normalizedPrefix) {
       return [];
     }
 
-    const clampedLimit = Math.min(Math.max(limit, 1), 25);
+    type SuggestionType = "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
+    type SuggestionOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
+    type SuggestionEntry = {
+      type: SuggestionType;
+      value: string;
+      score: number;
+      hits: number;
+      lexicalScore: number;
+      semanticScore: number;
+    };
 
-    // Use cache to avoid repeated facet scans
-    const cacheKey = `items:search-suggestions:${orgId}:${normalizedPrefix}:${clampedLimit}`;
+    const clampedLimit = Math.min(Math.max(limit, 1), 25);
+    const semanticLimit = Math.min(80, clampedLimit * 6);
+    const cacheKey = `${ITEMS_SEARCH_SUGGESTIONS_PREFIX}${orgId}:${normalizedPrefix}:${clampedLimit}:v3`;
+
+    const addScoredSuggestion = (
+      bucket: Map<string, SuggestionEntry>,
+      type: SuggestionType,
+      rawValue: string,
+      score: number,
+      origin: "LEXICAL" | "SEMANTIC"
+    ) => {
+      const value = rawValue.trim();
+      if (!value) {
+        return;
+      }
+      const key = `${type}:${value.toLowerCase()}`;
+      const current = bucket.get(key);
+      const lexicalScore = origin === "LEXICAL" ? score : 0;
+      const semanticScore = origin === "SEMANTIC" ? score : 0;
+      if (!current) {
+        bucket.set(key, {
+          type,
+          value,
+          score,
+          hits: 1,
+          lexicalScore,
+          semanticScore
+        });
+        return;
+      }
+      current.score += score;
+      current.hits += 1;
+      current.lexicalScore += lexicalScore;
+      current.semanticScore += semanticScore;
+    };
+
+    const resolveOrigin = (entry: SuggestionEntry): SuggestionOrigin => {
+      if (entry.lexicalScore > 0 && entry.semanticScore > 0) {
+        return "HYBRID";
+      }
+      if (entry.semanticScore > 0) {
+        return "SEMANTIC";
+      }
+      return "LEXICAL";
+    };
 
     return this.cache.wrap(
       cacheKey,
-      60, // 60 seconds TTL
+      SEARCH_SUGGESTIONS_CACHE_TTL_SECONDS,
       async () => {
-        // Get facets (scan recent items)
-        const facets = await this.getFacets(orgId);
+        const [facets, sourceCounts, semanticSuggestions] = await Promise.all([
+          this.getFacets(orgId),
+          this.resolveSourceSuggestionCounts(orgId, normalizedPrefix),
+          this.resolveSemanticSuggestions(orgId, trimmedPrefix, semanticLimit)
+        ]);
 
-        const suggestions: {
-          type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT";
-          value: string;
-          count: number;
-        }[] = [];
+        const suggestionByKey = new Map<string, SuggestionEntry>();
 
-        // Add matching topics
         for (const topic of facets.topics) {
-          if (topic.value.toLowerCase().startsWith(normalizedPrefix)) {
-            suggestions.push({ type: "TOPIC", value: topic.value, count: topic.count });
+          const value = topic.value.trim();
+          if (!value) {
+            continue;
+          }
+          const normalized = value.toLowerCase();
+          if (normalized.startsWith(normalizedPrefix)) {
+            addScoredSuggestion(
+              suggestionByKey,
+              "TOPIC",
+              value,
+              360 + topic.count * 2.5,
+              "LEXICAL"
+            );
+          } else if (normalized.includes(normalizedPrefix)) {
+            addScoredSuggestion(
+              suggestionByKey,
+              "TOPIC",
+              value,
+              180 + topic.count * 1.2,
+              "LEXICAL"
+            );
           }
         }
 
-        // Add matching regions
         for (const region of facets.regions) {
-          if (region.value.toLowerCase().startsWith(normalizedPrefix)) {
-            suggestions.push({ type: "REGION", value: region.value, count: region.count });
+          const value = region.value.trim();
+          if (!value) {
+            continue;
+          }
+          const normalized = value.toLowerCase();
+          if (normalized.startsWith(normalizedPrefix)) {
+            addScoredSuggestion(
+              suggestionByKey,
+              "REGION",
+              value,
+              320 + region.count * 2,
+              "LEXICAL"
+            );
+          } else if (normalized.includes(normalizedPrefix)) {
+            addScoredSuggestion(
+              suggestionByKey,
+              "REGION",
+              value,
+              160 + region.count,
+              "LEXICAL"
+            );
           }
         }
 
-        // Add matching sentiments (predefined set)
-        const sentiments = ["positive", "neutral", "negative"];
-        for (const sentiment of sentiments) {
-          if (sentiment.startsWith(normalizedPrefix)) {
-            const facetMatch = facets.sentiments.find((s) => s.value.toLowerCase() === sentiment);
-            suggestions.push({ type: "SENTIMENT", value: sentiment, count: facetMatch?.count ?? 0 });
+        const allowedSentiments = new Set(["positive", "neutral", "negative"]);
+        const sentimentCounts = new Map(
+          facets.sentiments.map((entry) => [entry.value.trim().toLowerCase(), entry.count] as const)
+        );
+        for (const sentiment of allowedSentiments) {
+          if (!sentiment.includes(normalizedPrefix)) {
+            continue;
           }
+          const scoreBoost = sentiment.startsWith(normalizedPrefix) ? 300 : 150;
+          addScoredSuggestion(
+            suggestionByKey,
+            "SENTIMENT",
+            sentiment,
+            scoreBoost + (sentimentCounts.get(sentiment) ?? 0) * 2,
+            "LEXICAL"
+          );
         }
 
-        // Sort by count desc, then value asc for stable ordering
-        suggestions.sort((a, b) => {
-          if (b.count !== a.count) return b.count - a.count;
-          return a.value.localeCompare(b.value);
+        sourceCounts.forEach((count, source) => {
+          const normalized = source.toLowerCase();
+          const scoreBoost = normalized.startsWith(normalizedPrefix) ? 330 : 165;
+          addScoredSuggestion(
+            suggestionByKey,
+            "SOURCE",
+            source,
+            scoreBoost + count * 2.2,
+            "LEXICAL"
+          );
         });
 
-        // Return limited results without count
-        return suggestions.slice(0, clampedLimit).map(({ type, value }) => ({ type, value }));
+        for (const semantic of semanticSuggestions) {
+          addScoredSuggestion(
+            suggestionByKey,
+            semantic.type,
+            semantic.value,
+            semantic.score,
+            "SEMANTIC"
+          );
+        }
+
+        return Array.from(suggestionByKey.values())
+          .sort((left, right) => {
+            if (right.score !== left.score) {
+              return right.score - left.score;
+            }
+            if (right.hits !== left.hits) {
+              return right.hits - left.hits;
+            }
+            if (left.type !== right.type) {
+              return left.type.localeCompare(right.type);
+            }
+            return left.value.localeCompare(right.value);
+          })
+          .slice(0, clampedLimit)
+          .map((entry) => ({
+            type: entry.type,
+            value: entry.value,
+            origin: resolveOrigin(entry)
+          }));
       },
       {
         lockTtlMs: 5_000,
@@ -2158,6 +2301,266 @@ export class ItemsService {
     return matched
       .map((row) => (typeof row.itemMetaId === "string" ? row.itemMetaId.trim() : ""))
       .filter((value): value is string => Boolean(value));
+  }
+
+  private shouldUseSemanticSuggestions(prefix: string) {
+    const tokens = this.tokenizeSearch(prefix, MONGO_MIN_TOKEN_LENGTH);
+    return tokens.length >= 2 || prefix.length >= SEARCH_SUGGESTIONS_MIN_SEMANTIC_CHARS;
+  }
+
+  private async resolveSourceSuggestionCounts(orgId: string, normalizedPrefix: string) {
+    const snapshot = await this.cache.wrap(
+      `${ITEMS_SOURCE_SUGGESTIONS_PREFIX}${orgId}:v1`,
+      SOURCE_SUGGESTIONS_CACHE_TTL_SECONDS,
+      async () => {
+        const records = await ProcessedItemModel.find(
+          {
+            orgId,
+            status: PipelineStageStatus.Completed
+          },
+          {
+            result: 1
+          }
+        )
+          .sort({ createdAt: -1 })
+          .limit(SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN)
+          .lean();
+
+        const counts = new Map<string, number>();
+        for (const record of records) {
+          const resultRecord = this.normalizeResultRecord(
+            (record as { result?: unknown }).result
+          );
+          const source = this.pickResultString(resultRecord, [
+            "source",
+            "sourceName",
+            "source_name",
+            "publisher"
+          ]);
+          if (!source) {
+            continue;
+          }
+          counts.set(source, (counts.get(source) ?? 0) + 1);
+        }
+
+        return Array.from(counts.entries()).map(([source, count]) => ({
+          source,
+          normalizedSource: source.toLowerCase(),
+          count
+        }));
+      },
+      {
+        lockTtlMs: 5_000,
+        retryDelayMs: 50,
+        maxWaitMs: 2_000
+      }
+    );
+
+    const counts = new Map<string, number>();
+    for (const entry of snapshot) {
+      if (
+        !entry.normalizedSource.startsWith(normalizedPrefix) &&
+        !entry.normalizedSource.includes(normalizedPrefix)
+      ) {
+        continue;
+      }
+      counts.set(entry.source, entry.count);
+    }
+    return counts;
+  }
+
+  private async resolveSemanticSuggestions(
+    orgId: string,
+    query: string,
+    limit: number
+  ): Promise<{ type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; score: number }[]> {
+    const trimmedQuery = query.trim();
+    const normalizedQuery = trimmedQuery.toLowerCase();
+    if (!this.shouldUseSemanticSuggestions(normalizedQuery)) {
+      return [];
+    }
+
+    const vectorIds = await this.resolveVectorSearchIds(orgId, trimmedQuery);
+    if (vectorIds.length === 0) {
+      return [];
+    }
+
+    const topIds = vectorIds.slice(0, SEARCH_SUGGESTIONS_MAX_SEMANTIC_IDS);
+    const processedDocs = await ProcessedItemModel.find(
+      {
+        orgId,
+        status: PipelineStageStatus.Completed,
+        itemMetaId: { $in: topIds }
+      },
+      {
+        itemMetaId: 1,
+        tags: 1,
+        result: 1,
+        createdAt: 1
+      }
+    )
+      .sort({ createdAt: -1 })
+      .limit(topIds.length * 3)
+      .lean();
+
+    const latestByMetaId = new Map<string, { tags?: unknown; result?: unknown }>();
+    for (const doc of processedDocs) {
+      const itemMetaId =
+        typeof (doc as { itemMetaId?: unknown }).itemMetaId === "string"
+          ? ((doc as { itemMetaId: string }).itemMetaId ?? "").trim()
+          : "";
+      if (!itemMetaId || latestByMetaId.has(itemMetaId)) {
+        continue;
+      }
+      latestByMetaId.set(itemMetaId, {
+        tags: (doc as { tags?: unknown }).tags,
+        result: (doc as { result?: unknown }).result
+      });
+    }
+
+    const tokens = this.tokenizeSearch(normalizedQuery, MONGO_MIN_TOKEN_LENGTH);
+    const scored = new Map<
+      string,
+      { type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; score: number }
+    >();
+
+    for (let index = 0; index < topIds.length; index += 1) {
+      const itemMetaId = topIds[index];
+      if (!itemMetaId) {
+        continue;
+      }
+      const doc = latestByMetaId.get(itemMetaId);
+      if (!doc) {
+        continue;
+      }
+      const rankScore = 140 - (index / Math.max(1, topIds.length)) * 80;
+      const fields = this.collectSuggestionValuesFromProcessed({
+        tags: doc.tags,
+        result: doc.result
+      });
+
+      this.pushSemanticSuggestions(scored, fields.topics, "TOPIC", normalizedQuery, tokens, rankScore);
+      this.pushSemanticSuggestions(scored, fields.regions, "REGION", normalizedQuery, tokens, rankScore * 0.92);
+      this.pushSemanticSuggestions(scored, fields.sources, "SOURCE", normalizedQuery, tokens, rankScore * 0.88);
+      this.pushSemanticSuggestions(
+        scored,
+        fields.sentiments,
+        "SENTIMENT",
+        normalizedQuery,
+        tokens,
+        rankScore * 0.8
+      );
+    }
+
+    return Array.from(scored.values())
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        if (left.type !== right.type) {
+          return left.type.localeCompare(right.type);
+        }
+        return left.value.localeCompare(right.value);
+      })
+      .slice(0, limit);
+  }
+
+  private collectSuggestionValuesFromProcessed(input: { tags?: unknown; result?: unknown }) {
+    const resultRecord = this.normalizeResultRecord(input.result);
+    const topicSet = new Set<string>();
+    this.pickResultStringArray(resultRecord, ["topics"]).forEach((value) => topicSet.add(value));
+    this.pickResultStringArray(resultRecord, ["entities"]).forEach((value) => topicSet.add(value));
+    if (Array.isArray(input.tags)) {
+      for (const tag of input.tags) {
+        if (typeof tag !== "string") {
+          continue;
+        }
+        const normalized = tag.trim();
+        if (normalized) {
+          topicSet.add(normalized);
+        }
+      }
+    }
+
+    const region = this.pickResultString(resultRecord, ["location", "region"]);
+    const source = this.pickResultString(resultRecord, [
+      "source",
+      "sourceName",
+      "source_name",
+      "publisher"
+    ]);
+
+    const sentiments = new Set<string>();
+    const sentiment = this.pickResultString(resultRecord, ["sentiment", "sentiment_label"]);
+    if (sentiment) {
+      const normalized = sentiment.toLowerCase();
+      if (normalized === "positive" || normalized === "neutral" || normalized === "negative") {
+        sentiments.add(normalized);
+      }
+    }
+    if (Array.isArray(input.tags)) {
+      for (const tag of input.tags) {
+        if (typeof tag !== "string") {
+          continue;
+        }
+        const normalized = tag.trim().toLowerCase();
+        if (normalized === "positive" || normalized === "neutral" || normalized === "negative") {
+          sentiments.add(normalized);
+        }
+      }
+    }
+
+    return {
+      topics: Array.from(topicSet).slice(0, 10),
+      regions: region ? [region] : [],
+      sources: source ? [source] : [],
+      sentiments: Array.from(sentiments)
+    };
+  }
+
+  private pushSemanticSuggestions(
+    bucket: Map<
+      string,
+      { type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT"; value: string; score: number }
+    >,
+    values: string[],
+    type: "TOPIC" | "REGION" | "SOURCE" | "SENTIMENT",
+    normalizedPrefix: string,
+    tokens: string[],
+    baseScore: number
+  ) {
+    for (const value of values) {
+      const normalizedValue = value.trim().toLowerCase();
+      if (!normalizedValue) {
+        continue;
+      }
+      const startsWithPrefix = normalizedValue.startsWith(normalizedPrefix);
+      const containsPrefix = normalizedValue.includes(normalizedPrefix);
+      const tokenHits = tokens.filter((token) => normalizedValue.includes(token)).length;
+      if (
+        !startsWithPrefix &&
+        !containsPrefix &&
+        tokenHits === 0 &&
+        tokens.length < 2 &&
+        normalizedPrefix.length < SEARCH_SUGGESTIONS_MIN_SEMANTIC_CHARS
+      ) {
+        continue;
+      }
+
+      const score =
+        baseScore +
+        (startsWithPrefix ? 48 : 0) +
+        (containsPrefix ? 24 : 0) +
+        tokenHits * 10;
+
+      const key = `${type}:${normalizedValue}`;
+      const current = bucket.get(key);
+      if (!current) {
+        bucket.set(key, { type, value: value.trim(), score });
+        continue;
+      }
+      current.score += score;
+    }
   }
 
   private async resolveMetaSearchIds(orgId: string, strategy: SearchStrategy) {
