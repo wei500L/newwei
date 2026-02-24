@@ -4385,6 +4385,59 @@
         }
       }
     },
+    "newsSourceRuntimeSecrets": {
+      "description": "Manage runtime secrets for news source fetchers (cookies, tokens, and custom headers) from the admin console.",
+      "notice": {
+        "title": "Hot apply",
+        "body": "Changes are stored in MySQL system settings and applied on subsequent source refresh calls without restarting services."
+      },
+      "status": {
+        "label": "Status",
+        "default": "Using environment/default secrets",
+        "saved": "Database-managed runtime secrets",
+        "unavailable": "Unavailable (settings load failed)",
+        "notStored": "Not stored",
+        "entryCount": "Entries: {{count}}",
+        "pendingRemoves": "Pending removes: {{count}}"
+      },
+      "fields": {
+        "sourceId": "Source ID",
+        "key": "Secret key",
+        "value": "Secret value",
+        "fingerprint": "Fingerprint",
+        "updatedAt": "Updated at"
+      },
+      "placeholders": {
+        "sourceId": "e.g. weibo",
+        "key": "e.g. cookie",
+        "value": "Paste secret value",
+        "keepExistingValue": "Leave empty to keep existing value"
+      },
+      "actions": {
+        "addRow": "Add entry"
+      },
+      "messages": {
+        "saved": "Saved",
+        "noChanges": "No changes to save"
+      },
+      "errors": {
+        "loadFailed": "Failed to load runtime secrets settings",
+        "saveFailed": "Failed to save runtime secrets settings",
+        "codes": {
+          "NEWS_SOURCE_RUNTIME_SECRETS_INVALID": "Stored runtime secrets are invalid"
+        }
+      },
+      "validation": {
+        "sourceIdRequired": "Source ID is required",
+        "sourceIdPattern": "Source ID must match /^[a-z0-9_-]+$/",
+        "keyRequired": "Secret key is required",
+        "keyPattern": "Secret key must match /^[a-zA-Z0-9._:-]+$/ and be <= 128 chars",
+        "duplicateEntry": "Duplicate source ID and secret key combination",
+        "valueRequiredForNew": "Value is required for new entries",
+        "valueTooLong": "Value must be <= 8192 chars"
+      },
+      "empty": "No runtime secrets configured."
+    },
     "situationMonitor": {
       "description": "Configure situation monitor translation behavior (concurrency + DeepLX primary API + fallback endpoint).",
       "notice": {
@@ -4502,6 +4555,7 @@
       "security": "Security",
       "situationMonitor": "Situation monitor",
       "newsSourceScheduler": "News source scheduler",
+      "newsSourceRuntimeSecrets": "News source secrets",
       "vectorService": "Vector service",
       "modelService": "Model service",
       "akshare": "AKShare"

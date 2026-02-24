@@ -31,7 +31,7 @@ export function NewsListHot({ items }: NewsListHotProps) {
           <div className="flex-1 overflow-hidden">
             <Tooltip title={item.extra?.hover} placement="left" mouseEnterDelay={0.5}>
               <a
-                href={item.url}
+                href={item.mobileUrl || item.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block truncate text-sm text-zinc-800 transition-colors group-hover:text-blue-600 dark:text-zinc-200"
@@ -48,12 +48,24 @@ export function NewsListHot({ items }: NewsListHotProps) {
           {item.extra?.icon && (
             <div className="shrink-0 pt-0.5">
               {typeof item.extra.icon === "string" ? (
-                <img src={item.extra.icon} alt="" className="h-4 w-4 rounded-sm object-contain" />
+                <img
+                  src={item.extra.icon}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
+                  className="h-4 w-4 rounded-sm object-contain"
+                />
               ) : (
                 <img
                   src={item.extra.icon.url}
                   alt=""
                   style={{ transform: `scale(${item.extra.icon.scale})` }}
+                  referrerPolicy="no-referrer"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
                   className="h-4 w-4 rounded-sm object-contain"
                 />
               )}

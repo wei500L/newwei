@@ -39,6 +39,7 @@ import { NewsClassificationSettingsPanel } from "@/components/settings/news-clas
 import { NewsEventsSettingsPanel } from "@/components/settings/news-events-settings-panel";
 import { NewsEventSourcePolicySettingsPanel } from "@/components/settings/news-event-source-policy-settings-panel";
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
+import { NewsSourceRuntimeSecretsPanel } from "@/components/settings/news-source-runtime-secrets-panel";
 import { NewsSourceSchedulerSettingsPanel } from "@/components/settings/news-source-scheduler-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { RssDiagnosticsPanel } from "@/components/settings/rss-diagnostics-panel";
@@ -1267,6 +1268,11 @@ export function SystemSettingsContent() {
         key: "newsSourceScheduler",
         label: t("systemSettings.tabs.newsSourceScheduler"),
         children: <NewsSourceSchedulerSettingsPanel />,
+      },
+      {
+        key: "newsSourceRuntimeSecrets",
+        label: t("systemSettings.tabs.newsSourceRuntimeSecrets"),
+        children: <NewsSourceRuntimeSecretsPanel />,
       },
       {
         key: "newsIndicator",

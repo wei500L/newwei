@@ -1,6 +1,7 @@
 "use client";
 
-import { use, useEffect } from "react";
+import { useEffect } from "react";
+import { useParams } from "next/navigation";
 import { NewsnowHeader } from "../components/newsnow-header";
 import { NewsnowColumn } from "../components/newsnow-column";
 import { useNewsMetadata, useBatchPrefetch } from "../hooks/use-news-sources";
@@ -8,13 +9,10 @@ import { useNewsnowStore } from "../store/newsnow-store";
 import { Skeleton, Empty, Button, Result } from "antd";
 import { StarOutlined } from "@ant-design/icons";
 
-interface NewsnowColumnPageProps {
-  params: Promise<{ column: string }>;
-}
-
-export default function NewsnowColumnPage({ params: paramsPromise }: NewsnowColumnPageProps) {
-  const params = use(paramsPromise);
-  const columnKey = params.column;
+export default function NewsnowColumnPage() {
+  const params = useParams<{ column?: string | string[] }>();
+  const columnParam = params.column;
+  const columnKey = Array.isArray(columnParam) ? (columnParam[0] ?? "hottest") : (columnParam ?? "hottest");
   const { data: metadata, isLoading, isError, refetch } = useNewsMetadata();
   const { focusSources } = useNewsnowStore();
   const batchPrefetch = useBatchPrefetch();

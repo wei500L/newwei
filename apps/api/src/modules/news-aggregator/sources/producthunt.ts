@@ -4,12 +4,35 @@ import { defineSource } from "./source";
 import process from "node:process"
 import type { NewsItem } from "../news-aggregator.types"
 
-export default defineSource(async () => {
-  const apiToken = process.env.PRODUCTHUNT_API_TOKEN
-  const token = `Bearer ${apiToken}`
+function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys: string[]) {
+  if (!secrets) {
+    return undefined
+  }
+  for (const key of keys) {
+    const value = secrets[key]
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+function stripBearerPrefix(value: string) {
+  return value.replace(/^bearer\s+/i, "").trim()
+}
+
+export default defineSource(async (context) => {
+  const runtimeToken = resolveRuntimeSecret(context?.secrets, [
+    "token",
+    "api_token",
+    "producthunt.api_token",
+    "producthunt.token",
+  ])
+  const apiToken = runtimeToken || process.env.PRODUCTHUNT_API_TOKEN
   if (!apiToken) {
     throw new Error("PRODUCTHUNT_API_TOKEN is not set")
   }
+  const token = `Bearer ${stripBearerPrefix(apiToken)}`
   const query = `
     query {
       posts(first: 30, order: VOTES) {

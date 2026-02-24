@@ -23,6 +23,8 @@ import { LlmGatewayTestService } from "./llm-gateway-test.service";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
+import { NewsSourceRuntimeSecretsController } from "./news-source-runtime-secrets.controller";
+import { NewsSourceRuntimeSecretsService } from "./news-source-runtime-secrets.service";
 import { NewsSourceSchedulerSettingsController } from "./news-source-scheduler-settings.controller";
 import { NewsSourceSchedulerSettingsService } from "./news-source-scheduler-settings.service";
 import { OpenAiKeysInternalController } from "./openai-keys-internal.controller";
@@ -61,6 +63,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
     LlmRequestLogSettingsController,
+    NewsSourceRuntimeSecretsController,
     NewsSourceSchedulerSettingsController,
     SituationMonitorSettingsController,
     VectorServiceSettingsController,
@@ -79,6 +82,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
     LlmRequestLogSettingsService,
+    NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
@@ -102,6 +106,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
     LlmRequestLogSettingsService,
+    NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,

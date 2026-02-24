@@ -4388,6 +4388,59 @@
         }
       }
     },
+    "newsSourceRuntimeSecrets": {
+      "description": "在管理后台维护新闻源抓取器运行时密钥（Cookie、Token、自定义 Header）。",
+      "notice": {
+        "title": "热生效",
+        "body": "配置写入 MySQL 系统设置后，无需重启服务；后续新闻源刷新请求将立即使用新值。"
+      },
+      "status": {
+        "label": "状态",
+        "default": "使用环境变量/默认密钥",
+        "saved": "使用数据库管理的运行时密钥",
+        "unavailable": "不可用（配置加载失败）",
+        "notStored": "未保存",
+        "entryCount": "条目数：{{count}}",
+        "pendingRemoves": "待删除：{{count}}"
+      },
+      "fields": {
+        "sourceId": "来源 ID",
+        "key": "密钥键名",
+        "value": "密钥值",
+        "fingerprint": "指纹",
+        "updatedAt": "更新时间"
+      },
+      "placeholders": {
+        "sourceId": "例如 weibo",
+        "key": "例如 cookie",
+        "value": "输入密钥值",
+        "keepExistingValue": "留空表示保留当前值"
+      },
+      "actions": {
+        "addRow": "新增条目"
+      },
+      "messages": {
+        "saved": "已保存",
+        "noChanges": "没有可保存的变更"
+      },
+      "errors": {
+        "loadFailed": "加载运行时密钥配置失败",
+        "saveFailed": "保存运行时密钥配置失败",
+        "codes": {
+          "NEWS_SOURCE_RUNTIME_SECRETS_INVALID": "已保存的运行时密钥配置无效"
+        }
+      },
+      "validation": {
+        "sourceIdRequired": "来源 ID 必填",
+        "sourceIdPattern": "来源 ID 必须匹配 /^[a-z0-9_-]+$/",
+        "keyRequired": "密钥键名必填",
+        "keyPattern": "密钥键名必须匹配 /^[a-zA-Z0-9._:-]+$/ 且长度不超过 128",
+        "duplicateEntry": "来源 ID 与密钥键名组合重复",
+        "valueRequiredForNew": "新增条目必须填写密钥值",
+        "valueTooLong": "密钥值长度不能超过 8192"
+      },
+      "empty": "暂无运行时密钥配置。"
+    },
     "situationMonitor": {
       "description": "配置态势监控翻译能力（并发、DeepLX 主翻译与备用端点）。",
       "notice": {
@@ -4505,6 +4558,7 @@
       "security": "安全",
       "situationMonitor": "态势监控",
       "newsSourceScheduler": "新闻源调度",
+      "newsSourceRuntimeSecrets": "新闻源密钥",
       "vectorService": "向量服务",
       "modelService": "模型服务",
       "akshare": "AKShare"

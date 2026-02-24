@@ -4,14 +4,35 @@ import type { NewsItem } from "../news-aggregator.types";
 
 import * as cheerio from "cheerio"
 
-export default defineSource(async () => {
+const DEFAULT_WEIBO_COOKIE =
+  "SUB=_2AkMWIuNSf8NxqwJRmP8dy2rhaoV2ygrEieKgfhKJJRMxHRl-yT9jqk86tRB6PaLNvQZR6zYUcYVT1zSjoSreQHidcUq7"
+
+function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys: string[]) {
+  if (!secrets) {
+    return undefined
+  }
+  for (const key of keys) {
+    const value = secrets[key]
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+export default defineSource(async (context) => {
   const baseurl = "https://s.weibo.com"
   const url = `${baseurl}/top/summary?cate=realtimehot`
+  const runtimeCookie = resolveRuntimeSecret(context?.secrets, [
+    "cookie",
+    "weibo.cookie",
+    "weibo_cookie",
+  ])
 
   const html = await myFetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-      ...(process.env.WEIBO_COOKIE ? { "Cookie": process.env.WEIBO_COOKIE } : {}),
+      "Cookie": runtimeCookie || process.env.WEIBO_COOKIE || DEFAULT_WEIBO_COOKIE,
       "referer": url,
     },
   })

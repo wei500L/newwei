@@ -82,7 +82,13 @@ export interface SourceResponse {
   items: NewsItem[]
 }
 
-export type SourceGetter = () => Promise<NewsItem[]>
+export interface SourceRuntimeContext {
+  sourceId: SourceID
+  requestedSourceId: SourceID
+  secrets: Record<string, string>
+}
+
+export type SourceGetter = (context?: SourceRuntimeContext) => Promise<NewsItem[]>
 
 export interface CacheInfo {
   id: SourceID

@@ -49,8 +49,11 @@ export interface Column {
 
 const api = createApiClient();
 
-async function fetchSourceById(id: string): Promise<SourceResponse> {
-  const { data } = await api.get(`/news-aggregator/source?id=${encodeURIComponent(id)}`);
+async function fetchSourceById(id: string, latest = false): Promise<SourceResponse> {
+  const query = latest
+    ? `/news-aggregator/source?id=${encodeURIComponent(id)}&latest=1`
+    : `/news-aggregator/source?id=${encodeURIComponent(id)}`;
+  const { data } = await api.get(query);
   return data;
 }
 
@@ -66,16 +69,25 @@ export function useNewsMetadata() {
 }
 
 export function useNewsSource(id: string, interval?: number) {
+  const queryClient = useQueryClient();
+
   const sourceQuery = useQuery<SourceResponse>({
     queryKey: ["news-source", id],
     queryFn: async () => await fetchSourceById(id),
     refetchInterval: interval || false,
     staleTime: 1000 * 30, // 30 seconds
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   return {
     ...sourceQuery,
-    refresh: sourceQuery.refetch,
+    refresh: async () => {
+      const latestData = await fetchSourceById(id, true);
+      queryClient.setQueryData(["news-source", id], latestData);
+      return latestData;
+    },
   };
 }
 

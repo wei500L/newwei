@@ -3,6 +3,7 @@ import type {
   NewsItem,
   RSSHubInfo as RSSHubResponse,
   RSSHubOption,
+  SourceRuntimeContext,
   SourceGetter,
   SourceOption,
 } from "../news-aggregator.types"
@@ -10,7 +11,7 @@ import type {
 import { myFetch } from "./fetch"
 import { rss2json } from "./rss2json"
 
-type AnySourceGetter = () => Promise<any[]>
+type AnySourceGetter = (context?: SourceRuntimeContext) => Promise<any[]>
 type SourceMap = Partial<Record<AllSourceID | string, AnySourceGetter>>
 
 export function defineSource<T extends AnySourceGetter>(source: T): T

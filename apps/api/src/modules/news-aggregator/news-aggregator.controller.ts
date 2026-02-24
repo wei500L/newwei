@@ -16,9 +16,9 @@ export class NewsAggregatorController {
 
   @Public()
   @Get("source")
-  getSource(@Query("id") id: string) {
+  getSource(@Query("id") id: string, @Query("latest") latest?: string) {
     const sourceId = this.validateSourceId(id)
-    return this.newsAggregatorService.fetchSource(sourceId)
+    return this.newsAggregatorService.fetchSource(sourceId, this.parseBooleanFlag(latest))
   }
 
   @Public()
@@ -50,5 +50,24 @@ export class NewsAggregatorController {
       throw new BadRequestException("invalid source id format")
     }
     return trimmed
+  }
+
+  private parseBooleanFlag(value: unknown): boolean {
+    if (value === undefined || value === null || value === "") {
+      return false
+    }
+    if (typeof value !== "string") {
+      throw new BadRequestException("latest must be a boolean string")
+    }
+
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+      return true
+    }
+    if (["false", "0", "no", "n", "off"].includes(normalized)) {
+      return false
+    }
+
+    throw new BadRequestException("latest must be one of true/false, 1/0, yes/no, y/n, on/off")
   }
 }

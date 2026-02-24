@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common"
 
 import { CacheService } from "../cache/cache.service"
+import { NewsSourceRuntimeSecretsService } from "../system-settings/news-source-runtime-secrets.service"
 
 import {
   BATCH_CONCURRENCY,
@@ -24,9 +25,10 @@ export class NewsAggregatorService {
   constructor(
     private readonly cacheService: CacheService,
     private readonly registryService: NewsAggregatorRegistryService,
+    private readonly runtimeSecretsService: NewsSourceRuntimeSecretsService,
   ) {}
 
-  async fetchSource(id: string): Promise<SourceResponse> {
+  async fetchSource(id: string, forceRefresh = false): Promise<SourceResponse> {
     const sourceId = id as SourceID
     const source = this.registryService.getSource(sourceId)
     if (!source) {
@@ -43,13 +45,18 @@ export class NewsAggregatorService {
     const cacheKey = this.buildCacheKey(sourceId)
     const staleKey = this.buildStaleKey(sourceId)
 
-    const cached = await this.safeGetCache<SourceResponse>(cacheKey)
-    if (cached) {
+    const cached = !forceRefresh ? await this.safeGetCache<SourceResponse>(cacheKey) : null
+    if (cached && !forceRefresh) {
       return { ...cached, id: sourceId, status: "cache" }
     }
 
     const refresh = async (): Promise<SourceResponse> => {
-      const items = this.normalizeItems(await getter())
+      const runtimeSecrets = await this.runtimeSecretsService.getSecretsForSource(sourceId, resolvedId)
+      const items = this.normalizeItems(await getter({
+        sourceId: resolvedId,
+        requestedSourceId: sourceId,
+        secrets: runtimeSecrets,
+      }))
       const response: SourceResponse = {
         status: "success",
         id: sourceId,
