@@ -1,10 +1,15 @@
 "use client";
 
-import { ReloadOutlined, StarFilled, StarOutlined, DragOutlined } from "@ant-design/icons";
+import {
+  DragOutlined,
+  ReloadOutlined,
+  StarFilled,
+  StarOutlined,
+} from "@ant-design/icons";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button, Skeleton, Tooltip } from "antd";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useRelativeTime } from "../hooks/use-relative-time";
 import { useNewsSource, type Source } from "../hooks/use-news-sources";
@@ -18,26 +23,78 @@ interface NewsnowCardProps {
 }
 
 const colorMap: Record<string, string> = {
-  slate: "bg-slate-500",
-  blue: "bg-blue-500",
-  red: "bg-red-500",
-  green: "bg-green-500",
-  orange: "bg-orange-500",
-  gray: "bg-gray-500",
-  indigo: "bg-indigo-500",
-  emerald: "bg-emerald-500",
-  teal: "bg-teal-500",
-  yellow: "bg-yellow-500",
+  slate: "bg-slate-400",
+  blue: "bg-blue-400",
+  red: "bg-red-400",
+  green: "bg-green-400",
+  orange: "bg-orange-400",
+  gray: "bg-zinc-400",
+  indigo: "bg-indigo-400",
+  emerald: "bg-emerald-400",
+  teal: "bg-teal-400",
+  yellow: "bg-amber-400",
 };
 
+const cardShellMap: Record<string, string> = {
+  slate: "border-slate-300/30 bg-[#0f1520]",
+  blue: "border-blue-300/28 bg-[#0b1424]",
+  red: "border-red-300/28 bg-[#1a1018]",
+  green: "border-green-300/28 bg-[#0d1a19]",
+  orange: "border-orange-300/28 bg-[#1b1510]",
+  gray: "border-zinc-300/28 bg-[#111824]",
+  indigo: "border-indigo-300/28 bg-[#10152b]",
+  emerald: "border-emerald-300/28 bg-[#0c1d19]",
+  teal: "border-teal-300/28 bg-[#0b1c22]",
+  yellow: "border-amber-300/28 bg-[#191810]",
+};
+
+const cardGlowMap: Record<string, string> = {
+  slate: "shadow-[0_20px_44px_-34px_rgba(148,163,184,0.54)]",
+  blue: "shadow-[0_20px_44px_-34px_rgba(59,130,246,0.56)]",
+  red: "shadow-[0_20px_44px_-34px_rgba(244,63,94,0.54)]",
+  green: "shadow-[0_20px_44px_-34px_rgba(16,185,129,0.54)]",
+  orange: "shadow-[0_20px_44px_-34px_rgba(249,115,22,0.54)]",
+  gray: "shadow-[0_20px_44px_-34px_rgba(161,161,170,0.5)]",
+  indigo: "shadow-[0_20px_44px_-34px_rgba(99,102,241,0.56)]",
+  emerald: "shadow-[0_20px_44px_-34px_rgba(16,185,129,0.56)]",
+  teal: "shadow-[0_20px_44px_-34px_rgba(20,184,166,0.56)]",
+  yellow: "shadow-[0_20px_44px_-34px_rgba(245,158,11,0.5)]",
+};
+
+const accentMap: Record<string, string> = {
+  slate: "text-slate-300",
+  blue: "text-blue-300",
+  red: "text-red-300",
+  green: "text-green-300",
+  orange: "text-orange-300",
+  gray: "text-gray-300",
+  indigo: "text-indigo-300",
+  emerald: "text-emerald-300",
+  teal: "text-teal-300",
+  yellow: "text-yellow-300",
+};
+
+const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
+
 export function NewsnowCard({ id, source }: NewsnowCardProps) {
-  const { data, isLoading, isError, isFetching, refresh } = useNewsSource(id, source.interval);
+  const { data, isLoading, isError, isFetching, refresh } = useNewsSource(
+    id,
+    source.interval,
+  );
   const { focusSources, toggleFocus } = useNewsnowStore();
   const { getRelativeTime } = useRelativeTime();
   const isFocused = focusSources.includes(id);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [iconLoadError, setIconLoadError] = useState(false);
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -46,73 +103,145 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const colorClass = colorMap[source.color] || "bg-blue-500";
+  const colorClass = colorMap[source.color] || "bg-blue-400";
+  const cardShellClass =
+    cardShellMap[source.color] || "border-blue-300/28 bg-[#0b1424]";
+  const cardGlowClass =
+    cardGlowMap[source.color] ||
+    "shadow-[0_20px_44px_-34px_rgba(59,130,246,0.54)]";
+  const accentClass = accentMap[source.color] || "text-blue-300";
+  const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
+  const iconUrl = `/icons/${sourceBaseId}.png`;
+  const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await refresh();
     } catch {
-      // error handled by React Query
+      // Error is surfaced by React Query state.
     } finally {
       setIsRefreshing(false);
     }
   };
 
+  const updatedText = data?.updatedTime
+    ? `${getRelativeTime(data.updatedTime)}更新`
+    : isError
+      ? "获取失败"
+      : "加载中...";
+
   return (
-    <div
+    <article
       ref={setNodeRef}
       style={style}
-      className="flex h-[500px] flex-col rounded-lg border bg-white shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+      className={`flex h-[500px] flex-col overflow-hidden rounded-2xl border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-white/12 ${cardShellClass} ${cardGlowClass}`}
     >
-      <div className={`h-1 w-full rounded-t-lg ${colorClass}`} />
-      <div className="flex items-center justify-between border-b px-4 py-2 dark:border-zinc-800">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div {...attributes} {...listeners} aria-label="拖动重新排序" className="cursor-grab p-1 text-zinc-400 hover:text-zinc-600 active:cursor-grabbing">
-            <DragOutlined />
-          </div>
-          <div className="overflow-hidden">
-            <h3 className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-200">{source.name}</h3>
-            {source.title && (
-              <p className="truncate text-[10px] text-zinc-400 dark:text-zinc-500">{source.title}</p>
+      <div className={`h-0.5 w-full ${colorClass}`} />
+      <div className="pointer-events-none h-2.5 w-full bg-gradient-to-b from-white/8 to-transparent" />
+      <div className="flex items-start justify-between px-3 pb-2 pt-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <a
+            href={source.home}
+            title={source.desc}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-black/45 text-xs font-semibold text-zinc-200"
+          >
+            {iconLoadError ? (
+              <span>{source.name.slice(0, 1)}</span>
+            ) : (
+              <img
+                src={iconUrl}
+                alt={source.name}
+                className="h-full w-full object-cover"
+                referrerPolicy="no-referrer"
+                onError={() => setIconLoadError(true)}
+              />
             )}
+          </a>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h3 className="truncate text-[15px] font-semibold tracking-[0.01em] text-zinc-100">
+                {source.name}
+              </h3>
+              {source.title ? (
+                <span className="truncate rounded bg-black/35 px-1.5 py-0.5 text-[10px] text-zinc-300/95">
+                  {source.title}
+                </span>
+              ) : null}
+            </div>
+            <p className="truncate text-[11px] text-zinc-300/80">
+              {updatedText}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-zinc-400">
-            {data?.updatedTime ? getRelativeTime(data.updatedTime) : ""}
-          </span>
+        <div
+          className={`ml-2 flex shrink-0 items-center gap-0.5 ${accentClass}`}
+        >
           <Tooltip title="刷新">
             <Button
               type="text"
               size="small"
               loading={isFetching || isRefreshing}
               icon={<ReloadOutlined />}
-              onClick={() => { void handleRefresh(); }}
-              className="text-zinc-400 hover:text-blue-500"
+              onClick={() => {
+                void handleRefresh();
+              }}
+              className="text-zinc-300 hover:bg-white/10 hover:text-current"
             />
           </Tooltip>
           <Tooltip title={isFocused ? "取消关注" : "关注"}>
             <Button
               type="text"
               size="small"
-              icon={isFocused ? <StarFilled className="text-yellow-500" /> : <StarOutlined />}
+              icon={
+                isFocused ? (
+                  <StarFilled className="text-yellow-500" />
+                ) : (
+                  <StarOutlined />
+                )
+              }
               onClick={() => toggleFocus(id)}
-              className="text-zinc-400 hover:text-yellow-500"
+              className="text-zinc-300 hover:bg-white/10 hover:text-yellow-500"
             />
+          </Tooltip>
+          <Tooltip title="拖动排序">
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              aria-label="拖动重新排序"
+              className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 active:cursor-grabbing"
+            >
+              <DragOutlined />
+            </button>
           </Tooltip>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-1 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800">
+      <div className="mx-2 mb-2 flex-1 overflow-y-auto rounded-xl border border-white/8 bg-[linear-gradient(180deg,#090d14_0%,#070a11_100%)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_18px_-16px_rgba(0,0,0,0.9)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {isLoading ? (
           <div className="space-y-3 p-2">
             <Skeleton active paragraph={{ rows: 8 }} />
           </div>
         ) : isError ? (
           <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
-            <p className="text-sm text-zinc-500">获取失败</p>
-            <Button size="small" onClick={() => { void handleRefresh(); }}>
+            <p className="text-sm text-zinc-300">获取失败</p>
+            {needsRuntimeSecret ? (
+              <a
+                href="/settings/system?tab=newsSourceRuntimeSecrets"
+                className="text-xs text-blue-300 underline-offset-2 hover:underline"
+              >
+                去系统设置 &gt; 新闻源密钥
+              </a>
+            ) : null}
+            <Button
+              size="small"
+              onClick={() => {
+                void handleRefresh();
+              }}
+            >
               重试
             </Button>
           </div>
@@ -123,11 +252,19 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
             <NewsListTimeline items={data.items} />
           )
         ) : (
-          <div className="flex h-full items-center justify-center p-4 text-center">
-            <p className="text-xs text-zinc-400">暂无数据</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+            <p className="text-xs text-zinc-300">暂无数据</p>
+            {needsRuntimeSecret ? (
+              <a
+                href="/settings/system?tab=newsSourceRuntimeSecrets"
+                className="text-xs text-blue-300 underline-offset-2 hover:underline"
+              >
+                该源可能需要先配置密钥
+              </a>
+            ) : null}
           </div>
         )}
       </div>
-    </div>
+    </article>
   );
 }

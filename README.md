@@ -421,6 +421,12 @@ infra/
      --config /app/config.yaml
    ```
 
+## 开源复用声明（NewsNow）
+
+- `/newsnow` 页面复用了 `https://github.com/ourongxing/newsnow` 的实现思路与部分源码，遵循 MIT License。
+- 归属声明：`Copyright (c) ourongxing`。
+- 完整许可证文本见 `apps/web/public/licenses/newsnow-mit.txt`（运行时访问路径：`/licenses/newsnow-mit.txt`）。
+
 ## TODO 与扩展点
 
 - [x] 在简单的撤销机制之外，实现刷新令牌黑名单

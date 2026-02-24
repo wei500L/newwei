@@ -49,12 +49,51 @@ export interface Column {
 
 const api = createApiClient();
 
+function coerceSourceResponse(data: SourceResponse): SourceResponse {
+  return {
+    ...data,
+    items: Array.isArray(data.items) ? data.items : [],
+  };
+}
+
+function normalizeSourceResponse(
+  incoming: SourceResponse,
+  previous?: SourceResponse
+): SourceResponse {
+  if (!previous?.items?.length) {
+    return incoming;
+  }
+
+  const previousPositions = new Map<string, number>();
+  previous.items.forEach((item, index) => {
+    previousPositions.set(String(item.id), index);
+  });
+
+  return {
+    ...incoming,
+    items: incoming.items.map((item, index) => {
+      const previousIndex = previousPositions.get(String(item.id));
+      if (previousIndex === undefined) {
+        return item;
+      }
+
+      return {
+        ...item,
+        extra: {
+          ...(item.extra ?? {}),
+          diff: previousIndex - index,
+        },
+      };
+    }),
+  };
+}
+
 async function fetchSourceById(id: string, latest = false): Promise<SourceResponse> {
   const query = latest
     ? `/news-aggregator/source?id=${encodeURIComponent(id)}&latest=1`
     : `/news-aggregator/source?id=${encodeURIComponent(id)}`;
   const { data } = await api.get(query);
-  return data;
+  return coerceSourceResponse(data as SourceResponse);
 }
 
 export function useNewsMetadata() {
@@ -73,7 +112,11 @@ export function useNewsSource(id: string, interval?: number) {
 
   const sourceQuery = useQuery<SourceResponse>({
     queryKey: ["news-source", id],
-    queryFn: async () => await fetchSourceById(id),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<SourceResponse>(["news-source", id]);
+      const incoming = await fetchSourceById(id);
+      return normalizeSourceResponse(incoming, previous);
+    },
     refetchInterval: interval || false,
     staleTime: 1000 * 30, // 30 seconds
     retry: false,
@@ -84,7 +127,8 @@ export function useNewsSource(id: string, interval?: number) {
   return {
     ...sourceQuery,
     refresh: async () => {
-      const latestData = await fetchSourceById(id, true);
+      const previous = queryClient.getQueryData<SourceResponse>(["news-source", id]);
+      const latestData = normalizeSourceResponse(await fetchSourceById(id, true), previous);
       queryClient.setQueryData(["news-source", id], latestData);
       return latestData;
     },
@@ -103,7 +147,9 @@ export function useBatchPrefetch() {
       });
 
       data.results.forEach((source) => {
-        queryClient.setQueryData(["news-source", source.id], source);
+        const normalizedSource = coerceSourceResponse(source);
+        const previous = queryClient.getQueryData<SourceResponse>(["news-source", normalizedSource.id]);
+        queryClient.setQueryData(["news-source", normalizedSource.id], normalizeSourceResponse(normalizedSource, previous));
       });
     } catch (error) {
       console.error("Batch prefetch failed:", error);

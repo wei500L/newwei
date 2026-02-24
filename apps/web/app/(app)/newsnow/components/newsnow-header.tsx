@@ -28,9 +28,9 @@ export function NewsnowHeader() {
   const allTabs = [...staticTabs, ...dynamicTabs];
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur-md dark:bg-zinc-900/80">
-      <div className="mx-auto flex h-14 max-w-7xl items-center px-4">
-        <nav className="flex h-full flex-1 items-center space-x-1 overflow-x-auto scrollbar-hide">
+    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[linear-gradient(180deg,rgba(7,10,17,0.96)_0%,rgba(6,9,15,0.94)_100%)] shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)] backdrop-blur-md">
+      <div className="mx-auto flex h-12 w-full items-center px-3 md:px-4">
+        <nav className="flex h-full flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {allTabs.map((tab) => {
             const href = `/newsnow/${tab.key}`;
             const isActive = pathname === href;
@@ -39,8 +39,10 @@ export function NewsnowHeader() {
                 key={tab.key}
                 href={href}
                 aria-current={isActive ? "page" : undefined}
-                className={`whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors hover:text-blue-600 ${
-                  isActive ? "border-b-2 border-blue-600 text-blue-600" : "text-zinc-600 dark:text-zinc-400"
+                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium tracking-[0.01em] transition-all ${
+                  isActive
+                    ? "bg-white/12 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-white/20"
+                    : "text-zinc-400 hover:bg-white/6 hover:text-zinc-100"
                 }`}
               >
                 {tab.name}
@@ -48,18 +50,21 @@ export function NewsnowHeader() {
             );
           })}
         </nav>
-        <div className="ml-4 flex items-center">
+        <div className="ml-3 flex items-center border-l border-white/10 pl-3">
           <Button
             type="text"
             icon={<SearchOutlined />}
             onClick={() => setIsSearchOpen(true)}
-            className="flex items-center dark:text-zinc-400"
+            className="flex items-center rounded-md text-zinc-400 hover:bg-white/6 hover:text-zinc-100"
           >
             搜索
           </Button>
         </div>
       </div>
-      <NewsnowSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      <NewsnowSearch
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+      />
     </header>
   );
 }

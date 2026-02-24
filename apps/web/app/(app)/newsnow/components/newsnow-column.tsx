@@ -22,7 +22,7 @@ export function NewsnowColumn({ columnKey, sourceIds, sources }: NewsnowColumnPr
   }, [sourceIds, sources]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <div className="mx-auto w-full max-w-[1880px] px-3 py-4 md:px-4 md:py-5">
       <NewsnowDndGrid columnKey={columnKey} sourceIds={sourceIds} sourcesMap={sourcesMap} />
     </div>
   );

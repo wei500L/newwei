@@ -2,10 +2,21 @@
 
 import { message } from "antd";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from "react";
 
 import { ActionRail } from "./action-rail";
-import { DESKTOP_RAIL_MIN_WIDTH, resolveNavMode, type NavMode } from "./nav-mode";
+import {
+  DESKTOP_RAIL_MIN_WIDTH,
+  resolveNavMode,
+  type NavMode,
+} from "./nav-mode";
 import { TopNav } from "./top-nav";
 import { UrlStateSync } from "./url-state-sync";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
@@ -18,14 +29,17 @@ import { UserUiSettingsSync } from "./user-ui-settings-sync";
  *   2. The page will automatically use max-w-[1920px] instead of max-w-[1440px]
  */
 const WIDE_LAYOUT_PATHS = [
-  "/situation-monitor",  // Multi-panel monitoring dashboard
-  "/dashboard",          // Analytics and charts
-  "/map",                // Full-screen map visualization
+  "/situation-monitor", // Multi-panel monitoring dashboard
+  "/dashboard", // Analytics and charts
+  "/map", // Full-screen map visualization
 ] as const;
 
 const FLUID_LAYOUT_PATHS = [
-  "/assistant",          // Chat layout benefits from using almost full width
+  "/assistant", // Chat layout benefits from using almost full width
+  "/newsnow", // News board should feel edge-to-edge
 ] as const;
+
+const EDGE_TO_EDGE_LAYOUT_PATHS = ["/newsnow"] as const;
 
 function useContainerClass(): string {
   const pathname = usePathname();
@@ -34,21 +48,57 @@ function useContainerClass(): string {
     return "w-full max-w-none mx-0";
   }
 
-  const isFluid = FLUID_LAYOUT_PATHS.some(path => pathname?.startsWith(path));
+  const isFluid = FLUID_LAYOUT_PATHS.some((path) => pathname?.startsWith(path));
   if (isFluid) {
     return "w-full max-w-none mx-0";
   }
 
-  const isWide = WIDE_LAYOUT_PATHS.some(path => pathname?.startsWith(path));
+  const isWide = WIDE_LAYOUT_PATHS.some((path) => pathname?.startsWith(path));
   if (isWide) {
     return "w-full max-w-[1920px] mx-auto";
   }
   return "w-full max-w-[1440px] mx-auto";
 }
 
+function useContentPaddingClass(): string {
+  const pathname = usePathname();
+  const isEdgeToEdge = EDGE_TO_EDGE_LAYOUT_PATHS.some((path) =>
+    pathname?.startsWith(path),
+  );
+  if (isEdgeToEdge) {
+    return "p-0";
+  }
+  return "p-4 md:p-6";
+}
+
+function useMainScrollbarClass(): string {
+  const pathname = usePathname();
+  const isEdgeToEdge = EDGE_TO_EDGE_LAYOUT_PATHS.some((path) =>
+    pathname?.startsWith(path),
+  );
+  if (isEdgeToEdge) {
+    return "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+  }
+  return "scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent";
+}
+
+function useMainSurfaceClass(): string {
+  const pathname = usePathname();
+  const isEdgeToEdge = EDGE_TO_EDGE_LAYOUT_PATHS.some((path) =>
+    pathname?.startsWith(path),
+  );
+  if (isEdgeToEdge) {
+    return "bg-[#04060b]";
+  }
+  return "";
+}
+
 export function ShellLayout({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
   const containerClass = useContainerClass();
+  const contentPaddingClass = useContentPaddingClass();
+  const mainScrollbarClass = useMainScrollbarClass();
+  const mainSurfaceClass = useMainSurfaceClass();
   const shellContentRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(DESKTOP_RAIL_MIN_WIDTH);
   const [availableRailHeight, setAvailableRailHeight] = useState(0);
@@ -76,14 +126,17 @@ export function ShellLayout({ children }: PropsWithChildren) {
     const updateAvailableRailHeight = () => {
       const styles = window.getComputedStyle(shellContent);
       const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
-      setAvailableRailHeight(Math.max(shellContent.clientHeight - paddingTop, 0));
+      setAvailableRailHeight(
+        Math.max(shellContent.clientHeight - paddingTop, 0),
+      );
     };
 
     updateAvailableRailHeight();
 
     if (typeof ResizeObserver === "undefined") {
       window.addEventListener("resize", updateAvailableRailHeight);
-      return () => window.removeEventListener("resize", updateAvailableRailHeight);
+      return () =>
+        window.removeEventListener("resize", updateAvailableRailHeight);
     }
 
     const observer = new ResizeObserver(updateAvailableRailHeight);
@@ -101,9 +154,9 @@ export function ShellLayout({ children }: PropsWithChildren) {
       resolveNavMode({
         viewportWidth,
         availableRailHeight,
-        railContentHeight
+        railContentHeight,
       }),
-    [availableRailHeight, railContentHeight, viewportWidth]
+    [availableRailHeight, railContentHeight, viewportWidth],
   );
 
   return (
@@ -121,11 +174,16 @@ export function ShellLayout({ children }: PropsWithChildren) {
         className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
       >
         <div className="relative z-20 h-full shrink-0 min-h-0">
-          <ActionRail mode={navMode} onContentHeightChange={setRailContentHeight} />
+          <ActionRail
+            mode={navMode}
+            onContentHeightChange={setRailContentHeight}
+          />
         </div>
 
-        <main className="relative z-0 flex-1 overflow-auto scrollbar-thin scrollbar-thumb-slate-200/80 hover:scrollbar-thumb-slate-300/90 scrollbar-track-transparent">
-          <div className={`${containerClass} p-4 md:p-6`}>
+        <main
+          className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass} ${mainSurfaceClass}`}
+        >
+          <div className={`${containerClass} ${contentPaddingClass}`}>
             {children}
           </div>
         </main>
