@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -362,8 +360,19 @@ export enum AssistantForecastModelKind {
   Ets = 'ets'
 }
 
+export enum AssistantKnowledgeSource {
+  SiteDb = 'site_db',
+  WebSearch = 'web_search'
+}
+
+export enum AssistantLlmApiSurface {
+  ChatCompletions = 'chat_completions',
+  Responses = 'responses'
+}
+
 export type AssistantQueryInput = {
   conversationId?: InputMaybe<Scalars['String']['input']>;
+  knowledgeSource?: InputMaybe<AssistantKnowledgeSource>;
   message: Scalars['String']['input'];
 };
 
@@ -403,6 +412,13 @@ export enum AssistantRunType {
   Query = 'query',
   Report = 'report'
 }
+
+export type AssistantRuntimeCapabilitiesModel = {
+  __typename?: 'AssistantRuntimeCapabilitiesModel';
+  apiSurface?: Maybe<AssistantLlmApiSurface>;
+  assistantModel?: Maybe<Scalars['String']['output']>;
+  webSearchSupported: Scalars['Boolean']['output'];
+};
 
 export type AuditLogRetentionModel = {
   __typename?: 'AuditLogRetentionModel';
@@ -2280,6 +2296,7 @@ export type Query = {
   articleEntityLinks: Array<ArticleEntityLinkModel>;
   assistantEconomicSeriesSuggestions: Array<EconomicSeriesSuggestion>;
   assistantRuns: Array<AssistantRunModel>;
+  assistantRuntimeCapabilities: AssistantRuntimeCapabilitiesModel;
   auditLogRetention: AuditLogRetentionModel;
   authCacheSettings: AuthCacheSettingsModel;
   classificationQualitySettings: ClassificationQualitySettingsModel;

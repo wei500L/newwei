@@ -151,85 +151,95 @@ export function NotificationCenter() {
             </Button>
           </Space>
         </Space>
-        {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
-            <Spin />
-          </div>
-        ) : (
-          <List
-            dataSource={items}
-            locale={{ emptyText: t("notifications.empty") }}
-            renderItem={(item) => {
-              const isUnread = !item.readAt;
-              const action = resolveNotificationLink(item.data ?? null, t);
-              return (
-                <List.Item
-                  key={item.id}
-                  style={{
-                    cursor: "pointer",
-                    background: isUnread ? "rgba(24,144,255,0.06)" : undefined,
-                    borderRadius: 4,
-                    paddingLeft: 12,
-                    paddingRight: 12
-                  }}
-                  onClick={() => void markOneAsRead(item.id)}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space size="small" align="center">
-                        <Tag color={typeColor[item.type] ?? "default"}>
-                          {t(`notifications.type.${item.type}`)}
-                        </Tag>
-                        <Typography.Text strong>{item.title}</Typography.Text>
-                      </Space>
-                    }
-                    description={
-                      <div>
-                        {item.body ? (
-                          <Typography.Paragraph
-                            style={{ marginBottom: 6 }}
-                            ellipsis={{ rows: 2, expandable: false }}
-                          >
-                            {item.body}
-                          </Typography.Paragraph>
-                        ) : null}
+        <div
+          style={{
+            maxHeight: "min(60vh, 480px)",
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            WebkitOverflowScrolling: "touch"
+          }}
+          onWheelCapture={(event) => event.stopPropagation()}
+        >
+          {loading ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
+              <Spin />
+            </div>
+          ) : (
+            <List
+              dataSource={items}
+              locale={{ emptyText: t("notifications.empty") }}
+              renderItem={(item) => {
+                const isUnread = !item.readAt;
+                const action = resolveNotificationLink(item.data ?? null, t);
+                return (
+                  <List.Item
+                    key={item.id}
+                    style={{
+                      cursor: "pointer",
+                      background: isUnread ? "rgba(24,144,255,0.06)" : undefined,
+                      borderRadius: 4,
+                      paddingLeft: 12,
+                      paddingRight: 12
+                    }}
+                    onClick={() => void markOneAsRead(item.id)}
+                  >
+                    <List.Item.Meta
+                      title={
                         <Space size="small" align="center">
-                          <Typography.Text type="secondary">
-                            {formatDateTime(item.createdAt, locale, {
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                              hour12: false
-                            })}
-                          </Typography.Text>
-                          {action ? (
-                            <Button
-                              type="link"
-                              size="small"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void markOneAsRead(item.id);
-                                router.push(action.href);
-                                setOpen(false);
-                              }}
-                              className="px-0"
-                            >
-                              {action.label}
-                            </Button>
-                          ) : null}
+                          <Tag color={typeColor[item.type] ?? "default"}>
+                            {t(`notifications.type.${item.type}`)}
+                          </Tag>
+                          <Typography.Text strong>{item.title}</Typography.Text>
                         </Space>
-                      </div>
-                    }
-                  />
-                  {isUnread ? <Badge status="processing" /> : null}
-                </List.Item>
-              );
-            }}
-          />
-        )}
+                      }
+                      description={
+                        <div>
+                          {item.body ? (
+                            <Typography.Paragraph
+                              style={{ marginBottom: 6 }}
+                              ellipsis={{ rows: 2, expandable: false }}
+                            >
+                              {item.body}
+                            </Typography.Paragraph>
+                          ) : null}
+                          <Space size="small" align="center">
+                            <Typography.Text type="secondary">
+                              {formatDateTime(item.createdAt, locale, {
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false
+                              })}
+                            </Typography.Text>
+                            {action ? (
+                              <Button
+                                type="link"
+                                size="small"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void markOneAsRead(item.id);
+                                  router.push(action.href);
+                                  setOpen(false);
+                                }}
+                                className="px-0"
+                              >
+                                {action.label}
+                              </Button>
+                            ) : null}
+                          </Space>
+                        </div>
+                      }
+                    />
+                    {isUnread ? <Badge status="processing" /> : null}
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+        </div>
       </div>
     );
   }, [items, loading, locale, markAllAsRead, markOneAsRead, refetch, router, t, unread]);

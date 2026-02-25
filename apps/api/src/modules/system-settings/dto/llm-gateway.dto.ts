@@ -86,6 +86,14 @@ export class CreateLlmGatewayDto {
   assistantModel?: string | null;
 
   @ApiPropertyOptional({
+    description:
+      "Enable web search capability for /assistant when this profile is active. Requires apiSurface=responses."
+  })
+  @IsOptional()
+  @IsBoolean()
+  assistantWebSearchEnabled?: boolean;
+
+  @ApiPropertyOptional({
     description: "Completion API surface: chat_completions (default) or responses.",
     enum: LLM_GATEWAY_API_SURFACES
   })
@@ -218,6 +226,14 @@ export class UpdateLlmGatewayDto {
   @IsOptional()
   @IsString()
   assistantModel?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Enable web search capability for /assistant when this profile is active. Requires apiSurface=responses."
+  })
+  @IsOptional()
+  @IsBoolean()
+  assistantWebSearchEnabled?: boolean;
 
   @ApiPropertyOptional({
     description: "Completion API surface: chat_completions (default) or responses.",

@@ -10,7 +10,14 @@ import type { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { AssistantForecastInput, AssistantQueryInput, AssistantReportInput } from "../dto/assistant.input";
 import type { GqlRequest } from "../graphql.types";
-import { AssistantRunModel, AssistantRunStatus, AssistantRunType, EconomicSeriesSuggestionModel } from "../models/assistant.model";
+import {
+  AssistantLlmApiSurface,
+  AssistantRunModel,
+  AssistantRunStatus,
+  AssistantRunType,
+  AssistantRuntimeCapabilitiesModel,
+  EconomicSeriesSuggestionModel
+} from "../models/assistant.model";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -75,6 +82,28 @@ export class AssistantResolver {
       description: candidate.description ?? null,
       docUrl: candidate.sourceDocUrl ?? null
     }));
+  }
+
+  @HasPermission("assistant.read")
+  @Query(() => AssistantRuntimeCapabilitiesModel)
+  async assistantRuntimeCapabilities(
+    @Context("req") req: GqlRequest
+  ): Promise<AssistantRuntimeCapabilitiesModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const capabilities = await this.assistantService.getRuntimeCapabilities();
+    return {
+      assistantModel: capabilities.assistantModel,
+      apiSurface:
+        capabilities.apiSurface === "responses"
+          ? AssistantLlmApiSurface.responses
+          : capabilities.apiSurface === "chat_completions"
+            ? AssistantLlmApiSurface.chat_completions
+            : null,
+      webSearchSupported: capabilities.webSearchSupported
+    };
   }
 
   @HasPermission("assistant.run")

@@ -126,20 +126,25 @@ describe("LlmGatewaySettingsService", () => {
       apiBase: "http://localhost:4001/v1",
       model: "openai/gpt-4o-mini",
       assistantModel: "openai/gpt-4.1-mini",
+      assistantWebSearchEnabled: true,
       enabled: true
     });
 
     expect(created.assistantModel).toBe("openai/gpt-4.1-mini");
+    expect(created.assistantWebSearchEnabled).toBe(true);
 
     const active = await service.getActiveConfig();
     expect(active?.assistantModel).toBe("openai/gpt-4.1-mini");
+    expect(active?.assistantWebSearchEnabled).toBe(true);
 
     await service.updateProfile("org-1", "actor-1", created.id, {
-      assistantModel: null
+      assistantModel: null,
+      assistantWebSearchEnabled: false
     });
 
     const listed = await service.list();
     expect(listed.profiles[0]?.assistantModel).toBeUndefined();
+    expect(listed.profiles[0]?.assistantWebSearchEnabled).toBe(false);
   });
 
   it("uses active profile for embeddings when embeddingActiveId is unset", async () => {

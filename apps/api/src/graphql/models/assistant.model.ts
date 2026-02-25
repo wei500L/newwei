@@ -14,8 +14,14 @@ export enum AssistantRunStatus {
   failed = "failed"
 }
 
+export enum AssistantLlmApiSurface {
+  chat_completions = "chat_completions",
+  responses = "responses"
+}
+
 registerEnumType(AssistantRunType, { name: "AssistantRunType" });
 registerEnumType(AssistantRunStatus, { name: "AssistantRunStatus" });
+registerEnumType(AssistantLlmApiSurface, { name: "AssistantLlmApiSurface" });
 
 @ObjectType()
 export class AssistantRunModel {
@@ -60,4 +66,16 @@ export class EconomicSeriesSuggestionModel {
 
   @Field(() => String, { nullable: true })
   docUrl?: string | null;
+}
+
+@ObjectType()
+export class AssistantRuntimeCapabilitiesModel {
+  @Field(() => String, { nullable: true })
+  assistantModel?: string | null;
+
+  @Field(() => AssistantLlmApiSurface, { nullable: true })
+  apiSurface?: AssistantLlmApiSurface | null;
+
+  @Field(() => Boolean)
+  webSearchSupported!: boolean;
 }

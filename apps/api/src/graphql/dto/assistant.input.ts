@@ -3,6 +3,13 @@ import { IsEnum, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength,
 
 import { AssistantRunType } from "../models/assistant.model";
 
+export enum AssistantKnowledgeSource {
+  site_db = "site_db",
+  web_search = "web_search"
+}
+
+registerEnumType(AssistantKnowledgeSource, { name: "AssistantKnowledgeSource" });
+
 @InputType()
 export class AssistantQueryInput {
   @Field()
@@ -15,6 +22,11 @@ export class AssistantQueryInput {
   @MaxLength(128)
   @Matches(/^[A-Za-z0-9:_-]+$/)
   conversationId?: string;
+
+  @Field(() => AssistantKnowledgeSource, { nullable: true })
+  @IsOptional()
+  @IsEnum(AssistantKnowledgeSource)
+  knowledgeSource?: AssistantKnowledgeSource;
 }
 
 export enum AssistantReportPeriod {

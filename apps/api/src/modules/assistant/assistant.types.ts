@@ -3,9 +3,12 @@ export type AssistantJobPayload =
   | { type: "report"; runId: string; orgId?: string; traceId?: string }
   | { type: "forecast"; runId: string; orgId?: string; traceId?: string };
 
+export type AssistantKnowledgeSource = "site_db" | "web_search";
+
 export interface AssistantQueryInput {
   message: string;
   conversationId?: string;
+  knowledgeSource?: AssistantKnowledgeSource;
 }
 
 export type AssistantReportPeriod = "daily" | "weekly";

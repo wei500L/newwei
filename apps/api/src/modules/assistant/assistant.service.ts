@@ -1,6 +1,6 @@
 import { AssistantRunModel, ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { EconomicDataPoint } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
@@ -13,7 +13,7 @@ import { ItemsService } from "../items/items.service";
 import { ModelServiceClient } from "../model-service/model-service.client";
 import { LiteLlmGuardrailViolationError, LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
 import { AssistantSafetySettingsService } from "../system-settings/assistant-safety-settings.service";
-import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
+import { LlmGatewaySettingsService, type LlmGatewayApiSurface } from "../system-settings/llm-gateway-settings.service";
 import { OpenAiKeysSettingsService } from "../system-settings/openai-keys-settings.service";
 
 import {
@@ -25,7 +25,13 @@ import {
 import { ASSISTANT_QUEUE } from "./assistant.constants";
 import { AssistantStreamError } from "./assistant.errors";
 import { ASSISTANT_PUBSUB } from "./assistant.pubsub";
-import type { AssistantForecastInput, AssistantJobPayload, AssistantQueryInput, AssistantReportInput } from "./assistant.types";
+import type {
+  AssistantForecastInput,
+  AssistantJobPayload,
+  AssistantKnowledgeSource,
+  AssistantQueryInput,
+  AssistantReportInput
+} from "./assistant.types";
 
 const logger = createLogger({ name: "assistant-service" });
 
@@ -45,6 +51,12 @@ interface ParsedSeriesSpecifier {
   slug?: string;
   field?: string;
   query: string;
+}
+
+interface AssistantRuntimeCapabilities {
+  assistantModel: string | null;
+  apiSurface: LlmGatewayApiSurface | null;
+  webSearchSupported: boolean;
 }
 
 function parseSeriesSpecifier(input: string): ParsedSeriesSpecifier {
@@ -110,6 +122,8 @@ export class AssistantService {
   private static readonly QUERY_HISTORY_TOTAL_MAX_CHARS = 8_000;
   private static readonly CONVERSATION_ID_MAX_LENGTH = 128;
   private static readonly CONVERSATION_ID_PATTERN = /^[A-Za-z0-9:_-]+$/;
+  private static readonly DEFAULT_KNOWLEDGE_SOURCE: AssistantKnowledgeSource = "site_db";
+  private static readonly WEB_SEARCH_TOOL = [{ type: "web_search_preview" }] as const;
 
   constructor(
     private readonly llm: LiteLlmService,
@@ -128,9 +142,11 @@ export class AssistantService {
   async submitQuery(orgId: string, input: AssistantQueryInput, triggeredById?: string) {
     const normalizedConversationId = this.normalizeConversationId(input?.conversationId);
     const conversationId = normalizedConversationId || randomUUID();
+    const knowledgeSource = this.normalizeKnowledgeSource(input?.knowledgeSource);
     const queryInput: AssistantQueryInput = {
       ...input,
-      conversationId
+      conversationId,
+      knowledgeSource
     };
 
     const record = await AssistantRunModel.create({
@@ -188,6 +204,18 @@ export class AssistantService {
     return AssistantRunModel.find({ orgId }).sort({ createdAt: -1 }).limit(limit).lean();
   }
 
+  async getRuntimeCapabilities(): Promise<AssistantRuntimeCapabilities> {
+    const activeConfig = await this.llmGatewaySettings.getActiveConfig();
+    const assistantModel = this.normalizeModelName(activeConfig?.assistantModel) ?? this.normalizeModelName(activeConfig?.model);
+    const apiSurface = activeConfig?.apiSurface ?? null;
+    const webSearchSupported = apiSurface === "responses" && activeConfig?.assistantWebSearchEnabled === true;
+    return {
+      assistantModel: assistantModel ?? null,
+      apiSurface,
+      webSearchSupported
+    };
+  }
+
   async deleteRun(orgId: string, runId: string): Promise<boolean> {
     let record: { type: AssistantRunType; status: AssistantRunStatus } | null = null;
     try {
@@ -241,7 +269,8 @@ export class AssistantService {
         const runConversationId = this.normalizeConversationId(record.conversationId);
         const mergedQueryInput: AssistantQueryInput = {
           ...queryInput,
-          conversationId: this.normalizeConversationId(queryInput.conversationId) || runConversationId
+          conversationId: this.normalizeConversationId(queryInput.conversationId) || runConversationId,
+          knowledgeSource: this.normalizeKnowledgeSource(queryInput.knowledgeSource)
         };
         const output = await this.runQuery(
           record.orgId,
@@ -367,12 +396,7 @@ export class AssistantService {
 
   private async resolveAssistantModelOverride(): Promise<string | undefined> {
     const activeConfig = await this.llmGatewaySettings.getActiveConfig();
-    const override = activeConfig?.assistantModel;
-    if (typeof override !== "string") {
-      return undefined;
-    }
-    const normalized = override.trim();
-    return normalized.length > 0 ? normalized : undefined;
+    return this.normalizeModelName(activeConfig?.assistantModel);
   }
 
   private async runQuery(
@@ -387,8 +411,22 @@ export class AssistantService {
     if (!message) {
       throw new Error("Assistant query message is required");
     }
+    const knowledgeSource = this.normalizeKnowledgeSource(input?.knowledgeSource);
     const conversationId = this.normalizeConversationId(input?.conversationId);
     const historyMessages = await this.buildQueryConversationHistoryMessages(orgId, runId, createdAt, conversationId);
+
+    if (knowledgeSource === "web_search") {
+      return this.runWebSearchQuery(
+        orgId,
+        runId,
+        createdAt,
+        message,
+        historyMessages,
+        guardrails,
+        assistantModel
+      );
+    }
+
     const plannerHistory = historyMessages.slice(-AssistantService.QUERY_PLANNER_HISTORY_MESSAGE_LIMIT);
 
     const planner = this.prompts.buildQueryPlannerRequest(message);
@@ -511,6 +549,49 @@ export class AssistantService {
     return { plan, summary: stream.summary, raw: stream.raw };
   }
 
+  private async runWebSearchQuery(
+    orgId: string,
+    runId: string,
+    createdAt: Date,
+    message: string,
+    historyMessages: LiteLlmMessage[],
+    guardrails?: string[],
+    assistantModel?: string
+  ) {
+    const capabilities = await this.getRuntimeCapabilities();
+    if (!capabilities.webSearchSupported) {
+      throw new BadRequestException({
+        code: "WEB_SEARCH_UNSUPPORTED",
+        message: "Active assistant profile does not support web search."
+      });
+    }
+
+    const baseMessages: LiteLlmMessage[] = [
+      {
+        role: "system",
+        content: [
+          "You are a finance analysis assistant with web search capability.",
+          "Write the response in Simplified Chinese.",
+          "Use web search results when needed.",
+          "If no reliable sources are found, clearly state that limitation.",
+          "When citing facts from web search, include source links in markdown list format."
+        ].join("\n")
+      },
+      { role: "user", content: message }
+    ];
+    const messages = this.injectQueryHistory(baseMessages, historyMessages);
+    const stream = await this.streamMessages(orgId, runId, "query", createdAt, messages, {
+      guardrails,
+      assistantModel,
+      tools: [...AssistantService.WEB_SEARCH_TOOL]
+    });
+    return {
+      knowledgeSource: "web_search",
+      summary: stream.summary,
+      raw: stream.raw
+    };
+  }
+
   private async buildQueryConversationHistoryMessages(
     orgId: string,
     runId: string,
@@ -574,6 +655,21 @@ export class AssistantService {
       return [firstMessage, ...historyMessages, ...remainingMessages];
     }
     return [...historyMessages, ...messages];
+  }
+
+  private normalizeKnowledgeSource(value: unknown): AssistantKnowledgeSource {
+    if (value === "web_search") {
+      return "web_search";
+    }
+    return AssistantService.DEFAULT_KNOWLEDGE_SOURCE;
+  }
+
+  private normalizeModelName(value: unknown): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private normalizeConversationId(value: unknown): string {
@@ -1417,13 +1513,19 @@ export class AssistantService {
     type: AssistantRunType,
     createdAt: Date,
     messages: LiteLlmMessage[],
-    options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
+    options?: {
+      initialChunk?: string;
+      guardrails?: string[];
+      assistantModel?: string;
+      tools?: Record<string, unknown>[];
+    }
   ): Promise<{ summary: string; raw: Record<string, unknown> }> {
     const flushChars = Math.max(1, Number(this.env.assistantConfig.streamFlushChars ?? 80));
     const flushMs = Math.max(0, Number(this.env.assistantConfig.streamFlushMs ?? 250));
     const initialChunk = options?.initialChunk;
     const guardrails = options?.guardrails;
     const assistantModel = options?.assistantModel;
+    const tools = options?.tools;
 
     let buffer = "";
     let summary = "";
@@ -1452,7 +1554,8 @@ export class AssistantService {
         orgId,
         messages,
         timeoutMs: this.env.assistantConfig.llmTimeoutMs,
-        guardrails
+        guardrails,
+        tools
       })) {
         if (typeof chunk.model === "string") {
           lastModel = chunk.model;

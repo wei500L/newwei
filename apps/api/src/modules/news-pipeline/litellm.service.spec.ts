@@ -79,6 +79,7 @@ describe("LiteLlmService", () => {
       maxOutputTokens: 1200,
       maxRetries: 3,
       requestsPerMinute: 60,
+      assistantWebSearchEnabled: false,
     },
     pipeline: {
       rateLimitWindowSeconds: 60,
@@ -142,6 +143,7 @@ describe("LiteLlmService", () => {
       sendMetadata: true,
       responseFormatMode: "json_schema" as const,
       apiSurface: "chat_completions" as const,
+      assistantWebSearchEnabled: false,
     });
     llmGatewaySettings = {
       getActiveConfig: jest
@@ -610,6 +612,41 @@ describe("LiteLlmService", () => {
         expect.any(Object),
       );
       expect(chunks).toEqual(["Hel", "lo", "<stop>"]);
+    });
+
+    it("forwards tools to responses stream payload", async () => {
+      llmGatewaySettings.getActiveConfig.mockResolvedValueOnce({
+        ...mockConfig.litellm,
+        sendMetadata: true,
+        responseFormatMode: "json_schema",
+        apiSurface: "responses",
+      });
+      mockAxiosPost.mockResolvedValueOnce({
+        data: Readable.from([
+          'data: {"type":"response.completed"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+        status: 200,
+        statusText: "OK",
+        headers: { "content-type": "text/event-stream" },
+        config: { headers: new AxiosHeaders() },
+      });
+
+      for await (const _chunk of service.stream({
+        messages: [{ role: "user", content: "Search gold news" }],
+        tools: [{ type: "web_search_preview" }],
+      })) {
+        // noop
+      }
+
+      expect(mockAxiosPost).toHaveBeenCalledWith(
+        "/v1/responses",
+        expect.objectContaining({
+          stream: true,
+          tools: [{ type: "web_search_preview" }],
+        }),
+        expect.any(Object),
+      );
     });
   });
 

@@ -337,8 +337,19 @@ enum AssistantForecastModelKind {
   ets
 }
 
+enum AssistantKnowledgeSource {
+  site_db
+  web_search
+}
+
+enum AssistantLlmApiSurface {
+  chat_completions
+  responses
+}
+
 input AssistantQueryInput {
   conversationId: String
+  knowledgeSource: AssistantKnowledgeSource
   message: String!
 }
 
@@ -376,6 +387,12 @@ enum AssistantRunType {
   forecast
   query
   report
+}
+
+type AssistantRuntimeCapabilitiesModel {
+  apiSurface: AssistantLlmApiSurface
+  assistantModel: String
+  webSearchSupported: Boolean!
 }
 
 type AuditLogRetentionModel {
@@ -1961,6 +1978,7 @@ type Query {
   articleEntityLinks(articleId: String!, limit: Int): [ArticleEntityLinkModel!]!
   assistantEconomicSeriesSuggestions(limit: Int = 8, term: String!): [EconomicSeriesSuggestion!]!
   assistantRuns(limit: Int): [AssistantRunModel!]!
+  assistantRuntimeCapabilities: AssistantRuntimeCapabilitiesModel!
   auditLogRetention: AuditLogRetentionModel!
   authCacheSettings: AuthCacheSettingsModel!
   classificationQualitySettings: ClassificationQualitySettingsModel!

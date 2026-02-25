@@ -1,5 +1,5 @@
 import type { PubSubEngine } from "graphql-subscriptions";
-import { ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { AssistantRunModel } from "@modular/mongo";
 
 import type { EnvService } from "../config/config.service";
@@ -97,9 +97,13 @@ describe("AssistantService.submitQuery", () => {
       await service.submitQuery("org-1", { message: "hello" }, "user-1");
 
       expect(createSpy).toHaveBeenCalledTimes(1);
-      const payload = createSpy.mock.calls[0]?.[0] as { input?: { conversationId?: string }; conversationId?: string };
+      const payload = createSpy.mock.calls[0]?.[0] as {
+        input?: { conversationId?: string; knowledgeSource?: string };
+        conversationId?: string;
+      };
       expect(payload.conversationId).toEqual(expect.any(String));
       expect(payload.input?.conversationId).toBe(payload.conversationId);
+      expect(payload.input?.knowledgeSource).toBe("site_db");
       expect((queue as { add: jest.Mock }).add).toHaveBeenCalledWith(
         "query",
         { type: "query", runId: "run-1", orgId: "org-1", traceId: "test-trace-id" },
@@ -123,10 +127,14 @@ describe("AssistantService.submitQuery", () => {
     try {
       await service.submitQuery("org-1", { message: "hello", conversationId: "bad id with spaces" }, "user-1");
 
-      const payload = createSpy.mock.calls[0]?.[0] as { input?: { conversationId?: string }; conversationId?: string };
+      const payload = createSpy.mock.calls[0]?.[0] as {
+        input?: { conversationId?: string; knowledgeSource?: string };
+        conversationId?: string;
+      };
       expect(payload.conversationId).toEqual(expect.any(String));
       expect(payload.conversationId).not.toBe("bad id with spaces");
       expect(payload.input?.conversationId).toBe(payload.conversationId);
+      expect(payload.input?.knowledgeSource).toBe("site_db");
     } finally {
       createSpy.mockRestore();
     }
@@ -244,7 +252,7 @@ describe("AssistantService.streamMessages", () => {
         type: "query" | "report" | "forecast",
         createdAt: Date,
         messages: LiteLlmMessage[],
-        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
+        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string; tools?: Record<string, unknown>[] }
       ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
@@ -279,7 +287,7 @@ describe("AssistantService.streamMessages", () => {
         type: "query" | "report" | "forecast",
         createdAt: Date,
         messages: LiteLlmMessage[],
-        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
+        options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string; tools?: Record<string, unknown>[] }
       ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
@@ -305,7 +313,7 @@ describe("AssistantService.streamMessages", () => {
           type: "query" | "report" | "forecast",
           createdAt: Date,
           messages: LiteLlmMessage[],
-          options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string }
+          options?: { initialChunk?: string; guardrails?: string[]; assistantModel?: string; tools?: Record<string, unknown>[] }
         ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
       }
     ).streamMessages.bind(service);
@@ -534,5 +542,93 @@ describe("AssistantService.runQuery", () => {
       }
     );
     expect(result.summary).toBe("ok");
+  });
+
+  it("rejects web search query when active profile does not support it", async () => {
+    const { service } = createService({
+      stream: jest.fn() as unknown as LiteLlmService["stream"]
+    });
+
+    const runQuery = (
+      service as unknown as {
+        runQuery: (
+          orgId: string,
+          runId: string,
+          createdAt: Date,
+          input: { message: string; conversationId?: string; knowledgeSource?: "site_db" | "web_search" },
+          guardrails?: string[],
+          assistantModel?: string
+        ) => Promise<{ summary: string; raw: Record<string, unknown> }>;
+      }
+    ).runQuery.bind(service);
+
+    try {
+      await runQuery("org-1", "run-1", new Date("2026-01-01T00:00:00.000Z"), {
+        message: "给我查一下最新黄金新闻",
+        knowledgeSource: "web_search"
+      });
+      throw new Error("Expected runQuery to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      const response = (error as BadRequestException).getResponse() as { code?: string; message?: string };
+      expect(response.code).toBe("WEB_SEARCH_UNSUPPORTED");
+      expect(response.message).toContain("does not support web search");
+    }
+  });
+
+  it("passes web search tool to stream when active profile supports it", async () => {
+    const { service } = createService({
+      stream: jest.fn() as unknown as LiteLlmService["stream"]
+    });
+
+    (service as any).llmGatewaySettings = {
+      getActiveConfig: jest.fn().mockResolvedValue({
+        model: "openai/gpt-4o-mini",
+        apiSurface: "responses",
+        assistantWebSearchEnabled: true
+      })
+    };
+
+    jest.spyOn(service as any, "buildQueryConversationHistoryMessages").mockResolvedValue([
+      { role: "user", content: "上一条问题" },
+      { role: "assistant", content: "上一条回答" }
+    ]);
+    const streamMessages = jest
+      .spyOn(service as any, "streamMessages")
+      .mockResolvedValue({ summary: "web-ok", raw: { stream: true } });
+
+    const runQuery = (
+      service as unknown as {
+        runQuery: (
+          orgId: string,
+          runId: string,
+          createdAt: Date,
+          input: { message: string; conversationId?: string; knowledgeSource?: "site_db" | "web_search" },
+          guardrails?: string[],
+          assistantModel?: string
+        ) => Promise<{ summary: string; raw: Record<string, unknown>; knowledgeSource?: string }>;
+      }
+    ).runQuery.bind(service);
+
+    const result = await runQuery("org-1", "run-1", new Date("2026-01-01T00:00:00.000Z"), {
+      message: "给我查一下最新黄金新闻",
+      knowledgeSource: "web_search",
+      conversationId: "conversation-1"
+    });
+
+    const call = streamMessages.mock.calls[0];
+    expect(call?.[4]).toEqual([
+      expect.objectContaining({ role: "system" }),
+      { role: "user", content: "上一条问题" },
+      { role: "assistant", content: "上一条回答" },
+      { role: "user", content: "给我查一下最新黄金新闻" }
+    ]);
+    expect(call?.[5]).toEqual(
+      expect.objectContaining({
+        tools: [{ type: "web_search_preview" }]
+      })
+    );
+    expect(result.summary).toBe("web-ok");
+    expect(result.knowledgeSource).toBe("web_search");
   });
 });

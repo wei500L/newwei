@@ -33,6 +33,7 @@ export type LlmGatewayResolvedConfig = LiteLlmEnvConfig &
   LlmGatewayCompatibilityOptions & {
     apiKey?: string;
     assistantModel?: string;
+    assistantWebSearchEnabled: boolean;
   };
 
 export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> &
@@ -40,6 +41,7 @@ export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> &
     id: string;
     name: string;
     assistantModel?: string;
+    assistantWebSearchEnabled: boolean;
     enabled: boolean;
     hasApiKey: boolean;
     createdAt: string;
@@ -64,6 +66,7 @@ export type LlmGatewayProfileInput =
       embeddingModel?: string | null;
       rerankModel?: string | null;
       assistantModel?: string | null;
+      assistantWebSearchEnabled?: boolean;
     };
 
 interface StoredProfile
@@ -73,6 +76,7 @@ interface StoredProfile
   name: string;
   apiKey?: unknown;
   assistantModel?: string;
+  assistantWebSearchEnabled: boolean;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -96,6 +100,7 @@ const CACHE_TTL_SECONDS = 60;
 const DEFAULT_SEND_METADATA = true;
 const DEFAULT_RESPONSE_FORMAT_MODE: LlmGatewayResponseFormatMode = "json_schema";
 const DEFAULT_API_SURFACE: LlmGatewayApiSurface = "chat_completions";
+const DEFAULT_ASSISTANT_WEB_SEARCH_ENABLED = false;
 
 @Injectable()
 export class LlmGatewaySettingsService {
@@ -149,6 +154,7 @@ export class LlmGatewaySettingsService {
       apiBase: profile.apiBase,
       model: profile.model,
       assistantModel: profile.assistantModel,
+      assistantWebSearchEnabled: profile.assistantWebSearchEnabled,
       rerankModel: profile.rerankModel,
       rerankFallbackModels: profile.rerankFallbackModels,
       enabled: profile.enabled,
@@ -198,6 +204,7 @@ export class LlmGatewaySettingsService {
       apiBase: updated.apiBase,
       model: updated.model,
       assistantModel: updated.assistantModel,
+      assistantWebSearchEnabled: updated.assistantWebSearchEnabled,
       rerankModel: updated.rerankModel,
       rerankFallbackModels: updated.rerankFallbackModels,
       enabled: updated.enabled,
@@ -391,6 +398,7 @@ export class LlmGatewaySettingsService {
       embeddingModel: profile.embeddingModel,
       rerankModel: profile.rerankModel,
       ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
+      assistantWebSearchEnabled: profile.assistantWebSearchEnabled,
       apiBase: profile.apiBase,
       apiKey,
       timeoutMs: profile.timeoutMs,
@@ -582,6 +590,10 @@ export class LlmGatewaySettingsService {
       rerankModel: this.normalizeOptionalString(record.rerankModel),
       rerankFallbackModels: this.normalizeStringList(record.rerankFallbackModels, []),
       assistantModel: this.normalizeOptionalString(record.assistantModel),
+      assistantWebSearchEnabled: this.normalizeBoolean(
+        record.assistantWebSearchEnabled,
+        DEFAULT_ASSISTANT_WEB_SEARCH_ENABLED
+      ),
       timeoutMs: this.asPositiveInt(record.timeoutMs, fallback.timeoutMs),
       temperature: this.clampNumber(record.temperature, fallback.temperature, 0, 2),
       topP: this.clampNumber(record.topP, fallback.topP, 0, 1),
@@ -642,6 +654,14 @@ export class LlmGatewaySettingsService {
         input.assistantModel !== undefined
           ? this.normalizeOptionalString(input.assistantModel)
           : base.assistantModel ?? (fallback as Partial<StoredProfile>).assistantModel,
+      assistantWebSearchEnabled:
+        input.assistantWebSearchEnabled !== undefined
+          ? input.assistantWebSearchEnabled
+          : base.assistantWebSearchEnabled ??
+            this.normalizeBoolean(
+              (fallback as Partial<StoredProfile>).assistantWebSearchEnabled,
+              DEFAULT_ASSISTANT_WEB_SEARCH_ENABLED
+            ),
       timeoutMs:
         input.timeoutMs !== undefined
           ? this.asPositiveInt(input.timeoutMs, fallback.timeoutMs)
@@ -754,6 +774,7 @@ export class LlmGatewaySettingsService {
       embeddingModel: profile.embeddingModel,
       rerankModel: profile.rerankModel,
       ...(profile.assistantModel ? { assistantModel: profile.assistantModel } : {}),
+      assistantWebSearchEnabled: profile.assistantWebSearchEnabled,
       apiBase: profile.apiBase,
       timeoutMs: profile.timeoutMs,
       temperature: profile.temperature,

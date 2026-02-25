@@ -24,6 +24,7 @@ import {
   InputNumber,
   List,
   Modal,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -45,6 +46,12 @@ import {
   type BuildUserPromptStrings,
   type ResolveAssistantReplyStrings,
 } from '@/lib/assistant-chat';
+import {
+  DEFAULT_ASSISTANT_KNOWLEDGE_SOURCE,
+  isAssistantWebSearchUnsupportedError,
+  isAssistantKnowledgeSourceSupported,
+  type AssistantKnowledgeSource,
+} from '@/lib/assistant-knowledge-source';
 import { MarkdownViewer } from '@/components/markdown-viewer';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
@@ -75,7 +82,7 @@ interface RequestAssistantQueryData {
 }
 
 interface RequestAssistantQueryVariables {
-  input: { message: string; conversationId?: string };
+  input: { message: string; conversationId?: string; knowledgeSource?: AssistantKnowledgeSource };
 }
 
 interface RequestAssistantReportData {
@@ -111,6 +118,16 @@ interface DeleteAssistantRunVariables {
 
 interface AssistantEventsSubscriptionData {
   assistantEvents: Pick<AssistantRun, 'id' | 'type' | 'status' | 'summary' | 'error' | 'createdAt'>;
+}
+
+interface AssistantRuntimeCapabilities {
+  assistantModel?: string | null;
+  apiSurface?: 'chat_completions' | 'responses' | null;
+  webSearchSupported: boolean;
+}
+
+interface AssistantRuntimeCapabilitiesQueryData {
+  assistantRuntimeCapabilities: AssistantRuntimeCapabilities;
 }
 
 interface AssistantBlockedInfo {
@@ -167,6 +184,16 @@ const ASSISTANT_EVENTS_SUBSCRIPTION = gql`
       summary
       error
       createdAt
+    }
+  }
+`;
+
+const ASSISTANT_RUNTIME_CAPABILITIES_QUERY = gql`
+  query AssistantRuntimeCapabilities {
+    assistantRuntimeCapabilities {
+      assistantModel
+      apiSurface
+      webSearchSupported
     }
   }
 `;
@@ -263,6 +290,9 @@ export function AssistantContent() {
   const canViewAssistantJson = permissions.includes('settings.manage');
 
   const [queryDraft, setQueryDraft] = useState('');
+  const [knowledgeSource, setKnowledgeSource] = useState<AssistantKnowledgeSource>(
+    DEFAULT_ASSISTANT_KNOWLEDGE_SOURCE,
+  );
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -438,6 +468,10 @@ export function AssistantContent() {
       skip: !authenticated,
     },
   );
+  const { data: runtimeCapabilitiesData, loading: runtimeCapabilitiesLoading } =
+    useQuery<AssistantRuntimeCapabilitiesQueryData>(ASSISTANT_RUNTIME_CAPABILITIES_QUERY, {
+      skip: !authenticated,
+    });
 
   useSubscription<AssistantEventsSubscriptionData>(ASSISTANT_EVENTS_SUBSCRIPTION, {
     skip: !authenticated,
@@ -747,6 +781,69 @@ export function AssistantContent() {
   const placeholder = t('assistant.chat.placeholder', {
     defaultValue: 'Ask anything about your pipeline data…',
   });
+  const runtimeCapabilities = runtimeCapabilitiesData?.assistantRuntimeCapabilities ?? null;
+  const webSearchCapabilityChecking = runtimeCapabilitiesLoading && runtimeCapabilities === null;
+  const webSearchCapabilityKnown = runtimeCapabilities !== null;
+  const webSearchSupportedByModel = runtimeCapabilities?.webSearchSupported === true;
+  const webSearchOptionDisabled = webSearchCapabilityChecking || !webSearchSupportedByModel;
+  const knowledgeSourceSupported = isAssistantKnowledgeSourceSupported(knowledgeSource, runtimeCapabilities);
+  const knowledgeSourceBlocked = knowledgeSource === 'web_search' && !knowledgeSourceSupported;
+  const knowledgeSourceUnsupportedMessage = t('assistant.chat.knowledgeSource.unsupported', {
+    defaultValue: 'Web search is unavailable for the active assistant model profile.',
+  });
+  const knowledgeSourceDetectingMessage = t('assistant.chat.knowledgeSource.detecting', {
+    defaultValue: 'Detecting model capability for web search…',
+  });
+  const knowledgeSourceFallbackMessage = t('assistant.chat.knowledgeSource.switchedToSiteDb', {
+    defaultValue:
+      'Web search is unavailable for the active assistant model profile. Switched to site database.',
+  });
+  const knowledgeSourceHint =
+    knowledgeSource === 'web_search'
+      ? t('assistant.chat.knowledgeSource.hintWebSearch', {
+          defaultValue: 'Use web search for latest external facts and include source links.',
+        })
+      : t('assistant.chat.knowledgeSource.hintSiteDb', {
+          defaultValue: 'Use your site database for grounded answers on collected content.',
+        });
+  const knowledgeSourceCapabilityMessage = webSearchCapabilityChecking
+    ? knowledgeSourceDetectingMessage
+    : webSearchSupportedByModel
+      ? t('assistant.chat.knowledgeSource.configReady', {
+          defaultValue: 'Web search is enabled by the active model profile (apiSurface=responses).',
+        })
+      : runtimeCapabilities?.apiSurface && runtimeCapabilities.apiSurface !== 'responses'
+        ? t('assistant.chat.knowledgeSource.configNeedsResponses', {
+            defaultValue:
+              'Active model profile uses apiSurface={{apiSurface}}. Switch to responses to enable web search.',
+            apiSurface: runtimeCapabilities.apiSurface,
+          })
+        : t('assistant.chat.knowledgeSource.configNeedsToggle', {
+            defaultValue:
+              'Active model profile has Assistant web search turned off. Enable it in LLM Gateway settings.',
+          });
+  const knowledgeSourceCapabilityClass = webSearchCapabilityChecking
+    ? 'text-slate-500'
+    : webSearchSupportedByModel
+      ? 'text-emerald-700'
+      : 'text-amber-700';
+
+  useEffect(() => {
+    if (knowledgeSource !== 'web_search') {
+      return;
+    }
+    if (!webSearchCapabilityKnown || webSearchSupportedByModel) {
+      return;
+    }
+    setKnowledgeSource(DEFAULT_ASSISTANT_KNOWLEDGE_SOURCE);
+    messageApi.warning(knowledgeSourceFallbackMessage);
+  }, [
+    knowledgeSource,
+    webSearchCapabilityKnown,
+    webSearchSupportedByModel,
+    messageApi,
+    knowledgeSourceFallbackMessage,
+  ]);
 
   const getStatusLabel = (statusValue: AssistantRunStatus): string => {
     return t(`assistant.status.${statusValue}`, { defaultValue: statusValue });
@@ -770,6 +867,11 @@ export function AssistantContent() {
       return;
     }
 
+    if (knowledgeSourceBlocked) {
+      messageApi.warning(knowledgeSourceUnsupportedMessage);
+      return;
+    }
+
     try {
       shouldAutoScrollRef.current = true;
       const sessionAtSend = conversationSessionRef.current;
@@ -781,8 +883,8 @@ export function AssistantContent() {
           : null;
       const requestConversationId = activeRunConversationId ?? conversationId;
       const requestInput: RequestAssistantQueryVariables['input'] = requestConversationId
-        ? { message: messageValue, conversationId: requestConversationId }
-        : { message: messageValue };
+        ? { message: messageValue, conversationId: requestConversationId, knowledgeSource }
+        : { message: messageValue, knowledgeSource };
       const res = await requestAssistantQuery({
         variables: { input: requestInput },
       });
@@ -800,8 +902,8 @@ export function AssistantContent() {
         pushOptimisticRun(
           created,
           createdConversationId
-            ? { message: messageValue, conversationId: createdConversationId }
-            : { message: messageValue },
+            ? { message: messageValue, conversationId: createdConversationId, knowledgeSource }
+            : { message: messageValue, knowledgeSource },
         );
       }
 
@@ -810,6 +912,11 @@ export function AssistantContent() {
       }
       void refetch();
     } catch (err) {
+      if (isAssistantWebSearchUnsupportedError(err)) {
+        setKnowledgeSource(DEFAULT_ASSISTANT_KNOWLEDGE_SOURCE);
+        messageApi.warning(knowledgeSourceFallbackMessage);
+        return;
+      }
       const errMessage = err instanceof Error ? err.message : String(err);
       messageApi.error(
         t('assistant.requestFailed', { defaultValue: 'Request failed: {{error}}', error: errMessage }),
@@ -1372,6 +1479,36 @@ export function AssistantContent() {
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
+                        <Space size={8} wrap>
+                          <span className="text-xs font-semibold text-slate-500">
+                            {t('assistant.chat.knowledgeSource.label', { defaultValue: 'Knowledge source' })}
+                          </span>
+                          <Segmented
+                            size="small"
+                            value={knowledgeSource}
+                            onChange={(value) => setKnowledgeSource(value as AssistantKnowledgeSource)}
+                            options={[
+                              {
+                                label: t('assistant.chat.knowledgeSource.siteDb', { defaultValue: 'Site database' }),
+                                value: 'site_db',
+                              },
+                              {
+                                label: webSearchCapabilityChecking
+                                  ? t('assistant.chat.knowledgeSource.webSearchChecking', {
+                                      defaultValue: 'Web search (checking capability...)',
+                                    })
+                                  : webSearchOptionDisabled
+                                  ? t('assistant.chat.knowledgeSource.webSearchDisabled', {
+                                      defaultValue: 'Web search (model unsupported)',
+                                    })
+                                  : t('assistant.chat.knowledgeSource.webSearch', { defaultValue: 'Web search' }),
+                                value: 'web_search',
+                                disabled: webSearchOptionDisabled,
+                              },
+                            ]}
+                            disabled={!canRunAssistant || querySaving}
+                          />
+                        </Space>
                         <Button
                           icon={<BarChartOutlined />}
                           className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
@@ -1397,12 +1534,19 @@ export function AssistantContent() {
                         className="h-10 w-full rounded-xl border-none bg-sky-600 px-8 font-bold text-white shadow-[0_12px_24px_rgba(14,116,217,0.28)] transition-all hover:bg-sky-700 hover:shadow-[0_16px_26px_rgba(14,116,217,0.34)] active:scale-[0.98] disabled:opacity-50 sm:w-auto"
                         type="primary"
                         loading={querySaving}
-                        disabled={!canRunAssistant}
+                        disabled={!canRunAssistant || knowledgeSourceBlocked}
                         onClick={() => void submitQuery()}
                       >
                         {t('assistant.chat.send', { defaultValue: 'Send' })}
                       </Button>
                     </div>
+                    {knowledgeSourceBlocked ? (
+                      <span className="mt-1 text-xs font-semibold text-amber-700">{knowledgeSourceUnsupportedMessage}</span>
+                    ) : null}
+                    <span className={`mt-1 text-xs ${knowledgeSourceCapabilityClass}`}>
+                      {knowledgeSourceCapabilityMessage}
+                    </span>
+                    <span className="mt-1 text-xs text-slate-500">{knowledgeSourceHint}</span>
                   </div>
                 </div>
               </div>

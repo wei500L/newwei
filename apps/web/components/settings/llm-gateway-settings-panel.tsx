@@ -38,6 +38,7 @@ interface LlmGatewayProfile {
   apiBase: string;
   model: string;
   assistantModel?: string | null;
+  assistantWebSearchEnabled: boolean;
   embeddingModel?: string | null;
   rerankModel?: string | null;
   rerankFallbackModels: string[];
@@ -239,6 +240,7 @@ interface LlmGatewayFormValues {
   apiKey?: string;
   model?: string;
   assistantModel?: string;
+  assistantWebSearchEnabled: boolean;
   embeddingModel?: string;
   rerankModel?: string;
   rerankFallbackModels?: string;
@@ -497,7 +499,19 @@ export function LlmGatewaySettingsPanel() {
   const includeEmbeddings =
     Form.useWatch("includeEmbeddings", testForm) ?? false;
   const includeRerank = Form.useWatch("includeRerank", testForm) ?? false;
+  const createApiSurface =
+    (Form.useWatch("apiSurface", createForm) as LlmGatewayApiSurface | undefined) ??
+    "chat_completions";
+  const createAssistantWebSearchEnabled =
+    Form.useWatch("assistantWebSearchEnabled", createForm) ?? false;
+  const editApiSurface =
+    (Form.useWatch("apiSurface", editForm) as LlmGatewayApiSurface | undefined) ??
+    "chat_completions";
+  const editAssistantWebSearchEnabled =
+    Form.useWatch("assistantWebSearchEnabled", editForm) ?? false;
   const editClearApiKey = Form.useWatch("clearApiKey", editForm) ?? false;
+  const createAssistantWebSearchDisabled = createApiSurface !== "responses";
+  const editAssistantWebSearchDisabled = editApiSurface !== "responses";
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -650,6 +664,7 @@ export function LlmGatewaySettingsPanel() {
       const next = response.data;
       const normalizedProfiles = (next?.profiles ?? []).map((profile) => ({
         ...profile,
+        assistantWebSearchEnabled: profile.assistantWebSearchEnabled ?? false,
         fallbackModels: profile.fallbackModels ?? [],
         rerankFallbackModels: profile.rerankFallbackModels ?? [],
       }));
@@ -679,6 +694,7 @@ export function LlmGatewaySettingsPanel() {
       apiBase: editing.apiBase,
       model: editing.model,
       assistantModel: editing.assistantModel ?? undefined,
+      assistantWebSearchEnabled: editing.assistantWebSearchEnabled ?? false,
       embeddingModel: editing.embeddingModel ?? undefined,
       rerankModel: editing.rerankModel ?? undefined,
       rerankFallbackModels: toFallbackModelsText(
@@ -700,6 +716,36 @@ export function LlmGatewaySettingsPanel() {
     });
   }, [editing, editForm]);
 
+  useEffect(() => {
+    if (!createOpen || !createAssistantWebSearchDisabled) {
+      return;
+    }
+    if (!createAssistantWebSearchEnabled) {
+      return;
+    }
+    createForm.setFieldValue("assistantWebSearchEnabled", false);
+  }, [
+    createOpen,
+    createAssistantWebSearchDisabled,
+    createAssistantWebSearchEnabled,
+    createForm,
+  ]);
+
+  useEffect(() => {
+    if (!editing || !editAssistantWebSearchDisabled) {
+      return;
+    }
+    if (!editAssistantWebSearchEnabled) {
+      return;
+    }
+    editForm.setFieldValue("assistantWebSearchEnabled", false);
+  }, [
+    editing,
+    editAssistantWebSearchDisabled,
+    editAssistantWebSearchEnabled,
+    editForm,
+  ]);
+
   const openCreate = () => {
     const baselineProfile =
       settings.profiles.find((profile) => profile.id === settings.activeId) ??
@@ -719,6 +765,7 @@ export function LlmGatewaySettingsPanel() {
       apiBase: initialApiBase,
       model: baselineProfile?.model ?? "openai/gpt-4o-mini",
       assistantModel: baselineProfile?.assistantModel ?? "",
+      assistantWebSearchEnabled: baselineProfile?.assistantWebSearchEnabled ?? false,
       embeddingModel: baselineProfile?.embeddingModel ?? "",
       rerankModel: baselineProfile?.rerankModel ?? "",
       rerankFallbackModels: templateRerankFallbackModels,
@@ -1050,6 +1097,7 @@ export function LlmGatewaySettingsPanel() {
         assistantModel: values.assistantModel?.trim()
           ? values.assistantModel.trim()
           : null,
+        assistantWebSearchEnabled: values.assistantWebSearchEnabled ?? false,
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
@@ -1115,6 +1163,7 @@ export function LlmGatewaySettingsPanel() {
         assistantModel: values.assistantModel?.trim()
           ? values.assistantModel.trim()
           : null,
+        assistantWebSearchEnabled: values.assistantWebSearchEnabled ?? false,
         embeddingModel: values.embeddingModel?.trim()
           ? values.embeddingModel.trim()
           : null,
@@ -2597,6 +2646,15 @@ export function LlmGatewaySettingsPanel() {
       render: (_: unknown, record) => (
         <Space wrap>
           <Tag>{`api:${record.apiSurface}`}</Tag>
+          <Tag color={record.assistantWebSearchEnabled ? "blue" : "default"}>
+            {record.assistantWebSearchEnabled
+              ? t("settings.llmGateway.columns.assistantWebSearchOn", {
+                  defaultValue: "assistant:web-search:on",
+                })
+              : t("settings.llmGateway.columns.assistantWebSearchOff", {
+                  defaultValue: "assistant:web-search:off",
+                })}
+          </Tag>
           <Tag>{`response_format:${record.responseFormatMode}`}</Tag>
           <Tag color={record.sendMetadata ? "green" : "default"}>
             {record.sendMetadata
@@ -3655,6 +3713,26 @@ export function LlmGatewaySettingsPanel() {
             <Input allowClear placeholder="openai/gpt-4.1-mini" />
           </Form.Item>
           <Form.Item
+            name="assistantWebSearchEnabled"
+            valuePropName="checked"
+            label={t("settings.llmGateway.fields.assistantWebSearchEnabled", {
+              defaultValue: "Assistant web search",
+            })}
+            extra={
+              createAssistantWebSearchDisabled
+                ? t("settings.llmGateway.hints.assistantWebSearchRequiresResponses", {
+                    defaultValue:
+                      "Unavailable now because API surface is chat_completions. Set API surface to responses first.",
+                  })
+                : t("settings.llmGateway.hints.assistantWebSearchEnabled", {
+                    defaultValue:
+                      "Enable web search for /assistant on this profile. Requires API surface = responses.",
+                  })
+            }
+          >
+            <Switch disabled={createAssistantWebSearchDisabled} />
+          </Form.Item>
+          <Form.Item
             label={t("settings.llmGateway.fields.embeddingModel")}
             name="embeddingModel"
           >
@@ -4016,6 +4094,26 @@ export function LlmGatewaySettingsPanel() {
             })}
           >
             <Input allowClear />
+          </Form.Item>
+          <Form.Item
+            name="assistantWebSearchEnabled"
+            valuePropName="checked"
+            label={t("settings.llmGateway.fields.assistantWebSearchEnabled", {
+              defaultValue: "Assistant web search",
+            })}
+            extra={
+              editAssistantWebSearchDisabled
+                ? t("settings.llmGateway.hints.assistantWebSearchRequiresResponses", {
+                    defaultValue:
+                      "Unavailable now because API surface is chat_completions. Set API surface to responses first.",
+                  })
+                : t("settings.llmGateway.hints.assistantWebSearchEnabled", {
+                    defaultValue:
+                      "Enable web search for /assistant on this profile. Requires API surface = responses.",
+                  })
+            }
+          >
+            <Switch disabled={editAssistantWebSearchDisabled} />
           </Form.Item>
           <Form.Item
             label={t("settings.llmGateway.fields.embeddingModel")}

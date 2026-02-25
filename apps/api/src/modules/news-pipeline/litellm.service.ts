@@ -53,6 +53,7 @@ export interface LiteLlmCompletionParams {
    * These must be configured on the LiteLLM Proxy side (config.yaml -> `guardrails`).
    */
   guardrails?: string[];
+  tools?: Record<string, unknown>[];
   metadata?: Record<string, unknown>;
   timeoutMs?: number;
   maxRetries?: number;
@@ -600,6 +601,9 @@ export class LiteLlmService {
           max_output_tokens: params.max_tokens ?? cfg.maxOutputTokens,
           ...(textFormat ? { text: { format: textFormat } } : {}),
           guardrails: guardrails.length > 0 ? guardrails : undefined,
+          ...(Array.isArray(params.tools) && params.tools.length > 0
+            ? { tools: params.tools }
+            : {}),
           metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
         };
         const start = Date.now();
@@ -733,6 +737,9 @@ export class LiteLlmService {
       ...(textFormat ? { text: { format: textFormat } } : {}),
       stream: true,
       guardrails: guardrails.length > 0 ? guardrails : undefined,
+      ...(Array.isArray(params.tools) && params.tools.length > 0
+        ? { tools: params.tools }
+        : {}),
       metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
     };
 
@@ -933,6 +940,9 @@ export class LiteLlmService {
           ),
           stream: false,
           guardrails: guardrails.length > 0 ? guardrails : undefined,
+          ...(Array.isArray(params.tools) && params.tools.length > 0
+            ? { tools: params.tools }
+            : {}),
           metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
         };
         const start = Date.now();
@@ -1075,6 +1085,9 @@ export class LiteLlmService {
       ),
       stream: true,
       guardrails: guardrails.length > 0 ? guardrails : undefined,
+      ...(Array.isArray(params.tools) && params.tools.length > 0
+        ? { tools: params.tools }
+        : {}),
       metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
     };
 
