@@ -9,7 +9,11 @@ export default defineSource(async () => {
   const match = regex.exec(html)
   const news: NewsItem[] = []
   if (match) {
-    const realData = JSON.parse(match[1])
+    const payload = match[1]
+    if (!payload) {
+      return news
+    }
+    const realData = JSON.parse(payload)
     const rawNews = realData.hotNews1 as {
       url: string
       title: string

@@ -7,6 +7,8 @@ import type { NewsItem } from "../hooks/use-news-sources";
 
 interface NewsListHotProps {
   items: NewsItem[];
+  onOpenEvent?: (item: NewsItem) => void;
+  onOpenItem?: (item: NewsItem) => void;
 }
 
 function getRankClass(index: number) {
@@ -85,7 +87,7 @@ function ExtraInfo({ item }: { item: NewsItem }) {
   );
 }
 
-export function NewsListHot({ items }: NewsListHotProps) {
+export function NewsListHot({ items, onOpenEvent, onOpenItem }: NewsListHotProps) {
   const isMobile = useIsMobile();
 
   return (
@@ -121,6 +123,32 @@ export function NewsListHot({ items }: NewsListHotProps) {
                 </span>
               </span>
             </a>
+            <div className="flex items-center gap-3 pb-1 pl-[34px] text-[11px] text-zinc-400">
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-zinc-200"
+              >
+                原文
+              </a>
+              <button
+                type="button"
+                className="transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onOpenEvent?.(item)}
+                disabled={!onOpenEvent}
+              >
+                事件
+              </button>
+              <button
+                type="button"
+                className="transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onOpenItem?.(item)}
+                disabled={!onOpenItem}
+              >
+                深读
+              </button>
+            </div>
           </li>
         );
       })}

@@ -41,6 +41,13 @@ export class NewsAggregatorController {
     return this.newsAggregatorService.getMetadata()
   }
 
+  @Public()
+  @Get("resolve")
+  resolveByUrl(@Query("url") url: string) {
+    const normalizedUrl = this.validateHttpUrl(url)
+    return this.newsAggregatorService.resolveByUrl(normalizedUrl)
+  }
+
   private validateSourceId(id: unknown): string {
     if (typeof id !== "string" || !id.trim()) {
       throw new BadRequestException("id query is required")
@@ -69,5 +76,25 @@ export class NewsAggregatorController {
     }
 
     throw new BadRequestException("latest must be one of true/false, 1/0, yes/no, y/n, on/off")
+  }
+
+  private validateHttpUrl(value: unknown): string {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new BadRequestException("url query is required")
+    }
+
+    const raw = value.trim()
+    let parsed: URL
+    try {
+      parsed = new URL(raw)
+    } catch {
+      throw new BadRequestException("url must be a valid absolute URL")
+    }
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new BadRequestException("url protocol must be http or https")
+    }
+
+    return parsed.toString()
   }
 }

@@ -122,7 +122,10 @@ function toDurations(matches: string[]) {
       if (!pattern) continue
       const match = pattern.regExp.exec(m)
       if (match) {
-        durations[pattern.unit] = match[1]
+        const value = match[1]
+        if (value) {
+          durations[pattern.unit] = value
+        }
         break
       }
     }
@@ -146,13 +149,19 @@ export function parseRelativeDate(date: string, timezone: string = "UTC") {
     if (lastMatch) {
       const beforeMatches = /(.*)(?:前|ago)$/.exec(lastMatch)
       if (beforeMatches) {
-        matches.push(beforeMatches[1])
+        const durationText = beforeMatches[1]
+        if (durationText) {
+          matches.push(durationText)
+        }
         return dayjs().subtract(dayjs.duration(toDurations(matches))).toDate()
       }
 
       const afterMatches = /(?:^in(.*)|(.*)[后後])$/.exec(lastMatch)
       if (afterMatches) {
-        matches.push(afterMatches[1] ?? afterMatches[2])
+        const durationText = afterMatches[1] ?? afterMatches[2]
+        if (durationText) {
+          matches.push(durationText)
+        }
         return dayjs()
           .add(dayjs.duration(toDurations(matches)))
           .toDate()
@@ -166,7 +175,10 @@ export function parseRelativeDate(date: string, timezone: string = "UTC") {
       for (const w of words()) {
         const wordMatches = w.regExp.exec(firstMatch)
         if (wordMatches) {
-          matches.unshift(wordMatches[1])
+          const durationText = wordMatches[1]
+          if (durationText) {
+            matches.unshift(durationText)
+          }
 
           return dayjs.tz(
             w.startAt
@@ -185,8 +197,9 @@ export function parseRelativeDate(date: string, timezone: string = "UTC") {
     for (const w of words()) {
       const wordMatches = w.regExp.exec(theDate)
       if (wordMatches) {
+        const timeSuffix = wordMatches[1] ?? ""
         return dayjs.tz(
-          `${w.startAt.add(offset).format("YYYY-MM-DD")} ${/a|pm$/.test(wordMatches[1]) ? wordMatches[1].replace(/a|pm/, " $&") : wordMatches[1]}`,
+          `${w.startAt.add(offset).format("YYYY-MM-DD")} ${/a|pm$/.test(timeSuffix) ? timeSuffix.replace(/a|pm/, " $&") : timeSuffix}`,
           timezone,
         ).toDate()
       }

@@ -6,6 +6,8 @@ import { useRelativeTime } from "../hooks/use-relative-time";
 
 interface NewsListTimelineProps {
   items: NewsItem[];
+  onOpenEvent?: (item: NewsItem) => void;
+  onOpenItem?: (item: NewsItem) => void;
 }
 
 function ExtraInfo({ item }: { item: NewsItem }) {
@@ -45,7 +47,7 @@ function ExtraInfo({ item }: { item: NewsItem }) {
   );
 }
 
-export function NewsListTimeline({ items }: NewsListTimelineProps) {
+export function NewsListTimeline({ items, onOpenEvent, onOpenItem }: NewsListTimelineProps) {
   const { getRelativeTime } = useRelativeTime();
   const isMobile = useIsMobile();
 
@@ -76,6 +78,32 @@ export function NewsListTimeline({ items }: NewsListTimelineProps) {
             >
               {item.title}
             </a>
+            <div className="mt-1 flex items-center gap-3 px-1 text-[11px] text-zinc-400">
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-zinc-200"
+              >
+                原文
+              </a>
+              <button
+                type="button"
+                className="transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onOpenEvent?.(item)}
+                disabled={!onOpenEvent}
+              >
+                事件
+              </button>
+              <button
+                type="button"
+                className="transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onOpenItem?.(item)}
+                disabled={!onOpenItem}
+              >
+                深读
+              </button>
+            </div>
           </li>
         );
       })}

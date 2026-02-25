@@ -10,6 +10,7 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
+  type EncryptedStringValueV1,
   isEncryptedStringValueV1,
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
@@ -37,7 +38,7 @@ interface NewsSourceRuntimeSecretsUpdateInput {
 interface StoredNewsSourceRuntimeSecretEntry {
   sourceId: string;
   key: string;
-  value: string | Record<string, unknown>;
+  value: string | EncryptedStringValueV1;
   fingerprint: string;
   updatedAt: string;
 }
@@ -249,7 +250,7 @@ export class NewsSourceRuntimeSecretsService {
     }
   }
 
-  private decodeSecretValue(value: string | Record<string, unknown>, key: Buffer | undefined): string {
+  private decodeSecretValue(value: string | EncryptedStringValueV1, key: Buffer | undefined): string {
     if (typeof value === "string") {
       return value.trim();
     }

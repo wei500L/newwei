@@ -82,6 +82,14 @@ export interface SourceResponse {
   items: NewsItem[]
 }
 
+export interface NewsResolveResponse {
+  matched: boolean
+  itemId?: string
+  eventId?: string
+  confidence?: number
+  matchedUrl?: string
+}
+
 export interface SourceRuntimeContext {
   sourceId: SourceID
   requestedSourceId: SourceID

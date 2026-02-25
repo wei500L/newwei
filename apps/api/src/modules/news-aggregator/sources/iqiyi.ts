@@ -44,12 +44,13 @@ const hotRankList = defineSource(async () => {
     headers: { Referer: "https://www.iqiyi.com" },
   })
 
-  return resp?.items[0]?.video[0]?.data.map((item) => {
+  const items = resp.items?.[0]?.video?.[0]?.data ?? []
+  return items.map((item) => {
     return {
       id: item.entity_id,
       title: item.title,
       url: item.page_url,
-      pubDate: item?.showDate,
+      pubDate: item.showDate,
       extra: {
         info: item.desc,
         hover: item.description,

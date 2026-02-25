@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common"
 
 import { genMetadata } from "./data/metadata"
 import { genSources } from "./data/pre-sources"
-import type { Metadata, Source, SourceGetter, SourceID } from "./news-aggregator.types"
+import type { Metadata, Source, SourceGetter, SourceID, SourceRuntimeContext } from "./news-aggregator.types"
 import source36kr from "./sources/_36kr"
 import baiduSource from "./sources/baidu"
 import bilibiliSource from "./sources/bilibili"
@@ -48,7 +48,8 @@ import xueqiuSource from "./sources/xueqiu"
 import zaobaoSource from "./sources/zaobao"
 import zhihuSource from "./sources/zhihu"
 
-type SourceModuleExport = (() => Promise<unknown>) | Record<string, () => Promise<unknown>>
+type SourceModuleGetter = (context?: SourceRuntimeContext) => Promise<unknown>
+type SourceModuleExport = SourceModuleGetter | Record<string, SourceModuleGetter>
 
 const hasOwn = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key)
 

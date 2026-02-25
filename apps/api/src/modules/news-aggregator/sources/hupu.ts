@@ -23,7 +23,11 @@ export default defineSource(async () => {
     match = regex.exec(html)
     if (!match) break
 
-    const [, path, title] = match
+    const path = match[1]
+    const title = match[2]
+    if (!path || !title) {
+      continue
+    }
 
     // 构建完整URL
     const url = `https://bbs.hupu.com${path}`

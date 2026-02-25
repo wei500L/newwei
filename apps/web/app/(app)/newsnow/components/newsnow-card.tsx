@@ -8,11 +8,17 @@ import {
 } from "@ant-design/icons";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button, Skeleton, Tooltip } from "antd";
-import { useMemo, useState } from "react";
+import { Button, Skeleton, Tooltip, message } from "antd";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
 
 import { useRelativeTime } from "../hooks/use-relative-time";
-import { useNewsSource, type Source } from "../hooks/use-news-sources";
+import {
+  useNewsSource,
+  useResolveNewsUrl,
+  type NewsItem,
+  type Source,
+} from "../hooks/use-news-sources";
 import { useNewsnowStore } from "../store/newsnow-store";
 import { NewsListHot } from "./news-list-hot";
 import { NewsListTimeline } from "./news-list-timeline";
@@ -77,10 +83,12 @@ const accentMap: Record<string, string> = {
 const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
 
 export function NewsnowCard({ id, source }: NewsnowCardProps) {
+  const router = useRouter();
   const { data, isLoading, isError, isFetching, refresh } = useNewsSource(
     id,
     source.interval,
   );
+  const resolveNewsUrl = useResolveNewsUrl();
   const { focusSources, toggleFocus } = useNewsnowStore();
   const { getRelativeTime } = useRelativeTime();
   const isFocused = focusSources.includes(id);
@@ -113,6 +121,64 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
   const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
   const iconUrl = `/icons/${sourceBaseId}.png`;
   const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
+
+  const openOriginal = useCallback((item: NewsItem) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const href = item.mobileUrl || item.url;
+    window.open(href, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const handleOpenEvent = useCallback(
+    async (item: NewsItem) => {
+      try {
+        const resolved = await resolveNewsUrl(item.url);
+        if (resolved.matched && resolved.eventId) {
+          router.push(`/events/${resolved.eventId}`);
+          return;
+        }
+        if (resolved.matched && resolved.itemId) {
+          message.info("未匹配到事件，已打开深读");
+          router.push(`/read/items/${resolved.itemId}`);
+          return;
+        }
+      } catch {
+        message.warning("解析失败，已打开原文");
+        openOriginal(item);
+        return;
+      }
+
+      message.info("暂未匹配到事件，已打开原文");
+      openOriginal(item);
+    },
+    [openOriginal, resolveNewsUrl, router],
+  );
+
+  const handleOpenItem = useCallback(
+    async (item: NewsItem) => {
+      try {
+        const resolved = await resolveNewsUrl(item.url);
+        if (resolved.matched && resolved.itemId) {
+          router.push(`/read/items/${resolved.itemId}`);
+          return;
+        }
+        if (resolved.matched && resolved.eventId) {
+          message.info("未匹配到深读，已打开事件");
+          router.push(`/events/${resolved.eventId}`);
+          return;
+        }
+      } catch {
+        message.warning("解析失败，已打开原文");
+        openOriginal(item);
+        return;
+      }
+
+      message.info("暂未匹配到深读，已打开原文");
+      openOriginal(item);
+    },
+    [openOriginal, resolveNewsUrl, router],
+  );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -247,9 +313,17 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
           </div>
         ) : data && data.items.length > 0 ? (
           source.type === "hottest" ? (
-            <NewsListHot items={data.items} />
+            <NewsListHot
+              items={data.items}
+              onOpenEvent={handleOpenEvent}
+              onOpenItem={handleOpenItem}
+            />
           ) : (
-            <NewsListTimeline items={data.items} />
+            <NewsListTimeline
+              items={data.items}
+              onOpenEvent={handleOpenEvent}
+              onOpenItem={handleOpenItem}
+            />
           )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">

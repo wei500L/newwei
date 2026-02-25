@@ -1,13 +1,12 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Button, Card, Empty, Grid, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Empty, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
-import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 
 // Event details now use dedicated page at /events/[id]
@@ -23,6 +22,16 @@ export interface NewsEventListItem {
   startAt: string;
   lastAt: string;
   itemCount: number;
+  breaking: boolean;
+  heatScore: number;
+  credibilityScore: number;
+  sourceType: "all" | "authoritative" | "mixed" | "blog" | "unknown";
+  sourceEvidence: {
+    uniqueSourceCount: number;
+    authoritativeSourceCount: number;
+    blogSourceCount: number;
+    corroborated: boolean;
+  };
   representativeProcessedArticleId?: string | null;
   representativeProcessedItemId?: string | null;
   createdAt: string;
@@ -30,8 +39,24 @@ export interface NewsEventListItem {
 }
 
 const NEWS_EVENTS_QUERY = gql`
-  query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
-    newsEvents(limit: $limit, windowDays: $windowDays, status: $status) {
+  query NewsEvents(
+    $limit: Int
+    $windowDays: Int
+    $status: NewsEventStatus
+    $sourceType: NewsEventSourceType
+    $minHeatScore: Float
+    $minCredibilityScore: Float
+    $sortBy: NewsEventSortBy
+  ) {
+    newsEvents(
+      limit: $limit
+      windowDays: $windowDays
+      status: $status
+      sourceType: $sourceType
+      minHeatScore: $minHeatScore
+      minCredibilityScore: $minCredibilityScore
+      sortBy: $sortBy
+    ) {
       id
       status
       language
@@ -42,6 +67,16 @@ const NEWS_EVENTS_QUERY = gql`
       startAt
       lastAt
       itemCount
+      breaking
+      heatScore
+      credibilityScore
+      sourceType
+      sourceEvidence {
+        uniqueSourceCount
+        authoritativeSourceCount
+        blogSourceCount
+        corroborated
+      }
       representativeProcessedArticleId
       representativeProcessedItemId
       createdAt
@@ -53,6 +88,10 @@ const NEWS_EVENTS_QUERY = gql`
 const DEFAULT_LIMIT = 30;
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_STATUS = "active";
+const DEFAULT_SORT_BY = "latest";
+const DEFAULT_SOURCE_TYPE = "all";
+const DEFAULT_MIN_HEAT = 0;
+const DEFAULT_MIN_CREDIBILITY = 0;
 
 const parsePositiveInt = (value: string | null, fallback: number) => {
   if (!value) {
@@ -60,6 +99,17 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+};
+
+const parseNonNegativeFloat = (value: string | null, fallback: number) => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return fallback;
   }
   return parsed;
@@ -90,7 +140,6 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
   const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
-  const screens = Grid.useBreakpoint();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -112,13 +161,43 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     }
     return ["active", "archived", "all"].includes(value) ? value : DEFAULT_STATUS;
   }, [searchParams]);
+  const sortBy = useMemo(() => {
+    const value = (searchParams.get("sort") ?? "").trim().toLowerCase();
+    return ["latest", "heat", "credibility"].includes(value) ? value : DEFAULT_SORT_BY;
+  }, [searchParams]);
+  const sourceType = useMemo(() => {
+    const value = (searchParams.get("sourceType") ?? "").trim().toLowerCase();
+    return ["all", "authoritative", "mixed", "blog", "unknown"].includes(value)
+      ? value
+      : DEFAULT_SOURCE_TYPE;
+  }, [searchParams]);
+  const minHeatScore = useMemo(
+    () => parseNonNegativeFloat(searchParams.get("minHeat"), DEFAULT_MIN_HEAT),
+    [searchParams]
+  );
+  const minCredibilityScore = useMemo(
+    () => parseNonNegativeFloat(searchParams.get("minCredibility"), DEFAULT_MIN_CREDIBILITY),
+    [searchParams]
+  );
 
   const updateFilters = useCallback(
-    (updates: { windowDays?: number; limit?: number; status?: string }) => {
+    (updates: {
+      windowDays?: number;
+      limit?: number;
+      status?: string;
+      sortBy?: string;
+      sourceType?: string;
+      minHeatScore?: number;
+      minCredibilityScore?: number;
+    }) => {
       const next = new URLSearchParams(searchParams.toString());
       const nextWindow = updates.windowDays ?? windowDays;
       const nextLimit = updates.limit ?? limit;
       const nextStatus = updates.status ?? status;
+      const nextSortBy = updates.sortBy ?? sortBy;
+      const nextSourceType = updates.sourceType ?? sourceType;
+      const nextMinHeat = updates.minHeatScore ?? minHeatScore;
+      const nextMinCredibility = updates.minCredibilityScore ?? minCredibilityScore;
 
       if (nextWindow === DEFAULT_WINDOW_DAYS) {
         next.delete("window");
@@ -137,18 +216,53 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       } else {
         next.set("status", nextStatus);
       }
+      if (nextSortBy === DEFAULT_SORT_BY) {
+        next.delete("sort");
+      } else {
+        next.set("sort", nextSortBy);
+      }
+      if (nextSourceType === DEFAULT_SOURCE_TYPE) {
+        next.delete("sourceType");
+      } else {
+        next.set("sourceType", nextSourceType);
+      }
+      if (nextMinHeat <= DEFAULT_MIN_HEAT) {
+        next.delete("minHeat");
+      } else {
+        next.set("minHeat", String(nextMinHeat));
+      }
+      if (nextMinCredibility <= DEFAULT_MIN_CREDIBILITY) {
+        next.delete("minCredibility");
+      } else {
+        next.set("minCredibility", String(nextMinCredibility));
+      }
 
       const nextQuery = next.toString();
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     },
-    [limit, pathname, router, searchParams, status, windowDays]
+    [
+      limit,
+      minCredibilityScore,
+      minHeatScore,
+      pathname,
+      router,
+      searchParams,
+      sortBy,
+      sourceType,
+      status,
+      windowDays
+    ]
   );
 
   const { data, loading, error, refetch } = useQuery<{ newsEvents: NewsEventListItem[] }>(NEWS_EVENTS_QUERY, {
     variables: {
       limit,
       windowDays,
-      status: status === "all" ? undefined : status
+      status: status === "all" ? undefined : status,
+      sourceType: sourceType === "all" ? undefined : sourceType,
+      minHeatScore: minHeatScore > 0 ? minHeatScore : undefined,
+      minCredibilityScore: minCredibilityScore > 0 ? minCredibilityScore : undefined,
+      sortBy: sortBy === DEFAULT_SORT_BY ? undefined : sortBy
     },
     fetchPolicy: "network-only"
   });
@@ -161,19 +275,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     captureClientError("Failed to load events list", error);
   }, [error]);
 
-  const sortedEvents = useMemo(() => {
-    const events = resolvedData?.newsEvents ?? [];
-    return [...events].sort((a, b) => {
-      const timeDiff = dayjs(b.lastAt).valueOf() - dayjs(a.lastAt).valueOf();
-      if (timeDiff !== 0) {
-        return timeDiff;
-      }
-      return b.itemCount - a.itemCount;
-    });
-  }, [resolvedData?.newsEvents]);
-
-  // Responsive breakpoints for layout
-  const isLargeScreen = screens.lg;
+  const sortedEvents = resolvedData?.newsEvents ?? [];
 
   const windowOptions = useMemo(
     () =>
@@ -197,6 +299,52 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       { value: "archived", label: t("pages.events.filters.status.archived", { defaultValue: "Archived" }) },
       { value: "all", label: t("pages.events.filters.status.all", { defaultValue: "All" }) }
     ],
+    [t]
+  );
+  const sortOptions = useMemo(
+    () => [
+      { value: "latest", label: t("pages.events.filters.sort.latest", { defaultValue: "Latest" }) },
+      { value: "heat", label: t("pages.events.filters.sort.heat", { defaultValue: "Heat" }) },
+      {
+        value: "credibility",
+        label: t("pages.events.filters.sort.credibility", { defaultValue: "Credibility" })
+      }
+    ],
+    [t]
+  );
+  const sourceTypeOptions = useMemo(
+    () => [
+      { value: "all", label: t("pages.events.filters.sourceType.all", { defaultValue: "All" }) },
+      {
+        value: "authoritative",
+        label: t("pages.events.filters.sourceType.authoritative", { defaultValue: "Authoritative" })
+      },
+      { value: "mixed", label: t("pages.events.filters.sourceType.mixed", { defaultValue: "Mixed" }) },
+      { value: "blog", label: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }) },
+      { value: "unknown", label: t("pages.events.filters.sourceType.unknown", { defaultValue: "Unknown" }) }
+    ],
+    [t]
+  );
+  const minHeatOptions = useMemo(
+    () =>
+      [0, 2, 4, 6, 8].map((value) => ({
+        value,
+        label:
+          value === 0
+            ? t("pages.events.filters.noMin", { defaultValue: "No minimum" })
+            : `>= ${value}`
+      })),
+    [t]
+  );
+  const minCredibilityOptions = useMemo(
+    () =>
+      [0, 40, 60, 80].map((value) => ({
+        value,
+        label:
+          value === 0
+            ? t("pages.events.filters.noMin", { defaultValue: "No minimum" })
+            : `>= ${value}`
+      })),
     [t]
   );
 
@@ -258,6 +406,50 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   style={{ minWidth: 140 }}
                 />
               </Space>
+
+              <Space size={6}>
+                <Typography.Text type="secondary">{t("pages.events.filters.sort.label", { defaultValue: "Sort" })}</Typography.Text>
+                <Select
+                  size="small"
+                  value={sortBy}
+                  options={sortOptions}
+                  onChange={(value) => updateFilters({ sortBy: value })}
+                  style={{ minWidth: 140 }}
+                />
+              </Space>
+
+              <Space size={6}>
+                <Typography.Text type="secondary">{t("pages.events.filters.sourceType.label", { defaultValue: "Source type" })}</Typography.Text>
+                <Select
+                  size="small"
+                  value={sourceType}
+                  options={sourceTypeOptions}
+                  onChange={(value) => updateFilters({ sourceType: value })}
+                  style={{ minWidth: 160 }}
+                />
+              </Space>
+
+              <Space size={6}>
+                <Typography.Text type="secondary">{t("pages.events.filters.minHeat", { defaultValue: "Min heat" })}</Typography.Text>
+                <Select
+                  size="small"
+                  value={minHeatScore}
+                  options={minHeatOptions}
+                  onChange={(value) => updateFilters({ minHeatScore: Number(value) })}
+                  style={{ minWidth: 130 }}
+                />
+              </Space>
+
+              <Space size={6}>
+                <Typography.Text type="secondary">{t("pages.events.filters.minCredibility", { defaultValue: "Min credibility" })}</Typography.Text>
+                <Select
+                  size="small"
+                  value={minCredibilityScore}
+                  options={minCredibilityOptions}
+                  onChange={(value) => updateFilters({ minCredibilityScore: Number(value) })}
+                  style={{ minWidth: 150 }}
+                />
+              </Space>
             </Space>
 
             <Button onClick={() => refetch()} loading={loading}>
@@ -297,6 +489,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const lastLabel = t("pages.events.fields.lastAt", { defaultValue: "Last" });
                 const itemCountLabel = t("pages.events.fields.items", { defaultValue: "Items" });
                 const eventStatusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
+                const heatLabel = t("pages.events.fields.heat", { defaultValue: "Heat" });
+                const credibilityLabel = t("pages.events.fields.credibility", { defaultValue: "Credibility" });
+                const sourcesLabel = t("pages.events.fields.sources", { defaultValue: "Sources" });
+                const sourceTypeLabel = t("pages.events.fields.sourceType", { defaultValue: "Type" });
 
                 const startDate = formatDateTime(event.startAt, locale, {
                   year: "numeric",
@@ -344,6 +540,28 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                           <Typography.Text strong>{title}</Typography.Text>
                           <Tag>{itemCountLabel}: {event.itemCount}</Tag>
                           <Tag color={event.status === "active" ? "green" : "default"}>{eventStatusLabel}</Tag>
+                          {event.breaking ? (
+                            <Tag color="volcano">
+                              {t("pages.events.fields.breaking", { defaultValue: "Breaking" })}
+                            </Tag>
+                          ) : null}
+                          <Tag color="magenta">
+                            {heatLabel}: {event.heatScore.toFixed(1)}
+                          </Tag>
+                          <Tag color="purple">
+                            {credibilityLabel}: {Math.round(event.credibilityScore)}
+                          </Tag>
+                          <Tag>
+                            {sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}
+                          </Tag>
+                          <Tag>
+                            {sourceTypeLabel}: {event.sourceType}
+                          </Tag>
+                          {event.sourceEvidence.corroborated ? (
+                            <Tag color="success">
+                              {t("pages.events.fields.corroborated", { defaultValue: "Corroborated" })}
+                            </Tag>
+                          ) : null}
                           {language ? <Tag color="blue">{language}</Tag> : null}
                           {topic ? <Tag color="geekblue">{topic}</Tag> : null}
                           {entity ? <Tag color="purple">{entity}</Tag> : null}

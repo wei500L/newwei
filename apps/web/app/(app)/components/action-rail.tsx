@@ -73,6 +73,12 @@ export function buildActionRailNavConfig(
       path: "/today",
     },
     {
+      key: "/newsnow",
+      icon: <GlobalOutlined />,
+      label: t("nav.main.newsnow", { defaultValue: "NewsNow" }),
+      path: "/newsnow",
+    },
+    {
       key: "/topics",
       icon: <AppstoreOutlined />,
       label: t("nav.main.topics", { defaultValue: "Topics" }),

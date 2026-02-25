@@ -48,7 +48,11 @@ const comprehensiveNews = defineSource(async () => {
       Referer: "https://news.qq.com/",
     },
   })
-  return res.data.tabs[0].articleList.map(news => ({
+  const firstTab = res.data.tabs[0]
+  if (!firstTab?.articleList) {
+    return []
+  }
+  return firstTab.articleList.map(news => ({
     id: news.id,
     title: news.title,
     url: news.link_info.url,

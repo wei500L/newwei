@@ -1,7 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common"
+import { ProcessedItemModel, RawItemModel } from "@modular/mongo"
 
 import { CacheService } from "../cache/cache.service"
+import { PrismaService } from "../config/prisma.service"
 import { NewsSourceRuntimeSecretsService } from "../system-settings/news-source-runtime-secrets.service"
+import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
+import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
 
 import {
   BATCH_CONCURRENCY,
@@ -15,8 +19,6 @@ import {
 
 const LOCK_WAIT_INTERVAL_MS = 200
 const LOCK_MAX_WAIT_MS = REFRESH_LOCK_TTL_MS
-import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
-import type { NewsItem, SourceID, SourceResponse } from "./news-aggregator.types"
 
 @Injectable()
 export class NewsAggregatorService {
@@ -24,6 +26,7 @@ export class NewsAggregatorService {
 
   constructor(
     private readonly cacheService: CacheService,
+    private readonly prisma: PrismaService,
     private readonly registryService: NewsAggregatorRegistryService,
     private readonly runtimeSecretsService: NewsSourceRuntimeSecretsService,
   ) {}
@@ -150,6 +153,81 @@ export class NewsAggregatorService {
     return this.registryService.getMetadata()
   }
 
+  async resolveByUrl(url: string): Promise<NewsResolveResponse> {
+    const normalizedFull = this.normalizeComparableUrl(url, { keepSearch: true })
+    const normalizedBase = this.normalizeComparableUrl(url, { keepSearch: false })
+    if (!normalizedFull || !normalizedBase) {
+      return { matched: false }
+    }
+
+    const exactCandidates = Array.from(new Set([normalizedFull, normalizedBase]))
+    const exactMatch = await RawItemModel.findOne(
+      { "payload.url": { $in: exactCandidates } },
+      { itemMetaId: 1, "payload.url": 1, createdAt: 1 },
+    )
+      .sort({ createdAt: -1 })
+      .lean()
+
+    const fallbackPattern = `^${this.escapeRegex(normalizedBase)}(?:/)?(?:[?#].*)?$`
+    const fallbackMatch = exactMatch
+      ? null
+      : await RawItemModel.findOne(
+          { "payload.url": { $regex: fallbackPattern, $options: "i" } },
+          { itemMetaId: 1, "payload.url": 1, createdAt: 1 },
+        )
+          .sort({ createdAt: -1 })
+          .lean()
+
+    const resolvedRaw = exactMatch ?? fallbackMatch
+    const itemMetaId =
+      resolvedRaw && typeof resolvedRaw.itemMetaId === "string"
+        ? resolvedRaw.itemMetaId.trim()
+        : ""
+    if (!itemMetaId) {
+      return { matched: false }
+    }
+
+    const processedRows = await ProcessedItemModel.find(
+      {
+        itemMetaId,
+        status: "completed",
+      },
+      { _id: 1 },
+    )
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+
+    const processedItemIds = processedRows
+      .map((row) => row._id?.toString?.())
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+
+    const linkedEvent = processedItemIds.length
+      ? await this.prisma.newsEventItem.findFirst({
+          where: {
+            processedItemId: { in: processedItemIds },
+          },
+          orderBy: { createdAt: "desc" },
+          select: { eventId: true },
+        })
+      : null
+
+    const matchedUrl =
+      resolvedRaw &&
+      typeof (resolvedRaw as { payload?: { url?: unknown } }).payload?.url === "string"
+        ? ((resolvedRaw as { payload: { url: string } }).payload.url)
+        : undefined
+    const confidence = exactMatch ? 1 : 0.86
+
+    return {
+      matched: true,
+      itemId: itemMetaId,
+      ...(linkedEvent?.eventId ? { eventId: linkedEvent.eventId } : {}),
+      confidence,
+      ...(matchedUrl ? { matchedUrl } : {}),
+    }
+  }
+
   private resolveSourceId(sourceId: SourceID): SourceID {
     const visited = new Set<SourceID>()
     let current = sourceId
@@ -212,5 +290,35 @@ export class NewsAggregatorService {
 
   private buildStaleKey(sourceId: SourceID): string {
     return `${CACHE_PREFIX}:source:${sourceId}:stale`
+  }
+
+  private normalizeComparableUrl(
+    value: string,
+    options: { keepSearch: boolean },
+  ): string | null {
+    try {
+      const parsed = new URL(value)
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return null
+      }
+      parsed.hash = ""
+      parsed.hostname = parsed.hostname.toLowerCase()
+      if (!options.keepSearch) {
+        parsed.search = ""
+      }
+      if (parsed.pathname !== "/") {
+        parsed.pathname = parsed.pathname.replace(/\/+$/, "")
+      }
+      const normalized = parsed.toString()
+      return normalized.endsWith("/") && parsed.pathname === "/"
+        ? normalized.slice(0, -1)
+        : normalized
+    } catch {
+      return null
+    }
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   }
 }

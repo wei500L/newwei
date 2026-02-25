@@ -96,6 +96,7 @@ interface ItemFilters {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  excludeDuplicates?: boolean;
   dateRange?: ItemDateRangeFilter;
 }
 
@@ -1806,8 +1807,9 @@ export class ItemsService {
     const regions = this.normalizeFilterList(input.regions);
     const topics = this.normalizeFilterList(input.topics);
     const sentiments = this.normalizeFilterList(input.sentiments, { lowerCase: true });
+    const excludeDuplicates = input.excludeDuplicates === true;
     const dateRange = this.normalizeDateRange(input.dateRange);
-    if (!sourceIds && !regions && !topics && !sentiments && !dateRange) {
+    if (!sourceIds && !regions && !topics && !sentiments && !excludeDuplicates && !dateRange) {
       return undefined;
     }
     return {
@@ -1815,6 +1817,7 @@ export class ItemsService {
       regions,
       topics,
       sentiments,
+      ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
       dateRange
     };
   }
@@ -1869,6 +1872,7 @@ export class ItemsService {
       (filters.regions && filters.regions.length > 0) ||
         (filters.topics && filters.topics.length > 0) ||
         (filters.sentiments && filters.sentiments.length > 0) ||
+        filters.excludeDuplicates === true ||
         filters.dateRange?.start ||
         filters.dateRange?.end
     );
@@ -2181,6 +2185,11 @@ export class ItemsService {
           { "result.sentiment_label": { $in: sentimentMatchers } },
           { tags: { $in: sentimentMatchers } }
         ]
+      });
+    }
+    if (filters.excludeDuplicates) {
+      matchFilters.push({
+        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }]
       });
     }
 

@@ -35,9 +35,13 @@ export default defineSource(async () => {
   if (!matches) {
     throw new Error("无法获取快手热榜数据")
   }
+  const apolloState = matches[1]
+  if (!apolloState) {
+    throw new Error("无法解析快手热榜数据")
+  }
 
   // 解析JSON数据
-  const data: KuaishouRes = JSON.parse(matches[1])
+  const data: KuaishouRes = JSON.parse(apolloState)
 
   // 获取热榜数据ID
   const hotRankId = data.defaultClient.ROOT_QUERY["visionHotRank({\"page\":\"home\"})"].id

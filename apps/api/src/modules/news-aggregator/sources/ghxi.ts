@@ -20,7 +20,11 @@ const relativeTimeToDate = function (timeStr: string) {
     return ""
   }
 
-  const num = Number.parseInt(match[1])
+  const numText = match[1]
+  if (!numText) {
+    return ""
+  }
+  const num = Number.parseInt(numText, 10)
   const unit = match[2] as keyof typeof units
   const msAgo = num * units[unit]
 

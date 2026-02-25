@@ -1,5 +1,21 @@
-query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
-  newsEvents(limit: $limit, windowDays: $windowDays, status: $status) {
+query NewsEvents(
+  $limit: Int
+  $windowDays: Int
+  $status: NewsEventStatus
+  $sourceType: NewsEventSourceType
+  $minHeatScore: Float
+  $minCredibilityScore: Float
+  $sortBy: NewsEventSortBy
+) {
+  newsEvents(
+    limit: $limit
+    windowDays: $windowDays
+    status: $status
+    sourceType: $sourceType
+    minHeatScore: $minHeatScore
+    minCredibilityScore: $minCredibilityScore
+    sortBy: $sortBy
+  ) {
     id
     title
     status
@@ -17,6 +33,14 @@ query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
     updatedAt
     breaking
     heatScore
+    credibilityScore
+    sourceType
+    sourceEvidence {
+      uniqueSourceCount
+      authoritativeSourceCount
+      blogSourceCount
+      corroborated
+    }
   }
 }
 
@@ -39,6 +63,14 @@ query NewsEvent($id: String!, $itemsLimit: Int, $timelineLimit: Int) {
     updatedAt
     breaking
     heatScore
+    credibilityScore
+    sourceType
+    sourceEvidence {
+      uniqueSourceCount
+      authoritativeSourceCount
+      blogSourceCount
+      corroborated
+    }
     items {
       id
       eventId

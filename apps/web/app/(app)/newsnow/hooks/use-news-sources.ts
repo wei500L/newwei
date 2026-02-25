@@ -37,6 +37,14 @@ export interface SourceResponse {
   items: NewsItem[];
 }
 
+export interface NewsResolveResponse {
+  matched: boolean;
+  itemId?: string;
+  eventId?: string;
+  confidence?: number;
+  matchedUrl?: string;
+}
+
 export interface MetadataResponse {
   sources: Record<string, Source>;
   columns: Record<string, Column>;
@@ -94,6 +102,11 @@ async function fetchSourceById(id: string, latest = false): Promise<SourceRespon
     : `/news-aggregator/source?id=${encodeURIComponent(id)}`;
   const { data } = await api.get(query);
   return coerceSourceResponse(data as SourceResponse);
+}
+
+async function fetchResolvedByUrl(url: string): Promise<NewsResolveResponse> {
+  const { data } = await api.get(`/news-aggregator/resolve?url=${encodeURIComponent(url)}`);
+  return (data ?? { matched: false }) as NewsResolveResponse;
 }
 
 export function useNewsMetadata() {
@@ -154,5 +167,22 @@ export function useBatchPrefetch() {
     } catch (error) {
       console.error("Batch prefetch failed:", error);
     }
+  };
+}
+
+export function useResolveNewsUrl() {
+  const queryClient = useQueryClient();
+
+  return async (url: string): Promise<NewsResolveResponse> => {
+    const normalized = url.trim();
+    if (!normalized) {
+      return { matched: false };
+    }
+
+    return queryClient.fetchQuery<NewsResolveResponse>({
+      queryKey: ["news-resolve", normalized],
+      queryFn: () => fetchResolvedByUrl(normalized),
+      staleTime: 1000 * 60 * 30,
+    });
   };
 }

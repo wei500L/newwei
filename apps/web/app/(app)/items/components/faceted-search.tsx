@@ -23,6 +23,7 @@ export interface FilterState {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  excludeDuplicates?: boolean;
 }
 
 interface FacetedSearchProps {
@@ -165,6 +166,13 @@ export function FacetedSearch({
               key: 'sentiment',
               label: t('items.filters.sentiment', { defaultValue: 'Sentiment' }),
               count: selectionCounts.sentiments
+            }
+          : null,
+        filters.excludeDuplicates
+          ? {
+              key: 'dedupe',
+              label: t('items.filters.excludeDuplicates', { defaultValue: 'Hide duplicates' }),
+              count: 1
             }
           : null,
         selectionCounts.dateRange > 0

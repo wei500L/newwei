@@ -27,7 +27,7 @@ export async function rss2json(url: string): Promise<RSSInfo | undefined> {
     image: channel.image ? channel.image.url : channel["itunes:image"] ? channel["itunes:image"].href : "",
     category: channel.category || [],
     updatedTime: channel.lastBuildDate ?? channel.updated,
-    items: [],
+    items: [] as Record<string, unknown>[],
   }
 
   let items = channel.item || channel.entry || []
@@ -91,5 +91,5 @@ export async function rss2json(url: string): Promise<RSSInfo | undefined> {
     rss.items.push(obj)
   }
 
-  return rss as RSSInfo
+  return rss as unknown as RSSInfo
 }

@@ -2,6 +2,7 @@ import { ArgsType, Field, GraphQLISODateTime, InputType, Int, registerEnumType }
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDate,
   IsEnum,
   IsInt,
@@ -127,6 +128,11 @@ export class ItemsFiltersInput {
   @IsArray()
   @IsString({ each: true })
   sentiments?: string[];
+
+  @Field(() => Boolean, { nullable: true, defaultValue: false })
+  @IsOptional()
+  @IsBoolean()
+  excludeDuplicates?: boolean;
 
   @Field(() => ItemsDateRangeInput, { nullable: true })
   @IsOptional()

@@ -14,6 +14,7 @@ import {
   Segmented,
   Skeleton,
   Space,
+  Switch,
   Table,
   Tag,
   Tooltip,
@@ -344,6 +345,7 @@ const ITEMS_FILTER_QUERY_KEYS = {
   region: "region",
   topic: "topic",
   sentiment: "sentiment",
+  dedup: "dedup",
   from: "from",
   to: "to"
 } as const;
@@ -354,6 +356,7 @@ function normalizeFiltersState(filters: FilterState): FilterState {
   const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true })?.sort((a, b) =>
     a.localeCompare(b)
   );
+  const excludeDuplicates = filters.excludeDuplicates === true;
 
   const start = filters.dateRange?.[0] ?? null;
   const end = filters.dateRange?.[1] ?? null;
@@ -366,6 +369,7 @@ function normalizeFiltersState(filters: FilterState): FilterState {
     ...(regions ? { regions } : {}),
     ...(topics ? { topics } : {}),
     ...(sentiments ? { sentiments } : {}),
+    ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
     ...(dateRange ? { dateRange } : {})
   };
 }
@@ -377,6 +381,7 @@ function fingerprintFilters(filters: FilterState): string {
     regions: normalized.regions ?? [],
     topics: normalized.topics ?? [],
     sentiments: normalized.sentiments ?? [],
+    excludeDuplicates: normalized.excludeDuplicates === true,
     from: dateRange?.[0]?.toISOString?.() ?? null,
     to: dateRange?.[1]?.toISOString?.() ?? null
   });
@@ -422,6 +427,9 @@ function parseFiltersFromSearchParams(
         lowerCase: true
       })?.sort((a, b) => a.localeCompare(b))
     : undefined;
+  const dedupeParam = (params.get(ITEMS_FILTER_QUERY_KEYS.dedup) ?? "").trim().toLowerCase();
+  const excludeDuplicates =
+    dedupeParam === "1" || dedupeParam === "true" || dedupeParam === "hide";
 
   const dateOverride = parseDateRangeParam(params).dateRange;
 
@@ -433,6 +441,7 @@ function parseFiltersFromSearchParams(
     ...(regions !== undefined ? { regions } : {}),
     ...(topics !== undefined ? { topics } : {}),
     ...(sentiments !== undefined ? { sentiments } : {}),
+    ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
     ...(dateOverride ? { dateRange: dateOverride } : {})
   };
 }
@@ -441,6 +450,7 @@ function applyFiltersToSearchParams(next: URLSearchParams, filters: FilterState 
   next.delete(ITEMS_FILTER_QUERY_KEYS.region);
   next.delete(ITEMS_FILTER_QUERY_KEYS.topic);
   next.delete(ITEMS_FILTER_QUERY_KEYS.sentiment);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.dedup);
   next.delete(ITEMS_FILTER_QUERY_KEYS.from);
   next.delete(ITEMS_FILTER_QUERY_KEYS.to);
 
@@ -457,6 +467,9 @@ function applyFiltersToSearchParams(next: URLSearchParams, filters: FilterState 
   }
   for (const value of normalized.sentiments ?? []) {
     next.append(ITEMS_FILTER_QUERY_KEYS.sentiment, value);
+  }
+  if (normalized.excludeDuplicates) {
+    next.set(ITEMS_FILTER_QUERY_KEYS.dedup, "hide");
   }
 
   const dateRange = normalized.dateRange;
@@ -495,6 +508,7 @@ interface ItemsFiltersInput {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  excludeDuplicates?: boolean;
   dateRange?: ItemsDateRangeInput;
 }
 
@@ -638,6 +652,7 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
   const regions = normalizeFilterList(filters.regions);
   const topics = normalizeFilterList(filters.topics);
   const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true });
+  const excludeDuplicates = filters.excludeDuplicates === true;
   const rangeStart = filters.dateRange?.[0]?.startOf("day");
   const rangeEnd = filters.dateRange?.[1]?.endOf("day");
   const dateRange =
@@ -648,7 +663,7 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
         }
       : undefined;
 
-  if (!sourceIds && !regions && !topics && !sentiments && !dateRange) {
+  if (!sourceIds && !regions && !topics && !sentiments && !excludeDuplicates && !dateRange) {
     return null;
   }
 
@@ -657,6 +672,7 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
     ...(regions ? { regions } : {}),
     ...(topics ? { topics } : {}),
     ...(sentiments ? { sentiments } : {}),
+    ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
     ...(dateRange ? { dateRange } : {})
   };
 }
@@ -1080,6 +1096,15 @@ export function ItemsView({
     },
     []
   );
+  const handleExcludeDuplicatesChange = useCallback((checked: boolean) => {
+    setFilters((current) =>
+      normalizeFiltersState({
+        ...current,
+        ...(checked ? { excludeDuplicates: true } : { excludeDuplicates: undefined })
+      })
+    );
+    setPage(1);
+  }, []);
 
   const {
     data,
@@ -1156,6 +1181,9 @@ export function ItemsView({
       parts.push(
         `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${filtersInput.sentiments.length.toLocaleString(locale)}`
       );
+    }
+    if (filtersInput?.excludeDuplicates) {
+      parts.push(t("items.filters.excludeDuplicates", { defaultValue: "Hide duplicates" }));
     }
     if (filtersInput?.dateRange) {
       parts.push(`${t("items.filters.date", { defaultValue: "Date Range" })}: 1`);
@@ -1919,6 +1947,7 @@ export function ItemsView({
     activeFilterDimensionCount > 0
       ? `${t("items.filters.button", { defaultValue: "Filters" })} (${activeFilterDimensionCount})`
       : t("items.filters.button", { defaultValue: "Filters" });
+  const excludeDuplicatesEnabled = effectiveFilters.excludeDuplicates === true;
 
   const containerClassName = layoutState.isReaderPreset
     ? "content-card items-reader-shell"
@@ -2017,6 +2046,22 @@ export function ItemsView({
                     }}
                   />
                 ) : null}
+                <Tooltip
+                  title={t("items.filters.excludeDuplicatesHint", {
+                    defaultValue: "Hide entries that are marked as duplicates."
+                  })}
+                >
+                  <Space size={6}>
+                    <Typography.Text type="secondary">
+                      {t("items.filters.excludeDuplicates", { defaultValue: "Hide duplicates" })}
+                    </Typography.Text>
+                    <Switch
+                      size="small"
+                      checked={excludeDuplicatesEnabled}
+                      onChange={handleExcludeDuplicatesChange}
+                    />
+                  </Space>
+                </Tooltip>
                 {!screens.lg && (
                   <Button onClick={() => setShowFilters(true)}>{filterButtonLabel}</Button>
                 )}
