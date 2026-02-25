@@ -59,6 +59,9 @@ export interface LlmRequestLogSettingsPublic {
   retentionDays: number;
   metadataAllowedTopLevelKeys: string[];
   metadataAllowedTopLevelPrefixes: string[];
+  briefErrorRateThreshold: number;
+  briefInvalidJsonRatioThreshold: number;
+  briefConsecutiveDaysThreshold: number;
 }
 
 export interface LlmRequestLogMetadataPolicy {
@@ -75,6 +78,9 @@ interface StoredLlmRequestLogSettings {
   retentionDays?: unknown;
   metadataAllowedTopLevelKeys?: unknown;
   metadataAllowedTopLevelPrefixes?: unknown;
+  briefErrorRateThreshold?: unknown;
+  briefInvalidJsonRatioThreshold?: unknown;
+  briefConsecutiveDaysThreshold?: unknown;
 }
 
 interface ManagedCreatedAtIndex {
@@ -96,6 +102,11 @@ const MAX_METADATA_ALLOWED_TOP_LEVEL_PREFIXES = 20;
 const MAX_METADATA_KEY_LENGTH = 64;
 const MAX_METADATA_PREFIX_LENGTH = 24;
 const METADATA_TOKEN_PATTERN = /^[a-z0-9_:\-.]+$/;
+const DEFAULT_BRIEF_ERROR_RATE_THRESHOLD = 0.1;
+const DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD = 0.3;
+const DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 3;
+const MIN_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 1;
+const MAX_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 30;
 
 @Injectable()
 export class LlmRequestLogSettingsService implements OnModuleInit {
@@ -165,16 +176,22 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       retentionDays?: number;
       metadataAllowedTopLevelKeys?: string[];
       metadataAllowedTopLevelPrefixes?: string[];
+      briefErrorRateThreshold?: number;
+      briefInvalidJsonRatioThreshold?: number;
+      briefConsecutiveDaysThreshold?: number;
     },
   ): Promise<LlmRequestLogSettingsPublic> {
     const hasAnyInput =
       input.retentionDays !== undefined ||
       input.metadataAllowedTopLevelKeys !== undefined ||
-      input.metadataAllowedTopLevelPrefixes !== undefined;
+      input.metadataAllowedTopLevelPrefixes !== undefined ||
+      input.briefErrorRateThreshold !== undefined ||
+      input.briefInvalidJsonRatioThreshold !== undefined ||
+      input.briefConsecutiveDaysThreshold !== undefined;
 
     if (!hasAnyInput) {
       throw new BadRequestException(
-        "At least one of retentionDays, metadataAllowedTopLevelKeys, metadataAllowedTopLevelPrefixes is required",
+        "At least one of retentionDays, metadataAllowedTopLevelKeys, metadataAllowedTopLevelPrefixes, briefErrorRateThreshold, briefInvalidJsonRatioThreshold, briefConsecutiveDaysThreshold is required",
       );
     }
 
@@ -214,6 +231,38 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       );
     }
 
+    const briefErrorRateThreshold =
+      input.briefErrorRateThreshold === undefined
+        ? current.briefErrorRateThreshold
+        : this.normalizeThresholdRateStrict(input.briefErrorRateThreshold);
+    if (briefErrorRateThreshold === null) {
+      throw new BadRequestException(
+        "briefErrorRateThreshold must be a number between 0 and 1",
+      );
+    }
+
+    const briefInvalidJsonRatioThreshold =
+      input.briefInvalidJsonRatioThreshold === undefined
+        ? current.briefInvalidJsonRatioThreshold
+        : this.normalizeThresholdRateStrict(input.briefInvalidJsonRatioThreshold);
+    if (briefInvalidJsonRatioThreshold === null) {
+      throw new BadRequestException(
+        "briefInvalidJsonRatioThreshold must be a number between 0 and 1",
+      );
+    }
+
+    const briefConsecutiveDaysThreshold =
+      input.briefConsecutiveDaysThreshold === undefined
+        ? current.briefConsecutiveDaysThreshold
+        : this.normalizeBriefConsecutiveDaysThresholdStrict(
+            input.briefConsecutiveDaysThreshold,
+          );
+    if (briefConsecutiveDaysThreshold === null) {
+      throw new BadRequestException(
+        `briefConsecutiveDaysThreshold must be an integer between ${MIN_BRIEF_CONSECUTIVE_DAYS_THRESHOLD} and ${MAX_BRIEF_CONSECUTIVE_DAYS_THRESHOLD}`,
+      );
+    }
+
     const shouldApplyRetentionTtl =
       input.retentionDays !== undefined && retentionDays !== current.retentionDays;
     if (shouldApplyRetentionTtl) {
@@ -224,6 +273,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       retentionDays,
       metadataAllowedTopLevelKeys,
       metadataAllowedTopLevelPrefixes,
+      briefErrorRateThreshold,
+      briefInvalidJsonRatioThreshold,
+      briefConsecutiveDaysThreshold,
     };
 
     await this.prisma.systemSetting.upsert({
@@ -257,6 +309,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
             metadataAllowedTopLevelPrefixes,
             metadataTopLevelKeysCount: metadataAllowedTopLevelKeys.length,
             metadataPrefixCount: metadataAllowedTopLevelPrefixes.length,
+            briefErrorRateThreshold,
+            briefInvalidJsonRatioThreshold,
+            briefConsecutiveDaysThreshold,
           }),
         },
       },
@@ -273,6 +328,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       retentionDays,
       metadataAllowedTopLevelKeys,
       metadataAllowedTopLevelPrefixes,
+      briefErrorRateThreshold,
+      briefInvalidJsonRatioThreshold,
+      briefConsecutiveDaysThreshold,
     };
 
     this.setCachedSettings(next);
@@ -303,6 +361,11 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
             metadataAllowedTopLevelKeys: defaults.metadataAllowedTopLevelKeys,
             metadataAllowedTopLevelPrefixes:
               defaults.metadataAllowedTopLevelPrefixes,
+            briefErrorRateThreshold: defaults.briefErrorRateThreshold,
+            briefInvalidJsonRatioThreshold:
+              defaults.briefInvalidJsonRatioThreshold,
+            briefConsecutiveDaysThreshold:
+              defaults.briefConsecutiveDaysThreshold,
           }),
         },
       },
@@ -609,11 +672,27 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
         rawObject?.metadataAllowedTopLevelPrefixes,
       );
 
+    const briefErrorRateThreshold = this.normalizeThresholdRateLenient(
+      rawObject?.briefErrorRateThreshold,
+      DEFAULT_BRIEF_ERROR_RATE_THRESHOLD,
+    );
+    const briefInvalidJsonRatioThreshold = this.normalizeThresholdRateLenient(
+      rawObject?.briefInvalidJsonRatioThreshold,
+      DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD,
+    );
+    const briefConsecutiveDaysThreshold =
+      this.normalizeBriefConsecutiveDaysThresholdLenient(
+        rawObject?.briefConsecutiveDaysThreshold,
+      );
+
     return {
       source: "db",
       retentionDays: retentionDays ?? DEFAULT_LLM_REQUEST_LOG_RETENTION_DAYS,
       metadataAllowedTopLevelKeys,
       metadataAllowedTopLevelPrefixes,
+      briefErrorRateThreshold,
+      briefInvalidJsonRatioThreshold,
+      briefConsecutiveDaysThreshold,
     };
   }
 
@@ -643,6 +722,51 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       return null;
     }
     return numeric;
+  }
+
+  private normalizeThresholdRateStrict(value: unknown): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    if (numeric < 0 || numeric > 1) {
+      return null;
+    }
+    return Number(numeric.toFixed(4));
+  }
+
+  private normalizeThresholdRateLenient(
+    value: unknown,
+    fallback: number,
+  ): number {
+    const normalized = this.normalizeThresholdRateStrict(value);
+    return normalized === null ? fallback : normalized;
+  }
+
+  private normalizeBriefConsecutiveDaysThresholdStrict(
+    value: unknown,
+  ): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    if (!Number.isInteger(numeric)) {
+      return null;
+    }
+    if (
+      numeric < MIN_BRIEF_CONSECUTIVE_DAYS_THRESHOLD ||
+      numeric > MAX_BRIEF_CONSECUTIVE_DAYS_THRESHOLD
+    ) {
+      return null;
+    }
+    return numeric;
+  }
+
+  private normalizeBriefConsecutiveDaysThresholdLenient(value: unknown): number {
+    const normalized = this.normalizeBriefConsecutiveDaysThresholdStrict(value);
+    return normalized === null
+      ? DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD
+      : normalized;
   }
 
   private normalizeMetadataAllowedTopLevelKeysStrict(
@@ -752,6 +876,9 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       metadataAllowedTopLevelPrefixes: [
         ...settings.metadataAllowedTopLevelPrefixes,
       ],
+      briefErrorRateThreshold: settings.briefErrorRateThreshold,
+      briefInvalidJsonRatioThreshold: settings.briefInvalidJsonRatioThreshold,
+      briefConsecutiveDaysThreshold: settings.briefConsecutiveDaysThreshold,
     };
   }
 
@@ -765,6 +892,10 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       metadataAllowedTopLevelPrefixes: [
         ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
       ],
+      briefErrorRateThreshold: DEFAULT_BRIEF_ERROR_RATE_THRESHOLD,
+      briefInvalidJsonRatioThreshold:
+        DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD,
+      briefConsecutiveDaysThreshold: DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD,
     };
   }
 

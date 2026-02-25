@@ -1,5 +1,6 @@
 import {
   ArrayMaxSize,
+  IsNumber,
   IsArray,
   IsInt,
   IsOptional,
@@ -29,4 +30,22 @@ export class UpdateLlmRequestLogSettingsDto {
   @ArrayMaxSize(MAX_METADATA_ALLOWED_TOP_LEVEL_PREFIXES)
   @IsString({ each: true })
   metadataAllowedTopLevelPrefixes?: string[];
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1)
+  briefErrorRateThreshold?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1)
+  briefInvalidJsonRatioThreshold?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  briefConsecutiveDaysThreshold?: number;
 }

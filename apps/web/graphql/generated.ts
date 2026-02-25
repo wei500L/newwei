@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1772,6 +1774,7 @@ export type NewsEventBriefComparisonModel = {
 export type NewsEventBriefModel = {
   __typename?: 'NewsEventBriefModel';
   comparison?: Maybe<NewsEventBriefComparisonModel>;
+  detailedSummary: Scalars['String']['output'];
   generatedAt: Scalars['DateTime']['output'];
   keyPoints: Array<NewsEventBriefPointModel>;
   language: Scalars['String']['output'];
@@ -3441,7 +3444,7 @@ export type NewsEventBriefQueryVariables = Exact<{
 }>;
 
 
-export type NewsEventBriefQuery = { __typename?: 'Query', newsEventBrief?: { __typename?: 'NewsEventBriefModel', version: number, generatedAt: any, language: string, tldr: string, limitations?: string | null, keyPoints: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, whyItMatters: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, latestUpdate?: { __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> } | null, whatToWatch: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, comparison?: { __typename?: 'NewsEventBriefComparisonModel', consensus: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, divergence: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }> } | null, sources: Array<{ __typename?: 'NewsEventBriefSourceModel', index: number, url: string, sourceLabel?: string | null, title?: string | null, publishedAt?: any | null, processedItemId?: string | null, processedArticleId?: string | null }> } | null };
+export type NewsEventBriefQuery = { __typename?: 'Query', newsEventBrief?: { __typename?: 'NewsEventBriefModel', version: number, generatedAt: any, language: string, detailedSummary: string, tldr: string, limitations?: string | null, keyPoints: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, whyItMatters: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, latestUpdate?: { __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> } | null, whatToWatch: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, comparison?: { __typename?: 'NewsEventBriefComparisonModel', consensus: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }>, divergence: Array<{ __typename?: 'NewsEventBriefPointModel', text: string, citations: Array<number> }> } | null, sources: Array<{ __typename?: 'NewsEventBriefSourceModel', index: number, url: string, sourceLabel?: string | null, title?: string | null, publishedAt?: any | null, processedItemId?: string | null, processedArticleId?: string | null }> } | null };
 
 export type NewsEventsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -5804,6 +5807,7 @@ export const NewsEventBriefDocument = gql`
     version
     generatedAt
     language
+    detailedSummary
     tldr
     keyPoints {
       text

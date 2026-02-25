@@ -1554,7 +1554,7 @@
       "actions": {
         "details": "Details",
         "open": "Open",
-        "brief": "Brief"
+        "brief": "Detailed summary"
       },
       "drawer": {
         "title": "Event details",
@@ -1562,11 +1562,12 @@
         "notFound": "Event not found.",
         "items": "Items",
         "references": "Refs",
-        "refreshBrief": "Refresh brief",
+        "refreshBrief": "Refresh detailed summary",
         "generatedAt": "Generated",
         "briefSources": "Sources",
-        "briefLoadFailed": "Failed to load brief.",
-        "briefEmpty": "Brief is not available yet. Click refresh to generate.",
+        "briefLoadFailed": "Failed to load detailed summary.",
+        "briefEmpty": "Detailed summary is not available yet. Click refresh to generate.",
+        "detailedSummary": "Detailed summary",
         "tldr": "TL;DR",
         "keyPoints": "Key points",
         "whyMatters": "Why it matters",
@@ -1594,7 +1595,7 @@
         "articleEmpty": "No LLM content available.",
         "openOriginal": "Open",
         "tabs": {
-          "brief": "Brief",
+          "brief": "Detailed summary",
           "timeline": "Timeline",
           "articles": "Articles"
         },
@@ -1606,14 +1607,15 @@
         "notFound": "Event not found.",
         "openItem": "Open item",
         "tabs": {
-          "brief": "Brief",
+          "brief": "Detailed summary",
           "narrative": "Narrative"
         },
-        "refreshBrief": "Refresh brief",
+        "refreshBrief": "Refresh detailed summary",
         "generatedAt": "Generated",
         "briefSources": "Sources",
-        "briefLoadFailed": "Failed to load brief.",
-        "briefEmpty": "Brief is not available yet. Click refresh to generate.",
+        "briefLoadFailed": "Failed to load detailed summary.",
+        "briefEmpty": "Detailed summary is not available yet. Click refresh to generate.",
+        "detailedSummary": "Detailed summary",
         "tldr": "TL;DR",
         "keyPoints": "Key points",
         "whyMatters": "Why it matters",
@@ -3918,6 +3920,7 @@
       "errors": {
         "loadFailed": "Failed to load LLM request logs.",
         "summaryFailed": "Failed to load usage summary.",
+        "briefMetricsFailed": "Failed to load event detailed summary metrics.",
         "settingsLoadFailed": "Failed to load log retention settings.",
         "settingsSaveFailed": "Failed to save log retention settings.",
         "settingsResetFailed": "Failed to reset log retention settings.",
@@ -3942,12 +3945,18 @@
         "fields": {
           "retentionDays": "Retention days",
           "metadataAllowedTopLevelKeys": "Metadata top-level key allowlist",
-          "metadataAllowedTopLevelPrefixes": "Metadata top-level prefix allowlist"
+          "metadataAllowedTopLevelPrefixes": "Metadata top-level prefix allowlist",
+          "briefErrorRateThreshold": "Brief error rate threshold",
+          "briefInvalidJsonRatioThreshold": "Brief invalid JSON ratio threshold",
+          "briefConsecutiveDaysThreshold": "Brief consecutive days threshold"
         },
         "hints": {
           "retentionDays": "Applied to MongoDB TTL index immediately after save and on server startup.",
           "metadataAllowedTopLevelKeys": "Only these top-level metadata keys are retained. Values are normalized to lowercase and deduplicated.",
-          "metadataAllowedTopLevelPrefixes": "Top-level metadata keys with these prefixes are retained (for example: x_, meta_, ctx_)."
+          "metadataAllowedTopLevelPrefixes": "Top-level metadata keys with these prefixes are retained (for example: x_, meta_, ctx_).",
+          "briefErrorRateThreshold": "Alert triggers when brief error rate reaches this threshold (0-1).",
+          "briefInvalidJsonRatioThreshold": "Alert triggers when invalid JSON ratio reaches this threshold (0-1).",
+          "briefConsecutiveDaysThreshold": "Alert triggers when any threshold is exceeded for this many consecutive days."
         },
         "placeholders": {
           "metadataAllowedTopLevelKeys": "Add keys and press Enter",
@@ -3961,7 +3970,13 @@
           "metadataKeysPattern": "Use lowercase tokens with [a-z0-9_:. -], max {{max}} chars.",
           "metadataPrefixesInvalid": "Metadata prefixes must be an array.",
           "metadataPrefixesMaxCount": "At most {{count}} prefixes are allowed.",
-          "metadataPrefixesPattern": "Use lowercase prefixes with [a-z0-9_:. -], max {{max}} chars."
+          "metadataPrefixesPattern": "Use lowercase prefixes with [a-z0-9_:. -], max {{max}} chars.",
+          "briefErrorRateThresholdRequired": "Brief error rate threshold is required.",
+          "briefErrorRateThresholdRange": "Use a value between 0 and 1.",
+          "briefInvalidJsonRatioThresholdRequired": "Brief invalid JSON ratio threshold is required.",
+          "briefInvalidJsonRatioThresholdRange": "Use a value between 0 and 1.",
+          "briefConsecutiveDaysThresholdRequired": "Consecutive days threshold is required.",
+          "briefConsecutiveDaysThresholdRange": "Use an integer between 1 and 30."
         },
         "actions": {
           "reset": "Reset to default",
@@ -3973,7 +3988,10 @@
           "default": "Default",
           "currentDays": "Current: {{days}} days",
           "currentKeyCount": "Keys: {{count}}",
-          "currentPrefixCount": "Prefixes: {{count}}"
+          "currentPrefixCount": "Prefixes: {{count}}",
+          "currentBriefErrorRateThreshold": "Error rate threshold: {{value}}%",
+          "currentBriefInvalidJsonRatioThreshold": "Invalid JSON threshold: {{value}}%",
+          "currentBriefConsecutiveDaysThreshold": "Consecutive days threshold: {{days}}"
         },
         "modal": {
           "resetTitle": "Reset retention settings",
@@ -3997,6 +4015,8 @@
       },
       "filters": {
         "model": "Model",
+        "featureAll": "All features",
+        "featureNewsEventBrief": "Event detailed summary",
         "requestTypeAll": "All request types",
         "statusAll": "All statuses"
       },
@@ -4023,6 +4043,29 @@
         "totalTokens": "Total tokens",
         "totalCost": "Total cost (USD)",
         "avgLatency": "Avg latency",
+        "successRate": "Success rate",
+        "errorRate": "Error rate",
+        "successCount": "Success count",
+        "p95Latency": "P95 latency",
+        "briefGraphqlErrors": "Brief GraphQL errors",
+        "briefInvalidJsonErrors": "Brief invalid JSON",
+        "briefInvalidJsonRatio": "Brief invalid JSON ratio",
+        "briefErrorTrend": {
+          "title": "Brief GraphQL error trend (by day)",
+          "empty": "No brief GraphQL errors in selected range.",
+          "seriesGraphqlErrors": "GraphQL errors",
+          "seriesInvalidJsonErrors": "Invalid JSON errors"
+        },
+        "thresholdAlerts": {
+          "title": "newsEventBrief threshold alerts",
+          "errorRateExceeded": "LLM error rate {{value}}% exceeds threshold {{threshold}}%.",
+          "invalidJsonRatioExceeded": "Invalid JSON ratio {{value}}% exceeds threshold {{threshold}}%.",
+          "consecutiveDaysExceeded": "Threshold has been exceeded for {{maxDays}} consecutive days (configured threshold: {{threshold}} days)."
+        },
+        "topErrors": {
+          "title": "Top errors",
+          "empty": "No error summary."
+        },
         "byModel": {
           "title": "By model",
           "model": "Model",

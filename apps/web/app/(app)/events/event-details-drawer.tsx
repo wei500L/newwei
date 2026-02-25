@@ -3,12 +3,13 @@
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
 import { useNewsEventBriefQuery, useProcessedItemByIdQuery } from "@/graphql/generated";
+import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -398,6 +399,27 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     fetchPolicy: "network-only"
   });
   const selectedProcessed = selectedProcessedQuery.data?.processedItemById ?? null;
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+    captureClientError("Failed to load event drawer detail", error);
+  }, [error]);
+
+  useEffect(() => {
+    if (!briefQuery.error) {
+      return;
+    }
+    captureClientError("Failed to load event detailed summary in drawer", briefQuery.error);
+  }, [briefQuery.error]);
+
+  useEffect(() => {
+    if (!selectedProcessedQuery.error) {
+      return;
+    }
+    captureClientError("Failed to load selected processed article in event drawer", selectedProcessedQuery.error);
+  }, [selectedProcessedQuery.error]);
   const selectedProcessedResult = useMemo(
     () => getResultObject(selectedProcessed?.resultJson),
     [selectedProcessed?.resultJson]
@@ -420,7 +442,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         type="error"
         showIcon
         message={t("pages.events.drawer.loadFailed", { defaultValue: "Failed to load event." })}
-        description={error.message}
+        description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
       />
     );
   }
@@ -533,6 +555,21 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     );
   };
 
+  const renderDetailedSummary = (summary: string | null | undefined) => {
+    const normalized = typeof summary === "string" ? summary.trim() : "";
+    if (!normalized) {
+      return (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={t("common.notAvailable", { defaultValue: "Not available" })}
+        />
+      );
+    }
+    return (
+      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>{normalized}</Typography.Paragraph>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <Space direction="vertical" size={6}>
@@ -584,7 +621,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         items={[
           {
             key: "brief",
-            label: t("pages.events.drawer.tabs.brief", { defaultValue: "One-page brief" }),
+            label: t("pages.events.drawer.tabs.brief", { defaultValue: "Detailed summary" }),
             children: (
               <div className="flex flex-col gap-4">
                 <Space wrap>
@@ -599,7 +636,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                     }
                     loading={briefQuery.loading}
                   >
-                    {t("pages.events.drawer.refreshBrief", { defaultValue: "Refresh brief" })}
+                    {t("pages.events.drawer.refreshBrief", { defaultValue: "Refresh detailed summary" })}
                   </Button>
                   {brief?.generatedAt ? (
                     <Tag>
@@ -618,8 +655,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Alert
                     type="error"
                     showIcon
-                    message={t("pages.events.drawer.briefLoadFailed", { defaultValue: "Failed to load brief." })}
-                    description={briefQuery.error.message}
+                    message={t("pages.events.drawer.briefLoadFailed", { defaultValue: "Failed to load detailed summary." })}
+                    description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
                   />
                 ) : briefQuery.loading && !brief ? (
                   <Skeleton active paragraph={{ rows: 10 }} />
@@ -627,11 +664,19 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={t("pages.events.drawer.briefEmpty", {
-                      defaultValue: "Brief is not available yet. Click refresh to generate."
+                      defaultValue: "Detailed summary is not available yet. Click refresh to generate."
                     })}
                   />
                 ) : (
                   <div className="flex flex-col gap-3">
+                    <Card
+                      size="small"
+                      className="content-card"
+                      title={t("pages.events.drawer.detailedSummary", { defaultValue: "Detailed summary" })}
+                    >
+                      {renderDetailedSummary(brief.detailedSummary)}
+                    </Card>
+
                     <Card size="small" className="content-card" title={t("pages.events.drawer.tldr", { defaultValue: "TL;DR" })}>
                       <Typography.Paragraph style={{ marginBottom: 0 }}>{brief.tldr}</Typography.Paragraph>
                     </Card>
@@ -1047,7 +1092,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             type="error"
             showIcon
             message={t("pages.events.drawer.articleLoadFailed", { defaultValue: "Failed to load article." })}
-            description={selectedProcessedQuery.error.message}
+            description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
           />
         ) : selectedProcessedQuery.loading && selectedProcessedItemId ? (
           <Skeleton active paragraph={{ rows: 10 }} />

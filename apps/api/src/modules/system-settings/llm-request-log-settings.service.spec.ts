@@ -241,6 +241,28 @@ describe("LlmRequestLogSettingsService", () => {
     expect(ttlIndex?.expireAfterSeconds).toBe(45 * 24 * 60 * 60);
   });
 
+  it("falls back to default brief alert thresholds when db record does not contain them", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue({
+      value: {
+        retentionDays: 45,
+        metadataAllowedTopLevelKeys: ["traceid"],
+        metadataAllowedTopLevelPrefixes: ["x_"],
+      },
+    });
+    await service.onModuleInit();
+    (service as unknown as { cacheExpiresAt: number }).cacheExpiresAt = 0;
+
+    const settings = await service.getSettings();
+
+    expect(settings).toMatchObject({
+      source: "db",
+      retentionDays: 45,
+      briefErrorRateThreshold: 0.1,
+      briefInvalidJsonRatioThreshold: 0.3,
+      briefConsecutiveDaysThreshold: 3,
+    });
+  });
+
   it("does not drop non-TTL createdAt indexes and fails fast with clear error", async () => {
     setIndexState([
       { name: "_id_", key: { _id: 1 } },
@@ -400,6 +422,9 @@ describe("LlmRequestLogSettingsService", () => {
       metadataAllowedTopLevelPrefixes: [
         ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
       ],
+      briefErrorRateThreshold: 0.1,
+      briefInvalidJsonRatioThreshold: 0.3,
+      briefConsecutiveDaysThreshold: 3,
     });
     expect(prismaMock.systemSetting.deleteMany).toHaveBeenCalled();
 
@@ -407,5 +432,45 @@ describe("LlmRequestLogSettingsService", () => {
       (index) => index.name === "llm_request_log_created_at_ttl",
     );
     expect(ttlIndex?.expireAfterSeconds).toBe(30 * 24 * 60 * 60);
+  });
+
+  it("updates configurable brief alert thresholds", async () => {
+    const result = await service.updateSettings("org-1", "actor-1", {
+      briefErrorRateThreshold: 0.12,
+      briefInvalidJsonRatioThreshold: 0.45,
+      briefConsecutiveDaysThreshold: 5,
+    });
+
+    expect(result).toMatchObject({
+      source: "db",
+      briefErrorRateThreshold: 0.12,
+      briefInvalidJsonRatioThreshold: 0.45,
+      briefConsecutiveDaysThreshold: 5,
+    });
+    expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          value: expect.objectContaining({
+            briefErrorRateThreshold: 0.12,
+            briefInvalidJsonRatioThreshold: 0.45,
+            briefConsecutiveDaysThreshold: 5,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("rejects invalid brief alert thresholds", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        briefErrorRateThreshold: 1.5,
+      }),
+    ).rejects.toThrow("briefErrorRateThreshold");
+
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        briefConsecutiveDaysThreshold: 0,
+      }),
+    ).rejects.toThrow("briefConsecutiveDaysThreshold");
   });
 });

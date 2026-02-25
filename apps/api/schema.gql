@@ -1473,6 +1473,7 @@ type NewsEventBriefComparisonModel {
 
 type NewsEventBriefModel {
   comparison: NewsEventBriefComparisonModel
+  detailedSummary: String!
   generatedAt: DateTime!
   keyPoints: [NewsEventBriefPointModel!]!
   language: String!

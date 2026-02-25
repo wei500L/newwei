@@ -1557,7 +1557,7 @@
       "actions": {
         "details": "详情",
         "open": "打开",
-        "brief": "简报"
+        "brief": "详细摘要"
       },
       "drawer": {
         "title": "事件详情",
@@ -1565,11 +1565,12 @@
         "notFound": "事件不存在。",
         "items": "条目",
         "references": "引用",
-        "refreshBrief": "刷新简报",
+        "refreshBrief": "刷新详细摘要",
         "generatedAt": "生成",
         "briefSources": "来源",
-        "briefLoadFailed": "加载简报失败。",
-        "briefEmpty": "简报暂不可用，可点击刷新生成。",
+        "briefLoadFailed": "加载详细摘要失败。",
+        "briefEmpty": "详细摘要暂不可用，可点击刷新生成。",
+        "detailedSummary": "详细摘要",
         "tldr": "一句话",
         "keyPoints": "要点",
         "whyMatters": "为何重要",
@@ -1597,7 +1598,7 @@
         "articleEmpty": "暂无 AI 内容。",
         "openOriginal": "打开",
         "tabs": {
-          "brief": "简报",
+          "brief": "详细摘要",
           "timeline": "时间线",
           "articles": "文章"
         },
@@ -1609,14 +1610,15 @@
         "notFound": "事件不存在。",
         "openItem": "打开条目",
         "tabs": {
-          "brief": "简报",
+          "brief": "详细摘要",
           "narrative": "叙事"
         },
-        "refreshBrief": "刷新简报",
+        "refreshBrief": "刷新详细摘要",
         "generatedAt": "生成",
         "briefSources": "来源",
-        "briefLoadFailed": "加载简报失败。",
-        "briefEmpty": "简报暂不可用，可点击刷新生成。",
+        "briefLoadFailed": "加载详细摘要失败。",
+        "briefEmpty": "详细摘要暂不可用，可点击刷新生成。",
+        "detailedSummary": "详细摘要",
         "tldr": "一句话",
         "keyPoints": "要点",
         "whyMatters": "为何重要",
@@ -3921,6 +3923,7 @@
       "errors": {
         "loadFailed": "加载 LLM 请求日志失败。",
         "summaryFailed": "加载用量汇总失败。",
+        "briefMetricsFailed": "加载事件详细摘要指标失败。",
         "settingsLoadFailed": "加载日志保留期设置失败。",
         "settingsSaveFailed": "保存日志保留期设置失败。",
         "settingsResetFailed": "重置日志保留期设置失败。",
@@ -3945,12 +3948,18 @@
         "fields": {
           "retentionDays": "保留天数",
           "metadataAllowedTopLevelKeys": "Metadata 顶层键白名单",
-          "metadataAllowedTopLevelPrefixes": "Metadata 顶层前缀白名单"
+          "metadataAllowedTopLevelPrefixes": "Metadata 顶层前缀白名单",
+          "briefErrorRateThreshold": "摘要失败率阈值",
+          "briefInvalidJsonRatioThreshold": "摘要 invalid JSON 占比阈值",
+          "briefConsecutiveDaysThreshold": "摘要连续天数阈值"
         },
         "hints": {
           "retentionDays": "保存后和服务启动时会立即同步到 MongoDB TTL 索引。",
           "metadataAllowedTopLevelKeys": "仅保留这些顶层 metadata 键。保存时会自动转小写并去重。",
-          "metadataAllowedTopLevelPrefixes": "保留以这些前缀开头的顶层 metadata 键（例如 x_、meta_、ctx_）。"
+          "metadataAllowedTopLevelPrefixes": "保留以这些前缀开头的顶层 metadata 键（例如 x_、meta_、ctx_）。",
+          "briefErrorRateThreshold": "当摘要失败率达到该阈值时触发告警（0-1）。",
+          "briefInvalidJsonRatioThreshold": "当 invalid JSON 占比达到该阈值时触发告警（0-1）。",
+          "briefConsecutiveDaysThreshold": "当任一阈值连续超标达到该天数时触发告警。"
         },
         "placeholders": {
           "metadataAllowedTopLevelKeys": "输入键名后回车添加",
@@ -3964,7 +3973,13 @@
           "metadataKeysPattern": "请使用小写 token（[a-z0-9_:. -]），长度不超过 {{max}}。",
           "metadataPrefixesInvalid": "Metadata 前缀必须是数组。",
           "metadataPrefixesMaxCount": "最多允许 {{count}} 个前缀。",
-          "metadataPrefixesPattern": "请使用小写前缀（[a-z0-9_:. -]），长度不超过 {{max}}。"
+          "metadataPrefixesPattern": "请使用小写前缀（[a-z0-9_:. -]），长度不超过 {{max}}。",
+          "briefErrorRateThresholdRequired": "请输入摘要失败率阈值。",
+          "briefErrorRateThresholdRange": "请输入 0 到 1 之间的数值。",
+          "briefInvalidJsonRatioThresholdRequired": "请输入摘要 invalid JSON 占比阈值。",
+          "briefInvalidJsonRatioThresholdRange": "请输入 0 到 1 之间的数值。",
+          "briefConsecutiveDaysThresholdRequired": "请输入连续天数阈值。",
+          "briefConsecutiveDaysThresholdRange": "请输入 1 到 30 的整数。"
         },
         "actions": {
           "reset": "恢复默认",
@@ -3976,7 +3991,10 @@
           "default": "默认值",
           "currentDays": "当前：{{days}} 天",
           "currentKeyCount": "键：{{count}}",
-          "currentPrefixCount": "前缀：{{count}}"
+          "currentPrefixCount": "前缀：{{count}}",
+          "currentBriefErrorRateThreshold": "失败率阈值：{{value}}%",
+          "currentBriefInvalidJsonRatioThreshold": "invalid JSON 阈值：{{value}}%",
+          "currentBriefConsecutiveDaysThreshold": "连续天数阈值：{{days}}"
         },
         "modal": {
           "resetTitle": "重置保留设置",
@@ -4000,6 +4018,8 @@
       },
       "filters": {
         "model": "模型",
+        "featureAll": "全部功能",
+        "featureNewsEventBrief": "事件详细摘要",
         "requestTypeAll": "全部请求类型",
         "statusAll": "全部状态"
       },
@@ -4026,6 +4046,29 @@
         "totalTokens": "Token 总量",
         "totalCost": "总成本 (USD)",
         "avgLatency": "平均延迟",
+        "successRate": "成功率",
+        "errorRate": "失败率",
+        "successCount": "成功次数",
+        "p95Latency": "P95 延迟",
+        "briefGraphqlErrors": "摘要 GraphQL 错误",
+        "briefInvalidJsonErrors": "摘要 invalid JSON",
+        "briefInvalidJsonRatio": "摘要 invalid JSON 占比",
+        "briefErrorTrend": {
+          "title": "摘要 GraphQL 错误趋势（按天）",
+          "empty": "所选时间范围内暂无摘要 GraphQL 错误。",
+          "seriesGraphqlErrors": "GraphQL 错误",
+          "seriesInvalidJsonErrors": "invalid JSON 错误"
+        },
+        "thresholdAlerts": {
+          "title": "newsEventBrief 阈值告警",
+          "errorRateExceeded": "LLM 失败率 {{value}}% 超过阈值 {{threshold}}%。",
+          "invalidJsonRatioExceeded": "invalid JSON 占比 {{value}}% 超过阈值 {{threshold}}%。",
+          "consecutiveDaysExceeded": "阈值已连续超标 {{maxDays}} 天（配置阈值：{{threshold}} 天）。"
+        },
+        "topErrors": {
+          "title": "高频错误",
+          "empty": "暂无错误汇总。"
+        },
         "byModel": {
           "title": "按模型",
           "model": "模型",

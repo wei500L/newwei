@@ -8,6 +8,7 @@ export const NewsEventBriefPointSchema = z.object({
 });
 
 export const NewsEventBriefPayloadSchema = z.object({
+  detailed_summary: z.string().min(1),
   tldr: z.string().min(1),
   key_points: z.array(NewsEventBriefPointSchema).min(1).max(10).default([]),
   why_it_matters: z.array(NewsEventBriefPointSchema).max(10).default([]),
@@ -23,4 +24,3 @@ export const NewsEventBriefPayloadSchema = z.object({
 });
 
 export type NewsEventBriefPayload = z.infer<typeof NewsEventBriefPayloadSchema>;
-

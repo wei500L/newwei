@@ -45,6 +45,7 @@ export interface LlmRequestLogEntry {
 export interface LlmRequestLogFilter {
   orgId: string;
   model?: string;
+  feature?: string;
   requestType?: LlmRequestType;
   status?: LlmRequestStatus;
   start?: Date;
@@ -109,8 +110,28 @@ export interface LlmUsageSummaryByDayRow extends LlmUsageSummaryTotals {
 
 export interface LlmUsageSummary {
   totals: LlmUsageSummaryTotals;
+  statusBreakdown: LlmUsageSummaryStatusBreakdown;
+  latency: LlmUsageSummaryLatency;
+  topErrors: LlmUsageSummaryTopError[];
   byModel: LlmUsageSummaryGroupRow[];
   byDay: LlmUsageSummaryByDayRow[];
+}
+
+export interface LlmUsageSummaryStatusBreakdown {
+  success: number;
+  error: number;
+  successRate: number;
+  errorRate: number;
+}
+
+export interface LlmUsageSummaryLatency {
+  avgMs: number;
+  p95Ms: number | null;
+}
+
+export interface LlmUsageSummaryTopError {
+  message: string;
+  count: number;
 }
 
 export interface LlmRequestLogExportResult {
@@ -138,6 +159,7 @@ const METADATA_POLICY_CACHE_TTL_MS = 5_000;
 const EXPORT_MAX_ROWS = 50_000;
 const EXPORT_MAX_DATE_WINDOW_DAYS = 90;
 const EXPORT_MAX_DATE_WINDOW_MS = EXPORT_MAX_DATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const SUMMARY_TOP_ERRORS_LIMIT = 5;
 const EXPORT_CSV_HEADERS = [
   "timestamp",
   "model",
@@ -194,6 +216,16 @@ interface UsageAggModelRow extends UsageAggRow {
 
 interface UsageAggDayRow extends UsageAggRow {
   _id?: string;
+}
+
+interface UsageAggStatusRow {
+  _id?: LlmRequestStatus | string;
+  count?: number;
+}
+
+interface UsageAggErrorRow {
+  _id?: string;
+  count?: number;
 }
 
 interface LlmRequestLogRaw
@@ -348,6 +380,7 @@ export class LlmRequestLogService {
           orgId,
           actorId,
           model: normalizedFilter.model ?? null,
+          feature: normalizedFilter.feature ?? null,
           requestType: normalizedFilter.requestType ?? null,
           status: normalizedFilter.status ?? null,
           start: normalizedFilter.start?.toISOString(),
@@ -385,6 +418,7 @@ export class LlmRequestLogService {
           orgId,
           actorId,
           model: normalizedFilter.model ?? null,
+          feature: normalizedFilter.feature ?? null,
           requestType: normalizedFilter.requestType ?? null,
           status: normalizedFilter.status ?? null,
           start: normalizedFilter.start?.toISOString(),
@@ -409,6 +443,7 @@ export class LlmRequestLogService {
     return {
       orgId: this.normalizeOrgId(filter.orgId),
       model: typeof filter.model === "string" ? filter.model.trim() || undefined : undefined,
+      feature: this.normalizeFeatureToken(filter.feature),
       requestType: filter.requestType,
       status: filter.status,
       start: filter.start,
@@ -468,6 +503,7 @@ export class LlmRequestLogService {
               rowCount: args.rowCount,
               durationMs: args.durationMs,
               model: args.filter.model ?? null,
+              feature: args.filter.feature ?? null,
               requestType: args.filter.requestType ?? null,
               status: args.filter.status ?? null,
               start: args.filter.start?.toISOString() ?? null,
@@ -500,15 +536,22 @@ export class LlmRequestLogService {
 
   async getUsageSummary(
     orgId: string,
-    dateRange?: { start?: Date; end?: Date },
+    dateRange?: { start?: Date; end?: Date; feature?: string },
   ): Promise<LlmUsageSummary> {
     const usageWhere = this.buildWhere({
       orgId,
       start: dateRange?.start,
       end: dateRange?.end,
+      feature: dateRange?.feature,
     });
 
-    const [totalsAgg, byModelAgg, byDayAgg] = await Promise.all([
+    const topErrorWhere: FilterQuery<LlmRequestLog> = {
+      ...usageWhere,
+      status: "error",
+      error: { $type: "string", $ne: "" },
+    };
+
+    const [totalsAgg, byModelAgg, byDayAgg, statusAgg, topErrorAgg, p95Latency] = await Promise.all([
       this.llmRequestLogModel.aggregate<UsageAggRow>([
         { $match: usageWhere },
         {
@@ -559,9 +602,45 @@ export class LlmRequestLogService {
         },
         { $sort: { _id: 1 } },
       ]),
+      this.llmRequestLogModel.aggregate<UsageAggStatusRow>([
+        { $match: usageWhere },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      this.llmRequestLogModel.aggregate<UsageAggErrorRow>([
+        { $match: topErrorWhere },
+        {
+          $group: {
+            _id: "$error",
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1, _id: 1 } },
+        { $limit: SUMMARY_TOP_ERRORS_LIMIT },
+      ]),
+      this.resolveP95Latency(usageWhere),
     ]);
 
     const totals = this.mapUsageAggRow(totalsAgg[0] ?? {});
+    const successCount = this.toSafeInteger(
+      statusAgg.find((row) => row._id === "success")?.count,
+    );
+    const errorCount = this.toSafeInteger(
+      statusAgg.find((row) => row._id === "error")?.count,
+    );
+    const requestCount = Math.max(0, totals.requestCount);
+    const successRate = requestCount > 0 ? successCount / requestCount : 0;
+    const errorRate = requestCount > 0 ? errorCount / requestCount : 0;
+    const topErrors = topErrorAgg
+      .map((row) => ({
+        message: typeof row._id === "string" ? row._id.trim() : "",
+        count: this.toSafeInteger(row.count),
+      }))
+      .filter((row) => row.message.length > 0 && row.count > 0);
 
     const byModel = byModelAgg.map((row) => ({
       model: typeof row._id === "string" && row._id.trim().length > 0 ? row._id : "unknown",
@@ -575,6 +654,17 @@ export class LlmRequestLogService {
 
     return {
       totals,
+      statusBreakdown: {
+        success: successCount,
+        error: errorCount,
+        successRate,
+        errorRate,
+      },
+      latency: {
+        avgMs: totals.avgLatencyMs,
+        p95Ms: p95Latency,
+      },
+      topErrors,
       byModel,
       byDay,
     };
@@ -1020,6 +1110,11 @@ export class LlmRequestLogService {
       where.status = filter.status;
     }
 
+    const feature = this.normalizeFeatureToken(filter.feature);
+    if (feature) {
+      (where as Record<string, unknown>)["metadata.feature"] = feature;
+    }
+
     const range: Record<string, Date> = {};
     if (filter.start instanceof Date && !Number.isNaN(filter.start.getTime())) {
       range.$gte = filter.start;
@@ -1032,6 +1127,31 @@ export class LlmRequestLogService {
     }
 
     return where;
+  }
+
+  private async resolveP95Latency(where: FilterQuery<LlmRequestLog>): Promise<number | null> {
+    const latencyWhere: FilterQuery<LlmRequestLog> = {
+      ...where,
+      latencyMs: { $type: "number" },
+    };
+    const count = await this.llmRequestLogModel.countDocuments(latencyWhere);
+    if (count <= 0) {
+      return null;
+    }
+
+    const rank = Math.max(0, Math.ceil(count * 0.95) - 1);
+    const rows = (await this.llmRequestLogModel
+      .find(latencyWhere)
+      .sort({ latencyMs: 1 })
+      .skip(rank)
+      .limit(1)
+      .select({ latencyMs: 1 })
+      .lean()) as Array<{ latencyMs?: unknown }>;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return null;
+    }
+
+    return this.toNullableNumber(rows[0]?.latencyMs);
   }
 
   private mapUsageAggRow(row: UsageAggRow): LlmUsageSummaryTotals {
@@ -1061,5 +1181,22 @@ export class LlmRequestLogService {
       return 0;
     }
     return numeric;
+  }
+
+  private normalizeFeatureToken(value: unknown): string | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return undefined;
+    }
+    if (normalized.length > 64) {
+      return undefined;
+    }
+    if (!/^[a-z0-9_:\-.]+$/.test(normalized)) {
+      return undefined;
+    }
+    return normalized;
   }
 }

@@ -3,9 +3,10 @@
 import { gql, useQuery } from "@apollo/client";
 import { Button, Card, Empty, Grid, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 
@@ -153,6 +154,13 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   });
 
   const resolvedData = data ?? initialData ?? undefined;
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+    captureClientError("Failed to load events list", error);
+  }, [error]);
+
   const sortedEvents = useMemo(() => {
     const events = resolvedData?.newsEvents ?? [];
     return [...events].sort((a, b) => {
@@ -259,7 +267,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
 
           {error ? (
             <Typography.Text type="danger">
-              {t("pages.events.loadFailed", { defaultValue: "Failed to load events." })}: {error.message}
+              {t("pages.events.loadFailed", { defaultValue: "Failed to load events." })}{" "}
+              {t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
             </Typography.Text>
           ) : null}
 
@@ -325,7 +334,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                         {t("pages.events.actions.open", { defaultValue: "Open" })}
                       </Button>,
                       <Button key="brief" type="link" onClick={() => router.push(`/events/${event.id}?tab=brief`)}>
-                        {t("pages.events.actions.brief", { defaultValue: "Brief" })}
+                        {t("pages.events.actions.brief", { defaultValue: "Detailed summary" })}
                       </Button>
                     ]}
                   >

@@ -98,6 +98,7 @@ function sanitizePayload(payload: NewsEventBriefPayload, maxSources: number): Ne
 
   return {
     ...payload,
+    detailed_summary: payload.detailed_summary.trim(),
     tldr: payload.tldr.trim(),
     key_points: (payload.key_points ?? []).map(sanitizePoint).filter((p) => p.text.length > 0),
     why_it_matters: (payload.why_it_matters ?? []).map(sanitizePoint).filter((p) => p.text.length > 0),
@@ -486,6 +487,7 @@ export class NewsEventBriefService {
       "",
       "Output requirements:",
       `- Citation indexes must be within 1..${sourceCount}. Do not output points without at least one valid citation.`,
+      "- detailed_summary: 4-8 paragraphs, narrative style, explain chronology, current status, disagreements, and near-term watchpoints.",
       "- tldr: 1-2 sentences summarizing what happened and the latest state.",
       "- key_points: 4-8 bullets covering core facts and chronology (each with citations).",
       "- why_it_matters: 2-5 bullets about impact (each with citations).",

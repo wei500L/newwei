@@ -54,6 +54,9 @@ export class NewsEventBriefModel {
   language!: string;
 
   @Field()
+  detailedSummary!: string;
+
+  @Field()
   tldr!: string;
 
   @Field(() => [NewsEventBriefPointModel])
@@ -77,4 +80,3 @@ export class NewsEventBriefModel {
   @Field(() => [NewsEventBriefSourceModel])
   sources!: NewsEventBriefSourceModel[];
 }
-

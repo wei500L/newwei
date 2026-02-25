@@ -20,6 +20,8 @@ export class AdminErrorsController {
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
     @Query("kind") kind?: string,
+    @Query("operationName") operationName?: string,
+    @Query("messageContains") messageContains?: string,
     @Query("start") start?: string,
     @Query("end") end?: string
   ) {
@@ -34,6 +36,8 @@ export class AdminErrorsController {
       offset: Number.isFinite(parsedOffset) ? parsedOffset : undefined,
       orgId: user?.orgId,
       kind: normalizedKind,
+      operationName: operationName?.trim() || undefined,
+      messageContains: messageContains?.trim() || undefined,
       start,
       end
     });
@@ -44,6 +48,8 @@ export class AdminErrorsController {
   async stats(
     @CurrentUser() user: AuthenticatedUser,
     @Query("kind") kind?: string,
+    @Query("operationName") operationName?: string,
+    @Query("messageContains") messageContains?: string,
     @Query("start") start?: string,
     @Query("end") end?: string
   ) {
@@ -54,6 +60,8 @@ export class AdminErrorsController {
     return this.exceptionEvents.stats({
       orgId: user?.orgId,
       kind: normalizedKind,
+      operationName: operationName?.trim() || undefined,
+      messageContains: messageContains?.trim() || undefined,
       start,
       end
     });

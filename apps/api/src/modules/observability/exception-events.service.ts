@@ -24,6 +24,8 @@ export interface ListExceptionEventsOptions {
   offset?: number;
   orgId?: string;
   kind?: ExceptionEventKind;
+  operationName?: string;
+  messageContains?: string;
   start?: string | Date;
   end?: string | Date;
 }
@@ -36,6 +38,8 @@ export interface ListExceptionEventsResult {
 export interface ExceptionEventStatsOptions {
   orgId?: string;
   kind?: ExceptionEventKind;
+  operationName?: string;
+  messageContains?: string;
   start?: string | Date;
   end?: string | Date;
 }
@@ -55,6 +59,10 @@ type RecordExceptionEventInput = Omit<ExceptionEvent, "id" | "timestamp"> & {
 
 @Injectable()
 export class ExceptionEventsService {
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   private parseDate(value?: string | Date) {
     if (!value) {
       return undefined;
@@ -73,6 +81,14 @@ export class ExceptionEventsService {
     }
     if (options.kind) {
       filter.kind = options.kind;
+    }
+    const operationName = typeof options.operationName === "string" ? options.operationName.trim() : "";
+    if (operationName) {
+      filter.operationName = operationName;
+    }
+    const messageContains = typeof options.messageContains === "string" ? options.messageContains.trim() : "";
+    if (messageContains) {
+      filter.message = { $regex: this.escapeRegex(messageContains), $options: "i" };
     }
     const start = this.parseDate(options.start);
     const end = this.parseDate(options.end);

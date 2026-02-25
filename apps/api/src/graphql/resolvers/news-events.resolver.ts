@@ -268,6 +268,7 @@ export class NewsEventsResolver {
       version: 1,
       generatedAt: result.generatedAt,
       language: result.language,
+      detailedSummary: payload.detailed_summary,
       tldr: payload.tldr,
       keyPoints: (payload.key_points ?? []).map(toPoint),
       whyItMatters: (payload.why_it_matters ?? []).map(toPoint),

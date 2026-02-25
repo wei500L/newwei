@@ -3,6 +3,7 @@ query NewsEventBrief($eventId: String!, $language: String, $maxSources: Int, $fo
     version
     generatedAt
     language
+    detailedSummary
     tldr
     keyPoints {
       text
@@ -42,4 +43,3 @@ query NewsEventBrief($eventId: String!, $language: String, $maxSources: Int, $fo
     }
   }
 }
-

@@ -391,4 +391,90 @@ describe("LlmRequestLogService", () => {
     expect(csv).toContain("'=risky-model");
     expect(csv).toContain(",'@malicious");
   });
+
+  it("applies feature filter when querying logs", async () => {
+    modelMock.countDocuments = jest.fn().mockResolvedValue(0);
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    modelMock.find = jest.fn().mockReturnValue({ sort });
+
+    await service.queryLogs(
+      {
+        orgId: "org-1",
+        feature: " News_Event_Brief ",
+      },
+      {},
+    );
+
+    expect(modelMock.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        "metadata.feature": "news_event_brief",
+      }),
+    );
+    expect(modelMock.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        "metadata.feature": "news_event_brief",
+      }),
+    );
+  });
+
+  it("returns summary status breakdown, p95 latency and top errors", async () => {
+    modelMock.aggregate = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          requestCount: 10,
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+          costUsd: 0.12,
+          totalLatencyMs: 2_000,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { _id: "success", count: 8 },
+        { _id: "error", count: 2 },
+      ])
+      .mockResolvedValueOnce([{ _id: "LiteLLM returned invalid JSON for news event brief", count: 2 }]);
+    modelMock.countDocuments = jest.fn().mockResolvedValue(10);
+    const p95Lean = jest.fn().mockResolvedValue([{ latencyMs: 420 }]);
+    const p95Select = jest.fn().mockReturnValue({ lean: p95Lean });
+    const p95Limit = jest.fn().mockReturnValue({ select: p95Select });
+    const p95Skip = jest.fn().mockReturnValue({ limit: p95Limit });
+    const p95Sort = jest.fn().mockReturnValue({ skip: p95Skip });
+    modelMock.find = jest.fn().mockReturnValue({ sort: p95Sort });
+
+    const result = await service.getUsageSummary("org-1", {
+      feature: "news_event_brief",
+    });
+
+    expect(result.statusBreakdown).toEqual({
+      success: 8,
+      error: 2,
+      successRate: 0.8,
+      errorRate: 0.2,
+    });
+    expect(result.latency).toEqual({
+      avgMs: 200,
+      p95Ms: 420,
+    });
+    expect(result.topErrors).toEqual([
+      {
+        message: "LiteLLM returned invalid JSON for news event brief",
+        count: 2,
+      },
+    ]);
+    expect(modelMock.aggregate.mock.calls[0]?.[0]?.[0]).toEqual({
+      $match: expect.objectContaining({
+        orgId: "org-1",
+        "metadata.feature": "news_event_brief",
+      }),
+    });
+  });
 });

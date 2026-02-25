@@ -6,9 +6,11 @@ import {
   Card,
   Col,
   DatePicker,
+  Empty,
   Form,
   Input,
   InputNumber,
+  List,
   Modal,
   Row,
   Select,
@@ -23,13 +25,15 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Dayjs } from "dayjs";
+import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DashboardChart } from "@/components/echart";
+import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useCsvExport } from "@/hooks/use-csv-export";
 import { createApiClient } from "@/lib/api-client";
-import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateForFilename } from "@/lib/data-export";
 
@@ -40,6 +44,7 @@ type LlmRequestType =
   | "stream"
   | "responses";
 type LlmRequestStatus = "success" | "error";
+type LlmFeatureFilter = "all" | "news_event_brief";
 
 interface LlmRequestLogRow {
   id: string;
@@ -92,8 +97,28 @@ interface LlmUsageSummaryByDayRow extends LlmUsageSummaryTotals {
   date: string;
 }
 
+interface LlmUsageSummaryStatusBreakdown {
+  success: number;
+  error: number;
+  successRate: number;
+  errorRate: number;
+}
+
+interface LlmUsageSummaryLatency {
+  avgMs: number;
+  p95Ms: number | null;
+}
+
+interface LlmUsageSummaryTopError {
+  message: string;
+  count: number;
+}
+
 interface LlmUsageSummaryResponse {
   totals: LlmUsageSummaryTotals;
+  statusBreakdown: LlmUsageSummaryStatusBreakdown;
+  latency: LlmUsageSummaryLatency;
+  topErrors: LlmUsageSummaryTopError[];
   byModel: LlmUsageSummaryByModelRow[];
   byDay: LlmUsageSummaryByDayRow[];
 }
@@ -105,12 +130,18 @@ interface LlmRequestLogSettingsResponse {
   retentionDays: number;
   metadataAllowedTopLevelKeys: string[];
   metadataAllowedTopLevelPrefixes: string[];
+  briefErrorRateThreshold: number;
+  briefInvalidJsonRatioThreshold: number;
+  briefConsecutiveDaysThreshold: number;
 }
 
 interface LlmRequestLogSettingsFormValues {
   retentionDays: number;
   metadataAllowedTopLevelKeys: string[];
   metadataAllowedTopLevelPrefixes: string[];
+  briefErrorRateThreshold: number;
+  briefInvalidJsonRatioThreshold: number;
+  briefConsecutiveDaysThreshold: number;
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -120,6 +151,9 @@ const MAX_METADATA_ALLOWED_TOP_LEVEL_PREFIXES = 20;
 const MAX_METADATA_KEY_LENGTH = 64;
 const MAX_METADATA_PREFIX_LENGTH = 24;
 const METADATA_TOKEN_PATTERN = /^[a-z0-9_:\-.]+$/;
+const DEFAULT_BRIEF_ERROR_RATE_THRESHOLD = 0.1;
+const DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD = 0.3;
+const DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 3;
 
 const DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS = [
   "attempt",
@@ -179,17 +213,168 @@ const EMPTY_TOTALS: LlmUsageSummaryTotals = {
   avgLatencyMs: 0,
 };
 
+const EMPTY_STATUS_BREAKDOWN: LlmUsageSummaryStatusBreakdown = {
+  success: 0,
+  error: 0,
+  successRate: 0,
+  errorRate: 0,
+};
+
+const EMPTY_LATENCY: LlmUsageSummaryLatency = {
+  avgMs: 0,
+  p95Ms: null,
+};
+
 const EMPTY_SUMMARY: LlmUsageSummaryResponse = {
   totals: EMPTY_TOTALS,
+  statusBreakdown: EMPTY_STATUS_BREAKDOWN,
+  latency: EMPTY_LATENCY,
+  topErrors: [],
   byModel: [],
   byDay: [],
 };
+
+interface ExceptionStatsResponse {
+  total: number;
+  byDay?: ExceptionStatsByDayRow[];
+}
+
+interface ExceptionStatsByDayRow {
+  date: string;
+  count: number;
+}
+
+interface BriefErrorTrendRow {
+  date: string;
+  graphqlErrorCount: number;
+  invalidJsonErrorCount: number;
+}
+
+function normalizeSummaryResponse(
+  payload: LlmUsageSummaryResponse | null | undefined,
+): LlmUsageSummaryResponse {
+  if (!payload) {
+    return EMPTY_SUMMARY;
+  }
+  return {
+    totals: { ...EMPTY_TOTALS, ...(payload.totals ?? {}) },
+    statusBreakdown: {
+      ...EMPTY_STATUS_BREAKDOWN,
+      ...(payload.statusBreakdown ?? {}),
+    },
+    latency: { ...EMPTY_LATENCY, ...(payload.latency ?? {}) },
+    topErrors: Array.isArray(payload.topErrors) ? payload.topErrors : [],
+    byModel: Array.isArray(payload.byModel) ? payload.byModel : [],
+    byDay: Array.isArray(payload.byDay) ? payload.byDay : [],
+  };
+}
+
+function normalizeExceptionStatsByDay(
+  rows: ExceptionStatsByDayRow[] | null | undefined,
+): ExceptionStatsByDayRow[] {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows
+    .map((row) => {
+      const date = typeof row.date === "string" ? row.date.trim() : "";
+      if (!date) {
+        return null;
+      }
+      const count = typeof row.count === "number" && Number.isFinite(row.count)
+        ? Math.max(0, Math.trunc(row.count))
+        : 0;
+      return {
+        date,
+        count,
+      };
+    })
+    .filter((row): row is ExceptionStatsByDayRow => row !== null)
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mergeBriefErrorTrendRows(
+  graphqlRows: ExceptionStatsByDayRow[],
+  invalidJsonRows: ExceptionStatsByDayRow[],
+): BriefErrorTrendRow[] {
+  const byDate = new Map<string, BriefErrorTrendRow>();
+  for (const row of graphqlRows) {
+    byDate.set(row.date, {
+      date: row.date,
+      graphqlErrorCount: row.count,
+      invalidJsonErrorCount: 0,
+    });
+  }
+  for (const row of invalidJsonRows) {
+    const existing = byDate.get(row.date);
+    if (existing) {
+      existing.invalidJsonErrorCount = row.count;
+      continue;
+    }
+    byDate.set(row.date, {
+      date: row.date,
+      graphqlErrorCount: 0,
+      invalidJsonErrorCount: row.count,
+    });
+  }
+  return Array.from(byDate.values()).sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+}
+
+function normalizeSettingsResponse(
+  payload: LlmRequestLogSettingsResponse | null | undefined,
+): LlmRequestLogSettingsResponse {
+  if (!payload) {
+    return EMPTY_SETTINGS;
+  }
+  const briefErrorRateThreshold =
+    typeof payload.briefErrorRateThreshold === "number" &&
+    Number.isFinite(payload.briefErrorRateThreshold)
+      ? Math.min(1, Math.max(0, payload.briefErrorRateThreshold))
+      : DEFAULT_BRIEF_ERROR_RATE_THRESHOLD;
+  const briefInvalidJsonRatioThreshold =
+    typeof payload.briefInvalidJsonRatioThreshold === "number" &&
+    Number.isFinite(payload.briefInvalidJsonRatioThreshold)
+      ? Math.min(1, Math.max(0, payload.briefInvalidJsonRatioThreshold))
+      : DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD;
+  const briefConsecutiveDaysThreshold =
+    typeof payload.briefConsecutiveDaysThreshold === "number" &&
+    Number.isInteger(payload.briefConsecutiveDaysThreshold) &&
+    payload.briefConsecutiveDaysThreshold >= 1 &&
+    payload.briefConsecutiveDaysThreshold <= 30
+      ? payload.briefConsecutiveDaysThreshold
+      : DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD;
+  return {
+    source: payload.source === "db" ? "db" : "default",
+    retentionDays:
+      typeof payload.retentionDays === "number" &&
+      Number.isFinite(payload.retentionDays)
+        ? Math.max(1, Math.trunc(payload.retentionDays))
+        : DEFAULT_RETENTION_DAYS,
+    metadataAllowedTopLevelKeys: Array.isArray(payload.metadataAllowedTopLevelKeys)
+      ? payload.metadataAllowedTopLevelKeys
+      : DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+    metadataAllowedTopLevelPrefixes: Array.isArray(
+      payload.metadataAllowedTopLevelPrefixes,
+    )
+      ? payload.metadataAllowedTopLevelPrefixes
+      : DEFAULT_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
+    briefErrorRateThreshold,
+    briefInvalidJsonRatioThreshold,
+    briefConsecutiveDaysThreshold,
+  };
+}
 
 const EMPTY_SETTINGS: LlmRequestLogSettingsResponse = {
   source: "default",
   retentionDays: DEFAULT_RETENTION_DAYS,
   metadataAllowedTopLevelKeys: DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS,
   metadataAllowedTopLevelPrefixes: DEFAULT_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
+  briefErrorRateThreshold: DEFAULT_BRIEF_ERROR_RATE_THRESHOLD,
+  briefInvalidJsonRatioThreshold: DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD,
+  briefConsecutiveDaysThreshold: DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD,
 };
 
 function formatDateTime(raw: string): string {
@@ -258,6 +443,7 @@ function buildMetadataPolicyFromSettings(
 
 export function LlmRequestLogsPanel() {
   const { t } = useTranslation();
+  const { echartsTheme, colors } = useChartTheme();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const { exporting: exportLogsLoading, exportCsvBlob } = useCsvExport();
@@ -269,22 +455,29 @@ export function LlmRequestLogsPanel() {
   const [settingsMetadataResetting, setSettingsMetadataResetting] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [briefMetricsLoading, setBriefMetricsLoading] = useState(false);
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [briefMetricsErrorMessage, setBriefMetricsErrorMessage] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<LlmRequestLogSettingsResponse>(EMPTY_SETTINGS);
   const [logs, setLogs] = useState<LlmRequestLogListResponse>(EMPTY_LOGS);
   const [summary, setSummary] = useState<LlmUsageSummaryResponse>(EMPTY_SUMMARY);
+  const [briefGraphqlErrorTotal, setBriefGraphqlErrorTotal] = useState(0);
+  const [briefInvalidJsonTotal, setBriefInvalidJsonTotal] = useState(0);
+  const [briefErrorTrendRows, setBriefErrorTrendRows] = useState<BriefErrorTrendRow[]>([]);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [modelFilter, setModelFilter] = useState("");
+  const [featureFilter, setFeatureFilter] = useState<LlmFeatureFilter>("all");
   const [requestTypeFilter, setRequestTypeFilter] = useState<"all" | LlmRequestType>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | LlmRequestStatus>("all");
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [appliedModelFilter, setAppliedModelFilter] = useState("");
+  const [appliedFeatureFilter, setAppliedFeatureFilter] = useState<LlmFeatureFilter>("all");
   const [appliedRequestTypeFilter, setAppliedRequestTypeFilter] = useState<"all" | LlmRequestType>("all");
   const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | LlmRequestStatus>("all");
   const [appliedDateRange, setAppliedDateRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -310,6 +503,9 @@ export function LlmRequestLogsPanel() {
     if (normalizedModel.length > 0) {
       params.model = normalizedModel;
     }
+    if (appliedFeatureFilter !== "all") {
+      params.feature = appliedFeatureFilter;
+    }
     if (appliedRequestTypeFilter !== "all") {
       params.requestType = appliedRequestTypeFilter;
     }
@@ -325,6 +521,7 @@ export function LlmRequestLogsPanel() {
     return params;
   }, [
     appliedModelFilter,
+    appliedFeatureFilter,
     appliedRequestTypeFilter,
     appliedStatusFilter,
     sharedDateParams.end,
@@ -333,6 +530,9 @@ export function LlmRequestLogsPanel() {
 
   const summaryFilterParams = useMemo(() => {
     const params: Record<string, string> = {};
+    if (appliedFeatureFilter !== "all") {
+      params.feature = appliedFeatureFilter;
+    }
     if (typeof sharedDateParams.start === "string") {
       params.start = sharedDateParams.start;
     }
@@ -340,7 +540,7 @@ export function LlmRequestLogsPanel() {
       params.end = sharedDateParams.end;
     }
     return params;
-  }, [sharedDateParams.end, sharedDateParams.start]);
+  }, [appliedFeatureFilter, sharedDateParams.end, sharedDateParams.start]);
 
   const loadSettings = useCallback(async () => {
     setSettingsLoading(true);
@@ -349,7 +549,7 @@ export function LlmRequestLogsPanel() {
       const response = await apiClient.get<LlmRequestLogSettingsResponse>(
         "system-settings/llm-request-logs",
       );
-      const data = response.data ?? EMPTY_SETTINGS;
+      const data = normalizeSettingsResponse(response.data);
       setSettings(data);
       setLogs((previous) => ({
         ...previous,
@@ -359,14 +559,15 @@ export function LlmRequestLogsPanel() {
         retentionDays: data.retentionDays,
         metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
         metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+        briefErrorRateThreshold: data.briefErrorRateThreshold,
+        briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
+        briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
       });
     } catch (error) {
       captureClientError("Failed to load LLM request log retention settings", error);
-      const messageText =
-        extractApiError(error).message ||
-        t("systemSettings.llmRequestLogs.errors.settingsLoadFailed", {
-          defaultValue: "Failed to load log retention settings.",
-        });
+      const messageText = t("systemSettings.llmRequestLogs.errors.settingsLoadFailed", {
+        defaultValue: "Failed to load log retention settings.",
+      });
       setSettingsErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -397,11 +598,9 @@ export function LlmRequestLogsPanel() {
       });
     } catch (error) {
       captureClientError("Failed to load LLM request logs", error);
-      const messageText =
-        extractApiError(error).message ||
-        t("systemSettings.llmRequestLogs.errors.loadFailed", {
-          defaultValue: "Failed to load LLM request logs.",
-        });
+      const messageText = t("systemSettings.llmRequestLogs.errors.loadFailed", {
+        defaultValue: "Failed to load LLM request logs.",
+      });
       setErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -423,14 +622,12 @@ export function LlmRequestLogsPanel() {
       const response = await apiClient.get<LlmUsageSummaryResponse>("llm-logs/summary", {
         params: summaryFilterParams,
       });
-      setSummary(response.data ?? EMPTY_SUMMARY);
+      setSummary(normalizeSummaryResponse(response.data));
     } catch (error) {
       captureClientError("Failed to load LLM request log summary", error);
-      const messageText =
-        extractApiError(error).message ||
-        t("systemSettings.llmRequestLogs.errors.summaryFailed", {
-          defaultValue: "Failed to load usage summary.",
-        });
+      const messageText = t("systemSettings.llmRequestLogs.errors.summaryFailed", {
+        defaultValue: "Failed to load usage summary.",
+      });
       messageApi.error(messageText);
     } finally {
       setSummaryLoading(false);
@@ -442,6 +639,66 @@ export function LlmRequestLogsPanel() {
     summaryFilterParams,
     t,
   ]);
+
+  const loadBriefMetrics = useCallback(async () => {
+    if (appliedFeatureFilter !== "news_event_brief") {
+      setBriefMetricsErrorMessage(null);
+      setBriefGraphqlErrorTotal(0);
+      setBriefInvalidJsonTotal(0);
+      setBriefErrorTrendRows([]);
+      return;
+    }
+
+    setBriefMetricsLoading(true);
+    setBriefMetricsErrorMessage(null);
+    try {
+      const [graphqlStatsResponse, invalidJsonStatsResponse] = await Promise.all([
+        apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
+          params: {
+            kind: "graphql",
+            operationName: "newsEventBrief",
+            ...sharedDateParams,
+          },
+        }),
+        apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
+          params: {
+            kind: "graphql",
+            operationName: "newsEventBrief",
+            messageContains: "invalid JSON for news event brief",
+            ...sharedDateParams,
+          },
+        }),
+      ]);
+
+      setBriefGraphqlErrorTotal(
+        typeof graphqlStatsResponse.data?.total === "number"
+          ? graphqlStatsResponse.data.total
+          : 0,
+      );
+      setBriefInvalidJsonTotal(
+        typeof invalidJsonStatsResponse.data?.total === "number"
+          ? invalidJsonStatsResponse.data.total
+          : 0,
+      );
+      const graphqlByDay = normalizeExceptionStatsByDay(graphqlStatsResponse.data?.byDay);
+      const invalidJsonByDay = normalizeExceptionStatsByDay(
+        invalidJsonStatsResponse.data?.byDay,
+      );
+      setBriefErrorTrendRows(mergeBriefErrorTrendRows(graphqlByDay, invalidJsonByDay));
+    } catch (error) {
+      captureClientError("Failed to load event detailed summary admin metrics", error);
+      setBriefMetricsErrorMessage(
+        t("systemSettings.llmRequestLogs.errors.briefMetricsFailed", {
+          defaultValue: "Failed to load event detailed summary metrics.",
+        }),
+      );
+      setBriefGraphqlErrorTotal(0);
+      setBriefInvalidJsonTotal(0);
+      setBriefErrorTrendRows([]);
+    } finally {
+      setBriefMetricsLoading(false);
+    }
+  }, [apiClient, appliedFeatureFilter, sharedDateParams, t]);
 
   useEffect(() => {
     void loadSettings();
@@ -455,9 +712,14 @@ export function LlmRequestLogsPanel() {
     void loadSummary();
   }, [loadSummary]);
 
+  useEffect(() => {
+    void loadBriefMetrics();
+  }, [loadBriefMetrics]);
+
   const handleSearch = () => {
     setPage(1);
     setAppliedModelFilter(modelFilter.trim());
+    setAppliedFeatureFilter(featureFilter);
     setAppliedRequestTypeFilter(requestTypeFilter);
     setAppliedStatusFilter(statusFilter);
     setAppliedDateRange(dateRange);
@@ -466,10 +728,12 @@ export function LlmRequestLogsPanel() {
 
   const handleReset = () => {
     setModelFilter("");
+    setFeatureFilter("all");
     setRequestTypeFilter("all");
     setStatusFilter("all");
     setDateRange(null);
     setAppliedModelFilter("");
+    setAppliedFeatureFilter("all");
     setAppliedRequestTypeFilter("all");
     setAppliedStatusFilter("all");
     setAppliedDateRange(null);
@@ -498,9 +762,12 @@ export function LlmRequestLogsPanel() {
           retentionDays: values.retentionDays,
           metadataAllowedTopLevelKeys,
           metadataAllowedTopLevelPrefixes,
+          briefErrorRateThreshold: values.briefErrorRateThreshold,
+          briefInvalidJsonRatioThreshold: values.briefInvalidJsonRatioThreshold,
+          briefConsecutiveDaysThreshold: values.briefConsecutiveDaysThreshold,
         },
       );
-      const data = response.data ?? EMPTY_SETTINGS;
+      const data = normalizeSettingsResponse(response.data);
       setSettings(data);
       setLogs((previous) => ({
         ...previous,
@@ -510,6 +777,9 @@ export function LlmRequestLogsPanel() {
         retentionDays: data.retentionDays,
         metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
         metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+        briefErrorRateThreshold: data.briefErrorRateThreshold,
+        briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
+        briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
       });
       messageApi.success(
         t("systemSettings.llmRequestLogs.messages.settingsSaved", {
@@ -524,11 +794,10 @@ export function LlmRequestLogsPanel() {
           : undefined;
       if (statusCode === 400) {
         messageApi.error(
-          extractApiError(error).message ||
-            t("systemSettings.llmRequestLogs.errors.settingsBadRequest", {
-              defaultValue:
-                "Retention days or metadata allowlist settings are invalid.",
-            }),
+          t("systemSettings.llmRequestLogs.errors.settingsBadRequest", {
+            defaultValue:
+              "Retention days or metadata allowlist settings are invalid.",
+          }),
         );
       } else {
         messageApi.error(
@@ -564,7 +833,7 @@ export function LlmRequestLogsPanel() {
           const response = await apiClient.delete<LlmRequestLogSettingsResponse>(
             "system-settings/llm-request-logs",
           );
-          const data = response.data ?? EMPTY_SETTINGS;
+          const data = normalizeSettingsResponse(response.data);
           setSettings(data);
           setLogs((previous) => ({
             ...previous,
@@ -574,6 +843,9 @@ export function LlmRequestLogsPanel() {
             retentionDays: data.retentionDays,
             metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
             metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+            briefErrorRateThreshold: data.briefErrorRateThreshold,
+            briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
+            briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
           });
           messageApi.success(
             t("systemSettings.llmRequestLogs.messages.settingsReset", {
@@ -616,7 +888,7 @@ export function LlmRequestLogsPanel() {
           const response = await apiClient.post<LlmRequestLogSettingsResponse>(
             "system-settings/llm-request-logs/metadata-policy/reset",
           );
-          const data = response.data ?? EMPTY_SETTINGS;
+          const data = normalizeSettingsResponse(response.data);
           setSettings(data);
           setLogs((previous) => ({
             ...previous,
@@ -626,6 +898,9 @@ export function LlmRequestLogsPanel() {
             retentionDays: data.retentionDays,
             metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
             metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+            briefErrorRateThreshold: data.briefErrorRateThreshold,
+            briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
+            briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
           });
           messageApi.success(
             t("systemSettings.llmRequestLogs.messages.metadataPolicyReset", {
@@ -868,7 +1143,254 @@ export function LlmRequestLogsPanel() {
     [t],
   );
 
-  const isLoading = logsLoading || summaryLoading;
+  const showBriefMetrics = appliedFeatureFilter === "news_event_brief";
+  const effectiveBriefErrorRateThreshold = useMemo(() => {
+    if (
+      typeof settings.briefErrorRateThreshold === "number" &&
+      Number.isFinite(settings.briefErrorRateThreshold)
+    ) {
+      return Math.min(1, Math.max(0, settings.briefErrorRateThreshold));
+    }
+    return DEFAULT_BRIEF_ERROR_RATE_THRESHOLD;
+  }, [settings.briefErrorRateThreshold]);
+  const effectiveBriefInvalidJsonRatioThreshold = useMemo(() => {
+    if (
+      typeof settings.briefInvalidJsonRatioThreshold === "number" &&
+      Number.isFinite(settings.briefInvalidJsonRatioThreshold)
+    ) {
+      return Math.min(1, Math.max(0, settings.briefInvalidJsonRatioThreshold));
+    }
+    return DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD;
+  }, [settings.briefInvalidJsonRatioThreshold]);
+  const effectiveBriefConsecutiveDaysThreshold = useMemo(() => {
+    if (
+      typeof settings.briefConsecutiveDaysThreshold === "number" &&
+      Number.isInteger(settings.briefConsecutiveDaysThreshold) &&
+      settings.briefConsecutiveDaysThreshold >= 1 &&
+      settings.briefConsecutiveDaysThreshold <= 30
+    ) {
+      return settings.briefConsecutiveDaysThreshold;
+    }
+    return DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD;
+  }, [settings.briefConsecutiveDaysThreshold]);
+  const briefInvalidJsonRatio = useMemo(() => {
+    if (briefGraphqlErrorTotal <= 0) {
+      return 0;
+    }
+    return briefInvalidJsonTotal / briefGraphqlErrorTotal;
+  }, [briefGraphqlErrorTotal, briefInvalidJsonTotal]);
+  const briefDailyThresholdSeries = useMemo(() => {
+    const byDate = new Map<
+      string,
+      {
+        date: string;
+        requestCount: number;
+        graphqlErrorCount: number;
+        invalidJsonErrorCount: number;
+      }
+    >();
+
+    for (const row of summary.byDay) {
+      const date = typeof row.date === "string" ? row.date.trim() : "";
+      if (!date) {
+        continue;
+      }
+      const requestCount =
+        typeof row.requestCount === "number" && Number.isFinite(row.requestCount)
+          ? Math.max(0, Math.trunc(row.requestCount))
+          : 0;
+      byDate.set(date, {
+        date,
+        requestCount,
+        graphqlErrorCount: 0,
+        invalidJsonErrorCount: 0,
+      });
+    }
+
+    for (const row of briefErrorTrendRows) {
+      const current = byDate.get(row.date);
+      if (current) {
+        current.graphqlErrorCount = row.graphqlErrorCount;
+        current.invalidJsonErrorCount = row.invalidJsonErrorCount;
+        continue;
+      }
+      byDate.set(row.date, {
+        date: row.date,
+        requestCount: 0,
+        graphqlErrorCount: row.graphqlErrorCount,
+        invalidJsonErrorCount: row.invalidJsonErrorCount,
+      });
+    }
+
+    return Array.from(byDate.values()).sort((left, right) =>
+      left.date.localeCompare(right.date),
+    );
+  }, [briefErrorTrendRows, summary.byDay]);
+  const maxConsecutiveBriefThresholdBreachDays = useMemo(() => {
+    let running = 0;
+    let maxRunning = 0;
+    let previousDateMs: number | null = null;
+    for (const row of briefDailyThresholdSeries) {
+      const dateMs = Date.parse(`${row.date}T00:00:00.000Z`);
+      if (
+        previousDateMs !== null &&
+        Number.isFinite(dateMs) &&
+        dateMs - previousDateMs > 24 * 60 * 60 * 1000
+      ) {
+        running = 0;
+      }
+      const dailyErrorRate =
+        row.requestCount > 0 ? row.graphqlErrorCount / row.requestCount : 0;
+      const dailyInvalidJsonRatio =
+        row.graphqlErrorCount > 0
+          ? row.invalidJsonErrorCount / row.graphqlErrorCount
+          : 0;
+      const breach =
+        (row.requestCount > 0 &&
+          dailyErrorRate >= effectiveBriefErrorRateThreshold) ||
+        (row.graphqlErrorCount > 0 &&
+          dailyInvalidJsonRatio >= effectiveBriefInvalidJsonRatioThreshold);
+      if (breach) {
+        running += 1;
+        if (running > maxRunning) {
+          maxRunning = running;
+        }
+        previousDateMs = Number.isFinite(dateMs) ? dateMs : previousDateMs;
+        continue;
+      }
+      running = 0;
+      previousDateMs = Number.isFinite(dateMs) ? dateMs : previousDateMs;
+    }
+    return maxRunning;
+  }, [
+    briefDailyThresholdSeries,
+    effectiveBriefErrorRateThreshold,
+    effectiveBriefInvalidJsonRatioThreshold,
+  ]);
+  const briefThresholdWarnings = useMemo(() => {
+    if (!showBriefMetrics) {
+      return [];
+    }
+    const warnings: string[] = [];
+    const hasRequests = summary.totals.requestCount > 0;
+    if (
+      hasRequests &&
+      summary.statusBreakdown.errorRate >= effectiveBriefErrorRateThreshold
+    ) {
+      warnings.push(
+        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.errorRateExceeded", {
+          defaultValue:
+            "LLM error rate {{value}}% exceeds threshold {{threshold}}%.",
+          value: (summary.statusBreakdown.errorRate * 100).toFixed(2),
+          threshold: (effectiveBriefErrorRateThreshold * 100).toFixed(2),
+        }),
+      );
+    }
+    if (
+      briefGraphqlErrorTotal > 0 &&
+      briefInvalidJsonRatio >= effectiveBriefInvalidJsonRatioThreshold
+    ) {
+      warnings.push(
+        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.invalidJsonRatioExceeded", {
+          defaultValue:
+            "Invalid JSON ratio {{value}}% exceeds threshold {{threshold}}%.",
+          value: (briefInvalidJsonRatio * 100).toFixed(2),
+          threshold: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(2),
+        }),
+      );
+    }
+    if (
+      maxConsecutiveBriefThresholdBreachDays >=
+      effectiveBriefConsecutiveDaysThreshold
+    ) {
+      warnings.push(
+        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.consecutiveDaysExceeded", {
+          defaultValue:
+            "Threshold has been exceeded for {{maxDays}} consecutive days (configured threshold: {{threshold}} days).",
+          maxDays: maxConsecutiveBriefThresholdBreachDays,
+          threshold: effectiveBriefConsecutiveDaysThreshold,
+        }),
+      );
+    }
+    return warnings;
+  }, [
+    effectiveBriefConsecutiveDaysThreshold,
+    effectiveBriefErrorRateThreshold,
+    effectiveBriefInvalidJsonRatioThreshold,
+    briefGraphqlErrorTotal,
+    briefInvalidJsonRatio,
+    maxConsecutiveBriefThresholdBreachDays,
+    showBriefMetrics,
+    summary.statusBreakdown.errorRate,
+    summary.totals.requestCount,
+    t,
+  ]);
+  const briefErrorTrendChartOption = useMemo<EChartsOption | null>(() => {
+    if (!showBriefMetrics || briefErrorTrendRows.length === 0) {
+      return null;
+    }
+
+    return {
+      tooltip: { trigger: "axis" },
+      legend: {
+        data: [
+          t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors", {
+            defaultValue: "GraphQL errors",
+          }),
+          t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors", {
+            defaultValue: "Invalid JSON errors",
+          }),
+        ],
+      },
+      grid: { top: 42, left: 24, right: 24, bottom: 24, containLabel: true },
+      xAxis: {
+        type: "category",
+        data: briefErrorTrendRows.map((item) => item.date),
+        axisLabel: { color: colors.foreground },
+      },
+      yAxis: {
+        type: "value",
+        min: 0,
+        minInterval: 1,
+        splitLine: {
+          lineStyle: {
+            color: colors.grid,
+            type: "dashed",
+          },
+        },
+      },
+      series: [
+        {
+          type: "line",
+          smooth: true,
+          name: t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors", {
+            defaultValue: "GraphQL errors",
+          }),
+          data: briefErrorTrendRows.map((item) => item.graphqlErrorCount),
+          itemStyle: { color: colors.destructive },
+        },
+        {
+          type: "line",
+          smooth: true,
+          name: t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors", {
+            defaultValue: "Invalid JSON errors",
+          }),
+          data: briefErrorTrendRows.map((item) => item.invalidJsonErrorCount),
+          itemStyle: { color: colors.bearish },
+        },
+      ],
+    };
+  }, [
+    briefErrorTrendRows,
+    colors.bearish,
+    colors.destructive,
+    colors.foreground,
+    colors.grid,
+    showBriefMetrics,
+    t,
+  ]);
+  const isLoading =
+    logsLoading || summaryLoading || (showBriefMetrics && briefMetricsLoading);
 
   if ((settingsLoading || isLoading) && logs.items.length === 0) {
     return (
@@ -960,6 +1482,33 @@ export function LlmRequestLogsPanel() {
               {
                 defaultValue: "Prefixes: {{count}}",
                 count: settings.metadataAllowedTopLevelPrefixes.length,
+              },
+            )}
+          </Tag>
+          <Tag color="gold">
+            {t(
+              "systemSettings.llmRequestLogs.retention.status.currentBriefErrorRateThreshold",
+              {
+                defaultValue: "Error rate threshold: {{value}}%",
+                value: (effectiveBriefErrorRateThreshold * 100).toFixed(2),
+              },
+            )}
+          </Tag>
+          <Tag color="orange">
+            {t(
+              "systemSettings.llmRequestLogs.retention.status.currentBriefInvalidJsonRatioThreshold",
+              {
+                defaultValue: "Invalid JSON threshold: {{value}}%",
+                value: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(2),
+              },
+            )}
+          </Tag>
+          <Tag color="red">
+            {t(
+              "systemSettings.llmRequestLogs.retention.status.currentBriefConsecutiveDaysThreshold",
+              {
+                defaultValue: "Consecutive days threshold: {{days}}",
+                days: effectiveBriefConsecutiveDaysThreshold,
               },
             )}
           </Tag>
@@ -1183,6 +1732,135 @@ export function LlmRequestLogsPanel() {
               )}
             />
           </Form.Item>
+          <Row gutter={[16, 0]}>
+            <Col xs={24} md={8}>
+              <Form.Item
+                label={t(
+                  "systemSettings.llmRequestLogs.retention.fields.briefErrorRateThreshold",
+                  {
+                    defaultValue: "Brief error rate threshold",
+                  },
+                )}
+                name="briefErrorRateThreshold"
+                rules={[
+                  {
+                    required: true,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefErrorRateThresholdRequired",
+                      {
+                        defaultValue: "Brief error rate threshold is required.",
+                      },
+                    ),
+                  },
+                  {
+                    type: "number",
+                    min: 0,
+                    max: 1,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefErrorRateThresholdRange",
+                      {
+                        defaultValue: "Use a value between 0 and 1.",
+                      },
+                    ),
+                  },
+                ]}
+                extra={t(
+                  "systemSettings.llmRequestLogs.retention.hints.briefErrorRateThreshold",
+                  {
+                    defaultValue:
+                      "Alert triggers when brief error rate reaches this threshold (0-1).",
+                  },
+                )}
+              >
+                <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                label={t(
+                  "systemSettings.llmRequestLogs.retention.fields.briefInvalidJsonRatioThreshold",
+                  {
+                    defaultValue: "Brief invalid JSON ratio threshold",
+                  },
+                )}
+                name="briefInvalidJsonRatioThreshold"
+                rules={[
+                  {
+                    required: true,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefInvalidJsonRatioThresholdRequired",
+                      {
+                        defaultValue:
+                          "Brief invalid JSON ratio threshold is required.",
+                      },
+                    ),
+                  },
+                  {
+                    type: "number",
+                    min: 0,
+                    max: 1,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefInvalidJsonRatioThresholdRange",
+                      {
+                        defaultValue: "Use a value between 0 and 1.",
+                      },
+                    ),
+                  },
+                ]}
+                extra={t(
+                  "systemSettings.llmRequestLogs.retention.hints.briefInvalidJsonRatioThreshold",
+                  {
+                    defaultValue:
+                      "Alert triggers when invalid JSON ratio reaches this threshold (0-1).",
+                  },
+                )}
+              >
+                <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                label={t(
+                  "systemSettings.llmRequestLogs.retention.fields.briefConsecutiveDaysThreshold",
+                  {
+                    defaultValue: "Brief consecutive days threshold",
+                  },
+                )}
+                name="briefConsecutiveDaysThreshold"
+                rules={[
+                  {
+                    required: true,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefConsecutiveDaysThresholdRequired",
+                      {
+                        defaultValue: "Consecutive days threshold is required.",
+                      },
+                    ),
+                  },
+                  {
+                    type: "number",
+                    min: 1,
+                    max: 30,
+                    message: t(
+                      "systemSettings.llmRequestLogs.retention.validation.briefConsecutiveDaysThresholdRange",
+                      {
+                        defaultValue: "Use an integer between 1 and 30.",
+                      },
+                    ),
+                  },
+                ]}
+                extra={t(
+                  "systemSettings.llmRequestLogs.retention.hints.briefConsecutiveDaysThreshold",
+                  {
+                    defaultValue:
+                      "Alert triggers when any threshold is exceeded for this many consecutive days.",
+                  },
+                )}
+              >
+                <InputNumber min={1} max={30} step={1} precision={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
           <Space wrap>
             <Button
               type="primary"
@@ -1312,6 +1990,25 @@ export function LlmRequestLogsPanel() {
             defaultValue: "Model",
           })}
           style={{ minWidth: 220 }}
+        />
+        <Select<LlmFeatureFilter>
+          value={featureFilter}
+          onChange={setFeatureFilter}
+          style={{ minWidth: 220 }}
+          options={[
+            {
+              value: "all",
+              label: t("systemSettings.llmRequestLogs.filters.featureAll", {
+                defaultValue: "All features",
+              }),
+            },
+            {
+              value: "news_event_brief",
+              label: t("systemSettings.llmRequestLogs.filters.featureNewsEventBrief", {
+                defaultValue: "Event detailed summary",
+              }),
+            },
+          ]}
         />
         <Select<"all" | LlmRequestType>
           value={requestTypeFilter}
@@ -1454,7 +2151,153 @@ export function LlmRequestLogsPanel() {
               suffix="ms"
             />
           </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Statistic
+              title={t("systemSettings.llmRequestLogs.summary.successRate", {
+                defaultValue: "Success rate",
+              })}
+              value={Number((summary.statusBreakdown.successRate * 100).toFixed(2))}
+              suffix="%"
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Statistic
+              title={t("systemSettings.llmRequestLogs.summary.errorRate", {
+                defaultValue: "Error rate",
+              })}
+              value={Number((summary.statusBreakdown.errorRate * 100).toFixed(2))}
+              suffix="%"
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Statistic
+              title={t("systemSettings.llmRequestLogs.summary.successCount", {
+                defaultValue: "Success count",
+              })}
+              value={summary.statusBreakdown.success}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Statistic
+              title={t("systemSettings.llmRequestLogs.summary.p95Latency", {
+                defaultValue: "P95 latency",
+              })}
+              value={
+                typeof summary.latency.p95Ms === "number"
+                  ? Math.round(summary.latency.p95Ms)
+                  : "-"
+              }
+              suffix={typeof summary.latency.p95Ms === "number" ? "ms" : undefined}
+            />
+          </Col>
+          {showBriefMetrics ? (
+            <>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title={t("systemSettings.llmRequestLogs.summary.briefGraphqlErrors", {
+                    defaultValue: "Brief GraphQL errors",
+                  })}
+                  value={briefGraphqlErrorTotal}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title={t("systemSettings.llmRequestLogs.summary.briefInvalidJsonErrors", {
+                    defaultValue: "Brief invalid JSON",
+                  })}
+                  value={briefInvalidJsonTotal}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Statistic
+                  title={t("systemSettings.llmRequestLogs.summary.briefInvalidJsonRatio", {
+                    defaultValue: "Brief invalid JSON ratio",
+                  })}
+                  value={Number((briefInvalidJsonRatio * 100).toFixed(2))}
+                  suffix="%"
+                />
+              </Col>
+            </>
+          ) : null}
         </Row>
+        {briefMetricsErrorMessage ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={briefMetricsErrorMessage}
+            style={{ marginTop: "0.75rem" }}
+          />
+        ) : null}
+        {showBriefMetrics && briefThresholdWarnings.length > 0 ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={t("systemSettings.llmRequestLogs.summary.thresholdAlerts.title", {
+              defaultValue: "newsEventBrief threshold alerts",
+            })}
+            description={
+              <Space direction="vertical" size={2}>
+                {briefThresholdWarnings.map((warning) => (
+                  <Typography.Text key={warning}>{warning}</Typography.Text>
+                ))}
+              </Space>
+            }
+            style={{ marginTop: "0.75rem" }}
+          />
+        ) : null}
+        {showBriefMetrics ? (
+          <Card
+            size="small"
+            style={{ marginTop: "0.75rem" }}
+            title={t("systemSettings.llmRequestLogs.summary.briefErrorTrend.title", {
+              defaultValue: "Brief GraphQL error trend (by day)",
+            })}
+          >
+            {briefErrorTrendChartOption ? (
+              <DashboardChart
+                option={briefErrorTrendChartOption}
+                theme={echartsTheme}
+                height={260}
+              />
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={t("systemSettings.llmRequestLogs.summary.briefErrorTrend.empty", {
+                  defaultValue: "No brief GraphQL errors in selected range.",
+                })}
+              />
+            )}
+          </Card>
+        ) : null}
+        <div style={{ marginTop: "0.75rem" }}>
+          <Typography.Text strong>
+            {t("systemSettings.llmRequestLogs.summary.topErrors.title", {
+              defaultValue: "Top errors",
+            })}
+          </Typography.Text>
+          {summary.topErrors.length === 0 ? (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {t("systemSettings.llmRequestLogs.summary.topErrors.empty", {
+                defaultValue: "No error summary.",
+              })}
+            </Typography.Paragraph>
+          ) : (
+            <List
+              size="small"
+              dataSource={summary.topErrors}
+              renderItem={(item) => (
+                <List.Item>
+                  <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                    <Typography.Text ellipsis={{ tooltip: item.message }} style={{ maxWidth: "75%" }}>
+                      {item.message}
+                    </Typography.Text>
+                    <Tag>{item.count}</Tag>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
       </Card>
 
       <Table<LlmRequestLogRow>
