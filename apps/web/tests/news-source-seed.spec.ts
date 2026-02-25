@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSeedConfigFromFormValues,
+  DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
   DEFAULT_SEED_FORM_VALUES,
+  getDefaultSeedCacheTtlSecondsByMode,
+  resolveSeedCacheTtlPolicy,
   readSeedFormValuesFromConfig
 } from '../lib/news-source-seed';
 
@@ -37,6 +40,75 @@ describe('news-source seed config mapping', () => {
     expect(values.seedListMaxPages).toBe(DEFAULT_SEED_FORM_VALUES.seedListMaxPages);
     expect(values.seedListPageConcurrency).toBe(DEFAULT_SEED_FORM_VALUES.seedListPageConcurrency);
     expect(values.seedFollowPagination).toBe(DEFAULT_SEED_FORM_VALUES.seedFollowPagination);
+  });
+
+  it('uses mode-aware cache TTL defaults when cacheTtlSeconds is missing', () => {
+    const listValues = readSeedFormValuesFromConfig({
+      seed: {
+        enabled: true,
+        mode: 'list'
+      }
+    });
+    const rssValues = readSeedFormValuesFromConfig({
+      seed: {
+        enabled: true,
+        mode: 'rss'
+      }
+    });
+
+    expect(listValues.seedCacheTtlSeconds).toBe(getDefaultSeedCacheTtlSecondsByMode('list'));
+    expect(rssValues.seedCacheTtlSeconds).toBe(getDefaultSeedCacheTtlSecondsByMode('rss'));
+  });
+
+  it('applies runtime scheduler defaults for missing cache ttl', () => {
+    const values = readSeedFormValuesFromConfig(
+      {
+        seed: {
+          enabled: true,
+          mode: 'list'
+        }
+      },
+      {
+        seedCacheTtlSecondsSitemapRss: 75,
+        seedCacheTtlSecondsListDeep: 240,
+        seedCacheTtlForceGlobal: false
+      }
+    );
+
+    expect(values.seedCacheTtlSeconds).toBe(240);
+  });
+
+  it('resolves effective cache ttl with source override when global force is off', () => {
+    const resolved = resolveSeedCacheTtlPolicy(
+      'sitemap',
+      900,
+      {
+        ...DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
+        seedCacheTtlForceGlobal: false
+      }
+    );
+
+    expect(resolved.isGlobalForced).toBe(false);
+    expect(resolved.modeDefaultCacheTtlSeconds).toBe(60);
+    expect(resolved.sourceSeedCacheTtlSeconds).toBe(900);
+    expect(resolved.effectiveCacheTtlSeconds).toBe(900);
+  });
+
+  it('resolves effective cache ttl with global defaults when force is on', () => {
+    const resolved = resolveSeedCacheTtlPolicy(
+      'deep',
+      900,
+      {
+        seedCacheTtlForceGlobal: true,
+        seedCacheTtlSecondsSitemapRss: 75,
+        seedCacheTtlSecondsListDeep: 210
+      }
+    );
+
+    expect(resolved.isGlobalForced).toBe(true);
+    expect(resolved.modeDefaultCacheTtlSeconds).toBe(210);
+    expect(resolved.sourceSeedCacheTtlSeconds).toBe(900);
+    expect(resolved.effectiveCacheTtlSeconds).toBe(210);
   });
 
   it('builds list seed config with pagination settings', () => {

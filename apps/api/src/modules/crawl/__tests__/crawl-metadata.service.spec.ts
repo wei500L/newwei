@@ -54,6 +54,9 @@ describe("CrawlMetadataService pattern matching", () => {
 
 describe("CrawlMetadataService sitemap discovery", () => {
   const originalFetch = global.fetch;
+  const makeHeaders = (headers: Record<string, string>) => ({
+    get: (key: string) => headers[key.toLowerCase()] ?? null,
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;
@@ -76,10 +79,6 @@ describe("CrawlMetadataService sitemap discovery", () => {
     const gzipped = gzipSync(Buffer.from(urlsetXml, "utf8"));
 
     global.fetch = jest.fn(async (url: string) => {
-      const makeHeaders = (headers: Record<string, string>) => ({
-        get: (key: string) => headers[key.toLowerCase()] ?? null
-      });
-
       if (url === "https://example.com/sitemap.xml") {
         const buffer = Buffer.from(sitemapIndexXml, "utf8");
         return {
@@ -127,6 +126,246 @@ describe("CrawlMetadataService sitemap discovery", () => {
       "https://example.com/sitemap-posts.xml.gz",
       expect.any(Object)
     );
+  });
+
+  it("does not truncate sitemapindex children to the first five entries", async () => {
+    const sitemapIndexXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap><loc>https://example.com/sitemap-1.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-2.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-3.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-4.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-5.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-6.xml</loc></sitemap>
+      </sitemapindex>`;
+
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://example.com/sitemap.xml") {
+        const buffer = Buffer.from(sitemapIndexXml, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+        } as any;
+      }
+
+      if (url.startsWith("https://example.com/sitemap-")) {
+        const isTarget = url.endsWith("6.xml");
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+          <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc>${isTarget ? "https://example.com/target/one" : "https://example.com/other/path"}</loc></url>
+          </urlset>`;
+        const buffer = Buffer.from(xml, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+        } as any;
+      }
+
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const urls = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      pattern: "https://example.com/target/*",
+      maxUrls: 10,
+      requestTimeoutMs: 5000,
+    });
+
+    expect(urls).toEqual(["https://example.com/target/one"]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://example.com/sitemap-6.xml",
+      expect.any(Object),
+    );
+  });
+
+  it("avoids infinite loops when sitemap indexes reference each other", async () => {
+    const rootIndex = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap><loc>https://example.com/sitemap-b.xml</loc></sitemap>
+      </sitemapindex>`;
+    const nestedIndex = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap><loc>https://example.com/sitemap.xml</loc></sitemap>
+        <sitemap><loc>https://example.com/sitemap-c.xml</loc></sitemap>
+      </sitemapindex>`;
+    const leafUrlset = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/news/final</loc></url>
+      </urlset>`;
+
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://example.com/sitemap.xml") {
+        const buffer = Buffer.from(rootIndex, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+        } as any;
+      }
+      if (url === "https://example.com/sitemap-b.xml") {
+        const buffer = Buffer.from(nestedIndex, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+        } as any;
+      }
+      if (url === "https://example.com/sitemap-c.xml") {
+        const buffer = Buffer.from(leafUrlset, "utf8");
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => buffer,
+        } as any;
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const urls = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      maxUrls: 1,
+      requestTimeoutMs: 5000,
+    });
+
+    const fetchedUrls = (global.fetch as jest.Mock).mock.calls.map(
+      (call) => call[0],
+    );
+    expect(urls).toEqual(["https://example.com/news/final"]);
+    expect(
+      fetchedUrls.filter((url) => url === "https://example.com/sitemap.xml")
+        .length,
+    ).toBe(1);
+    expect(
+      fetchedUrls.filter((url) => url === "https://example.com/sitemap-b.xml")
+        .length,
+    ).toBe(1);
+    expect(
+      fetchedUrls.filter((url) => url === "https://example.com/sitemap-c.xml")
+        .length,
+    ).toBe(1);
+  });
+
+  it("reuses cached sitemap body when the server returns 304", async () => {
+    const cacheData = new Map<string, unknown>();
+    const cache = {
+      get: jest.fn(async (key: string) => (cacheData.get(key) as any) ?? null),
+      set: jest.fn(async (key: string, value: unknown) => {
+        cacheData.set(key, value);
+      }),
+    };
+    const sitemapUrlset = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/news/cached</loc></url>
+      </urlset>`;
+
+    global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (headers["if-none-match"] === "\"seed-v1\"") {
+        return {
+          ok: false,
+          status: 304,
+          headers: makeHeaders({ etag: "\"seed-v1\"" }),
+          arrayBuffer: async () => Buffer.from("", "utf8"),
+        } as any;
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: makeHeaders({
+          "content-type": "application/xml",
+          etag: "\"seed-v1\"",
+        }),
+        arrayBuffer: async () => Buffer.from(sitemapUrlset, "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService(undefined, cache as any);
+    const firstRun = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      maxUrls: 1,
+      requestTimeoutMs: 5000,
+    });
+    const secondRun = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      maxUrls: 1,
+      requestTimeoutMs: 5000,
+    });
+
+    expect(firstRun).toEqual(["https://example.com/news/cached"]);
+    expect(secondRun).toEqual(["https://example.com/news/cached"]);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const secondRequestHeaders = (global.fetch as jest.Mock).mock.calls[1]?.[1]
+      ?.headers as Record<string, string>;
+    expect(secondRequestHeaders["if-none-match"]).toBe("\"seed-v1\"");
+  });
+
+  it("falls back to an unconditional fetch when 304 is returned without cached body", async () => {
+    const cache = {
+      get: jest
+        .fn()
+        .mockResolvedValueOnce({
+          etag: "\"seed-v1\"",
+          lastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
+          updatedAt: Date.now(),
+        })
+        .mockResolvedValueOnce(null),
+      set: jest.fn(async () => undefined),
+    };
+    const urlsetXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/news/fallback</loc></url>
+      </urlset>`;
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 304,
+        headers: makeHeaders({
+          etag: "\"seed-v1\"",
+          "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT",
+        }),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: makeHeaders({
+          "content-type": "application/xml",
+          etag: "\"seed-v2\"",
+        }),
+        arrayBuffer: async () => Buffer.from(urlsetXml, "utf8"),
+      }) as any;
+
+    const service = new CrawlMetadataService(undefined, cache as any);
+    const urls = await service.discoverSitemapUrls({
+      domain: "https://example.com",
+      maxUrls: 1,
+      requestTimeoutMs: 5000,
+    });
+
+    expect(urls).toEqual(["https://example.com/news/fallback"]);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(cache.set).toHaveBeenCalled();
   });
 });
 

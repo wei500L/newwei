@@ -2,7 +2,10 @@ import { createLogger } from "@modular/utils";
 import { BadRequestException, Injectable, Optional } from "@nestjs/common";
 import { load } from "cheerio";
 import { XMLParser } from "fast-xml-parser";
+import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
+
+import { CacheService } from "../cache/cache.service";
 
 import { Crawl4aiClient, type Crawl4aiArticle } from "./crawl4ai.client";
 import type {
@@ -32,7 +35,16 @@ interface NormalizedMetadataConfig {
 
 interface FetchResponse {
   status: number;
-  body: string;
+  body?: string;
+  etag?: string;
+  lastModified?: string;
+}
+
+interface DiscoveryHttpState {
+  etag?: string;
+  lastModified?: string;
+  body?: string;
+  updatedAt: number;
 }
 
 interface DeepDiscoveryOptions {
@@ -62,6 +74,8 @@ const DEEP_DISCOVERY_ERROR_CODES = {
   noCandidates: "SEED_DEEP_NO_CANDIDATE",
   noPublishedAt: "SEED_DEEP_NO_PUBLISHED_AT",
 } as const;
+const DISCOVERY_HTTP_STATE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const DISCOVERY_HTTP_STATE_CACHE_KEY_PREFIX = "crawl:discover:http-state";
 
 @Injectable()
 export class CrawlMetadataService {
@@ -74,7 +88,10 @@ export class CrawlMetadataService {
     trimValues: true,
   });
 
-  constructor(@Optional() private readonly crawl4ai?: Crawl4aiClient) {}
+  constructor(
+    @Optional() private readonly crawl4ai?: Crawl4aiClient,
+    @Optional() private readonly cache?: CacheService,
+  ) {}
 
   async extract(
     input: CrawlMetadataExtractionInput,
@@ -1284,6 +1301,9 @@ export class CrawlMetadataService {
   private async fetchPublishedAtTimestamp(url: string, timeoutMs: number) {
     try {
       const response = await this.fetchWithStatus(url, timeoutMs);
+      if (typeof response.body !== "string") {
+        return undefined;
+      }
       return this.extractPublishedAtTimestampFromHtml(response.body);
     } catch {
       return undefined;
@@ -1838,17 +1858,27 @@ export class CrawlMetadataService {
     }
     const seeds = ["sitemap.xml", "sitemap_index.xml", "sitemap-index.xml"];
     const collected = new Set<string>();
+    const visitedSitemapUrls = new Set<string>();
 
     for (const seed of seeds) {
       if (collected.size >= config.maxUrls) {
         break;
       }
       const sitemapUrl = this.joinUrl(config.domain, seed);
+      if (visitedSitemapUrls.has(sitemapUrl)) {
+        continue;
+      }
+      visitedSitemapUrls.add(sitemapUrl);
       const xml = await this.fetchMaybe(sitemapUrl, config.requestTimeoutMs);
       if (!xml) {
         continue;
       }
-      await this.extractFromSitemapPayload(xml, config, collected);
+      await this.extractFromSitemapPayload(
+        xml,
+        config,
+        collected,
+        visitedSitemapUrls,
+      );
     }
 
     return Array.from(collected).slice(0, config.maxUrls);
@@ -1858,6 +1888,7 @@ export class CrawlMetadataService {
     xml: string,
     config: NormalizedMetadataConfig,
     collected: Set<string>,
+    visitedSitemapUrls: Set<string>,
   ) {
     let parsed: Record<string, unknown> | null = null;
     try {
@@ -1905,7 +1936,7 @@ export class CrawlMetadataService {
         : sitemapEntries
           ? [sitemapEntries]
           : [];
-      for (const site of sites.slice(0, 5)) {
+      for (const site of sites) {
         const record =
           site && typeof site === "object" ? (site as { loc?: unknown }) : null;
         const loc =
@@ -1916,9 +1947,22 @@ export class CrawlMetadataService {
         if (collected.size >= config.maxUrls) {
           break;
         }
-        const xmlChild = await this.fetchMaybe(loc, config.requestTimeoutMs);
+        const normalizedLoc = this.normalizeUrl(loc) ?? loc;
+        if (visitedSitemapUrls.has(normalizedLoc)) {
+          continue;
+        }
+        visitedSitemapUrls.add(normalizedLoc);
+        const xmlChild = await this.fetchMaybe(
+          normalizedLoc,
+          config.requestTimeoutMs,
+        );
         if (xmlChild) {
-          await this.extractFromSitemapPayload(xmlChild, config, collected);
+          await this.extractFromSitemapPayload(
+            xmlChild,
+            config,
+            collected,
+            visitedSitemapUrls,
+          );
         }
       }
     }
@@ -2090,6 +2134,9 @@ export class CrawlMetadataService {
   ): Promise<CrawlMetadataResult> {
     try {
       const response = await this.fetchWithStatus(url, config.requestTimeoutMs);
+      if (typeof response.body !== "string") {
+        throw new Error("Metadata response body missing");
+      }
       const parsed = this.parseMetadata(response.body, config);
       const relevanceScore = this.computeRelevance(
         url,
@@ -2197,6 +2244,7 @@ export class CrawlMetadataService {
   private async fetchWithStatus(
     url: string,
     timeoutMs: number,
+    additionalHeaders?: Record<string, string>,
   ): Promise<FetchResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -2207,9 +2255,16 @@ export class CrawlMetadataService {
         headers: {
           "user-agent":
             "MetadataBot/1.0 (+https://github.com/unclecode/crawl4ai) crawl-metadata-service",
+          ...(additionalHeaders ?? {}),
         },
         signal: controller.signal,
       });
+      const etag = response.headers.get("etag")?.trim() || undefined;
+      const lastModified =
+        response.headers.get("last-modified")?.trim() || undefined;
+      if (response.status === 304) {
+        return { status: response.status, etag, lastModified };
+      }
       const buffer = Buffer.from(await response.arrayBuffer());
       const shouldGunzip =
         url.toLowerCase().endsWith(".gz") ||
@@ -2229,7 +2284,7 @@ export class CrawlMetadataService {
           `Metadata request failed with status ${response.status}`,
         );
       }
-      return { status: response.status, body };
+      return { status: response.status, body, etag, lastModified };
     } finally {
       clearTimeout(timer);
     }
@@ -2245,11 +2300,98 @@ export class CrawlMetadataService {
 
   private async fetchMaybe(url: string, timeoutMs: number) {
     try {
-      const response = await this.fetchWithStatus(url, timeoutMs);
+      const state = await this.readDiscoveryHttpState(url);
+      const conditionalHeaders: Record<string, string> = {};
+      if (state?.etag) {
+        conditionalHeaders["if-none-match"] = state.etag;
+      }
+      if (state?.lastModified) {
+        conditionalHeaders["if-modified-since"] = state.lastModified;
+      }
+
+      const response = await this.fetchWithStatus(
+        url,
+        timeoutMs,
+        Object.keys(conditionalHeaders).length > 0
+          ? conditionalHeaders
+          : undefined,
+      );
+
+      if (response.status === 304) {
+        if (state?.body) {
+          await this.writeDiscoveryHttpState(url, {
+            etag: response.etag ?? state.etag,
+            lastModified: response.lastModified ?? state.lastModified,
+            body: state.body,
+            updatedAt: Date.now(),
+          });
+          return state.body;
+        }
+
+        const refreshed = await this.fetchWithStatus(url, timeoutMs);
+        if (typeof refreshed.body === "string") {
+          await this.writeDiscoveryHttpState(url, {
+            etag: refreshed.etag,
+            lastModified: refreshed.lastModified,
+            body: refreshed.body,
+            updatedAt: Date.now(),
+          });
+        }
+        return refreshed.body;
+      }
+
+      if (typeof response.body === "string") {
+        await this.writeDiscoveryHttpState(url, {
+          etag: response.etag,
+          lastModified: response.lastModified,
+          body: response.body,
+          updatedAt: Date.now(),
+        });
+      }
       return response.body;
     } catch (error) {
       logger.debug({ url, error }, "Optional metadata fetch failed");
       return undefined;
+    }
+  }
+
+  private discoveryHttpStateCacheKey(url: string) {
+    const digest = createHash("sha1").update(url).digest("hex");
+    return `${DISCOVERY_HTTP_STATE_CACHE_KEY_PREFIX}:${digest}`;
+  }
+
+  private async readDiscoveryHttpState(url: string) {
+    if (!this.cache) {
+      return null;
+    }
+    try {
+      return this.cache.get<DiscoveryHttpState>(
+        this.discoveryHttpStateCacheKey(url),
+      );
+    } catch (error) {
+      logger.debug(
+        { url, error },
+        "Failed to read conditional discovery state cache",
+      );
+      return null;
+    }
+  }
+
+  private async writeDiscoveryHttpState(url: string, state: DiscoveryHttpState) {
+    if (!this.cache) {
+      return;
+    }
+    try {
+      await this.cache.set(
+        this.discoveryHttpStateCacheKey(url),
+        state,
+        DISCOVERY_HTTP_STATE_CACHE_TTL_SECONDS,
+      );
+    } catch (error) {
+      logger.debug(
+        { url, error },
+        "Failed to write conditional discovery state cache",
+      );
     }
   }
 

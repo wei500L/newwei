@@ -78,6 +78,12 @@ export function useNewsnowUiSync() {
       return;
     }
 
+    hydratedRef.current = false;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
     let cancelled = false;
 
     const fetchRemote = async () => {
@@ -100,7 +106,7 @@ export function useNewsnowUiSync() {
         if (cancelled) {
           return;
         }
-        hydratedRef.current = true;
+        hydratedRef.current = false;
         captureClientError("Failed to load NewsNow UI settings", error);
       }
     };

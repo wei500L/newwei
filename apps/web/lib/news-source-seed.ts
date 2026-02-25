@@ -1,6 +1,14 @@
+export type SeedMode = 'sitemap' | 'rss' | 'list' | 'deep';
+
+export interface SeedSchedulerRuntimeSettings {
+  seedCacheTtlForceGlobal: boolean;
+  seedCacheTtlSecondsSitemapRss: number;
+  seedCacheTtlSecondsListDeep: number;
+}
+
 export interface NewsSourceSeedFormValues {
   seedEnabled?: boolean;
-  seedMode?: 'sitemap' | 'rss' | 'list' | 'deep';
+  seedMode?: SeedMode;
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
@@ -25,6 +33,93 @@ export interface NewsSourceSeedFormValues {
   seedDeepEnableSecondaryHubs?: boolean;
   seedDeepIgnoreRobotsTxt?: boolean;
 }
+
+export const normalizeSeedMode = (value: unknown): SeedMode =>
+  value === 'rss'
+    ? 'rss'
+    : value === 'list'
+      ? 'list'
+      : value === 'deep'
+        ? 'deep'
+        : 'sitemap';
+
+export const DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS: SeedSchedulerRuntimeSettings = {
+  seedCacheTtlForceGlobal: false,
+  seedCacheTtlSecondsSitemapRss: 60,
+  seedCacheTtlSecondsListDeep: 180
+};
+
+const toIntegerInRange = (value: unknown, min: number, max: number): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  const rounded = Math.round(value);
+  if (rounded < min || rounded > max) {
+    return null;
+  }
+  return rounded;
+};
+
+const resolveSeedSchedulerRuntimeSettings = (
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+): SeedSchedulerRuntimeSettings => {
+  const sitemapRss =
+    toIntegerInRange(runtimeSettings?.seedCacheTtlSecondsSitemapRss, 10, 3600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss;
+  const listDeep =
+    toIntegerInRange(runtimeSettings?.seedCacheTtlSecondsListDeep, 10, 3600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep;
+  return {
+    seedCacheTtlForceGlobal: runtimeSettings?.seedCacheTtlForceGlobal === true,
+    seedCacheTtlSecondsSitemapRss: sitemapRss,
+    seedCacheTtlSecondsListDeep: listDeep
+  };
+};
+
+export const getDefaultSeedCacheTtlSecondsByMode = (
+  mode: SeedMode,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+): number => {
+  const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  return mode === 'list' || mode === 'deep'
+    ? resolved.seedCacheTtlSecondsListDeep
+    : resolved.seedCacheTtlSecondsSitemapRss;
+};
+
+export interface ResolvedSeedCacheTtlPolicy {
+  mode: SeedMode;
+  isGlobalForced: boolean;
+  modeDefaultCacheTtlSeconds: number;
+  effectiveCacheTtlSeconds: number;
+  sourceSeedCacheTtlSeconds: number | null;
+}
+
+export const resolveSeedCacheTtlPolicy = (
+  modeValue: unknown,
+  sourceSeedCacheTtlSeconds: unknown,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+): ResolvedSeedCacheTtlPolicy => {
+  const mode = normalizeSeedMode(modeValue);
+  const resolvedRuntimeSettings = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  const modeDefaultCacheTtlSeconds = getDefaultSeedCacheTtlSecondsByMode(
+    mode,
+    resolvedRuntimeSettings
+  );
+  const sourceSeedCacheTtl = toIntegerInRange(sourceSeedCacheTtlSeconds, 10, 3600);
+  const isGlobalForced = resolvedRuntimeSettings.seedCacheTtlForceGlobal;
+  const effectiveCacheTtlSeconds =
+    isGlobalForced || sourceSeedCacheTtl === null
+      ? modeDefaultCacheTtlSeconds
+      : sourceSeedCacheTtl;
+
+  return {
+    mode,
+    isGlobalForced,
+    modeDefaultCacheTtlSeconds,
+    effectiveCacheTtlSeconds,
+    sourceSeedCacheTtlSeconds: sourceSeedCacheTtl
+  };
+};
 
 export const DEFAULT_SEED_FORM_VALUES: Required<
   Pick<
@@ -56,7 +151,7 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
   seedMaxNewUrlsPerRun: 80,
   seedScoreThreshold: 0,
   seedDedupeWindowHours: 24,
-  seedCacheTtlSeconds: 600,
+  seedCacheTtlSeconds: getDefaultSeedCacheTtlSecondsByMode('sitemap'),
   seedConcurrency: 5,
   seedListMaxPages: 6,
   seedListPageConcurrency: 2,
@@ -76,7 +171,10 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
 const toFiniteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-export const readSeedFormValuesFromConfig = (config: unknown): Partial<NewsSourceSeedFormValues> => {
+export const readSeedFormValuesFromConfig = (
+  config: unknown,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+): Partial<NewsSourceSeedFormValues> => {
   const seedConfig =
     config && typeof config === 'object' && !Array.isArray(config) &&
     (config as Record<string, unknown>).seed &&
@@ -85,14 +183,7 @@ export const readSeedFormValuesFromConfig = (config: unknown): Partial<NewsSourc
       ? ((config as Record<string, unknown>).seed as Record<string, unknown>)
       : null;
 
-  const mode =
-    seedConfig?.mode === 'rss'
-      ? 'rss'
-      : seedConfig?.mode === 'list'
-        ? 'list'
-        : seedConfig?.mode === 'deep'
-          ? 'deep'
-        : 'sitemap';
+  const mode = normalizeSeedMode(seedConfig?.mode);
   const deepConfig =
     seedConfig?.deep && typeof seedConfig.deep === 'object' && !Array.isArray(seedConfig.deep)
       ? (seedConfig.deep as Record<string, unknown>)
@@ -112,7 +203,8 @@ export const readSeedFormValuesFromConfig = (config: unknown): Partial<NewsSourc
     seedDedupeWindowHours:
       toFiniteNumber(seedConfig?.dedupeWindowHours) ?? DEFAULT_SEED_FORM_VALUES.seedDedupeWindowHours,
     seedCacheTtlSeconds:
-      toFiniteNumber(seedConfig?.cacheTtlSeconds) ?? DEFAULT_SEED_FORM_VALUES.seedCacheTtlSeconds,
+      toFiniteNumber(seedConfig?.cacheTtlSeconds) ??
+      getDefaultSeedCacheTtlSecondsByMode(mode, runtimeSettings),
     seedConcurrency: toFiniteNumber(seedConfig?.concurrency) ?? DEFAULT_SEED_FORM_VALUES.seedConcurrency,
     seedListMaxPages: toFiniteNumber(seedConfig?.listMaxPages) ?? DEFAULT_SEED_FORM_VALUES.seedListMaxPages,
     seedListPageConcurrency:
@@ -162,14 +254,7 @@ export const buildSeedConfigFromFormValues = (
     return existingConfig;
   }
 
-  const seedMode =
-    values.seedMode === 'rss'
-      ? 'rss'
-      : values.seedMode === 'list'
-        ? 'list'
-        : values.seedMode === 'deep'
-          ? 'deep'
-          : 'sitemap';
+  const seedMode = normalizeSeedMode(values.seedMode);
   const seed: Record<string, unknown> = {
     enabled: values.seedEnabled === true,
     mode: seedMode

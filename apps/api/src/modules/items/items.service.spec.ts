@@ -384,6 +384,94 @@ describe("ItemsService.listWithCursor", () => {
   });
 });
 
+describe("ItemsService personalized pagination cap", () => {
+  const buildCandidateRows = (count: number) => {
+    const baseMs = Date.parse("2024-01-01T00:00:00.000Z");
+    return Array.from({ length: count }, (_, index) => ({
+      id: `meta-${index + 1}`,
+      createdAt: new Date(baseMs - index * 60_000),
+      sortAt: new Date(baseMs - index * 60_000)
+    }));
+  };
+
+  const buildService = () => {
+    const candidates = buildCandidateRows(1600);
+    const prisma = {
+      itemMeta: {
+        count: jest.fn().mockResolvedValue(5000),
+        findMany: jest.fn().mockImplementation(async (args: { take?: number }) => {
+          const take = typeof args?.take === "number" ? args.take : candidates.length;
+          return candidates.slice(0, take);
+        })
+      }
+    };
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+    (service as any).resolveScopedIds = jest.fn().mockResolvedValue(undefined);
+    (service as any).loadItemPersonalizationProfile = jest.fn().mockResolvedValue({
+      sources: {},
+      topics: {},
+      entities: {},
+      items: {},
+      events: {},
+      domains: {}
+    });
+    (service as any).rankPersonalizedCandidates = jest
+      .fn()
+      .mockImplementation(async (input: { candidates: Array<{ id: string }> }) =>
+        input.candidates.map((candidate, index) => ({
+          id: candidate.id,
+          score: 1,
+          rankOffset: index
+        }))
+      );
+    return { service };
+  };
+
+  it("caps page-mode total to the personalized candidate window", async () => {
+    const { service } = buildService();
+
+    const result = await service.list(
+      "org-1",
+      161,
+      10,
+      undefined,
+      undefined,
+      "PERSONALIZED",
+      "RECENCY",
+      "user-1"
+    );
+
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(1600);
+  });
+
+  it("caps cursor-mode totalCount to avoid phantom hasNext pages", async () => {
+    const { service } = buildService();
+
+    const result = await service.listWithCursor(
+      "org-1",
+      10,
+      { id: "meta-1600", offset: 1599 },
+      undefined,
+      undefined,
+      "PERSONALIZED",
+      "RECENCY",
+      "user-1"
+    );
+
+    expect(result.items).toEqual([]);
+    expect(result.hasNextPage).toBe(false);
+    expect(result.totalCount).toBe(1600);
+  });
+});
+
 describe("ItemsService.createFromCrawlResult", () => {
   it("creates an item meta + raw item and enqueues the pipeline job", async () => {
     const { RawItemModel } = jest.requireMock("@modular/mongo") as {

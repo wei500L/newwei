@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
+import { createHash } from "node:crypto";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
@@ -35,6 +36,9 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
 ];
 const DEFAULT_SEED_FRESHNESS_WINDOW_DAYS = 365;
 const MAX_SEED_FRESHNESS_WINDOW_DAYS = 3_650;
+const DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS = 60;
+const DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP = 180;
+const DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL = false;
 
 type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
   include: {
@@ -57,6 +61,7 @@ interface SeedConfig {
   scoreThreshold: number;
   dedupeWindowHours: number;
   cacheTtlSeconds: number;
+  cacheTtlPolicy: "global_forced" | "source_override" | "mode_default";
   deep?: DeepSeedConfig;
 }
 
@@ -84,6 +89,20 @@ interface CronScheduleConfig {
   timezone?: string;
   window?: CronWindowConfig;
 }
+
+interface SeedRuntimeSettings {
+  seedFreshnessWindowDays: number;
+  seedCacheTtlSecondsSitemapRss: number;
+  seedCacheTtlSecondsListDeep: number;
+  seedCacheTtlForceGlobal: boolean;
+}
+
+const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
+  seedFreshnessWindowDays: DEFAULT_SEED_FRESHNESS_WINDOW_DAYS,
+  seedCacheTtlSecondsSitemapRss: DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS,
+  seedCacheTtlSecondsListDeep: DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
+  seedCacheTtlForceGlobal: DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
+};
 
 @Injectable()
 export class NewsSourceSchedulerService {
@@ -196,6 +215,29 @@ export class NewsSourceSchedulerService {
             now.getTime() - schedulerConfig.inFlightLookbackMs,
           );
           seedConfig = this.normalizeSeedConfig(source);
+          let runtimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS;
+          if (seedConfig) {
+            runtimeSettings = await this.resolveSeedRuntimeSettings();
+            const normalizedSeedConfig = this.normalizeSeedConfig(
+              source,
+              runtimeSettings,
+            );
+            seedConfig = normalizedSeedConfig;
+            if (normalizedSeedConfig) {
+              logger.debug(
+                {
+                  sourceId: source.id,
+                  orgId: source.orgId,
+                  mode: normalizedSeedConfig.mode,
+                  seedFreshnessWindowDays:
+                    runtimeSettings.seedFreshnessWindowDays,
+                  seedCacheTtlSeconds: normalizedSeedConfig.cacheTtlSeconds,
+                  seedCacheTtlPolicy: normalizedSeedConfig.cacheTtlPolicy,
+                },
+                "Resolved seed discovery runtime policy for dispatchNow",
+              );
+            }
+          }
           const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
           const inFlightJobs = await this.prisma.pipelineJob.findMany({
             where: {
@@ -251,7 +293,7 @@ export class NewsSourceSchedulerService {
             ? Math.max(0, remainingCapacity)
             : 1;
           const seedFreshnessWindowDays = seedConfig
-            ? await this.resolveSeedFreshnessWindowDays()
+            ? runtimeSettings.seedFreshnessWindowDays
             : DEFAULT_SEED_FRESHNESS_WINDOW_DAYS;
 
           const jobsToSchedule = seedConfig
@@ -1423,7 +1465,10 @@ export class NewsSourceSchedulerService {
     };
   }
 
-  private normalizeSeedConfig(source: NewsSourceWithTemplate) {
+  private normalizeSeedConfig(
+    source: NewsSourceWithTemplate,
+    runtimeSettings: SeedRuntimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS,
+  ) {
     const config =
       source.config &&
       typeof source.config === "object" &&
@@ -1466,6 +1511,21 @@ export class NewsSourceSchedulerService {
           ? keywords.join(" ")
           : "";
     const queryTokens = query ? this.tokenizeQuery(query) : undefined;
+    const modeDefaultCacheTtlSeconds =
+      mode === "list" || mode === "deep"
+        ? runtimeSettings.seedCacheTtlSecondsListDeep
+        : runtimeSettings.seedCacheTtlSecondsSitemapRss;
+    const sourceCacheTtlSeconds = this.toOptionalSeedCacheTtlSeconds(
+      seed.cacheTtlSeconds,
+    );
+    let cacheTtlPolicy: SeedConfig["cacheTtlPolicy"] = "mode_default";
+    let cacheTtlSeconds = modeDefaultCacheTtlSeconds;
+    if (runtimeSettings.seedCacheTtlForceGlobal) {
+      cacheTtlPolicy = "global_forced";
+    } else if (sourceCacheTtlSeconds !== null) {
+      cacheTtlPolicy = "source_override";
+      cacheTtlSeconds = sourceCacheTtlSeconds;
+    }
 
     return {
       enabled: true,
@@ -1492,7 +1552,9 @@ export class NewsSourceSchedulerService {
       queryTokens,
       scoreThreshold: this.clampFloat(seed.scoreThreshold, 0, 1, 0),
       dedupeWindowHours: this.clampInt(seed.dedupeWindowHours, 0, 24 * 30, 24),
-      cacheTtlSeconds: this.clampInt(seed.cacheTtlSeconds, 10, 3600, 600),
+      // Optional runtime policy can force global TTL defaults over per-source seed.cacheTtlSeconds.
+      cacheTtlSeconds,
+      cacheTtlPolicy,
       deep:
         mode === "deep"
           ? {
@@ -1584,6 +1646,17 @@ export class NewsSourceSchedulerService {
     return Math.min(max, Math.max(min, rounded));
   }
 
+  private toOptionalSeedCacheTtlSeconds(value: unknown): number | null {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+    const rounded = Math.round(value);
+    if (rounded < 10 || rounded > 3600) {
+      return null;
+    }
+    return rounded;
+  }
+
   private clampFloat(
     value: unknown,
     min: number,
@@ -1622,7 +1695,7 @@ export class NewsSourceSchedulerService {
       return [];
     }
 
-    const cacheKey = `news-source:${seed.mode}:${source.id}`;
+    const cacheKey = this.buildSeedDiscoveryCacheKey(source.id, source.url, seed);
     const discovered = await this.cache.wrap<string[]>(
       cacheKey,
       seed.cacheTtlSeconds,
@@ -1754,8 +1827,71 @@ export class NewsSourceSchedulerService {
     return scored.slice(0, seed.maxUrls);
   }
 
-  private async resolveSeedFreshnessWindowDays() {
-    return this.schedulerSettings.getSeedFreshnessWindowDays();
+  private buildSeedDiscoveryCacheKey(
+    sourceId: string,
+    sourceUrl: string,
+    seed: SeedConfig,
+  ) {
+    const fingerprintInput = {
+      mode: seed.mode,
+      sourceUrl,
+      domain: seed.domain ?? null,
+      pattern: seed.pattern ?? null,
+      feedUrl: seed.feedUrl ?? null,
+      maxUrls: seed.maxUrls,
+      listMaxPages: seed.listMaxPages,
+      listPageConcurrency: seed.listPageConcurrency,
+      followPagination: seed.followPagination,
+      queryTokens: seed.queryTokens ?? [],
+      scoreThreshold: seed.scoreThreshold,
+      cacheTtlSeconds: seed.cacheTtlSeconds,
+      cacheTtlPolicy: seed.cacheTtlPolicy,
+      deep: seed.deep
+        ? {
+            maxPages: seed.deep.maxPages,
+            maxDepth: seed.deep.maxDepth,
+            timeBudgetSeconds: seed.deep.timeBudgetSeconds,
+            pageConcurrency: seed.deep.pageConcurrency,
+            scoreThreshold: seed.deep.scoreThreshold,
+            candidatePoolSize: seed.deep.candidatePoolSize,
+            headFetchTopK: seed.deep.headFetchTopK,
+            preferPathDate: seed.deep.preferPathDate,
+            enableSecondaryHubs: seed.deep.enableSecondaryHubs,
+          }
+        : null,
+    };
+    const digest = createHash("sha1")
+      .update(JSON.stringify(fingerprintInput))
+      .digest("hex");
+    return `news-source:${seed.mode}:${sourceId}:${digest}`;
+  }
+
+  private async resolveSeedRuntimeSettings(): Promise<SeedRuntimeSettings> {
+    const settings = await this.schedulerSettings.getSettings();
+    return {
+      seedFreshnessWindowDays: this.clampInt(
+        settings.seedFreshnessWindowDays,
+        1,
+        MAX_SEED_FRESHNESS_WINDOW_DAYS,
+        DEFAULT_SEED_FRESHNESS_WINDOW_DAYS,
+      ),
+      seedCacheTtlSecondsSitemapRss: this.clampInt(
+        settings.seedCacheTtlSecondsSitemapRss,
+        10,
+        3600,
+        DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS,
+      ),
+      seedCacheTtlSecondsListDeep: this.clampInt(
+        settings.seedCacheTtlSecondsListDeep,
+        10,
+        3600,
+        DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
+      ),
+      seedCacheTtlForceGlobal:
+        typeof settings.seedCacheTtlForceGlobal === "boolean"
+          ? settings.seedCacheTtlForceGlobal
+          : DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
+    };
   }
 
   private parsePublishedAtFromUrl(url: string) {
@@ -2014,7 +2150,8 @@ export class NewsSourceSchedulerService {
       0,
       Math.floor(schedulerConfig.maxEnqueuePerTick),
     );
-    const seedFreshnessWindowDays = await this.resolveSeedFreshnessWindowDays();
+    const runtimeSettings = await this.resolveSeedRuntimeSettings();
+    const seedFreshnessWindowDays = runtimeSettings.seedFreshnessWindowDays;
     let enqueuedThisTick = 0;
 
     for (const source of sources) {
@@ -2043,7 +2180,7 @@ export class NewsSourceSchedulerService {
       const activeCutoff = new Date(
         now.getTime() - schedulerConfig.inFlightLookbackMs,
       );
-      const seedConfig = this.normalizeSeedConfig(source);
+      const seedConfig = this.normalizeSeedConfig(source, runtimeSettings);
       const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
       const inFlightJobs = await this.prisma.pipelineJob.findMany({
         where: {
@@ -2107,6 +2244,19 @@ export class NewsSourceSchedulerService {
 
       const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
       try {
+        if (seedConfig) {
+          logger.debug(
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              mode: seedConfig.mode,
+              seedFreshnessWindowDays,
+              seedCacheTtlSeconds: seedConfig.cacheTtlSeconds,
+              seedCacheTtlPolicy: seedConfig.cacheTtlPolicy,
+            },
+            "Resolved seed discovery runtime policy",
+          );
+        }
         const jobsToSchedule = seedConfig
           ? await this.resolveSeedCandidates(
               source,
@@ -2158,6 +2308,10 @@ export class NewsSourceSchedulerService {
               sourceId: source.id,
               orgId: source.orgId,
               mode: "seed",
+              seedMode: seedConfig?.mode,
+              seedFreshnessWindowDays,
+              seedCacheTtlSeconds: seedConfig?.cacheTtlSeconds,
+              seedCacheTtlPolicy: seedConfig?.cacheTtlPolicy,
               scheduledFor,
               nextRunAt,
             },

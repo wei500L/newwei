@@ -53,6 +53,33 @@ export class CacheService implements OnModuleDestroy {
     return this.redis.del(...keys);
   }
 
+  async delByPrefix(prefix: string, scanCount = 500) {
+    const trimmedPrefix = prefix.trim();
+    if (!trimmedPrefix) {
+      return 0;
+    }
+    const count = Math.max(1, Math.floor(scanCount));
+    const match = `${trimmedPrefix}*`;
+    let cursor = "0";
+    let deleted = 0;
+
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        "MATCH",
+        match,
+        "COUNT",
+        count,
+      );
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        deleted += await this.delMany(keys);
+      }
+    } while (cursor !== "0");
+
+    return deleted;
+  }
+
   async expire(key: string, ttlSeconds: number) {
     const ttl = Math.max(1, Math.floor(ttlSeconds));
     await this.redis.expire(key, ttl);

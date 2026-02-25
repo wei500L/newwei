@@ -2080,6 +2080,7 @@
       "seedScoreThresholdHint": "0 表示禁用评分过滤；取值范围 0..1。",
       "seedDedupeWindowHours": "去重窗口（小时）",
       "seedCacheTtlSeconds": "种子缓存 TTL（秒）",
+      "seedCacheTtlSecondsHint": "用于控制该新闻源的发现结果缓存时长；若全局强制策略开启则此值不会在调度中生效。",
       "seedConcurrency": "预览并发数",
       "seedConcurrencyHint": "预览用于抓取元信息；调度会使用轻量级 URL 评分。",
       "scheduleMode": "调度模式",
@@ -2106,6 +2107,19 @@
       "default": "默认",
       "fullPage": "整页扫描",
       "virtualScroll": "虚拟滚动"
+    },
+    "seedCachePolicy": {
+      "globalForcedTag": "全局强制策略",
+      "sourceAwareTag": "按新闻源策略",
+      "sitemapRssTag": "Sitemap/RSS {{ttl}} 秒",
+      "listDeepTag": "List/Deep {{ttl}} 秒",
+      "loadFailedTitle": "无法加载调度缓存策略",
+      "loadFailedDescription": "当前仍允许编辑新闻源 TTL，但调度运行时仍可能应用全局覆盖策略。",
+      "globalForcedTitle": "已启用全局缓存 TTL 覆盖",
+      "globalForcedDescription": "调度器会忽略新闻源 seed.cacheTtlSeconds，统一使用模式默认值（sitemap/rss={{sitemapRss}} 秒，list/deep={{listDeep}} 秒）。新闻源值会被保留，便于后续回退。",
+      "sourceAwareTitle": "当前使用按新闻源 TTL 策略",
+      "sourceAwareDescription": "当新闻源设置了 seed.cacheTtlSeconds 时优先使用该值；未设置时回退到模式默认值（sitemap/rss={{sitemapRss}} 秒，list/deep={{listDeep}} 秒）。",
+      "effectiveTtlHint": "当前模式在调度中的生效 TTL：{{ttl}} 秒。"
     },
     "presets": {
       "cloudflare": "Cloudflare 预设",
@@ -4440,15 +4454,33 @@
         "saved": "已保存覆盖配置",
         "unavailable": "不可用（配置加载失败）"
       },
+      "policyPreview": {
+        "globalForcedTag": "全局强制策略",
+        "sourceAwareTag": "按新闻源策略",
+        "globalForcedTitle": "已启用全局缓存 TTL 覆盖",
+        "globalForcedDescription": "调度器会忽略每个新闻源的 seed.cacheTtlSeconds，统一使用模式默认值（sitemap/rss={{sitemapRss}} 秒，list/deep={{listDeep}} 秒）。",
+        "sourceAwareTitle": "新闻源缓存 TTL 仍然生效",
+        "sourceAwareDescription": "当新闻源配置了 seed.cacheTtlSeconds 时优先使用该值；未配置时回退到模式默认值（sitemap/rss={{sitemapRss}} 秒，list/deep={{listDeep}} 秒）。"
+      },
       "fields": {
-        "seedFreshnessWindowDays": "种子新鲜度窗口（天）"
+        "seedFreshnessWindowDays": "种子新鲜度窗口（天）",
+        "seedCacheTtlSecondsSitemapRss": "sitemap/RSS 默认种子缓存 TTL（秒）",
+        "seedCacheTtlSecondsListDeep": "list/deep 默认种子缓存 TTL（秒）",
+        "seedCacheTtlForceGlobal": "强制使用全局缓存 TTL 策略"
       },
       "hints": {
-        "seedFreshnessWindowDays": "种子候选过滤时，发布时间早于该窗口的 URL 将被跳过。"
+        "seedFreshnessWindowDays": "种子候选过滤时，发布时间早于该窗口的 URL 将被跳过。",
+        "seedCacheTtlSecondsSitemapRss": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 sitemap 或 rss 时使用该默认值。",
+        "seedCacheTtlSecondsListDeep": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 list 或 deep 时使用该默认值。",
+        "seedCacheTtlForceGlobal": "开启后调度器将始终使用全局按模式 TTL 默认值，并忽略每个新闻源的 seed.cacheTtlSeconds。"
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "新鲜度窗口必填",
-        "seedFreshnessWindowDaysRange": "新鲜度窗口必须在 1 到 3650 天之间"
+        "seedFreshnessWindowDaysRange": "新鲜度窗口必须在 1 到 3650 天之间",
+        "seedCacheTtlSecondsSitemapRssRequired": "sitemap/RSS 缓存 TTL 必填",
+        "seedCacheTtlSecondsSitemapRssRange": "sitemap/RSS 缓存 TTL 必须在 10 到 3600 秒之间",
+        "seedCacheTtlSecondsListDeepRequired": "list/deep 缓存 TTL 必填",
+        "seedCacheTtlSecondsListDeepRange": "list/deep 缓存 TTL 必须在 10 到 3600 秒之间"
       },
       "messages": {
         "saved": "已保存"

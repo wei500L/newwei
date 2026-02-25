@@ -2077,6 +2077,7 @@
       "seedScoreThresholdHint": "0 disables the scoring filter; values range from 0..1.",
       "seedDedupeWindowHours": "Dedupe window (hours)",
       "seedCacheTtlSeconds": "Seed cache TTL (seconds)",
+      "seedCacheTtlSecondsHint": "Controls discovery result cache duration for this source unless global force strategy is enabled.",
       "seedConcurrency": "Preview concurrency",
       "seedConcurrencyHint": "Used by Preview to fetch metadata; scheduling uses lightweight URL scoring.",
       "scheduleMode": "Schedule mode",
@@ -2103,6 +2104,19 @@
       "default": "Default",
       "fullPage": "Full-page scanning",
       "virtualScroll": "Virtual scroll"
+    },
+    "seedCachePolicy": {
+      "globalForcedTag": "Global forced strategy",
+      "sourceAwareTag": "Source-aware strategy",
+      "sitemapRssTag": "Sitemap/RSS {{ttl}}s",
+      "listDeepTag": "List/Deep {{ttl}}s",
+      "loadFailedTitle": "Unable to load scheduler cache policy",
+      "loadFailedDescription": "Source TTL editing remains enabled. Scheduler runtime may still apply a global override.",
+      "globalForcedTitle": "Global cache TTL override is enabled",
+      "globalForcedDescription": "Scheduler ignores source seed.cacheTtlSeconds and uses mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s). Source value is preserved for future fallback.",
+      "sourceAwareTitle": "Source cache TTL is active",
+      "sourceAwareDescription": "Current source value is used when set; otherwise scheduler falls back to mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s).",
+      "effectiveTtlHint": "Effective scheduler TTL for current mode: {{ttl}}s."
     },
     "presets": {
       "cloudflare": "Cloudflare preset",
@@ -4437,15 +4451,33 @@
         "saved": "Saved override",
         "unavailable": "Unavailable (settings load failed)"
       },
+      "policyPreview": {
+        "globalForcedTag": "Global forced strategy",
+        "sourceAwareTag": "Source-aware strategy",
+        "globalForcedTitle": "Global cache TTL override is enabled",
+        "globalForcedDescription": "Scheduler ignores per-source seed.cacheTtlSeconds and always uses mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s).",
+        "sourceAwareTitle": "Per-source cache TTL remains effective",
+        "sourceAwareDescription": "When a source defines seed.cacheTtlSeconds it takes priority; otherwise scheduler falls back to mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s)."
+      },
       "fields": {
-        "seedFreshnessWindowDays": "Seed freshness window (days)"
+        "seedFreshnessWindowDays": "Seed freshness window (days)",
+        "seedCacheTtlSecondsSitemapRss": "Default seed cache TTL for sitemap/RSS (seconds)",
+        "seedCacheTtlSecondsListDeep": "Default seed cache TTL for list/deep (seconds)",
+        "seedCacheTtlForceGlobal": "Force global cache TTL strategy"
       },
       "hints": {
-        "seedFreshnessWindowDays": "URLs with publish dates older than this window are skipped during seed candidate filtering."
+        "seedFreshnessWindowDays": "URLs with publish dates older than this window are skipped during seed candidate filtering.",
+        "seedCacheTtlSecondsSitemapRss": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is sitemap or rss.",
+        "seedCacheTtlSecondsListDeep": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is list or deep.",
+        "seedCacheTtlForceGlobal": "When enabled, scheduler always uses global mode-based TTL defaults and ignores per-source seed.cacheTtlSeconds."
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "Freshness window is required",
-        "seedFreshnessWindowDaysRange": "Freshness window must be between 1 and 3650 days"
+        "seedFreshnessWindowDaysRange": "Freshness window must be between 1 and 3650 days",
+        "seedCacheTtlSecondsSitemapRssRequired": "Sitemap/RSS cache TTL is required",
+        "seedCacheTtlSecondsSitemapRssRange": "Sitemap/RSS cache TTL must be between 10 and 3600 seconds",
+        "seedCacheTtlSecondsListDeepRequired": "List/deep cache TTL is required",
+        "seedCacheTtlSecondsListDeepRange": "List/deep cache TTL must be between 10 and 3600 seconds"
       },
       "messages": {
         "saved": "Saved"

@@ -912,10 +912,12 @@ export class ItemsService {
     where: Prisma.ItemMetaWhereInput;
     requiredCount: number;
   }): Promise<{ total: number; ranked: RankedItem[] }> {
-    const total = await this.prisma.itemMeta.count({ where: input.where });
-    if (total <= 0) {
+    const rawTotal = await this.prisma.itemMeta.count({ where: input.where });
+    if (rawTotal <= 0) {
       return { total: 0, ranked: [] };
     }
+    const total = Math.min(rawTotal, PERSONALIZED_CANDIDATE_MAX);
+    const targetCount = Math.min(Math.max(input.requiredCount, 1), total);
 
     let candidateTake = Math.min(
       PERSONALIZED_CANDIDATE_MAX,
@@ -951,7 +953,7 @@ export class ItemsService {
       });
 
       if (
-        ranked.length >= input.requiredCount ||
+        ranked.length >= targetCount ||
         candidates.length >= total ||
         candidateTake >= PERSONALIZED_CANDIDATE_MAX
       ) {

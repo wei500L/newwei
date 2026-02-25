@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { createApiClient } from "@/lib/api-client";
 
@@ -183,19 +184,22 @@ export function useBatchPrefetch() {
 export function useResolveNewsUrl() {
   const queryClient = useQueryClient();
 
-  return async (
-    url: string,
-    options?: ResolveNewsUrlOptions,
-  ): Promise<NewsResolveResponse> => {
-    const normalized = url.trim();
-    if (!normalized) {
-      return { matched: false };
-    }
+  return useCallback(
+    async (
+      url: string,
+      options?: ResolveNewsUrlOptions,
+    ): Promise<NewsResolveResponse> => {
+      const normalized = url.trim();
+      if (!normalized) {
+        return { matched: false };
+      }
 
-    return queryClient.fetchQuery<NewsResolveResponse>({
-      queryKey: ["news-resolve", normalized],
-      queryFn: () => fetchResolvedByUrl(normalized, options),
-      staleTime: 1000 * 60 * 30,
-    });
-  };
+      return queryClient.fetchQuery<NewsResolveResponse>({
+        queryKey: ["news-resolve", normalized],
+        queryFn: () => fetchResolvedByUrl(normalized, options),
+        staleTime: 1000 * 60 * 30,
+      });
+    },
+    [queryClient],
+  );
 }

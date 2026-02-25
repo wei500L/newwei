@@ -82,7 +82,13 @@ describe("NewsSourceSchedulerService", () => {
     const crawlTaskService = {} as any;
     const notifications = { notify: jest.fn() } as any;
     const schedulerSettings = {
-      getSeedFreshnessWindowDays: jest.fn().mockResolvedValue(365),
+      getSettings: jest.fn().mockResolvedValue({
+        source: "default",
+        seedFreshnessWindowDays: 365,
+        seedCacheTtlSecondsSitemapRss: 60,
+        seedCacheTtlSecondsListDeep: 180,
+        seedCacheTtlForceGlobal: false,
+      }),
     } as any;
 
     const service = new NewsSourceSchedulerService(
@@ -386,9 +392,15 @@ describe("NewsSourceSchedulerService", () => {
       } =
         createService();
       const now = new Date("2026-02-15T00:00:00.000Z");
-      schedulerSettings.getSeedFreshnessWindowDays = jest
+      schedulerSettings.getSettings = jest
         .fn()
-        .mockResolvedValue(30);
+        .mockResolvedValue({
+          source: "db",
+          seedFreshnessWindowDays: 30,
+          seedCacheTtlSecondsSitemapRss: 60,
+          seedCacheTtlSecondsListDeep: 180,
+          seedCacheTtlForceGlobal: false,
+        });
 
       (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
         "https://example.com/news/2025/12/01/stale-under-30-day-window",
@@ -457,9 +469,7 @@ describe("NewsSourceSchedulerService", () => {
 
       await (service as any).scheduleDueSources(now, 10);
 
-      expect(schedulerSettings.getSeedFreshnessWindowDays).toHaveBeenCalledTimes(
-        1,
-      );
+      expect(schedulerSettings.getSettings).toHaveBeenCalledTimes(1);
       expect(crawlQueue.enqueueTask).toHaveBeenCalledTimes(1);
       expect(crawlQueue.enqueueTask).toHaveBeenCalledWith(
         "task-1",
@@ -538,7 +548,7 @@ describe("NewsSourceSchedulerService", () => {
     const { service, prisma, schedulerSettings } = createService();
     const now = new Date("2026-01-01T00:00:00.000Z");
 
-    schedulerSettings.getSeedFreshnessWindowDays = jest
+    schedulerSettings.getSettings = jest
       .fn()
       .mockRejectedValue(new Error("settings unavailable"));
     (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([]);
@@ -621,6 +631,155 @@ describe("NewsSourceSchedulerService", () => {
         followPagination: false,
       }),
     );
+  });
+
+  it("uses mode-aware default seed cache ttl when cacheTtlSeconds is not configured", () => {
+    const { service } = createService();
+
+    const sitemapSeed = (service as any).normalizeSeedConfig({
+      url: "https://example.com",
+      config: { seed: { enabled: true, mode: "sitemap" } },
+    });
+    const rssSeed = (service as any).normalizeSeedConfig({
+      url: "https://example.com",
+      config: { seed: { enabled: true, mode: "rss" } },
+    });
+    const listSeed = (service as any).normalizeSeedConfig({
+      url: "https://example.com/latest",
+      config: { seed: { enabled: true, mode: "list" } },
+    });
+    const deepSeed = (service as any).normalizeSeedConfig({
+      url: "https://example.com/latest",
+      config: { seed: { enabled: true, mode: "deep" } },
+    });
+
+    expect(sitemapSeed?.cacheTtlSeconds).toBe(60);
+    expect(rssSeed?.cacheTtlSeconds).toBe(60);
+    expect(listSeed?.cacheTtlSeconds).toBe(180);
+    expect(deepSeed?.cacheTtlSeconds).toBe(180);
+  });
+
+  it("keeps per-source seed cache ttl when global force strategy is disabled", () => {
+    const { service } = createService();
+
+    const seedConfig = (service as any).normalizeSeedConfig(
+      {
+        url: "https://example.com",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "sitemap",
+            cacheTtlSeconds: 900,
+          },
+        },
+      },
+      {
+        seedFreshnessWindowDays: 365,
+        seedCacheTtlSecondsSitemapRss: 60,
+        seedCacheTtlSecondsListDeep: 180,
+        seedCacheTtlForceGlobal: false,
+      },
+    );
+
+    expect(seedConfig?.cacheTtlSeconds).toBe(900);
+  });
+
+  it("forces global seed cache ttl when global force strategy is enabled", () => {
+    const { service } = createService();
+
+    const seedConfig = (service as any).normalizeSeedConfig(
+      {
+        url: "https://example.com/latest",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "list",
+            cacheTtlSeconds: 900,
+          },
+        },
+      },
+      {
+        seedFreshnessWindowDays: 365,
+        seedCacheTtlSecondsSitemapRss: 60,
+        seedCacheTtlSecondsListDeep: 180,
+        seedCacheTtlForceGlobal: true,
+      },
+    );
+
+    expect(seedConfig?.cacheTtlSeconds).toBe(180);
+  });
+
+  it("changes seed discovery cache key when ttl policy changes", async () => {
+    const { service, cache, metadataService } = createService();
+    (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([]);
+
+    const source = {
+      id: "source-1",
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "sitemap",
+          cacheTtlSeconds: 900,
+          maxUrls: 20,
+          maxNewUrlsPerRun: 5,
+        },
+      },
+      crawlTemplate: null,
+    };
+
+    const seedFromSource = (service as any).normalizeSeedConfig(source, {
+      seedFreshnessWindowDays: 365,
+      seedCacheTtlSecondsSitemapRss: 60,
+      seedCacheTtlSecondsListDeep: 180,
+      seedCacheTtlForceGlobal: false,
+    });
+    await (service as any).resolveSeedCandidates(source as any, seedFromSource, 365);
+    const keyFromSource = (cache.wrap as jest.Mock).mock.calls[0]?.[0] as string;
+
+    const seedFromGlobal = (service as any).normalizeSeedConfig(source, {
+      seedFreshnessWindowDays: 365,
+      seedCacheTtlSecondsSitemapRss: 60,
+      seedCacheTtlSecondsListDeep: 180,
+      seedCacheTtlForceGlobal: true,
+    });
+    await (service as any).resolveSeedCandidates(source as any, seedFromGlobal, 365);
+    const keyFromGlobal = (cache.wrap as jest.Mock).mock.calls[1]?.[0] as string;
+
+    expect(keyFromSource).toMatch(/^news-source:sitemap:source-1:/);
+    expect(keyFromGlobal).toMatch(/^news-source:sitemap:source-1:/);
+    expect(keyFromSource).not.toBe(keyFromGlobal);
+  });
+
+  it("changes seed discovery cache key when discovery params change", async () => {
+    const { service, cache, metadataService } = createService();
+    (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([]);
+
+    const source = {
+      id: "source-1",
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "sitemap",
+          maxUrls: 20,
+          maxNewUrlsPerRun: 5,
+        },
+      },
+      crawlTemplate: null,
+    };
+
+    const seedA = (service as any).normalizeSeedConfig(source);
+    await (service as any).resolveSeedCandidates(source as any, seedA, 365);
+    const keyA = (cache.wrap as jest.Mock).mock.calls[0]?.[0] as string;
+
+    const seedB = { ...seedA, pattern: "https://example.com/news/*" };
+    await (service as any).resolveSeedCandidates(source as any, seedB, 365);
+    const keyB = (cache.wrap as jest.Mock).mock.calls[1]?.[0] as string;
+
+    expect(keyA).toMatch(/^news-source:sitemap:source-1:/);
+    expect(keyB).toMatch(/^news-source:sitemap:source-1:/);
+    expect(keyA).not.toBe(keyB);
   });
 
   it("schedules deep seeds via deep discovery and enforces robots ignore", async () => {

@@ -59,7 +59,12 @@ import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   buildSeedConfigFromFormValues,
+  type SeedSchedulerRuntimeSettings,
+  DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
   DEFAULT_SEED_FORM_VALUES,
+  getDefaultSeedCacheTtlSecondsByMode,
+  normalizeSeedMode,
+  resolveSeedCacheTtlPolicy,
   readSeedFormValuesFromConfig,
 } from "@/lib/news-source-seed";
 
@@ -288,6 +293,11 @@ type NewsSourceOpmlMode = "preset" | "upload";
 
 interface NewsSourceScheduleValues {
   nextRunAt: Dayjs;
+}
+
+interface NewsSourceSchedulerSettingsResponse
+  extends SeedSchedulerRuntimeSettings {
+  source?: "default" | "db";
 }
 
 interface NewsSourceFormValues {
@@ -878,6 +888,10 @@ export function NewsSourcesContent() {
     [],
   );
   const [groups, setGroups] = useState<string[]>([]);
+  const [seedSchedulerSettings, setSeedSchedulerSettings] =
+    useState<NewsSourceSchedulerSettingsResponse | null>(null);
+  const [seedSchedulerSettingsLoadFailed, setSeedSchedulerSettingsLoadFailed] =
+    useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [batchRunLoading, setBatchRunLoading] = useState(false);
   const [batchToggleLoading, setBatchToggleLoading] = useState(false);
@@ -909,6 +923,7 @@ export function NewsSourcesContent() {
   const liveUiBusyRef = useRef(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const refreshRef = useRef(false);
+  const seedModeRef = useRef<NewsSourceFormValues["seedMode"]>("sitemap");
 
   const selectedSourceIdSet = useMemo(
     () => new Set(selectedSourceIds),
@@ -986,6 +1001,34 @@ export function NewsSourcesContent() {
       setGroups(response.data ?? []);
     } catch (error) {
       captureClientError("Failed to load news source groups", error);
+    }
+  }, [apiClient]);
+
+  const loadSeedSchedulerSettings = useCallback(async () => {
+    try {
+      const response = await apiClient.get<NewsSourceSchedulerSettingsResponse>(
+        "system-settings/news-source-scheduler",
+      );
+      const data = response.data ?? {};
+      setSeedSchedulerSettings({
+        source: data.source === "db" ? "db" : "default",
+        seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal === true,
+        seedCacheTtlSecondsSitemapRss:
+          typeof data.seedCacheTtlSecondsSitemapRss === "number" &&
+          Number.isFinite(data.seedCacheTtlSecondsSitemapRss)
+            ? data.seedCacheTtlSecondsSitemapRss
+            : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss,
+        seedCacheTtlSecondsListDeep:
+          typeof data.seedCacheTtlSecondsListDeep === "number" &&
+          Number.isFinite(data.seedCacheTtlSecondsListDeep)
+            ? data.seedCacheTtlSecondsListDeep
+            : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep,
+      });
+      setSeedSchedulerSettingsLoadFailed(false);
+    } catch (error) {
+      captureClientError("Failed to load news source scheduler settings", error);
+      setSeedSchedulerSettings(null);
+      setSeedSchedulerSettingsLoadFailed(true);
     }
   }, [apiClient]);
 
@@ -1106,8 +1149,17 @@ export function NewsSourcesContent() {
       void refreshAll();
       void loadTemplates();
       void loadGroups();
+      if (canManage) {
+        void loadSeedSchedulerSettings();
+      }
     }
-  }, [canView, loadTemplates, loadGroups, refreshAll]);
+  }, [canManage, canView, loadTemplates, loadGroups, loadSeedSchedulerSettings, refreshAll]);
+
+  useEffect(() => {
+    if (modalOpen && canManage) {
+      void loadSeedSchedulerSettings();
+    }
+  }, [canManage, loadSeedSchedulerSettings, modalOpen]);
 
   useEffect(() => {
     if (!canView || !autoRefreshEnabled) {
@@ -1291,6 +1343,7 @@ export function NewsSourcesContent() {
       return;
     }
 
+    seedModeRef.current = normalizeSeedMode(modalFormValues.seedMode);
     form.resetFields();
     form.setFieldsValue({
       ...modalFormValues,
@@ -1530,15 +1583,11 @@ export function NewsSourcesContent() {
       !Array.isArray(config.seed)
         ? (config.seed as Record<string, unknown>)
         : null;
-    const seedFormValues = readSeedFormValuesFromConfig(config);
-    const seedMode =
-      seedConfig?.mode === "rss"
-        ? "rss"
-        : seedConfig?.mode === "list"
-          ? "list"
-          : seedConfig?.mode === "deep"
-            ? "deep"
-            : "sitemap";
+    const seedFormValues = readSeedFormValuesFromConfig(
+      config,
+      seedSchedulerSettings ?? undefined,
+    );
+    const seedMode = normalizeSeedMode(seedConfig?.mode);
     const crawlOptionsConfig =
       config?.crawlOptions &&
       typeof config.crawlOptions === "object" &&
@@ -4430,6 +4479,37 @@ export function NewsSourcesContent() {
         layout="vertical"
         initialValues={NEWS_SOURCE_CREATE_INITIAL_VALUES}
         onFinish={handleSubmit}
+        onValuesChange={(changedValues, allValues) => {
+          if (!Object.prototype.hasOwnProperty.call(changedValues, "seedMode")) {
+            return;
+          }
+          const previousMode = normalizeSeedMode(seedModeRef.current);
+          const nextMode = normalizeSeedMode(changedValues.seedMode);
+          seedModeRef.current = nextMode;
+
+          const schedulerRuntimeSettings =
+            seedSchedulerSettings ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS;
+          const currentTtl = allValues.seedCacheTtlSeconds;
+          const previousDefaultTtl =
+            getDefaultSeedCacheTtlSecondsByMode(
+              previousMode,
+              schedulerRuntimeSettings,
+            );
+          if (
+            typeof currentTtl === "number" &&
+            Number.isFinite(currentTtl) &&
+            currentTtl !== previousDefaultTtl
+          ) {
+            return;
+          }
+
+          form.setFieldsValue({
+            seedCacheTtlSeconds: getDefaultSeedCacheTtlSecondsByMode(
+              nextMode,
+              schedulerRuntimeSettings,
+            ),
+          });
+        }}
         component={false}
       >
         <Modal
@@ -4442,6 +4522,7 @@ export function NewsSourcesContent() {
           onCancel={() => {
             setModalOpen(false);
             setEditingSource(null);
+            seedModeRef.current = "sitemap";
             form.resetFields();
           }}
           onOk={() => form.submit()}
@@ -5724,20 +5805,29 @@ export function NewsSourcesContent() {
             noStyle
             shouldUpdate={(prevValues, nextValues) =>
               prevValues.seedEnabled !== nextValues.seedEnabled ||
-              prevValues.seedMode !== nextValues.seedMode
+              prevValues.seedMode !== nextValues.seedMode ||
+              prevValues.seedCacheTtlSeconds !== nextValues.seedCacheTtlSeconds
             }
           >
             {({ getFieldValue }) => {
               const seedEnabled = getFieldValue("seedEnabled") === true;
-              const seedModeRaw = getFieldValue("seedMode");
-              const seedMode =
-                seedModeRaw === "rss"
-                  ? "rss"
-                  : seedModeRaw === "list"
-                    ? "list"
-                    : seedModeRaw === "deep"
-                      ? "deep"
-                      : "sitemap";
+              const seedMode = normalizeSeedMode(getFieldValue("seedMode"));
+              const currentSeedCacheTtlSeconds = getFieldValue(
+                "seedCacheTtlSeconds",
+              );
+              const resolvedSeedCachePolicy = resolveSeedCacheTtlPolicy(
+                seedMode,
+                currentSeedCacheTtlSeconds,
+                seedSchedulerSettings ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
+              );
+              const seedCacheTtlInputDisabled =
+                resolvedSeedCachePolicy.isGlobalForced;
+              const schedulerSitemapRssTtl =
+                seedSchedulerSettings?.seedCacheTtlSecondsSitemapRss ??
+                DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss;
+              const schedulerListDeepTtl =
+                seedSchedulerSettings?.seedCacheTtlSecondsListDeep ??
+                DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep;
 
               return (
                 <div style={{ display: seedEnabled ? "block" : "none" }}>
@@ -5888,16 +5978,102 @@ export function NewsSourcesContent() {
                   >
                     <InputNumber min={0} max={720} style={{ width: "100%" }} />
                   </Form.Item>
+                  <Space wrap size={[8, 8]} style={{ marginBottom: 8 }}>
+                    <Tag color={seedCacheTtlInputDisabled ? "gold" : "blue"}>
+                      {seedCacheTtlInputDisabled
+                        ? t("newsSources.seedCachePolicy.globalForcedTag", {
+                            defaultValue: "Global forced strategy",
+                          })
+                        : t("newsSources.seedCachePolicy.sourceAwareTag", {
+                            defaultValue: "Source-aware strategy",
+                          })}
+                    </Tag>
+                    <Tag>
+                      {t("newsSources.seedCachePolicy.sitemapRssTag", {
+                        defaultValue: "Sitemap/RSS {{ttl}}s",
+                        ttl: schedulerSitemapRssTtl,
+                      })}
+                    </Tag>
+                    <Tag>
+                      {t("newsSources.seedCachePolicy.listDeepTag", {
+                        defaultValue: "List/Deep {{ttl}}s",
+                        ttl: schedulerListDeepTtl,
+                      })}
+                    </Tag>
+                  </Space>
+                  {seedSchedulerSettingsLoadFailed ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={t("newsSources.seedCachePolicy.loadFailedTitle", {
+                        defaultValue: "Unable to load scheduler cache policy",
+                      })}
+                      description={t(
+                        "newsSources.seedCachePolicy.loadFailedDescription",
+                        {
+                          defaultValue:
+                            "Source TTL editing remains enabled. Scheduler runtime may still apply a global override.",
+                        },
+                      )}
+                    />
+                  ) : seedCacheTtlInputDisabled ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={t("newsSources.seedCachePolicy.globalForcedTitle", {
+                        defaultValue: "Global cache TTL override is enabled",
+                      })}
+                      description={t(
+                        "newsSources.seedCachePolicy.globalForcedDescription",
+                        {
+                          defaultValue:
+                            "Scheduler ignores source seed.cacheTtlSeconds and uses mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s). Source value is preserved for future fallback.",
+                          sitemapRss: schedulerSitemapRssTtl,
+                          listDeep: schedulerListDeepTtl,
+                        },
+                      )}
+                    />
+                  ) : (
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={t("newsSources.seedCachePolicy.sourceAwareTitle", {
+                        defaultValue: "Source cache TTL is active",
+                      })}
+                      description={t(
+                        "newsSources.seedCachePolicy.sourceAwareDescription",
+                        {
+                          defaultValue:
+                            "Current source value is used when set; otherwise scheduler falls back to mode defaults (sitemap/rss={{sitemapRss}}s, list/deep={{listDeep}}s).",
+                          sitemapRss: schedulerSitemapRssTtl,
+                          listDeep: schedulerListDeepTtl,
+                        },
+                      )}
+                    />
+                  )}
                   <Form.Item
                     name="seedCacheTtlSeconds"
                     label={t("newsSources.fields.seedCacheTtlSeconds", {
                       defaultValue: "Seed cache TTL (seconds)",
+                    })}
+                    tooltip={t("newsSources.fields.seedCacheTtlSecondsHint", {
+                      defaultValue:
+                        "Controls discovery result cache duration for this source unless global force strategy is enabled.",
+                    })}
+                    extra={t("newsSources.seedCachePolicy.effectiveTtlHint", {
+                      defaultValue:
+                        "Effective scheduler TTL for current mode: {{ttl}}s.",
+                      ttl: resolvedSeedCachePolicy.effectiveCacheTtlSeconds,
                     })}
                   >
                     <InputNumber
                       min={10}
                       max={3600}
                       style={{ width: "100%" }}
+                      disabled={seedCacheTtlInputDisabled}
                     />
                   </Form.Item>
                   <Form.Item

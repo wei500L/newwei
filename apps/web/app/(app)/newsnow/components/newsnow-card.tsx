@@ -101,6 +101,7 @@ const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
 const VIEW_EXPOSURE_THRESHOLD = 0.35;
 const VIEW_EXPOSURE_DWELL_MS = 1200;
 const RESOLVE_PREFETCH_CONCURRENCY = 6;
+const EMPTY_CROSS_SOURCE_META_BY_ITEM_ID: Record<string, CrossSourceItemMeta> = {};
 
 async function mapWithConcurrency<T, R>(
   values: T[],
@@ -135,6 +136,43 @@ async function mapWithConcurrency<T, R>(
 
 function toItemKey(item: NewsItem): string {
   return String(item.id);
+}
+
+function areStringArraysEqual(current: string[], next: string[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  for (let idx = 0; idx < current.length; idx += 1) {
+    if (current[idx] !== next[idx]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areResolvedTargetsEqual(
+  current: Record<string, { eventId?: string; itemId?: string }>,
+  next: Record<string, { eventId?: string; itemId?: string }>,
+): boolean {
+  const currentKeys = Object.keys(current);
+  const nextKeys = Object.keys(next);
+  if (currentKeys.length !== nextKeys.length) {
+    return false;
+  }
+  for (const key of currentKeys) {
+    const currentTarget = current[key];
+    const nextTarget = next[key];
+    if (!currentTarget || !nextTarget) {
+      return false;
+    }
+    if (
+      (currentTarget.eventId ?? null) !== (nextTarget.eventId ?? null) ||
+      (currentTarget.itemId ?? null) !== (nextTarget.itemId ?? null)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function NewsnowCard({
@@ -185,6 +223,7 @@ export function NewsnowCard({
   const exposureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedExposureRef = useRef(false);
   const exposureKeyRef = useRef("");
+  const lastResolvedPrefetchKeyRef = useRef<string | null>(null);
 
   const {
     attributes,
@@ -221,7 +260,8 @@ export function NewsnowCard({
   const iconUrl = `/icons/${sourceBaseId}.png`;
   const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
 
-  const dedupMetaMap = crossSourceMetaByItemId ?? {};
+  const dedupMetaMap =
+    crossSourceMetaByItemId ?? EMPTY_CROSS_SOURCE_META_BY_ITEM_ID;
   const affinityScore = sourceAffinity[id]?.score ?? 0;
   const personalizedCombinedScore =
     personalizedScoreDetail && Number.isFinite(personalizedScoreDetail.combinedScore)
@@ -418,9 +458,18 @@ export function NewsnowCard({
     const abortController =
       typeof AbortController !== "undefined" ? new AbortController() : null;
     const candidates = displayItems;
+    const prefetchKey = candidates
+      .map((item) => `${toItemKey(item)}::${item.url}`)
+      .join("|");
+    if (lastResolvedPrefetchKeyRef.current === prefetchKey) {
+      return;
+    }
     if (candidates.length === 0) {
-      setResolvedTargetsByItemId({});
-      setPrefetchedEventIds([]);
+      setResolvedTargetsByItemId((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      setPrefetchedEventIds((prev) => (prev.length === 0 ? prev : []));
+      lastResolvedPrefetchKeyRef.current = prefetchKey;
       return;
     }
 
@@ -457,7 +506,9 @@ export function NewsnowCard({
           ...(entry.itemId ? { itemId: entry.itemId } : {}),
         };
       });
-      setResolvedTargetsByItemId(nextByItemId);
+      setResolvedTargetsByItemId((prev) =>
+        areResolvedTargetsEqual(prev, nextByItemId) ? prev : nextByItemId,
+      );
 
       const eventIds = Array.from(
         new Set(
@@ -466,7 +517,10 @@ export function NewsnowCard({
             .filter((value): value is string => typeof value === "string" && value.length > 0),
         ),
       );
-      setPrefetchedEventIds(eventIds);
+      setPrefetchedEventIds((prev) =>
+        areStringArraysEqual(prev, eventIds) ? prev : eventIds,
+      );
+      lastResolvedPrefetchKeyRef.current = prefetchKey;
     };
 
     void prefetch();

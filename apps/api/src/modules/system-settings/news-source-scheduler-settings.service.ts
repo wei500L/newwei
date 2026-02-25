@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Injectable } from "@nestjs/comm
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 
 export type NewsSourceSchedulerSettingsSource = "default" | "db";
@@ -10,29 +11,49 @@ export type NewsSourceSchedulerSettingsSource = "default" | "db";
 export interface NewsSourceSchedulerSettingsPublic {
   source: NewsSourceSchedulerSettingsSource;
   seedFreshnessWindowDays: number;
+  seedCacheTtlSecondsSitemapRss: number;
+  seedCacheTtlSecondsListDeep: number;
+  seedCacheTtlForceGlobal: boolean;
 }
 
 interface StoredNewsSourceSchedulerSettings {
   seedFreshnessWindowDays?: unknown;
+  seedCacheTtlSecondsSitemapRss?: unknown;
+  seedCacheTtlSecondsListDeep?: unknown;
+  seedCacheTtlForceGlobal?: unknown;
 }
 
 const SETTINGS_KEY = "news_source_scheduler_settings";
 const SETTINGS_DESCRIPTION =
-  "News source scheduler runtime settings (seed freshness window)";
+  "News source scheduler runtime settings (seed freshness + discovery TTL defaults)";
 const DEFAULT_SEED_FRESHNESS_WINDOW_DAYS = 365;
 const MIN_SEED_FRESHNESS_WINDOW_DAYS = 1;
 const MAX_SEED_FRESHNESS_WINDOW_DAYS = 3_650;
+const DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS = 60;
+const DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP = 180;
+const DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL = false;
+const MIN_SEED_CACHE_TTL_SECONDS = 10;
+const MAX_SEED_CACHE_TTL_SECONDS = 3_600;
+const SEED_DISCOVERY_CACHE_KEY_PREFIXES = [
+  "news-source:sitemap:",
+  "news-source:rss:",
+  "news-source:list:",
+  "news-source:deep:",
+] as const;
 const INVALID_PERSISTED_SETTINGS_CODE = "NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID";
 const INVALID_PERSISTED_SETTINGS_ERROR =
   "Stored news source scheduler settings are invalid.";
 const INVALID_PERSISTED_SETTINGS_DETAIL =
-  "seedFreshnessWindowDays must be an integer between 1 and 3650.";
+  "seedFreshnessWindowDays must be an integer between 1 and 3650; seedCacheTtlSecondsSitemapRss and seedCacheTtlSecondsListDeep must be integers between 10 and 3600; seedCacheTtlForceGlobal must be a boolean.";
 
 @Injectable()
 export class NewsSourceSchedulerSettingsService {
   private readonly logger = createLogger({ name: "news-source-scheduler-settings" });
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async getSettings(): Promise<NewsSourceSchedulerSettingsPublic> {
     let record: { value: unknown } | null = null;
@@ -53,18 +74,43 @@ export class NewsSourceSchedulerSettingsService {
       return {
         source: "default",
         seedFreshnessWindowDays: DEFAULT_SEED_FRESHNESS_WINDOW_DAYS,
+        seedCacheTtlSecondsSitemapRss:
+          DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS,
+        seedCacheTtlSecondsListDeep: DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
+        seedCacheTtlForceGlobal: DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
       };
     }
 
     const value = (record.value as StoredNewsSourceSchedulerSettings | null) ?? {};
-    const parsed = this.toStrictSeedFreshnessWindowDays(
+    const parsedSeedFreshnessWindowDays = this.toStrictSeedFreshnessWindowDays(
       value.seedFreshnessWindowDays,
     );
-    if (parsed === null) {
+    const parsedSeedCacheTtlSecondsSitemapRss =
+      this.toStrictOptionalSeedCacheTtlSeconds(
+        value.seedCacheTtlSecondsSitemapRss,
+      );
+    const parsedSeedCacheTtlSecondsListDeep =
+      this.toStrictOptionalSeedCacheTtlSeconds(
+        value.seedCacheTtlSecondsListDeep,
+      );
+    const parsedSeedCacheTtlForceGlobal = this.toStrictOptionalBoolean(
+      value.seedCacheTtlForceGlobal,
+    );
+    if (
+      parsedSeedFreshnessWindowDays === null ||
+      parsedSeedCacheTtlSecondsSitemapRss === null ||
+      parsedSeedCacheTtlSecondsListDeep === null ||
+      parsedSeedCacheTtlForceGlobal === null
+    ) {
       this.logger.error(
         {
           settingsKey: SETTINGS_KEY,
           storedSeedFreshnessWindowDays: value.seedFreshnessWindowDays,
+          storedSeedCacheTtlSecondsSitemapRss:
+            value.seedCacheTtlSecondsSitemapRss,
+          storedSeedCacheTtlSecondsListDeep:
+            value.seedCacheTtlSecondsListDeep,
+          storedSeedCacheTtlForceGlobal: value.seedCacheTtlForceGlobal,
         },
         "Invalid persisted news source scheduler settings value",
       );
@@ -77,26 +123,57 @@ export class NewsSourceSchedulerSettingsService {
 
     return {
       source: "db",
-      seedFreshnessWindowDays: parsed,
+      seedFreshnessWindowDays: parsedSeedFreshnessWindowDays,
+      seedCacheTtlSecondsSitemapRss:
+        parsedSeedCacheTtlSecondsSitemapRss ??
+        DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS,
+      seedCacheTtlSecondsListDeep:
+        parsedSeedCacheTtlSecondsListDeep ??
+        DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
+      seedCacheTtlForceGlobal:
+        parsedSeedCacheTtlForceGlobal ?? DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
     };
-  }
-
-  async getSeedFreshnessWindowDays(): Promise<number> {
-    const settings = await this.getSettings();
-    return settings.seedFreshnessWindowDays;
   }
 
   async updateSettings(
     orgId: string,
     actorId: string,
-    input: { seedFreshnessWindowDays: number },
+    input: {
+      seedFreshnessWindowDays: number;
+      seedCacheTtlSecondsSitemapRss: number;
+      seedCacheTtlSecondsListDeep: number;
+      seedCacheTtlForceGlobal: boolean;
+    },
   ): Promise<NewsSourceSchedulerSettingsPublic> {
     const normalizedSeedFreshnessWindowDays = this.toStrictSeedFreshnessWindowDays(
       input.seedFreshnessWindowDays,
     );
+    const normalizedSeedCacheTtlSecondsSitemapRss =
+      this.toStrictSeedCacheTtlSeconds(input.seedCacheTtlSecondsSitemapRss);
+    const normalizedSeedCacheTtlSecondsListDeep = this.toStrictSeedCacheTtlSeconds(
+      input.seedCacheTtlSecondsListDeep,
+    );
+    const normalizedSeedCacheTtlForceGlobal = this.toStrictBoolean(
+      input.seedCacheTtlForceGlobal,
+    );
     if (normalizedSeedFreshnessWindowDays === null) {
       throw new BadRequestException(
         `seedFreshnessWindowDays must be an integer between ${MIN_SEED_FRESHNESS_WINDOW_DAYS} and ${MAX_SEED_FRESHNESS_WINDOW_DAYS}`,
+      );
+    }
+    if (normalizedSeedCacheTtlSecondsSitemapRss === null) {
+      throw new BadRequestException(
+        `seedCacheTtlSecondsSitemapRss must be an integer between ${MIN_SEED_CACHE_TTL_SECONDS} and ${MAX_SEED_CACHE_TTL_SECONDS}`,
+      );
+    }
+    if (normalizedSeedCacheTtlSecondsListDeep === null) {
+      throw new BadRequestException(
+        `seedCacheTtlSecondsListDeep must be an integer between ${MIN_SEED_CACHE_TTL_SECONDS} and ${MAX_SEED_CACHE_TTL_SECONDS}`,
+      );
+    }
+    if (normalizedSeedCacheTtlForceGlobal === null) {
+      throw new BadRequestException(
+        "seedCacheTtlForceGlobal must be a boolean",
       );
     }
 
@@ -106,6 +183,10 @@ export class NewsSourceSchedulerSettingsService {
         update: {
           value: toPrismaJsonValue({
             seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
+            seedCacheTtlSecondsSitemapRss:
+              normalizedSeedCacheTtlSecondsSitemapRss,
+            seedCacheTtlSecondsListDeep: normalizedSeedCacheTtlSecondsListDeep,
+            seedCacheTtlForceGlobal: normalizedSeedCacheTtlForceGlobal,
           }),
           updatedById: actorId,
           description: SETTINGS_DESCRIPTION,
@@ -114,6 +195,10 @@ export class NewsSourceSchedulerSettingsService {
           key: SETTINGS_KEY,
           value: toPrismaJsonValue({
             seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
+            seedCacheTtlSecondsSitemapRss:
+              normalizedSeedCacheTtlSecondsSitemapRss,
+            seedCacheTtlSecondsListDeep: normalizedSeedCacheTtlSecondsListDeep,
+            seedCacheTtlForceGlobal: normalizedSeedCacheTtlForceGlobal,
           }),
           updatedById: actorId,
           description: SETTINGS_DESCRIPTION,
@@ -121,11 +206,24 @@ export class NewsSourceSchedulerSettingsService {
       });
     } catch (error) {
       this.logger.error(
-        { error, orgId, actorId, settingsKey: SETTINGS_KEY, seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays },
+        {
+          error,
+          orgId,
+          actorId,
+          settingsKey: SETTINGS_KEY,
+          seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
+          seedCacheTtlSecondsSitemapRss:
+            normalizedSeedCacheTtlSecondsSitemapRss,
+          seedCacheTtlSecondsListDeep: normalizedSeedCacheTtlSecondsListDeep,
+          seedCacheTtlForceGlobal: normalizedSeedCacheTtlForceGlobal,
+        },
         "Failed to persist news source scheduler settings",
       );
       throw error;
     }
+    await this.invalidateSeedDiscoveryCacheBestEffort(
+      normalizedSeedCacheTtlForceGlobal,
+    );
 
     await writeAuditLogBestEffort(
       this.prisma,
@@ -137,6 +235,10 @@ export class NewsSourceSchedulerSettingsService {
           action: "news_source_scheduler_settings_update",
           metadata: toPrismaJsonValue({
             seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
+            seedCacheTtlSecondsSitemapRss:
+              normalizedSeedCacheTtlSecondsSitemapRss,
+            seedCacheTtlSecondsListDeep: normalizedSeedCacheTtlSecondsListDeep,
+            seedCacheTtlForceGlobal: normalizedSeedCacheTtlForceGlobal,
           }),
         },
       },
@@ -151,6 +253,9 @@ export class NewsSourceSchedulerSettingsService {
     return {
       source: "db",
       seedFreshnessWindowDays: normalizedSeedFreshnessWindowDays,
+      seedCacheTtlSecondsSitemapRss: normalizedSeedCacheTtlSecondsSitemapRss,
+      seedCacheTtlSecondsListDeep: normalizedSeedCacheTtlSecondsListDeep,
+      seedCacheTtlForceGlobal: normalizedSeedCacheTtlForceGlobal,
     };
   }
 
@@ -166,6 +271,66 @@ export class NewsSourceSchedulerSettingsService {
       return null;
     }
     return parsed;
+  }
+
+  private toStrictOptionalSeedCacheTtlSeconds(value: unknown) {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    return this.toStrictSeedCacheTtlSeconds(value);
+  }
+
+  private toStrictSeedCacheTtlSeconds(value: unknown): number | null {
+    const parsed = this.toNumber(value);
+    if (parsed === null || !Number.isInteger(parsed)) {
+      return null;
+    }
+    if (
+      parsed < MIN_SEED_CACHE_TTL_SECONDS ||
+      parsed > MAX_SEED_CACHE_TTL_SECONDS
+    ) {
+      return null;
+    }
+    return parsed;
+  }
+
+  private toStrictOptionalBoolean(value: unknown) {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    return this.toStrictBoolean(value);
+  }
+
+  private toStrictBoolean(value: unknown): boolean | null {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return null;
+  }
+
+  private async invalidateSeedDiscoveryCacheBestEffort(
+    forceGlobal: boolean,
+  ) {
+    try {
+      let deleted = 0;
+      for (const prefix of SEED_DISCOVERY_CACHE_KEY_PREFIXES) {
+        deleted += await this.cache.delByPrefix(prefix);
+      }
+      this.logger.info(
+        {
+          settingsKey: SETTINGS_KEY,
+          forceGlobal,
+          deletedCacheKeys: deleted,
+          prefixes: SEED_DISCOVERY_CACHE_KEY_PREFIXES,
+        },
+        "Invalidated news source seed discovery cache after scheduler settings update",
+      );
+    } catch (error) {
+      this.logger.warn(
+        { error, settingsKey: SETTINGS_KEY, forceGlobal },
+        "Failed to invalidate news source seed discovery cache after scheduler settings update",
+      );
+    }
   }
 
   private toNumber(value: unknown): number | null {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Form, InputNumber, Space, Spin, Tag, Typography, message } from "antd";
+import { Alert, Button, Form, InputNumber, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,15 +14,24 @@ type NewsSourceSchedulerSettingsSource = "default" | "db";
 interface NewsSourceSchedulerSettingsResponse {
   source: NewsSourceSchedulerSettingsSource;
   seedFreshnessWindowDays: number;
+  seedCacheTtlSecondsSitemapRss: number;
+  seedCacheTtlSecondsListDeep: number;
+  seedCacheTtlForceGlobal: boolean;
 }
 
 interface NewsSourceSchedulerSettingsFormValues {
   seedFreshnessWindowDays: number;
+  seedCacheTtlSecondsSitemapRss: number;
+  seedCacheTtlSecondsListDeep: number;
+  seedCacheTtlForceGlobal: boolean;
 }
 
 const DEFAULT_SETTINGS: NewsSourceSchedulerSettingsResponse = {
   source: "default",
   seedFreshnessWindowDays: 365,
+  seedCacheTtlSecondsSitemapRss: 60,
+  seedCacheTtlSecondsListDeep: 180,
+  seedCacheTtlForceGlobal: false,
 };
 
 const ERROR_CODE_I18N_KEY: Record<string, string> = {
@@ -60,6 +69,18 @@ export function NewsSourceSchedulerSettingsPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const watchedSeedCacheTtlForceGlobal = Form.useWatch(
+    "seedCacheTtlForceGlobal",
+    form,
+  );
+  const watchedSeedCacheTtlSecondsSitemapRss = Form.useWatch(
+    "seedCacheTtlSecondsSitemapRss",
+    form,
+  );
+  const watchedSeedCacheTtlSecondsListDeep = Form.useWatch(
+    "seedCacheTtlSecondsListDeep",
+    form,
+  );
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -80,6 +101,9 @@ export function NewsSourceSchedulerSettingsPanel() {
       setSettings(data);
       form.setFieldsValue({
         seedFreshnessWindowDays: data.seedFreshnessWindowDays,
+        seedCacheTtlSecondsSitemapRss: data.seedCacheTtlSecondsSitemapRss,
+        seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
+        seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
       });
     } catch (error) {
       captureClientError("Failed to load news source scheduler settings", error);
@@ -92,6 +116,10 @@ export function NewsSourceSchedulerSettingsPanel() {
       setSettings(null);
       form.setFieldsValue({
         seedFreshnessWindowDays: DEFAULT_SETTINGS.seedFreshnessWindowDays,
+        seedCacheTtlSecondsSitemapRss:
+          DEFAULT_SETTINGS.seedCacheTtlSecondsSitemapRss,
+        seedCacheTtlSecondsListDeep: DEFAULT_SETTINGS.seedCacheTtlSecondsListDeep,
+        seedCacheTtlForceGlobal: DEFAULT_SETTINGS.seedCacheTtlForceGlobal,
       });
       messageApi.error(detail);
     } finally {
@@ -111,6 +139,9 @@ export function NewsSourceSchedulerSettingsPanel() {
     try {
       const payload = {
         seedFreshnessWindowDays: values.seedFreshnessWindowDays,
+        seedCacheTtlSecondsSitemapRss: values.seedCacheTtlSecondsSitemapRss,
+        seedCacheTtlSecondsListDeep: values.seedCacheTtlSecondsListDeep,
+        seedCacheTtlForceGlobal: values.seedCacheTtlForceGlobal,
       };
       const response = await apiClient.put<NewsSourceSchedulerSettingsResponse>(
         "system-settings/news-source-scheduler",
@@ -123,6 +154,9 @@ export function NewsSourceSchedulerSettingsPanel() {
       setSettings(data);
       form.setFieldsValue({
         seedFreshnessWindowDays: data.seedFreshnessWindowDays,
+        seedCacheTtlSecondsSitemapRss: data.seedCacheTtlSecondsSitemapRss,
+        seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
+        seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
       });
       messageApi.success(t("systemSettings.newsSourceScheduler.messages.saved"));
     } catch (error) {
@@ -154,6 +188,20 @@ export function NewsSourceSchedulerSettingsPanel() {
       : settings?.source === "default"
         ? t("systemSettings.newsSourceScheduler.status.default")
         : t("systemSettings.newsSourceScheduler.status.unavailable");
+  const isGlobalForced =
+    typeof watchedSeedCacheTtlForceGlobal === "boolean"
+      ? watchedSeedCacheTtlForceGlobal
+      : (settings?.seedCacheTtlForceGlobal ?? false);
+  const previewSeedCacheTtlSecondsSitemapRss =
+    typeof watchedSeedCacheTtlSecondsSitemapRss === "number"
+      ? watchedSeedCacheTtlSecondsSitemapRss
+      : (settings?.seedCacheTtlSecondsSitemapRss ??
+        DEFAULT_SETTINGS.seedCacheTtlSecondsSitemapRss);
+  const previewSeedCacheTtlSecondsListDeep =
+    typeof watchedSeedCacheTtlSecondsListDeep === "number"
+      ? watchedSeedCacheTtlSecondsListDeep
+      : (settings?.seedCacheTtlSecondsListDeep ??
+        DEFAULT_SETTINGS.seedCacheTtlSecondsListDeep);
 
   return (
     <>
@@ -178,8 +226,35 @@ export function NewsSourceSchedulerSettingsPanel() {
         <Space wrap>
           <Typography.Text>{t("systemSettings.newsSourceScheduler.status.label")}</Typography.Text>
           <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag color={isGlobalForced ? "gold" : "blue"}>
+            {isGlobalForced
+              ? t("systemSettings.newsSourceScheduler.policyPreview.globalForcedTag")
+              : t("systemSettings.newsSourceScheduler.policyPreview.sourceAwareTag")}
+          </Tag>
         </Space>
       </Space>
+
+      <Alert
+        type={isGlobalForced ? "warning" : "info"}
+        showIcon
+        message={
+          isGlobalForced
+            ? t("systemSettings.newsSourceScheduler.policyPreview.globalForcedTitle")
+            : t("systemSettings.newsSourceScheduler.policyPreview.sourceAwareTitle")
+        }
+        description={
+          isGlobalForced
+            ? t("systemSettings.newsSourceScheduler.policyPreview.globalForcedDescription", {
+                sitemapRss: previewSeedCacheTtlSecondsSitemapRss,
+                listDeep: previewSeedCacheTtlSecondsListDeep,
+              })
+            : t("systemSettings.newsSourceScheduler.policyPreview.sourceAwareDescription", {
+                sitemapRss: previewSeedCacheTtlSecondsSitemapRss,
+                listDeep: previewSeedCacheTtlSecondsListDeep,
+              })
+        }
+        style={{ marginBottom: "1rem" }}
+      />
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
@@ -204,6 +279,63 @@ export function NewsSourceSchedulerSettingsPanel() {
           extra={t("systemSettings.newsSourceScheduler.hints.seedFreshnessWindowDays")}
         >
           <InputNumber min={1} max={3_650} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.seedCacheTtlSecondsSitemapRss")}
+          name="seedCacheTtlSecondsSitemapRss"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.seedCacheTtlSecondsSitemapRssRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 3_600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.seedCacheTtlSecondsSitemapRssRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.seedCacheTtlSecondsSitemapRss")}
+        >
+          <InputNumber min={10} max={3_600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.seedCacheTtlSecondsListDeep")}
+          name="seedCacheTtlSecondsListDeep"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.seedCacheTtlSecondsListDeepRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 3_600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.seedCacheTtlSecondsListDeepRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.seedCacheTtlSecondsListDeep")}
+        >
+          <InputNumber min={10} max={3_600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.seedCacheTtlForceGlobal")}
+          name="seedCacheTtlForceGlobal"
+          valuePropName="checked"
+          extra={t("systemSettings.newsSourceScheduler.hints.seedCacheTtlForceGlobal")}
+        >
+          <Switch />
         </Form.Item>
 
         <Form.Item>
