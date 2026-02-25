@@ -139,6 +139,33 @@ describe("AssistantService.submitQuery", () => {
       createSpy.mockRestore();
     }
   });
+
+  it("rejects unsupported web search before creating and enqueuing run", async () => {
+    const { service, queue } = createService();
+    const createSpy = jest.spyOn(
+      AssistantRunModel as unknown as { create: (...args: unknown[]) => Promise<unknown> },
+      "create"
+    ).mockResolvedValue({
+      id: "run-web-search",
+      createdAt: new Date("2026-01-01T00:00:00.000Z")
+    } as never);
+
+    try {
+      try {
+        await service.submitQuery("org-1", { message: "hello", knowledgeSource: "web_search" }, "user-1");
+        throw new Error("Expected submitQuery to reject");
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        const response = (error as BadRequestException).getResponse() as { code?: string; message?: string };
+        expect(response.code).toBe("WEB_SEARCH_UNSUPPORTED");
+      }
+
+      expect(createSpy).not.toHaveBeenCalled();
+      expect((queue as { add: jest.Mock }).add).not.toHaveBeenCalled();
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
 });
 
 describe("AssistantService.buildQueryConversationHistoryMessages", () => {

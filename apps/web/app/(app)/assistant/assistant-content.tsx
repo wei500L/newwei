@@ -471,6 +471,8 @@ export function AssistantContent() {
   const { data: runtimeCapabilitiesData, loading: runtimeCapabilitiesLoading } =
     useQuery<AssistantRuntimeCapabilitiesQueryData>(ASSISTANT_RUNTIME_CAPABILITIES_QUERY, {
       skip: !authenticated,
+      fetchPolicy: 'network-only',
+      nextFetchPolicy: 'network-only',
     });
 
   useSubscription<AssistantEventsSubscriptionData>(ASSISTANT_EVENTS_SUBSCRIPTION, {

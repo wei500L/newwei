@@ -143,6 +143,9 @@ export class AssistantService {
     const normalizedConversationId = this.normalizeConversationId(input?.conversationId);
     const conversationId = normalizedConversationId || randomUUID();
     const knowledgeSource = this.normalizeKnowledgeSource(input?.knowledgeSource);
+    if (knowledgeSource === "web_search") {
+      await this.ensureWebSearchSupported();
+    }
     const queryInput: AssistantQueryInput = {
       ...input,
       conversationId,
@@ -214,6 +217,16 @@ export class AssistantService {
       apiSurface,
       webSearchSupported
     };
+  }
+
+  private async ensureWebSearchSupported(): Promise<void> {
+    const capabilities = await this.getRuntimeCapabilities();
+    if (!capabilities.webSearchSupported) {
+      throw new BadRequestException({
+        code: "WEB_SEARCH_UNSUPPORTED",
+        message: "Active assistant profile does not support web search."
+      });
+    }
   }
 
   async deleteRun(orgId: string, runId: string): Promise<boolean> {
@@ -558,13 +571,7 @@ export class AssistantService {
     guardrails?: string[],
     assistantModel?: string
   ) {
-    const capabilities = await this.getRuntimeCapabilities();
-    if (!capabilities.webSearchSupported) {
-      throw new BadRequestException({
-        code: "WEB_SEARCH_UNSUPPORTED",
-        message: "Active assistant profile does not support web search."
-      });
-    }
+    await this.ensureWebSearchSupported();
 
     const baseMessages: LiteLlmMessage[] = [
       {
