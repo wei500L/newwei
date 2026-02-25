@@ -99,5 +99,49 @@ describe("UserSettingsService", () => {
     expect(response.settings?.layerVisibility.chokepoints).toBe(false);
     expect(response.settings?.layerVisibility.monitors).toBe(false);
   });
-});
 
+  it("returns null payload when no newsnow settings exist", async () => {
+    const response = await service.getNewsnowUiSettings("org-1", "user-1");
+    expect(response.settings).toBeNull();
+    expect(response.updatedAt).toEqual({});
+  });
+
+  it("normalizes and persists newsnow settings", async () => {
+    const response = await service.updateNewsnowUiSettings("org-1", "user-1", {
+      settings: {
+        focusSources: ["weibo", "weibo", " bad source "],
+        columnOrders: {
+          hottest: ["weibo", "hackernews", "bad source", "hackernews"],
+          "bad column name": ["weibo"],
+        },
+        hideCrossSourceDuplicates: 1,
+        sortMode: "smart",
+        sourceAffinity: {
+          weibo: {
+            score: 123,
+            openOriginalCount: 2.8,
+            openEventCount: 1,
+            openItemCount: 0,
+            refreshCount: 4,
+            focusCount: 5,
+            accumulatedDwellMs: 9_999,
+            lastInteractedAt: 1739900000000,
+          },
+          "bad source": {
+            score: 1,
+          },
+        },
+      },
+    });
+
+    expect(response.settings?.focusSources).toEqual(["weibo"]);
+    expect(response.settings?.columnOrders).toEqual({
+      hottest: ["weibo", "hackernews"],
+    });
+    expect(response.settings?.hideCrossSourceDuplicates).toBe(true);
+    expect(response.settings?.sortMode).toBe("smart");
+    expect(response.settings?.sourceAffinity.weibo?.score).toBe(100);
+    expect(response.settings?.sourceAffinity.weibo?.openOriginalCount).toBe(3);
+    expect(response.settings?.sourceAffinity).not.toHaveProperty("bad source");
+  });
+});

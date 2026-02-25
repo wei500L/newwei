@@ -399,6 +399,9 @@
     "collapse": "收起",
     "empty": "暂无数据",
     "refresh": "刷新",
+    "freshnessFresh": "新鲜",
+    "freshnessWarm": "延迟",
+    "freshnessStale": "过期",
     "saveChanges": "保存更改",
     "save": "保存",
     "submit": "提交",
@@ -1404,7 +1407,9 @@
     "commandEmpty": "暂无匹配结果。",
     "newCrawl": "新建采集",
     "main": {
+      "newsHub": "新闻枢纽",
       "today": "今日要闻",
+      "newsnow": "快览",
       "topics": "专题/事件",
       "events": "新闻事件",
       "eventsArchive": "历史档案",
@@ -4457,6 +4462,128 @@
         }
       }
     },
+    "newsnowPersonalization": {
+      "description": "配置 NewsNow 个性化排序接口的服务端策略，包括排序权重、缓存与请求节流。",
+      "notice": {
+        "title": "生效方式",
+        "body": "配置将写入 MySQL 系统设置，并动态作用于个性化排序请求。"
+      },
+      "status": {
+        "label": "状态",
+        "default": "使用系统默认值",
+        "saved": "已保存覆盖配置",
+        "unavailable": "不可用（配置加载失败）"
+      },
+      "fields": {
+        "affinitySourceWeight": "偏好信号权重",
+        "behaviorSourceWeight": "行为信号权重",
+        "focusSourceBonus": "关注来源加分",
+        "cacheTtlMs": "排序结果缓存时长（ms）",
+        "maxCacheEntries": "Redis 缓存最大条目数",
+        "throttleWindowMs": "节流窗口（ms）",
+        "maxRequestsPerWindowPerUser": "每用户每窗口最大请求数",
+        "staleTtlStrategy": "陈旧缓存 TTL 策略",
+        "staleTtlMultiplier": "陈旧 TTL 倍数",
+        "staleTtlFixedMs": "陈旧 TTL 固定时长（ms）"
+      },
+      "options": {
+        "staleTtlStrategyMultiplier": "按倍数计算",
+        "staleTtlStrategyFixed": "固定时长"
+      },
+      "hints": {
+        "affinitySourceWeight": "用于来源排序的 UI 偏好分相对权重，与行为权重共同参与计算并在运行时归一化。",
+        "behaviorSourceWeight": "用于来源排序的行为画像分相对权重，与偏好权重共同参与计算并在运行时归一化。",
+        "focusSourceBonus": "用户将来源设为关注时额外叠加的加分值。",
+        "cacheTtlMs": "设置为 0 表示禁用个性化排序结果缓存。",
+        "maxCacheEntries": "个性化排序结果在 Redis 中的缓存上限。",
+        "throttleWindowMs": "对每个用户生效的请求限流时间窗口。",
+        "maxRequestsPerWindowPerUser": "单个用户在每个节流窗口内允许的最大个性化排序请求次数。",
+        "staleTtlStrategy": "倍数策略以 cache TTL 为基准，固定策略直接使用固定毫秒值；最终都会受节流窗口安全下限约束。",
+        "staleTtlMultiplier": "仅在倍数策略下生效。staleTTL = max(cacheTTL * multiplier, throttleWindow * 2)。",
+        "staleTtlFixedMs": "仅在固定时长策略下生效。最终 stale TTL 仍会保证不低于节流窗口安全下限。"
+      },
+      "weightPreview": {
+        "title": "当前归一化排序占比",
+        "body": "行为 {{behavior}} / 偏好 {{affinity}}（关注来源加分单独叠加）。",
+        "invalid": "偏好权重与行为权重不能同时为 0。"
+      },
+      "behaviorProfile": {
+        "title": "行为画像诊断",
+        "description": "查看当前用户用于个性化排序的行为画像，核对来源/主题/实体信号是否符合预期。",
+        "sections": {
+          "sources": "来源偏好",
+          "topics": "主题偏好",
+          "entities": "实体偏好",
+          "domains": "域名偏好",
+          "items": "深读偏好",
+          "events": "事件偏好"
+        },
+        "empty": "暂无画像数据",
+        "clearAction": "清空画像",
+        "clearConfirmTitle": "确认清空行为画像？",
+        "clearConfirmDescription": "会删除当前用户累计的来源/主题/实体/深读/事件偏好。"
+      },
+      "unsaved": {
+        "title": "存在未保存变更",
+        "description": "当前个性化配置尚未保存，离开页面可能会丢失修改。"
+      },
+      "restoreDefaults": {
+        "action": "恢复默认值",
+        "confirmTitle": "确认恢复默认值？",
+        "confirmDescription": "将把表单改为系统默认值，需点击保存后才会写入。"
+      },
+      "validation": {
+        "affinitySourceWeightRequired": "偏好信号权重必填",
+        "affinitySourceWeightRange": "偏好信号权重必须在 0 到 5 之间",
+        "behaviorSourceWeightRequired": "行为信号权重必填",
+        "behaviorSourceWeightRange": "行为信号权重必须在 0 到 5 之间",
+        "focusSourceBonusRequired": "关注来源加分必填",
+        "focusSourceBonusRange": "关注来源加分必须在 0 到 20 之间",
+        "signalWeightSum": "偏好权重与行为权重之和必须大于 0",
+        "cacheTtlMsRequired": "缓存时长必填",
+        "cacheTtlMsRange": "缓存时长必须在 0 到 300000 ms 之间",
+        "maxCacheEntriesRequired": "缓存条目上限必填",
+        "maxCacheEntriesRange": "缓存条目上限必须在 100 到 20000 之间",
+        "throttleWindowMsRequired": "节流窗口必填",
+        "throttleWindowMsRange": "节流窗口必须在 1000 到 600000 ms 之间",
+        "maxRequestsPerWindowPerUserRequired": "请求上限必填",
+        "maxRequestsPerWindowPerUserRange": "请求上限必须在 1 到 500 之间",
+        "staleTtlStrategyRequired": "陈旧 TTL 策略必选",
+        "staleTtlMultiplierRequired": "陈旧 TTL 倍数必填",
+        "staleTtlMultiplierRange": "陈旧 TTL 倍数必须在 1 到 20 之间",
+        "staleTtlFixedMsRequired": "陈旧 TTL 固定时长必填",
+        "staleTtlFixedMsRange": "陈旧 TTL 固定时长必须在 1000 到 3600000 ms 之间"
+      },
+      "metrics": {
+        "title": "运行态可观测指标",
+        "description": "基于 Redis 计数器的个性化排序运行态指标（最近 7 天滚动窗口）。",
+        "window": "统计窗口：{{from}} ~ {{to}}（{{days}} 天）",
+        "requestCount": "请求总数",
+        "cacheHitFreshCount": "新鲜缓存命中",
+        "cacheHitStaleCount": "陈旧回退命中",
+        "cacheHitRate": "缓存命中率",
+        "throttleLimitedCount": "被限流次数",
+        "throttleRejectedCount": "限流拒绝（429）",
+        "throttleRate": "限流率",
+        "trimCount": "缓存裁剪次数",
+        "trimEvictedCount": "裁剪淘汰条目数"
+      },
+      "messages": {
+        "saved": "已保存",
+        "defaultsRestored": "已将默认值填充到表单",
+        "behaviorProfileCleared": "行为画像已清空"
+      },
+      "errors": {
+        "loadFailed": "加载 NewsNow 个性化策略配置失败",
+        "saveFailed": "保存 NewsNow 个性化策略配置失败",
+        "metricsLoadFailed": "加载 NewsNow 个性化运行指标失败",
+        "behaviorProfileLoadFailed": "加载行为画像诊断失败",
+        "behaviorProfileClearFailed": "清空行为画像失败",
+        "codes": {
+          "NEWSNOW_PERSONALIZATION_SETTINGS_INVALID": "已保存的 NewsNow 个性化策略配置无效"
+        }
+      }
+    },
     "newsSourceRuntimeSecrets": {
       "description": "在管理后台维护新闻源抓取器运行时密钥（Cookie、Token、自定义 Header）。",
       "notice": {
@@ -4627,6 +4754,7 @@
       "security": "安全",
       "situationMonitor": "态势监控",
       "newsSourceScheduler": "新闻源调度",
+      "newsnowPersonalization": "NewsNow 个性化",
       "newsSourceRuntimeSecrets": "新闻源密钥",
       "vectorService": "向量服务",
       "modelService": "模型服务",
@@ -5846,6 +5974,16 @@
       },
       "readOriginal": "查看原文",
       "openItem": "打开条目",
+      "subscribeAction": "订阅",
+      "subscribedAction": "已订阅",
+      "subscribeTopic": "订阅该主题",
+      "subscribedTopic": "该主题已订阅",
+      "subscribeEntity": "订阅该实体",
+      "subscribedEntity": "该实体已订阅",
+      "subscribeSaved": "已加入订阅，并用于个性化简报",
+      "subscribeAlready": "已在订阅列表中",
+      "subscribeFailed": "订阅保存失败，请稍后重试",
+      "subscribeLoginRequired": "请先登录后再订阅",
       "empty": "未找到条目。",
       "fields": {
         "itemId": "条目 ID",

@@ -283,7 +283,12 @@ export class ItemsResolver {
       throw new BadRequestException("Use either 'after' cursor or 'page' pagination, not both.");
     }
 
-    const orderBy = args.orderBy === ItemsOrderBy.PUBLISHED_DESC ? "PUBLISHED_DESC" : "CREATED_DESC";
+    const orderBy =
+      args.orderBy === ItemsOrderBy.PUBLISHED_DESC
+        ? "PUBLISHED_DESC"
+        : args.orderBy === ItemsOrderBy.PERSONALIZED
+          ? "PERSONALIZED"
+          : "CREATED_DESC";
     const normalizedSearch = typeof args.search === "string" ? args.search.trim() : "";
     const rankingMode =
       args.rankingMode ??
@@ -297,12 +302,13 @@ export class ItemsResolver {
         args.search,
         args.filters,
         orderBy,
-        rankingMode
+        rankingMode,
+        requester.id
       );
 
       const edges: ItemEdge[] = items.map((item, index) => ({
         cursor: encodeCursor(
-          rankingMode === ItemsRankingMode.RELEVANCE
+          rankingMode === ItemsRankingMode.RELEVANCE || orderBy === "PERSONALIZED"
             ? { id: item.id, offset: (page - 1) * pageSize + index }
             : orderBy === "PUBLISHED_DESC"
             ? { id: item.id, sortAt: item.sortAt?.toISOString?.() }
@@ -331,7 +337,8 @@ export class ItemsResolver {
       args.search,
       args.filters,
       orderBy,
-      rankingMode
+      rankingMode,
+      requester.id
     );
 
     const edges: ItemEdge[] = items.map((item) => {
@@ -339,7 +346,7 @@ export class ItemsResolver {
       const rankOffset = (item as { rankOffset?: unknown }).rankOffset;
       return {
         cursor: encodeCursor(
-          rankingMode === ItemsRankingMode.RELEVANCE
+          rankingMode === ItemsRankingMode.RELEVANCE || orderBy === "PERSONALIZED"
             ? {
                 id: item.id,
                 offset:

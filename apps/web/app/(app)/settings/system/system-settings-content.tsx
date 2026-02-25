@@ -41,6 +41,7 @@ import { NewsEventSourcePolicySettingsPanel } from "@/components/settings/news-e
 import { NewsIndicatorSettingsPanel } from "@/components/settings/news-indicator-settings-panel";
 import { NewsSourceRuntimeSecretsPanel } from "@/components/settings/news-source-runtime-secrets-panel";
 import { NewsSourceSchedulerSettingsPanel } from "@/components/settings/news-source-scheduler-settings-panel";
+import { NewsnowPersonalizationSettingsPanel } from "@/components/settings/newsnow-personalization-settings-panel";
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { RssDiagnosticsPanel } from "@/components/settings/rss-diagnostics-panel";
 import { RssTranslationMetricsPanel } from "@/components/settings/rss-translation-metrics-panel";
@@ -1268,6 +1269,13 @@ export function SystemSettingsContent() {
         key: "newsSourceScheduler",
         label: t("systemSettings.tabs.newsSourceScheduler"),
         children: <NewsSourceSchedulerSettingsPanel />,
+      },
+      {
+        key: "newsnowPersonalization",
+        label: t("systemSettings.tabs.newsnowPersonalization", {
+          defaultValue: "NewsNow personalization",
+        }),
+        children: <NewsnowPersonalizationSettingsPanel />,
       },
       {
         key: "newsSourceRuntimeSecrets",

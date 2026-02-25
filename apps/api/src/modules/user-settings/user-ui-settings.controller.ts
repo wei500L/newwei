@@ -5,6 +5,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
+import { UpdateNewsnowUiSettingsDto } from "./dto/newsnow-ui-settings.dto";
 import { UpdateSituationMonitorUiSettingsDto } from "./dto/situation-monitor-ui-settings.dto";
 import { UpdateSpacetimeTimelineUiSettingsDto } from "./dto/spacetime-timeline-ui-settings.dto";
 import { UpdateWarMapUiSettingsDto } from "./dto/war-map-ui-settings.dto";
@@ -70,5 +71,21 @@ export class UserUiSettingsController {
       user.id,
       body,
     );
+  }
+
+  @Get("newsnow")
+  @Header("Cache-Control", "no-store")
+  @Permissions("items.read")
+  async getNewsnowUiSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.getNewsnowUiSettings(user.orgId, user.id);
+  }
+
+  @Put("newsnow")
+  @Permissions("items.read")
+  async updateNewsnowUiSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateNewsnowUiSettingsDto,
+  ) {
+    return this.settings.updateNewsnowUiSettings(user.orgId, user.id, body);
   }
 }

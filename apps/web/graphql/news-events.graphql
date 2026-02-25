@@ -75,6 +75,7 @@ query NewsEvent($id: String!, $itemsLimit: Int, $timelineLimit: Int) {
       id
       eventId
       processedArticleId
+      itemMetaId
       processedItemId
       similarity
       assignedBy

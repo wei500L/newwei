@@ -2,16 +2,69 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from "antd";
+import { Button, Popconfirm, Segmented, Space, Switch, Tooltip, Typography, message } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { useNewsMetadata } from "../hooks/use-news-sources";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { NewsnowSearch } from "./newsnow-search";
+import { useNewsnowStore } from "../store/newsnow-store";
+
+import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
+import { emitNewsnowPersonalizationUpdated } from "@/lib/newsnow-personalization-events";
 
 export function NewsnowHeader() {
   const pathname = usePathname();
   const { data: metadata } = useNewsMetadata();
+  const { data: session } = useSession();
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
+  const [messageApi, contextHolder] = message.useMessage();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [clearingBehavior, setClearingBehavior] = useState(false);
+  const {
+    hideCrossSourceDuplicates,
+    setHideCrossSourceDuplicates,
+    sortMode,
+    setSortMode,
+    densityMode,
+    setDensityMode,
+    columnOrders,
+    resetColumnOrders,
+    sourceAffinity,
+    resetSourceAffinity,
+    liveUnreadBySource,
+    realtimeConnected,
+  } = useNewsnowStore();
+  const affinitySamples = Object.keys(sourceAffinity).length;
+  const realtimeUnreadTotal = Object.values(liveUnreadBySource).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  const manualOrderColumnCount = useMemo(
+    () =>
+      Object.values(columnOrders).reduce(
+        (count, order) => count + (Array.isArray(order) && order.length > 0 ? 1 : 0),
+        0,
+      ),
+    [columnOrders],
+  );
+  const handleClearBehaviorProfile = useCallback(async () => {
+    setClearingBehavior(true);
+    try {
+      await apiClient.delete("user-news-behavior/profile");
+      emitNewsnowPersonalizationUpdated({ updatedAt: Date.now() });
+      messageApi.success("行为画像已清空");
+    } catch (error) {
+      captureClientError("Failed to clear NewsNow behavior profile", error);
+      messageApi.error("清空行为画像失败");
+    } finally {
+      setClearingBehavior(false);
+    }
+  }, [apiClient, messageApi]);
 
   const staticTabs = [
     { key: "focus", name: "关注" },
@@ -29,7 +82,8 @@ export function NewsnowHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(248,250,252,0.92)_100%)] shadow-[0_8px_24px_-18px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(7,10,17,0.96)_0%,rgba(6,9,15,0.94)_100%)] dark:shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
-      <div className="mx-auto flex h-12 w-full items-center px-3 md:px-4">
+      {contextHolder}
+      <div className="mx-auto flex w-full flex-wrap items-center gap-y-2 px-3 py-2 md:px-4">
         <nav className="flex h-full flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {allTabs.map((tab) => {
             const href = `/newsnow/${tab.key}`;
@@ -50,7 +104,110 @@ export function NewsnowHeader() {
             );
           })}
         </nav>
-        <div className="ml-3 flex items-center border-l border-slate-300/70 pl-3 dark:border-white/10">
+        <div className="ml-2 flex shrink-0 items-center gap-3 border-l border-slate-300/70 pl-3 dark:border-white/10">
+          <Space size={6} className="hidden lg:flex">
+            <Link href="/news-hub">
+              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                Hub
+              </span>
+            </Link>
+            <Link href="/items">
+              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                深读
+              </span>
+            </Link>
+            <Link href="/events">
+              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                事件
+              </span>
+            </Link>
+          </Space>
+          <Segmented
+            size="small"
+            value={sortMode}
+            options={[
+              { label: "手动", value: "manual" },
+              { label: "个性化", value: "personalized" },
+            ]}
+            onChange={(value) => setSortMode(value as "manual" | "personalized")}
+          />
+          {sortMode === "personalized" ? (
+            <Tooltip title="根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。">
+              <Space size={4} align="center" wrap>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  样本 {affinitySamples}
+                </Typography.Text>
+                {manualOrderColumnCount > 0 ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    手动顺序 {manualOrderColumnCount} 列
+                  </Typography.Text>
+                ) : null}
+                <Button
+                  size="small"
+                  type="text"
+                  onClick={() => resetSourceAffinity()}
+                  disabled={affinitySamples === 0}
+                >
+                  重置本地偏好
+                </Button>
+                <Popconfirm
+                  title="清空行为画像"
+                  description="将删除服务端累计的来源/主题/实体偏好分，影响个性化排序。"
+                  okText="确认清空"
+                  cancelText="取消"
+                  onConfirm={() => handleClearBehaviorProfile()}
+                >
+                  <Button size="small" type="text" loading={clearingBehavior}>
+                    清空行为画像
+                  </Button>
+                </Popconfirm>
+                {manualOrderColumnCount > 0 ? (
+                  <Button
+                    size="small"
+                    type="text"
+                    onClick={() => resetColumnOrders()}
+                  >
+                    清除手动顺序
+                  </Button>
+                ) : null}
+              </Space>
+            </Tooltip>
+          ) : null}
+          <Tooltip title={realtimeConnected ? "实时连接正常" : "实时连接断开"}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <span
+                className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${
+                  realtimeConnected ? "bg-emerald-400" : "bg-rose-400"
+                }`}
+              />
+              实时 {realtimeUnreadTotal > 0 ? `${realtimeUnreadTotal}` : ""}
+            </Typography.Text>
+          </Tooltip>
+          <Tooltip title="跨源标题相同新闻将仅保留首个来源卡片中的条目">
+            <Space size={4} align="center">
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                去重
+              </Typography.Text>
+              <Switch
+                size="small"
+                checked={hideCrossSourceDuplicates}
+                onChange={(checked) => setHideCrossSourceDuplicates(checked)}
+              />
+            </Space>
+          </Tooltip>
+          <Tooltip title="调整列表密度：紧凑优先信息量，舒适优先可读性。">
+            <Segmented
+              size="small"
+              value={densityMode}
+              options={[
+                { label: "紧凑", value: "compact" },
+                { label: "舒适", value: "comfortable" },
+              ]}
+              onChange={(value) =>
+                setDensityMode(value as "compact" | "comfortable")
+              }
+            />
+          </Tooltip>
           <Button
             type="text"
             icon={<SearchOutlined />}

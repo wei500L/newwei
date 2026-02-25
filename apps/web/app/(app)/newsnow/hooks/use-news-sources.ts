@@ -45,6 +45,10 @@ export interface NewsResolveResponse {
   matchedUrl?: string;
 }
 
+interface ResolveNewsUrlOptions {
+  signal?: AbortSignal;
+}
+
 export interface MetadataResponse {
   sources: Record<string, Source>;
   columns: Record<string, Column>;
@@ -104,8 +108,14 @@ async function fetchSourceById(id: string, latest = false): Promise<SourceRespon
   return coerceSourceResponse(data as SourceResponse);
 }
 
-async function fetchResolvedByUrl(url: string): Promise<NewsResolveResponse> {
-  const { data } = await api.get(`/news-aggregator/resolve?url=${encodeURIComponent(url)}`);
+async function fetchResolvedByUrl(
+  url: string,
+  options?: ResolveNewsUrlOptions,
+): Promise<NewsResolveResponse> {
+  const { data } = await api.get(
+    `/news-aggregator/resolve?url=${encodeURIComponent(url)}`,
+    options?.signal ? { signal: options.signal } : undefined,
+  );
   return (data ?? { matched: false }) as NewsResolveResponse;
 }
 
@@ -173,7 +183,10 @@ export function useBatchPrefetch() {
 export function useResolveNewsUrl() {
   const queryClient = useQueryClient();
 
-  return async (url: string): Promise<NewsResolveResponse> => {
+  return async (
+    url: string,
+    options?: ResolveNewsUrlOptions,
+  ): Promise<NewsResolveResponse> => {
     const normalized = url.trim();
     if (!normalized) {
       return { matched: false };
@@ -181,7 +194,7 @@ export function useResolveNewsUrl() {
 
     return queryClient.fetchQuery<NewsResolveResponse>({
       queryKey: ["news-resolve", normalized],
-      queryFn: () => fetchResolvedByUrl(normalized),
+      queryFn: () => fetchResolvedByUrl(normalized, options),
       staleTime: 1000 * 60 * 30,
     });
   };

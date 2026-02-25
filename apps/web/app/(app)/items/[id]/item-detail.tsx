@@ -4,11 +4,13 @@ import { useMutation, useQuery } from '@apollo/client';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import {
   Alert,
+  Button,
   Card,
   Col,
   Collapse,
   Descriptions,
   List,
+  message,
   Radio,
   Row,
   Select,
@@ -21,6 +23,7 @@ import {
 } from 'antd';
 import type { CollapseProps } from 'antd';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -29,6 +32,8 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { MarkdownViewer } from '@/components/markdown-viewer';
 import { NewsImage } from '@/components/news-image';
 import { useItemQuery } from '@/graphql/generated';
+import { createApiClient } from '@/lib/api-client';
+import { captureClientError } from '@/lib/client-telemetry';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 import {
   isChineseLanguage,
@@ -51,9 +56,20 @@ import {
   type TranslateRssItemsMutationVariables
 } from '@/lib/rss-translation';
 import { safeHttpUrl } from '@/lib/url';
+import { trackUserNewsBehavior } from '@/lib/user-news-behavior';
 
 interface ItemDetailProps {
   itemId: string;
+}
+
+interface UserDigestPreferenceV1 {
+  version: 1;
+  focusEntities: string[];
+  focusTopics: string[];
+  windowDays: number;
+  maxEvents: number;
+  includeIndicators: boolean;
+  maxIndicatorsPerEvent: number;
 }
 
 const ITEM_DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
@@ -115,10 +131,74 @@ const toString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const EMPTY_DIGEST_PREFERENCE: UserDigestPreferenceV1 = {
+  version: 1,
+  focusEntities: [],
+  focusTopics: [],
+  windowDays: 3,
+  maxEvents: 8,
+  includeIndicators: true,
+  maxIndicatorsPerEvent: 5
+};
+
+function normalizeDigestTagValues(values: string[]): string[] {
+  const normalized = values
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .slice(0, 128);
+  return Array.from(new Set(normalized)).slice(0, 50);
+}
+
+function normalizeDigestPreference(value: unknown): UserDigestPreferenceV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return EMPTY_DIGEST_PREFERENCE;
+  }
+  const record = value as Record<string, unknown>;
+  const focusTopics = normalizeDigestTagValues(
+    Array.isArray(record.focusTopics)
+      ? record.focusTopics.filter(
+          (entry): entry is string => typeof entry === 'string',
+        )
+      : [],
+  );
+  const focusEntities = normalizeDigestTagValues(
+    Array.isArray(record.focusEntities)
+      ? record.focusEntities.filter(
+          (entry): entry is string => typeof entry === 'string',
+        )
+      : [],
+  );
+  return {
+    ...EMPTY_DIGEST_PREFERENCE,
+    focusTopics,
+    focusEntities,
+  };
+}
+
+function hasDigestSubscription(values: string[] | undefined, candidate: string): boolean {
+  if (!Array.isArray(values) || values.length === 0) {
+    return false;
+  }
+  const normalizedCandidate = candidate.trim().toLowerCase();
+  if (!normalizedCandidate) {
+    return false;
+  }
+  return values.some((value) => value.trim().toLowerCase() === normalizedCandidate);
+}
+
+function buildDigestSubscriptionKey(kind: 'topic' | 'entity', value: string): string {
+  return `${kind}:${value.trim().toLowerCase()}`;
+}
+
 export function ItemDetail({ itemId }: ItemDetailProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession();
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken: session?.accessToken }),
+    [session?.accessToken],
+  );
   const { data, loading, error } = useItemQuery({
     variables: { id: itemId }
   });
@@ -131,6 +211,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const [showOriginalContent, setShowOriginalContent] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [translatedItem, setTranslatedItem] = useState<RssItemTranslation | null>(null);
+  const [digestPreference, setDigestPreference] = useState<UserDigestPreferenceV1 | null>(null);
+  const [subscriptionBusyByKey, setSubscriptionBusyByKey] = useState<
+    Record<string, boolean>
+  >({});
   const translationRequestSeqRef = useRef(0);
 
   const { data: translationStatusData } = useQuery<
@@ -293,10 +377,133 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     if (!trimmed) return;
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
+  const handleBookmarkPreference = async (kind: 'topic' | 'entity', value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
+    const subscriptionKey = buildDigestSubscriptionKey(kind, trimmed);
+    setSubscriptionBusyByKey((current) => ({
+      ...current,
+      [subscriptionKey]: true
+    }));
+    void trackUserNewsBehavior({
+      type: 'bookmark',
+      itemId: item?.id ?? undefined,
+      source: source ?? undefined,
+      ...(kind === 'topic' ? { topics: [trimmed] } : { entities: [trimmed] }),
+      ...(originalUrl ? { url: originalUrl } : {})
+    });
+    try {
+      if (sessionStatus !== 'authenticated' || !session?.accessToken) {
+        message.warning(
+          t('items.detail.subscribeLoginRequired', {
+            defaultValue: 'Please sign in before subscribing'
+          })
+        );
+        return;
+      }
+
+      const currentPreference =
+        digestPreference ??
+        normalizeDigestPreference(
+          (await apiClient.get<UserDigestPreferenceV1>('user-digest/preference')).data,
+        );
+      const currentTags =
+        kind === 'topic'
+          ? currentPreference.focusTopics
+          : currentPreference.focusEntities;
+      if (hasDigestSubscription(currentTags, trimmed)) {
+        message.info(
+          t('items.detail.subscribeAlready', {
+            defaultValue: 'Already in subscription list'
+          })
+        );
+        setDigestPreference(currentPreference);
+        return;
+      }
+
+      const nextTags = normalizeDigestTagValues([...currentTags, trimmed]);
+      const updatePayload =
+        kind === 'topic'
+          ? { focusTopics: nextTags }
+          : { focusEntities: nextTags };
+      const response = await apiClient.put<UserDigestPreferenceV1>(
+        'user-digest/preference',
+        updatePayload,
+      );
+      const updatedPreference = normalizeDigestPreference(
+        response.data ?? {
+          ...currentPreference,
+          ...updatePayload
+        },
+      );
+      setDigestPreference(updatedPreference);
+      message.success(
+        t('items.detail.subscribeSaved', {
+          defaultValue: 'Added to subscriptions and used by personalized digest'
+        })
+      );
+    } catch (subscriptionError) {
+      captureClientError('Failed to save digest subscription from item detail', subscriptionError);
+      message.error(
+        t('items.detail.subscribeFailed', {
+          defaultValue: 'Failed to save subscription. Please try again later.'
+        })
+      );
+    } finally {
+      setSubscriptionBusyByKey((current) => {
+        const next = { ...current };
+        delete next[subscriptionKey];
+        return next;
+      });
+    }
+  };
 
   const formattedPublishedAt = publishedAt
     ? formatDateTime(publishedAt, locale, ITEM_DATE_TIME_FORMAT)
     : publishedUnknownLabel;
+
+  useEffect(() => {
+    if (!item?.id) {
+      return;
+    }
+    void trackUserNewsBehavior({
+      type: 'view',
+      itemId: item.id,
+      source: source ?? undefined,
+      topics: topics.slice(0, 6),
+      entities: entities.slice(0, 6),
+      ...(originalUrl ? { url: originalUrl } : {})
+    });
+  }, [entities, item?.id, originalUrl, source, topics]);
+
+  useEffect(() => {
+    if (sessionStatus !== 'authenticated' || !session?.accessToken) {
+      setDigestPreference(null);
+      return;
+    }
+    let cancelled = false;
+    const fetchPreference = async () => {
+      try {
+        const response = await apiClient.get<UserDigestPreferenceV1>('user-digest/preference');
+        if (cancelled) {
+          return;
+        }
+        setDigestPreference(normalizeDigestPreference(response.data));
+      } catch (preferenceError) {
+        if (cancelled) {
+          return;
+        }
+        captureClientError('Failed to load digest preference from item detail', preferenceError);
+        setDigestPreference(null);
+      }
+    };
+    void fetchPreference();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, session?.accessToken, sessionStatus]);
 
   useEffect(() => {
     setSummaryExpanded(false);
@@ -901,47 +1108,117 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                 {topicsDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
-                    {topicsDisplay.map((topic) => (
-                      <Tag
-                        key={`topic-${topic}`}
-                        color="blue"
-                        className="cursor-pointer"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleSearch(topic)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            handleSearch(topic);
-                          }
-                        }}
-                      >
-                        {topic}
-                      </Tag>
-                    ))}
+                    {topicsDisplay.map((topic) => {
+                      const subscriptionKey = buildDigestSubscriptionKey('topic', topic);
+                      const isBusy = Boolean(subscriptionBusyByKey[subscriptionKey]);
+                      const isSubscribed = hasDigestSubscription(
+                        digestPreference?.focusTopics,
+                        topic,
+                      );
+                      return (
+                        <Space key={`topic-${topic}`} size={4}>
+                          <Tag
+                            color="blue"
+                            className="cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleSearch(topic)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                handleSearch(topic);
+                              }
+                            }}
+                          >
+                            {topic}
+                          </Tag>
+                          <Tooltip
+                            title={
+                              isSubscribed
+                                ? t('items.detail.subscribedTopic', {
+                                    defaultValue: 'Topic subscribed'
+                                  })
+                                : t('items.detail.subscribeTopic', {
+                                    defaultValue: 'Subscribe topic'
+                                  })
+                            }
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              className="px-0"
+                              loading={isBusy}
+                              disabled={isSubscribed}
+                              onClick={() => {
+                                void handleBookmarkPreference('topic', topic);
+                              }}
+                            >
+                              {isSubscribed
+                                ? t('items.detail.subscribedAction', { defaultValue: 'Subscribed' })
+                                : t('items.detail.subscribeAction', { defaultValue: 'Subscribe' })}
+                            </Button>
+                          </Tooltip>
+                        </Space>
+                      );
+                    })}
                     {extraTopics > 0 ? <Tag>+{extraTopics}</Tag> : null}
                   </Space>
                 ) : null}
                 {entitiesDisplay.length > 0 ? (
                   <Space wrap size={[6, 6]}>
-                    {entitiesDisplay.map((entity) => (
-                      <Tag
-                        key={`entity-${entity}`}
-                        color="purple"
-                        className="cursor-pointer"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleSearch(entity)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            handleSearch(entity);
-                          }
-                        }}
-                      >
-                        {entity}
-                      </Tag>
-                    ))}
+                    {entitiesDisplay.map((entity) => {
+                      const subscriptionKey = buildDigestSubscriptionKey('entity', entity);
+                      const isBusy = Boolean(subscriptionBusyByKey[subscriptionKey]);
+                      const isSubscribed = hasDigestSubscription(
+                        digestPreference?.focusEntities,
+                        entity,
+                      );
+                      return (
+                        <Space key={`entity-${entity}`} size={4}>
+                          <Tag
+                            color="purple"
+                            className="cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleSearch(entity)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                handleSearch(entity);
+                              }
+                            }}
+                          >
+                            {entity}
+                          </Tag>
+                          <Tooltip
+                            title={
+                              isSubscribed
+                                ? t('items.detail.subscribedEntity', {
+                                    defaultValue: 'Entity subscribed'
+                                  })
+                                : t('items.detail.subscribeEntity', {
+                                    defaultValue: 'Subscribe entity'
+                                  })
+                            }
+                          >
+                            <Button
+                              type="link"
+                              size="small"
+                              className="px-0"
+                              loading={isBusy}
+                              disabled={isSubscribed}
+                              onClick={() => {
+                                void handleBookmarkPreference('entity', entity);
+                              }}
+                            >
+                              {isSubscribed
+                                ? t('items.detail.subscribedAction', { defaultValue: 'Subscribed' })
+                                : t('items.detail.subscribeAction', { defaultValue: 'Subscribe' })}
+                            </Button>
+                          </Tooltip>
+                        </Space>
+                      );
+                    })}
                     {extraEntities > 0 ? <Tag>+{extraEntities}</Tag> : null}
                   </Space>
                 ) : null}

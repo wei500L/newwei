@@ -27,6 +27,8 @@ import { NewsSourceRuntimeSecretsController } from "./news-source-runtime-secret
 import { NewsSourceRuntimeSecretsService } from "./news-source-runtime-secrets.service";
 import { NewsSourceSchedulerSettingsController } from "./news-source-scheduler-settings.controller";
 import { NewsSourceSchedulerSettingsService } from "./news-source-scheduler-settings.service";
+import { NewsnowPersonalizationSettingsController } from "./newsnow-personalization-settings.controller";
+import { NewsnowPersonalizationSettingsService } from "./newsnow-personalization-settings.service";
 import { OpenAiKeysInternalController } from "./openai-keys-internal.controller";
 import { OpenAiKeysSettingsController } from "./openai-keys-settings.controller";
 import { OpenAiKeysSettingsService } from "./openai-keys-settings.service";
@@ -65,6 +67,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     LlmRequestLogSettingsController,
     NewsSourceRuntimeSecretsController,
     NewsSourceSchedulerSettingsController,
+    NewsnowPersonalizationSettingsController,
     SituationMonitorSettingsController,
     VectorServiceSettingsController,
     RssTranslationMetricsController,
@@ -84,6 +87,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
+    NewsnowPersonalizationSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
     AssistantSafetySettingsService,
@@ -108,6 +112,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
+    NewsnowPersonalizationSettingsService,
     SituationMonitorSettingsService,
     VectorServiceSettingsService,
     RssTranslationMetricsService,

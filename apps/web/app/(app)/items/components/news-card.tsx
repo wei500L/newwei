@@ -3,7 +3,7 @@
 import { BookOutlined, ClockCircleOutlined, InfoCircleOutlined, ShareAltOutlined } from "@ant-design/icons";
 import { Button, Card, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import { useRouter } from "next/navigation";
-import type { KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -12,8 +12,11 @@ import { SentimentBadge } from "@/components/sentiment-badge";
 import { resolveLocale } from "@/lib/i18n";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { safeHttpUrl } from "@/lib/url";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 const { Title, Paragraph } = Typography;
+const VIEW_EXPOSURE_THRESHOLD = 0.4;
+const VIEW_EXPOSURE_DWELL_MS = 1200;
 
 export type NewsCardVariant = "default" | "reader";
 export type NewsCardDensity = "compact" | "comfortable";
@@ -74,25 +77,6 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   const shareLabel = t("common.share", { defaultValue: "Share" });
   const readingTimeLabel = t("items.readingTime", { defaultValue: "min read" });
 
-  const topicTags = Array.from(new Set(item.topics ?? []))
-    .map((label) => label.trim())
-    .filter((label) => label.length > 0)
-    .map((label) => ({
-      label,
-      color: "blue" as const
-    }));
-  const entityTags = Array.from(new Set(item.entities ?? []))
-    .map((label) => label.trim())
-    .filter((label) => label.length > 0)
-    .map((label) => ({
-      label,
-      color: "purple" as const
-    }));
-  const allTags = [...topicTags, ...entityTags];
-  const displayTagCount = isReaderVariant ? 4 : 5;
-  const displayTags = allTags.slice(0, displayTagCount);
-  const extraTagCount = Math.max(allTags.length - displayTags.length, 0);
-
   const qualityScore = formatRatioAsPercent(item.qualityScore, locale);
   const duplicateScore = formatRatioAsPercent(item.duplicateSimilarity, locale);
   const duplicateLabel = item.duplicateOf
@@ -125,16 +109,10 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
       };
   const thumbnailUrl = safeHttpUrl(item.thumbnail);
   const originalUrl = safeHttpUrl(item.url);
-  const locationText = item.location?.trim() ?? "";
   const readingTime = estimateReadingTime(summaryText);
-
-  const handleSearch = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return;
-    }
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-  };
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasTrackedViewRef = useRef(false);
 
   const handleActivate = (event: KeyboardEvent<HTMLElement>, action: () => void) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -144,6 +122,14 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   };
 
   const handleOpenItem = () => {
+    void trackUserNewsBehavior({
+      type: "open_item",
+      itemId: item.id,
+      source: item.source,
+      topics: item.topics,
+      entities: item.entities,
+      url: originalUrl ?? undefined
+    });
     router.push(`/items/${item.id}`);
   };
 
@@ -153,9 +139,99 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
 
   const handleOpenEvent = () => {
     if (item.eventId) {
+      void trackUserNewsBehavior({
+        type: "open_event",
+        eventId: item.eventId,
+        itemId: item.id,
+        source: item.source,
+        topics: item.topics,
+        entities: item.entities,
+        url: originalUrl ?? undefined
+      });
       router.push(`/events/${item.eventId}`);
     }
   };
+
+  const handleOpenPrimaryItem = () => {
+    const primaryId = typeof item.duplicateOf === "string" ? item.duplicateOf.trim() : "";
+    if (!primaryId) {
+      return;
+    }
+    void trackUserNewsBehavior({
+      type: "open_item",
+      itemId: primaryId,
+      source: item.source,
+      topics: item.topics,
+      entities: item.entities,
+      url: originalUrl ?? undefined
+    });
+    router.push(`/items/${primaryId}`);
+  };
+
+  useEffect(() => {
+    hasTrackedViewRef.current = false;
+  }, [item.id]);
+
+  useEffect(() => {
+    const node = cardRef.current;
+    if (!node) {
+      return;
+    }
+
+    const emitView = () => {
+      if (hasTrackedViewRef.current) {
+        return;
+      }
+      hasTrackedViewRef.current = true;
+      void trackUserNewsBehavior({
+        type: "view",
+        itemId: item.id,
+        source: item.source,
+        topics: item.topics,
+        entities: item.entities,
+        url: originalUrl ?? undefined
+      });
+    };
+
+    const clearPendingTimer = () => {
+      if (viewTimerRef.current) {
+        clearTimeout(viewTimerRef.current);
+        viewTimerRef.current = null;
+      }
+    };
+
+    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+      emitView();
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) {
+          return;
+        }
+        if (entry.isIntersecting && entry.intersectionRatio >= VIEW_EXPOSURE_THRESHOLD) {
+          if (!viewTimerRef.current && !hasTrackedViewRef.current) {
+            viewTimerRef.current = setTimeout(() => {
+              viewTimerRef.current = null;
+              emitView();
+            }, VIEW_EXPOSURE_DWELL_MS);
+          }
+          return;
+        }
+        clearPendingTimer();
+      },
+      { threshold: [0, VIEW_EXPOSURE_THRESHOLD, 0.8] }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      clearPendingTimer();
+      observer.disconnect();
+    };
+  }, [item.entities, item.id, item.source, item.topics, originalUrl]);
 
   const metricsContent = (
     <div className="flex flex-col gap-2 text-xs min-w-[220px]">
@@ -174,11 +250,21 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           <span className="font-medium">{duplicateScore}</span>
         </div>
       )}
-      {item.duplicateOf && (
+      {item.duplicateOf ? (
         <div className="text-gray-400 text-[10px]">
           {t("items.duplicate.of", { defaultValue: "Duplicate of" })}: {item.duplicateOf}
         </div>
-      )}
+      ) : null}
+      {item.duplicateOf ? (
+        <Button
+          type="link"
+          size="small"
+          className="self-start px-0"
+          onClick={handleOpenPrimaryItem}
+        >
+          {t("items.duplicate.viewPrimary", { defaultValue: "查看主稿" })}
+        </Button>
+      ) : null}
       {item.llm?.model && (
         <div className="flex justify-between">
           <span className="text-gray-500">{t("items.metrics.model", { defaultValue: "Model" })}:</span>
@@ -236,35 +322,6 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
         </Paragraph>
       ) : null}
 
-      <div className="flex flex-wrap gap-1 mb-3">
-        {locationText ? (
-          <Tag
-            color="cyan"
-            className="text-xs cursor-pointer"
-            onClick={() => handleSearch(locationText)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => handleActivate(event, () => handleSearch(locationText))}
-          >
-            {locationText}
-          </Tag>
-        ) : null}
-        {displayTags.map((tag) => (
-          <Tag
-            key={`${tag.color}-${tag.label}`}
-            color={tag.color}
-            className="text-xs cursor-pointer"
-            onClick={() => handleSearch(tag.label)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => handleActivate(event, () => handleSearch(tag.label))}
-          >
-            {tag.label}
-          </Tag>
-        ))}
-        {extraTagCount > 0 ? <Tag className="text-xs">+{extraTagCount}</Tag> : null}
-      </div>
-
       {item.eventId ? (
         <div className="mb-3">
           <Tag
@@ -290,16 +347,6 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           {item.source ? (
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
           ) : null}
-          {isReaderVariant && qualityScore ? (
-            <Tag className="items-compact-tag" color="blue">
-              Q {qualityScore}
-            </Tag>
-          ) : null}
-          {isReaderVariant && duplicateScore ? (
-            <Tag className="items-compact-tag" color="gold">
-              {duplicateLabel} {duplicateScore}
-            </Tag>
-          ) : null}
         </div>
         <ArticlePublishedTime
           publishedAt={item.publishedAt ?? null}
@@ -314,26 +361,27 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           secondaryStyle={{ fontSize: 11 }}
         />
       </div>
-      <Popover content={metricsContent} trigger="hover" placement="bottomRight">
+      <Popover content={metricsContent} trigger={["hover", "click"]} placement="bottomRight">
         <Button type="text" size="small" icon={<InfoCircleOutlined className="text-gray-400" />} />
       </Popover>
     </div>
   );
 
   return (
-    <Card
-      hoverable
-      className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
-      style={{ height: "100%", display: "flex", flexDirection: "column" }}
-      styles={{
-        body: {
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          padding: isReaderVariant ? "18px" : "16px"
-        }
-      }}
-    >
+    <div ref={cardRef} className="h-full">
+      <Card
+        hoverable
+        className={isReaderVariant ? "glass-card items-feed-card-reader" : "glass-card"}
+        style={{ height: "100%", display: "flex", flexDirection: "column" }}
+        styles={{
+          body: {
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            padding: isReaderVariant ? "18px" : "16px"
+          }
+        }}
+      >
       {isCompactDensity ? (
         <div className="mb-3 flex items-start gap-3">
           <div className="w-24 shrink-0">{imageBlock}</div>
@@ -388,7 +436,23 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           ) : null}
 
           {originalUrl ? (
-            <Button type="link" size="small" href={originalUrl} target="_blank" rel="noopener noreferrer">
+            <Button
+              type="link"
+              size="small"
+              href={originalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                void trackUserNewsBehavior({
+                  type: "click",
+                  itemId: item.id,
+                  source: item.source,
+                  topics: item.topics,
+                  entities: item.entities,
+                  url: originalUrl
+                });
+              }}
+            >
               {readOriginalLabel}
             </Button>
           ) : null}
@@ -398,6 +462,7 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           </Button>
         </Space>
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

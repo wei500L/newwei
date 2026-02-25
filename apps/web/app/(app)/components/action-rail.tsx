@@ -67,6 +67,12 @@ export function buildActionRailNavConfig(
 
   const mainNavItems: ActionItem[] = [
     {
+      key: "/news-hub",
+      icon: <AppstoreOutlined />,
+      label: t("nav.main.newsHub", { defaultValue: "News Hub" }),
+      path: "/news-hub",
+    },
+    {
       key: "/today",
       icon: <ReadOutlined />,
       label: t("nav.main.today", { defaultValue: "Today" }),

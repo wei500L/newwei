@@ -26,6 +26,7 @@ import {
   NormalizedNewsPayloadSchema
 } from "../news-pipeline/news-pipeline.schema";
 import { QueueService } from "../queue/queue.service";
+import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-behavior.constants";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -61,6 +62,9 @@ const SEARCH_SUGGESTIONS_MAX_SOURCE_SCAN = 1000;
 const SEARCH_SUGGESTIONS_MIN_SEMANTIC_CHARS = 6;
 const TOPIC_GROUPS_CACHE_TTL_SECONDS = 120;
 const EVENT_GROUPS_CACHE_TTL_SECONDS = 120;
+const PERSONALIZED_CANDIDATE_MIN = 180;
+const PERSONALIZED_CANDIDATE_MAX = 1600;
+const PERSONALIZED_CANDIDATE_MULTIPLIER = 8;
 const DEFAULT_RECENCY_HALFLIFE_HOURS = 48;
 const DEFAULT_WEIGHT_RERANK = 0.55;
 const DEFAULT_WEIGHT_RECENCY = 0.25;
@@ -105,7 +109,7 @@ interface ParsedSearchPayload {
   filters?: ItemFilters;
 }
 
-export type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
+export type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC" | "PERSONALIZED";
 export type ItemsRankingMode = "RECENCY" | "RELEVANCE";
 
 export interface ItemsCursorPayload {
@@ -117,6 +121,35 @@ export interface ItemsCursorPayload {
 
 type ItemMetaRow = Prisma.ItemMetaGetPayload<Record<string, never>>;
 type ItemListRow = ItemMetaRow & { relevanceScore?: number; rankOffset?: number };
+
+interface ItemPersonalizationProfile {
+  sources: Record<string, number>;
+  topics: Record<string, number>;
+  entities: Record<string, number>;
+  items: Record<string, number>;
+  events: Record<string, number>;
+  domains: Record<string, number>;
+}
+
+interface PersonalizedCandidateRow {
+  id: string;
+  createdAt: Date;
+  sortAt: Date;
+}
+
+interface RankedItem {
+  id: string;
+  score: number;
+  rankOffset: number;
+}
+
+interface ItemCandidateFeatures {
+  source: string | null;
+  domain: string | null;
+  topics: string[];
+  entities: string[];
+  eventIds: string[];
+}
 
 interface TopicGroupItem {
   processedId: string;
@@ -553,7 +586,8 @@ export class ItemsService {
     search?: string,
     filters?: ItemFilters,
     orderBy: ItemsOrderBy = "CREATED_DESC",
-    rankingMode: ItemsRankingMode = "RECENCY"
+    rankingMode: ItemsRankingMode = "RECENCY",
+    userId?: string,
   ) {
     const normalizedPageSize = Number.isFinite(pageSize) ? Math.floor(pageSize) : 10;
     const take = Math.min(Math.max(normalizedPageSize, 1), MAX_CURSOR_PAGE_SIZE);
@@ -573,6 +607,9 @@ export class ItemsService {
       };
     }
 
+    const baseWhere = this.buildBaseWhere(orgId);
+    const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
+
     if (effectiveRankingMode === "RELEVANCE" && normalizedSearch && scopedIds) {
       return this.listByRelevanceWithPage({
         orgId,
@@ -583,34 +620,22 @@ export class ItemsService {
       });
     }
 
-    const orderField = orderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
+    if (orderBy === "PERSONALIZED" && userId) {
+      return this.listPersonalizedWithPage({
+        orgId,
+        userId,
+        where,
+        page: safePage,
+        pageSize: take,
+      });
+    }
+
+    const effectiveOrderBy = orderBy === "PERSONALIZED" ? "CREATED_DESC" : orderBy;
+    const orderField = effectiveOrderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
     const orderByClause: Prisma.ItemMetaOrderByWithRelationInput[] =
       orderField === "sortAt"
         ? [{ sortAt: "desc" }, { id: "desc" }]
         : [{ createdAt: "desc" }, { id: "desc" }];
-
-    if (!normalizedSearch && !scopedIds) {
-      const baseWhere = this.buildBaseWhere(orgId);
-      const [items, total] = await Promise.all([
-        this.prisma.itemMeta.findMany({
-          where: baseWhere,
-          skip,
-          take,
-          orderBy: orderByClause
-        }),
-        this.prisma.itemMeta.count({ where: baseWhere })
-      ]);
-
-      return {
-        items,
-        total,
-        page: safePage,
-        pageSize: take
-      };
-    }
-
-    const baseWhere = this.buildBaseWhere(orgId);
-    const where = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
 
     const [items, total] = await Promise.all([
       this.prisma.itemMeta.findMany({
@@ -637,7 +662,8 @@ export class ItemsService {
     search?: string,
     filters?: ItemFilters,
     orderBy: ItemsOrderBy = "CREATED_DESC",
-    rankingMode: ItemsRankingMode = "RECENCY"
+    rankingMode: ItemsRankingMode = "RECENCY",
+    userId?: string,
   ) {
     const take = Math.min(Math.max(first, 1), MAX_CURSOR_PAGE_SIZE);
     const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
@@ -663,6 +689,20 @@ export class ItemsService {
     }
 
     const baseWhere = this.buildBaseWhere(orgId);
+    const whereBase = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
+
+    if (orderBy === "PERSONALIZED" && userId) {
+      return this.listPersonalizedWithCursor({
+        orgId,
+        userId,
+        where: whereBase,
+        first: take,
+        cursor,
+      });
+    }
+
+    const effectiveOrderBy = orderBy === "PERSONALIZED" ? "CREATED_DESC" : orderBy;
+
     const cursorId = cursor?.id;
     if (scopedIds) {
       const scopedSet = new Set(scopedIds);
@@ -675,8 +715,7 @@ export class ItemsService {
       }
     }
 
-    const whereBase = scopedIds ? { ...baseWhere, id: { in: scopedIds } } : baseWhere;
-    const orderField = orderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
+    const orderField = effectiveOrderBy === "PUBLISHED_DESC" ? "sortAt" : "createdAt";
 
     let cursorTimestamp: Date | null = null;
     if (cursorId) {
@@ -742,6 +781,673 @@ export class ItemsService {
       hasNextPage,
       totalCount
     };
+  }
+
+  private async listPersonalizedWithPage(input: {
+    orgId: string;
+    userId: string;
+    where: Prisma.ItemMetaWhereInput;
+    page: number;
+    pageSize: number;
+  }) {
+    const offset = Math.max(0, (input.page - 1) * input.pageSize);
+    const { total, ranked } = await this.getPersonalizedRanking({
+      orgId: input.orgId,
+      userId: input.userId,
+      where: input.where,
+      requiredCount: offset + input.pageSize,
+    });
+    if (total <= 0 || ranked.length <= offset) {
+      return {
+        items: [],
+        total,
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    }
+
+    const picked = ranked.slice(offset, offset + input.pageSize);
+    const rows = await this.prisma.itemMeta.findMany({
+      where: {
+        orgId: input.orgId,
+        id: { in: picked.map((entry) => entry.id) },
+      },
+    });
+    const rowById = new Map(rows.map((row) => [row.id, row] as const));
+
+    const items: ItemListRow[] = [];
+    for (const entry of picked) {
+      const row = rowById.get(entry.id);
+      if (!row) {
+        continue;
+      }
+      items.push({
+        ...row,
+        rankOffset: entry.rankOffset,
+      });
+    }
+
+    return {
+      items,
+      total,
+      page: input.page,
+      pageSize: input.pageSize,
+    };
+  }
+
+  private async listPersonalizedWithCursor(input: {
+    orgId: string;
+    userId: string;
+    where: Prisma.ItemMetaWhereInput;
+    first: number;
+    cursor?: ItemsCursorPayload;
+  }) {
+    let offset =
+      typeof input.cursor?.offset === "number" &&
+      Number.isFinite(input.cursor.offset) &&
+      input.cursor.offset >= 0
+        ? Math.floor(input.cursor.offset) + 1
+        : 0;
+    const { total, ranked } = await this.getPersonalizedRanking({
+      orgId: input.orgId,
+      userId: input.userId,
+      where: input.where,
+      requiredCount: offset + input.first + 1,
+    });
+
+    if (
+      offset <= 0 &&
+      input.cursor?.id &&
+      typeof input.cursor.id === "string" &&
+      input.cursor.id.trim().length > 0
+    ) {
+      const cursorIndex = ranked.findIndex((entry) => entry.id === input.cursor?.id);
+      if (cursorIndex >= 0) {
+        offset = cursorIndex + 1;
+      }
+    }
+
+    if (total <= 0 || ranked.length <= offset) {
+      return {
+        items: [],
+        hasNextPage: false,
+        totalCount: total,
+      };
+    }
+
+    const window = ranked.slice(offset, offset + input.first + 1);
+    const hasNextPage = window.length > input.first || offset + input.first < total;
+    const picked = hasNextPage ? window.slice(0, input.first) : window;
+
+    const rows = await this.prisma.itemMeta.findMany({
+      where: {
+        orgId: input.orgId,
+        id: { in: picked.map((entry) => entry.id) },
+      },
+    });
+    const rowById = new Map(rows.map((row) => [row.id, row] as const));
+
+    const items: ItemListRow[] = [];
+    for (const entry of picked) {
+      const row = rowById.get(entry.id);
+      if (!row) {
+        continue;
+      }
+      items.push({
+        ...row,
+        rankOffset: entry.rankOffset,
+      });
+    }
+
+    return {
+      items,
+      hasNextPage,
+      totalCount: total,
+    };
+  }
+
+  private async getPersonalizedRanking(input: {
+    orgId: string;
+    userId: string;
+    where: Prisma.ItemMetaWhereInput;
+    requiredCount: number;
+  }): Promise<{ total: number; ranked: RankedItem[] }> {
+    const total = await this.prisma.itemMeta.count({ where: input.where });
+    if (total <= 0) {
+      return { total: 0, ranked: [] };
+    }
+
+    let candidateTake = Math.min(
+      PERSONALIZED_CANDIDATE_MAX,
+      Math.max(
+        PERSONALIZED_CANDIDATE_MIN,
+        Math.floor(input.requiredCount * PERSONALIZED_CANDIDATE_MULTIPLIER),
+      ),
+    );
+    const profile = await this.loadItemPersonalizationProfile(input.orgId, input.userId);
+    let ranked: RankedItem[] = [];
+
+    while (true) {
+      const candidates = await this.prisma.itemMeta.findMany({
+        where: input.where,
+        select: {
+          id: true,
+          createdAt: true,
+          sortAt: true,
+        },
+        orderBy: [{ sortAt: "desc" }, { id: "desc" }],
+        take: candidateTake,
+      });
+
+      const normalizedCandidates: PersonalizedCandidateRow[] = candidates.map((candidate) => ({
+        id: candidate.id,
+        createdAt: candidate.createdAt,
+        sortAt: candidate.sortAt ?? candidate.createdAt,
+      }));
+      ranked = await this.rankPersonalizedCandidates({
+        orgId: input.orgId,
+        candidates: normalizedCandidates,
+        profile,
+      });
+
+      if (
+        ranked.length >= input.requiredCount ||
+        candidates.length >= total ||
+        candidateTake >= PERSONALIZED_CANDIDATE_MAX
+      ) {
+        break;
+      }
+      candidateTake = Math.min(PERSONALIZED_CANDIDATE_MAX, candidateTake * 2);
+    }
+
+    return { total, ranked };
+  }
+
+  private async rankPersonalizedCandidates(input: {
+    orgId: string;
+    candidates: PersonalizedCandidateRow[];
+    profile: ItemPersonalizationProfile;
+  }): Promise<RankedItem[]> {
+    const profileEnabled =
+      Object.keys(input.profile.sources).length > 0 ||
+      Object.keys(input.profile.topics).length > 0 ||
+      Object.keys(input.profile.entities).length > 0 ||
+      Object.keys(input.profile.items).length > 0 ||
+      Object.keys(input.profile.events).length > 0 ||
+      Object.keys(input.profile.domains).length > 0;
+    if (input.candidates.length === 0) {
+      return [];
+    }
+
+    const candidateIds = input.candidates.map((candidate) => candidate.id);
+    const featuresById = await this.loadCandidateFeatures(input.orgId, candidateIds);
+    const sortAtById = new Map(
+      input.candidates.map((candidate) => [candidate.id, candidate.sortAt.getTime()] as const),
+    );
+    const nowMs = Date.now();
+
+    const ranked = input.candidates
+      .map((candidate) => {
+        const feature = featuresById.get(candidate.id);
+        const ageHours = Math.max(0, (nowMs - candidate.sortAt.getTime()) / (1000 * 60 * 60));
+        const recencyScore = 1 / (1 + ageHours / 36);
+        if (!profileEnabled) {
+          return {
+            id: candidate.id,
+            score: recencyScore,
+          };
+        }
+
+        const sourceScore = this.resolveSourcePreferenceScore(
+          feature,
+          input.profile.sources,
+        );
+        const topicScore = this.sumPreferenceScore(
+          feature?.topics ?? [],
+          input.profile.topics,
+          6,
+        );
+        const entityScore = this.sumPreferenceScore(
+          feature?.entities ?? [],
+          input.profile.entities,
+          6,
+        );
+        const itemPreferenceId = this.normalizeBehaviorId(candidate.id);
+        const itemScore = itemPreferenceId
+          ? (input.profile.items[itemPreferenceId] ?? 0)
+          : 0;
+        const eventScore = this.sumPreferenceScore(
+          feature?.eventIds ?? [],
+          input.profile.events,
+          4,
+        );
+        const domainScore = feature?.domain
+          ? (input.profile.domains[feature.domain] ?? 0)
+          : 0;
+        const behaviorRaw =
+          sourceScore * 1.15 +
+          topicScore +
+          entityScore * 0.9 +
+          itemScore * 1.45 +
+          eventScore * 1.2 +
+          domainScore * 0.75;
+        const behaviorScore = Math.log1p(Math.max(0, behaviorRaw));
+        return {
+          id: candidate.id,
+          score: behaviorScore * 0.78 + recencyScore * 0.22,
+        };
+      })
+      .sort((a, b) => {
+        if (Math.abs(b.score - a.score) > 0.0001) {
+          return b.score - a.score;
+        }
+        const leftSort = sortAtById.get(a.id) ?? 0;
+        const rightSort = sortAtById.get(b.id) ?? 0;
+        if (rightSort !== leftSort) {
+          return rightSort - leftSort;
+        }
+        return a.id.localeCompare(b.id);
+      });
+
+    return ranked.map((entry, index) => ({
+      id: entry.id,
+      score: entry.score,
+      rankOffset: index,
+    }));
+  }
+
+  private async loadCandidateFeatures(orgId: string, itemMetaIds: string[]) {
+    if (itemMetaIds.length === 0) {
+      return new Map<string, ItemCandidateFeatures>();
+    }
+
+    const [docs, rawDocs] = await Promise.all([
+      ProcessedItemModel.aggregate<{
+        _id: string;
+        itemMetaId?: string;
+        sourceId?: string | null;
+        source?: string | null;
+        result?: unknown;
+        processedItemIds?: string[];
+      }>([
+        {
+          $match: {
+            orgId,
+            status: PipelineStageStatus.Completed,
+            itemMetaId: { $in: itemMetaIds },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: "$itemMetaId",
+            itemMetaId: { $first: "$itemMetaId" },
+            sourceId: { $first: "$sourceId" },
+            source: { $first: "$source" },
+            result: { $first: "$result" },
+            processedItemIds: { $push: { $toString: "$_id" } },
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            itemMetaId: 1,
+            sourceId: 1,
+            source: 1,
+            result: 1,
+            processedItemIds: { $slice: ["$processedItemIds", 12] },
+          },
+        },
+      ]),
+      RawItemModel.aggregate<{
+        _id: string;
+        itemMetaId?: string;
+        url?: string | null;
+      }>([
+        {
+          $match: {
+            itemMetaId: { $in: itemMetaIds },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: "$itemMetaId",
+            itemMetaId: { $first: "$itemMetaId" },
+            url: { $first: "$payload.url" },
+          },
+        },
+      ]),
+    ]);
+
+    const out = new Map<string, ItemCandidateFeatures>();
+    const processedItemIdsByMetaId = new Map<string, string[]>();
+    const processedItemIdsForEvents = new Set<string>();
+
+    for (const doc of docs) {
+      const itemMetaId =
+        typeof doc.itemMetaId === "string" && doc.itemMetaId.trim().length > 0
+          ? doc.itemMetaId.trim()
+          : typeof doc._id === "string" && doc._id.trim().length > 0
+            ? doc._id.trim()
+            : "";
+      if (!itemMetaId) {
+        continue;
+      }
+      const result =
+        doc.result && typeof doc.result === "object" && !Array.isArray(doc.result)
+          ? (doc.result as Record<string, unknown>)
+          : {};
+      const sourceCandidate =
+        typeof doc.sourceId === "string" && doc.sourceId.trim().length > 0
+          ? doc.sourceId
+          : typeof doc.source === "string" && doc.source.trim().length > 0
+          ? doc.source
+          : typeof result.source === "string"
+            ? result.source
+            : undefined;
+      const processedItemIds = Array.from(
+        new Set(
+          (Array.isArray(doc.processedItemIds) ? doc.processedItemIds : [])
+            .map((value) => this.normalizeBehaviorId(value))
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).slice(0, 12);
+      if (processedItemIds.length > 0) {
+        processedItemIdsByMetaId.set(itemMetaId, processedItemIds);
+        for (const processedItemId of processedItemIds) {
+          processedItemIdsForEvents.add(processedItemId);
+        }
+      }
+      out.set(itemMetaId, {
+        source: this.normalizePreferenceKey(sourceCandidate),
+        domain: null,
+        topics: this.normalizePreferenceTerms(result.topics),
+        entities: this.normalizePreferenceTerms(result.entities),
+        eventIds: [],
+      });
+    }
+
+    for (const rawDoc of rawDocs) {
+      const itemMetaId =
+        typeof rawDoc.itemMetaId === "string" && rawDoc.itemMetaId.trim().length > 0
+          ? rawDoc.itemMetaId.trim()
+          : typeof rawDoc._id === "string" && rawDoc._id.trim().length > 0
+            ? rawDoc._id.trim()
+            : "";
+      if (!itemMetaId) {
+        continue;
+      }
+      const domain = this.normalizePreferenceDomain(rawDoc.url ?? undefined);
+      if (!domain) {
+        continue;
+      }
+      const existing = out.get(itemMetaId);
+      if (existing) {
+        if (!existing.domain) {
+          existing.domain = domain;
+        }
+        continue;
+      }
+      out.set(itemMetaId, {
+        source: null,
+        domain,
+        topics: [],
+        entities: [],
+        eventIds: [],
+      });
+    }
+
+    if (processedItemIdsForEvents.size > 0) {
+      const eventRows = await this.prisma.newsEventItem.findMany({
+        where: {
+          orgId,
+          processedItemId: { in: Array.from(processedItemIdsForEvents) },
+        },
+        select: { processedItemId: true, eventId: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const eventIdsByProcessedItemId = new Map<string, string[]>();
+      for (const row of eventRows) {
+        const processedItemId = this.normalizeBehaviorId(row.processedItemId);
+        const eventId = this.normalizeBehaviorId(row.eventId);
+        if (!processedItemId || !eventId) {
+          continue;
+        }
+        const bucket = eventIdsByProcessedItemId.get(processedItemId) ?? [];
+        if (!bucket.includes(eventId)) {
+          bucket.push(eventId);
+        }
+        if (bucket.length > 8) {
+          bucket.length = 8;
+        }
+        eventIdsByProcessedItemId.set(processedItemId, bucket);
+      }
+
+      for (const [itemMetaId, processedItemIds] of processedItemIdsByMetaId.entries()) {
+        const eventIdSet = new Set<string>();
+        for (const processedItemId of processedItemIds) {
+          const eventIds = eventIdsByProcessedItemId.get(processedItemId) ?? [];
+          for (const eventId of eventIds) {
+            eventIdSet.add(eventId);
+            if (eventIdSet.size >= 8) {
+              break;
+            }
+          }
+          if (eventIdSet.size >= 8) {
+            break;
+          }
+        }
+        const feature =
+          out.get(itemMetaId) ??
+          ({
+            source: null,
+            domain: null,
+            topics: [],
+            entities: [],
+            eventIds: [],
+          } as ItemCandidateFeatures);
+        feature.eventIds = Array.from(eventIdSet);
+        out.set(itemMetaId, feature);
+      }
+    }
+
+    return out;
+  }
+
+  private async loadItemPersonalizationProfile(
+    orgId: string,
+    userId: string,
+  ): Promise<ItemPersonalizationProfile> {
+    const [sourcesRaw, topicsRaw, entitiesRaw, itemsRaw, eventsRaw, domainsRaw] =
+      await Promise.all([
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "sources" }),
+        ),
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "topics" }),
+        ),
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "entities" }),
+        ),
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "items" }),
+        ),
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "events" }),
+        ),
+        this.cache.hgetall(
+          buildUserNewsBehaviorHashKey({ orgId, userId, kind: "domains" }),
+        ),
+      ]);
+
+    return {
+      sources: this.parseBehaviorScores(sourcesRaw),
+      topics: this.parseBehaviorScores(topicsRaw),
+      entities: this.parseBehaviorScores(entitiesRaw),
+      items: this.parseBehaviorScores(itemsRaw, (value) =>
+        this.normalizeBehaviorId(value),
+      ),
+      events: this.parseBehaviorScores(eventsRaw, (value) =>
+        this.normalizeBehaviorId(value),
+      ),
+      domains: this.parseBehaviorScores(domainsRaw),
+    };
+  }
+
+  private parseBehaviorScores(
+    raw: Record<string, string>,
+    normalizeKey: (value?: string) => string | null = (value) =>
+      this.normalizePreferenceKey(value),
+  ): Record<string, number> {
+    const entries = Object.entries(raw ?? {})
+      .map(([term, value]) => {
+        const normalized = normalizeKey(term);
+        if (!normalized) {
+          return null;
+        }
+        const score = Number(value);
+        if (!Number.isFinite(score) || score <= 0) {
+          return null;
+        }
+        return [normalized, score] as const;
+      })
+      .filter((entry): entry is readonly [string, number] => Boolean(entry))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 400);
+    return Object.fromEntries(entries);
+  }
+
+  private normalizePreferenceTerms(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const terms: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of value) {
+      let raw: string | undefined;
+      if (typeof entry === "string") {
+        raw = entry;
+      } else if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as Record<string, unknown>;
+        raw =
+          typeof record.name === "string"
+            ? record.name
+            : typeof record.label === "string"
+              ? record.label
+              : typeof record.value === "string"
+                ? record.value
+                : undefined;
+      }
+      const normalized = this.normalizePreferenceKey(raw);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      terms.push(normalized);
+      if (terms.length >= 10) {
+        break;
+      }
+    }
+    return terms;
+  }
+
+  private normalizePreferenceKey(value?: string | null): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .slice(0, 96);
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizeBehaviorId(value?: string | null): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim().slice(0, 128);
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizePreferenceDomain(value?: string | null): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const raw = value.trim();
+    if (!raw) {
+      return null;
+    }
+    const parseCandidate = (candidate: string): string | null => {
+      try {
+        const parsed = new URL(candidate);
+        const hostname = parsed.hostname.trim().toLowerCase().replace(/^www\./, "");
+        return this.normalizePreferenceKey(hostname);
+      } catch {
+        return null;
+      }
+    };
+
+    return parseCandidate(raw) ?? parseCandidate(`https://${raw}`);
+  }
+
+  private sumPreferenceScore(
+    terms: string[],
+    profile: Record<string, number>,
+    limit: number,
+  ): number {
+    if (!terms.length) {
+      return 0;
+    }
+    let score = 0;
+    let consumed = 0;
+    const seen = new Set<string>();
+    for (const term of terms) {
+      if (seen.has(term)) {
+        continue;
+      }
+      seen.add(term);
+      const value = profile[term];
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        score += value;
+      }
+      consumed += 1;
+      if (consumed >= limit) {
+        break;
+      }
+    }
+    return score;
+  }
+
+  private resolveSourcePreferenceScore(
+    feature: ItemCandidateFeatures | undefined,
+    profile: Record<string, number>,
+  ): number {
+    let score = 0;
+    if (feature?.source) {
+      const sourceScore = profile[feature.source];
+      if (
+        typeof sourceScore === "number" &&
+        Number.isFinite(sourceScore) &&
+        sourceScore > score
+      ) {
+        score = sourceScore;
+      }
+    }
+    if (feature?.domain) {
+      const domainScore = profile[feature.domain];
+      if (
+        typeof domainScore === "number" &&
+        Number.isFinite(domainScore) &&
+        domainScore > score
+      ) {
+        score = domainScore;
+      }
+    }
+    return score;
   }
 
   async getFacets(orgId: string, search?: string, filters?: ItemFilters) {

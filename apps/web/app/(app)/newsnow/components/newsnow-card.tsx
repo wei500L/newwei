@@ -10,22 +10,39 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button, Skeleton, Tooltip, message } from "antd";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useRelativeTime } from "../hooks/use-relative-time";
+import type { PersonalizedSourceScoreDetail } from "../hooks/use-newsnow-personalized-order";
 import {
   useNewsSource,
   useResolveNewsUrl,
   type NewsItem,
+  type NewsResolveResponse,
   type Source,
 } from "../hooks/use-news-sources";
+import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
+import {
+  formatShortDuration,
+  resolveNewsFreshnessState,
+} from "../lib/newsnow-freshness";
 import { useNewsnowStore } from "../store/newsnow-store";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 import { NewsListHot } from "./news-list-hot";
 import { NewsListTimeline } from "./news-list-timeline";
 
 interface NewsnowCardProps {
   id: string;
   source: Source;
+  dragDisabled?: boolean;
+  mobileMode?: boolean;
+  hideCrossSourceDuplicates?: boolean;
+  crossSourceMetaByItemId?: Record<string, CrossSourceItemMeta>;
+  duplicateItemsCount?: number;
+  visibleItemsCount?: number;
+  realtimeUnreadCount?: number;
+  personalizedScoreDetail?: PersonalizedSourceScoreDetail;
 }
 
 const colorMap: Record<string, string> = {
@@ -81,19 +98,93 @@ const accentMap: Record<string, string> = {
 };
 
 const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
+const VIEW_EXPOSURE_THRESHOLD = 0.35;
+const VIEW_EXPOSURE_DWELL_MS = 1200;
+const RESOLVE_PREFETCH_CONCURRENCY = 6;
 
-export function NewsnowCard({ id, source }: NewsnowCardProps) {
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  worker: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (values.length === 0) {
+    return [];
+  }
+  const safeConcurrency = Math.max(1, Math.min(concurrency, values.length));
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, async () => {
+      while (true) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= values.length) {
+          return;
+        }
+        const value = values[index];
+        if (value === undefined) {
+          continue;
+        }
+        results[index] = await worker(value, index);
+      }
+    }),
+  );
+  return results;
+}
+
+function toItemKey(item: NewsItem): string {
+  return String(item.id);
+}
+
+export function NewsnowCard({
+  id,
+  source,
+  dragDisabled = false,
+  mobileMode = false,
+  hideCrossSourceDuplicates = false,
+  crossSourceMetaByItemId,
+  duplicateItemsCount = 0,
+  visibleItemsCount = 0,
+  realtimeUnreadCount = 0,
+  personalizedScoreDetail,
+}: NewsnowCardProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const { data, isLoading, isError, isFetching, refresh } = useNewsSource(
     id,
     source.interval,
   );
   const resolveNewsUrl = useResolveNewsUrl();
-  const { focusSources, toggleFocus } = useNewsnowStore();
+  const {
+    focusSources,
+    toggleFocus,
+    trackSourceInteraction,
+    upsertSourceSnapshot,
+    removeSourceSnapshot,
+    sortMode,
+    densityMode,
+    sourceAffinity,
+    clearLiveUnread,
+  } = useNewsnowStore();
   const { getRelativeTime } = useRelativeTime();
   const isFocused = focusSources.includes(id);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iconLoadError, setIconLoadError] = useState(false);
+  const [newItemIds, setNewItemIds] = useState<string[]>([]);
+  const [animatedItemIds, setAnimatedItemIds] = useState<string[]>([]);
+  const [resolvedTargetsByItemId, setResolvedTargetsByItemId] = useState<
+    Record<string, { eventId?: string; itemId?: string }>
+  >({});
+  const [prefetchedEventIds, setPrefetchedEventIds] = useState<string[]>([]);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const previousIdsRef = useRef<string[]>([]);
+  const openStartedAtRef = useRef<number | null>(null);
+  const highlightTimersRef = useRef<Record<string, number>>({});
+  const articleRef = useRef<HTMLElement | null>(null);
+  const exposureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasTrackedExposureRef = useRef(false);
+  const exposureKeyRef = useRef("");
 
   const {
     attributes,
@@ -102,7 +193,14 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id, disabled: dragDisabled });
+  const setArticleNodeRef = useCallback(
+    (node: HTMLElement | null) => {
+      articleRef.current = node;
+      setNodeRef(node);
+    },
+    [setNodeRef],
+  );
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -119,28 +217,359 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
     "shadow-[0_20px_44px_-34px_rgba(59,130,246,0.54)]";
   const accentClass = accentMap[source.color] || "text-blue-300";
   const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
+  const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
   const iconUrl = `/icons/${sourceBaseId}.png`;
   const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
+
+  const dedupMetaMap = crossSourceMetaByItemId ?? {};
+  const affinityScore = sourceAffinity[id]?.score ?? 0;
+  const personalizedCombinedScore =
+    personalizedScoreDetail && Number.isFinite(personalizedScoreDetail.combinedScore)
+      ? personalizedScoreDetail.combinedScore
+      : 0;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClockMs(Date.now());
+    }, 15_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const displayItems = useMemo(() => {
+    const sourceItems = data?.items ?? [];
+    if (!hideCrossSourceDuplicates) {
+      return sourceItems;
+    }
+    return sourceItems.filter((item) => {
+      const meta = dedupMetaMap[toItemKey(item)];
+      return !meta || meta.isPrimary;
+    });
+  }, [data?.items, dedupMetaMap, hideCrossSourceDuplicates]);
+
+  const hiddenDuplicatesCount = Math.max(
+    0,
+    (data?.items?.length ?? 0) - displayItems.length,
+  );
+  const exposurePrimaryItem = displayItems[0];
+  const exposurePrimaryKey = exposurePrimaryItem
+    ? `${toItemKey(exposurePrimaryItem)}::${exposurePrimaryItem.url}`
+    : "";
+
+  useEffect(() => {
+    if (exposureKeyRef.current !== exposurePrimaryKey) {
+      exposureKeyRef.current = exposurePrimaryKey;
+      hasTrackedExposureRef.current = false;
+    }
+  }, [exposurePrimaryKey]);
+
+  useEffect(() => {
+    const node = articleRef.current;
+    const firstItem = exposurePrimaryItem;
+    if (!node || !firstItem) {
+      return;
+    }
+
+    const emitView = () => {
+      if (hasTrackedExposureRef.current) {
+        return;
+      }
+      hasTrackedExposureRef.current = true;
+      void trackUserNewsBehavior({
+        type: "view",
+        itemId: toItemKey(firstItem),
+        source: sourceBehaviorKey,
+        url: firstItem.url,
+      });
+    };
+
+    const clearPendingTimer = () => {
+      if (exposureTimerRef.current) {
+        clearTimeout(exposureTimerRef.current);
+        exposureTimerRef.current = null;
+      }
+    };
+
+    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+      emitView();
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) {
+          return;
+        }
+        if (
+          entry.isIntersecting &&
+          entry.intersectionRatio >= VIEW_EXPOSURE_THRESHOLD
+        ) {
+          if (!exposureTimerRef.current && !hasTrackedExposureRef.current) {
+            exposureTimerRef.current = setTimeout(() => {
+              exposureTimerRef.current = null;
+              emitView();
+            }, VIEW_EXPOSURE_DWELL_MS);
+          }
+          return;
+        }
+        clearPendingTimer();
+      },
+      { threshold: [0, VIEW_EXPOSURE_THRESHOLD, 0.75] },
+    );
+    observer.observe(node);
+
+    return () => {
+      clearPendingTimer();
+      observer.disconnect();
+    };
+  }, [exposurePrimaryItem, sourceBehaviorKey]);
+
+  useEffect(() => {
+    if (!data?.items) {
+      return;
+    }
+
+    const snapshotItems = data.items.map((item) => ({
+      id: String(item.id),
+      title: item.title,
+      pubDate: item.pubDate,
+      url: item.url,
+    }));
+
+    upsertSourceSnapshot(id, {
+      updatedAt: Date.now(),
+      items: snapshotItems,
+    });
+  }, [data?.items, id, upsertSourceSnapshot]);
+
+  useEffect(
+    () => () => {
+      removeSourceSnapshot(id);
+    },
+    [id, removeSourceSnapshot],
+  );
+
+  useEffect(() => {
+    const currentIds = (data?.items ?? []).map(toItemKey);
+    if (currentIds.length === 0) {
+      previousIdsRef.current = [];
+      return;
+    }
+
+    if (previousIdsRef.current.length > 0) {
+      const previousSet = new Set(previousIdsRef.current);
+      const added = currentIds.filter((itemId) => !previousSet.has(itemId));
+      if (added.length > 0) {
+        setNewItemIds((prev) => {
+          const merged = Array.from(new Set([...added, ...prev]));
+          return merged.slice(0, 80);
+        });
+        setAnimatedItemIds((prev) => {
+          const merged = Array.from(new Set([...added, ...prev]));
+          return merged.slice(0, 80);
+        });
+        added.forEach((itemId) => {
+          const existingTimer = highlightTimersRef.current[itemId];
+          if (existingTimer) {
+            window.clearTimeout(existingTimer);
+          }
+          const timer = window.setTimeout(() => {
+            setAnimatedItemIds((prev) => prev.filter((id) => id !== itemId));
+            delete highlightTimersRef.current[itemId];
+          }, 3_000);
+          highlightTimersRef.current[itemId] = timer;
+        });
+      }
+    }
+    previousIdsRef.current = currentIds;
+  }, [data?.items]);
+
+  useEffect(
+    () => () => {
+      Object.values(highlightTimersRef.current).forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+      highlightTimersRef.current = {};
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      const startedAt = openStartedAtRef.current;
+      if (startedAt === null) {
+        return;
+      }
+      const dwellMs = Date.now() - startedAt;
+      openStartedAtRef.current = null;
+      trackSourceInteraction(id, "focus", { dwellMs });
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [id, trackSourceInteraction]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const abortController =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+    const candidates = displayItems;
+    if (candidates.length === 0) {
+      setResolvedTargetsByItemId({});
+      setPrefetchedEventIds([]);
+      return;
+    }
+
+    const prefetch = async () => {
+      const settled = await mapWithConcurrency<NewsItem, NewsResolveResponse>(
+        candidates,
+        RESOLVE_PREFETCH_CONCURRENCY,
+        async (item) => {
+          try {
+            return await resolveNewsUrl(item.url, {
+              signal: abortController?.signal,
+            });
+          } catch {
+            return { matched: false as const };
+          }
+        },
+      );
+
+      if (cancelled) {
+        return;
+      }
+      const nextByItemId: Record<string, { eventId?: string; itemId?: string }> = {};
+      settled.forEach((entry, idx) => {
+        const item = candidates[idx];
+        if (!item) {
+          return;
+        }
+        if (!entry?.matched) {
+          return;
+        }
+        const itemKey = toItemKey(item);
+        nextByItemId[itemKey] = {
+          ...(entry.eventId ? { eventId: entry.eventId } : {}),
+          ...(entry.itemId ? { itemId: entry.itemId } : {}),
+        };
+      });
+      setResolvedTargetsByItemId(nextByItemId);
+
+      const eventIds = Array.from(
+        new Set(
+          settled
+            .map((entry) => entry.eventId)
+            .filter((value): value is string => typeof value === "string" && value.length > 0),
+        ),
+      );
+      setPrefetchedEventIds(eventIds);
+    };
+
+    void prefetch();
+    return () => {
+      cancelled = true;
+      abortController?.abort();
+    };
+  }, [displayItems, resolveNewsUrl]);
+
+  const markItemSeen = useCallback((item: NewsItem) => {
+    const itemId = toItemKey(item);
+    setNewItemIds((prev) => {
+      if (!prev.includes(itemId)) {
+        return prev;
+      }
+      return prev.filter((id) => id !== itemId);
+    });
+    setAnimatedItemIds((prev) => {
+      if (!prev.includes(itemId)) {
+        return prev;
+      }
+      return prev.filter((id) => id !== itemId);
+    });
+    const timer = highlightTimersRef.current[itemId];
+    if (timer) {
+      window.clearTimeout(timer);
+      delete highlightTimersRef.current[itemId];
+    }
+  }, []);
+
+  const unreadCount = newItemIds.length;
+
+  const handleOpenEventsHub = useCallback(() => {
+    clearLiveUnread(id);
+    if (prefetchedEventIds.length === 1) {
+      router.push(`/events/${prefetchedEventIds[0]}`);
+      return;
+    }
+    router.push("/events");
+  }, [clearLiveUnread, id, prefetchedEventIds, router]);
+
+  const trackOriginalOpen = useCallback((item: NewsItem) => {
+    markItemSeen(item);
+    clearLiveUnread(id);
+    trackSourceInteraction(id, "open_original");
+    void trackUserNewsBehavior({
+      type: "click",
+      source: sourceBehaviorKey,
+      url: item.url,
+    });
+    openStartedAtRef.current = Date.now();
+  }, [clearLiveUnread, id, markItemSeen, sourceBehaviorKey, trackSourceInteraction]);
 
   const openOriginal = useCallback((item: NewsItem) => {
     if (typeof window === "undefined") {
       return;
     }
+    trackOriginalOpen(item);
     const href = item.mobileUrl || item.url;
     window.open(href, "_blank", "noopener,noreferrer");
-  }, []);
+  }, [trackOriginalOpen]);
 
   const handleOpenEvent = useCallback(
     async (item: NewsItem) => {
+      markItemSeen(item);
+      clearLiveUnread(id);
+      const cached = resolvedTargetsByItemId[toItemKey(item)];
+      if (cached?.eventId) {
+        trackSourceInteraction(id, "open_event");
+        void trackUserNewsBehavior({
+          type: "open_event",
+          source: sourceBehaviorKey,
+          eventId: cached.eventId,
+          url: item.url,
+        });
+        router.push(`/events/${cached.eventId}`);
+        return;
+      }
       try {
         const resolved = await resolveNewsUrl(item.url);
         if (resolved.matched && resolved.eventId) {
+          trackSourceInteraction(id, "open_event");
+          void trackUserNewsBehavior({
+            type: "open_event",
+            source: sourceBehaviorKey,
+            eventId: resolved.eventId,
+            itemId: resolved.itemId,
+            url: item.url,
+          });
           router.push(`/events/${resolved.eventId}`);
           return;
         }
         if (resolved.matched && resolved.itemId) {
           message.info("未匹配到事件，已打开深读");
-          router.push(`/read/items/${resolved.itemId}`);
+          trackSourceInteraction(id, "open_item");
+          void trackUserNewsBehavior({
+            type: "open_item",
+            source: sourceBehaviorKey,
+            itemId: resolved.itemId,
+            eventId: resolved.eventId,
+            url: item.url,
+          });
+          router.push(`/items/${resolved.itemId}`);
           return;
         }
       } catch {
@@ -152,19 +581,60 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
       message.info("暂未匹配到事件，已打开原文");
       openOriginal(item);
     },
-    [openOriginal, resolveNewsUrl, router],
+    [
+      clearLiveUnread,
+      id,
+      markItemSeen,
+      openOriginal,
+      resolveNewsUrl,
+      resolvedTargetsByItemId,
+      router,
+      sourceBehaviorKey,
+      trackSourceInteraction,
+    ],
   );
 
   const handleOpenItem = useCallback(
     async (item: NewsItem) => {
+      markItemSeen(item);
+      clearLiveUnread(id);
+      const cached = resolvedTargetsByItemId[toItemKey(item)];
+      if (cached?.itemId) {
+        trackSourceInteraction(id, "open_item");
+        void trackUserNewsBehavior({
+          type: "open_item",
+          source: sourceBehaviorKey,
+          itemId: cached.itemId,
+          eventId: cached.eventId,
+          url: item.url,
+        });
+        router.push(`/items/${cached.itemId}`);
+        return;
+      }
       try {
         const resolved = await resolveNewsUrl(item.url);
         if (resolved.matched && resolved.itemId) {
-          router.push(`/read/items/${resolved.itemId}`);
+          trackSourceInteraction(id, "open_item");
+          void trackUserNewsBehavior({
+            type: "open_item",
+            source: sourceBehaviorKey,
+            itemId: resolved.itemId,
+            eventId: resolved.eventId,
+            url: item.url,
+          });
+          router.push(`/items/${resolved.itemId}`);
           return;
         }
         if (resolved.matched && resolved.eventId) {
           message.info("未匹配到深读，已打开事件");
+          trackSourceInteraction(id, "open_event");
+          void trackUserNewsBehavior({
+            type: "open_event",
+            source: sourceBehaviorKey,
+            eventId: resolved.eventId,
+            itemId: resolved.itemId,
+            url: item.url,
+          });
           router.push(`/events/${resolved.eventId}`);
           return;
         }
@@ -177,12 +647,24 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
       message.info("暂未匹配到深读，已打开原文");
       openOriginal(item);
     },
-    [openOriginal, resolveNewsUrl, router],
+    [
+      clearLiveUnread,
+      id,
+      markItemSeen,
+      openOriginal,
+      resolveNewsUrl,
+      resolvedTargetsByItemId,
+      router,
+      sourceBehaviorKey,
+      trackSourceInteraction,
+    ],
   );
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
+      clearLiveUnread(id);
+      trackSourceInteraction(id, "refresh");
       await refresh();
     } catch {
       // Error is surfaced by React Query state.
@@ -196,12 +678,42 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
     : isError
       ? "获取失败"
       : "加载中...";
+  const freshness = useMemo(
+    () =>
+      resolveNewsFreshnessState({
+        updatedTime: data?.updatedTime,
+        intervalMs: source.interval,
+        nowMs: clockMs,
+      }),
+    [clockMs, data?.updatedTime, source.interval],
+  );
+  const freshnessDelayLabel =
+    freshness.delayMs > 0 ? formatShortDuration(freshness.delayMs) : null;
+  const nextRefreshLabel =
+    source.interval && source.interval > 0
+      ? formatShortDuration(freshness.nextRefreshInMs)
+      : null;
+  const actionAvailabilityByItemId = useMemo(() => {
+    const map: Record<string, { hasEvent: boolean; hasItem: boolean }> = {};
+    displayItems.forEach((item) => {
+      const key = toItemKey(item);
+      const resolved = resolvedTargetsByItemId[key];
+      map[key] = {
+        hasEvent: Boolean(resolved?.eventId),
+        hasItem: Boolean(resolved?.itemId),
+      };
+    });
+    return map;
+  }, [displayItems, resolvedTargetsByItemId]);
 
   return (
     <article
-      ref={setNodeRef}
-      style={style}
-      className={`flex h-[500px] flex-col overflow-hidden rounded-2xl border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-white/12 ${cardShellClass} ${cardGlowClass}`}
+      ref={setArticleNodeRef}
+      style={{
+        ...style,
+        height: "clamp(360px, 52vh, 560px)",
+      }}
+      className={`flex min-h-[360px] flex-col overflow-hidden rounded-2xl border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-white/12 ${cardShellClass} ${cardGlowClass}`}
     >
       <div className={`h-0.5 w-full ${colorClass}`} />
       <div className="pointer-events-none h-2.5 w-full bg-gradient-to-b from-white/8 to-transparent" />
@@ -240,6 +752,86 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
             <p className="truncate text-[11px] text-zinc-300/80">
               {updatedText}
             </p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+              {duplicateItemsCount > 0 ? (
+                <span className="rounded bg-amber-400/18 px-1.5 py-0.5 text-[10px] text-amber-200">
+                  同题 {duplicateItemsCount}
+                </span>
+              ) : null}
+              {hideCrossSourceDuplicates && hiddenDuplicatesCount > 0 ? (
+                <span className="rounded bg-emerald-400/18 px-1.5 py-0.5 text-[10px] text-emerald-200">
+                  已折叠 {hiddenDuplicatesCount}
+                </span>
+              ) : null}
+              {unreadCount > 0 ? (
+                <span className="animate-pulse rounded bg-sky-400/18 px-1.5 py-0.5 text-[10px] text-sky-200">
+                  新 {unreadCount}
+                </span>
+              ) : null}
+              {realtimeUnreadCount > 0 ? (
+                <span className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] text-cyan-200">
+                  推送 {realtimeUnreadCount}
+                </span>
+              ) : null}
+              {(sortMode === "personalized" || sortMode === "smart") &&
+              personalizedCombinedScore > 0 ? (
+                <Tooltip
+                  title={
+                    <div className="space-y-0.5 text-[11px] leading-5">
+                      <div>综合分 {personalizedScoreDetail?.combinedScore.toFixed(2)}</div>
+                      <div>
+                        偏好贡献 {personalizedScoreDetail?.affinityContribution.toFixed(2)}
+                        {" = "}
+                        {personalizedScoreDetail?.affinityScore.toFixed(2)} ×{" "}
+                        {((personalizedScoreDetail?.affinityWeight ?? 0) * 100).toFixed(0)}%
+                      </div>
+                      <div>
+                        行为贡献 {personalizedScoreDetail?.behaviorContribution.toFixed(2)}
+                        {" = "}
+                        {personalizedScoreDetail?.behaviorScore.toFixed(2)} ×{" "}
+                        {((personalizedScoreDetail?.behaviorWeight ?? 0) * 100).toFixed(0)}%
+                      </div>
+                      <div>关注加分 {personalizedScoreDetail?.focusBonus.toFixed(2)}</div>
+                    </div>
+                  }
+                >
+                  <span className="cursor-help rounded bg-violet-400/20 px-1.5 py-0.5 text-[10px] text-violet-200">
+                    综合 {Math.round(personalizedCombinedScore)}
+                  </span>
+                </Tooltip>
+              ) : null}
+              {(sortMode === "personalized" || sortMode === "smart") &&
+              affinityScore > 0 ? (
+                <span className="rounded bg-fuchsia-400/18 px-1.5 py-0.5 text-[10px] text-fuchsia-200">
+                  偏好 {Math.round(affinityScore)}
+                </span>
+              ) : null}
+              {hideCrossSourceDuplicates && visibleItemsCount > 0 ? (
+                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  可见 {visibleItemsCount}
+                </span>
+              ) : null}
+              {nextRefreshLabel ? (
+                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  下次刷新 {nextRefreshLabel}
+                </span>
+              ) : null}
+              {freshness.level === "fresh" ? (
+                <span className="rounded bg-emerald-400/18 px-1.5 py-0.5 text-[10px] text-emerald-200">
+                  {t("common.freshnessFresh", { defaultValue: "Fresh" })}
+                </span>
+              ) : null}
+              {freshness.level === "aging" ? (
+                <span className="rounded bg-amber-400/18 px-1.5 py-0.5 text-[10px] text-amber-200">
+                  {t("common.freshnessWarm", { defaultValue: "Warm" })} {freshnessDelayLabel}
+                </span>
+              ) : null}
+              {freshness.level === "stale" ? (
+                <span className="rounded bg-rose-400/20 px-1.5 py-0.5 text-[10px] text-rose-200">
+                  {t("common.freshnessStale", { defaultValue: "Stale" })} {freshnessDelayLabel}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
         <div
@@ -272,13 +864,29 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
               className="text-zinc-300 hover:bg-white/10 hover:text-yellow-500"
             />
           </Tooltip>
-          <Tooltip title="拖动排序">
+          <Tooltip title="查看关联事件">
+            <Button
+              type="text"
+              size="small"
+              onClick={handleOpenEventsHub}
+              className="text-zinc-300 hover:bg-white/10 hover:text-current"
+            >
+              事件
+              {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
+            </Button>
+          </Tooltip>
+          <Tooltip title={dragDisabled ? "智能排序中已禁用拖动" : "拖动排序"}>
             <button
               type="button"
-              {...attributes}
-              {...listeners}
+              {...(!dragDisabled ? attributes : {})}
+              {...(!dragDisabled ? listeners : {})}
               aria-label="拖动重新排序"
-              className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 active:cursor-grabbing"
+              disabled={dragDisabled}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 ${
+                dragDisabled
+                  ? "cursor-not-allowed opacity-45"
+                  : "cursor-grab active:cursor-grabbing"
+              }`}
             >
               <DragOutlined />
             </button>
@@ -311,18 +919,28 @@ export function NewsnowCard({ id, source }: NewsnowCardProps) {
               重试
             </Button>
           </div>
-        ) : data && data.items.length > 0 ? (
+        ) : displayItems.length > 0 ? (
           source.type === "hottest" ? (
             <NewsListHot
-              items={data.items}
+              items={displayItems}
               onOpenEvent={handleOpenEvent}
               onOpenItem={handleOpenItem}
+              onOpenOriginal={trackOriginalOpen}
+              freshItemIds={animatedItemIds}
+              crossSourceMetaByItemId={dedupMetaMap}
+              actionAvailabilityByItemId={actionAvailabilityByItemId}
+              densityMode={densityMode}
             />
           ) : (
             <NewsListTimeline
-              items={data.items}
+              items={displayItems}
               onOpenEvent={handleOpenEvent}
               onOpenItem={handleOpenItem}
+              onOpenOriginal={trackOriginalOpen}
+              freshItemIds={animatedItemIds}
+              crossSourceMetaByItemId={dedupMetaMap}
+              actionAvailabilityByItemId={actionAvailabilityByItemId}
+              densityMode={densityMode}
             />
           )
         ) : (

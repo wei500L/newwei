@@ -16,7 +16,8 @@ import {
 
 export enum ItemsOrderBy {
   CREATED_DESC = "CREATED_DESC",
-  PUBLISHED_DESC = "PUBLISHED_DESC"
+  PUBLISHED_DESC = "PUBLISHED_DESC",
+  PERSONALIZED = "PERSONALIZED"
 }
 
 registerEnumType(ItemsOrderBy, { name: "ItemsOrderBy" });

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildActionRailNavConfig } from "./action-rail";
+import { resolveActiveItemKey } from "./action-rail-routing";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { useTheme } from "@/hooks/use-theme";
@@ -105,6 +106,14 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const { mainNavItems, adminNavItems } = useMemo(
     () => buildActionRailNavConfig(t, permissions),
     [permissions, t]
+  );
+  const allNavItems = useMemo(
+    () => [...mainNavItems, ...adminNavItems],
+    [adminNavItems, mainNavItems]
+  );
+  const activeKey = useMemo(
+    () => resolveActiveItemKey(pathname, allNavItems),
+    [allNavItems, pathname]
   );
 
   const canStartCrawl = permissions.includes("crawl.write");
@@ -265,7 +274,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
         <nav className="flex flex-col gap-6">
           <div className="flex flex-col gap-1">
             {mainNavItems.map((item) => {
-              const isActive = item.path ? pathname.startsWith(item.path) : false;
+              const isActive = item.key === activeKey;
               return (
                 <Link
                   key={item.key}
@@ -295,7 +304,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
               </span>
               <div className="flex flex-col gap-1">
                 {adminNavItems.map((item) => {
-                  const isActive = item.path ? pathname.startsWith(item.path) : false;
+                  const isActive = item.key === activeKey;
                   return (
                     <Link
                       key={item.key}

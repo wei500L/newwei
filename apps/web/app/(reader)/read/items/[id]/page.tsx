@@ -33,6 +33,8 @@ import {
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 
+import { buildReaderAiInsights } from "./reader-ai-insights";
+
 const READER_ITEM_QUERY = gql`
   query ReaderItem($id: String!) {
     item(id: $id) {
@@ -43,6 +45,7 @@ const READER_ITEM_QUERY = gql`
         payload
       }
       processed {
+        eventId
         resultJson
         result
       }
@@ -221,6 +224,10 @@ export default function ReaderPage() {
   });
 
   const currentTheme = themeClasses[theme];
+  const aiInsights = useMemo(
+    () => buildReaderAiInsights(processedResult),
+    [processedResult]
+  );
 
   useEffect(() => {
     if (translationProvider === "deeplx" && !isChineseTargetLanguage(targetLanguage)) {
@@ -553,6 +560,115 @@ export default function ReaderPage() {
             </Typography.Paragraph>
           </div>
         )}
+
+        {/* AI Insights */}
+        {aiInsights.hasData ? (
+          <section className="mb-6 rounded-xl border border-violet-200/60 bg-violet-50/70 p-4 dark:border-violet-400/30 dark:bg-violet-950/20">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-violet-900 dark:text-violet-200">
+                {t("reader.aiInsights.title", { defaultValue: "AI 解读" })}
+              </h3>
+              <div className="flex flex-wrap items-center gap-1">
+                {aiInsights.sentimentLabel ? (
+                  <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
+                    {t("reader.aiInsights.sentiment", { defaultValue: "情感" })}:{" "}
+                    {aiInsights.sentimentLabel}
+                  </span>
+                ) : null}
+                {typeof aiInsights.qualityScore === "number" ? (
+                  <span className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100">
+                    {t("reader.aiInsights.quality", { defaultValue: "质量" })}:{" "}
+                    {Math.round(aiInsights.qualityScore * 100)}%
+                  </span>
+                ) : null}
+                {item?.processed?.eventId ? (
+                  <Link
+                    href={`/events/${item.processed.eventId}`}
+                    className="rounded bg-white/80 px-1.5 py-0.5 text-[11px] text-violet-700 underline-offset-2 hover:underline dark:bg-violet-900/40 dark:text-violet-100"
+                  >
+                    {t("reader.aiInsights.event", { defaultValue: "查看关联事件" })}
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            {aiInsights.timeline.length > 0 ? (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                  {t("reader.aiInsights.timeline", { defaultValue: "事件脉络" })}
+                </p>
+                <ol className="space-y-1">
+                  {aiInsights.timeline.map((point, index) => (
+                    <li
+                      key={`${point.label}-${point.detail}-${index}`}
+                      className="rounded bg-white/70 px-2 py-1 text-xs text-violet-900 dark:bg-violet-900/30 dark:text-violet-100"
+                    >
+                      <span className="font-medium">{point.label}：</span>
+                      {point.detail}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
+            {aiInsights.controversies.length > 0 ? (
+              <div className="mt-3 rounded border border-rose-300/50 bg-rose-50/85 p-2 dark:border-rose-400/30 dark:bg-rose-950/25">
+                <p className="mb-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+                  {t("reader.aiInsights.controversy", { defaultValue: "争议信号" })}
+                </p>
+                <ul className="space-y-1">
+                  {aiInsights.controversies.map((signal, index) => (
+                    <li key={`${signal}-${index}`} className="text-xs text-rose-800 dark:text-rose-100">
+                      • {signal}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {aiInsights.actors.length > 0 ? (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                  {t("reader.aiInsights.actors", { defaultValue: "关键主体" })}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {aiInsights.actors.map((actor) => (
+                    <span
+                      key={`${actor.name}-${actor.type}`}
+                      className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] text-violet-800 dark:bg-violet-900/40 dark:text-violet-100"
+                    >
+                      {actor.name} · {actor.type}
+                      {typeof actor.confidence === "number"
+                        ? ` (${Math.round(actor.confidence * 100)}%)`
+                        : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {aiInsights.relations.length > 0 ? (
+              <div className="mt-3">
+                <p className="mb-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+                  {t("reader.aiInsights.relations", { defaultValue: "关系图谱" })}
+                </p>
+                <div className="space-y-1">
+                  {aiInsights.relations.map((relation, index) => (
+                    <div
+                      key={`${relation.subject}-${relation.predicate}-${relation.object}-${index}`}
+                      className="rounded bg-white/70 px-2 py-1 text-xs text-violet-900 dark:bg-violet-900/30 dark:text-violet-100"
+                    >
+                      {relation.subject} → {relation.predicate} → {relation.object}
+                      {typeof relation.confidence === "number"
+                        ? ` (${Math.round(relation.confidence * 100)}%)`
+                        : ""}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {/* Key Points */}
         {resolvedKeyPoints.length > 0 && (

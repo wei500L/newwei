@@ -399,6 +399,9 @@
     "collapse": "Show less",
     "empty": "No data",
     "refresh": "Refresh",
+    "freshnessFresh": "Fresh",
+    "freshnessWarm": "Warm",
+    "freshnessStale": "Stale",
     "saveChanges": "Save changes",
     "save": "Save",
     "submit": "Submit",
@@ -1401,7 +1404,9 @@
     "commandEmpty": "No results found.",
     "newCrawl": "New Crawl",
     "main": {
+      "newsHub": "News Hub",
       "today": "Today",
+      "newsnow": "NewsNow",
       "topics": "Topics & Events",
       "events": "News Events",
       "eventsArchive": "Events Archive",
@@ -4454,6 +4459,128 @@
         }
       }
     },
+    "newsnowPersonalization": {
+      "description": "Configure server-side policy for NewsNow personalized sorting endpoint, including ranking weights, cache, and request throttling.",
+      "notice": {
+        "title": "Runtime effect",
+        "body": "Changes are stored in MySQL system settings and applied dynamically to personalized sorting requests."
+      },
+      "status": {
+        "label": "Status",
+        "default": "Using system defaults",
+        "saved": "Saved override",
+        "unavailable": "Unavailable (settings load failed)"
+      },
+      "fields": {
+        "affinitySourceWeight": "Affinity signal weight",
+        "behaviorSourceWeight": "Behavior signal weight",
+        "focusSourceBonus": "Focus source bonus",
+        "cacheTtlMs": "Sort result cache TTL (ms)",
+        "maxCacheEntries": "Max Redis cache entries",
+        "throttleWindowMs": "Throttle window (ms)",
+        "maxRequestsPerWindowPerUser": "Max requests per user per window",
+        "staleTtlStrategy": "Stale cache TTL strategy",
+        "staleTtlMultiplier": "Stale TTL multiplier",
+        "staleTtlFixedMs": "Stale TTL fixed duration (ms)"
+      },
+      "options": {
+        "staleTtlStrategyMultiplier": "Multiplier-based",
+        "staleTtlStrategyFixed": "Fixed duration"
+      },
+      "hints": {
+        "affinitySourceWeight": "Relative weight for UI affinity score in source ranking. Combined with behavior weight and normalized at runtime.",
+        "behaviorSourceWeight": "Relative weight for behavior profile score in source ranking. Combined with affinity weight and normalized at runtime.",
+        "focusSourceBonus": "Additional score bonus applied when source is pinned/focused by the user.",
+        "cacheTtlMs": "0 means disable response caching for personalized sort requests.",
+        "maxCacheEntries": "Upper bound of Redis personalized sort cache entries.",
+        "throttleWindowMs": "Length of rate-limit window applied to each user.",
+        "maxRequestsPerWindowPerUser": "Maximum personalized sort requests a user can issue within each throttle window.",
+        "staleTtlStrategy": "Multiplier uses cache TTL as base; fixed uses the configured milliseconds directly. Both are clamped by throttle window safety bounds.",
+        "staleTtlMultiplier": "Effective only when strategy is multiplier. staleTTL = max(cacheTTL * multiplier, throttleWindow * 2).",
+        "staleTtlFixedMs": "Effective only when strategy is fixed. Final stale TTL still keeps throttle-window safety lower bound."
+      },
+      "weightPreview": {
+        "title": "Current normalized ranking ratio",
+        "body": "Behavior {{behavior}} / Affinity {{affinity}} (focus bonus is applied separately).",
+        "invalid": "Affinity and behavior weights cannot both be 0."
+      },
+      "behaviorProfile": {
+        "title": "Behavior profile diagnostics",
+        "description": "Inspect the current user behavior profile used by personalized ranking and verify whether source/topic/entity signals match expectations.",
+        "sections": {
+          "sources": "Sources",
+          "topics": "Topics",
+          "entities": "Entities",
+          "domains": "Domains",
+          "items": "Items",
+          "events": "Events"
+        },
+        "empty": "No profile data",
+        "clearAction": "Clear profile",
+        "clearConfirmTitle": "Clear behavior profile?",
+        "clearConfirmDescription": "This removes accumulated source/topic/entity/item/event preferences for the current user."
+      },
+      "unsaved": {
+        "title": "Unsaved changes",
+        "description": "You have unsaved personalization settings. Leaving this page may discard modifications."
+      },
+      "restoreDefaults": {
+        "action": "Restore defaults",
+        "confirmTitle": "Restore default values?",
+        "confirmDescription": "This will update the form values to system defaults. Click Save to persist."
+      },
+      "validation": {
+        "affinitySourceWeightRequired": "Affinity weight is required",
+        "affinitySourceWeightRange": "Affinity weight must be between 0 and 5",
+        "behaviorSourceWeightRequired": "Behavior weight is required",
+        "behaviorSourceWeightRange": "Behavior weight must be between 0 and 5",
+        "focusSourceBonusRequired": "Focus bonus is required",
+        "focusSourceBonusRange": "Focus bonus must be between 0 and 20",
+        "signalWeightSum": "Affinity weight + behavior weight must be greater than 0",
+        "cacheTtlMsRequired": "Cache TTL is required",
+        "cacheTtlMsRange": "Cache TTL must be between 0 and 300000 ms",
+        "maxCacheEntriesRequired": "Max cache entries is required",
+        "maxCacheEntriesRange": "Max cache entries must be between 100 and 20000",
+        "throttleWindowMsRequired": "Throttle window is required",
+        "throttleWindowMsRange": "Throttle window must be between 1000 and 600000 ms",
+        "maxRequestsPerWindowPerUserRequired": "Request limit is required",
+        "maxRequestsPerWindowPerUserRange": "Request limit must be between 1 and 500",
+        "staleTtlStrategyRequired": "Stale TTL strategy is required",
+        "staleTtlMultiplierRequired": "Stale TTL multiplier is required",
+        "staleTtlMultiplierRange": "Stale TTL multiplier must be between 1 and 20",
+        "staleTtlFixedMsRequired": "Stale fixed TTL is required",
+        "staleTtlFixedMsRange": "Stale fixed TTL must be between 1000 and 3600000 ms"
+      },
+      "metrics": {
+        "title": "Runtime observability",
+        "description": "Rolling 7-day metrics derived from Redis counters for personalized sorting runtime.",
+        "window": "Window: {{from}} ~ {{to}} ({{days}} days)",
+        "requestCount": "Requests",
+        "cacheHitFreshCount": "Fresh cache hits",
+        "cacheHitStaleCount": "Stale fallback hits",
+        "cacheHitRate": "Cache hit rate",
+        "throttleLimitedCount": "Throttle limited",
+        "throttleRejectedCount": "Throttle rejected (429)",
+        "throttleRate": "Throttle rate",
+        "trimCount": "Cache trim operations",
+        "trimEvictedCount": "Trim evicted entries"
+      },
+      "messages": {
+        "saved": "Saved",
+        "defaultsRestored": "Default values loaded into form",
+        "behaviorProfileCleared": "Behavior profile cleared"
+      },
+      "errors": {
+        "loadFailed": "Failed to load NewsNow personalization settings",
+        "saveFailed": "Failed to save NewsNow personalization settings",
+        "metricsLoadFailed": "Failed to load NewsNow personalization runtime metrics",
+        "behaviorProfileLoadFailed": "Failed to load behavior profile diagnostics",
+        "behaviorProfileClearFailed": "Failed to clear behavior profile",
+        "codes": {
+          "NEWSNOW_PERSONALIZATION_SETTINGS_INVALID": "Stored NewsNow personalization settings are invalid"
+        }
+      }
+    },
     "newsSourceRuntimeSecrets": {
       "description": "Manage runtime secrets for news source fetchers (cookies, tokens, and custom headers) from the admin console.",
       "notice": {
@@ -4624,6 +4751,7 @@
       "security": "Security",
       "situationMonitor": "Situation monitor",
       "newsSourceScheduler": "News source scheduler",
+      "newsnowPersonalization": "NewsNow personalization",
       "newsSourceRuntimeSecrets": "News source secrets",
       "vectorService": "Vector service",
       "modelService": "Model service",
@@ -5843,6 +5971,16 @@
       },
       "readOriginal": "Read original",
       "openItem": "Open item",
+      "subscribeAction": "Subscribe",
+      "subscribedAction": "Subscribed",
+      "subscribeTopic": "Subscribe topic",
+      "subscribedTopic": "Topic subscribed",
+      "subscribeEntity": "Subscribe entity",
+      "subscribedEntity": "Entity subscribed",
+      "subscribeSaved": "Added to subscriptions and used by personalized digest",
+      "subscribeAlready": "Already in subscription list",
+      "subscribeFailed": "Failed to save subscription. Please try again later.",
+      "subscribeLoginRequired": "Please sign in before subscribing",
       "empty": "Item not found.",
       "fields": {
         "itemId": "Item ID",

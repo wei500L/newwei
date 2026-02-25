@@ -312,6 +312,17 @@ function resolveRankingModeFromParam(
   return emptyStateVariant === "search" ? "RELEVANCE" : "RECENCY";
 }
 
+function resolveSortModeFromParam(value: string | null): ItemsSortMode {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "published" || normalized === "publisheddesc") {
+    return "publishedDesc";
+  }
+  if (normalized === "personalized") {
+    return "personalized";
+  }
+  return "default";
+}
+
 function normalizeRssTranslationFields(
   fields?: RssTranslationField[]
 ): RssTranslationField[] {
@@ -349,6 +360,7 @@ const ITEMS_FILTER_QUERY_KEYS = {
   from: "from",
   to: "to"
 } as const;
+const ITEMS_ORDER_QUERY_KEY = "order";
 
 function normalizeFiltersState(filters: FilterState): FilterState {
   const regions = normalizeFilterList(filters.regions)?.sort((a, b) => a.localeCompare(b));
@@ -512,7 +524,8 @@ interface ItemsFiltersInput {
   dateRange?: ItemsDateRangeInput;
 }
 
-type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC";
+type ItemsOrderBy = "CREATED_DESC" | "PUBLISHED_DESC" | "PERSONALIZED";
+type ItemsSortMode = "default" | "publishedDesc" | "personalized";
 type ItemsRankingMode = "RECENCY" | "RELEVANCE";
 
 interface ItemsQueryVariables {
@@ -682,8 +695,6 @@ type ItemEdge = ItemsQuery["items"]["edges"][number];
 const EMPTY_EDGES: ItemEdge[] = [];
 
 type EmptyStateVariant = "default" | "today" | "search";
-type ItemsSortMode = "default" | "publishedDesc";
-
 interface ItemsRssTranslationConfig {
   enabled: boolean;
   provider: RssTranslationProvider;
@@ -787,12 +798,16 @@ export function ItemsView({
   const urlRawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
   const urlPageSize = clampItemsPageSize(urlRawPageSize);
   const urlRanking = searchParams.get("ranking");
+  const urlOrder = searchParams.get(ITEMS_ORDER_QUERY_KEY);
 
   // Local State (UI + query source of truth)
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [search, setSearch] = useState(urlSearch);
   const [rankingMode, setRankingMode] = useState<ItemsRankingMode>(() =>
     resolveRankingModeFromParam(urlRanking, emptyStateVariant)
+  );
+  const [activeSortMode, setActiveSortMode] = useState<ItemsSortMode>(() =>
+    sortMode === "default" ? resolveSortModeFromParam(urlOrder) : sortMode
   );
   const [view, setView] = useState<ItemViewType>(lockedView ?? initialView);
   const [filters, setFilters] = useState<FilterState>(() =>
@@ -866,6 +881,15 @@ export function ItemsView({
   }, [lockedView]);
 
   useEffect(() => {
+    if (lockedView) {
+      return;
+    }
+    if (!screens.lg && view !== "feed") {
+      setView("feed");
+    }
+  }, [lockedView, screens.lg, view]);
+
+  useEffect(() => {
     setPage(1);
   }, [normalizedFixedSourceIds]);
 
@@ -936,6 +960,15 @@ export function ItemsView({
     setRankingMode((current) => (current === nextRankingMode ? current : nextRankingMode));
   }, [emptyStateVariant, urlRanking]);
 
+  useEffect(() => {
+    if (sortMode !== "default") {
+      setActiveSortMode((current) => (current === sortMode ? current : sortMode));
+      return;
+    }
+    const nextSortMode = resolveSortModeFromParam(urlOrder);
+    setActiveSortMode((current) => (current === nextSortMode ? current : nextSortMode));
+  }, [sortMode, urlOrder]);
+
   const debouncedSearchInput = useDebounceValue(searchInput, ITEMS_SEARCH_DEBOUNCE_MS);
   const debouncedFilters = useDebounceValue(filters, ITEMS_FILTERS_URL_DEBOUNCE_MS);
   const debouncedFiltersFingerprint = useMemo(
@@ -977,9 +1010,23 @@ export function ItemsView({
         }
       : undefined;
   const listTableVirtualEnabled = Boolean(listTableScroll);
+  const effectiveSortMode = sortMode === "default" ? activeSortMode : sortMode;
+  const orderQueryValue =
+    sortMode !== "default"
+      ? null
+      : effectiveSortMode === "publishedDesc"
+        ? "published"
+        : effectiveSortMode === "personalized"
+          ? "personalized"
+          : null;
   const orderBy = useMemo<ItemsOrderBy>(
-    () => (sortMode === "publishedDesc" ? "PUBLISHED_DESC" : "CREATED_DESC"),
-    [sortMode]
+    () =>
+      effectiveSortMode === "publishedDesc"
+        ? "PUBLISHED_DESC"
+        : effectiveSortMode === "personalized"
+          ? "PERSONALIZED"
+          : "CREATED_DESC",
+    [effectiveSortMode]
   );
 
   const setQueryParams = useCallback(
@@ -989,6 +1036,7 @@ export function ItemsView({
       pageSize?: number | null;
       filters?: FilterState | null;
       ranking?: "relevance" | "recency" | null;
+      order?: "published" | "personalized" | null;
     }) => {
       const currentQuery = window.location.search.startsWith("?")
         ? window.location.search.slice(1)
@@ -1028,6 +1076,13 @@ export function ItemsView({
           next.delete("ranking");
         }
       }
+      if (updates.order !== undefined) {
+        if (updates.order) {
+          next.set(ITEMS_ORDER_QUERY_KEY, updates.order);
+        } else {
+          next.delete(ITEMS_ORDER_QUERY_KEY);
+        }
+      }
       const nextQuery = next.toString();
       if (nextQuery === currentQuery) {
         return;
@@ -1055,12 +1110,21 @@ export function ItemsView({
         ? currentRankingRaw
         : null;
     const nextRankingParam = rankingModeQueryValue;
+    const currentOrderRaw = (currentParams.get(ITEMS_ORDER_QUERY_KEY) ?? "")
+      .trim()
+      .toLowerCase();
+    const currentOrderParam =
+      currentOrderRaw === "published" || currentOrderRaw === "personalized"
+        ? currentOrderRaw
+        : null;
+    const nextOrderParam = orderQueryValue;
 
     const shouldUpdateSearch = nextSearchParam !== currentSearchParam;
     const shouldUpdateFilters = debouncedFiltersFingerprint !== currentFiltersFingerprint;
     const shouldUpdateRanking = nextRankingParam !== currentRankingParam;
+    const shouldUpdateOrder = nextOrderParam !== currentOrderParam;
 
-    if (!shouldUpdateSearch && !shouldUpdateFilters && !shouldUpdateRanking) {
+    if (!shouldUpdateSearch && !shouldUpdateFilters && !shouldUpdateRanking && !shouldUpdateOrder) {
       return;
     }
 
@@ -1068,12 +1132,14 @@ export function ItemsView({
       ...(shouldUpdateSearch ? { q: nextSearchParam } : {}),
       ...(shouldUpdateFilters ? { filters: debouncedFilters } : {}),
       ...(shouldUpdateRanking ? { ranking: nextRankingParam } : {}),
+      ...(shouldUpdateOrder ? { order: nextOrderParam } : {}),
       page: 1
     });
   }, [
     debouncedFilters,
     debouncedFiltersFingerprint,
     initialFilters,
+    orderQueryValue,
     rankingModeQueryValue,
     search,
     setQueryParams,
@@ -1956,6 +2022,17 @@ export function ItemsView({
   return (
     <div className={containerClassName} style={{ padding: "24px" }}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="small" onClick={() => router.push("/news-hub")}>
+            {t("items.quickNav.hub", { defaultValue: "News Hub" })}
+          </Button>
+          <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
+            {t("items.quickNav.newsnow", { defaultValue: "实时热榜" })}
+          </Button>
+          <Button size="small" onClick={() => router.push("/events")}>
+            {t("items.quickNav.events", { defaultValue: "事件脉络" })}
+          </Button>
+        </div>
         
         {/* Header Controls */}
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
@@ -2042,6 +2119,30 @@ export function ItemsView({
                         return;
                       }
                       setRankingMode(value as ItemsRankingMode);
+                      setPage(1);
+                    }}
+                  />
+                ) : null}
+                {sortMode === "default" ? (
+                  <Segmented
+                    size="small"
+                    value={effectiveSortMode}
+                    options={[
+                      {
+                        label: t("items.sort.latest", { defaultValue: "Latest" }),
+                        value: "default"
+                      },
+                      {
+                        label: t("items.sort.published", { defaultValue: "Published" }),
+                        value: "publishedDesc"
+                      },
+                      {
+                        label: t("items.sort.personalized", { defaultValue: "Personalized" }),
+                        value: "personalized"
+                      }
+                    ]}
+                    onChange={(value) => {
+                      setActiveSortMode(value as ItemsSortMode);
                       setPage(1);
                     }}
                   />
@@ -2143,7 +2244,9 @@ export function ItemsView({
 
       <Drawer
         title={t("items.filters.title", { defaultValue: "Filters" })}
-        placement="right"
+        placement={screens.lg ? "right" : "bottom"}
+        width={screens.lg ? 360 : undefined}
+        height={!screens.lg ? "72vh" : undefined}
         onClose={() => setShowFilters(false)}
         open={showFilters}
       >

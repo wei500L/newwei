@@ -1,6 +1,8 @@
 import { ForbiddenException, UseGuards } from "@nestjs/common";
 import { Args, Context, Float, Int, Query, Resolver } from "@nestjs/graphql";
+import { ProcessedItemModel } from "@modular/mongo";
 import { NewsEventStatus } from "@prisma/client";
+import { Types } from "mongoose";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -208,11 +210,15 @@ export class NewsEventsResolver {
       return null;
     }
 
-    const [heatMap, authorityMap, categoryDistributionMap] = await Promise.all([
-      this.events.getEventHeatMap(user.orgId, [id]),
-      this.events.getEventAuthorityMap(user.orgId, [id]),
-      this.events.getEventCategoryDistributionMap(user.orgId, [id]),
-    ]);
+    const [heatMap, authorityMap, categoryDistributionMap, itemMetaIdByProcessedItemId] =
+      await Promise.all([
+        this.events.getEventHeatMap(user.orgId, [id]),
+        this.events.getEventAuthorityMap(user.orgId, [id]),
+        this.events.getEventCategoryDistributionMap(user.orgId, [id]),
+        this.loadItemMetaIdByProcessedItemId(
+          row.items.map((item) => item.processedItemId),
+        ),
+      ]);
     const heat = heatMap.get(id) ?? { breaking: false, heatScore: 0 };
     const authority = this.toAuthorityScore(authorityMap.get(id));
     const categoryDistribution = categoryDistributionMap.get(id) ?? null;
@@ -220,7 +226,9 @@ export class NewsEventsResolver {
     return this.toModel(
       row,
       {
-        items: row.items.map((item) => this.toItemModel(item)),
+        items: row.items.map((item) =>
+          this.toItemModel(item, itemMetaIdByProcessedItemId),
+        ),
         timeline: row.timeline.map((entry) =>
           this.toTimelineModel(entry, row.metadata),
         ),
@@ -400,12 +408,23 @@ export class NewsEventsResolver {
     };
   }
 
-  private toItemModel(item: any): NewsEventItemModel {
+  private toItemModel(
+    item: any,
+    itemMetaIdByProcessedItemId?: Map<string, string>,
+  ): NewsEventItemModel {
+    const processedItemId =
+      typeof item.processedItemId === "string" && item.processedItemId.trim().length > 0
+        ? item.processedItemId.trim()
+        : null;
+    const itemMetaId = processedItemId
+      ? (itemMetaIdByProcessedItemId?.get(processedItemId) ?? null)
+      : null;
     return {
       id: item.id,
       eventId: item.eventId,
       processedArticleId: item.processedArticleId,
-      processedItemId: item.processedItemId,
+      itemMetaId,
+      processedItemId,
       similarity: item.similarity,
       assignedBy: item.assignedBy,
       createdAt: item.createdAt,
@@ -425,6 +444,49 @@ export class NewsEventsResolver {
         },
       },
     };
+  }
+
+  private async loadItemMetaIdByProcessedItemId(
+    processedItemIds: Array<string | null | undefined>,
+  ) {
+    const normalizedIds = Array.from(
+      new Set(
+        processedItemIds
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter((value) => value.length > 0),
+      ),
+    );
+    if (normalizedIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const objectIds = normalizedIds
+      .filter((value) => Types.ObjectId.isValid(value))
+      .map((value) => new Types.ObjectId(value));
+    if (objectIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const rows = await ProcessedItemModel.find(
+      { _id: { $in: objectIds } },
+      { _id: 1, itemMetaId: 1 },
+    )
+      .lean()
+      .exec();
+    const out = new Map<string, string>();
+    for (const row of rows) {
+      const rowRecord = row as { _id?: unknown; itemMetaId?: unknown };
+      const processedItemId = String(rowRecord._id ?? "").trim();
+      const itemMetaId =
+        typeof rowRecord.itemMetaId === "string"
+          ? rowRecord.itemMetaId.trim()
+          : "";
+      if (!processedItemId || !itemMetaId || out.has(processedItemId)) {
+        continue;
+      }
+      out.set(processedItemId, itemMetaId);
+    }
+    return out;
   }
 
   private toTimelineModel(

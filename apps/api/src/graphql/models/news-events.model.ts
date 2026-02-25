@@ -85,6 +85,9 @@ export class NewsEventItemModel {
   processedArticleId!: string;
 
   @Field(() => String, { nullable: true })
+  itemMetaId?: string | null;
+
+  @Field(() => String, { nullable: true })
   processedItemId?: string | null;
 
   @Field(() => Float, { nullable: true })

@@ -13,12 +13,21 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   rectSortingStrategy,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { useIsMobile } from "../hooks/use-is-mobile";
+import {
+  type PersonalizedSourceScoreDetail,
+  useNewsnowPersonalizedOrder,
+} from "../hooks/use-newsnow-personalized-order";
 import { type Source } from "../hooks/use-news-sources";
-import { reorderNewsnowItems } from "../lib/newsnow-dnd";
+import {
+  buildCrossSourceDedupResult,
+  reorderNewsnowItems,
+} from "../lib/newsnow-dnd";
 import { useNewsnowStore } from "../store/newsnow-store";
 import { NewsnowCard } from "./newsnow-card";
 
@@ -29,8 +38,18 @@ interface NewsnowDndGridProps {
 }
 
 function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndGridProps) {
-  const { columnOrders, setColumnOrder } = useNewsnowStore();
+  const {
+    columnOrders,
+    setColumnOrder,
+    sourceAffinity,
+    sourceSnapshots,
+    focusSources,
+    sortMode,
+    hideCrossSourceDuplicates,
+    liveUnreadBySource,
+  } = useNewsnowStore();
   const [items, setItems] = useState<string[]>([]);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const savedOrder = columnOrders[columnKey];
@@ -57,6 +76,9 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
   );
 
   function handleDragEnd(event: DragEndEvent) {
+    if (sortMode === "personalized" || isMobile || sortMode === "smart") {
+      return;
+    }
     const { active, over } = event;
     const activeId = String(active.id);
     const overId = over?.id ? String(over.id) : null;
@@ -74,18 +96,102 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
     });
   }
 
+  const sortSettingsOverride = useMemo(() => {
+    if (sortMode !== "personalized" && sortMode !== "smart") {
+      return undefined;
+    }
+    const scopedSourceAffinity = items.reduce(
+      (acc, sourceId) => {
+        if (sourceAffinity[sourceId]) {
+          acc[sourceId] = sourceAffinity[sourceId];
+        }
+        return acc;
+      },
+      {} as typeof sourceAffinity,
+    );
+    return {
+      sortMode,
+      focusSources,
+      columnOrders: {
+        [columnKey]: columnOrders[columnKey] ?? [],
+      },
+      sourceAffinity: scopedSourceAffinity,
+    } as const;
+  }, [columnKey, columnOrders, focusSources, items, sortMode, sourceAffinity]);
+
+  const { data: personalizedOrder } = useNewsnowPersonalizedOrder({
+    columnKey,
+    sourceIds: items,
+    settingsOverride: sortSettingsOverride,
+    enabled: (sortMode === "personalized" || sortMode === "smart") && items.length > 0,
+  });
+
+  const effectiveDisplayItems = useMemo(() => {
+    const hasManualOrder = (columnOrders[columnKey]?.length ?? 0) > 0;
+    if (sortMode !== "personalized" && sortMode !== "smart") {
+      return items;
+    }
+    // priority: manual order > personalized response > global metadata/default order
+    if (hasManualOrder) {
+      return items;
+    }
+    if (personalizedOrder?.sourceIds && personalizedOrder.sourceIds.length > 0) {
+      return personalizedOrder.sourceIds;
+    }
+    return items;
+  }, [columnKey, columnOrders, items, personalizedOrder?.sourceIds, sortMode]);
+  const personalizedScoreDetailsBySourceId = useMemo(
+    () =>
+      (personalizedOrder?.sourceScoreDetails ?? {}) as Record<
+        string,
+        PersonalizedSourceScoreDetail
+      >,
+    [personalizedOrder?.sourceScoreDetails],
+  );
+
+  const dedupeResult = useMemo(
+    () =>
+      buildCrossSourceDedupResult({
+        sourceOrder: effectiveDisplayItems,
+        snapshots: sourceSnapshots,
+      }),
+    [effectiveDisplayItems, sourceSnapshots],
+  );
+
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragEnd={handleDragEnd}
     >
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4 md:gap-5">
-        <SortableContext items={items} strategy={rectSortingStrategy}>
-          {items.map((id) => (
+      <div
+        className={
+          isMobile
+            ? "flex flex-col gap-3"
+            : "grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] md:gap-5"
+        }
+      >
+        <SortableContext
+          items={effectiveDisplayItems}
+          strategy={isMobile ? verticalListSortingStrategy : rectSortingStrategy}
+        >
+          {effectiveDisplayItems.map((id) => (
             <div key={id}>
               {sourcesMap[id] ? (
-                <NewsnowCard id={id} source={sourcesMap[id]} />
+                <NewsnowCard
+                  id={id}
+                  source={sourcesMap[id]}
+                  dragDisabled={
+                    sortMode === "personalized" || sortMode === "smart" || isMobile
+                  }
+                  mobileMode={isMobile}
+                  hideCrossSourceDuplicates={hideCrossSourceDuplicates}
+                  crossSourceMetaByItemId={dedupeResult.bySource[id]}
+                  duplicateItemsCount={dedupeResult.duplicateItemsBySource[id] ?? 0}
+                  visibleItemsCount={dedupeResult.visibleItemsBySource[id] ?? 0}
+                  realtimeUnreadCount={liveUnreadBySource[id] ?? 0}
+                  personalizedScoreDetail={personalizedScoreDetailsBySourceId[id]}
+                />
               ) : null}
             </div>
           ))}

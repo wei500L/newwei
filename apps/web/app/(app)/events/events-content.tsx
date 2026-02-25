@@ -364,6 +364,17 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
             defaultValue: "Clustered storylines built from processed news articles."
           })}
         </Typography.Text>
+        <Space wrap size={[8, 8]}>
+          <Button size="small" onClick={() => router.push("/news-hub")}>
+            {t("pages.events.quickNav.hub", { defaultValue: "News Hub" })}
+          </Button>
+          <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
+            {t("pages.events.quickNav.newsnow", { defaultValue: "实时热榜" })}
+          </Button>
+          <Button size="small" onClick={() => router.push("/items")}>
+            {t("pages.events.quickNav.items", { defaultValue: "深度文章" })}
+          </Button>
+        </Space>
       </Space>
 
       <Card className="content-card">

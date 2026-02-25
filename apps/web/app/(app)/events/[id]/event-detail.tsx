@@ -5,7 +5,7 @@ import { gql, useQuery } from "@apollo/client";
 import { Alert, Breadcrumb, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
@@ -15,6 +15,7 @@ import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 import { pickRepresentativeProcessedItemId } from "../utils";
 
@@ -22,6 +23,7 @@ interface EventItem {
   id: string;
   eventId: string;
   processedArticleId: string;
+  itemMetaId?: string | null;
   processedItemId?: string | null;
   similarity?: number | null;
   assignedBy: string;
@@ -59,6 +61,13 @@ interface TimelineEntry {
   updatedAt: string;
 }
 
+interface NewsEventSourceEvidence {
+  uniqueSourceCount: number;
+  authoritativeSourceCount: number;
+  blogSourceCount: number;
+  corroborated: boolean;
+}
+
 interface NewsEvent {
   id: string;
   status: "active" | "archived";
@@ -70,6 +79,10 @@ interface NewsEvent {
   startAt: string;
   lastAt: string;
   itemCount: number;
+  heatScore: number;
+  credibilityScore: number;
+  sourceType: "all" | "authoritative" | "mixed" | "blog" | "unknown";
+  sourceEvidence?: NewsEventSourceEvidence | null;
   representativeProcessedItemId?: string | null;
   categoryDistribution?: unknown;
   topicDriftWarning?: boolean | null;
@@ -93,6 +106,15 @@ const NEWS_EVENT_QUERY = gql`
       startAt
       lastAt
       itemCount
+      heatScore
+      credibilityScore
+      sourceType
+      sourceEvidence {
+        uniqueSourceCount
+        authoritativeSourceCount
+        blogSourceCount
+        corroborated
+      }
       representativeProcessedItemId
       categoryDistribution
       topicDriftWarning
@@ -103,6 +125,7 @@ const NEWS_EVENT_QUERY = gql`
         id
         eventId
         processedArticleId
+        itemMetaId
         processedItemId
         similarity
         assignedBy
@@ -295,6 +318,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [markdownExpanded, setMarkdownExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("brief");
+  const [highlightedSourceIndex, setHighlightedSourceIndex] = useState<number | null>(null);
+  const sourceRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const { data, loading, error, refetch } = useQuery<{ newsEvent: NewsEvent | null }>(NEWS_EVENT_QUERY, {
     variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
@@ -333,6 +358,30 @@ export function EventDetail({ eventId }: { eventId: string }) {
     const entries = items.map((item) => [item.processedArticleId, item] as const);
     return new Map(entries);
   }, [items]);
+  const itemMetaIdByProcessedItemId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of items) {
+      const processedItemId =
+        typeof item.processedItemId === "string" ? item.processedItemId.trim() : "";
+      const itemMetaId =
+        typeof item.itemMetaId === "string" ? item.itemMetaId.trim() : "";
+      if (!processedItemId || !itemMetaId || map.has(processedItemId)) {
+        continue;
+      }
+      map.set(processedItemId, itemMetaId);
+    }
+    return map;
+  }, [items]);
+  const resolveTrackedItemId = (processedItemId?: string | null) => {
+    if (typeof processedItemId !== "string") {
+      return undefined;
+    }
+    const normalized = processedItemId.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    return itemMetaIdByProcessedItemId.get(normalized) ?? undefined;
+  };
   const briefSourcesByIndex = useMemo(() => {
     const map = new Map<number, NonNullable<typeof brief>["sources"][number]>();
     for (const source of brief?.sources ?? []) {
@@ -407,6 +456,30 @@ export function EventDetail({ eventId }: { eventId: string }) {
     }
     captureClientError("Failed to load selected processed article in event detail", selectedProcessedQuery.error);
   }, [selectedProcessedQuery.error]);
+
+  useEffect(() => {
+    if (highlightedSourceIndex === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setHighlightedSourceIndex((current) =>
+        current === highlightedSourceIndex ? null : current
+      );
+    }, 4_000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [highlightedSourceIndex]);
+
+  useEffect(() => {
+    if (activeTab !== "brief" || highlightedSourceIndex === null) {
+      return;
+    }
+    const node = sourceRowRefs.current[highlightedSourceIndex];
+    if (node) {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [activeTab, brief?.sources, highlightedSourceIndex]);
   const selectedProcessedResult = useMemo(
     () => getResultObject(selectedProcessed?.resultJson),
     [selectedProcessed?.resultJson]
@@ -452,6 +525,51 @@ export function EventDetail({ eventId }: { eventId: string }) {
   const topic = event.primaryTopic?.trim() ?? "";
   const entity = event.primaryEntity?.trim() ?? "";
   const statusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
+  const sourceEvidence: NewsEventSourceEvidence = event.sourceEvidence ?? {
+    uniqueSourceCount: 0,
+    authoritativeSourceCount: 0,
+    blogSourceCount: 0,
+    corroborated: false
+  };
+  const sourceTypeLabelMap: Record<NewsEvent["sourceType"], string> = {
+    all: t("pages.events.filters.sourceType.all", { defaultValue: "All" }),
+    authoritative: t("pages.events.filters.sourceType.authoritative", { defaultValue: "Authoritative" }),
+    mixed: t("pages.events.filters.sourceType.mixed", { defaultValue: "Mixed" }),
+    blog: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }),
+    unknown: t("pages.events.filters.sourceType.unknown", { defaultValue: "Unknown" })
+  };
+  const credibilitySummary = sourceEvidence.corroborated
+    ? t("pages.events.detail.credibilityStrong", {
+        defaultValue: "Cross-source corroboration detected. Confidence is relatively strong."
+      })
+    : sourceEvidence.uniqueSourceCount <= 1
+      ? t("pages.events.detail.credibilityWeak", {
+          defaultValue: "Single-source signal. Treat this as preliminary."
+        })
+      : t("pages.events.detail.credibilityMedium", {
+          defaultValue: "Multiple sources exist, but corroboration is still limited."
+        });
+
+  const trackEventBehavior = (input: {
+    type: "view" | "click" | "open_item";
+    source?: string;
+    url?: string | null;
+    itemId?: string;
+  }) => {
+    void trackUserNewsBehavior({
+      type: input.type,
+      eventId: event.id,
+      source: input.source,
+      ...(input.itemId ? { itemId: input.itemId } : {}),
+      ...(topic ? { topics: [topic] } : {}),
+      ...(entity ? { entities: [entity] } : {}),
+      ...(input.url ? { url: input.url } : {}),
+    });
+  };
+
+  useEffect(() => {
+    trackEventBehavior({ type: "view", url: representativeUrl ?? null });
+  }, [entity, event.id, representativeUrl, topic]);
 
   const startRelative = formatRelativeTime(event.startAt, locale, { timeZone });
   const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });
@@ -496,6 +614,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
               color="blue"
               style={(processedItemId || url) ? { cursor: "pointer" } : undefined}
               onClick={() => {
+                setHighlightedSourceIndex(idx);
+                const trackedItemId = resolveTrackedItemId(source?.processedItemId);
+                trackEventBehavior({
+                  type: "click",
+                  source: source?.sourceLabel ?? undefined,
+                  url,
+                  ...(trackedItemId ? { itemId: trackedItemId } : {}),
+                });
                 if (processedItemId) {
                   setSelectedProcessedItemId(processedItemId);
                   setSelectedTitle(source?.title ?? label);
@@ -625,6 +751,42 @@ export function EventDetail({ eventId }: { eventId: string }) {
         ) : null}
       </Space>
 
+      <Card size="small" className="content-card">
+        <Space direction="vertical" size={8} className="w-full">
+          <Typography.Text strong>
+            {t("pages.events.detail.credibilityCardTitle", {
+              defaultValue: "Credibility signal"
+            })}
+          </Typography.Text>
+          <Space wrap size={[8, 8]}>
+            <Tag color="blue">
+              {t("pages.events.fields.heatScore", { defaultValue: "Heat" })}: {Math.round(event.heatScore)}
+            </Tag>
+            <Tag color={event.credibilityScore >= 70 ? "success" : event.credibilityScore >= 45 ? "warning" : "error"}>
+              {t("pages.events.fields.credibility", { defaultValue: "Credibility" })}: {Math.round(event.credibilityScore)}
+            </Tag>
+            <Tag>
+              {t("pages.events.fields.sourceType", { defaultValue: "Source type" })}: {sourceTypeLabelMap[event.sourceType] ?? event.sourceType}
+            </Tag>
+            <Tag>
+              {t("pages.events.detail.uniqueSources", { defaultValue: "Unique sources" })}: {sourceEvidence.uniqueSourceCount}
+            </Tag>
+            <Tag>
+              {t("pages.events.detail.authoritativeSources", { defaultValue: "Authoritative" })}: {sourceEvidence.authoritativeSourceCount}
+            </Tag>
+            <Tag>
+              {t("pages.events.detail.blogSources", { defaultValue: "Blog" })}: {sourceEvidence.blogSourceCount}
+            </Tag>
+            <Tag color={sourceEvidence.corroborated ? "green" : "orange"}>
+              {sourceEvidence.corroborated
+                ? t("pages.events.detail.corroboratedYes", { defaultValue: "Corroborated" })
+                : t("pages.events.detail.corroboratedNo", { defaultValue: "Needs corroboration" })}
+            </Tag>
+          </Space>
+          <Typography.Text type="secondary">{credibilitySummary}</Typography.Text>
+        </Space>
+      </Card>
+
       <Card className="content-card">
         <Space direction="vertical" className="w-full" size="middle">
           <Space wrap>
@@ -637,7 +799,18 @@ export function EventDetail({ eventId }: { eventId: string }) {
               </a>
             ) : null}
             {representativeProcessed?.itemMetaId ? (
-              <Button type="link" onClick={() => router.push(`/items/${representativeProcessed.itemMetaId}`)}>
+              <Button
+                type="link"
+                onClick={() => {
+                  trackEventBehavior({
+                    type: "open_item",
+                    itemId: representativeProcessed.itemMetaId ?? undefined,
+                    source: representativeItem?.processedArticle.article.sourceLabel ?? undefined,
+                    url: representativeUrl ?? null,
+                  });
+                  router.push(`/items/${representativeProcessed.itemMetaId}`);
+                }}
+              >
                 {t("pages.events.detail.openItem", { defaultValue: "Open item" })}
               </Button>
             ) : null}
@@ -794,6 +967,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                 ? itemByProcessedArticleId.get(source.processedArticleId)
                                 : undefined;
                               const summary = item?.processedArticle.summary ?? null;
+                              const isHighlighted = highlightedSourceIndex === source.index;
 
                               const actions: React.ReactNode[] = [
                                 <Button
@@ -803,6 +977,15 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                     if (!source.processedItemId) {
                                       return;
                                     }
+                                    const trackedItemId = resolveTrackedItemId(
+                                      source.processedItemId,
+                                    );
+                                    trackEventBehavior({
+                                      type: "click",
+                                      source: source.sourceLabel ?? undefined,
+                                      url,
+                                      itemId: trackedItemId,
+                                    });
                                     setSelectedProcessedItemId(source.processedItemId);
                                     setSelectedTitle(source.title ?? sourceName);
                                     setSelectedUrl(url ?? null);
@@ -815,7 +998,19 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
                               if (url) {
                                 actions.push(
-                                  <a key="open" href={url} target="_blank" rel="noreferrer">
+                                  <a
+                                    key="open"
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={() => {
+                                      trackEventBehavior({
+                                        type: "click",
+                                        source: source.sourceLabel ?? undefined,
+                                        url,
+                                      });
+                                    }}
+                                  >
                                     {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
                                   </a>
                                 );
@@ -823,34 +1018,43 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
                               return (
                                 <List.Item key={source.index} actions={actions}>
-                                  <List.Item.Meta
-                                    title={
-                                      <Space wrap size={[6, 6]}>
-                                        <Tag>#{source.index}</Tag>
-                                        <Typography.Text strong>{sourceName}</Typography.Text>
-                                        <ArticlePublishedTime
-                                          publishedAt={source.publishedAt ?? null}
-                                          locale={locale}
-                                          timeZone={timeZone}
-                                          showLabel={false}
-                                          formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
-                                          primaryClassName="text-xs"
-                                          secondaryClassName="text-[11px]"
-                                          secondaryStyle={{ fontSize: 11 }}
-                                        />
-                                      </Space>
-                                    }
-                                    description={
-                                      <div className="flex flex-col gap-1">
-                                        {source.title ? <Typography.Text>{source.title}</Typography.Text> : null}
-                                        {summary ? (
-                                          <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
-                                            {summary}
-                                          </Typography.Paragraph>
-                                        ) : null}
-                                      </div>
-                                    }
-                                  />
+                                  <div
+                                    ref={(node) => {
+                                      sourceRowRefs.current[source.index] = node;
+                                    }}
+                                    className={`w-full rounded-md p-2 transition-colors ${
+                                      isHighlighted ? "bg-blue-50 ring-1 ring-blue-300" : ""
+                                    }`}
+                                  >
+                                    <List.Item.Meta
+                                      title={
+                                        <Space wrap size={[6, 6]}>
+                                          <Tag color={isHighlighted ? "processing" : undefined}>#{source.index}</Tag>
+                                          <Typography.Text strong>{sourceName}</Typography.Text>
+                                          <ArticlePublishedTime
+                                            publishedAt={source.publishedAt ?? null}
+                                            locale={locale}
+                                            timeZone={timeZone}
+                                            showLabel={false}
+                                            formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                            primaryClassName="text-xs"
+                                            secondaryClassName="text-[11px]"
+                                            secondaryStyle={{ fontSize: 11 }}
+                                          />
+                                        </Space>
+                                      }
+                                      description={
+                                        <div className="flex flex-col gap-1">
+                                          {source.title ? <Typography.Text>{source.title}</Typography.Text> : null}
+                                          {summary ? (
+                                            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                                              {summary}
+                                            </Typography.Paragraph>
+                                          ) : null}
+                                        </div>
+                                      }
+                                    />
+                                  </div>
                                 </List.Item>
                               );
                             }}
@@ -1119,6 +1323,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         if (!processedItemId) {
                           return;
                         }
+                        trackEventBehavior({
+                          type: "click",
+                          source: sourceLabel || undefined,
+                          url,
+                          itemId: item.itemMetaId ?? undefined,
+                        });
                         setSelectedProcessedItemId(processedItemId);
                         setSelectedTitle(processed.title ?? processed.articleId);
                         setSelectedUrl(url ?? null);
@@ -1213,7 +1423,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
           <Space direction="vertical" size="middle" className="w-full">
             <Space wrap>
               {selectedProcessed.itemMetaId ? (
-                <Button type="link" onClick={() => router.push(`/items/${selectedProcessed.itemMetaId}`)}>
+                <Button
+                  type="link"
+                  onClick={() => {
+                    trackEventBehavior({
+                      type: "open_item",
+                      itemId: selectedProcessed.itemMetaId ?? undefined,
+                      url: selectedUrl,
+                    });
+                    router.push(`/items/${selectedProcessed.itemMetaId}`);
+                  }}
+                >
                   {t("pages.events.detail.openItem", { defaultValue: "Open item" })}
                 </Button>
               ) : null}

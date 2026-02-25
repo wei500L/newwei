@@ -9,10 +9,15 @@ const KEY_SITUATION_MONITOR_LAYOUT = "ui:situation-monitor:layout:v1";
 const KEY_SITUATION_MONITOR_SETTINGS = "ui:situation-monitor:settings:v1";
 const KEY_WAR_MAP_SETTINGS = "ui:war-map:settings:v1";
 const KEY_SPACETIME_TIMELINE_SETTINGS = "ui:spacetime-timeline:settings:v1";
+const KEY_NEWSNOW_SETTINGS = "ui:newsnow:settings:v1";
 
 const MAX_MONITORS = 20;
 const MAX_LAYOUT_ITEMS = 120;
 const MAX_VISIBILITY_KEYS = 64;
+const MAX_NEWSNOW_SOURCE_IDS = 200;
+const MAX_NEWSNOW_COLUMNS = 32;
+const MAX_NEWSNOW_AFFINITIES = 300;
+const NEWSNOW_SOURCE_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i;
 
 export interface SituationMonitorUiSettingsResponse {
   version: 1;
@@ -77,6 +82,48 @@ export interface SpacetimeTimelineUiSettingsResponse {
     settings?: string;
   };
   settings: SpacetimeTimelineSettings | null;
+}
+
+export type NewsnowSortMode = "manual" | "personalized" | "smart";
+export type NewsnowDensityMode = "compact" | "comfortable";
+
+export interface NewsnowSourceAffinitySettings {
+  score: number;
+  openOriginalCount: number;
+  openEventCount: number;
+  openItemCount: number;
+  refreshCount: number;
+  focusCount: number;
+  accumulatedDwellMs: number;
+  lastInteractedAt: number;
+}
+
+export interface NewsnowUiSettings {
+  focusSources: string[];
+  columnOrders: Record<string, string[]>;
+  hideCrossSourceDuplicates: boolean;
+  sortMode: NewsnowSortMode;
+  densityMode: NewsnowDensityMode;
+  sourceAffinity: Record<string, NewsnowSourceAffinitySettings>;
+}
+
+export interface NewsnowUiSettingsResponse {
+  version: 1;
+  updatedAt: {
+    settings?: string;
+  };
+  settings: NewsnowUiSettings | null;
+}
+
+export function createDefaultNewsnowUiSettings(): NewsnowUiSettings {
+  return {
+    focusSources: [],
+    columnOrders: {},
+    hideCrossSourceDuplicates: false,
+    sortMode: "manual",
+    densityMode: "compact",
+    sourceAffinity: {},
+  };
 }
 
 export interface SituationMonitorCustomMonitor {
@@ -510,6 +557,172 @@ function normalizeSpacetimeTimelineSettings(
   };
 }
 
+function normalizeNewsnowSourceId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return NEWSNOW_SOURCE_ID_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+function clampNewsnowInt(value: unknown, min: number, max: number, fallback = 0): number {
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+  if (!Number.isFinite(raw)) {
+    return fallback;
+  }
+  if (raw < min) {
+    return min;
+  }
+  if (raw > max) {
+    return max;
+  }
+  return Math.round(raw);
+}
+
+function clampNewsnowFloat(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback = 0,
+): number {
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : Number.NaN;
+  if (!Number.isFinite(raw)) {
+    return fallback;
+  }
+  if (raw < min) {
+    return min;
+  }
+  if (raw > max) {
+    return max;
+  }
+  return raw;
+}
+
+function normalizeNewsnowSourceList(value: unknown, maxCount: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const normalized = normalizeNewsnowSourceId(entry);
+    if (!normalized) {
+      continue;
+    }
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= maxCount) {
+      break;
+    }
+  }
+  return out;
+}
+
+function normalizeNewsnowColumnOrders(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const out: Record<string, string[]> = {};
+  let count = 0;
+  for (const [column, rawList] of Object.entries(record)) {
+    if (count >= MAX_NEWSNOW_COLUMNS) {
+      break;
+    }
+    const normalizedColumn = normalizeNewsnowSourceId(column);
+    if (!normalizedColumn) {
+      continue;
+    }
+    const normalizedList = normalizeNewsnowSourceList(rawList, MAX_NEWSNOW_SOURCE_IDS);
+    if (normalizedList.length === 0) {
+      continue;
+    }
+    out[normalizedColumn] = normalizedList;
+    count += 1;
+  }
+  return out;
+}
+
+function normalizeNewsnowSourceAffinity(
+  value: unknown,
+): Record<string, NewsnowSourceAffinitySettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const record = value as Record<string, unknown>;
+  const out: Record<string, NewsnowSourceAffinitySettings> = {};
+  let count = 0;
+
+  for (const [sourceId, rawAffinity] of Object.entries(record)) {
+    if (count >= MAX_NEWSNOW_AFFINITIES) {
+      break;
+    }
+    const normalizedSourceId = normalizeNewsnowSourceId(sourceId);
+    if (!normalizedSourceId) {
+      continue;
+    }
+    if (!rawAffinity || typeof rawAffinity !== "object" || Array.isArray(rawAffinity)) {
+      continue;
+    }
+    const affinity = rawAffinity as Record<string, unknown>;
+    out[normalizedSourceId] = {
+      score: clampNewsnowFloat(affinity.score, 0, 100, 0),
+      openOriginalCount: clampNewsnowInt(affinity.openOriginalCount, 0, 1_000_000, 0),
+      openEventCount: clampNewsnowInt(affinity.openEventCount, 0, 1_000_000, 0),
+      openItemCount: clampNewsnowInt(affinity.openItemCount, 0, 1_000_000, 0),
+      refreshCount: clampNewsnowInt(affinity.refreshCount, 0, 1_000_000, 0),
+      focusCount: clampNewsnowInt(affinity.focusCount, 0, 1_000_000, 0),
+      accumulatedDwellMs: clampNewsnowInt(
+        affinity.accumulatedDwellMs,
+        0,
+        365 * 24 * 60 * 60 * 1000,
+        0,
+      ),
+      lastInteractedAt: clampNewsnowInt(
+        affinity.lastInteractedAt,
+        0,
+        9_999_999_999_999,
+        0,
+      ),
+    };
+    count += 1;
+  }
+
+  return out;
+}
+
+function normalizeNewsnowSortMode(value: unknown): NewsnowSortMode {
+  return value === "smart" || value === "personalized"
+    ? "personalized"
+    : "manual";
+}
+
+function normalizeNewsnowDensityMode(value: unknown): NewsnowDensityMode {
+  return value === "comfortable" ? "comfortable" : "compact";
+}
+
+export function normalizeNewsnowUiSettings(value: unknown): NewsnowUiSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return createDefaultNewsnowUiSettings();
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    focusSources: normalizeNewsnowSourceList(record.focusSources, MAX_NEWSNOW_SOURCE_IDS),
+    columnOrders: normalizeNewsnowColumnOrders(record.columnOrders),
+    hideCrossSourceDuplicates: Boolean(record.hideCrossSourceDuplicates),
+    sortMode: normalizeNewsnowSortMode(record.sortMode),
+    densityMode: normalizeNewsnowDensityMode(record.densityMode),
+    sourceAffinity: normalizeNewsnowSourceAffinity(record.sourceAffinity),
+  };
+}
+
 @Injectable()
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -709,6 +922,48 @@ export class UserSettingsService {
     }
 
     return this.getSpacetimeTimelineUiSettings(orgId, userId);
+  }
+
+  async getNewsnowUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<NewsnowUiSettingsResponse> {
+    const record = await this.prisma.userSetting.findUnique({
+      where: {
+        orgId_userId_key: {
+          orgId,
+          userId,
+          key: KEY_NEWSNOW_SETTINGS,
+        },
+      },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return {
+      version: 1,
+      updatedAt: {
+        ...(record ? { settings: record.updatedAt.toISOString() } : {}),
+      },
+      settings: record ? normalizeNewsnowUiSettings(record.value) : null,
+    };
+  }
+
+  async updateNewsnowUiSettings(
+    orgId: string,
+    userId: string,
+    input: { settings?: Record<string, unknown> },
+  ): Promise<NewsnowUiSettingsResponse> {
+    if (input.settings !== undefined) {
+      const settings = normalizeNewsnowUiSettings(input.settings);
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_NEWSNOW_SETTINGS,
+        this.toPrismaJson(settings),
+      );
+    }
+
+    return this.getNewsnowUiSettings(orgId, userId);
   }
 
   private async upsert(

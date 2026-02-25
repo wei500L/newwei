@@ -1,6 +1,9 @@
 import { BadRequestException, Body, Controller, Get, Post, Query } from "@nestjs/common"
 
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator"
+import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { NewsAggregatorService } from "./news-aggregator.service"
 
@@ -8,7 +11,15 @@ interface BatchFetchDto {
   sources?: string[]
 }
 
+interface PersonalizedOrderDto {
+  column?: string
+  sources?: string[]
+  settings?: Record<string, unknown>
+}
+
 const SOURCE_ID_PATTERN = /^[a-z0-9_-]+$/i
+const COLUMN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i
+const MAX_PERSONALIZED_ORDER_SOURCES = 240
 
 @Controller("news-aggregator")
 export class NewsAggregatorController {
@@ -35,6 +46,26 @@ export class NewsAggregatorController {
     return this.newsAggregatorService.fetchBatch(validated)
   }
 
+  @Post("sources/order")
+  @Permissions("items.read")
+  getPersonalizedSourcesOrder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: PersonalizedOrderDto,
+  ) {
+    const columnKey = this.validateColumnKey(body?.column)
+    const sourceIds = this.normalizeSourceIds(body?.sources)
+    if (body?.settings !== undefined && !this.isRecord(body.settings)) {
+      throw new BadRequestException("settings must be an object")
+    }
+    return this.newsAggregatorService.getPersonalizedSourceOrderForUser({
+      orgId: user.orgId,
+      userId: user.id,
+      columnKey,
+      sourceIds,
+      settingsOverride: body?.settings,
+    })
+  }
+
   @Public()
   @Get("metadata")
   getMetadata() {
@@ -57,6 +88,47 @@ export class NewsAggregatorController {
       throw new BadRequestException("invalid source id format")
     }
     return trimmed
+  }
+
+  private validateColumnKey(value: unknown): string {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new BadRequestException("column is required")
+    }
+    const normalized = value.trim().toLowerCase()
+    if (!COLUMN_ID_PATTERN.test(normalized)) {
+      throw new BadRequestException("invalid column format")
+    }
+    return normalized
+  }
+
+  private normalizeSourceIds(value: unknown): string[] {
+    if (value === undefined || value === null) {
+      return []
+    }
+    if (!Array.isArray(value)) {
+      throw new BadRequestException("sources must be an array of source ids")
+    }
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const entry of value) {
+      if (typeof entry !== "string") {
+        continue
+      }
+      const sourceId = entry.trim()
+      if (!sourceId || !SOURCE_ID_PATTERN.test(sourceId) || seen.has(sourceId)) {
+        continue
+      }
+      seen.add(sourceId)
+      out.push(sourceId)
+      if (out.length >= MAX_PERSONALIZED_ORDER_SOURCES) {
+        break
+      }
+    }
+    return out
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value))
   }
 
   private parseBooleanFlag(value: unknown): boolean {

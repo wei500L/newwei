@@ -5,8 +5,10 @@ import { useParams } from "next/navigation";
 import { NewsnowHeader } from "../components/newsnow-header";
 import { NewsnowColumn } from "../components/newsnow-column";
 import { useNewsMetadata, useBatchPrefetch } from "../hooks/use-news-sources";
+import { useNewsnowStream } from "../hooks/use-newsnow-stream";
+import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
 import { useNewsnowStore } from "../store/newsnow-store";
-import { Skeleton, Empty, Button, Result } from "antd";
+import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
 import { StarOutlined } from "@ant-design/icons";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -40,6 +42,8 @@ function NewsnowAttribution() {
 
 export default function NewsnowColumnPage() {
   const { isDark } = useTheme();
+  useNewsnowUiSync();
+  useNewsnowStream();
   const params = useParams<{ column?: string | string[] }>();
   const columnParam = params.column;
   const columnKey = Array.isArray(columnParam)
@@ -47,7 +51,15 @@ export default function NewsnowColumnPage() {
     : (columnParam ?? "hottest");
   const normalizedColumnKey = columnKey.toLowerCase();
   const { data: metadata, isLoading, isError, refetch } = useNewsMetadata();
-  const { focusSources } = useNewsnowStore();
+  const {
+    focusSources,
+    liveUnreadBySource,
+    realtimeHighlights,
+    realtimeConnected,
+    realtimeConnectionError,
+    clearLiveUnread,
+    clearAllLiveUnread,
+  } = useNewsnowStore();
   const batchPrefetch = useBatchPrefetch();
   const resolvedColumnKey = metadata?.columns[normalizedColumnKey]
     ? normalizedColumnKey
@@ -63,6 +75,14 @@ export default function NewsnowColumnPage() {
       batchPrefetch(sourceIds);
     }
   }, [sourceIds, batchPrefetch]);
+
+  const visibleRealtimeUnread = sourceIds.reduce(
+    (total, sourceId) => total + (liveUnreadBySource[sourceId] ?? 0),
+    0,
+  );
+  const visibleRealtimeHighlights = realtimeHighlights
+    .filter((entry) => sourceIds.includes(entry.sourceId))
+    .slice(0, 3);
 
   const frameClass = "min-h-full";
   const frameStyle = isDark
@@ -82,11 +102,11 @@ export default function NewsnowColumnPage() {
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
         <div className="mx-auto w-full max-w-[1880px] px-3 py-4 md:px-4 md:py-5">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4 md:gap-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] md:gap-5">
             {[...Array(10)].map((_, i) => (
               <div
                 key={i}
-                className={`h-[500px] rounded-2xl border p-4 ${
+                className={`h-[430px] rounded-2xl border p-4 sm:h-[470px] lg:h-[500px] ${
                   isDark
                     ? "border-zinc-800 bg-zinc-900/80"
                     : "border-slate-200 bg-white/85"
@@ -156,6 +176,62 @@ export default function NewsnowColumnPage() {
   return (
     <div className={frameClass} style={frameStyle}>
       <NewsnowHeader />
+      {visibleRealtimeUnread > 0 ? (
+        <div className="mx-auto w-full max-w-[1880px] px-3 pt-3 md:px-4">
+          <Alert
+            showIcon
+            type="info"
+            message={`实时推送到达 ${visibleRealtimeUnread} 条新内容`}
+            description={
+              <div className="space-y-1">
+                <p>已检测到数据源更新。你可以立即刷新当前栏目并清空未读计数。</p>
+                {visibleRealtimeHighlights.length > 0 ? (
+                  <ul className="list-disc pl-5">
+                    {visibleRealtimeHighlights.map((entry) => {
+                      const sourceName =
+                        metadata?.sources[entry.sourceId]?.name ?? entry.sourceId;
+                      const firstTitle = entry.topTitles[0];
+                      return (
+                        <li key={`${entry.sourceId}:${entry.timestamp}`}>
+                          <span className="font-medium">{sourceName}</span>
+                          <span>{` +${entry.count}`}</span>
+                          {firstTitle ? <span>{` · ${firstTitle}`}</span> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+            }
+            action={
+              <Space>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    void batchPrefetch(sourceIds);
+                    sourceIds.forEach((sourceId) => clearLiveUnread(sourceId));
+                  }}
+                >
+                  立即刷新
+                </Button>
+                <Button size="small" type="text" onClick={() => clearAllLiveUnread()}>
+                  标记已读
+                </Button>
+              </Space>
+            }
+          />
+        </div>
+      ) : null}
+      {!realtimeConnected && realtimeConnectionError ? (
+        <div className="mx-auto w-full max-w-[1880px] px-3 pt-3 md:px-4">
+          <Alert
+            showIcon
+            type="warning"
+            message="实时连接不可用"
+            description={realtimeConnectionError}
+          />
+        </div>
+      ) : null}
       <main>
         <NewsnowColumn
           columnKey={resolvedColumnKey}

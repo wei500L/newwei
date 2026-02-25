@@ -46,6 +46,45 @@ export class CacheService implements OnModuleDestroy {
     await this.redis.del(key);
   }
 
+  async delMany(keys: string[]) {
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return 0;
+    }
+    return this.redis.del(...keys);
+  }
+
+  async expire(key: string, ttlSeconds: number) {
+    const ttl = Math.max(1, Math.floor(ttlSeconds));
+    await this.redis.expire(key, ttl);
+  }
+
+  async zadd(key: string, score: number, member: string) {
+    await this.redis.zadd(key, score, member);
+  }
+
+  async zcard(key: string) {
+    return this.redis.zcard(key);
+  }
+
+  async zrange(key: string, start: number, stop: number) {
+    return this.redis.zrange(key, start, stop);
+  }
+
+  async zrem(key: string, members: string[]) {
+    if (!Array.isArray(members) || members.length === 0) {
+      return 0;
+    }
+    return this.redis.zrem(key, ...members);
+  }
+
+  async hincrby(key: string, field: string, value: number) {
+    return this.redis.hincrby(key, field, value);
+  }
+
+  async hgetall(key: string) {
+    return this.redis.hgetall(key);
+  }
+
   async incr(key: string, ttlSeconds: number) {
     const value = await this.redis.incr(key);
     if (value === 1) {
