@@ -304,11 +304,11 @@ describe("NewsSourceService.preview", () => {
     } as any;
 
     const metadataService = {
-      discoverDeepUrls: jest
+      discoverDeepCandidates: jest
         .fn()
         .mockRejectedValue(
           new Error(
-            "[SEED_DEEP_NO_PUBLISHED_AT] Deep discovery could not determine publish time for discovered links. discovered=3, unresolved=3",
+            "[SEED_DEEP_CRAWL_FAILED] Deep discovery crawl failed: timeout",
           ),
         ),
       extract: jest.fn(),
@@ -326,9 +326,8 @@ describe("NewsSourceService.preview", () => {
         .mockResolvedValueOnce({
           streak: 2,
           lastFailureAt: "2026-01-01T00:00:00.000Z",
-          lastCode: "SEED_DEEP_NO_PUBLISHED_AT",
-          lastMessage:
-            "Deep discovery could not determine publish time for discovered links.",
+          lastCode: "SEED_DEEP_CRAWL_FAILED",
+          lastMessage: "Deep discovery crawl failed: timeout",
           retryAt: "2026-01-01T00:15:00.000Z",
           nextRunAt: "2026-01-01T00:15:00.000Z",
           circuitOpenUntil: null,
@@ -336,7 +335,7 @@ describe("NewsSourceService.preview", () => {
         .mockResolvedValueOnce({
           total: 4,
           byCode: {
-            SEED_DEEP_NO_PUBLISHED_AT: 3,
+            SEED_DEEP_CRAWL_FAILED: 3,
             SEED_DEEP_EMPTY_RESULT: 1,
           },
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -348,7 +347,7 @@ describe("NewsSourceService.preview", () => {
 
     expect(result.deepPreviewError).toEqual(
       expect.objectContaining({
-        code: "SEED_DEEP_NO_PUBLISHED_AT",
+        code: "SEED_DEEP_CRAWL_FAILED",
       }),
     );
     expect(result.deepFailureStats).toEqual(
@@ -356,13 +355,104 @@ describe("NewsSourceService.preview", () => {
         total24h: 4,
         streak: 2,
         byCode: expect.arrayContaining([
-          { code: "SEED_DEEP_NO_PUBLISHED_AT", count: 3 },
+          { code: "SEED_DEEP_CRAWL_FAILED", count: 3 },
           { code: "SEED_DEEP_EMPTY_RESULT", count: 1 },
         ]),
       }),
     );
     expect(result.scheduleCount).toBe(0);
     expect(result.candidates).toEqual([]);
+  });
+
+  it("returns preview time signals with published-first and crawled fallback", async () => {
+    const prisma = {
+      newsSource: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "source-1",
+          orgId: "org-1",
+          name: "Example",
+          url: "https://example.com/latest/",
+          siteType: "general",
+          crawlTemplateId: null,
+          config: {
+            seed: {
+              enabled: true,
+              mode: "list",
+              maxUrls: 20,
+              maxNewUrlsPerRun: 5,
+              dedupeWindowHours: 24,
+            },
+          },
+        }),
+      },
+      crawlTemplate: {
+        findUnique: jest.fn(),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      article: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as any;
+
+    const metadataService = {
+      discoverListCandidates: jest.fn().mockResolvedValue([
+        {
+          url: "https://example.com/news/with-published",
+          publishedAtTs: Date.parse("2026-02-14T10:00:00.000Z"),
+          crawledAtTs: Date.parse("2026-02-14T10:05:00.000Z"),
+        },
+        {
+          url: "https://example.com/news/no-published",
+          crawledAtTs: Date.parse("2026-02-14T10:06:00.000Z"),
+        },
+      ]),
+      extract: jest.fn().mockResolvedValue([
+        {
+          url: "https://example.com/news/with-published",
+          status: "success",
+          title: "One",
+        },
+        {
+          url: "https://example.com/news/no-published",
+          status: "success",
+          title: "Two",
+        },
+      ]),
+    } as any;
+
+    const env = {
+      newsSourceSchedulerConfig: {
+        inFlightLookbackMs: 6 * 60 * 60 * 1000,
+      },
+    } as any;
+
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+    } as any;
+
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const result = await service.preview("org-1", "source-1");
+
+    expect(result.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://example.com/news/with-published",
+          timestampSource: "published",
+          publishDateMissing: false,
+          effectiveAt: "2026-02-14T10:00:00.000Z",
+          publishedAt: "2026-02-14T10:00:00.000Z",
+        }),
+        expect.objectContaining({
+          url: "https://example.com/news/no-published",
+          timestampSource: "crawled",
+          publishDateMissing: true,
+          effectiveAt: "2026-02-14T10:06:00.000Z",
+          crawledAt: "2026-02-14T10:06:00.000Z",
+        }),
+      ]),
+    );
   });
 });
 

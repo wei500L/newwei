@@ -139,6 +139,11 @@ interface NewsSourcePreviewCandidate {
   description?: string;
   author?: string;
   relevanceScore?: number;
+  publishedAt?: string | null;
+  crawledAt?: string | null;
+  effectiveAt?: string | null;
+  timestampSource?: "published" | "crawled" | "none";
+  publishDateMissing?: boolean;
   alreadyCrawled: boolean;
   lastCrawlAt?: string | null;
   alreadyQueued?: boolean;
@@ -4359,6 +4364,59 @@ export function NewsSourcesContent() {
         typeof value === "number" && Number.isFinite(value)
           ? value.toFixed(3)
           : "-",
+    },
+    {
+      title: t("newsSources.preview.columns.timeSignal", {
+        defaultValue: "Time signal",
+      }),
+      key: "timeSignal",
+      width: 220,
+      render: (_: unknown, record) => {
+        if (record.publishedAt) {
+          return (
+            <Space direction="vertical" size={2}>
+              <Typography.Text>
+                {formatDateTime(record.publishedAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </Typography.Text>
+              <Tag color="green">
+                {t("newsSources.preview.timePublished", {
+                  defaultValue: "Published",
+                })}
+              </Tag>
+            </Space>
+          );
+        }
+
+        if (record.crawledAt) {
+          return (
+            <Space direction="vertical" size={2}>
+              <Typography.Text>
+                {formatDateTime(record.crawledAt, locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </Typography.Text>
+              <Space size={4} wrap>
+                <Tag color="blue">
+                  {t("newsSources.preview.timeCrawled", {
+                    defaultValue: "Crawled",
+                  })}
+                </Tag>
+                <Tag color="orange">
+                  {t("newsSources.preview.publishDateMissing", {
+                    defaultValue: "Publish date missing",
+                  })}
+                </Tag>
+              </Space>
+            </Space>
+          );
+        }
+
+        return <Typography.Text type="secondary">-</Typography.Text>;
+      },
     },
     {
       title: t("newsSources.preview.columns.status", {

@@ -2183,10 +2183,14 @@
       "columns": {
         "url": "URL",
         "relevance": "相关度",
+        "timeSignal": "时间信号",
         "status": "状态",
         "dedupe": "去重",
         "error": "错误"
       },
+      "timePublished": "发布时间",
+      "timeCrawled": "爬取时间",
+      "publishDateMissing": "未获取到发布日期",
       "alreadyCrawled": "已爬取",
       "newUrl": "新增",
       "inFlightStatus": "进行中：{{status}}",
@@ -4520,7 +4524,7 @@
         "rssAdaptive": "RSS 自适应轮询策略"
       },
       "hints": {
-        "seedFreshnessWindowDays": "种子候选过滤时，发布时间早于该窗口的 URL 将被跳过。",
+        "seedFreshnessWindowDays": "种子候选按生效时间过滤：优先发布时间，若缺失则回退为发现爬取时间。",
         "seedCacheTtlSecondsSitemapRss": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 sitemap 或 rss 时使用该默认值。",
         "seedCacheTtlSecondsListDeep": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 list 或 deep 时使用该默认值。",
         "seedCacheTtlForceGlobal": "开启后调度器将始终使用全局按模式 TTL 默认值，并忽略每个新闻源的 seed.cacheTtlSeconds。",

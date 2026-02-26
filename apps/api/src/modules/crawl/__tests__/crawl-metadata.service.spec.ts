@@ -318,6 +318,162 @@ describe("CrawlMetadataService sitemap discovery", () => {
     expect(secondRequestHeaders["if-none-match"]).toBe("\"seed-v1\"");
   });
 
+  it("extracts sitemap lastmod/news dates and applies freshness filtering", async () => {
+    const sitemapUrlset = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+        <url>
+          <loc>https://example.com/news/old-story</loc>
+          <lastmod>2025-01-01T00:00:00Z</lastmod>
+        </url>
+        <url>
+          <loc>https://example.com/news/new-story</loc>
+          <news:news>
+            <news:publication>
+              <news:publication_date>2026-02-14T10:30:00Z</news:publication_date>
+            </news:publication>
+          </news:news>
+        </url>
+      </urlset>`;
+
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://example.com/sitemap.xml") {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => Buffer.from(sitemapUrlset, "utf8"),
+        } as any;
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const candidates = await service.discoverSitemapCandidates({
+      domain: "https://example.com",
+      maxUrls: 10,
+      freshnessCutoffTs: Date.parse("2026-02-01T00:00:00Z"),
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        url: "https://example.com/news/new-story",
+      }),
+    ]);
+    expect(candidates[0]?.publishedAtTs).toBe(Date.parse("2026-02-14T10:30:00Z"));
+  });
+
+  it("assigns crawledAt timestamp when sitemap url has no publish signal", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+    try {
+      const sitemapUrlset = `<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url>
+            <loc>https://example.com/news/no-date-signal</loc>
+          </url>
+        </urlset>`;
+
+      global.fetch = jest.fn(async (url: string) => {
+        if (url === "https://example.com/sitemap.xml") {
+          return {
+            ok: true,
+            status: 200,
+            headers: makeHeaders({ "content-type": "application/xml" }),
+            arrayBuffer: async () => Buffer.from(sitemapUrlset, "utf8"),
+          } as any;
+        }
+        return {
+          ok: false,
+          status: 404,
+          headers: makeHeaders({}),
+          arrayBuffer: async () => Buffer.from("", "utf8"),
+        } as any;
+      }) as any;
+
+      const service = new CrawlMetadataService();
+      const candidates = await service.discoverSitemapCandidates({
+        domain: "https://example.com",
+        maxUrls: 10,
+      });
+
+      expect(candidates).toEqual([
+        expect.objectContaining({
+          url: "https://example.com/news/no-date-signal",
+          crawledAtTs: Date.parse("2026-02-15T12:00:00.000Z"),
+        }),
+      ]);
+      expect(candidates[0]?.publishedAtTs).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("skips stale sitemapindex children by lastmod when freshness cutoff is set", async () => {
+    const rootIndex = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap>
+          <loc>https://example.com/sitemap-old.xml</loc>
+          <lastmod>2024-01-01T00:00:00Z</lastmod>
+        </sitemap>
+        <sitemap>
+          <loc>https://example.com/sitemap-fresh.xml</loc>
+          <lastmod>2026-02-14T00:00:00Z</lastmod>
+        </sitemap>
+      </sitemapindex>`;
+    const freshChild = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/news/fresh-child</loc></url>
+      </urlset>`;
+
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://example.com/sitemap.xml") {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => Buffer.from(rootIndex, "utf8"),
+        } as any;
+      }
+      if (url === "https://example.com/sitemap-fresh.xml") {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => Buffer.from(freshChild, "utf8"),
+        } as any;
+      }
+      if (url === "https://example.com/sitemap-old.xml") {
+        throw new Error("stale child should not be fetched");
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const candidates = await service.discoverSitemapCandidates({
+      domain: "https://example.com",
+      maxUrls: 10,
+      freshnessCutoffTs: Date.parse("2026-01-01T00:00:00Z"),
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        url: "https://example.com/news/fresh-child",
+      }),
+    ]);
+    const fetchedUrls = (global.fetch as jest.Mock).mock.calls.map((call) => call[0]);
+    expect(fetchedUrls).toContain("https://example.com/sitemap-fresh.xml");
+    expect(fetchedUrls).not.toContain("https://example.com/sitemap-old.xml");
+  });
+
   it("falls back to an unconditional fetch when 304 is returned without cached body", async () => {
     const cache = {
       get: jest
@@ -761,7 +917,7 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
     expect(urls).toEqual(["https://www.politico.eu/article/2026-02-13-valid-story/"]);
   });
 
-  it("throws explicit error when publish timestamps cannot be determined", async () => {
+  it("keeps deep candidates when publish timestamps cannot be determined", async () => {
     const crawl = jest.fn(async ({ url }: { url: string }) => ({
       results: [
         {
@@ -787,28 +943,23 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
 
     const service = new CrawlMetadataService({ crawl } as any);
     try {
-      await expect(
-        service.discoverDeepUrls({
-          url: "https://www.politico.eu/latest/",
-          domain: "https://www.politico.eu",
-          pattern: "https://www.politico.eu/article/*",
-          maxUrls: 10,
-          deep: {
-            maxPages: 5,
-            maxDepth: 1,
-            pageConcurrency: 1,
-            headFetchTopK: 10,
-            timeBudgetSeconds: 30,
-          },
-        }),
-      ).rejects.toEqual(
-        expect.objectContaining({
-          name: BadRequestException.name,
-          message: expect.stringMatching(
-            /SEED_DEEP_NO_PUBLISHED_AT[\s\S]*could not determine publish time/i,
-          ),
-        }),
-      );
+      const urls = await service.discoverDeepUrls({
+        url: "https://www.politico.eu/latest/",
+        domain: "https://www.politico.eu",
+        pattern: "https://www.politico.eu/article/*",
+        maxUrls: 10,
+        deep: {
+          maxPages: 5,
+          maxDepth: 1,
+          pageConcurrency: 1,
+          headFetchTopK: 10,
+          timeBudgetSeconds: 30,
+        },
+      });
+      expect(urls).toEqual([
+        "https://www.politico.eu/article/story-alpha-no-date/",
+        "https://www.politico.eu/article/story-bravo-no-date/",
+      ]);
     } finally {
       global.fetch = originalFetch;
     }

@@ -31,6 +31,7 @@ interface NormalizedMetadataConfig {
   queryTokens?: string[];
   scoreThreshold: number;
   requestTimeoutMs: number;
+  freshnessCutoffTs?: number;
 }
 
 interface FetchResponse {
@@ -44,7 +45,36 @@ interface DiscoveryHttpState {
   etag?: string;
   lastModified?: string;
   body?: string;
+  parsedSitemapPayload?: ParsedSitemapPayload;
   updatedAt: number;
+}
+
+export type CrawlDiscoveryTimestampSource =
+  | "published"
+  | "crawled"
+  | "none";
+
+export interface CrawlDiscoveryCandidate {
+  url: string;
+  relevanceScore?: number;
+  publishedAtTs?: number;
+  crawledAtTs?: number;
+}
+
+interface ParsedSitemapUrlEntry {
+  loc: string;
+  lastmodTs?: number;
+  newsPublishedAtTs?: number;
+}
+
+interface ParsedSitemapIndexEntry {
+  loc: string;
+  lastmodTs?: number;
+}
+
+interface ParsedSitemapPayload {
+  urls: ParsedSitemapUrlEntry[];
+  childSitemaps: ParsedSitemapIndexEntry[];
 }
 
 interface DeepDiscoveryOptions {
@@ -65,6 +95,7 @@ interface DeepDiscoveryCandidate {
   linkScore: number;
   relevanceScore?: number;
   publishedAtTs?: number;
+  crawledAtTs?: number;
 }
 
 const DEEP_DISCOVERY_ERROR_CODES = {
@@ -124,6 +155,17 @@ export class CrawlMetadataService {
     maxUrls?: number;
     requestTimeoutMs?: number;
   }): Promise<string[]> {
+    const candidates = await this.discoverSitemapCandidates(input);
+    return candidates.map((candidate) => candidate.url);
+  }
+
+  async discoverSitemapCandidates(input: {
+    domain?: string;
+    pattern?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+    freshnessCutoffTs?: number;
+  }): Promise<CrawlDiscoveryCandidate[]> {
     const domain = this.normalizeDomain(input.domain);
     if (!domain) {
       return [];
@@ -135,8 +177,13 @@ export class CrawlMetadataService {
       Number.isFinite(input.requestTimeoutMs)
         ? Math.max(1000, Math.round(input.requestTimeoutMs))
         : 15_000;
+    const freshnessCutoffTs =
+      typeof input.freshnessCutoffTs === "number" &&
+      Number.isFinite(input.freshnessCutoffTs)
+        ? Math.max(0, Math.floor(input.freshnessCutoffTs))
+        : undefined;
 
-    return this.discoverFromSitemaps({
+    return this.discoverFromSitemapsCandidates({
       source: "sitemap",
       domain,
       patternMatcher,
@@ -147,6 +194,7 @@ export class CrawlMetadataService {
       concurrency: 1,
       scoreThreshold: 0,
       requestTimeoutMs,
+      freshnessCutoffTs,
     });
   }
 
@@ -175,6 +223,20 @@ export class CrawlMetadataService {
     return this.extractFromRssPayload(xml, feedUrl).slice(0, maxUrls);
   }
 
+  async discoverRssCandidates(input: {
+    feedUrl?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+  }): Promise<CrawlDiscoveryCandidate[]> {
+    const urls = await this.discoverRssUrls(input);
+    const crawledAtTs = Date.now();
+    return urls.map((url) => ({
+      url,
+      publishedAtTs: this.parsePublishedAtFromUrl(url),
+      crawledAtTs,
+    }));
+  }
+
   async discoverListUrls(input: {
     url?: string;
     domain?: string;
@@ -186,6 +248,21 @@ export class CrawlMetadataService {
     requestTimeoutMs?: number;
     crawlOptions?: Record<string, unknown>;
   }): Promise<string[]> {
+    const candidates = await this.discoverListCandidates(input);
+    return candidates.map((candidate) => candidate.url);
+  }
+
+  async discoverListCandidates(input: {
+    url?: string;
+    domain?: string;
+    pattern?: string;
+    maxUrls?: number;
+    listMaxPages?: number;
+    listPageConcurrency?: number;
+    followPagination?: boolean;
+    requestTimeoutMs?: number;
+    crawlOptions?: Record<string, unknown>;
+  }): Promise<CrawlDiscoveryCandidate[]> {
     const seedUrl = this.normalizeUrl(input.url);
     if (!seedUrl) {
       return [];
@@ -231,7 +308,12 @@ export class CrawlMetadataService {
       crawlOptions,
     });
     if (discoveredViaCrawl4ai.length > 0) {
-      return discoveredViaCrawl4ai;
+      const crawledAtTs = Date.now();
+      return discoveredViaCrawl4ai.map((url) => ({
+        url,
+        publishedAtTs: this.parsePublishedAtFromUrl(url),
+        crawledAtTs,
+      }));
     }
 
     const html = await this.fetchMaybe(seedUrl, requestTimeoutMs);
@@ -248,8 +330,9 @@ export class CrawlMetadataService {
     const allowedOrigin = domain ?? baseOrigin;
 
     const $ = load(html);
-    const urls: string[] = [];
+    const urls: CrawlDiscoveryCandidate[] = [];
     const seen = new Set<string>();
+    const crawledAtTs = Date.now();
 
     $("a[href]").each((_index, element) => {
       const href = $(element).attr("href");
@@ -297,7 +380,11 @@ export class CrawlMetadataService {
       }
 
       seen.add(absolute);
-      urls.push(absolute);
+      urls.push({
+        url: absolute,
+        publishedAtTs: this.parsePublishedAtFromUrl(absolute),
+        crawledAtTs,
+      });
     });
 
     return urls.slice(0, maxUrls);
@@ -313,6 +400,20 @@ export class CrawlMetadataService {
     crawlOptions?: Record<string, unknown>;
     deep?: Partial<DeepDiscoveryOptions> | null;
   }): Promise<string[]> {
+    const candidates = await this.discoverDeepCandidates(input);
+    return candidates.map((candidate) => candidate.url);
+  }
+
+  async discoverDeepCandidates(input: {
+    url?: string;
+    domain?: string;
+    pattern?: string;
+    query?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+    crawlOptions?: Record<string, unknown>;
+    deep?: Partial<DeepDiscoveryOptions> | null;
+  }): Promise<CrawlDiscoveryCandidate[]> {
     const seedUrl = this.normalizeUrl(input.url);
     if (!seedUrl) {
       return [];
@@ -336,7 +437,7 @@ export class CrawlMetadataService {
       );
     }
 
-    const viaCrawl4ai = await this.discoverDeepUrlsViaCrawl4ai({
+    const viaCrawl4ai = await this.discoverDeepCandidatesViaCrawl4ai({
       seedUrl,
       domain,
       maxUrls,
@@ -352,7 +453,7 @@ export class CrawlMetadataService {
 
     this.throwDeepDiscoveryError(
       DEEP_DISCOVERY_ERROR_CODES.emptyResult,
-      "Deep discovery did not produce publish-time-ranked article URLs.",
+      "Deep discovery did not produce article URLs.",
       "Adjust seed.deep.pattern/maxPages/maxDepth/headFetchTopK and retry.",
     );
   }
@@ -644,7 +745,7 @@ export class CrawlMetadataService {
     };
   }
 
-  private async discoverDeepUrlsViaCrawl4ai(input: {
+  private async discoverDeepCandidatesViaCrawl4ai(input: {
     seedUrl: string;
     domain?: string;
     patternMatcher?: (url: string) => boolean;
@@ -653,7 +754,7 @@ export class CrawlMetadataService {
     maxUrls: number;
     crawlOptions?: CrawlTaskOptions;
     deep: DeepDiscoveryOptions;
-  }): Promise<string[]> {
+  }): Promise<CrawlDiscoveryCandidate[]> {
     if (!this.crawl4ai) {
       return [];
     }
@@ -678,8 +779,6 @@ export class CrawlMetadataService {
     const visitedPages = new Set<string>();
     const candidates = new Map<string, DeepDiscoveryCandidate>();
     let pagesCrawled = 0;
-    let discoveredArticleCandidateCount = 0;
-    let discoveredCandidateWithPathDateCount = 0;
 
     const crawlOptions: CrawlTaskOptions = {
       ...(input.crawlOptions ?? {}),
@@ -723,6 +822,7 @@ export class CrawlMetadataService {
               url: current.url,
               options: crawlOptions,
             });
+            const crawledAtTs = Date.now();
             const article = this.selectDiscoveryResultArticle(
               response.results,
               normalizedCurrentUrl,
@@ -812,15 +912,12 @@ export class CrawlMetadataService {
                 const publishedAtTs = input.deep.preferPathDate
                   ? this.parsePublishedAtFromUrl(url)
                   : undefined;
-                discoveredArticleCandidateCount += 1;
-                if (typeof publishedAtTs === "number" && Number.isFinite(publishedAtTs)) {
-                  discoveredCandidateWithPathDateCount += 1;
-                }
                 discoveredCandidates.push({
                   url,
                   linkScore,
                   relevanceScore,
                   publishedAtTs,
+                  crawledAtTs,
                 });
               }
 
@@ -863,8 +960,14 @@ export class CrawlMetadataService {
                 existing.relevanceScore ?? 0,
                 candidate.relevanceScore ?? 0,
               ),
-              publishedAtTs:
-                existing.publishedAtTs ?? candidate.publishedAtTs ?? undefined,
+              publishedAtTs: this.resolveBetterTimestamp(
+                existing.publishedAtTs,
+                candidate.publishedAtTs,
+              ),
+              crawledAtTs: this.resolveBetterTimestamp(
+                existing.crawledAtTs,
+                candidate.crawledAtTs,
+              ),
             });
           }
 
@@ -958,31 +1061,12 @@ export class CrawlMetadataService {
         .slice(0, input.deep.candidatePoolSize);
     }
 
-    const discoveredCandidateWithHeadDateCount = Array.from(candidates.values()).filter(
-      (candidate) =>
-        typeof candidate.publishedAtTs === "number" &&
-        Number.isFinite(candidate.publishedAtTs),
-    ).length;
-    const publishedRanked = ranked
-      .filter(
-        (candidate): candidate is DeepDiscoveryCandidate & { publishedAtTs: number } =>
-          typeof candidate.publishedAtTs === "number" &&
-          Number.isFinite(candidate.publishedAtTs),
-      )
-      .sort((a, b) => this.compareDeepCandidates(a, b));
-    if (publishedRanked.length === 0) {
-      const withoutPublishedAt = Math.max(
-        0,
-        discoveredArticleCandidateCount - discoveredCandidateWithHeadDateCount,
-      );
-      this.throwDeepDiscoveryError(
-        DEEP_DISCOVERY_ERROR_CODES.noPublishedAt,
-        "Deep discovery could not determine publish time for discovered links.",
-        `discovered=${discoveredArticleCandidateCount}, pathDate=${discoveredCandidateWithPathDateCount}, resolvedPublishedAt=${discoveredCandidateWithHeadDateCount}, unresolved=${withoutPublishedAt}. Tighten seed pattern to article URLs or increase headFetchTopK/timeBudget.`,
-      );
-    }
-
-    return publishedRanked.slice(0, input.maxUrls).map((candidate) => candidate.url);
+    return ranked.slice(0, input.maxUrls).map((candidate) => ({
+      url: candidate.url,
+      relevanceScore: candidate.relevanceScore,
+      publishedAtTs: candidate.publishedAtTs,
+      crawledAtTs: candidate.crawledAtTs,
+    }));
   }
 
   private throwDeepDiscoveryError(
@@ -1105,8 +1189,8 @@ export class CrawlMetadataService {
     a: DeepDiscoveryCandidate,
     b: DeepDiscoveryCandidate,
   ) {
-    const aTs = typeof a.publishedAtTs === "number" ? a.publishedAtTs : -1;
-    const bTs = typeof b.publishedAtTs === "number" ? b.publishedAtTs : -1;
+    const aTs = this.resolveEffectiveTimestamp(a);
+    const bTs = this.resolveEffectiveTimestamp(b);
     if (aTs !== bTs) {
       return bTs - aTs;
     }
@@ -1119,6 +1203,69 @@ export class CrawlMetadataService {
       return bRel - aRel;
     }
     return a.url.localeCompare(b.url);
+  }
+
+  private mergeDiscoveryCandidates(
+    existing: CrawlDiscoveryCandidate | undefined,
+    incoming: CrawlDiscoveryCandidate,
+  ): CrawlDiscoveryCandidate {
+    if (!existing) {
+      return incoming;
+    }
+    const maxRelevanceScore = Math.max(
+      existing.relevanceScore ?? Number.NEGATIVE_INFINITY,
+      incoming.relevanceScore ?? Number.NEGATIVE_INFINITY,
+    );
+    return {
+      url: incoming.url,
+      relevanceScore:
+        maxRelevanceScore === Number.NEGATIVE_INFINITY
+          ? undefined
+          : maxRelevanceScore,
+      publishedAtTs: this.resolveBetterTimestamp(
+        existing.publishedAtTs,
+        incoming.publishedAtTs,
+      ),
+      crawledAtTs: this.resolveBetterTimestamp(
+        existing.crawledAtTs,
+        incoming.crawledAtTs,
+      ),
+    };
+  }
+
+  private resolveBetterTimestamp(
+    first?: number,
+    second?: number,
+  ): number | undefined {
+    const normalizedFirst =
+      typeof first === "number" && Number.isFinite(first) ? first : undefined;
+    const normalizedSecond =
+      typeof second === "number" && Number.isFinite(second) ? second : undefined;
+    if (normalizedFirst === undefined) {
+      return normalizedSecond;
+    }
+    if (normalizedSecond === undefined) {
+      return normalizedFirst;
+    }
+    return Math.max(normalizedFirst, normalizedSecond);
+  }
+
+  private resolveEffectiveTimestamp(
+    candidate: Pick<CrawlDiscoveryCandidate, "publishedAtTs" | "crawledAtTs">,
+  ) {
+    if (
+      typeof candidate.publishedAtTs === "number" &&
+      Number.isFinite(candidate.publishedAtTs)
+    ) {
+      return candidate.publishedAtTs;
+    }
+    if (
+      typeof candidate.crawledAtTs === "number" &&
+      Number.isFinite(candidate.crawledAtTs)
+    ) {
+      return candidate.crawledAtTs;
+    }
+    return -1;
   }
 
   private isLikelySecondaryHubLink(url: string, anchorText?: string) {
@@ -1853,11 +2000,16 @@ export class CrawlMetadataService {
   }
 
   private async discoverFromSitemaps(config: NormalizedMetadataConfig) {
+    const candidates = await this.discoverFromSitemapsCandidates(config);
+    return candidates.map((candidate) => candidate.url);
+  }
+
+  private async discoverFromSitemapsCandidates(config: NormalizedMetadataConfig) {
     if (!config.domain) {
       return [];
     }
     const seeds = ["sitemap.xml", "sitemap_index.xml", "sitemap-index.xml"];
-    const collected = new Set<string>();
+    const collected = new Map<string, CrawlDiscoveryCandidate>();
     const visitedSitemapUrls = new Set<string>();
 
     for (const seed of seeds) {
@@ -1874,6 +2026,7 @@ export class CrawlMetadataService {
         continue;
       }
       await this.extractFromSitemapPayload(
+        sitemapUrl,
         xml,
         config,
         collected,
@@ -1881,91 +2034,308 @@ export class CrawlMetadataService {
       );
     }
 
-    return Array.from(collected).slice(0, config.maxUrls);
+    return Array.from(collected.values()).slice(0, config.maxUrls);
   }
 
   private async extractFromSitemapPayload(
+    sitemapUrl: string,
     xml: string,
     config: NormalizedMetadataConfig,
-    collected: Set<string>,
+    collected: Map<string, CrawlDiscoveryCandidate>,
     visitedSitemapUrls: Set<string>,
   ) {
+    const parsed = await this.parseSitemapPayload(sitemapUrl, xml);
+    if (!parsed) {
+      return;
+    }
+    const crawledAtTs = Date.now();
+
+    for (const entry of parsed.urls) {
+      if (collected.size >= config.maxUrls) {
+        break;
+      }
+      const normalizedLoc = this.normalizeUrl(entry.loc) ?? entry.loc;
+      if (!this.shouldIncludeUrl(normalizedLoc, config.patternMatcher)) {
+        continue;
+      }
+
+      const publishedAtTs = this.resolveSitemapEntryPublishedAt(entry);
+      if (
+        typeof config.freshnessCutoffTs === "number" &&
+        Number.isFinite(config.freshnessCutoffTs) &&
+        typeof publishedAtTs === "number" &&
+        Number.isFinite(publishedAtTs) &&
+        publishedAtTs < config.freshnessCutoffTs
+      ) {
+        continue;
+      }
+
+      const existing = collected.get(normalizedLoc);
+      const candidate: CrawlDiscoveryCandidate = {
+        url: normalizedLoc,
+        publishedAtTs,
+        crawledAtTs,
+      };
+      collected.set(normalizedLoc, this.mergeDiscoveryCandidates(existing, candidate));
+    }
+
+    for (const child of parsed.childSitemaps) {
+      if (collected.size >= config.maxUrls) {
+        break;
+      }
+      if (
+        typeof config.freshnessCutoffTs === "number" &&
+        Number.isFinite(config.freshnessCutoffTs) &&
+        typeof child.lastmodTs === "number" &&
+        Number.isFinite(child.lastmodTs) &&
+        child.lastmodTs < config.freshnessCutoffTs
+      ) {
+        continue;
+      }
+
+      const normalizedLoc = this.normalizeUrl(child.loc) ?? child.loc;
+      if (visitedSitemapUrls.has(normalizedLoc)) {
+        continue;
+      }
+      visitedSitemapUrls.add(normalizedLoc);
+      const xmlChild = await this.fetchMaybe(normalizedLoc, config.requestTimeoutMs);
+      if (xmlChild) {
+        await this.extractFromSitemapPayload(
+          normalizedLoc,
+          xmlChild,
+          config,
+          collected,
+          visitedSitemapUrls,
+        );
+      }
+    }
+  }
+
+  private async parseSitemapPayload(sitemapUrl: string, xml: string) {
+    const state = await this.readDiscoveryHttpState(sitemapUrl);
+    const cachedParsed = this.normalizeParsedSitemapPayload(
+      state?.parsedSitemapPayload,
+    );
+    if (cachedParsed && state?.body === xml) {
+      return cachedParsed;
+    }
+
     let parsed: Record<string, unknown> | null = null;
     try {
       parsed = this.parser.parse(xml) as Record<string, unknown>;
     } catch (error) {
-      logger.warn({ error }, "Failed to parse sitemap xml");
-      return;
+      logger.warn({ sitemapUrl, error }, "Failed to parse sitemap xml");
+      return null;
     }
-    if (parsed?.urlset) {
-      const urlset = parsed.urlset as { url?: unknown } | undefined;
-      const urlEntries = urlset?.url;
-      const urls = Array.isArray(urlEntries)
-        ? urlEntries
-        : urlEntries
-          ? [urlEntries]
-          : [];
-      for (const entry of urls) {
-        const record =
-          entry && typeof entry === "object"
-            ? (entry as { loc?: unknown })
-            : null;
-        if (!record) {
-          continue;
-        }
-        const loc =
-          typeof record.loc === "string" ? record.loc.trim() : undefined;
-        if (!loc) {
-          continue;
-        }
-        if (
-          this.shouldIncludeUrl(loc, config.patternMatcher) &&
-          collected.size < config.maxUrls
-        ) {
-          collected.add(loc);
-        }
+
+    const toArray = <T>(value: T | T[] | undefined): T[] => {
+      if (!value) {
+        return [];
       }
+      return Array.isArray(value) ? value : [value];
+    };
+
+    const urls: ParsedSitemapUrlEntry[] = [];
+    const urlset = parsed.urlset as { url?: unknown } | undefined;
+    for (const entry of toArray(urlset?.url)) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+      const loc = this.extractSitemapText(record.loc);
+      if (!loc) {
+        continue;
+      }
+      const lastmodTs = this.parseSitemapTimestamp(record.lastmod);
+      const newsPublishedAtTs = this.extractNewsPublicationTimestamp(record);
+      urls.push({
+        loc,
+        lastmodTs,
+        newsPublishedAtTs,
+      });
     }
+
+    const childSitemaps: ParsedSitemapIndexEntry[] = [];
     const sitemapindex = parsed.sitemapindex as
       | { sitemap?: unknown }
       | undefined;
-    const sitemapEntries = sitemapindex?.sitemap;
-    if (sitemapEntries) {
-      const sites = Array.isArray(sitemapEntries)
-        ? sitemapEntries
-        : sitemapEntries
-          ? [sitemapEntries]
-          : [];
-      for (const site of sites) {
-        const record =
-          site && typeof site === "object" ? (site as { loc?: unknown }) : null;
-        const loc =
-          typeof record?.loc === "string" ? record.loc.trim() : undefined;
-        if (!loc) {
-          continue;
-        }
-        if (collected.size >= config.maxUrls) {
-          break;
-        }
-        const normalizedLoc = this.normalizeUrl(loc) ?? loc;
-        if (visitedSitemapUrls.has(normalizedLoc)) {
-          continue;
-        }
-        visitedSitemapUrls.add(normalizedLoc);
-        const xmlChild = await this.fetchMaybe(
-          normalizedLoc,
-          config.requestTimeoutMs,
-        );
-        if (xmlChild) {
-          await this.extractFromSitemapPayload(
-            xmlChild,
-            config,
-            collected,
-            visitedSitemapUrls,
-          );
-        }
+    for (const entry of toArray(sitemapindex?.sitemap)) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+      const loc = this.extractSitemapText(record.loc);
+      if (!loc) {
+        continue;
+      }
+      childSitemaps.push({
+        loc,
+        lastmodTs: this.parseSitemapTimestamp(record.lastmod),
+      });
+    }
+
+    const normalized: ParsedSitemapPayload = { urls, childSitemaps };
+    await this.writeDiscoveryHttpState(sitemapUrl, {
+      etag: state?.etag,
+      lastModified: state?.lastModified,
+      body: xml,
+      parsedSitemapPayload: normalized,
+      updatedAt: Date.now(),
+    });
+    return normalized;
+  }
+
+  private normalizeParsedSitemapPayload(value: unknown): ParsedSitemapPayload | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    if (!Array.isArray(record.urls) || !Array.isArray(record.childSitemaps)) {
+      return null;
+    }
+
+    const urls: ParsedSitemapUrlEntry[] = [];
+    for (const item of record.urls) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        continue;
+      }
+      const entry = item as Record<string, unknown>;
+      const loc = typeof entry.loc === "string" ? entry.loc.trim() : "";
+      if (!loc) {
+        continue;
+      }
+      urls.push({
+        loc,
+        lastmodTs:
+          typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)
+            ? entry.lastmodTs
+            : undefined,
+        newsPublishedAtTs:
+          typeof entry.newsPublishedAtTs === "number" &&
+          Number.isFinite(entry.newsPublishedAtTs)
+            ? entry.newsPublishedAtTs
+            : undefined,
+      });
+    }
+
+    const childSitemaps: ParsedSitemapIndexEntry[] = [];
+    for (const item of record.childSitemaps) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        continue;
+      }
+      const entry = item as Record<string, unknown>;
+      const loc = typeof entry.loc === "string" ? entry.loc.trim() : "";
+      if (!loc) {
+        continue;
+      }
+      childSitemaps.push({
+        loc,
+        lastmodTs:
+          typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)
+            ? entry.lastmodTs
+            : undefined,
+      });
+    }
+
+    return { urls, childSitemaps };
+  }
+
+  private extractSitemapText(value: unknown): string | undefined {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const candidate =
+        typeof record["#text"] === "string"
+          ? record["#text"]
+          : typeof record.text === "string"
+            ? record.text
+            : undefined;
+      if (typeof candidate === "string") {
+        const trimmed = candidate.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
       }
     }
+    return undefined;
+  }
+
+  private parseSitemapTimestamp(value: unknown): number | undefined {
+    const candidate = this.extractSitemapText(value);
+    if (!candidate) {
+      return undefined;
+    }
+    const ts = Date.parse(candidate);
+    if (!Number.isFinite(ts) || ts <= 0) {
+      return undefined;
+    }
+    return ts;
+  }
+
+  private extractNewsPublicationTimestamp(
+    urlEntry: Record<string, unknown>,
+  ): number | undefined {
+    const newsNode = urlEntry["news:news"];
+    const candidates = Array.isArray(newsNode) ? newsNode : newsNode ? [newsNode] : [];
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        continue;
+      }
+      const publicationDate = this.findNewsPublicationDateValue(candidate);
+      const ts = this.parseSitemapTimestamp(publicationDate);
+      if (typeof ts === "number" && Number.isFinite(ts)) {
+        return ts;
+      }
+    }
+    return undefined;
+  }
+
+  private findNewsPublicationDateValue(value: unknown): unknown {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = this.findNewsPublicationDateValue(item);
+        if (found !== undefined) {
+          return found;
+        }
+      }
+      return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    if (record["news:publication_date"] !== undefined) {
+      return record["news:publication_date"];
+    }
+    if (record.publication_date !== undefined) {
+      return record.publication_date;
+    }
+    if (record.publicationDate !== undefined) {
+      return record.publicationDate;
+    }
+
+    for (const nested of Object.values(record)) {
+      const found = this.findNewsPublicationDateValue(nested);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+
+  private resolveSitemapEntryPublishedAt(entry: ParsedSitemapUrlEntry) {
+    if (
+      typeof entry.newsPublishedAtTs === "number" &&
+      Number.isFinite(entry.newsPublishedAtTs)
+    ) {
+      return entry.newsPublishedAtTs;
+    }
+    if (typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)) {
+      return entry.lastmodTs;
+    }
+    return undefined;
   }
 
   private extractFromRssPayload(xml: string, feedUrl: string): string[] {
@@ -2323,6 +2693,7 @@ export class CrawlMetadataService {
             etag: response.etag ?? state.etag,
             lastModified: response.lastModified ?? state.lastModified,
             body: state.body,
+            parsedSitemapPayload: state.parsedSitemapPayload,
             updatedAt: Date.now(),
           });
           return state.body;
@@ -2334,6 +2705,10 @@ export class CrawlMetadataService {
             etag: refreshed.etag,
             lastModified: refreshed.lastModified,
             body: refreshed.body,
+            parsedSitemapPayload:
+              state?.body === refreshed.body
+                ? state.parsedSitemapPayload
+                : undefined,
             updatedAt: Date.now(),
           });
         }
@@ -2345,6 +2720,8 @@ export class CrawlMetadataService {
           etag: response.etag,
           lastModified: response.lastModified,
           body: response.body,
+          parsedSitemapPayload:
+            state?.body === response.body ? state.parsedSitemapPayload : undefined,
           updatedAt: Date.now(),
         });
       }

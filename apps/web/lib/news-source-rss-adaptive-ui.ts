@@ -43,11 +43,25 @@ const toRoundedSeedCacheTtlSeconds = (value: unknown): number | null => {
   return null;
 };
 
+const isCronScheduleEnabled = (config: unknown): boolean => {
+  if (!isRecord(config) || !isRecord(config.schedule)) {
+    return false;
+  }
+  const modeRaw =
+    typeof config.schedule.mode === "string"
+      ? config.schedule.mode.trim().toLowerCase()
+      : "";
+  return modeRaw === "cron";
+};
+
 const isRssAdaptiveEnabled = (config: unknown): boolean => {
   if (!isRecord(config) || !isRecord(config.seed) || config.seed.enabled !== true) {
     return false;
   }
   if (normalizeSeedMode(config.seed.mode) !== "rss") {
+    return false;
+  }
+  if (isCronScheduleEnabled(config)) {
     return false;
   }
   const adaptive = isRecord(config.seed.rssAdaptive)
@@ -100,4 +114,3 @@ export const resolveRssAdaptiveListUiModel = (
     hasHistory,
   };
 };
-

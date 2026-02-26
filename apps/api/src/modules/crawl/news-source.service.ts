@@ -12,7 +12,11 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
-import { CrawlMetadataService } from "./crawl-metadata.service";
+import {
+  CrawlMetadataService,
+  type CrawlDiscoveryCandidate,
+  type CrawlDiscoveryTimestampSource,
+} from "./crawl-metadata.service";
 import {
   deepDiscoveryFailureStateCacheKey,
   deepDiscoveryFailureStatsCacheKey,
@@ -81,6 +85,11 @@ export interface NewsSourcePreviewCandidate {
   description?: string;
   author?: string;
   relevanceScore?: number;
+  publishedAt?: string | null;
+  crawledAt?: string | null;
+  effectiveAt?: string | null;
+  timestampSource?: CrawlDiscoveryTimestampSource;
+  publishDateMissing?: boolean;
   alreadyCrawled: boolean;
   lastCrawlAt?: string | null;
   alreadyQueued?: boolean;
@@ -679,14 +688,14 @@ export class NewsSourceService {
         ? await this.readDeepDiscoveryFailureStats(source.id)
         : undefined;
     let deepPreviewError: NewsSourcePreviewDeepError | undefined;
-    let discovery: string[] = [];
+    let discovery: CrawlDiscoveryCandidate[] = [];
     if (seedConfig.mode === "rss") {
-      discovery = await this.metadataService.discoverRssUrls({
+      discovery = await this.metadataService.discoverRssCandidates({
         feedUrl: seedConfig.feedUrl ?? source.url,
         maxUrls: seedConfig.maxUrls,
       });
     } else if (seedConfig.mode === "list") {
-      discovery = await this.metadataService.discoverListUrls({
+      discovery = await this.metadataService.discoverListCandidates({
         url: source.url,
         domain: seedConfig.domain,
         pattern: seedConfig.pattern,
@@ -698,7 +707,7 @@ export class NewsSourceService {
       });
     } else if (seedConfig.mode === "deep") {
       try {
-        discovery = await this.metadataService.discoverDeepUrls({
+        discovery = await this.metadataService.discoverDeepCandidates({
           url: source.url,
           domain: seedConfig.domain,
           pattern: seedConfig.pattern,
@@ -720,18 +729,19 @@ export class NewsSourceService {
         discovery = [];
       }
     } else {
-      discovery = await this.metadataService.discoverSitemapUrls({
+      discovery = await this.metadataService.discoverSitemapCandidates({
         domain: seedConfig.domain,
         pattern: seedConfig.pattern,
         maxUrls: seedConfig.maxUrls,
       });
     }
 
+    const discoveryUrls = discovery.map((entry) => entry.url);
     const metadataResults =
-      discovery.length > 0
+      discoveryUrls.length > 0
         ? await this.metadataService.extract({
             source: "urls",
-            urls: discovery,
+            urls: discoveryUrls,
             query: seedConfig.query,
             scoreThreshold: seedConfig.scoreThreshold,
             concurrency: seedConfig.concurrency,
@@ -740,6 +750,33 @@ export class NewsSourceService {
             extractStandardMeta: false,
           })
         : [];
+    const discoveryByUrl = new Map<string, CrawlDiscoveryCandidate>();
+    for (const candidate of discovery) {
+      const url = typeof candidate.url === "string" ? candidate.url.trim() : "";
+      if (!url) {
+        continue;
+      }
+      const existing = discoveryByUrl.get(url);
+      if (!existing) {
+        discoveryByUrl.set(url, candidate);
+        continue;
+      }
+      const maxRelevanceScore = Math.max(
+        existing.relevanceScore ?? Number.NEGATIVE_INFINITY,
+        candidate.relevanceScore ?? Number.NEGATIVE_INFINITY,
+      );
+      discoveryByUrl.set(url, {
+        url,
+        relevanceScore:
+          maxRelevanceScore === Number.NEGATIVE_INFINITY
+            ? undefined
+            : maxRelevanceScore,
+        publishedAtTs:
+          this.resolveTimestampMax(existing.publishedAtTs, candidate.publishedAtTs),
+        crawledAtTs:
+          this.resolveTimestampMax(existing.crawledAtTs, candidate.crawledAtTs),
+      });
+    }
 
     const candidateUrls = metadataResults.map((result) => result.url);
     const [crawlLookup, activeLookup] = await Promise.all([
@@ -751,6 +788,14 @@ export class NewsSourceService {
       (result) => {
         const lastCrawlAt = crawlLookup.get(result.url)?.toISOString() ?? null;
         const inFlightStatus = activeLookup.get(result.url) ?? null;
+        const discoverySignal = discoveryByUrl.get(result.url);
+        const publishedAt = this.toIsoTimestamp(discoverySignal?.publishedAtTs) ?? null;
+        const crawledAt = this.toIsoTimestamp(discoverySignal?.crawledAtTs) ?? null;
+        const effectiveAt = publishedAt ?? crawledAt ?? null;
+        const timestampSource = this.resolvePreviewTimestampSource({
+          publishedAt,
+          crawledAt,
+        });
         return {
           url: result.url,
           status: result.status,
@@ -758,6 +803,11 @@ export class NewsSourceService {
           description: result.description,
           author: result.author,
           relevanceScore: result.relevanceScore,
+          publishedAt,
+          crawledAt,
+          effectiveAt,
+          timestampSource,
+          publishDateMissing: !publishedAt,
           alreadyCrawled: Boolean(lastCrawlAt),
           lastCrawlAt,
           alreadyQueued: Boolean(inFlightStatus),
@@ -791,6 +841,40 @@ export class NewsSourceService {
       deepPreviewError,
       deepFailureStats,
     };
+  }
+
+  private resolveTimestampMax(first?: number, second?: number) {
+    const left =
+      typeof first === "number" && Number.isFinite(first) ? first : undefined;
+    const right =
+      typeof second === "number" && Number.isFinite(second) ? second : undefined;
+    if (left === undefined) {
+      return right;
+    }
+    if (right === undefined) {
+      return left;
+    }
+    return Math.max(left, right);
+  }
+
+  private toIsoTimestamp(value?: number) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return undefined;
+    }
+    return new Date(value).toISOString();
+  }
+
+  private resolvePreviewTimestampSource(input: {
+    publishedAt?: string | null;
+    crawledAt?: string | null;
+  }): CrawlDiscoveryTimestampSource {
+    if (input.publishedAt) {
+      return "published";
+    }
+    if (input.crawledAt) {
+      return "crawled";
+    }
+    return "none";
   }
 
   async listGroups(orgId: string): Promise<string[]> {

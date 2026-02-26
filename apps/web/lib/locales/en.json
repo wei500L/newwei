@@ -2180,10 +2180,14 @@
       "columns": {
         "url": "URL",
         "relevance": "Relevance",
+        "timeSignal": "Time signal",
         "status": "Status",
         "dedupe": "Dedupe",
         "error": "Error"
       },
+      "timePublished": "Published",
+      "timeCrawled": "Crawled",
+      "publishDateMissing": "Publish date missing",
       "alreadyCrawled": "Crawled",
       "newUrl": "New",
       "inFlightStatus": "In-flight: {{status}}",
@@ -4517,7 +4521,7 @@
         "rssAdaptive": "RSS adaptive polling strategy"
       },
       "hints": {
-        "seedFreshnessWindowDays": "URLs with publish dates older than this window are skipped during seed candidate filtering.",
+        "seedFreshnessWindowDays": "Seed candidates are filtered by effective time: publish date when available, otherwise discovery crawl time.",
         "seedCacheTtlSecondsSitemapRss": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is sitemap or rss.",
         "seedCacheTtlSecondsListDeep": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is list or deep.",
         "seedCacheTtlForceGlobal": "When enabled, scheduler always uses global mode-based TTL defaults and ignores per-source seed.cacheTtlSeconds.",
