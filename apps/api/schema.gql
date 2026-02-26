@@ -465,6 +465,9 @@ type CrawlClientSettingsModel {
   adaptiveLatencyThresholdRatio: Float!
   adaptiveMemoryHeadroomThreshold: Float!
   adaptiveWindowMinutes: Int!
+  detailPublishSignalHeadFetchConcurrency: Int!
+  detailPublishSignalHeadFetchMaxReadBytes: Int!
+  detailPublishSignalHeadFetchTimeoutMs: Int!
   healthCheckTtlMs: Int!
   maxRetries: Int!
   queueOverloadCooldownMs: Int!
@@ -476,8 +479,12 @@ type CrawlClientSettingsModel {
 
 input CrawlDetailExpansionOptionsInput {
   allowExternalLinks: Boolean
+  excludeUrlPatterns: [String!]
+  includeUrlPatterns: [String!]
   maxDetailUrls: Int
+  minPublishTimeConfidence: Float
   minRelevanceScore: Float
+  preferFitMarkdownForQuality: Boolean
   requireSameDomain: Boolean
 }
 
@@ -2331,6 +2338,9 @@ input UpdateCrawlClientSettingsInput {
   adaptiveLatencyThresholdRatio: Float
   adaptiveMemoryHeadroomThreshold: Float
   adaptiveWindowMinutes: Int
+  detailPublishSignalHeadFetchConcurrency: Int
+  detailPublishSignalHeadFetchMaxReadBytes: Int
+  detailPublishSignalHeadFetchTimeoutMs: Int
   healthCheckTtlMs: Int!
   maxRetries: Int!
   queueOverloadCooldownMs: Int!

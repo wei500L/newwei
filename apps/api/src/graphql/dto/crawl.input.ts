@@ -151,6 +151,18 @@ export class CrawlDetailExpansionOptionsInput {
 
   @Field(() => Boolean, { nullable: true })
   allowExternalLinks?: CrawlDetailExpansionOptions["allowExternalLinks"];
+
+  @Field(() => [String], { nullable: true })
+  includeUrlPatterns?: CrawlDetailExpansionOptions["includeUrlPatterns"];
+
+  @Field(() => [String], { nullable: true })
+  excludeUrlPatterns?: CrawlDetailExpansionOptions["excludeUrlPatterns"];
+
+  @Field(() => Float, { nullable: true })
+  minPublishTimeConfidence?: CrawlDetailExpansionOptions["minPublishTimeConfidence"];
+
+  @Field(() => Boolean, { nullable: true })
+  preferFitMarkdownForQuality?: CrawlDetailExpansionOptions["preferFitMarkdownForQuality"];
 }
 
 @InputType()

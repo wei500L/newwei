@@ -2046,6 +2046,10 @@
       "crawlDetailMinRelevanceScore": "Min relevance score",
       "crawlDetailRequireSameDomain": "Require same domain",
       "crawlDetailAllowExternalLinks": "Allow external links",
+      "crawlDetailMinPublishTimeConfidence": "Min publish time confidence",
+      "crawlDetailPreferFitMarkdownForQuality": "Prefer fit markdown for quality",
+      "crawlDetailExcludeUrlPatterns": "Exclude URL patterns",
+      "crawlDetailIncludeUrlPatterns": "Include URL patterns",
       "crawlMarkdownContentSource": "Markdown content source",
       "crawlMarkdownEscapeHtmlMode": "Escape HTML",
       "crawlMarkdownCitationsMode": "Citations",
@@ -2564,6 +2568,9 @@
       "fields": {
         "healthCheckTtl": "Health check TTL",
         "requestTimeout": "Request timeout",
+        "detailPublishSignalHeadFetchTimeout": "Detail publish-signal head fetch timeout",
+        "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency",
+        "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes",
         "maxAttempts": "Max attempts",
         "retryBackoff": "Retry backoff"
       },
@@ -2574,6 +2581,9 @@
       "validation": {
         "healthCheckTtl": "Health check TTL is required",
         "requestTimeout": "Request timeout is required",
+        "detailPublishSignalHeadFetchTimeout": "Detail publish-signal head fetch timeout is required",
+        "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency is required",
+        "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes is required",
         "maxAttempts": "Max attempts is required",
         "retryBackoff": "Retry backoff is required"
       },
@@ -5415,6 +5425,17 @@
         "lastError": "Last error",
         "configuration": "Configuration"
       },
+      "expansion": {
+        "softFailureMessage": "{{count}} publish-signal enrichment fetches soft-failed (non-blocking)",
+        "softFailureDescription": "Soft failures only reduce publish-time confidence and do not fail the crawl task. {{details}}",
+        "softFailures": {
+          "httpStatus": "HTTP non-2xx: {{count}}",
+          "nonHtml": "Non-HTML response: {{count}}",
+          "emptyHtml": "Empty HTML: {{count}}",
+          "networkOrTimeout": "Timeout/Network: {{count}}",
+          "noPublishSignal": "No publish signal extracted: {{count}}"
+        }
+      },
       "latestError": "Latest error",
       "scanFullPageEnabled": "Scan full page enabled",
       "serverDefault": "Server default",
@@ -5627,7 +5648,15 @@
       "requireSameDomain": "Require same domain",
       "requireSameDomainHint": "Restrict auto-expanded detail links to the same domain.",
       "allowExternalLinks": "Allow external links",
-      "allowExternalLinksHint": "Permit detail expansion to follow cross-domain links when they appear relevant."
+      "allowExternalLinksHint": "Permit detail expansion to follow cross-domain links when they appear relevant.",
+      "minPublishTimeConfidence": "Min publish time confidence",
+      "minPublishTimeConfidenceHint": "Prioritize URLs with stronger publish-time signals (0~1).",
+      "preferFitMarkdownForQuality": "Prefer fit markdown for quality",
+      "preferFitMarkdownForQualityHint": "Use fit_markdown first for low-signal/list-like quality assessment.",
+      "excludeUrlPatterns": "Exclude URL patterns",
+      "excludeUrlPatternsHint": "One pattern per line. Supports wildcard * and regex /.../.",
+      "includeUrlPatterns": "Include URL patterns",
+      "includeUrlPatternsHint": "Optional allowlist. If set, only matching URLs are followed."
     },
     "virtualScroll": {
       "title": "Virtual scroll",

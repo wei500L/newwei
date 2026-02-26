@@ -10,6 +10,7 @@ import type { Crawl4aiArticle } from "./crawl4ai.client";
 import { CrawlResultService } from "./crawl-result.service";
 
 export type CrawlPageKind = "detail" | "list" | "mixed" | "blocked";
+export type CrawlPublishTimeSource = "meta" | "time_tag" | "jsonld" | "url_path" | "none";
 
 export interface CrawlArticleSignal {
   wordCount: number;
@@ -18,6 +19,10 @@ export interface CrawlArticleSignal {
   linkCount: number;
   linkDensity: number;
   bulletLines: number;
+  publishTimeConfidence: number;
+  publishTimeSource: CrawlPublishTimeSource;
+  mediaDensity: number;
+  domListRisk: number;
   score: number;
   isListLike: boolean;
 }
@@ -46,16 +51,43 @@ const DEFAULT_DETAIL_EXPANSION_OPTIONS: Required<CrawlDetailExpansionOptions> = 
   maxDetailUrls: 12,
   minRelevanceScore: 0.35,
   requireSameDomain: true,
-  allowExternalLinks: true
+  allowExternalLinks: true,
+  includeUrlPatterns: [],
+  excludeUrlPatterns: [
+    "/tag/",
+    "/tags/",
+    "/topic/",
+    "/topics/",
+    "/archive/",
+    "/category/",
+    "/categories/",
+    "/author/",
+    "/authors/",
+    "/section/",
+    "/sections/",
+    "/latest"
+  ],
+  minPublishTimeConfidence: 0.55,
+  preferFitMarkdownForQuality: true
 };
 
 @Injectable()
 export class CrawlQualityStrategyService {
   constructor(private readonly resultService: CrawlResultService) {}
 
-  assessPageSignals(successes: Crawl4aiArticle[], hint: CrawlPageTypeHint = "auto"): CrawlPageAssessment {
+  assessPageSignals(
+    successes: Crawl4aiArticle[],
+    hint: CrawlPageTypeHint = "auto",
+    detailExpansion?: CrawlDetailExpansionOptions
+  ): CrawlPageAssessment {
+    const resolvedDetailExpansion = this.resolveDetailExpansion({
+      detailExpansion
+    } as CrawlTaskOptions);
     const assessments = successes.map((article, index) => {
-      const quality = this.assessArticleMarkdownSignal(article);
+      const quality = this.assessArticleMarkdownSignal(
+        article,
+        resolvedDetailExpansion.preferFitMarkdownForQuality
+      );
       return {
         index,
         article,
@@ -146,12 +178,29 @@ export class CrawlQualityStrategyService {
         : requireSameDomain === false
           ? true
           : DEFAULT_DETAIL_EXPANSION_OPTIONS.allowExternalLinks;
+    const includeUrlPatterns = this.normalizePatternList(input?.includeUrlPatterns) ?? [];
+    const excludeUrlPatterns =
+      this.normalizePatternList(input?.excludeUrlPatterns) ??
+      DEFAULT_DETAIL_EXPANSION_OPTIONS.excludeUrlPatterns;
+    const minPublishTimeConfidence =
+      typeof input?.minPublishTimeConfidence === "number" &&
+      Number.isFinite(input.minPublishTimeConfidence)
+        ? Math.max(0, Math.min(1, Number(input.minPublishTimeConfidence.toFixed(3))))
+        : DEFAULT_DETAIL_EXPANSION_OPTIONS.minPublishTimeConfidence;
+    const preferFitMarkdownForQuality =
+      typeof input?.preferFitMarkdownForQuality === "boolean"
+        ? input.preferFitMarkdownForQuality
+        : DEFAULT_DETAIL_EXPANSION_OPTIONS.preferFitMarkdownForQuality;
 
     return {
       maxDetailUrls,
       minRelevanceScore,
       requireSameDomain,
-      allowExternalLinks
+      allowExternalLinks,
+      includeUrlPatterns,
+      excludeUrlPatterns,
+      minPublishTimeConfidence,
+      preferFitMarkdownForQuality
     };
   }
 
@@ -234,9 +283,13 @@ export class CrawlQualityStrategyService {
     return value ?? "quality_first";
   }
 
-  assessArticleMarkdownSignal(article: Crawl4aiArticle): CrawlArticleSignal {
+  assessArticleMarkdownSignal(
+    article: Crawl4aiArticle,
+    preferFitMarkdownForQuality = true
+  ): CrawlArticleSignal {
     const markdownResult = this.resultService.extractMarkdownResult(article.markdown);
-    const markdown = typeof markdownResult.primary === "string" ? markdownResult.primary.trim() : "";
+    const markdown = this.selectMarkdownForQuality(markdownResult, preferFitMarkdownForQuality);
+    const publishTimeSignal = this.resolvePublishTimeSignal(article);
     if (!markdown) {
       return {
         wordCount: 0,
@@ -245,6 +298,10 @@ export class CrawlQualityStrategyService {
         linkCount: 0,
         linkDensity: 0,
         bulletLines: 0,
+        publishTimeConfidence: publishTimeSignal.confidence,
+        publishTimeSource: publishTimeSignal.source,
+        mediaDensity: 0,
+        domListRisk: 0,
         score: Number.NEGATIVE_INFINITY,
         isListLike: false
       };
@@ -265,13 +322,31 @@ export class CrawlQualityStrategyService {
       .map((entry) => entry.trim())
       .filter((entry) => entry.startsWith("- ") || entry.startsWith("* ") || entry.startsWith("• ")).length;
     const linkDensity = wordCount > 0 ? linkCount / wordCount : linkCount;
+    const mediaDensity = this.estimateMediaDensity(article, wordCount);
+    const domListRisk = this.estimateDomListRisk(article, {
+      paragraphCount,
+      linkCount,
+      linkDensity,
+      bulletLines
+    });
 
     const listLikeSignals =
       (linkCount >= 16 && wordCount <= 1500) ||
       (bulletLines >= 10 && linkCount >= 10) ||
-      (linkDensity >= 0.09 && wordCount <= 1200);
+      (linkDensity >= 0.09 && wordCount <= 1200) ||
+      domListRisk >= 0.72;
     const hasArticleLikeBody = paragraphCount >= 8 && wordCount >= 260 && linkDensity <= 0.22;
-    const isListLike = listLikeSignals && !hasArticleLikeBody;
+    const isShortHighValueBulletin =
+      wordCount >= 60 &&
+      paragraphCount >= 2 &&
+      publishTimeSignal.confidence >= 0.75 &&
+      linkDensity <= 0.16;
+    const hasMixedMediaBody =
+      mediaDensity >= 0.012 &&
+      paragraphCount >= 4 &&
+      wordCount >= 90 &&
+      linkDensity <= 0.2;
+    const isListLike = listLikeSignals && !hasArticleLikeBody && !isShortHighValueBulletin && !hasMixedMediaBody;
     const boilerplateRatio = this.estimateBoilerplateRatio(markdown);
 
     const score =
@@ -280,7 +355,10 @@ export class CrawlQualityStrategyService {
       headingCount * 3 -
       linkCount * 6 -
       bulletLines * 2 -
-      Math.round(boilerplateRatio * 320);
+      Math.round(boilerplateRatio * 320) +
+      Math.round(Math.min(mediaDensity * 2200, 90)) +
+      Math.round(publishTimeSignal.confidence * 140) -
+      Math.round(domListRisk * 80);
 
     return {
       wordCount,
@@ -289,6 +367,10 @@ export class CrawlQualityStrategyService {
       linkCount,
       linkDensity,
       bulletLines,
+      publishTimeConfidence: publishTimeSignal.confidence,
+      publishTimeSource: publishTimeSignal.source,
+      mediaDensity,
+      domListRisk,
       score,
       isListLike
     };
@@ -307,6 +389,309 @@ export class CrawlQualityStrategyService {
       }
     }
     return total;
+  }
+
+  private selectMarkdownForQuality(
+    markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>,
+    preferFitMarkdownForQuality: boolean
+  ): string {
+    if (preferFitMarkdownForQuality && typeof markdownResult.fit === "string" && markdownResult.fit.trim().length > 0) {
+      return markdownResult.fit.trim();
+    }
+    if (typeof markdownResult.primary === "string" && markdownResult.primary.trim().length > 0) {
+      return markdownResult.primary.trim();
+    }
+    if (typeof markdownResult.raw === "string" && markdownResult.raw.trim().length > 0) {
+      return markdownResult.raw.trim();
+    }
+    if (typeof markdownResult.citations === "string" && markdownResult.citations.trim().length > 0) {
+      return markdownResult.citations.trim();
+    }
+    if (typeof markdownResult.references === "string" && markdownResult.references.trim().length > 0) {
+      return markdownResult.references.trim();
+    }
+    return "";
+  }
+
+  private resolvePublishTimeSignal(article: Crawl4aiArticle): {
+    confidence: number;
+    source: CrawlPublishTimeSource;
+  } {
+    const fromArticle = this.parseDateValue(article.publishedAt);
+    if (fromArticle) {
+      return {
+        confidence: this.normalizePublishTimeConfidence(fromArticle, 0.92),
+        source: "meta"
+      };
+    }
+
+    const metadata = article.metadata;
+    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+      const metaRecord = metadata as Record<string, unknown>;
+      const directMetaTimestamp = this.resolvePublishTimeFromMetaRecord(metaRecord);
+      if (directMetaTimestamp) {
+        return {
+          confidence: this.normalizePublishTimeConfidence(directMetaTimestamp, 0.86),
+          source: "meta"
+        };
+      }
+
+      const timeTagTimestamp = this.parseDateValue(metaRecord.datetime) ?? this.parseDateValue(metaRecord.time);
+      if (timeTagTimestamp) {
+        return {
+          confidence: this.normalizePublishTimeConfidence(timeTagTimestamp, 0.82),
+          source: "time_tag"
+        };
+      }
+
+      const jsonLdTimestamp = this.findJsonLdPublishDate(metaRecord);
+      if (jsonLdTimestamp) {
+        return {
+          confidence: this.normalizePublishTimeConfidence(jsonLdTimestamp, 0.9),
+          source: "jsonld"
+        };
+      }
+    }
+
+    const fromUrl = this.parseDateFromArticleUrl(article.url);
+    if (fromUrl) {
+      return {
+        confidence: this.normalizePublishTimeConfidence(fromUrl, 0.62),
+        source: "url_path"
+      };
+    }
+    return {
+      confidence: 0,
+      source: "none"
+    };
+  }
+
+  private resolvePublishTimeFromMetaRecord(record: Record<string, unknown>): number | undefined {
+    const directMetaValues = [
+      record["article:published_time"],
+      record["og:published_time"],
+      record.publishdate,
+      record.publishDate,
+      record.pubdate,
+      record.date,
+      record.datePublished
+    ];
+    for (const value of directMetaValues) {
+      const ts = this.parseDateValue(value);
+      if (ts) {
+        return ts;
+      }
+    }
+
+    for (const key of ["meta", "metadata", "openGraph", "open_graph"]) {
+      const nested = record[key];
+      if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
+        continue;
+      }
+      const nestedTs = this.resolvePublishTimeFromMetaRecord(nested as Record<string, unknown>);
+      if (nestedTs) {
+        return nestedTs;
+      }
+    }
+    return undefined;
+  }
+
+  private findJsonLdPublishDate(value: unknown): number | undefined {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const nested = this.findJsonLdPublishDate(entry);
+        if (nested) {
+          return nested;
+        }
+      }
+      return undefined;
+    }
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    for (const key of ["jsonld", "jsonLd", "structuredData", "ldJson"]) {
+      const nested = record[key];
+      if (nested) {
+        const candidate = this.findJsonLdPublishDate(nested);
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    const directDate =
+      this.parseDateValue(record.datePublished) ??
+      this.parseDateValue(record.dateCreated) ??
+      this.parseDateValue(record.dateModified);
+    if (directDate) {
+      return directDate;
+    }
+    for (const nested of Object.values(record)) {
+      const found = this.findJsonLdPublishDate(nested);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+
+  private parseDateValue(value: unknown): number | undefined {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const ts = Date.parse(trimmed);
+    if (!Number.isFinite(ts) || ts <= 0) {
+      return undefined;
+    }
+    return ts;
+  }
+
+  private parseDateFromArticleUrl(url?: string): number | undefined {
+    if (!url || typeof url !== "string") {
+      return undefined;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return undefined;
+    }
+    const path = parsed.pathname.toLowerCase();
+    const toUtcTimestamp = (year: number, month: number, day: number) => {
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return undefined;
+      }
+      if (month < 1 || month > 12 || day < 1 || day > 31) {
+        return undefined;
+      }
+      const ts = Date.UTC(year, month - 1, day);
+      if (!Number.isFinite(ts) || ts <= 0) {
+        return undefined;
+      }
+      const check = new Date(ts);
+      if (
+        check.getUTCFullYear() !== year ||
+        check.getUTCMonth() !== month - 1 ||
+        check.getUTCDate() !== day
+      ) {
+        return undefined;
+      }
+      return ts;
+    };
+    const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
+    if (slashDate) {
+      const ts = toUtcTimestamp(Number(slashDate[1]), Number(slashDate[2]), Number(slashDate[3]));
+      if (ts) {
+        return ts;
+      }
+    }
+    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    if (dashedDate) {
+      return toUtcTimestamp(Number(dashedDate[1]), Number(dashedDate[2]), Number(dashedDate[3]));
+    }
+    return undefined;
+  }
+
+  private normalizePublishTimeConfidence(timestamp: number, base: number): number {
+    const now = Date.now();
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return 0;
+    }
+    const year2000 = Date.UTC(2000, 0, 1);
+    const maxFuture = now + 2 * 24 * 60 * 60 * 1000;
+    if (timestamp < year2000 || timestamp > maxFuture) {
+      return Math.max(0, Math.min(1, Number((base * 0.35).toFixed(3))));
+    }
+    const ageDays = Math.abs(now - timestamp) / (24 * 60 * 60 * 1000);
+    const freshnessBoost = ageDays <= 10 ? 0.08 : ageDays <= 45 ? 0.03 : 0;
+    return Math.max(0, Math.min(1, Number((base + freshnessBoost).toFixed(3))));
+  }
+
+  private estimateMediaDensity(article: Crawl4aiArticle, wordCount: number): number {
+    const imageCount = this.countArticleImageInventory(article);
+    if (imageCount <= 0) {
+      return 0;
+    }
+    const density = imageCount / Math.max(wordCount, 1);
+    return Number(Math.max(0, Math.min(1, density)).toFixed(4));
+  }
+
+  private countArticleImageInventory(article: Crawl4aiArticle): number {
+    if (!article.media || typeof article.media !== "object" || Array.isArray(article.media)) {
+      return 0;
+    }
+    let total = 0;
+    for (const [key, value] of Object.entries(article.media)) {
+      if (!Array.isArray(value) || value.length === 0) {
+        continue;
+      }
+      const normalizedKey = key.trim().toLowerCase();
+      if (normalizedKey.includes("image") || normalizedKey === "img" || normalizedKey === "images") {
+        total += value.length;
+      } else if (normalizedKey.includes("photo")) {
+        total += value.length;
+      } else {
+        total += Math.min(2, value.length);
+      }
+    }
+    return total;
+  }
+
+  private estimateDomListRisk(
+    article: Crawl4aiArticle,
+    metrics: {
+      paragraphCount: number;
+      linkCount: number;
+      linkDensity: number;
+      bulletLines: number;
+    }
+  ): number {
+    let risk = 0;
+    const linkInventory = this.countArticleLinkInventory(article);
+    if (linkInventory >= 60) {
+      risk += 0.5;
+    } else if (linkInventory >= 40) {
+      risk += 0.35;
+    } else if (linkInventory >= 24) {
+      risk += 0.2;
+    }
+    if (metrics.linkDensity >= 0.14) {
+      risk += 0.35;
+    } else if (metrics.linkDensity >= 0.09) {
+      risk += 0.2;
+    }
+    if (metrics.bulletLines >= 12) {
+      risk += 0.25;
+    } else if (metrics.bulletLines >= 8) {
+      risk += 0.12;
+    }
+    if (metrics.paragraphCount <= 2 && metrics.linkCount >= 10) {
+      risk += 0.2;
+    }
+    if (this.hasListPathTokens(article.url)) {
+      risk += 0.25;
+    }
+    return Number(Math.max(0, Math.min(1, risk)).toFixed(3));
+  }
+
+  private hasListPathTokens(url?: string): boolean {
+    if (!url) {
+      return false;
+    }
+    try {
+      const parsed = new URL(url);
+      const value = parsed.pathname.toLowerCase();
+      return /\/(latest|archive|tag|tags|topic|topics|category|categories|section|sections|author|authors)(\/|$)/.test(
+        value
+      );
+    } catch {
+      return false;
+    }
   }
 
   private classifyPageKind(
@@ -336,7 +721,28 @@ export class CrawlQualityStrategyService {
   }
 
   private isLowSignal(quality: CrawlArticleSignal, linkInventory: number): boolean {
+    const likelyHighValueBulletin =
+      quality.publishTimeConfidence >= 0.75 &&
+      quality.wordCount >= 60 &&
+      quality.paragraphCount >= 2 &&
+      quality.linkDensity <= 0.16;
+    if (likelyHighValueBulletin) {
+      return false;
+    }
+
+    const likelyMixedMediaDetail =
+      quality.mediaDensity >= 0.012 &&
+      quality.wordCount >= 90 &&
+      quality.paragraphCount >= 4 &&
+      quality.linkDensity <= 0.2;
+    if (likelyMixedMediaDetail) {
+      return false;
+    }
+
     if (quality.isListLike) {
+      return true;
+    }
+    if (quality.domListRisk >= 0.78 && quality.wordCount <= 1800) {
       return true;
     }
     if (quality.linkDensity >= 0.14 && quality.wordCount <= 1600) {
@@ -379,5 +785,23 @@ export class CrawlQualityStrategyService {
       /subscribe|newsletter|sign up|privacy policy|terms|cookie|follow us|advertisement/i.test(line)
     ).length;
     return Math.min(1, boilerplateLines / lines.length);
+  }
+
+  private normalizePatternList(patterns?: string[]): string[] | undefined {
+    if (!patterns || patterns.length === 0) {
+      return undefined;
+    }
+    const unique: string[] = [];
+    for (const raw of patterns) {
+      const normalized = typeof raw === "string" ? raw.trim() : "";
+      if (!normalized || unique.includes(normalized)) {
+        continue;
+      }
+      unique.push(normalized);
+      if (unique.length >= 25) {
+        break;
+      }
+    }
+    return unique.length > 0 ? unique : undefined;
   }
 }

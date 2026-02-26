@@ -2049,6 +2049,10 @@
       "crawlDetailMinRelevanceScore": "最低相关度分数",
       "crawlDetailRequireSameDomain": "仅限同域",
       "crawlDetailAllowExternalLinks": "允许外域链接",
+      "crawlDetailMinPublishTimeConfidence": "最小发布时间置信度",
+      "crawlDetailPreferFitMarkdownForQuality": "质量评估优先 fit markdown",
+      "crawlDetailExcludeUrlPatterns": "排除 URL 模式",
+      "crawlDetailIncludeUrlPatterns": "包含 URL 模式",
       "crawlMarkdownContentSource": "Markdown 内容来源",
       "crawlMarkdownEscapeHtmlMode": "HTML 转义",
       "crawlMarkdownCitationsMode": "引用标注",
@@ -2567,6 +2571,9 @@
       "fields": {
         "healthCheckTtl": "健康检查 TTL",
         "requestTimeout": "请求超时",
+        "detailPublishSignalHeadFetchTimeout": "详情发布时间信号头部抓取超时",
+        "detailPublishSignalHeadFetchConcurrency": "详情发布时间信号头部抓取并发",
+        "detailPublishSignalHeadFetchMaxReadBytes": "详情发布时间信号头部抓取最大读取字节数",
         "maxAttempts": "最大尝试次数",
         "retryBackoff": "重试退避"
       },
@@ -2577,6 +2584,9 @@
       "validation": {
         "healthCheckTtl": "请填写健康检查 TTL",
         "requestTimeout": "请填写请求超时",
+        "detailPublishSignalHeadFetchTimeout": "请填写详情发布时间信号头部抓取超时",
+        "detailPublishSignalHeadFetchConcurrency": "请填写详情发布时间信号头部抓取并发",
+        "detailPublishSignalHeadFetchMaxReadBytes": "请填写详情发布时间信号头部抓取最大读取字节数",
         "maxAttempts": "请填写最大尝试次数",
         "retryBackoff": "请填写重试退避"
       },
@@ -5418,6 +5428,17 @@
         "lastError": "上次错误",
         "configuration": "配置"
       },
+      "expansion": {
+        "softFailureMessage": "{{count}} 次发布时间信号补强抓取发生软失败（不阻断任务）",
+        "softFailureDescription": "软失败只会降低发布时间置信度，不会导致任务失败。{{details}}",
+        "softFailures": {
+          "httpStatus": "HTTP 非 2xx：{{count}}",
+          "nonHtml": "非 HTML 响应：{{count}}",
+          "emptyHtml": "HTML 为空：{{count}}",
+          "networkOrTimeout": "超时/网络异常：{{count}}",
+          "noPublishSignal": "未提取到发布时间信号：{{count}}"
+        }
+      },
       "latestError": "最近错误",
       "scanFullPageEnabled": "扫描完整页面已启用",
       "serverDefault": "服务器默认",
@@ -5630,7 +5651,15 @@
       "requireSameDomain": "限制同域名",
       "requireSameDomainHint": "仅自动展开同一域名下的详情链接。",
       "allowExternalLinks": "允许外域链接",
-      "allowExternalLinksHint": "在相关度足够时，允许详情扩展跟进跨域链接。"
+      "allowExternalLinksHint": "在相关度足够时，允许详情扩展跟进跨域链接。",
+      "minPublishTimeConfidence": "最小发布时间置信度",
+      "minPublishTimeConfidenceHint": "优先保留发布时间信号更强的 URL（0~1）。",
+      "preferFitMarkdownForQuality": "质量评估优先 fit markdown",
+      "preferFitMarkdownForQualityHint": "在低信号/列表型页面质量评估时优先使用 fit_markdown。",
+      "excludeUrlPatterns": "排除 URL 模式",
+      "excludeUrlPatternsHint": "每行一个模式，支持通配符 * 和正则 /.../。",
+      "includeUrlPatterns": "包含 URL 模式",
+      "includeUrlPatternsHint": "可选白名单。设置后仅跟进匹配的 URL。"
     },
     "virtualScroll": {
       "title": "虚拟滚动",

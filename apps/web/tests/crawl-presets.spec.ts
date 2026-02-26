@@ -46,6 +46,25 @@ describe("crawl presets", () => {
     expect(values.qualityProfile).toBe("quality_first");
   });
 
+  it("builds forum preset with strict detail expansion defaults", () => {
+    const values = buildCrawlTaskTemplateValues("forum", { canWriteItems: true });
+
+    expect(values.autoExpandDetails).toBe(true);
+    expect(values.detailExpansion).toEqual(
+      expect.objectContaining({
+        maxDetailUrls: 12,
+        minRelevanceScore: 0.25,
+        requireSameDomain: true,
+        allowExternalLinks: true,
+        minPublishTimeConfidence: 0.55,
+        preferFitMarkdownForQuality: true,
+      }),
+    );
+    expect(values.detailExpansion?.excludeUrlPatterns).toEqual(
+      expect.arrayContaining(["/tag/", "/archive/", "/latest"]),
+    );
+  });
+
   it("builds news source cloudflare preset", () => {
     const values = buildNewsSourceCloudflarePresetValues();
 

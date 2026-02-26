@@ -41,6 +41,9 @@ describe("CrawlSettingsService", () => {
     expect(settings.requestTimeoutMs).toBe(envMock.crawl4aiConfig.timeoutMs);
     expect(settings.requestTimeoutHotMs).toBe(60_000);
     expect(settings.requestTimeoutNormalMs).toBe(envMock.crawl4aiConfig.timeoutMs);
+    expect(settings.detailPublishSignalHeadFetchTimeoutMs).toBe(1_500);
+    expect(settings.detailPublishSignalHeadFetchConcurrency).toBe(2);
+    expect(settings.detailPublishSignalHeadFetchMaxReadBytes).toBe(8_000_000);
     expect(settings.maxRetries).toBe(envMock.crawl4aiConfig.maxRetries);
     expect(settings.queueOverloadCooldownMs).toBe(30_000);
     expect(settings.adaptiveConcurrencyEnabled).toBe(false);
@@ -61,6 +64,9 @@ describe("CrawlSettingsService", () => {
       value: {
         healthCheckTtlMs: 10_000,
         requestTimeoutMs: 1_500_000, // should clamp down
+        detailPublishSignalHeadFetchTimeoutMs: 30_000, // should clamp down
+        detailPublishSignalHeadFetchConcurrency: 0, // should clamp up
+        detailPublishSignalHeadFetchMaxReadBytes: 128_000_000, // should clamp down
         maxRetries: 12, // should clamp down
         retryBackoffMs: 200, // should clamp up
         queueOverloadCooldownMs: 1_000_000, // should clamp down
@@ -77,6 +83,9 @@ describe("CrawlSettingsService", () => {
     expect(settings.requestTimeoutMs).toBe(900_000);
     expect(settings.requestTimeoutHotMs).toBe(60_000);
     expect(settings.requestTimeoutNormalMs).toBe(900_000);
+    expect(settings.detailPublishSignalHeadFetchTimeoutMs).toBe(10_000);
+    expect(settings.detailPublishSignalHeadFetchConcurrency).toBe(1);
+    expect(settings.detailPublishSignalHeadFetchMaxReadBytes).toBe(64_000_000);
     expect(settings.maxRetries).toBe(10);
     expect(settings.retryBackoffMs).toBe(500);
     expect(settings.queueOverloadCooldownMs).toBe(600_000);
@@ -94,6 +103,9 @@ describe("CrawlSettingsService", () => {
       healthCheckTtlMs: 90_000,
       requestTimeoutHotMs: 60_000,
       requestTimeoutNormalMs: 150_000,
+      detailPublishSignalHeadFetchTimeoutMs: 2_000,
+      detailPublishSignalHeadFetchConcurrency: 4,
+      detailPublishSignalHeadFetchMaxReadBytes: 12_000_000,
       maxRetries: 2,
       retryBackoffMs: 8_000,
       queueOverloadCooldownMs: 45_000,
@@ -115,6 +127,9 @@ describe("CrawlSettingsService", () => {
             requestTimeoutMs: 150_000,
             requestTimeoutHotMs: 60_000,
             requestTimeoutNormalMs: 150_000,
+            detailPublishSignalHeadFetchTimeoutMs: 2_000,
+            detailPublishSignalHeadFetchConcurrency: 4,
+            detailPublishSignalHeadFetchMaxReadBytes: 12_000_000,
             maxRetries: 2,
             retryBackoffMs: 8_000,
             queueOverloadCooldownMs: 45_000,
@@ -140,18 +155,27 @@ describe("CrawlSettingsService", () => {
             changedCount: expect.any(Number),
             changedFields: expect.arrayContaining([
               "requestTimeoutNormalMs",
+              "detailPublishSignalHeadFetchTimeoutMs",
+              "detailPublishSignalHeadFetchConcurrency",
+              "detailPublishSignalHeadFetchMaxReadBytes",
               "adaptiveConcurrencyEnabled",
               "maxConcurrency"
             ]),
             inputFields: expect.arrayContaining([
               "requestTimeoutHotMs",
               "requestTimeoutNormalMs",
+              "detailPublishSignalHeadFetchTimeoutMs",
+              "detailPublishSignalHeadFetchConcurrency",
+              "detailPublishSignalHeadFetchMaxReadBytes",
               "adaptiveConcurrencyEnabled",
               "maxConcurrency"
             ]),
             before: expect.any(Object),
             after: expect.objectContaining({
               requestTimeoutNormalMs: 150_000,
+              detailPublishSignalHeadFetchTimeoutMs: 2_000,
+              detailPublishSignalHeadFetchConcurrency: 4,
+              detailPublishSignalHeadFetchMaxReadBytes: 12_000_000,
               adaptiveConcurrencyEnabled: true,
               maxConcurrency: 6
             })
@@ -166,6 +190,9 @@ describe("CrawlSettingsService", () => {
         healthCheckTtlMs: 90_000,
         requestTimeoutHotMs: 60_000,
         requestTimeoutNormalMs: 150_000,
+        detailPublishSignalHeadFetchTimeoutMs: 2_000,
+        detailPublishSignalHeadFetchConcurrency: 4,
+        detailPublishSignalHeadFetchMaxReadBytes: 12_000_000,
         maxRetries: 2,
         retryBackoffMs: 8_000,
         queueOverloadCooldownMs: 45_000,
@@ -181,6 +208,9 @@ describe("CrawlSettingsService", () => {
 
     const refreshed = await service.getSettings();
     expect(refreshed.maxRetries).toBe(2);
+    expect(refreshed.detailPublishSignalHeadFetchTimeoutMs).toBe(2_000);
+    expect(refreshed.detailPublishSignalHeadFetchConcurrency).toBe(4);
+    expect(refreshed.detailPublishSignalHeadFetchMaxReadBytes).toBe(12_000_000);
     expect(refreshed.queueOverloadCooldownMs).toBe(45_000);
     expect(refreshed.adaptiveConcurrencyEnabled).toBe(true);
     expect(refreshed.adaptiveWindowMinutes).toBe(20);

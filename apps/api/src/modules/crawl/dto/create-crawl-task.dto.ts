@@ -44,6 +44,29 @@ export class CrawlDetailExpansionOptionsDto {
   @IsOptional()
   @IsBoolean()
   allowExternalLinks?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(25)
+  @IsString({ each: true })
+  excludeUrlPatterns?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(25)
+  @IsString({ each: true })
+  includeUrlPatterns?: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: "minPublishTimeConfidence must be a number" })
+  @Min(0)
+  @Max(1)
+  minPublishTimeConfidence?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  preferFitMarkdownForQuality?: boolean;
 }
 
 export class CrawlProxyConfigDto {

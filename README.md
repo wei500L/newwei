@@ -148,6 +148,22 @@ pnpm docker:down
 - `crawl4ai` 新闻抓取容器默认暴露在 `8082` 端口，API 会通过 `CRAWL4AI_BASE_URL` 访问它（建议随 `extras` 一起启动）。
 - `qdrant` + `vector` 组成语义向量检索栈。当 `VECTOR_SERVICE_ENABLED=true`（或在系统设置里启用向量服务）时，API 会优先走向量服务做语义去重/搜索；需要将历史向量回填到 Qdrant 可运行 `pnpm --filter @modular/api run vector:backfill`。
 - `crawl4ai` 自带实时监控仪表盘（系统指标、请求与浏览器池）：`http://localhost:8082/dashboard/`。控制台 `Operations → Crawl4AI Monitor` 提供自研监控面板（WebSocket 实时流 + REST 指标）并保留内置仪表盘标签页（需要配置 `CRAWL4AI_DASHBOARD_URL` / `CRAWL4AI_BASE_URL`，见下文）。
+
+#### Crawl 内容质量补强参数（MySQL 系统设置）
+
+以下参数已改为系统设置（存于 MySQL `crawl_client_settings`），不再依赖环境变量：
+
+- `detailPublishSignalHeadFetchTimeoutMs`：候选详情页头部发布时间信号抓取超时（毫秒）。
+- `detailPublishSignalHeadFetchConcurrency`：头部信号抓取并发。
+- `detailPublishSignalHeadFetchMaxReadBytes`：单页头部信号探测最大读取字节数（默认 `8_000_000`，新闻站点建议从 `8MB~16MB` 起调）。
+
+质量语义说明（均为软失败，不会让 crawl 任务硬失败）：
+
+- `headSignalSoftFailureRate`：头部信号抓取软失败率（如超时/非 HTML/无可用发布时间信号）。
+- `headSignalTruncatedRate`：达到读取上限而截断的比例。
+- `headSignalNoPublishSignalRate`：抓到页面但未提取到发布时间信号的比例。
+
+任务详情会展示 `headSignalEnrichment` 的软失败明细与 `url_path` 回退比例（仅提示质量风险，任务仍继续）。
 - 如果你打开 `http://localhost:8082/dashboard/` 看到 `{\"detail\":\"Not Found\"}`，通常是 crawl4ai 镜像版本太旧/用错 tag（Docker Hub 的 `unclecode/crawl4ai:latest` 比较常见），缺少内置面板与监控接口；请将 `infra/docker/.env` 的 `CRAWL4AI_IMAGE` 改为 `unclecode/crawl4ai:0`（推荐，跟随最新 release 且不锁死具体 minor/patch），并执行 `pnpm docker:up -d --force-recreate crawl4ai` 重新创建容器。
 - 不同版本的内置面板路径可能不同（例如 `/dashboard/` 或 `/playground/`）；如遇到 404，可将 `CRAWL4AI_DASHBOARD_URL` 先设为 `http://localhost:8082/` 再尝试。
 - 经济数据抓取模块使用 `AKSHARE_HTTP_BASE_URL` 指向一个 Python 网关（默认暴露在 `8081` 端口，底层通过 `pip install akshare` 调用 Akshare 并以 HTTP 提供数据）。如果你不需要该能力，可设置 `AKSHARE_ENABLED=false`（禁用所有 Akshare jobs）。

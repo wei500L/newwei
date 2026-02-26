@@ -86,6 +86,24 @@ export class UpdateCrawlClientSettingsInput {
   @Max(900_000)
   requestTimeoutNormalMs?: number;
 
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(500)
+  @Max(10_000)
+  detailPublishSignalHeadFetchTimeoutMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(8)
+  detailPublishSignalHeadFetchConcurrency?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1_048_576)
+  @Max(64_000_000)
+  detailPublishSignalHeadFetchMaxReadBytes?: number;
+
   @Field(() => Int)
   @Min(1)
   @Max(10)

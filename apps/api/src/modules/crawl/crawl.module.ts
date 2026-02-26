@@ -24,10 +24,12 @@ import { CrawlTemplateService } from "./crawl-template.service";
 import {
   CRAWL_QUEUE,
   CRAWL_QUEUE_EVENTS,
+  CRAWL_QUEUE_EVENTS_LEGACY,
   CRAWL_QUEUE_EVENTS_HOT,
   CRAWL_QUEUE_EVENTS_NORMAL,
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LEGACY,
   CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
@@ -95,6 +97,27 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlQueueEventPublisher,
     CrawlQueueCleanupService,
     CrawlAdaptiveConcurrencyService,
+    {
+      provide: CRAWL_QUEUE_LEGACY,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const redis = env.redisConfig;
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
+          connection: redis,
+          defaultJobOptions: {
+            attempts: env.crawl4aiConfig.maxRetries,
+            removeOnComplete: true,
+            removeOnFail: false,
+            backoff: {
+              type: "exponential",
+              delay: env.crawl4aiConfig.retryBackoffMs
+            }
+          }
+        });
+        cleanup.track(queue);
+        return queue;
+      }
+    },
     {
       provide: CRAWL_QUEUE_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
@@ -170,6 +193,18 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       useExisting: CRAWL_QUEUE_EVENTS_NORMAL
     },
     {
+      provide: CRAWL_QUEUE_EVENTS_LEGACY,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const redis = env.redisConfig;
+        const events = new QueueEvents(CRAWL_QUEUE_NAME, {
+          connection: redis
+        });
+        cleanup.track(events);
+        return events;
+      }
+    },
+    {
       provide: getQueueToken(CRAWL_QUEUE_HOT_NAME),
       useExisting: CRAWL_QUEUE_HOT
     },
@@ -179,7 +214,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     },
     {
       provide: getQueueToken(CRAWL_QUEUE_NAME),
-      useExisting: CRAWL_QUEUE_NORMAL
+      useExisting: CRAWL_QUEUE_LEGACY
     }
   ],
   exports: [
@@ -194,6 +229,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlAdaptiveConcurrencyService,
     CRAWL_QUEUE,
     CRAWL_QUEUE_EVENTS,
+    CRAWL_QUEUE_LEGACY,
+    CRAWL_QUEUE_EVENTS_LEGACY,
     CRAWL_QUEUE_HOT,
     CRAWL_QUEUE_NORMAL,
     CRAWL_QUEUE_EVENTS_HOT,

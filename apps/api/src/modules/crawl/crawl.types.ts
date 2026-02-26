@@ -55,6 +55,10 @@ export interface CrawlDetailExpansionOptions {
   minRelevanceScore?: number;
   requireSameDomain?: boolean;
   allowExternalLinks?: boolean;
+  includeUrlPatterns?: string[];
+  excludeUrlPatterns?: string[];
+  minPublishTimeConfidence?: number;
+  preferFitMarkdownForQuality?: boolean;
 }
 
 export type CrawlUrlMatchMode = "glob" | "regex" | "substring" | "prefix";

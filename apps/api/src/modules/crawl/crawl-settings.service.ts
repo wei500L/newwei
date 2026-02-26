@@ -11,6 +11,9 @@ export interface CrawlClientSettings {
   requestTimeoutMs: number;
   requestTimeoutHotMs: number;
   requestTimeoutNormalMs: number;
+  detailPublishSignalHeadFetchTimeoutMs: number;
+  detailPublishSignalHeadFetchConcurrency: number;
+  detailPublishSignalHeadFetchMaxReadBytes: number;
   maxRetries: number;
   retryBackoffMs: number;
   queueOverloadCooldownMs: number;
@@ -28,6 +31,9 @@ export interface CrawlClientSettingsInput {
   requestTimeoutMs?: number;
   requestTimeoutHotMs?: number;
   requestTimeoutNormalMs?: number;
+  detailPublishSignalHeadFetchTimeoutMs?: number;
+  detailPublishSignalHeadFetchConcurrency?: number;
+  detailPublishSignalHeadFetchMaxReadBytes?: number;
   maxRetries?: number;
   retryBackoffMs?: number;
   queueOverloadCooldownMs?: number;
@@ -46,6 +52,15 @@ const MAX_HEALTH_CHECK_TTL_MS = 900_000;
 const MIN_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_REQUEST_TIMEOUT_MS = 900_000;
 const DEFAULT_REQUEST_TIMEOUT_HOT_MS = 60_000;
+const DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 1_500;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 500;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 10_000;
+const DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY = 2;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY = 1;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY = 8;
+const DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES = 8_000_000;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES = 1_048_576;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES = 64_000_000;
 const MIN_RETRY_BACKOFF_MS = 500;
 const MAX_RETRY_BACKOFF_MS = 600_000;
 const MIN_RETRY_ATTEMPTS = 1;
@@ -70,6 +85,9 @@ const CRAWL_CLIENT_SETTINGS_AUDIT_FIELDS = [
   "healthCheckTtlMs",
   "requestTimeoutHotMs",
   "requestTimeoutNormalMs",
+  "detailPublishSignalHeadFetchTimeoutMs",
+  "detailPublishSignalHeadFetchConcurrency",
+  "detailPublishSignalHeadFetchMaxReadBytes",
   "maxRetries",
   "retryBackoffMs",
   "queueOverloadCooldownMs",
@@ -149,6 +167,12 @@ export class CrawlSettingsService {
         requestTimeoutMs: raw.requestTimeoutMs,
         requestTimeoutHotMs: raw.requestTimeoutHotMs,
         requestTimeoutNormalMs: raw.requestTimeoutNormalMs,
+        detailPublishSignalHeadFetchTimeoutMs:
+          raw.detailPublishSignalHeadFetchTimeoutMs,
+        detailPublishSignalHeadFetchConcurrency:
+          raw.detailPublishSignalHeadFetchConcurrency,
+        detailPublishSignalHeadFetchMaxReadBytes:
+          raw.detailPublishSignalHeadFetchMaxReadBytes,
         maxRetries: raw.maxRetries,
         retryBackoffMs: raw.retryBackoffMs,
         queueOverloadCooldownMs: raw.queueOverloadCooldownMs,
@@ -187,6 +211,21 @@ export class CrawlSettingsService {
       requestTimeoutMs: requestTimeoutNormalMs,
       requestTimeoutHotMs,
       requestTimeoutNormalMs,
+      detailPublishSignalHeadFetchTimeoutMs: this.clamp(
+        DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS
+      ),
+      detailPublishSignalHeadFetchConcurrency: this.clamp(
+        DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY
+      ),
+      detailPublishSignalHeadFetchMaxReadBytes: this.clamp(
+        DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES
+      ),
       maxRetries: this.clamp(envConfig.maxRetries, MIN_RETRY_ATTEMPTS, MAX_RETRY_ATTEMPTS),
       retryBackoffMs: this.clamp(
         envConfig.retryBackoffMs ?? 5_000,
@@ -244,6 +283,24 @@ export class CrawlSettingsService {
       requestTimeoutMs: requestTimeoutNormalMs,
       requestTimeoutHotMs,
       requestTimeoutNormalMs,
+      detailPublishSignalHeadFetchTimeoutMs: this.clamp(
+        this.toInt(value.detailPublishSignalHeadFetchTimeoutMs),
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+        defaults.detailPublishSignalHeadFetchTimeoutMs
+      ),
+      detailPublishSignalHeadFetchConcurrency: this.clamp(
+        this.toInt(value.detailPublishSignalHeadFetchConcurrency),
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+        defaults.detailPublishSignalHeadFetchConcurrency
+      ),
+      detailPublishSignalHeadFetchMaxReadBytes: this.clamp(
+        this.toInt(value.detailPublishSignalHeadFetchMaxReadBytes),
+        MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+        MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+        defaults.detailPublishSignalHeadFetchMaxReadBytes
+      ),
       maxRetries: this.clamp(
         this.toInt(value.maxRetries),
         MIN_RETRY_ATTEMPTS,
@@ -357,6 +414,12 @@ export class CrawlSettingsService {
       healthCheckTtlMs: settings.healthCheckTtlMs,
       requestTimeoutHotMs: settings.requestTimeoutHotMs,
       requestTimeoutNormalMs: settings.requestTimeoutNormalMs,
+      detailPublishSignalHeadFetchTimeoutMs:
+        settings.detailPublishSignalHeadFetchTimeoutMs,
+      detailPublishSignalHeadFetchConcurrency:
+        settings.detailPublishSignalHeadFetchConcurrency,
+      detailPublishSignalHeadFetchMaxReadBytes:
+        settings.detailPublishSignalHeadFetchMaxReadBytes,
       maxRetries: settings.maxRetries,
       retryBackoffMs: settings.retryBackoffMs,
       queueOverloadCooldownMs: settings.queueOverloadCooldownMs,

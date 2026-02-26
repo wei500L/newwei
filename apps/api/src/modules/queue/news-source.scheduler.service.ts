@@ -943,6 +943,52 @@ export class NewsSourceSchedulerService {
               true,
               (value) => (typeof value === "boolean" ? value : undefined),
             ),
+      allowExternalLinks:
+        typeof currentDetailExpansion.allowExternalLinks === "boolean"
+          ? currentDetailExpansion.allowExternalLinks
+          : true,
+      includeUrlPatterns: Array.isArray(currentDetailExpansion.includeUrlPatterns)
+        ? currentDetailExpansion.includeUrlPatterns
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+            .slice(0, 25)
+        : undefined,
+      excludeUrlPatterns: Array.isArray(currentDetailExpansion.excludeUrlPatterns)
+        ? currentDetailExpansion.excludeUrlPatterns
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0)
+            .slice(0, 25)
+        : [
+            "/tag/",
+            "/tags/",
+            "/topic/",
+            "/topics/",
+            "/archive/",
+            "/category/",
+            "/categories/",
+            "/author/",
+            "/authors/",
+            "/section/",
+            "/sections/",
+            "/latest",
+          ],
+      minPublishTimeConfidence:
+        typeof currentDetailExpansion.minPublishTimeConfidence === "number" &&
+        Number.isFinite(currentDetailExpansion.minPublishTimeConfidence)
+          ? Math.max(
+              0,
+              Math.min(
+                1,
+                Number(currentDetailExpansion.minPublishTimeConfidence.toFixed(3)),
+              ),
+            )
+          : 0.55,
+      preferFitMarkdownForQuality:
+        typeof currentDetailExpansion.preferFitMarkdownForQuality === "boolean"
+          ? currentDetailExpansion.preferFitMarkdownForQuality
+          : true,
     };
 
     if (seedMode === "list" || seedMode === "deep") {

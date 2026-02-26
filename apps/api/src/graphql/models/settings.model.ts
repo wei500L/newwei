@@ -68,6 +68,15 @@ export class CrawlClientSettingsModel {
   requestTimeoutNormalMs!: number;
 
   @Field(() => Int)
+  detailPublishSignalHeadFetchTimeoutMs!: number;
+
+  @Field(() => Int)
+  detailPublishSignalHeadFetchConcurrency!: number;
+
+  @Field(() => Int)
+  detailPublishSignalHeadFetchMaxReadBytes!: number;
+
+  @Field(() => Int)
   maxRetries!: number;
 
   @Field(() => Int)

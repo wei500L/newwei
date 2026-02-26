@@ -21,6 +21,10 @@ export interface CrawlDetailExpansionOptionsFormValue {
   minRelevanceScore?: number;
   requireSameDomain?: boolean;
   allowExternalLinks?: boolean;
+  includeUrlPatterns?: string[];
+  excludeUrlPatterns?: string[];
+  minPublishTimeConfidence?: number;
+  preferFitMarkdownForQuality?: boolean;
 }
 
 export interface CrawlDetailExpansionOptionsValue {
@@ -28,6 +32,10 @@ export interface CrawlDetailExpansionOptionsValue {
   minRelevanceScore?: number;
   requireSameDomain?: boolean;
   allowExternalLinks?: boolean;
+  includeUrlPatterns?: string[];
+  excludeUrlPatterns?: string[];
+  minPublishTimeConfidence?: number;
+  preferFitMarkdownForQuality?: boolean;
 }
 
 export interface CrawlStrategyOverridesFormValue {
@@ -943,11 +951,26 @@ const sanitizeDetailExpansionOptions = (
     typeof value.requireSameDomain === "boolean" ? value.requireSameDomain : undefined;
   const allowExternalLinks =
     typeof value.allowExternalLinks === "boolean" ? value.allowExternalLinks : undefined;
+  const includeUrlPatterns = sanitizeStringList(value.includeUrlPatterns)?.slice(0, 25);
+  const excludeUrlPatterns = sanitizeStringList(value.excludeUrlPatterns)?.slice(0, 25);
+  const minPublishTimeConfidence =
+    typeof value.minPublishTimeConfidence === "number" &&
+    Number.isFinite(value.minPublishTimeConfidence)
+      ? Number(Math.max(0, Math.min(1, value.minPublishTimeConfidence)).toFixed(3))
+      : undefined;
+  const preferFitMarkdownForQuality =
+    typeof value.preferFitMarkdownForQuality === "boolean"
+      ? value.preferFitMarkdownForQuality
+      : undefined;
   if (
     maxDetailUrls === undefined &&
     minRelevanceScore === undefined &&
     requireSameDomain === undefined &&
-    allowExternalLinks === undefined
+    allowExternalLinks === undefined &&
+    includeUrlPatterns === undefined &&
+    excludeUrlPatterns === undefined &&
+    minPublishTimeConfidence === undefined &&
+    preferFitMarkdownForQuality === undefined
   ) {
     return undefined;
   }
@@ -956,6 +979,10 @@ const sanitizeDetailExpansionOptions = (
     minRelevanceScore,
     requireSameDomain,
     allowExternalLinks,
+    includeUrlPatterns,
+    excludeUrlPatterns,
+    minPublishTimeConfidence,
+    preferFitMarkdownForQuality,
   };
 };
 

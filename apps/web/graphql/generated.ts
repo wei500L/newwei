@@ -496,6 +496,9 @@ export type CrawlClientSettingsModel = {
   adaptiveLatencyThresholdRatio: Scalars['Float']['output'];
   adaptiveMemoryHeadroomThreshold: Scalars['Float']['output'];
   adaptiveWindowMinutes: Scalars['Int']['output'];
+  detailPublishSignalHeadFetchConcurrency: Scalars['Int']['output'];
+  detailPublishSignalHeadFetchMaxReadBytes: Scalars['Int']['output'];
+  detailPublishSignalHeadFetchTimeoutMs: Scalars['Int']['output'];
   healthCheckTtlMs: Scalars['Int']['output'];
   maxRetries: Scalars['Int']['output'];
   queueOverloadCooldownMs: Scalars['Int']['output'];
@@ -507,8 +510,12 @@ export type CrawlClientSettingsModel = {
 
 export type CrawlDetailExpansionOptionsInput = {
   allowExternalLinks?: InputMaybe<Scalars['Boolean']['input']>;
+  excludeUrlPatterns?: InputMaybe<Array<Scalars['String']['input']>>;
+  includeUrlPatterns?: InputMaybe<Array<Scalars['String']['input']>>;
   maxDetailUrls?: InputMaybe<Scalars['Int']['input']>;
+  minPublishTimeConfidence?: InputMaybe<Scalars['Float']['input']>;
   minRelevanceScore?: InputMaybe<Scalars['Float']['input']>;
+  preferFitMarkdownForQuality?: InputMaybe<Scalars['Boolean']['input']>;
   requireSameDomain?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
@@ -2944,6 +2951,9 @@ export type UpdateCrawlClientSettingsInput = {
   adaptiveLatencyThresholdRatio?: InputMaybe<Scalars['Float']['input']>;
   adaptiveMemoryHeadroomThreshold?: InputMaybe<Scalars['Float']['input']>;
   adaptiveWindowMinutes?: InputMaybe<Scalars['Int']['input']>;
+  detailPublishSignalHeadFetchConcurrency?: InputMaybe<Scalars['Int']['input']>;
+  detailPublishSignalHeadFetchMaxReadBytes?: InputMaybe<Scalars['Int']['input']>;
+  detailPublishSignalHeadFetchTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   healthCheckTtlMs: Scalars['Int']['input'];
   maxRetries: Scalars['Int']['input'];
   queueOverloadCooldownMs: Scalars['Int']['input'];
@@ -3627,14 +3637,14 @@ export type UpdateNewsPromptConfigMutation = { __typename?: 'Mutation', updateNe
 export type CrawlClientSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
+export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type UpdateCrawlClientSettingsMutationVariables = Exact<{
   input: UpdateCrawlClientSettingsInput;
 }>;
 
 
-export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
+export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type EntityImpactGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -7017,6 +7027,9 @@ export const CrawlClientSettingsDocument = gql`
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    detailPublishSignalHeadFetchTimeoutMs
+    detailPublishSignalHeadFetchConcurrency
+    detailPublishSignalHeadFetchMaxReadBytes
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs
@@ -7068,6 +7081,9 @@ export const UpdateCrawlClientSettingsDocument = gql`
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    detailPublishSignalHeadFetchTimeoutMs
+    detailPublishSignalHeadFetchConcurrency
+    detailPublishSignalHeadFetchMaxReadBytes
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs

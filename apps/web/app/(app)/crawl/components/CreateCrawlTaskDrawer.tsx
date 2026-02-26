@@ -865,6 +865,20 @@ function CrawlSettingsForm({
                       ? current.allowExternalLinks
                       : true,
                 },
+                {
+                  name: ["detailExpansion", "minPublishTimeConfidence"],
+                  value:
+                    typeof current.minPublishTimeConfidence === "number"
+                      ? current.minPublishTimeConfidence
+                      : 0.55,
+                },
+                {
+                  name: ["detailExpansion", "preferFitMarkdownForQuality"],
+                  value:
+                    typeof current.preferFitMarkdownForQuality === "boolean"
+                      ? current.preferFitMarkdownForQuality
+                      : true,
+                },
               ]);
             }}
           />
@@ -905,6 +919,63 @@ function CrawlSettingsForm({
               extra={t("crawl.detailExpansion.allowExternalLinksHint")}
             >
               <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.minPublishTimeConfidence", {
+                defaultValue: "Min publish time confidence",
+              })}
+              name={["detailExpansion", "minPublishTimeConfidence"]}
+              extra={t("crawl.detailExpansion.minPublishTimeConfidenceHint", {
+                defaultValue:
+                  "Prioritize URLs with stronger publish-time signals (0~1).",
+              })}
+            >
+              <InputNumber
+                min={0}
+                max={1}
+                step={0.01}
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.preferFitMarkdownForQuality", {
+                defaultValue: "Prefer fit markdown for quality",
+              })}
+              name={["detailExpansion", "preferFitMarkdownForQuality"]}
+              valuePropName="checked"
+              extra={t(
+                "crawl.detailExpansion.preferFitMarkdownForQualityHint",
+                {
+                  defaultValue:
+                    "Use fit_markdown first for low-signal/list-like quality assessment.",
+                },
+              )}
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.excludeUrlPatterns", {
+                defaultValue: "Exclude URL patterns",
+              })}
+              name={["detailExpansion", "excludeUrlPatterns"]}
+              extra={t("crawl.detailExpansion.excludeUrlPatternsHint", {
+                defaultValue:
+                  "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
+              })}
+            >
+              <Select mode="tags" tokenSeparators={[","]} />
+            </Form.Item>
+            <Form.Item
+              label={t("crawl.detailExpansion.includeUrlPatterns", {
+                defaultValue: "Include URL patterns",
+              })}
+              name={["detailExpansion", "includeUrlPatterns"]}
+              extra={t("crawl.detailExpansion.includeUrlPatternsHint", {
+                defaultValue:
+                  "Optional allowlist. If set, only matching URLs are followed.",
+              })}
+            >
+              <Select mode="tags" tokenSeparators={[","]} />
             </Form.Item>
           </>
         ) : null}
@@ -2059,6 +2130,99 @@ function CrawlSettingsForm({
                           )}
                         >
                           <Switch />
+                        </Form.Item>
+                        <Form.Item
+                          label={t(
+                            "crawl.detailExpansion.minPublishTimeConfidence",
+                            {
+                              defaultValue: "Min publish time confidence",
+                            },
+                          )}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "minPublishTimeConfidence",
+                          ]}
+                          extra={t(
+                            "crawl.detailExpansion.minPublishTimeConfidenceHint",
+                            {
+                              defaultValue:
+                                "Prioritize URLs with stronger publish-time signals (0~1).",
+                            },
+                          )}
+                        >
+                          <InputNumber
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            style={{ width: "100%" }}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t(
+                            "crawl.detailExpansion.preferFitMarkdownForQuality",
+                            {
+                              defaultValue:
+                                "Prefer fit markdown for quality",
+                            },
+                          )}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "preferFitMarkdownForQuality",
+                          ]}
+                          valuePropName="checked"
+                          extra={t(
+                            "crawl.detailExpansion.preferFitMarkdownForQualityHint",
+                            {
+                              defaultValue:
+                                "Use fit_markdown first for low-signal/list-like quality assessment.",
+                            },
+                          )}
+                        >
+                          <Switch />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.excludeUrlPatterns", {
+                            defaultValue: "Exclude URL patterns",
+                          })}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "excludeUrlPatterns",
+                          ]}
+                          extra={t(
+                            "crawl.detailExpansion.excludeUrlPatternsHint",
+                            {
+                              defaultValue:
+                                "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
+                            },
+                          )}
+                        >
+                          <Select mode="tags" tokenSeparators={[","]} />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("crawl.detailExpansion.includeUrlPatterns", {
+                            defaultValue: "Include URL patterns",
+                          })}
+                          name={[
+                            field.name,
+                            "options",
+                            "detailExpansion",
+                            "includeUrlPatterns",
+                          ]}
+                          extra={t(
+                            "crawl.detailExpansion.includeUrlPatternsHint",
+                            {
+                              defaultValue:
+                                "Optional allowlist. If set, only matching URLs are followed.",
+                            },
+                          )}
+                        >
+                          <Select mode="tags" tokenSeparators={[","]} />
                         </Form.Item>
                       </>
                     );

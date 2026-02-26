@@ -7,6 +7,7 @@ import {
 import { Injectable } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
+import { load } from "cheerio";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
@@ -17,6 +18,7 @@ import {
   type CrawlArticleSignal,
 } from "./crawl-quality.strategy";
 import { CrawlResultService } from "./crawl-result.service";
+import { CrawlSettingsService } from "./crawl-settings.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
@@ -80,8 +82,73 @@ interface CrawlRetryCandidate extends CrawlRetryResult {
   challengeFailureCount: number;
 }
 
+interface DetailCandidateDiagnostics {
+  includePatternRejected: number;
+  excludePatternRejected: number;
+  publishConfidenceRejected: number;
+}
+
+interface DetailCandidateConfidenceBuckets {
+  lt04: number;
+  from04To06: number;
+  from06To08: number;
+  gte08: number;
+}
+
+interface CandidatePublishSignal {
+  confidence: number;
+  source: "meta" | "jsonld" | "time_tag" | "url_path" | "none";
+  timestamp?: number;
+}
+
+interface PublishSignalEnrichmentSettings {
+  timeoutMs: number;
+  concurrency: number;
+  maxReadBytes: number;
+}
+
+type PublishSignalSoftFailureReason =
+  | "http_status"
+  | "non_html"
+  | "empty_html"
+  | "network_or_timeout"
+  | "no_publish_signal";
+
+interface PublishSignalSoftFailureBreakdown {
+  httpStatus: number;
+  nonHtml: number;
+  emptyHtml: number;
+  networkOrTimeout: number;
+  noPublishSignal: number;
+}
+
+interface CandidatePublishSignalFetchResult {
+  signal?: CandidatePublishSignal;
+  truncated: boolean;
+  earlyStopped: boolean;
+  failureReason?: PublishSignalSoftFailureReason;
+}
+
+interface PublishSignalEnrichmentResult {
+  signals: Map<string, CandidatePublishSignal>;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  skipped: boolean;
+  effectiveTimeoutMs: number;
+  effectiveConcurrency: number;
+  maxReadBytes: number;
+  truncatedResponses: number;
+  earlyStoppedResponses: number;
+  softFailures: PublishSignalSoftFailureBreakdown;
+  softFailureCount: number;
+}
+
 @Injectable()
 export class CrawlExecutionService {
+  private readonly defaultDetailPublishSignalHeadFetchTimeoutMs = 1_500;
+  private readonly defaultDetailPublishSignalHeadFetchConcurrency = 2;
+  private readonly defaultDetailPublishSignalHeadFetchMaxReadBytes = 8_000_000;
   private readonly retryableStatusCodes = new Set([
     408, 423, 425, 429, 500, 502, 503, 504,
   ]);
@@ -132,6 +199,7 @@ export class CrawlExecutionService {
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
     private readonly qualityStrategy: CrawlQualityStrategyService,
+    private readonly crawlSettings: CrawlSettingsService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -1694,6 +1762,7 @@ export class CrawlExecutionService {
     const pageAssessment = this.qualityStrategy.assessPageSignals(
       options.successes,
       pageTypeHint,
+      options.crawlOptions.detailExpansion,
     );
     const {
       assessments,
@@ -1762,6 +1831,28 @@ export class CrawlExecutionService {
             wordCount: entry.quality.wordCount,
             linkCount: entry.quality.linkCount,
             linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+            publishTimeConfidence: Number(
+              (
+                typeof entry.quality.publishTimeConfidence === "number"
+                  ? entry.quality.publishTimeConfidence
+                  : 0
+              ).toFixed(3),
+            ),
+            publishTimeSource: entry.quality.publishTimeSource ?? "none",
+            mediaDensity: Number(
+              (
+                typeof entry.quality.mediaDensity === "number"
+                  ? entry.quality.mediaDensity
+                  : 0
+              ).toFixed(4),
+            ),
+            domListRisk: Number(
+              (
+                typeof entry.quality.domListRisk === "number"
+                  ? entry.quality.domListRisk
+                  : 0
+              ).toFixed(3),
+            ),
             bulletLines: entry.quality.bulletLines,
             score: Number(entry.quality.score.toFixed(2)),
             linkInventory: entry.linkInventory,
@@ -1777,6 +1868,11 @@ export class CrawlExecutionService {
 
     const candidateScoreMap = new Map<string, number>();
     const fallbackCandidateScoreMap = new Map<string, number>();
+    const primaryCandidateDiagnostics =
+      this.createEmptyDetailCandidateDiagnostics();
+    const fallbackCandidateDiagnostics =
+      this.createEmptyDetailCandidateDiagnostics();
+    let existingUrlSkipped = 0;
     const detailExpansion = this.qualityStrategy.resolveDetailExpansion(
       options.crawlOptions,
     );
@@ -1787,9 +1883,14 @@ export class CrawlExecutionService {
         entry.article,
         detailExpansion.requireSameDomain,
         detailExpansion.allowExternalLinks,
+        detailExpansion.excludeUrlPatterns,
+        detailExpansion.includeUrlPatterns,
+        detailExpansion.minPublishTimeConfidence,
+        primaryCandidateDiagnostics,
       );
       for (const candidate of candidates) {
         if (existingUrls.has(candidate)) {
+          existingUrlSkipped += 1;
           continue;
         }
         const nextScore = this.scoreDetailCandidateUrl(candidate, baseUrl);
@@ -1804,9 +1905,17 @@ export class CrawlExecutionService {
           entry.article,
           detailExpansion.requireSameDomain,
           detailExpansion.allowExternalLinks,
+          detailExpansion.excludeUrlPatterns,
+          detailExpansion.includeUrlPatterns,
+          typeof detailExpansion.minPublishTimeConfidence === "number" &&
+          Number.isFinite(detailExpansion.minPublishTimeConfidence)
+            ? Math.max(0, detailExpansion.minPublishTimeConfidence - 0.2)
+            : undefined,
+          fallbackCandidateDiagnostics,
         );
       for (const candidate of fallbackCandidates) {
         if (existingUrls.has(candidate)) {
+          existingUrlSkipped += 1;
           continue;
         }
         const nextScore =
@@ -1817,23 +1926,6 @@ export class CrawlExecutionService {
         }
       }
     }
-
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: options.taskId,
-      orgId: options.orgId,
-      stage: "expansion",
-      status: "processing",
-      message: "Resolved detail expansion policy",
-      data: {
-        qualityProfile,
-        detailExpansion,
-        pageTypeHint,
-        pageKind,
-        primaryCandidatePool: candidateScoreMap.size,
-        fallbackCandidatePool: fallbackCandidateScoreMap.size,
-      },
-    });
 
     const profileCandidateMultiplier =
       qualityProfile === "quality_first"
@@ -1851,14 +1943,155 @@ export class CrawlExecutionService {
     const minCandidateScore = this.detailRelevanceToScore(
       detailExpansion.minRelevanceScore,
     );
-    const candidateEntries = Array.from(candidateScoreMap.entries())
+    const candidateEntriesRaw = Array.from(candidateScoreMap.entries())
       .filter((entry) => Number.isFinite(entry[1]))
       .sort((left, right) => right[1] - left[1]);
-    const fallbackCandidateEntries = Array.from(
+    const fallbackCandidateEntriesRaw = Array.from(
       fallbackCandidateScoreMap.entries(),
     )
       .filter((entry) => Number.isFinite(entry[1]))
       .sort((left, right) => right[1] - left[1]);
+    const publishSignalPool = new Map<string, number>();
+    for (const [url, score] of candidateEntriesRaw) {
+      const current = publishSignalPool.get(url);
+      if (current === undefined || score > current) {
+        publishSignalPool.set(url, score);
+      }
+    }
+    for (const [url, score] of fallbackCandidateEntriesRaw) {
+      const current = publishSignalPool.get(url);
+      if (current === undefined || score > current) {
+        publishSignalPool.set(url, score);
+      }
+    }
+    const sortedPublishSignalPool = Array.from(publishSignalPool.entries()).sort(
+      (left, right) => right[1] - left[1],
+    );
+    const publishSignalTopK = this.resolvePublishSignalTopK(
+      candidateLimit,
+      detailExpansion.maxDetailUrls,
+      sortedPublishSignalPool.length,
+    );
+    const publishSignalSettings =
+      await this.getPublishSignalEnrichmentSettings();
+    const publishSignalEnrichment = await this.enrichCandidatePublishSignals({
+      urls: sortedPublishSignalPool
+        .slice(0, publishSignalTopK)
+        .map((entry) => entry[0]),
+      requestTimeoutMs: options.requestTimeoutMs,
+      settings: publishSignalSettings,
+    });
+    const candidateSignalByUrl = new Map<string, CandidatePublishSignal>();
+    for (const [candidateUrl] of sortedPublishSignalPool) {
+      candidateSignalByUrl.set(
+        candidateUrl,
+        this.resolveCandidatePublishSignal(
+          candidateUrl,
+          publishSignalEnrichment.signals.get(candidateUrl),
+        ),
+      );
+    }
+    const totalSignalCandidates = candidateSignalByUrl.size;
+    const urlPathFallbackCount = Array.from(candidateSignalByUrl.values()).filter(
+      (signal) => signal.source === "url_path",
+    ).length;
+    const urlPathFallbackRatio =
+      totalSignalCandidates > 0
+        ? Number((urlPathFallbackCount / totalSignalCandidates).toFixed(4))
+        : 0;
+    const minPublishTimeConfidenceThreshold =
+      typeof detailExpansion.minPublishTimeConfidence === "number" &&
+      Number.isFinite(detailExpansion.minPublishTimeConfidence)
+        ? Math.max(0, Math.min(1, detailExpansion.minPublishTimeConfidence))
+        : undefined;
+    const fallbackPublishTimeConfidenceThreshold =
+      typeof minPublishTimeConfidenceThreshold === "number"
+        ? Math.max(0, minPublishTimeConfidenceThreshold - 0.15)
+        : undefined;
+    let publishConfidenceRejectedPrimary = 0;
+    let publishConfidenceRejectedFallback = 0;
+    const candidateEntries = candidateEntriesRaw.filter(([url]) => {
+      if (minPublishTimeConfidenceThreshold === undefined) {
+        return true;
+      }
+      const confidence =
+        candidateSignalByUrl.get(url)?.confidence ??
+        this.estimatePublishTimeConfidenceFromCandidateUrl(url);
+      if (confidence >= minPublishTimeConfidenceThreshold) {
+        return true;
+      }
+      publishConfidenceRejectedPrimary += 1;
+      return false;
+    });
+    const fallbackCandidateEntries = fallbackCandidateEntriesRaw.filter(
+      ([url]) => {
+        if (fallbackPublishTimeConfidenceThreshold === undefined) {
+          return true;
+        }
+        const confidence =
+          candidateSignalByUrl.get(url)?.confidence ??
+          this.estimatePublishTimeConfidenceFromCandidateUrl(url);
+        if (confidence >= fallbackPublishTimeConfidenceThreshold) {
+          return true;
+        }
+        publishConfidenceRejectedFallback += 1;
+        return false;
+      },
+    );
+    const candidateDiagnostics = this.combineDetailCandidateDiagnostics(
+      primaryCandidateDiagnostics,
+      fallbackCandidateDiagnostics,
+    );
+    candidateDiagnostics.publishConfidenceRejected +=
+      publishConfidenceRejectedPrimary + publishConfidenceRejectedFallback;
+    const publishConfidenceBuckets = this.buildDetailCandidateConfidenceBuckets(
+      candidateSignalByUrl,
+      sortedPublishSignalPool.map((entry) => entry[0]),
+    );
+
+    await TaskLogModel.create({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: options.taskId,
+      orgId: options.orgId,
+      stage: "expansion",
+      status: "processing",
+      message: "Resolved detail expansion policy",
+      data: {
+        qualityProfile,
+        detailExpansion,
+        pageTypeHint,
+        pageKind,
+        primaryCandidatePool: candidateEntriesRaw.length,
+        fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
+        existingUrlSkipped,
+        candidateRejects: candidateDiagnostics,
+        publishConfidenceThreshold: minPublishTimeConfidenceThreshold ?? null,
+        fallbackPublishConfidenceThreshold:
+          fallbackPublishTimeConfidenceThreshold ?? null,
+        publishConfidenceBuckets,
+        headSignalEnrichment: {
+          attempted: publishSignalEnrichment.attempted,
+          succeeded: publishSignalEnrichment.succeeded,
+          failed: publishSignalEnrichment.failed,
+          topK: publishSignalTopK,
+          skipped: publishSignalEnrichment.skipped,
+          configuredTimeoutMs: publishSignalSettings.timeoutMs,
+          configuredConcurrency: publishSignalSettings.concurrency,
+          configuredMaxReadBytes: publishSignalSettings.maxReadBytes,
+          effectiveTimeoutMs: publishSignalEnrichment.effectiveTimeoutMs,
+          effectiveConcurrency: publishSignalEnrichment.effectiveConcurrency,
+          maxReadBytes: publishSignalEnrichment.maxReadBytes,
+          truncatedResponses: publishSignalEnrichment.truncatedResponses,
+          earlyStoppedResponses: publishSignalEnrichment.earlyStoppedResponses,
+          softFailures: publishSignalEnrichment.softFailures,
+          softFailureCount: publishSignalEnrichment.softFailureCount,
+          urlPathFallbackCount,
+          totalSignalCandidates,
+          urlPathFallbackRatio,
+        },
+      },
+    });
+
     const minimumCandidateCount = this.resolveMinimumDetailExpansionCandidates(
       detailExpansion.maxDetailUrls,
       candidateLimit,
@@ -1946,11 +2179,40 @@ export class CrawlExecutionService {
           detailExpansion,
           allLowSignal: effectiveAllLowSignal,
           minimumCandidateCount,
-          primaryCandidatePool: candidateEntries.length,
-          fallbackCandidatePool: fallbackCandidateEntries.length,
+          primaryCandidatePool: candidateEntriesRaw.length,
+          fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
+          primaryCandidatePoolAfterConfidenceFilter: candidateEntries.length,
+          fallbackCandidatePoolAfterConfidenceFilter:
+            fallbackCandidateEntries.length,
           strictCandidateCount,
           relaxedCandidateCount,
           linkFallbackCandidateCount,
+          existingUrlSkipped,
+          candidateRejects: candidateDiagnostics,
+          publishConfidenceThreshold: minPublishTimeConfidenceThreshold ?? null,
+          fallbackPublishConfidenceThreshold:
+            fallbackPublishTimeConfidenceThreshold ?? null,
+          publishConfidenceBuckets,
+          headSignalEnrichment: {
+            attempted: publishSignalEnrichment.attempted,
+            succeeded: publishSignalEnrichment.succeeded,
+            failed: publishSignalEnrichment.failed,
+            topK: publishSignalTopK,
+            skipped: publishSignalEnrichment.skipped,
+            configuredTimeoutMs: publishSignalSettings.timeoutMs,
+            configuredConcurrency: publishSignalSettings.concurrency,
+            configuredMaxReadBytes: publishSignalSettings.maxReadBytes,
+            effectiveTimeoutMs: publishSignalEnrichment.effectiveTimeoutMs,
+            effectiveConcurrency: publishSignalEnrichment.effectiveConcurrency,
+            maxReadBytes: publishSignalEnrichment.maxReadBytes,
+            truncatedResponses: publishSignalEnrichment.truncatedResponses,
+            earlyStoppedResponses: publishSignalEnrichment.earlyStoppedResponses,
+            softFailures: publishSignalEnrichment.softFailures,
+            softFailureCount: publishSignalEnrichment.softFailureCount,
+            urlPathFallbackCount,
+            totalSignalCandidates,
+            urlPathFallbackRatio,
+          },
           lowSignalResults: effectiveLowSignalAssessments.length,
           lowSignalWords: {
             min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
@@ -2222,11 +2484,40 @@ export class CrawlExecutionService {
         detailExpansion,
         allLowSignal: effectiveAllLowSignal,
         minimumCandidateCount,
-        primaryCandidatePool: candidateEntries.length,
-        fallbackCandidatePool: fallbackCandidateEntries.length,
+        primaryCandidatePool: candidateEntriesRaw.length,
+        fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
+        primaryCandidatePoolAfterConfidenceFilter: candidateEntries.length,
+        fallbackCandidatePoolAfterConfidenceFilter:
+          fallbackCandidateEntries.length,
         strictCandidateCount,
         relaxedCandidateCount,
         linkFallbackCandidateCount,
+        existingUrlSkipped,
+        candidateRejects: candidateDiagnostics,
+        publishConfidenceThreshold: minPublishTimeConfidenceThreshold ?? null,
+        fallbackPublishConfidenceThreshold:
+          fallbackPublishTimeConfidenceThreshold ?? null,
+        publishConfidenceBuckets,
+        headSignalEnrichment: {
+          attempted: publishSignalEnrichment.attempted,
+          succeeded: publishSignalEnrichment.succeeded,
+          failed: publishSignalEnrichment.failed,
+          topK: publishSignalTopK,
+          skipped: publishSignalEnrichment.skipped,
+          configuredTimeoutMs: publishSignalSettings.timeoutMs,
+          configuredConcurrency: publishSignalSettings.concurrency,
+          configuredMaxReadBytes: publishSignalSettings.maxReadBytes,
+          effectiveTimeoutMs: publishSignalEnrichment.effectiveTimeoutMs,
+          effectiveConcurrency: publishSignalEnrichment.effectiveConcurrency,
+          maxReadBytes: publishSignalEnrichment.maxReadBytes,
+          truncatedResponses: publishSignalEnrichment.truncatedResponses,
+          earlyStoppedResponses: publishSignalEnrichment.earlyStoppedResponses,
+          softFailures: publishSignalEnrichment.softFailures,
+          softFailureCount: publishSignalEnrichment.softFailureCount,
+          urlPathFallbackCount,
+          totalSignalCandidates,
+          urlPathFallbackRatio,
+        },
         candidateCount: candidateUrls.length,
         batchCount: candidateBatches.length,
         expansionSuccesses: expansionSuccesses.length,
@@ -2238,6 +2529,28 @@ export class CrawlExecutionService {
           wordCount: entry.quality.wordCount,
           linkCount: entry.quality.linkCount,
           linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+          publishTimeConfidence: Number(
+            (
+              typeof entry.quality.publishTimeConfidence === "number"
+                ? entry.quality.publishTimeConfidence
+                : 0
+            ).toFixed(3),
+          ),
+          publishTimeSource: entry.quality.publishTimeSource ?? "none",
+          mediaDensity: Number(
+            (
+              typeof entry.quality.mediaDensity === "number"
+                ? entry.quality.mediaDensity
+                : 0
+            ).toFixed(4),
+          ),
+          domListRisk: Number(
+            (
+              typeof entry.quality.domListRisk === "number"
+                ? entry.quality.domListRisk
+                : 0
+            ).toFixed(3),
+          ),
           score: Number(entry.quality.score.toFixed(2)),
           isListLike: entry.quality.isListLike,
         })),
@@ -2388,6 +2701,10 @@ export class CrawlExecutionService {
     article: Crawl4aiArticle,
     requireSameDomain: boolean,
     allowExternalLinks?: boolean,
+    excludeUrlPatterns?: string[],
+    includeUrlPatterns?: string[],
+    minPublishTimeConfidence?: number,
+    diagnostics?: DetailCandidateDiagnostics,
   ): string[] {
     const baseUrl = this.resolveArticleBaseUrl(article);
     if (!baseUrl) {
@@ -2535,10 +2852,43 @@ export class CrawlExecutionService {
       ) {
         continue;
       }
+      if (
+        this.applyDetailExpansionPatternFilters(
+          normalized,
+          excludeUrlPatterns,
+          includeUrlPatterns,
+          diagnostics,
+        ) === false
+      ) {
+        continue;
+      }
+      const publishConfidence =
+        this.estimatePublishTimeConfidenceFromCandidateUrl(normalized);
+      if (
+        typeof minPublishTimeConfidence === "number" &&
+        Number.isFinite(minPublishTimeConfidence)
+      ) {
+        const prefilterThreshold = Math.max(
+          0,
+          minPublishTimeConfidence - 0.25,
+        );
+        if (publishConfidence < prefilterThreshold) {
+          if (diagnostics) {
+            diagnostics.publishConfidenceRejected += 1;
+          }
+          continue;
+        }
+      }
       seen.add(normalized);
+      const precheckPenalty =
+        typeof minPublishTimeConfidence === "number" &&
+        Number.isFinite(minPublishTimeConfidence) &&
+        publishConfidence < minPublishTimeConfidence
+          ? Math.round((minPublishTimeConfidence - publishConfidence) * 120)
+          : 0;
       scored.push({
         url: normalized,
-        score: this.scoreDetailCandidateUrl(normalized, baseUrl),
+        score: this.scoreDetailCandidateUrl(normalized, baseUrl) - precheckPenalty,
       });
       if (scored.length >= 30) {
         break;
@@ -2554,6 +2904,10 @@ export class CrawlExecutionService {
     article: Crawl4aiArticle,
     requireSameDomain: boolean,
     allowExternalLinks?: boolean,
+    excludeUrlPatterns?: string[],
+    includeUrlPatterns?: string[],
+    minPublishTimeConfidence?: number,
+    diagnostics?: DetailCandidateDiagnostics,
   ): string[] {
     const baseUrl = this.resolveArticleBaseUrl(article);
     if (!baseUrl) {
@@ -2611,11 +2965,45 @@ export class CrawlExecutionService {
         ) {
           continue;
         }
-
+        if (
+          this.applyDetailExpansionPatternFilters(
+            normalized,
+            excludeUrlPatterns,
+            includeUrlPatterns,
+            diagnostics,
+          ) === false
+        ) {
+          continue;
+        }
+        const publishConfidence =
+          this.estimatePublishTimeConfidenceFromCandidateUrl(normalized);
+        if (
+          typeof minPublishTimeConfidence === "number" &&
+          Number.isFinite(minPublishTimeConfidence)
+        ) {
+          const prefilterThreshold = Math.max(
+            0,
+            minPublishTimeConfidence - 0.25,
+          );
+          if (publishConfidence < prefilterThreshold) {
+            if (diagnostics) {
+              diagnostics.publishConfidenceRejected += 1;
+            }
+            continue;
+          }
+        }
+        const precheckPenalty =
+          typeof minPublishTimeConfidence === "number" &&
+          Number.isFinite(minPublishTimeConfidence) &&
+          publishConfidence < minPublishTimeConfidence
+            ? Math.round((minPublishTimeConfidence - publishConfidence) * 120)
+            : 0;
         const linkText = this.pickString(record, ["text", "title"]);
         const textBonus = this.scoreFallbackLinkText(linkText);
         const score =
-          this.scoreDetailCandidateUrl(normalized, baseUrl) + textBonus;
+          this.scoreDetailCandidateUrl(normalized, baseUrl) +
+          textBonus -
+          precheckPenalty;
         const current = scoreByUrl.get(normalized);
         if (current === undefined || score > current) {
           scoreByUrl.set(normalized, score);
@@ -2941,6 +3329,798 @@ export class CrawlExecutionService {
     }
   }
 
+  private applyDetailExpansionPatternFilters(
+    url: string,
+    excludeUrlPatterns?: string[],
+    includeUrlPatterns?: string[],
+    diagnostics?: DetailCandidateDiagnostics,
+  ): boolean {
+    const normalizedExclude =
+      this.normalizePatternList(excludeUrlPatterns) ?? [];
+    const normalizedInclude =
+      this.normalizePatternList(includeUrlPatterns) ?? [];
+
+    if (
+      normalizedInclude.length > 0 &&
+      !this.urlMatchesAnyPattern(url, normalizedInclude)
+    ) {
+      if (diagnostics) {
+        diagnostics.includePatternRejected += 1;
+      }
+      return false;
+    }
+    if (
+      normalizedExclude.length > 0 &&
+      this.urlMatchesAnyPattern(url, normalizedExclude)
+    ) {
+      if (diagnostics) {
+        diagnostics.excludePatternRejected += 1;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  private createEmptyDetailCandidateDiagnostics(): DetailCandidateDiagnostics {
+    return {
+      includePatternRejected: 0,
+      excludePatternRejected: 0,
+      publishConfidenceRejected: 0,
+    };
+  }
+
+  private combineDetailCandidateDiagnostics(
+    primary: DetailCandidateDiagnostics,
+    fallback: DetailCandidateDiagnostics,
+  ): DetailCandidateDiagnostics {
+    return {
+      includePatternRejected:
+        primary.includePatternRejected + fallback.includePatternRejected,
+      excludePatternRejected:
+        primary.excludePatternRejected + fallback.excludePatternRejected,
+      publishConfidenceRejected:
+        primary.publishConfidenceRejected + fallback.publishConfidenceRejected,
+    };
+  }
+
+  private resolvePublishSignalTopK(
+    candidateLimit: number,
+    maxDetailUrls: number,
+    candidatePoolSize: number,
+  ): number {
+    if (candidatePoolSize <= 0) {
+      return 0;
+    }
+    const desired = Math.max(
+      3,
+      Math.min(18, Math.max(candidateLimit + 2, maxDetailUrls)),
+    );
+    return Math.max(0, Math.min(candidatePoolSize, desired));
+  }
+
+  private async getPublishSignalEnrichmentSettings(): Promise<PublishSignalEnrichmentSettings> {
+    const fallback: PublishSignalEnrichmentSettings = {
+      timeoutMs: this.defaultDetailPublishSignalHeadFetchTimeoutMs,
+      concurrency: this.defaultDetailPublishSignalHeadFetchConcurrency,
+      maxReadBytes: this.defaultDetailPublishSignalHeadFetchMaxReadBytes,
+    };
+    try {
+      const settings = await this.crawlSettings.getSettings();
+      return {
+        timeoutMs:
+          typeof settings.detailPublishSignalHeadFetchTimeoutMs === "number" &&
+          Number.isFinite(settings.detailPublishSignalHeadFetchTimeoutMs)
+            ? settings.detailPublishSignalHeadFetchTimeoutMs
+            : fallback.timeoutMs,
+        concurrency:
+          typeof settings.detailPublishSignalHeadFetchConcurrency === "number" &&
+          Number.isFinite(settings.detailPublishSignalHeadFetchConcurrency)
+            ? settings.detailPublishSignalHeadFetchConcurrency
+            : fallback.concurrency,
+        maxReadBytes:
+          typeof settings.detailPublishSignalHeadFetchMaxReadBytes === "number" &&
+          Number.isFinite(settings.detailPublishSignalHeadFetchMaxReadBytes)
+            ? settings.detailPublishSignalHeadFetchMaxReadBytes
+            : fallback.maxReadBytes,
+      };
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Failed to load crawl settings for publish-signal enrichment; using defaults",
+      );
+      return fallback;
+    }
+  }
+
+  private async enrichCandidatePublishSignals(options: {
+    urls: string[];
+    requestTimeoutMs?: number;
+    settings: PublishSignalEnrichmentSettings;
+  }): Promise<PublishSignalEnrichmentResult> {
+    const signals = new Map<string, CandidatePublishSignal>();
+    const softFailures = this.createEmptyPublishSignalSoftFailureBreakdown();
+    const uniqueUrls = Array.from(
+      new Set(
+        options.urls.filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+        ),
+      ),
+    );
+    const timeoutMs = this.resolvePublishSignalFetchTimeoutMs(
+      options.settings.timeoutMs,
+      options.requestTimeoutMs,
+    );
+    const resolvedConcurrency = this.resolvePublishSignalFetchConcurrency(
+      options.settings.concurrency,
+    );
+    const resolvedMaxReadBytes = this.resolvePublishSignalMaxReadBytes(
+      options.settings.maxReadBytes,
+    );
+    const effectiveConcurrency =
+      uniqueUrls.length > 0
+        ? Math.max(1, Math.min(uniqueUrls.length, resolvedConcurrency))
+        : 0;
+    if (uniqueUrls.length === 0) {
+      return {
+        signals,
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        skipped: false,
+        effectiveTimeoutMs: timeoutMs,
+        effectiveConcurrency,
+        maxReadBytes: resolvedMaxReadBytes,
+        truncatedResponses: 0,
+        earlyStoppedResponses: 0,
+        softFailures,
+        softFailureCount: 0,
+      };
+    }
+    if (!this.shouldEnrichCandidatePublishSignals()) {
+      return {
+        signals,
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        skipped: true,
+        effectiveTimeoutMs: timeoutMs,
+        effectiveConcurrency,
+        maxReadBytes: resolvedMaxReadBytes,
+        truncatedResponses: 0,
+        earlyStoppedResponses: 0,
+        softFailures,
+        softFailureCount: 0,
+      };
+    }
+    let cursor = 0;
+    let succeeded = 0;
+    let failed = 0;
+    let truncatedResponses = 0;
+    let earlyStoppedResponses = 0;
+
+    const worker = async () => {
+      while (cursor < uniqueUrls.length) {
+        const index = cursor;
+        cursor += 1;
+        const url = uniqueUrls[index];
+        if (!url) {
+          failed += 1;
+          continue;
+        }
+        const fetched = await this.fetchCandidatePublishSignal(
+          url,
+          timeoutMs,
+          resolvedMaxReadBytes,
+        );
+        if (fetched.truncated) {
+          truncatedResponses += 1;
+        }
+        if (fetched.earlyStopped) {
+          earlyStoppedResponses += 1;
+        }
+        const signal = fetched.signal;
+        if (signal && signal.source !== "none") {
+          signals.set(url, signal);
+          succeeded += 1;
+        } else {
+          this.incrementPublishSignalSoftFailure(
+            softFailures,
+            fetched.failureReason ?? "no_publish_signal",
+          );
+          failed += 1;
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: effectiveConcurrency }, () => worker()),
+    );
+
+    const softFailureCount = this.countPublishSignalSoftFailures(softFailures);
+    if (softFailureCount > 0) {
+      logger.warn(
+        {
+          attempted: uniqueUrls.length,
+          succeeded,
+          failed,
+          truncatedResponses,
+          earlyStoppedResponses,
+          softFailures,
+        },
+        "Publish-signal enrichment completed with non-blocking soft failures",
+      );
+    }
+
+    return {
+      signals,
+      attempted: uniqueUrls.length,
+      succeeded,
+      failed,
+      skipped: false,
+      effectiveTimeoutMs: timeoutMs,
+      effectiveConcurrency,
+      maxReadBytes: resolvedMaxReadBytes,
+      truncatedResponses,
+      earlyStoppedResponses,
+      softFailures,
+      softFailureCount,
+    };
+  }
+
+  private shouldEnrichCandidatePublishSignals(): boolean {
+    return process.env.NODE_ENV !== "test";
+  }
+
+  private resolvePublishSignalFetchTimeoutMs(
+    configuredTimeoutMs: number,
+    requestTimeoutMs?: number,
+  ): number {
+    const fromSettings =
+      typeof configuredTimeoutMs === "number" &&
+      Number.isFinite(configuredTimeoutMs) &&
+      configuredTimeoutMs > 0
+        ? Math.max(
+            500,
+            Math.min(10_000, Math.round(configuredTimeoutMs)),
+          )
+        : this.defaultDetailPublishSignalHeadFetchTimeoutMs;
+    if (
+      typeof requestTimeoutMs === "number" &&
+      Number.isFinite(requestTimeoutMs) &&
+      requestTimeoutMs > 0
+    ) {
+      const requestBound = Math.max(
+        500,
+        Math.min(10_000, Math.round(requestTimeoutMs)),
+      );
+      return Math.min(fromSettings, requestBound);
+    }
+    return fromSettings;
+  }
+
+  private resolvePublishSignalFetchConcurrency(configuredConcurrency: number): number {
+    if (
+      typeof configuredConcurrency !== "number" ||
+      !Number.isFinite(configuredConcurrency) ||
+      configuredConcurrency <= 0
+    ) {
+      return this.defaultDetailPublishSignalHeadFetchConcurrency;
+    }
+    return Math.max(1, Math.min(8, Math.round(configuredConcurrency)));
+  }
+
+  private resolvePublishSignalMaxReadBytes(configuredMaxReadBytes: number): number {
+    if (
+      typeof configuredMaxReadBytes !== "number" ||
+      !Number.isFinite(configuredMaxReadBytes) ||
+      configuredMaxReadBytes <= 0
+    ) {
+      return this.defaultDetailPublishSignalHeadFetchMaxReadBytes;
+    }
+    return Math.max(1_048_576, Math.min(64_000_000, Math.round(configuredMaxReadBytes)));
+  }
+
+  private async fetchCandidatePublishSignal(
+    url: string,
+    timeoutMs: number,
+    maxReadBytes: number,
+  ): Promise<CandidatePublishSignalFetchResult> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          signal: controller.signal,
+          headers: {
+            accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "user-agent":
+              "Mozilla/5.0 (compatible; CrawlQualityProbe/1.0; +https://example.com)",
+          },
+        });
+        if (!response.ok) {
+          return {
+            truncated: false,
+            earlyStopped: false,
+            failureReason: "http_status",
+          };
+        }
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (
+          contentType.length > 0 &&
+          !contentType.includes("text/html") &&
+          !contentType.includes("application/xhtml+xml")
+        ) {
+          return {
+            truncated: false,
+            earlyStopped: false,
+            failureReason: "non_html",
+          };
+        }
+        const readResult = await this.readPublishSignalHtmlWithSoftLimit(
+          response,
+          maxReadBytes,
+        );
+        if (!readResult.html || readResult.html.trim().length === 0) {
+          return {
+            truncated: readResult.truncated,
+            earlyStopped: readResult.earlyStopped,
+            failureReason: "empty_html",
+          };
+        }
+        const signal = this.extractPublishSignalFromHtml(readResult.html);
+        if (!signal || signal.source === "none") {
+          return {
+            truncated: readResult.truncated,
+            earlyStopped: readResult.earlyStopped,
+            failureReason: "no_publish_signal",
+          };
+        }
+        return {
+          signal,
+          truncated: readResult.truncated,
+          earlyStopped: readResult.earlyStopped,
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return {
+        truncated: false,
+        earlyStopped: false,
+        failureReason: "network_or_timeout",
+      };
+    }
+  }
+
+  private createEmptyPublishSignalSoftFailureBreakdown(): PublishSignalSoftFailureBreakdown {
+    return {
+      httpStatus: 0,
+      nonHtml: 0,
+      emptyHtml: 0,
+      networkOrTimeout: 0,
+      noPublishSignal: 0,
+    };
+  }
+
+  private incrementPublishSignalSoftFailure(
+    breakdown: PublishSignalSoftFailureBreakdown,
+    reason: PublishSignalSoftFailureReason,
+  ) {
+    if (reason === "http_status") {
+      breakdown.httpStatus += 1;
+      return;
+    }
+    if (reason === "non_html") {
+      breakdown.nonHtml += 1;
+      return;
+    }
+    if (reason === "empty_html") {
+      breakdown.emptyHtml += 1;
+      return;
+    }
+    if (reason === "network_or_timeout") {
+      breakdown.networkOrTimeout += 1;
+      return;
+    }
+    breakdown.noPublishSignal += 1;
+  }
+
+  private countPublishSignalSoftFailures(
+    breakdown: PublishSignalSoftFailureBreakdown,
+  ): number {
+    return (
+      breakdown.httpStatus +
+      breakdown.nonHtml +
+      breakdown.emptyHtml +
+      breakdown.networkOrTimeout +
+      breakdown.noPublishSignal
+    );
+  }
+
+  private async readPublishSignalHtmlWithSoftLimit(
+    response: Response,
+    maxBytes: number,
+  ): Promise<{ html: string; truncated: boolean; earlyStopped: boolean }> {
+    const limit =
+      Number.isFinite(maxBytes) && maxBytes > 0
+        ? Math.max(32_768, Math.min(64_000_000, Math.round(maxBytes)))
+        : this.defaultDetailPublishSignalHeadFetchMaxReadBytes;
+    if (!response.body) {
+      const text = await response.text();
+      if (text.length <= limit) {
+        return { html: text, truncated: false, earlyStopped: false };
+      }
+      return { html: text.slice(0, limit), truncated: true, earlyStopped: false };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const headProbeBytes = Math.min(limit, 524_288);
+    let bytesRead = 0;
+    let html = "";
+    let truncated = false;
+    let earlyStopped = false;
+    let shouldProbeHeadSignal = true;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (!value || value.length === 0) {
+          continue;
+        }
+        const remaining = limit - bytesRead;
+        if (remaining <= 0) {
+          truncated = true;
+          break;
+        }
+        if (value.length > remaining) {
+          html += decoder.decode(value.subarray(0, remaining), {
+            stream: true,
+          });
+          bytesRead += remaining;
+          truncated = true;
+          break;
+        }
+        html += decoder.decode(value, { stream: true });
+        bytesRead += value.length;
+        if (shouldProbeHeadSignal) {
+          const hasClosedHead = html.includes("</head>");
+          if (hasClosedHead || bytesRead >= headProbeBytes) {
+            shouldProbeHeadSignal = false;
+            const headSignal = this.extractPublishSignalFromHtml(html, {
+              includeTimeTag: false,
+            });
+            if (headSignal && (headSignal.source === "meta" || headSignal.source === "jsonld")) {
+              earlyStopped = true;
+              break;
+            }
+          }
+        }
+      }
+      html += decoder.decode();
+    } finally {
+      if (truncated || earlyStopped) {
+        try {
+          await reader.cancel();
+        } catch {
+          // no-op
+        }
+      } else {
+        try {
+          reader.releaseLock();
+        } catch {
+          // no-op
+        }
+      }
+    }
+    return { html, truncated, earlyStopped };
+  }
+
+  private extractPublishSignalFromHtml(
+    html: string,
+    options?: { includeTimeTag?: boolean },
+  ): CandidatePublishSignal | undefined {
+    const $ = load(html);
+    const head = $("head");
+    const includeTimeTag = options?.includeTimeTag ?? true;
+    const parseTimestamp = (value: unknown): number | undefined => {
+      if (typeof value !== "string") {
+        return undefined;
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      const timestamp = Date.parse(trimmed);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return undefined;
+      }
+      return timestamp;
+    };
+
+    const resolveMetaTimestamp = (): number | undefined => {
+      const selectors = [
+        'meta[property="article:published_time"]',
+        'meta[property="og:published_time"]',
+        'meta[name="pubdate"]',
+        'meta[name="publishdate"]',
+        'meta[name="date"]',
+        'meta[itemprop="datePublished"]',
+      ];
+      for (const selector of selectors) {
+        const value = head.find(selector).attr("content");
+        const timestamp = parseTimestamp(value);
+        if (timestamp) {
+          return timestamp;
+        }
+      }
+      return undefined;
+    };
+
+    const metaTimestamp = resolveMetaTimestamp();
+    if (metaTimestamp) {
+      return {
+        confidence: 0.95,
+        source: "meta",
+        timestamp: metaTimestamp,
+      };
+    }
+
+    const scripts = head.find('script[type="application/ld+json"]');
+    for (let index = 0; index < scripts.length && index < 8; index += 1) {
+      const raw = scripts.eq(index).contents().text().trim();
+      if (!raw) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        const timestamp = this.findJsonLdPublishTimestamp(parsed);
+        if (timestamp) {
+          return {
+            confidence: 0.92,
+            source: "jsonld",
+            timestamp,
+          };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (includeTimeTag) {
+      const timeValue = $("time[datetime]").first().attr("datetime");
+      const timeTimestamp = parseTimestamp(timeValue);
+      if (timeTimestamp) {
+        return {
+          confidence: 0.88,
+          source: "time_tag",
+          timestamp: timeTimestamp,
+        };
+      }
+    }
+
+    return undefined;
+  }
+
+  private findJsonLdPublishTimestamp(value: unknown): number | undefined {
+    const parseTimestamp = (candidate: unknown): number | undefined => {
+      if (typeof candidate !== "string") {
+        return undefined;
+      }
+      const timestamp = Date.parse(candidate);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) {
+        return undefined;
+      }
+      return timestamp;
+    };
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const timestamp = this.findJsonLdPublishTimestamp(item);
+        if (timestamp) {
+          return timestamp;
+        }
+      }
+      return undefined;
+    }
+
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    const published = parseTimestamp(record.datePublished);
+    if (published) {
+      return published;
+    }
+    const created = parseTimestamp(record.dateCreated);
+    if (created) {
+      return created;
+    }
+    const modified = parseTimestamp(record.dateModified);
+    if (modified) {
+      return modified;
+    }
+
+    for (const nested of Object.values(record)) {
+      const timestamp = this.findJsonLdPublishTimestamp(nested);
+      if (timestamp) {
+        return timestamp;
+      }
+    }
+    return undefined;
+  }
+
+  private resolveCandidatePublishSignal(
+    url: string,
+    enriched?: CandidatePublishSignal,
+  ): CandidatePublishSignal {
+    const pathTimestamp = this.parseDateFromUrlPath(url);
+    const pathSignal: CandidatePublishSignal = {
+      confidence: this.estimatePublishTimeConfidenceFromCandidateUrl(url),
+      source: "url_path",
+      timestamp: pathTimestamp,
+    };
+    if (!enriched) {
+      return pathSignal;
+    }
+    return enriched.confidence >= pathSignal.confidence ? enriched : pathSignal;
+  }
+
+  private buildDetailCandidateConfidenceBuckets(
+    signalByUrl: Map<string, CandidatePublishSignal>,
+    candidateUrls: string[],
+  ): DetailCandidateConfidenceBuckets {
+    const buckets: DetailCandidateConfidenceBuckets = {
+      lt04: 0,
+      from04To06: 0,
+      from06To08: 0,
+      gte08: 0,
+    };
+    for (const url of candidateUrls) {
+      const signal = signalByUrl.get(url);
+      const confidence =
+        signal?.confidence ??
+        this.estimatePublishTimeConfidenceFromCandidateUrl(url);
+      if (!Number.isFinite(confidence)) {
+        continue;
+      }
+      if (confidence < 0.4) {
+        buckets.lt04 += 1;
+      } else if (confidence < 0.6) {
+        buckets.from04To06 += 1;
+      } else if (confidence < 0.8) {
+        buckets.from06To08 += 1;
+      } else {
+        buckets.gte08 += 1;
+      }
+    }
+    return buckets;
+  }
+
+  private urlMatchesAnyPattern(url: string, patterns: string[]): boolean {
+    return patterns.some((pattern) => this.urlMatchesPattern(url, pattern));
+  }
+
+  private urlMatchesPattern(url: string, pattern: string): boolean {
+    const normalizedPattern = pattern.trim();
+    if (!normalizedPattern) {
+      return false;
+    }
+    const normalizedUrl = url.toLowerCase();
+    const loweredPattern = normalizedPattern.toLowerCase();
+
+    if (
+      loweredPattern.startsWith("/") &&
+      loweredPattern.endsWith("/") &&
+      loweredPattern.length > 2
+    ) {
+      try {
+        const regex = new RegExp(
+          normalizedPattern.slice(1, normalizedPattern.length - 1),
+          "i",
+        );
+        return regex.test(url);
+      } catch {
+        return normalizedUrl.includes(loweredPattern);
+      }
+    }
+
+    if (loweredPattern.includes("*")) {
+      const escaped = loweredPattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+      const wildcardRegex = new RegExp(
+        "^" + escaped.replace(/\*/g, ".*") + "$",
+        "i",
+      );
+      return wildcardRegex.test(url);
+    }
+    return normalizedUrl.includes(loweredPattern);
+  }
+
+  private estimatePublishTimeConfidenceFromCandidateUrl(url: string): number {
+    const fromPath = this.parseDateFromUrlPath(url);
+    if (fromPath) {
+      return 0.82;
+    }
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname
+        .replace(/\/+$/, "")
+        .split("/")
+        .filter((entry) => entry.length > 0);
+      const lastSegment = (segments[segments.length - 1] ?? "").toLowerCase();
+      if (/^\d{7,}$/.test(lastSegment)) {
+        return 0.74;
+      }
+      if (
+        segments.some(
+          (segment) => segment === "article" || segment === "articles",
+        )
+      ) {
+        return 0.6;
+      }
+      if (segments.length >= 3 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
+        return 0.56;
+      }
+      return 0.38;
+    } catch {
+      return 0.3;
+    }
+  }
+
+  private parseDateFromUrlPath(url: string): number | undefined {
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.toLowerCase();
+      const toUtcTimestamp = (year: number, month: number, day: number) => {
+        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+          return undefined;
+        }
+        if (month < 1 || month > 12 || day < 1 || day > 31) {
+          return undefined;
+        }
+        const ts = Date.UTC(year, month - 1, day);
+        if (!Number.isFinite(ts)) {
+          return undefined;
+        }
+        const check = new Date(ts);
+        if (
+          check.getUTCFullYear() !== year ||
+          check.getUTCMonth() !== month - 1 ||
+          check.getUTCDate() !== day
+        ) {
+          return undefined;
+        }
+        return ts;
+      };
+      const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
+      if (slashDate) {
+        return toUtcTimestamp(
+          Number(slashDate[1]),
+          Number(slashDate[2]),
+          Number(slashDate[3]),
+        );
+      }
+      const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+      if (dashedDate) {
+        return toUtcTimestamp(
+          Number(dashedDate[1]),
+          Number(dashedDate[2]),
+          Number(dashedDate[3]),
+        );
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private detailRelevanceToScore(minRelevanceScore: number): number {
     if (minRelevanceScore <= 0) {
       return Number.NEGATIVE_INFINITY;
@@ -2958,8 +4138,11 @@ export class CrawlExecutionService {
       const lastSegmentLower = lastSegment.toLowerCase();
       const hasArticleLeadSegment =
         this.hasArticleLeadPathSegment(segmentsLower);
+      const publishTimeConfidence =
+        this.estimatePublishTimeConfidenceFromCandidateUrl(url);
 
       let score = 0;
+      score += Math.round(publishTimeConfidence * 80);
       if (this.hasBlockedDetailPathSegments(segmentsLower)) {
         score -= 400;
       }
@@ -3763,6 +4946,16 @@ export class CrawlExecutionService {
         typeof record.allowExternalLinks === "boolean"
           ? record.allowExternalLinks
           : undefined,
+      includeUrlPatterns: this.parsePatternArray(record.includeUrlPatterns),
+      excludeUrlPatterns: this.parsePatternArray(record.excludeUrlPatterns),
+      minPublishTimeConfidence:
+        typeof record.minPublishTimeConfidence === "number"
+          ? record.minPublishTimeConfidence
+          : undefined,
+      preferFitMarkdownForQuality:
+        typeof record.preferFitMarkdownForQuality === "boolean"
+          ? record.preferFitMarkdownForQuality
+          : undefined,
     });
   }
 
@@ -3790,12 +4983,27 @@ export class CrawlExecutionService {
       typeof value.allowExternalLinks === "boolean"
         ? value.allowExternalLinks
         : undefined;
+    const includeUrlPatterns = this.normalizePatternList(value.includeUrlPatterns);
+    const excludeUrlPatterns = this.normalizePatternList(value.excludeUrlPatterns);
+    const minPublishTimeConfidence =
+      typeof value.minPublishTimeConfidence === "number" &&
+      Number.isFinite(value.minPublishTimeConfidence)
+        ? Math.max(0, Math.min(1, Number(value.minPublishTimeConfidence.toFixed(3))))
+        : undefined;
+    const preferFitMarkdownForQuality =
+      typeof value.preferFitMarkdownForQuality === "boolean"
+        ? value.preferFitMarkdownForQuality
+        : undefined;
 
     if (
       maxDetailUrls === undefined &&
       minRelevanceScore === undefined &&
       requireSameDomain === undefined &&
-      allowExternalLinks === undefined
+      allowExternalLinks === undefined &&
+      includeUrlPatterns === undefined &&
+      excludeUrlPatterns === undefined &&
+      minPublishTimeConfidence === undefined &&
+      preferFitMarkdownForQuality === undefined
     ) {
       return undefined;
     }
@@ -3805,6 +5013,10 @@ export class CrawlExecutionService {
       minRelevanceScore,
       requireSameDomain,
       allowExternalLinks,
+      includeUrlPatterns,
+      excludeUrlPatterns,
+      minPublishTimeConfidence,
+      preferFitMarkdownForQuality,
     };
   }
 
@@ -4837,6 +6049,19 @@ export class CrawlExecutionService {
       return undefined;
     }
     return value;
+  }
+
+  private parsePatternArray(value: unknown): string[] | undefined {
+    if (typeof value === "string") {
+      return this.normalizePatternList([value]);
+    }
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const normalized = value
+      .map((entry) => (typeof entry === "string" ? entry : ""))
+      .filter((entry): entry is string => Boolean(entry));
+    return this.normalizePatternList(normalized);
   }
 
   private coerceStringArray(value: unknown): string[] | undefined {

@@ -75,6 +75,12 @@ const statusColors: Record<CrawlTaskStatus, string> = {
 };
 const MIN_CRAWL_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_CRAWL_REQUEST_TIMEOUT_MS = 900_000;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 500;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 10_000;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY = 1;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY = 8;
+const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES = 1_048_576;
+const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES = 64_000_000;
 
 function safeParseJson<T>(input?: string | null): T | null {
   if (!input) {
@@ -1580,6 +1586,130 @@ export function CrawlTasksView() {
                       min={MIN_CRAWL_REQUEST_TIMEOUT_MS}
                       max={MAX_CRAWL_REQUEST_TIMEOUT_MS}
                       step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t(
+                      "settings.crawlClient.fields.detailPublishSignalHeadFetchTimeout",
+                      {
+                        defaultValue:
+                          "Detail publish-signal head fetch timeout",
+                      },
+                    )}
+                    name="detailPublishSignalHeadFetchTimeoutMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t(
+                          "settings.crawlClient.validation.detailPublishSignalHeadFetchTimeout",
+                          {
+                            defaultValue:
+                              "Please enter detail publish-signal head fetch timeout.",
+                          },
+                        ),
+                      },
+                      {
+                        type: "number",
+                        min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+                        max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+                        message: t("common.validation.numberRange", {
+                          min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+                          max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS}
+                      max={MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS}
+                      step={100}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t(
+                      "settings.crawlClient.fields.detailPublishSignalHeadFetchConcurrency",
+                      {
+                        defaultValue:
+                          "Detail publish-signal head fetch concurrency",
+                      },
+                    )}
+                    name="detailPublishSignalHeadFetchConcurrency"
+                    rules={[
+                      {
+                        required: true,
+                        message: t(
+                          "settings.crawlClient.validation.detailPublishSignalHeadFetchConcurrency",
+                          {
+                            defaultValue:
+                              "Please enter detail publish-signal head fetch concurrency.",
+                          },
+                        ),
+                      },
+                      {
+                        type: "number",
+                        min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+                        max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+                        message: t("common.validation.numberRange", {
+                          min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+                          max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY}
+                      max={MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_CONCURRENCY}
+                      step={1}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t(
+                      "settings.crawlClient.fields.detailPublishSignalHeadFetchMaxReadBytes",
+                      {
+                        defaultValue:
+                          "Detail publish-signal head fetch max read bytes",
+                      },
+                    )}
+                    name="detailPublishSignalHeadFetchMaxReadBytes"
+                    rules={[
+                      {
+                        required: true,
+                        message: t(
+                          "settings.crawlClient.validation.detailPublishSignalHeadFetchMaxReadBytes",
+                          {
+                            defaultValue:
+                              "Please enter detail publish-signal head fetch max read bytes.",
+                          },
+                        ),
+                      },
+                      {
+                        type: "number",
+                        min:
+                          MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                        max:
+                          MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                        message: t("common.validation.numberRange", {
+                          min:
+                            MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                          max:
+                            MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES}
+                      max={MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES}
+                      step={262_144}
                       style={{ width: "100%" }}
                     />
                   </Form.Item>

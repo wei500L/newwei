@@ -197,7 +197,23 @@ const buildForumTemplateValues = (): Partial<CrawlTaskTemplateValues> => ({
     maxDetailUrls: 12,
     minRelevanceScore: 0.25,
     requireSameDomain: true,
-    allowExternalLinks: true
+    allowExternalLinks: true,
+    minPublishTimeConfidence: 0.55,
+    preferFitMarkdownForQuality: true,
+    excludeUrlPatterns: [
+      "/tag/",
+      "/tags/",
+      "/topic/",
+      "/topics/",
+      "/archive/",
+      "/category/",
+      "/categories/",
+      "/author/",
+      "/authors/",
+      "/section/",
+      "/sections/",
+      "/latest"
+    ]
   }
 });
 

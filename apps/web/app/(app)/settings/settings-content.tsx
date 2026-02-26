@@ -819,6 +819,60 @@ function CrawlClientSettingsPanel() {
           <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
+          label={t("settings.crawlClient.fields.detailPublishSignalHeadFetchTimeout", {
+            defaultValue: "Detail publish-signal head fetch timeout"
+          })}
+          name="detailPublishSignalHeadFetchTimeoutMs"
+          rules={[
+            {
+              required: true,
+              message: t("settings.crawlClient.validation.detailPublishSignalHeadFetchTimeout", {
+                defaultValue: "Please enter detail publish-signal head fetch timeout."
+              })
+            },
+            { type: "number", min: 500, max: 10_000, message: t("common.validation.numberRange", { min: 500, max: 10_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="detailPublishSignalHeadFetchTimeoutMs" min={500} max={10_000} unit="ms" />}
+        >
+          <UnitInputNumber min={500} max={10_000} step={100} unit="ms" style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.detailPublishSignalHeadFetchConcurrency", {
+            defaultValue: "Detail publish-signal head fetch concurrency"
+          })}
+          name="detailPublishSignalHeadFetchConcurrency"
+          rules={[
+            {
+              required: true,
+              message: t("settings.crawlClient.validation.detailPublishSignalHeadFetchConcurrency", {
+                defaultValue: "Please enter detail publish-signal head fetch concurrency."
+              })
+            },
+            { type: "number", min: 1, max: 8, message: t("common.validation.numberRange", { min: 1, max: 8 }) }
+          ]}
+          extra={<NumberRangeExtra name="detailPublishSignalHeadFetchConcurrency" min={1} max={8} />}
+        >
+          <InputNumber min={1} max={8} step={1} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.detailPublishSignalHeadFetchMaxReadBytes", {
+            defaultValue: "Detail publish-signal head fetch max read bytes"
+          })}
+          name="detailPublishSignalHeadFetchMaxReadBytes"
+          rules={[
+            {
+              required: true,
+              message: t("settings.crawlClient.validation.detailPublishSignalHeadFetchMaxReadBytes", {
+                defaultValue: "Please enter detail publish-signal head fetch max read bytes."
+              })
+            },
+            { type: "number", min: 1_048_576, max: 64_000_000, message: t("common.validation.numberRange", { min: 1_048_576, max: 64_000_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="detailPublishSignalHeadFetchMaxReadBytes" min={1_048_576} max={64_000_000} unit="B" />}
+        >
+          <UnitInputNumber min={1_048_576} max={64_000_000} step={262_144} unit="B" style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
           label={t("settings.crawlClient.fields.maxAttempts")}
           name="maxRetries"
           rules={[

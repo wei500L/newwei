@@ -49,6 +49,7 @@ describe("CrawlQueueProcessor", () => {
       requestTimeoutHotMs?: number;
       requestTimeoutNormalMs?: number;
       queueOverloadCooldownMs?: number;
+      legacyQueueOverrides?: Record<string, unknown>;
       hotQueueOverrides?: Record<string, unknown>;
       normalQueueOverrides?: Record<string, unknown>;
     } = {}
@@ -79,6 +80,15 @@ describe("CrawlQueueProcessor", () => {
       }
     } as any;
 
+    const legacyQueue = {
+      opts: {
+        connection: { host: "localhost", port: 6379 }
+      },
+      getJob: jest.fn(),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined),
+      ...(options.legacyQueueOverrides ?? {})
+    } as any;
+
     const hotQueue = {
       opts: {
         connection: { host: "localhost", port: 6379 }
@@ -97,6 +107,11 @@ describe("CrawlQueueProcessor", () => {
       ...(options.normalQueueOverrides ?? {})
     } as any;
 
+    const legacyEvents = {
+      on: jest.fn(),
+      off: jest.fn()
+    } as any;
+
     const hotEvents = {
       on: jest.fn(),
       off: jest.fn()
@@ -112,13 +127,24 @@ describe("CrawlQueueProcessor", () => {
       crawlSettings,
       crawlExecutionService,
       prisma,
+      legacyQueue,
       hotQueue,
       normalQueue,
+      legacyEvents,
       hotEvents,
       normalEvents
     );
 
-    return { processor, crawlExecutionService, hotQueue, normalQueue, hotEvents, normalEvents };
+    return {
+      processor,
+      crawlExecutionService,
+      legacyQueue,
+      hotQueue,
+      normalQueue,
+      legacyEvents,
+      hotEvents,
+      normalEvents
+    };
   };
 
   beforeEach(() => {
@@ -126,7 +152,7 @@ describe("CrawlQueueProcessor", () => {
     workerInstances.length = 0;
   });
 
-  it("creates workers for hot and normal queues and forwards timeout tier", async () => {
+  it("creates workers for hot, legacy, and normal queues and forwards timeout tier", async () => {
     const { processor, crawlExecutionService } = createContext({
       requestTimeoutHotMs: 60_000,
       requestTimeoutNormalMs: 120_000
@@ -136,10 +162,12 @@ describe("CrawlQueueProcessor", () => {
     await processor.onModuleInit();
 
     expect((Worker as jest.Mock).mock.calls[0][0]).toBe("crawl4ai-hot");
-    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai-normal");
+    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai");
+    expect((Worker as jest.Mock).mock.calls[2][0]).toBe("crawl4ai-normal");
 
     const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
-    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
+    const legacyCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[2][1] as (job: any) => Promise<unknown>;
 
     const baseJob = {
       id: "job-1",
@@ -157,7 +185,8 @@ describe("CrawlQueueProcessor", () => {
     };
 
     await hotCallback(baseJob);
-    await normalCallback({ ...baseJob, id: "job-2" });
+    await legacyCallback({ ...baseJob, id: "job-2", data: { ...baseJob.data, taskId: "task-2" } });
+    await normalCallback({ ...baseJob, id: "job-3", data: { ...baseJob.data, taskId: "task-3" } });
 
     expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
       1,
@@ -168,7 +197,14 @@ describe("CrawlQueueProcessor", () => {
     );
     expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
       2,
-      "task-1",
+      "task-2",
+      "org-1",
+      "user-1",
+      expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
+    );
+    expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
+      3,
+      "task-3",
       "org-1",
       "user-1",
       expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
@@ -194,7 +230,7 @@ describe("CrawlQueueProcessor", () => {
     await processor.onModuleInit();
 
     const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
-    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[2][1] as (job: any) => Promise<unknown>;
     const baseJob = {
       id: "job-1",
       data: {
@@ -258,7 +294,9 @@ describe("CrawlQueueProcessor", () => {
     };
 
     await expect(workerCallback(job)).rejects.toBe(mockRateLimitError);
-    expect(workerInstances[0].rateLimit).toHaveBeenCalledWith(90_000);
+    for (const worker of workerInstances) {
+      expect(worker.rateLimit).toHaveBeenCalledWith(90_000);
+    }
     expect(WorkerMock.RateLimitError).toHaveBeenCalledTimes(1);
   });
 
@@ -285,17 +323,20 @@ describe("CrawlQueueProcessor", () => {
     expect(workerInstances[0].rateLimit).not.toHaveBeenCalled();
   });
 
-  it("applies global concurrency to both queues on startup", async () => {
+  it("applies global concurrency to all queues on startup", async () => {
+    const legacySetGlobalConcurrency = jest.fn().mockResolvedValue(undefined);
     const hotSetGlobalConcurrency = jest.fn().mockResolvedValue(undefined);
     const normalSetGlobalConcurrency = jest.fn().mockResolvedValue(undefined);
     const { processor } = createContext({
       settingsMaxConcurrency: 5,
+      legacyQueueOverrides: { setGlobalConcurrency: legacySetGlobalConcurrency },
       hotQueueOverrides: { setGlobalConcurrency: hotSetGlobalConcurrency },
       normalQueueOverrides: { setGlobalConcurrency: normalSetGlobalConcurrency }
     });
 
     await processor.onModuleInit();
 
+    expect(legacySetGlobalConcurrency).toHaveBeenCalledWith(5);
     expect(hotSetGlobalConcurrency).toHaveBeenCalledWith(5);
     expect(normalSetGlobalConcurrency).toHaveBeenCalledWith(5);
   });

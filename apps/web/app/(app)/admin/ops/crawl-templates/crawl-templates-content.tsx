@@ -66,6 +66,10 @@ interface CrawlTemplateFormValues {
   minRelevanceScore?: number;
   requireSameDomain: boolean;
   allowExternalLinks: boolean;
+  minPublishTimeConfidence?: number;
+  preferFitMarkdownForQuality: boolean;
+  includeUrlPatterns?: string;
+  excludeUrlPatterns?: string;
   crawlOptionsJson?: string;
 }
 
@@ -99,6 +103,36 @@ const normalizeOptions = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+
+const parsePatternText = (value: string | undefined): string[] | undefined => {
+  const normalized = (value ?? "")
+    .split(/[\n,]/g)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const unique: string[] = [];
+  for (const pattern of normalized) {
+    if (!unique.includes(pattern)) {
+      unique.push(pattern);
+    }
+    if (unique.length >= 25) {
+      break;
+    }
+  }
+  return unique.length > 0 ? unique : undefined;
+};
+
+const stringifyPatternList = (value: unknown): string => {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+  return normalized.length > 0 ? normalized.join("\n") : "";
+};
 
 export function CrawlTemplatesContent() {
   const { t } = useTranslation();
@@ -169,6 +203,10 @@ export function CrawlTemplatesContent() {
         autoExpandDetails: false,
         requireSameDomain: true,
         allowExternalLinks: true,
+        minPublishTimeConfidence: 0.55,
+        preferFitMarkdownForQuality: true,
+        includeUrlPatterns: "",
+        excludeUrlPatterns: "",
         crawlOptionsJson: "{}",
       },
     });
@@ -205,6 +243,11 @@ export function CrawlTemplatesContent() {
       Number.isFinite(detailExpansionOptions.minRelevanceScore)
         ? detailExpansionOptions.minRelevanceScore
         : undefined;
+    const minPublishTimeConfidence =
+      typeof detailExpansionOptions?.minPublishTimeConfidence === "number" &&
+      Number.isFinite(detailExpansionOptions.minPublishTimeConfidence)
+        ? detailExpansionOptions.minPublishTimeConfidence
+        : 0.55;
     setModalState({
       open: true,
       editing: template,
@@ -244,6 +287,18 @@ export function CrawlTemplatesContent() {
           typeof detailExpansionOptions?.allowExternalLinks === "boolean"
             ? detailExpansionOptions.allowExternalLinks
             : true,
+        minPublishTimeConfidence,
+        preferFitMarkdownForQuality:
+          typeof detailExpansionOptions?.preferFitMarkdownForQuality ===
+          "boolean"
+            ? detailExpansionOptions.preferFitMarkdownForQuality
+            : true,
+        includeUrlPatterns: stringifyPatternList(
+          detailExpansionOptions?.includeUrlPatterns,
+        ),
+        excludeUrlPatterns: stringifyPatternList(
+          detailExpansionOptions?.excludeUrlPatterns,
+        ),
         crawlOptionsJson: options ? JSON.stringify(options, null, 2) : "{}",
       },
     });
@@ -338,6 +393,26 @@ export function CrawlTemplatesContent() {
       }
       if (typeof values.allowExternalLinks === "boolean") {
         detailExpansion.allowExternalLinks = values.allowExternalLinks;
+      }
+      if (
+        typeof values.minPublishTimeConfidence === "number" &&
+        Number.isFinite(values.minPublishTimeConfidence)
+      ) {
+        detailExpansion.minPublishTimeConfidence = Number(
+          Math.max(0, Math.min(1, values.minPublishTimeConfidence)).toFixed(3),
+        );
+      }
+      if (typeof values.preferFitMarkdownForQuality === "boolean") {
+        detailExpansion.preferFitMarkdownForQuality =
+          values.preferFitMarkdownForQuality;
+      }
+      const includeUrlPatterns = parsePatternText(values.includeUrlPatterns);
+      if (includeUrlPatterns && includeUrlPatterns.length > 0) {
+        detailExpansion.includeUrlPatterns = includeUrlPatterns;
+      }
+      const excludeUrlPatterns = parsePatternText(values.excludeUrlPatterns);
+      if (excludeUrlPatterns && excludeUrlPatterns.length > 0) {
+        detailExpansion.excludeUrlPatterns = excludeUrlPatterns;
       }
       if (Object.keys(detailExpansion).length > 0) {
         base.detailExpansion = detailExpansion;
@@ -956,6 +1031,72 @@ export function CrawlTemplatesContent() {
                     valuePropName="checked"
                   >
                     <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="minPublishTimeConfidence"
+                    label={t(
+                      "crawl.detailExpansion.minPublishTimeConfidence",
+                      {
+                        defaultValue: "Min publish time confidence",
+                      },
+                    )}
+                    tooltip={t(
+                      "crawl.detailExpansion.minPublishTimeConfidenceHint",
+                      {
+                        defaultValue:
+                          "Only prioritize links that look like publish-time-stamped detail pages (0~1).",
+                      },
+                    )}
+                  >
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="preferFitMarkdownForQuality"
+                    label={t(
+                      "crawl.detailExpansion.preferFitMarkdownForQuality",
+                      {
+                        defaultValue: "Prefer fit markdown for quality",
+                      },
+                    )}
+                    tooltip={t(
+                      "crawl.detailExpansion.preferFitMarkdownForQualityHint",
+                      {
+                        defaultValue:
+                          "Use fit_markdown first when evaluating low-signal/list-like pages.",
+                      },
+                    )}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="excludeUrlPatterns"
+                    label={t("crawl.detailExpansion.excludeUrlPatterns", {
+                      defaultValue: "Exclude URL patterns",
+                    })}
+                    tooltip={t("crawl.detailExpansion.excludeUrlPatternsHint", {
+                      defaultValue:
+                        "One pattern per line. Supports wildcard * and regex /.../.",
+                    })}
+                  >
+                    <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="includeUrlPatterns"
+                    label={t("crawl.detailExpansion.includeUrlPatterns", {
+                      defaultValue: "Include URL patterns",
+                    })}
+                    tooltip={t("crawl.detailExpansion.includeUrlPatternsHint", {
+                      defaultValue:
+                        "Optional allowlist. If set, only URLs matching these patterns are followed.",
+                    })}
+                  >
+                    <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
                   </Form.Item>
                 </>
               ) : null

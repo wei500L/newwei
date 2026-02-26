@@ -192,6 +192,22 @@ interface Crawl4aiQualitySourceMetric {
   lowSignalRatio: number;
   expansionSuccessRate: number;
   avgMarkdownChars: number;
+  candidateRejects?: {
+    includePattern: number;
+    excludePattern: number;
+    publishConfidence: number;
+  };
+  publishConfidenceBuckets?: {
+    lt04: number;
+    from04To06: number;
+    from06To08: number;
+    gte08: number;
+  };
+  fitMarkdownPreferenceRate?: number;
+  headSignalSuccessRate?: number;
+  headSignalSoftFailureRate?: number;
+  headSignalTruncatedRate?: number;
+  headSignalNoPublishSignalRate?: number;
 }
 
 interface Crawl4aiQualitySnapshot {
@@ -204,6 +220,22 @@ interface Crawl4aiQualitySnapshot {
   expansionTriggerRate: number;
   expansionSuccessRate: number;
   avgMarkdownChars: number;
+  candidateRejects?: {
+    includePattern: number;
+    excludePattern: number;
+    publishConfidence: number;
+  };
+  publishConfidenceBuckets?: {
+    lt04: number;
+    from04To06: number;
+    from06To08: number;
+    gte08: number;
+  };
+  fitMarkdownPreferenceRate?: number;
+  headSignalSuccessRate?: number;
+  headSignalSoftFailureRate?: number;
+  headSignalTruncatedRate?: number;
+  headSignalNoPublishSignalRate?: number;
   groupedBySource: Crawl4aiQualitySourceMetric[];
 }
 
@@ -336,6 +368,10 @@ interface NewsSourceFormValues {
   crawlDetailMinRelevanceScore?: number;
   crawlDetailRequireSameDomain?: boolean;
   crawlDetailAllowExternalLinks?: boolean;
+  crawlDetailMinPublishTimeConfidence?: number;
+  crawlDetailPreferFitMarkdownForQuality?: boolean;
+  crawlDetailIncludeUrlPatterns?: string[];
+  crawlDetailExcludeUrlPatterns?: string[];
   crawlMarkdownContentSource?: "cleaned_html" | "raw_html" | "fit_html";
   crawlMarkdownEscapeHtmlMode?: "auto" | "enable" | "disable";
   crawlMarkdownCitationsMode?: "auto" | "enable" | "disable";
@@ -403,6 +439,10 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   crawlDetailMinRelevanceScore: 0.2,
   crawlDetailRequireSameDomain: true,
   crawlDetailAllowExternalLinks: true,
+  crawlDetailMinPublishTimeConfidence: 0.55,
+  crawlDetailPreferFitMarkdownForQuality: true,
+  crawlDetailIncludeUrlPatterns: [],
+  crawlDetailExcludeUrlPatterns: [],
   crawlMarkdownContentSource: "cleaned_html",
   crawlMarkdownEscapeHtmlMode: "auto",
   crawlMarkdownCitationsMode: "auto",
@@ -819,6 +859,8 @@ const createDefaultLiveRefreshSources = (): Record<
   alerts: false,
 });
 
+const CRAWL_QUALITY_ALERT_RATE_THRESHOLD = 0.15;
+
 export function NewsSourcesContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -944,6 +986,70 @@ export function NewsSourcesContent() {
       ).sort(),
     [groups, sources],
   );
+
+  const crawlQualityRateAlerts = useMemo(() => {
+    if (!crawlQualityStats) {
+      return [];
+    }
+    const grouped = Array.isArray(crawlQualityStats.groupedBySource)
+      ? crawlQualityStats.groupedBySource
+      : [];
+    const resolveWorstSource = (
+      selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+    ) => {
+      let best: { sourceId: string; rate: number } | null = null;
+      for (const entry of grouped) {
+        const value = selector(entry);
+        const rate =
+          typeof value === "number" && Number.isFinite(value)
+            ? Math.max(0, value)
+            : 0;
+        if (!best || rate > best.rate) {
+          best = { sourceId: entry.sourceId, rate };
+        }
+      }
+      return best;
+    };
+    const alerts: Array<{
+      key: "softFailure" | "truncated" | "noPublishSignal";
+      overallRate: number;
+      worstSource?: { sourceId: string; rate: number } | null;
+    }> = [];
+    const pushAlert = (
+      key: "softFailure" | "truncated" | "noPublishSignal",
+      rawRate: number | undefined,
+      selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+    ) => {
+      const overallRate =
+        typeof rawRate === "number" && Number.isFinite(rawRate)
+          ? Math.max(0, rawRate)
+          : 0;
+      if (overallRate < CRAWL_QUALITY_ALERT_RATE_THRESHOLD) {
+        return;
+      }
+      alerts.push({
+        key,
+        overallRate,
+        worstSource: resolveWorstSource(selector),
+      });
+    };
+    pushAlert(
+      "softFailure",
+      crawlQualityStats.headSignalSoftFailureRate,
+      (entry) => entry.headSignalSoftFailureRate,
+    );
+    pushAlert(
+      "truncated",
+      crawlQualityStats.headSignalTruncatedRate,
+      (entry) => entry.headSignalTruncatedRate,
+    );
+    pushAlert(
+      "noPublishSignal",
+      crawlQualityStats.headSignalNoPublishSignalRate,
+      (entry) => entry.headSignalNoPublishSignalRate,
+    );
+    return alerts;
+  }, [crawlQualityStats]);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -1752,6 +1858,38 @@ export function NewsSourcesContent() {
       typeof detailExpansionConfig?.allowExternalLinks === "boolean"
         ? detailExpansionConfig.allowExternalLinks
         : true;
+    const crawlDetailMinPublishTimeConfidence =
+      typeof detailExpansionConfig?.minPublishTimeConfidence === "number" &&
+      Number.isFinite(detailExpansionConfig.minPublishTimeConfidence)
+        ? Number(
+            Math.max(
+              0,
+              Math.min(1, detailExpansionConfig.minPublishTimeConfidence),
+            ).toFixed(3),
+          )
+        : 0.55;
+    const crawlDetailPreferFitMarkdownForQuality =
+      typeof detailExpansionConfig?.preferFitMarkdownForQuality === "boolean"
+        ? detailExpansionConfig.preferFitMarkdownForQuality
+        : true;
+    const crawlDetailIncludeUrlPatterns = Array.isArray(
+      detailExpansionConfig?.includeUrlPatterns,
+    )
+      ? detailExpansionConfig.includeUrlPatterns
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+          .slice(0, 25)
+      : [];
+    const crawlDetailExcludeUrlPatterns = Array.isArray(
+      detailExpansionConfig?.excludeUrlPatterns,
+    )
+      ? detailExpansionConfig.excludeUrlPatterns
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+          .slice(0, 25)
+      : [];
     const markdownOptionsConfig =
       crawlOptionsConfig?.markdownOptions &&
       typeof crawlOptionsConfig.markdownOptions === "object" &&
@@ -1819,6 +1957,10 @@ export function NewsSourcesContent() {
       crawlDetailMinRelevanceScore,
       crawlDetailRequireSameDomain,
       crawlDetailAllowExternalLinks,
+      crawlDetailMinPublishTimeConfidence,
+      crawlDetailPreferFitMarkdownForQuality,
+      crawlDetailIncludeUrlPatterns,
+      crawlDetailExcludeUrlPatterns,
       crawlMarkdownContentSource,
       crawlMarkdownEscapeHtmlMode,
       crawlMarkdownCitationsMode,
@@ -2098,6 +2240,43 @@ export function NewsSourcesContent() {
       if (typeof values.crawlDetailAllowExternalLinks === "boolean") {
         detailExpansion.allowExternalLinks =
           values.crawlDetailAllowExternalLinks;
+      }
+      if (
+        typeof values.crawlDetailMinPublishTimeConfidence === "number" &&
+        Number.isFinite(values.crawlDetailMinPublishTimeConfidence)
+      ) {
+        detailExpansion.minPublishTimeConfidence = Number(
+          Math.max(
+            0,
+            Math.min(1, values.crawlDetailMinPublishTimeConfidence),
+          ).toFixed(3),
+        );
+      }
+      if (typeof values.crawlDetailPreferFitMarkdownForQuality === "boolean") {
+        detailExpansion.preferFitMarkdownForQuality =
+          values.crawlDetailPreferFitMarkdownForQuality;
+      }
+      const includeUrlPatterns = Array.isArray(
+        values.crawlDetailIncludeUrlPatterns,
+      )
+        ? values.crawlDetailIncludeUrlPatterns
+            .map((value) => (typeof value === "string" ? value.trim() : ""))
+            .filter((value) => value.length > 0)
+            .slice(0, 25)
+        : [];
+      if (includeUrlPatterns.length > 0) {
+        detailExpansion.includeUrlPatterns = includeUrlPatterns;
+      }
+      const excludeUrlPatterns = Array.isArray(
+        values.crawlDetailExcludeUrlPatterns,
+      )
+        ? values.crawlDetailExcludeUrlPatterns
+            .map((value) => (typeof value === "string" ? value.trim() : ""))
+            .filter((value) => value.length > 0)
+            .slice(0, 25)
+        : [];
+      if (excludeUrlPatterns.length > 0) {
+        detailExpansion.excludeUrlPatterns = excludeUrlPatterns;
       }
       if (Object.keys(detailExpansion).length > 0) {
         resolvedCrawlOptions.detailExpansion = detailExpansion;
@@ -4339,6 +4518,142 @@ export function NewsSourcesContent() {
                     />
                   </Col>
                 </Row>
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.publishConfidenceRejects", {
+                        defaultValue: "Publish-confidence rejects",
+                      })}
+                      value={
+                        crawlQualityStats.candidateRejects?.publishConfidence ?? 0
+                      }
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.patternRejects", {
+                        defaultValue: "Pattern rejects",
+                      })}
+                      value={
+                        (crawlQualityStats.candidateRejects?.includePattern ??
+                          0) +
+                        (crawlQualityStats.candidateRejects?.excludePattern ??
+                          0)
+                      }
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.fitMarkdownPreference", {
+                        defaultValue: "Fit markdown preference",
+                      })}
+                      value={Number(
+                        (
+                          (crawlQualityStats.fitMarkdownPreferenceRate ?? 0) *
+                          100
+                        ).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.headSignalSuccess", {
+                        defaultValue: "Head signal success",
+                      })}
+                      value={Number(
+                        ((crawlQualityStats.headSignalSuccessRate ?? 0) * 100)
+                          .toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                </Row>
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.headSignalSoftFailure", {
+                        defaultValue: "Head signal soft-failure",
+                      })}
+                      value={Number(
+                        ((crawlQualityStats.headSignalSoftFailureRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.headSignalTruncated", {
+                        defaultValue: "Head signal truncated",
+                      })}
+                      value={Number(
+                        ((crawlQualityStats.headSignalTruncatedRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={t("newsSources.quality.headSignalNoPublishSignal", {
+                        defaultValue: "Head signal no-publish",
+                      })}
+                      value={Number(
+                        ((crawlQualityStats.headSignalNoPublishSignalRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                </Row>
+                {crawlQualityRateAlerts.length > 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message={t("newsSources.quality.headSignalAlertTitle", {
+                      defaultValue:
+                        "Head-signal quality warning: one or more fallback/error rates exceed 15%",
+                    })}
+                    description={crawlQualityRateAlerts
+                      .map((entry) =>
+                        t(`newsSources.quality.headSignalAlert.${entry.key}`, {
+                          defaultValue:
+                            "{{metric}} {{overall}}% (worst source: {{source}} {{sourceRate}}%)",
+                          metric:
+                            entry.key === "softFailure"
+                              ? t("newsSources.quality.headSignalSoftFailure", {
+                                  defaultValue: "soft-failure",
+                                })
+                              : entry.key === "truncated"
+                                ? t("newsSources.quality.headSignalTruncated", {
+                                    defaultValue: "truncated",
+                                  })
+                                : t("newsSources.quality.headSignalNoPublishSignal", {
+                                    defaultValue: "no-publish-signal",
+                                  }),
+                          overall: Number((entry.overallRate * 100).toFixed(1)),
+                          source: entry.worstSource?.sourceId ?? "unknown",
+                          sourceRate: Number(
+                            (((entry.worstSource?.rate ?? 0) * 100)).toFixed(1),
+                          ),
+                        }),
+                      )
+                      .join(" | ")}
+                  />
+                ) : null}
+                <Typography.Text type="secondary">
+                  {t("newsSources.quality.publishConfidenceBuckets", {
+                    defaultValue:
+                      "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
+                    lt04: crawlQualityStats.publishConfidenceBuckets?.lt04 ?? 0,
+                    from04To06:
+                      crawlQualityStats.publishConfidenceBuckets?.from04To06 ??
+                      0,
+                    from06To08:
+                      crawlQualityStats.publishConfidenceBuckets?.from06To08 ??
+                      0,
+                    gte08:
+                      crawlQualityStats.publishConfidenceBuckets?.gte08 ?? 0,
+                  })}
+                </Typography.Text>
                 <Typography.Text type="secondary">
                   {t("newsSources.quality.updatedAt", {
                     defaultValue: "Window {{from}} - {{to}}",
@@ -5305,6 +5620,72 @@ export function NewsSourcesContent() {
                     valuePropName="checked"
                   >
                     <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailMinPublishTimeConfidence"
+                    label={t(
+                      "newsSources.fields.crawlDetailMinPublishTimeConfidence",
+                      {
+                        defaultValue: "Min publish time confidence",
+                      },
+                    )}
+                    extra={t(
+                      "crawl.detailExpansion.minPublishTimeConfidenceHint",
+                      {
+                        defaultValue:
+                          "Prioritize URLs with stronger publish-time signals (0~1).",
+                      },
+                    )}
+                  >
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailPreferFitMarkdownForQuality"
+                    label={t(
+                      "newsSources.fields.crawlDetailPreferFitMarkdownForQuality",
+                      {
+                        defaultValue: "Prefer fit markdown for quality",
+                      },
+                    )}
+                    extra={t(
+                      "crawl.detailExpansion.preferFitMarkdownForQualityHint",
+                      {
+                        defaultValue:
+                          "Use fit_markdown first for low-signal/list-like quality assessment.",
+                      },
+                    )}
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailExcludeUrlPatterns"
+                    label={t("newsSources.fields.crawlDetailExcludeUrlPatterns", {
+                      defaultValue: "Exclude URL patterns",
+                    })}
+                    extra={t("crawl.detailExpansion.excludeUrlPatternsHint", {
+                      defaultValue:
+                        "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
+                    })}
+                  >
+                    <Select mode="tags" tokenSeparators={[","]} />
+                  </Form.Item>
+                  <Form.Item
+                    name="crawlDetailIncludeUrlPatterns"
+                    label={t("newsSources.fields.crawlDetailIncludeUrlPatterns", {
+                      defaultValue: "Include URL patterns",
+                    })}
+                    extra={t("crawl.detailExpansion.includeUrlPatternsHint", {
+                      defaultValue:
+                        "Optional allowlist. If set, only matching URLs are followed.",
+                    })}
+                  >
+                    <Select mode="tags" tokenSeparators={[","]} />
                   </Form.Item>
                 </>
               );

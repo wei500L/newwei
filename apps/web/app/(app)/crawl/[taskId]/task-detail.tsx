@@ -45,6 +45,11 @@ import {
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
+import {
+  parseExpansionHeadSignalSummary,
+  resolveHeadSignalFallbackHint,
+  type ExpansionHeadSignalSummary,
+} from "@/lib/crawl-task-head-signal";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
@@ -1034,11 +1039,36 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       typeof value.allowExternalLinks === "boolean"
         ? value.allowExternalLinks
         : null;
+    const minPublishTimeConfidence =
+      typeof value.minPublishTimeConfidence === "number" &&
+      Number.isFinite(value.minPublishTimeConfidence)
+        ? value.minPublishTimeConfidence
+        : null;
+    const preferFitMarkdownForQuality =
+      typeof value.preferFitMarkdownForQuality === "boolean"
+        ? value.preferFitMarkdownForQuality
+        : null;
+    const includeUrlPatterns = Array.isArray(value.includeUrlPatterns)
+      ? value.includeUrlPatterns
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+      : [];
+    const excludeUrlPatterns = Array.isArray(value.excludeUrlPatterns)
+      ? value.excludeUrlPatterns
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+      : [];
     if (
       maxDetailUrls == null &&
       minRelevanceScore == null &&
       requireSameDomain == null &&
-      allowExternalLinks == null
+      allowExternalLinks == null &&
+      minPublishTimeConfidence == null &&
+      preferFitMarkdownForQuality == null &&
+      includeUrlPatterns.length === 0 &&
+      excludeUrlPatterns.length === 0
     ) {
       return null;
     }
@@ -1047,6 +1077,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       minRelevanceScore,
       requireSameDomain,
       allowExternalLinks,
+      minPublishTimeConfidence,
+      preferFitMarkdownForQuality,
+      includeUrlPatterns,
+      excludeUrlPatterns,
     };
   }, [config]);
 
@@ -1224,6 +1258,66 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
     return null;
   }, [taskLogs]);
+
+  const expansionHeadSignalSummary = useMemo<ExpansionHeadSignalSummary | null>(
+    () => parseExpansionHeadSignalSummary(taskLogs),
+    [taskLogs],
+  );
+
+  const expansionHeadSignalSoftFailureDetails = useMemo(() => {
+    if (
+      !expansionHeadSignalSummary ||
+      expansionHeadSignalSummary.softFailureCount <= 0
+    ) {
+      return "";
+    }
+    const parts: string[] = [];
+    if (expansionHeadSignalSummary.softFailures.httpStatus > 0) {
+      parts.push(
+        t("crawl.detail.expansion.softFailures.httpStatus", {
+          defaultValue: "HTTP non-2xx: {{count}}",
+          count: expansionHeadSignalSummary.softFailures.httpStatus,
+        }),
+      );
+    }
+    if (expansionHeadSignalSummary.softFailures.nonHtml > 0) {
+      parts.push(
+        t("crawl.detail.expansion.softFailures.nonHtml", {
+          defaultValue: "Non-HTML response: {{count}}",
+          count: expansionHeadSignalSummary.softFailures.nonHtml,
+        }),
+      );
+    }
+    if (expansionHeadSignalSummary.softFailures.emptyHtml > 0) {
+      parts.push(
+        t("crawl.detail.expansion.softFailures.emptyHtml", {
+          defaultValue: "Empty HTML: {{count}}",
+          count: expansionHeadSignalSummary.softFailures.emptyHtml,
+        }),
+      );
+    }
+    if (expansionHeadSignalSummary.softFailures.networkOrTimeout > 0) {
+      parts.push(
+        t("crawl.detail.expansion.softFailures.networkOrTimeout", {
+          defaultValue: "Timeout/Network: {{count}}",
+          count: expansionHeadSignalSummary.softFailures.networkOrTimeout,
+        }),
+      );
+    }
+    if (expansionHeadSignalSummary.softFailures.noPublishSignal > 0) {
+      parts.push(
+        t("crawl.detail.expansion.softFailures.noPublishSignal", {
+          defaultValue: "No publish signal extracted: {{count}}",
+          count: expansionHeadSignalSummary.softFailures.noPublishSignal,
+        }),
+      );
+    }
+    return parts.join(" · ");
+  }, [expansionHeadSignalSummary, t]);
+
+  const expansionHeadSignalFallbackHint = useMemo(() => {
+    return resolveHeadSignalFallbackHint(expansionHeadSignalSummary);
+  }, [expansionHeadSignalSummary]);
 
   const proxySummary: ReactNode = useMemo(() => {
     if (!config) {
@@ -2509,6 +2603,32 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
                   {detailExpansionSummary.allowExternalLinks ? "true" : "false"}
                 </Typography.Text>
               ) : null}
+              {detailExpansionSummary.minPublishTimeConfidence != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  minPublishTimeConfidence=
+                  {detailExpansionSummary.minPublishTimeConfidence}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.preferFitMarkdownForQuality != null ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  preferFitMarkdownForQuality=
+                  {detailExpansionSummary.preferFitMarkdownForQuality
+                    ? "true"
+                    : "false"}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.excludeUrlPatterns.length > 0 ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  excludeUrlPatterns=
+                  {detailExpansionSummary.excludeUrlPatterns.join(", ")}
+                </Typography.Text>
+              ) : null}
+              {detailExpansionSummary.includeUrlPatterns.length > 0 ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  includeUrlPatterns=
+                  {detailExpansionSummary.includeUrlPatterns.join(", ")}
+                </Typography.Text>
+              ) : null}
             </Space>
           ) : (
             t("common.emptyValue")
@@ -2519,47 +2639,173 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
             defaultValue: "Expansion metrics",
           })}
         >
-          {expansionSummary ? (
+          {expansionSummary || expansionHeadSignalSummary ? (
             <Space direction="vertical" size={0}>
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                candidateCount={expansionSummary.candidateCount}
-              </Typography.Text>
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                batchCount={expansionSummary.batchCount}
-              </Typography.Text>
-              <Typography.Text style={{ fontFamily: "monospace" }}>
-                improvedSuccesses={expansionSummary.improvedSuccesses}
-              </Typography.Text>
-              {expansionSummary.primaryCandidatePool != null ? (
+              {expansionSummary ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  candidateCount={expansionSummary.candidateCount}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  batchCount={expansionSummary.batchCount}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary ? (
+                <Typography.Text style={{ fontFamily: "monospace" }}>
+                  improvedSuccesses={expansionSummary.improvedSuccesses}
+                </Typography.Text>
+              ) : null}
+              {expansionSummary?.primaryCandidatePool != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   primaryCandidatePool={expansionSummary.primaryCandidatePool}
                 </Typography.Text>
               ) : null}
-              {expansionSummary.fallbackCandidatePool != null ? (
+              {expansionSummary?.fallbackCandidatePool != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   fallbackCandidatePool={expansionSummary.fallbackCandidatePool}
                 </Typography.Text>
               ) : null}
-              {expansionSummary.minimumCandidateCount != null ? (
+              {expansionSummary?.minimumCandidateCount != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   minimumCandidateCount={expansionSummary.minimumCandidateCount}
                 </Typography.Text>
               ) : null}
-              {expansionSummary.strictCandidateCount != null ? (
+              {expansionSummary?.strictCandidateCount != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   strictCandidateCount={expansionSummary.strictCandidateCount}
                 </Typography.Text>
               ) : null}
-              {expansionSummary.relaxedCandidateCount != null ? (
+              {expansionSummary?.relaxedCandidateCount != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   relaxedCandidateCount={expansionSummary.relaxedCandidateCount}
                 </Typography.Text>
               ) : null}
-              {expansionSummary.linkFallbackCandidateCount != null ? (
+              {expansionSummary?.linkFallbackCandidateCount != null ? (
                 <Typography.Text style={{ fontFamily: "monospace" }}>
                   linkFallbackCandidateCount=
                   {expansionSummary.linkFallbackCandidateCount}
                 </Typography.Text>
+              ) : null}
+              {expansionHeadSignalSummary ? (
+                <>
+                  {expansionHeadSignalSummary.attempted != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      headSignalAttempted={expansionHeadSignalSummary.attempted}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.succeeded != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      headSignalSucceeded={expansionHeadSignalSummary.succeeded}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.failed != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      headSignalFailed={expansionHeadSignalSummary.failed}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.topK != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      headSignalTopK={expansionHeadSignalSummary.topK}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.configuredTimeoutMs != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      configuredTimeoutMs=
+                      {expansionHeadSignalSummary.configuredTimeoutMs}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.configuredConcurrency != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      configuredConcurrency=
+                      {expansionHeadSignalSummary.configuredConcurrency}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.configuredMaxReadBytes != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      configuredMaxReadBytes=
+                      {expansionHeadSignalSummary.configuredMaxReadBytes}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.effectiveTimeoutMs != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      effectiveTimeoutMs=
+                      {expansionHeadSignalSummary.effectiveTimeoutMs}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.effectiveConcurrency != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      effectiveConcurrency=
+                      {expansionHeadSignalSummary.effectiveConcurrency}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.maxReadBytes != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      maxReadBytes={expansionHeadSignalSummary.maxReadBytes}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.truncatedResponses != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      truncatedResponses=
+                      {expansionHeadSignalSummary.truncatedResponses}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.earlyStoppedResponses != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      earlyStoppedResponses=
+                      {expansionHeadSignalSummary.earlyStoppedResponses}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.skipped != null ? (
+                    <Typography.Text style={{ fontFamily: "monospace" }}>
+                      headSignalSkipped=
+                      {expansionHeadSignalSummary.skipped ? "true" : "false"}
+                    </Typography.Text>
+                  ) : null}
+                  {expansionHeadSignalSummary.softFailureCount > 0 ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                      message={t("crawl.detail.expansion.softFailureMessage", {
+                        defaultValue:
+                          "{{count}} publish-signal enrichment fetches soft-failed (non-blocking)",
+                        count: expansionHeadSignalSummary.softFailureCount,
+                      })}
+                      description={t(
+                        "crawl.detail.expansion.softFailureDescription",
+                        {
+                          defaultValue:
+                            "Soft failures only reduce publish-time confidence and do not fail the crawl task. {{details}}",
+                          details: expansionHeadSignalSoftFailureDetails,
+                        },
+                      )}
+                    />
+                  ) : null}
+                  {expansionHeadSignalFallbackHint ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginTop: 8 }}
+                      message={t("crawl.detail.expansion.urlPathFallbackMessage", {
+                        defaultValue:
+                          "{{count}}/{{total}} candidates fell back to url-path publish confidence",
+                        count: expansionHeadSignalFallbackHint.fallbackCount,
+                        total: expansionHeadSignalFallbackHint.totalCandidates,
+                      })}
+                      description={t(
+                        "crawl.detail.expansion.urlPathFallbackDescription",
+                        {
+                          defaultValue:
+                            "URL-path fallback keeps crawl running (non-blocking), but can reduce publish-time confidence quality. Current fallback ratio: {{ratio}}%.",
+                          ratio: Number(
+                            (expansionHeadSignalFallbackHint.fallbackRatio * 100).toFixed(1),
+                          ),
+                        },
+                      )}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </Space>
           ) : (

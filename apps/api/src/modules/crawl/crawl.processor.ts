@@ -7,10 +7,13 @@ import { PrismaService } from "../config/prisma.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
 import {
+  CRAWL_QUEUE_EVENTS_LEGACY,
   CRAWL_QUEUE_EVENTS_HOT,
   CRAWL_QUEUE_EVENTS_NORMAL,
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LEGACY,
+  CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
@@ -48,6 +51,12 @@ interface QueueRuntimeContext {
   queueName: string;
   queue: Queue<CrawlJobData>;
   events: QueueEvents;
+}
+
+interface WorkerRuntimeContext {
+  queueClass: CrawlPriorityClass;
+  queueName: string;
+  worker: Worker<CrawlJobData>;
 }
 
 type ConcurrencySlotReleaser = () => void;
@@ -371,7 +380,7 @@ interface QueueWithGlobalConcurrencyApi {
 
 @Injectable()
 export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
-  private readonly workers = new Map<CrawlPriorityClass, Worker<CrawlJobData>>();
+  private readonly workers: WorkerRuntimeContext[] = [];
   private readonly queueEventBindings: QueueEventBinding[] = [];
   private readonly globalConcurrencyLimiter = new SharedGlobalConcurrencyLimiter(1);
 
@@ -380,8 +389,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly crawlSettings: CrawlSettingsService,
     private readonly crawlExecutionService: CrawlExecutionService,
     private readonly prisma: PrismaService,
+    @Inject(CRAWL_QUEUE_LEGACY) private readonly legacyQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_NORMAL) private readonly normalQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_EVENTS_LEGACY) private readonly legacyEvents: QueueEvents,
     @Inject(CRAWL_QUEUE_EVENTS_HOT) private readonly hotEvents: QueueEvents,
     @Inject(CRAWL_QUEUE_EVENTS_NORMAL) private readonly normalEvents: QueueEvents
   ) {}
@@ -393,6 +404,12 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         queueName: CRAWL_QUEUE_HOT_NAME,
         queue: this.hotQueue,
         events: this.hotEvents
+      },
+      {
+        queueClass: "normal",
+        queueName: CRAWL_QUEUE_NAME,
+        queue: this.legacyQueue,
+        events: this.legacyEvents
       },
       {
         queueClass: "normal",
@@ -424,13 +441,17 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     for (const context of this.queueContexts()) {
       const worker = this.createWorker(context, concurrency);
-      this.workers.set(context.queueClass, worker);
+      this.workers.push({
+        queueClass: context.queueClass,
+        queueName: context.queueName,
+        worker
+      });
       this.registerQueueEvents(context);
     }
   }
 
   private createWorker(context: QueueRuntimeContext, concurrency: number): Worker<CrawlJobData> {
-    let workerRef: Worker<CrawlJobData>;
+    let workerRef!: Worker<CrawlJobData>;
 
     const worker = new Worker<CrawlJobData>(
       context.queueName,
@@ -501,7 +522,11 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
                 const cooldownMs = resolveQueueOverloadCooldownMs(configuredCooldownMs, memoryPercent);
 
                 try {
-                  await workerRef.rateLimit(cooldownMs);
+                  await this.rateLimitAllWorkers(cooldownMs, {
+                    queueClass: context.queueClass,
+                    queueName: context.queueName,
+                    worker: workerRef
+                  });
                 } catch (rateLimitError) {
                   logger.error(
                     {
@@ -596,6 +621,31 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     });
 
     return worker;
+  }
+
+  private async rateLimitAllWorkers(cooldownMs: number, currentWorker?: WorkerRuntimeContext) {
+    const runtimeWorkers = [...this.workers];
+    if (currentWorker && !runtimeWorkers.some((entry) => entry.worker === currentWorker.worker)) {
+      runtimeWorkers.push(currentWorker);
+    }
+
+    const failedQueues: string[] = [];
+    await Promise.all(
+      runtimeWorkers.map(async ({ queueName, worker }) => {
+        try {
+          await worker.rateLimit(cooldownMs);
+        } catch (error) {
+          failedQueues.push(queueName);
+          logger.error({ queue: queueName, cooldownMs, err: error }, "Failed to apply crawl queue rate limit");
+        }
+      })
+    );
+
+    if (failedQueues.length > 0) {
+      throw new Error(
+        `Failed to apply crawl queue rate limit to queues: ${failedQueues.join(",")}`
+      );
+    }
   }
 
   private registerQueueEvents(context: QueueRuntimeContext) {
@@ -698,10 +748,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    for (const worker of this.workers.values()) {
+    for (const { worker } of this.workers) {
       await worker.close();
     }
-    this.workers.clear();
+    this.workers.length = 0;
     this.globalConcurrencyLimiter.close();
 
     for (const binding of this.queueEventBindings) {
@@ -716,16 +766,16 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     this.globalConcurrencyLimiter.setCapacity(sanitized);
 
     if (queueClass) {
-      const worker = this.workers.get(queueClass);
-      if (!worker) {
-        return;
+      for (const runtime of this.workers) {
+        if (runtime.queueClass === queueClass) {
+          runtime.worker.concurrency = sanitized;
+        }
       }
-      worker.concurrency = sanitized;
       return;
     }
 
-    for (const worker of this.workers.values()) {
-      worker.concurrency = sanitized;
+    for (const runtime of this.workers) {
+      runtime.worker.concurrency = sanitized;
     }
   }
 

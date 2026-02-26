@@ -116,6 +116,14 @@ const createMockNotificationsService = () => ({
   notify: jest.fn(),
 });
 
+const createMockCrawlSettingsService = () => ({
+  getSettings: jest.fn().mockResolvedValue({
+    detailPublishSignalHeadFetchTimeoutMs: 1500,
+    detailPublishSignalHeadFetchConcurrency: 2,
+    detailPublishSignalHeadFetchMaxReadBytes: 8_000_000,
+  }),
+});
+
 const createMockQualityStrategyService = () => ({
   resolveQualityProfile: jest.fn().mockReturnValue("quality_first"),
   assessPageSignals: jest.fn().mockReturnValue({
@@ -161,6 +169,7 @@ describe("CrawlExecutionService", () => {
   let mockCrawlClient: ReturnType<typeof createMockCrawlClient>;
   let mockResultService: ReturnType<typeof createMockResultService>;
   let mockQualityStrategy: ReturnType<typeof createMockQualityStrategyService>;
+  let mockCrawlSettings: ReturnType<typeof createMockCrawlSettingsService>;
   let mockNotifications: ReturnType<typeof createMockNotificationsService>;
 
   beforeEach(() => {
@@ -172,6 +181,7 @@ describe("CrawlExecutionService", () => {
     mockCrawlClient = createMockCrawlClient();
     mockResultService = createMockResultService();
     mockQualityStrategy = createMockQualityStrategyService();
+    mockCrawlSettings = createMockCrawlSettingsService();
     mockNotifications = createMockNotificationsService();
 
     service = new CrawlExecutionService(
@@ -180,6 +190,7 @@ describe("CrawlExecutionService", () => {
       mockCrawlClient as any,
       mockResultService as any,
       mockQualityStrategy as any,
+      mockCrawlSettings as any,
       mockNotifications as any,
     );
     (TaskLogModel.create as jest.Mock).mockResolvedValue(undefined);
@@ -796,6 +807,7 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "expansion", status: "processing" }),
       );
+      expect(mockCrawlSettings.getSettings).toHaveBeenCalledTimes(1);
       expect(result.inserted).toBe(1);
     });
   });
@@ -1120,6 +1132,338 @@ describe("CrawlExecutionService", () => {
     expect(candidates).not.toContain(
       "https://www.politico.eu/special-report/danish-presidency-of-the-eu-special-report",
     );
+  });
+
+  it("applies pattern and publish-confidence guards for detail candidates", async () => {
+    mockResultService.extractMarkdownResult.mockImplementation(
+      (markdown: unknown) => ({
+        primary: typeof markdown === "string" ? markdown : "",
+        references: "",
+        citations: "",
+        raw: "",
+        fit: "",
+      }),
+    );
+
+    const instance = service as unknown as {
+      extractDetailLinkCandidatesFromArticle: (
+        article: Record<string, unknown>,
+        requireSameDomain: boolean,
+        allowExternalLinks?: boolean,
+        excludeUrlPatterns?: string[],
+        includeUrlPatterns?: string[],
+        minPublishTimeConfidence?: number,
+      ) => string[];
+    };
+
+    const candidates = instance.extractDetailLinkCandidatesFromArticle(
+      {
+        url: "https://example.com/latest/",
+        markdown:
+          "[A](https://example.com/world/market-wrap-2026-02-06)\n" +
+          "[B](https://example.com/archive/markets)\n" +
+          "[C](https://example.com/world/short-note)",
+      },
+      true,
+      true,
+      ["/archive/"],
+      undefined,
+      0.8,
+    );
+
+    expect(candidates).toContain(
+      "https://example.com/world/market-wrap-2026-02-06",
+    );
+    expect(candidates).not.toContain("https://example.com/archive/markets");
+    expect(candidates).not.toContain("https://example.com/world/short-note");
+  });
+
+  it("extracts publish-time confidence from html meta/jsonld/time signals", () => {
+    const instance = service as unknown as {
+      extractPublishSignalFromHtml: (html: string) =>
+        | { confidence: number; source: string; timestamp?: number }
+        | undefined;
+    };
+
+    const html = `
+      <html>
+        <head>
+          <meta property="article:published_time" content="2026-02-06T08:30:00Z" />
+          <script type="application/ld+json">
+            {"@type":"NewsArticle","datePublished":"2026-02-06T08:30:00Z"}
+          </script>
+        </head>
+        <body>
+          <time datetime="2026-02-06T08:30:00Z"></time>
+        </body>
+      </html>
+    `;
+    const signal = instance.extractPublishSignalFromHtml(html);
+
+    expect(signal?.source).toBe("meta");
+    expect(signal?.confidence).toBe(0.95);
+    expect(typeof signal?.timestamp).toBe("number");
+  });
+
+  it("prefers enriched publish-time signal over url-path heuristic when stronger", () => {
+    const instance = service as unknown as {
+      resolveCandidatePublishSignal: (
+        url: string,
+        enriched?: { confidence: number; source: "meta" | "jsonld" | "time_tag" | "url_path" | "none"; timestamp?: number },
+      ) => { confidence: number; source: string };
+    };
+
+    const enriched = instance.resolveCandidatePublishSignal(
+      "https://example.com/world/story",
+      {
+        confidence: 0.92,
+        source: "jsonld",
+        timestamp: Date.parse("2026-02-06T08:30:00Z"),
+      },
+    );
+    expect(enriched.source).toBe("jsonld");
+    expect(enriched.confidence).toBe(0.92);
+
+    const fallback = instance.resolveCandidatePublishSignal(
+      "https://example.com/2026/02/06/world/story",
+    );
+    expect(fallback.source).toBe("url_path");
+    expect(fallback.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it("loads publish-signal enrichment timeout/concurrency/maxReadBytes from crawl settings", async () => {
+    mockCrawlSettings.getSettings.mockResolvedValueOnce({
+      detailPublishSignalHeadFetchTimeoutMs: 2_500,
+      detailPublishSignalHeadFetchConcurrency: 5,
+      detailPublishSignalHeadFetchMaxReadBytes: 12_000_000,
+    });
+
+    const instance = service as unknown as {
+      getPublishSignalEnrichmentSettings: () => Promise<{
+        timeoutMs: number;
+        concurrency: number;
+        maxReadBytes: number;
+      }>;
+    };
+
+    const settings = await instance.getPublishSignalEnrichmentSettings();
+
+    expect(mockCrawlSettings.getSettings).toHaveBeenCalledTimes(1);
+    expect(settings).toEqual({
+      timeoutMs: 2_500,
+      concurrency: 5,
+      maxReadBytes: 12_000_000,
+    });
+  });
+
+  it("falls back to defaults when crawl settings fetch fails", async () => {
+    mockCrawlSettings.getSettings.mockRejectedValueOnce(
+      new Error("settings unavailable"),
+    );
+
+    const instance = service as unknown as {
+      getPublishSignalEnrichmentSettings: () => Promise<{
+        timeoutMs: number;
+        concurrency: number;
+        maxReadBytes: number;
+      }>;
+    };
+
+    const settings = await instance.getPublishSignalEnrichmentSettings();
+
+    expect(mockCrawlSettings.getSettings).toHaveBeenCalledTimes(1);
+    expect(settings).toEqual({
+      timeoutMs: 1_500,
+      concurrency: 2,
+      maxReadBytes: 8_000_000,
+    });
+  });
+
+  it("reports effective enrichment parameters even when enrichment is skipped", async () => {
+    const instance = service as unknown as {
+      enrichCandidatePublishSignals: (options: {
+        urls: string[];
+        requestTimeoutMs?: number;
+        settings: { timeoutMs: number; concurrency: number; maxReadBytes: number };
+      }) => Promise<{
+        attempted: number;
+        skipped: boolean;
+        effectiveTimeoutMs: number;
+        effectiveConcurrency: number;
+        maxReadBytes: number;
+        truncatedResponses: number;
+        earlyStoppedResponses: number;
+        softFailureCount: number;
+        softFailures: {
+          httpStatus: number;
+          nonHtml: number;
+          emptyHtml: number;
+          networkOrTimeout: number;
+          noPublishSignal: number;
+        };
+      }>;
+    };
+
+    const result = await instance.enrichCandidatePublishSignals({
+      urls: ["https://example.com/world/story"],
+      requestTimeoutMs: 900,
+      settings: {
+        timeoutMs: 2_500,
+        concurrency: 5,
+        maxReadBytes: 12_000_000,
+      },
+    });
+
+    expect(result.attempted).toBe(0);
+    expect(result.skipped).toBe(true);
+    expect(result.effectiveTimeoutMs).toBe(900);
+    expect(result.effectiveConcurrency).toBe(1);
+    expect(result.maxReadBytes).toBe(12_000_000);
+    expect(result.truncatedResponses).toBe(0);
+    expect(result.earlyStoppedResponses).toBe(0);
+    expect(result.softFailureCount).toBe(0);
+    expect(result.softFailures).toEqual({
+      httpStatus: 0,
+      nonHtml: 0,
+      emptyHtml: 0,
+      networkOrTimeout: 0,
+      noPublishSignal: 0,
+    });
+  });
+
+  it("records enrichment soft-failures and early-stop metrics without hard failing", async () => {
+    const instance = service as unknown as {
+      shouldEnrichCandidatePublishSignals: () => boolean;
+      fetchCandidatePublishSignal: (
+        url: string,
+        timeoutMs: number,
+        maxReadBytes: number,
+      ) => Promise<{
+        signal?: {
+          confidence: number;
+          source: "meta" | "jsonld" | "time_tag" | "url_path" | "none";
+          timestamp?: number;
+        };
+        truncated: boolean;
+        earlyStopped: boolean;
+        failureReason?: "no_publish_signal";
+      }>;
+      enrichCandidatePublishSignals: (options: {
+        urls: string[];
+        requestTimeoutMs?: number;
+        settings: { timeoutMs: number; concurrency: number; maxReadBytes: number };
+      }) => Promise<{
+        attempted: number;
+        succeeded: number;
+        failed: number;
+        skipped: boolean;
+        truncatedResponses: number;
+        earlyStoppedResponses: number;
+        softFailureCount: number;
+        softFailures: {
+          httpStatus: number;
+          nonHtml: number;
+          emptyHtml: number;
+          networkOrTimeout: number;
+          noPublishSignal: number;
+        };
+      }>;
+    };
+
+    jest
+      .spyOn(instance, "shouldEnrichCandidatePublishSignals")
+      .mockReturnValue(true);
+    jest
+      .spyOn(instance, "fetchCandidatePublishSignal")
+      .mockResolvedValueOnce({
+        truncated: false,
+        earlyStopped: false,
+        failureReason: "no_publish_signal",
+      })
+      .mockResolvedValueOnce({
+        signal: {
+          confidence: 0.95,
+          source: "meta",
+          timestamp: Date.parse("2026-02-06T08:30:00Z"),
+        },
+        truncated: true,
+        earlyStopped: true,
+      });
+
+    const result = await instance.enrichCandidatePublishSignals({
+      urls: ["https://example.com/a", "https://example.com/b"],
+      settings: {
+        timeoutMs: 2_500,
+        concurrency: 2,
+        maxReadBytes: 8_000_000,
+      },
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.attempted).toBe(2);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.softFailureCount).toBe(1);
+    expect(result.softFailures.noPublishSignal).toBe(1);
+    expect(result.truncatedResponses).toBe(1);
+    expect(result.earlyStoppedResponses).toBe(1);
+  });
+
+  it("soft-truncates oversized publish-signal html without failing", async () => {
+    const instance = service as unknown as {
+      readPublishSignalHtmlWithSoftLimit: (
+        response: Response,
+        maxBytes: number,
+      ) => Promise<{ html: string; truncated: boolean; earlyStopped: boolean }>;
+    };
+    const response = {
+      body: null,
+      text: jest.fn().mockResolvedValue("x".repeat(45_000)),
+    } as unknown as Response;
+
+    const result = await instance.readPublishSignalHtmlWithSoftLimit(
+      response,
+      40_000,
+    );
+
+    expect(result.truncated).toBe(true);
+    expect(result.earlyStopped).toBe(false);
+    expect(result.html.length).toBe(40_000);
+  });
+
+  it("stops reading early when head meta publish signal is found", async () => {
+    const instance = service as unknown as {
+      readPublishSignalHtmlWithSoftLimit: (
+        response: Response,
+        maxBytes: number,
+      ) => Promise<{ html: string; truncated: boolean; earlyStopped: boolean }>;
+    };
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            '<html><head><meta property="article:published_time" content="2026-02-06T08:30:00Z" /></head>',
+          ),
+        );
+        controller.enqueue(encoder.encode("<body>tail-marker</body></html>"));
+        controller.close();
+      },
+    });
+    const response = {
+      body: stream,
+      text: jest.fn(),
+    } as unknown as Response;
+
+    const result = await instance.readPublishSignalHtmlWithSoftLimit(
+      response,
+      8_000_000,
+    );
+
+    expect(result.earlyStopped).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.html).toContain("article:published_time");
+    expect(result.html).not.toContain("tail-marker");
   });
 
   it("uses low-signal results as expansion seeds when no successful markdown exists", async () => {
@@ -2027,6 +2371,99 @@ describe("CrawlExecutionService", () => {
       expect(overrides?.maxDelayRangeMs).toBe(10000);
       expect(overrides?.semaphoreCount).toBe(50);
       expect(overrides?.removeForms).toBe(true);
+    });
+
+    it("normalizes detailExpansion fields on top-level options", () => {
+      const result = service.normalizeOptions({
+        detailExpansion: {
+          maxDetailUrls: 88,
+          minRelevanceScore: 1.2,
+          requireSameDomain: false,
+          allowExternalLinks: true,
+          includeUrlPatterns: [" /news/* ", "/news/*", "/article/ "],
+          excludeUrlPatterns: [" /tag/ ", "/archive/", "/tag/"],
+          minPublishTimeConfidence: -0.25,
+          preferFitMarkdownForQuality: false,
+        },
+      });
+
+      expect(result.detailExpansion).toEqual(
+        expect.objectContaining({
+          maxDetailUrls: 30,
+          minRelevanceScore: 1,
+          requireSameDomain: false,
+          allowExternalLinks: true,
+          includeUrlPatterns: ["/news/*", "/article/"],
+          excludeUrlPatterns: ["/tag/", "/archive/"],
+          minPublishTimeConfidence: 0,
+          preferFitMarkdownForQuality: false,
+        }),
+      );
+    });
+
+    it("normalizes detailExpansion fields in multiUrl strategy overrides", () => {
+      const result = service.normalizeOptions({
+        multiUrlConfigs: [
+          {
+            matcher: {
+              patterns: ["https://example.com/world/*"],
+              matchMode: "glob",
+            },
+            options: {
+              detailExpansion: {
+                maxDetailUrls: 0,
+                minRelevanceScore: 0.4567,
+                includeUrlPatterns: [" /world/* ", "/world/*"],
+                excludeUrlPatterns: ["   "],
+                minPublishTimeConfidence: 0.87654,
+                preferFitMarkdownForQuality: true,
+              },
+            },
+          },
+        ],
+      });
+
+      const overrides = result.multiUrlConfigs?.[0]?.options?.detailExpansion;
+      expect(overrides).toEqual(
+        expect.objectContaining({
+          maxDetailUrls: 1,
+          minRelevanceScore: 0.457,
+          includeUrlPatterns: ["/world/*"],
+          minPublishTimeConfidence: 0.877,
+          preferFitMarkdownForQuality: true,
+        }),
+      );
+      expect(overrides?.excludeUrlPatterns).toBeUndefined();
+    });
+
+    it("parses detailExpansion fields from persisted crawl config", () => {
+      const extracted = (
+        service as unknown as {
+          extractOptions: (config: Record<string, unknown>) => Record<string, unknown>;
+        }
+      ).extractOptions({
+        autoExpandDetails: true,
+        detailExpansion: {
+          maxDetailUrls: 15.8,
+          minRelevanceScore: 0.33333,
+          includeUrlPatterns: [" /article/* ", "", "/article/*", "/world/*"],
+          excludeUrlPatterns: [" /tag/ ", "/archive/"],
+          minPublishTimeConfidence: 1.8,
+          preferFitMarkdownForQuality: true,
+        },
+      });
+
+      expect(extracted.autoExpandDetails).toBe(true);
+      expect(extracted.detailExpansion).toEqual(
+        expect.objectContaining({
+          maxDetailUrls: 16,
+          minRelevanceScore: 0.333,
+          includeUrlPatterns: ["/article/*", "/world/*"],
+          excludeUrlPatterns: ["/tag/", "/archive/"],
+          minPublishTimeConfidence: 1,
+          preferFitMarkdownForQuality: true,
+        }),
+      );
     });
 
     it("sets excludeExternalImages to false when storeMedia is true", () => {
