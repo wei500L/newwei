@@ -63,6 +63,7 @@ import {
   DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
   DEFAULT_SEED_FORM_VALUES,
   getDefaultSeedCacheTtlSecondsByMode,
+  normalizeSeedQueryParamAllowlist,
   normalizeSeedMode,
   resolveSeedCacheTtlPolicy,
   readSeedFormValuesFromConfig,
@@ -208,6 +209,9 @@ interface Crawl4aiQualitySourceMetric {
   headSignalSoftFailureRate?: number;
   headSignalTruncatedRate?: number;
   headSignalNoPublishSignalRate?: number;
+  http304HitRate?: number;
+  orgHashDedupeHitRate?: number;
+  preflightFailureRate?: number;
 }
 
 interface Crawl4aiQualitySnapshot {
@@ -236,6 +240,14 @@ interface Crawl4aiQualitySnapshot {
   headSignalSoftFailureRate?: number;
   headSignalTruncatedRate?: number;
   headSignalNoPublishSignalRate?: number;
+  http304HitRate?: number;
+  orgHashDedupeHitRate?: number;
+  preflightFailureRate?: number;
+  alertThresholds?: {
+    preflightFailureRateHigh?: number;
+    http304HitRateLow?: number;
+    orgHashDedupeHitRateHigh?: number;
+  };
   groupedBySource: Crawl4aiQualitySourceMetric[];
 }
 
@@ -406,6 +418,7 @@ interface NewsSourceFormValues {
   seedDeepPreferPathDate?: boolean;
   seedDeepEnableSecondaryHubs?: boolean;
   seedDeepIgnoreRobotsTxt?: boolean;
+  seedQueryParamAllowlist?: string[];
 }
 
 const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
@@ -468,6 +481,7 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedDeepEnableSecondaryHubs:
     DEFAULT_SEED_FORM_VALUES.seedDeepEnableSecondaryHubs,
   seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt,
+  seedQueryParamAllowlist: DEFAULT_SEED_FORM_VALUES.seedQueryParamAllowlist,
 };
 
 const parseStringList = (value?: string) =>
@@ -860,6 +874,11 @@ const createDefaultLiveRefreshSources = (): Record<
 });
 
 const CRAWL_QUALITY_ALERT_RATE_THRESHOLD = 0.15;
+const DEFAULT_CRAWL_QUALITY_LOW_304_HIT_RATE_THRESHOLD = 0.05;
+const DEFAULT_CRAWL_QUALITY_HIGH_ORG_HASH_DEDUPE_RATE_THRESHOLD = 0.3;
+const DEFAULT_CRAWL_QUALITY_PREFLIGHT_FAILURE_RATE_THRESHOLD = 0.15;
+const normalizeRateValue = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 
 export function NewsSourcesContent() {
   const { t, i18n } = useTranslation();
@@ -987,6 +1006,57 @@ export function NewsSourcesContent() {
     [groups, sources],
   );
 
+  const crawlQualityThresholds = useMemo(() => {
+    const preflightFailureRateHigh =
+      typeof crawlQualityStats?.alertThresholds?.preflightFailureRateHigh ===
+        "number" &&
+      Number.isFinite(crawlQualityStats.alertThresholds.preflightFailureRateHigh)
+        ? Math.max(0, crawlQualityStats.alertThresholds.preflightFailureRateHigh)
+        : DEFAULT_CRAWL_QUALITY_PREFLIGHT_FAILURE_RATE_THRESHOLD;
+    const http304HitRateLow =
+      typeof crawlQualityStats?.alertThresholds?.http304HitRateLow ===
+        "number" &&
+      Number.isFinite(crawlQualityStats.alertThresholds.http304HitRateLow)
+        ? Math.max(0, crawlQualityStats.alertThresholds.http304HitRateLow)
+        : DEFAULT_CRAWL_QUALITY_LOW_304_HIT_RATE_THRESHOLD;
+    const orgHashDedupeHitRateHigh =
+      typeof crawlQualityStats?.alertThresholds?.orgHashDedupeHitRateHigh ===
+        "number" &&
+      Number.isFinite(crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh)
+        ? Math.max(0, crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh)
+        : DEFAULT_CRAWL_QUALITY_HIGH_ORG_HASH_DEDUPE_RATE_THRESHOLD;
+
+    return {
+      preflightFailureRateHigh,
+      http304HitRateLow,
+      orgHashDedupeHitRateHigh,
+    };
+  }, [crawlQualityStats]);
+
+  const crawlQualityThresholdStatus = useMemo(() => {
+    if (!crawlQualityStats) {
+      return null;
+    }
+    const preflightFailureRate = normalizeRateValue(
+      crawlQualityStats.preflightFailureRate,
+    );
+    const http304HitRate = normalizeRateValue(crawlQualityStats.http304HitRate);
+    const orgHashDedupeHitRate = normalizeRateValue(
+      crawlQualityStats.orgHashDedupeHitRate,
+    );
+
+    return {
+      preflightFailureRate,
+      http304HitRate,
+      orgHashDedupeHitRate,
+      preflightFailureBreached:
+        preflightFailureRate >= crawlQualityThresholds.preflightFailureRateHigh,
+      http304Breached: http304HitRate <= crawlQualityThresholds.http304HitRateLow,
+      orgHashDedupeBreached:
+        orgHashDedupeHitRate >= crawlQualityThresholds.orgHashDedupeHitRateHigh,
+    };
+  }, [crawlQualityStats, crawlQualityThresholds]);
+
   const crawlQualityRateAlerts = useMemo(() => {
     if (!crawlQualityStats) {
       return [];
@@ -994,8 +1064,9 @@ export function NewsSourcesContent() {
     const grouped = Array.isArray(crawlQualityStats.groupedBySource)
       ? crawlQualityStats.groupedBySource
       : [];
-    const resolveWorstSource = (
+    const resolveExtremeSource = (
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+      direction: "high" | "low",
     ) => {
       let best: { sourceId: string; rate: number } | null = null;
       for (const entry of grouped) {
@@ -1004,19 +1075,36 @@ export function NewsSourcesContent() {
           typeof value === "number" && Number.isFinite(value)
             ? Math.max(0, value)
             : 0;
-        if (!best || rate > best.rate) {
+        if (
+          !best ||
+          (direction === "high" ? rate > best.rate : rate < best.rate)
+        ) {
           best = { sourceId: entry.sourceId, rate };
         }
       }
       return best;
     };
     const alerts: Array<{
-      key: "softFailure" | "truncated" | "noPublishSignal";
+      key:
+        | "softFailure"
+        | "truncated"
+        | "noPublishSignal"
+        | "preflightFailure"
+        | "http304Low"
+        | "orgHashDedupeHigh";
+      direction: "high" | "low";
+      threshold: number;
       overallRate: number;
-      worstSource?: { sourceId: string; rate: number } | null;
+      extremeSource?: { sourceId: string; rate: number } | null;
     }> = [];
-    const pushAlert = (
-      key: "softFailure" | "truncated" | "noPublishSignal",
+    const pushHighAlert = (
+      key:
+        | "softFailure"
+        | "truncated"
+        | "noPublishSignal"
+        | "preflightFailure"
+        | "orgHashDedupeHigh",
+      threshold: number,
       rawRate: number | undefined,
       selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
     ) => {
@@ -1024,32 +1112,76 @@ export function NewsSourcesContent() {
         typeof rawRate === "number" && Number.isFinite(rawRate)
           ? Math.max(0, rawRate)
           : 0;
-      if (overallRate < CRAWL_QUALITY_ALERT_RATE_THRESHOLD) {
+      if (overallRate < threshold) {
         return;
       }
       alerts.push({
         key,
+        direction: "high",
+        threshold,
         overallRate,
-        worstSource: resolveWorstSource(selector),
+        extremeSource: resolveExtremeSource(selector, "high"),
       });
     };
-    pushAlert(
+    const pushLowAlert = (
+      key: "http304Low",
+      threshold: number,
+      rawRate: number | undefined,
+      selector: (entry: Crawl4aiQualitySourceMetric) => number | undefined,
+    ) => {
+      const overallRate =
+        typeof rawRate === "number" && Number.isFinite(rawRate)
+          ? Math.max(0, rawRate)
+          : 0;
+      if (overallRate > threshold) {
+        return;
+      }
+      alerts.push({
+        key,
+        direction: "low",
+        threshold,
+        overallRate,
+        extremeSource: resolveExtremeSource(selector, "low"),
+      });
+    };
+    pushHighAlert(
       "softFailure",
+      CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalSoftFailureRate,
       (entry) => entry.headSignalSoftFailureRate,
     );
-    pushAlert(
+    pushHighAlert(
       "truncated",
+      CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalTruncatedRate,
       (entry) => entry.headSignalTruncatedRate,
     );
-    pushAlert(
+    pushHighAlert(
       "noPublishSignal",
+      CRAWL_QUALITY_ALERT_RATE_THRESHOLD,
       crawlQualityStats.headSignalNoPublishSignalRate,
       (entry) => entry.headSignalNoPublishSignalRate,
     );
+    pushHighAlert(
+      "preflightFailure",
+      crawlQualityThresholds.preflightFailureRateHigh,
+      crawlQualityStats.preflightFailureRate,
+      (entry) => entry.preflightFailureRate,
+    );
+    pushHighAlert(
+      "orgHashDedupeHigh",
+      crawlQualityThresholds.orgHashDedupeHitRateHigh,
+      crawlQualityStats.orgHashDedupeHitRate,
+      (entry) => entry.orgHashDedupeHitRate,
+    );
+    pushLowAlert(
+      "http304Low",
+      crawlQualityThresholds.http304HitRateLow,
+      crawlQualityStats.http304HitRate,
+      (entry) => entry.http304HitRate,
+    );
     return alerts;
-  }, [crawlQualityStats]);
+  }, [crawlQualityStats, crawlQualityThresholds]);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -1129,6 +1261,11 @@ export function NewsSourcesContent() {
           Number.isFinite(data.seedCacheTtlSecondsListDeep)
             ? data.seedCacheTtlSecondsListDeep
             : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep,
+        seedUrlQueryParamAllowlist: Array.isArray(
+          data.seedUrlQueryParamAllowlist,
+        )
+          ? normalizeSeedQueryParamAllowlist(data.seedUrlQueryParamAllowlist)
+          : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist,
       });
       setSeedSchedulerSettingsLoadFailed(false);
     } catch (error) {
@@ -4430,13 +4567,23 @@ export function NewsSourcesContent() {
               defaultValue: "Crawl quality",
             })}
             extra={
-              <Button
-                size="small"
-                onClick={() => void loadCrawlQualityStats()}
-                loading={crawlQualityLoading}
-              >
-                {t("common.refresh", { defaultValue: "Refresh" })}
-              </Button>
+              <Space size={8}>
+                <Button
+                  size="small"
+                  onClick={() => void router.push("/admin/alerts")}
+                >
+                  {t("newsSources.quality.manageThresholds", {
+                    defaultValue: "Manage thresholds",
+                  })}
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => void loadCrawlQualityStats()}
+                  loading={crawlQualityLoading}
+                >
+                  {t("common.refresh", { defaultValue: "Refresh" })}
+                </Button>
+              </Space>
             }
           >
             {crawlQualityError ? (
@@ -4604,19 +4751,142 @@ export function NewsSourcesContent() {
                     />
                   </Col>
                 </Row>
+                <Row gutter={[16, 12]}>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={
+                        <Space size={4} wrap>
+                          <span>
+                            {t("newsSources.quality.http304HitRate", {
+                              defaultValue: "HTTP 304 hit",
+                            })}
+                          </span>
+                          <Tag
+                            color={
+                              crawlQualityThresholdStatus?.http304Breached
+                                ? "red"
+                                : "green"
+                            }
+                          >
+                            {crawlQualityThresholdStatus?.http304Breached
+                              ? t("newsSources.quality.thresholdStatusBreached", {
+                                  defaultValue: "breach",
+                                })
+                              : t("newsSources.quality.thresholdStatusNormal", {
+                                  defaultValue: "normal",
+                                })}
+                          </Tag>
+                          <Tag>
+                            {`<= ${Number(
+                              (crawlQualityThresholds.http304HitRateLow * 100).toFixed(1),
+                            )}%`}
+                          </Tag>
+                        </Space>
+                      }
+                      value={Number(
+                        ((crawlQualityStats.http304HitRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={
+                        <Space size={4} wrap>
+                          <span>
+                            {t("newsSources.quality.preflightFailureRate", {
+                              defaultValue: "Preflight failure",
+                            })}
+                          </span>
+                          <Tag
+                            color={
+                              crawlQualityThresholdStatus?.preflightFailureBreached
+                                ? "red"
+                                : "green"
+                            }
+                          >
+                            {crawlQualityThresholdStatus?.preflightFailureBreached
+                              ? t("newsSources.quality.thresholdStatusBreached", {
+                                  defaultValue: "breach",
+                                })
+                              : t("newsSources.quality.thresholdStatusNormal", {
+                                  defaultValue: "normal",
+                                })}
+                          </Tag>
+                          <Tag>
+                            {`>= ${Number(
+                              (crawlQualityThresholds.preflightFailureRateHigh * 100).toFixed(
+                                1,
+                              ),
+                            )}%`}
+                          </Tag>
+                        </Space>
+                      }
+                      value={Number(
+                        ((crawlQualityStats.preflightFailureRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                  <Col xs={12} sm={8} md={6}>
+                    <Statistic
+                      title={
+                        <Space size={4} wrap>
+                          <span>
+                            {t("newsSources.quality.orgHashDedupeHitRate", {
+                              defaultValue: "Org hash dedupe hit",
+                            })}
+                          </span>
+                          <Tag
+                            color={
+                              crawlQualityThresholdStatus?.orgHashDedupeBreached
+                                ? "red"
+                                : "green"
+                            }
+                          >
+                            {crawlQualityThresholdStatus?.orgHashDedupeBreached
+                              ? t("newsSources.quality.thresholdStatusBreached", {
+                                  defaultValue: "breach",
+                                })
+                              : t("newsSources.quality.thresholdStatusNormal", {
+                                  defaultValue: "normal",
+                                })}
+                          </Tag>
+                          <Tag>
+                            {`>= ${Number(
+                              (crawlQualityThresholds.orgHashDedupeHitRateHigh * 100).toFixed(
+                                1,
+                              ),
+                            )}%`}
+                          </Tag>
+                        </Space>
+                      }
+                      value={Number(
+                        ((crawlQualityStats.orgHashDedupeHitRate ?? 0) * 100).toFixed(1),
+                      )}
+                      suffix="%"
+                    />
+                  </Col>
+                </Row>
+                <Typography.Text type="secondary">
+                  {t("newsSources.quality.thresholdHint", {
+                    defaultValue:
+                      "Threshold tags come from active alert rules and are evaluated over the selected window.",
+                  })}
+                </Typography.Text>
                 {crawlQualityRateAlerts.length > 0 ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message={t("newsSources.quality.headSignalAlertTitle", {
+                    message={t("newsSources.quality.crawlQualityAlertTitle", {
                       defaultValue:
-                        "Head-signal quality warning: one or more fallback/error rates exceed 15%",
+                        "Crawl quality warning: one or more quality rates crossed configured thresholds",
                     })}
                     description={crawlQualityRateAlerts
                       .map((entry) =>
-                        t(`newsSources.quality.headSignalAlert.${entry.key}`, {
+                        t(`newsSources.quality.crawlQualityAlert.${entry.key}`, {
                           defaultValue:
-                            "{{metric}} {{overall}}% (worst source: {{source}} {{sourceRate}}%)",
+                            "{{metric}} {{overall}}% (threshold {{operator}} {{threshold}}%; {{extremeLabel}} source: {{source}} {{sourceRate}}%)",
                           metric:
                             entry.key === "softFailure"
                               ? t("newsSources.quality.headSignalSoftFailure", {
@@ -4626,13 +4896,35 @@ export function NewsSourcesContent() {
                                 ? t("newsSources.quality.headSignalTruncated", {
                                     defaultValue: "truncated",
                                   })
-                                : t("newsSources.quality.headSignalNoPublishSignal", {
-                                    defaultValue: "no-publish-signal",
-                                  }),
+                                : entry.key === "noPublishSignal"
+                                  ? t("newsSources.quality.headSignalNoPublishSignal", {
+                                      defaultValue: "no-publish-signal",
+                                    })
+                                  : entry.key === "preflightFailure"
+                                    ? t("newsSources.quality.preflightFailureRate", {
+                                        defaultValue: "preflight-failure",
+                                      })
+                                    : entry.key === "orgHashDedupeHigh"
+                                      ? t("newsSources.quality.orgHashDedupeHitRate", {
+                                          defaultValue: "org-hash-dedupe-hit",
+                                        })
+                                      : t("newsSources.quality.http304HitRate", {
+                                          defaultValue: "http-304-hit",
+                                        }),
                           overall: Number((entry.overallRate * 100).toFixed(1)),
-                          source: entry.worstSource?.sourceId ?? "unknown",
+                          operator: entry.direction === "high" ? ">=" : "<=",
+                          threshold: Number((entry.threshold * 100).toFixed(1)),
+                          extremeLabel:
+                            entry.direction === "high"
+                              ? t("newsSources.quality.highestSource", {
+                                  defaultValue: "highest",
+                                })
+                              : t("newsSources.quality.lowestSource", {
+                                  defaultValue: "lowest",
+                                }),
+                          source: entry.extremeSource?.sourceId ?? "unknown",
                           sourceRate: Number(
-                            (((entry.worstSource?.rate ?? 0) * 100)).toFixed(1),
+                            ((entry.extremeSource?.rate ?? 0) * 100).toFixed(1),
                           ),
                         }),
                       )
@@ -6358,6 +6650,31 @@ export function NewsSourcesContent() {
                     })}
                   >
                     <InputNumber min={0} max={720} style={{ width: "100%" }} />
+                  </Form.Item>
+                  <Form.Item
+                    name="seedQueryParamAllowlist"
+                    label={t("newsSources.fields.seedQueryParamAllowlist", {
+                      defaultValue: "URL query param allowlist",
+                    })}
+                    tooltip={t("newsSources.fields.seedQueryParamAllowlistHint", {
+                      defaultValue:
+                        "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
+                    })}
+                  >
+                    <Select
+                      mode="tags"
+                      tokenSeparators={[",", " ", "\n", "\t"]}
+                      options={(
+                        seedSchedulerSettings?.seedUrlQueryParamAllowlist ??
+                        DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist
+                      ).map((entry) => ({
+                        label: entry,
+                        value: entry,
+                      }))}
+                      placeholder={t("newsSources.fields.seedQueryParamAllowlistPlaceholder", {
+                        defaultValue: "id, page, lang",
+                      })}
+                    />
                   </Form.Item>
                   <Space wrap size={[8, 8]} style={{ marginBottom: 8 }}>
                     <Tag color={seedCacheTtlInputDisabled ? "gold" : "blue"}>

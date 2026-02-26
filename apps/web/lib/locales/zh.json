@@ -2571,6 +2571,9 @@
       "fields": {
         "healthCheckTtl": "健康检查 TTL",
         "requestTimeout": "请求超时",
+        "conditionalRequestEnabled": "启用 HTTP 条件请求",
+        "conditionalRequestTimeoutMs": "条件请求超时",
+        "conditionalRequestMaxRetries": "条件请求重试次数",
         "detailPublishSignalHeadFetchTimeout": "详情发布时间信号头部抓取超时",
         "detailPublishSignalHeadFetchConcurrency": "详情发布时间信号头部抓取并发",
         "detailPublishSignalHeadFetchMaxReadBytes": "详情发布时间信号头部抓取最大读取字节数",
@@ -2584,6 +2587,8 @@
       "validation": {
         "healthCheckTtl": "请填写健康检查 TTL",
         "requestTimeout": "请填写请求超时",
+        "conditionalRequestTimeoutMs": "请填写条件请求超时",
+        "conditionalRequestMaxRetries": "请填写条件请求重试次数",
         "detailPublishSignalHeadFetchTimeout": "请填写详情发布时间信号头部抓取超时",
         "detailPublishSignalHeadFetchConcurrency": "请填写详情发布时间信号头部抓取并发",
         "detailPublishSignalHeadFetchMaxReadBytes": "请填写详情发布时间信号头部抓取最大读取字节数",

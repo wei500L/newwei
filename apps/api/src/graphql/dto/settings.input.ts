@@ -86,6 +86,23 @@ export class UpdateCrawlClientSettingsInput {
   @Max(900_000)
   requestTimeoutNormalMs?: number;
 
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  conditionalRequestEnabled?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(500)
+  @Max(60_000)
+  conditionalRequestTimeoutMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(0)
+  @Max(5)
+  conditionalRequestMaxRetries?: number;
+
   @Field(() => Int, { nullable: true })
   @IsOptional()
   @Min(500)
@@ -647,11 +664,24 @@ export class UpdateNewsIndicatorSettingsInput {
 }
 
 @InputType()
-export class NewsDedupeCategoryThresholdInput {
-  @Field(() => String)
+export class NewsDedupeScopedThresholdInput {
+  @Field(() => String, { nullable: true })
+  @IsOptional()
   @IsString()
-  @MaxLength(120)
-  category!: string;
+  @MaxLength(191)
+  sourceId?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  language?: string | null;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  categoryPath?: string | null;
 
   @Field(() => Float)
   @Min(0)
@@ -712,11 +742,11 @@ export class UpdateNewsDedupeSettingsInput {
   @MaxLength(12000)
   llmJudgeUserPromptTemplate?: string | null;
 
-  @Field(() => [NewsDedupeCategoryThresholdInput])
+  @Field(() => [NewsDedupeScopedThresholdInput])
   @ArrayMaxSize(100)
   @ValidateNested({ each: true })
-  @Type(() => NewsDedupeCategoryThresholdInput)
-  categoryThresholds!: NewsDedupeCategoryThresholdInput[];
+  @Type(() => NewsDedupeScopedThresholdInput)
+  scopedThresholds!: NewsDedupeScopedThresholdInput[];
 }
 
 @InputType()

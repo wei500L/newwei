@@ -30,6 +30,11 @@ import type {
 import { coerceDate, hashMarkdown } from "./crawl.utils";
 import type { Crawl4aiArticle } from "./crawl4ai.client";
 import { buildLinkAnalysis } from "./link-analysis";
+import {
+  buildCanonicalUrlFingerprint,
+  extractOrgContentDedupeWindowHoursFromTaskConfig,
+  extractUrlQueryParamAllowlistFromTaskConfig,
+} from "./url-fingerprint";
 const logger = createLogger({ name: "crawl-result-service" });
 const RESULT_PERSIST_CONCURRENCY_LIMIT = 6;
 
@@ -60,6 +65,9 @@ interface HashedCrawlResultItem {
   markdown: string;
   markdownResult: ReturnType<CrawlResultService["extractMarkdownResult"]>;
   hash: string;
+  sourceUrl: string;
+  canonicalSourceUrl: string | null;
+  sourceUrlFingerprint: string | null;
 }
 
 @Injectable()
@@ -154,10 +162,24 @@ export class CrawlResultService {
     let inserted = 0;
     let skipped = 0;
     let latestResultAt: Date | undefined;
+    let reusedResultId: string | undefined;
+    let reusedResultFetchedAt: Date | undefined;
+    let taskReuseCount = 0;
+    let orgReuseCount = 0;
+    let batchDuplicateCount = 0;
     let itemsQueued = 0;
     let itemsQueueFailed = 0;
     const itemsService = ingestToItems ? this.resolveItemsService() : null;
     const shouldStoreMedia = options.storeMedia ?? false;
+    const urlQueryParamAllowlist = extractUrlQueryParamAllowlistFromTaskConfig(
+      task.config,
+    );
+    const orgContentDedupeWindowHours =
+      extractOrgContentDedupeWindowHoursFromTaskConfig(task.config);
+    const orgContentDedupeSince =
+      orgContentDedupeWindowHours > 0
+        ? new Date(Date.now() - orgContentDedupeWindowHours * 60 * 60 * 1000)
+        : null;
 
     const itemsWithHash: HashedCrawlResultItem[] = [];
 
@@ -169,7 +191,23 @@ export class CrawlResultService {
         continue;
       }
       const hash = hashMarkdown(markdown);
-      itemsWithHash.push({ item, markdown, markdownResult, hash });
+      const sourceUrlRaw =
+        typeof item.url === "string" && item.url.trim().length > 0
+          ? item.url.trim()
+          : task.targetUrl;
+      const canonical = buildCanonicalUrlFingerprint(
+        sourceUrlRaw,
+        urlQueryParamAllowlist,
+      );
+      itemsWithHash.push({
+        item,
+        markdown,
+        markdownResult,
+        hash,
+        sourceUrl: sourceUrlRaw,
+        canonicalSourceUrl: canonical?.canonicalUrl ?? null,
+        sourceUrlFingerprint: canonical?.fingerprint ?? null,
+      });
     }
 
     if (itemsWithHash.length === 0) {
@@ -182,27 +220,65 @@ export class CrawlResultService {
     }
 
     const allHashes = itemsWithHash.map((i) => i.hash);
-    const existingRecords = await this.prisma.crawlResult.findMany({
+    const existingTaskRecords = await this.prisma.crawlResult.findMany({
       where: {
         taskId: task.id,
         contentHash: { in: allHashes }
       }
     });
-    const existingMap = new Map(existingRecords.map((r) => [r.contentHash, r]));
+    const existingTaskMap = new Map(
+      existingTaskRecords.map((record) => [record.contentHash, record]),
+    );
+    const existingOrgRecords = orgContentDedupeSince
+      ? await this.prisma.crawlResult.findMany({
+          where: {
+            orgId: task.orgId,
+            contentHash: { in: allHashes },
+            fetchedAt: { gte: orgContentDedupeSince },
+          },
+          orderBy: { fetchedAt: "desc" },
+        })
+      : [];
+    const existingOrgMap = new Map<string, CrawlResult>();
+    for (const record of existingOrgRecords) {
+      if (!existingOrgMap.has(record.contentHash)) {
+        existingOrgMap.set(record.contentHash, record);
+      }
+    }
 
     const newItems: HashedCrawlResultItem[] = [];
     const existingItems: { item: Crawl4aiArticle; existing: CrawlResult }[] = [];
     const seenNewHashes = new Set<string>();
+    const registerReusedResult = (existing: CrawlResult) => {
+      if (
+        !reusedResultFetchedAt ||
+        existing.fetchedAt.getTime() > reusedResultFetchedAt.getTime()
+      ) {
+        reusedResultFetchedAt = existing.fetchedAt;
+        reusedResultId = existing.id;
+      }
+    };
 
     for (const entry of itemsWithHash) {
-      const existing = existingMap.get(entry.hash);
-      if (existing) {
+      const existingByTask = existingTaskMap.get(entry.hash);
+      if (existingByTask) {
         skipped += 1;
-        existingItems.push({ item: entry.item, existing });
+        taskReuseCount += 1;
+        existingItems.push({ item: entry.item, existing: existingByTask });
+        registerReusedResult(existingByTask);
+        continue;
+      }
+      const existingByOrg = existingOrgMap.get(entry.hash);
+      if (existingByOrg) {
+        skipped += 1;
+        orgReuseCount += 1;
+        existingItems.push({ item: entry.item, existing: existingByOrg });
+        registerReusedResult(existingByOrg);
         continue;
       }
       if (seenNewHashes.has(entry.hash)) {
         skipped += 1;
+        batchDuplicateCount += 1;
         continue;
       }
       seenNewHashes.add(entry.hash);
@@ -212,17 +288,47 @@ export class CrawlResultService {
     logger.debug(
       {
         hashCount: allHashes.length,
-        existingCount: existingRecords.length,
+        existingTaskCount: existingTaskRecords.length,
+        existingOrgCount: existingOrgRecords.length,
         newCount: newItems.length
       },
       "persistResults hash classification complete"
     );
+    if (process.env.NODE_ENV !== "test") {
+      void TaskLogModel.create({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: task.id,
+        orgId: task.orgId,
+        stage: "dedupe",
+        status: "completed",
+        message: "Crawl dedupe classification complete",
+        data: {
+          evaluatedCount: itemsWithHash.length,
+          taskReuseCount,
+          orgReuseCount,
+          batchDuplicateCount,
+          insertedCandidateCount: newItems.length,
+          orgContentDedupeWindowHours,
+          hasOrgContentDedupeWindow: Boolean(orgContentDedupeSince),
+        },
+      }).catch((error) => {
+        logger.warn(
+          { err: error, taskId: task.id, orgId: task.orgId },
+          "Failed to persist dedupe task log",
+        );
+      });
+    }
 
     const createdResultIds: string[] = [];
     for (let i = 0; i < newItems.length; i += RESULT_PERSIST_CONCURRENCY_LIMIT) {
       const batch = newItems.slice(i, i + RESULT_PERSIST_CONCURRENCY_LIMIT);
       const batchResults = await Promise.allSettled(
-        batch.map((entry) => this.persistSingleResult(task, entry, shouldStoreMedia, runId))
+        batch.map((entry) =>
+          this.persistSingleResult(task, entry, shouldStoreMedia, runId, {
+            orgContentDedupeSince,
+            urlQueryParamAllowlist,
+          }),
+        ),
       );
       for (const result of batchResults) {
         if (result.status === "rejected") {
@@ -232,6 +338,13 @@ export class CrawlResultService {
         createdResultIds.push(persisted.resultId);
         if (!persisted.inserted) {
           skipped += 1;
+          if (
+            !reusedResultFetchedAt ||
+            persisted.fetchedAt.getTime() > reusedResultFetchedAt.getTime()
+          ) {
+            reusedResultFetchedAt = persisted.fetchedAt;
+            reusedResultId = persisted.resultId;
+          }
           continue;
         }
         inserted += 1;
@@ -280,8 +393,9 @@ export class CrawlResultService {
     return {
       inserted,
       skipped,
+      ...(reusedResultId ? { reusedResultId } : {}),
       ...(ingestToItems ? { itemsQueued, itemsQueueFailed } : {}),
-      lastFetchedAt: latestResultAt,
+      lastFetchedAt: latestResultAt ?? reusedResultFetchedAt,
       runId,
       memory
     };
@@ -291,11 +405,34 @@ export class CrawlResultService {
     task: CrawlTask,
     entry: HashedCrawlResultItem,
     shouldStoreMedia: boolean,
-    runId?: string
+    runId?: string,
+    options?: {
+      orgContentDedupeSince: Date | null;
+      urlQueryParamAllowlist: string[];
+    },
   ): Promise<{ resultId: string; fetchedAt: Date; inserted: boolean }> {
-    const sourceUrl = entry.item.url ?? task.targetUrl;
+    const sourceUrl = entry.sourceUrl;
+    const metadataRecord: Record<string, unknown> = {
+      ...(entry.item.metadata ?? {}),
+      ...(entry.canonicalSourceUrl
+        ? { canonicalUrl: entry.canonicalSourceUrl }
+        : {}),
+      ...(entry.sourceUrlFingerprint
+        ? { urlFingerprint: entry.sourceUrlFingerprint }
+        : {}),
+      ...(entry.canonicalSourceUrl &&
+      entry.canonicalSourceUrl !== sourceUrl
+        ? { originalUrl: sourceUrl }
+        : {}),
+      ...(options?.urlQueryParamAllowlist &&
+      options.urlQueryParamAllowlist.length > 0
+        ? {
+            urlQueryParamAllowlist: options.urlQueryParamAllowlist,
+          }
+        : {}),
+    };
     const fetchedAt = coerceDate(entry.item.publishedAt) ?? new Date();
-    const metadata = toPrismaJsonValue(entry.item.metadata ?? {});
+    const metadata = toPrismaJsonValue(metadataRecord);
     let stage = "create_result";
     let resultId: string | undefined;
     let created: CrawlResult | undefined;
@@ -305,7 +442,9 @@ export class CrawlResultService {
         created = await this.prisma.crawlResult.create({
           data: {
             taskId: task.id,
+            orgId: task.orgId,
             sourceUrl,
+            sourceUrlFingerprint: entry.sourceUrlFingerprint,
             fetchedAt,
             markdownRef: "",
             contentHash: entry.hash,
@@ -343,6 +482,39 @@ export class CrawlResultService {
         throw error;
       }
       resultId = created.id;
+
+      if (options?.orgContentDedupeSince) {
+        stage = "check_org_dedupe_race";
+        const existingWithinWindow = await this.prisma.crawlResult.findFirst({
+          where: {
+            orgId: task.orgId,
+            contentHash: entry.hash,
+            fetchedAt: { gte: options.orgContentDedupeSince },
+            NOT: { id: created.id },
+          },
+          orderBy: { fetchedAt: "desc" },
+          select: { id: true, fetchedAt: true },
+        });
+        if (existingWithinWindow) {
+          logger.warn(
+            {
+              taskId: task.id,
+              orgId: task.orgId,
+              duplicateResultId: existingWithinWindow.id,
+              transientResultId: created.id,
+              sourceUrl,
+              contentHash: entry.hash,
+            },
+            "Detected org-level duplicate crawl result insert race; rolling back transient row",
+          );
+          await this.rollbackPersistedResult(task, created.id);
+          return {
+            resultId: existingWithinWindow.id,
+            fetchedAt: existingWithinWindow.fetchedAt,
+            inserted: false,
+          };
+        }
+      }
 
       const linkAnalysis = this.extractLinkAnalysisFromResult(entry.item);
       const media = shouldStoreMedia ? this.normalizeMediaCollection(entry.item.media) : undefined;
@@ -575,6 +747,12 @@ export class CrawlResultService {
     }
     if (typeof data.runId === "string") {
       summary.runId = data.runId;
+    }
+    if (
+      typeof data.reusedResultId === "string" &&
+      data.reusedResultId.trim().length > 0
+    ) {
+      summary.reusedResultId = data.reusedResultId.trim();
     }
     if (typeof data.retryableFailures === "number" && Number.isFinite(data.retryableFailures)) {
       summary.retryableFailures = data.retryableFailures;

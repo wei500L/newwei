@@ -4,6 +4,7 @@ export interface SeedSchedulerRuntimeSettings {
   seedCacheTtlForceGlobal: boolean;
   seedCacheTtlSecondsSitemapRss: number;
   seedCacheTtlSecondsListDeep: number;
+  seedUrlQueryParamAllowlist: string[];
 }
 
 export interface NewsSourceSeedFormValues {
@@ -32,6 +33,7 @@ export interface NewsSourceSeedFormValues {
   seedDeepPreferPathDate?: boolean;
   seedDeepEnableSecondaryHubs?: boolean;
   seedDeepIgnoreRobotsTxt?: boolean;
+  seedQueryParamAllowlist?: string[];
 }
 
 export const normalizeSeedMode = (value: unknown): SeedMode =>
@@ -46,7 +48,46 @@ export const normalizeSeedMode = (value: unknown): SeedMode =>
 export const DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS: SeedSchedulerRuntimeSettings = {
   seedCacheTtlForceGlobal: false,
   seedCacheTtlSecondsSitemapRss: 60,
-  seedCacheTtlSecondsListDeep: 180
+  seedCacheTtlSecondsListDeep: 180,
+  seedUrlQueryParamAllowlist: [
+    "id",
+    "story",
+    "article",
+    "post",
+    "item",
+    "p",
+    "page",
+    "v",
+    "ver",
+    "lang",
+    "locale",
+    "hl"
+  ]
+};
+
+const QUERY_PARAM_KEY_PATTERN = /^[a-z0-9_.-]{1,64}$/i;
+
+export const normalizeSeedQueryParamAllowlist = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const key = entry.trim().toLowerCase();
+    if (!QUERY_PARAM_KEY_PATTERN.test(key) || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(key);
+    if (normalized.length >= 64) {
+      break;
+    }
+  }
+  return normalized;
 };
 
 const toIntegerInRange = (value: unknown, min: number, max: number): number | null => {
@@ -69,10 +110,14 @@ const resolveSeedSchedulerRuntimeSettings = (
   const listDeep =
     toIntegerInRange(runtimeSettings?.seedCacheTtlSecondsListDeep, 10, 3600) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep;
+  const allowlist = Array.isArray(runtimeSettings?.seedUrlQueryParamAllowlist)
+    ? normalizeSeedQueryParamAllowlist(runtimeSettings?.seedUrlQueryParamAllowlist)
+    : [...DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist];
   return {
     seedCacheTtlForceGlobal: runtimeSettings?.seedCacheTtlForceGlobal === true,
     seedCacheTtlSecondsSitemapRss: sitemapRss,
-    seedCacheTtlSecondsListDeep: listDeep
+    seedCacheTtlSecondsListDeep: listDeep,
+    seedUrlQueryParamAllowlist: allowlist
   };
 };
 
@@ -144,6 +189,7 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
     | 'seedDeepPreferPathDate'
     | 'seedDeepEnableSecondaryHubs'
     | 'seedDeepIgnoreRobotsTxt'
+    | 'seedQueryParamAllowlist'
   >
 > = {
   seedMode: 'sitemap',
@@ -165,7 +211,8 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
   seedDeepHeadFetchTopK: 40,
   seedDeepPreferPathDate: true,
   seedDeepEnableSecondaryHubs: true,
-  seedDeepIgnoreRobotsTxt: true
+  seedDeepIgnoreRobotsTxt: true,
+  seedQueryParamAllowlist: []
 };
 
 const toFiniteNumber = (value: unknown): number | null =>
@@ -240,6 +287,8 @@ export const readSeedFormValuesFromConfig = (
       typeof deepConfig?.enableSecondaryHubs === 'boolean'
         ? deepConfig.enableSecondaryHubs
         : DEFAULT_SEED_FORM_VALUES.seedDeepEnableSecondaryHubs,
+    seedQueryParamAllowlist:
+      normalizeSeedQueryParamAllowlist(seedConfig?.queryParamAllowlist),
     // Deep mode is hard-locked to ignore robots.txt, regardless of stored config.
     seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt
   };
@@ -360,6 +409,12 @@ export const buildSeedConfigFromFormValues = (
   }
   if (typeof values.seedConcurrency === 'number' && Number.isFinite(values.seedConcurrency)) {
     seed.concurrency = values.seedConcurrency;
+  }
+  const queryParamAllowlist = normalizeSeedQueryParamAllowlist(
+    values.seedQueryParamAllowlist,
+  );
+  if (queryParamAllowlist.length > 0) {
+    seed.queryParamAllowlist = queryParamAllowlist;
   }
 
   return {

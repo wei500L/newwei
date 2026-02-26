@@ -11,7 +11,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Select,
   Space,
   Switch,
   Spin,
@@ -25,8 +24,10 @@ import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
 
-interface NewsDedupeCategoryThresholdModel {
-  category: string;
+interface NewsDedupeScopedThresholdModel {
+  sourceId: string | null;
+  language: string | null;
+  categoryPath: string | null;
   threshold: number;
 }
 
@@ -40,7 +41,7 @@ interface NewsDedupeSettingsModel {
   llmJudgePromptVersion: string;
   llmJudgeSystemPromptTemplate: string;
   llmJudgeUserPromptTemplate: string;
-  categoryThresholds: NewsDedupeCategoryThresholdModel[];
+  scopedThresholds: NewsDedupeScopedThresholdModel[];
 }
 
 interface QueryData {
@@ -61,13 +62,13 @@ interface FormValues {
   llmJudgePromptVersion: string | null;
   llmJudgeSystemPromptTemplate: string | null;
   llmJudgeUserPromptTemplate: string | null;
-  categoryThresholds: NewsDedupeCategoryThresholdModel[];
+  scopedThresholds: NewsDedupeScopedThresholdModel[];
 }
 
 interface UpdateNewsDedupeSettingsInput {
   defaultThreshold: number;
   useEmbeddings: boolean;
-  categoryThresholds: NewsDedupeCategoryThresholdModel[];
+  scopedThresholds: NewsDedupeScopedThresholdModel[];
   llmJudgeInstructions?: string | null;
   llmJudgeModel?: string | null;
   llmJudgeMaxComparisons?: number | null;
@@ -89,8 +90,10 @@ const NEWS_DEDUPE_SETTINGS_QUERY = gql`
       llmJudgePromptVersion
       llmJudgeSystemPromptTemplate
       llmJudgeUserPromptTemplate
-      categoryThresholds {
-        category
+      scopedThresholds {
+        sourceId
+        language
+        categoryPath
         threshold
       }
     }
@@ -109,85 +112,121 @@ const UPDATE_NEWS_DEDUPE_SETTINGS_MUTATION = gql`
       llmJudgePromptVersion
       llmJudgeSystemPromptTemplate
       llmJudgeUserPromptTemplate
-      categoryThresholds {
-        category
+      scopedThresholds {
+        sourceId
+        language
+        categoryPath
         threshold
       }
     }
   }
 `;
 
-function normalizeTopicKey(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
+function normalizeScopeToken(
+  value: string | null | undefined,
+  maxLength: number,
+  forceLowercase = false
+) {
+  if (typeof value !== "string") {
+    return null;
   }
-  return trimmed.replace(/\s+/g, " ").toLowerCase();
+  const collapsed = value.trim().replace(/\s+/g, " ");
+  if (!collapsed) {
+    return null;
+  }
+  const bounded = collapsed.length > maxLength ? collapsed.slice(0, maxLength) : collapsed;
+  return forceLowercase ? bounded.toLowerCase() : bounded;
 }
 
-function normalizeCategoryThresholds(values: NewsDedupeCategoryThresholdModel[]) {
-  const map = new Map<string, NewsDedupeCategoryThresholdModel>();
+function normalizeScopeKeyPart(value: string | null) {
+  if (!value) {
+    return "*";
+  }
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function buildScopeKey(value: {
+  sourceId: string | null;
+  language: string | null;
+  categoryPath: string | null;
+}) {
+  return [
+    normalizeScopeKeyPart(value.sourceId),
+    normalizeScopeKeyPart(value.language),
+    normalizeScopeKeyPart(value.categoryPath)
+  ].join("|");
+}
+
+function normalizeScopedThresholds(values: NewsDedupeScopedThresholdModel[]) {
+  const map = new Map<string, NewsDedupeScopedThresholdModel>();
   for (const entry of values) {
-    const category = typeof entry?.category === "string" ? entry.category.trim() : "";
-    if (!category) {
+    const sourceId = normalizeScopeToken(entry?.sourceId ?? null, 191, false);
+    const language = normalizeScopeToken(entry?.language ?? null, 32, true);
+    const categoryPath = normalizeScopeToken(entry?.categoryPath ?? null, 240, false);
+    if (!sourceId && !language && !categoryPath) {
       continue;
     }
-    const key = normalizeTopicKey(category);
     const threshold =
       typeof entry.threshold === "number" && Number.isFinite(entry.threshold) ? entry.threshold : 0;
     const clamped = Math.min(1, Math.max(0, threshold));
-    map.set(key, { category, threshold: clamped });
+    const normalized: NewsDedupeScopedThresholdModel = {
+      sourceId,
+      language,
+      categoryPath,
+      threshold: clamped
+    };
+    map.set(buildScopeKey(normalized), normalized);
     if (map.size >= 100) {
       break;
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => a.category.localeCompare(b.category));
+  return Array.from(map.values()).sort((left, right) =>
+    buildScopeKey(left).localeCompare(buildScopeKey(right))
+  );
 }
 
 function resolveBaseThreshold(
-  settings: { defaultThreshold: number; categoryThresholds: NewsDedupeCategoryThresholdModel[] },
-  options: { category?: string | null; topics?: string[] | null }
+  settings: { defaultThreshold: number; scopedThresholds: NewsDedupeScopedThresholdModel[] },
+  options: { sourceId?: string | null; language?: string | null; categoryPath?: string | null }
 ) {
-  const map = new Map<string, NewsDedupeCategoryThresholdModel>();
-  for (const entry of settings.categoryThresholds) {
-    const key = normalizeTopicKey(entry.category);
-    if (!key) {
-      continue;
-    }
-    map.set(key, entry);
+  const map = new Map<string, NewsDedupeScopedThresholdModel>();
+  for (const entry of settings.scopedThresholds) {
+    map.set(buildScopeKey(entry), entry);
   }
 
-  const candidates: string[] = [];
-  if (typeof options.category === "string" && options.category.trim()) {
-    candidates.push(options.category);
-  }
-  if (Array.isArray(options.topics)) {
-    for (const topic of options.topics) {
-      if (typeof topic === "string" && topic.trim()) {
-        candidates.push(topic);
-      }
-    }
-  }
-
-  let best: NewsDedupeCategoryThresholdModel | null = null;
+  const sourceId = normalizeScopeToken(options.sourceId ?? null, 191, false);
+  const language = normalizeScopeToken(options.language ?? null, 32, true);
+  const categoryPath = normalizeScopeToken(options.categoryPath ?? null, 240, false);
+  const candidates: Array<{
+    sourceId: string | null;
+    language: string | null;
+    categoryPath: string | null;
+  }> = [
+    { sourceId, language, categoryPath },
+    { sourceId, language, categoryPath: null },
+    { sourceId, language: null, categoryPath: null },
+    { sourceId: null, language, categoryPath },
+    { sourceId: null, language, categoryPath: null },
+    { sourceId: null, language: null, categoryPath }
+  ];
+  const seen = new Set<string>();
   for (const candidate of candidates) {
-    const key = normalizeTopicKey(candidate);
-    if (!key) {
+    const key = buildScopeKey(candidate);
+    if (seen.has(key)) {
       continue;
     }
+    seen.add(key);
     const match = map.get(key);
-    if (!match) {
-      continue;
-    }
-    if (!best || match.threshold > best.threshold) {
-      best = match;
+    if (match) {
+      return {
+        threshold: match.threshold,
+        matchedScope: match
+      };
     }
   }
 
-  return best
-    ? { threshold: best.threshold, matchedCategory: best.category }
-    : { threshold: settings.defaultThreshold };
+  return { threshold: settings.defaultThreshold };
 }
 
 function resolveFinalThreshold(summaryLength: number, base: number) {
@@ -220,8 +259,9 @@ export function NewsDedupeSettingsPanel() {
   const { t } = useTranslation();
   const [form] = Form.useForm<FormValues>();
   const [messageApi, contextHolder] = message.useMessage();
-  const [probeCategory, setProbeCategory] = useState<string>("");
-  const [probeTopics, setProbeTopics] = useState<string[]>([]);
+  const [probeSourceId, setProbeSourceId] = useState<string>("");
+  const [probeLanguage, setProbeLanguage] = useState<string>("");
+  const [probeCategoryPath, setProbeCategoryPath] = useState<string>("");
   const [probeSummaryLength, setProbeSummaryLength] = useState<number>(200);
 
   const { data, loading, refetch, error } = useQuery<QueryData>(NEWS_DEDUPE_SETTINGS_QUERY, {
@@ -242,16 +282,16 @@ export function NewsDedupeSettingsPanel() {
         llmJudgePromptVersion: data.newsDedupeSettings.llmJudgePromptVersion,
         llmJudgeSystemPromptTemplate: data.newsDedupeSettings.llmJudgeSystemPromptTemplate,
         llmJudgeUserPromptTemplate: data.newsDedupeSettings.llmJudgeUserPromptTemplate,
-        categoryThresholds: data.newsDedupeSettings.categoryThresholds ?? []
+        scopedThresholds: data.newsDedupeSettings.scopedThresholds ?? []
       });
     }
   }, [data?.newsDedupeSettings, form]);
 
   const watchedDefaultThreshold = Form.useWatch("defaultThreshold", form);
-  const categoryThresholds = Form.useWatch("categoryThresholds", form);
+  const scopedThresholds = Form.useWatch("scopedThresholds", form);
   const normalizedPreview = useMemo(
-    () => normalizeCategoryThresholds(Array.isArray(categoryThresholds) ? categoryThresholds : []),
-    [categoryThresholds]
+    () => normalizeScopedThresholds(Array.isArray(scopedThresholds) ? scopedThresholds : []),
+    [scopedThresholds]
   );
 
   const effectiveDefaultThreshold = useMemo(() => {
@@ -263,23 +303,46 @@ export function NewsDedupeSettingsPanel() {
     const base = resolveBaseThreshold(
       {
         defaultThreshold: effectiveDefaultThreshold,
-        categoryThresholds: normalizedPreview
+        scopedThresholds: normalizedPreview
       },
-      { category: probeCategory, topics: probeTopics }
+      {
+        sourceId: probeSourceId,
+        language: probeLanguage,
+        categoryPath: probeCategoryPath
+      }
     );
     const finalThreshold = resolveFinalThreshold(probeSummaryLength, base.threshold);
     return {
       ...base,
       finalThreshold
     };
-  }, [effectiveDefaultThreshold, normalizedPreview, probeCategory, probeSummaryLength, probeTopics]);
+  }, [
+    effectiveDefaultThreshold,
+    normalizedPreview,
+    probeCategoryPath,
+    probeLanguage,
+    probeSourceId,
+    probeSummaryLength
+  ]);
+  const probeMatchedScopeLabel = useMemo(() => {
+    const matched = probeResult.matchedScope;
+    if (!matched) {
+      return null;
+    }
+    const parts = [
+      matched.sourceId ? `source=${matched.sourceId}` : null,
+      matched.language ? `lang=${matched.language}` : null,
+      matched.categoryPath ? `path=${matched.categoryPath}` : null
+    ].filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.join(" | ") : null;
+  }, [probeResult.matchedScope]);
 
   const handleSubmit = async (values: FormValues) => {
     try {
       const payload: UpdateNewsDedupeSettingsInput = {
         defaultThreshold: Math.min(1, Math.max(0, values.defaultThreshold)),
         useEmbeddings: Boolean(values.useEmbeddings),
-        categoryThresholds: normalizeCategoryThresholds(values.categoryThresholds ?? [])
+        scopedThresholds: normalizeScopedThresholds(values.scopedThresholds ?? [])
       };
 
       if (!values.useEmbeddings) {
@@ -320,7 +383,7 @@ export function NewsDedupeSettingsPanel() {
         JSON.stringify(
           {
             defaultThreshold: effectiveDefaultThreshold,
-            categoryThresholds: normalizedPreview
+            scopedThresholds: normalizedPreview
           },
           null,
           2
@@ -346,7 +409,7 @@ export function NewsDedupeSettingsPanel() {
       {contextHolder}
       <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
         {t("settings.newsDedupe.description", {
-          defaultValue: "Configure semantic dedupe thresholds per topic/category."
+          defaultValue: "Configure semantic dedupe thresholds by source, language, and category path."
         })}
       </Typography.Paragraph>
 
@@ -356,7 +419,7 @@ export function NewsDedupeSettingsPanel() {
         message={t("settings.newsDedupe.notice.title", { defaultValue: "How it works" })}
         description={t("settings.newsDedupe.notice.body", {
           defaultValue:
-            "The pipeline picks the strictest (highest) threshold among matched category/topics; otherwise it uses the default threshold. Length-based adjustments still apply."
+            "Matching priority: source+language+path > source+language > source > language+path > language > path > default. Length-based adjustments still apply."
         })}
         style={{ marginBottom: "1rem" }}
       />
@@ -497,14 +560,14 @@ export function NewsDedupeSettingsPanel() {
 
         <Card
           size="small"
-          title={t("settings.newsDedupe.sections.overrides", { defaultValue: "Per-topic overrides" })}
+          title={t("settings.newsDedupe.sections.overrides", { defaultValue: "Scoped overrides" })}
           style={{ marginBottom: "1rem" }}
         >
           <Form.Item
             label={t("settings.newsDedupe.fields.defaultThreshold", { defaultValue: "Default threshold" })}
             name="defaultThreshold"
             extra={t("settings.newsDedupe.hints.defaultThreshold", {
-              defaultValue: "Used when no category/topics match. Range 0–1 (higher = stricter)."
+              defaultValue: "Used when no scoped rule matches. Range 0–1 (higher = stricter)."
             })}
             rules={[
               { required: true, message: t("settings.newsDedupe.validation.required", { defaultValue: "Required" }) }
@@ -515,7 +578,7 @@ export function NewsDedupeSettingsPanel() {
 
           <Divider style={{ margin: "0.75rem 0" }} />
 
-          <Form.List name="categoryThresholds">
+          <Form.List name="scopedThresholds">
             {(fields, { add, remove }) => (
               <>
                 <Space wrap style={{ marginBottom: "0.75rem" }}>
@@ -533,8 +596,14 @@ export function NewsDedupeSettingsPanel() {
 
                 {fields.length > 0 ? (
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                    <Typography.Text type="secondary" style={{ flex: 1, minWidth: 240 }}>
-                      {t("settings.newsDedupe.fields.category", { defaultValue: "Category/topic" })}
+                    <Typography.Text type="secondary" style={{ width: 220 }}>
+                      {t("settings.newsDedupe.fields.sourceId", { defaultValue: "Source ID (optional)" })}
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ width: 160 }}>
+                      {t("settings.newsDedupe.fields.language", { defaultValue: "Language (optional)" })}
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ flex: 1, minWidth: 220 }}>
+                      {t("settings.newsDedupe.fields.categoryPath", { defaultValue: "Category path (optional)" })}
                     </Typography.Text>
                     <Typography.Text type="secondary" style={{ width: 220 }}>
                       {t("settings.newsDedupe.fields.threshold", { defaultValue: "Threshold" })}
@@ -547,18 +616,32 @@ export function NewsDedupeSettingsPanel() {
                   <Space key={field.key} align="baseline" style={{ display: "flex", marginBottom: 8 }}>
                     <Form.Item
                       {...field}
-                      name={[field.name, "category"]}
-                      rules={[
-                        {
-                          required: true,
-                          message: t("settings.newsDedupe.validation.category", { defaultValue: "Required" })
-                        }
-                      ]}
-                      style={{ flex: 1, minWidth: 240, marginBottom: 0 }}
+                      name={[field.name, "sourceId"]}
+                      style={{ width: 220, marginBottom: 0 }}
                     >
                       <Input
-                        placeholder={t("settings.newsDedupe.placeholders.category", {
-                          defaultValue: "e.g. finance / 科技 / geopolitics"
+                        placeholder={t("settings.newsDedupe.placeholders.sourceId", {
+                          defaultValue: "news-source-id"
+                        })}
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      {...field}
+                      name={[field.name, "language"]}
+                      style={{ width: 160, marginBottom: 0 }}
+                    >
+                      <Input placeholder={t("settings.newsDedupe.placeholders.language", { defaultValue: "en / zh" })} />
+                    </Form.Item>
+
+                    <Form.Item
+                      {...field}
+                      name={[field.name, "categoryPath"]}
+                      style={{ flex: 1, minWidth: 220, marginBottom: 0 }}
+                    >
+                      <Input
+                        placeholder={t("settings.newsDedupe.placeholders.categoryPath", {
+                          defaultValue: "finance/markets"
                         })}
                       />
                     </Form.Item>
@@ -588,7 +671,18 @@ export function NewsDedupeSettingsPanel() {
                 ))}
 
                 <Form.Item style={{ marginBottom: 0, marginTop: "0.5rem" }}>
-                  <Button type="dashed" onClick={() => add({ category: "", threshold: 0.92 })} icon={<PlusOutlined />}>
+                  <Button
+                    type="dashed"
+                    onClick={() =>
+                      add({
+                        sourceId: null,
+                        language: null,
+                        categoryPath: null,
+                        threshold: 0.92
+                      })
+                    }
+                    icon={<PlusOutlined />}
+                  >
                     {t("settings.newsDedupe.actions.add", { defaultValue: "Add override" })}
                   </Button>
                 </Form.Item>
@@ -612,12 +706,25 @@ export function NewsDedupeSettingsPanel() {
               size="small"
               pagination={{ pageSize: 10, hideOnSinglePage: true }}
               dataSource={normalizedPreview}
-              rowKey={(row) => row.category}
+              rowKey={(row) => buildScopeKey(row)}
               columns={[
                 {
-                  title: t("settings.newsDedupe.fields.category", { defaultValue: "Category/topic" }),
-                  dataIndex: "category",
-                  key: "category"
+                  title: t("settings.newsDedupe.fields.sourceId", { defaultValue: "Source ID" }),
+                  dataIndex: "sourceId",
+                  key: "sourceId",
+                  render: (value: string | null) => value ?? "—"
+                },
+                {
+                  title: t("settings.newsDedupe.fields.language", { defaultValue: "Language" }),
+                  dataIndex: "language",
+                  key: "language",
+                  render: (value: string | null) => value ?? "—"
+                },
+                {
+                  title: t("settings.newsDedupe.fields.categoryPath", { defaultValue: "Category path" }),
+                  dataIndex: "categoryPath",
+                  key: "categoryPath",
+                  render: (value: string | null) => value ?? "—"
                 },
                 {
                   title: t("settings.newsDedupe.fields.threshold", { defaultValue: "Threshold" }),
@@ -648,29 +755,35 @@ export function NewsDedupeSettingsPanel() {
           <Space direction="vertical" size="middle" style={{ display: "flex" }}>
             <Space wrap style={{ display: "flex" }}>
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.category", { defaultValue: "Category" })}
-                style={{ minWidth: 240, flex: 1, marginBottom: 0 }}
+                label={t("settings.newsDedupe.tester.fields.sourceId", { defaultValue: "Source ID" })}
+                style={{ minWidth: 220, flex: 1, marginBottom: 0 }}
               >
                 <Input
-                  value={probeCategory}
-                  onChange={(event) => setProbeCategory(event.target.value)}
-                  placeholder={t("settings.newsDedupe.tester.placeholders.category", { defaultValue: "Optional" })}
+                  value={probeSourceId}
+                  onChange={(event) => setProbeSourceId(event.target.value)}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.sourceId", { defaultValue: "Optional" })}
                 />
               </Form.Item>
 
               <Form.Item
-                label={t("settings.newsDedupe.tester.fields.topics", { defaultValue: "Topics" })}
+                label={t("settings.newsDedupe.tester.fields.language", { defaultValue: "Language" })}
+                style={{ minWidth: 160, marginBottom: 0 }}
+              >
+                <Input
+                  value={probeLanguage}
+                  onChange={(event) => setProbeLanguage(event.target.value)}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.language", { defaultValue: "Optional" })}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label={t("settings.newsDedupe.tester.fields.categoryPath", { defaultValue: "Category path" })}
                 style={{ minWidth: 260, flex: 1, marginBottom: 0 }}
               >
-                <Select
-                  mode="tags"
-                  value={probeTopics}
-                  onChange={(value) => setProbeTopics(value)}
-                  tokenSeparators={[",", " ", "\n", "\t"]}
-                  placeholder={t("settings.newsDedupe.tester.placeholders.topics", {
-                    defaultValue: "Optional (comma / Enter separated)"
-                  })}
-                  options={(probeTopics ?? []).map((topic) => ({ label: topic, value: topic }))}
+                <Input
+                  value={probeCategoryPath}
+                  onChange={(event) => setProbeCategoryPath(event.target.value)}
+                  placeholder={t("settings.newsDedupe.tester.placeholders.categoryPath", { defaultValue: "Optional" })}
                 />
               </Form.Item>
 
@@ -692,9 +805,9 @@ export function NewsDedupeSettingsPanel() {
               <Tag>
                 {t("settings.newsDedupe.tester.results.base", { defaultValue: "Base" })}:{" "}
                 {formatThreshold(probeResult.threshold)}
-                {probeResult.matchedCategory
+                {probeMatchedScopeLabel
                   ? ` (${t("settings.newsDedupe.tester.results.matched", { defaultValue: "matched" })}: ${
-                      probeResult.matchedCategory
+                      probeMatchedScopeLabel
                     })`
                   : ` (${t("settings.newsDedupe.tester.results.default", { defaultValue: "default" })})`}
               </Tag>

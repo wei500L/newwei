@@ -93,6 +93,67 @@ const crawlStatusOptions = [
   label: status,
   value: status,
 }));
+const crawlMetricSlugs = [
+  {
+    label: "crawl_task",
+    value: "crawl_task",
+  },
+  {
+    label: "crawl_quality.preflight_failure_rate",
+    value: "crawl_quality.preflight_failure_rate",
+  },
+  {
+    label: "crawl_quality.http_304_hit_rate",
+    value: "crawl_quality.http_304_hit_rate",
+  },
+  {
+    label: "crawl_quality.org_hash_dedupe_hit_rate",
+    value: "crawl_quality.org_hash_dedupe_hit_rate",
+  },
+];
+type CrawlQualityMetricSlug =
+  | "crawl_quality.preflight_failure_rate"
+  | "crawl_quality.http_304_hit_rate"
+  | "crawl_quality.org_hash_dedupe_hit_rate";
+
+const crawlQualityMetricPresetConfig: Record<
+  CrawlQualityMetricSlug,
+  {
+    operator: AlertOperator;
+    thresholdValue: number;
+    defaultName: string;
+    defaultDescription: string;
+  }
+> = {
+  "crawl_quality.preflight_failure_rate": {
+    operator: AlertOperator.Gte,
+    thresholdValue: 0.15,
+    defaultName: "Crawl Quality: Preflight Failure Rate High",
+    defaultDescription: "Alert when preflight failure rate remains too high.",
+  },
+  "crawl_quality.http_304_hit_rate": {
+    operator: AlertOperator.Lte,
+    thresholdValue: 0.05,
+    defaultName: "Crawl Quality: HTTP 304 Hit Rate Low",
+    defaultDescription:
+      "Alert when HTTP 304 hit rate drops below expected baseline.",
+  },
+  "crawl_quality.org_hash_dedupe_hit_rate": {
+    operator: AlertOperator.Gte,
+    thresholdValue: 0.3,
+    defaultName: "Crawl Quality: Org Hash Dedupe Hit Rate High",
+    defaultDescription:
+      "Alert when org-level content hash dedupe hit rate spikes.",
+  },
+};
+
+const isCrawlQualityMetricSlug = (
+  value: string | undefined,
+): value is CrawlQualityMetricSlug =>
+  value === "crawl_quality.preflight_failure_rate" ||
+  value === "crawl_quality.http_304_hit_rate" ||
+  value === "crawl_quality.org_hash_dedupe_hit_rate";
+
 const systemMetricSlugs = [
   "system.memory.usage_pct",
   "system.load.1m",
@@ -126,6 +187,7 @@ export function AlertConfigForm() {
           initialValues={{
             id: existingRule?.id,
             name: existingRule?.name ?? t("alerts.config.defaults.name"),
+            description: existingRule?.description ?? undefined,
             metricProvider:
               existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
             metricSlug:
@@ -161,6 +223,11 @@ export function AlertConfigForm() {
             channelIds: existingRule?.channels?.map((c) => c.id) ?? [],
           }}
           onFinish={async (values) => {
+            const description =
+              typeof values.description === "string" &&
+              values.description.trim().length > 0
+                ? values.description.trim()
+                : undefined;
             const parsedMetadata = safeParseJsonObject(values.metadataJson);
             if ("error" in parsedMetadata) {
               message.error(parsedMetadata.error);
@@ -175,6 +242,7 @@ export function AlertConfigForm() {
             }
             if (
               values.metricProvider === AlertMetricProvider.CrawlTask &&
+              values.metricSlug === "crawl_task" &&
               (!values.crawlStatuses || !values.crawlStatuses.length)
             ) {
               message.error(t("alerts.config.errors.crawlStatus"));
@@ -202,10 +270,12 @@ export function AlertConfigForm() {
                     sourceId: values.pipelineSourceId,
                   }
                 : values.metricProvider === AlertMetricProvider.CrawlTask
-                  ? {
-                      statuses: values.crawlStatuses,
-                      createdById: values.crawlCreatedById,
-                    }
+                  ? values.metricSlug === "crawl_task"
+                    ? {
+                        statuses: values.crawlStatuses,
+                        createdById: values.crawlCreatedById,
+                      }
+                    : {}
                   : values.metricProvider === AlertMetricProvider.SystemMetric
                     ? {
                         currentValue: values.systemCurrentValue,
@@ -223,6 +293,7 @@ export function AlertConfigForm() {
                   input: {
                     id: values.id ?? undefined,
                     name: values.name,
+                    description,
                     metricProvider: values.metricProvider,
                     metricSlug: values.metricSlug,
                     operator: values.operator,
@@ -254,6 +325,17 @@ export function AlertConfigForm() {
           </Form.Item>
           <Form.Item label={t("alerts.config.fields.name")} name="name" rules={[{ required: true }]}>
             <Input autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            label={t("alerts.config.fields.description", {
+              defaultValue: "Description",
+            })}
+            name="description"
+          >
+            <Input.TextArea
+              autoComplete="off"
+              autoSize={{ minRows: 2, maxRows: 4 }}
+            />
           </Form.Item>
           <Form.Item
             label={t("alerts.config.fields.metricProvider")}
@@ -352,7 +434,8 @@ export function AlertConfigForm() {
           <Form.Item
             noStyle
             shouldUpdate={(prev, next) =>
-              prev.metricProvider !== next.metricProvider
+              prev.metricProvider !== next.metricProvider ||
+              prev.metricSlug !== next.metricSlug
             }
           >
             {({ getFieldValue }) => {
@@ -378,22 +461,101 @@ export function AlertConfigForm() {
                 );
               }
               if (provider === AlertMetricProvider.CrawlTask) {
+                const selectedCrawlMetricSlug = getFieldValue("metricSlug") as
+                  | string
+                  | undefined;
+                const isTaskCountMetric = selectedCrawlMetricSlug === "crawl_task";
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>{t("alerts.config.crawl.title")}</Typography.Text>
-                    <Form.Item label={t("alerts.config.crawl.statuses")} name="crawlStatuses">
+                    <Form.Item
+                      label={t("alerts.config.crawl.metricPreset", {
+                        defaultValue: "Crawl metric"
+                      })}
+                    >
                       <Select
-                        mode="multiple"
-                        options={crawlStatusOptions}
-                        placeholder={t("alerts.config.crawl.defaultsToFailed")}
+                        options={crawlMetricSlugs}
+                        value={getFieldValue("metricSlug")}
+                        onChange={(value) => {
+                          const currentMetricSlug = getFieldValue("metricSlug") as
+                            | string
+                            | undefined;
+                          const currentName = getFieldValue("name") as
+                            | string
+                            | undefined;
+                          const currentDescription = getFieldValue(
+                            "description",
+                          ) as string | undefined;
+                          const previousPreset = isCrawlQualityMetricSlug(
+                            currentMetricSlug,
+                          )
+                            ? crawlQualityMetricPresetConfig[currentMetricSlug]
+                            : null;
+                          const nextPreset = isCrawlQualityMetricSlug(value)
+                            ? crawlQualityMetricPresetConfig[value]
+                            : null;
+                          const nextValues: Record<string, unknown> = {
+                            metricSlug: value
+                          };
+                          if (nextPreset) {
+                            nextValues.operator = nextPreset.operator;
+                            nextValues.thresholdValue = nextPreset.thresholdValue;
+                            const normalizedName =
+                              typeof currentName === "string"
+                                ? currentName.trim()
+                                : "";
+                            const normalizedDescription =
+                              typeof currentDescription === "string"
+                                ? currentDescription.trim()
+                                : "";
+                            const defaultName = t("alerts.config.defaults.name");
+                            const shouldAutoFillName =
+                              normalizedName.length === 0 ||
+                              normalizedName === defaultName ||
+                              (previousPreset
+                                ? normalizedName === previousPreset.defaultName
+                                : false);
+                            const shouldAutoFillDescription =
+                              normalizedDescription.length === 0 ||
+                              (previousPreset
+                                ? normalizedDescription ===
+                                  previousPreset.defaultDescription
+                                : false);
+                            if (shouldAutoFillName) {
+                              nextValues.name = nextPreset.defaultName;
+                            }
+                            if (shouldAutoFillDescription) {
+                              nextValues.description = nextPreset.defaultDescription;
+                            }
+                          }
+                          form.setFieldsValue(nextValues);
+                        }}
                       />
                     </Form.Item>
-                    <Form.Item
-                      label={t("alerts.config.crawl.createdBy")}
-                      name="crawlCreatedById"
-                    >
-                      <Input placeholder={t("alerts.config.crawl.createdByPlaceholder")} />
-                    </Form.Item>
+                    {isTaskCountMetric ? (
+                      <>
+                        <Form.Item label={t("alerts.config.crawl.statuses")} name="crawlStatuses">
+                          <Select
+                            mode="multiple"
+                            options={crawlStatusOptions}
+                            placeholder={t("alerts.config.crawl.defaultsToFailed")}
+                          />
+                        </Form.Item>
+                        <Form.Item
+                          label={t("alerts.config.crawl.createdBy")}
+                          name="crawlCreatedById"
+                        >
+                          <Input placeholder={t("alerts.config.crawl.createdByPlaceholder")} />
+                        </Form.Item>
+                      </>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        {t("alerts.config.crawl.metricPresetHint", {
+                          defaultValue:
+                            "This quality metric uses pipeline logs; crawl status filters are not applied.",
+                        })}
+                      </Typography.Text>
+                    )}
                   </Space>
                 );
               }

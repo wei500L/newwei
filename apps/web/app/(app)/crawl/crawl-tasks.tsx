@@ -363,6 +363,10 @@ export function CrawlTasksView() {
   });
   const [updateCrawlClientSettings, { loading: crawlClientSettingsSaving }] =
     useUpdateCrawlClientSettingsMutation();
+  const conditionalRequestEnabled =
+    Form.useWatch("conditionalRequestEnabled", clientSettingsForm) ??
+    crawlClientSettingsData?.crawlClientSettings?.conditionalRequestEnabled ??
+    true;
   const adaptiveConcurrencyEnabled =
     Form.useWatch("adaptiveConcurrencyEnabled", clientSettingsForm) ??
     crawlClientSettingsData?.crawlClientSettings?.adaptiveConcurrencyEnabled ??
@@ -1586,6 +1590,85 @@ export function CrawlTasksView() {
                       min={MIN_CRAWL_REQUEST_TIMEOUT_MS}
                       max={MAX_CRAWL_REQUEST_TIMEOUT_MS}
                       step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.conditionalRequestEnabled", {
+                      defaultValue: "Enable HTTP conditional requests",
+                    })}
+                    name="conditionalRequestEnabled"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.conditionalRequestTimeoutMs", {
+                      defaultValue: "Conditional request timeout",
+                    })}
+                    name="conditionalRequestTimeoutMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.conditionalRequestTimeoutMs", {
+                          defaultValue:
+                            "Please enter conditional request timeout.",
+                        }),
+                      },
+                      {
+                        type: "number",
+                        min: 500,
+                        max: 60_000,
+                        message: t("common.validation.numberRange", {
+                          min: 500,
+                          max: 60_000,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={500}
+                      max={60_000}
+                      step={100}
+                      disabled={!conditionalRequestEnabled}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.conditionalRequestMaxRetries", {
+                      defaultValue: "Conditional request retries",
+                    })}
+                    name="conditionalRequestMaxRetries"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.conditionalRequestMaxRetries", {
+                          defaultValue:
+                            "Please enter conditional request retries.",
+                        }),
+                      },
+                      {
+                        type: "number",
+                        min: 0,
+                        max: 5,
+                        message: t("common.validation.numberRange", {
+                          min: 0,
+                          max: 5,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={0}
+                      max={5}
+                      step={1}
+                      disabled={!conditionalRequestEnabled}
                       style={{ width: "100%" }}
                     />
                   </Form.Item>

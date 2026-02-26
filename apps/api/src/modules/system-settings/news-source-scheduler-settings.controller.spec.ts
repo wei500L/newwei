@@ -28,6 +28,7 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
     settings.updateSettings.mockResolvedValue({
       source: "db",
@@ -35,6 +36,7 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: true,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
     controller = new NewsSourceSchedulerSettingsController(settings as any);
   });
@@ -54,6 +56,7 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsSitemapRss: 90,
       seedCacheTtlSecondsListDeep: 240,
       seedCacheTtlForceGlobal: true,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     };
 
     await controller.updateSettings(user, body);

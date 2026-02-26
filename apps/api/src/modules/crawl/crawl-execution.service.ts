@@ -23,6 +23,10 @@ import { CRAWL_QUEUE_NAME } from "./crawl.constants";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
 import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
+  buildCanonicalUrlFingerprint,
+  extractUrlQueryParamAllowlistFromTaskConfig,
+} from "./url-fingerprint";
+import {
   CrawlExecutionSummary,
   CrawlDetailExpansionOptions,
   CrawlTaskOptions,
@@ -144,8 +148,49 @@ interface PublishSignalEnrichmentResult {
   softFailureCount: number;
 }
 
+interface CrawlResultHttpValidationState {
+  resultId: string;
+  fetchedAt: Date;
+  etag?: string;
+  lastModified?: string;
+}
+
+interface ConditionalPreflightResult {
+  status: number;
+  etag?: string;
+  lastModified?: string;
+  method: "HEAD" | "GET";
+  checkedAt: string;
+}
+
+interface ConditionalRequestSettings {
+  enabled: boolean;
+  timeoutMs: number;
+  maxRetries: number;
+}
+
+interface ConditionalPreflightOutcomeCompleted {
+  status: "completed";
+  result: ConditionalPreflightResult;
+  attempts: number;
+  failures: number;
+}
+
+interface ConditionalPreflightOutcomeFailed {
+  status: "failed";
+  attempts: number;
+  failures: number;
+}
+
+type ConditionalPreflightOutcome =
+  | ConditionalPreflightOutcomeCompleted
+  | ConditionalPreflightOutcomeFailed;
+
 @Injectable()
 export class CrawlExecutionService {
+  private readonly defaultConditionalRequestEnabled = true;
+  private readonly defaultConditionalRequestTimeoutMs = 5_000;
+  private readonly defaultConditionalRequestMaxRetries = 0;
   private readonly defaultDetailPublishSignalHeadFetchTimeoutMs = 1_500;
   private readonly defaultDetailPublishSignalHeadFetchConcurrency = 2;
   private readonly defaultDetailPublishSignalHeadFetchMaxReadBytes = 8_000_000;
@@ -259,11 +304,136 @@ export class CrawlExecutionService {
       const requestTimeoutMs = this.normalizeRequestTimeoutMs(
         retryContext?.requestTimeoutMs,
       );
+      const urlQueryParamAllowlist = extractUrlQueryParamAllowlistFromTaskConfig(
+        task.config,
+      );
+      const conditionalRequestSettings =
+        await this.getConditionalRequestSettings();
       assertNoCrawl4aiLlmOptions(options, "task.config.options");
       const ingestToItems = configRecord?.ingestToItems === true;
       let effectiveOptions = this.ensureTaskSessionReuse(task.id, options);
       const payload = this.buildRequestPayload(task, effectiveOptions);
       effectiveOptions = payload.options ?? effectiveOptions;
+      const latestHttpValidationState =
+        await this.findLatestResultHttpValidationState({
+          taskId: task.id,
+          targetUrl: task.targetUrl,
+          urlQueryParamAllowlist,
+        });
+      const preflightResult = this.shouldRunConditionalPreflight(
+        conditionalRequestSettings.enabled,
+      )
+        ? await this.runConditionalPreflight({
+            targetUrl: task.targetUrl,
+            options: effectiveOptions,
+            requestTimeoutMs,
+            etag: latestHttpValidationState?.etag,
+            lastModified: latestHttpValidationState?.lastModified,
+            timeoutMs: conditionalRequestSettings.timeoutMs,
+            maxRetries: conditionalRequestSettings.maxRetries,
+          })
+        : null;
+      if (preflightResult) {
+        if (preflightResult.status === "completed") {
+          await TaskLogModel.create({
+            queue: CRAWL_QUEUE_NAME,
+            jobId: taskId,
+            orgId,
+            stage: "preflight",
+            status: "completed",
+            message: "HTTP validator preflight completed",
+            data: {
+              method: preflightResult.result.method,
+              status: preflightResult.result.status,
+              attempts: preflightResult.attempts,
+              failures: preflightResult.failures,
+              etag: preflightResult.result.etag ?? null,
+              lastModified: preflightResult.result.lastModified ?? null,
+              hasConditionalHeaders:
+                Boolean(latestHttpValidationState?.etag) ||
+                Boolean(latestHttpValidationState?.lastModified),
+            },
+          });
+        } else {
+          await TaskLogModel.create({
+            queue: CRAWL_QUEUE_NAME,
+            jobId: taskId,
+            orgId,
+            stage: "preflight",
+            status: "failed",
+            message: "HTTP validator preflight failed",
+            data: {
+              attempts: preflightResult.attempts,
+              failures: preflightResult.failures,
+              hasConditionalHeaders:
+                Boolean(latestHttpValidationState?.etag) ||
+                Boolean(latestHttpValidationState?.lastModified),
+            },
+          });
+        }
+      }
+      if (
+        preflightResult?.status === "completed" &&
+        preflightResult.result.status === 304 &&
+        latestHttpValidationState?.resultId
+      ) {
+        const summary: CrawlExecutionSummary = {
+          inserted: 0,
+          skipped: 1,
+          reusedResultId: latestHttpValidationState.resultId,
+          lastFetchedAt: latestHttpValidationState.fetchedAt,
+        };
+
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: taskId,
+          orgId,
+          stage: "crawler",
+          status: "completed",
+          message: "Skipped crawl body extraction via HTTP 304 reuse",
+          data: {
+            reusedResultId: latestHttpValidationState.resultId,
+            status: preflightResult.result.status,
+            etag:
+              preflightResult.result.etag ??
+              latestHttpValidationState.etag ??
+              null,
+            lastModified:
+              preflightResult.result.lastModified ??
+              latestHttpValidationState.lastModified ??
+              null,
+          },
+        });
+
+        await this.prisma.crawlTask.update({
+          where: { id: task.id },
+          data: {
+            status: "completed",
+            runCount: { increment: 1 },
+            lastSuccessAt: new Date(),
+            lastResultAt: latestHttpValidationState.fetchedAt,
+            lastError: null,
+          },
+        });
+
+        await TaskLogModel.create({
+          queue: CRAWL_QUEUE_NAME,
+          jobId: taskId,
+          orgId,
+          stage: "complete",
+          status: "completed",
+          data: summary,
+        });
+
+        if (triggeredById) {
+          await this.safeNotifyCrawl(task, summary, triggeredById, "completed");
+        }
+
+        return summary;
+      }
+      const preflightMetadata = this.buildHttpValidationMetadata(
+        preflightResult?.status === "completed" ? preflightResult.result : null,
+      );
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
@@ -486,6 +656,10 @@ export class CrawlExecutionService {
           };
         }
       }
+      const persistedSuccesses = this.attachHttpValidationMetadata(
+        successes,
+        preflightMetadata,
+      );
 
       await TaskLogModel.create({
         queue: CRAWL_QUEUE_NAME,
@@ -497,7 +671,7 @@ export class CrawlExecutionService {
           runId: response.runId ?? null,
           nextCursor: response.nextCursor ?? null,
           totalResults: response.results?.length ?? 0,
-          successes: successes.length,
+          successes: persistedSuccesses.length,
           failures: failures.length,
         },
       });
@@ -537,7 +711,7 @@ export class CrawlExecutionService {
 
       const summary = await this.resultService.persistResults(
         task,
-        successes,
+        persistedSuccesses,
         effectiveOptions,
         response.runId ?? undefined,
         this.extractMemoryStats(response),
@@ -745,6 +919,335 @@ export class CrawlExecutionService {
       }
       throw error;
     }
+  }
+
+  private async findLatestResultHttpValidationState(options: {
+    taskId: string;
+    targetUrl: string;
+    urlQueryParamAllowlist: string[];
+  }): Promise<CrawlResultHttpValidationState | null> {
+    const normalizedTargetUrl = options.targetUrl.trim();
+    const canonical = buildCanonicalUrlFingerprint(
+      normalizedTargetUrl,
+      options.urlQueryParamAllowlist,
+    );
+    const where: Prisma.CrawlResultWhereInput = {
+      taskId: options.taskId,
+    };
+    const matchers: Prisma.CrawlResultWhereInput[] = [];
+    if (canonical) {
+      matchers.push({
+        sourceUrlFingerprint: canonical.fingerprint,
+      });
+      matchers.push({
+        sourceUrl: canonical.canonicalUrl,
+      });
+    }
+    if (normalizedTargetUrl.length > 0) {
+      matchers.push({
+        sourceUrl: normalizedTargetUrl,
+      });
+    }
+    if (matchers.length === 0) {
+      return null;
+    }
+    where.OR = matchers;
+
+    const latest = await this.prisma.crawlResult.findFirst({
+      where,
+      orderBy: { fetchedAt: "desc" },
+      select: {
+        id: true,
+        fetchedAt: true,
+        metadata: true,
+      },
+    });
+    if (!latest) {
+      return null;
+    }
+
+    const metadata =
+      latest.metadata &&
+      typeof latest.metadata === "object" &&
+      !Array.isArray(latest.metadata)
+        ? (latest.metadata as Record<string, unknown>)
+        : undefined;
+    const etag = this.pickString(metadata, ["httpEtag", "etag"]);
+    const lastModified = this.pickString(metadata, [
+      "httpLastModified",
+      "lastModified",
+      "last-modified",
+    ]);
+
+    return {
+      resultId: latest.id,
+      fetchedAt: latest.fetchedAt,
+      ...(etag ? { etag } : {}),
+      ...(lastModified ? { lastModified } : {}),
+    };
+  }
+
+  private shouldRunConditionalPreflight(enabled: boolean): boolean {
+    return enabled && process.env.NODE_ENV !== "test";
+  }
+
+  private async runConditionalPreflight(options: {
+    targetUrl: string;
+    options: CrawlTaskOptions;
+    requestTimeoutMs?: number;
+    etag?: string;
+    lastModified?: string;
+    timeoutMs: number;
+    maxRetries: number;
+  }): Promise<ConditionalPreflightOutcome> {
+    const timeoutMs = this.resolveConditionalPreflightTimeoutMs(
+      options.timeoutMs,
+      options.requestTimeoutMs,
+    );
+    const maxRetries = this.resolveConditionalPreflightMaxRetries(
+      options.maxRetries,
+    );
+    const headers = this.buildConditionalPreflightHeaders(options.options, {
+      etag: options.etag,
+      lastModified: options.lastModified,
+    });
+
+    const maxAttempts = Math.max(1, maxRetries + 1);
+    let failures = 0;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const head = await this.requestConditionalUrlStatus(
+        options.targetUrl,
+        "HEAD",
+        headers,
+        timeoutMs,
+      );
+      if (!head) {
+        failures += 1;
+        continue;
+      }
+
+      if (head.status === 403 || head.status === 405 || head.status === 501) {
+        const get = await this.requestConditionalUrlStatus(
+          options.targetUrl,
+          "GET",
+          headers,
+          timeoutMs,
+        );
+        if (!get) {
+          failures += 1;
+          continue;
+        }
+        if (
+          this.shouldRetryConditionalPreflightStatus(get.status) &&
+          attempt < maxAttempts
+        ) {
+          failures += 1;
+          continue;
+        }
+        return {
+          status: "completed",
+          result: get,
+          attempts: attempt,
+          failures,
+        };
+      }
+
+      if (
+        this.shouldRetryConditionalPreflightStatus(head.status) &&
+        attempt < maxAttempts
+      ) {
+        failures += 1;
+        continue;
+      }
+
+      return {
+        status: "completed",
+        result: head,
+        attempts: attempt,
+        failures,
+      };
+    }
+
+    return {
+      status: "failed",
+      attempts: maxAttempts,
+      failures,
+    };
+  }
+
+  private resolveConditionalPreflightTimeoutMs(
+    configuredTimeoutMs: number,
+    requestTimeoutMs?: number,
+  ): number {
+    const boundedConfiguredTimeoutMs = Math.max(
+      500,
+      Math.min(60_000, Math.round(configuredTimeoutMs)),
+    );
+    if (
+      typeof requestTimeoutMs !== "number" ||
+      !Number.isFinite(requestTimeoutMs) ||
+      requestTimeoutMs <= 0
+    ) {
+      return boundedConfiguredTimeoutMs;
+    }
+    return Math.max(
+      500,
+      Math.min(boundedConfiguredTimeoutMs, Math.round(requestTimeoutMs)),
+    );
+  }
+
+  private resolveConditionalPreflightMaxRetries(value: number): number {
+    return Math.max(0, Math.min(5, Math.round(value)));
+  }
+
+  private shouldRetryConditionalPreflightStatus(status: number): boolean {
+    return (
+      status === 408 ||
+      status === 425 ||
+      status === 429 ||
+      status === 500 ||
+      status === 502 ||
+      status === 503 ||
+      status === 504
+    );
+  }
+
+  private async getConditionalRequestSettings(): Promise<ConditionalRequestSettings> {
+    const fallback: ConditionalRequestSettings = {
+      enabled: this.defaultConditionalRequestEnabled,
+      timeoutMs: this.defaultConditionalRequestTimeoutMs,
+      maxRetries: this.defaultConditionalRequestMaxRetries,
+    };
+    try {
+      const settings = await this.crawlSettings.getSettings();
+      return {
+        enabled:
+          typeof settings.conditionalRequestEnabled === "boolean"
+            ? settings.conditionalRequestEnabled
+            : fallback.enabled,
+        timeoutMs:
+          typeof settings.conditionalRequestTimeoutMs === "number" &&
+          Number.isFinite(settings.conditionalRequestTimeoutMs)
+            ? settings.conditionalRequestTimeoutMs
+            : fallback.timeoutMs,
+        maxRetries:
+          typeof settings.conditionalRequestMaxRetries === "number" &&
+          Number.isFinite(settings.conditionalRequestMaxRetries)
+            ? settings.conditionalRequestMaxRetries
+            : fallback.maxRetries,
+      };
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "Failed to load crawl settings for conditional requests; using defaults",
+      );
+      return fallback;
+    }
+  }
+
+  private buildConditionalPreflightHeaders(
+    options: CrawlTaskOptions,
+    validators: { etag?: string; lastModified?: string },
+  ): Record<string, string> {
+    const userAgent =
+      typeof options.userAgent === "string" && options.userAgent.trim().length > 0
+        ? options.userAgent.trim()
+        : "Mozilla/5.0 (compatible; CrawlConditionalProbe/1.0; +https://example.com)";
+    const headers: Record<string, string> = {
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "user-agent": userAgent,
+    };
+    if (validators.etag) {
+      headers["if-none-match"] = validators.etag;
+    }
+    if (validators.lastModified) {
+      headers["if-modified-since"] = validators.lastModified;
+    }
+    return headers;
+  }
+
+  private async requestConditionalUrlStatus(
+    url: string,
+    method: "HEAD" | "GET",
+    headers: Record<string, string>,
+    timeoutMs: number,
+  ): Promise<ConditionalPreflightResult | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          method,
+          redirect: "follow",
+          signal: controller.signal,
+          headers,
+        });
+        if (method === "GET" && response.body) {
+          await response.body.cancel().catch(() => undefined);
+        }
+        return {
+          status: response.status,
+          etag: response.headers.get("etag")?.trim() || undefined,
+          lastModified:
+            response.headers.get("last-modified")?.trim() || undefined,
+          method,
+          checkedAt: new Date().toISOString(),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (error) {
+      logger.debug(
+        { error, url, method },
+        "HTTP validator preflight request failed",
+      );
+      return null;
+    }
+  }
+
+  private buildHttpValidationMetadata(
+    preflightResult: ConditionalPreflightResult | null,
+  ): Record<string, unknown> | null {
+    if (!preflightResult) {
+      return null;
+    }
+    const metadata: Record<string, unknown> = {
+      httpValidationStatus: preflightResult.status,
+      httpValidationMethod: preflightResult.method,
+      httpValidationCheckedAt: preflightResult.checkedAt,
+    };
+    if (preflightResult.etag) {
+      metadata.httpEtag = preflightResult.etag;
+    }
+    if (preflightResult.lastModified) {
+      metadata.httpLastModified = preflightResult.lastModified;
+    }
+    return metadata;
+  }
+
+  private attachHttpValidationMetadata(
+    successes: Crawl4aiArticle[],
+    metadata: Record<string, unknown> | null,
+  ): Crawl4aiArticle[] {
+    if (!metadata || successes.length === 0) {
+      return successes;
+    }
+    return successes.map((article) => {
+      const articleMetadata =
+        article.metadata &&
+        typeof article.metadata === "object" &&
+        !Array.isArray(article.metadata)
+          ? article.metadata
+          : {};
+      return {
+        ...article,
+        metadata: {
+          ...articleMetadata,
+          ...metadata,
+        },
+      };
+    });
   }
 
   private normalizeRequestTimeoutMs(value: unknown): number | undefined {

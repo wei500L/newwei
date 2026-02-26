@@ -14,7 +14,8 @@
     "test:e2e": "cross-env NODE_PATH=./node_modules jest --config ./test/jest-e2e.json --runInBand --detectOpenHandles",
     "generate:schema": "cross-env NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/generate-graphql-schema.ts",
     "copy:email-templates": "node ./scripts/copy-email-templates.js",
-    "vector:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-vector-index.ts"
+    "vector:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-vector-index.ts",
+    "fingerprint:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-canonical-url-fingerprints.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.11.1",

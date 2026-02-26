@@ -27,6 +27,10 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
 import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";
+import {
+  buildCanonicalUrlFingerprint,
+  resolveQueryParamAllowlist,
+} from "../crawl/url-fingerprint";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { LiteLlmService } from "./litellm.service";
@@ -241,17 +245,38 @@ export class NewsPipelineService implements OnModuleDestroy {
     orgId: string;
     url: string;
     since: Date;
+    queryParamAllowlist?: string[];
   }): Promise<string | null> {
-    const record = await this.prisma.crawlResult.findFirst({
+    const canonical = buildCanonicalUrlFingerprint(
+      options.url,
+      options.queryParamAllowlist,
+    );
+
+    if (canonical) {
+      const fingerprintMatch = await this.prisma.crawlResult.findFirst({
+        where: {
+          orgId: options.orgId,
+          sourceUrlFingerprint: canonical.fingerprint,
+          fetchedAt: { gte: options.since },
+        },
+        orderBy: { fetchedAt: "desc" },
+        select: { id: true },
+      });
+      if (fingerprintMatch?.id) {
+        return fingerprintMatch.id;
+      }
+    }
+
+    const fallback = await this.prisma.crawlResult.findFirst({
       where: {
         sourceUrl: options.url,
         fetchedAt: { gte: options.since },
-        task: { orgId: options.orgId },
+        orgId: options.orgId,
       },
       orderBy: { fetchedAt: "desc" },
       select: { id: true },
     });
-    return record?.id ?? null;
+    return fallback?.id ?? null;
   }
 
   private async crawlViaCrawlTask(options: {
@@ -260,7 +285,21 @@ export class NewsPipelineService implements OnModuleDestroy {
     payload: NormalizedNewsPayload;
   }): Promise<{ crawlResultId: string; crawlTaskId: string }> {
     const crawlOptions = this.buildCrawlTaskOptions(options.payload);
-    const crawlTaskConfig = crawlOptions;
+    const urlQueryParamAllowlist = this.extractUrlQueryParamAllowlist(
+      options.payload,
+    );
+    const orgContentDedupeWindowHours = this.extractSeedDedupeWindowHours(
+      options.payload,
+    );
+    const crawlTaskConfig: Record<string, unknown> = {
+      ...crawlOptions,
+      ...(urlQueryParamAllowlist.length > 0
+        ? { urlQueryParamAllowlist }
+        : {}),
+      ...(typeof orgContentDedupeWindowHours === "number"
+        ? { orgContentDedupeWindowHours }
+        : {}),
+    };
     const displayNameLabel = options.payload.sourceName?.trim()
       ? options.payload.sourceName.trim()
       : (() => {
@@ -319,9 +358,26 @@ export class NewsPipelineService implements OnModuleDestroy {
       crawlTaskId = createdTask.id;
     }
 
-    await this.crawlExecution.runTask(crawlTaskId, options.orgId);
+    const executionSummary = await this.crawlExecution.runTask(
+      crawlTaskId,
+      options.orgId,
+    );
+    const reusedResultId =
+      typeof executionSummary.reusedResultId === "string" &&
+      executionSummary.reusedResultId.trim().length > 0
+        ? executionSummary.reusedResultId.trim()
+        : null;
 
     const preferredResult =
+      (reusedResultId
+        ? await this.prisma.crawlResult.findFirst({
+            where: {
+              id: reusedResultId,
+              orgId: options.orgId,
+            },
+            select: { id: true },
+          })
+        : null) ??
       (await this.prisma.crawlResult.findFirst({
         where: { taskId: crawlTaskId, sourceUrl: options.url },
         orderBy: { fetchedAt: "desc" },
@@ -613,6 +669,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       async () =>
         this.evaluateSummaryDedupe({
           job,
+          payload,
           cleaned: cleanedWithClassification,
           contentDuplicateOf,
         }),
@@ -733,6 +790,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     job: PipelineJobContext,
     payload: NormalizedNewsPayload
   ): Promise<CrawledArticle & { fromCache: boolean }> {
+    const queryParamAllowlist = this.extractUrlQueryParamAllowlist(payload);
     if (!payload.forceRefresh) {
       const crawlResultId = this.extractCrawlResultId(payload);
       if (crawlResultId) {
@@ -759,6 +817,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           orgId: job.orgId,
           url: payload.url,
           since,
+          queryParamAllowlist,
         });
         if (recentResultId) {
           const stored = await this.fetchStoredCrawlResult(job.orgId, recentResultId);
@@ -1574,6 +1633,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   private async evaluateSummaryDedupe(options: {
     job: PipelineJobContext;
+    payload: NormalizedNewsPayload;
     cleaned: CleanedNews;
     contentDuplicateOf?: string | null;
   }): Promise<SummaryDedupeResult> {
@@ -1600,9 +1660,11 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const settings = await this.dedupeSettings.getSettings(options.job.orgId);
+    const sourceId = options.job.sourceId ?? this.extractSourceId(options.payload);
     const thresholdBase = this.dedupeSettings.resolveBaseThreshold(settings, {
-      category: options.cleaned.category,
-      topics: options.cleaned.topics,
+      sourceId,
+      language: options.cleaned.language ?? options.payload.language,
+      categoryPath: options.cleaned.category_path,
     }).threshold;
     const threshold = this.resolveSummaryDedupThreshold(summary.length, thresholdBase);
     const baseResult: SummaryDedupeResult = { thresholdUsed: threshold };
@@ -2563,16 +2625,33 @@ export class NewsPipelineService implements OnModuleDestroy {
         new Date();
 
       const sourceUrl = options.article.sourceUrl?.trim() ?? "";
-      const persistedUrl = this.toArticleUrl(sourceUrl);
+      const queryParamAllowlist = this.extractUrlQueryParamAllowlist(
+        options.payload,
+      );
+      const canonical = buildCanonicalUrlFingerprint(
+        sourceUrl,
+        queryParamAllowlist,
+      );
+      const persistedUrl = this.toArticleUrl(canonical?.canonicalUrl ?? sourceUrl);
       const persistedMetadata: Record<string, unknown> = {
         ...(options.article.metadata ?? {}),
-        ...(sourceUrl.length > persistedUrl.length ? { originalUrl: sourceUrl } : {}),
+        ...(sourceUrl && sourceUrl !== persistedUrl
+          ? { originalUrl: sourceUrl }
+          : {}),
+        ...(canonical
+          ? {
+              canonicalUrl: canonical.canonicalUrl,
+              urlFingerprint: canonical.fingerprint,
+              urlQueryParamAllowlist: queryParamAllowlist,
+            }
+          : {}),
       };
 
       const articleRecord = await tx.article.upsert({
         where: { contentHash: options.contentHash },
         update: {
           url: persistedUrl,
+          urlFingerprint: canonical?.fingerprint ?? null,
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
@@ -2583,6 +2662,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           orgId: options.orgId,
           sourceId: options.sourceId,
           url: persistedUrl,
+          urlFingerprint: canonical?.fingerprint ?? null,
           sourceLabel: options.payload.sourceName ?? null,
           language: options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
@@ -2682,6 +2762,41 @@ export class NewsPipelineService implements OnModuleDestroy {
       );
       throw error;
     }
+  }
+
+  private extractUrlQueryParamAllowlist(payload: NormalizedNewsPayload): string[] {
+    const metadata =
+      payload.metadata &&
+      typeof payload.metadata === "object" &&
+      !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : {};
+    return resolveQueryParamAllowlist(
+      metadata.urlQueryParamAllowlist,
+      undefined,
+    );
+  }
+
+  private extractSeedDedupeWindowHours(
+    payload: NormalizedNewsPayload,
+  ): number | undefined {
+    const metadata =
+      payload.metadata &&
+      typeof payload.metadata === "object" &&
+      !Array.isArray(payload.metadata)
+        ? (payload.metadata as Record<string, unknown>)
+        : {};
+    const seed =
+      metadata.newsSourceSeed &&
+      typeof metadata.newsSourceSeed === "object" &&
+      !Array.isArray(metadata.newsSourceSeed)
+        ? (metadata.newsSourceSeed as Record<string, unknown>)
+        : null;
+    const raw = seed?.dedupeWindowHours;
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(24 * 30, Math.round(raw)));
   }
 
   private extractSourceId(payload: NormalizedNewsPayload) {

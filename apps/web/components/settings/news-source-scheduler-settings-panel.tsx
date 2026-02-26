@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Form, InputNumber, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Alert, Button, Form, InputNumber, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ interface NewsSourceSchedulerSettingsResponse {
   seedCacheTtlSecondsSitemapRss: number;
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
+  seedUrlQueryParamAllowlist: string[];
 }
 
 interface NewsSourceSchedulerSettingsFormValues {
@@ -24,7 +25,58 @@ interface NewsSourceSchedulerSettingsFormValues {
   seedCacheTtlSecondsSitemapRss: number;
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
+  seedUrlQueryParamAllowlist: string[];
 }
+
+const DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST = [
+  "id",
+  "story",
+  "article",
+  "post",
+  "item",
+  "p",
+  "page",
+  "v",
+  "ver",
+  "lang",
+  "locale",
+  "hl",
+];
+
+const QUERY_PARAM_KEY_PATTERN = /^[a-z0-9_.-]{1,64}$/;
+
+const normalizeQueryAllowlist = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+    const key = entry.trim().toLowerCase();
+    if (!QUERY_PARAM_KEY_PATTERN.test(key) || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(key);
+    if (normalized.length >= 64) {
+      break;
+    }
+  }
+  return normalized;
+};
+
+const resolveAllowlist = (value: unknown): string[] => {
+  const normalized = normalizeQueryAllowlist(value);
+  if (Array.isArray(value)) {
+    return normalized;
+  }
+  return normalized.length > 0
+    ? normalized
+    : [...DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST];
+};
 
 const DEFAULT_SETTINGS: NewsSourceSchedulerSettingsResponse = {
   source: "default",
@@ -32,6 +84,7 @@ const DEFAULT_SETTINGS: NewsSourceSchedulerSettingsResponse = {
   seedCacheTtlSecondsSitemapRss: 60,
   seedCacheTtlSecondsListDeep: 180,
   seedCacheTtlForceGlobal: false,
+  seedUrlQueryParamAllowlist: [...DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST],
 };
 
 const ERROR_CODE_I18N_KEY: Record<string, string> = {
@@ -97,6 +150,9 @@ export function NewsSourceSchedulerSettingsPanel() {
       const data: NewsSourceSchedulerSettingsResponse = {
         ...DEFAULT_SETTINGS,
         ...(response.data ?? {}),
+        seedUrlQueryParamAllowlist: resolveAllowlist(
+          response.data?.seedUrlQueryParamAllowlist,
+        ),
       };
       setSettings(data);
       form.setFieldsValue({
@@ -104,6 +160,7 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlSecondsSitemapRss: data.seedCacheTtlSecondsSitemapRss,
         seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
+        seedUrlQueryParamAllowlist: data.seedUrlQueryParamAllowlist,
       });
     } catch (error) {
       captureClientError("Failed to load news source scheduler settings", error);
@@ -120,6 +177,8 @@ export function NewsSourceSchedulerSettingsPanel() {
           DEFAULT_SETTINGS.seedCacheTtlSecondsSitemapRss,
         seedCacheTtlSecondsListDeep: DEFAULT_SETTINGS.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: DEFAULT_SETTINGS.seedCacheTtlForceGlobal,
+        seedUrlQueryParamAllowlist:
+          DEFAULT_SETTINGS.seedUrlQueryParamAllowlist,
       });
       messageApi.error(detail);
     } finally {
@@ -142,6 +201,9 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlSecondsSitemapRss: values.seedCacheTtlSecondsSitemapRss,
         seedCacheTtlSecondsListDeep: values.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: values.seedCacheTtlForceGlobal,
+        seedUrlQueryParamAllowlist: normalizeQueryAllowlist(
+          values.seedUrlQueryParamAllowlist,
+        ),
       };
       const response = await apiClient.put<NewsSourceSchedulerSettingsResponse>(
         "system-settings/news-source-scheduler",
@@ -150,6 +212,9 @@ export function NewsSourceSchedulerSettingsPanel() {
       const data: NewsSourceSchedulerSettingsResponse = {
         ...DEFAULT_SETTINGS,
         ...(response.data ?? {}),
+        seedUrlQueryParamAllowlist: resolveAllowlist(
+          response.data?.seedUrlQueryParamAllowlist,
+        ),
       };
       setSettings(data);
       form.setFieldsValue({
@@ -157,6 +222,7 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlSecondsSitemapRss: data.seedCacheTtlSecondsSitemapRss,
         seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
+        seedUrlQueryParamAllowlist: data.seedUrlQueryParamAllowlist,
       });
       messageApi.success(t("systemSettings.newsSourceScheduler.messages.saved"));
     } catch (error) {
@@ -336,6 +402,57 @@ export function NewsSourceSchedulerSettingsPanel() {
           extra={t("systemSettings.newsSourceScheduler.hints.seedCacheTtlForceGlobal")}
         >
           <Switch />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.seedUrlQueryParamAllowlist", {
+            defaultValue: "Seed URL query param allowlist",
+          })}
+          name="seedUrlQueryParamAllowlist"
+          extra={t("systemSettings.newsSourceScheduler.hints.seedUrlQueryParamAllowlist", {
+            defaultValue:
+              "Only these query keys are kept when canonicalizing discovered URLs (e.g. keep id/page, drop utm_*).",
+          })}
+          rules={[
+            {
+              validator: async (_, value: unknown) => {
+                const normalized = normalizeQueryAllowlist(value);
+                const rawLength = Array.isArray(value) ? value.length : 0;
+                if (rawLength > 64) {
+                  throw new Error(
+                    t(
+                      "systemSettings.newsSourceScheduler.validation.seedUrlQueryParamAllowlistLimit",
+                      { defaultValue: "At most 64 keys." },
+                    ),
+                  );
+                }
+                if (Array.isArray(value) && normalized.length !== rawLength) {
+                  throw new Error(
+                    t(
+                      "systemSettings.newsSourceScheduler.validation.seedUrlQueryParamAllowlistInvalid",
+                      {
+                        defaultValue:
+                          "Each key must match [a-z0-9_.-] and be up to 64 chars.",
+                      },
+                    ),
+                  );
+                }
+              },
+            },
+          ]}
+        >
+          <Select
+            mode="tags"
+            tokenSeparators={[",", " ", "\n", "\t"]}
+            options={DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST.map((entry) => ({
+              label: entry,
+              value: entry,
+            }))}
+            placeholder={t(
+              "systemSettings.newsSourceScheduler.placeholders.seedUrlQueryParamAllowlist",
+              { defaultValue: "id, page, lang" },
+            )}
+          />
         </Form.Item>
 
         <Form.Item>

@@ -1,5 +1,6 @@
 import { CrawlResultContentModel, TaskLogModel } from "@modular/mongo";
 import { Injectable } from "@nestjs/common";
+import { AlertMetricProvider, AlertOperator, AlertStatus } from "@prisma/client";
 
 import { PrismaService } from "../config/prisma.service";
 
@@ -15,6 +16,18 @@ interface CrawlQualityConfidenceBuckets {
   from06To08: number;
   gte08: number;
 }
+
+interface CrawlQualityAlertThresholds {
+  preflightFailureRateHigh: number;
+  http304HitRateLow: number;
+  orgHashDedupeHitRateHigh: number;
+}
+
+const DEFAULT_CRAWL_QUALITY_ALERT_THRESHOLDS: CrawlQualityAlertThresholds = {
+  preflightFailureRateHigh: 0.15,
+  http304HitRateLow: 0.05,
+  orgHashDedupeHitRateHigh: 0.3
+};
 
 export interface CrawlQualityMetricsSnapshot {
   orgId: string;
@@ -33,6 +46,10 @@ export interface CrawlQualityMetricsSnapshot {
   headSignalSoftFailureRate: number;
   headSignalTruncatedRate: number;
   headSignalNoPublishSignalRate: number;
+  http304HitRate: number;
+  orgHashDedupeHitRate: number;
+  preflightFailureRate: number;
+  alertThresholds: CrawlQualityAlertThresholds;
   groupedBySource: Array<{
     sourceId: string;
     taskCount: number;
@@ -46,6 +63,9 @@ export interface CrawlQualityMetricsSnapshot {
     headSignalSoftFailureRate: number;
     headSignalTruncatedRate: number;
     headSignalNoPublishSignalRate: number;
+    http304HitRate: number;
+    orgHashDedupeHitRate: number;
+    preflightFailureRate: number;
   }>;
 }
 
@@ -57,6 +77,7 @@ export class CrawlQualityMetricsService {
     const safeHours = Math.max(1, Math.min(24 * 14, Math.floor(lookbackHours)));
     const to = new Date();
     const from = new Date(to.getTime() - safeHours * 60 * 60 * 1000);
+    const alertThresholds = await this.resolveAlertThresholds(orgId);
 
     const tasks = await this.prisma.crawlTask.findMany({
       where: {
@@ -89,15 +110,35 @@ export class CrawlQualityMetricsService {
         headSignalSoftFailureRate: 0,
         headSignalTruncatedRate: 0,
         headSignalNoPublishSignalRate: 0,
+        http304HitRate: 0,
+        orgHashDedupeHitRate: 0,
+        preflightFailureRate: 0,
+        alertThresholds,
         groupedBySource: []
       };
     }
 
-    const [expansionLogs, markdownDocs] = await Promise.all([
+    const [expansionLogs, preflightLogs, dedupeLogs, markdownDocs] = await Promise.all([
       TaskLogModel.find({
         orgId,
         queue: "crawl4ai",
         stage: "expansion",
+        createdAt: { $gte: from }
+      })
+        .select({ jobId: 1, status: 1, data: 1 })
+        .lean(),
+      TaskLogModel.find({
+        orgId,
+        queue: "crawl4ai",
+        stage: "preflight",
+        createdAt: { $gte: from }
+      })
+        .select({ jobId: 1, status: 1, data: 1 })
+        .lean(),
+      TaskLogModel.find({
+        orgId,
+        queue: "crawl4ai",
+        stage: "dedupe",
         createdAt: { $gte: from }
       })
         .select({ jobId: 1, status: 1, data: 1 })
@@ -125,6 +166,11 @@ export class CrawlQualityMetricsService {
         headSignalSoftFailures: number;
         headSignalTruncated: number;
         headSignalNoPublishSignal: number;
+        preflightRuns: number;
+        preflightFailures: number;
+        preflight304Hits: number;
+        dedupeEvaluated: number;
+        dedupeOrgReuse: number;
       }
     >();
     const lowSignalTaskSet = new Set<string>();
@@ -152,7 +198,12 @@ export class CrawlQualityMetricsService {
           headSignalSucceeded: 0,
           headSignalSoftFailures: 0,
           headSignalTruncated: 0,
-          headSignalNoPublishSignal: 0
+          headSignalNoPublishSignal: 0,
+          preflightRuns: 0,
+          preflightFailures: 0,
+          preflight304Hits: 0,
+          dedupeEvaluated: 0,
+          dedupeOrgReuse: 0
         };
       current.triggered = true;
       const improvedSuccesses =
@@ -270,6 +321,86 @@ export class CrawlQualityMetricsService {
       expansionByTask.set(taskId, current);
     }
 
+    for (const log of preflightLogs) {
+      const taskId = typeof log.jobId === "string" ? log.jobId : "";
+      if (!taskId || !taskIdSet.has(taskId)) {
+        continue;
+      }
+
+      const data =
+        log.data && typeof log.data === "object" && !Array.isArray(log.data)
+          ? (log.data as Record<string, unknown>)
+          : {};
+      const current =
+        expansionByTask.get(taskId) ??
+        {
+          triggered: false,
+          improved: 0,
+          lowSignal: false,
+          candidateRejects: this.createEmptyRejectBreakdown(),
+          publishConfidenceBuckets: this.createEmptyConfidenceBuckets(),
+          preferFitMarkdown: false,
+          headSignalAttempted: 0,
+          headSignalSucceeded: 0,
+          headSignalSoftFailures: 0,
+          headSignalTruncated: 0,
+          headSignalNoPublishSignal: 0,
+          preflightRuns: 0,
+          preflightFailures: 0,
+          preflight304Hits: 0,
+          dedupeEvaluated: 0,
+          dedupeOrgReuse: 0
+        };
+
+      current.preflightRuns += 1;
+      if (log.status === "failed") {
+        current.preflightFailures += 1;
+      }
+
+      const status = this.toSafeNonNegativeInt(data.status);
+      if (status === 304) {
+        current.preflight304Hits += 1;
+      }
+
+      expansionByTask.set(taskId, current);
+    }
+
+    for (const log of dedupeLogs) {
+      const taskId = typeof log.jobId === "string" ? log.jobId : "";
+      if (!taskId || !taskIdSet.has(taskId)) {
+        continue;
+      }
+
+      const data =
+        log.data && typeof log.data === "object" && !Array.isArray(log.data)
+          ? (log.data as Record<string, unknown>)
+          : {};
+      const current =
+        expansionByTask.get(taskId) ??
+        {
+          triggered: false,
+          improved: 0,
+          lowSignal: false,
+          candidateRejects: this.createEmptyRejectBreakdown(),
+          publishConfidenceBuckets: this.createEmptyConfidenceBuckets(),
+          preferFitMarkdown: false,
+          headSignalAttempted: 0,
+          headSignalSucceeded: 0,
+          headSignalSoftFailures: 0,
+          headSignalTruncated: 0,
+          headSignalNoPublishSignal: 0,
+          preflightRuns: 0,
+          preflightFailures: 0,
+          preflight304Hits: 0,
+          dedupeEvaluated: 0,
+          dedupeOrgReuse: 0
+        };
+
+      current.dedupeEvaluated += this.toSafeNonNegativeInt(data.evaluatedCount);
+      current.dedupeOrgReuse += this.toSafeNonNegativeInt(data.orgReuseCount);
+      expansionByTask.set(taskId, current);
+    }
+
     const markdownByTask = new Map<string, { count: number; totalChars: number; emptyCount: number }>();
     for (const doc of markdownDocs) {
       const taskId = typeof doc.taskId === "string" ? doc.taskId : "";
@@ -297,6 +428,11 @@ export class CrawlQualityMetricsService {
     let headSignalSoftFailureTotal = 0;
     let headSignalTruncatedTotal = 0;
     let headSignalNoPublishSignalTotal = 0;
+    let preflightRunsTotal = 0;
+    let preflightFailuresTotal = 0;
+    let preflight304HitsTotal = 0;
+    let dedupeEvaluatedTotal = 0;
+    let dedupeOrgReuseTotal = 0;
     for (const entry of expansionByTask.values()) {
       candidateRejects.includePattern += entry.candidateRejects.includePattern;
       candidateRejects.excludePattern += entry.candidateRejects.excludePattern;
@@ -313,6 +449,11 @@ export class CrawlQualityMetricsService {
       headSignalSoftFailureTotal += entry.headSignalSoftFailures;
       headSignalTruncatedTotal += entry.headSignalTruncated;
       headSignalNoPublishSignalTotal += entry.headSignalNoPublishSignal;
+      preflightRunsTotal += entry.preflightRuns;
+      preflightFailuresTotal += entry.preflightFailures;
+      preflight304HitsTotal += entry.preflight304Hits;
+      dedupeEvaluatedTotal += entry.dedupeEvaluated;
+      dedupeOrgReuseTotal += entry.dedupeOrgReuse;
     }
 
     let markdownCount = 0;
@@ -346,6 +487,16 @@ export class CrawlQualityMetricsService {
         headSignalNoPublishSignalTotal,
         headSignalAttemptedTotal
       ),
+      http304HitRate: this.safeRatio(preflight304HitsTotal, preflightRunsTotal),
+      orgHashDedupeHitRate: this.safeRatio(
+        dedupeOrgReuseTotal,
+        dedupeEvaluatedTotal
+      ),
+      preflightFailureRate: this.safeRatio(
+        preflightFailuresTotal,
+        preflightRunsTotal
+      ),
+      alertThresholds,
       groupedBySource
     };
   }
@@ -370,6 +521,9 @@ export class CrawlQualityMetricsService {
         headSignalSoftFailureRate: 0,
         headSignalTruncatedRate: 0,
         headSignalNoPublishSignalRate: 0,
+        http304HitRate: 0,
+        orgHashDedupeHitRate: 0,
+        preflightFailureRate: 0,
         groupedBySource: []
       };
     }
@@ -386,6 +540,9 @@ export class CrawlQualityMetricsService {
       headSignalSoftFailureRate: entry.headSignalSoftFailureRate,
       headSignalTruncatedRate: entry.headSignalTruncatedRate,
       headSignalNoPublishSignalRate: entry.headSignalNoPublishSignalRate,
+      http304HitRate: entry.http304HitRate,
+      orgHashDedupeHitRate: entry.orgHashDedupeHitRate,
+      preflightFailureRate: entry.preflightFailureRate,
       groupedBySource: filtered
     };
   }
@@ -406,6 +563,11 @@ export class CrawlQualityMetricsService {
         headSignalSoftFailures: number;
         headSignalTruncated: number;
         headSignalNoPublishSignal: number;
+        preflightRuns: number;
+        preflightFailures: number;
+        preflight304Hits: number;
+        dedupeEvaluated: number;
+        dedupeOrgReuse: number;
       }
     >,
     markdownByTask: Map<string, { count: number; totalChars: number; emptyCount: number }>
@@ -427,6 +589,11 @@ export class CrawlQualityMetricsService {
         headSignalSoftFailures: number;
         headSignalTruncated: number;
         headSignalNoPublishSignal: number;
+        preflightRuns: number;
+        preflightFailures: number;
+        preflight304Hits: number;
+        dedupeEvaluated: number;
+        dedupeOrgReuse: number;
       }
     >();
 
@@ -448,7 +615,12 @@ export class CrawlQualityMetricsService {
           headSignalSucceeded: 0,
           headSignalSoftFailures: 0,
           headSignalTruncated: 0,
-          headSignalNoPublishSignal: 0
+          headSignalNoPublishSignal: 0,
+          preflightRuns: 0,
+          preflightFailures: 0,
+          preflight304Hits: 0,
+          dedupeEvaluated: 0,
+          dedupeOrgReuse: 0
         };
 
       current.taskCount += 1;
@@ -478,6 +650,11 @@ export class CrawlQualityMetricsService {
         current.headSignalSoftFailures += expansion.headSignalSoftFailures;
         current.headSignalTruncated += expansion.headSignalTruncated;
         current.headSignalNoPublishSignal += expansion.headSignalNoPublishSignal;
+        current.preflightRuns += expansion.preflightRuns;
+        current.preflightFailures += expansion.preflightFailures;
+        current.preflight304Hits += expansion.preflight304Hits;
+        current.dedupeEvaluated += expansion.dedupeEvaluated;
+        current.dedupeOrgReuse += expansion.dedupeOrgReuse;
       }
 
       const markdown = markdownByTask.get(task.id);
@@ -511,9 +688,93 @@ export class CrawlQualityMetricsService {
         headSignalNoPublishSignalRate: this.safeRatio(
           value.headSignalNoPublishSignal,
           value.headSignalAttempted
+        ),
+        http304HitRate: this.safeRatio(value.preflight304Hits, value.preflightRuns),
+        orgHashDedupeHitRate: this.safeRatio(
+          value.dedupeOrgReuse,
+          value.dedupeEvaluated
+        ),
+        preflightFailureRate: this.safeRatio(
+          value.preflightFailures,
+          value.preflightRuns
         )
       }))
       .sort((left, right) => right.taskCount - left.taskCount);
+  }
+
+  private async resolveAlertThresholds(orgId: string): Promise<CrawlQualityAlertThresholds> {
+    const thresholds: CrawlQualityAlertThresholds = {
+      ...DEFAULT_CRAWL_QUALITY_ALERT_THRESHOLDS
+    };
+    const rules = await this.prisma.alertRule.findMany({
+      where: {
+        orgId,
+        status: AlertStatus.active,
+        metricProvider: AlertMetricProvider.crawl_task,
+        metricSlug: {
+          in: [
+            "crawl_quality.preflight_failure_rate",
+            "crawl_quality.http_304_hit_rate",
+            "crawl_quality.org_hash_dedupe_hit_rate"
+          ]
+        },
+        thresholdValue: { not: null }
+      },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        metricSlug: true,
+        operator: true,
+        thresholdValue: true
+      }
+    });
+
+    const pickThreshold = (
+      metricSlug: string,
+      allowedOperators: AlertOperator[]
+    ) => {
+      const exact = rules.find(
+        (entry) =>
+          entry.metricSlug === metricSlug &&
+          allowedOperators.includes(entry.operator)
+      );
+      if (exact?.thresholdValue !== null && exact?.thresholdValue !== undefined) {
+        return Number(exact.thresholdValue);
+      }
+      const fallback = rules.find((entry) => entry.metricSlug === metricSlug);
+      if (
+        fallback?.thresholdValue !== null &&
+        fallback?.thresholdValue !== undefined
+      ) {
+        return Number(fallback.thresholdValue);
+      }
+      return null;
+    };
+
+    const preflightFailure = pickThreshold("crawl_quality.preflight_failure_rate", [
+      AlertOperator.gte,
+      AlertOperator.gt
+    ]);
+    if (typeof preflightFailure === "number" && Number.isFinite(preflightFailure)) {
+      thresholds.preflightFailureRateHigh = Math.max(0, preflightFailure);
+    }
+
+    const http304Low = pickThreshold("crawl_quality.http_304_hit_rate", [
+      AlertOperator.lte,
+      AlertOperator.lt
+    ]);
+    if (typeof http304Low === "number" && Number.isFinite(http304Low)) {
+      thresholds.http304HitRateLow = Math.max(0, http304Low);
+    }
+
+    const orgHashHigh = pickThreshold(
+      "crawl_quality.org_hash_dedupe_hit_rate",
+      [AlertOperator.gte, AlertOperator.gt]
+    );
+    if (typeof orgHashHigh === "number" && Number.isFinite(orgHashHigh)) {
+      thresholds.orgHashDedupeHitRateHigh = Math.max(0, orgHashHigh);
+    }
+
+    return thresholds;
   }
 
   private createEmptyRejectBreakdown(): CrawlQualityRejectBreakdown {
@@ -539,9 +800,15 @@ export class CrawlQualityMetricsService {
     }
     const record = value as Record<string, unknown>;
     return {
-      includePattern: this.toSafeNonNegativeInt(record.includePattern),
-      excludePattern: this.toSafeNonNegativeInt(record.excludePattern),
-      publishConfidence: this.toSafeNonNegativeInt(record.publishConfidence)
+      includePattern: this.toSafeNonNegativeInt(
+        record.includePatternRejected ?? record.includePattern
+      ),
+      excludePattern: this.toSafeNonNegativeInt(
+        record.excludePatternRejected ?? record.excludePattern
+      ),
+      publishConfidence: this.toSafeNonNegativeInt(
+        record.publishConfidenceRejected ?? record.publishConfidence
+      )
     };
   }
 

@@ -1,4 +1,4 @@
-import { createLogger } from "@modular/utils";
+import { createLogger, DEFAULT_URL_QUERY_PARAM_ALLOWLIST } from "@modular/utils";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
@@ -14,6 +14,10 @@ import { CrawlQueueService } from "../crawl/crawl-queue.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
 import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
 import type { CrawlPriorityClass } from "../crawl/crawl.types";
+import {
+  buildCanonicalUrlFingerprint,
+  resolveQueryParamAllowlist,
+} from "../crawl/url-fingerprint";
 import {
   DEEP_DISCOVERY_FAILURE_STATE_TTL_SECONDS,
   DEEP_DISCOVERY_FAILURE_STATS_TTL_SECONDS,
@@ -62,9 +66,16 @@ interface SeedConfig {
   queryTokens?: string[];
   scoreThreshold: number;
   dedupeWindowHours: number;
+  queryParamAllowlist: string[];
   cacheTtlSeconds: number;
   cacheTtlPolicy: "global_forced" | "source_override" | "mode_default";
   deep?: DeepSeedConfig;
+}
+
+interface CanonicalSeedJob {
+  url: string;
+  urlFingerprint: string;
+  relevanceScore?: number;
 }
 
 interface DeepSeedConfig {
@@ -97,6 +108,7 @@ interface SeedRuntimeSettings {
   seedCacheTtlSecondsSitemapRss: number;
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
+  seedUrlQueryParamAllowlist: string[];
 }
 
 const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
@@ -104,6 +116,7 @@ const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
   seedCacheTtlSecondsSitemapRss: DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS,
   seedCacheTtlSecondsListDeep: DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
   seedCacheTtlForceGlobal: DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
+  seedUrlQueryParamAllowlist: [...DEFAULT_URL_QUERY_PARAM_ALLOWLIST],
 };
 
 @Injectable()
@@ -310,33 +323,43 @@ export class NewsSourceSchedulerService {
             await this.clearDeepDiscoveryFailureState(source.id);
           }
 
-          const candidateUrls = jobsToSchedule.map((job) => job.url);
-          const [recentArticles, activeUrls] = await Promise.all([
+          const canonicalJobs = seedConfig
+            ? this.canonicalizeSeedJobs(
+                jobsToSchedule,
+                seedConfig.queryParamAllowlist,
+              )
+            : [];
+          const [recentArticleFingerprints, activeFingerprints] =
+            await Promise.all([
             seedConfig
-              ? this.findRecentArticleUrls(
+              ? this.findRecentArticleFingerprints(
                   source.orgId,
-                  candidateUrls,
+                  canonicalJobs,
                   seedConfig.dedupeWindowHours,
                 )
               : Promise.resolve(new Set<string>()),
             seedConfig
-              ? this.findActivePipelineUrls(
+              ? this.findActivePipelineFingerprints(
                   source.id,
-                  candidateUrls,
+                  canonicalJobs,
                   activeCutoff,
                 )
               : Promise.resolve(new Set<string>()),
-          ]);
+            ]);
 
           const newJobs = seedConfig
-            ? jobsToSchedule
-                .filter((job) => !recentArticles.has(job.url))
-                .filter((job) => !activeUrls.has(job.url))
+            ? canonicalJobs
+                .filter(
+                  (job) =>
+                    !recentArticleFingerprints.has(job.urlFingerprint),
+                )
+                .filter((job) => !activeFingerprints.has(job.urlFingerprint))
                 .slice(0, maxNewUrlsThisRun)
             : jobsToSchedule;
           const skippedCount = Math.max(
             0,
-            jobsToSchedule.length - newJobs.length,
+            (seedConfig ? canonicalJobs.length : jobsToSchedule.length) -
+              newJobs.length,
           );
 
           await this.prisma.newsSource.update({
@@ -387,6 +410,8 @@ export class NewsSourceSchedulerService {
                     mode: seedConfig.mode,
                     parentUrl: seedParentUrl ?? source.url,
                     relevanceScore: job.relevanceScore,
+                    dedupeWindowHours: seedConfig.dedupeWindowHours,
+                    queryParamAllowlist: seedConfig.queryParamAllowlist,
                   }
                 : undefined,
             );
@@ -401,10 +426,16 @@ export class NewsSourceSchedulerService {
               crawlTemplateId: source.crawlTemplateId ?? undefined,
               ...(seedConfig
                 ? {
+                    urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
+                  }
+                : {}),
+              ...(seedConfig
+                ? {
                     newsSourceSeed: {
                       mode: seedConfig.mode,
                       parentUrl: seedParentUrl ?? source.url,
                       relevanceScore: job.relevanceScore,
+                      dedupeWindowHours: seedConfig.dedupeWindowHours,
                     },
                   }
                 : {}),
@@ -417,6 +448,13 @@ export class NewsSourceSchedulerService {
               pipelinePriority: bullPriority,
               crawlPriorityClass,
               sourcePriority: source.priority,
+              ...(seedConfig
+                ? {
+                    orgContentDedupeWindowHours:
+                      seedConfig.dedupeWindowHours,
+                    urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
+                  }
+                : {}),
               itemPayload: {
                 sourceName: payload.sourceName,
                 language: payload.language,
@@ -438,6 +476,8 @@ export class NewsSourceSchedulerService {
                     orgId: source.orgId,
                     sourceId: source.id,
                     url: job.url,
+                    urlFingerprint:
+                      "urlFingerprint" in job ? job.urlFingerprint : null,
                     priority: source.priority,
                     status: PipelineJobStatus.queued,
                     queueName: ITEM_PIPELINE_QUEUE_NAME,
@@ -450,6 +490,10 @@ export class NewsSourceSchedulerService {
                       relevanceScore: seedConfig
                         ? job.relevanceScore
                         : undefined,
+                      urlFingerprint:
+                        "urlFingerprint" in job
+                          ? job.urlFingerprint
+                          : undefined,
                       triggeredById,
                     },
                   },
@@ -1477,6 +1521,8 @@ export class NewsSourceSchedulerService {
       mode: "single" | "sitemap" | "rss" | "list" | "deep";
       parentUrl: string;
       relevanceScore?: number;
+      dedupeWindowHours?: number;
+      queryParamAllowlist?: string[];
     },
   ) {
     const config =
@@ -1508,7 +1554,9 @@ export class NewsSourceSchedulerService {
                 mode: seed.mode,
                 parentUrl: seed.parentUrl,
                 relevanceScore: seed.relevanceScore,
+                dedupeWindowHours: seed.dedupeWindowHours,
               },
+              urlQueryParamAllowlist: seed.queryParamAllowlist,
             }
           : {}),
         ...metadata,
@@ -1587,6 +1635,13 @@ export class NewsSourceSchedulerService {
       cacheTtlPolicy = "source_override";
       cacheTtlSeconds = sourceCacheTtlSeconds;
     }
+    const sourceQueryParamAllowlist = this.normalizeSeedQueryParamAllowlist(
+      seed.queryParamAllowlist,
+    );
+    const queryParamAllowlist =
+      sourceQueryParamAllowlist.length > 0
+        ? sourceQueryParamAllowlist
+        : runtimeSettings.seedUrlQueryParamAllowlist;
 
     return {
       enabled: true,
@@ -1613,6 +1668,7 @@ export class NewsSourceSchedulerService {
       queryTokens,
       scoreThreshold: this.clampFloat(seed.scoreThreshold, 0, 1, 0),
       dedupeWindowHours: this.clampInt(seed.dedupeWindowHours, 0, 24 * 30, 24),
+      queryParamAllowlist,
       // Optional runtime policy can force global TTL defaults over per-source seed.cacheTtlSeconds.
       cacheTtlSeconds,
       cacheTtlPolicy,
@@ -1663,6 +1719,10 @@ export class NewsSourceSchedulerService {
             }
           : undefined,
     } satisfies SeedConfig;
+  }
+
+  private normalizeSeedQueryParamAllowlist(value: unknown): string[] {
+    return resolveQueryParamAllowlist(value, []);
   }
 
   private normalizeSeedDomain(rawDomain: unknown, fallbackUrl: string) {
@@ -1952,6 +2012,10 @@ export class NewsSourceSchedulerService {
         typeof settings.seedCacheTtlForceGlobal === "boolean"
           ? settings.seedCacheTtlForceGlobal
           : DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
+      seedUrlQueryParamAllowlist: resolveQueryParamAllowlist(
+        settings.seedUrlQueryParamAllowlist,
+        DEFAULT_SEED_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist,
+      ),
     };
   }
 
@@ -2014,41 +2078,137 @@ export class NewsSourceSchedulerService {
     return undefined;
   }
 
-  private async findRecentArticleUrls(
+  private canonicalizeSeedJobs(
+    jobs: Array<{ url: string; relevanceScore?: number }>,
+    queryParamAllowlist: string[],
+  ): CanonicalSeedJob[] {
+    const byFingerprint = new Map<string, CanonicalSeedJob>();
+    for (const job of jobs) {
+      const rawUrl = typeof job.url === "string" ? job.url.trim() : "";
+      if (!rawUrl) {
+        continue;
+      }
+      const normalized = buildCanonicalUrlFingerprint(
+        rawUrl,
+        queryParamAllowlist,
+      );
+      if (!normalized) {
+        continue;
+      }
+      const existing = byFingerprint.get(normalized.fingerprint);
+      if (!existing) {
+        byFingerprint.set(normalized.fingerprint, {
+          url: normalized.canonicalUrl,
+          urlFingerprint: normalized.fingerprint,
+          relevanceScore: job.relevanceScore,
+        });
+        continue;
+      }
+      const existingScore = existing.relevanceScore ?? Number.NEGATIVE_INFINITY;
+      const nextScore = job.relevanceScore ?? Number.NEGATIVE_INFINITY;
+      if (nextScore > existingScore) {
+        byFingerprint.set(normalized.fingerprint, {
+          url: normalized.canonicalUrl,
+          urlFingerprint: normalized.fingerprint,
+          relevanceScore: job.relevanceScore,
+        });
+      }
+    }
+    return Array.from(byFingerprint.values());
+  }
+
+  private async findRecentArticleFingerprints(
     orgId: string,
-    urls: string[],
+    candidates: CanonicalSeedJob[],
     windowHours: number,
   ) {
     const hours = Math.max(0, Math.min(24 * 30, Math.floor(windowHours)));
-    if (hours === 0 || urls.length === 0) {
+    if (hours === 0 || candidates.length === 0) {
       return new Set<string>();
     }
+
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+    const fingerprints = Array.from(
+      new Set(candidates.map((candidate) => candidate.urlFingerprint)),
+    );
+    const urls = Array.from(new Set(candidates.map((candidate) => candidate.url)));
+    const fingerprintByUrl = new Map(
+      candidates.map((candidate) => [candidate.url, candidate.urlFingerprint]),
+    );
+
     const records = await this.prisma.article.findMany({
-      where: { orgId, url: { in: urls }, crawlAt: { gte: since } },
-      select: { url: true },
+      where: {
+        orgId,
+        crawlAt: { gte: since },
+        OR: [
+          { urlFingerprint: { in: fingerprints } },
+          { url: { in: urls } },
+        ],
+      },
+      select: { urlFingerprint: true, url: true },
     });
-    return new Set(records.map((record) => record.url));
+
+    const matched = new Set<string>();
+    for (const record of records) {
+      if (
+        typeof record.urlFingerprint === "string" &&
+        record.urlFingerprint.length > 0
+      ) {
+        matched.add(record.urlFingerprint);
+        continue;
+      }
+      const fallback = fingerprintByUrl.get(record.url);
+      if (fallback) {
+        matched.add(fallback);
+      }
+    }
+    return matched;
   }
 
-  private async findActivePipelineUrls(
+  private async findActivePipelineFingerprints(
     sourceId: string,
-    urls: string[],
+    candidates: CanonicalSeedJob[],
     activeCutoff: Date,
   ) {
-    if (urls.length === 0) {
+    if (candidates.length === 0) {
       return new Set<string>();
     }
+
+    const fingerprints = Array.from(
+      new Set(candidates.map((candidate) => candidate.urlFingerprint)),
+    );
+    const urls = Array.from(new Set(candidates.map((candidate) => candidate.url)));
+    const fingerprintByUrl = new Map(
+      candidates.map((candidate) => [candidate.url, candidate.urlFingerprint]),
+    );
     const records = await this.prisma.pipelineJob.findMany({
       where: {
         sourceId,
-        url: { in: urls },
         status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
         createdAt: { gte: activeCutoff },
+        OR: [
+          { urlFingerprint: { in: fingerprints } },
+          { url: { in: urls } },
+        ],
       },
-      select: { url: true },
+      select: { urlFingerprint: true, url: true },
     });
-    return new Set(records.map((record) => record.url));
+
+    const matched = new Set<string>();
+    for (const record of records) {
+      if (
+        typeof record.urlFingerprint === "string" &&
+        record.urlFingerprint.length > 0
+      ) {
+        matched.add(record.urlFingerprint);
+        continue;
+      }
+      const fallback = fingerprintByUrl.get(record.url);
+      if (fallback) {
+        matched.add(fallback);
+      }
+    }
+    return matched;
   }
 
   private async scheduleDueSources(now: Date, batchSize: number) {
@@ -2329,28 +2489,37 @@ export class NewsSourceSchedulerService {
           await this.clearDeepDiscoveryFailureState(source.id);
         }
 
-        const candidateUrls = jobsToSchedule.map((job) => job.url);
-        const [recentArticles, activeUrls] = await Promise.all([
+        const canonicalJobs = seedConfig
+          ? this.canonicalizeSeedJobs(
+              jobsToSchedule,
+              seedConfig.queryParamAllowlist,
+            )
+          : [];
+        const [recentArticleFingerprints, activeFingerprints] =
+          await Promise.all([
           seedConfig
-            ? this.findRecentArticleUrls(
+            ? this.findRecentArticleFingerprints(
                 source.orgId,
-                candidateUrls,
+                canonicalJobs,
                 seedConfig.dedupeWindowHours,
               )
             : Promise.resolve(new Set<string>()),
           seedConfig
-            ? this.findActivePipelineUrls(
+            ? this.findActivePipelineFingerprints(
                 source.id,
-                candidateUrls,
+                canonicalJobs,
                 activeCutoff,
               )
             : Promise.resolve(new Set<string>()),
-        ]);
+          ]);
 
         const newJobs = seedConfig
-          ? jobsToSchedule
-              .filter((job) => !recentArticles.has(job.url))
-              .filter((job) => !activeUrls.has(job.url))
+          ? canonicalJobs
+              .filter(
+                (job) =>
+                  !recentArticleFingerprints.has(job.urlFingerprint),
+              )
+              .filter((job) => !activeFingerprints.has(job.urlFingerprint))
               .slice(0, maxNewUrlsThisRun)
           : jobsToSchedule;
 
@@ -2437,6 +2606,8 @@ export class NewsSourceSchedulerService {
                   mode: seedConfig.mode,
                   parentUrl: seedParentUrl ?? source.url,
                   relevanceScore: job.relevanceScore,
+                  dedupeWindowHours: seedConfig.dedupeWindowHours,
+                  queryParamAllowlist: seedConfig.queryParamAllowlist,
                 }
               : undefined,
           );
@@ -2453,10 +2624,16 @@ export class NewsSourceSchedulerService {
             crawlTemplateId: source.crawlTemplateId ?? undefined,
             ...(seedConfig
               ? {
+                  urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
+                }
+              : {}),
+            ...(seedConfig
+              ? {
                   newsSourceSeed: {
                     mode: seedConfig.mode,
                     parentUrl: seedParentUrl ?? source.url,
                     relevanceScore: job.relevanceScore,
+                    dedupeWindowHours: seedConfig.dedupeWindowHours,
                   },
                 }
               : {}),
@@ -2469,6 +2646,13 @@ export class NewsSourceSchedulerService {
             pipelinePriority: bullPriority,
             crawlPriorityClass,
             sourcePriority: source.priority,
+            ...(seedConfig
+              ? {
+                  orgContentDedupeWindowHours:
+                    seedConfig.dedupeWindowHours,
+                  urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
+                }
+              : {}),
             itemPayload: {
               sourceName: payload.sourceName,
               language: payload.language,
@@ -2490,6 +2674,8 @@ export class NewsSourceSchedulerService {
                   orgId: source.orgId,
                   sourceId: source.id,
                   url: job.url,
+                  urlFingerprint:
+                    "urlFingerprint" in job ? job.urlFingerprint : null,
                   priority: source.priority,
                   status: PipelineJobStatus.queued,
                   queueName: ITEM_PIPELINE_QUEUE_NAME,
@@ -2500,6 +2686,10 @@ export class NewsSourceSchedulerService {
                     seedMode: seedConfig ? seedConfig.mode : "single",
                     seedParentUrl: seedConfig ? seedParentUrl : undefined,
                     relevanceScore: seedConfig ? job.relevanceScore : undefined,
+                    urlFingerprint:
+                      "urlFingerprint" in job
+                        ? job.urlFingerprint
+                        : undefined,
                   },
                 },
               });

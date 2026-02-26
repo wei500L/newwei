@@ -11,6 +11,9 @@ export interface CrawlClientSettings {
   requestTimeoutMs: number;
   requestTimeoutHotMs: number;
   requestTimeoutNormalMs: number;
+  conditionalRequestEnabled: boolean;
+  conditionalRequestTimeoutMs: number;
+  conditionalRequestMaxRetries: number;
   detailPublishSignalHeadFetchTimeoutMs: number;
   detailPublishSignalHeadFetchConcurrency: number;
   detailPublishSignalHeadFetchMaxReadBytes: number;
@@ -31,6 +34,9 @@ export interface CrawlClientSettingsInput {
   requestTimeoutMs?: number;
   requestTimeoutHotMs?: number;
   requestTimeoutNormalMs?: number;
+  conditionalRequestEnabled?: boolean;
+  conditionalRequestTimeoutMs?: number;
+  conditionalRequestMaxRetries?: number;
   detailPublishSignalHeadFetchTimeoutMs?: number;
   detailPublishSignalHeadFetchConcurrency?: number;
   detailPublishSignalHeadFetchMaxReadBytes?: number;
@@ -52,6 +58,13 @@ const MAX_HEALTH_CHECK_TTL_MS = 900_000;
 const MIN_REQUEST_TIMEOUT_MS = 5_000;
 const MAX_REQUEST_TIMEOUT_MS = 900_000;
 const DEFAULT_REQUEST_TIMEOUT_HOT_MS = 60_000;
+const DEFAULT_CONDITIONAL_REQUEST_ENABLED = true;
+const DEFAULT_CONDITIONAL_REQUEST_TIMEOUT_MS = 5_000;
+const MIN_CONDITIONAL_REQUEST_TIMEOUT_MS = 500;
+const MAX_CONDITIONAL_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_CONDITIONAL_REQUEST_MAX_RETRIES = 0;
+const MIN_CONDITIONAL_REQUEST_MAX_RETRIES = 0;
+const MAX_CONDITIONAL_REQUEST_MAX_RETRIES = 5;
 const DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 1_500;
 const MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 500;
 const MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS = 10_000;
@@ -85,6 +98,9 @@ const CRAWL_CLIENT_SETTINGS_AUDIT_FIELDS = [
   "healthCheckTtlMs",
   "requestTimeoutHotMs",
   "requestTimeoutNormalMs",
+  "conditionalRequestEnabled",
+  "conditionalRequestTimeoutMs",
+  "conditionalRequestMaxRetries",
   "detailPublishSignalHeadFetchTimeoutMs",
   "detailPublishSignalHeadFetchConcurrency",
   "detailPublishSignalHeadFetchMaxReadBytes",
@@ -167,6 +183,9 @@ export class CrawlSettingsService {
         requestTimeoutMs: raw.requestTimeoutMs,
         requestTimeoutHotMs: raw.requestTimeoutHotMs,
         requestTimeoutNormalMs: raw.requestTimeoutNormalMs,
+        conditionalRequestEnabled: raw.conditionalRequestEnabled,
+        conditionalRequestTimeoutMs: raw.conditionalRequestTimeoutMs,
+        conditionalRequestMaxRetries: raw.conditionalRequestMaxRetries,
         detailPublishSignalHeadFetchTimeoutMs:
           raw.detailPublishSignalHeadFetchTimeoutMs,
         detailPublishSignalHeadFetchConcurrency:
@@ -211,6 +230,9 @@ export class CrawlSettingsService {
       requestTimeoutMs: requestTimeoutNormalMs,
       requestTimeoutHotMs,
       requestTimeoutNormalMs,
+      conditionalRequestEnabled: DEFAULT_CONDITIONAL_REQUEST_ENABLED,
+      conditionalRequestTimeoutMs: DEFAULT_CONDITIONAL_REQUEST_TIMEOUT_MS,
+      conditionalRequestMaxRetries: DEFAULT_CONDITIONAL_REQUEST_MAX_RETRIES,
       detailPublishSignalHeadFetchTimeoutMs: this.clamp(
         DEFAULT_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
         MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
@@ -283,6 +305,22 @@ export class CrawlSettingsService {
       requestTimeoutMs: requestTimeoutNormalMs,
       requestTimeoutHotMs,
       requestTimeoutNormalMs,
+      conditionalRequestEnabled: this.toBoolean(
+        value.conditionalRequestEnabled,
+        defaults.conditionalRequestEnabled
+      ),
+      conditionalRequestTimeoutMs: this.clamp(
+        this.toInt(value.conditionalRequestTimeoutMs),
+        MIN_CONDITIONAL_REQUEST_TIMEOUT_MS,
+        MAX_CONDITIONAL_REQUEST_TIMEOUT_MS,
+        defaults.conditionalRequestTimeoutMs
+      ),
+      conditionalRequestMaxRetries: this.clamp(
+        this.toInt(value.conditionalRequestMaxRetries),
+        MIN_CONDITIONAL_REQUEST_MAX_RETRIES,
+        MAX_CONDITIONAL_REQUEST_MAX_RETRIES,
+        defaults.conditionalRequestMaxRetries
+      ),
       detailPublishSignalHeadFetchTimeoutMs: this.clamp(
         this.toInt(value.detailPublishSignalHeadFetchTimeoutMs),
         MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_TIMEOUT_MS,
@@ -414,6 +452,9 @@ export class CrawlSettingsService {
       healthCheckTtlMs: settings.healthCheckTtlMs,
       requestTimeoutHotMs: settings.requestTimeoutHotMs,
       requestTimeoutNormalMs: settings.requestTimeoutNormalMs,
+      conditionalRequestEnabled: settings.conditionalRequestEnabled,
+      conditionalRequestTimeoutMs: settings.conditionalRequestTimeoutMs,
+      conditionalRequestMaxRetries: settings.conditionalRequestMaxRetries,
       detailPublishSignalHeadFetchTimeoutMs:
         settings.detailPublishSignalHeadFetchTimeoutMs,
       detailPublishSignalHeadFetchConcurrency:

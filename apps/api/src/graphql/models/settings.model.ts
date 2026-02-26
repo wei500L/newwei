@@ -67,6 +67,15 @@ export class CrawlClientSettingsModel {
   @Field(() => Int)
   requestTimeoutNormalMs!: number;
 
+  @Field(() => Boolean)
+  conditionalRequestEnabled!: boolean;
+
+  @Field(() => Int)
+  conditionalRequestTimeoutMs!: number;
+
+  @Field(() => Int)
+  conditionalRequestMaxRetries!: number;
+
   @Field(() => Int)
   detailPublishSignalHeadFetchTimeoutMs!: number;
 
@@ -459,9 +468,15 @@ export class NewsEventSourceCategoryAuthorityRuleModel {
 }
 
 @ObjectType()
-export class NewsDedupeCategoryThresholdModel {
-  @Field(() => String)
-  category!: string;
+export class NewsDedupeScopedThresholdModel {
+  @Field(() => String, { nullable: true })
+  sourceId!: string | null;
+
+  @Field(() => String, { nullable: true })
+  language!: string | null;
+
+  @Field(() => String, { nullable: true })
+  categoryPath!: string | null;
 
   @Field(() => Float)
   threshold!: number;
@@ -472,8 +487,8 @@ export class NewsDedupeSettingsModel {
   @Field(() => Float)
   defaultThreshold!: number;
 
-  @Field(() => [NewsDedupeCategoryThresholdModel])
-  categoryThresholds!: NewsDedupeCategoryThresholdModel[];
+  @Field(() => [NewsDedupeScopedThresholdModel])
+  scopedThresholds!: NewsDedupeScopedThresholdModel[];
 
   @Field(() => Boolean)
   useEmbeddings!: boolean;

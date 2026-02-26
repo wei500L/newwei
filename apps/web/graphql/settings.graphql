@@ -84,6 +84,9 @@ query CrawlClientSettings {
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    conditionalRequestEnabled
+    conditionalRequestTimeoutMs
+    conditionalRequestMaxRetries
     detailPublishSignalHeadFetchTimeoutMs
     detailPublishSignalHeadFetchConcurrency
     detailPublishSignalHeadFetchMaxReadBytes
@@ -105,6 +108,9 @@ mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    conditionalRequestEnabled
+    conditionalRequestTimeoutMs
+    conditionalRequestMaxRetries
     detailPublishSignalHeadFetchTimeoutMs
     detailPublishSignalHeadFetchConcurrency
     detailPublishSignalHeadFetchMaxReadBytes

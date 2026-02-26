@@ -143,3 +143,60 @@ describe("AlertsService.getRuleTuningSuggestion", () => {
     expect(result?.suggestedThresholdValue).toBe(137.5);
   });
 });
+
+describe("AlertsService.listRules default crawl quality rules", () => {
+  const buildService = () => {
+    const createdRules: Array<{ id: string; orgId: string }> = [];
+    const prisma = {
+      org: {
+        findMany: jest.fn().mockResolvedValue([{ id: "org-1" }])
+      },
+      alertRule: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+        create: jest.fn(async ({ data }: any) => {
+          const created = {
+            id: data.id,
+            orgId: data.orgId,
+            checkIntervalSec: data.checkIntervalSec,
+            status: data.status
+          };
+          createdRules.push(created);
+          return created;
+        }),
+      },
+    } as any;
+    const queue = {
+      add: jest.fn().mockResolvedValue(undefined),
+      getRepeatableJobs: jest.fn().mockResolvedValue([]),
+      removeRepeatableByKey: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
+    const service = new AlertsService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      queue,
+      {} as any,
+      []
+    );
+
+    return { prisma, queue, service, createdRules };
+  };
+
+  it("creates missing default crawl quality rules and schedules them", async () => {
+    const { service, prisma, queue, createdRules } = buildService();
+
+    await service.listRules("org-1");
+
+    expect(createdRules).toHaveLength(3);
+    expect(prisma.alertRule.create).toHaveBeenCalledTimes(3);
+    expect(queue.add).toHaveBeenCalled();
+  });
+});

@@ -465,6 +465,9 @@ type CrawlClientSettingsModel {
   adaptiveLatencyThresholdRatio: Float!
   adaptiveMemoryHeadroomThreshold: Float!
   adaptiveWindowMinutes: Int!
+  conditionalRequestEnabled: Boolean!
+  conditionalRequestMaxRetries: Int!
+  conditionalRequestTimeoutMs: Int!
   detailPublishSignalHeadFetchConcurrency: Int!
   detailPublishSignalHeadFetchMaxReadBytes: Int!
   detailPublishSignalHeadFetchTimeoutMs: Int!
@@ -1447,18 +1450,21 @@ type NewsClassificationTaxonomyNodeModel {
   synonyms: [String!]!
 }
 
-input NewsDedupeCategoryThresholdInput {
-  category: String!
+input NewsDedupeScopedThresholdInput {
+  categoryPath: String
+  language: String
+  sourceId: String
   threshold: Float!
 }
 
-type NewsDedupeCategoryThresholdModel {
-  category: String!
+type NewsDedupeScopedThresholdModel {
+  categoryPath: String
+  language: String
+  sourceId: String
   threshold: Float!
 }
 
 type NewsDedupeSettingsModel {
-  categoryThresholds: [NewsDedupeCategoryThresholdModel!]!
   defaultThreshold: Float!
   llmJudgeCandidateChars: Int!
   llmJudgeInstructions: String
@@ -1467,6 +1473,7 @@ type NewsDedupeSettingsModel {
   llmJudgePromptVersion: String!
   llmJudgeSystemPromptTemplate: String!
   llmJudgeUserPromptTemplate: String!
+  scopedThresholds: [NewsDedupeScopedThresholdModel!]!
   useEmbeddings: Boolean!
 }
 
@@ -2338,6 +2345,9 @@ input UpdateCrawlClientSettingsInput {
   adaptiveLatencyThresholdRatio: Float
   adaptiveMemoryHeadroomThreshold: Float
   adaptiveWindowMinutes: Int
+  conditionalRequestEnabled: Boolean
+  conditionalRequestMaxRetries: Int
+  conditionalRequestTimeoutMs: Int
   detailPublishSignalHeadFetchConcurrency: Int
   detailPublishSignalHeadFetchMaxReadBytes: Int
   detailPublishSignalHeadFetchTimeoutMs: Int
@@ -2402,7 +2412,6 @@ input UpdateNewsClassificationSettingsInput {
 }
 
 input UpdateNewsDedupeSettingsInput {
-  categoryThresholds: [NewsDedupeCategoryThresholdInput!]!
   defaultThreshold: Float!
   llmJudgeCandidateChars: Int
   llmJudgeInstructions: String
@@ -2411,6 +2420,7 @@ input UpdateNewsDedupeSettingsInput {
   llmJudgePromptVersion: String
   llmJudgeSystemPromptTemplate: String
   llmJudgeUserPromptTemplate: String
+  scopedThresholds: [NewsDedupeScopedThresholdInput!]!
   useEmbeddings: Boolean!
 }
 

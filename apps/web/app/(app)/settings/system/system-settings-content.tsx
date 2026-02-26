@@ -511,6 +511,10 @@ function CrawlClientSettingsPanel() {
   const [updateSettings, { loading: saving }] =
     useUpdateCrawlClientSettingsMutation();
   const [messageApi, contextHolder] = message.useMessage();
+  const conditionalRequestEnabled =
+    Form.useWatch("conditionalRequestEnabled", form) ??
+    data?.crawlClientSettings?.conditionalRequestEnabled ??
+    true;
   const adaptiveConcurrencyEnabled =
     Form.useWatch("adaptiveConcurrencyEnabled", form) ??
     data?.crawlClientSettings?.adaptiveConcurrencyEnabled ??
@@ -665,6 +669,99 @@ function CrawlClientSettingsPanel() {
             max={900_000}
             step={1_000}
             unit="ms"
+            style={{ width: "100%" }}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.conditionalRequestEnabled", {
+            defaultValue: "Enable HTTP conditional requests",
+          })}
+          name="conditionalRequestEnabled"
+          valuePropName="checked"
+        >
+          <Switch />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.conditionalRequestTimeoutMs", {
+            defaultValue: "Conditional request timeout",
+          })}
+          name="conditionalRequestTimeoutMs"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "settings.crawlClient.validation.conditionalRequestTimeoutMs",
+                {
+                  defaultValue: "Please enter conditional request timeout.",
+                },
+              ),
+            },
+            {
+              type: "number",
+              min: 500,
+              max: 60_000,
+              message: t("common.validation.numberRange", {
+                min: 500,
+                max: 60_000,
+              }),
+            },
+          ]}
+          extra={
+            <NumberRangeExtra
+              name="conditionalRequestTimeoutMs"
+              min={500}
+              max={60_000}
+              unit="ms"
+            />
+          }
+        >
+          <UnitInputNumber
+            min={500}
+            max={60_000}
+            step={100}
+            unit="ms"
+            disabled={!conditionalRequestEnabled}
+            style={{ width: "100%" }}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.conditionalRequestMaxRetries", {
+            defaultValue: "Conditional request retries",
+          })}
+          name="conditionalRequestMaxRetries"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "settings.crawlClient.validation.conditionalRequestMaxRetries",
+                {
+                  defaultValue: "Please enter conditional request retries.",
+                },
+              ),
+            },
+            {
+              type: "number",
+              min: 0,
+              max: 5,
+              message: t("common.validation.numberRange", {
+                min: 0,
+                max: 5,
+              }),
+            },
+          ]}
+          extra={
+            <NumberRangeExtra
+              name="conditionalRequestMaxRetries"
+              min={0}
+              max={5}
+            />
+          }
+        >
+          <InputNumber
+            min={0}
+            max={5}
+            step={1}
+            disabled={!conditionalRequestEnabled}
             style={{ width: "100%" }}
           />
         </Form.Item>

@@ -15,6 +15,7 @@ export interface CrawlJobData {
 export interface CrawlExecutionSummary {
   inserted: number;
   skipped: number;
+  reusedResultId?: string;
   itemsQueued?: number;
   itemsQueueFailed?: number;
   lastFetchedAt?: Date;

@@ -496,6 +496,9 @@ export type CrawlClientSettingsModel = {
   adaptiveLatencyThresholdRatio: Scalars['Float']['output'];
   adaptiveMemoryHeadroomThreshold: Scalars['Float']['output'];
   adaptiveWindowMinutes: Scalars['Int']['output'];
+  conditionalRequestEnabled: Scalars['Boolean']['output'];
+  conditionalRequestMaxRetries: Scalars['Int']['output'];
+  conditionalRequestTimeoutMs: Scalars['Int']['output'];
   detailPublishSignalHeadFetchConcurrency: Scalars['Int']['output'];
   detailPublishSignalHeadFetchMaxReadBytes: Scalars['Int']['output'];
   detailPublishSignalHeadFetchTimeoutMs: Scalars['Int']['output'];
@@ -1743,20 +1746,23 @@ export type NewsClassificationTaxonomyNodeModel = {
   synonyms: Array<Scalars['String']['output']>;
 };
 
-export type NewsDedupeCategoryThresholdInput = {
-  category: Scalars['String']['input'];
+export type NewsDedupeScopedThresholdInput = {
+  categoryPath?: InputMaybe<Scalars['String']['input']>;
+  language?: InputMaybe<Scalars['String']['input']>;
+  sourceId?: InputMaybe<Scalars['String']['input']>;
   threshold: Scalars['Float']['input'];
 };
 
-export type NewsDedupeCategoryThresholdModel = {
-  __typename?: 'NewsDedupeCategoryThresholdModel';
-  category: Scalars['String']['output'];
+export type NewsDedupeScopedThresholdModel = {
+  __typename?: 'NewsDedupeScopedThresholdModel';
+  categoryPath?: Maybe<Scalars['String']['output']>;
+  language?: Maybe<Scalars['String']['output']>;
+  sourceId?: Maybe<Scalars['String']['output']>;
   threshold: Scalars['Float']['output'];
 };
 
 export type NewsDedupeSettingsModel = {
   __typename?: 'NewsDedupeSettingsModel';
-  categoryThresholds: Array<NewsDedupeCategoryThresholdModel>;
   defaultThreshold: Scalars['Float']['output'];
   llmJudgeCandidateChars: Scalars['Int']['output'];
   llmJudgeInstructions?: Maybe<Scalars['String']['output']>;
@@ -1765,6 +1771,7 @@ export type NewsDedupeSettingsModel = {
   llmJudgePromptVersion: Scalars['String']['output'];
   llmJudgeSystemPromptTemplate: Scalars['String']['output'];
   llmJudgeUserPromptTemplate: Scalars['String']['output'];
+  scopedThresholds: Array<NewsDedupeScopedThresholdModel>;
   useEmbeddings: Scalars['Boolean']['output'];
 };
 
@@ -2951,6 +2958,9 @@ export type UpdateCrawlClientSettingsInput = {
   adaptiveLatencyThresholdRatio?: InputMaybe<Scalars['Float']['input']>;
   adaptiveMemoryHeadroomThreshold?: InputMaybe<Scalars['Float']['input']>;
   adaptiveWindowMinutes?: InputMaybe<Scalars['Int']['input']>;
+  conditionalRequestEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  conditionalRequestMaxRetries?: InputMaybe<Scalars['Int']['input']>;
+  conditionalRequestTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
   detailPublishSignalHeadFetchConcurrency?: InputMaybe<Scalars['Int']['input']>;
   detailPublishSignalHeadFetchMaxReadBytes?: InputMaybe<Scalars['Int']['input']>;
   detailPublishSignalHeadFetchTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
@@ -3015,7 +3025,6 @@ export type UpdateNewsClassificationSettingsInput = {
 };
 
 export type UpdateNewsDedupeSettingsInput = {
-  categoryThresholds: Array<NewsDedupeCategoryThresholdInput>;
   defaultThreshold: Scalars['Float']['input'];
   llmJudgeCandidateChars?: InputMaybe<Scalars['Int']['input']>;
   llmJudgeInstructions?: InputMaybe<Scalars['String']['input']>;
@@ -3024,6 +3033,7 @@ export type UpdateNewsDedupeSettingsInput = {
   llmJudgePromptVersion?: InputMaybe<Scalars['String']['input']>;
   llmJudgeSystemPromptTemplate?: InputMaybe<Scalars['String']['input']>;
   llmJudgeUserPromptTemplate?: InputMaybe<Scalars['String']['input']>;
+  scopedThresholds: Array<NewsDedupeScopedThresholdInput>;
   useEmbeddings: Scalars['Boolean']['input'];
 };
 
@@ -3637,14 +3647,14 @@ export type UpdateNewsPromptConfigMutation = { __typename?: 'Mutation', updateNe
 export type CrawlClientSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
+export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, conditionalRequestEnabled: boolean, conditionalRequestTimeoutMs: number, conditionalRequestMaxRetries: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type UpdateCrawlClientSettingsMutationVariables = Exact<{
   input: UpdateCrawlClientSettingsInput;
 }>;
 
 
-export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
+export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, conditionalRequestEnabled: boolean, conditionalRequestTimeoutMs: number, conditionalRequestMaxRetries: number, detailPublishSignalHeadFetchTimeoutMs: number, detailPublishSignalHeadFetchConcurrency: number, detailPublishSignalHeadFetchMaxReadBytes: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type EntityImpactGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -7027,6 +7037,9 @@ export const CrawlClientSettingsDocument = gql`
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    conditionalRequestEnabled
+    conditionalRequestTimeoutMs
+    conditionalRequestMaxRetries
     detailPublishSignalHeadFetchTimeoutMs
     detailPublishSignalHeadFetchConcurrency
     detailPublishSignalHeadFetchMaxReadBytes
@@ -7081,6 +7094,9 @@ export const UpdateCrawlClientSettingsDocument = gql`
     requestTimeoutMs
     requestTimeoutHotMs
     requestTimeoutNormalMs
+    conditionalRequestEnabled
+    conditionalRequestTimeoutMs
+    conditionalRequestMaxRetries
     detailPublishSignalHeadFetchTimeoutMs
     detailPublishSignalHeadFetchConcurrency
     detailPublishSignalHeadFetchMaxReadBytes

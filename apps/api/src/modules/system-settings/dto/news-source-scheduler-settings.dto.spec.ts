@@ -18,6 +18,7 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
           seedCacheTtlSecondsSitemapRss: 60,
           seedCacheTtlSecondsListDeep: 180,
           seedCacheTtlForceGlobal: true,
+          seedUrlQueryParamAllowlist: ["id", "lang"],
         },
         metadata,
       ),
@@ -26,6 +27,7 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: true,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
   });
 
@@ -38,6 +40,23 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
           seedCacheTtlSecondsSitemapRss: 60,
           seedCacheTtlSecondsListDeep: 180,
           seedCacheTtlForceGlobal: "true",
+          seedUrlQueryParamAllowlist: ["id"],
+        },
+        metadata,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("rejects invalid query allowlist values", async () => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    await expect(
+      pipe.transform(
+        {
+          seedFreshnessWindowDays: 365,
+          seedCacheTtlSecondsSitemapRss: 60,
+          seedCacheTtlSecondsListDeep: 180,
+          seedCacheTtlForceGlobal: true,
+          seedUrlQueryParamAllowlist: ["id", "utm source"],
         },
         metadata,
       ),

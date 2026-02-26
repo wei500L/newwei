@@ -229,19 +229,24 @@ model CrawlTask {
 }
 
 model CrawlResult {
-  id          String     @id @default(cuid())
-  task        CrawlTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  taskId      String
-  sourceUrl   String
-  fetchedAt   DateTime
-  markdownRef String
-  contentHash String
-  metadata    Json?
-  createdAt   DateTime   @default(now())
+  id                 String     @id @default(cuid())
+  task               CrawlTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId             String
+  orgId              String
+  sourceUrl          String
+  sourceUrlFingerprint String?  @db.VarChar(64)
+  fetchedAt          DateTime
+  markdownRef        String
+  contentHash        String
+  metadata           Json?
+  createdAt          DateTime   @default(now())
   mediaAssets CrawlMediaAsset[]
 
   @@index([sourceUrl])
   @@index([taskId, fetchedAt])
+  @@index([orgId, fetchedAt])
+  @@index([orgId, contentHash, fetchedAt])
+  @@index([orgId, sourceUrlFingerprint, fetchedAt])
   @@unique([taskId, contentHash])
 }
 
@@ -384,6 +389,7 @@ model PipelineJob {
   source       NewsSource?       @relation(fields: [sourceId], references: [id])
   sourceId     String?
   url          String
+  urlFingerprint String?         @db.VarChar(64)
   priority     Int               @default(0)
   status       PipelineJobStatus @default(pending)
   queueName    String            @default("crawl-queue")
@@ -402,6 +408,7 @@ model PipelineJob {
   @@index([orgId, status])
   @@index([queueName, status])
   @@index([sourceId, createdAt])
+  @@index([sourceId, urlFingerprint, createdAt])
 }
 
 model Article {
@@ -411,6 +418,7 @@ model Article {
   source      NewsSource?   @relation(fields: [sourceId], references: [id])
   sourceId    String?
   url         String        @db.VarChar(512)
+  urlFingerprint String?    @db.VarChar(64)
   sourceLabel String?
   language    String?
   titleGuess  String?
@@ -429,6 +437,7 @@ model Article {
 
   @@unique([url, contentHash])
   @@index([orgId, sourceId, crawlAt])
+  @@index([orgId, urlFingerprint, crawlAt])
 }
 
 model ProcessedArticle {

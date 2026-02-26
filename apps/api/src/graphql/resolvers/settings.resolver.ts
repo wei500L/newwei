@@ -584,8 +584,10 @@ export class SettingsResolver {
         input.llmJudgeUserPromptTemplate === undefined
           ? current.llmJudgeUserPromptTemplate
           : input.llmJudgeUserPromptTemplate,
-      categoryThresholds: input.categoryThresholds.map((entry) => ({
-        category: entry.category,
+      scopedThresholds: input.scopedThresholds.map((entry) => ({
+        sourceId: entry.sourceId ?? null,
+        language: entry.language ?? null,
+        categoryPath: entry.categoryPath ?? null,
         threshold: entry.threshold,
       })),
     };

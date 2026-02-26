@@ -20,6 +20,7 @@ import {
   type DeepDiscoveryFailureState,
   type DeepDiscoveryFailureStats24h,
 } from "./deep-discovery-failure";
+import { resolveQueryParamAllowlist } from "./url-fingerprint";
 import {
   CreateNewsSourceDto,
   ListNewsSourceDto,
@@ -54,6 +55,7 @@ export interface NewsSourceSeedConfig {
   scoreThreshold: number;
   concurrency: number;
   dedupeWindowHours: number;
+  queryParamAllowlist: string[];
   deep?: NewsSourceDeepSeedConfig;
 }
 
@@ -1078,6 +1080,10 @@ export class NewsSourceService {
         0,
         24 * 30,
         24,
+      ),
+      queryParamAllowlist: resolveQueryParamAllowlist(
+        rawSeed?.queryParamAllowlist,
+        [],
       ),
       deep:
         mode === "deep"

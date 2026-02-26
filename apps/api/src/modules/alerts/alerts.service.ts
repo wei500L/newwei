@@ -81,6 +81,43 @@ export type AlertJobPayload =
 
 const logger = createLogger({ name: "alerts" });
 const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
+const DEFAULT_CRAWL_QUALITY_RULES: Array<{
+  key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate";
+  name: string;
+  description: string;
+  metricSlug: string;
+  operator: AlertOperator;
+  thresholdValue: number;
+  severity: AlertSeverity;
+}> = [
+  {
+    key: "preflight_failure_rate",
+    name: "Crawl Quality: Preflight Failure Rate High",
+    description: "Alert when preflight failure rate remains too high.",
+    metricSlug: "crawl_quality.preflight_failure_rate",
+    operator: AlertOperator.gte,
+    thresholdValue: 0.15,
+    severity: AlertSeverity.medium
+  },
+  {
+    key: "http_304_hit_rate",
+    name: "Crawl Quality: HTTP 304 Hit Rate Low",
+    description: "Alert when HTTP 304 hit rate drops below expected baseline.",
+    metricSlug: "crawl_quality.http_304_hit_rate",
+    operator: AlertOperator.lte,
+    thresholdValue: 0.05,
+    severity: AlertSeverity.medium
+  },
+  {
+    key: "org_hash_dedupe_hit_rate",
+    name: "Crawl Quality: Org Hash Dedupe Hit Rate High",
+    description: "Alert when org-level content hash dedupe hit rate spikes.",
+    metricSlug: "crawl_quality.org_hash_dedupe_hit_rate",
+    operator: AlertOperator.gte,
+    thresholdValue: 0.3,
+    severity: AlertSeverity.medium
+  }
+];
 
 @Injectable()
 export class AlertsService {
@@ -190,6 +227,7 @@ export class AlertsService {
   }
 
   async listRules(orgId: string) {
+    await this.ensureDefaultCrawlQualityRules(orgId);
     return this.prisma.alertRule.findMany({
       where: { orgId },
       include: {
@@ -198,6 +236,89 @@ export class AlertsService {
       },
       orderBy: { createdAt: "asc" }
     });
+  }
+
+  private async ensureDefaultCrawlQualityRules(orgId: string) {
+    const slugs = DEFAULT_CRAWL_QUALITY_RULES.map((rule) => rule.metricSlug);
+    const existing = await this.prisma.alertRule.findMany({
+      where: {
+        orgId,
+        metricProvider: AlertMetricProvider.crawl_task,
+        metricSlug: { in: slugs }
+      },
+      select: {
+        id: true,
+        metricSlug: true
+      }
+    });
+    const existingSlugSet = new Set(existing.map((entry) => entry.metricSlug));
+
+    for (const definition of DEFAULT_CRAWL_QUALITY_RULES) {
+      if (existingSlugSet.has(definition.metricSlug)) {
+        continue;
+      }
+
+      try {
+        const created = await this.prisma.alertRule.create({
+          data: {
+            id: this.buildDefaultCrawlQualityRuleId(orgId, definition.key),
+            orgId,
+            name: definition.name,
+            description: definition.description,
+            severity: definition.severity,
+            status: AlertStatus.active,
+            metricProvider: AlertMetricProvider.crawl_task,
+            metricSlug: definition.metricSlug,
+            operator: definition.operator,
+            thresholdValue: new Prisma.Decimal(definition.thresholdValue),
+            thresholdLower: null,
+            thresholdUpper: null,
+            changeWindowMin: 60,
+            cooldownSeconds: 3600,
+            checkIntervalSec: 300,
+            metadata: toPrismaJsonValue({
+              systemDefault: true,
+              defaultRuleKey: definition.key,
+              version: 1
+            }),
+            dataItemId: null
+          }
+        });
+        existingSlugSet.add(definition.metricSlug);
+        await this.ensureRuleSchedule(created);
+        await this.enqueueRuleCheck(created.id, created.orgId);
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          logger.debug(
+            { orgId, metricSlug: definition.metricSlug },
+            "Default crawl quality alert rule already exists"
+          );
+          existingSlugSet.add(definition.metricSlug);
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async ensureDefaultCrawlQualityRulesForAllOrgs() {
+    const orgs = await this.prisma.org.findMany({
+      select: { id: true }
+    });
+    for (const org of orgs) {
+      await this.ensureDefaultCrawlQualityRules(org.id);
+    }
+  }
+
+  private buildDefaultCrawlQualityRuleId(
+    orgId: string,
+    key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate"
+  ) {
+    const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return `default-crawl-quality-${key}-${normalizedOrgId}`.slice(0, 191);
   }
 
   async listEvents(orgId: string, limit = 50, metricSlug?: string) {
@@ -637,6 +758,7 @@ export class AlertsService {
   }
 
   async enqueueActiveRuleChecks() {
+    await this.ensureDefaultCrawlQualityRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active }
     });
@@ -646,6 +768,7 @@ export class AlertsService {
   }
 
   async ensureAllSchedules() {
+    await this.ensureDefaultCrawlQualityRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active }
     });

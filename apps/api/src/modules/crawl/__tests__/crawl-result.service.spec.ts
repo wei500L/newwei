@@ -275,4 +275,61 @@ describe("CrawlResultService", () => {
     });
   });
 
+  it("reuses recent org-level hash matches when task-level records are missing", async () => {
+    const now = new Date("2026-02-26T10:00:00.000Z");
+    const prisma = {
+      crawlResult: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "result-existing-org",
+              taskId: "task-old",
+              orgId: "org-1",
+              sourceUrl: "https://example.com/story?id=1",
+              sourceUrlFingerprint: "fp-1",
+              fetchedAt: now,
+              markdownRef: "mongo-1",
+              contentHash:
+                "e2fb560b07cdf3c190ed574bf91209df9ee32938f47adad70cbfacfca19de981",
+              metadata: {},
+              createdAt: now
+            }
+          ])
+      }
+    };
+    const service = createService(128, { prisma });
+    const task = {
+      id: "task-1",
+      orgId: "org-1",
+      targetUrl: "https://example.com/story?id=1&utm_source=x",
+      config: {
+        orgContentDedupeWindowHours: 24,
+        urlQueryParamAllowlist: ["id"]
+      }
+    } as any;
+
+    const summary = await service.persistResults(
+      task,
+      [
+        {
+          url: "https://example.com/story?utm_source=x&id=1",
+          markdown: "# Headline\n\nBody paragraph"
+        } as any
+      ],
+      {}
+    );
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        inserted: 0,
+        skipped: 1,
+        reusedResultId: "result-existing-org",
+        lastFetchedAt: now
+      })
+    );
+    expect(prisma.crawlResult.findMany).toHaveBeenCalledTimes(2);
+  });
+
 });

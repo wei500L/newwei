@@ -49,7 +49,7 @@ describe("NewsDedupeSettingsService", () => {
 
     expect(settings).toEqual(expect.objectContaining({
       defaultThreshold: 0.9,
-      categoryThresholds: [],
+      scopedThresholds: [],
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
@@ -67,7 +67,7 @@ describe("NewsDedupeSettingsService", () => {
     });
   });
 
-  it("normalizes and upserts category overrides", async () => {
+  it("normalizes and upserts scoped overrides", async () => {
     const service = new NewsDedupeSettingsService(
       prismaMock as any,
       cacheMock as any,
@@ -86,22 +86,48 @@ describe("NewsDedupeSettingsService", () => {
         "SYSTEM {{language_hint}} {{additional_instructions}} Output JSON only.",
       llmJudgeUserPromptTemplate:
         "USER threshold={{threshold}} A={{summary_a}} B={{summary_b}}",
-      categoryThresholds: [
-        { category: " Finance ", threshold: 0.93 },
-        { category: "finance", threshold: 0.91 },
-        { category: "", threshold: 0.95 },
-        { category: "Tech", threshold: 2 },
+      scopedThresholds: [
+        {
+          sourceId: " source-a ",
+          language: "EN",
+          categoryPath: "finance/markets",
+          threshold: 0.93,
+        },
+        {
+          sourceId: "source-a",
+          language: "en",
+          categoryPath: " finance/markets ",
+          threshold: 0.91,
+        },
+        {
+          sourceId: null,
+          language: " zh ",
+          categoryPath: null,
+          threshold: 0.89,
+        },
+        {
+          sourceId: null,
+          language: null,
+          categoryPath: "Tech",
+          threshold: 2,
+        },
       ],
     });
 
     expect(result.defaultThreshold).toBe(1);
-    expect(result.categoryThresholds).toEqual(
+    expect(result.scopedThresholds).toEqual(
       expect.arrayContaining([
-        { category: "finance", threshold: 0.91 },
-        { category: "Tech", threshold: 1 },
+        {
+          sourceId: "source-a",
+          language: "en",
+          categoryPath: "finance/markets",
+          threshold: 0.91,
+        },
+        { sourceId: null, language: "zh", categoryPath: null, threshold: 0.89 },
+        { sourceId: null, language: null, categoryPath: "Tech", threshold: 1 },
       ]),
     );
-    expect(result.categoryThresholds).toHaveLength(2);
+    expect(result.scopedThresholds).toHaveLength(3);
     expect(result.useEmbeddings).toBe(false);
 
     expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith({
@@ -120,7 +146,7 @@ describe("NewsDedupeSettingsService", () => {
     });
   });
 
-  it("resolves the strictest threshold among category/topics", async () => {
+  it("resolves threshold with source/language/categoryPath priority", async () => {
     const service = new NewsDedupeSettingsService(
       prismaMock as any,
       cacheMock as any,
@@ -130,9 +156,43 @@ describe("NewsDedupeSettingsService", () => {
     const resolved = service.resolveBaseThreshold(
       {
         defaultThreshold: 0.9,
-        categoryThresholds: [
-          { category: "finance", threshold: 0.92 },
-          { category: "news", threshold: 0.88 },
+        scopedThresholds: [
+          {
+            sourceId: "source-a",
+            language: "en",
+            categoryPath: "finance/markets",
+            threshold: 0.95,
+          },
+          {
+            sourceId: "source-a",
+            language: "en",
+            categoryPath: null,
+            threshold: 0.93,
+          },
+          {
+            sourceId: "source-a",
+            language: null,
+            categoryPath: null,
+            threshold: 0.92,
+          },
+          {
+            sourceId: null,
+            language: "en",
+            categoryPath: "finance/markets",
+            threshold: 0.91,
+          },
+          {
+            sourceId: null,
+            language: "en",
+            categoryPath: null,
+            threshold: 0.9,
+          },
+          {
+            sourceId: null,
+            language: null,
+            categoryPath: "finance/markets",
+            threshold: 0.89,
+          },
         ],
         useEmbeddings: true,
         llmJudgeInstructions: null,
@@ -143,9 +203,22 @@ describe("NewsDedupeSettingsService", () => {
         llmJudgeSystemPromptTemplate: "system prompt",
         llmJudgeUserPromptTemplate: "user prompt",
       },
-      { category: "Finance", topics: ["news"] },
+      {
+        sourceId: "source-a",
+        language: "EN",
+        categoryPath: "finance/markets",
+      },
     );
 
-    expect(resolved).toEqual({ threshold: 0.92, matchedCategory: "finance" });
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        threshold: 0.95,
+        matchedScope: expect.objectContaining({
+          sourceId: "source-a",
+          language: "en",
+          categoryPath: "finance/markets",
+        }),
+      }),
+    );
   });
 });

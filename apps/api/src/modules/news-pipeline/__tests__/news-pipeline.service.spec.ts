@@ -163,7 +163,7 @@ describe("NewsPipelineService", () => {
   const dedupeSettingsService = {
     getSettings: jest.fn().mockResolvedValue({
       defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
-      categoryThresholds: [],
+      scopedThresholds: [],
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
@@ -683,6 +683,64 @@ describe("NewsPipelineService", () => {
     expect(crawlExecution.runTask).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses crawl execution summary reusedResultId when crawl run inserted no new rows", async () => {
+    const reusedResultId = "reused-result-1";
+    const reusedContentHash = createHash("sha256")
+      .update("# Reused headline\nReused body")
+      .digest("hex");
+    crawlExecution.runTask.mockResolvedValueOnce({
+      inserted: 0,
+      skipped: 1,
+      reusedResultId,
+    });
+    prisma.crawlResult.findFirst.mockReset();
+    prisma.crawlResult.findFirst
+      .mockResolvedValueOnce(null) // findRecentStoredCrawlResultId fingerprint match
+      .mockResolvedValueOnce(null) // findRecentStoredCrawlResultId url fallback
+      .mockResolvedValueOnce({ id: reusedResultId }) // crawlViaCrawlTask reusedResult lookup
+      .mockResolvedValueOnce({
+        // fetchStoredCrawlResult by reusedResultId
+        id: reusedResultId,
+        sourceUrl: "https://example.com/story",
+        fetchedAt: new Date("2024-01-01T00:00:00Z"),
+        markdownRef: defaultMarkdownRef,
+        contentHash: reusedContentHash,
+        metadata: { title: "Reused headline" },
+      })
+      .mockResolvedValue(null);
+
+    const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
+      CrawlResultContentModel: { findById: jest.Mock };
+    };
+    CrawlResultContentModel.findById.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({
+        markdown: "# Reused headline\nReused body",
+        markdownWithCitations: null,
+        referencesMarkdown: null,
+        crawlRunId: "crawl-run-reused",
+        metadata: { title: "Reused headline" },
+      }),
+    });
+
+    await service.process(job, raw);
+    await flushOutbox();
+
+    expect(crawlExecution.runTask).toHaveBeenCalledTimes(1);
+    const hasTaskIdLookup = prisma.crawlResult.findFirst.mock.calls.some(
+      ([args]: [any]) => Boolean(args?.where?.taskId),
+    );
+    expect(hasTaskIdLookup).toBe(false);
+    expect(prisma.crawlResult.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: reusedResultId,
+          orgId: "org-1",
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
   it("reuses existing processed article when content hash matches", async () => {
     const contentHash = createHash("sha256")
       .update("# Headline\nBody paragraph")
@@ -806,7 +864,7 @@ describe("NewsPipelineService", () => {
 
     dedupeSettingsService.getSettings.mockResolvedValueOnce({
       defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
-      categoryThresholds: [],
+      scopedThresholds: [],
       useEmbeddings: false,
       llmJudgeInstructions: null,
       llmJudgeModel: "openai/gpt-4o-mini",

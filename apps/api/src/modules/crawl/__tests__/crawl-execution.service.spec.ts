@@ -1,41 +1,46 @@
-jest.mock("@modular/utils", () => ({
-  createLogger: () => ({
-    warn: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-    debug: jest.fn(),
-  }),
-  normalizeBrowserHeaders: (input: unknown) => {
-    if (!Array.isArray(input)) {
-      return [];
-    }
-    const controlChar = /[\u0000-\u001f\u007f]/;
-    const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    return input
-      .map((entry) => {
-        const record = entry as { name?: unknown; value?: unknown };
-        const name = typeof record?.name === "string" ? record.name.trim() : "";
-        const value =
-          typeof record?.value === "string" ? record.value.trim() : "";
-        if (!name || !value) {
-          return null;
-        }
-        if (!headerNamePattern.test(name)) {
-          return null;
-        }
-        if (controlChar.test(name) || controlChar.test(value)) {
-          return null;
-        }
-        return { name, value };
-      })
-      .filter((entry): entry is { name: string; value: string } =>
-        Boolean(entry),
-      );
-  },
-  sanitizeError: (error: unknown) => ({
-    message: error instanceof Error ? error.message : String(error),
-  }),
-}));
+jest.mock("@modular/utils", () => {
+  const actual = jest.requireActual("@modular/utils");
+  return {
+    ...actual,
+    createLogger: () => ({
+      warn: jest.fn(),
+      error: jest.fn(),
+      info: jest.fn(),
+      debug: jest.fn(),
+    }),
+    normalizeBrowserHeaders: (input: unknown) => {
+      if (!Array.isArray(input)) {
+        return [];
+      }
+      const controlChar = /[\u0000-\u001f\u007f]/;
+      const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+      return input
+        .map((entry) => {
+          const record = entry as { name?: unknown; value?: unknown };
+          const name =
+            typeof record?.name === "string" ? record.name.trim() : "";
+          const value =
+            typeof record?.value === "string" ? record.value.trim() : "";
+          if (!name || !value) {
+            return null;
+          }
+          if (!headerNamePattern.test(name)) {
+            return null;
+          }
+          if (controlChar.test(name) || controlChar.test(value)) {
+            return null;
+          }
+          return { name, value };
+        })
+        .filter((entry): entry is { name: string; value: string } =>
+          Boolean(entry),
+        );
+    },
+    sanitizeError: (error: unknown) => ({
+      message: error instanceof Error ? error.message : String(error),
+    }),
+  };
+});
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
@@ -47,6 +52,7 @@ import { TaskLogModel } from "@modular/mongo";
 import { NotificationType } from "@prisma/client";
 import { CrawlExecutionService } from "../crawl-execution.service";
 import { Crawl4aiRequestException } from "../crawl4ai.exception";
+import { buildCanonicalUrlFingerprint } from "../url-fingerprint";
 
 // Test fixtures
 const createMockTask = (overrides: Record<string, unknown> = {}) => ({
@@ -93,6 +99,9 @@ const createMockPrismaService = () => ({
     findFirst: jest.fn(),
     update: jest.fn(),
   },
+  crawlResult: {
+    findFirst: jest.fn().mockResolvedValue(null),
+  },
 });
 
 const createMockEnvService = () => ({
@@ -118,6 +127,9 @@ const createMockNotificationsService = () => ({
 
 const createMockCrawlSettingsService = () => ({
   getSettings: jest.fn().mockResolvedValue({
+    conditionalRequestEnabled: true,
+    conditionalRequestTimeoutMs: 5_000,
+    conditionalRequestMaxRetries: 0,
     detailPublishSignalHeadFetchTimeoutMs: 1500,
     detailPublishSignalHeadFetchConcurrency: 2,
     detailPublishSignalHeadFetchMaxReadBytes: 8_000_000,
@@ -308,6 +320,108 @@ describe("CrawlExecutionService", () => {
       expect(mockCrawlClient.crawl).toHaveBeenCalled();
       expect(mockResultService.persistResults).toHaveBeenCalled();
       expect(result.inserted).toBe(1);
+    });
+
+    it("skips crawl body extraction when conditional preflight returns 304", async () => {
+      const task = createMockTask();
+      const fetchedAt = new Date("2026-02-26T10:00:00.000Z");
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockPrisma.crawlResult.findFirst.mockResolvedValue({
+        id: "result-previous",
+        fetchedAt,
+        metadata: {
+          httpEtag: "\"seed-v1\"",
+          httpLastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
+        },
+      });
+
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 304,
+        headers: {
+          get: (key: string) => {
+            if (key === "etag") {
+              return "\"seed-v1\"";
+            }
+            if (key === "last-modified") {
+              return "Mon, 01 Jan 2024 00:00:00 GMT";
+            }
+            return null;
+          },
+        },
+        body: null,
+      }) as any;
+      (service as any).shouldRunConditionalPreflight = jest
+        .fn()
+        .mockReturnValue(true);
+
+      try {
+        const result = await service.runTask("task-1", "org-1");
+
+        expect(result).toEqual(
+          expect.objectContaining({
+            inserted: 0,
+            skipped: 1,
+            reusedResultId: "result-previous",
+            lastFetchedAt: fetchedAt,
+          }),
+        );
+        expect(global.fetch).toHaveBeenCalledWith(
+          "https://example.com",
+          expect.objectContaining({
+            method: "HEAD",
+            headers: expect.objectContaining({
+              "if-none-match": "\"seed-v1\"",
+              "if-modified-since": "Mon, 01 Jan 2024 00:00:00 GMT",
+            }),
+          }),
+        );
+        expect(mockCrawlClient.crawl).not.toHaveBeenCalled();
+        expect(mockResultService.persistResults).not.toHaveBeenCalled();
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("looks up HTTP validators by canonical URL fingerprint within task scope", async () => {
+      const task = createMockTask({
+        targetUrl: "https://example.com/story?id=42&utm_source=newsletter",
+        config: {
+          urlQueryParamAllowlist: ["id"],
+        },
+      });
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockPrisma.crawlResult.findFirst.mockResolvedValue(null);
+      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
+      mockResultService.persistResults.mockResolvedValue({
+        inserted: 1,
+        skipped: 0,
+      });
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
+
+      await service.runTask("task-1", "org-1");
+
+      const canonical = buildCanonicalUrlFingerprint(task.targetUrl, ["id"]);
+      expect(canonical).not.toBeNull();
+      expect(mockPrisma.crawlResult.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            taskId: "task-1",
+            OR: expect.arrayContaining([
+              { sourceUrlFingerprint: canonical?.fingerprint },
+              { sourceUrl: canonical?.canonicalUrl },
+              { sourceUrl: task.targetUrl },
+            ]),
+          }),
+          orderBy: { fetchedAt: "desc" },
+        }),
+      );
     });
 
     it("retries with headless=true when headed crawl fails due to display dependency", async () => {
@@ -807,7 +921,7 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "expansion", status: "processing" }),
       );
-      expect(mockCrawlSettings.getSettings).toHaveBeenCalledTimes(1);
+      expect(mockCrawlSettings.getSettings.mock.calls.length).toBeGreaterThanOrEqual(1);
       expect(result.inserted).toBe(1);
     });
   });

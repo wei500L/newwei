@@ -2568,6 +2568,9 @@
       "fields": {
         "healthCheckTtl": "Health check TTL",
         "requestTimeout": "Request timeout",
+        "conditionalRequestEnabled": "Enable HTTP conditional requests",
+        "conditionalRequestTimeoutMs": "Conditional request timeout",
+        "conditionalRequestMaxRetries": "Conditional request retries",
         "detailPublishSignalHeadFetchTimeout": "Detail publish-signal head fetch timeout",
         "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency",
         "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes",
@@ -2581,6 +2584,8 @@
       "validation": {
         "healthCheckTtl": "Health check TTL is required",
         "requestTimeout": "Request timeout is required",
+        "conditionalRequestTimeoutMs": "Conditional request timeout is required",
+        "conditionalRequestMaxRetries": "Conditional request retries are required",
         "detailPublishSignalHeadFetchTimeout": "Detail publish-signal head fetch timeout is required",
         "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency is required",
         "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes is required",

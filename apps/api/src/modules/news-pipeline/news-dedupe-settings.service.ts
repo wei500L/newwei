@@ -13,14 +13,16 @@ import {
 } from "./news-dedupe-llm";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 
-export interface NewsDedupeCategoryThreshold {
-  category: string;
+export interface NewsDedupeScopedThreshold {
+  sourceId: string | null;
+  language: string | null;
+  categoryPath: string | null;
   threshold: number;
 }
 
 export interface NewsDedupeSettings {
   defaultThreshold: number;
-  categoryThresholds: NewsDedupeCategoryThreshold[];
+  scopedThresholds: NewsDedupeScopedThreshold[];
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
@@ -33,7 +35,7 @@ export interface NewsDedupeSettings {
 
 export interface NewsDedupeSettingsInput {
   defaultThreshold: number;
-  categoryThresholds: NewsDedupeCategoryThreshold[];
+  scopedThresholds: NewsDedupeScopedThreshold[];
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
@@ -48,8 +50,10 @@ const SETTINGS_CACHE_TTL_SECONDS = 60;
 const CACHE_KEY_PREFIX = "newsDedupe:settings:";
 const SYSTEM_SETTING_KEY_PREFIX = "news_dedupe_settings:";
 
-const MAX_CATEGORY_THRESHOLDS = 100;
-const MAX_CATEGORY_LENGTH = 120;
+const MAX_SCOPED_THRESHOLDS = 100;
+const MAX_SCOPE_SOURCE_ID_LENGTH = 191;
+const MAX_SCOPE_LANGUAGE_LENGTH = 32;
+const MAX_SCOPE_CATEGORY_PATH_LENGTH = 240;
 const MIN_THRESHOLD = 0;
 const MAX_THRESHOLD = 1;
 const MAX_LLM_JUDGE_INSTRUCTIONS_LENGTH = 2_000;
@@ -139,7 +143,7 @@ export class NewsDedupeSettingsService {
           action: "news_dedupe_settings_update",
           metadata: toPrismaJsonValue({
             defaultThreshold: normalized.defaultThreshold,
-            categories: normalized.categoryThresholds.length,
+            scopedThresholds: normalized.scopedThresholds.length,
             useEmbeddings: normalized.useEmbeddings,
             llmJudgeInstructionsConfigured: Boolean(normalized.llmJudgeInstructions),
             llmJudgeModelConfigured: Boolean(normalized.llmJudgeModel),
@@ -172,47 +176,46 @@ export class NewsDedupeSettingsService {
 
   resolveBaseThreshold(
     settings: NewsDedupeSettings,
-    options: { category?: string | null; topics?: string[] | null },
-  ): { threshold: number; matchedCategory?: string } {
-    const map = new Map<string, NewsDedupeCategoryThreshold>();
-    for (const entry of settings.categoryThresholds) {
-      const key = this.normalizeTopicKey(entry.category);
-      if (!key) {
-        continue;
-      }
-      map.set(key, entry);
+    options: {
+      sourceId?: string | null;
+      language?: string | null;
+      categoryPath?: string | null;
+    },
+  ): { threshold: number; matchedScope?: NewsDedupeScopedThreshold } {
+    const map = new Map<string, NewsDedupeScopedThreshold>();
+    for (const entry of settings.scopedThresholds) {
+      map.set(this.buildScopeKey(entry), entry);
     }
 
-    const candidates: string[] = [];
-    if (typeof options.category === "string" && options.category.trim()) {
-      candidates.push(options.category);
-    }
-    if (Array.isArray(options.topics)) {
-      for (const topic of options.topics) {
-        if (typeof topic === "string" && topic.trim()) {
-          candidates.push(topic);
-        }
-      }
-    }
+    const sourceId = this.cleanScopeSourceId(options.sourceId);
+    const language = this.cleanScopeLanguage(options.language);
+    const categoryPath = this.cleanScopeCategoryPath(options.categoryPath);
+    const candidates: NewsDedupeScopedThreshold[] = [
+      { sourceId, language, categoryPath, threshold: 0 },
+      { sourceId, language, categoryPath: null, threshold: 0 },
+      { sourceId, language: null, categoryPath: null, threshold: 0 },
+      { sourceId: null, language, categoryPath, threshold: 0 },
+      { sourceId: null, language, categoryPath: null, threshold: 0 },
+      { sourceId: null, language: null, categoryPath, threshold: 0 },
+    ];
+    const seenKeys = new Set<string>();
 
-    let best: NewsDedupeCategoryThreshold | null = null;
     for (const candidate of candidates) {
-      const key = this.normalizeTopicKey(candidate);
-      if (!key) {
+      const key = this.buildScopeKey(candidate);
+      if (seenKeys.has(key)) {
         continue;
       }
+      seenKeys.add(key);
       const match = map.get(key);
-      if (!match) {
-        continue;
-      }
-      if (!best || match.threshold > best.threshold) {
-        best = match;
+      if (match) {
+        return {
+          threshold: match.threshold,
+          matchedScope: match,
+        };
       }
     }
 
-    return best
-      ? { threshold: best.threshold, matchedCategory: best.category }
-      : { threshold: settings.defaultThreshold };
+    return { threshold: settings.defaultThreshold };
   }
 
   private async loadSettings(orgId: string): Promise<NewsDedupeSettings> {
@@ -227,7 +230,7 @@ export class NewsDedupeSettingsService {
   private getFallbackSettings(): NewsDedupeSettings {
     return {
       defaultThreshold: this.pipelineConfig.config.pipeline.summaryDedupThreshold,
-      categoryThresholds: [],
+      scopedThresholds: [],
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
@@ -285,49 +288,85 @@ export class NewsDedupeSettingsService {
         (value as { llmJudgeUserPromptTemplate?: unknown }).llmJudgeUserPromptTemplate,
       ) ?? defaults.llmJudgeUserPromptTemplate;
 
-    const rawList = Array.isArray(value.categoryThresholds)
-      ? value.categoryThresholds
+    const scopedList = Array.isArray((value as { scopedThresholds?: unknown }).scopedThresholds)
+      ? ((value as { scopedThresholds?: unknown[] }).scopedThresholds ?? [])
       : [];
-    const normalizedMap = new Map<string, NewsDedupeCategoryThreshold>();
+    const legacyCategoryList = Array.isArray(
+      (value as { categoryThresholds?: unknown }).categoryThresholds,
+    )
+      ? ((value as { categoryThresholds?: unknown[] }).categoryThresholds ?? [])
+      : [];
+    const normalizedMap = new Map<string, NewsDedupeScopedThreshold>();
 
-    for (const rawEntry of rawList) {
-      const category =
-        rawEntry && typeof rawEntry === "object" && "category" in rawEntry
-          ? this.cleanCategory((rawEntry as { category?: unknown }).category)
-          : null;
-      if (!category) {
+    for (const rawEntry of scopedList) {
+      if (!rawEntry || typeof rawEntry !== "object") {
+        continue;
+      }
+      const record = rawEntry as Record<string, unknown>;
+      const sourceId = this.cleanScopeSourceId(record.sourceId);
+      const language = this.cleanScopeLanguage(record.language);
+      const categoryPath = this.cleanScopeCategoryPath(record.categoryPath);
+      if (!sourceId && !language && !categoryPath) {
         continue;
       }
 
-      const thresholdRaw =
-        rawEntry && typeof rawEntry === "object" && "threshold" in rawEntry
-          ? (rawEntry as { threshold?: unknown }).threshold
-          : null;
       const threshold = this.clampFloat(
-        thresholdRaw,
+        record.threshold,
         MIN_THRESHOLD,
         MAX_THRESHOLD,
         defaultThreshold,
       );
+      const scopedThreshold: NewsDedupeScopedThreshold = {
+        sourceId,
+        language,
+        categoryPath,
+        threshold,
+      };
+      normalizedMap.set(this.buildScopeKey(scopedThreshold), scopedThreshold);
 
-      const key = this.normalizeTopicKey(category);
-      if (!key) {
-        continue;
-      }
-      normalizedMap.set(key, { category, threshold });
-
-      if (normalizedMap.size >= MAX_CATEGORY_THRESHOLDS) {
+      if (normalizedMap.size >= MAX_SCOPED_THRESHOLDS) {
         break;
       }
     }
 
-    const categoryThresholds = Array.from(normalizedMap.values()).sort((a, b) =>
-      a.category.localeCompare(b.category),
+    for (const rawEntry of legacyCategoryList) {
+      if (!rawEntry || typeof rawEntry !== "object") {
+        continue;
+      }
+      const categoryPath = this.cleanScopeCategoryPath(
+        (rawEntry as { category?: unknown }).category,
+      );
+      if (!categoryPath) {
+        continue;
+      }
+      const threshold = this.clampFloat(
+        (rawEntry as { threshold?: unknown }).threshold,
+        MIN_THRESHOLD,
+        MAX_THRESHOLD,
+        defaultThreshold,
+      );
+      const scopedThreshold: NewsDedupeScopedThreshold = {
+        sourceId: null,
+        language: null,
+        categoryPath,
+        threshold,
+      };
+      const key = this.buildScopeKey(scopedThreshold);
+      if (!normalizedMap.has(key)) {
+        normalizedMap.set(key, scopedThreshold);
+      }
+      if (normalizedMap.size >= MAX_SCOPED_THRESHOLDS) {
+        break;
+      }
+    }
+
+    const scopedThresholds = Array.from(normalizedMap.values()).sort((left, right) =>
+      this.buildScopeSortKey(left).localeCompare(this.buildScopeSortKey(right)),
     );
 
     return {
       defaultThreshold,
-      categoryThresholds,
+      scopedThresholds,
       useEmbeddings,
       llmJudgeInstructions,
       llmJudgeModel,
@@ -347,15 +386,16 @@ export class NewsDedupeSettingsService {
     return `${SYSTEM_SETTING_KEY_PREFIX}${orgId}`;
   }
 
-  private cleanCategory(value: unknown) {
-    if (typeof value !== "string") {
-      return null;
-    }
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    return trimmed.length > MAX_CATEGORY_LENGTH ? trimmed.slice(0, MAX_CATEGORY_LENGTH) : trimmed;
+  private cleanScopeSourceId(value: unknown): string | null {
+    return this.cleanScopeToken(value, MAX_SCOPE_SOURCE_ID_LENGTH, false);
+  }
+
+  private cleanScopeLanguage(value: unknown): string | null {
+    return this.cleanScopeToken(value, MAX_SCOPE_LANGUAGE_LENGTH, true);
+  }
+
+  private cleanScopeCategoryPath(value: unknown): string | null {
+    return this.cleanScopeToken(value, MAX_SCOPE_CATEGORY_PATH_LENGTH, false);
   }
 
   private cleanLlmJudgeInstructions(value: unknown) {
@@ -410,12 +450,46 @@ export class NewsDedupeSettingsService {
       : trimmed;
   }
 
-  private normalizeTopicKey(value: string) {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return "";
+  private cleanScopeToken(
+    value: unknown,
+    maxLength: number,
+    forceLowercase: boolean,
+  ): string | null {
+    if (typeof value !== "string") {
+      return null;
     }
-    return trimmed.replace(/\s+/g, " ").toLowerCase();
+    const collapsed = value.trim().replace(/\s+/g, " ");
+    if (!collapsed) {
+      return null;
+    }
+    const bounded =
+      collapsed.length > maxLength ? collapsed.slice(0, maxLength) : collapsed;
+    return forceLowercase ? bounded.toLowerCase() : bounded;
+  }
+
+  private normalizeScopeKeyPart(value: string | null): string {
+    if (!value) {
+      return "*";
+    }
+    return value.trim().replace(/\s+/g, " ").toLowerCase();
+  }
+
+  private buildScopeKey(scope: {
+    sourceId: string | null;
+    language: string | null;
+    categoryPath: string | null;
+  }): string {
+    return [
+      this.normalizeScopeKeyPart(scope.sourceId),
+      this.normalizeScopeKeyPart(scope.language),
+      this.normalizeScopeKeyPart(scope.categoryPath),
+    ].join("|");
+  }
+
+  private buildScopeSortKey(scope: NewsDedupeScopedThreshold): string {
+    return `${scope.sourceId ?? ""}\u0000${scope.language ?? ""}\u0000${
+      scope.categoryPath ?? ""
+    }\u0000${scope.threshold.toFixed(6)}`;
   }
 
   private toNumber(value: unknown): number | null {

@@ -3,6 +3,21 @@ import { ConflictException } from "@nestjs/common";
 import { NewsSourceSchedulerSettingsService } from "./news-source-scheduler-settings.service";
 
 describe("NewsSourceSchedulerSettingsService", () => {
+  const defaultAllowlist = [
+    "id",
+    "story",
+    "article",
+    "post",
+    "item",
+    "p",
+    "page",
+    "v",
+    "ver",
+    "lang",
+    "locale",
+    "hl",
+  ];
+
   const prisma = {
     systemSetting: {
       findUnique: jest.fn(),
@@ -40,6 +55,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: defaultAllowlist,
     });
   });
 
@@ -92,6 +108,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: "90",
         seedCacheTtlSecondsListDeep: 240,
         seedCacheTtlForceGlobal: true,
+        seedUrlQueryParamAllowlist: ["id", "lang"],
       },
     });
 
@@ -103,6 +120,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsSitemapRss: 90,
       seedCacheTtlSecondsListDeep: 240,
       seedCacheTtlForceGlobal: true,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
   });
 
@@ -121,6 +139,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: defaultAllowlist,
     });
   });
 
@@ -130,6 +149,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsSitemapRss: 75,
       seedCacheTtlSecondsListDeep: 210,
       seedCacheTtlForceGlobal: true,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
 
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
@@ -152,6 +172,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: 75,
         seedCacheTtlSecondsListDeep: 210,
         seedCacheTtlForceGlobal: false,
+        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedFreshnessWindowDays must be an integer between 1 and 3650",
@@ -166,6 +187,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: 9,
         seedCacheTtlSecondsListDeep: 210,
         seedCacheTtlForceGlobal: false,
+        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedCacheTtlSecondsSitemapRss must be an integer between 10 and 3600",
@@ -180,6 +202,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: 75,
         seedCacheTtlSecondsListDeep: 3_601,
         seedCacheTtlForceGlobal: false,
+        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedCacheTtlSecondsListDeep must be an integer between 10 and 3600",
@@ -194,8 +217,24 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: 75,
         seedCacheTtlSecondsListDeep: 210,
         seedCacheTtlForceGlobal: "true" as unknown as boolean,
+        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow("seedCacheTtlForceGlobal must be a boolean");
+    expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid seed query allowlist payload", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        seedFreshnessWindowDays: 45,
+        seedCacheTtlSecondsSitemapRss: 75,
+        seedCacheTtlSecondsListDeep: 210,
+        seedCacheTtlForceGlobal: false,
+        seedUrlQueryParamAllowlist: ["id", "utm source"],
+      }),
+    ).rejects.toThrow(
+      "seedUrlQueryParamAllowlist must be an array of valid query keys",
+    );
     expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
   });
 
@@ -208,6 +247,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsSitemapRss: 75,
         seedCacheTtlSecondsListDeep: 210,
         seedCacheTtlForceGlobal: false,
+        seedUrlQueryParamAllowlist: ["id", "lang"],
       }),
     ).resolves.toMatchObject({
       source: "db",
@@ -215,6 +255,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsSitemapRss: 75,
       seedCacheTtlSecondsListDeep: 210,
       seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
     expect(prisma.systemSetting.upsert).toHaveBeenCalled();
   });
