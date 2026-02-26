@@ -62,6 +62,12 @@ export class CrawlClientSettingsModel {
   requestTimeoutMs!: number;
 
   @Field(() => Int)
+  requestTimeoutHotMs!: number;
+
+  @Field(() => Int)
+  requestTimeoutNormalMs!: number;
+
+  @Field(() => Int)
   maxRetries!: number;
 
   @Field(() => Int)
@@ -69,6 +75,24 @@ export class CrawlClientSettingsModel {
 
   @Field(() => Int)
   queueOverloadCooldownMs!: number;
+
+  @Field(() => Boolean)
+  adaptiveConcurrencyEnabled!: boolean;
+
+  @Field(() => Int)
+  adaptiveWindowMinutes!: number;
+
+  @Field(() => Int)
+  adaptiveCooldownMinutes!: number;
+
+  @Field(() => Float)
+  adaptiveLatencyThresholdRatio!: number;
+
+  @Field(() => Float)
+  adaptiveErrorRateThreshold!: number;
+
+  @Field(() => Float)
+  adaptiveMemoryHeadroomThreshold!: number;
 }
 
 @ObjectType()

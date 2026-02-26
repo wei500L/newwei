@@ -68,10 +68,23 @@ export class UpdateCrawlClientSettingsInput {
   @Max(900_000)
   healthCheckTtlMs!: number;
 
-  @Field(() => Int)
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
   @Min(5_000)
   @Max(900_000)
-  requestTimeoutMs!: number;
+  requestTimeoutMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(5_000)
+  @Max(900_000)
+  requestTimeoutHotMs?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(5_000)
+  @Max(900_000)
+  requestTimeoutNormalMs?: number;
 
   @Field(() => Int)
   @Min(1)
@@ -87,6 +100,41 @@ export class UpdateCrawlClientSettingsInput {
   @Min(5_000)
   @Max(600_000)
   queueOverloadCooldownMs!: number;
+
+  @Field(() => Boolean, { nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  adaptiveConcurrencyEnabled?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(180)
+  adaptiveWindowMinutes?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
+  @Max(60)
+  adaptiveCooldownMinutes?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0.01)
+  @Max(0.99)
+  adaptiveLatencyThresholdRatio?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0.01)
+  @Max(0.99)
+  adaptiveErrorRateThreshold?: number;
+
+  @Field(() => Float, { nullable: true })
+  @IsOptional()
+  @Min(0.01)
+  @Max(0.99)
+  adaptiveMemoryHeadroomThreshold?: number;
 }
 
 @InputType()

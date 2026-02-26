@@ -41,6 +41,7 @@ export interface Crawl4aiRequest {
   urls?: string[];
   keywords?: string[];
   options?: CrawlTaskOptions;
+  requestTimeoutMs?: number;
 }
 
 export interface Crawl4aiMarkdownResult {
@@ -127,11 +128,12 @@ export class Crawl4aiClient {
 
   async crawl(request: Crawl4aiRequest): Promise<Crawl4aiResponse> {
     const settings = await this.crawlSettings.getSettings();
+    const requestTimeoutMs = this.resolveRequestTimeoutMs(request.requestTimeoutMs, settings);
     await this.ensureHealthy(settings);
     const payload = this.toHttpPayload(request);
 
     try {
-      return await this.sendCrawlRequest(payload, settings.requestTimeoutMs);
+      return await this.sendCrawlRequest(payload, requestTimeoutMs);
     } catch (error) {
       let resolvedError: unknown = error;
       let resolvedPayload: Crawl4aiHttpPayload = payload;
@@ -144,7 +146,7 @@ export class Crawl4aiClient {
         try {
           return await this.sendCrawlRequest(
             compatibilityPayload,
-            settings.requestTimeoutMs,
+            requestTimeoutMs,
           );
         } catch (retryError) {
           resolvedError = retryError;
@@ -164,7 +166,7 @@ export class Crawl4aiClient {
         try {
           return await this.sendCrawlRequest(
             scanFallbackPayload,
-            settings.requestTimeoutMs,
+            requestTimeoutMs,
           );
         } catch (fallbackError) {
           resolvedError = fallbackError;
@@ -173,7 +175,7 @@ export class Crawl4aiClient {
 
       if (resolvedError instanceof TimeoutError) {
         const requestUrl = (request.urls?.[0] ?? request.url ?? "").trim();
-        const timeoutMessage = `crawl4ai request timed out after ${settings.requestTimeoutMs}ms`;
+        const timeoutMessage = `crawl4ai request timed out after ${requestTimeoutMs}ms`;
         const hints: string[] = [];
         if (request.options?.scanFullPage) {
           hints.push(
@@ -298,6 +300,28 @@ export class Crawl4aiClient {
         resolvedError,
       );
     }
+  }
+
+  private resolveRequestTimeoutMs(
+    overrideTimeoutMs: number | undefined,
+    settings: CrawlClientSettings,
+  ) {
+    if (
+      typeof overrideTimeoutMs === "number" &&
+      Number.isFinite(overrideTimeoutMs) &&
+      overrideTimeoutMs > 0
+    ) {
+      return Math.max(1_000, Math.round(overrideTimeoutMs));
+    }
+
+    const requestTimeoutNormalMs =
+      typeof settings.requestTimeoutNormalMs === "number" &&
+      Number.isFinite(settings.requestTimeoutNormalMs) &&
+      settings.requestTimeoutNormalMs > 0
+        ? settings.requestTimeoutNormalMs
+        : settings.requestTimeoutMs;
+
+    return Math.max(1_000, Math.round(requestTimeoutNormalMs));
   }
 
   private async sendCrawlRequest(
@@ -597,6 +621,10 @@ export class Crawl4aiClient {
   }
 
   private async ensureHealthy(settings: CrawlClientSettings) {
+    const healthTimeoutMs = Math.max(
+      1_000,
+      Math.round(settings.requestTimeoutNormalMs ?? settings.requestTimeoutMs),
+    );
     const now = Date.now();
     if (now - this.lastHealthCheck < settings.healthCheckTtlMs) {
       return;
@@ -605,9 +633,9 @@ export class Crawl4aiClient {
       await lastValueFrom(
         this.http
           .get("/health", {
-            timeout: settings.requestTimeoutMs,
+            timeout: healthTimeoutMs,
           })
-          .pipe(timeout(settings.requestTimeoutMs)),
+          .pipe(timeout(healthTimeoutMs)),
       );
       this.lastHealthCheck = now;
     } catch (error) {

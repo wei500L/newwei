@@ -13,7 +13,7 @@ import { AnalysisModule } from "../analysis/analysis.module";
 import { ASSISTANT_QUEUE_NAME } from "../assistant/assistant.constants";
 import { AssistantModule } from "../assistant/assistant.module";
 import { EnvService } from "../config/config.service";
-import { CRAWL_QUEUE_NAME } from "../crawl/crawl.constants";
+import { CRAWL_QUEUE_HOT_NAME, CRAWL_QUEUE_NAME, CRAWL_QUEUE_NORMAL_NAME } from "../crawl/crawl.constants";
 import { CrawlModule } from "../crawl/crawl.module";
 
 import { ITEM_PIPELINE_DLQ_QUEUE_NAME, ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
@@ -72,6 +72,8 @@ const createBullBoardBasicAuthMiddleware = (
       { name: ITEM_PIPELINE_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ITEM_PIPELINE_DLQ_QUEUE_NAME, adapter: BullMQAdapter },
       { name: CRAWL_QUEUE_NAME, adapter: BullMQAdapter },
+      { name: CRAWL_QUEUE_HOT_NAME, adapter: BullMQAdapter },
+      { name: CRAWL_QUEUE_NORMAL_NAME, adapter: BullMQAdapter },
       { name: AKSHARE_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ANALYSIS_QUEUE_NAME, adapter: BullMQAdapter },
       { name: ASSISTANT_QUEUE_NAME, adapter: BullMQAdapter },

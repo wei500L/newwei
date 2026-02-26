@@ -42,6 +42,7 @@ import {
   CrawlAntiBotMode,
   CrawlPageTypeHint,
   CrawlQualityProfile,
+  CrawlPriorityClass,
   CrawlMarkdownStrategy,
   CrawlTableExtractionStrategy,
   CrawlVirtualScrollConfig,
@@ -61,6 +62,8 @@ export interface CrawlExecutionRetryContext {
   attempt?: number;
   maxAttempts?: number;
   backoffDelayMs?: number | null;
+  requestTimeoutMs?: number | null;
+  priorityClass?: CrawlPriorityClass;
 }
 
 interface CrawlRetryResult {
@@ -185,6 +188,9 @@ export class CrawlExecutionService {
       const options = this.extractOptions(
         configRecord as Prisma.JsonValue | null,
       );
+      const requestTimeoutMs = this.normalizeRequestTimeoutMs(
+        retryContext?.requestTimeoutMs,
+      );
       assertNoCrawl4aiLlmOptions(options, "task.config.options");
       const ingestToItems = configRecord?.ingestToItems === true;
       let effectiveOptions = this.ensureTaskSessionReuse(task.id, options);
@@ -221,6 +227,7 @@ export class CrawlExecutionService {
       const initialRun = await this.runCrawlWithHeadedFallback({
         request: payload,
         options: effectiveOptions,
+        requestTimeoutMs,
         taskId,
         orgId,
         stage: "crawler",
@@ -240,6 +247,7 @@ export class CrawlExecutionService {
         successes,
         failures,
         lowSignalCandidates,
+        requestTimeoutMs,
       });
       if (challengeRetryResult) {
         response = challengeRetryResult.response;
@@ -287,6 +295,7 @@ export class CrawlExecutionService {
             const fallbackRun = await this.runCrawlWithHeadedFallback({
               request: fallbackPayload,
               options: fallbackPayload.options ?? profile.options,
+              requestTimeoutMs,
               taskId,
               orgId,
               stage: "fallback",
@@ -395,6 +404,7 @@ export class CrawlExecutionService {
         crawlOptions: this.ensureTaskSessionReuse(task.id, effectiveOptions),
         successes: expansionSeedCandidates,
         seededFromLowSignal,
+        requestTimeoutMs,
       });
       if (expansionResult) {
         successes = expansionResult.successes;
@@ -669,16 +679,32 @@ export class CrawlExecutionService {
     }
   }
 
+  private normalizeRequestTimeoutMs(value: unknown): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return undefined;
+    }
+    return Math.max(1_000, Math.round(value));
+  }
+
   private async runCrawlWithHeadedFallback(options: {
     request: Crawl4aiRequest;
     options: CrawlTaskOptions;
+    requestTimeoutMs?: number;
     taskId: string;
     orgId: string;
     stage: string;
     reason: string;
   }): Promise<{ response: Crawl4aiResponse; options: CrawlTaskOptions }> {
+    const requestWithTimeout: Crawl4aiRequest =
+      typeof options.requestTimeoutMs === "number"
+        ? {
+            ...options.request,
+            requestTimeoutMs: options.requestTimeoutMs,
+          }
+        : options.request;
+
     try {
-      const response = await this.crawlClient.crawl(options.request);
+      const response = await this.crawlClient.crawl(requestWithTimeout);
       return { response, options: options.options };
     } catch (error) {
       if (!this.shouldFallbackToHeadless(options.options, error)) {
@@ -690,7 +716,7 @@ export class CrawlExecutionService {
         headless: true,
       });
       const fallbackRequest: Crawl4aiRequest = {
-        ...options.request,
+        ...requestWithTimeout,
         options: fallbackOptions,
       };
       const originalErrorMessage = this.extractCrawlErrorMessage(error);
@@ -881,6 +907,7 @@ export class CrawlExecutionService {
     successes: Crawl4aiArticle[];
     failures: CrawlFailureDetail[];
     lowSignalCandidates: Crawl4aiArticle[];
+    requestTimeoutMs?: number;
   }): Promise<CrawlRetryResult | null> {
     if (options.failures.length === 0) {
       return null;
@@ -917,6 +944,7 @@ export class CrawlExecutionService {
       taskId: options.taskId,
       orgId: options.orgId,
       options: baseRetryOptions,
+      requestTimeoutMs: options.requestTimeoutMs,
     });
 
     const retryCandidates: CrawlRetryCandidate[] = [];
@@ -969,6 +997,7 @@ export class CrawlExecutionService {
         const retryRun = await this.runCrawlWithHeadedFallback({
           request: retryPayload,
           options: retryPayload.options ?? attemptOptions,
+          requestTimeoutMs: options.requestTimeoutMs,
           taskId: options.taskId,
           orgId: options.orgId,
           stage: "anti_bot_retry",
@@ -1191,6 +1220,7 @@ export class CrawlExecutionService {
     taskId: string;
     orgId: string;
     options: CrawlTaskOptions;
+    requestTimeoutMs?: number;
   }): Promise<CrawlTaskOptions> {
     const warmupUrls = this.buildAntiBotWarmupUrls(options.task.targetUrl);
     if (warmupUrls.length === 0) {
@@ -1229,6 +1259,7 @@ export class CrawlExecutionService {
       const warmupRun = await this.runCrawlWithHeadedFallback({
         request: warmupPayload,
         options: warmupPayload.options ?? warmupOptions,
+        requestTimeoutMs: options.requestTimeoutMs,
         taskId: options.taskId,
         orgId: options.orgId,
         stage: "anti_bot_retry",
@@ -1646,6 +1677,7 @@ export class CrawlExecutionService {
     crawlOptions: CrawlTaskOptions;
     successes: Crawl4aiArticle[];
     seededFromLowSignal?: boolean;
+    requestTimeoutMs?: number;
   }): Promise<{
     successes: Crawl4aiArticle[];
     failures: CrawlFailureDetail[];
@@ -1992,6 +2024,7 @@ export class CrawlExecutionService {
         const batchRun = await this.runCrawlWithHeadedFallback({
           request: batchRequest,
           options: detailOptions,
+          requestTimeoutMs: options.requestTimeoutMs,
           taskId: options.taskId,
           orgId: options.orgId,
           stage: "expansion",

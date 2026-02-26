@@ -2570,6 +2570,10 @@
         "maxAttempts": "最大尝试次数",
         "retryBackoff": "重试退避"
       },
+      "hints": {
+        "adaptiveEnabled": "已启用自适应模式，下方窗口与阈值配置将生效。",
+        "adaptiveDisabled": "当前未启用自适应模式，开启后可配置窗口与阈值字段。"
+      },
       "validation": {
         "healthCheckTtl": "请填写健康检查 TTL",
         "requestTimeout": "请填写请求超时",

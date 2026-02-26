@@ -2567,6 +2567,10 @@
         "maxAttempts": "Max attempts",
         "retryBackoff": "Retry backoff"
       },
+      "hints": {
+        "adaptiveEnabled": "Adaptive mode is enabled. Window and threshold fields below are active.",
+        "adaptiveDisabled": "Adaptive mode is disabled. Enable it to configure window and threshold fields."
+      },
       "validation": {
         "healthCheckTtl": "Health check TTL is required",
         "requestTimeout": "Request timeout is required",

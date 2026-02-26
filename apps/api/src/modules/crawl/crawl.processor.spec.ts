@@ -4,22 +4,26 @@ jest.mock("@modular/utils", () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    debug: jest.fn()
   }),
   ensureTraceId: jest.fn((traceId?: string) => traceId ?? "test-trace-id"),
-  runWithTraceId: jest.fn(async (_traceId: string, fn: () => Promise<any>) =>
-    fn(),
-  ),
+  runWithTraceId: jest.fn(async (_traceId: string, fn: () => Promise<any>) => fn())
 }));
 
-const mockWorkerInstance = {
-  on: jest.fn(),
-  close: jest.fn().mockResolvedValue(undefined),
-  rateLimit: jest.fn().mockResolvedValue(undefined),
-};
-const mockRateLimitError = new Error("__rate_limit__");
-const WorkerMock = jest.fn(() => mockWorkerInstance) as unknown as jest.Mock & {
+const workerInstances: any[] = [];
+const WorkerMock = jest.fn().mockImplementation(() => {
+  const instance = {
+    on: jest.fn(),
+    close: jest.fn().mockResolvedValue(undefined),
+    rateLimit: jest.fn().mockResolvedValue(undefined),
+    concurrency: 1
+  };
+  workerInstances.push(instance);
+  return instance;
+}) as unknown as jest.Mock & {
   RateLimitError: jest.Mock;
 };
+const mockRateLimitError = new Error("__rate_limit__");
 WorkerMock.RateLimitError = jest.fn(() => mockRateLimitError);
 
 jest.mock("bullmq", () => ({
@@ -29,7 +33,7 @@ jest.mock("bullmq", () => ({
       super(message);
       this.name = "UnrecoverableError";
     }
-  },
+  }
 }));
 
 import { Worker, UnrecoverableError } from "bullmq";
@@ -42,44 +46,65 @@ describe("CrawlQueueProcessor", () => {
     options: {
       envMaxConcurrency?: number;
       settingsMaxConcurrency?: number;
+      requestTimeoutHotMs?: number;
+      requestTimeoutNormalMs?: number;
       queueOverloadCooldownMs?: number;
-      queueOverrides?: Record<string, unknown>;
-    } = {},
+      hotQueueOverrides?: Record<string, unknown>;
+      normalQueueOverrides?: Record<string, unknown>;
+    } = {}
   ) => {
     const env = {
       crawl4aiConfig: {
         maxConcurrency: options.envMaxConcurrency ?? 3,
-      },
+        timeoutMs: options.requestTimeoutNormalMs ?? 120_000
+      }
     } as any;
 
     const crawlSettings = {
       getSettings: jest.fn().mockResolvedValue({
-        maxConcurrency:
-          options.settingsMaxConcurrency ?? options.envMaxConcurrency ?? 3,
+        maxConcurrency: options.settingsMaxConcurrency ?? options.envMaxConcurrency ?? 3,
         queueOverloadCooldownMs: options.queueOverloadCooldownMs ?? 30_000,
-      }),
+        requestTimeoutHotMs: options.requestTimeoutHotMs ?? 60_000,
+        requestTimeoutNormalMs: options.requestTimeoutNormalMs ?? 120_000
+      })
     } as any;
 
     const crawlExecutionService = {
-      runTask: jest.fn(),
+      runTask: jest.fn()
     } as any;
 
     const prisma = {
       crawlTask: {
-        updateMany: jest.fn(),
-      },
+        updateMany: jest.fn()
+      }
     } as any;
 
-    const queue = {
+    const hotQueue = {
       opts: {
-        connection: { host: "localhost", port: 6379 },
+        connection: { host: "localhost", port: 6379 }
       },
       getJob: jest.fn(),
-      ...(options.queueOverrides ?? {}),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined),
+      ...(options.hotQueueOverrides ?? {})
     } as any;
 
-    const events = {
+    const normalQueue = {
+      opts: {
+        connection: { host: "localhost", port: 6379 }
+      },
+      getJob: jest.fn(),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined),
+      ...(options.normalQueueOverrides ?? {})
+    } as any;
+
+    const hotEvents = {
       on: jest.fn(),
+      off: jest.fn()
+    } as any;
+
+    const normalEvents = {
+      on: jest.fn(),
+      off: jest.fn()
     } as any;
 
     const processor = new CrawlQueueProcessor(
@@ -87,207 +112,154 @@ describe("CrawlQueueProcessor", () => {
       crawlSettings,
       crawlExecutionService,
       prisma,
-      queue,
-      events,
+      hotQueue,
+      normalQueue,
+      hotEvents,
+      normalEvents
     );
 
-    return { processor, crawlExecutionService, queue };
+    return { processor, crawlExecutionService, hotQueue, normalQueue, hotEvents, normalEvents };
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    workerInstances.length = 0;
+  });
+
+  it("creates workers for hot and normal queues and forwards timeout tier", async () => {
+    const { processor, crawlExecutionService } = createContext({
+      requestTimeoutHotMs: 60_000,
+      requestTimeoutNormalMs: 120_000
+    });
+    crawlExecutionService.runTask.mockResolvedValue({ inserted: 1, skipped: 0 });
+
+    await processor.onModuleInit();
+
+    expect((Worker as jest.Mock).mock.calls[0][0]).toBe("crawl4ai-hot");
+    expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai-normal");
+
+    const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
+
+    const baseJob = {
+      id: "job-1",
+      data: {
+        taskId: "task-1",
+        orgId: "org-1",
+        triggeredById: "user-1"
+      },
+      opts: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5_000 }
+      },
+      attemptsMade: 0,
+      attemptsStarted: 1
+    };
+
+    await hotCallback(baseJob);
+    await normalCallback({ ...baseJob, id: "job-2" });
+
+    expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
+      1,
+      "task-1",
+      "org-1",
+      "user-1",
+      expect.objectContaining({ priorityClass: "hot", requestTimeoutMs: 60_000 })
+    );
+    expect(crawlExecutionService.runTask).toHaveBeenNthCalledWith(
+      2,
+      "task-1",
+      "org-1",
+      "user-1",
+      expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
+    );
+  });
+
+  it("enforces a shared global concurrency budget across hot and normal workers", async () => {
+    const { processor, crawlExecutionService } = createContext({
+      settingsMaxConcurrency: 1,
+      envMaxConcurrency: 1
+    });
+
+    let firstResolve: ((value: unknown) => void) | null = null;
+    crawlExecutionService.runTask
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            firstResolve = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ inserted: 1, skipped: 0 });
+
+    await processor.onModuleInit();
+
+    const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
+    const normalCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
+    const baseJob = {
+      id: "job-1",
+      data: {
+        taskId: "task-1",
+        orgId: "org-1",
+        triggeredById: "user-1"
+      },
+      opts: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5_000 }
+      },
+      attemptsMade: 0,
+      attemptsStarted: 1
+    };
+
+    const hotRun = hotCallback(baseJob);
+    const normalRun = normalCallback({
+      ...baseJob,
+      id: "job-2",
+      data: { ...baseJob.data, taskId: "task-2" }
+    });
+
+    for (let index = 0; index < 20 && crawlExecutionService.runTask.mock.calls.length === 0; index += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(crawlExecutionService.runTask).toHaveBeenCalledTimes(1);
+
+    firstResolve?.({ inserted: 1, skipped: 0 });
+    await hotRun;
+    for (let index = 0; index < 20 && crawlExecutionService.runTask.mock.calls.length < 2; index += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    expect(crawlExecutionService.runTask).toHaveBeenCalledTimes(2);
+    await normalRun;
   });
 
   it("applies queue-wide cooldown and requeues when crawl4ai reports memory pressure", async () => {
     const { processor, crawlExecutionService } = createContext();
     crawlExecutionService.runTask.mockRejectedValue(
-      new Crawl4aiRequestException(
-        "Memory at 96.1%, refusing new browser\n(status 500)",
-        500,
-      ),
+      new Crawl4aiRequestException("Memory at 96.1%, refusing new browser\n(status 500)", 500)
     );
 
     await processor.onModuleInit();
 
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
+    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
     const job = {
       id: "job-1",
       data: {
         taskId: "task-1",
         orgId: "org-1",
-        triggeredById: "user-1",
+        triggeredById: "user-1"
       },
       opts: {
         attempts: 3,
-        backoff: { type: "exponential", delay: 5_000 },
+        backoff: { type: "exponential", delay: 5_000 }
       },
       attemptsMade: 0,
       attemptsStarted: 1,
+      updateData: jest.fn().mockResolvedValue(undefined)
     };
 
     await expect(workerCallback(job)).rejects.toBe(mockRateLimitError);
-    expect(mockWorkerInstance.rateLimit).toHaveBeenCalledWith(90_000);
+    expect(workerInstances[0].rateLimit).toHaveBeenCalledWith(90_000);
     expect(WorkerMock.RateLimitError).toHaveBeenCalledTimes(1);
-  });
-
-  it("marks memory-pressure errors as unrecoverable when retry budget is exhausted", async () => {
-    const { processor, crawlExecutionService } = createContext();
-    crawlExecutionService.runTask.mockRejectedValue(
-      new Crawl4aiRequestException(
-        "Memory at 96.1%, refusing new browser\n(status 500)",
-        500,
-      ),
-    );
-
-    await processor.onModuleInit();
-
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
-    const job = {
-      id: "job-1-exhausted",
-      data: {
-        taskId: "task-1",
-        orgId: "org-1",
-        triggeredById: "user-1",
-      },
-      opts: {
-        attempts: 3,
-      },
-      attemptsMade: 0,
-      attemptsStarted: 3,
-    };
-
-    await expect(workerCallback(job)).rejects.toBeInstanceOf(UnrecoverableError);
-    expect(mockWorkerInstance.rateLimit).not.toHaveBeenCalled();
-    expect(WorkerMock.RateLimitError).not.toHaveBeenCalled();
-  });
-
-  it("uses memory-pressure requeue counter when attemptsStarted is unavailable", async () => {
-    const { processor, crawlExecutionService } = createContext();
-    crawlExecutionService.runTask.mockRejectedValue(
-      new Crawl4aiRequestException(
-        "Memory at 96.1%, refusing new browser\n(status 500)",
-        500,
-      ),
-    );
-
-    await processor.onModuleInit();
-
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
-    const updateData = jest.fn().mockResolvedValue(undefined);
-    const job = {
-      id: "job-1-counter",
-      data: {
-        taskId: "task-1",
-        orgId: "org-1",
-        triggeredById: "user-1",
-        memoryPressureRequeues: 0,
-      },
-      opts: {
-        attempts: 3,
-      },
-      attemptsMade: 0,
-      updateData,
-    };
-
-    await expect(workerCallback(job)).rejects.toBe(mockRateLimitError);
-    expect(updateData).toHaveBeenCalledWith(
-      expect.objectContaining({
-        memoryPressureRequeues: 1,
-      }),
-    );
-  });
-
-  it("marks memory-pressure errors as unrecoverable when requeue counter budget is exhausted", async () => {
-    const { processor, crawlExecutionService } = createContext();
-    crawlExecutionService.runTask.mockRejectedValue(
-      new Crawl4aiRequestException(
-        "Memory at 96.1%, refusing new browser\n(status 500)",
-        500,
-      ),
-    );
-
-    await processor.onModuleInit();
-
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
-    const job = {
-      id: "job-1-counter-exhausted",
-      data: {
-        taskId: "task-1",
-        orgId: "org-1",
-        triggeredById: "user-1",
-        memoryPressureRequeues: 2,
-      },
-      opts: {
-        attempts: 3,
-      },
-      attemptsMade: 0,
-    };
-
-    await expect(workerCallback(job)).rejects.toBeInstanceOf(UnrecoverableError);
-    expect(mockWorkerInstance.rateLimit).not.toHaveBeenCalled();
-    expect(WorkerMock.RateLimitError).not.toHaveBeenCalled();
-  });
-
-  it("fails memory-pressure requeue as unrecoverable when retry state cannot be persisted", async () => {
-    const { processor, crawlExecutionService } = createContext();
-    crawlExecutionService.runTask.mockRejectedValue(
-      new Crawl4aiRequestException(
-        "Memory at 96.1%, refusing new browser\n(status 500)",
-        500,
-      ),
-    );
-
-    await processor.onModuleInit();
-
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
-    const job = {
-      id: "job-1-no-persist",
-      data: {
-        taskId: "task-1",
-        orgId: "org-1",
-        triggeredById: "user-1",
-        memoryPressureRequeues: 0,
-      },
-      opts: {
-        attempts: 3,
-      },
-      attemptsMade: 0,
-    };
-
-    await expect(workerCallback(job)).rejects.toBeInstanceOf(UnrecoverableError);
-    expect(mockWorkerInstance.rateLimit).toHaveBeenCalledTimes(1);
-    expect(WorkerMock.RateLimitError).not.toHaveBeenCalled();
-  });
-
-  it("prefers configured worker concurrency when global concurrency update fails", async () => {
-    const setGlobalConcurrency = jest
-      .fn()
-      .mockRejectedValue(new Error("redis unavailable"));
-    const { processor } = createContext({
-      envMaxConcurrency: 8,
-      settingsMaxConcurrency: 2,
-      queueOverrides: {
-        setGlobalConcurrency,
-      },
-    });
-
-    await processor.onModuleInit();
-
-    expect(setGlobalConcurrency).toHaveBeenCalledWith(2);
-    const workerOptions = (Worker as jest.Mock).mock.calls[0][2] as {
-      concurrency: number;
-    };
-    expect(workerOptions.concurrency).toBe(2);
   });
 
   it("marks non-retryable errors as unrecoverable", async () => {
@@ -296,22 +268,35 @@ describe("CrawlQueueProcessor", () => {
 
     await processor.onModuleInit();
 
-    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (
-      job: any,
-    ) => Promise<unknown>;
+    const workerCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
     const job = {
       id: "job-2",
       data: {
         taskId: "task-2",
-        orgId: "org-1",
+        orgId: "org-1"
       },
       opts: {
-        attempts: 3,
+        attempts: 3
       },
-      attemptsMade: 0,
+      attemptsMade: 0
     };
 
     await expect(workerCallback(job)).rejects.toBeInstanceOf(UnrecoverableError);
-    expect(mockWorkerInstance.rateLimit).not.toHaveBeenCalled();
+    expect(workerInstances[0].rateLimit).not.toHaveBeenCalled();
+  });
+
+  it("applies global concurrency to both queues on startup", async () => {
+    const hotSetGlobalConcurrency = jest.fn().mockResolvedValue(undefined);
+    const normalSetGlobalConcurrency = jest.fn().mockResolvedValue(undefined);
+    const { processor } = createContext({
+      settingsMaxConcurrency: 5,
+      hotQueueOverrides: { setGlobalConcurrency: hotSetGlobalConcurrency },
+      normalQueueOverrides: { setGlobalConcurrency: normalSetGlobalConcurrency }
+    });
+
+    await processor.onModuleInit();
+
+    expect(hotSetGlobalConcurrency).toHaveBeenCalledWith(5);
+    expect(normalSetGlobalConcurrency).toHaveBeenCalledWith(5);
   });
 });

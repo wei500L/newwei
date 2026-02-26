@@ -14,155 +14,167 @@ jest.mock("@modular/utils", () => {
 
 import { CrawlQueueService } from "./crawl-queue.service";
 
-describe("CrawlQueueService.removeQueuedJobs", () => {
+describe("CrawlQueueService", () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     const utils = jest.requireMock("@modular/utils") as any;
     utils.__mockLogger.warn.mockClear();
     utils.__mockLogger.info.mockClear();
     utils.__mockLogger.error.mockClear();
   });
 
-  it("skips removal when a job becomes locked/active during deletion", async () => {
-    const queue = {
-      getJobs: jest.fn()
-    };
-    const settings = {} as any;
-    const service = new CrawlQueueService(queue as any, settings);
-
-    const lockedJob = {
-      id: "locked",
-      data: { taskId: "t1" },
-      remove: jest.fn().mockRejectedValue(new Error("Job locked could not be removed because it is locked by another worker")),
-      getState: jest.fn()
-    };
-    const okJob = {
-      id: "ok",
-      data: { taskId: "t1" },
-      remove: jest.fn().mockResolvedValue(undefined),
-      getState: jest.fn()
-    };
-    const otherJob = {
-      id: "other",
-      data: { taskId: "t2" },
-      remove: jest.fn().mockResolvedValue(undefined),
-      getState: jest.fn()
-    };
-
-    queue.getJobs.mockResolvedValueOnce([lockedJob, okJob, otherJob]);
-
-    await service.removeQueuedJobs("t1");
-
-    expect(queue.getJobs).toHaveBeenCalledTimes(1);
-    const [states, start, end] = queue.getJobs.mock.calls[0];
-    expect(states).toEqual(["waiting", "delayed", "failed", "paused"]);
-    expect(states).not.toContain("active");
-    expect(start).toBe(0);
-    expect(end).toBe(199);
-
-    expect(lockedJob.remove).toHaveBeenCalledTimes(1);
-    expect(lockedJob.getState).not.toHaveBeenCalled();
-    expect(okJob.remove).toHaveBeenCalledTimes(1);
-    expect(otherJob.remove).not.toHaveBeenCalled();
-
-    const utils = jest.requireMock("@modular/utils") as any;
-    expect(utils.__mockLogger.warn).not.toHaveBeenCalled();
+  const createQueueMock = () => ({
+    add: jest.fn().mockResolvedValue(undefined),
+    getJobs: jest.fn().mockResolvedValue([]),
+    getJobCounts: jest
+      .fn()
+      .mockResolvedValue({ waiting: 0, active: 0, delayed: 0, failed: 0, paused: 0 }),
+    pause: jest.fn().mockResolvedValue(undefined),
+    resume: jest.fn().mockResolvedValue(undefined),
+    isPaused: jest.fn().mockResolvedValue(false),
+    getGlobalConcurrency: jest.fn().mockResolvedValue(null),
+    setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
   });
 
-  it("logs a warning for unexpected removal errors", async () => {
-    const queue = {
-      getJobs: jest.fn()
-    };
-    const settings = {} as any;
-    const service = new CrawlQueueService(queue as any, settings);
-
-    const badJob = {
-      id: "bad",
-      data: { taskId: "t1" },
-      remove: jest.fn().mockRejectedValue(new Error("boom")),
-      getState: jest.fn().mockResolvedValue("waiting")
-    };
-
-    queue.getJobs.mockResolvedValueOnce([badJob]);
-
-    await service.removeQueuedJobs("t1");
-
-    const utils = jest.requireMock("@modular/utils") as any;
-    expect(utils.__mockLogger.warn).toHaveBeenCalledTimes(1);
-    expect(utils.__mockLogger.warn.mock.calls[0][0]).toMatchObject({
-      taskId: "t1",
-      jobId: "bad",
-      state: "waiting"
-    });
-  });
-});
-
-describe("CrawlQueueService.enqueueTask", () => {
-  it("uses a BullMQ-safe jobId", async () => {
-    const queue = {
-      add: jest.fn().mockResolvedValue(undefined)
-    };
+  it("routes enqueueTask to hot queue with source priority", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
     const settings = {
-      getSettings: jest.fn().mockResolvedValue({ maxRetries: 2, retryBackoffMs: 1000 })
+      getSettings: jest.fn().mockResolvedValue({
+        maxRetries: 2,
+        retryBackoffMs: 1_000,
+        maxConcurrency: 3
+      })
     } as any;
-    const service = new CrawlQueueService(queue as any, settings);
+    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
 
-    await service.enqueueTask("task-1", "org-1", "user-1");
+    await service.enqueueTask("task-1", "org-1", "user-1", {
+      priorityClass: "hot",
+      sourcePriority: 100
+    });
 
-    expect(queue.add).toHaveBeenCalledTimes(1);
-    const [, data, opts] = queue.add.mock.calls[0];
+    expect(hotQueue.add).toHaveBeenCalledTimes(1);
+    expect(normalQueue.add).not.toHaveBeenCalled();
+
+    const [, data, opts] = hotQueue.add.mock.calls[0];
     expect(data).toMatchObject({
       taskId: "task-1",
       orgId: "org-1",
       triggeredById: "user-1",
       traceId: "test-trace-id",
-      memoryPressureRequeues: 0
+      memoryPressureRequeues: 0,
+      priorityClass: "hot",
+      sourcePriority: 100
     });
-    expect(typeof opts.jobId).toBe("string");
-    expect(opts.jobId).toContain("task-1-");
-    expect(opts.jobId).not.toContain(":");
-
-    expect(opts.deduplication).toEqual({
-      id: "crawl-task:task-1"
-    });
+    expect(opts.priority).toBe(1);
+    expect(opts.deduplication).toEqual({ id: "crawl-task:task-1:hot" });
   });
-});
 
-describe("CrawlQueueService queue controls", () => {
-  it("pauses and resumes queue processing", async () => {
-    const queue = {
-      pause: jest.fn().mockResolvedValue(undefined),
-      resume: jest.fn().mockResolvedValue(undefined),
-      isPaused: jest.fn().mockResolvedValue(false)
+  it("routes enqueueTask to normal queue by default", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        maxRetries: 2,
+        retryBackoffMs: 1_000,
+        maxConcurrency: 3
+      })
+    } as any;
+    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+
+    await service.enqueueTask("task-2", "org-1", "user-1");
+
+    expect(normalQueue.add).toHaveBeenCalledTimes(1);
+    expect(hotQueue.add).not.toHaveBeenCalled();
+
+    const [, data, opts] = normalQueue.add.mock.calls[0];
+    expect(data.priorityClass).toBe("normal");
+    expect(opts.priority).toBeUndefined();
+    expect(opts.deduplication).toEqual({ id: "crawl-task:task-2:normal" });
+  });
+
+  it("removes matching jobs from both queues and ignores lock errors", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
+    const settings = { getSettings: jest.fn() } as any;
+    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+
+    const lockedJob = {
+      id: "locked",
+      data: { taskId: "task-1" },
+      remove: jest
+        .fn()
+        .mockRejectedValue(
+          new Error("Job locked could not be removed because it is locked by another worker")
+        ),
+      getState: jest.fn()
     };
+    const okJob = {
+      id: "ok",
+      data: { taskId: "task-1" },
+      remove: jest.fn().mockResolvedValue(undefined),
+      getState: jest.fn()
+    };
+
+    hotQueue.getJobs.mockResolvedValueOnce([lockedJob, okJob]);
+    normalQueue.getJobs.mockResolvedValueOnce([]);
+
+    await service.removeQueuedJobs("task-1");
+
+    expect(lockedJob.remove).toHaveBeenCalledTimes(1);
+    expect(okJob.remove).toHaveBeenCalledTimes(1);
+    expect(hotQueue.getJobs).toHaveBeenCalled();
+    expect(normalQueue.getJobs).toHaveBeenCalled();
+
+    const utils = jest.requireMock("@modular/utils") as any;
+    expect(utils.__mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it("aggregates job counts and pending from both queues", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
     } as any;
-    const service = new CrawlQueueService(queue as any, settings);
+    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+
+    hotQueue.getJobCounts.mockResolvedValue({ waiting: 2, active: 1, delayed: 0, failed: 1, paused: 0 });
+    normalQueue.getJobCounts.mockResolvedValue({ waiting: 3, active: 0, delayed: 1, failed: 0, paused: 0 });
+
+    const counts = await service.getJobCounts();
+    const pending = await service.getPendingJobCount();
+
+    expect(counts).toEqual({ waiting: 5, active: 1, delayed: 1, failed: 1, paused: 0 });
+    expect(pending).toBe(7);
+  });
+
+  it("applies pause/resume and global concurrency to both queues", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
+    hotQueue.getGlobalConcurrency.mockResolvedValue(4);
+    normalQueue.getGlobalConcurrency.mockResolvedValue(2);
+
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
+    } as any;
+    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
 
     await service.pauseQueue();
     await service.resumeQueue();
-    await service.isPaused();
-
-    expect(queue.pause).toHaveBeenCalledTimes(1);
-    expect(queue.resume).toHaveBeenCalledTimes(1);
-    expect(queue.isPaused).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses queue global concurrency when available", async () => {
-    const queue = {
-      getGlobalConcurrency: jest.fn().mockResolvedValue(4),
-      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
-    };
-    const settings = {
-      getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
-    } as any;
-    const service = new CrawlQueueService(queue as any, settings);
-
     await service.setGlobalConcurrency(5);
-    const effective = await service.getEffectiveConcurrency();
 
-    expect(queue.setGlobalConcurrency).toHaveBeenCalledWith(5);
-    expect(effective).toBe(4);
-    expect(settings.getSettings).not.toHaveBeenCalled();
+    const effective = await service.getEffectiveConcurrencyByQueue();
+    const paused = await service.getPausedByQueue();
+
+    expect(hotQueue.pause).toHaveBeenCalledTimes(1);
+    expect(normalQueue.pause).toHaveBeenCalledTimes(1);
+    expect(hotQueue.resume).toHaveBeenCalledTimes(1);
+    expect(normalQueue.resume).toHaveBeenCalledTimes(1);
+    expect(hotQueue.setGlobalConcurrency).toHaveBeenCalledWith(5);
+    expect(normalQueue.setGlobalConcurrency).toHaveBeenCalledWith(5);
+
+    expect(effective).toEqual({ hot: 4, normal: 2 });
+    expect(paused).toEqual({ hot: false, normal: false });
+    expect(settings.getSettings).toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ import {
   List,
   message,
   Spin,
+  Switch,
   Tabs,
   Tag,
   Typography
@@ -731,6 +732,10 @@ function CrawlClientSettingsPanel() {
   const { data, loading, refetch } = useCrawlClientSettingsQuery();
   const [updateSettings, { loading: saving }] = useUpdateCrawlClientSettingsMutation();
   const [messageApi, contextHolder] = message.useMessage();
+  const adaptiveConcurrencyEnabled =
+    Form.useWatch("adaptiveConcurrencyEnabled", form) ??
+    data?.crawlClientSettings?.adaptiveConcurrencyEnabled ??
+    false;
 
   useEffect(() => {
     if (data?.crawlClientSettings) {
@@ -778,13 +783,38 @@ function CrawlClientSettingsPanel() {
           <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
-          label={t("settings.crawlClient.fields.requestTimeout")}
-          name="requestTimeoutMs"
+          label={t("settings.crawlClient.fields.requestTimeoutHot", {
+            defaultValue: "Hot request timeout"
+          })}
+          name="requestTimeoutHotMs"
           rules={[
-            { required: true, message: t("settings.crawlClient.validation.requestTimeout") },
+            {
+              required: true,
+              message: t("settings.crawlClient.validation.requestTimeoutHot", {
+                defaultValue: "Please enter hot request timeout."
+              })
+            },
             { type: "number", min: 5_000, max: 900_000, message: t("common.validation.numberRange", { min: 5_000, max: 900_000 }) }
           ]}
-          extra={<NumberRangeExtra name="requestTimeoutMs" min={5_000} max={900_000} unit="ms" />}
+          extra={<NumberRangeExtra name="requestTimeoutHotMs" min={5_000} max={900_000} unit="ms" />}
+        >
+          <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.requestTimeoutNormal", {
+            defaultValue: "Normal request timeout"
+          })}
+          name="requestTimeoutNormalMs"
+          rules={[
+            {
+              required: true,
+              message: t("settings.crawlClient.validation.requestTimeoutNormal", {
+                defaultValue: "Please enter normal request timeout."
+              })
+            },
+            { type: "number", min: 5_000, max: 900_000, message: t("common.validation.numberRange", { min: 5_000, max: 900_000 }) }
+          ]}
+          extra={<NumberRangeExtra name="requestTimeoutNormalMs" min={5_000} max={900_000} unit="ms" />}
         >
           <UnitInputNumber min={5_000} max={900_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
@@ -828,6 +858,132 @@ function CrawlClientSettingsPanel() {
         >
           <UnitInputNumber min={5_000} max={600_000} step={1_000} unit="ms" style={{ width: "100%" }} />
         </Form.Item>
+        <Form.Item
+          label={t("settings.crawlClient.fields.adaptiveConcurrency", {
+            defaultValue: "Adaptive concurrency"
+          })}
+          name="adaptiveConcurrencyEnabled"
+          valuePropName="checked"
+        >
+          <Switch />
+        </Form.Item>
+        <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+          {adaptiveConcurrencyEnabled
+            ? t("settings.crawlClient.hints.adaptiveEnabled", {
+                defaultValue:
+                  "Adaptive mode is enabled. Window and threshold fields below are active."
+              })
+            : t("settings.crawlClient.hints.adaptiveDisabled", {
+                defaultValue:
+                  "Adaptive mode is disabled. Enable it to configure window and threshold fields."
+              })}
+        </Typography.Paragraph>
+        {adaptiveConcurrencyEnabled ? (
+          <>
+            <Form.Item
+              label={t("settings.crawlClient.fields.adaptiveWindowMinutes", {
+                defaultValue: "Adaptive window"
+              })}
+              name="adaptiveWindowMinutes"
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.crawlClient.validation.adaptiveWindowMinutes", {
+                    defaultValue: "Please enter adaptive window in minutes."
+                  })
+                },
+                { type: "number", min: 1, max: 180, message: t("common.validation.numberRange", { min: 1, max: 180 }) }
+              ]}
+              extra={<NumberRangeExtra name="adaptiveWindowMinutes" min={1} max={180} unit="min" />}
+            >
+              <UnitInputNumber min={1} max={180} step={1} unit="min" style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.crawlClient.fields.adaptiveCooldownMinutes", {
+                defaultValue: "Adaptive cooldown"
+              })}
+              name="adaptiveCooldownMinutes"
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.crawlClient.validation.adaptiveCooldownMinutes", {
+                    defaultValue: "Please enter adaptive cooldown in minutes."
+                  })
+                },
+                { type: "number", min: 1, max: 60, message: t("common.validation.numberRange", { min: 1, max: 60 }) }
+              ]}
+              extra={<NumberRangeExtra name="adaptiveCooldownMinutes" min={1} max={60} unit="min" />}
+            >
+              <UnitInputNumber min={1} max={60} step={1} unit="min" style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.crawlClient.fields.adaptiveLatencyThresholdRatio", {
+                defaultValue: "Adaptive latency threshold"
+              })}
+              name="adaptiveLatencyThresholdRatio"
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.crawlClient.validation.adaptiveLatencyThresholdRatio", {
+                    defaultValue: "Please enter adaptive latency threshold ratio."
+                  })
+                },
+                {
+                  type: "number",
+                  min: 0.01,
+                  max: 0.99,
+                  message: t("common.validation.numberRange", { min: 0.01, max: 0.99 })
+                }
+              ]}
+            >
+              <InputNumber min={0.01} max={0.99} step={0.01} precision={2} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.crawlClient.fields.adaptiveErrorRateThreshold", {
+                defaultValue: "Adaptive error-rate threshold"
+              })}
+              name="adaptiveErrorRateThreshold"
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.crawlClient.validation.adaptiveErrorRateThreshold", {
+                    defaultValue: "Please enter adaptive error-rate threshold ratio."
+                  })
+                },
+                {
+                  type: "number",
+                  min: 0.01,
+                  max: 0.99,
+                  message: t("common.validation.numberRange", { min: 0.01, max: 0.99 })
+                }
+              ]}
+            >
+              <InputNumber min={0.01} max={0.99} step={0.01} precision={2} style={{ width: "100%" }} />
+            </Form.Item>
+            <Form.Item
+              label={t("settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold", {
+                defaultValue: "Adaptive memory headroom threshold"
+              })}
+              name="adaptiveMemoryHeadroomThreshold"
+              rules={[
+                {
+                  required: true,
+                  message: t("settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold", {
+                    defaultValue: "Please enter adaptive memory headroom threshold ratio."
+                  })
+                },
+                {
+                  type: "number",
+                  min: 0.01,
+                  max: 0.99,
+                  message: t("common.validation.numberRange", { min: 0.01, max: 0.99 })
+                }
+              ]}
+            >
+              <InputNumber min={0.01} max={0.99} step={0.01} precision={2} style={{ width: "100%" }} />
+            </Form.Item>
+          </>
+        ) : null}
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("settings.crawlClient.save")}

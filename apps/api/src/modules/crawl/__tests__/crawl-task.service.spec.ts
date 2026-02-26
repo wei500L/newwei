@@ -221,4 +221,97 @@ describe("CrawlTaskService", () => {
     expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsCode).toEqual(["console.log('nested')"]);
     expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsOnly).toBe(true);
   });
+
+  it("retries with stored crawlPriorityClass and sourcePriority", async () => {
+    const task = {
+      id: "task-1",
+      orgId: "org-1",
+      config: {
+        crawlPriorityClass: "hot",
+        sourcePriority: 88
+      },
+      _count: { results: 0 }
+    };
+
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue(task),
+        update: jest.fn().mockResolvedValue(undefined)
+      },
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+    } as any;
+
+    const queueServiceMock = {
+      enqueueTask: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      queueServiceMock,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn() } as any
+    );
+    jest.spyOn(service, "toView").mockReturnValue({ id: "task-1" } as any);
+
+    await service.retryTask("org-1", "user-1", "task-1");
+
+    expect(queueServiceMock.enqueueTask).toHaveBeenCalledWith(
+      "task-1",
+      "org-1",
+      "user-1",
+      {
+        priorityClass: "hot",
+        sourcePriority: 88
+      }
+    );
+  });
+
+  it("infers priorityClass from sourcePriority when retry config lacks crawlPriorityClass", async () => {
+    const task = {
+      id: "task-2",
+      orgId: "org-1",
+      config: {
+        sourcePriority: 10
+      },
+      _count: { results: 0 }
+    };
+
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue(task),
+        update: jest.fn().mockResolvedValue(undefined)
+      },
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+    } as any;
+
+    const queueServiceMock = {
+      enqueueTask: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      queueServiceMock,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn() } as any
+    );
+    jest.spyOn(service, "toView").mockReturnValue({ id: "task-2" } as any);
+
+    await service.retryTask("org-1", "user-1", "task-2");
+
+    expect(queueServiceMock.enqueueTask).toHaveBeenCalledWith(
+      "task-2",
+      "org-1",
+      "user-1",
+      {
+        priorityClass: "normal",
+        sourcePriority: 10
+      }
+    );
+  });
 });

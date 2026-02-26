@@ -11,11 +11,13 @@ import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
-import { CrawlQueueService } from "./crawl-queue.service";
+import { CrawlQueueService, type EnqueueCrawlTaskOptions } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
+import { CRAWL_HOT_PRIORITY_THRESHOLD } from "./crawl.constants";
 import type {
   CrawlIngestBatchSummary,
   CrawlMarkdownFilter,
+  CrawlPriorityClass,
   CrawlTaskOptions,
   CrawlTaskView,
 } from "./crawl.types";
@@ -487,6 +489,7 @@ export class CrawlTaskService {
     if (ingestToItems && !actorPermissions?.includes("items.write")) {
       throw new ForbiddenException("items.write permission is required to ingest crawl results into Items");
     }
+    const enqueueOptions = this.extractEnqueueOptions(config);
 
     await this.prisma.crawlTask.update({
       where: { id },
@@ -495,7 +498,7 @@ export class CrawlTaskService {
         lastError: null
       }
     });
-    await this.queueService.enqueueTask(id, orgId, userId);
+    await this.queueService.enqueueTask(id, orgId, userId, enqueueOptions);
 
     await writeAuditLogBestEffort(
       this.prisma,
@@ -548,6 +551,39 @@ export class CrawlTaskService {
       lastServerMemoryMb: task.lastServerMemoryMb ?? null,
       lastPeakMemoryMb: task.lastPeakMemoryMb ?? null,
       lastMemoryEfficiency: task.lastMemoryEfficiency ?? null
+    };
+  }
+
+  private extractEnqueueOptions(config: Record<string, unknown> | null): EnqueueCrawlTaskOptions | undefined {
+    if (!config) {
+      return undefined;
+    }
+
+    const sourcePriorityRaw = config.sourcePriority;
+    const sourcePriority =
+      typeof sourcePriorityRaw === "number" && Number.isFinite(sourcePriorityRaw)
+        ? Math.round(sourcePriorityRaw)
+        : undefined;
+
+    const configuredPriorityClass = config.crawlPriorityClass;
+    const priorityClassFromConfig: CrawlPriorityClass | undefined =
+      configuredPriorityClass === "hot" || configuredPriorityClass === "normal"
+        ? configuredPriorityClass
+        : undefined;
+
+    const inferredPriorityClass: CrawlPriorityClass | undefined =
+      sourcePriority !== undefined
+        ? (sourcePriority >= CRAWL_HOT_PRIORITY_THRESHOLD ? "hot" : "normal")
+        : undefined;
+
+    const priorityClass = priorityClassFromConfig ?? inferredPriorityClass;
+    if (priorityClass === undefined && sourcePriority === undefined) {
+      return undefined;
+    }
+
+    return {
+      ...(priorityClass ? { priorityClass } : {}),
+      ...(sourcePriority !== undefined ? { sourcePriority } : {})
     };
   }
 

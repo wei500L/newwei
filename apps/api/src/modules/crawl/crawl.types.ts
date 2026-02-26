@@ -1,11 +1,15 @@
 import type { CrawlTaskStatus } from "@prisma/client";
 
+export type CrawlPriorityClass = "hot" | "normal";
+
 export interface CrawlJobData {
   taskId: string;
   orgId: string;
   triggeredById?: string;
   traceId?: string;
   memoryPressureRequeues?: number;
+  priorityClass?: CrawlPriorityClass;
+  sourcePriority?: number;
 }
 
 export interface CrawlExecutionSummary {

@@ -490,10 +490,18 @@ export type CrawlCleanMarkdownInput = {
 
 export type CrawlClientSettingsModel = {
   __typename?: 'CrawlClientSettingsModel';
+  adaptiveConcurrencyEnabled: Scalars['Boolean']['output'];
+  adaptiveCooldownMinutes: Scalars['Int']['output'];
+  adaptiveErrorRateThreshold: Scalars['Float']['output'];
+  adaptiveLatencyThresholdRatio: Scalars['Float']['output'];
+  adaptiveMemoryHeadroomThreshold: Scalars['Float']['output'];
+  adaptiveWindowMinutes: Scalars['Int']['output'];
   healthCheckTtlMs: Scalars['Int']['output'];
   maxRetries: Scalars['Int']['output'];
   queueOverloadCooldownMs: Scalars['Int']['output'];
+  requestTimeoutHotMs: Scalars['Int']['output'];
   requestTimeoutMs: Scalars['Int']['output'];
+  requestTimeoutNormalMs: Scalars['Int']['output'];
   retryBackoffMs: Scalars['Int']['output'];
 };
 
@@ -1236,6 +1244,7 @@ export type ItemsDateRangeInput = {
 
 export type ItemsFiltersInput = {
   dateRange?: InputMaybe<ItemsDateRangeInput>;
+  excludeDuplicates?: InputMaybe<Scalars['Boolean']['input']>;
   regions?: InputMaybe<Array<Scalars['String']['input']>>;
   sentiments?: InputMaybe<Array<Scalars['String']['input']>>;
   sourceIds?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -1244,6 +1253,7 @@ export type ItemsFiltersInput = {
 
 export enum ItemsOrderBy {
   CreatedDesc = 'CREATED_DESC',
+  Personalized = 'PERSONALIZED',
   PublishedDesc = 'PUBLISHED_DESC'
 }
 
@@ -1810,6 +1820,7 @@ export type NewsEventItemModel = {
   createdAt: Scalars['DateTime']['output'];
   eventId: Scalars['String']['output'];
   id: Scalars['String']['output'];
+  itemMetaId?: Maybe<Scalars['String']['output']>;
   processedArticle: NewsEventProcessedArticleModel;
   processedArticleId: Scalars['String']['output'];
   processedItemId?: Maybe<Scalars['String']['output']>;
@@ -2927,10 +2938,18 @@ export type UpdateClassificationQualitySettingsInput = {
 };
 
 export type UpdateCrawlClientSettingsInput = {
+  adaptiveConcurrencyEnabled?: InputMaybe<Scalars['Boolean']['input']>;
+  adaptiveCooldownMinutes?: InputMaybe<Scalars['Int']['input']>;
+  adaptiveErrorRateThreshold?: InputMaybe<Scalars['Float']['input']>;
+  adaptiveLatencyThresholdRatio?: InputMaybe<Scalars['Float']['input']>;
+  adaptiveMemoryHeadroomThreshold?: InputMaybe<Scalars['Float']['input']>;
+  adaptiveWindowMinutes?: InputMaybe<Scalars['Int']['input']>;
   healthCheckTtlMs: Scalars['Int']['input'];
   maxRetries: Scalars['Int']['input'];
   queueOverloadCooldownMs: Scalars['Int']['input'];
-  requestTimeoutMs: Scalars['Int']['input'];
+  requestTimeoutHotMs?: InputMaybe<Scalars['Int']['input']>;
+  requestTimeoutMs?: InputMaybe<Scalars['Int']['input']>;
+  requestTimeoutNormalMs?: InputMaybe<Scalars['Int']['input']>;
   retryBackoffMs: Scalars['Int']['input'];
 };
 
@@ -3450,10 +3469,14 @@ export type NewsEventsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
   windowDays?: InputMaybe<Scalars['Int']['input']>;
   status?: InputMaybe<NewsEventStatus>;
+  sourceType?: InputMaybe<NewsEventSourceType>;
+  minHeatScore?: InputMaybe<Scalars['Float']['input']>;
+  minCredibilityScore?: InputMaybe<Scalars['Float']['input']>;
+  sortBy?: InputMaybe<NewsEventSortBy>;
 }>;
 
 
-export type NewsEventsQuery = { __typename?: 'Query', newsEvents: Array<{ __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number }> };
+export type NewsEventsQuery = { __typename?: 'Query', newsEvents: Array<{ __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number, credibilityScore: number, sourceType: NewsEventSourceType, sourceEvidence: { __typename?: 'NewsEventSourceEvidenceModel', uniqueSourceCount: number, authoritativeSourceCount: number, blogSourceCount: number, corroborated: boolean } }> };
 
 export type NewsEventQueryVariables = Exact<{
   id: Scalars['String']['input'];
@@ -3462,7 +3485,7 @@ export type NewsEventQueryVariables = Exact<{
 }>;
 
 
-export type NewsEventQuery = { __typename?: 'Query', newsEvent?: { __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number, items?: Array<{ __typename?: 'NewsEventItemModel', id: string, eventId: string, processedArticleId: string, processedItemId?: string | null, similarity?: number | null, assignedBy: NewsEventAssignmentMethod, createdAt: any, processedArticle: { __typename?: 'NewsEventProcessedArticleModel', id: string, articleId: string, title?: string | null, summary?: string | null, publishedAt?: any | null, language?: string | null, processedAt: any, article: { __typename?: 'NewsEventArticleModel', id: string, url: string, sourceLabel?: string | null, crawlAt: any } } }> | null, timeline?: Array<{ __typename?: 'NewsEventTimelineEntryModel', id: string, eventId: string, bucketStart: any, title?: string | null, summary?: string | null, keyPoints?: any | null, referencedArticleIds?: any | null, createdAt: any, updatedAt: any }> | null } | null };
+export type NewsEventQuery = { __typename?: 'Query', newsEvent?: { __typename?: 'NewsEventModel', id: string, title?: string | null, status: NewsEventStatus, language?: string | null, primaryTopic?: string | null, primaryEntity?: string | null, summary?: string | null, startAt: any, lastAt: any, itemCount: number, representativeProcessedArticleId?: string | null, representativeProcessedItemId?: string | null, metadata?: any | null, createdAt: any, updatedAt: any, breaking: boolean, heatScore: number, credibilityScore: number, sourceType: NewsEventSourceType, sourceEvidence: { __typename?: 'NewsEventSourceEvidenceModel', uniqueSourceCount: number, authoritativeSourceCount: number, blogSourceCount: number, corroborated: boolean }, items?: Array<{ __typename?: 'NewsEventItemModel', id: string, eventId: string, processedArticleId: string, itemMetaId?: string | null, processedItemId?: string | null, similarity?: number | null, assignedBy: NewsEventAssignmentMethod, createdAt: any, processedArticle: { __typename?: 'NewsEventProcessedArticleModel', id: string, articleId: string, title?: string | null, summary?: string | null, publishedAt?: any | null, language?: string | null, processedAt: any, article: { __typename?: 'NewsEventArticleModel', id: string, url: string, sourceLabel?: string | null, crawlAt: any } } }> | null, timeline?: Array<{ __typename?: 'NewsEventTimelineEntryModel', id: string, eventId: string, bucketStart: any, title?: string | null, summary?: string | null, keyPoints?: any | null, referencedArticleIds?: any | null, createdAt: any, updatedAt: any }> | null } | null };
 
 export type NotificationsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -3604,14 +3627,14 @@ export type UpdateNewsPromptConfigMutation = { __typename?: 'Mutation', updateNe
 export type CrawlClientSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number } };
+export type CrawlClientSettingsQuery = { __typename?: 'Query', crawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type UpdateCrawlClientSettingsMutationVariables = Exact<{
   input: UpdateCrawlClientSettingsInput;
 }>;
 
 
-export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number } };
+export type UpdateCrawlClientSettingsMutation = { __typename?: 'Mutation', updateCrawlClientSettings: { __typename?: 'CrawlClientSettingsModel', healthCheckTtlMs: number, requestTimeoutMs: number, requestTimeoutHotMs: number, requestTimeoutNormalMs: number, maxRetries: number, retryBackoffMs: number, queueOverloadCooldownMs: number, adaptiveConcurrencyEnabled: boolean, adaptiveWindowMinutes: number, adaptiveCooldownMinutes: number, adaptiveLatencyThresholdRatio: number, adaptiveErrorRateThreshold: number, adaptiveMemoryHeadroomThreshold: number } };
 
 export type EntityImpactGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -5885,8 +5908,16 @@ export type NewsEventBriefLazyQueryHookResult = ReturnType<typeof useNewsEventBr
 export type NewsEventBriefSuspenseQueryHookResult = ReturnType<typeof useNewsEventBriefSuspenseQuery>;
 export type NewsEventBriefQueryResult = Apollo.QueryResult<NewsEventBriefQuery, NewsEventBriefQueryVariables>;
 export const NewsEventsDocument = gql`
-    query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus) {
-  newsEvents(limit: $limit, windowDays: $windowDays, status: $status) {
+    query NewsEvents($limit: Int, $windowDays: Int, $status: NewsEventStatus, $sourceType: NewsEventSourceType, $minHeatScore: Float, $minCredibilityScore: Float, $sortBy: NewsEventSortBy) {
+  newsEvents(
+    limit: $limit
+    windowDays: $windowDays
+    status: $status
+    sourceType: $sourceType
+    minHeatScore: $minHeatScore
+    minCredibilityScore: $minCredibilityScore
+    sortBy: $sortBy
+  ) {
     id
     title
     status
@@ -5904,6 +5935,14 @@ export const NewsEventsDocument = gql`
     updatedAt
     breaking
     heatScore
+    credibilityScore
+    sourceType
+    sourceEvidence {
+      uniqueSourceCount
+      authoritativeSourceCount
+      blogSourceCount
+      corroborated
+    }
   }
 }
     `;
@@ -5923,6 +5962,10 @@ export const NewsEventsDocument = gql`
  *      limit: // value for 'limit'
  *      windowDays: // value for 'windowDays'
  *      status: // value for 'status'
+ *      sourceType: // value for 'sourceType'
+ *      minHeatScore: // value for 'minHeatScore'
+ *      minCredibilityScore: // value for 'minCredibilityScore'
+ *      sortBy: // value for 'sortBy'
  *   },
  * });
  */
@@ -5962,10 +6005,19 @@ export const NewsEventDocument = gql`
     updatedAt
     breaking
     heatScore
+    credibilityScore
+    sourceType
+    sourceEvidence {
+      uniqueSourceCount
+      authoritativeSourceCount
+      blogSourceCount
+      corroborated
+    }
     items {
       id
       eventId
       processedArticleId
+      itemMetaId
       processedItemId
       similarity
       assignedBy
@@ -6963,9 +7015,17 @@ export const CrawlClientSettingsDocument = gql`
   crawlClientSettings {
     healthCheckTtlMs
     requestTimeoutMs
+    requestTimeoutHotMs
+    requestTimeoutNormalMs
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs
+    adaptiveConcurrencyEnabled
+    adaptiveWindowMinutes
+    adaptiveCooldownMinutes
+    adaptiveLatencyThresholdRatio
+    adaptiveErrorRateThreshold
+    adaptiveMemoryHeadroomThreshold
   }
 }
     `;
@@ -7006,9 +7066,17 @@ export const UpdateCrawlClientSettingsDocument = gql`
   updateCrawlClientSettings(input: $input) {
     healthCheckTtlMs
     requestTimeoutMs
+    requestTimeoutHotMs
+    requestTimeoutNormalMs
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs
+    adaptiveConcurrencyEnabled
+    adaptiveWindowMinutes
+    adaptiveCooldownMinutes
+    adaptiveLatencyThresholdRatio
+    adaptiveErrorRateThreshold
+    adaptiveMemoryHeadroomThreshold
   }
 }
     `;

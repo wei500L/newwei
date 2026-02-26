@@ -12,6 +12,8 @@ import { PrismaService } from "../config/prisma.service";
 import { CrawlMetadataService } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
+import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
+import type { CrawlPriorityClass } from "../crawl/crawl.types";
 import {
   DEEP_DISCOVERY_FAILURE_STATE_TTL_SECONDS,
   DEEP_DISCOVERY_FAILURE_STATS_TTL_SECONDS,
@@ -108,6 +110,7 @@ const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
 export class NewsSourceSchedulerService {
   private readonly sourcePriorityMin = -100;
   private readonly sourcePriorityMax = 100;
+  private readonly crawlHotPriorityThreshold = CRAWL_HOT_PRIORITY_THRESHOLD;
   private readonly crawlActorByOrgId = new Map<string, string>();
 
   constructor(
@@ -364,6 +367,7 @@ export class NewsSourceSchedulerService {
           }
 
           const bullPriority = this.toBullmqPriority(source.priority);
+          const crawlPriorityClass = this.toCrawlPriorityClass(source.priority);
           const seedParentUrl = seedConfig
             ? seedConfig.mode === "rss"
               ? (seedConfig.feedUrl ?? source.url)
@@ -411,6 +415,8 @@ export class NewsSourceSchedulerService {
               ingestToItems: true,
               pipelineJobId: "",
               pipelinePriority: bullPriority,
+              crawlPriorityClass,
+              sourcePriority: source.priority,
               itemPayload: {
                 sourceName: payload.sourceName,
                 language: payload.language,
@@ -520,6 +526,10 @@ export class NewsSourceSchedulerService {
                 crawlTaskId,
                 source.orgId,
                 triggeredById,
+                {
+                  priorityClass: crawlPriorityClass,
+                  sourcePriority: source.priority,
+                },
               );
               await this.prisma.crawlTask.updateMany({
                 where: { id: crawlTaskId },
@@ -969,6 +979,11 @@ export class NewsSourceSchedulerService {
       Math.min(this.sourcePriorityMax, normalized),
     );
     return this.sourcePriorityMax + 1 - clamped;
+  }
+
+  private toCrawlPriorityClass(priority: number): CrawlPriorityClass {
+    const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
+    return normalized >= this.crawlHotPriorityThreshold ? "hot" : "normal";
   }
 
   private computeNextIntervalRunAt(
@@ -2352,6 +2367,7 @@ export class NewsSourceSchedulerService {
         }
 
         const bullPriority = this.toBullmqPriority(source.priority);
+        const crawlPriorityClass = this.toCrawlPriorityClass(source.priority);
         const crawlActorId = await this.resolveCrawlActorId(source.orgId);
         if (!crawlActorId) {
           logger.warn(
@@ -2405,6 +2421,8 @@ export class NewsSourceSchedulerService {
             ingestToItems: true,
             pipelineJobId: "",
             pipelinePriority: bullPriority,
+            crawlPriorityClass,
+            sourcePriority: source.priority,
             itemPayload: {
               sourceName: payload.sourceName,
               language: payload.language,
@@ -2509,6 +2527,10 @@ export class NewsSourceSchedulerService {
               crawlTaskId,
               source.orgId,
               crawlActorId,
+              {
+                priorityClass: crawlPriorityClass,
+                sourcePriority: source.priority,
+              },
             );
             await this.prisma.crawlTask.updateMany({
               where: { id: crawlTaskId },

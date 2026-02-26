@@ -7,6 +7,7 @@ import { EnvService } from "../config/config.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { StorageModule } from "../storage/storage.module";
 
+import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
@@ -20,7 +21,17 @@ import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlTemplateController } from "./crawl-template.controller";
 import { CrawlTemplateService } from "./crawl-template.service";
-import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import {
+  CRAWL_QUEUE,
+  CRAWL_QUEUE_EVENTS,
+  CRAWL_QUEUE_EVENTS_HOT,
+  CRAWL_QUEUE_EVENTS_NORMAL,
+  CRAWL_QUEUE_HOT,
+  CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_NAME,
+  CRAWL_QUEUE_NORMAL,
+  CRAWL_QUEUE_NORMAL_NAME
+} from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
 import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
@@ -34,7 +45,6 @@ import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
 import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
 import { JsCodeAuditService } from "./services/js-code-audit.service";
-
 
 @Module({
   imports: [
@@ -84,12 +94,13 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlQueueProcessor,
     CrawlQueueEventPublisher,
     CrawlQueueCleanupService,
+    CrawlAdaptiveConcurrencyService,
     {
-      provide: CRAWL_QUEUE,
+      provide: CRAWL_QUEUE_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const redis = env.redisConfig;
-        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_HOT_NAME, {
           connection: redis,
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
@@ -106,11 +117,36 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     },
     {
-      provide: CRAWL_QUEUE_EVENTS,
+      provide: CRAWL_QUEUE_NORMAL,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
         const redis = env.redisConfig;
-        const events = new QueueEvents(CRAWL_QUEUE_NAME, {
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NORMAL_NAME, {
+          connection: redis,
+          defaultJobOptions: {
+            attempts: env.crawl4aiConfig.maxRetries,
+            removeOnComplete: true,
+            removeOnFail: false,
+            backoff: {
+              type: "exponential",
+              delay: env.crawl4aiConfig.retryBackoffMs
+            }
+          }
+        });
+        cleanup.track(queue);
+        return queue;
+      }
+    },
+    {
+      provide: CRAWL_QUEUE,
+      useExisting: CRAWL_QUEUE_NORMAL
+    },
+    {
+      provide: CRAWL_QUEUE_EVENTS_HOT,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const redis = env.redisConfig;
+        const events = new QueueEvents(CRAWL_QUEUE_HOT_NAME, {
           connection: redis
         });
         cleanup.track(events);
@@ -118,8 +154,32 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     },
     {
+      provide: CRAWL_QUEUE_EVENTS_NORMAL,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const redis = env.redisConfig;
+        const events = new QueueEvents(CRAWL_QUEUE_NORMAL_NAME, {
+          connection: redis
+        });
+        cleanup.track(events);
+        return events;
+      }
+    },
+    {
+      provide: CRAWL_QUEUE_EVENTS,
+      useExisting: CRAWL_QUEUE_EVENTS_NORMAL
+    },
+    {
+      provide: getQueueToken(CRAWL_QUEUE_HOT_NAME),
+      useExisting: CRAWL_QUEUE_HOT
+    },
+    {
+      provide: getQueueToken(CRAWL_QUEUE_NORMAL_NAME),
+      useExisting: CRAWL_QUEUE_NORMAL
+    },
+    {
       provide: getQueueToken(CRAWL_QUEUE_NAME),
-      useExisting: CRAWL_QUEUE
+      useExisting: CRAWL_QUEUE_NORMAL
     }
   ],
   exports: [
@@ -131,8 +191,15 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlMetadataService,
     Crawl4aiClient,
     CrawlQueueEventPublisher,
+    CrawlAdaptiveConcurrencyService,
     CRAWL_QUEUE,
     CRAWL_QUEUE_EVENTS,
+    CRAWL_QUEUE_HOT,
+    CRAWL_QUEUE_NORMAL,
+    CRAWL_QUEUE_EVENTS_HOT,
+    CRAWL_QUEUE_EVENTS_NORMAL,
+    getQueueToken(CRAWL_QUEUE_HOT_NAME),
+    getQueueToken(CRAWL_QUEUE_NORMAL_NAME),
     getQueueToken(CRAWL_QUEUE_NAME)
   ]
 })

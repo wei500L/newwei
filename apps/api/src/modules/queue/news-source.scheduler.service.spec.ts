@@ -205,12 +205,20 @@ describe("NewsSourceSchedulerService", () => {
       "task-1",
       "org-1",
       "user-actor",
+      {
+        priorityClass: "normal",
+        sourcePriority: 0,
+      },
     );
     expect(crawlQueue.enqueueTask).toHaveBeenNthCalledWith(
       2,
       "task-2",
       "org-1",
       "user-actor",
+      {
+        priorityClass: "normal",
+        sourcePriority: 0,
+      },
     );
   });
 
@@ -295,6 +303,10 @@ describe("NewsSourceSchedulerService", () => {
       "task-1",
       "org-1",
       "user-actor",
+      {
+        priorityClass: "normal",
+        sourcePriority: 0,
+      },
     );
   });
 
@@ -475,6 +487,10 @@ describe("NewsSourceSchedulerService", () => {
         "task-1",
         "org-1",
         "user-actor",
+        {
+          priorityClass: "normal",
+          sourcePriority: 0,
+        },
       );
     } finally {
       jest.useRealTimers();

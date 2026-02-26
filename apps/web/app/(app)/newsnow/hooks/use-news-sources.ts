@@ -48,6 +48,7 @@ export interface NewsResolveResponse {
 
 interface ResolveNewsUrlOptions {
   signal?: AbortSignal;
+  forceRefresh?: boolean;
 }
 
 export interface MetadataResponse {
@@ -197,7 +198,7 @@ export function useResolveNewsUrl() {
       return queryClient.fetchQuery<NewsResolveResponse>({
         queryKey: ["news-resolve", normalized],
         queryFn: () => fetchResolvedByUrl(normalized, options),
-        staleTime: 1000 * 60 * 30,
+        staleTime: options?.forceRefresh ? 0 : 1000 * 60 * 30,
       });
     },
     [queryClient],

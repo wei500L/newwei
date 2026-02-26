@@ -82,9 +82,17 @@ query CrawlClientSettings {
   crawlClientSettings {
     healthCheckTtlMs
     requestTimeoutMs
+    requestTimeoutHotMs
+    requestTimeoutNormalMs
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs
+    adaptiveConcurrencyEnabled
+    adaptiveWindowMinutes
+    adaptiveCooldownMinutes
+    adaptiveLatencyThresholdRatio
+    adaptiveErrorRateThreshold
+    adaptiveMemoryHeadroomThreshold
   }
 }
 
@@ -92,9 +100,17 @@ mutation UpdateCrawlClientSettings($input: UpdateCrawlClientSettingsInput!) {
   updateCrawlClientSettings(input: $input) {
     healthCheckTtlMs
     requestTimeoutMs
+    requestTimeoutHotMs
+    requestTimeoutNormalMs
     maxRetries
     retryBackoffMs
     queueOverloadCooldownMs
+    adaptiveConcurrencyEnabled
+    adaptiveWindowMinutes
+    adaptiveCooldownMinutes
+    adaptiveLatencyThresholdRatio
+    adaptiveErrorRateThreshold
+    adaptiveMemoryHeadroomThreshold
   }
 }
 

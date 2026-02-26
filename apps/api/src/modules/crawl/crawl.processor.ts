@@ -6,9 +6,16 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
-import { CRAWL_QUEUE, CRAWL_QUEUE_EVENTS, CRAWL_QUEUE_NAME } from "./crawl.constants";
+import {
+  CRAWL_QUEUE_EVENTS_HOT,
+  CRAWL_QUEUE_EVENTS_NORMAL,
+  CRAWL_QUEUE_HOT,
+  CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_NORMAL,
+  CRAWL_QUEUE_NORMAL_NAME
+} from "./crawl.constants";
 import { CrawlSettingsService } from "./crawl-settings.service";
-import type { CrawlJobData } from "./crawl.types";
+import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 const logger = createLogger({ name: "crawl-queue" });
@@ -29,6 +36,105 @@ const MEMORY_PRESSURE_HINTS = [
   "not enough memory",
   "cannot allocate memory"
 ];
+
+type QueueEventBinding = {
+  events: QueueEvents;
+  onStalled: ({ jobId }: { jobId: string }) => Promise<void>;
+  onFailed: ({ jobId, failedReason }: { jobId: string; failedReason?: string }) => Promise<void>;
+};
+
+interface QueueRuntimeContext {
+  queueClass: CrawlPriorityClass;
+  queueName: string;
+  queue: Queue<CrawlJobData>;
+  events: QueueEvents;
+}
+
+type ConcurrencySlotReleaser = () => void;
+
+interface ConcurrencyWaiter {
+  resolve: (release: ConcurrencySlotReleaser) => void;
+  reject: (error: Error) => void;
+}
+
+class SharedGlobalConcurrencyLimiter {
+  private capacity: number;
+  private active = 0;
+  private closed = false;
+  private readonly waiters: Record<CrawlPriorityClass, ConcurrencyWaiter[]> = {
+    hot: [],
+    normal: []
+  };
+
+  constructor(initialCapacity: number) {
+    this.capacity = Math.max(1, Math.round(initialCapacity));
+  }
+
+  setCapacity(next: number) {
+    this.capacity = Math.max(1, Math.round(next));
+    this.drain();
+  }
+
+  async acquire(queueClass: CrawlPriorityClass): Promise<ConcurrencySlotReleaser> {
+    if (this.closed) {
+      throw new Error("Global crawl concurrency limiter is closed");
+    }
+
+    const immediate = this.tryAcquire(queueClass);
+    if (immediate) {
+      return immediate;
+    }
+
+    return new Promise<ConcurrencySlotReleaser>((resolve, reject) => {
+      this.waiters[queueClass].push({ resolve, reject });
+    });
+  }
+
+  close() {
+    this.closed = true;
+    const error = new Error("Global crawl concurrency limiter is shutting down");
+    const waiters = [...this.waiters.hot, ...this.waiters.normal];
+    this.waiters.hot = [];
+    this.waiters.normal = [];
+    for (const waiter of waiters) {
+      waiter.reject(error);
+    }
+  }
+
+  private tryAcquire(queueClass: CrawlPriorityClass): ConcurrencySlotReleaser | null {
+    if (this.active >= this.capacity) {
+      return null;
+    }
+    if (queueClass === "normal" && this.waiters.hot.length > 0) {
+      return null;
+    }
+    this.active += 1;
+    return this.createReleaser();
+  }
+
+  private createReleaser(): ConcurrencySlotReleaser {
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      this.active = Math.max(0, this.active - 1);
+      this.drain();
+    };
+  }
+
+  private drain() {
+    while (this.active < this.capacity) {
+      const next = this.waiters.hot.shift() ?? this.waiters.normal.shift();
+      if (!next) {
+        break;
+      }
+      this.active += 1;
+      next.resolve(this.createReleaser());
+    }
+  }
+}
 
 function truncateText(value: string, maxLength: number): string {
   const trimmed = value.trim();
@@ -265,26 +371,44 @@ interface QueueWithGlobalConcurrencyApi {
 
 @Injectable()
 export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
-  private worker?: Worker<CrawlJobData>;
+  private readonly workers = new Map<CrawlPriorityClass, Worker<CrawlJobData>>();
+  private readonly queueEventBindings: QueueEventBinding[] = [];
+  private readonly globalConcurrencyLimiter = new SharedGlobalConcurrencyLimiter(1);
 
   constructor(
     private readonly env: EnvService,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly crawlExecutionService: CrawlExecutionService,
     private readonly prisma: PrismaService,
-    @Inject(CRAWL_QUEUE) private readonly queue: Queue<CrawlJobData>,
-    @Inject(CRAWL_QUEUE_EVENTS) private readonly events: QueueEvents
+    @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_NORMAL) private readonly normalQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_EVENTS_HOT) private readonly hotEvents: QueueEvents,
+    @Inject(CRAWL_QUEUE_EVENTS_NORMAL) private readonly normalEvents: QueueEvents
   ) {}
+
+  private queueContexts(): QueueRuntimeContext[] {
+    return [
+      {
+        queueClass: "hot",
+        queueName: CRAWL_QUEUE_HOT_NAME,
+        queue: this.hotQueue,
+        events: this.hotEvents
+      },
+      {
+        queueClass: "normal",
+        queueName: CRAWL_QUEUE_NORMAL_NAME,
+        queue: this.normalQueue,
+        events: this.normalEvents
+      }
+    ];
+  }
 
   async onModuleInit() {
     let configuredConcurrency = Math.max(1, Math.round(this.env.crawl4aiConfig.maxConcurrency ?? 1));
     try {
       const settings = await this.crawlSettings.getSettings();
       configuredConcurrency = Math.max(1, Math.round(settings.maxConcurrency));
-      const queueWithGlobalConcurrency = this.queue as Queue<CrawlJobData> & QueueWithGlobalConcurrencyApi;
-      if (typeof queueWithGlobalConcurrency.setGlobalConcurrency === "function") {
-        await queueWithGlobalConcurrency.setGlobalConcurrency(configuredConcurrency);
-      }
+      await this.applyGlobalConcurrency(configuredConcurrency);
     } catch (error) {
       logger.warn(
         { err: error },
@@ -296,129 +420,160 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       configuredConcurrency,
       this.env.crawl4aiConfig.maxConcurrency ?? 1
     );
+    this.globalConcurrencyLimiter.setCapacity(concurrency);
+
+    for (const context of this.queueContexts()) {
+      const worker = this.createWorker(context, concurrency);
+      this.workers.set(context.queueClass, worker);
+      this.registerQueueEvents(context);
+    }
+  }
+
+  private createWorker(context: QueueRuntimeContext, concurrency: number): Worker<CrawlJobData> {
+    let workerRef: Worker<CrawlJobData>;
 
     const worker = new Worker<CrawlJobData>(
-      CRAWL_QUEUE_NAME,
+      context.queueName,
       async (job) => {
         const traceId = ensureTraceId(job.data.traceId);
         return runWithTraceId(traceId, async () => {
-          logger.info({ jobId: job.id, taskId: job.data.taskId }, "Processing crawl job");
-          const maxAttempts = resolveMaxAttempts(job.opts?.attempts);
-          const attemptsStarted = resolveAttemptsStarted(job);
-          const attempt = Math.min(maxAttempts, attemptsStarted);
-          const backoffDelayMs = resolveBackoffDelayMs(job.opts?.backoff, attempt);
+          logger.info(
+            { queue: context.queueName, jobId: job.id, taskId: job.data.taskId },
+            "Processing crawl job"
+          );
+          const releaseConcurrency = await this.globalConcurrencyLimiter.acquire(context.queueClass);
           try {
-            return await this.crawlExecutionService.runTask(
-              job.data.taskId,
-              job.data.orgId,
-              job.data.triggeredById,
-              {
-                attempt,
-                maxAttempts,
-                backoffDelayMs
-              }
-            );
-          } catch (error) {
-            if (isMemoryPressureError(error)) {
-              const memoryPressureRequeues = resolveMemoryPressureRequeues(job);
-              if (
-                attemptsStarted >= maxAttempts ||
-                memoryPressureRequeues >= maxAttempts - 1
-              ) {
-                logger.warn(
-                  {
-                    jobId: job.id,
-                    taskId: job.data.taskId,
-                    attemptsStarted,
-                    maxAttempts,
-                    memoryPressureRequeues
-                  },
-                  "crawl4ai memory pressure retry budget exhausted; failing job as unrecoverable"
-                );
-                const unrecoverable = new UnrecoverableError(
-                  error instanceof Error ? error.message : String(error)
-                );
-                (unrecoverable as Error & { cause?: unknown }).cause = error;
-                throw unrecoverable;
-              }
-
-              let configuredCooldownMs: number = MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS;
-              try {
-                const settings = await this.crawlSettings.getSettings();
-                configuredCooldownMs = settings.queueOverloadCooldownMs;
-              } catch (settingsError) {
-                logger.warn(
-                  { err: settingsError },
-                  "Failed to load crawl settings for memory pressure cooldown; using default"
-                );
-              }
-
-              const memoryPercent = extractMemoryPressurePercent(error);
-              const cooldownMs = resolveQueueOverloadCooldownMs(configuredCooldownMs, memoryPercent);
-
-              try {
-                await worker.rateLimit(cooldownMs);
-              } catch (rateLimitError) {
-                logger.error(
-                  { jobId: job.id, taskId: job.data.taskId, cooldownMs, err: rateLimitError },
-                  "Failed to apply crawl queue rate limit during memory pressure fallback"
-                );
-                throw error;
-              }
-
-              const nextMemoryPressureRequeues = memoryPressureRequeues + 1;
-              try {
-                await persistMemoryPressureRequeueCount(job, nextMemoryPressureRequeues);
-              } catch (persistError) {
-                logger.error(
-                  {
-                    jobId: job.id,
-                    taskId: job.data.taskId,
-                    nextMemoryPressureRequeues,
-                    maxAttempts,
-                    err: persistError
-                  },
-                  "Failed to persist memory pressure retry state; failing crawl job as unrecoverable"
-                );
-                const unrecoverable = new UnrecoverableError(
-                  error instanceof Error ? error.message : String(error)
-                );
-                (unrecoverable as Error & { cause?: unknown }).cause = error;
-                throw unrecoverable;
-              }
-
-              logger.warn(
+            const maxAttempts = resolveMaxAttempts(job.opts?.attempts);
+            const attemptsStarted = resolveAttemptsStarted(job);
+            const attempt = Math.min(maxAttempts, attemptsStarted);
+            const backoffDelayMs = resolveBackoffDelayMs(job.opts?.backoff, attempt);
+            const requestTimeoutMs = await this.resolveQueueTimeoutMs(context.queueClass);
+            try {
+              return await this.crawlExecutionService.runTask(
+                job.data.taskId,
+                job.data.orgId,
+                job.data.triggeredById,
                 {
-                  jobId: job.id,
-                  taskId: job.data.taskId,
-                  cooldownMs,
-                  memoryPercent,
-                  memoryPressureRequeues: nextMemoryPressureRequeues,
+                  attempt,
                   maxAttempts,
-                  error:
-                    error instanceof Error
-                      ? truncateText(error.message, 500)
-                      : truncateText(String(error), 500)
-                },
-                "crawl4ai memory pressure detected; re-queueing job with queue-wide cooldown"
+                  backoffDelayMs,
+                  priorityClass: context.queueClass,
+                  requestTimeoutMs
+                }
               );
+            } catch (error) {
+              if (isMemoryPressureError(error)) {
+                const memoryPressureRequeues = resolveMemoryPressureRequeues(job);
+                if (
+                  attemptsStarted >= maxAttempts ||
+                  memoryPressureRequeues >= maxAttempts - 1
+                ) {
+                  logger.warn(
+                    {
+                      queue: context.queueName,
+                      jobId: job.id,
+                      taskId: job.data.taskId,
+                      attemptsStarted,
+                      maxAttempts,
+                      memoryPressureRequeues
+                    },
+                    "crawl4ai memory pressure retry budget exhausted; failing job as unrecoverable"
+                  );
+                  const unrecoverable = new UnrecoverableError(
+                    error instanceof Error ? error.message : String(error)
+                  );
+                  (unrecoverable as Error & { cause?: unknown }).cause = error;
+                  throw unrecoverable;
+                }
 
-              throw Worker.RateLimitError();
-            }
+                let configuredCooldownMs: number = MEMORY_PRESSURE_DEFAULT_COOLDOWN_MS;
+                try {
+                  const settings = await this.crawlSettings.getSettings();
+                  configuredCooldownMs = settings.queueOverloadCooldownMs;
+                } catch (settingsError) {
+                  logger.warn(
+                    { err: settingsError },
+                    "Failed to load crawl settings for memory pressure cooldown; using default"
+                  );
+                }
 
-            if (!isRetryableError(error)) {
-              const unrecoverable = new UnrecoverableError(
-                error instanceof Error ? error.message : String(error)
-              );
-              (unrecoverable as Error & { cause?: unknown }).cause = error;
-              throw unrecoverable;
+                const memoryPercent = extractMemoryPressurePercent(error);
+                const cooldownMs = resolveQueueOverloadCooldownMs(configuredCooldownMs, memoryPercent);
+
+                try {
+                  await workerRef.rateLimit(cooldownMs);
+                } catch (rateLimitError) {
+                  logger.error(
+                    {
+                      queue: context.queueName,
+                      jobId: job.id,
+                      taskId: job.data.taskId,
+                      cooldownMs,
+                      err: rateLimitError
+                    },
+                    "Failed to apply crawl queue rate limit during memory pressure fallback"
+                  );
+                  throw error;
+                }
+
+                const nextMemoryPressureRequeues = memoryPressureRequeues + 1;
+                try {
+                  await persistMemoryPressureRequeueCount(job, nextMemoryPressureRequeues);
+                } catch (persistError) {
+                  logger.error(
+                    {
+                      queue: context.queueName,
+                      jobId: job.id,
+                      taskId: job.data.taskId,
+                      nextMemoryPressureRequeues,
+                      maxAttempts,
+                      err: persistError
+                    },
+                    "Failed to persist memory pressure retry state; failing crawl job as unrecoverable"
+                  );
+                  const unrecoverable = new UnrecoverableError(
+                    error instanceof Error ? error.message : String(error)
+                  );
+                  (unrecoverable as Error & { cause?: unknown }).cause = error;
+                  throw unrecoverable;
+                }
+
+                logger.warn(
+                  {
+                    queue: context.queueName,
+                    jobId: job.id,
+                    taskId: job.data.taskId,
+                    cooldownMs,
+                    memoryPercent,
+                    memoryPressureRequeues: nextMemoryPressureRequeues,
+                    maxAttempts,
+                    error:
+                      error instanceof Error
+                        ? truncateText(error.message, 500)
+                        : truncateText(String(error), 500)
+                  },
+                  "crawl4ai memory pressure detected; re-queueing job with queue-wide cooldown"
+                );
+
+                throw Worker.RateLimitError();
+              }
+
+              if (!isRetryableError(error)) {
+                const unrecoverable = new UnrecoverableError(
+                  error instanceof Error ? error.message : String(error)
+                );
+                (unrecoverable as Error & { cause?: unknown }).cause = error;
+                throw unrecoverable;
+              }
+              throw error;
             }
-            throw error;
+          } finally {
+            releaseConcurrency();
           }
         });
       },
       {
-        connection: this.queue.opts.connection,
+        connection: context.queue.opts.connection,
         concurrency,
         limiter: {
           max: resolveManualLimiterMax(concurrency),
@@ -426,22 +581,29 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         }
       }
     );
-    this.worker = worker;
 
-    this.worker.on("failed", (job, error) => {
+    workerRef = worker;
+
+    worker.on("failed", (job, error) => {
       const traceId = job?.data?.traceId;
       if (traceId) {
-        runWithTraceId(traceId, () => logger.error({ jobId: job?.id, error }, "Crawl queue worker error"));
+        runWithTraceId(traceId, () =>
+          logger.error({ queue: context.queueName, jobId: job?.id, error }, "Crawl queue worker error")
+        );
       } else {
-        logger.error({ jobId: job?.id, error }, "Crawl queue worker error");
+        logger.error({ queue: context.queueName, jobId: job?.id, error }, "Crawl queue worker error");
       }
     });
 
-    this.events.on("stalled", async ({ jobId }) => {
+    return worker;
+  }
+
+  private registerQueueEvents(context: QueueRuntimeContext) {
+    const onStalled = async ({ jobId }: { jobId: string }) => {
       try {
-        const job = await this.queue.getJob(jobId);
+        const job = await context.queue.getJob(jobId);
         if (!job?.data?.taskId || !job.data.orgId) {
-          logger.warn({ jobId }, "Crawl stalled event missing job data");
+          logger.warn({ queue: context.queueName, jobId }, "Crawl stalled event missing job data");
           return;
         }
         await this.prisma.crawlTask.updateMany({
@@ -456,15 +618,24 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
           }
         });
       } catch (error) {
-        logger.error({ jobId, err: error }, "Failed to handle crawl stalled event");
+        logger.error({ queue: context.queueName, jobId, err: error }, "Failed to handle crawl stalled event");
       }
-    });
+    };
 
-    this.events.on("failed", async ({ jobId, failedReason }) => {
+    const onFailed = async ({
+      jobId,
+      failedReason
+    }: {
+      jobId: string;
+      failedReason?: string;
+    }) => {
       try {
-        const job = await this.queue.getJob(jobId);
+        const job = await context.queue.getJob(jobId);
         if (!job?.data?.taskId || !job.data.orgId) {
-          logger.warn({ jobId, failedReason }, "Crawl failed event missing job data");
+          logger.warn(
+            { queue: context.queueName, jobId, failedReason },
+            "Crawl failed event missing job data"
+          );
           return;
         }
         const normalizedReason =
@@ -488,7 +659,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
             normalizedReason.length <= MYSQL_VARCHAR_191
               ? normalizedReason
               : truncateText(normalizedReason, MYSQL_VARCHAR_191);
-          logger.warn({ err: error, jobId, taskId: job.data.taskId }, "Failed to persist crawl failure reason; truncating");
+          logger.warn(
+            { err: error, queue: context.queueName, jobId, taskId: job.data.taskId },
+            "Failed to persist crawl failure reason; truncating"
+          );
           await this.prisma.crawlTask
             .updateMany({
               where: {
@@ -503,25 +677,86 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
             })
             .catch((fallbackError) => {
               logger.error(
-                { err: fallbackError, jobId, taskId: job.data.taskId },
+                { err: fallbackError, queue: context.queueName, jobId, taskId: job.data.taskId },
                 "Failed to persist crawl failure reason after truncation"
               );
             });
         }
       } catch (error) {
-        logger.error({ jobId, err: error }, "Failed to handle crawl failed event");
+        logger.error({ queue: context.queueName, jobId, err: error }, "Failed to handle crawl failed event");
       }
+    };
+
+    context.events.on("stalled", onStalled);
+    context.events.on("failed", onFailed);
+
+    this.queueEventBindings.push({
+      events: context.events,
+      onStalled,
+      onFailed
     });
   }
 
   async onModuleDestroy() {
-    await this.worker?.close();
+    for (const worker of this.workers.values()) {
+      await worker.close();
+    }
+    this.workers.clear();
+    this.globalConcurrencyLimiter.close();
+
+    for (const binding of this.queueEventBindings) {
+      binding.events.off("stalled", binding.onStalled);
+      binding.events.off("failed", binding.onFailed);
+    }
+    this.queueEventBindings.length = 0;
   }
 
-  setWorkerConcurrency(maxConcurrency: number) {
-    if (!this.worker) {
+  setWorkerConcurrency(maxConcurrency: number, queueClass?: CrawlPriorityClass) {
+    const sanitized = Math.max(1, Math.round(maxConcurrency));
+    this.globalConcurrencyLimiter.setCapacity(sanitized);
+
+    if (queueClass) {
+      const worker = this.workers.get(queueClass);
+      if (!worker) {
+        return;
+      }
+      worker.concurrency = sanitized;
       return;
     }
-    this.worker.concurrency = Math.max(1, Math.round(maxConcurrency));
+
+    for (const worker of this.workers.values()) {
+      worker.concurrency = sanitized;
+    }
+  }
+
+  private async applyGlobalConcurrency(maxConcurrency: number) {
+    const concurrency = Math.max(1, Math.round(maxConcurrency));
+    await Promise.all(
+      this.queueContexts().map(async (context) => {
+        const queueWithGlobalConcurrency = context.queue as Queue<CrawlJobData> & QueueWithGlobalConcurrencyApi;
+        if (typeof queueWithGlobalConcurrency.setGlobalConcurrency === "function") {
+          await queueWithGlobalConcurrency.setGlobalConcurrency(concurrency);
+        }
+      })
+    );
+  }
+
+  private async resolveQueueTimeoutMs(queueClass: CrawlPriorityClass): Promise<number> {
+    try {
+      const settings = await this.crawlSettings.getSettings();
+      const timeoutMs =
+        queueClass === "hot" ? settings.requestTimeoutHotMs : settings.requestTimeoutNormalMs;
+      if (typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+        return Math.max(1_000, Math.round(timeoutMs));
+      }
+    } catch (error) {
+      logger.warn({ err: error, queueClass }, "Failed to resolve crawl timeout tier; using env fallback");
+    }
+
+    const fallback = this.env.crawl4aiConfig.timeoutMs;
+    if (typeof fallback === "number" && Number.isFinite(fallback) && fallback > 0) {
+      return Math.max(1_000, Math.round(fallback));
+    }
+    return 120_000;
   }
 }

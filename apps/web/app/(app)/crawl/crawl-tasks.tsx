@@ -29,6 +29,7 @@ import {
   Grid,
   Row,
   Col,
+  Switch,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import Link from "next/link";
@@ -160,12 +161,56 @@ interface CrawlTaskConfigSummary {
 
 interface CrawlQueueOpsStats {
   queueName: string;
+  legacyQueueName?: string;
+  queueMode?: string;
+  queueNames?: {
+    hot: string;
+    normal: string;
+  };
   updatedAt: string;
   pending: number;
   paused: boolean;
   counts: Record<string, number>;
   maxConcurrency: number;
   effectiveConcurrency: number;
+  queues?: {
+    hot?: {
+      queueName: string;
+      pending: number;
+      paused: boolean;
+      counts: Record<string, number>;
+      effectiveConcurrency: number;
+    };
+    normal?: {
+      queueName: string;
+      pending: number;
+      paused: boolean;
+      counts: Record<string, number>;
+      effectiveConcurrency: number;
+    };
+  };
+  adaptive?: {
+    enabled: boolean;
+    lastDecision: string;
+    currentMaxConcurrency?: number;
+    lastAdjustedAt?: string | null;
+    reason?: string | null;
+    windowMinutes?: number;
+    cooldownMinutes?: number;
+    thresholds?: {
+      latencyRatio: number;
+      errorRate: number;
+      memoryHeadroom: number;
+    };
+    metrics?: {
+      taskCount: number;
+      failedCount: number;
+      errorRate: number;
+      p95LatencyMs: number | null;
+      memoryHeadroom: number | null;
+      memorySampleCount: number;
+    };
+  };
 }
 
 interface BatchUpdateFrequencyResponse {
@@ -312,6 +357,10 @@ export function CrawlTasksView() {
   });
   const [updateCrawlClientSettings, { loading: crawlClientSettingsSaving }] =
     useUpdateCrawlClientSettingsMutation();
+  const adaptiveConcurrencyEnabled =
+    Form.useWatch("adaptiveConcurrencyEnabled", clientSettingsForm) ??
+    crawlClientSettingsData?.crawlClientSettings?.adaptiveConcurrencyEnabled ??
+    false;
   const [fetchMetadata, { loading: metadataLoading, data: metadataData }] =
     useCrawlMetadataLazyQuery();
   const metadataResults = metadataData?.crawlMetadata ?? [];
@@ -1258,6 +1307,112 @@ export function CrawlTasksView() {
                   })}
                   : {queueStats?.effectiveConcurrency ?? "-"}
                 </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("crawl.ops.queueSplit", {
+                    defaultValue: "Hot/Normal pending",
+                  })}
+                  : {queueStats?.queues?.hot?.pending ?? 0}/
+                  {queueStats?.queues?.normal?.pending ?? 0}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("crawl.ops.hotQueueRuntime", {
+                    defaultValue: "Hot queue (A/F/E/P)",
+                  })}
+                  : {queueStats?.queues?.hot?.counts?.active ?? 0}/
+                  {queueStats?.queues?.hot?.counts?.failed ?? 0}/
+                  {queueStats?.queues?.hot?.effectiveConcurrency ?? 0}/
+                  {queueStats?.queues?.hot?.paused
+                    ? t("crawl.ops.paused", { defaultValue: "Paused" })
+                    : t("crawl.ops.running", { defaultValue: "Running" })}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("crawl.ops.normalQueueRuntime", {
+                    defaultValue: "Normal queue (A/F/E/P)",
+                  })}
+                  : {queueStats?.queues?.normal?.counts?.active ?? 0}/
+                  {queueStats?.queues?.normal?.counts?.failed ?? 0}/
+                  {queueStats?.queues?.normal?.effectiveConcurrency ?? 0}/
+                  {queueStats?.queues?.normal?.paused
+                    ? t("crawl.ops.paused", { defaultValue: "Paused" })
+                    : t("crawl.ops.running", { defaultValue: "Running" })}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {t("crawl.ops.adaptiveStatus", {
+                    defaultValue: "Adaptive",
+                  })}
+                  :{" "}
+                  {queueStats?.adaptive?.enabled
+                    ? `${queueStats?.adaptive?.lastDecision ?? "idle"}`
+                    : t("common.disabled", { defaultValue: "Disabled" })}
+                </Typography.Text>
+                {queueStats?.adaptive?.enabled ? (
+                  <>
+                    <Typography.Text type="secondary">
+                      {t("crawl.ops.adaptiveWindowCooldown", {
+                        defaultValue: "Adaptive window/cooldown (min)",
+                      })}
+                      : {queueStats?.adaptive?.windowMinutes ?? "-"}/
+                      {queueStats?.adaptive?.cooldownMinutes ?? "-"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("crawl.ops.adaptiveThresholds", {
+                        defaultValue: "Adaptive thresholds (L/E/M)",
+                      })}
+                      :{" "}
+                      {typeof queueStats?.adaptive?.thresholds?.latencyRatio ===
+                      "number"
+                        ? `${Math.round(
+                            (queueStats?.adaptive?.thresholds?.latencyRatio ??
+                              0) * 100,
+                          )}%`
+                        : "-"}
+                      /
+                      {typeof queueStats?.adaptive?.thresholds?.errorRate ===
+                      "number"
+                        ? `${Math.round(
+                            (queueStats?.adaptive?.thresholds?.errorRate ?? 0) *
+                              100,
+                          )}%`
+                        : "-"}
+                      /
+                      {typeof queueStats?.adaptive?.thresholds
+                        ?.memoryHeadroom === "number"
+                        ? `${Math.round(
+                            (queueStats?.adaptive?.thresholds?.memoryHeadroom ??
+                              0) * 100,
+                          )}%`
+                        : "-"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      {t("crawl.ops.adaptiveMetrics", {
+                        defaultValue: "Adaptive metrics p95/error/headroom",
+                      })}
+                      : {queueStats?.adaptive?.metrics?.p95LatencyMs ?? "-"}ms/
+                      {typeof queueStats?.adaptive?.metrics?.errorRate ===
+                      "number"
+                        ? `${(
+                            (queueStats?.adaptive?.metrics?.errorRate ?? 0) *
+                            100
+                          ).toFixed(1)}%`
+                        : "-"}/
+                      {typeof queueStats?.adaptive?.metrics?.memoryHeadroom ===
+                      "number"
+                        ? `${(
+                            (queueStats?.adaptive?.metrics?.memoryHeadroom ??
+                              0) * 100
+                          ).toFixed(1)}%`
+                        : "-"}
+                    </Typography.Text>
+                    {queueStats?.adaptive?.reason ? (
+                      <Typography.Text type="secondary">
+                        {t("crawl.ops.adaptiveReason", {
+                          defaultValue: "Adaptive reason",
+                        })}
+                        : {queueStats?.adaptive?.reason}
+                      </Typography.Text>
+                    ) : null}
+                  </>
+                ) : null}
               </Space>
             </Col>
 
@@ -1367,14 +1522,48 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.requestTimeout")}
-                    name="requestTimeoutMs"
+                    label={t("settings.crawlClient.fields.requestTimeoutHot", {
+                      defaultValue: "Hot request timeout",
+                    })}
+                    name="requestTimeoutHotMs"
                     rules={[
                       {
                         required: true,
-                        message: t(
-                          "settings.crawlClient.validation.requestTimeout",
-                        ),
+                        message: t("settings.crawlClient.validation.requestTimeoutHot", {
+                          defaultValue: "Please enter hot request timeout.",
+                        }),
+                      },
+                      {
+                        type: "number",
+                        min: MIN_CRAWL_REQUEST_TIMEOUT_MS,
+                        max: MAX_CRAWL_REQUEST_TIMEOUT_MS,
+                        message: t("common.validation.numberRange", {
+                          min: MIN_CRAWL_REQUEST_TIMEOUT_MS,
+                          max: MAX_CRAWL_REQUEST_TIMEOUT_MS,
+                        }),
+                      },
+                    ]}
+                  >
+                    <InputNumber
+                      min={MIN_CRAWL_REQUEST_TIMEOUT_MS}
+                      max={MAX_CRAWL_REQUEST_TIMEOUT_MS}
+                      step={1_000}
+                      style={{ width: "100%" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.requestTimeoutNormal", {
+                      defaultValue: "Normal request timeout",
+                    })}
+                    name="requestTimeoutNormalMs"
+                    rules={[
+                      {
+                        required: true,
+                        message: t("settings.crawlClient.validation.requestTimeoutNormal", {
+                          defaultValue: "Please enter normal request timeout.",
+                        }),
                       },
                       {
                         type: "number",
@@ -1494,6 +1683,226 @@ export function CrawlTasksView() {
                     />
                   </Form.Item>
                 </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    label={t("settings.crawlClient.fields.adaptiveConcurrency", {
+                      defaultValue: "Adaptive concurrency",
+                    })}
+                    name="adaptiveConcurrencyEnabled"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24}>
+                  <Typography.Paragraph
+                    type="secondary"
+                    style={{ marginTop: -8, marginBottom: 8 }}
+                  >
+                    {adaptiveConcurrencyEnabled
+                      ? t("settings.crawlClient.hints.adaptiveEnabled", {
+                          defaultValue:
+                            "Adaptive mode is enabled. Window and threshold fields below are active.",
+                        })
+                      : t("settings.crawlClient.hints.adaptiveDisabled", {
+                          defaultValue:
+                            "Adaptive mode is disabled. Enable it to configure window and threshold fields.",
+                        })}
+                  </Typography.Paragraph>
+                </Col>
+                {adaptiveConcurrencyEnabled ? (
+                  <>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={t("settings.crawlClient.fields.adaptiveWindowMinutes", {
+                          defaultValue: "Adaptive window",
+                        })}
+                        name="adaptiveWindowMinutes"
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "settings.crawlClient.validation.adaptiveWindowMinutes",
+                              {
+                                defaultValue:
+                                  "Please enter adaptive window in minutes.",
+                              },
+                            ),
+                          },
+                          {
+                            type: "number",
+                            min: 1,
+                            max: 180,
+                            message: t("common.validation.numberRange", {
+                              min: 1,
+                              max: 180,
+                            }),
+                          },
+                        ]}
+                      >
+                        <InputNumber
+                          min={1}
+                          max={180}
+                          step={1}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={t("settings.crawlClient.fields.adaptiveCooldownMinutes", {
+                          defaultValue: "Adaptive cooldown",
+                        })}
+                        name="adaptiveCooldownMinutes"
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "settings.crawlClient.validation.adaptiveCooldownMinutes",
+                              {
+                                defaultValue:
+                                  "Please enter adaptive cooldown in minutes.",
+                              },
+                            ),
+                          },
+                          {
+                            type: "number",
+                            min: 1,
+                            max: 60,
+                            message: t("common.validation.numberRange", {
+                              min: 1,
+                              max: 60,
+                            }),
+                          },
+                        ]}
+                      >
+                        <InputNumber
+                          min={1}
+                          max={60}
+                          step={1}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={t(
+                          "settings.crawlClient.fields.adaptiveLatencyThresholdRatio",
+                          {
+                            defaultValue: "Adaptive latency threshold",
+                          },
+                        )}
+                        name="adaptiveLatencyThresholdRatio"
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "settings.crawlClient.validation.adaptiveLatencyThresholdRatio",
+                              {
+                                defaultValue:
+                                  "Please enter adaptive latency threshold ratio.",
+                              },
+                            ),
+                          },
+                          {
+                            type: "number",
+                            min: 0.01,
+                            max: 0.99,
+                            message: t("common.validation.numberRange", {
+                              min: 0.01,
+                              max: 0.99,
+                            }),
+                          },
+                        ]}
+                      >
+                        <InputNumber
+                          min={0.01}
+                          max={0.99}
+                          step={0.01}
+                          precision={2}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={t("settings.crawlClient.fields.adaptiveErrorRateThreshold", {
+                          defaultValue: "Adaptive error-rate threshold",
+                        })}
+                        name="adaptiveErrorRateThreshold"
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "settings.crawlClient.validation.adaptiveErrorRateThreshold",
+                              {
+                                defaultValue:
+                                  "Please enter adaptive error-rate threshold ratio.",
+                              },
+                            ),
+                          },
+                          {
+                            type: "number",
+                            min: 0.01,
+                            max: 0.99,
+                            message: t("common.validation.numberRange", {
+                              min: 0.01,
+                              max: 0.99,
+                            }),
+                          },
+                        ]}
+                      >
+                        <InputNumber
+                          min={0.01}
+                          max={0.99}
+                          step={0.01}
+                          precision={2}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        label={t(
+                          "settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold",
+                          {
+                            defaultValue: "Adaptive memory headroom threshold",
+                          },
+                        )}
+                        name="adaptiveMemoryHeadroomThreshold"
+                        rules={[
+                          {
+                            required: true,
+                            message: t(
+                              "settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold",
+                              {
+                                defaultValue:
+                                  "Please enter adaptive memory headroom threshold ratio.",
+                              },
+                            ),
+                          },
+                          {
+                            type: "number",
+                            min: 0.01,
+                            max: 0.99,
+                            message: t("common.validation.numberRange", {
+                              min: 0.01,
+                              max: 0.99,
+                            }),
+                          },
+                        ]}
+                      >
+                        <InputNumber
+                          min={0.01}
+                          max={0.99}
+                          step={0.01}
+                          precision={2}
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </>
+                ) : null}
               </Row>
               <Form.Item style={{ marginBottom: 0 }}>
                 <Button

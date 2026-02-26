@@ -27,6 +27,12 @@ import {
   formatShortDuration,
   resolveNewsFreshnessState,
 } from "../lib/newsnow-freshness";
+import {
+  RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
+  buildResolvePrefetchAttemptState,
+  shouldSkipResolvePrefetch,
+  type ResolvePrefetchAttemptState,
+} from "../lib/newsnow-resolve-prefetch";
 import { useNewsnowStore } from "../store/newsnow-store";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 import { NewsListHot } from "./news-list-hot";
@@ -223,7 +229,7 @@ export function NewsnowCard({
   const exposureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasTrackedExposureRef = useRef(false);
   const exposureKeyRef = useRef("");
-  const lastResolvedPrefetchKeyRef = useRef<string | null>(null);
+  const lastResolvedPrefetchRef = useRef<ResolvePrefetchAttemptState | null>(null);
 
   const {
     attributes,
@@ -461,7 +467,19 @@ export function NewsnowCard({
     const prefetchKey = candidates
       .map((item) => `${toItemKey(item)}::${item.url}`)
       .join("|");
-    if (lastResolvedPrefetchKeyRef.current === prefetchKey) {
+    const nowMs = Date.now();
+    const previousPrefetch = lastResolvedPrefetchRef.current;
+    const shouldForceRefresh =
+      previousPrefetch?.key === prefetchKey &&
+      previousPrefetch.hasUnresolvedCandidates;
+    if (
+      shouldSkipResolvePrefetch({
+        prefetchKey,
+        previous: previousPrefetch,
+        nowMs,
+        retryIntervalMs: RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
+      })
+    ) {
       return;
     }
     if (candidates.length === 0) {
@@ -469,7 +487,12 @@ export function NewsnowCard({
         Object.keys(prev).length === 0 ? prev : {},
       );
       setPrefetchedEventIds((prev) => (prev.length === 0 ? prev : []));
-      lastResolvedPrefetchKeyRef.current = prefetchKey;
+      lastResolvedPrefetchRef.current = buildResolvePrefetchAttemptState({
+        prefetchKey,
+        candidateCount: 0,
+        matchedCount: 0,
+        attemptedAtMs: nowMs,
+      });
       return;
     }
 
@@ -481,6 +504,7 @@ export function NewsnowCard({
           try {
             return await resolveNewsUrl(item.url, {
               signal: abortController?.signal,
+              ...(shouldForceRefresh ? { forceRefresh: true } : {}),
             });
           } catch {
             return { matched: false as const };
@@ -492,6 +516,7 @@ export function NewsnowCard({
         return;
       }
       const nextByItemId: Record<string, { eventId?: string; itemId?: string }> = {};
+      let matchedCount = 0;
       settled.forEach((entry, idx) => {
         const item = candidates[idx];
         if (!item) {
@@ -500,6 +525,7 @@ export function NewsnowCard({
         if (!entry?.matched) {
           return;
         }
+        matchedCount += 1;
         const itemKey = toItemKey(item);
         nextByItemId[itemKey] = {
           ...(entry.eventId ? { eventId: entry.eventId } : {}),
@@ -520,7 +546,11 @@ export function NewsnowCard({
       setPrefetchedEventIds((prev) =>
         areStringArraysEqual(prev, eventIds) ? prev : eventIds,
       );
-      lastResolvedPrefetchKeyRef.current = prefetchKey;
+      lastResolvedPrefetchRef.current = buildResolvePrefetchAttemptState({
+        prefetchKey,
+        candidateCount: candidates.length,
+        matchedCount,
+      });
     };
 
     void prefetch();
