@@ -18,6 +18,16 @@ interface NewsSourceSchedulerSettingsResponse {
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
   seedUrlQueryParamAllowlist: string[];
+  rssAdaptiveHotHitRatePercent: number;
+  rssAdaptiveWarmHitRatePercent: number;
+  rssAdaptiveColdConsecutiveNoHitRuns: number;
+  rssAdaptiveHotIntervalSeconds: number;
+  rssAdaptiveWarmIntervalDivisor: number;
+  rssAdaptiveWarmMinIntervalSeconds: number;
+  rssAdaptiveColdIntervalMultiplier: number;
+  rssAdaptiveColdMaxIntervalSeconds: number;
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: number;
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: number;
 }
 
 interface NewsSourceSchedulerSettingsFormValues {
@@ -26,6 +36,16 @@ interface NewsSourceSchedulerSettingsFormValues {
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
   seedUrlQueryParamAllowlist: string[];
+  rssAdaptiveHotHitRatePercent: number;
+  rssAdaptiveWarmHitRatePercent: number;
+  rssAdaptiveColdConsecutiveNoHitRuns: number;
+  rssAdaptiveHotIntervalSeconds: number;
+  rssAdaptiveWarmIntervalDivisor: number;
+  rssAdaptiveWarmMinIntervalSeconds: number;
+  rssAdaptiveColdIntervalMultiplier: number;
+  rssAdaptiveColdMaxIntervalSeconds: number;
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: number;
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: number;
 }
 
 const DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST = [
@@ -85,6 +105,16 @@ const DEFAULT_SETTINGS: NewsSourceSchedulerSettingsResponse = {
   seedCacheTtlSecondsListDeep: 180,
   seedCacheTtlForceGlobal: false,
   seedUrlQueryParamAllowlist: [...DEFAULT_SEED_URL_QUERY_PARAM_ALLOWLIST],
+  rssAdaptiveHotHitRatePercent: 60,
+  rssAdaptiveWarmHitRatePercent: 25,
+  rssAdaptiveColdConsecutiveNoHitRuns: 4,
+  rssAdaptiveHotIntervalSeconds: 30,
+  rssAdaptiveWarmIntervalDivisor: 2,
+  rssAdaptiveWarmMinIntervalSeconds: 30,
+  rssAdaptiveColdIntervalMultiplier: 2,
+  rssAdaptiveColdMaxIntervalSeconds: 3600,
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
 };
 
 const ERROR_CODE_I18N_KEY: Record<string, string> = {
@@ -161,6 +191,22 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
         seedUrlQueryParamAllowlist: data.seedUrlQueryParamAllowlist,
+        rssAdaptiveHotHitRatePercent: data.rssAdaptiveHotHitRatePercent,
+        rssAdaptiveWarmHitRatePercent: data.rssAdaptiveWarmHitRatePercent,
+        rssAdaptiveColdConsecutiveNoHitRuns:
+          data.rssAdaptiveColdConsecutiveNoHitRuns,
+        rssAdaptiveHotIntervalSeconds: data.rssAdaptiveHotIntervalSeconds,
+        rssAdaptiveWarmIntervalDivisor: data.rssAdaptiveWarmIntervalDivisor,
+        rssAdaptiveWarmMinIntervalSeconds:
+          data.rssAdaptiveWarmMinIntervalSeconds,
+        rssAdaptiveColdIntervalMultiplier:
+          data.rssAdaptiveColdIntervalMultiplier,
+        rssAdaptiveColdMaxIntervalSeconds:
+          data.rssAdaptiveColdMaxIntervalSeconds,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds:
+          data.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
+          data.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
       });
     } catch (error) {
       captureClientError("Failed to load news source scheduler settings", error);
@@ -179,6 +225,26 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlForceGlobal: DEFAULT_SETTINGS.seedCacheTtlForceGlobal,
         seedUrlQueryParamAllowlist:
           DEFAULT_SETTINGS.seedUrlQueryParamAllowlist,
+        rssAdaptiveHotHitRatePercent:
+          DEFAULT_SETTINGS.rssAdaptiveHotHitRatePercent,
+        rssAdaptiveWarmHitRatePercent:
+          DEFAULT_SETTINGS.rssAdaptiveWarmHitRatePercent,
+        rssAdaptiveColdConsecutiveNoHitRuns:
+          DEFAULT_SETTINGS.rssAdaptiveColdConsecutiveNoHitRuns,
+        rssAdaptiveHotIntervalSeconds:
+          DEFAULT_SETTINGS.rssAdaptiveHotIntervalSeconds,
+        rssAdaptiveWarmIntervalDivisor:
+          DEFAULT_SETTINGS.rssAdaptiveWarmIntervalDivisor,
+        rssAdaptiveWarmMinIntervalSeconds:
+          DEFAULT_SETTINGS.rssAdaptiveWarmMinIntervalSeconds,
+        rssAdaptiveColdIntervalMultiplier:
+          DEFAULT_SETTINGS.rssAdaptiveColdIntervalMultiplier,
+        rssAdaptiveColdMaxIntervalSeconds:
+          DEFAULT_SETTINGS.rssAdaptiveColdMaxIntervalSeconds,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds:
+          DEFAULT_SETTINGS.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
+          DEFAULT_SETTINGS.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
       });
       messageApi.error(detail);
     } finally {
@@ -204,6 +270,22 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedUrlQueryParamAllowlist: normalizeQueryAllowlist(
           values.seedUrlQueryParamAllowlist,
         ),
+        rssAdaptiveHotHitRatePercent: values.rssAdaptiveHotHitRatePercent,
+        rssAdaptiveWarmHitRatePercent: values.rssAdaptiveWarmHitRatePercent,
+        rssAdaptiveColdConsecutiveNoHitRuns:
+          values.rssAdaptiveColdConsecutiveNoHitRuns,
+        rssAdaptiveHotIntervalSeconds: values.rssAdaptiveHotIntervalSeconds,
+        rssAdaptiveWarmIntervalDivisor: values.rssAdaptiveWarmIntervalDivisor,
+        rssAdaptiveWarmMinIntervalSeconds:
+          values.rssAdaptiveWarmMinIntervalSeconds,
+        rssAdaptiveColdIntervalMultiplier:
+          values.rssAdaptiveColdIntervalMultiplier,
+        rssAdaptiveColdMaxIntervalSeconds:
+          values.rssAdaptiveColdMaxIntervalSeconds,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds:
+          values.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
+          values.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
       };
       const response = await apiClient.put<NewsSourceSchedulerSettingsResponse>(
         "system-settings/news-source-scheduler",
@@ -223,6 +305,22 @@ export function NewsSourceSchedulerSettingsPanel() {
         seedCacheTtlSecondsListDeep: data.seedCacheTtlSecondsListDeep,
         seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal,
         seedUrlQueryParamAllowlist: data.seedUrlQueryParamAllowlist,
+        rssAdaptiveHotHitRatePercent: data.rssAdaptiveHotHitRatePercent,
+        rssAdaptiveWarmHitRatePercent: data.rssAdaptiveWarmHitRatePercent,
+        rssAdaptiveColdConsecutiveNoHitRuns:
+          data.rssAdaptiveColdConsecutiveNoHitRuns,
+        rssAdaptiveHotIntervalSeconds: data.rssAdaptiveHotIntervalSeconds,
+        rssAdaptiveWarmIntervalDivisor: data.rssAdaptiveWarmIntervalDivisor,
+        rssAdaptiveWarmMinIntervalSeconds:
+          data.rssAdaptiveWarmMinIntervalSeconds,
+        rssAdaptiveColdIntervalMultiplier:
+          data.rssAdaptiveColdIntervalMultiplier,
+        rssAdaptiveColdMaxIntervalSeconds:
+          data.rssAdaptiveColdMaxIntervalSeconds,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds:
+          data.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
+          data.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
       });
       messageApi.success(t("systemSettings.newsSourceScheduler.messages.saved"));
     } catch (error) {
@@ -453,6 +551,317 @@ export function NewsSourceSchedulerSettingsPanel() {
               { defaultValue: "id, page, lang" },
             )}
           />
+        </Form.Item>
+
+        <Typography.Title level={5}>
+          {t("systemSettings.newsSourceScheduler.sections.rssAdaptive", {
+            defaultValue: "RSS adaptive polling strategy",
+          })}
+        </Typography.Title>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveHotHitRatePercent")}
+          name="rssAdaptiveHotHitRatePercent"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotHitRatePercentRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 0,
+              max: 100,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotHitRatePercentRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveHotHitRatePercent")}
+        >
+          <InputNumber min={0} max={100} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveWarmHitRatePercent")}
+          name="rssAdaptiveWarmHitRatePercent"
+          dependencies={["rssAdaptiveHotHitRatePercent"]}
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmHitRatePercentRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 0,
+              max: 100,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmHitRatePercentRange",
+              ),
+            },
+            ({ getFieldValue }) => ({
+              validator: async (_, value: unknown) => {
+                const warm = typeof value === "number" ? value : null;
+                const hot = getFieldValue("rssAdaptiveHotHitRatePercent");
+                if (warm === null || typeof hot !== "number") {
+                  return;
+                }
+                if (warm > hot) {
+                  throw new Error(
+                    t(
+                      "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmHitRatePercentOrdering",
+                      {
+                        defaultValue:
+                          "Warm hit-rate threshold must be less than or equal to hot hit-rate threshold.",
+                      },
+                    ),
+                  );
+                }
+              },
+            }),
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveWarmHitRatePercent")}
+        >
+          <InputNumber min={0} max={100} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveColdConsecutiveNoHitRuns")}
+          name="rssAdaptiveColdConsecutiveNoHitRuns"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdConsecutiveNoHitRunsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 1,
+              max: 24,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdConsecutiveNoHitRunsRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveColdConsecutiveNoHitRuns")}
+        >
+          <InputNumber min={1} max={24} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveHotIntervalSeconds")}
+          name="rssAdaptiveHotIntervalSeconds"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotIntervalSecondsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 21600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotIntervalSecondsRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveHotIntervalSeconds")}
+        >
+          <InputNumber min={10} max={21600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveWarmIntervalDivisor")}
+          name="rssAdaptiveWarmIntervalDivisor"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmIntervalDivisorRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 1,
+              max: 8,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmIntervalDivisorRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveWarmIntervalDivisor")}
+        >
+          <InputNumber min={1} max={8} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveWarmMinIntervalSeconds")}
+          name="rssAdaptiveWarmMinIntervalSeconds"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmMinIntervalSecondsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 21600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmMinIntervalSecondsRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveWarmMinIntervalSeconds")}
+        >
+          <InputNumber min={10} max={21600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveColdIntervalMultiplier")}
+          name="rssAdaptiveColdIntervalMultiplier"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdIntervalMultiplierRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 1,
+              max: 8,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdIntervalMultiplierRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveColdIntervalMultiplier")}
+        >
+          <InputNumber min={1} max={8} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveColdMaxIntervalSeconds")}
+          name="rssAdaptiveColdMaxIntervalSeconds"
+          dependencies={["rssAdaptiveWarmMinIntervalSeconds"]}
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdMaxIntervalSecondsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 21600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdMaxIntervalSecondsRange",
+              ),
+            },
+            ({ getFieldValue }) => ({
+              validator: async (_, value: unknown) => {
+                const coldMax = typeof value === "number" ? value : null;
+                const warmMin = getFieldValue("rssAdaptiveWarmMinIntervalSeconds");
+                if (coldMax === null || typeof warmMin !== "number") {
+                  return;
+                }
+                if (coldMax < warmMin) {
+                  throw new Error(
+                    t(
+                      "systemSettings.newsSourceScheduler.validation.rssAdaptiveColdMaxIntervalSecondsOrdering",
+                      {
+                        defaultValue:
+                          "Cold max interval must be greater than or equal to warm min interval.",
+                      },
+                    ),
+                  );
+                }
+              },
+            }),
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveColdMaxIntervalSeconds")}
+        >
+          <InputNumber min={10} max={21600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveHotDiscoveryCacheTtlCapSeconds")}
+          name="rssAdaptiveHotDiscoveryCacheTtlCapSeconds"
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotDiscoveryCacheTtlCapSecondsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 3600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveHotDiscoveryCacheTtlCapSecondsRange",
+              ),
+            },
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveHotDiscoveryCacheTtlCapSeconds")}
+        >
+          <InputNumber min={10} max={3600} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.newsSourceScheduler.fields.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds")}
+          name="rssAdaptiveWarmDiscoveryCacheTtlCapSeconds"
+          dependencies={["rssAdaptiveHotDiscoveryCacheTtlCapSeconds"]}
+          rules={[
+            {
+              required: true,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRequired",
+              ),
+            },
+            {
+              type: "number",
+              min: 10,
+              max: 3600,
+              message: t(
+                "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRange",
+              ),
+            },
+            ({ getFieldValue }) => ({
+              validator: async (_, value: unknown) => {
+                const warmCap = typeof value === "number" ? value : null;
+                const hotCap = getFieldValue(
+                  "rssAdaptiveHotDiscoveryCacheTtlCapSeconds",
+                );
+                if (warmCap === null || typeof hotCap !== "number") {
+                  return;
+                }
+                if (warmCap < hotCap) {
+                  throw new Error(
+                    t(
+                      "systemSettings.newsSourceScheduler.validation.rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering",
+                      {
+                        defaultValue:
+                          "Warm discovery TTL cap must be greater than or equal to hot discovery TTL cap.",
+                      },
+                    ),
+                  );
+                }
+              },
+            }),
+          ]}
+          extra={t("systemSettings.newsSourceScheduler.hints.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds")}
+        >
+          <InputNumber min={10} max={3600} />
         </Form.Item>
 
         <Form.Item>

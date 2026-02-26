@@ -64,6 +64,77 @@ describe("NewsSourceService.createSource", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.newsSource.create).not.toHaveBeenCalled();
   });
+
+  it("strips legacy rss cache ttl override of 600 seconds on create", async () => {
+    const prisma = {
+      newsSource: {
+        create: jest.fn().mockResolvedValue({ id: "source-1" }),
+      },
+    } as any;
+    const metadataService = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+
+    await service.createSource("org-1", {
+      name: "RSS Source",
+      url: "https://example.com",
+      siteType: "general" as any,
+      frequencySeconds: 3600,
+      priority: 0,
+      crawlTemplateId: null,
+      config: {
+        seed: {
+          enabled: true,
+          mode: "rss",
+          feedUrl: "https://example.com/rss.xml",
+          cacheTtlSeconds: 600,
+        },
+      },
+    });
+
+    const createArgs = (prisma.newsSource.create as jest.Mock).mock.calls[0]?.[0];
+    const savedConfig = createArgs?.data?.config as Record<string, unknown>;
+    expect((savedConfig.seed as Record<string, unknown>).mode).toBe("rss");
+    expect(
+      (savedConfig.seed as Record<string, unknown>).cacheTtlSeconds,
+    ).toBeUndefined();
+  });
+
+  it("keeps cache ttl override for non-rss seed mode", async () => {
+    const prisma = {
+      newsSource: {
+        create: jest.fn().mockResolvedValue({ id: "source-1" }),
+      },
+    } as any;
+    const metadataService = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+
+    await service.createSource("org-1", {
+      name: "List Source",
+      url: "https://example.com/list",
+      siteType: "general" as any,
+      frequencySeconds: 3600,
+      priority: 0,
+      crawlTemplateId: null,
+      config: {
+        seed: {
+          enabled: true,
+          mode: "list",
+          cacheTtlSeconds: 600,
+        },
+      },
+    });
+
+    const createArgs = (prisma.newsSource.create as jest.Mock).mock.calls[0]?.[0];
+    const savedConfig = createArgs?.data?.config as Record<string, unknown>;
+    expect((savedConfig.seed as Record<string, unknown>).mode).toBe("list");
+    expect((savedConfig.seed as Record<string, unknown>).cacheTtlSeconds).toBe(
+      600,
+    );
+  });
 });
 
 describe("NewsSourceService.updateSource", () => {
@@ -94,6 +165,42 @@ describe("NewsSourceService.updateSource", () => {
     await expect(
       service.updateSource("org-1", "source-1", { name: "Duplicate" }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("strips legacy rss cache ttl override of 600 seconds on update", async () => {
+    const prisma = {
+      newsSource: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "source-1",
+          orgId: "org-1",
+          isActive: true,
+          frequencySeconds: 3600,
+        }),
+        update: jest.fn().mockResolvedValue({ id: "source-1" }),
+      },
+    } as any;
+    const metadataService = {} as any;
+    const env = {} as any;
+    const cache = {} as any;
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+
+    await service.updateSource("org-1", "source-1", {
+      config: {
+        seed: {
+          enabled: true,
+          mode: "rss",
+          feedUrl: "https://example.com/rss.xml",
+          cacheTtlSeconds: "600",
+        },
+      },
+    });
+
+    const updateArgs = (prisma.newsSource.update as jest.Mock).mock.calls[0]?.[0];
+    const savedConfig = updateArgs?.data?.config as Record<string, unknown>;
+    expect((savedConfig.seed as Record<string, unknown>).mode).toBe("rss");
+    expect(
+      (savedConfig.seed as Record<string, unknown>).cacheTtlSeconds,
+    ).toBeUndefined();
   });
 });
 

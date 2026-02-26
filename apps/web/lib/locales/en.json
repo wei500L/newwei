@@ -2068,6 +2068,8 @@
       "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and will crawl each discovered article.",
       "seedFeedUrl": "Feed URL (optional)",
       "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
+      "seedRssAdaptiveEnabled": "Enable RSS adaptive polling",
+      "seedRssAdaptiveEnabledHint": "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
       "seedDomain": "Seed domain (optional)",
       "seedDomainHint": "Defaults to the source URL origin if empty.",
       "seedPattern": "URL pattern (optional)",
@@ -2256,7 +2258,7 @@
       "none": "No schedule set.",
       "title": "Schedule crawl",
       "hintTitle": "Queued via crawl4ai",
-      "description": "Sets the next run time. The scheduler checks every minute and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+      "description": "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
       "enablesSource": "This will enable {{count}} source(s).",
       "presets": {
         "in5m": "+5m",
@@ -2272,6 +2274,23 @@
     "queueCounts": {
       "queued": "Queued: {{count}}",
       "active": "Active: {{count}}"
+    },
+    "rssAdaptive": {
+      "tier": {
+        "hot": "Hot",
+        "warm": "Warm",
+        "normal": "Normal",
+        "cold": "Cold"
+      },
+      "tierTag": "Adaptive {{tier}}",
+      "intervalTag": "Poll {{seconds}}s",
+      "discoveryTtlTag": "Discovery TTL {{seconds}}s",
+      "tooltip": {
+        "hitRate": "Hit rate: {{value}}",
+        "consecutiveNoHit": "Consecutive no-hit runs: {{value}}",
+        "updatedAt": "Updated at: {{value}}",
+        "noHistory": "No adaptive history yet."
+      }
     },
     "nextRun": {
       "due": "Due",
@@ -4482,13 +4501,36 @@
         "seedFreshnessWindowDays": "Seed freshness window (days)",
         "seedCacheTtlSecondsSitemapRss": "Default seed cache TTL for sitemap/RSS (seconds)",
         "seedCacheTtlSecondsListDeep": "Default seed cache TTL for list/deep (seconds)",
-        "seedCacheTtlForceGlobal": "Force global cache TTL strategy"
+        "seedCacheTtlForceGlobal": "Force global cache TTL strategy",
+        "rssAdaptiveHotHitRatePercent": "Hot hit-rate threshold (%)",
+        "rssAdaptiveWarmHitRatePercent": "Warm hit-rate threshold (%)",
+        "rssAdaptiveColdConsecutiveNoHitRuns": "Cold no-hit streak threshold (runs)",
+        "rssAdaptiveHotIntervalSeconds": "Hot interval (seconds)",
+        "rssAdaptiveWarmIntervalDivisor": "Warm interval divisor",
+        "rssAdaptiveWarmMinIntervalSeconds": "Warm min interval (seconds)",
+        "rssAdaptiveColdIntervalMultiplier": "Cold interval multiplier",
+        "rssAdaptiveColdMaxIntervalSeconds": "Cold max interval (seconds)",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot discovery TTL cap (seconds)",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm discovery TTL cap (seconds)"
+      },
+      "sections": {
+        "rssAdaptive": "RSS adaptive polling strategy"
       },
       "hints": {
         "seedFreshnessWindowDays": "URLs with publish dates older than this window are skipped during seed candidate filtering.",
         "seedCacheTtlSecondsSitemapRss": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is sitemap or rss.",
         "seedCacheTtlSecondsListDeep": "Used when a source does not explicitly set seed.cacheTtlSeconds and mode is list or deep.",
-        "seedCacheTtlForceGlobal": "When enabled, scheduler always uses global mode-based TTL defaults and ignores per-source seed.cacheTtlSeconds."
+        "seedCacheTtlForceGlobal": "When enabled, scheduler always uses global mode-based TTL defaults and ignores per-source seed.cacheTtlSeconds.",
+        "rssAdaptiveHotHitRatePercent": "If recent hit-rate >= this value, source enters hot tier.",
+        "rssAdaptiveWarmHitRatePercent": "If recent hit-rate >= this value and below hot threshold, source enters warm tier.",
+        "rssAdaptiveColdConsecutiveNoHitRuns": "If consecutive no-hit runs reach this value, source enters cold tier.",
+        "rssAdaptiveHotIntervalSeconds": "Scheduler interval used for hot tier.",
+        "rssAdaptiveWarmIntervalDivisor": "Warm interval = max(warm min interval, floor(source frequency / divisor)).",
+        "rssAdaptiveWarmMinIntervalSeconds": "Lower bound for warm interval.",
+        "rssAdaptiveColdIntervalMultiplier": "Cold interval multiplier against source frequency.",
+        "rssAdaptiveColdMaxIntervalSeconds": "Upper bound for cold interval.",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Discovery cache TTL upper cap in hot tier.",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Discovery cache TTL upper cap in warm tier."
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "Freshness window is required",
@@ -4496,7 +4538,30 @@
         "seedCacheTtlSecondsSitemapRssRequired": "Sitemap/RSS cache TTL is required",
         "seedCacheTtlSecondsSitemapRssRange": "Sitemap/RSS cache TTL must be between 10 and 3600 seconds",
         "seedCacheTtlSecondsListDeepRequired": "List/deep cache TTL is required",
-        "seedCacheTtlSecondsListDeepRange": "List/deep cache TTL must be between 10 and 3600 seconds"
+        "seedCacheTtlSecondsListDeepRange": "List/deep cache TTL must be between 10 and 3600 seconds",
+        "rssAdaptiveHotHitRatePercentRequired": "Hot hit-rate threshold is required",
+        "rssAdaptiveHotHitRatePercentRange": "Hot hit-rate threshold must be between 0 and 100",
+        "rssAdaptiveWarmHitRatePercentRequired": "Warm hit-rate threshold is required",
+        "rssAdaptiveWarmHitRatePercentRange": "Warm hit-rate threshold must be between 0 and 100",
+        "rssAdaptiveWarmHitRatePercentOrdering": "Warm hit-rate threshold must be less than or equal to hot hit-rate threshold",
+        "rssAdaptiveColdConsecutiveNoHitRunsRequired": "Cold no-hit streak threshold is required",
+        "rssAdaptiveColdConsecutiveNoHitRunsRange": "Cold no-hit streak threshold must be between 1 and 24",
+        "rssAdaptiveHotIntervalSecondsRequired": "Hot interval is required",
+        "rssAdaptiveHotIntervalSecondsRange": "Hot interval must be between 10 and 21600 seconds",
+        "rssAdaptiveWarmIntervalDivisorRequired": "Warm interval divisor is required",
+        "rssAdaptiveWarmIntervalDivisorRange": "Warm interval divisor must be between 1 and 8",
+        "rssAdaptiveWarmMinIntervalSecondsRequired": "Warm min interval is required",
+        "rssAdaptiveWarmMinIntervalSecondsRange": "Warm min interval must be between 10 and 21600 seconds",
+        "rssAdaptiveColdIntervalMultiplierRequired": "Cold interval multiplier is required",
+        "rssAdaptiveColdIntervalMultiplierRange": "Cold interval multiplier must be between 1 and 8",
+        "rssAdaptiveColdMaxIntervalSecondsRequired": "Cold max interval is required",
+        "rssAdaptiveColdMaxIntervalSecondsRange": "Cold max interval must be between 10 and 21600 seconds",
+        "rssAdaptiveColdMaxIntervalSecondsOrdering": "Cold max interval must be greater than or equal to warm min interval",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSecondsRequired": "Hot discovery TTL cap is required",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSecondsRange": "Hot discovery TTL cap must be between 10 and 3600 seconds",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRequired": "Warm discovery TTL cap is required",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRange": "Warm discovery TTL cap must be between 10 and 3600 seconds",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering": "Warm discovery TTL cap must be greater than or equal to hot discovery TTL cap"
       },
       "messages": {
         "saved": "Saved"

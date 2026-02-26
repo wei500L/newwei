@@ -61,9 +61,9 @@ export interface ImportNewsSourceOpmlReport {
     skipped: number;
     failed: number;
   };
-  created: Array<{ id: string; name: string; url: string }>;
-  skipped: Array<{ name: string; url: string; reason: string }>;
-  failed: Array<{ name: string; url: string; error: string }>;
+  created: { id: string; name: string; url: string }[];
+  skipped: { name: string; url: string; reason: string }[];
+  failed: { name: string; url: string; error: string }[];
 }
 
 interface ParsedOpmlOutline {
@@ -416,7 +416,7 @@ export class NewsSourceOpmlService {
 
   private parseOpml(opml: string): {
     title: string | null;
-    entries: Array<{ name: string; url: string; feedUrl: string; group: string | null }>;
+    entries: { name: string; url: string; feedUrl: string; group: string | null }[];
   } {
     let parsed: Record<string, unknown> | null = null;
     try {
@@ -433,7 +433,7 @@ export class NewsSourceOpmlService {
     const body = isRecord(opmlNode?.body) ? (opmlNode.body as Record<string, unknown>) : null;
     const outlines = body?.outline;
 
-    const collected: Array<{ outline: ParsedOpmlOutline; group: string | null }> = [];
+    const collected: { outline: ParsedOpmlOutline; group: string | null }[] = [];
     const walk = (node: unknown, parentGroup: string | null = null) => {
       if (!node) {
         return;
@@ -585,7 +585,6 @@ export class NewsSourceOpmlService {
         scoreThreshold: 0,
         concurrency: 5,
         dedupeWindowHours: 24,
-        cacheTtlSeconds: 600,
       },
     };
   }

@@ -5,6 +5,10 @@ import {
   DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
   DEFAULT_SEED_FORM_VALUES,
   getDefaultSeedCacheTtlSecondsByMode,
+  resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds,
+  resolveSeedRssAdaptiveIntervalSeconds,
+  resolveSeedRssAdaptiveTier,
+  resolveSeedSchedulerRuntimeSettings,
   resolveSeedCacheTtlPolicy,
   readSeedFormValuesFromConfig
 } from '../lib/news-source-seed';
@@ -58,6 +62,21 @@ describe('news-source seed config mapping', () => {
 
     expect(listValues.seedCacheTtlSeconds).toBe(getDefaultSeedCacheTtlSecondsByMode('list'));
     expect(rssValues.seedCacheTtlSeconds).toBe(getDefaultSeedCacheTtlSecondsByMode('rss'));
+  });
+
+  it('reads rss adaptive setting from config', () => {
+    const values = readSeedFormValuesFromConfig({
+      seed: {
+        enabled: true,
+        mode: 'rss',
+        rssAdaptive: {
+          enabled: true
+        }
+      }
+    });
+
+    expect(values.seedMode).toBe('rss');
+    expect(values.seedRssAdaptiveEnabled).toBe(true);
   });
 
   it('applies runtime scheduler defaults for missing cache ttl', () => {
@@ -229,5 +248,128 @@ describe('news-source seed config mapping', () => {
         })
       })
     );
+  });
+
+  it('builds rss seed config with adaptive toggle', () => {
+    const enabled = buildSeedConfigFromFormValues(
+      {
+        seedEnabled: true,
+        seedMode: 'rss',
+        seedFeedUrl: 'https://example.com/rss.xml',
+        seedRssAdaptiveEnabled: true
+      },
+      null
+    );
+    const disabled = buildSeedConfigFromFormValues(
+      {
+        seedEnabled: true,
+        seedMode: 'rss',
+        seedFeedUrl: 'https://example.com/rss.xml',
+        seedRssAdaptiveEnabled: false
+      },
+      null
+    );
+
+    expect(enabled).toEqual(
+      expect.objectContaining({
+        seed: expect.objectContaining({
+          mode: 'rss',
+          feedUrl: 'https://example.com/rss.xml',
+          rssAdaptive: expect.objectContaining({ enabled: true })
+        })
+      })
+    );
+    expect(disabled).toEqual(
+      expect.objectContaining({
+        seed: expect.objectContaining({
+          mode: 'rss',
+          rssAdaptive: expect.objectContaining({ enabled: false })
+        })
+      })
+    );
+  });
+
+  it('normalizes adaptive runtime settings with safe bounds', () => {
+    const resolved = resolveSeedSchedulerRuntimeSettings({
+      rssAdaptiveHotHitRatePercent: 40,
+      rssAdaptiveWarmHitRatePercent: 80,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 120,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
+      rssAdaptiveWarmMinIntervalSeconds: 120,
+      rssAdaptiveColdMaxIntervalSeconds: 60
+    });
+
+    expect(resolved.rssAdaptiveHotHitRatePercent).toBe(40);
+    expect(resolved.rssAdaptiveWarmHitRatePercent).toBe(40);
+    expect(resolved.rssAdaptiveHotDiscoveryCacheTtlCapSeconds).toBe(60);
+    expect(resolved.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds).toBe(60);
+    expect(resolved.rssAdaptiveWarmMinIntervalSeconds).toBe(120);
+    expect(resolved.rssAdaptiveColdMaxIntervalSeconds).toBe(120);
+  });
+
+  it('allows zero hot hit-rate threshold when resolving adaptive settings', () => {
+    const resolved = resolveSeedSchedulerRuntimeSettings({
+      rssAdaptiveHotHitRatePercent: 0,
+      rssAdaptiveWarmHitRatePercent: 50
+    });
+
+    expect(resolved.rssAdaptiveHotHitRatePercent).toBe(0);
+    expect(resolved.rssAdaptiveWarmHitRatePercent).toBe(0);
+  });
+
+  it('resolves adaptive tier from state and runtime thresholds', () => {
+    const hot = resolveSeedRssAdaptiveTier(
+      {
+        outcomes: [true, true, false, true],
+        consecutiveNoHit: 0
+      },
+      {
+        rssAdaptiveHotHitRatePercent: 60,
+        rssAdaptiveWarmHitRatePercent: 25
+      }
+    );
+    const warm = resolveSeedRssAdaptiveTier(
+      {
+        outcomes: [true, false, false, false],
+        consecutiveNoHit: 0
+      },
+      {
+        rssAdaptiveHotHitRatePercent: 80,
+        rssAdaptiveWarmHitRatePercent: 20
+      }
+    );
+    const cold = resolveSeedRssAdaptiveTier(
+      {
+        outcomes: [false, false, false],
+        consecutiveNoHit: 5
+      },
+      {
+        rssAdaptiveColdConsecutiveNoHitRuns: 4
+      }
+    );
+
+    expect(hot).toBe('hot');
+    expect(warm).toBe('warm');
+    expect(cold).toBe('cold');
+  });
+
+  it('resolves adaptive interval and discovery ttl by tier', () => {
+    const runtime = {
+      rssAdaptiveHotIntervalSeconds: 45,
+      rssAdaptiveWarmIntervalDivisor: 3,
+      rssAdaptiveWarmMinIntervalSeconds: 90,
+      rssAdaptiveColdIntervalMultiplier: 2,
+      rssAdaptiveColdMaxIntervalSeconds: 500,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 20,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 50
+    };
+
+    expect(resolveSeedRssAdaptiveIntervalSeconds(600, 'hot', runtime)).toBe(45);
+    expect(resolveSeedRssAdaptiveIntervalSeconds(600, 'warm', runtime)).toBe(200);
+    expect(resolveSeedRssAdaptiveIntervalSeconds(600, 'cold', runtime)).toBe(600);
+    expect(resolveSeedRssAdaptiveIntervalSeconds(120, 'cold', runtime)).toBe(240);
+    expect(resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds(180, 'hot', runtime)).toBe(20);
+    expect(resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds(180, 'warm', runtime)).toBe(50);
+    expect(resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds(180, 'normal', runtime)).toBe(180);
   });
 });

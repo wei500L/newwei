@@ -1,6 +1,6 @@
 import { createLogger, DEFAULT_URL_QUERY_PARAM_ALLOWLIST } from "@modular/utils";
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Injectable, NotFoundException, type OnModuleInit } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
 import { createHash } from "node:crypto";
@@ -15,10 +15,6 @@ import { CrawlTaskService } from "../crawl/crawl-task.service";
 import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
 import type { CrawlPriorityClass } from "../crawl/crawl.types";
 import {
-  buildCanonicalUrlFingerprint,
-  resolveQueryParamAllowlist,
-} from "../crawl/url-fingerprint";
-import {
   DEEP_DISCOVERY_FAILURE_STATE_TTL_SECONDS,
   DEEP_DISCOVERY_FAILURE_STATS_TTL_SECONDS,
   deepDiscoveryFailureStateCacheKey,
@@ -28,6 +24,10 @@ import {
   type DeepDiscoveryFailureState,
   type DeepDiscoveryFailureStats24h,
 } from "../crawl/deep-discovery-failure";
+import {
+  buildCanonicalUrlFingerprint,
+  resolveQueryParamAllowlist,
+} from "../crawl/url-fingerprint";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NewsSourceSchedulerSettingsService } from "../system-settings/news-source-scheduler-settings.service";
 
@@ -45,6 +45,25 @@ const MAX_SEED_FRESHNESS_WINDOW_DAYS = 3_650;
 const DEFAULT_SEED_CACHE_TTL_SECONDS_SITEMAP_RSS = 60;
 const DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP = 180;
 const DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL = false;
+const DEFAULT_RSS_ADAPTIVE_HOT_HIT_RATE_PERCENT = 60;
+const DEFAULT_RSS_ADAPTIVE_WARM_HIT_RATE_PERCENT = 25;
+const DEFAULT_RSS_ADAPTIVE_COLD_CONSECUTIVE_NO_HIT_RUNS = 4;
+const DEFAULT_RSS_ADAPTIVE_HOT_INTERVAL_SECONDS = 30;
+const DEFAULT_RSS_ADAPTIVE_WARM_INTERVAL_DIVISOR = 2;
+const DEFAULT_RSS_ADAPTIVE_WARM_MIN_INTERVAL_SECONDS = 30;
+const DEFAULT_RSS_ADAPTIVE_COLD_INTERVAL_MULTIPLIER = 2;
+const DEFAULT_RSS_ADAPTIVE_COLD_MAX_INTERVAL_SECONDS = 3_600;
+const DEFAULT_RSS_ADAPTIVE_HOT_DISCOVERY_CACHE_TTL_CAP_SECONDS = 30;
+const DEFAULT_RSS_ADAPTIVE_WARM_DISCOVERY_CACHE_TTL_CAP_SECONDS = 60;
+const SCHEDULER_DISPATCH_DEDUPE_WINDOW_MS = 25_000;
+const RSS_ADAPTIVE_STATE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const RSS_ADAPTIVE_HISTORY_SIZE = 8;
+const LEGACY_RSS_SEED_CACHE_TTL_SECONDS = 600;
+const RSS_SEED_CACHE_TTL_MIGRATION_LOCK_KEY =
+  "migration:news-source:rss-seed-cache-ttl-600";
+const RSS_SEED_CACHE_TTL_MIGRATION_DONE_KEY =
+  "migration:news-source:rss-seed-cache-ttl-600:done";
+const RSS_SEED_CACHE_TTL_MIGRATION_DONE_TTL_SECONDS = 365 * 24 * 60 * 60;
 
 type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
   include: {
@@ -55,6 +74,7 @@ type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
 interface SeedConfig {
   enabled: boolean;
   mode: "sitemap" | "rss" | "list" | "deep";
+  rssAdaptiveEnabled: boolean;
   domain?: string;
   pattern?: string;
   feedUrl?: string;
@@ -91,6 +111,14 @@ interface DeepSeedConfig {
   ignoreRobotsTxt: boolean;
 }
 
+type RssAdaptiveTier = "hot" | "warm" | "normal" | "cold";
+
+interface RssAdaptiveState {
+  outcomes: boolean[];
+  consecutiveNoHit: number;
+  updatedAt: string;
+}
+
 interface CronWindowConfig {
   daysOfWeek?: number[];
   startHour?: number;
@@ -109,6 +137,16 @@ interface SeedRuntimeSettings {
   seedCacheTtlSecondsListDeep: number;
   seedCacheTtlForceGlobal: boolean;
   seedUrlQueryParamAllowlist: string[];
+  rssAdaptiveHotHitRatePercent: number;
+  rssAdaptiveWarmHitRatePercent: number;
+  rssAdaptiveColdConsecutiveNoHitRuns: number;
+  rssAdaptiveHotIntervalSeconds: number;
+  rssAdaptiveWarmIntervalDivisor: number;
+  rssAdaptiveWarmMinIntervalSeconds: number;
+  rssAdaptiveColdIntervalMultiplier: number;
+  rssAdaptiveColdMaxIntervalSeconds: number;
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: number;
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: number;
 }
 
 const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
@@ -117,10 +155,26 @@ const DEFAULT_SEED_RUNTIME_SETTINGS: SeedRuntimeSettings = {
   seedCacheTtlSecondsListDeep: DEFAULT_SEED_CACHE_TTL_SECONDS_LIST_DEEP,
   seedCacheTtlForceGlobal: DEFAULT_SEED_CACHE_TTL_FORCE_GLOBAL,
   seedUrlQueryParamAllowlist: [...DEFAULT_URL_QUERY_PARAM_ALLOWLIST],
+  rssAdaptiveHotHitRatePercent: DEFAULT_RSS_ADAPTIVE_HOT_HIT_RATE_PERCENT,
+  rssAdaptiveWarmHitRatePercent: DEFAULT_RSS_ADAPTIVE_WARM_HIT_RATE_PERCENT,
+  rssAdaptiveColdConsecutiveNoHitRuns:
+    DEFAULT_RSS_ADAPTIVE_COLD_CONSECUTIVE_NO_HIT_RUNS,
+  rssAdaptiveHotIntervalSeconds: DEFAULT_RSS_ADAPTIVE_HOT_INTERVAL_SECONDS,
+  rssAdaptiveWarmIntervalDivisor: DEFAULT_RSS_ADAPTIVE_WARM_INTERVAL_DIVISOR,
+  rssAdaptiveWarmMinIntervalSeconds:
+    DEFAULT_RSS_ADAPTIVE_WARM_MIN_INTERVAL_SECONDS,
+  rssAdaptiveColdIntervalMultiplier:
+    DEFAULT_RSS_ADAPTIVE_COLD_INTERVAL_MULTIPLIER,
+  rssAdaptiveColdMaxIntervalSeconds:
+    DEFAULT_RSS_ADAPTIVE_COLD_MAX_INTERVAL_SECONDS,
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds:
+    DEFAULT_RSS_ADAPTIVE_HOT_DISCOVERY_CACHE_TTL_CAP_SECONDS,
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds:
+    DEFAULT_RSS_ADAPTIVE_WARM_DISCOVERY_CACHE_TTL_CAP_SECONDS,
 };
 
 @Injectable()
-export class NewsSourceSchedulerService {
+export class NewsSourceSchedulerService implements OnModuleInit {
   private readonly sourcePriorityMin = -100;
   private readonly sourcePriorityMax = 100;
   private readonly crawlHotPriorityThreshold = CRAWL_HOT_PRIORITY_THRESHOLD;
@@ -136,6 +190,10 @@ export class NewsSourceSchedulerService {
     private readonly notifications: NotificationsService,
     private readonly schedulerSettings: NewsSourceSchedulerSettingsService,
   ) {}
+
+  async onModuleInit() {
+    await this.ensureLegacyRssSeedCacheTtlMigrated();
+  }
 
   private getEnvValue<T>(
     key: string,
@@ -155,7 +213,7 @@ export class NewsSourceSchedulerService {
     return fallback;
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron("*/30 * * * * *")
   async scheduleCron() {
     const config = this.env.newsSourceSchedulerConfig;
     if (!config.enabled) {
@@ -197,7 +255,7 @@ export class NewsSourceSchedulerService {
           throw new NotFoundException("News source not found");
         }
 
-        const dedupe = this.computeMinuteDispatchDedupeKey(source.id, now);
+        const dedupe = this.computeManualDispatchDedupeKey(source.id, now);
         const dedupeAcquired = await this.cache.setIfAbsent(
           dedupe.key,
           { until: dedupe.until },
@@ -1274,6 +1332,7 @@ export class NewsSourceSchedulerService {
     source: NewsSourceWithTemplate,
     scheduledFor: Date,
     now: Date,
+    options?: { intervalSecondsOverride?: number },
   ) {
     const cron = this.normalizeCronSchedule(source);
     if (cron) {
@@ -1300,13 +1359,13 @@ export class NewsSourceSchedulerService {
     }
 
     return this.computeNextIntervalRunAt(
-      source.frequencySeconds,
+      options?.intervalSecondsOverride ?? source.frequencySeconds,
       scheduledFor,
       now,
     );
   }
 
-  private computeMinuteDispatchDedupeKey(sourceId: string, now: Date) {
+  private computeManualDispatchDedupeKey(sourceId: string, now: Date) {
     const bucketStart = new Date(now.getTime());
     bucketStart.setSeconds(0, 0);
     const bucketEnd = new Date(bucketStart.getTime() + 60_000);
@@ -1316,6 +1375,22 @@ export class NewsSourceSchedulerService {
     );
     return {
       key: `news-source:dispatch-minute:${sourceId}:${bucketStart.toISOString()}`,
+      until: bucketEnd.toISOString(),
+      ttlSeconds,
+    };
+  }
+
+  private computeSchedulerDispatchDedupeKey(sourceId: string, now: Date) {
+    const windowMs = SCHEDULER_DISPATCH_DEDUPE_WINDOW_MS;
+    const bucketStartMs = Math.floor(now.getTime() / windowMs) * windowMs;
+    const bucketStart = new Date(bucketStartMs);
+    const bucketEnd = new Date(bucketStartMs + windowMs);
+    const ttlSeconds = Math.max(
+      1,
+      Math.ceil((bucketEnd.getTime() - now.getTime()) / 1000) + 2,
+    );
+    return {
+      key: `news-source:dispatch-window:${sourceId}:${bucketStart.toISOString()}`,
       until: bucketEnd.toISOString(),
       ttlSeconds,
     };
@@ -1646,6 +1721,14 @@ export class NewsSourceSchedulerService {
     return {
       enabled: true,
       mode,
+      rssAdaptiveEnabled:
+        mode === "rss" &&
+        Boolean(
+          seed.rssAdaptive &&
+            typeof seed.rssAdaptive === "object" &&
+            !Array.isArray(seed.rssAdaptive) &&
+            (seed.rssAdaptive as Record<string, unknown>).enabled === true,
+        ),
       domain:
         mode === "sitemap" || mode === "list" || mode === "deep"
           ? this.normalizeSeedDomain(seed.domain, source.url)
@@ -1811,15 +1894,23 @@ export class NewsSourceSchedulerService {
     source: NewsSourceWithTemplate,
     seed: SeedConfig,
     seedFreshnessWindowDays: number,
+    options?: { cacheTtlSecondsOverride?: number },
   ) {
     if (seed.mode === "sitemap" && !seed.domain) {
       return [];
     }
 
-    const cacheKey = this.buildSeedDiscoveryCacheKey(source.id, source.url, seed);
+    const cacheTtlSeconds =
+      options?.cacheTtlSecondsOverride ?? seed.cacheTtlSeconds;
+    const cacheKey = this.buildSeedDiscoveryCacheKey(
+      source.id,
+      source.url,
+      seed,
+      cacheTtlSeconds,
+    );
     const discovered = await this.cache.wrap<string[]>(
       cacheKey,
-      seed.cacheTtlSeconds,
+      cacheTtlSeconds,
       async () => {
         if (seed.mode === "rss") {
           return this.metadataService.discoverRssUrls({
@@ -1952,6 +2043,7 @@ export class NewsSourceSchedulerService {
     sourceId: string,
     sourceUrl: string,
     seed: SeedConfig,
+    cacheTtlSeconds = seed.cacheTtlSeconds,
   ) {
     const fingerprintInput = {
       mode: seed.mode,
@@ -1965,7 +2057,7 @@ export class NewsSourceSchedulerService {
       followPagination: seed.followPagination,
       queryTokens: seed.queryTokens ?? [],
       scoreThreshold: seed.scoreThreshold,
-      cacheTtlSeconds: seed.cacheTtlSeconds,
+      cacheTtlSeconds,
       cacheTtlPolicy: seed.cacheTtlPolicy,
       deep: seed.deep
         ? {
@@ -1987,8 +2079,321 @@ export class NewsSourceSchedulerService {
     return `news-source:${seed.mode}:${sourceId}:${digest}`;
   }
 
+  private rssAdaptiveStateCacheKey(sourceId: string) {
+    return `news-source:rss-adaptive:${sourceId}`;
+  }
+
+  private normalizeRssAdaptiveState(value: unknown): RssAdaptiveState {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        outcomes: [],
+        consecutiveNoHit: 0,
+        updatedAt: new Date(0).toISOString(),
+      };
+    }
+
+    const record = value as Record<string, unknown>;
+    const outcomes = Array.isArray(record.outcomes)
+      ? record.outcomes
+          .filter((entry): entry is boolean => typeof entry === "boolean")
+          .slice(-RSS_ADAPTIVE_HISTORY_SIZE)
+      : [];
+    const consecutiveNoHitRaw = record.consecutiveNoHit;
+    const consecutiveNoHit =
+      typeof consecutiveNoHitRaw === "number" &&
+      Number.isFinite(consecutiveNoHitRaw)
+        ? Math.max(0, Math.floor(consecutiveNoHitRaw))
+        : 0;
+    const updatedAt =
+      typeof record.updatedAt === "string" && record.updatedAt.length > 0
+        ? record.updatedAt
+        : new Date(0).toISOString();
+
+    return {
+      outcomes,
+      consecutiveNoHit,
+      updatedAt,
+    };
+  }
+
+  private async readRssAdaptiveState(sourceId: string) {
+    const state = await this.cache.get<RssAdaptiveState>(
+      this.rssAdaptiveStateCacheKey(sourceId),
+    );
+    return this.normalizeRssAdaptiveState(state);
+  }
+
+  private async writeRssAdaptiveState(sourceId: string, state: RssAdaptiveState) {
+    await this.cache.set(
+      this.rssAdaptiveStateCacheKey(sourceId),
+      state,
+      RSS_ADAPTIVE_STATE_TTL_SECONDS,
+    );
+  }
+
+  private shouldUseRssAdaptive(
+    source: NewsSourceWithTemplate,
+    seedConfig: SeedConfig | null,
+  ) {
+    if (!seedConfig || seedConfig.mode !== "rss" || !seedConfig.rssAdaptiveEnabled) {
+      return false;
+    }
+    return this.normalizeCronSchedule(source) === null;
+  }
+
+  private resolveRssAdaptiveTier(
+    state: RssAdaptiveState,
+    runtimeSettings: SeedRuntimeSettings,
+  ): RssAdaptiveTier {
+    const normalizedState = this.normalizeRssAdaptiveState(state);
+    if (
+      normalizedState.consecutiveNoHit >=
+      runtimeSettings.rssAdaptiveColdConsecutiveNoHitRuns
+    ) {
+      return "cold";
+    }
+    const total = normalizedState.outcomes.length;
+    if (total < 3) {
+      return "normal";
+    }
+    const hits = normalizedState.outcomes.filter(Boolean).length;
+    const hitRate = hits / total;
+    if (hitRate >= runtimeSettings.rssAdaptiveHotHitRatePercent / 100) {
+      return "hot";
+    }
+    if (hitRate >= runtimeSettings.rssAdaptiveWarmHitRatePercent / 100) {
+      return "warm";
+    }
+    return "normal";
+  }
+
+  private resolveRssAdaptiveIntervalSeconds(
+    frequencySeconds: number,
+    tier: RssAdaptiveTier,
+    runtimeSettings: SeedRuntimeSettings,
+  ) {
+    const base = Math.max(1, Math.floor(frequencySeconds));
+    if (tier === "hot") {
+      return runtimeSettings.rssAdaptiveHotIntervalSeconds;
+    }
+    if (tier === "warm") {
+      return Math.max(
+        runtimeSettings.rssAdaptiveWarmMinIntervalSeconds,
+        Math.floor(base / runtimeSettings.rssAdaptiveWarmIntervalDivisor),
+      );
+    }
+    if (tier === "cold") {
+      return Math.min(
+        base * runtimeSettings.rssAdaptiveColdIntervalMultiplier,
+        Math.max(base, runtimeSettings.rssAdaptiveColdMaxIntervalSeconds),
+      );
+    }
+    return base;
+  }
+
+  private resolveRssAdaptiveCacheTtlSeconds(
+    cacheTtlSeconds: number,
+    tier: RssAdaptiveTier,
+    runtimeSettings: SeedRuntimeSettings,
+  ) {
+    const base = Math.max(10, Math.min(3600, Math.floor(cacheTtlSeconds)));
+    if (tier === "hot") {
+      return Math.max(
+        10,
+        Math.min(
+          base,
+          runtimeSettings.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        ),
+      );
+    }
+    if (tier === "warm") {
+      return Math.max(
+        10,
+        Math.min(
+          base,
+          runtimeSettings.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
+        ),
+      );
+    }
+    return base;
+  }
+
+  private buildNextRssAdaptiveState(
+    previous: RssAdaptiveState,
+    hasScheduledUrls: boolean,
+  ): RssAdaptiveState {
+    const normalized = this.normalizeRssAdaptiveState(previous);
+    const outcomes = [...normalized.outcomes, hasScheduledUrls].slice(
+      -RSS_ADAPTIVE_HISTORY_SIZE,
+    );
+    const consecutiveNoHit = hasScheduledUrls
+      ? 0
+      : normalized.consecutiveNoHit + 1;
+    return {
+      outcomes,
+      consecutiveNoHit,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async ensureLegacyRssSeedCacheTtlMigrated() {
+    try {
+      const marker = await this.cache.get<{ completedAt?: string }>(
+        RSS_SEED_CACHE_TTL_MIGRATION_DONE_KEY,
+      );
+      if (marker) {
+        return;
+      }
+
+      const result = await this.cache.withLock(
+        RSS_SEED_CACHE_TTL_MIGRATION_LOCK_KEY,
+        120_000,
+        async () => {
+          const latestMarker = await this.cache.get<{ completedAt?: string }>(
+            RSS_SEED_CACHE_TTL_MIGRATION_DONE_KEY,
+          );
+          if (latestMarker) {
+            return null;
+          }
+
+          const migrationResult =
+            await this.migrateLegacyRssSeedCacheTtlToModeDefault();
+          if (migrationResult.updatedCount > 0) {
+            await this.cache.delByPrefix("news-source:rss:");
+          }
+          await this.cache.set(
+            RSS_SEED_CACHE_TTL_MIGRATION_DONE_KEY,
+            {
+              completedAt: new Date().toISOString(),
+              ...migrationResult,
+            },
+            RSS_SEED_CACHE_TTL_MIGRATION_DONE_TTL_SECONDS,
+          );
+          return migrationResult;
+        },
+      );
+
+      if (result) {
+        logger.info(
+          {
+            scannedCount: result.scannedCount,
+            matchedCount: result.matchedCount,
+            updatedCount: result.updatedCount,
+          },
+          "Migrated legacy RSS seed cache TTL overrides",
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        { error },
+        "Failed to migrate legacy RSS seed cache TTL overrides",
+      );
+    }
+  }
+
+  private async migrateLegacyRssSeedCacheTtlToModeDefault() {
+    const rows = await this.prisma.newsSource.findMany({
+      select: { id: true, config: true },
+    });
+    let matchedCount = 0;
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      const migrated = this.removeLegacyRssSeedCacheTtlOverride(row.config);
+      if (!migrated) {
+        continue;
+      }
+      matchedCount += 1;
+      await this.prisma.newsSource.update({
+        where: { id: row.id },
+        data: { config: toPrismaJsonValue(migrated) },
+      });
+      updatedCount += 1;
+    }
+
+    return {
+      scannedCount: rows.length,
+      matchedCount,
+      updatedCount,
+    };
+  }
+
+  private removeLegacyRssSeedCacheTtlOverride(configRaw: unknown) {
+    if (!configRaw || typeof configRaw !== "object" || Array.isArray(configRaw)) {
+      return null;
+    }
+    const config = configRaw as Record<string, unknown>;
+    const seedRaw =
+      config.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
+        ? (config.seed as Record<string, unknown>)
+        : null;
+    if (!seedRaw) {
+      return null;
+    }
+
+    const modeRaw =
+      typeof seedRaw.mode === "string" ? seedRaw.mode.trim().toLowerCase() : "";
+    if (modeRaw !== "rss") {
+      return null;
+    }
+
+    const rawTtl = seedRaw.cacheTtlSeconds;
+    const ttl =
+      typeof rawTtl === "number"
+        ? rawTtl
+        : typeof rawTtl === "string" && rawTtl.trim().length > 0
+          ? Number(rawTtl)
+          : NaN;
+    if (!Number.isFinite(ttl) || Math.round(ttl) !== LEGACY_RSS_SEED_CACHE_TTL_SECONDS) {
+      return null;
+    }
+
+    const nextSeed = { ...seedRaw };
+    delete nextSeed.cacheTtlSeconds;
+    return {
+      ...config,
+      seed: nextSeed,
+    };
+  }
+
   private async resolveSeedRuntimeSettings(): Promise<SeedRuntimeSettings> {
     const settings = await this.schedulerSettings.getSettings();
+    const rssAdaptiveHotHitRatePercent = this.clampInt(
+      settings.rssAdaptiveHotHitRatePercent,
+      0,
+      100,
+      DEFAULT_RSS_ADAPTIVE_HOT_HIT_RATE_PERCENT,
+    );
+    const rssAdaptiveWarmHitRatePercent = this.clampInt(
+      settings.rssAdaptiveWarmHitRatePercent,
+      0,
+      100,
+      DEFAULT_RSS_ADAPTIVE_WARM_HIT_RATE_PERCENT,
+    );
+    const rssAdaptiveWarmMinIntervalSeconds = this.clampInt(
+      settings.rssAdaptiveWarmMinIntervalSeconds,
+      10,
+      21_600,
+      DEFAULT_RSS_ADAPTIVE_WARM_MIN_INTERVAL_SECONDS,
+    );
+    const rssAdaptiveColdMaxIntervalSeconds = this.clampInt(
+      settings.rssAdaptiveColdMaxIntervalSeconds,
+      10,
+      21_600,
+      DEFAULT_RSS_ADAPTIVE_COLD_MAX_INTERVAL_SECONDS,
+    );
+    const rssAdaptiveHotDiscoveryCacheTtlCapSeconds = this.clampInt(
+      settings.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+      10,
+      3600,
+      DEFAULT_RSS_ADAPTIVE_HOT_DISCOVERY_CACHE_TTL_CAP_SECONDS,
+    );
+    const rssAdaptiveWarmDiscoveryCacheTtlCapSeconds = this.clampInt(
+      settings.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
+      10,
+      3600,
+      DEFAULT_RSS_ADAPTIVE_WARM_DISCOVERY_CACHE_TTL_CAP_SECONDS,
+    );
     return {
       seedFreshnessWindowDays: this.clampInt(
         settings.seedFreshnessWindowDays,
@@ -2015,6 +2420,48 @@ export class NewsSourceSchedulerService {
       seedUrlQueryParamAllowlist: resolveQueryParamAllowlist(
         settings.seedUrlQueryParamAllowlist,
         DEFAULT_SEED_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist,
+      ),
+      rssAdaptiveHotHitRatePercent,
+      rssAdaptiveWarmHitRatePercent: Math.min(
+        rssAdaptiveWarmHitRatePercent,
+        rssAdaptiveHotHitRatePercent,
+      ),
+      rssAdaptiveColdConsecutiveNoHitRuns: this.clampInt(
+        settings.rssAdaptiveColdConsecutiveNoHitRuns,
+        1,
+        24,
+        DEFAULT_RSS_ADAPTIVE_COLD_CONSECUTIVE_NO_HIT_RUNS,
+      ),
+      rssAdaptiveHotIntervalSeconds: this.clampInt(
+        settings.rssAdaptiveHotIntervalSeconds,
+        10,
+        21_600,
+        DEFAULT_RSS_ADAPTIVE_HOT_INTERVAL_SECONDS,
+      ),
+      rssAdaptiveWarmIntervalDivisor: this.clampInt(
+        settings.rssAdaptiveWarmIntervalDivisor,
+        1,
+        8,
+        DEFAULT_RSS_ADAPTIVE_WARM_INTERVAL_DIVISOR,
+      ),
+      rssAdaptiveWarmMinIntervalSeconds,
+      rssAdaptiveColdIntervalMultiplier: this.clampInt(
+        settings.rssAdaptiveColdIntervalMultiplier,
+        1,
+        8,
+        DEFAULT_RSS_ADAPTIVE_COLD_INTERVAL_MULTIPLIER,
+      ),
+      rssAdaptiveColdMaxIntervalSeconds: Math.max(
+        rssAdaptiveWarmMinIntervalSeconds,
+        rssAdaptiveColdMaxIntervalSeconds,
+      ),
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: Math.min(
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
+      ),
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: Math.max(
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
       ),
     };
   }
@@ -2064,7 +2511,7 @@ export class NewsSourceSchedulerService {
       }
     }
 
-    const dashedDate = /(20\d{2})[-_/\.]([01]\d)[-_/\.]([0-3]\d)/.exec(path);
+    const dashedDate = /(20\d{2})[-_/.]([01]\d)[-_/.]([0-3]\d)/.exec(path);
     if (dashedDate) {
       const year = Number(dashedDate[1]);
       const month = Number(dashedDate[2]);
@@ -2079,7 +2526,7 @@ export class NewsSourceSchedulerService {
   }
 
   private canonicalizeSeedJobs(
-    jobs: Array<{ url: string; relevanceScore?: number }>,
+    jobs: { url: string; relevanceScore?: number }[],
     queryParamAllowlist: string[],
   ): CanonicalSeedJob[] {
     const byFingerprint = new Map<string, CanonicalSeedJob>();
@@ -2384,7 +2831,7 @@ export class NewsSourceSchedulerService {
         break;
       }
 
-      const dedupe = this.computeMinuteDispatchDedupeKey(source.id, now);
+      const dedupe = this.computeSchedulerDispatchDedupeKey(source.id, now);
       const dedupeAcquired = await this.cache.setIfAbsent(
         dedupe.key,
         { until: dedupe.until },
@@ -2461,10 +2908,26 @@ export class NewsSourceSchedulerService {
       }
 
       const scheduledFor = source.nextRunAt ?? now;
-      const nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
 
       const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
       try {
+        const rssAdaptiveEnabled = this.shouldUseRssAdaptive(source, seedConfig);
+        const rssAdaptiveState = rssAdaptiveEnabled
+          ? await this.readRssAdaptiveState(source.id)
+          : null;
+        const rssAdaptiveTierBefore =
+          rssAdaptiveEnabled && rssAdaptiveState
+            ? this.resolveRssAdaptiveTier(rssAdaptiveState, runtimeSettings)
+            : null;
+        const rssAdaptiveDiscoveryCacheTtlSeconds =
+          seedConfig && rssAdaptiveTierBefore
+            ? this.resolveRssAdaptiveCacheTtlSeconds(
+                seedConfig.cacheTtlSeconds,
+                rssAdaptiveTierBefore,
+                runtimeSettings,
+              )
+            : undefined;
+
         if (seedConfig) {
           logger.debug(
             {
@@ -2474,6 +2937,10 @@ export class NewsSourceSchedulerService {
               seedFreshnessWindowDays,
               seedCacheTtlSeconds: seedConfig.cacheTtlSeconds,
               seedCacheTtlPolicy: seedConfig.cacheTtlPolicy,
+              rssAdaptiveEnabled: seedConfig.rssAdaptiveEnabled,
+              rssAdaptiveTier: rssAdaptiveTierBefore,
+              rssAdaptiveDiscoveryCacheTtlSeconds:
+                rssAdaptiveDiscoveryCacheTtlSeconds ?? null,
             },
             "Resolved seed discovery runtime policy",
           );
@@ -2483,6 +2950,9 @@ export class NewsSourceSchedulerService {
               source,
               seedConfig,
               seedFreshnessWindowDays,
+              {
+                cacheTtlSecondsOverride: rssAdaptiveDiscoveryCacheTtlSeconds,
+              },
             )
           : [{ url: source.url, relevanceScore: undefined }];
         if (seedConfig?.mode === "deep") {
@@ -2523,6 +2993,29 @@ export class NewsSourceSchedulerService {
               .slice(0, maxNewUrlsThisRun)
           : jobsToSchedule;
 
+        let nextRunAt = this.computeNextRunAt(source, scheduledFor, now);
+        let rssAdaptiveTierAfter: RssAdaptiveTier | null = null;
+        let rssAdaptiveIntervalSeconds: number | null = null;
+        if (rssAdaptiveEnabled && rssAdaptiveState) {
+          const nextAdaptiveState = this.buildNextRssAdaptiveState(
+            rssAdaptiveState,
+            newJobs.length > 0,
+          );
+          await this.writeRssAdaptiveState(source.id, nextAdaptiveState);
+          rssAdaptiveTierAfter = this.resolveRssAdaptiveTier(
+            nextAdaptiveState,
+            runtimeSettings,
+          );
+          rssAdaptiveIntervalSeconds = this.resolveRssAdaptiveIntervalSeconds(
+            source.frequencySeconds,
+            rssAdaptiveTierAfter,
+            runtimeSettings,
+          );
+          nextRunAt = this.computeNextRunAt(source, scheduledFor, now, {
+            intervalSecondsOverride: rssAdaptiveIntervalSeconds,
+          });
+        }
+
         await this.prisma.newsSource.update({
           where: { id: source.id },
           data: {
@@ -2542,6 +3035,12 @@ export class NewsSourceSchedulerService {
               seedFreshnessWindowDays,
               seedCacheTtlSeconds: seedConfig?.cacheTtlSeconds,
               seedCacheTtlPolicy: seedConfig?.cacheTtlPolicy,
+              rssAdaptiveEnabled: seedConfig?.rssAdaptiveEnabled ?? false,
+              rssAdaptiveTierBefore,
+              rssAdaptiveTierAfter,
+              rssAdaptiveIntervalSeconds,
+              rssAdaptiveDiscoveryCacheTtlSeconds:
+                rssAdaptiveDiscoveryCacheTtlSeconds ?? null,
               scheduledFor,
               nextRunAt,
             },

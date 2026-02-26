@@ -22,6 +22,18 @@ describe("NewsSourceSchedulerSettingsController", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    const adaptiveDefaults = {
+      rssAdaptiveHotHitRatePercent: 60,
+      rssAdaptiveWarmHitRatePercent: 25,
+      rssAdaptiveColdConsecutiveNoHitRuns: 4,
+      rssAdaptiveHotIntervalSeconds: 30,
+      rssAdaptiveWarmIntervalDivisor: 2,
+      rssAdaptiveWarmMinIntervalSeconds: 30,
+      rssAdaptiveColdIntervalMultiplier: 2,
+      rssAdaptiveColdMaxIntervalSeconds: 3600,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
+    };
     settings.getSettings.mockResolvedValue({
       source: "db",
       seedFreshnessWindowDays: 365,
@@ -29,6 +41,7 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
       seedUrlQueryParamAllowlist: ["id", "lang"],
+      ...adaptiveDefaults,
     });
     settings.updateSettings.mockResolvedValue({
       source: "db",
@@ -37,6 +50,7 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: true,
       seedUrlQueryParamAllowlist: ["id", "lang"],
+      ...adaptiveDefaults,
     });
     controller = new NewsSourceSchedulerSettingsController(settings as any);
   });
@@ -57,6 +71,16 @@ describe("NewsSourceSchedulerSettingsController", () => {
       seedCacheTtlSecondsListDeep: 240,
       seedCacheTtlForceGlobal: true,
       seedUrlQueryParamAllowlist: ["id", "lang"],
+      rssAdaptiveHotHitRatePercent: 60,
+      rssAdaptiveWarmHitRatePercent: 25,
+      rssAdaptiveColdConsecutiveNoHitRuns: 4,
+      rssAdaptiveHotIntervalSeconds: 30,
+      rssAdaptiveWarmIntervalDivisor: 2,
+      rssAdaptiveWarmMinIntervalSeconds: 30,
+      rssAdaptiveColdIntervalMultiplier: 2,
+      rssAdaptiveColdMaxIntervalSeconds: 3600,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
     };
 
     await controller.updateSettings(user, body);

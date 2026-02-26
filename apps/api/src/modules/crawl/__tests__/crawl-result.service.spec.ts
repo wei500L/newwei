@@ -275,6 +275,53 @@ describe("CrawlResultService", () => {
     });
   });
 
+  it("selects the earliest created row as org dedupe winner", () => {
+    const service = createService(128);
+    const created = {
+      id: "result-new",
+      fetchedAt: new Date("2026-02-26T10:05:00.000Z"),
+      createdAt: new Date("2026-02-26T10:05:00.000Z"),
+    };
+    const existing = [
+      {
+        id: "result-existing",
+        fetchedAt: new Date("2026-02-26T10:00:00.000Z"),
+        createdAt: new Date("2026-02-26T10:00:00.000Z"),
+      },
+    ];
+
+    const winner = (service as any).selectOrgDedupeWinner(created, existing);
+
+    expect(winner).toEqual({
+      id: "result-existing",
+      fetchedAt: new Date("2026-02-26T10:00:00.000Z"),
+    });
+  });
+
+  it("uses id as a stable tie-breaker for org dedupe winner selection", () => {
+    const service = createService(128);
+    const createdAt = new Date("2026-02-26T10:00:00.000Z");
+    const created = {
+      id: "result-b",
+      fetchedAt: new Date("2026-02-26T10:00:01.000Z"),
+      createdAt,
+    };
+    const existing = [
+      {
+        id: "result-a",
+        fetchedAt: new Date("2026-02-26T10:00:02.000Z"),
+        createdAt,
+      },
+    ];
+
+    const winner = (service as any).selectOrgDedupeWinner(created, existing);
+
+    expect(winner).toEqual({
+      id: "result-a",
+      fetchedAt: new Date("2026-02-26T10:00:02.000Z"),
+    });
+  });
+
   it("reuses recent org-level hash matches when task-level records are missing", async () => {
     const now = new Date("2026-02-26T10:00:00.000Z");
     const prisma = {

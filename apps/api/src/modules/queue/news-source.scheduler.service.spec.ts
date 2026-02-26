@@ -41,6 +41,7 @@ describe("NewsSourceSchedulerService", () => {
 
     const metadataService = {
       discoverSitemapUrls: jest.fn(),
+      discoverRssUrls: jest.fn(),
       discoverDeepUrls: jest.fn(),
     } as any;
 
@@ -55,6 +56,7 @@ describe("NewsSourceSchedulerService", () => {
       ),
       get: jest.fn().mockResolvedValue(null),
       del: jest.fn().mockResolvedValue(undefined),
+      delByPrefix: jest.fn().mockResolvedValue(undefined),
       set: jest.fn().mockResolvedValue(undefined),
       setIfAbsent: jest.fn().mockResolvedValue(true),
       incr: jest.fn().mockResolvedValue(1),
@@ -1023,5 +1025,382 @@ describe("NewsSourceSchedulerService", () => {
         }),
       }),
     );
+  });
+
+  it("parses RSS adaptive opt-in only for rss seed mode", () => {
+    const { service } = createService();
+
+    const rssEnabled = (service as any).normalizeSeedConfig({
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "rss",
+          rssAdaptive: {
+            enabled: true,
+          },
+        },
+      },
+    });
+    const rssDisabled = (service as any).normalizeSeedConfig({
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "rss",
+        },
+      },
+    });
+    const listIgnored = (service as any).normalizeSeedConfig({
+      url: "https://example.com/latest",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "list",
+          rssAdaptive: {
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    expect(rssEnabled?.rssAdaptiveEnabled).toBe(true);
+    expect(rssDisabled?.rssAdaptiveEnabled).toBe(false);
+    expect(listIgnored?.rssAdaptiveEnabled).toBe(false);
+  });
+
+  it("supports seed discovery cache ttl override for adaptive scheduling", async () => {
+    const { service, cache, metadataService } = createService();
+    (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([]);
+
+    const source = {
+      id: "source-1",
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "sitemap",
+          cacheTtlSeconds: 120,
+          maxUrls: 20,
+          maxNewUrlsPerRun: 5,
+        },
+      },
+      crawlTemplate: null,
+    };
+
+    const seed = (service as any).normalizeSeedConfig(source);
+    await (service as any).resolveSeedCandidates(source as any, seed, 365);
+    await (service as any).resolveSeedCandidates(source as any, seed, 365, {
+      cacheTtlSecondsOverride: 30,
+    });
+
+    const defaultCall = (cache.wrap as jest.Mock).mock.calls[0];
+    const overrideCall = (cache.wrap as jest.Mock).mock.calls[1];
+    expect(defaultCall?.[1]).toBe(seed.cacheTtlSeconds);
+    expect(overrideCall?.[1]).toBe(30);
+    expect(defaultCall?.[0]).not.toBe(overrideCall?.[0]);
+  });
+
+  it("skips legacy rss cache ttl migration when done marker exists", async () => {
+    const { service, cache, prisma } = createService();
+    (cache.get as jest.Mock).mockResolvedValueOnce({
+      completedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    await (service as any).ensureLegacyRssSeedCacheTtlMigrated();
+
+    expect(cache.withLock).not.toHaveBeenCalled();
+    expect(prisma.newsSource.findMany).not.toHaveBeenCalled();
+  });
+
+  it("runs legacy rss cache ttl migration under lock and writes done marker", async () => {
+    const { service, cache, prisma } = createService();
+    (cache.withLock as jest.Mock).mockImplementation(
+      async (_key: string, _ttlMs: number, fn: () => Promise<unknown>) => fn(),
+    );
+    (cache.get as jest.Mock).mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "rss-legacy",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            cacheTtlSeconds: 600,
+          },
+        },
+      },
+      {
+        id: "rss-normal",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            cacheTtlSeconds: 90,
+          },
+        },
+      },
+    ]);
+    (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+
+    await (service as any).ensureLegacyRssSeedCacheTtlMigrated();
+
+    expect(cache.withLock).toHaveBeenCalledWith(
+      "migration:news-source:rss-seed-cache-ttl-600",
+      120_000,
+      expect.any(Function),
+    );
+    expect(prisma.newsSource.update).toHaveBeenCalledTimes(1);
+    expect(cache.delByPrefix).toHaveBeenCalledWith("news-source:rss:");
+    expect(cache.set).toHaveBeenCalledWith(
+      "migration:news-source:rss-seed-cache-ttl-600:done",
+      expect.objectContaining({
+        scannedCount: 2,
+        matchedCount: 1,
+        updatedCount: 1,
+        completedAt: expect.any(String),
+      }),
+      365 * 24 * 60 * 60,
+    );
+  });
+
+  it("applies rss adaptive hot tier interval and discovery ttl overrides", async () => {
+    const {
+      service,
+      prisma,
+      metadataService,
+      crawlQueue,
+      schedulerSettings,
+      cache,
+    } = createService();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    schedulerSettings.getSettings = jest.fn().mockResolvedValue({
+      source: "db",
+      seedFreshnessWindowDays: 365,
+      seedCacheTtlSecondsSitemapRss: 60,
+      seedCacheTtlSecondsListDeep: 180,
+      seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
+      rssAdaptiveHotHitRatePercent: 60,
+      rssAdaptiveWarmHitRatePercent: 25,
+      rssAdaptiveColdConsecutiveNoHitRuns: 4,
+      rssAdaptiveHotIntervalSeconds: 45,
+      rssAdaptiveWarmIntervalDivisor: 2,
+      rssAdaptiveWarmMinIntervalSeconds: 30,
+      rssAdaptiveColdIntervalMultiplier: 2,
+      rssAdaptiveColdMaxIntervalSeconds: 3600,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 20,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 50,
+    });
+    (cache.get as jest.Mock).mockResolvedValueOnce({
+      outcomes: [true, true, true],
+      consecutiveNoHit: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    (metadataService.discoverRssUrls as jest.Mock).mockResolvedValue([
+      "https://example.com/news/a",
+    ]);
+    (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "rss-hot",
+        orgId: "org-1",
+        name: "RSS Hot",
+        url: "https://example.com",
+        siteType: "general",
+        language: "en",
+        crawlTemplateId: null,
+        frequencySeconds: 900,
+        priority: 0,
+        nextRunAt: now,
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            feedUrl: "https://example.com/rss.xml",
+            rssAdaptive: { enabled: true },
+            maxUrls: 20,
+            maxNewUrlsPerRun: 5,
+            dedupeWindowHours: 24,
+            cacheTtlSeconds: 300,
+          },
+        },
+        crawlTemplate: null,
+      },
+    ]);
+    (prisma.membership.findFirst as jest.Mock).mockResolvedValue({
+      userId: "user-actor",
+    });
+    (prisma.article.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.pipelineJob.findMany as jest.Mock).mockResolvedValue([]);
+
+    let taskIndex = 0;
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (fn: (tx: any) => Promise<any>) =>
+        fn({
+          pipelineJob: {
+            create: jest.fn(async () => ({ id: "job-1", metadata: null })),
+            update: jest.fn(async () => ({})),
+          },
+          crawlTask: {
+            findFirst: jest.fn(async () => null),
+            create: jest.fn(async () => ({ id: `task-${++taskIndex}` })),
+            update: jest.fn(async (args: any) => ({
+              id: args?.where?.id ?? `task-${taskIndex}`,
+            })),
+          },
+        }),
+    );
+    (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+    (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
+
+    await (service as any).scheduleDueSources(now, 10);
+
+    const discoveryCall = (cache.wrap as jest.Mock).mock.calls[0];
+    expect(discoveryCall?.[1]).toBe(20);
+    expect(prisma.newsSource.update).toHaveBeenCalledWith({
+      where: { id: "rss-hot" },
+      data: {
+        lastRunAt: now,
+        nextRunAt: new Date(now.getTime() + 45 * 1000),
+      },
+    });
+    expect(cache.set).toHaveBeenCalledWith(
+      "news-source:rss-adaptive:rss-hot",
+      expect.objectContaining({
+        consecutiveNoHit: 0,
+      }),
+      30 * 24 * 60 * 60,
+    );
+  });
+
+  it("applies rss adaptive cold tier interval and keeps base discovery ttl", async () => {
+    const { service, prisma, metadataService, schedulerSettings, cache } =
+      createService();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    schedulerSettings.getSettings = jest.fn().mockResolvedValue({
+      source: "db",
+      seedFreshnessWindowDays: 365,
+      seedCacheTtlSecondsSitemapRss: 60,
+      seedCacheTtlSecondsListDeep: 180,
+      seedCacheTtlForceGlobal: false,
+      seedUrlQueryParamAllowlist: ["id", "lang"],
+      rssAdaptiveHotHitRatePercent: 60,
+      rssAdaptiveWarmHitRatePercent: 25,
+      rssAdaptiveColdConsecutiveNoHitRuns: 4,
+      rssAdaptiveHotIntervalSeconds: 30,
+      rssAdaptiveWarmIntervalDivisor: 2,
+      rssAdaptiveWarmMinIntervalSeconds: 30,
+      rssAdaptiveColdIntervalMultiplier: 2,
+      rssAdaptiveColdMaxIntervalSeconds: 900,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 20,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 50,
+    });
+    (cache.get as jest.Mock).mockResolvedValueOnce({
+      outcomes: [false, false, false],
+      consecutiveNoHit: 4,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    (metadataService.discoverRssUrls as jest.Mock).mockResolvedValue([]);
+    (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "rss-cold",
+        orgId: "org-1",
+        name: "RSS Cold",
+        url: "https://example.com",
+        siteType: "general",
+        language: "en",
+        crawlTemplateId: null,
+        frequencySeconds: 300,
+        priority: 0,
+        nextRunAt: now,
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            feedUrl: "https://example.com/rss.xml",
+            rssAdaptive: { enabled: true },
+            maxUrls: 20,
+            maxNewUrlsPerRun: 5,
+            dedupeWindowHours: 24,
+            cacheTtlSeconds: 300,
+          },
+        },
+        crawlTemplate: null,
+      },
+    ]);
+    (prisma.pipelineJob.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+
+    await (service as any).scheduleDueSources(now, 10);
+
+    const discoveryCall = (cache.wrap as jest.Mock).mock.calls[0];
+    expect(discoveryCall?.[1]).toBe(300);
+    expect(prisma.newsSource.update).toHaveBeenCalledWith({
+      where: { id: "rss-cold" },
+      data: {
+        lastRunAt: now,
+        nextRunAt: new Date(now.getTime() + 600 * 1000),
+      },
+    });
+  });
+
+  it("migrates legacy rss cache ttl override of 600 seconds", async () => {
+    const { service, prisma } = createService();
+
+    (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: "rss-legacy",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            feedUrl: "https://example.com/rss.xml",
+            cacheTtlSeconds: 600,
+          },
+        },
+      },
+      {
+        id: "rss-non-legacy",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "rss",
+            cacheTtlSeconds: 60,
+          },
+        },
+      },
+      {
+        id: "list-legacy",
+        config: {
+          seed: {
+            enabled: true,
+            mode: "list",
+            cacheTtlSeconds: 600,
+          },
+        },
+      },
+    ]);
+    (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
+
+    const result = await (service as any).migrateLegacyRssSeedCacheTtlToModeDefault();
+
+    expect(result).toEqual({
+      scannedCount: 3,
+      matchedCount: 1,
+      updatedCount: 1,
+    });
+    expect(prisma.newsSource.update).toHaveBeenCalledTimes(1);
+    const updateArgs = (prisma.newsSource.update as jest.Mock).mock.calls[0]?.[0];
+    expect(updateArgs.where).toEqual({ id: "rss-legacy" });
+    expect(updateArgs.data.config).toEqual(
+      expect.objectContaining({
+        seed: expect.objectContaining({
+          mode: "rss",
+          feedUrl: "https://example.com/rss.xml",
+        }),
+      }),
+    );
+    expect((updateArgs.data.config as any).seed.cacheTtlSeconds).toBeUndefined();
   });
 });

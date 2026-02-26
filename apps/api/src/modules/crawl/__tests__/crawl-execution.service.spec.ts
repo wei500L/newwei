@@ -385,6 +385,74 @@ describe("CrawlExecutionService", () => {
       }
     });
 
+    it("does not skip crawl body extraction on 304 when task includes additionalUrls", async () => {
+      const task = createMockTask({
+        config: {
+          additionalUrls: ["https://example.com/secondary"],
+        },
+      });
+      const fetchedAt = new Date("2026-02-26T10:00:00.000Z");
+      const persistSummary = {
+        inserted: 1,
+        skipped: 0,
+        lastFetchedAt: new Date("2026-02-26T10:05:00.000Z"),
+      };
+
+      mockPrisma.crawlTask.findFirst.mockResolvedValue(task);
+      mockPrisma.crawlTask.update.mockResolvedValue(task);
+      mockPrisma.crawlResult.findFirst.mockResolvedValue({
+        id: "result-previous",
+        fetchedAt,
+        metadata: {
+          httpEtag: "\"seed-v1\"",
+          httpLastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
+        },
+      });
+      mockCrawlClient.crawl.mockResolvedValue(createMockCrawlResponse());
+      mockResultService.persistResults.mockResolvedValue(persistSummary);
+      mockResultService.extractMarkdownResult.mockReturnValue({
+        primary: "# Test",
+      });
+
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 304,
+        headers: {
+          get: (key: string) => {
+            if (key === "etag") {
+              return "\"seed-v1\"";
+            }
+            if (key === "last-modified") {
+              return "Mon, 01 Jan 2024 00:00:00 GMT";
+            }
+            return null;
+          },
+        },
+        body: null,
+      }) as any;
+      (service as any).shouldRunConditionalPreflight = jest
+        .fn()
+        .mockReturnValue(true);
+
+      try {
+        const result = await service.runTask("task-1", "org-1");
+
+        expect(result).toEqual(expect.objectContaining(persistSummary));
+        expect(mockCrawlClient.crawl).toHaveBeenCalledTimes(1);
+        expect(mockCrawlClient.crawl).toHaveBeenCalledWith(
+          expect.objectContaining({
+            urls: expect.arrayContaining([
+              "https://example.com",
+              "https://example.com/secondary",
+            ]),
+          }),
+        );
+        expect(mockResultService.persistResults).toHaveBeenCalledTimes(1);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
     it("looks up HTTP validators by canonical URL fingerprint within task scope", async () => {
       const task = createMockTask({
         targetUrl: "https://example.com/story?id=42&utm_source=newsletter",

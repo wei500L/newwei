@@ -39,6 +39,8 @@ const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
   PipelineJobStatus.running,
   PipelineJobStatus.delayed,
 ];
+const LEGACY_RSS_SEED_CACHE_TTL_SECONDS = 600;
+const RSS_ADAPTIVE_MAX_HISTORY_SIZE = 8;
 
 export interface NewsSourceSeedConfig {
   enabled: boolean;
@@ -274,6 +276,24 @@ export class NewsSourceService {
       }
     }
 
+    const rssAdaptiveStateKeys = sources.map(
+      (source) => `news-source:rss-adaptive:${source.id}`,
+    );
+    const rssAdaptiveStateValues = await this.cache.getMany<unknown>(
+      rssAdaptiveStateKeys,
+    );
+    const rssAdaptiveStateBySourceId = new Map<
+      string,
+      { outcomes: boolean[]; consecutiveNoHit: number; updatedAt: string } | null
+    >();
+    for (const [index, value] of rssAdaptiveStateValues.entries()) {
+      const id = sources[index]?.id;
+      if (typeof id !== "string" || id.length === 0) {
+        continue;
+      }
+      rssAdaptiveStateBySourceId.set(id, this.normalizeRssAdaptiveState(value));
+    }
+
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const pipelineJobs24h =
       sources.length > 0
@@ -368,6 +388,7 @@ export class NewsSourceService {
         backpressurePendingJobs,
         backpressureThreshold,
         backpressureCount24h,
+        rssAdaptiveState: rssAdaptiveStateBySourceId.get(source.id) ?? null,
         stats24h: {
           completed: stats?.completed ?? 0,
           failed: stats?.failed ?? 0,
@@ -982,8 +1003,9 @@ export class NewsSourceService {
     if (typeof config !== "object" || Array.isArray(config)) {
       throw new BadRequestException("config must be an object");
     }
+    const normalizedConfig = { ...config };
 
-    const crawlOptions = (config as Record<string, unknown>).crawlOptions;
+    const crawlOptions = normalizedConfig.crawlOptions;
     if (crawlOptions !== undefined) {
       if (
         !crawlOptions ||
@@ -998,7 +1020,30 @@ export class NewsSourceService {
       );
     }
 
-    return config;
+    const seedConfig =
+      normalizedConfig.seed &&
+      typeof normalizedConfig.seed === "object" &&
+      !Array.isArray(normalizedConfig.seed)
+        ? { ...(normalizedConfig.seed as Record<string, unknown>) }
+        : null;
+    if (seedConfig) {
+      const modeRaw =
+        typeof seedConfig.mode === "string"
+          ? seedConfig.mode.trim().toLowerCase()
+          : "";
+      const roundedTtl = this.toRoundedSeedCacheTtlSeconds(
+        seedConfig.cacheTtlSeconds,
+      );
+      if (
+        modeRaw === "rss" &&
+        roundedTtl === LEGACY_RSS_SEED_CACHE_TTL_SECONDS
+      ) {
+        delete seedConfig.cacheTtlSeconds;
+        normalizedConfig.seed = seedConfig;
+      }
+    }
+
+    return normalizedConfig;
   }
 
   private normalizeSeedConfig(
@@ -1196,6 +1241,45 @@ export class NewsSourceService {
       return fallback;
     }
     return Math.min(max, Math.max(min, value));
+  }
+
+  private toRoundedSeedCacheTtlSeconds(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.round(value);
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.round(parsed);
+      }
+    }
+    return null;
+  }
+
+  private normalizeRssAdaptiveState(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const outcomes = Array.isArray(record.outcomes)
+      ? record.outcomes
+          .filter((entry): entry is boolean => typeof entry === "boolean")
+          .slice(-RSS_ADAPTIVE_MAX_HISTORY_SIZE)
+      : [];
+    const consecutiveNoHit =
+      typeof record.consecutiveNoHit === "number" &&
+      Number.isFinite(record.consecutiveNoHit)
+        ? Math.max(0, Math.floor(record.consecutiveNoHit))
+        : 0;
+    const updatedAt =
+      typeof record.updatedAt === "string" && record.updatedAt.length > 0
+        ? record.updatedAt
+        : new Date(0).toISOString();
+    return {
+      outcomes,
+      consecutiveNoHit,
+      updatedAt,
+    };
   }
 
   private resolveUniqueConflictMessage(error: unknown): string | null {

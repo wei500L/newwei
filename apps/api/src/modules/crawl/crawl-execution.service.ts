@@ -314,6 +314,14 @@ export class CrawlExecutionService {
       let effectiveOptions = this.ensureTaskSessionReuse(task.id, options);
       const payload = this.buildRequestPayload(task, effectiveOptions);
       effectiveOptions = payload.options ?? effectiveOptions;
+      const payloadUrls =
+        Array.isArray(payload.urls) && payload.urls.length > 0
+          ? payload.urls
+          : [task.targetUrl];
+      if (!Array.isArray(payload.urls) || payload.urls.length === 0) {
+        payload.urls = payloadUrls;
+      }
+      const isSingleUrlPayload = payloadUrls.length <= 1;
       const latestHttpValidationState =
         await this.findLatestResultHttpValidationState({
           taskId: task.id,
@@ -375,6 +383,7 @@ export class CrawlExecutionService {
       if (
         preflightResult?.status === "completed" &&
         preflightResult.result.status === 304 &&
+        isSingleUrlPayload &&
         latestHttpValidationState?.resultId
       ) {
         const summary: CrawlExecutionSummary = {
@@ -442,7 +451,7 @@ export class CrawlExecutionService {
         status: "processing",
         message: "crawl4ai request started",
         data: {
-          urls: payload.urls?.length ?? 0,
+          urls: payloadUrls.length,
           scanFullPage: effectiveOptions.scanFullPage ?? false,
           scrollDelayMs: effectiveOptions.scrollDelayMs ?? null,
           virtualScroll: effectiveOptions.virtualScroll

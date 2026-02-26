@@ -93,6 +93,28 @@ describe('NewsSourceOpmlService', () => {
     });
 
     expect(prisma.newsSource.create).toHaveBeenCalledTimes(1);
+    const createArgs = (prisma.newsSource.create as jest.Mock).mock.calls[0]?.[0];
+    const createdSeed =
+      createArgs &&
+      createArgs.data &&
+      createArgs.data.config &&
+      typeof createArgs.data.config === 'object' &&
+      !Array.isArray(createArgs.data.config) &&
+      (createArgs.data.config as Record<string, unknown>).seed &&
+      typeof (createArgs.data.config as Record<string, unknown>).seed === 'object'
+        ? ((createArgs.data.config as Record<string, unknown>).seed as Record<
+            string,
+            unknown
+          >)
+        : null;
+    expect(createdSeed).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        mode: 'rss',
+        feedUrl: 'https://new-source.test/rss.xml',
+      }),
+    );
+    expect(createdSeed?.cacheTtlSeconds).toBeUndefined();
     expect(report.summary.total).toBe(3);
     expect(report.summary.enabled).toBe(3);
     expect(report.summary.created).toBe(1);

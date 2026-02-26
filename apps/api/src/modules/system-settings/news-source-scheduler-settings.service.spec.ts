@@ -17,6 +17,26 @@ describe("NewsSourceSchedulerSettingsService", () => {
     "locale",
     "hl",
   ];
+  const defaultAdaptiveSettings = {
+    rssAdaptiveHotHitRatePercent: 60,
+    rssAdaptiveWarmHitRatePercent: 25,
+    rssAdaptiveColdConsecutiveNoHitRuns: 4,
+    rssAdaptiveHotIntervalSeconds: 30,
+    rssAdaptiveWarmIntervalDivisor: 2,
+    rssAdaptiveWarmMinIntervalSeconds: 30,
+    rssAdaptiveColdIntervalMultiplier: 2,
+    rssAdaptiveColdMaxIntervalSeconds: 3600,
+    rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
+  } as const;
+  const baseUpdateInput = {
+    seedFreshnessWindowDays: 45,
+    seedCacheTtlSecondsSitemapRss: 75,
+    seedCacheTtlSecondsListDeep: 210,
+    seedCacheTtlForceGlobal: false,
+    seedUrlQueryParamAllowlist: ["id", "lang"],
+    ...defaultAdaptiveSettings,
+  };
 
   const prisma = {
     systemSetting: {
@@ -56,6 +76,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
       seedUrlQueryParamAllowlist: defaultAllowlist,
+      ...defaultAdaptiveSettings,
     });
   });
 
@@ -109,6 +130,16 @@ describe("NewsSourceSchedulerSettingsService", () => {
         seedCacheTtlSecondsListDeep: 240,
         seedCacheTtlForceGlobal: true,
         seedUrlQueryParamAllowlist: ["id", "lang"],
+        rssAdaptiveHotHitRatePercent: 70,
+        rssAdaptiveWarmHitRatePercent: 40,
+        rssAdaptiveColdConsecutiveNoHitRuns: 6,
+        rssAdaptiveHotIntervalSeconds: 45,
+        rssAdaptiveWarmIntervalDivisor: 3,
+        rssAdaptiveWarmMinIntervalSeconds: 40,
+        rssAdaptiveColdIntervalMultiplier: 3,
+        rssAdaptiveColdMaxIntervalSeconds: 4800,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 20,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 80,
       },
     });
 
@@ -121,6 +152,16 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsListDeep: 240,
       seedCacheTtlForceGlobal: true,
       seedUrlQueryParamAllowlist: ["id", "lang"],
+      rssAdaptiveHotHitRatePercent: 70,
+      rssAdaptiveWarmHitRatePercent: 40,
+      rssAdaptiveColdConsecutiveNoHitRuns: 6,
+      rssAdaptiveHotIntervalSeconds: 45,
+      rssAdaptiveWarmIntervalDivisor: 3,
+      rssAdaptiveWarmMinIntervalSeconds: 40,
+      rssAdaptiveColdIntervalMultiplier: 3,
+      rssAdaptiveColdMaxIntervalSeconds: 4800,
+      rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 20,
+      rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 80,
     });
   });
 
@@ -140,16 +181,14 @@ describe("NewsSourceSchedulerSettingsService", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
       seedUrlQueryParamAllowlist: defaultAllowlist,
+      ...defaultAdaptiveSettings,
     });
   });
 
   it("updates settings and writes audit log", async () => {
     await service.updateSettings("org-1", "actor-1", {
-      seedFreshnessWindowDays: 45,
-      seedCacheTtlSecondsSitemapRss: 75,
-      seedCacheTtlSecondsListDeep: 210,
+      ...baseUpdateInput,
       seedCacheTtlForceGlobal: true,
-      seedUrlQueryParamAllowlist: ["id", "lang"],
     });
 
     expect(prisma.systemSetting.upsert).toHaveBeenCalledWith(
@@ -168,11 +207,8 @@ describe("NewsSourceSchedulerSettingsService", () => {
   it("rejects invalid update payload without silently falling back", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
+        ...baseUpdateInput,
         seedFreshnessWindowDays: 4_000,
-        seedCacheTtlSecondsSitemapRss: 75,
-        seedCacheTtlSecondsListDeep: 210,
-        seedCacheTtlForceGlobal: false,
-        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedFreshnessWindowDays must be an integer between 1 and 3650",
@@ -183,11 +219,8 @@ describe("NewsSourceSchedulerSettingsService", () => {
   it("rejects invalid sitemap/rss ttl in update payload", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
-        seedFreshnessWindowDays: 45,
+        ...baseUpdateInput,
         seedCacheTtlSecondsSitemapRss: 9,
-        seedCacheTtlSecondsListDeep: 210,
-        seedCacheTtlForceGlobal: false,
-        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedCacheTtlSecondsSitemapRss must be an integer between 10 and 3600",
@@ -198,11 +231,8 @@ describe("NewsSourceSchedulerSettingsService", () => {
   it("rejects invalid list/deep ttl in update payload", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
-        seedFreshnessWindowDays: 45,
-        seedCacheTtlSecondsSitemapRss: 75,
+        ...baseUpdateInput,
         seedCacheTtlSecondsListDeep: 3_601,
-        seedCacheTtlForceGlobal: false,
-        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow(
       "seedCacheTtlSecondsListDeep must be an integer between 10 and 3600",
@@ -213,11 +243,8 @@ describe("NewsSourceSchedulerSettingsService", () => {
   it("rejects invalid cache ttl strategy toggle in update payload", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
-        seedFreshnessWindowDays: 45,
-        seedCacheTtlSecondsSitemapRss: 75,
-        seedCacheTtlSecondsListDeep: 210,
+        ...baseUpdateInput,
         seedCacheTtlForceGlobal: "true" as unknown as boolean,
-        seedUrlQueryParamAllowlist: ["id"],
       }),
     ).rejects.toThrow("seedCacheTtlForceGlobal must be a boolean");
     expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
@@ -226,10 +253,7 @@ describe("NewsSourceSchedulerSettingsService", () => {
   it("rejects invalid seed query allowlist payload", async () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
-        seedFreshnessWindowDays: 45,
-        seedCacheTtlSecondsSitemapRss: 75,
-        seedCacheTtlSecondsListDeep: 210,
-        seedCacheTtlForceGlobal: false,
+        ...baseUpdateInput,
         seedUrlQueryParamAllowlist: ["id", "utm source"],
       }),
     ).rejects.toThrow(
@@ -238,24 +262,50 @@ describe("NewsSourceSchedulerSettingsService", () => {
     expect(prisma.systemSetting.upsert).not.toHaveBeenCalled();
   });
 
+  it("rejects invalid adaptive hit rate ordering", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        ...baseUpdateInput,
+        rssAdaptiveHotHitRatePercent: 30,
+        rssAdaptiveWarmHitRatePercent: 40,
+      }),
+    ).rejects.toThrow(
+      "rssAdaptiveWarmHitRatePercent must be less than or equal to rssAdaptiveHotHitRatePercent",
+    );
+  });
+
+  it("rejects invalid adaptive cache ttl cap ordering", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        ...baseUpdateInput,
+        rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 90,
+        rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 45,
+      }),
+    ).rejects.toThrow(
+      "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds must be greater than or equal to rssAdaptiveHotDiscoveryCacheTtlCapSeconds",
+    );
+  });
+
+  it("rejects invalid adaptive interval ordering", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        ...baseUpdateInput,
+        rssAdaptiveWarmMinIntervalSeconds: 120,
+        rssAdaptiveColdMaxIntervalSeconds: 90,
+      }),
+    ).rejects.toThrow(
+      "rssAdaptiveColdMaxIntervalSeconds must be greater than or equal to rssAdaptiveWarmMinIntervalSeconds",
+    );
+  });
+
   it("does not fail update when cache invalidation throws", async () => {
     cache.delByPrefix = jest.fn().mockRejectedValue(new Error("redis down"));
 
     await expect(
-      service.updateSettings("org-1", "actor-1", {
-        seedFreshnessWindowDays: 45,
-        seedCacheTtlSecondsSitemapRss: 75,
-        seedCacheTtlSecondsListDeep: 210,
-        seedCacheTtlForceGlobal: false,
-        seedUrlQueryParamAllowlist: ["id", "lang"],
-      }),
+      service.updateSettings("org-1", "actor-1", baseUpdateInput),
     ).resolves.toMatchObject({
       source: "db",
-      seedFreshnessWindowDays: 45,
-      seedCacheTtlSecondsSitemapRss: 75,
-      seedCacheTtlSecondsListDeep: 210,
-      seedCacheTtlForceGlobal: false,
-      seedUrlQueryParamAllowlist: ["id", "lang"],
+      ...baseUpdateInput,
     });
     expect(prisma.systemSetting.upsert).toHaveBeenCalled();
   });

@@ -485,34 +485,44 @@ export class CrawlResultService {
 
       if (options?.orgContentDedupeSince) {
         stage = "check_org_dedupe_race";
-        const existingWithinWindow = await this.prisma.crawlResult.findFirst({
+        const existingWithinWindow = await this.prisma.crawlResult.findMany({
           where: {
             orgId: task.orgId,
             contentHash: entry.hash,
             fetchedAt: { gte: options.orgContentDedupeSince },
             NOT: { id: created.id },
           },
-          orderBy: { fetchedAt: "desc" },
-          select: { id: true, fetchedAt: true },
+          select: { id: true, fetchedAt: true, createdAt: true },
         });
-        if (existingWithinWindow) {
-          logger.warn(
+        if (existingWithinWindow.length > 0) {
+          const winner = this.selectOrgDedupeWinner(
             {
-              taskId: task.id,
-              orgId: task.orgId,
-              duplicateResultId: existingWithinWindow.id,
-              transientResultId: created.id,
-              sourceUrl,
-              contentHash: entry.hash,
+              id: created.id,
+              fetchedAt: created.fetchedAt,
+              createdAt: created.createdAt,
             },
-            "Detected org-level duplicate crawl result insert race; rolling back transient row",
+            existingWithinWindow,
           );
-          await this.rollbackPersistedResult(task, created.id);
-          return {
-            resultId: existingWithinWindow.id,
-            fetchedAt: existingWithinWindow.fetchedAt,
-            inserted: false,
-          };
+
+          if (winner.id !== created.id) {
+            logger.warn(
+              {
+                taskId: task.id,
+                orgId: task.orgId,
+                duplicateResultId: winner.id,
+                transientResultId: created.id,
+                sourceUrl,
+                contentHash: entry.hash,
+              },
+              "Detected org-level duplicate crawl result insert race; rolling back transient row",
+            );
+            await this.rollbackPersistedResult(task, created.id);
+            return {
+              resultId: winner.id,
+              fetchedAt: winner.fetchedAt,
+              inserted: false,
+            };
+          }
         }
       }
 
@@ -637,6 +647,26 @@ export class CrawlResultService {
         "Failed to cleanup crawl result row during rollback"
       );
     }
+  }
+
+  private selectOrgDedupeWinner(
+    created: Pick<CrawlResult, "id" | "fetchedAt" | "createdAt">,
+    existing: Array<Pick<CrawlResult, "id" | "fetchedAt" | "createdAt">>,
+  ): Pick<CrawlResult, "id" | "fetchedAt"> {
+    const candidates = [created, ...existing];
+    candidates.sort((left, right) => {
+      const createdAtDelta =
+        left.createdAt.getTime() - right.createdAt.getTime();
+      if (createdAtDelta !== 0) {
+        return createdAtDelta;
+      }
+      return left.id.localeCompare(right.id);
+    });
+    const [winner = created] = candidates;
+    return {
+      id: winner.id,
+      fetchedAt: winner.fetchedAt,
+    };
   }
 
   private isUniqueConstraintConflict(error: unknown): boolean {

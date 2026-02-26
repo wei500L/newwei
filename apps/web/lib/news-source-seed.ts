@@ -5,6 +5,16 @@ export interface SeedSchedulerRuntimeSettings {
   seedCacheTtlSecondsSitemapRss: number;
   seedCacheTtlSecondsListDeep: number;
   seedUrlQueryParamAllowlist: string[];
+  rssAdaptiveHotHitRatePercent: number;
+  rssAdaptiveWarmHitRatePercent: number;
+  rssAdaptiveColdConsecutiveNoHitRuns: number;
+  rssAdaptiveHotIntervalSeconds: number;
+  rssAdaptiveWarmIntervalDivisor: number;
+  rssAdaptiveWarmMinIntervalSeconds: number;
+  rssAdaptiveColdIntervalMultiplier: number;
+  rssAdaptiveColdMaxIntervalSeconds: number;
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: number;
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: number;
 }
 
 export interface NewsSourceSeedFormValues {
@@ -13,6 +23,7 @@ export interface NewsSourceSeedFormValues {
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
+  seedRssAdaptiveEnabled?: boolean;
   seedQuery?: string;
   seedMaxUrls?: number;
   seedMaxNewUrlsPerRun?: number;
@@ -62,7 +73,17 @@ export const DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS: SeedSchedulerRuntimeSettin
     "lang",
     "locale",
     "hl"
-  ]
+  ],
+  rssAdaptiveHotHitRatePercent: 60,
+  rssAdaptiveWarmHitRatePercent: 25,
+  rssAdaptiveColdConsecutiveNoHitRuns: 4,
+  rssAdaptiveHotIntervalSeconds: 30,
+  rssAdaptiveWarmIntervalDivisor: 2,
+  rssAdaptiveWarmMinIntervalSeconds: 30,
+  rssAdaptiveColdIntervalMultiplier: 2,
+  rssAdaptiveColdMaxIntervalSeconds: 3600,
+  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60
 };
 
 const QUERY_PARAM_KEY_PATTERN = /^[a-z0-9_.-]{1,64}$/i;
@@ -101,7 +122,7 @@ const toIntegerInRange = (value: unknown, min: number, max: number): number | nu
   return rounded;
 };
 
-const resolveSeedSchedulerRuntimeSettings = (
+export const resolveSeedSchedulerRuntimeSettings = (
   runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
 ): SeedSchedulerRuntimeSettings => {
   const sitemapRss =
@@ -113,11 +134,67 @@ const resolveSeedSchedulerRuntimeSettings = (
   const allowlist = Array.isArray(runtimeSettings?.seedUrlQueryParamAllowlist)
     ? normalizeSeedQueryParamAllowlist(runtimeSettings?.seedUrlQueryParamAllowlist)
     : [...DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist];
+  const rssAdaptiveHotHitRatePercent =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveHotHitRatePercent, 0, 100) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotHitRatePercent;
+  const rssAdaptiveWarmHitRatePercentRaw =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmHitRatePercent, 0, 100) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmHitRatePercent;
+  const rssAdaptiveWarmHitRatePercent = Math.min(
+    rssAdaptiveWarmHitRatePercentRaw,
+    rssAdaptiveHotHitRatePercent,
+  );
+  const rssAdaptiveColdConsecutiveNoHitRuns =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveColdConsecutiveNoHitRuns, 1, 24) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdConsecutiveNoHitRuns;
+  const rssAdaptiveHotIntervalSeconds =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveHotIntervalSeconds, 10, 21600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotIntervalSeconds;
+  const rssAdaptiveWarmIntervalDivisor =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmIntervalDivisor, 1, 8) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmIntervalDivisor;
+  const rssAdaptiveWarmMinIntervalSeconds =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmMinIntervalSeconds, 10, 21600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmMinIntervalSeconds;
+  const rssAdaptiveColdIntervalMultiplier =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveColdIntervalMultiplier, 1, 8) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdIntervalMultiplier;
+  const rssAdaptiveColdMaxIntervalSecondsRaw =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveColdMaxIntervalSeconds, 10, 21600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdMaxIntervalSeconds;
+  const rssAdaptiveColdMaxIntervalSeconds = Math.max(
+    rssAdaptiveWarmMinIntervalSeconds,
+    rssAdaptiveColdMaxIntervalSecondsRaw,
+  );
+  const rssAdaptiveHotDiscoveryCacheTtlCapSecondsRaw =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveHotDiscoveryCacheTtlCapSeconds, 10, 3600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotDiscoveryCacheTtlCapSeconds;
+  const rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRaw =
+    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds, 10, 3600) ??
+    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds;
+  const rssAdaptiveHotDiscoveryCacheTtlCapSeconds = Math.min(
+    rssAdaptiveHotDiscoveryCacheTtlCapSecondsRaw,
+    rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRaw,
+  );
+  const rssAdaptiveWarmDiscoveryCacheTtlCapSeconds = Math.max(
+    rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRaw,
+    rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+  );
   return {
     seedCacheTtlForceGlobal: runtimeSettings?.seedCacheTtlForceGlobal === true,
     seedCacheTtlSecondsSitemapRss: sitemapRss,
     seedCacheTtlSecondsListDeep: listDeep,
-    seedUrlQueryParamAllowlist: allowlist
+    seedUrlQueryParamAllowlist: allowlist,
+    rssAdaptiveHotHitRatePercent,
+    rssAdaptiveWarmHitRatePercent,
+    rssAdaptiveColdConsecutiveNoHitRuns,
+    rssAdaptiveHotIntervalSeconds,
+    rssAdaptiveWarmIntervalDivisor,
+    rssAdaptiveWarmMinIntervalSeconds,
+    rssAdaptiveColdIntervalMultiplier,
+    rssAdaptiveColdMaxIntervalSeconds,
+    rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds
   };
 };
 
@@ -138,6 +215,138 @@ export interface ResolvedSeedCacheTtlPolicy {
   effectiveCacheTtlSeconds: number;
   sourceSeedCacheTtlSeconds: number | null;
 }
+
+export type SeedRssAdaptiveTier = 'hot' | 'warm' | 'normal' | 'cold';
+
+export interface SeedRssAdaptiveState {
+  outcomes: boolean[];
+  consecutiveNoHit: number;
+  updatedAt: string;
+}
+
+const RSS_ADAPTIVE_MAX_HISTORY_SIZE = 8;
+
+export const normalizeSeedRssAdaptiveState = (
+  value: unknown,
+): SeedRssAdaptiveState => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      outcomes: [],
+      consecutiveNoHit: 0,
+      updatedAt: new Date(0).toISOString()
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const outcomes = Array.isArray(record.outcomes)
+    ? record.outcomes
+        .filter((entry): entry is boolean => typeof entry === 'boolean')
+        .slice(-RSS_ADAPTIVE_MAX_HISTORY_SIZE)
+    : [];
+  const consecutiveNoHit =
+    typeof record.consecutiveNoHit === 'number' && Number.isFinite(record.consecutiveNoHit)
+      ? Math.max(0, Math.floor(record.consecutiveNoHit))
+      : 0;
+  const updatedAt =
+    typeof record.updatedAt === 'string' && record.updatedAt.length > 0
+      ? record.updatedAt
+      : new Date(0).toISOString();
+  return {
+    outcomes,
+    consecutiveNoHit,
+    updatedAt
+  };
+};
+
+export const resolveSeedRssAdaptiveHitRate = (
+  stateValue: unknown,
+): number | null => {
+  const state = normalizeSeedRssAdaptiveState(stateValue);
+  if (state.outcomes.length === 0) {
+    return null;
+  }
+  const hits = state.outcomes.filter(Boolean).length;
+  return hits / state.outcomes.length;
+};
+
+export const resolveSeedRssAdaptiveTier = (
+  stateValue: unknown,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
+): SeedRssAdaptiveTier => {
+  const state = normalizeSeedRssAdaptiveState(stateValue);
+  const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  if (
+    state.consecutiveNoHit >= resolved.rssAdaptiveColdConsecutiveNoHitRuns
+  ) {
+    return 'cold';
+  }
+  if (state.outcomes.length < 3) {
+    return 'normal';
+  }
+  const hitRate = resolveSeedRssAdaptiveHitRate(state);
+  if (hitRate === null) {
+    return 'normal';
+  }
+  if (hitRate >= resolved.rssAdaptiveHotHitRatePercent / 100) {
+    return 'hot';
+  }
+  if (hitRate >= resolved.rssAdaptiveWarmHitRatePercent / 100) {
+    return 'warm';
+  }
+  return 'normal';
+};
+
+export const resolveSeedRssAdaptiveIntervalSeconds = (
+  frequencySeconds: number,
+  tier: SeedRssAdaptiveTier,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
+): number => {
+  const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  const base =
+    typeof frequencySeconds === 'number' && Number.isFinite(frequencySeconds)
+      ? Math.max(1, Math.floor(frequencySeconds))
+      : 1;
+  if (tier === 'hot') {
+    return resolved.rssAdaptiveHotIntervalSeconds;
+  }
+  if (tier === 'warm') {
+    return Math.max(
+      resolved.rssAdaptiveWarmMinIntervalSeconds,
+      Math.floor(base / resolved.rssAdaptiveWarmIntervalDivisor),
+    );
+  }
+  if (tier === 'cold') {
+    return Math.min(
+      base * resolved.rssAdaptiveColdIntervalMultiplier,
+      Math.max(base, resolved.rssAdaptiveColdMaxIntervalSeconds),
+    );
+  }
+  return base;
+};
+
+export const resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds = (
+  cacheTtlSeconds: number,
+  tier: SeedRssAdaptiveTier,
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
+): number => {
+  const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  const base =
+    typeof cacheTtlSeconds === 'number' && Number.isFinite(cacheTtlSeconds)
+      ? Math.max(10, Math.min(3600, Math.floor(cacheTtlSeconds)))
+      : 60;
+  if (tier === 'hot') {
+    return Math.max(
+      10,
+      Math.min(base, resolved.rssAdaptiveHotDiscoveryCacheTtlCapSeconds),
+    );
+  }
+  if (tier === 'warm') {
+    return Math.max(
+      10,
+      Math.min(base, resolved.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds),
+    );
+  }
+  return base;
+};
 
 export const resolveSeedCacheTtlPolicy = (
   modeValue: unknown,
@@ -172,6 +381,7 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
     | 'seedMode'
     | 'seedMaxUrls'
     | 'seedMaxNewUrlsPerRun'
+    | 'seedRssAdaptiveEnabled'
     | 'seedScoreThreshold'
     | 'seedDedupeWindowHours'
     | 'seedCacheTtlSeconds'
@@ -195,6 +405,7 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
   seedMode: 'sitemap',
   seedMaxUrls: 200,
   seedMaxNewUrlsPerRun: 80,
+  seedRssAdaptiveEnabled: false,
   seedScoreThreshold: 0,
   seedDedupeWindowHours: 24,
   seedCacheTtlSeconds: getDefaultSeedCacheTtlSecondsByMode('sitemap'),
@@ -235,6 +446,12 @@ export const readSeedFormValuesFromConfig = (
     seedConfig?.deep && typeof seedConfig.deep === 'object' && !Array.isArray(seedConfig.deep)
       ? (seedConfig.deep as Record<string, unknown>)
       : null;
+  const rssAdaptiveConfig =
+    seedConfig?.rssAdaptive &&
+    typeof seedConfig.rssAdaptive === 'object' &&
+    !Array.isArray(seedConfig.rssAdaptive)
+      ? (seedConfig.rssAdaptive as Record<string, unknown>)
+      : null;
 
   return {
     seedEnabled: seedConfig?.enabled === true,
@@ -242,6 +459,10 @@ export const readSeedFormValuesFromConfig = (
     seedDomain: typeof seedConfig?.domain === 'string' ? seedConfig.domain : '',
     seedPattern: typeof seedConfig?.pattern === 'string' ? seedConfig.pattern : '',
     seedFeedUrl: typeof seedConfig?.feedUrl === 'string' ? seedConfig.feedUrl : '',
+    seedRssAdaptiveEnabled:
+      typeof rssAdaptiveConfig?.enabled === 'boolean'
+        ? rssAdaptiveConfig.enabled
+        : DEFAULT_SEED_FORM_VALUES.seedRssAdaptiveEnabled,
     seedQuery: typeof seedConfig?.query === 'string' ? seedConfig.query : '',
     seedMaxUrls: toFiniteNumber(seedConfig?.maxUrls) ?? DEFAULT_SEED_FORM_VALUES.seedMaxUrls,
     seedMaxNewUrlsPerRun:
@@ -314,6 +535,9 @@ export const buildSeedConfigFromFormValues = (
     if (feedUrl) {
       seed.feedUrl = feedUrl;
     }
+    seed.rssAdaptive = {
+      enabled: values.seedRssAdaptiveEnabled === true
+    };
   } else {
     const domain = values.seedDomain?.trim();
     if (domain) {

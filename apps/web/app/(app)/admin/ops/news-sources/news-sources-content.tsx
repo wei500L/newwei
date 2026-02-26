@@ -60,14 +60,14 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   buildSeedConfigFromFormValues,
   type SeedSchedulerRuntimeSettings,
-  DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
   DEFAULT_SEED_FORM_VALUES,
   getDefaultSeedCacheTtlSecondsByMode,
-  normalizeSeedQueryParamAllowlist,
   normalizeSeedMode,
   resolveSeedCacheTtlPolicy,
+  resolveSeedSchedulerRuntimeSettings,
   readSeedFormValuesFromConfig,
 } from "@/lib/news-source-seed";
+import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
 
 interface NewsSourceRecord {
   id: string;
@@ -89,6 +89,7 @@ interface NewsSourceRecord {
   backpressureUntil?: string | null;
   backpressurePendingJobs?: number | null;
   backpressureThreshold?: number | null;
+  rssAdaptiveState?: unknown;
   config?: Record<string, unknown> | null;
   latestJob?: {
     id: string;
@@ -398,6 +399,7 @@ interface NewsSourceFormValues {
   seedDomain?: string;
   seedPattern?: string;
   seedFeedUrl?: string;
+  seedRssAdaptiveEnabled?: boolean;
   seedQuery?: string;
   seedMaxUrls?: number;
   seedMaxNewUrlsPerRun?: number;
@@ -435,6 +437,7 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedDomain: "",
   seedPattern: "",
   seedFeedUrl: "",
+  seedRssAdaptiveEnabled: DEFAULT_SEED_FORM_VALUES.seedRssAdaptiveEnabled,
   seedQuery: "",
   crawlProxyMode: "auto",
   crawlProxyUrl: "",
@@ -994,6 +997,11 @@ export function NewsSourcesContent() {
     () => sources.filter((source) => selectedSourceIdSet.has(source.id)),
     [selectedSourceIdSet, sources],
   );
+  const resolvedSeedRuntimeSettings = useMemo(
+    () =>
+      resolveSeedSchedulerRuntimeSettings(seedSchedulerSettings ?? undefined),
+    [seedSchedulerSettings],
+  );
 
   const uniqueGroups = useMemo(
     () =>
@@ -1248,24 +1256,10 @@ export function NewsSourcesContent() {
         "system-settings/news-source-scheduler",
       );
       const data = response.data ?? {};
+      const runtimeSettings = resolveSeedSchedulerRuntimeSettings(data);
       setSeedSchedulerSettings({
         source: data.source === "db" ? "db" : "default",
-        seedCacheTtlForceGlobal: data.seedCacheTtlForceGlobal === true,
-        seedCacheTtlSecondsSitemapRss:
-          typeof data.seedCacheTtlSecondsSitemapRss === "number" &&
-          Number.isFinite(data.seedCacheTtlSecondsSitemapRss)
-            ? data.seedCacheTtlSecondsSitemapRss
-            : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss,
-        seedCacheTtlSecondsListDeep:
-          typeof data.seedCacheTtlSecondsListDeep === "number" &&
-          Number.isFinite(data.seedCacheTtlSecondsListDeep)
-            ? data.seedCacheTtlSecondsListDeep
-            : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep,
-        seedUrlQueryParamAllowlist: Array.isArray(
-          data.seedUrlQueryParamAllowlist,
-        )
-          ? normalizeSeedQueryParamAllowlist(data.seedUrlQueryParamAllowlist)
-          : DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist,
+        ...runtimeSettings,
       });
       setSeedSchedulerSettingsLoadFailed(false);
     } catch (error) {
@@ -1612,6 +1606,17 @@ export function NewsSourcesContent() {
     });
   }, [search, sources]);
 
+  const resolveRssAdaptiveObservability = useCallback(
+    (record: NewsSourceRecord) =>
+      resolveRssAdaptiveListUiModel({
+        config: record.config,
+        frequencySeconds: record.frequencySeconds,
+        rssAdaptiveState: record.rssAdaptiveState,
+        runtimeSettings: resolvedSeedRuntimeSettings,
+      }),
+    [resolvedSeedRuntimeSettings],
+  );
+
   const siteTypeOptions = [
     {
       value: "general",
@@ -1828,7 +1833,7 @@ export function NewsSourcesContent() {
         : null;
     const seedFormValues = readSeedFormValuesFromConfig(
       config,
-      seedSchedulerSettings ?? undefined,
+      resolvedSeedRuntimeSettings,
     );
     const seedMode = normalizeSeedMode(seedConfig?.mode);
     const crawlOptionsConfig =
@@ -3612,76 +3617,160 @@ export function NewsSourcesContent() {
       dataIndex: "name",
       key: "name",
       width: 320,
-      render: (_, record) => (
-        <Space direction="vertical" size={2}>
-          <Space size={8} wrap>
-            <Typography.Text strong>{record.name}</Typography.Text>
-            {(() => {
-              const mode = getSeedMode(record.config);
-              if (!mode) {
-                return null;
-              }
-              const color =
-                mode === "rss"
-                  ? "blue"
-                  : mode === "list"
-                    ? "gold"
-                    : mode === "deep"
-                      ? "geekblue"
-                      : "purple";
-              const label =
-                mode === "rss"
-                  ? t("newsSources.seedMode.rss", {
-                      defaultValue: "RSS / Atom",
-                    })
-                  : mode === "list"
-                    ? t("newsSources.seedMode.list", {
-                        defaultValue: "List page",
+      render: (_, record) => {
+        const mode = getSeedMode(record.config);
+        const modeTag =
+          mode === null
+            ? null
+            : (() => {
+                const color =
+                  mode === "rss"
+                    ? "blue"
+                    : mode === "list"
+                      ? "gold"
+                      : mode === "deep"
+                        ? "geekblue"
+                        : "purple";
+                const label =
+                  mode === "rss"
+                    ? t("newsSources.seedMode.rss", {
+                        defaultValue: "RSS / Atom",
                       })
-                    : mode === "deep"
-                      ? t("newsSources.seedMode.deep", {
-                          defaultValue: "Deep discovery",
+                    : mode === "list"
+                      ? t("newsSources.seedMode.list", {
+                          defaultValue: "List page",
                         })
-                      : t("newsSources.seedMode.sitemap", {
-                          defaultValue: "Sitemap",
-                        });
-              return <Tag color={color}>{label}</Tag>;
-            })()}
-          </Space>
-          <Space size={6} wrap>
-            {record.crawlTaskQueuedCount > 0 ? (
-              <Tag color="cyan">
-                {t("newsSources.queueCounts.queued", {
-                  defaultValue: "Queued: {{count}}",
-                  count: record.crawlTaskQueuedCount,
+                      : mode === "deep"
+                        ? t("newsSources.seedMode.deep", {
+                            defaultValue: "Deep discovery",
+                          })
+                        : t("newsSources.seedMode.sitemap", {
+                            defaultValue: "Sitemap",
+                          });
+                return <Tag color={color}>{label}</Tag>;
+              })();
+        const rssAdaptive = resolveRssAdaptiveObservability(record);
+        const rssAdaptiveTierColor =
+          rssAdaptive?.tier === "hot"
+            ? "volcano"
+            : rssAdaptive?.tier === "warm"
+              ? "gold"
+              : rssAdaptive?.tier === "cold"
+                ? "blue"
+                : "default";
+        const rssAdaptiveTierLabel =
+          rssAdaptive?.tier === "hot"
+            ? t("newsSources.rssAdaptive.tier.hot", { defaultValue: "Hot" })
+            : rssAdaptive?.tier === "warm"
+              ? t("newsSources.rssAdaptive.tier.warm", { defaultValue: "Warm" })
+              : rssAdaptive?.tier === "cold"
+                ? t("newsSources.rssAdaptive.tier.cold", { defaultValue: "Cold" })
+                : t("newsSources.rssAdaptive.tier.normal", {
+                    defaultValue: "Normal",
+                  });
+
+        return (
+          <Space direction="vertical" size={2}>
+            <Space size={8} wrap>
+              <Typography.Text strong>{record.name}</Typography.Text>
+              {modeTag}
+              {rssAdaptive ? (
+                <Tooltip
+                  title={
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text>
+                        {t("newsSources.rssAdaptive.tooltip.hitRate", {
+                          defaultValue: "Hit rate: {{value}}",
+                          value:
+                            typeof rssAdaptive.hitRate === "number"
+                              ? `${Math.round(rssAdaptive.hitRate * 100)}%`
+                              : t("common.emptyValue", { defaultValue: "-" }),
+                        })}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {rssAdaptive.hasHistory
+                          ? t("newsSources.rssAdaptive.tooltip.consecutiveNoHit", {
+                              defaultValue: "Consecutive no-hit runs: {{value}}",
+                              value: rssAdaptive.consecutiveNoHit,
+                            })
+                          : t("newsSources.rssAdaptive.tooltip.noHistory", {
+                              defaultValue: "No adaptive history yet.",
+                            })}
+                      </Typography.Text>
+                      {rssAdaptive.updatedAt ? (
+                        <Typography.Text type="secondary">
+                          {t("newsSources.rssAdaptive.tooltip.updatedAt", {
+                            defaultValue: "Updated at: {{value}}",
+                            value: formatDateTime(rssAdaptive.updatedAt, locale, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            }),
+                          })}
+                        </Typography.Text>
+                      ) : null}
+                    </Space>
+                  }
+                >
+                  <Tag color={rssAdaptiveTierColor}>
+                    {t("newsSources.rssAdaptive.tierTag", {
+                      defaultValue: "Adaptive {{tier}}",
+                      tier: rssAdaptiveTierLabel,
+                    })}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {rssAdaptive ? (
+                <Tag>
+                  {t("newsSources.rssAdaptive.intervalTag", {
+                    defaultValue: "Poll {{seconds}}s",
+                    seconds: rssAdaptive.effectiveIntervalSeconds,
+                  })}
+                </Tag>
+              ) : null}
+              {rssAdaptive ? (
+                <Tag>
+                  {t("newsSources.rssAdaptive.discoveryTtlTag", {
+                    defaultValue: "Discovery TTL {{seconds}}s",
+                    seconds: rssAdaptive.effectiveDiscoveryCacheTtlSeconds,
+                  })}
+                </Tag>
+              ) : null}
+            </Space>
+            <Space size={6} wrap>
+              {record.crawlTaskQueuedCount > 0 ? (
+                <Tag color="cyan">
+                  {t("newsSources.queueCounts.queued", {
+                    defaultValue: "Queued: {{count}}",
+                    count: record.crawlTaskQueuedCount,
+                  })}
+                </Tag>
+              ) : null}
+              {record.crawlTaskRunningCount > 0 ? (
+                <Tag color="blue">
+                  {t("newsSources.queueCounts.active", {
+                    defaultValue: "Active: {{count}}",
+                    count: record.crawlTaskRunningCount,
+                  })}
+                </Tag>
+              ) : null}
+              <Button
+                size="small"
+                type="link"
+                onClick={() =>
+                  router.push(`/admin/ops/crawl-tasks?sourceId=${record.id}`)
+                }
+              >
+                {t("newsSources.actions.viewTasks", {
+                  defaultValue: "Crawl tasks",
                 })}
-              </Tag>
-            ) : null}
-            {record.crawlTaskRunningCount > 0 ? (
-              <Tag color="blue">
-                {t("newsSources.queueCounts.active", {
-                  defaultValue: "Active: {{count}}",
-                  count: record.crawlTaskRunningCount,
-                })}
-              </Tag>
-            ) : null}
-            <Button
-              size="small"
-              type="link"
-              onClick={() =>
-                router.push(`/admin/ops/crawl-tasks?sourceId=${record.id}`)
-              }
-            >
-              {t("newsSources.actions.viewTasks", {
-                defaultValue: "Crawl tasks",
-              })}
-            </Button>
+              </Button>
+            </Space>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
+              {record.url}
+            </Typography.Text>
           </Space>
-          <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
-            {record.url}
-          </Typography.Text>
-        </Space>
-      ),
+        );
+      },
     },
     {
       title: t("newsSources.columns.type", { defaultValue: "Type" }),
@@ -5095,7 +5184,7 @@ export function NewsSourcesContent() {
           seedModeRef.current = nextMode;
 
           const schedulerRuntimeSettings =
-            seedSchedulerSettings ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS;
+            resolvedSeedRuntimeSettings;
           const currentTtl = allValues.seedCacheTtlSeconds;
           const previousDefaultTtl =
             getDefaultSeedCacheTtlSecondsByMode(
@@ -6491,16 +6580,14 @@ export function NewsSourcesContent() {
               const resolvedSeedCachePolicy = resolveSeedCacheTtlPolicy(
                 seedMode,
                 currentSeedCacheTtlSeconds,
-                seedSchedulerSettings ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS,
+                resolvedSeedRuntimeSettings,
               );
               const seedCacheTtlInputDisabled =
                 resolvedSeedCachePolicy.isGlobalForced;
               const schedulerSitemapRssTtl =
-                seedSchedulerSettings?.seedCacheTtlSecondsSitemapRss ??
-                DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss;
+                resolvedSeedRuntimeSettings.seedCacheTtlSecondsSitemapRss;
               const schedulerListDeepTtl =
-                seedSchedulerSettings?.seedCacheTtlSecondsListDeep ??
-                DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep;
+                resolvedSeedRuntimeSettings.seedCacheTtlSecondsListDeep;
 
               return (
                 <div style={{ display: seedEnabled ? "block" : "none" }}>
@@ -6545,18 +6632,33 @@ export function NewsSourcesContent() {
                   </Form.Item>
 
                   {seedMode === "rss" ? (
-                    <Form.Item
-                      name="seedFeedUrl"
-                      label={t("newsSources.fields.seedFeedUrl", {
-                        defaultValue: "Feed URL (optional)",
-                      })}
-                      tooltip={t("newsSources.fields.seedFeedUrlHint", {
-                        defaultValue:
-                          "If empty, the source URL will be used as the feed URL.",
-                      })}
-                    >
-                      <Input placeholder="https://example.com/rss.xml" />
-                    </Form.Item>
+                    <>
+                      <Form.Item
+                        name="seedFeedUrl"
+                        label={t("newsSources.fields.seedFeedUrl", {
+                          defaultValue: "Feed URL (optional)",
+                        })}
+                        tooltip={t("newsSources.fields.seedFeedUrlHint", {
+                          defaultValue:
+                            "If empty, the source URL will be used as the feed URL.",
+                        })}
+                      >
+                        <Input placeholder="https://example.com/rss.xml" />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedRssAdaptiveEnabled"
+                        label={t("newsSources.fields.seedRssAdaptiveEnabled", {
+                          defaultValue: "Enable RSS adaptive polling",
+                        })}
+                        tooltip={t("newsSources.fields.seedRssAdaptiveEnabledHint", {
+                          defaultValue:
+                            "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
+                        })}
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                    </>
                   ) : (
                     <>
                       <Form.Item
@@ -6664,10 +6766,7 @@ export function NewsSourcesContent() {
                     <Select
                       mode="tags"
                       tokenSeparators={[",", " ", "\n", "\t"]}
-                      options={(
-                        seedSchedulerSettings?.seedUrlQueryParamAllowlist ??
-                        DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist
-                      ).map((entry) => ({
+                      options={resolvedSeedRuntimeSettings.seedUrlQueryParamAllowlist.map((entry) => ({
                         label: entry,
                         value: entry,
                       }))}
@@ -7449,7 +7548,7 @@ export function NewsSourcesContent() {
             })}
             description={t("newsSources.schedule.description", {
               defaultValue:
-                "Sets the next run time. The scheduler checks every minute and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+                "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
             })}
           />
           {scheduleTargets.some((target) => !target.isActive) ? (

@@ -2071,6 +2071,8 @@
       "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL；列表页模式会用 Crawl4AI 从新闻源 URL（如 /latest/）提取文章链接，并对每篇文章进行抓取。",
       "seedFeedUrl": "订阅源 URL（可选）",
       "seedFeedUrlHint": "为空时，将使用新闻源 URL 作为订阅源 URL。",
+      "seedRssAdaptiveEnabled": "启用 RSS 自适应轮询",
+      "seedRssAdaptiveEnabledHint": "启用后，调度器会按该新闻源的命中活跃度动态调整 RSS 轮询间隔与发现缓存 TTL。",
       "seedDomain": "种子域名（可选）",
       "seedDomainHint": "为空时默认使用新闻源 URL 的 origin。",
       "seedPattern": "URL 模式（可选）",
@@ -2259,7 +2261,7 @@
       "none": "尚未设置调度。",
       "title": "调度抓取",
       "hintTitle": "通过 crawl4ai 入队",
-      "description": "设置下次运行时间。调度器每分钟检查并入队 CrawlTask；crawl4ai 会限制并发以避免阻塞。",
+      "description": "设置下次运行时间。调度器每 30 秒检查并入队 CrawlTask；crawl4ai 会限制并发以避免阻塞。",
       "enablesSource": "这将启用 {{count}} 个数据源。",
       "presets": {
         "in5m": "+5m",
@@ -2275,6 +2277,23 @@
     "queueCounts": {
       "queued": "排队：{{count}}",
       "active": "进行中：{{count}}"
+    },
+    "rssAdaptive": {
+      "tier": {
+        "hot": "Hot",
+        "warm": "Warm",
+        "normal": "Normal",
+        "cold": "Cold"
+      },
+      "tierTag": "自适应 {{tier}}",
+      "intervalTag": "轮询 {{seconds}} 秒",
+      "discoveryTtlTag": "发现缓存 TTL {{seconds}} 秒",
+      "tooltip": {
+        "hitRate": "命中率：{{value}}",
+        "consecutiveNoHit": "连续无命中次数：{{value}}",
+        "updatedAt": "更新时间：{{value}}",
+        "noHistory": "暂无自适应历史。"
+      }
     },
     "nextRun": {
       "due": "到期",
@@ -4485,13 +4504,36 @@
         "seedFreshnessWindowDays": "种子新鲜度窗口（天）",
         "seedCacheTtlSecondsSitemapRss": "sitemap/RSS 默认种子缓存 TTL（秒）",
         "seedCacheTtlSecondsListDeep": "list/deep 默认种子缓存 TTL（秒）",
-        "seedCacheTtlForceGlobal": "强制使用全局缓存 TTL 策略"
+        "seedCacheTtlForceGlobal": "强制使用全局缓存 TTL 策略",
+        "rssAdaptiveHotHitRatePercent": "Hot 命中率阈值（%）",
+        "rssAdaptiveWarmHitRatePercent": "Warm 命中率阈值（%）",
+        "rssAdaptiveColdConsecutiveNoHitRuns": "Cold 连续无命中阈值（次）",
+        "rssAdaptiveHotIntervalSeconds": "Hot 轮询间隔（秒）",
+        "rssAdaptiveWarmIntervalDivisor": "Warm 间隔除数",
+        "rssAdaptiveWarmMinIntervalSeconds": "Warm 最小间隔（秒）",
+        "rssAdaptiveColdIntervalMultiplier": "Cold 间隔倍率",
+        "rssAdaptiveColdMaxIntervalSeconds": "Cold 最大间隔（秒）",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot 发现缓存 TTL 上限（秒）",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm 发现缓存 TTL 上限（秒）"
+      },
+      "sections": {
+        "rssAdaptive": "RSS 自适应轮询策略"
       },
       "hints": {
         "seedFreshnessWindowDays": "种子候选过滤时，发布时间早于该窗口的 URL 将被跳过。",
         "seedCacheTtlSecondsSitemapRss": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 sitemap 或 rss 时使用该默认值。",
         "seedCacheTtlSecondsListDeep": "当新闻源未显式配置 seed.cacheTtlSeconds 且模式为 list 或 deep 时使用该默认值。",
-        "seedCacheTtlForceGlobal": "开启后调度器将始终使用全局按模式 TTL 默认值，并忽略每个新闻源的 seed.cacheTtlSeconds。"
+        "seedCacheTtlForceGlobal": "开启后调度器将始终使用全局按模式 TTL 默认值，并忽略每个新闻源的 seed.cacheTtlSeconds。",
+        "rssAdaptiveHotHitRatePercent": "最近命中率高于该阈值时进入 Hot 档位。",
+        "rssAdaptiveWarmHitRatePercent": "最近命中率高于该阈值且低于 Hot 阈值时进入 Warm 档位。",
+        "rssAdaptiveColdConsecutiveNoHitRuns": "连续无命中次数达到该值时进入 Cold 档位。",
+        "rssAdaptiveHotIntervalSeconds": "Hot 档位使用的调度间隔。",
+        "rssAdaptiveWarmIntervalDivisor": "Warm 间隔 = max(Warm 最小间隔, floor(新闻源频率 / 除数))。",
+        "rssAdaptiveWarmMinIntervalSeconds": "Warm 档位调度间隔下限。",
+        "rssAdaptiveColdIntervalMultiplier": "Cold 档位相对新闻源频率的放大倍率。",
+        "rssAdaptiveColdMaxIntervalSeconds": "Cold 档位调度间隔上限。",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot 档位发现缓存 TTL 上限。",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm 档位发现缓存 TTL 上限。"
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "新鲜度窗口必填",
@@ -4499,7 +4541,30 @@
         "seedCacheTtlSecondsSitemapRssRequired": "sitemap/RSS 缓存 TTL 必填",
         "seedCacheTtlSecondsSitemapRssRange": "sitemap/RSS 缓存 TTL 必须在 10 到 3600 秒之间",
         "seedCacheTtlSecondsListDeepRequired": "list/deep 缓存 TTL 必填",
-        "seedCacheTtlSecondsListDeepRange": "list/deep 缓存 TTL 必须在 10 到 3600 秒之间"
+        "seedCacheTtlSecondsListDeepRange": "list/deep 缓存 TTL 必须在 10 到 3600 秒之间",
+        "rssAdaptiveHotHitRatePercentRequired": "Hot 命中率阈值必填",
+        "rssAdaptiveHotHitRatePercentRange": "Hot 命中率阈值必须在 0 到 100 之间",
+        "rssAdaptiveWarmHitRatePercentRequired": "Warm 命中率阈值必填",
+        "rssAdaptiveWarmHitRatePercentRange": "Warm 命中率阈值必须在 0 到 100 之间",
+        "rssAdaptiveWarmHitRatePercentOrdering": "Warm 命中率阈值必须小于或等于 Hot 命中率阈值",
+        "rssAdaptiveColdConsecutiveNoHitRunsRequired": "Cold 连续无命中阈值必填",
+        "rssAdaptiveColdConsecutiveNoHitRunsRange": "Cold 连续无命中阈值必须在 1 到 24 之间",
+        "rssAdaptiveHotIntervalSecondsRequired": "Hot 轮询间隔必填",
+        "rssAdaptiveHotIntervalSecondsRange": "Hot 轮询间隔必须在 10 到 21600 秒之间",
+        "rssAdaptiveWarmIntervalDivisorRequired": "Warm 间隔除数必填",
+        "rssAdaptiveWarmIntervalDivisorRange": "Warm 间隔除数必须在 1 到 8 之间",
+        "rssAdaptiveWarmMinIntervalSecondsRequired": "Warm 最小间隔必填",
+        "rssAdaptiveWarmMinIntervalSecondsRange": "Warm 最小间隔必须在 10 到 21600 秒之间",
+        "rssAdaptiveColdIntervalMultiplierRequired": "Cold 间隔倍率必填",
+        "rssAdaptiveColdIntervalMultiplierRange": "Cold 间隔倍率必须在 1 到 8 之间",
+        "rssAdaptiveColdMaxIntervalSecondsRequired": "Cold 最大间隔必填",
+        "rssAdaptiveColdMaxIntervalSecondsRange": "Cold 最大间隔必须在 10 到 21600 秒之间",
+        "rssAdaptiveColdMaxIntervalSecondsOrdering": "Cold 最大间隔必须大于或等于 Warm 最小间隔",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSecondsRequired": "Hot 发现缓存 TTL 上限必填",
+        "rssAdaptiveHotDiscoveryCacheTtlCapSecondsRange": "Hot 发现缓存 TTL 上限必须在 10 到 3600 秒之间",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRequired": "Warm 发现缓存 TTL 上限必填",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRange": "Warm 发现缓存 TTL 上限必须在 10 到 3600 秒之间",
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering": "Warm 发现缓存 TTL 上限必须大于或等于 Hot 发现缓存 TTL 上限"
       },
       "messages": {
         "saved": "已保存"

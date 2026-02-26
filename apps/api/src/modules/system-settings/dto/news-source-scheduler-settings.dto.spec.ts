@@ -8,26 +8,36 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
     metatype: UpdateNewsSourceSchedulerSettingsDto,
     data: undefined,
   };
+  const basePayload = {
+    seedFreshnessWindowDays: 365,
+    seedCacheTtlSecondsSitemapRss: 60,
+    seedCacheTtlSecondsListDeep: 180,
+    seedCacheTtlForceGlobal: true,
+    seedUrlQueryParamAllowlist: ["id", "lang"],
+    rssAdaptiveHotHitRatePercent: 60,
+    rssAdaptiveWarmHitRatePercent: 25,
+    rssAdaptiveColdConsecutiveNoHitRuns: 4,
+    rssAdaptiveHotIntervalSeconds: 30,
+    rssAdaptiveWarmIntervalDivisor: 2,
+    rssAdaptiveWarmMinIntervalSeconds: 30,
+    rssAdaptiveColdIntervalMultiplier: 2,
+    rssAdaptiveColdMaxIntervalSeconds: 3600,
+    rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
+  };
 
   it("accepts valid payload", async () => {
     const pipe = new ValidationPipe({ transform: true, whitelist: true });
     await expect(
-      pipe.transform(
-        {
-          seedFreshnessWindowDays: 365,
-          seedCacheTtlSecondsSitemapRss: 60,
-          seedCacheTtlSecondsListDeep: 180,
-          seedCacheTtlForceGlobal: true,
-          seedUrlQueryParamAllowlist: ["id", "lang"],
-        },
-        metadata,
-      ),
+      pipe.transform(basePayload, metadata),
     ).resolves.toMatchObject({
       seedFreshnessWindowDays: 365,
       seedCacheTtlSecondsSitemapRss: 60,
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: true,
       seedUrlQueryParamAllowlist: ["id", "lang"],
+      rssAdaptiveHotHitRatePercent: 60,
+      rssAdaptiveWarmHitRatePercent: 25,
     });
   });
 
@@ -36,11 +46,8 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
     await expect(
       pipe.transform(
         {
-          seedFreshnessWindowDays: 365,
-          seedCacheTtlSecondsSitemapRss: 60,
-          seedCacheTtlSecondsListDeep: 180,
+          ...basePayload,
           seedCacheTtlForceGlobal: "true",
-          seedUrlQueryParamAllowlist: ["id"],
         },
         metadata,
       ),
@@ -52,10 +59,7 @@ describe("UpdateNewsSourceSchedulerSettingsDto", () => {
     await expect(
       pipe.transform(
         {
-          seedFreshnessWindowDays: 365,
-          seedCacheTtlSecondsSitemapRss: 60,
-          seedCacheTtlSecondsListDeep: 180,
-          seedCacheTtlForceGlobal: true,
+          ...basePayload,
           seedUrlQueryParamAllowlist: ["id", "utm source"],
         },
         metadata,
