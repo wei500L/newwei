@@ -1,25 +1,38 @@
 "use client";
 
 import {
+  GlobalOutlined,
   LogoutOutlined,
   MenuOutlined,
   MoonOutlined,
   PlusOutlined,
   SunOutlined,
+  SwapOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Drawer, Dropdown, Skeleton } from "antd";
+import { Button, Drawer, Dropdown, Popover, Skeleton } from "antd";
+import type { MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildActionRailNavConfig } from "./action-rail";
 import { resolveActiveItemKey } from "./action-rail-routing";
+import {
+  downgradeDensityMode,
+  NAV_FULL_MIN_WIDTH,
+  NAV_OVERFLOW_EPSILON,
+  NAV_UPGRADE_SLACK,
+  resolveBaseDensityMode,
+  upgradeDensityMode,
+  type TopNavDensityMode,
+} from "./top-nav-density";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { useTheme } from "@/hooks/use-theme";
+import { changeLanguage } from "@/lib/i18n";
 import { createTraceHeaders } from "@/lib/trace";
 
 import { AvatarFallback } from "./avatar-fallback";
@@ -43,14 +56,29 @@ interface TopNavProps {
 }
 
 export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { isDark, toggleTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [viewportWidth, setViewportWidth] = useState<number>(
+    typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth
+  );
+  const [densityMode, setDensityMode] = useState<TopNavDensityMode>(() =>
+    resolveBaseDensityMode(typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth)
+  );
   const isLoadingSession = status === "loading";
+  const user = session?.user;
+  const permissions = session?.permissions ?? user?.permissions ?? [];
+  const canStartCrawl = permissions.includes("crawl.write");
+  const permissionsKey = useMemo(() => permissions.join("|"), [permissions]);
+  const baseDensityMode = useMemo(
+    () => resolveBaseDensityMode(viewportWidth),
+    [viewportWidth]
+  );
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -73,6 +101,72 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [showDesktopMenuButton]);
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    updateViewportWidth();
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+
+  useEffect(() => {
+    setDensityMode((current) => {
+      if (current === baseDensityMode) {
+        return current;
+      }
+      if (baseDensityMode === "minimal") {
+        return "minimal";
+      }
+      if (baseDensityMode === "compact" && current === "full") {
+        return "compact";
+      }
+      return current;
+    });
+  }, [baseDensityMode]);
+
+  const checkDensityFit = useCallback(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    const overflow = header.scrollWidth - header.clientWidth;
+    if (overflow > NAV_OVERFLOW_EPSILON) {
+      setDensityMode((current) =>
+        current === "minimal" ? current : downgradeDensityMode(current)
+      );
+      return;
+    }
+
+    const slack = header.clientWidth - header.scrollWidth;
+    if (slack >= NAV_UPGRADE_SLACK) {
+      setDensityMode((current) => upgradeDensityMode(current, baseDensityMode));
+    }
+  }, [baseDensityMode]);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(checkDensityFit);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [
+    canStartCrawl,
+    checkDensityFit,
+    densityMode,
+    i18n.language,
+    isLoadingSession,
+    pathname,
+    permissionsKey,
+    session?.orgId,
+  ]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => checkDensityFit());
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [checkDensityFit]);
 
   const handleLogout = useCallback(
     async (logoutAll: boolean) => {
@@ -100,9 +194,6 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     []
   );
 
-  const user = session?.user;
-  const permissions = session?.permissions ?? user?.permissions ?? [];
-
   const { mainNavItems, adminNavItems } = useMemo(
     () => buildActionRailNavConfig(t, permissions),
     [permissions, t]
@@ -115,8 +206,6 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
     () => resolveActiveItemKey(pathname, allNavItems),
     [allNavItems, pathname]
   );
-
-  const canStartCrawl = permissions.includes("crawl.write");
 
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   const displayEmail = user?.email ?? "";
@@ -132,6 +221,108 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const brandFullLabel = t("brand.full", { defaultValue: "Modular" });
   const menuButtonClassName = showDesktopMenuButton ? "" : "md:hidden";
   const drawerClassName = showDesktopMenuButton ? "" : "md:hidden";
+  const isFullMode = densityMode === "full";
+  const isCompactMode = densityMode === "compact";
+  const isMinimalMode = densityMode === "minimal";
+  const showCommandBar = !isMinimalMode;
+  const showSystemDefcon = isFullMode;
+  const showPrimaryCrawlButton = canStartCrawl && isFullMode;
+  const showCompactCrawlButton = canStartCrawl && isCompactMode;
+  const showInlineLanguage = !isMinimalMode;
+  const showInlineOrganization = !isMinimalMode;
+  const showSyncIndicator = !isMinimalMode;
+  const showMinimalUtilityButtons = isMinimalMode;
+  const commandBarWidthClass = isFullMode ? "max-w-[640px]" : "max-w-[460px]";
+  const headerSpacingClassName = isFullMode
+    ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6"
+    : isCompactMode
+      ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-2 sm:px-4 lg:gap-3 lg:px-5"
+      : "gap-1.5 border-b border-[var(--border)] px-2.5 sm:gap-2 sm:px-3";
+
+  const languageMenuItems: MenuProps["items"] = useMemo(
+    () => [
+      {
+        key: "lang-zh",
+        label: t("language.chinese", { defaultValue: "简体中文" }),
+        onClick: () => void changeLanguage("zh-CN"),
+      },
+      {
+        key: "lang-en",
+        label: t("language.english", { defaultValue: "English" }),
+        onClick: () => void changeLanguage("en-US"),
+      },
+    ],
+    [t]
+  );
+
+  const userMenuItems: MenuProps["items"] = useMemo(() => {
+    const items: MenuProps["items"] = [
+      {
+        key: "profile-info",
+        label: (
+          <div className="flex flex-col">
+            <span className="font-medium">{displayNameOrEmail}</span>
+            <span className="text-xs text-slate-500">{planBadgeLabel}</span>
+          </div>
+        ),
+        disabled: true,
+        className: "cursor-default opacity-100 hover:bg-transparent"
+      },
+      { type: "divider" },
+      {
+        key: "profile",
+        label: t("nav.profile", { defaultValue: "Profile" }),
+        icon: <UserOutlined />,
+        onClick: () => router.push("/profile")
+      }
+    ];
+
+    if (canStartCrawl && isMinimalMode) {
+      items.push({
+        key: "new-crawl",
+        label: startNewCrawlLabel,
+        icon: <PlusOutlined />,
+        onClick: () => router.push("/admin/ops/crawl-tasks?new=true")
+      });
+    }
+
+    if (isMinimalMode) {
+      items.push(
+        {
+          key: "lang-zh",
+          label: t("language.chinese", { defaultValue: "简体中文" }),
+          icon: <GlobalOutlined />,
+          onClick: () => void changeLanguage("zh-CN"),
+        },
+        {
+          key: "lang-en",
+          label: t("language.english", { defaultValue: "English" }),
+          icon: <GlobalOutlined />,
+          onClick: () => void changeLanguage("en-US"),
+        }
+      );
+    }
+
+    items.push({
+      key: "logout",
+      label: t("auth.logout"),
+      icon: <LogoutOutlined />,
+      onClick: () => handleLogout(false),
+      disabled: loggingOut
+    });
+
+    return items;
+  }, [
+    canStartCrawl,
+    displayNameOrEmail,
+    handleLogout,
+    isMinimalMode,
+    loggingOut,
+    planBadgeLabel,
+    router,
+    startNewCrawlLabel,
+    t,
+  ]);
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex flex-col">
@@ -139,7 +330,10 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
       <TickerTape />
 
       {/* Main Navbar Layer */}
-      <header className="relative flex h-16 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 glass sm:gap-3 sm:px-4 lg:gap-4 lg:px-6">
+      <header
+        ref={headerRef}
+        className={`relative flex h-16 shrink-0 items-center ${headerSpacingClassName} glass`}
+      >
         {/* Left: Logo */}
         <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
           <Button
@@ -160,21 +354,27 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
         </div>
 
         {/* Center: Command Bar (Replaces old nav links) */}
-        <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex md:px-2 lg:px-4">
-          <div className="w-full max-w-[640px]">
-            <CommandBar />
+        {showCommandBar ? (
+          <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex md:px-2 lg:px-4">
+            <div className={`w-full ${commandBarWidthClass}`}>
+              <CommandBar />
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {/* Right: Actions + User */}
-        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2 md:gap-3">
-          <div className="hidden 2xl:block">
-            <SystemDefcon />
-          </div>
+        <div className="ml-auto flex min-w-0 max-w-full items-center gap-1 sm:gap-2 md:gap-3">
+          {showSystemDefcon ? (
+            <div className="hidden 2xl:block">
+              <SystemDefcon />
+            </div>
+          ) : null}
 
-          <div className="mx-1 hidden h-6 w-px bg-[var(--border)] 2xl:block" />
+          {showSystemDefcon ? (
+            <div className="mx-1 hidden h-6 w-px bg-[var(--border)] 2xl:block" />
+          ) : null}
 
-          {canStartCrawl && (
+          {showPrimaryCrawlButton ? (
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -184,19 +384,82 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             >
               {startNewCrawlLabel}
             </Button>
-          )}
+          ) : null}
+
+          {showCompactCrawlButton ? (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="small"
+              onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
+              aria-label={startNewCrawlLabel}
+              className="hidden shadow-none lg:inline-flex !px-2"
+            />
+          ) : null}
 
           <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             <NotificationCenter />
-            <div className="hidden lg:block">
-              <LanguageSwitcher />
-            </div>
-            <div className="hidden xl:block">
-              <OrganizationSwitcher />
-            </div>
-            <div className="hidden xl:block">
-              <UserUiSettingsSyncIndicator />
-            </div>
+
+            {showInlineLanguage ? (
+              <div className="hidden lg:block">
+                <LanguageSwitcher compact={isCompactMode} />
+              </div>
+            ) : null}
+
+            {showInlineOrganization ? (
+              <div className="hidden xl:block">
+                <OrganizationSwitcher
+                  mode={isCompactMode ? "compact" : "full"}
+                  showErrorText={false}
+                />
+              </div>
+            ) : null}
+
+            {showSyncIndicator ? (
+              <div className="hidden xl:block">
+                <UserUiSettingsSyncIndicator />
+              </div>
+            ) : null}
+
+            {showMinimalUtilityButtons ? (
+              <>
+                <div className="hidden lg:block">
+                  <UserUiSettingsSyncIndicator />
+                </div>
+
+                <div className="hidden sm:block">
+                  <Dropdown
+                    menu={{ items: languageMenuItems }}
+                    placement="bottomRight"
+                    trigger={["click"]}
+                  >
+                    <Button
+                      type="text"
+                      icon={<GlobalOutlined />}
+                      aria-label={t("language.label", { defaultValue: "Language" })}
+                      className="inline-flex h-8 w-8 items-center justify-center p-0"
+                    />
+                  </Dropdown>
+                </div>
+
+                <Popover
+                  trigger="click"
+                  placement="bottomRight"
+                  content={
+                    <div className="w-[220px]">
+                      <OrganizationSwitcher mode="compact" showErrorText={false} />
+                    </div>
+                  }
+                >
+                  <Button
+                    type="text"
+                    icon={<SwapOutlined />}
+                    aria-label={t("orgSwitcher.switch", { defaultValue: "Switch organization" })}
+                    className="inline-flex h-8 w-8 items-center justify-center p-0"
+                  />
+                </Popover>
+              </>
+            ) : null}
           </div>
 
           <div className="mx-1 hidden h-6 w-px bg-[var(--border)] lg:block" />
@@ -215,35 +478,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             <Skeleton.Avatar active size="default" />
           ) : (
               <Dropdown
-                  menu={{
-                  items: [
-                      {
-                          key: "profile-info",
-                          label: (
-                              <div className="flex flex-col">
-                                  <span className="font-medium">{displayNameOrEmail}</span>
-                                  <span className="text-xs text-slate-500">{planBadgeLabel}</span>
-                              </div>
-                          ),
-                          disabled: true,
-                          className: "cursor-default opacity-100 hover:bg-transparent"
-                      },
-                      { type: 'divider' },
-                      {
-                          key: "profile",
-                          label: t("nav.profile", { defaultValue: "Profile" }),
-                          icon: <UserOutlined />,
-                          onClick: () => router.push("/profile")
-                      },
-                      {
-                          key: "logout",
-                          label: t("auth.logout"),
-                          icon: <LogoutOutlined />,
-                          onClick: () => handleLogout(false),
-                          disabled: loggingOut
-                      }
-                  ]
-                  }}
+                  menu={{ items: userMenuItems }}
                   placement="bottomRight"
                   trigger={['click']}
               >

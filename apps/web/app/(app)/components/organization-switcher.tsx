@@ -10,7 +10,17 @@ import type { BackendLoginResponse, OrganizationOption } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
 
-export function OrganizationSwitcher() {
+type OrganizationSwitcherMode = "full" | "compact";
+
+interface OrganizationSwitcherProps {
+  mode?: OrganizationSwitcherMode;
+  showErrorText?: boolean;
+}
+
+export function OrganizationSwitcher({
+  mode = "full",
+  showErrorText = true,
+}: OrganizationSwitcherProps) {
   const { t } = useTranslation();
   const { data: session, status, update } = useSession();
   const [orgIdOrSlug, setOrgIdOrSlug] = useState<string>("");
@@ -118,6 +128,12 @@ export function OrganizationSwitcher() {
     disabled: org.isActive === false
   }));
 
+  const inputWidthClassName =
+    mode === "compact"
+      ? "w-[120px] xl:w-[150px] 2xl:w-[170px]"
+      : "w-[150px] xl:w-[180px] 2xl:w-[220px]";
+  const showSwitchLabel = mode === "full";
+
   return (
     <>
       {contextHolder}
@@ -127,7 +143,7 @@ export function OrganizationSwitcher() {
             allowClear
             id="topnav-organization"
             placeholder={t("orgSwitcher.placeholder")}
-            className="w-[150px] xl:w-[180px] 2xl:w-[220px]"
+            className={inputWidthClassName}
             value={orgIdOrSlug}
             onChange={(value) => setOrgIdOrSlug(value ?? "")}
             options={options}
@@ -144,12 +160,14 @@ export function OrganizationSwitcher() {
           disabled={!orgIdOrSlug || isSelectedDisabled}
           onClick={handleSwitch}
           aria-label={t("orgSwitcher.switch")}
-          className="!px-2 2xl:!px-3"
+          className={showSwitchLabel ? "!px-2 2xl:!px-3" : "!px-2"}
         >
-          <span className="hidden 2xl:inline">{t("orgSwitcher.switch")}</span>
+          {showSwitchLabel ? (
+            <span className="hidden 2xl:inline">{t("orgSwitcher.switch")}</span>
+          ) : null}
         </Button>
       </Space.Compact>
-      {error ? (
+      {showErrorText && error ? (
         <Typography.Text type="danger" style={{ display: "block", textAlign: "right" }}>
           {error}
         </Typography.Text>

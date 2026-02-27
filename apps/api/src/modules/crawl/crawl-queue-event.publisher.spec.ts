@@ -29,7 +29,10 @@ describe("CrawlQueueEventPublisher", () => {
     const hotQueue = {
       getJob: jest.fn().mockResolvedValue({
         data: {
-          orgId: "org-1"
+          orgId: "org-1",
+          taskId: "task-hot",
+          priorityClass: "hot",
+          sourcePriority: 90
         }
       })
     } as any;
@@ -37,7 +40,10 @@ describe("CrawlQueueEventPublisher", () => {
     const normalQueue = {
       getJob: jest.fn().mockResolvedValue({
         data: {
-          orgId: "org-1"
+          orgId: "org-1",
+          taskId: "task-normal",
+          priorityClass: "normal",
+          sourcePriority: 10
         }
       })
     } as any;
@@ -74,7 +80,10 @@ describe("CrawlQueueEventPublisher", () => {
         event: "ACTIVE",
         jobId: "job-hot",
         queueName: "crawl4ai-hot",
-        data: { prev: "waiting" }
+        data: { prev: "waiting" },
+        taskId: "task-hot",
+        priorityClass: "hot",
+        sourcePriority: 90
       })
     );
     expect(listener).toHaveBeenCalledWith(
@@ -83,7 +92,10 @@ describe("CrawlQueueEventPublisher", () => {
         event: "FAILED",
         jobId: "job-normal",
         queueName: "crawl4ai-normal",
-        data: { reason: "boom" }
+        data: { reason: "boom" },
+        taskId: "task-normal",
+        priorityClass: "normal",
+        sourcePriority: 10
       })
     );
   });

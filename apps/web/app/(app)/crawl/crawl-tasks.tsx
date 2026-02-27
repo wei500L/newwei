@@ -38,6 +38,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { io, type Socket } from "socket.io-client";
 
 import type {
   CrawlMetadataInput,
@@ -58,6 +59,7 @@ import {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
+import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 import { Crawl4aiHealthCard } from "./components/Crawl4aiHealthCard";
@@ -226,6 +228,22 @@ interface BatchUpdateFrequencyResponse {
   nextRunAt: string;
 }
 
+type OpsLiveEventSource =
+  | "pipeline"
+  | "crawl"
+  | "analysis"
+  | "assistant"
+  | "alerts";
+
+interface OpsLiveEventPayload {
+  source: OpsLiveEventSource;
+  event: string;
+  jobId: string;
+  timestamp: string;
+  taskId?: string;
+  pipelineJobId?: string;
+}
+
 function parseCrawlTaskConfigSummary(
   rawConfig?: string | null,
 ): CrawlTaskConfigSummary | null {
@@ -350,6 +368,12 @@ export function CrawlTasksView() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const ensureLoadingRef = useRef(false);
+  const opsSocketRef = useRef<Socket | null>(null);
+  const opsRefreshTimerRef = useRef<number | null>(null);
+  const pendingOpsRefreshRef = useRef({ tasks: false, queue: false });
+  const [opsLiveStatus, setOpsLiveStatus] = useState<
+    "disconnected" | "connecting" | "connected"
+  >("disconnected");
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
@@ -552,6 +576,105 @@ export function CrawlTasksView() {
     setPagination((prev) => ({ ...prev, current: 1 }));
     await ensureTasksLoaded(1);
   }, [ensureTasksLoaded, resetTaskCache]);
+
+  const scheduleOpsRefresh = useCallback(
+    (options?: { tasks?: boolean; queue?: boolean }) => {
+      if (!canView) {
+        return;
+      }
+      pendingOpsRefreshRef.current.tasks =
+        pendingOpsRefreshRef.current.tasks || options?.tasks !== false;
+      pendingOpsRefreshRef.current.queue =
+        pendingOpsRefreshRef.current.queue || options?.queue !== false;
+      if (opsRefreshTimerRef.current) {
+        return;
+      }
+      opsRefreshTimerRef.current = window.setTimeout(() => {
+        opsRefreshTimerRef.current = null;
+        const pending = pendingOpsRefreshRef.current;
+        pendingOpsRefreshRef.current = { tasks: false, queue: false };
+        if (pending.tasks) {
+          void reloadTasks();
+        }
+        if (pending.queue) {
+          void loadQueueStats();
+        }
+      }, 800);
+    },
+    [canView, loadQueueStats, reloadTasks],
+  );
+
+  useEffect(() => {
+    if (!canView || !session?.accessToken) {
+      setOpsLiveStatus("disconnected");
+      return;
+    }
+
+    setOpsLiveStatus("connecting");
+    const socket = io(`${env.apiRoot}/ops`, {
+      auth: { token: session.accessToken },
+      transports: ["websocket"],
+    });
+    opsSocketRef.current = socket;
+
+    const handleConnect = () => {
+      setOpsLiveStatus("connected");
+      scheduleOpsRefresh();
+    };
+    const handleDisconnect = () => {
+      setOpsLiveStatus("disconnected");
+    };
+    const handleConnectError = () => {
+      setOpsLiveStatus("disconnected");
+    };
+    const handleEvent = (payload: unknown) => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        return;
+      }
+      const record = payload as Partial<OpsLiveEventPayload>;
+      if (record.source !== "pipeline" && record.source !== "crawl") {
+        return;
+      }
+      scheduleOpsRefresh();
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("ops:event", handleEvent);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("ops:event", handleEvent);
+      socket.disconnect();
+      if (opsSocketRef.current === socket) {
+        opsSocketRef.current = null;
+      }
+    };
+  }, [canView, scheduleOpsRefresh, session?.accessToken]);
+
+  useEffect(() => {
+    if (!canView || status !== "authenticated" || opsLiveStatus === "connected") {
+      return;
+    }
+    scheduleOpsRefresh();
+    const id = window.setInterval(() => {
+      scheduleOpsRefresh();
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [canView, opsLiveStatus, scheduleOpsRefresh, status]);
+
+  useEffect(() => {
+    return () => {
+      if (opsRefreshTimerRef.current) {
+        window.clearTimeout(opsRefreshTimerRef.current);
+        opsRefreshTimerRef.current = null;
+      }
+      pendingOpsRefreshRef.current = { tasks: false, queue: false };
+    };
+  }, []);
 
   const buildTaskConfigTags = (record: CrawlTaskNode): ReactNode[] => {
     const summary = parseCrawlTaskConfigSummary(record.config);

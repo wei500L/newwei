@@ -252,9 +252,16 @@ export function NotificationCenter() {
       open={open}
       onOpenChange={setOpen}
     >
-      <Badge count={unread} size="small" showZero={false}>
-        <Button type="text" icon={<BellOutlined />} />
-      </Badge>
+      <span className="inline-flex shrink-0">
+        <Badge count={unread} size="small" showZero={false} offset={[-2, 2]}>
+          <Button
+            type="text"
+            icon={<BellOutlined />}
+            aria-label={t("notifications.title", { defaultValue: "Notifications" })}
+            className="inline-flex h-8 w-8 items-center justify-center p-0"
+          />
+        </Badge>
+      </span>
     </Popover>
   );
 }

@@ -851,6 +851,15 @@ interface OpsLiveEvent {
   event: string;
   jobId: string;
   timestamp: string;
+  data?: Record<string, unknown>;
+  pipelineJobId?: string;
+  sourceId?: string;
+  rawItemId?: string;
+  itemMetaId?: string;
+  processedItemId?: string;
+  taskId?: string;
+  priorityClass?: "hot" | "normal";
+  sourcePriority?: number;
 }
 
 const LIVE_EVENT_SOURCES: LiveEventSource[] = [
@@ -1403,8 +1412,16 @@ export function NewsSourcesContent() {
     }
   }, [canManage, loadSeedSchedulerSettings, modalOpen]);
 
+  const liveFallbackPollingEnabled =
+    canView &&
+    status === "authenticated" &&
+    liveUpdatesEnabled &&
+    liveStatus !== "connected";
+  const intervalRefreshEnabled =
+    liveFallbackPollingEnabled || (!liveUpdatesEnabled && autoRefreshEnabled);
+
   useEffect(() => {
-    if (!canView || !autoRefreshEnabled) {
+    if (!intervalRefreshEnabled) {
       return;
     }
     const intervalMs = Math.max(5, Math.min(300, autoRefreshSeconds)) * 1000;
@@ -1429,9 +1446,9 @@ export function NewsSourcesContent() {
     autoRefreshSeconds,
     batchRunLoading,
     batchToggleLoading,
-    canView,
     createDrawerOpen,
     dispatchingSourceIds.size,
+    intervalRefreshEnabled,
     modalOpen,
     opsLoadingSourceIds.size,
     previewLoading,
@@ -1510,6 +1527,7 @@ export function NewsSourcesContent() {
     const handleConnect = () => {
       setLiveStatus("connected");
       setLiveError(null);
+      void refreshAll({ silent: true });
     };
     const handleDisconnect = () => setLiveStatus("disconnected");
     const handleConnectError = (error: Error) => {
@@ -1616,6 +1634,7 @@ export function NewsSourcesContent() {
       resolveRssAdaptiveListUiModel({
         config: record.config,
         frequencySeconds: record.frequencySeconds,
+        priority: record.priority,
         rssAdaptiveState: record.rssAdaptiveState,
         runtimeSettings: resolvedSeedRuntimeSettings,
       }),

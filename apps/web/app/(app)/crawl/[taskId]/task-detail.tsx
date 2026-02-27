@@ -34,6 +34,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { io, type Socket } from "socket.io-client";
 
 import {
   useCrawlTaskQuery,
@@ -85,6 +86,14 @@ interface TaskLogRecord {
   error?: unknown;
   createdAt: string;
   updatedAt: string;
+}
+
+interface OpsLiveEventPayload {
+  source?: "pipeline" | "crawl" | "analysis" | "assistant" | "alerts";
+  event?: string;
+  jobId?: string;
+  taskId?: string;
+  pipelineJobId?: string;
 }
 
 interface ExpansionQualitySummary {
@@ -785,6 +794,12 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
   const [taskLogsLoading, setTaskLogsLoading] = useState(false);
   const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
+  const opsSocketRef = useRef<Socket | null>(null);
+  const opsRefreshTimerRef = useRef<number | null>(null);
+  const pendingOpsRefreshRef = useRef({ task: false, logs: false });
+  const [opsLiveStatus, setOpsLiveStatus] = useState<
+    "disconnected" | "connecting" | "connected"
+  >("disconnected");
 
   const { data, loading, refetch, startPolling, stopPolling } =
     useCrawlTaskQuery({
@@ -851,22 +866,27 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     [apiClient, canViewTaskLogs, message, taskId],
   );
 
+  const currentTaskStatus = data?.crawlTask?.status;
+  const shouldTrackInFlightTask =
+    currentTaskStatus === "pending" ||
+    currentTaskStatus === "queued" ||
+    currentTaskStatus === "running";
+
   useEffect(() => {
     if (!canView) {
       stopPolling();
       return;
     }
-    const taskStatus = data?.crawlTask?.status;
-    const shouldPoll =
-      taskStatus === "pending" ||
-      taskStatus === "queued" ||
-      taskStatus === "running";
-    if (shouldPoll) {
+    if (opsLiveStatus === "connected") {
+      stopPolling();
+      return;
+    }
+    if (shouldTrackInFlightTask) {
       startPolling(3000);
       return;
     }
     stopPolling();
-  }, [canView, data?.crawlTask?.status, startPolling, stopPolling]);
+  }, [canView, opsLiveStatus, shouldTrackInFlightTask, startPolling, stopPolling]);
 
   useEffect(() => {
     if (!canViewTaskLogs || !canView || status !== "authenticated") {
@@ -879,19 +899,21 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     if (!canViewTaskLogs || !canView || status !== "authenticated") {
       return;
     }
-    const taskStatus = data?.crawlTask?.status;
-    const shouldPoll =
-      taskStatus === "pending" ||
-      taskStatus === "queued" ||
-      taskStatus === "running";
-    if (!shouldPoll) {
+    if (opsLiveStatus === "connected" || !shouldTrackInFlightTask) {
       return;
     }
     const id = window.setInterval(() => {
       void loadTaskLogs({ silent: true });
     }, 3000);
     return () => window.clearInterval(id);
-  }, [canView, canViewTaskLogs, data?.crawlTask?.status, loadTaskLogs, status]);
+  }, [
+    canView,
+    canViewTaskLogs,
+    loadTaskLogs,
+    opsLiveStatus,
+    shouldTrackInFlightTask,
+    status,
+  ]);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -909,6 +931,132 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     () => classifyHeadedIssue(task?.lastError ?? undefined),
     [task?.lastError],
   );
+  const pipelineJobId = useMemo(() => {
+    if (!config) {
+      return null;
+    }
+    const value = config.pipelineJobId;
+    return typeof value === "string" && value.trim().length > 0
+      ? value.trim()
+      : null;
+  }, [config]);
+
+  const scheduleOpsRefresh = useCallback(
+    (options?: { task?: boolean; logs?: boolean }) => {
+      if (!canView) {
+        return;
+      }
+      pendingOpsRefreshRef.current.task =
+        pendingOpsRefreshRef.current.task || options?.task !== false;
+      pendingOpsRefreshRef.current.logs =
+        pendingOpsRefreshRef.current.logs || options?.logs === true;
+      if (opsRefreshTimerRef.current) {
+        return;
+      }
+      opsRefreshTimerRef.current = window.setTimeout(() => {
+        opsRefreshTimerRef.current = null;
+        const pending = pendingOpsRefreshRef.current;
+        pendingOpsRefreshRef.current = { task: false, logs: false };
+        if (pending.task) {
+          void refetch();
+        }
+        if (pending.logs && canViewTaskLogs) {
+          void loadTaskLogs({ silent: true });
+        }
+      }, 700);
+    },
+    [canView, canViewTaskLogs, loadTaskLogs, refetch],
+  );
+
+  useEffect(() => {
+    if (!canView || !session?.accessToken) {
+      setOpsLiveStatus("disconnected");
+      return;
+    }
+
+    setOpsLiveStatus("connecting");
+    const socket = io(`${env.apiRoot}/ops`, {
+      auth: { token: session.accessToken },
+      transports: ["websocket"],
+    });
+    opsSocketRef.current = socket;
+
+    const handleConnect = () => {
+      setOpsLiveStatus("connected");
+      scheduleOpsRefresh({ task: true, logs: canViewTaskLogs });
+    };
+    const handleDisconnect = () => {
+      setOpsLiveStatus("disconnected");
+    };
+    const handleConnectError = () => {
+      setOpsLiveStatus("disconnected");
+    };
+    const handleEvent = (payload: unknown) => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        return;
+      }
+      const record = payload as OpsLiveEventPayload;
+      if (record.source !== "crawl" && record.source !== "pipeline") {
+        return;
+      }
+
+      let relevant = false;
+      if (record.source === "crawl") {
+        const eventTaskId =
+          typeof record.taskId === "string" ? record.taskId : undefined;
+        const eventJobId =
+          typeof record.jobId === "string" ? record.jobId : undefined;
+        relevant =
+          eventTaskId === taskId ||
+          eventJobId === taskId ||
+          (typeof eventJobId === "string" &&
+            eventJobId.startsWith(`${taskId}-`));
+      } else if (record.source === "pipeline") {
+        relevant =
+          Boolean(pipelineJobId) &&
+          typeof record.pipelineJobId === "string" &&
+          record.pipelineJobId === pipelineJobId;
+      }
+
+      if (!relevant) {
+        return;
+      }
+      scheduleOpsRefresh({ task: true, logs: canViewTaskLogs });
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("ops:event", handleEvent);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("ops:event", handleEvent);
+      socket.disconnect();
+      if (opsSocketRef.current === socket) {
+        opsSocketRef.current = null;
+      }
+    };
+  }, [
+    canView,
+    canViewTaskLogs,
+    pipelineJobId,
+    scheduleOpsRefresh,
+    session?.accessToken,
+    taskId,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (opsRefreshTimerRef.current) {
+        window.clearTimeout(opsRefreshTimerRef.current);
+        opsRefreshTimerRef.current = null;
+      }
+      pendingOpsRefreshRef.current = { task: false, logs: false };
+    };
+  }, []);
 
   const virtualScrollSummary = useMemo(() => {
     if (

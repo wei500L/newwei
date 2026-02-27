@@ -1154,17 +1154,21 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   }
 
   private toBullmqPriority(priority: number) {
-    const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
-    const clamped = Math.max(
-      this.sourcePriorityMin,
-      Math.min(this.sourcePriorityMax, normalized),
-    );
+    const clamped = this.normalizeSourcePriority(priority);
     return this.sourcePriorityMax + 1 - clamped;
   }
 
   private toCrawlPriorityClass(priority: number): CrawlPriorityClass {
-    const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
+    const normalized = this.normalizeSourcePriority(priority);
     return normalized >= this.crawlHotPriorityThreshold ? "hot" : "normal";
+  }
+
+  private normalizeSourcePriority(priority: number) {
+    const normalized = Number.isFinite(priority) ? Math.round(priority) : 0;
+    return Math.max(
+      this.sourcePriorityMin,
+      Math.min(this.sourcePriorityMax, normalized),
+    );
   }
 
   private computeNextIntervalRunAt(
@@ -2418,6 +2422,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
   private resolveRssAdaptiveTier(
     state: RssAdaptiveState,
+    sourcePriority: number,
     runtimeSettings: SeedRuntimeSettings,
   ): RssAdaptiveTier {
     const normalizedState = this.normalizeRssAdaptiveState(state);
@@ -2429,17 +2434,48 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     }
     const total = normalizedState.outcomes.length;
     if (total < 3) {
-      return "normal";
+      return this.resolveRssAdaptiveTierWithPriority(
+        "normal",
+        sourcePriority,
+      );
     }
     const hits = normalizedState.outcomes.filter(Boolean).length;
     const hitRate = hits / total;
+    let tier: RssAdaptiveTier = "normal";
     if (hitRate >= runtimeSettings.rssAdaptiveHotHitRatePercent / 100) {
-      return "hot";
+      tier = "hot";
+    } else if (hitRate >= runtimeSettings.rssAdaptiveWarmHitRatePercent / 100) {
+      tier = "warm";
     }
-    if (hitRate >= runtimeSettings.rssAdaptiveWarmHitRatePercent / 100) {
-      return "warm";
+    return this.resolveRssAdaptiveTierWithPriority(tier, sourcePriority);
+  }
+
+  private resolveRssAdaptiveTierWithPriority(
+    tier: RssAdaptiveTier,
+    sourcePriority: number,
+  ): RssAdaptiveTier {
+    const normalizedPriority = this.normalizeSourcePriority(sourcePriority);
+    if (normalizedPriority >= this.crawlHotPriorityThreshold) {
+      if (tier === "normal") {
+        return "warm";
+      }
+      if (tier === "warm") {
+        return "hot";
+      }
+      return tier;
     }
-    return "normal";
+    if (normalizedPriority <= -this.crawlHotPriorityThreshold) {
+      if (tier === "hot") {
+        return "warm";
+      }
+      if (tier === "warm") {
+        return "normal";
+      }
+      if (tier === "normal") {
+        return "cold";
+      }
+    }
+    return tier;
   }
 
   private resolveRssAdaptiveIntervalSeconds(
@@ -3260,7 +3296,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           : null;
         const rssAdaptiveTierBefore =
           rssAdaptiveEnabled && rssAdaptiveState
-            ? this.resolveRssAdaptiveTier(rssAdaptiveState, runtimeSettings)
+            ? this.resolveRssAdaptiveTier(
+                rssAdaptiveState,
+                source.priority,
+                runtimeSettings,
+              )
             : null;
         const rssAdaptiveDiscoveryCacheTtlSeconds =
           seedConfig && rssAdaptiveTierBefore
@@ -3347,6 +3387,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           await this.writeRssAdaptiveState(source.id, nextAdaptiveState);
           rssAdaptiveTierAfter = this.resolveRssAdaptiveTier(
             nextAdaptiveState,
+            source.priority,
             runtimeSettings,
           );
           rssAdaptiveIntervalSeconds = this.resolveRssAdaptiveIntervalSeconds(

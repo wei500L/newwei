@@ -10,6 +10,11 @@ export interface QueueEventPayload {
   jobId: string;
   data?: Record<string, unknown>;
   timestamp: string;
+  pipelineJobId?: string;
+  sourceId?: string;
+  rawItemId?: string;
+  itemMetaId?: string;
+  processedItemId?: string;
 }
 
 export type QueueEventListener = (
@@ -17,11 +22,26 @@ export type QueueEventListener = (
   payload: QueueEventPayload
 ) => Promise<void> | void;
 
+interface PipelineQueueJobContext {
+  orgId: string;
+  pipelineJobId?: string;
+  sourceId?: string;
+  rawItemId?: string;
+  itemMetaId?: string;
+  processedItemId?: string;
+}
+
+interface QueueJobContextCacheEntry extends PipelineQueueJobContext {
+  expiresAt: number;
+}
+
 @Injectable()
 export class QueueEventPublisher implements OnModuleDestroy {
   private readonly pubsub = new PubSub();
   private readonly listeners = new Set<QueueEventListener>();
   private readonly logger = createLogger({ name: "queue-events" });
+  private readonly orgCache = new Map<string, QueueJobContextCacheEntry>();
+  private readonly orgCacheTtlMs = 10 * 60_000;
 
   private readonly handleCompleted = async ({
     jobId,
@@ -92,22 +112,90 @@ export class QueueEventPublisher implements OnModuleDestroy {
 
   private async emit(jobId: string, event: string, data?: Record<string, unknown>) {
     try {
-      const job = await this.queue.getJob(jobId);
-      const orgId = job?.data?.orgId as string | undefined;
-      if (!orgId) {
+      const context = await this.resolveJobContext(jobId);
+      if (!context?.orgId) {
         this.logger.debug({ jobId, event }, "Skipping queue event without org context");
         return;
       }
+      const orgId = context.orgId;
       const payload: QueueEventPayload = {
         event,
         jobId,
         data,
         timestamp: new Date().toISOString(),
+        ...(context.pipelineJobId ? { pipelineJobId: context.pipelineJobId } : {}),
+        ...(context.sourceId ? { sourceId: context.sourceId } : {}),
+        ...(context.rawItemId ? { rawItemId: context.rawItemId } : {}),
+        ...(context.itemMetaId ? { itemMetaId: context.itemMetaId } : {}),
+        ...(context.processedItemId ? { processedItemId: context.processedItemId } : {}),
       };
       await this.publish(orgId, payload);
     } catch (error) {
       this.logger.error({ jobId, event, error }, "Failed to publish queue event");
     }
+  }
+
+  private async resolveJobContext(jobId: string): Promise<PipelineQueueJobContext | null> {
+    const cached = this.getCachedJobContext(jobId);
+    try {
+      const job = await this.queue.getJob(jobId);
+      const context = this.extractJobContext(job?.data);
+      if (context) {
+        this.setCachedJobContext(jobId, context);
+        return context;
+      }
+    } catch (error) {
+      this.logger.debug({ jobId, error }, "Failed to resolve pipeline queue context from job");
+    }
+
+    return cached;
+  }
+
+  private extractJobContext(value: unknown): PipelineQueueJobContext | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const orgId = this.readStringField(record.orgId);
+    if (!orgId) {
+      return null;
+    }
+    return {
+      orgId,
+      pipelineJobId: this.readStringField(record.pipelineJobId),
+      sourceId: this.readStringField(record.sourceId),
+      rawItemId: this.readStringField(record.rawItemId),
+      itemMetaId: this.readStringField(record.itemMetaId),
+      processedItemId: this.readStringField(record.processedItemId),
+    };
+  }
+
+  private setCachedJobContext(jobId: string, context: PipelineQueueJobContext) {
+    this.orgCache.set(jobId, {
+      ...context,
+      expiresAt: Date.now() + this.orgCacheTtlMs,
+    });
+  }
+
+  private getCachedJobContext(jobId: string): PipelineQueueJobContext | null {
+    const cached = this.orgCache.get(jobId);
+    if (!cached) {
+      return null;
+    }
+    if (Date.now() >= cached.expiresAt) {
+      this.orgCache.delete(jobId);
+      return null;
+    }
+    const { expiresAt: _expiresAt, ...context } = cached;
+    return context;
+  }
+
+  private readStringField(value: unknown) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   async publish(orgId: string, payload: QueueEventPayload) {
@@ -140,5 +228,6 @@ export class QueueEventPublisher implements OnModuleDestroy {
     this.events.off("completed", this.handleCompleted);
     this.events.off("failed", this.handleFailed);
     this.listeners.clear();
+    this.orgCache.clear();
   }
 }

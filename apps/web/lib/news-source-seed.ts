@@ -225,6 +225,9 @@ export interface SeedRssAdaptiveState {
 }
 
 const RSS_ADAPTIVE_MAX_HISTORY_SIZE = 8;
+const SOURCE_PRIORITY_MIN = -100;
+const SOURCE_PRIORITY_MAX = 100;
+const RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD = 50;
 
 export const normalizeSeedRssAdaptiveState = (
   value: unknown,
@@ -271,6 +274,7 @@ export const resolveSeedRssAdaptiveHitRate = (
 export const resolveSeedRssAdaptiveTier = (
   stateValue: unknown,
   runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
+  sourcePriority?: number,
 ): SeedRssAdaptiveTier => {
   const state = normalizeSeedRssAdaptiveState(stateValue);
   const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
@@ -280,19 +284,55 @@ export const resolveSeedRssAdaptiveTier = (
     return 'cold';
   }
   if (state.outcomes.length < 3) {
-    return 'normal';
+    return resolveSeedRssAdaptiveTierWithPriority('normal', sourcePriority);
   }
   const hitRate = resolveSeedRssAdaptiveHitRate(state);
   if (hitRate === null) {
-    return 'normal';
+    return resolveSeedRssAdaptiveTierWithPriority('normal', sourcePriority);
   }
+  let tier: SeedRssAdaptiveTier = 'normal';
   if (hitRate >= resolved.rssAdaptiveHotHitRatePercent / 100) {
-    return 'hot';
+    tier = 'hot';
+  } else if (hitRate >= resolved.rssAdaptiveWarmHitRatePercent / 100) {
+    tier = 'warm';
   }
-  if (hitRate >= resolved.rssAdaptiveWarmHitRatePercent / 100) {
-    return 'warm';
+  return resolveSeedRssAdaptiveTierWithPriority(tier, sourcePriority);
+};
+
+const normalizeSourcePriority = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
   }
-  return 'normal';
+  const normalized = Math.round(value);
+  return Math.max(SOURCE_PRIORITY_MIN, Math.min(SOURCE_PRIORITY_MAX, normalized));
+};
+
+const resolveSeedRssAdaptiveTierWithPriority = (
+  tier: SeedRssAdaptiveTier,
+  sourcePriority: unknown,
+): SeedRssAdaptiveTier => {
+  const normalizedPriority = normalizeSourcePriority(sourcePriority);
+  if (normalizedPriority >= RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD) {
+    if (tier === 'normal') {
+      return 'warm';
+    }
+    if (tier === 'warm') {
+      return 'hot';
+    }
+    return tier;
+  }
+  if (normalizedPriority <= -RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD) {
+    if (tier === 'hot') {
+      return 'warm';
+    }
+    if (tier === 'warm') {
+      return 'normal';
+    }
+    if (tier === 'normal') {
+      return 'cold';
+    }
+  }
+  return tier;
 };
 
 export const resolveSeedRssAdaptiveIntervalSeconds = (

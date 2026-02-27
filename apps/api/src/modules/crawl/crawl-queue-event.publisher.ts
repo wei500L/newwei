@@ -10,7 +10,7 @@ import {
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
-import type { CrawlJobData } from "./crawl.types";
+import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 
 export interface CrawlQueueEventPayload {
   event: string;
@@ -18,12 +18,21 @@ export interface CrawlQueueEventPayload {
   queueName?: string;
   data?: Record<string, unknown>;
   timestamp: string;
+  taskId?: string;
+  priorityClass?: CrawlPriorityClass;
+  sourcePriority?: number;
 }
 
 export type CrawlQueueEventListener = (orgId: string, payload: CrawlQueueEventPayload) => Promise<void> | void;
 
-interface OrgCacheEntry {
+interface CrawlJobContext {
   orgId: string;
+  taskId?: string;
+  priorityClass?: CrawlPriorityClass;
+  sourcePriority?: number;
+}
+
+interface OrgCacheEntry extends CrawlJobContext {
   expiresAt: number;
 }
 
@@ -125,18 +134,24 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     data?: Record<string, unknown>
   ) {
     try {
-      const orgId = await this.resolveOrgId(queue, queueName, jobId);
-      if (!orgId) {
+      const context = await this.resolveJobContext(queue, queueName, jobId);
+      if (!context?.orgId) {
         this.logger.debug({ queueName, jobId, event }, "Skipping crawl queue event without org context");
         return;
       }
+      const orgId = context.orgId;
 
       const payload: CrawlQueueEventPayload = {
         event,
         jobId,
         queueName,
         data,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        ...(context.taskId ? { taskId: context.taskId } : {}),
+        ...(context.priorityClass ? { priorityClass: context.priorityClass } : {}),
+        ...(typeof context.sourcePriority === "number"
+          ? { sourcePriority: context.sourcePriority }
+          : {})
       };
 
       await this.dispatchToListeners(orgId, payload);
@@ -149,15 +164,19 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     return `${queueName}:${jobId}`;
   }
 
-  private async resolveOrgId(queue: Queue<CrawlJobData>, queueName: string, jobId: string): Promise<string | null> {
+  private async resolveJobContext(
+    queue: Queue<CrawlJobData>,
+    queueName: string,
+    jobId: string
+  ): Promise<CrawlJobContext | null> {
     const cacheKey = this.cacheKey(queueName, jobId);
-    const cached = this.getCachedOrgId(cacheKey);
+    const cached = this.getCachedJobContext(cacheKey);
     try {
       const job = await queue.getJob(jobId);
-      const orgId = job?.data?.orgId;
-      if (orgId && typeof orgId === "string") {
-        this.setCachedOrgId(cacheKey, orgId);
-        return orgId;
+      const context = this.extractJobContext(job?.data);
+      if (context) {
+        this.setCachedJobContext(cacheKey, context);
+        return context;
       }
     } catch (error) {
       this.logger.debug({ queueName, jobId, error }, "Failed to resolve crawl queue orgId from job");
@@ -166,11 +185,47 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
     return cached;
   }
 
-  private setCachedOrgId(cacheKey: string, orgId: string) {
-    this.orgCache.set(cacheKey, { orgId, expiresAt: Date.now() + this.orgCacheTtlMs });
+  private extractJobContext(value: unknown): CrawlJobContext | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const orgId = this.readStringField(record.orgId);
+    if (!orgId) {
+      return null;
+    }
+
+    const priorityClassRaw = this.readStringField(record.priorityClass);
+    const priorityClass: CrawlPriorityClass | undefined =
+      priorityClassRaw === "hot" || priorityClassRaw === "normal"
+        ? priorityClassRaw
+        : undefined;
+    const sourcePriority =
+      typeof record.sourcePriority === "number" && Number.isFinite(record.sourcePriority)
+        ? Math.round(record.sourcePriority)
+        : undefined;
+
+    return {
+      orgId,
+      taskId: this.readStringField(record.taskId),
+      priorityClass,
+      sourcePriority
+    };
   }
 
-  private getCachedOrgId(cacheKey: string): string | null {
+  private readStringField(value: unknown) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private setCachedJobContext(cacheKey: string, context: CrawlJobContext) {
+    this.orgCache.set(cacheKey, { ...context, expiresAt: Date.now() + this.orgCacheTtlMs });
+  }
+
+  private getCachedJobContext(cacheKey: string): CrawlJobContext | null {
     const cached = this.orgCache.get(cacheKey);
     if (!cached) {
       return null;
@@ -179,7 +234,8 @@ export class CrawlQueueEventPublisher implements OnModuleDestroy {
       this.orgCache.delete(cacheKey);
       return null;
     }
-    return cached.orgId;
+    const { expiresAt: _expiresAt, ...context } = cached;
+    return context;
   }
 
   private async dispatchToListeners(orgId: string, payload: CrawlQueueEventPayload) {

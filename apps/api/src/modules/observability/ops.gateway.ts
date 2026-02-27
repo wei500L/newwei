@@ -21,6 +21,14 @@ interface OpsLiveEventPayload {
   jobId: string;
   data?: Record<string, unknown>;
   timestamp: string;
+  pipelineJobId?: string;
+  sourceId?: string;
+  rawItemId?: string;
+  itemMetaId?: string;
+  processedItemId?: string;
+  taskId?: string;
+  priorityClass?: "hot" | "normal";
+  sourcePriority?: number;
 }
 
 @WebSocketGateway({
@@ -56,19 +64,57 @@ export class OpsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnM
 
   onModuleInit() {
     this.unsubscribePipeline = this.queueEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, { source: "pipeline", event: payload.event, jobId: payload.jobId, timestamp: payload.timestamp });
+      this.broadcast(orgId, {
+        source: "pipeline",
+        event: payload.event,
+        jobId: payload.jobId,
+        data: payload.data,
+        timestamp: payload.timestamp,
+        pipelineJobId: payload.pipelineJobId,
+        sourceId: payload.sourceId,
+        rawItemId: payload.rawItemId,
+        itemMetaId: payload.itemMetaId,
+        processedItemId: payload.processedItemId
+      });
     });
     this.unsubscribeCrawl = this.crawlEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, { source: "crawl", event: payload.event, jobId: payload.jobId, timestamp: payload.timestamp });
+      this.broadcast(orgId, {
+        source: "crawl",
+        event: payload.event,
+        jobId: payload.jobId,
+        data: payload.data,
+        timestamp: payload.timestamp,
+        taskId: payload.taskId,
+        priorityClass: payload.priorityClass,
+        sourcePriority: payload.sourcePriority
+      });
     });
     this.unsubscribeAnalysis = this.analysisEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, { source: "analysis", event: payload.event, jobId: payload.jobId, timestamp: payload.timestamp });
+      this.broadcast(orgId, {
+        source: "analysis",
+        event: payload.event,
+        jobId: payload.jobId,
+        data: payload.data,
+        timestamp: payload.timestamp
+      });
     });
     this.unsubscribeAssistant = this.assistantEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, { source: "assistant", event: payload.event, jobId: payload.jobId, timestamp: payload.timestamp });
+      this.broadcast(orgId, {
+        source: "assistant",
+        event: payload.event,
+        jobId: payload.jobId,
+        data: payload.data,
+        timestamp: payload.timestamp
+      });
     });
     this.unsubscribeAlerts = this.alertsEvents.registerListener((orgId, payload) => {
-      this.broadcast(orgId, { source: "alerts", event: payload.event, jobId: payload.jobId, timestamp: payload.timestamp });
+      this.broadcast(orgId, {
+        source: "alerts",
+        event: payload.event,
+        jobId: payload.jobId,
+        data: payload.data,
+        timestamp: payload.timestamp
+      });
     });
   }
 

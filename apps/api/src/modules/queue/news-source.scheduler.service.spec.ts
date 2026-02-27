@@ -1247,6 +1247,34 @@ describe("NewsSourceSchedulerService", () => {
     );
   });
 
+  it("applies source priority bias when resolving rss adaptive tier", () => {
+    const { service } = createService();
+    const state = {
+      outcomes: [true, false, false],
+      consecutiveNoHit: 0,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const runtimeSettings = {
+      rssAdaptiveHotHitRatePercent: 90,
+      rssAdaptiveWarmHitRatePercent: 20,
+      rssAdaptiveColdConsecutiveNoHitRuns: 4,
+    };
+
+    const boosted = (service as any).resolveRssAdaptiveTier(
+      state,
+      80,
+      runtimeSettings,
+    );
+    const demoted = (service as any).resolveRssAdaptiveTier(
+      state,
+      -80,
+      runtimeSettings,
+    );
+
+    expect(boosted).toBe("hot");
+    expect(demoted).toBe("normal");
+  });
+
   it("applies rss adaptive hot tier interval and discovery ttl overrides", async () => {
     const {
       service,

@@ -51,4 +51,30 @@ describe('news-source rss adaptive ui model', () => {
       })
     );
   });
+
+  it('applies source priority bias when computing tier', () => {
+    const model = resolveRssAdaptiveListUiModel({
+      config: {
+        seed: {
+          enabled: true,
+          mode: 'rss',
+          rssAdaptive: { enabled: true }
+        }
+      },
+      frequencySeconds: 300,
+      priority: -80,
+      rssAdaptiveState: {
+        outcomes: [true, false, false],
+        consecutiveNoHit: 0,
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    });
+
+    expect(model).toEqual(
+      expect.objectContaining({
+        tier: 'normal',
+        effectiveIntervalSeconds: 300
+      })
+    );
+  });
 });

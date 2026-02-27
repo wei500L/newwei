@@ -23,6 +23,7 @@ export interface RssAdaptiveListUiModel {
 export interface ResolveRssAdaptiveListUiModelInput {
   config: unknown;
   frequencySeconds: number;
+  priority?: number;
   rssAdaptiveState: unknown;
   runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>;
 }
@@ -93,7 +94,11 @@ export const resolveRssAdaptiveListUiModel = (
   const normalizedState = normalizeSeedRssAdaptiveState(input.rssAdaptiveState);
   const hasHistory =
     normalizedState.outcomes.length > 0 || normalizedState.consecutiveNoHit > 0;
-  const tier = resolveSeedRssAdaptiveTier(normalizedState, runtimeSettings);
+  const tier = resolveSeedRssAdaptiveTier(
+    normalizedState,
+    runtimeSettings,
+    input.priority,
+  );
 
   return {
     tier,

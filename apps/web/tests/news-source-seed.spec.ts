@@ -347,10 +347,34 @@ describe('news-source seed config mapping', () => {
         rssAdaptiveColdConsecutiveNoHitRuns: 4
       }
     );
+    const boostedByPriority = resolveSeedRssAdaptiveTier(
+      {
+        outcomes: [true, false, false],
+        consecutiveNoHit: 0
+      },
+      {
+        rssAdaptiveHotHitRatePercent: 90,
+        rssAdaptiveWarmHitRatePercent: 20
+      },
+      80
+    );
+    const demotedByPriority = resolveSeedRssAdaptiveTier(
+      {
+        outcomes: [true, false, false],
+        consecutiveNoHit: 0
+      },
+      {
+        rssAdaptiveHotHitRatePercent: 90,
+        rssAdaptiveWarmHitRatePercent: 20
+      },
+      -80
+    );
 
     expect(hot).toBe('hot');
     expect(warm).toBe('warm');
     expect(cold).toBe('cold');
+    expect(boostedByPriority).toBe('hot');
+    expect(demotedByPriority).toBe('normal');
   });
 
   it('resolves adaptive interval and discovery ttl by tier', () => {
