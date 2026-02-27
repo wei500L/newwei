@@ -5,8 +5,8 @@ import { Button, Dropdown, type MenuProps } from "antd";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem } from "../hooks/use-news-sources";
-import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import { useRelativeTime } from "../hooks/use-relative-time";
+import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
 interface NewsListTimelineProps {
@@ -77,7 +77,7 @@ export function NewsListTimeline({
   const isComfortable = densityMode === "comfortable";
 
   return (
-    <ol className="ml-1.5 flex flex-col border-l border-zinc-700/65">
+    <ol className="ml-2 flex flex-col border-l border-zinc-700/65">
       {items.map((item) => {
         const href = isMobile ? item.mobileUrl || item.url : item.url;
         const displayTime = getRelativeTime(item.pubDate || item.extra?.date);
@@ -104,10 +104,10 @@ export function NewsListTimeline({
         return (
           <li
             key={`${item.id}-${item.pubDate || item.extra?.date || ""}`}
-            className="group relative ml-3 border-b border-white/6 pb-2 pt-1.5 last:border-b-0"
+            className="group relative ml-3.5 border-b border-white/10 pb-2.5 pt-2 last:border-b-0"
           >
-            <span className="absolute -left-[15px] top-[10px] h-2 w-2 rounded-full bg-zinc-500/90 shadow-[0_0_0_2px_rgba(8,11,17,0.95)]" />
-            <div className="mb-0.5 flex items-center justify-between gap-1.5 text-[11px] leading-4 text-zinc-400">
+            <span className="absolute -left-[17px] top-[12px] h-2.5 w-2.5 rounded-full bg-zinc-500/90 shadow-[0_0_0_2px_rgba(8,11,17,0.95)]" />
+            <div className="mb-1 flex items-center justify-between gap-1.5 text-[11px] leading-4 text-zinc-400">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span>{displayTime}</span>
                 <span className="truncate">
@@ -149,7 +149,7 @@ export function NewsListTimeline({
               target="_blank"
               rel="noopener noreferrer"
               title={item.extra?.hover}
-              className={`block overflow-hidden rounded-md px-1 py-0.5 text-zinc-100 transition-colors hover:bg-white/10 hover:text-white visited:text-zinc-500 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
+              className={`block overflow-hidden rounded-lg px-1.5 py-1 text-zinc-100 transition-colors hover:bg-white/10 hover:text-white visited:text-zinc-500 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                 isComfortable
                   ? "text-[14px] leading-[1.45]"
                   : "text-[13px] leading-[1.35]"
@@ -162,7 +162,7 @@ export function NewsListTimeline({
             >
               {item.title}
             </a>
-            <div className="mt-0.5 flex items-center gap-1 px-1 text-[10px] text-zinc-400">
+            <div className="mt-1 flex items-center gap-1 px-1.5 text-[10px] text-zinc-400">
               {isFresh ? (
                 <span className="rounded bg-sky-400/20 px-1 py-0.5 text-sky-200">
                   NEW
@@ -175,7 +175,7 @@ export function NewsListTimeline({
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-zinc-400 opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1.5 text-[11px] text-zinc-400 opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"

@@ -1,3 +1,4 @@
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { NewsAggregatorService } from './news-aggregator.service';
 
 const metadataFixture = {
@@ -47,6 +48,8 @@ describe('NewsAggregatorService personalization order', () => {
 
   const registryServiceMock = {
     getMetadata: jest.fn(() => metadataFixture),
+    getSource: jest.fn(),
+    getGetter: jest.fn(),
   } as any;
 
   const runtimeSecretsServiceMock = {
@@ -84,9 +87,30 @@ describe('NewsAggregatorService personalization order', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     registryServiceMock.getMetadata.mockReturnValue(metadataFixture);
+    registryServiceMock.getSource.mockReturnValue({
+      name: '微博',
+      interval: 120000,
+      color: 'red',
+    });
+    registryServiceMock.getGetter.mockReturnValue(
+      jest.fn().mockResolvedValue([
+        {
+          id: 'item-1',
+          title: 'headline',
+          url: 'https://example.com/headline',
+        },
+      ]),
+    );
+    cacheServiceMock.get.mockResolvedValue(null);
+    cacheServiceMock.set.mockResolvedValue(undefined);
+    cacheServiceMock.withLock.mockImplementation(
+      async (_lockKey: string, _ttlMs: number, fn: () => Promise<unknown>) => fn(),
+    );
     cacheServiceMock.zcard.mockResolvedValue(0);
     cacheServiceMock.zrange.mockResolvedValue([]);
     rateLimiterServiceMock.consume.mockResolvedValue(true);
+    runtimeSecretsServiceMock.getSecretsForSource.mockResolvedValue({});
+    realtimeDispatcherMock.publish.mockResolvedValue(undefined);
     personalizationSettingsServiceMock.getRuntimeSettings.mockResolvedValue({
       source: 'default',
       cacheTtlMs: 20_000,
@@ -326,5 +350,41 @@ describe('NewsAggregatorService personalization order', () => {
     ).rejects.toMatchObject({
       status: 429,
     });
+  });
+
+  it('wraps source refresh failures into 502 response with source context and logs error', async () => {
+    const loggerErrorSpy = jest.spyOn((service as any).logger, 'error');
+    cacheServiceMock.withLock.mockRejectedValue(new Error('upstream timeout'));
+
+    try {
+      await service.fetchSource('weibo');
+      throw new Error('expected fetchSource to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error).toMatchObject({
+        status: 502,
+        response: expect.objectContaining({
+          code: 'NEWS_SOURCE_FETCH_FAILED',
+          message: 'Failed to fetch news source: weibo',
+          detail: 'upstream timeout',
+        }),
+      });
+    }
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('source refresh failed for "weibo": upstream timeout'),
+      expect.any(String),
+    );
+  });
+
+  it('does not wrap 4xx HttpException from source refresh flow', async () => {
+    cacheServiceMock.withLock.mockRejectedValue(new BadRequestException('invalid token'));
+
+    try {
+      await service.fetchSource('weibo');
+      throw new Error('expected fetchSource to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(error).toMatchObject({ status: 400 });
+    }
   });
 });

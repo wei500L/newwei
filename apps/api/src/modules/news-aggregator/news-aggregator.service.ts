@@ -162,15 +162,27 @@ export class NewsAggregatorService {
       // No stale data available — last resort, do the refresh
       return await refresh()
     } catch (error) {
-      this.logger.warn(`source refresh failed for "${sourceId}": ${error instanceof Error ? error.message : String(error)}`)
-
-      const stale = await this.safeGetCache<SourceResponse>(staleKey)
-      if (stale) {
-        return { ...stale, id: sourceId, status: "cache" }
+      const message = error instanceof Error ? error.message : String(error)
+      const stack = error instanceof Error ? error.stack : undefined
+      this.logger.error(`source refresh failed for "${sourceId}": ${message}`, stack)
+      if (error instanceof HttpException && error.getStatus() < 500) {
+        throw error
       }
-
-      throw error
+      throw this.buildSourceFetchException(sourceId, error)
     }
+  }
+
+  private buildSourceFetchException(sourceId: string, error: unknown): HttpException {
+    const detailRaw = error instanceof Error ? error.message : String(error)
+    const detail = detailRaw.length > 240 ? `${detailRaw.slice(0, 237)}...` : detailRaw
+    return new HttpException(
+      {
+        code: "NEWS_SOURCE_FETCH_FAILED",
+        message: `Failed to fetch news source: ${sourceId}`,
+        detail,
+      },
+      HttpStatus.BAD_GATEWAY,
+    )
   }
 
   async fetchBatch(ids: string[]) {

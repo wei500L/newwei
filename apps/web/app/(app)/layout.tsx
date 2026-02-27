@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { auth } from "@/lib/auth";
+import { AuraBackground } from "@/components/aura-background";
 
 import { ShellLayout } from "./components/shell";
 
@@ -11,5 +12,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/login");
   }
 
-  return <ShellLayout>{children}</ShellLayout>;
+  return (
+    <>
+      <AuraBackground />
+      <ShellLayout>{children}</ShellLayout>
+    </>
+  );
 }

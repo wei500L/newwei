@@ -3,11 +3,12 @@
 import { ArrowRightOutlined } from "@ant-design/icons";
 import { useQuery } from "@apollo/client";
 import { gql } from "@apollo/client";
-import { Card, Skeleton } from "antd";
+import { Skeleton } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
 import { resolveArticlePublishedTime } from "@/components/article-published-time";
+import { AuraBentoCard } from "@/components/aura-bento-card";
 import { NewsImage } from "@/components/news-image";
 import dayjs from "@/lib/dayjs";
 import { resolveLocale } from "@/lib/i18n";
@@ -79,9 +80,9 @@ export function Headlines() {
 
   if (loading) {
     return (
-      <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
+      <AuraBentoCard className="overflow-hidden p-0" squish={false}>
         <Skeleton active paragraph={{ rows: 6 }} className="p-6" />
-      </Card>
+      </AuraBentoCard>
     );
   }
 
@@ -98,10 +99,10 @@ export function Headlines() {
   });
 
   return (
-    <Card className="glass-card overflow-hidden" styles={{ body: { padding: 0 } }} variant="borderless">
+    <AuraBentoCard className="overflow-hidden flex flex-col" squish={false}>
       {/* Hero Section */}
       <div
-        className="relative w-full group cursor-pointer"
+        className="relative w-full group cursor-pointer shrink-0"
         onClick={() => router.push(`/items/${heroItem.id}`)}
       >
         <NewsImage
@@ -190,6 +191,6 @@ export function Headlines() {
           })}
         </div>
       )}
-    </Card>
+    </AuraBentoCard>
   );
 }

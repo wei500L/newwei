@@ -3,9 +3,11 @@
 import { FireOutlined, RiseOutlined } from "@ant-design/icons";
 import { useQuery } from "@apollo/client";
 import { gql } from "@apollo/client";
-import { Card, Skeleton, Tag } from "antd";
+import { Skeleton, Tag } from "antd";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
+
+import { AuraBentoCard } from "@/components/aura-bento-card";
 
 const HOT_TOPICS_QUERY = gql`
   query HotTopics($search: String, $filters: ItemsFiltersInput) {
@@ -46,17 +48,12 @@ export function HotTopics() {
 
   if (loading) {
     return (
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
-          </div>
-        }
-        size="small"
-        className="glass-card"
-      >
+      <AuraBentoCard className="p-4" squish={false}>
+        <div className="flex items-center gap-2 mb-4 font-semibold text-sm">
+          <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
+        </div>
         <Skeleton active paragraph={{ rows: 4 }} />
-      </Card>
+      </AuraBentoCard>
     );
   }
 
@@ -65,15 +62,10 @@ export function HotTopics() {
   }
 
   return (
-    <Card
-      title={
-        <div className="flex items-center gap-2">
-          <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
-        </div>
-      }
-      size="small"
-      className="glass-card"
-    >
+    <AuraBentoCard className="p-4 flex flex-col" squish={false}>
+      <div className="flex items-center gap-2 mb-3 font-semibold text-sm">
+        <FireOutlined className="text-orange-500" /> {t("pages.today.hotTopics", { defaultValue: "Hot Topics" })}
+      </div>
       <div className="flex flex-col gap-1">
         {topics.map((topic, index) => {
           const trendType = getTrendType(index);
@@ -98,6 +90,6 @@ export function HotTopics() {
           );
         })}
       </div>
-    </Card>
+    </AuraBentoCard>
   );
 }

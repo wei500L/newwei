@@ -9,6 +9,24 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      animation: {
+        'aura-breathe': 'aura-breathe 15s ease-in-out infinite alternate',
+      },
+      keyframes: {
+        'aura-breathe': {
+          '0%': { transform: 'scale(1) translate(0, 0)', opacity: '0.8' },
+          '50%': { transform: 'scale(1.05) translate(2%, -2%)', opacity: '1' },
+          '100%': { transform: 'scale(0.95) translate(-2%, 2%)', opacity: '0.8' },
+        }
+      },
+      transitionTimingFunction: {
+        'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      },
+      backdropBlur: {
+        '20': '20px',
+        '28': '28px',
+        '32': '32px',
+      },
       fontFamily: {
         sans: ['var(--font-sans)', ...fontFamily.sans],
         serif: ['var(--font-serif)', ...fontFamily.serif],

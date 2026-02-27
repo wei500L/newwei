@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { Source } from "../hooks/use-news-sources";
+
+import type { Source } from "../hooks/use-news-sources";
+
 import { NewsnowDndGrid } from "./newsnow-dnd-grid";
 
 interface NewsnowColumnProps {
@@ -22,7 +24,7 @@ export function NewsnowColumn({ columnKey, sourceIds, sources }: NewsnowColumnPr
   }, [sourceIds, sources]);
 
   return (
-    <div className="mx-auto w-full max-w-[1880px] px-3 py-4 md:px-4 md:py-5">
+    <div className="mx-auto w-full max-w-[1760px] px-4 pb-8 pt-6 md:px-6 md:pb-9 md:pt-7 xl:px-8">
       <NewsnowDndGrid columnKey={columnKey} sourceIds={sourceIds} sourcesMap={sourcesMap} />
     </div>
   );

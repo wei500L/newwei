@@ -50,14 +50,21 @@ describe("NewsAggregatorController", () => {
     },
   )
 
-  it("throws when forceRefresh query is invalid", () => {
-    expect(() => controller.getSource("baidu", "maybe")).toThrow(BadRequestException)
+  it("throws when forceRefresh query is invalid", async () => {
+    await expect(controller.getSource("baidu", "maybe")).rejects.toBeInstanceOf(BadRequestException)
     expect(newsAggregatorService.fetchSource).not.toHaveBeenCalled()
   })
 
-  it("throws when source id format is invalid", () => {
-    expect(() => controller.getSource("bad id", "true")).toThrow(BadRequestException)
+  it("throws when source id format is invalid", async () => {
+    await expect(controller.getSource("bad id", "true")).rejects.toBeInstanceOf(BadRequestException)
     expect(newsAggregatorService.fetchSource).not.toHaveBeenCalled()
+  })
+
+  it("propagates upstream fetch errors without controller fallback", async () => {
+    const upstreamError = new Error("upstream unavailable")
+    newsAggregatorService.fetchSource.mockRejectedValue(upstreamError)
+
+    await expect(controller.getSource("baidu", "true")).rejects.toBe(upstreamError)
   })
 
   it("delegates resolve endpoint with normalized URL", async () => {

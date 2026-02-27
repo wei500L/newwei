@@ -161,10 +161,6 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     },
     {
-      provide: CRAWL_QUEUE,
-      useExisting: CRAWL_QUEUE_NORMAL
-    },
-    {
       provide: CRAWL_QUEUE_EVENTS_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
@@ -187,10 +183,6 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
         cleanup.track(events);
         return events;
       }
-    },
-    {
-      provide: CRAWL_QUEUE_EVENTS,
-      useExisting: CRAWL_QUEUE_EVENTS_NORMAL
     },
     {
       provide: CRAWL_QUEUE_EVENTS_LEGACY,

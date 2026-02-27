@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { StarOutlined } from "@ant-design/icons";
+import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
 import { useParams } from "next/navigation";
-import { NewsnowHeader } from "../components/newsnow-header";
+import { useEffect, useMemo } from "react";
+
+import { useTheme } from "@/hooks/use-theme";
+
 import { NewsnowColumn } from "../components/newsnow-column";
+import { NewsnowHeader } from "../components/newsnow-header";
 import { useNewsMetadata, useBatchPrefetch } from "../hooks/use-news-sources";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
 import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
 import { useNewsnowStore } from "../store/newsnow-store";
-import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
-import { StarOutlined } from "@ant-design/icons";
-import { useTheme } from "@/hooks/use-theme";
 
 function NewsnowAttribution() {
   return (
-    <footer className="mx-auto w-full max-w-[1880px] px-3 pb-5 pt-2 text-center text-xs text-slate-500 dark:text-zinc-500 md:px-4">
+    <footer className="mx-auto w-full max-w-[1760px] px-4 pb-7 pt-3 text-center text-xs text-slate-500 dark:text-zinc-500 md:px-6 xl:px-8">
       <p className="leading-6">
         本页面基于{" "}
         <a
@@ -65,10 +67,13 @@ export default function NewsnowColumnPage() {
     ? normalizedColumnKey
     : "hottest";
 
-  const sourceIds =
-    resolvedColumnKey === "focus"
-      ? focusSources
-      : metadata?.columns[resolvedColumnKey]?.sources || [];
+  const sourceIds = useMemo(
+    () =>
+      resolvedColumnKey === "focus"
+        ? focusSources
+        : metadata?.columns[resolvedColumnKey]?.sources || [],
+    [focusSources, metadata?.columns, resolvedColumnKey],
+  );
 
   useEffect(() => {
     if (sourceIds.length > 0) {
@@ -101,12 +106,12 @@ export default function NewsnowColumnPage() {
     return (
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
-        <div className="mx-auto w-full max-w-[1880px] px-3 py-4 md:px-4 md:py-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] md:gap-5">
+        <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7">
             {[...Array(10)].map((_, i) => (
               <div
                 key={i}
-                className={`h-[430px] rounded-2xl border p-4 sm:h-[470px] lg:h-[500px] ${
+                className={`h-[430px] rounded-3xl border p-5 sm:h-[470px] lg:h-[500px] ${
                   isDark
                     ? "border-zinc-800 bg-zinc-900/80"
                     : "border-slate-200 bg-white/85"
@@ -177,7 +182,7 @@ export default function NewsnowColumnPage() {
     <div className={frameClass} style={frameStyle}>
       <NewsnowHeader />
       {visibleRealtimeUnread > 0 ? (
-        <div className="mx-auto w-full max-w-[1880px] px-3 pt-3 md:px-4">
+        <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
           <Alert
             showIcon
             type="info"
@@ -223,7 +228,7 @@ export default function NewsnowColumnPage() {
         </div>
       ) : null}
       {!realtimeConnected && realtimeConnectionError ? (
-        <div className="mx-auto w-full max-w-[1880px] px-3 pt-3 md:px-4">
+        <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
           <Alert
             showIcon
             type="warning"

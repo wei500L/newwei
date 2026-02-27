@@ -1,18 +1,20 @@
 "use client";
 
+import { SearchOutlined } from "@ant-design/icons";
+import { Button, Popconfirm, Segmented, Space, Switch, Tooltip, Typography, message } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button, Popconfirm, Segmented, Space, Switch, Tooltip, Typography, message } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
-import { useNewsMetadata } from "../hooks/use-news-sources";
-import { useCallback, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
-import { NewsnowSearch } from "./newsnow-search";
-import { useNewsnowStore } from "../store/newsnow-store";
+import { useCallback, useMemo, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { emitNewsnowPersonalizationUpdated } from "@/lib/newsnow-personalization-events";
+
+import { useNewsMetadata } from "../hooks/use-news-sources";
+import { useNewsnowStore } from "../store/newsnow-store";
+
+import { NewsnowSearch } from "./newsnow-search";
 
 export function NewsnowHeader() {
   const pathname = usePathname();
@@ -83,57 +85,111 @@ export function NewsnowHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(248,250,252,0.92)_100%)] shadow-[0_8px_24px_-18px_rgba(15,23,42,0.18)] backdrop-blur-md dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(7,10,17,0.96)_0%,rgba(6,9,15,0.94)_100%)] dark:shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
       {contextHolder}
-      <div className="mx-auto flex w-full flex-wrap items-center gap-y-2 px-3 py-2 md:px-4">
-        <nav className="flex h-full flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          {allTabs.map((tab) => {
-            const href = `/newsnow/${tab.key}`;
-            const isActive = pathname === href;
-            return (
-              <Link
-                key={tab.key}
-                href={href}
-                aria-current={isActive ? "page" : undefined}
-                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium tracking-[0.01em] transition-all ${
-                  isActive
-                    ? "bg-slate-900/8 text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] ring-1 ring-slate-900/12 dark:bg-white/12 dark:text-zinc-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] dark:ring-white/20"
-                    : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100"
-                }`}
-              >
-                {tab.name}
+      <div className="mx-auto w-full max-w-[1760px] px-4 py-3 md:px-6 md:py-4 xl:px-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            {allTabs.map((tab) => {
+              const href = `/newsnow/${tab.key}`;
+              const isActive = pathname === href;
+              return (
+                <Link
+                  key={tab.key}
+                  href={href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium tracking-[0.01em] transition-all ${
+                    isActive
+                      ? "bg-slate-900/10 text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] ring-1 ring-slate-900/12 dark:bg-white/12 dark:text-zinc-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] dark:ring-white/20"
+                      : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  {tab.name}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="flex shrink-0 items-center gap-2.5">
+            <Space size={6} className="hidden xl:flex">
+              <Link href="/news-hub">
+                <span className="inline-flex rounded-lg px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                  Hub
+                </span>
               </Link>
-            );
-          })}
-        </nav>
-        <div className="ml-2 flex shrink-0 items-center gap-3 border-l border-slate-300/70 pl-3 dark:border-white/10">
-          <Space size={6} className="hidden lg:flex">
-            <Link href="/news-hub">
-              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
-                Hub
-              </span>
-            </Link>
-            <Link href="/items">
-              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
-                深读
-              </span>
-            </Link>
-            <Link href="/events">
-              <span className="inline-flex rounded-md px-2 py-1 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
-                事件
-              </span>
-            </Link>
-          </Space>
-          <Segmented
-            size="small"
-            value={sortMode}
-            options={[
-              { label: "手动", value: "manual" },
-              { label: "个性化", value: "personalized" },
-            ]}
-            onChange={(value) => setSortMode(value as "manual" | "personalized")}
-          />
+              <Link href="/items">
+                <span className="inline-flex rounded-lg px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                  深读
+                </span>
+              </Link>
+              <Link href="/events">
+                <span className="inline-flex rounded-lg px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100">
+                  事件
+                </span>
+              </Link>
+            </Space>
+            <Button
+              type="default"
+              icon={<SearchOutlined />}
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center rounded-xl border-slate-300/65 bg-white/65 text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.7)] hover:border-slate-400/70 hover:text-slate-900 dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+            >
+              搜索
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2.5 md:mt-4">
+          <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-slate-300/65 bg-white/68 px-2.5 py-1.5 shadow-[0_14px_28px_-26px_rgba(15,23,42,0.9)] dark:border-white/12 dark:bg-white/[0.045]">
+            <Segmented
+              size="small"
+              value={sortMode}
+              options={[
+                { label: "手动", value: "manual" },
+                { label: "个性化", value: "personalized" },
+              ]}
+              onChange={(value) => setSortMode(value as "manual" | "personalized")}
+            />
+            <Tooltip title={realtimeConnected ? "实时连接正常" : "实时连接断开"}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                <span
+                  className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${
+                    realtimeConnected ? "bg-emerald-400" : "bg-rose-400"
+                  }`}
+                />
+                实时 {realtimeUnreadTotal > 0 ? `${realtimeUnreadTotal}` : ""}
+              </Typography.Text>
+            </Tooltip>
+          </div>
+
+          <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-slate-300/65 bg-white/68 px-2.5 py-1.5 shadow-[0_14px_28px_-26px_rgba(15,23,42,0.9)] dark:border-white/12 dark:bg-white/[0.045]">
+            <Tooltip title="跨源标题相同新闻将仅保留首个来源卡片中的条目">
+              <Space size={4} align="center">
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  去重
+                </Typography.Text>
+                <Switch
+                  size="small"
+                  checked={hideCrossSourceDuplicates}
+                  onChange={(checked) => setHideCrossSourceDuplicates(checked)}
+                />
+              </Space>
+            </Tooltip>
+            <Tooltip title="调整列表密度：紧凑优先信息量，舒适优先可读性。">
+              <Segmented
+                size="small"
+                value={densityMode}
+                options={[
+                  { label: "紧凑", value: "compact" },
+                  { label: "舒适", value: "comfortable" },
+                ]}
+                onChange={(value) =>
+                  setDensityMode(value as "compact" | "comfortable")
+                }
+              />
+            </Tooltip>
+          </div>
+
           {sortMode === "personalized" ? (
             <Tooltip title="根据本地偏好与行为画像计算个性化排序。重置本地偏好不会清空服务端行为画像。">
-              <Space size={4} align="center" wrap>
+              <div className="inline-flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-300/65 bg-white/68 px-2.5 py-1.5 shadow-[0_14px_28px_-26px_rgba(15,23,42,0.9)] dark:border-white/12 dark:bg-white/[0.045]">
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   样本 {affinitySamples}
                 </Typography.Text>
@@ -170,52 +226,9 @@ export function NewsnowHeader() {
                     清除手动顺序
                   </Button>
                 ) : null}
-              </Space>
+              </div>
             </Tooltip>
           ) : null}
-          <Tooltip title={realtimeConnected ? "实时连接正常" : "实时连接断开"}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              <span
-                className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${
-                  realtimeConnected ? "bg-emerald-400" : "bg-rose-400"
-                }`}
-              />
-              实时 {realtimeUnreadTotal > 0 ? `${realtimeUnreadTotal}` : ""}
-            </Typography.Text>
-          </Tooltip>
-          <Tooltip title="跨源标题相同新闻将仅保留首个来源卡片中的条目">
-            <Space size={4} align="center">
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                去重
-              </Typography.Text>
-              <Switch
-                size="small"
-                checked={hideCrossSourceDuplicates}
-                onChange={(checked) => setHideCrossSourceDuplicates(checked)}
-              />
-            </Space>
-          </Tooltip>
-          <Tooltip title="调整列表密度：紧凑优先信息量，舒适优先可读性。">
-            <Segmented
-              size="small"
-              value={densityMode}
-              options={[
-                { label: "紧凑", value: "compact" },
-                { label: "舒适", value: "comfortable" },
-              ]}
-              onChange={(value) =>
-                setDensityMode(value as "compact" | "comfortable")
-              }
-            />
-          </Tooltip>
-          <Button
-            type="text"
-            icon={<SearchOutlined />}
-            onClick={() => setIsSearchOpen(true)}
-            className="flex items-center rounded-md text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100"
-          >
-            搜索
-          </Button>
         </div>
       </div>
       <NewsnowSearch

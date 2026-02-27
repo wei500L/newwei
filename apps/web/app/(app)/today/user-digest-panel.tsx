@@ -1,11 +1,13 @@
 "use client";
 
-import { Button, Card, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Button, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AuraBentoCard } from "@/components/aura-bento-card";
+import { EmptyDigestSvg } from "@/components/empty-digest-svg";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -204,20 +206,20 @@ export function UserDigestPanel() {
   return (
     <>
       {contextHolder}
-      <Card
-        className="content-card"
-        title={t("pages.digest.title", { defaultValue: "Personalized Digest" })}
-        extra={
+      <AuraBentoCard className="p-4" squish={false}>
+        <div className="flex items-center justify-between mb-4">
+          <Typography.Title level={5} style={{ margin: 0 }}>
+            {t("pages.digest.title", { defaultValue: "Personalized Digest" })}
+          </Typography.Title>
           <Space>
-            <Button onClick={() => loadDigest()} loading={loadingDigest}>
+            <Button onClick={() => loadDigest()} loading={loadingDigest} size="small">
               {t("common.refresh", { defaultValue: "Refresh" })}
             </Button>
-            <Button onClick={handleOpenModal} disabled={loadingPreference}>
+            <Button onClick={handleOpenModal} disabled={loadingPreference} size="small">
               {t("pages.digest.customize", { defaultValue: "Customize" })}
             </Button>
           </Space>
-        }
-      >
+        </div>
         {loading && !digest ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "1.5rem 0" }}>
             <Spin />
@@ -251,7 +253,7 @@ export function UserDigestPanel() {
 
             {events.length === 0 ? (
               <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                image={<EmptyDigestSvg />}
                 description={t("pages.digest.empty", {
                   defaultValue: "No digest events yet. Enable News Events ingestion and wait for it to backfill."
                 })}
@@ -341,12 +343,14 @@ export function UserDigestPanel() {
             )}
           </div>
         ) : (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("pages.digest.empty", { defaultValue: "No digest yet." })}
-          />
+          <div className="py-6 flex justify-center">
+            <Empty
+              image={<EmptyDigestSvg />}
+              description={t("pages.digest.empty", { defaultValue: "No digest yet." })}
+            />
+          </div>
         )}
-      </Card>
+      </AuraBentoCard>
 
       <Modal
         open={modalOpen}

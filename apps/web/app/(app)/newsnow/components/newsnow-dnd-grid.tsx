@@ -19,16 +19,17 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
+import { type Source } from "../hooks/use-news-sources";
 import {
   type PersonalizedSourceScoreDetail,
   useNewsnowPersonalizedOrder,
 } from "../hooks/use-newsnow-personalized-order";
-import { type Source } from "../hooks/use-news-sources";
 import {
   buildCrossSourceDedupResult,
   reorderNewsnowItems,
 } from "../lib/newsnow-dnd";
 import { useNewsnowStore } from "../store/newsnow-store";
+
 import { NewsnowCard } from "./newsnow-card";
 
 interface NewsnowDndGridProps {
@@ -167,8 +168,8 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
       <div
         className={
           isMobile
-            ? "flex flex-col gap-3"
-            : "grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(290px,1fr))] md:gap-5"
+            ? "flex flex-col gap-4"
+            : "grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7"
         }
       >
         <SortableContext

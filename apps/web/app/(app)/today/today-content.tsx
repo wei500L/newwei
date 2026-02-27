@@ -4,6 +4,7 @@ import { Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
+import { AuraBentoCard } from "@/components/aura-bento-card";
 import dayjs from "@/lib/dayjs";
 
 import { BreakingAlerts } from "./components/breaking-alerts";
@@ -29,34 +30,36 @@ export function TodayContent() {
       </div>
 
       {/* Bento Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div className="aura-bento-grid">
         {/* Top: Alerts (Full Width) */}
         <div className="lg:col-span-4">
           <BreakingAlerts />
         </div>
 
         {/* Left: Headlines + User Digest (2 cols) */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="col-span-2 space-y-4">
           <Headlines />
           <UserDigestPanel />
         </div>
 
         {/* Right: Hot Topics + Feed (2 cols) */}
-        <div className="lg:col-span-2 space-y-4 h-full">
+        <div className="col-span-2 space-y-4 h-full flex flex-col">
           <HotTopics />
-          <div className="bg-white/50 dark:bg-black/20 rounded-xl p-4 min-h-[500px]">
+          <AuraBentoCard squish={false} className="p-4 min-h-[500px] flex-1 flex flex-col">
             <Typography.Title level={5}>{t("pages.today.latestFeed", { defaultValue: "Latest Feed" })}</Typography.Title>
-            <ItemsView
-              initialView="feed"
-              emptyStateVariant="today"
-              sortMode="publishedDesc"
-              experiencePreset="reader"
-              density="compact"
-              initialFilters={{
-                dateRange: [dayjs().startOf("day"), dayjs().endOf("day")]
-              }}
-            />
-          </div>
+            <div className="flex-1 overflow-y-auto rail-scrollbar">
+              <ItemsView
+                initialView="feed"
+                emptyStateVariant="today"
+                sortMode="publishedDesc"
+                experiencePreset="reader"
+                density="compact"
+                initialFilters={{
+                  dateRange: [dayjs().startOf("day"), dayjs().endOf("day")]
+                }}
+              />
+            </div>
+          </AuraBentoCard>
         </div>
       </div>
     </div>

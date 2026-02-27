@@ -1958,7 +1958,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     );
     const freshnessCutoffTs = Date.now() - freshnessWindowDays * 24 * 60 * 60 * 1000;
 
-    const discovered = await this.cache.wrap<CrawlDiscoveryCandidate[]>(
+    const discovered = await this.cache.wrap<unknown[]>(
       cacheKey,
       cacheTtlSeconds,
       async () => this.discoverSeedCandidates(source, seed, freshnessCutoffTs),
@@ -1967,24 +1967,15 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
     const normalized = new Map<string, CrawlDiscoveryCandidate>();
     for (const entry of discovered) {
-      const url = typeof entry.url === "string" ? entry.url.trim() : "";
-      if (!url) {
+      const incoming = this.normalizeCachedSeedDiscoveryCandidate(entry);
+      if (!incoming) {
         continue;
       }
-      const existing = normalized.get(url);
-      const fallbackPathPublishedAtTs = this.parsePublishedAtFromUrl(url);
-      const incoming: CrawlDiscoveryCandidate = {
-        url,
-        relevanceScore:
-          typeof entry.relevanceScore === "number" &&
-          Number.isFinite(entry.relevanceScore)
-            ? entry.relevanceScore
-            : undefined,
-        publishedAtTs:
-          this.resolveTimestamp(entry.publishedAtTs) ?? fallbackPathPublishedAtTs,
-        crawledAtTs: this.resolveTimestamp(entry.crawledAtTs),
-      };
-      normalized.set(url, this.mergeSeedDiscoveryCandidate(existing, incoming));
+      const existing = normalized.get(incoming.url);
+      normalized.set(
+        incoming.url,
+        this.mergeSeedDiscoveryCandidate(existing, incoming),
+      );
     }
 
     const scored = Array.from(normalized.values())
@@ -2042,6 +2033,43 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     });
 
     return scored.slice(0, seed.maxUrls);
+  }
+
+  private normalizeCachedSeedDiscoveryCandidate(
+    value: unknown,
+  ): CrawlDiscoveryCandidate | undefined {
+    if (typeof value === "string") {
+      const url = value.trim();
+      if (!url) {
+        return undefined;
+      }
+      return {
+        url,
+        publishedAtTs: this.parsePublishedAtFromUrl(url),
+      };
+    }
+
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+
+    const entry = value as Record<string, unknown>;
+    const url = typeof entry.url === "string" ? entry.url.trim() : "";
+    if (!url) {
+      return undefined;
+    }
+    const fallbackPathPublishedAtTs = this.parsePublishedAtFromUrl(url);
+    return {
+      url,
+      relevanceScore:
+        typeof entry.relevanceScore === "number" &&
+        Number.isFinite(entry.relevanceScore)
+          ? entry.relevanceScore
+          : undefined,
+      publishedAtTs:
+        this.resolveTimestamp(entry.publishedAtTs) ?? fallbackPathPublishedAtTs,
+      crawledAtTs: this.resolveTimestamp(entry.crawledAtTs),
+    };
   }
 
   private async discoverSeedCandidates(

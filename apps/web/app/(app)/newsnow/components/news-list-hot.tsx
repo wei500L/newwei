@@ -115,7 +115,7 @@ export function NewsListHot({
   const isComfortable = densityMode === "comfortable";
 
   return (
-    <ol className="flex flex-col gap-1.5">
+    <ol className="flex flex-col gap-2.5">
       {items.map((item, index) => {
         const href = isMobile ? item.mobileUrl || item.url : item.url;
         const itemKey = toItemKey(item);
@@ -140,7 +140,7 @@ export function NewsListHot({
         return (
           <li
             key={item.id}
-            className="group relative border-b border-white/6 pb-[1px] last:border-b-0"
+            className="group relative border-b border-white/10 pb-1.5 last:border-b-0"
           >
             <div className="flex items-start gap-2">
               <a
@@ -148,7 +148,7 @@ export function NewsListHot({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={item.extra?.hover}
-                className={`relative grid min-h-[44px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-2.5 rounded-md px-1.5 py-1.5 text-zinc-100 transition-colors hover:bg-white/10 hover:text-white visited:text-zinc-500 ${
+                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-2 text-zinc-100 transition-colors hover:bg-white/10 hover:text-white visited:text-zinc-500 ${
                   isFresh ? "animate-[pulse_1.8s_ease-in-out_1] ring-1 ring-sky-300/45" : ""
                 }`}
                 onClick={() => {
@@ -173,10 +173,10 @@ export function NewsListHot({
                   >
                     {item.title}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px] leading-4 text-zinc-400">
+                  <span className="mt-1 block truncate text-[11px] leading-4 text-zinc-400">
                     <ExtraInfo item={item} />
                   </span>
-                  <span className="mt-0.5 flex items-center gap-1 text-[10px] text-zinc-400">
+                  <span className="mt-1 flex items-center gap-1 text-[10px] text-zinc-400">
                     {isFresh ? (
                       <span className="rounded bg-sky-400/20 px-1 py-0.5 text-sky-200">
                         NEW
@@ -221,7 +221,7 @@ export function NewsListHot({
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1 pl-[34px] text-[11px] text-zinc-400 opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-[11px] text-zinc-400 opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"

@@ -13,10 +13,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { Toaster } from "sonner";
 
+import { useTheme } from "@/hooks/use-theme";
 import { getApolloClient } from "@/lib/apollo-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
-import { useTheme } from "@/hooks/use-theme";
 import {
   changeLanguage,
   getStoredLanguage,
@@ -53,6 +53,10 @@ export function AppProviders({ children }: PropsWithChildren) {
     new QueryClient({
       queryCache: new QueryCache({
         onError: (error, query) => {
+          const classification = classifyRequestError(error);
+          if (classification.kind === "cancelled") {
+            return;
+          }
           captureClientError("React Query request failed", error, {
             tags: { area: "react-query", queryHash: query.queryHash },
             extras: { queryKey: query.queryKey }
@@ -61,6 +65,10 @@ export function AppProviders({ children }: PropsWithChildren) {
       }),
       mutationCache: new MutationCache({
         onError: (error, variables, _, mutation) => {
+          const classification = classifyRequestError(error);
+          if (classification.kind === "cancelled") {
+            return;
+          }
           captureClientError("React Query mutation failed", error, {
             tags: { area: "react-query", mutationKey: String(mutation.options.mutationKey ?? "unknown") },
             extras: { variables }
@@ -167,11 +175,11 @@ export function AppProviders({ children }: PropsWithChildren) {
     const colorBgSpotlight = isDark ? "rgba(2, 6, 23, 0.98)" : "rgba(15, 23, 42, 0.95)";
     const colorTextPlaceholder = isDark ? "#94a3b8" : "#64748b";
     const cardShadow = isDark
-      ? "0 10px 24px rgba(2, 6, 23, 0.45)"
-      : "0 8px 20px rgba(15, 23, 42, 0.08)";
+      ? "0 4px 6px rgba(0,0,0,0.2), 0 12px 28px rgba(2,6,23,0.4), 0 0 48px rgba(99,102,241,0.04)"
+      : "0 4px 6px rgba(31,59,123,0.04), 0 12px 28px rgba(31,59,123,0.06), 0 24px 48px rgba(31,59,123,0.03)";
     const modalShadow = isDark
-      ? "0 18px 42px rgba(2, 6, 23, 0.55)"
-      : "0 16px 40px rgba(15, 23, 42, 0.18)";
+      ? "0 18px 42px rgba(2, 6, 23, 0.55), 0 0 64px rgba(99,102,241,0.06)"
+      : "0 16px 40px rgba(15, 23, 42, 0.18), 0 24px 64px rgba(31,59,123,0.05)";
 
     return {
       algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
@@ -194,7 +202,7 @@ export function AppProviders({ children }: PropsWithChildren) {
       },
       components: {
         Card: {
-          borderRadiusLG: 12,
+          borderRadiusLG: 14,
           colorBgContainer,
           boxShadow: cardShadow,
         },
@@ -211,7 +219,7 @@ export function AppProviders({ children }: PropsWithChildren) {
           colorBgContainer: "transparent",
         },
         Modal: {
-          borderRadiusLG: 12,
+          borderRadiusLG: 14,
           colorBgElevated,
           boxShadow: modalShadow,
         }

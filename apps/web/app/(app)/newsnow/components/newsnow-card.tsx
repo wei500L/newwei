@@ -13,8 +13,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useRelativeTime } from "../hooks/use-relative-time";
-import type { PersonalizedSourceScoreDetail } from "../hooks/use-newsnow-personalized-order";
+import { extractApiError } from "@/lib/api-error";
+import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+
 import {
   useNewsSource,
   useResolveNewsUrl,
@@ -22,6 +23,8 @@ import {
   type NewsResolveResponse,
   type Source,
 } from "../hooks/use-news-sources";
+import type { PersonalizedSourceScoreDetail } from "../hooks/use-newsnow-personalized-order";
+import { useRelativeTime } from "../hooks/use-relative-time";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import {
   formatShortDuration,
@@ -34,7 +37,7 @@ import {
   type ResolvePrefetchAttemptState,
 } from "../lib/newsnow-resolve-prefetch";
 import { useNewsnowStore } from "../store/newsnow-store";
-import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+
 import { NewsListHot } from "./news-list-hot";
 import { NewsListTimeline } from "./news-list-timeline";
 
@@ -109,6 +112,21 @@ const VIEW_EXPOSURE_DWELL_MS = 1200;
 const RESOLVE_PREFETCH_CONCURRENCY = 6;
 const EMPTY_CROSS_SOURCE_META_BY_ITEM_ID: Record<string, CrossSourceItemMeta> = {};
 
+function resolveSourceIconUrl(home?: string): string | null {
+  if (!home) {
+    return null;
+  }
+  try {
+    const hostname = new URL(home).hostname;
+    if (!hostname) {
+      return null;
+    }
+    return `https://icons.duckduckgo.com/ip3/${hostname}.ico`;
+  } catch {
+    return null;
+  }
+}
+
 async function mapWithConcurrency<T, R>(
   values: T[],
   concurrency: number,
@@ -123,7 +141,7 @@ async function mapWithConcurrency<T, R>(
 
   await Promise.all(
     Array.from({ length: safeConcurrency }, async () => {
-      while (true) {
+      for (;;) {
         const index = cursor;
         cursor += 1;
         if (index >= values.length) {
@@ -185,7 +203,6 @@ export function NewsnowCard({
   id,
   source,
   dragDisabled = false,
-  mobileMode = false,
   hideCrossSourceDuplicates = false,
   crossSourceMetaByItemId,
   duplicateItemsCount = 0,
@@ -195,7 +212,7 @@ export function NewsnowCard({
 }: NewsnowCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
-  const { data, isLoading, isError, isFetching, refresh } = useNewsSource(
+  const { data, error, isLoading, isError, isFetching, refresh } = useNewsSource(
     id,
     source.interval,
   );
@@ -263,8 +280,19 @@ export function NewsnowCard({
   const accentClass = accentMap[source.color] || "text-blue-300";
   const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
-  const iconUrl = `/icons/${sourceBaseId}.png`;
+  const iconUrl = useMemo(() => resolveSourceIconUrl(source.home), [source.home]);
   const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
+  const sourceErrorMessage = useMemo(() => {
+    if (!isError) {
+      return null;
+    }
+    const parsed = extractApiError(error);
+    return parsed.detail ? `${parsed.message} (${parsed.detail})` : parsed.message;
+  }, [error, isError]);
+
+  useEffect(() => {
+    setIconLoadError(false);
+  }, [iconUrl]);
 
   const dedupMetaMap =
     crossSourceMetaByItemId ?? EMPTY_CROSS_SOURCE_META_BY_ITEM_ID;
@@ -795,22 +823,22 @@ export function NewsnowCard({
       ref={setArticleNodeRef}
       style={{
         ...style,
-        height: "clamp(360px, 52vh, 560px)",
+        height: "clamp(380px, 56vh, 620px)",
       }}
-      className={`flex min-h-[360px] flex-col overflow-hidden rounded-2xl border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-white/12 ${cardShellClass} ${cardGlowClass}`}
+      className={`flex min-h-[380px] flex-col overflow-hidden rounded-[24px] border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-1 hover:ring-white/14 ${cardShellClass} ${cardGlowClass}`}
     >
-      <div className={`h-0.5 w-full ${colorClass}`} />
-      <div className="pointer-events-none h-2.5 w-full bg-gradient-to-b from-white/8 to-transparent" />
-      <div className="flex items-start justify-between px-3 pb-2 pt-2">
+      <div className={`h-1 w-full ${colorClass}`} />
+      <div className="pointer-events-none h-3 w-full bg-gradient-to-b from-white/8 to-transparent" />
+      <div className="flex items-start justify-between px-4 pb-3 pt-3.5">
         <div className="flex min-w-0 items-center gap-2">
           <a
             href={source.home}
             title={source.desc}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-black/45 text-xs font-semibold text-zinc-200"
+            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/45 text-xs font-semibold text-zinc-200"
           >
-            {iconLoadError ? (
+            {iconLoadError || !iconUrl ? (
               <span>{source.name.slice(0, 1)}</span>
             ) : (
               <img
@@ -836,7 +864,7 @@ export function NewsnowCard({
             <p className="truncate text-[11px] text-zinc-300/80">
               {updatedText}
             </p>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {duplicateItemsCount > 0 ? (
                 <span className="rounded bg-amber-400/18 px-1.5 py-0.5 text-[10px] text-amber-200">
                   同题 {duplicateItemsCount}
@@ -919,7 +947,7 @@ export function NewsnowCard({
           </div>
         </div>
         <div
-          className={`ml-2 flex shrink-0 items-center gap-0.5 ${accentClass}`}
+          className={`ml-3 inline-flex shrink-0 items-center gap-1 rounded-xl border border-white/12 bg-black/20 px-1 py-1 ${accentClass}`}
         >
           <Tooltip title="刷新">
             <Button
@@ -930,7 +958,7 @@ export function NewsnowCard({
               onClick={() => {
                 void handleRefresh();
               }}
-              className="text-zinc-300 hover:bg-white/10 hover:text-current"
+              className="h-7 w-7 text-zinc-300 hover:bg-white/10 hover:text-current"
             />
           </Tooltip>
           <Tooltip title={isFocused ? "取消关注" : "关注"}>
@@ -945,7 +973,7 @@ export function NewsnowCard({
                 )
               }
               onClick={() => toggleFocus(id)}
-              className="text-zinc-300 hover:bg-white/10 hover:text-yellow-500"
+              className="h-7 w-7 text-zinc-300 hover:bg-white/10 hover:text-yellow-500"
             />
           </Tooltip>
           <Tooltip title="查看关联事件">
@@ -953,7 +981,7 @@ export function NewsnowCard({
               type="text"
               size="small"
               onClick={handleOpenEventsHub}
-              className="text-zinc-300 hover:bg-white/10 hover:text-current"
+              className="h-7 px-2 text-zinc-300 hover:bg-white/10 hover:text-current"
             >
               事件
               {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
@@ -966,7 +994,7 @@ export function NewsnowCard({
               {...(!dragDisabled ? listeners : {})}
               aria-label="拖动重新排序"
               disabled={dragDisabled}
-              className={`inline-flex h-7 w-7 items-center justify-center rounded text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 ${
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 ${
                 dragDisabled
                   ? "cursor-not-allowed opacity-45"
                   : "cursor-grab active:cursor-grabbing"
@@ -978,14 +1006,19 @@ export function NewsnowCard({
         </div>
       </div>
 
-      <div className="mx-2 mb-2 flex-1 overflow-y-auto rounded-xl border border-white/8 bg-[linear-gradient(180deg,#090d14_0%,#070a11_100%)] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_10px_18px_-16px_rgba(0,0,0,0.9)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="mx-3 mb-3 flex-1 overflow-y-auto rounded-2xl border border-white/8 bg-[linear-gradient(180deg,#090d14_0%,#070a11_100%)] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_12px_22px_-18px_rgba(0,0,0,0.9)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {isLoading ? (
-          <div className="space-y-3 p-2">
+          <div className="space-y-3 p-3">
             <Skeleton active paragraph={{ rows: 8 }} />
           </div>
         ) : isError ? (
           <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
             <p className="text-sm text-zinc-300">获取失败</p>
+            {sourceErrorMessage ? (
+              <p className="max-w-[28rem] break-all text-[11px] text-zinc-400">
+                {sourceErrorMessage}
+              </p>
+            ) : null}
             {needsRuntimeSecret ? (
               <a
                 href="/settings/system?tab=newsSourceRuntimeSecrets"

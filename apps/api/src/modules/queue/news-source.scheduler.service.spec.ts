@@ -548,6 +548,40 @@ describe("NewsSourceSchedulerService", () => {
     }
   });
 
+  it("parses legacy string[] seed discovery cache entries", async () => {
+    const { service, cache, metadataService } = createService();
+    (cache.wrap as jest.Mock).mockResolvedValue([
+      " https://example.com/2026/02/14/news/legacy-alpha ",
+      "https://example.com/2026/02/13/news/legacy-bravo",
+    ]);
+
+    const source = {
+      id: "source-1",
+      url: "https://example.com",
+      config: {
+        seed: {
+          enabled: true,
+          mode: "sitemap",
+          maxUrls: 20,
+          maxNewUrlsPerRun: 5,
+        },
+      },
+      crawlTemplate: null,
+    };
+    const seedConfig = (service as any).normalizeSeedConfig(source);
+    const resolved = await (service as any).resolveSeedCandidates(
+      source as any,
+      seedConfig,
+      365,
+    );
+
+    expect(resolved.map((entry: any) => entry.url)).toEqual([
+      "https://example.com/2026/02/14/news/legacy-alpha",
+      "https://example.com/2026/02/13/news/legacy-bravo",
+    ]);
+    expect(metadataService.discoverSitemapUrls).not.toHaveBeenCalled();
+  });
+
   it("reschedules when a seed source is at in-flight capacity", async () => {
     const { service, prisma, metadataService, crawlQueue, env } =
       createService();

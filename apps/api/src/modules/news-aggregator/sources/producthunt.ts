@@ -30,7 +30,7 @@ export default defineSource(async (context) => {
   ])
   const apiToken = runtimeToken || process.env.PRODUCTHUNT_API_TOKEN
   if (!apiToken) {
-    throw new Error("PRODUCTHUNT_API_TOKEN is not set")
+    throw new Error("PRODUCTHUNT_API_TOKEN is not set; configure producthunt runtime secret or env token")
   }
   const token = `Bearer ${stripBearerPrefix(apiToken)}`
   const query = `
@@ -77,6 +77,5 @@ export default defineSource(async (context) => {
       })
     }
   }
-
   return news
 })

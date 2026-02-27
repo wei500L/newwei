@@ -32,7 +32,7 @@ export interface Source {
 }
 
 export interface SourceResponse {
-  status: "success" | "cache" | "error";
+  status: "success" | "cache";
   id: string;
   updatedTime: number | string;
   items: NewsItem[];
@@ -193,6 +193,12 @@ export function useResolveNewsUrl() {
       const normalized = url.trim();
       if (!normalized) {
         return { matched: false };
+      }
+
+      // Abortable prefetches are intentionally kept out of React Query cache
+      // to avoid global cancelled-error noise from rapid card rerenders.
+      if (options?.signal) {
+        return fetchResolvedByUrl(normalized, options);
       }
 
       return queryClient.fetchQuery<NewsResolveResponse>({
