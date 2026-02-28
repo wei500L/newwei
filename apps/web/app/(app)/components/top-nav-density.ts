@@ -22,6 +22,36 @@ export const downgradeDensityMode = (mode: TopNavDensityMode): TopNavDensityMode
   return "minimal";
 };
 
+export const alignDensityModeToBase = (
+  mode: TopNavDensityMode,
+  baseMode: TopNavDensityMode
+): TopNavDensityMode => {
+  if (baseMode === "minimal") {
+    return "minimal";
+  }
+
+  if (baseMode === "compact" && mode !== "compact") {
+    return "compact";
+  }
+
+  return mode;
+};
+
+export const downgradeDensityModeForBase = (
+  mode: TopNavDensityMode,
+  baseMode: TopNavDensityMode
+): TopNavDensityMode => {
+  if (mode === "minimal") {
+    return "minimal";
+  }
+
+  const nextMode = downgradeDensityMode(mode);
+  if (baseMode === "compact" && nextMode === "minimal") {
+    return "compact";
+  }
+  return nextMode;
+};
+
 export const upgradeDensityMode = (
   mode: TopNavDensityMode,
   target: TopNavDensityMode

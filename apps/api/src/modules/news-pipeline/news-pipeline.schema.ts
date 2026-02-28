@@ -2,6 +2,7 @@ import { parseDateTime } from "@modular/utils";
 import { z } from "zod";
 
 import type { CrawlTaskOptions } from "../crawl/crawl.types";
+import { normalizeNewsContentType } from "./news-content-type";
 
 const stringList = z
   .preprocess((value) => (Array.isArray(value) ? value : []), z.array(z.string()))
@@ -100,6 +101,19 @@ const optionalNullableSentimentLabel = z
     return normalized;
   });
 
+const optionalNullableContentType = z
+  .union([z.string(), z.null()])
+  .optional()
+  .transform((value) => {
+    if (value === null) {
+      return null;
+    }
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    return normalizeNewsContentType(value) ?? null;
+  });
+
 const crawlOptionsSchema: z.ZodType<Partial<CrawlTaskOptions>> = z
   .object({})
   .catchall(z.unknown());
@@ -175,6 +189,7 @@ export const CleanedNewsSchema = z.object({
   language: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
+  content_type: optionalNullableContentType,
   category_path: z.string().nullable().optional(),
   category_labels: z.array(z.string().min(1)).default([]),
   category_confidence: z.number().min(0).max(1).nullable().optional(),

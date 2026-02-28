@@ -21,7 +21,8 @@ import { useTranslation } from "react-i18next";
 import { buildActionRailNavConfig } from "./action-rail";
 import { resolveActiveItemKey } from "./action-rail-routing";
 import {
-  downgradeDensityMode,
+  alignDensityModeToBase,
+  downgradeDensityModeForBase,
   NAV_FULL_MIN_WIDTH,
   NAV_OVERFLOW_EPSILON,
   NAV_UPGRADE_SLACK,
@@ -55,6 +56,9 @@ interface TopNavProps {
   showDesktopMenuButton?: boolean;
 }
 
+const resolveInitialViewportWidth = (): number =>
+  typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth;
+
 export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const { t, i18n } = useTranslation();
   const { isDark, toggleTheme } = useTheme();
@@ -64,11 +68,9 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState<number>(
-    typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth
-  );
+  const [viewportWidth, setViewportWidth] = useState<number>(resolveInitialViewportWidth);
   const [densityMode, setDensityMode] = useState<TopNavDensityMode>(() =>
-    resolveBaseDensityMode(typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth)
+    resolveBaseDensityMode(resolveInitialViewportWidth())
   );
   const isLoadingSession = status === "loading";
   const user = session?.user;
@@ -110,18 +112,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   }, []);
 
   useEffect(() => {
-    setDensityMode((current) => {
-      if (current === baseDensityMode) {
-        return current;
-      }
-      if (baseDensityMode === "minimal") {
-        return "minimal";
-      }
-      if (baseDensityMode === "compact" && current === "full") {
-        return "compact";
-      }
-      return current;
-    });
+    setDensityMode((current) => alignDensityModeToBase(current, baseDensityMode));
   }, [baseDensityMode]);
 
   const checkDensityFit = useCallback(() => {
@@ -132,9 +123,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
 
     const overflow = header.scrollWidth - header.clientWidth;
     if (overflow > NAV_OVERFLOW_EPSILON) {
-      setDensityMode((current) =>
-        current === "minimal" ? current : downgradeDensityMode(current)
-      );
+      setDensityMode((current) => downgradeDensityModeForBase(current, baseDensityMode));
       return;
     }
 
@@ -229,10 +218,11 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const showPrimaryCrawlButton = canStartCrawl && isFullMode;
   const showCompactCrawlButton = canStartCrawl && isCompactMode;
   const showInlineLanguage = !isMinimalMode;
-  const showInlineOrganization = !isMinimalMode;
+  const showInlineOrganization = isFullMode;
+  const showCompactOrganizationUtility = isCompactMode;
   const showSyncIndicator = !isMinimalMode;
   const showMinimalUtilityButtons = isMinimalMode;
-  const commandBarWidthClass = isFullMode ? "max-w-[640px]" : "max-w-[460px]";
+  const commandBarWidthClass = isFullMode ? "max-w-[640px]" : "max-w-[380px]";
   const headerSpacingClassName = isFullMode
     ? "gap-2 border-b border-[var(--border)] px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6"
     : isCompactMode
@@ -393,7 +383,7 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
               size="small"
               onClick={() => router.push("/admin/ops/crawl-tasks?new=true")}
               aria-label={startNewCrawlLabel}
-              className="hidden shadow-none lg:inline-flex !px-2"
+              className="hidden shadow-none xl:inline-flex !px-2"
             />
           ) : null}
 
@@ -409,10 +399,29 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
             {showInlineOrganization ? (
               <div className="hidden xl:block">
                 <OrganizationSwitcher
-                  mode={isCompactMode ? "compact" : "full"}
+                  mode="full"
                   showErrorText={false}
                 />
               </div>
+            ) : null}
+
+            {showCompactOrganizationUtility ? (
+              <Popover
+                trigger="click"
+                placement="bottomRight"
+                content={
+                  <div className="w-[220px]">
+                    <OrganizationSwitcher mode="compact" showErrorText={false} />
+                  </div>
+                }
+              >
+                <Button
+                  type="text"
+                  icon={<SwapOutlined />}
+                  aria-label={t("orgSwitcher.switch", { defaultValue: "Switch organization" })}
+                  className="hidden xl:inline-flex h-8 w-8 items-center justify-center p-0"
+                />
+              </Popover>
             ) : null}
 
             {showSyncIndicator ? (

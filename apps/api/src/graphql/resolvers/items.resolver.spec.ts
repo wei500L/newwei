@@ -179,6 +179,7 @@ describe("ItemsResolver preview fields", () => {
           published_at: "2024-01-01T00:00:00Z",
           language: "zh-CN",
           summary: "Hello",
+          content_type: "news_fact",
           sentiment_label: "Positive",
           topics: ["Topic A", "Topic A", "Topic B"],
           entities: [{ name: "Entity A" }, { name: "Entity A" }, "Entity B"],
@@ -198,6 +199,7 @@ describe("ItemsResolver preview fields", () => {
     expect(preview?.language).toBe("zh-CN");
     expect(preview?.summary).toBe("Hello");
     expect(preview?.sentiment).toBe("Positive");
+    expect(preview?.contentType).toBe("news_fact");
     expect(preview?.source).toBe("Example");
     expect(preview?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
     expect(preview?.topics).toEqual(["Topic A", "Topic B"]);
@@ -221,6 +223,7 @@ describe("ItemsResolver preview fields", () => {
           publishedAt: "2024-01-01T00:00:00Z",
           lang: "en",
           abstract: "Hello",
+          contentType: "insight",
           sentimentLabel: "Positive",
           topics: [{ name: "Topic A" }, { label: "Topic B" }, "Topic C"],
           entities: ["Entity A", { name: "Entity B" }],
@@ -244,6 +247,7 @@ describe("ItemsResolver preview fields", () => {
     expect(preview?.language).toBe("en");
     expect(preview?.summary).toBe("Hello");
     expect(preview?.sentiment).toBe("Positive");
+    expect(preview?.contentType).toBe("analysis");
     expect(preview?.source).toBe("Example");
     expect(preview?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
     expect(preview?.topics).toEqual(["Topic A", "Topic B", "Topic C"]);

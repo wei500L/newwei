@@ -23,6 +23,7 @@ export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
   "Always populate removed_noise_types with every noise category you remove, including garbled_text for encoding noise.",
   "quality_score is a decimal 0-1 reflecting completeness, readability, and de-noising success.",
   "sentiment_label must be one of positive/neutral/negative reflecting the overall tone; use neutral when uncertain.",
+  "content_type must be one of news_fact/opinion/analysis/mixed. news_fact = event reporting with verifiable facts; opinion = viewpoint-heavy commentary; analysis = interpretive explanation/forecast; mixed = substantial overlap.",
   "Use null for fields you cannot infer, never omit required properties.",
   "{{language_hint}}"
 ].join(" ");

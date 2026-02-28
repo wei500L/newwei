@@ -1,39 +1,41 @@
-
 import { RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
 import { createHash } from "crypto";
 
 import type { NewsPipelineConfig } from "../news-pipeline.config";
 import { NormalizedNewsPayloadSchema } from "../news-pipeline.schema";
 import { NewsPipelineService } from "../news-pipeline.service";
-import type { PipelineJobContext, RawPipelineItem } from "../news-pipeline.types";
+import type {
+  PipelineJobContext,
+  RawPipelineItem,
+} from "../news-pipeline.types";
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
-    create: jest.fn().mockResolvedValue(undefined)
+    create: jest.fn().mockResolvedValue(undefined),
   },
   CrawlResultContentModel: {
     findById: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue(null)
-    })
+      lean: jest.fn().mockResolvedValue(null),
+    }),
   },
   RawItemModel: {
     findById: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue(null)
-    })
+      lean: jest.fn().mockResolvedValue(null),
+    }),
   },
   ProcessedItemModel: {
     findOneAndUpdate: jest.fn().mockResolvedValue({
       _id: { toString: () => "processed-id" },
-      toJSON: () => ({ id: "processed-id" })
+      toJSON: () => ({ id: "processed-id" }),
     }),
     create: jest.fn(),
     find: jest.fn(),
     findById: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue(null)
-    })
-  }
+      lean: jest.fn().mockResolvedValue(null),
+    }),
+  },
 }));
 
 jest.mock("@modular/utils", () => {
@@ -44,8 +46,8 @@ jest.mock("@modular/utils", () => {
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
-      debug: jest.fn()
-    })
+      debug: jest.fn(),
+    }),
   };
 });
 
@@ -65,7 +67,7 @@ const baseConfig: NewsPipelineConfig = {
     fallbackModels: [],
     requestsPerMinute: 100,
     stream: false,
-    responseFormat: "json_schema"
+    responseFormat: "json_schema",
   },
   crawl4ai: {
     userAgent: "Mozilla/5.0",
@@ -75,7 +77,7 @@ const baseConfig: NewsPipelineConfig = {
     markdown: undefined,
     cleanMarkdown: undefined,
     virtualScroll: undefined,
-    crawlerDefaults: {}
+    crawlerDefaults: {},
   },
   pipeline: {
     cacheTtlSeconds: 3600,
@@ -89,8 +91,8 @@ const baseConfig: NewsPipelineConfig = {
     summaryDedupLookbackHours: 48,
     summaryDedupMaxCandidates: 100,
     summaryDedupMinChars: 40,
-    configPath: "config/news-pipeline.config.yaml"
-  }
+    configPath: "config/news-pipeline.config.yaml",
+  },
 };
 
 describe("NewsPipelineService", () => {
@@ -106,7 +108,7 @@ describe("NewsPipelineService", () => {
   const defaultMarkdownRef = "mongo-markdown-1";
 
   const crawlExecution = {
-    runTask: jest.fn().mockResolvedValue({ inserted: 1, skipped: 0 })
+    runTask: jest.fn().mockResolvedValue({ inserted: 1, skipped: 0 }),
   };
 
   const liteLlm = {
@@ -119,7 +121,7 @@ describe("NewsPipelineService", () => {
       usage: {
         prompt_tokens: 100,
         completion_tokens: 80,
-        total_tokens: 180
+        total_tokens: 180,
       },
       choices: [
         {
@@ -144,20 +146,20 @@ describe("NewsPipelineService", () => {
               removed_noise_types: [],
               quality_score: 0.9,
               llm_model: "openai/gpt-4o-mini",
-              llm_prompt_version: "v1"
-            })
-          }
-        }
-      ]
+              llm_prompt_version: "v1",
+            }),
+          },
+        },
+      ],
     })),
     embedding: jest.fn(async () => ({
       model: "openai/text-embedding-3-small",
-      data: [{ index: 0, embedding: [1, 0, 0] }]
-    }))
+      data: [{ index: 0, embedding: [1, 0, 0] }],
+    })),
   };
 
   const promptConfigService = {
-    getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG)
+    getConfig: jest.fn().mockResolvedValue(DEFAULT_NEWS_PROMPT_CONFIG),
   };
 
   const dedupeSettingsService = {
@@ -171,15 +173,17 @@ describe("NewsPipelineService", () => {
       llmJudgeCandidateChars: 1200,
       llmJudgePromptVersion: "news-dedupe-judge-v1",
       llmJudgeSystemPromptTemplate: "system prompt",
-      llmJudgeUserPromptTemplate: "user prompt"
+      llmJudgeUserPromptTemplate: "user prompt",
     }),
-    resolveBaseThreshold: jest.fn((settings: any) => ({ threshold: settings.defaultThreshold }))
+    resolveBaseThreshold: jest.fn((settings: any) => ({
+      threshold: settings.defaultThreshold,
+    })),
   };
 
   const configService = {
     get config() {
       return baseConfig;
-    }
+    },
   };
 
   const mongoOutbox = {
@@ -188,19 +192,19 @@ describe("NewsPipelineService", () => {
     findUnique: jest.fn(),
     delete: jest.fn(),
     findMany: jest.fn(),
-    update: jest.fn()
+    update: jest.fn(),
   };
 
   const prisma: any = {
     processedArticle: {
       findFirst: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue(null)
+      upsert: jest.fn().mockResolvedValue(null),
     },
     article: {
-      upsert: jest.fn().mockResolvedValue({ id: "article-1" })
+      upsert: jest.fn().mockResolvedValue({ id: "article-1" }),
     },
     membership: {
-      findFirst: jest.fn().mockResolvedValue({ userId: "user-1" })
+      findFirst: jest.fn().mockResolvedValue({ userId: "user-1" }),
     },
     crawlTask: {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -208,7 +212,7 @@ describe("NewsPipelineService", () => {
       update: jest.fn().mockResolvedValue({ id: "crawl-task-1" }),
     },
     crawlResult: {
-      findFirst: jest.fn().mockResolvedValue(null)
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     itemMeta: {
       findUnique: jest.fn().mockResolvedValue({
@@ -216,21 +220,21 @@ describe("NewsPipelineService", () => {
         orgId: "org-1",
         name: "Example: https://example.com/story",
         createdAt: new Date("2024-01-01T00:00:00Z"),
-        publishedAt: null
+        publishedAt: null,
       }),
       update: jest.fn().mockResolvedValue(null),
-      updateMany: jest.fn().mockResolvedValue({ count: 1 })
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     mongoOutbox,
-    runInTransaction: jest.fn()
+    runInTransaction: jest.fn(),
   };
 
   prisma.runInTransaction.mockImplementation(async (cb: any) =>
     cb({
       article: prisma.article,
       processedArticle: prisma.processedArticle,
-      mongoOutbox
-    })
+      mongoOutbox,
+    }),
   );
 
   const service = new NewsPipelineService(
@@ -240,7 +244,7 @@ describe("NewsPipelineService", () => {
     promptConfigService as any,
     dedupeSettingsService as any,
     prisma as any,
-    crawlExecution as any
+    crawlExecution as any,
   );
 
   const rawItemId = "507f1f77bcf86cd799439011";
@@ -250,7 +254,7 @@ describe("NewsPipelineService", () => {
     jobId: "job-1",
     itemMetaId: "meta-1",
     rawItemId,
-    orgId: "org-1"
+    orgId: "org-1",
   };
 
   const raw: RawPipelineItem = {
@@ -259,8 +263,8 @@ describe("NewsPipelineService", () => {
     payload: {
       url: "https://example.com/story",
       keywords: ["AI"],
-      tags: ["breaking"]
-    }
+      tags: ["breaking"],
+    },
   };
 
   beforeEach(() => {
@@ -274,8 +278,8 @@ describe("NewsPipelineService", () => {
       cb({
         article: prisma.article,
         processedArticle: prisma.processedArticle,
-        mongoOutbox
-      })
+        mongoOutbox,
+      }),
     );
     mongoOutbox.create.mockResolvedValue({ id: "outbox-1", attempts: 0 });
     mongoOutbox.updateMany.mockResolvedValue({ count: 1 });
@@ -284,17 +288,19 @@ describe("NewsPipelineService", () => {
     mongoOutbox.findMany.mockResolvedValue([]);
     mongoOutbox.update.mockResolvedValue(undefined);
     (ProcessedItemModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue(null)
+      lean: jest.fn().mockResolvedValue(null),
     });
     (RawItemModel.findById as jest.Mock).mockReturnValue({
-      lean: jest.fn().mockResolvedValue(null)
+      lean: jest.fn().mockResolvedValue(null),
     });
 
     const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
       CrawlResultContentModel: { findById: jest.Mock };
     };
 
-    const defaultContentHash = createHash("sha256").update(defaultMarkdown).digest("hex");
+    const defaultContentHash = createHash("sha256")
+      .update(defaultMarkdown)
+      .digest("hex");
     prisma.crawlResult.findFirst.mockImplementation(async (args: any) => {
       if (args?.where?.id) {
         return {
@@ -303,7 +309,7 @@ describe("NewsPipelineService", () => {
           fetchedAt: new Date("2024-01-01T00:00:00Z"),
           markdownRef: defaultMarkdownRef,
           contentHash: defaultContentHash,
-          metadata: { title: "Headline" }
+          metadata: { title: "Headline" },
         };
       }
 
@@ -320,14 +326,14 @@ describe("NewsPipelineService", () => {
         markdownWithCitations: null,
         referencesMarkdown: null,
         crawlRunId: null,
-        metadata: { title: "Headline" }
-      })
+        metadata: { title: "Headline" },
+      }),
     });
     const findChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([])
+      lean: jest.fn().mockResolvedValue([]),
     };
     (ProcessedItemModel.find as jest.Mock).mockReturnValue(findChain);
   });
@@ -375,10 +381,10 @@ describe("NewsPipelineService", () => {
         forceRefresh: false,
         crawlOptions: {
           markdownStrategy: {
-            type: "LLMExtractionStrategy"
-          }
-        }
-      })
+            type: "LLMExtractionStrategy",
+          },
+        },
+      }),
     ).toThrow("crawl stage must only fetch and store cleaned markdown");
   });
 
@@ -388,7 +394,8 @@ describe("NewsPipelineService", () => {
       rawMarkdown:
         "# Full article\n\n" +
         "Detailed paragraph with facts and context.\n".repeat(120),
-      markdownWithCitations: "Verification Required\nPlease enable JS and disable any ad blocker"
+      markdownWithCitations:
+        "Verification Required\nPlease enable JS and disable any ad blocker",
     });
 
     expect(typeof selected).toBe("string");
@@ -407,9 +414,9 @@ describe("NewsPipelineService", () => {
         publishedAt: null,
         runId: null,
         fetchedAt: "2024-01-01T00:00:00.000Z",
-        contentHash: "hash-1"
+        contentHash: "hash-1",
       },
-      10_000
+      10_000,
     );
 
     expect(prepared.source).toBe("citations");
@@ -422,15 +429,16 @@ describe("NewsPipelineService", () => {
       {
         sourceUrl: "https://example.com/story",
         markdown: "# Headline\n\nNormal article body with context.",
-        markdownWithCitations: "Verification Required\nPlease enable JS and disable any ad blocker",
+        markdownWithCitations:
+          "Verification Required\nPlease enable JS and disable any ad blocker",
         referencesMarkdown: null,
         metadata: {},
         publishedAt: null,
         runId: null,
         fetchedAt: "2024-01-01T00:00:00.000Z",
-        contentHash: "hash-2"
+        contentHash: "hash-2",
       },
-      10_000
+      10_000,
     );
 
     expect(prepared.source).toBe("primary");
@@ -452,9 +460,9 @@ describe("NewsPipelineService", () => {
         publishedAt: null,
         runId: null,
         fetchedAt: "2024-01-01T00:00:00.000Z",
-        contentHash: "hash-raw"
+        contentHash: "hash-raw",
       },
-      12_000
+      12_000,
     );
 
     expect(prepared.variant).toBe("raw");
@@ -475,11 +483,11 @@ describe("NewsPipelineService", () => {
       publishedAt: null,
       runId: null,
       fetchedAt: "2024-01-01T00:00:00.000Z",
-      contentHash: "hash-relative"
+      contentHash: "hash-relative",
     });
 
     expect(candidates).toEqual([
-      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/"
+      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/",
     ]);
   });
 
@@ -497,11 +505,11 @@ describe("NewsPipelineService", () => {
       publishedAt: null,
       runId: null,
       fetchedAt: "2024-01-01T00:00:00.000Z",
-      contentHash: "hash-3"
+      contentHash: "hash-3",
     });
 
     expect(candidates).toEqual([
-      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/"
+      "https://jp.reuters.com/world/us/HR4DZXQ265MXDBOFDVZM3QUIVA-2026-02-06/",
     ]);
   });
 
@@ -518,7 +526,7 @@ describe("NewsPipelineService", () => {
           summaryHints: [],
           metadata: {},
           forceRefresh: false,
-          crawlOptions: {}
+          crawlOptions: {},
         },
         article: {
           sourceUrl: "https://jp.reuters.com/world/",
@@ -531,9 +539,9 @@ describe("NewsPipelineService", () => {
           publishedAt: null,
           runId: null,
           fetchedAt: "2024-01-01T00:00:00.000Z",
-          contentHash: "hash-4"
-        }
-      })
+          contentHash: "hash-4",
+        },
+      }),
     ).rejects.toThrow("no detail candidate URLs were extracted");
   });
 
@@ -546,34 +554,35 @@ describe("NewsPipelineService", () => {
       {
         id: "preferred",
         sourceUrl: "https://www.reuters.com/world/",
-        markdownRef: "md-blocked"
+        markdownRef: "md-blocked",
       },
       {
         id: "alt",
         sourceUrl: "https://jp.reuters.com/world/",
-        markdownRef: "md-usable"
-      }
+        markdownRef: "md-usable",
+      },
     ]);
 
     CrawlResultContentModel.findById.mockImplementation((id: string) => ({
       lean: jest.fn().mockResolvedValue(
         id === "md-blocked"
           ? {
-              markdown: "Verification Required\nPlease enable JS and disable any ad blocker"
+              markdown:
+                "Verification Required\nPlease enable JS and disable any ad blocker",
             }
           : {
               markdown:
                 "# Usable story\n\n" +
-                "Paragraph with meaningful context and facts.\n".repeat(80)
-            }
-      )
+                "Paragraph with meaningful context and facts.\n".repeat(80),
+            },
+      ),
     }));
 
     const selected = await (service as any).selectBestPipelineCrawlResultId({
       orgId: "org-1",
       crawlTaskId: "crawl-task-1",
       preferredResultId: "preferred",
-      preferredSourceUrl: "https://www.reuters.com/world/"
+      preferredSourceUrl: "https://www.reuters.com/world/",
     });
 
     expect(selected).toBe("alt");
@@ -606,20 +615,26 @@ describe("NewsPipelineService", () => {
               removed_noise_types: [],
               quality_score: 0.9,
               llm_model: "openai/gpt-4o-mini",
-              llm_prompt_version: "v1"
-            })
-          }
-        }
-      ]
+              llm_prompt_version: "v1",
+            }),
+          },
+        },
+      ],
     });
 
     await service.process(job, raw);
     await flushOutbox();
 
-    const createArgs = (prisma.mongoOutbox.create as jest.Mock).mock.calls[0]?.[0];
+    const createArgs = (prisma.mongoOutbox.create as jest.Mock).mock
+      .calls[0]?.[0];
     const payload = createArgs?.data?.payload as any;
-    expect(payload.document.result.cleaned_markdown).toBe("# Headline\nBody paragraph");
-    expect(payload.document.result.cleaned_markdown_source).toBe("crawl_fallback");
+    expect(payload.document.result.cleaned_markdown).toBe(
+      "# Headline\nBody paragraph",
+    );
+    expect(payload.document.result.cleaned_markdown_source).toBe(
+      "crawl_fallback",
+    );
+    expect(payload.document.result.content_type).toBe("news_fact");
   });
 
   it("uses stored crawl results when crawlResultId is provided", async () => {
@@ -632,8 +647,10 @@ describe("NewsPipelineService", () => {
       sourceUrl: "https://example.com/story",
       fetchedAt: new Date("2024-01-01T00:00:00Z"),
       markdownRef: "mongo-markdown-1",
-      contentHash: createHash("sha256").update("# Stored headline\nStored body").digest("hex"),
-      metadata: { title: "Stored headline" }
+      contentHash: createHash("sha256")
+        .update("# Stored headline\nStored body")
+        .digest("hex"),
+      metadata: { title: "Stored headline" },
     });
 
     CrawlResultContentModel.findById.mockReturnValueOnce({
@@ -642,8 +659,8 @@ describe("NewsPipelineService", () => {
         markdownWithCitations: null,
         referencesMarkdown: null,
         crawlRunId: "crawl-run-1",
-        metadata: { title: "Stored headline" }
-      })
+        metadata: { title: "Stored headline" },
+      }),
     });
 
     await service.process(job, {
@@ -651,9 +668,9 @@ describe("NewsPipelineService", () => {
       payload: {
         ...raw.payload,
         metadata: {
-          crawlResultId: "crawl-result-1"
-        }
-      }
+          crawlResultId: "crawl-result-1",
+        },
+      },
     });
     await flushOutbox();
 
@@ -673,9 +690,9 @@ describe("NewsPipelineService", () => {
       payload: {
         ...raw.payload,
         metadata: {
-          crawlResultId: "missing-crawl-result"
-        }
-      }
+          crawlResultId: "missing-crawl-result",
+        },
+      },
     });
     await flushOutbox();
 
@@ -762,7 +779,7 @@ describe("NewsPipelineService", () => {
         version: 1,
         metadata: {},
         createdAt: new Date("2024-01-01T00:00:00Z"),
-        updatedAt: new Date("2024-01-01T00:00:00Z")
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
       },
       title: "Existing title",
       subtitle: null,
@@ -788,10 +805,10 @@ describe("NewsPipelineService", () => {
       latencyMs: 80,
       createdAt: new Date("2024-01-01T00:00:00Z"),
       processedAt: new Date("2024-01-01T00:00:00Z"),
-      updatedAt: new Date("2024-01-01T00:00:00Z")
+      updatedAt: new Date("2024-01-01T00:00:00Z"),
     };
     (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValueOnce(
-      processedArticle
+      processedArticle,
     );
     (ProcessedItemModel.findById as jest.Mock).mockReturnValueOnce({
       lean: jest.fn().mockResolvedValue({
@@ -812,9 +829,9 @@ describe("NewsPipelineService", () => {
           removed_noise_types: [],
           quality_score: 0.9,
           llm_model: "openai/gpt-4o-mini",
-          llm_prompt_version: "v1"
-        }
-      })
+          llm_prompt_version: "v1",
+        },
+      }),
     });
 
     await service.process(job, raw);
@@ -836,16 +853,18 @@ describe("NewsPipelineService", () => {
     const duplicateId = "64b5f0c4f6e4b0495c3f4a10";
     (liteLlm.embedding as jest.Mock).mockResolvedValueOnce({
       model: "openai/text-embedding-3-small",
-      data: [{ index: 0, embedding: [1, 0] }]
+      data: [{ index: 0, embedding: [1, 0] }],
     });
 
     const findChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([
-        { _id: duplicateId, summaryEmbedding: [0.99, 0.01] }
-      ])
+      lean: jest
+        .fn()
+        .mockResolvedValue([
+          { _id: duplicateId, summaryEmbedding: [0.99, 0.01] },
+        ]),
     };
     (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
 
@@ -854,7 +873,7 @@ describe("NewsPipelineService", () => {
 
     expect(prisma.itemMeta.update).toHaveBeenCalledWith({
       where: { id: job.itemMetaId },
-      data: { status: "duplicate" }
+      data: { status: "duplicate" },
     });
   });
 
@@ -872,7 +891,7 @@ describe("NewsPipelineService", () => {
       llmJudgeCandidateChars: 1200,
       llmJudgePromptVersion: "news-dedupe-judge-v1",
       llmJudgeSystemPromptTemplate: "system prompt",
-      llmJudgeUserPromptTemplate: "user prompt"
+      llmJudgeUserPromptTemplate: "user prompt",
     });
 
     const duplicateId = "64b5f0c4f6e4b0495c3f4a11";
@@ -883,13 +902,18 @@ describe("NewsPipelineService", () => {
       lean: jest.fn().mockResolvedValue([
         {
           _id: duplicateId,
-          result: { summary: "Clean body with minor edits", title: "Duplicate title" }
-        }
-      ])
+          result: {
+            summary: "Clean body with minor edits",
+            title: "Duplicate title",
+          },
+        },
+      ]),
     };
     (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
 
-    const originalCompletion = await (liteLlm.acompletion as jest.Mock).getMockImplementation()!();
+    const originalCompletion = await (
+      liteLlm.acompletion as jest.Mock
+    ).getMockImplementation()!();
 
     (liteLlm.acompletion as jest.Mock)
       .mockResolvedValueOnce(originalCompletion)
@@ -903,10 +927,14 @@ describe("NewsPipelineService", () => {
             finish_reason: "stop",
             message: {
               role: "assistant",
-              content: JSON.stringify({ similarity: 0.95, is_duplicate: true, rationale: "same event" })
-            }
-          }
-        ]
+              content: JSON.stringify({
+                similarity: 0.95,
+                is_duplicate: true,
+                rationale: "same event",
+              }),
+            },
+          },
+        ],
       });
 
     await service.process(job, raw);
@@ -916,7 +944,7 @@ describe("NewsPipelineService", () => {
     expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
     expect(prisma.itemMeta.update).toHaveBeenCalledWith({
       where: { id: job.itemMetaId },
-      data: { status: "duplicate" }
+      data: { status: "duplicate" },
     });
   });
 
@@ -941,7 +969,7 @@ describe("NewsPipelineService", () => {
         version: 1,
         metadata: {},
         createdAt: new Date("2024-01-01T00:00:00Z"),
-        updatedAt: new Date("2024-01-01T00:00:00Z")
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
       },
       title: "Existing title",
       subtitle: null,
@@ -967,26 +995,28 @@ describe("NewsPipelineService", () => {
       latencyMs: 80,
       createdAt: new Date("2024-01-01T00:00:00Z"),
       processedAt: new Date("2024-01-01T00:00:00Z"),
-      updatedAt: new Date("2024-01-01T00:00:00Z")
+      updatedAt: new Date("2024-01-01T00:00:00Z"),
     });
 
     await expect(service.process(job, raw)).rejects.toThrow();
     expect(liteLlm.acompletion).not.toHaveBeenCalled();
 
     const failureCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
-      ([entry]) => entry.stage === "llm" && entry.status === "failed"
+      ([entry]) => entry.stage === "llm" && entry.status === "failed",
     );
     expect(failureCall?.[0]).toMatchObject({
       stage: "llm",
       status: "failed",
-      data: { url: "https://example.com/story", runId: null }
+      data: { url: "https://example.com/story", runId: null },
     });
   });
 
   it("throws when crawl task produces no results", async () => {
     prisma.crawlResult.findFirst.mockResolvedValue(null);
 
-    await expect(service.process(job, raw)).rejects.toThrow("crawl task produced no results");
+    await expect(service.process(job, raw)).rejects.toThrow(
+      "crawl task produced no results",
+    );
   });
 
   it("normalizes payloads via schema parsing", () => {
@@ -999,7 +1029,7 @@ describe("NewsPipelineService", () => {
       summaryHints: [" focus "],
       metadata: { foo: "bar" },
       forceRefresh: "",
-      crawlOptions: { userAgent: "UA" }
+      crawlOptions: { userAgent: "UA" },
     });
 
     expect(parsed.url).toBe("https://example.com/news");
@@ -1018,25 +1048,27 @@ describe("NewsPipelineService", () => {
 
     await expect(service.process(job, raw)).rejects.toThrow("LLM unavailable");
 
-    const llmProcessingCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
-      ([entry]) => entry.stage === "llm" && entry.status === "processing"
+    const llmProcessingCall = (
+      TaskLogModel.create as jest.Mock
+    ).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "processing",
     );
 
     expect(llmProcessingCall?.[0]).toMatchObject({
       stage: "llm",
       status: "processing",
-      data: { url: "https://example.com/story", runId: null }
+      data: { url: "https://example.com/story", runId: null },
     });
 
     const llmFailureCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
-      ([entry]) => entry.stage === "llm" && entry.status === "failed"
+      ([entry]) => entry.stage === "llm" && entry.status === "failed",
     );
 
     expect(llmFailureCall?.[0]).toMatchObject({
       stage: "llm",
       status: "failed",
       data: { url: "https://example.com/story", runId: null },
-      error: { message: "LLM unavailable" }
+      error: { message: "LLM unavailable" },
     });
   });
 
@@ -1049,8 +1081,8 @@ describe("NewsPipelineService", () => {
         status: "pending",
         attempts: 2,
         availableAt: new Date(),
-        lockedAt: null
-      }
+        lockedAt: null,
+      },
     ]);
 
     await service.retryPendingOutbox();
@@ -1062,9 +1094,9 @@ describe("NewsPipelineService", () => {
           status: "failed",
           attempts: 3,
           lockedAt: null,
-          availableAt: expect.any(Date)
-        })
-      })
+          availableAt: expect.any(Date),
+        }),
+      }),
     );
     expect(ProcessedItemModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
@@ -1097,7 +1129,7 @@ describe("NewsPipelineService", () => {
           removed_noise_types: [],
           quality_score: 0.9,
           llm_model: "openai/gpt-4o-mini",
-          llm_prompt_version: "v1"
+          llm_prompt_version: "v1",
         },
         llm: {
           model: "openai/gpt-4o-mini",
@@ -1106,10 +1138,10 @@ describe("NewsPipelineService", () => {
           completionTokens: 5,
           totalTokens: 15,
           costUsd: 0.01,
-          latencyMs: 80
+          latencyMs: 80,
         },
-        error: undefined
-      }
+        error: undefined,
+      },
     };
 
     mongoOutbox.findMany.mockResolvedValueOnce([
@@ -1119,32 +1151,36 @@ describe("NewsPipelineService", () => {
         status: "processing",
         attempts: 1,
         availableAt: new Date(),
-        lockedAt: staleLockedAt
-      }
+        lockedAt: staleLockedAt,
+      },
     ]);
     mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
     mongoOutbox.findUnique.mockResolvedValueOnce({
       id: "outbox-stale",
-      attempts: 1
+      attempts: 1,
     });
     const upsertSpy = ProcessedItemModel.findOneAndUpdate as jest.Mock;
     upsertSpy.mockResolvedValueOnce({
       _id: { toString: () => validPayload.document._id },
-      toJSON: () => ({ id: validPayload.document._id })
+      toJSON: () => ({ id: validPayload.document._id }),
     });
 
     await service.retryPendingOutbox();
 
-    expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-stale" } });
-    const updateArgs = upsertSpy.mock.calls[0]?.[1] as { $set?: Record<string, unknown> } | undefined;
+    expect(mongoOutbox.delete).toHaveBeenCalledWith({
+      where: { id: "outbox-stale" },
+    });
+    const updateArgs = upsertSpy.mock.calls[0]?.[1] as
+      | { $set?: Record<string, unknown> }
+      | undefined;
     expect(updateArgs?.$set).toEqual(
       expect.objectContaining({
         rawItemId: expect.anything(),
         result: expect.objectContaining({
           title: "Existing title",
-          published_at: "2024-01-01T00:00:00.000Z"
-        })
-      })
+          published_at: "2024-01-01T00:00:00.000Z",
+        }),
+      }),
     );
   });
 
@@ -1175,7 +1211,7 @@ describe("NewsPipelineService", () => {
           removed_noise_types: [],
           quality_score: 0.9,
           llm_model: "openai/gpt-4o-mini",
-          llm_prompt_version: "v1"
+          llm_prompt_version: "v1",
         },
         llm: {
           model: "openai/gpt-4o-mini",
@@ -1184,9 +1220,9 @@ describe("NewsPipelineService", () => {
           completionTokens: 5,
           totalTokens: 15,
           costUsd: 0.01,
-          latencyMs: 80
-        }
-      }
+          latencyMs: 80,
+        },
+      },
     };
 
     mongoOutbox.findMany.mockResolvedValueOnce([
@@ -1196,19 +1232,22 @@ describe("NewsPipelineService", () => {
         status: "processing",
         attempts: 1,
         availableAt: new Date(),
-        lockedAt: staleLockedAt
-      }
+        lockedAt: staleLockedAt,
+      },
     ]);
     mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
     mongoOutbox.findUnique.mockResolvedValueOnce({
       id: "outbox-dirty",
-      attempts: 1
+      attempts: 1,
     });
 
     await service.retryPendingOutbox();
 
-    expect(mongoOutbox.delete).toHaveBeenCalledWith({ where: { id: "outbox-dirty" } });
-    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock.calls[0]?.[1];
+    expect(mongoOutbox.delete).toHaveBeenCalledWith({
+      where: { id: "outbox-dirty" },
+    });
+    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock
+      .calls[0]?.[1];
     expect(updateArgs.$set.tags).toEqual([]);
     expect(updateArgs.$set.llm.promptTokens).toBeNull();
   });

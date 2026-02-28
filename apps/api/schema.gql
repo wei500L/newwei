@@ -1171,6 +1171,7 @@ type ItemFacetOption {
 }
 
 type ItemFacets {
+  contentTypes: [ItemFacetOption!]!
   regions: [ItemFacetOption!]!
   sentiments: [ItemFacetOption!]!
   topics: [ItemFacetOption!]!
@@ -1215,6 +1216,7 @@ input ItemsDateRangeInput {
 }
 
 input ItemsFiltersInput {
+  contentTypes: [String!]
   dateRange: ItemsDateRangeInput
   excludeDuplicates: Boolean = false
   regions: [String!]
@@ -1966,6 +1968,7 @@ type ProcessedItemModelGraph {
 }
 
 type ProcessedItemPreviewModelGraph {
+  contentType: String
   createdAt: DateTime!
   duplicateOf: String
   duplicateSimilarity: Float

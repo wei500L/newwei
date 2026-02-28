@@ -100,6 +100,7 @@ interface ItemFilters {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  contentTypes?: string[];
   excludeDuplicates?: boolean;
   dateRange?: ItemDateRangeFilter;
 }
@@ -1457,7 +1458,7 @@ export class ItemsService {
     const effectiveFilters = filters ?? legacyFilters;
     const scopedIds = await this.resolveScopedIds(orgId, normalizedSearch, effectiveFilters);
     if (scopedIds && scopedIds.length === 0) {
-      return { regions: [], topics: [], sentiments: [] };
+      return { regions: [], topics: [], sentiments: [], contentTypes: [] };
     }
 
     const match: Record<string, unknown> = {
@@ -1480,7 +1481,9 @@ export class ItemsService {
     const regionCounts = new Map<string, number>();
     const topicCounts = new Map<string, number>();
     const sentimentCounts = new Map<string, number>();
+    const contentTypeCounts = new Map<string, number>();
     const allowedSentiments = new Set(["positive", "neutral", "negative"]);
+    const allowedContentTypes = new Set(["news_fact", "opinion", "analysis", "mixed"]);
 
     for (const record of records) {
       const result = record.result as
@@ -1491,6 +1494,8 @@ export class ItemsService {
             entities?: ({ name?: string | null } | string)[] | null;
             sentiment?: string | null;
             sentiment_label?: string | null;
+            content_type?: string | null;
+            contentType?: string | null;
           }
         | undefined;
 
@@ -1560,12 +1565,27 @@ export class ItemsService {
           this.incrementFacetCount(sentimentCounts, sentiment);
         }
       });
+
+      const contentTypeRaw =
+        typeof result?.content_type === "string"
+          ? result.content_type
+          : typeof result?.contentType === "string"
+            ? result.contentType
+            : null;
+      const contentType =
+        typeof contentTypeRaw === "string"
+          ? contentTypeRaw.trim().toLowerCase()
+          : "";
+      if (contentType && allowedContentTypes.has(contentType)) {
+        this.incrementFacetCount(contentTypeCounts, contentType);
+      }
     }
 
     return {
       regions: this.buildFacetOptions(regionCounts),
       topics: this.buildFacetOptions(topicCounts),
-      sentiments: this.buildFacetOptions(sentimentCounts)
+      sentiments: this.buildFacetOptions(sentimentCounts),
+      contentTypes: this.buildFacetOptions(contentTypeCounts)
     };
   }
 
@@ -2515,9 +2535,20 @@ export class ItemsService {
     const regions = this.normalizeFilterList(input.regions);
     const topics = this.normalizeFilterList(input.topics);
     const sentiments = this.normalizeFilterList(input.sentiments, { lowerCase: true });
+    const contentTypes = this.normalizeFilterList(input.contentTypes, {
+      lowerCase: true,
+    });
     const excludeDuplicates = input.excludeDuplicates === true;
     const dateRange = this.normalizeDateRange(input.dateRange);
-    if (!sourceIds && !regions && !topics && !sentiments && !excludeDuplicates && !dateRange) {
+    if (
+      !sourceIds &&
+      !regions &&
+      !topics &&
+      !sentiments &&
+      !contentTypes &&
+      !excludeDuplicates &&
+      !dateRange
+    ) {
       return undefined;
     }
     return {
@@ -2525,6 +2556,7 @@ export class ItemsService {
       regions,
       topics,
       sentiments,
+      contentTypes,
       ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
       dateRange
     };
@@ -2578,11 +2610,12 @@ export class ItemsService {
     return Boolean(
       (filters.sourceIds && filters.sourceIds.length > 0) ||
       (filters.regions && filters.regions.length > 0) ||
-        (filters.topics && filters.topics.length > 0) ||
-        (filters.sentiments && filters.sentiments.length > 0) ||
-        filters.excludeDuplicates === true ||
-        filters.dateRange?.start ||
-        filters.dateRange?.end
+      (filters.topics && filters.topics.length > 0) ||
+      (filters.sentiments && filters.sentiments.length > 0) ||
+      (filters.contentTypes && filters.contentTypes.length > 0) ||
+      filters.excludeDuplicates === true ||
+      filters.dateRange?.start ||
+      filters.dateRange?.end
     );
   }
 
@@ -2892,6 +2925,17 @@ export class ItemsService {
           { "result.sentiment": { $in: sentimentMatchers } },
           { "result.sentiment_label": { $in: sentimentMatchers } },
           { tags: { $in: sentimentMatchers } }
+        ]
+      });
+    }
+    if (filters.contentTypes?.length) {
+      const contentTypeMatchers = filters.contentTypes.map(
+        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i")
+      );
+      matchFilters.push({
+        $or: [
+          { "result.content_type": { $in: contentTypeMatchers } },
+          { "result.contentType": { $in: contentTypeMatchers } }
         ]
       });
     }

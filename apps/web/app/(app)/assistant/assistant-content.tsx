@@ -1765,7 +1765,7 @@ export function AssistantContent() {
             <AutoComplete
               options={seriesOptions}
               onSearch={handleSearch}
-              dropdownMatchSelectWidth={false}
+              popupMatchSelectWidth={false}
               notFoundContent={suggestionsLoading ? <Spin size="small" /> : null}
             >
               <Input

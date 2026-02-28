@@ -215,6 +215,9 @@ export class ProcessedItemPreviewModelGraph {
   @Field(() => String, { nullable: true })
   sentiment?: string | null;
 
+  @Field(() => String, { nullable: true })
+  contentType?: string | null;
+
   @Field(() => [String])
   topics!: string[];
 
@@ -399,4 +402,7 @@ export class ItemFacets {
 
   @Field(() => [ItemFacetOption])
   sentiments!: ItemFacetOption[];
+
+  @Field(() => [ItemFacetOption])
+  contentTypes!: ItemFacetOption[];
 }

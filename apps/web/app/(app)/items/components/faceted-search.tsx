@@ -23,6 +23,7 @@ export interface FilterState {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  contentTypes?: string[];
   excludeDuplicates?: boolean;
 }
 
@@ -32,6 +33,7 @@ interface FacetedSearchProps {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  contentTypes?: string[];
   behavior?: FacetedFilterBehavior;
   stickySummary?: boolean;
   maxSectionBodyHeight?: number;
@@ -57,6 +59,7 @@ export function FacetedSearch({
   regions = [],
   topics = [],
   sentiments = [],
+  contentTypes = [],
   behavior = 'legacy',
   stickySummary = false,
   maxSectionBodyHeight = 240
@@ -65,7 +68,8 @@ export function FacetedSearch({
   const [sectionSearch, setSectionSearch] = useState<Record<FacetedSectionKey, string>>({
     region: '',
     topic: '',
-    sentiment: ''
+    sentiment: '',
+    contentType: ''
   });
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
@@ -88,6 +92,10 @@ export function FacetedSearch({
     onFilterChange({ ...filters, sentiments: checkedValues as string[] });
   };
 
+  const handleContentTypeChange = (checkedValues: Array<string | number>) => {
+    onFilterChange({ ...filters, contentTypes: checkedValues as string[] });
+  };
+
   const orderedSentiments = useMemo(
     () => [
       ...['positive', 'neutral', 'negative'].filter((value) => sentiments.includes(value)),
@@ -107,8 +115,11 @@ export function FacetedSearch({
     if (orderedSentiments.length > 0) {
       keys.push('sentiment');
     }
+    if (contentTypes.length > 0) {
+      keys.push('contentType');
+    }
     return keys;
-  }, [orderedSentiments.length, regions.length, topics.length]);
+  }, [contentTypes.length, orderedSentiments.length, regions.length, topics.length]);
 
   const defaultActiveKeys = useMemo(
     () =>
@@ -168,6 +179,13 @@ export function FacetedSearch({
               count: selectionCounts.sentiments
             }
           : null,
+        selectionCounts.contentTypes > 0
+          ? {
+              key: 'contentType',
+              label: t('items.filters.contentType', { defaultValue: 'Content type' }),
+              count: selectionCounts.contentTypes
+            }
+          : null,
         filters.excludeDuplicates
           ? {
               key: 'dedupe',
@@ -197,6 +215,22 @@ export function FacetedSearch({
     }
     if (value === 'negative') {
       return t('items.sentiment.negative', { defaultValue: 'Negative' });
+    }
+    return value;
+  };
+
+  const formatContentTypeLabel = (value: string): string => {
+    if (value === 'news_fact') {
+      return t('items.contentType.newsFact', { defaultValue: 'News fact' });
+    }
+    if (value === 'opinion') {
+      return t('items.contentType.opinion', { defaultValue: 'Opinion' });
+    }
+    if (value === 'analysis') {
+      return t('items.contentType.analysis', { defaultValue: 'Analysis' });
+    }
+    if (value === 'mixed') {
+      return t('items.contentType.mixed', { defaultValue: 'Mixed' });
     }
     return value;
   };
@@ -305,6 +339,19 @@ export function FacetedSearch({
             filters.sentiments,
             handleSentimentChange,
             formatSentimentLabel
+          )
+        ]
+      : []),
+    ...(contentTypes.length
+      ? [
+          renderSection(
+            "contentType",
+            t("items.filters.contentType", { defaultValue: "Content type" }),
+            selectionCounts.contentTypes,
+            contentTypes,
+            filters.contentTypes,
+            handleContentTypeChange,
+            formatContentTypeLabel
           )
         ]
       : [])

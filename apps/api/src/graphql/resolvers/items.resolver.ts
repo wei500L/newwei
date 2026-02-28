@@ -228,6 +228,55 @@ function pickFirstFiniteNumber(obj: Record<string, unknown>, keys: string[]): nu
   return null;
 }
 
+function normalizeContentType(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.replace(/[\s-]+/g, "_");
+  if (
+    normalized === "news_fact" ||
+    normalized === "opinion" ||
+    normalized === "analysis" ||
+    normalized === "mixed"
+  ) {
+    return normalized;
+  }
+
+  if (
+    normalized === "news" ||
+    normalized === "fact" ||
+    normalized === "facts" ||
+    normalized === "report"
+  ) {
+    return "news_fact";
+  }
+  if (
+    normalized === "editorial" ||
+    normalized === "commentary" ||
+    normalized === "op_ed" ||
+    normalized === "column"
+  ) {
+    return "opinion";
+  }
+  if (
+    normalized === "insight" ||
+    normalized === "insights" ||
+    normalized === "explainer"
+  ) {
+    return "analysis";
+  }
+  if (normalized === "hybrid") {
+    return "mixed";
+  }
+
+  return null;
+}
+
 function normalizeSeriesPoints(
   value: unknown,
   options?: { limit?: number }
@@ -702,6 +751,7 @@ export class ItemsResolver {
     const qualityScore = pickFirstFiniteNumber(result, ["quality_score", "qualityScore"]);
     const topics = normalizeStringList(result.topics);
     const entities = normalizeEntityNames(result.entities);
+    const contentType = normalizeContentType(result.content_type ?? result.contentType);
 
     return {
       id: processed.id,
@@ -718,6 +768,7 @@ export class ItemsResolver {
       publishedAt,
       summary,
       sentiment,
+      contentType,
       topics,
       entities,
       qualityScore,

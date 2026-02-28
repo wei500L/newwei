@@ -33,6 +33,12 @@ describe("NewsPromptBuilder", () => {
     expect(prompt).toContain("garbled_text");
   });
 
+  it("includes content_type guidance in the system prompt", () => {
+    const prompt = builder.buildSystemPrompt(DEFAULT_NEWS_PROMPT_CONFIG, "en");
+    expect(prompt).toContain("content_type");
+    expect(prompt).toContain("news_fact/opinion/analysis/mixed");
+  });
+
   it("returns a json schema response format with required fields", () => {
     const format = builder.buildResponseFormat();
     expect(format.type).toBe("json_schema");

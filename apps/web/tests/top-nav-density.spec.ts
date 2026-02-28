@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alignDensityModeToBase,
   downgradeDensityMode,
+  downgradeDensityModeForBase,
   NAV_COMPACT_MIN_WIDTH,
   NAV_FULL_MIN_WIDTH,
   NAV_UPGRADE_SLACK,
@@ -56,6 +58,33 @@ describe("upgradeDensityMode", () => {
 
   it("keeps mode when already at target", () => {
     expect(upgradeDensityMode("full", "full")).toBe("full");
+  });
+});
+
+describe("alignDensityModeToBase", () => {
+  it("forces minimal when base mode is minimal", () => {
+    expect(alignDensityModeToBase("full", "minimal")).toBe("minimal");
+    expect(alignDensityModeToBase("compact", "minimal")).toBe("minimal");
+  });
+
+  it("forces compact when base mode is compact", () => {
+    expect(alignDensityModeToBase("full", "compact")).toBe("compact");
+    expect(alignDensityModeToBase("minimal", "compact")).toBe("compact");
+  });
+
+  it("keeps full when base mode is full", () => {
+    expect(alignDensityModeToBase("full", "full")).toBe("full");
+  });
+});
+
+describe("downgradeDensityModeForBase", () => {
+  it("does not downgrade below compact when base mode is compact", () => {
+    expect(downgradeDensityModeForBase("full", "compact")).toBe("compact");
+    expect(downgradeDensityModeForBase("compact", "compact")).toBe("compact");
+  });
+
+  it("allows compact to minimal downgrade when base mode is minimal", () => {
+    expect(downgradeDensityModeForBase("compact", "minimal")).toBe("minimal");
   });
 });
 

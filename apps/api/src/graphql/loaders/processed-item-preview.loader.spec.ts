@@ -95,6 +95,8 @@ describe("ProcessedItemPreviewLoader", () => {
       "result.titleZh": 1,
       "result.language": 1,
       "result.lang": 1,
+      "result.content_type": 1,
+      "result.contentType": 1,
       "result.publishedAt": 1,
       "result.sourceName": 1,
       "result.source_name": 1,

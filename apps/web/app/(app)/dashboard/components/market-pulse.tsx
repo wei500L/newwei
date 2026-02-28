@@ -41,14 +41,14 @@ const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
             type: "linear",
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: color },
-              { offset: 1, color: "rgba(255,255,255,0)" } // Could use theme.colors.background but transparent is safe
+              { offset: 0, color: color + "4D" }, // 30% opacity
+              { offset: 1, color: "transparent" }
             ]
-          },
-          opacity: 0.2
+          }
         }
       },
     ],
+    animation: false,
     tooltip: { show: false },
   };
 
@@ -57,7 +57,7 @@ const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
 
 // ... Metric Component with Flash ...
 
-const MetricValue = ({ value, suffix }: { value: number | string, suffix?: string }) => {
+const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffix?: string, hasData: boolean }) => {
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
   const prevValueRef = useRef(value);
 
@@ -73,20 +73,21 @@ const MetricValue = ({ value, suffix }: { value: number | string, suffix?: strin
   }, [value]);
 
   const flashClass = flash === "up"
-    ? "bg-emerald-50 text-[var(--bullish)]"
+    ? "bg-[var(--bullish)]/10 text-[var(--bullish)]"
     : flash === "down"
-      ? "bg-amber-50 text-[var(--bearish)]"
+      ? "bg-[var(--bearish)]/10 text-[var(--bearish)]"
       : "";
 
   return (
-    <span className={`text-3xl font-semibold tracking-tight transition-all duration-500 px-1 ${flash ? flashClass : "text-slate-900"}`}>
+    <span className={`text-3xl font-bold tracking-tight transition-all duration-500 px-1 rounded ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/40"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
-      {suffix && <span className="text-lg ml-1 text-slate-400 font-medium">{suffix}</span>}
+      {suffix && <span className="text-sm ml-1 text-secondary-foreground/60 font-medium">{suffix}</span>}
     </span>
   );
 };
 
 // ... existing interfaces ...
+// ... (rest of imports and processSeries remain same) ...
 interface HeroMetric {
   key: string;
   title: string;
@@ -313,14 +314,14 @@ export function MarketPulse({
   return (
     <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
       <div className="flex items-center justify-between gap-3 mb-4">
-        <Typography.Text type="secondary" className="text-xs">
+        <Typography.Text type="secondary" className="text-xs font-medium">
           Range: {range} ·{" "}
           {formatDateTime(start, locale, { dateStyle: "medium" })} -{" "}
           {formatDateTime(end, locale, { dateStyle: "medium" })}
         </Typography.Text>
         <Space size={6} wrap>
           <Tooltip title={granularityTooltip}>
-            <Tag color={granularityColor} className="text-xs">
+            <Tag color={granularityColor} className="text-xs border-none bg-secondary text-secondary-foreground">
               {granularityTagText}
             </Tag>
           </Tooltip>
@@ -330,13 +331,13 @@ export function MarketPulse({
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
             <div 
-              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-slate-50 group border-l border-[var(--border)] first:border-l-0"
+              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-[var(--secondary)]/40 rounded-xl group border-l border-[var(--border)] first:border-l-0"
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text type="secondary" className="mb-2 text-[12px] font-medium tracking-wide text-slate-500 group-hover:text-[var(--primary)] transition-colors">
+              <Typography.Text className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-slate-500 group-hover:text-[var(--primary)] transition-colors">
                 {metric.title}
               </Typography.Text>
-              <div className="flex items-baseline gap-3 mb-2">
+              <div className="flex items-baseline gap-2 mb-2">
                 <Tooltip
                   title={
                     metric.hasData && metric.lastTimestamp
@@ -368,6 +369,7 @@ export function MarketPulse({
                     <MetricValue
                       value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
                       suffix={metric.hasData ? metric.suffix : undefined}
+                      hasData={metric.hasData}
                     />
                   </span>
                 </Tooltip>
@@ -375,16 +377,16 @@ export function MarketPulse({
                 {(() => {
                   const trend = metric.trend;
                   const hasTrend = trend !== null && Number.isFinite(trend);
-                  const trendLabel = hasTrend ? `${Math.abs(trend).toFixed(1)}%` : notAvailableLabel;
+                  if (!metric.hasData || !hasTrend) return null;
+
+                  const trendLabel = `${Math.abs(trend).toFixed(1)}%`;
                   const trendClass =
-                    !hasTrend
-                      ? "text-slate-400"
-                      : trend > 0
-                        ? "text-[var(--bullish)]"
-                        : trend < 0
-                          ? "text-[var(--bearish)]"
-                          : "text-slate-400";
-                  const Icon = !hasTrend ? MinusOutlined : trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
+                    trend > 0
+                      ? "text-[var(--bullish)] bg-[var(--bullish)]/10"
+                      : trend < 0
+                        ? "text-[var(--bearish)] bg-[var(--bearish)]/10"
+                        : "text-slate-400 bg-slate-100 dark:bg-slate-800";
+                  const Icon = trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
                   return (
                     <Tooltip
                       title={
@@ -393,7 +395,7 @@ export function MarketPulse({
                           : "Change vs previous data point"
                       }
                     >
-                      <div className={`flex items-center text-xs font-bold px-1.5 py-0.5 ${trendClass}`}>
+                      <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${trendClass}`}>
                         <Icon className="text-[10px]" />
                         <span className="ml-1">{trendLabel}</span>
                       </div>
@@ -401,13 +403,13 @@ export function MarketPulse({
                   );
                 })()}
               </div>
-              <div className="mt-auto h-[40px] w-full opacity-50 group-hover:opacity-100 transition-all duration-500">
+              <div className="mt-auto h-[40px] w-full opacity-60 group-hover:opacity-100 transition-all duration-500">
                 {metric.data.length > 1 ? (
                   <Sparkline data={metric.data} color={metric.color} />
                 ) : (
-                  <Typography.Text type="secondary" className="text-xs">
+                  <Typography.Text className="text-[11px] text-slate-400 dark:text-slate-600 font-medium italic">
                     {metric.hasData
-                      ? t("dashboard.hero.insufficientData", { defaultValue: "Not enough data points" })
+                      ? t("dashboard.hero.insufficientData", { defaultValue: "Insufficient data points" })
                       : notAvailableLabel}
                   </Typography.Text>
                 )}

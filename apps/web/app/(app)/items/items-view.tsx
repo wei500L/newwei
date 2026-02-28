@@ -22,7 +22,12 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import dynamic from "next/dynamic";
-import { type ReadonlyURLSearchParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  type ReadonlyURLSearchParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -46,7 +51,7 @@ import {
   type RssTranslationProvider,
   TRANSLATE_RSS_ITEMS_MUTATION,
   type TranslateRssItemsMutation,
-  type TranslateRssItemsMutationVariables
+  type TranslateRssItemsMutationVariables,
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
@@ -59,19 +64,19 @@ import {
   resolveItemsViewLayoutState,
   type ItemsDensity,
   type ItemsExperiencePreset,
-  type ItemsFilterBehavior
+  type ItemsFilterBehavior,
 } from "./items-view-layout";
 import {
   DEFAULT_ITEMS_PAGE_SIZE,
   ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
   clampItemsPageSize,
   getItemsLastPage,
-  normalizeItemsPaginationChange
+  normalizeItemsPaginationChange,
 } from "./pagination";
 
 const FinancialCard = dynamic(
   () => import("./components/financial-card").then((mod) => mod.FinancialCard),
-  { loading: () => <Skeleton active paragraph={{ rows: 3 }} /> }
+  { loading: () => <Skeleton active paragraph={{ rows: 3 }} /> },
 );
 
 const EMPTY_FILTERS_STATE: FilterState = {};
@@ -117,11 +122,27 @@ function ItemsCardLoadingSkeleton({ compact }: { compact?: boolean }) {
     <div className="glass-card overflow-hidden">
       <div className="flex flex-col gap-3 p-[20px]">
         <div className="flex flex-wrap gap-2">
-          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
-          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
-          <Skeleton.Button active size="small" style={{ width: 72, height: 22 }} />
+          <Skeleton.Button
+            active
+            size="small"
+            style={{ width: 72, height: 22 }}
+          />
+          <Skeleton.Button
+            active
+            size="small"
+            style={{ width: 72, height: 22 }}
+          />
+          <Skeleton.Button
+            active
+            size="small"
+            style={{ width: 72, height: 22 }}
+          />
         </div>
-        <Skeleton active title={{ width: "70%" }} paragraph={{ rows: compact ? 3 : 5 }} />
+        <Skeleton
+          active
+          title={{ width: "70%" }}
+          paragraph={{ rows: compact ? 3 : 5 }}
+        />
         {!compact ? (
           <div className="flex items-center justify-between gap-3">
             <Skeleton.Input active size="small" style={{ width: 200 }} />
@@ -285,7 +306,9 @@ function extractRerankUnavailableMessage(error: unknown): string | null {
   const matched = messages.find((message) => {
     const lower = message.toLowerCase();
     const mentionsRerank =
-      lower.includes("rerank") || lower.includes("reranker") || lower.includes("re-rank");
+      lower.includes("rerank") ||
+      lower.includes("reranker") ||
+      lower.includes("re-rank");
     if (!mentionsRerank) {
       return false;
     }
@@ -300,7 +323,7 @@ function extractRerankUnavailableMessage(error: unknown): string | null {
 
 function resolveRankingModeFromParam(
   value: string | null,
-  emptyStateVariant: EmptyStateVariant
+  emptyStateVariant: EmptyStateVariant,
 ): ItemsRankingMode {
   const normalized = (value ?? "").trim().toLowerCase();
   if (normalized === "relevance") {
@@ -324,7 +347,7 @@ function resolveSortModeFromParam(value: string | null): ItemsSortMode {
 }
 
 function normalizeRssTranslationFields(
-  fields?: RssTranslationField[]
+  fields?: RssTranslationField[],
 ): RssTranslationField[] {
   if (!fields || fields.length === 0) {
     return ["title", "summary"] satisfies RssTranslationField[];
@@ -337,7 +360,7 @@ function normalizeRssTranslationFields(
 
 function normalizeFilterList(
   values?: string[],
-  options?: { lowerCase?: boolean }
+  options?: { lowerCase?: boolean },
 ): string[] | undefined {
   if (!values) {
     return undefined;
@@ -352,28 +375,104 @@ function normalizeFilterList(
   return Array.from(new Set(normalized));
 }
 
+const CANONICAL_CONTENT_TYPES = [
+  "news_fact",
+  "opinion",
+  "analysis",
+  "mixed",
+] as const;
+type CanonicalContentType = (typeof CANONICAL_CONTENT_TYPES)[number];
+
+const CONTENT_TYPE_ORDER = new Map<CanonicalContentType, number>(
+  CANONICAL_CONTENT_TYPES.map((value, index) => [value, index]),
+);
+
+const CONTENT_TYPE_ALIASES = new Map<string, CanonicalContentType>([
+  ["news_fact", "news_fact"],
+  ["news-fact", "news_fact"],
+  ["newsfact", "news_fact"],
+  ["fact", "news_fact"],
+  ["factual", "news_fact"],
+  ["report", "news_fact"],
+  ["reporting", "news_fact"],
+  ["opinion", "opinion"],
+  ["op-ed", "opinion"],
+  ["oped", "opinion"],
+  ["commentary", "opinion"],
+  ["editorial", "opinion"],
+  ["analysis", "analysis"],
+  ["analytical", "analysis"],
+  ["explainer", "analysis"],
+  ["insight", "analysis"],
+  ["deep-dive", "analysis"],
+  ["deep_dive", "analysis"],
+  ["mixed", "mixed"],
+  ["mixed-content", "mixed"],
+  ["mixed_content", "mixed"],
+  ["hybrid", "mixed"],
+]);
+
+function normalizeContentType(value: string): CanonicalContentType | undefined {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+  return CONTENT_TYPE_ALIASES.get(normalized);
+}
+
+function normalizeContentTypeList(
+  values?: string[],
+): CanonicalContentType[] | undefined {
+  if (!values) {
+    return undefined;
+  }
+  const normalized = values
+    .map((value) => normalizeContentType(value))
+    .filter((value): value is CanonicalContentType => Boolean(value));
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const unique = Array.from(new Set(normalized));
+  unique.sort((a, b) => {
+    const left = CONTENT_TYPE_ORDER.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const right = CONTENT_TYPE_ORDER.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return left - right;
+  });
+  return unique;
+}
+
 const ITEMS_FILTER_QUERY_KEYS = {
   region: "region",
   topic: "topic",
   sentiment: "sentiment",
+  contentType: "contentType",
   dedup: "dedup",
   from: "from",
-  to: "to"
+  to: "to",
 } as const;
 const ITEMS_ORDER_QUERY_KEY = "order";
 
 function normalizeFiltersState(filters: FilterState): FilterState {
-  const regions = normalizeFilterList(filters.regions)?.sort((a, b) => a.localeCompare(b));
-  const topics = normalizeFilterList(filters.topics)?.sort((a, b) => a.localeCompare(b));
-  const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true })?.sort((a, b) =>
-    a.localeCompare(b)
+  const regions = normalizeFilterList(filters.regions)?.sort((a, b) =>
+    a.localeCompare(b),
   );
+  const topics = normalizeFilterList(filters.topics)?.sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const sentiments = normalizeFilterList(filters.sentiments, {
+    lowerCase: true,
+  })?.sort((a, b) => a.localeCompare(b));
+  const contentTypes = normalizeContentTypeList(filters.contentTypes);
   const excludeDuplicates = filters.excludeDuplicates === true;
 
   const start = filters.dateRange?.[0] ?? null;
   const end = filters.dateRange?.[1] ?? null;
   const dateRange: FilterState["dateRange"] | undefined =
-    start && end && start.isValid() && end.isValid() && (start.isBefore(end) || start.isSame(end))
+    start &&
+    end &&
+    start.isValid() &&
+    end.isValid() &&
+    (start.isBefore(end) || start.isSame(end))
       ? [start, end]
       : undefined;
 
@@ -381,8 +480,9 @@ function normalizeFiltersState(filters: FilterState): FilterState {
     ...(regions ? { regions } : {}),
     ...(topics ? { topics } : {}),
     ...(sentiments ? { sentiments } : {}),
+    ...(contentTypes ? { contentTypes } : {}),
     ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
-    ...(dateRange ? { dateRange } : {})
+    ...(dateRange ? { dateRange } : {}),
   };
 }
 
@@ -393,15 +493,16 @@ function fingerprintFilters(filters: FilterState): string {
     regions: normalized.regions ?? [],
     topics: normalized.topics ?? [],
     sentiments: normalized.sentiments ?? [],
+    contentTypes: normalized.contentTypes ?? [],
     excludeDuplicates: normalized.excludeDuplicates === true,
     from: dateRange?.[0]?.toISOString?.() ?? null,
-    to: dateRange?.[1]?.toISOString?.() ?? null
+    to: dateRange?.[1]?.toISOString?.() ?? null,
   });
 }
 
-function parseDateRangeParam(
-  params: ReadonlyURLSearchParams
-): { dateRange?: FilterState["dateRange"] } {
+function parseDateRangeParam(params: ReadonlyURLSearchParams): {
+  dateRange?: FilterState["dateRange"];
+} {
   const rawFrom = params.get(ITEMS_FILTER_QUERY_KEYS.from);
   const rawTo = params.get(ITEMS_FILTER_QUERY_KEYS.to);
   if (!rawFrom || !rawTo) {
@@ -420,26 +521,33 @@ function parseDateRangeParam(
 
 function parseFiltersFromSearchParams(
   params: ReadonlyURLSearchParams,
-  baseFilters: FilterState
+  baseFilters: FilterState,
 ): FilterState {
   const base = normalizeFiltersState(baseFilters);
 
   const regions = params.has(ITEMS_FILTER_QUERY_KEYS.region)
-    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.region))?.sort((a, b) =>
-        a.localeCompare(b)
+    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.region))?.sort(
+        (a, b) => a.localeCompare(b),
       )
     : undefined;
   const topics = params.has(ITEMS_FILTER_QUERY_KEYS.topic)
-    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.topic))?.sort((a, b) =>
-        a.localeCompare(b)
+    ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.topic))?.sort(
+        (a, b) => a.localeCompare(b),
       )
     : undefined;
   const sentiments = params.has(ITEMS_FILTER_QUERY_KEYS.sentiment)
     ? normalizeFilterList(params.getAll(ITEMS_FILTER_QUERY_KEYS.sentiment), {
-        lowerCase: true
+        lowerCase: true,
       })?.sort((a, b) => a.localeCompare(b))
     : undefined;
-  const dedupeParam = (params.get(ITEMS_FILTER_QUERY_KEYS.dedup) ?? "").trim().toLowerCase();
+  const contentTypes = params.has(ITEMS_FILTER_QUERY_KEYS.contentType)
+    ? normalizeContentTypeList(
+        params.getAll(ITEMS_FILTER_QUERY_KEYS.contentType),
+      )
+    : undefined;
+  const dedupeParam = (params.get(ITEMS_FILTER_QUERY_KEYS.dedup) ?? "")
+    .trim()
+    .toLowerCase();
   const excludeDuplicates =
     dedupeParam === "1" || dedupeParam === "true" || dedupeParam === "hide";
 
@@ -449,19 +557,25 @@ function parseFiltersFromSearchParams(
     ...(base.regions ? { regions: base.regions } : {}),
     ...(base.topics ? { topics: base.topics } : {}),
     ...(base.sentiments ? { sentiments: base.sentiments } : {}),
+    ...(base.contentTypes ? { contentTypes: base.contentTypes } : {}),
     ...(base.dateRange ? { dateRange: base.dateRange } : {}),
     ...(regions !== undefined ? { regions } : {}),
     ...(topics !== undefined ? { topics } : {}),
     ...(sentiments !== undefined ? { sentiments } : {}),
+    ...(contentTypes !== undefined ? { contentTypes } : {}),
     ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
-    ...(dateOverride ? { dateRange: dateOverride } : {})
+    ...(dateOverride ? { dateRange: dateOverride } : {}),
   };
 }
 
-function applyFiltersToSearchParams(next: URLSearchParams, filters: FilterState | null) {
+function applyFiltersToSearchParams(
+  next: URLSearchParams,
+  filters: FilterState | null,
+) {
   next.delete(ITEMS_FILTER_QUERY_KEYS.region);
   next.delete(ITEMS_FILTER_QUERY_KEYS.topic);
   next.delete(ITEMS_FILTER_QUERY_KEYS.sentiment);
+  next.delete(ITEMS_FILTER_QUERY_KEYS.contentType);
   next.delete(ITEMS_FILTER_QUERY_KEYS.dedup);
   next.delete(ITEMS_FILTER_QUERY_KEYS.from);
   next.delete(ITEMS_FILTER_QUERY_KEYS.to);
@@ -479,6 +593,9 @@ function applyFiltersToSearchParams(next: URLSearchParams, filters: FilterState 
   }
   for (const value of normalized.sentiments ?? []) {
     next.append(ITEMS_FILTER_QUERY_KEYS.sentiment, value);
+  }
+  for (const value of normalized.contentTypes ?? []) {
+    next.append(ITEMS_FILTER_QUERY_KEYS.contentType, value);
   }
   if (normalized.excludeDuplicates) {
     next.set(ITEMS_FILTER_QUERY_KEYS.dedup, "hide");
@@ -520,6 +637,7 @@ interface ItemsFiltersInput {
   regions?: string[];
   topics?: string[];
   sentiments?: string[];
+  contentTypes?: string[];
   excludeDuplicates?: boolean;
   dateRange?: ItemsDateRangeInput;
 }
@@ -548,6 +666,7 @@ interface ItemFacetsQuery {
     regions: ItemFacetOption[];
     topics: ItemFacetOption[];
     sentiments: ItemFacetOption[];
+    contentTypes: ItemFacetOption[];
   };
 }
 
@@ -596,6 +715,7 @@ const ITEMS_QUERY = gql`
             language
             publishedAt
             summary
+            contentType
             sentiment
             topics
             entities
@@ -656,6 +776,10 @@ const ITEM_FACETS_QUERY = gql`
         value
         count
       }
+      contentTypes {
+        value
+        count
+      }
     }
   }
 `;
@@ -664,7 +788,10 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
   const sourceIds = normalizeFilterList(filters.sourceIds);
   const regions = normalizeFilterList(filters.regions);
   const topics = normalizeFilterList(filters.topics);
-  const sentiments = normalizeFilterList(filters.sentiments, { lowerCase: true });
+  const sentiments = normalizeFilterList(filters.sentiments, {
+    lowerCase: true,
+  });
+  const contentTypes = normalizeContentTypeList(filters.contentTypes);
   const excludeDuplicates = filters.excludeDuplicates === true;
   const rangeStart = filters.dateRange?.[0]?.startOf("day");
   const rangeEnd = filters.dateRange?.[1]?.endOf("day");
@@ -672,11 +799,19 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
     rangeStart || rangeEnd
       ? {
           ...(rangeStart ? { start: rangeStart.toISOString() } : {}),
-          ...(rangeEnd ? { end: rangeEnd.toISOString() } : {})
+          ...(rangeEnd ? { end: rangeEnd.toISOString() } : {}),
         }
       : undefined;
 
-  if (!sourceIds && !regions && !topics && !sentiments && !excludeDuplicates && !dateRange) {
+  if (
+    !sourceIds &&
+    !regions &&
+    !topics &&
+    !sentiments &&
+    !contentTypes &&
+    !excludeDuplicates &&
+    !dateRange
+  ) {
     return null;
   }
 
@@ -685,8 +820,9 @@ function buildFiltersInput(filters: FilterState): ItemsFiltersInput | null {
     ...(regions ? { regions } : {}),
     ...(topics ? { topics } : {}),
     ...(sentiments ? { sentiments } : {}),
+    ...(contentTypes ? { contentTypes } : {}),
     ...(excludeDuplicates ? { excludeDuplicates: true } : {}),
-    ...(dateRange ? { dateRange } : {})
+    ...(dateRange ? { dateRange } : {}),
   };
 }
 
@@ -730,6 +866,7 @@ interface ParsedItem {
   summary?: string;
   thumbnail?: string;
   source?: string;
+  contentType?: CanonicalContentType;
   relevanceScore?: number;
   price?: number;
   change?: number;
@@ -769,7 +906,7 @@ export function ItemsView({
   fixedSourceIds,
   rssTranslationConfig,
   onTranslationError,
-  onSearchSuggestionStatusChange
+  onSearchSuggestionStatusChange,
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -782,20 +919,27 @@ export function ItemsView({
   const layoutState = resolveItemsViewLayoutState({
     experiencePreset,
     density,
-    filterBehavior
+    filterBehavior,
   });
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canManageCrawl = permissions.includes("crawl.read") || permissions.includes("crawl.write");
+  const canManageCrawl =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
 
   // URL State
   const urlSearch = (searchParams.get("q") ?? "").trim();
   const urlFilters = useMemo(
     () => parseFiltersFromSearchParams(searchParams, initialFilters),
-    [initialFilters, searchParams]
+    [initialFilters, searchParams],
   );
-  const urlFiltersFingerprint = useMemo(() => fingerprintFilters(urlFilters), [urlFilters]);
+  const urlFiltersFingerprint = useMemo(
+    () => fingerprintFilters(urlFilters),
+    [urlFilters],
+  );
   const urlPage = parsePositiveInt(searchParams.get("page"), 1);
-  const urlRawPageSize = parsePositiveInt(searchParams.get("pageSize"), DEFAULT_ITEMS_PAGE_SIZE);
+  const urlRawPageSize = parsePositiveInt(
+    searchParams.get("pageSize"),
+    DEFAULT_ITEMS_PAGE_SIZE,
+  );
   const urlPageSize = clampItemsPageSize(urlRawPageSize);
   const urlRanking = searchParams.get("ranking");
   const urlOrder = searchParams.get(ITEMS_ORDER_QUERY_KEY);
@@ -804,14 +948,14 @@ export function ItemsView({
   const [searchInput, setSearchInput] = useState(urlSearch);
   const [search, setSearch] = useState(urlSearch);
   const [rankingMode, setRankingMode] = useState<ItemsRankingMode>(() =>
-    resolveRankingModeFromParam(urlRanking, emptyStateVariant)
+    resolveRankingModeFromParam(urlRanking, emptyStateVariant),
   );
   const [activeSortMode, setActiveSortMode] = useState<ItemsSortMode>(() =>
-    sortMode === "default" ? resolveSortModeFromParam(urlOrder) : sortMode
+    sortMode === "default" ? resolveSortModeFromParam(urlOrder) : sortMode,
   );
   const [view, setView] = useState<ItemViewType>(lockedView ?? initialView);
   const [filters, setFilters] = useState<FilterState>(() =>
-    parseFiltersFromSearchParams(searchParams, initialFilters)
+    parseFiltersFromSearchParams(searchParams, initialFilters),
   );
   const [page, setPage] = useState(urlPage);
   const [pageSize, setPageSize] = useState(urlPageSize);
@@ -832,7 +976,7 @@ export function ItemsView({
   >(TRANSLATE_RSS_ITEMS_MUTATION);
   const normalizedFixedSourceIds = useMemo(
     () => normalizeFilterList(fixedSourceIds),
-    [fixedSourceIds]
+    [fixedSourceIds],
   );
   const effectiveFilters = useMemo<FilterState>(() => {
     if (!normalizedFixedSourceIds || normalizedFixedSourceIds.length === 0) {
@@ -840,7 +984,7 @@ export function ItemsView({
     }
     return {
       ...filters,
-      sourceIds: normalizedFixedSourceIds
+      sourceIds: normalizedFixedSourceIds,
     };
   }, [filters, normalizedFixedSourceIds]);
 
@@ -852,8 +996,12 @@ export function ItemsView({
 
     const rect = container.getBoundingClientRect();
     const viewportHeight = window.innerHeight || 0;
-    const headerEl = container.querySelector(".ant-table-thead") as HTMLElement | null;
-    const paginationEl = container.querySelector(".ant-table-pagination") as HTMLElement | null;
+    const headerEl = container.querySelector(
+      ".ant-table-thead",
+    ) as HTMLElement | null;
+    const paginationEl = container.querySelector(
+      ".ant-table-pagination",
+    ) as HTMLElement | null;
 
     const headerHeight = headerEl?.getBoundingClientRect().height ?? 0;
     const paginationHeight = paginationEl?.getBoundingClientRect().height ?? 0;
@@ -865,9 +1013,12 @@ export function ItemsView({
 
     const nextScrollY = Math.max(
       ITEMS_TABLE_MIN_BODY_SCROLL_Y,
-      Math.floor(available - headerHeight - paginationHeight)
+      Math.floor(available - headerHeight - paginationHeight),
     );
-    const nextScrollX = Math.max(ITEMS_TABLE_MIN_SCROLL_X, Math.floor(container.clientWidth));
+    const nextScrollX = Math.max(
+      ITEMS_TABLE_MIN_SCROLL_X,
+      Math.floor(container.clientWidth),
+    );
 
     setListTableScrollX((prev) => (prev === nextScrollX ? prev : nextScrollX));
     setListTableScrollY((prev) => (prev === nextScrollY ? prev : nextScrollY));
@@ -900,7 +1051,7 @@ export function ItemsView({
   }, [
     rssTranslationConfig?.enabled,
     rssTranslationConfig?.provider,
-    rssTranslationConfig?.targetLanguage
+    rssTranslationConfig?.targetLanguage,
   ]);
 
   useEffect(() => {
@@ -956,24 +1107,39 @@ export function ItemsView({
   }, [urlPageSize]);
 
   useEffect(() => {
-    const nextRankingMode = resolveRankingModeFromParam(urlRanking, emptyStateVariant);
-    setRankingMode((current) => (current === nextRankingMode ? current : nextRankingMode));
+    const nextRankingMode = resolveRankingModeFromParam(
+      urlRanking,
+      emptyStateVariant,
+    );
+    setRankingMode((current) =>
+      current === nextRankingMode ? current : nextRankingMode,
+    );
   }, [emptyStateVariant, urlRanking]);
 
   useEffect(() => {
     if (sortMode !== "default") {
-      setActiveSortMode((current) => (current === sortMode ? current : sortMode));
+      setActiveSortMode((current) =>
+        current === sortMode ? current : sortMode,
+      );
       return;
     }
     const nextSortMode = resolveSortModeFromParam(urlOrder);
-    setActiveSortMode((current) => (current === nextSortMode ? current : nextSortMode));
+    setActiveSortMode((current) =>
+      current === nextSortMode ? current : nextSortMode,
+    );
   }, [sortMode, urlOrder]);
 
-  const debouncedSearchInput = useDebounceValue(searchInput, ITEMS_SEARCH_DEBOUNCE_MS);
-  const debouncedFilters = useDebounceValue(filters, ITEMS_FILTERS_URL_DEBOUNCE_MS);
+  const debouncedSearchInput = useDebounceValue(
+    searchInput,
+    ITEMS_SEARCH_DEBOUNCE_MS,
+  );
+  const debouncedFilters = useDebounceValue(
+    filters,
+    ITEMS_FILTERS_URL_DEBOUNCE_MS,
+  );
   const debouncedFiltersFingerprint = useMemo(
     () => fingerprintFilters(debouncedFilters),
-    [debouncedFilters]
+    [debouncedFilters],
   );
 
   useEffect(() => {
@@ -985,11 +1151,14 @@ export function ItemsView({
     setPage(1);
   }, [debouncedSearchInput, search]);
 
-  const filtersInput = useMemo(() => buildFiltersInput(effectiveFilters), [effectiveFilters]);
+  const filtersInput = useMemo(
+    () => buildFiltersInput(effectiveFilters),
+    [effectiveFilters],
+  );
   const hasActiveFilters = filtersInput !== null;
   const activeFilterDimensionCount = useMemo(
     () => countItemsFilterDimensions(effectiveFilters),
-    [effectiveFilters]
+    [effectiveFilters],
   );
   const isUnsearched =
     emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
@@ -1006,7 +1175,7 @@ export function ItemsView({
       ? {
           x: listTableScrollX,
           y: listTableScrollY,
-          scrollToFirstRowOnChange: true
+          scrollToFirstRowOnChange: true,
         }
       : undefined;
   const listTableVirtualEnabled = Boolean(listTableScroll);
@@ -1026,7 +1195,7 @@ export function ItemsView({
         : effectiveSortMode === "personalized"
           ? "PERSONALIZED"
           : "CREATED_DESC",
-    [effectiveSortMode]
+    [effectiveSortMode],
   );
 
   const setQueryParams = useCallback(
@@ -1089,7 +1258,7 @@ export function ItemsView({
       }
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
     },
-    [pathname, router]
+    [pathname, router],
   );
 
   useEffect(() => {
@@ -1099,12 +1268,14 @@ export function ItemsView({
     const currentFiltersFingerprint = fingerprintFilters(
       parseFiltersFromSearchParams(
         currentParams as unknown as ReadonlyURLSearchParams,
-        initialFilters
-      )
+        initialFilters,
+      ),
     );
 
     const nextSearchParam = search.length > 0 ? search : null;
-    const currentRankingRaw = (currentParams.get("ranking") ?? "").trim().toLowerCase();
+    const currentRankingRaw = (currentParams.get("ranking") ?? "")
+      .trim()
+      .toLowerCase();
     const currentRankingParam =
       currentRankingRaw === "relevance" || currentRankingRaw === "recency"
         ? currentRankingRaw
@@ -1120,11 +1291,17 @@ export function ItemsView({
     const nextOrderParam = orderQueryValue;
 
     const shouldUpdateSearch = nextSearchParam !== currentSearchParam;
-    const shouldUpdateFilters = debouncedFiltersFingerprint !== currentFiltersFingerprint;
+    const shouldUpdateFilters =
+      debouncedFiltersFingerprint !== currentFiltersFingerprint;
     const shouldUpdateRanking = nextRankingParam !== currentRankingParam;
     const shouldUpdateOrder = nextOrderParam !== currentOrderParam;
 
-    if (!shouldUpdateSearch && !shouldUpdateFilters && !shouldUpdateRanking && !shouldUpdateOrder) {
+    if (
+      !shouldUpdateSearch &&
+      !shouldUpdateFilters &&
+      !shouldUpdateRanking &&
+      !shouldUpdateOrder
+    ) {
       return;
     }
 
@@ -1133,7 +1310,7 @@ export function ItemsView({
       ...(shouldUpdateFilters ? { filters: debouncedFilters } : {}),
       ...(shouldUpdateRanking ? { ranking: nextRankingParam } : {}),
       ...(shouldUpdateOrder ? { order: nextOrderParam } : {}),
-      page: 1
+      page: 1,
     });
   }, [
     debouncedFilters,
@@ -1154,30 +1331,27 @@ export function ItemsView({
     setQueryParams({ page: 1, pageSize: urlPageSize });
   }, [setQueryParams, urlPageSize, urlRawPageSize]);
 
-  const handleFilterChange = useCallback(
-    (nextFilters: FilterState) => {
-      const normalized = normalizeFiltersState(nextFilters);
-      setFilters(normalized);
-      setPage(1);
-    },
-    []
-  );
+  const handleFilterChange = useCallback((nextFilters: FilterState) => {
+    const normalized = normalizeFiltersState(nextFilters);
+    setFilters(normalized);
+    setPage(1);
+  }, []);
   const handleExcludeDuplicatesChange = useCallback((checked: boolean) => {
     setFilters((current) =>
       normalizeFiltersState({
         ...current,
-        ...(checked ? { excludeDuplicates: true } : { excludeDuplicates: undefined })
-      })
+        ...(checked
+          ? { excludeDuplicates: true }
+          : { excludeDuplicates: undefined }),
+      }),
     );
     setPage(1);
   }, []);
 
-  const {
-    data,
-    loading,
-    error,
-    refetch
-  } = useQuery<ItemsQuery, ItemsQueryVariables>(ITEMS_QUERY, {
+  const { data, loading, error, refetch } = useQuery<
+    ItemsQuery,
+    ItemsQueryVariables
+  >(ITEMS_QUERY, {
     skip: isUnsearched,
     variables: {
       first: pageSize,
@@ -1186,9 +1360,9 @@ export function ItemsView({
       search: search || null,
       filters: filtersInput,
       orderBy,
-      rankingMode
+      rankingMode,
     },
-    notifyOnNetworkStatusChange: true
+    notifyOnNetworkStatusChange: true,
   });
   const rerankUnavailableMessage = useMemo(
     () => extractRerankUnavailableMessage(error),
@@ -1201,12 +1375,15 @@ export function ItemsView({
     setPage(1);
   }, []);
 
-  const { data: facetsData } = useQuery<ItemFacetsQuery, ItemFacetsQueryVariables>(ITEM_FACETS_QUERY, {
+  const { data: facetsData } = useQuery<
+    ItemFacetsQuery,
+    ItemFacetsQueryVariables
+  >(ITEM_FACETS_QUERY, {
     variables: {
       search: search || null,
-      filters: filtersInput
+      filters: filtersInput,
     },
-    fetchPolicy: "cache-and-network"
+    fetchPolicy: "cache-and-network",
   });
 
   useEffect(() => {
@@ -1218,45 +1395,56 @@ export function ItemsView({
     return () => clearTimeout(timeout);
   }, [loading]);
 
-  const resolvedData =
-    isUnsearched
-      ? undefined
-      : data ??
-        (filtersInput === null ? initialData ?? undefined : undefined);
+  const resolvedData = isUnsearched
+    ? undefined
+    : (data ??
+      (filtersInput === null ? (initialData ?? undefined) : undefined));
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const resolvedTotalCount = resolvedData?.items.totalCount;
-  const totalCount = typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
+  const totalCount =
+    typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
     if (filtersInput?.sourceIds?.length) {
       parts.push(
-        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${filtersInput.sourceIds.length.toLocaleString(locale)}`
+        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${filtersInput.sourceIds.length.toLocaleString(locale)}`,
       );
     }
     if (filtersInput?.regions?.length) {
       parts.push(
-        `${t("items.filters.region", { defaultValue: "Region" })}: ${filtersInput.regions.length.toLocaleString(locale)}`
+        `${t("items.filters.region", { defaultValue: "Region" })}: ${filtersInput.regions.length.toLocaleString(locale)}`,
       );
     }
     if (filtersInput?.topics?.length) {
       parts.push(
-        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${filtersInput.topics.length.toLocaleString(locale)}`
+        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${filtersInput.topics.length.toLocaleString(locale)}`,
       );
     }
     if (filtersInput?.sentiments?.length) {
       parts.push(
-        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${filtersInput.sentiments.length.toLocaleString(locale)}`
+        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${filtersInput.sentiments.length.toLocaleString(locale)}`,
+      );
+    }
+    if (filtersInput?.contentTypes?.length) {
+      parts.push(
+        `${t("items.filters.contentType", { defaultValue: "Content type" })}: ${filtersInput.contentTypes.length.toLocaleString(locale)}`,
       );
     }
     if (filtersInput?.excludeDuplicates) {
-      parts.push(t("items.filters.excludeDuplicates", { defaultValue: "Hide duplicates" }));
+      parts.push(
+        t("items.filters.excludeDuplicates", {
+          defaultValue: "Hide duplicates",
+        }),
+      );
     }
     if (filtersInput?.dateRange) {
-      parts.push(`${t("items.filters.date", { defaultValue: "Date Range" })}: 1`);
+      parts.push(
+        `${t("items.filters.date", { defaultValue: "Date Range" })}: 1`,
+      );
     }
     return {
       parts,
-      text: parts.join(" | ")
+      text: parts.join(" | "),
     };
   }, [filtersInput, locale, t]);
 
@@ -1281,7 +1469,15 @@ export function ItemsView({
       setPage(lastPage);
       setQueryParams({ page: lastPage });
     }
-  }, [error, isUnsearched, loading, page, pageSize, resolvedTotalCount, setQueryParams]);
+  }, [
+    error,
+    isUnsearched,
+    loading,
+    page,
+    pageSize,
+    resolvedTotalCount,
+    setQueryParams,
+  ]);
 
   const basePageData = useMemo<ParsedItem[]>(() => {
     return edges.map((edge) => {
@@ -1289,24 +1485,34 @@ export function ItemsView({
       const raw = edge.node.rawPreview;
       const summary = resolveDisplaySummary({
         processedSummary: processed?.summary,
-        rawSummary: raw?.summary
+        rawSummary: raw?.summary,
       });
       const sentiment =
-        toNonEmptyString(processed?.sentiment) ?? toNonEmptyString(raw?.sentiment) ?? undefined;
+        toNonEmptyString(processed?.sentiment) ??
+        toNonEmptyString(raw?.sentiment) ??
+        undefined;
       const region = toNonEmptyString(raw?.region) ?? undefined;
       const location =
-        toNonEmptyString(processed?.location) ?? toNonEmptyString(raw?.location) ?? undefined;
+        toNonEmptyString(processed?.location) ??
+        toNonEmptyString(raw?.location) ??
+        undefined;
       const ticker = toNonEmptyString(raw?.ticker) ?? undefined;
       const price =
-        typeof raw?.price === "number" && Number.isFinite(raw.price) ? raw.price : undefined;
+        typeof raw?.price === "number" && Number.isFinite(raw.price)
+          ? raw.price
+          : undefined;
       const change =
-        typeof raw?.changePercent === "number" && Number.isFinite(raw.changePercent)
+        typeof raw?.changePercent === "number" &&
+        Number.isFinite(raw.changePercent)
           ? raw.changePercent
           : undefined;
       const history = Array.isArray(raw?.history)
         ? raw.history
             .map((point) => {
-              const timestamp = typeof point?.timestamp === "string" ? point.timestamp.trim() : "";
+              const timestamp =
+                typeof point?.timestamp === "string"
+                  ? point.timestamp.trim()
+                  : "";
               const value =
                 typeof point?.value === "number" && Number.isFinite(point.value)
                   ? point.value
@@ -1316,7 +1522,9 @@ export function ItemsView({
               }
               return { timestamp, value };
             })
-            .filter((point): point is { timestamp: string; value: number } => Boolean(point))
+            .filter((point): point is { timestamp: string; value: number } =>
+              Boolean(point),
+            )
         : undefined;
       const url = safeHttpUrl(raw?.url) ?? undefined;
       const thumbnail = safeHttpUrl(raw?.thumbnail) ?? undefined;
@@ -1325,28 +1533,35 @@ export function ItemsView({
         toNonEmptyString(edge.node.publishedAt) ??
         toNonEmptyString(processed?.publishedAt) ??
         undefined;
-      const ingestedAt = dayjs(edge.node.ingestedAt ?? edge.node.createdAt).toISOString();
+      const ingestedAt = dayjs(
+        edge.node.ingestedAt ?? edge.node.createdAt,
+      ).toISOString();
       const topics = Array.from(
         new Set(
           (processed?.topics ?? [])
             .map((topic) => topic.trim())
-            .filter((topic) => topic.length > 0)
-        )
+            .filter((topic) => topic.length > 0),
+        ),
       );
       const entities = Array.from(
         new Set(
           (processed?.entities ?? [])
             .map((entity) => entity.trim())
-            .filter((entity) => entity.length > 0)
-        )
+            .filter((entity) => entity.length > 0),
+        ),
       );
       const source =
-        toNonEmptyString(processed?.source) ?? toNonEmptyString(raw?.sourceName) ?? undefined;
+        toNonEmptyString(processed?.source) ??
+        toNonEmptyString(raw?.sourceName) ??
+        undefined;
+      const contentType = normalizeContentType(
+        toNonEmptyString(processed?.contentType) ?? "",
+      );
       const displayTitle = resolveDisplayTitle({
         processedTitle: processed?.title,
         itemTitle: edge.node.title,
         source,
-        originalUrl: raw?.url
+        originalUrl: raw?.url,
       });
 
       return {
@@ -1365,15 +1580,20 @@ export function ItemsView({
         ingestedAt,
         createdAt: ingestedAt,
         source,
+        contentType,
         language: toNonEmptyString(processed?.language) ?? undefined,
         topics,
         entities,
         region,
         relevanceScore:
-          typeof edge.node.relevanceScore === "number" && Number.isFinite(edge.node.relevanceScore)
+          typeof edge.node.relevanceScore === "number" &&
+          Number.isFinite(edge.node.relevanceScore)
             ? edge.node.relevanceScore
             : undefined,
-        qualityScore: typeof processed?.qualityScore === "number" ? processed.qualityScore : undefined,
+        qualityScore:
+          typeof processed?.qualityScore === "number"
+            ? processed.qualityScore
+            : undefined,
         duplicateSimilarity:
           typeof processed?.duplicateSimilarity === "number"
             ? processed.duplicateSimilarity
@@ -1382,7 +1602,7 @@ export function ItemsView({
         llm: processed?.llm ?? undefined,
         url: url ?? undefined,
         location,
-        eventId: processed?.eventId ?? null
+        eventId: processed?.eventId ?? null,
       } as ParsedItem;
     });
   }, [edges]);
@@ -1399,12 +1619,18 @@ export function ItemsView({
       return;
     }
 
-    const targetLanguage = rssTranslationConfig.targetLanguage?.trim() || "zh-CN";
+    const targetLanguage =
+      rssTranslationConfig.targetLanguage?.trim() || "zh-CN";
     const provider = rssTranslationConfig.provider;
     const fields = normalizeRssTranslationFields(rssTranslationConfig.fields);
     const itemIds = basePageData.map((item) => item.id);
 
-    const requestKey = JSON.stringify({ provider, targetLanguage, fields, itemIds });
+    const requestKey = JSON.stringify({
+      provider,
+      targetLanguage,
+      fields,
+      itemIds,
+    });
     if (translationRequestKeyRef.current === requestKey) {
       return;
     }
@@ -1418,16 +1644,17 @@ export function ItemsView({
           itemIds,
           provider,
           targetLanguage,
-          fields
-        }
-      }
+          fields,
+        },
+      },
     })
       .then((response) => {
         if (translationRequestSeqRef.current !== requestSeq) {
           return;
         }
         onTranslationError?.(null);
-        const translations = response.data?.translateRssItems.translations ?? [];
+        const translations =
+          response.data?.translateRssItems.translations ?? [];
         if (translations.length === 0) {
           return;
         }
@@ -1440,7 +1667,9 @@ export function ItemsView({
               ...(entry.title ? { title: entry.title } : {}),
               ...(entry.summary ? { summary: entry.summary } : {}),
               ...(entry.keyPoints ? { keyPoints: entry.keyPoints } : {}),
-              ...(entry.cleanedMarkdown ? { cleanedMarkdown: entry.cleanedMarkdown } : {})
+              ...(entry.cleanedMarkdown
+                ? { cleanedMarkdown: entry.cleanedMarkdown }
+                : {}),
             };
           });
           return next;
@@ -1451,7 +1680,8 @@ export function ItemsView({
           return;
         }
         translationRequestKeyRef.current = "";
-        const message = err instanceof Error ? err.message : "Translation failed";
+        const message =
+          err instanceof Error ? err.message : "Translation failed";
         onTranslationError?.(message);
       });
   }, [
@@ -1463,7 +1693,7 @@ export function ItemsView({
     rssTranslationConfig?.fields,
     rssTranslationConfig?.provider,
     rssTranslationConfig?.targetLanguage,
-    translateRssItems
+    translateRssItems,
   ]);
 
   const pageData = useMemo<ParsedItem[]>(() => {
@@ -1484,7 +1714,7 @@ export function ItemsView({
         ...item,
         title,
         name: title,
-        summary
+        summary,
       };
     });
   }, [basePageData, rssTranslationConfig?.enabled, translatedByItemId]);
@@ -1494,7 +1724,14 @@ export function ItemsView({
       return;
     }
     updateListTableScroll();
-  }, [error, hasActiveFilters, pageData.length, search, updateListTableScroll, view]);
+  }, [
+    error,
+    hasActiveFilters,
+    pageData.length,
+    search,
+    updateListTableScroll,
+    view,
+  ]);
 
   const availableRegions = useMemo(() => {
     const regions = facetsData?.itemFacets?.regions;
@@ -1513,9 +1750,7 @@ export function ItemsView({
       return topics.map((topic) => topic.value);
     }
     const fallback = pageData
-      .flatMap((item) => [
-        ...(item.topics ?? []),
-      ])
+      .flatMap((item) => [...(item.topics ?? [])])
       .filter((value): value is string => Boolean(value));
     return Array.from(new Set(fallback));
   }, [facetsData, pageData]);
@@ -1532,6 +1767,24 @@ export function ItemsView({
     return Array.from(new Set(values));
   }, [facetsData]);
 
+  const availableContentTypes = useMemo(() => {
+    const facetContentTypes = facetsData?.itemFacets?.contentTypes;
+    if (facetContentTypes && facetContentTypes.length > 0) {
+      return (
+        normalizeContentTypeList(
+          facetContentTypes.map((entry) => entry.value),
+        ) ?? []
+      );
+    }
+    return (
+      normalizeContentTypeList(
+        pageData.flatMap((item) =>
+          item.contentType ? [item.contentType] : [],
+        ),
+      ) ?? []
+    );
+  }, [facetsData, pageData]);
+
   useEffect(() => {
     if (availableSentiments.length > 0) {
       return;
@@ -1542,71 +1795,101 @@ export function ItemsView({
     handleFilterChange({ ...filters, sentiments: undefined });
   }, [availableSentiments.length, filters, handleFilterChange]);
 
+  useEffect(() => {
+    const selected = normalizeContentTypeList(filters.contentTypes);
+    if (!selected || selected.length === 0) {
+      return;
+    }
+    if (availableContentTypes.length === 0) {
+      handleFilterChange({ ...filters, contentTypes: undefined });
+      return;
+    }
+    const allowed = new Set(availableContentTypes);
+    const validSelections = selected.filter((value) => allowed.has(value));
+    if (validSelections.length === selected.length) {
+      return;
+    }
+    handleFilterChange({
+      ...filters,
+      ...(validSelections.length > 0
+        ? { contentTypes: validSelections }
+        : { contentTypes: undefined }),
+    });
+  }, [availableContentTypes, filters, handleFilterChange]);
+
   const emptyStateConfig = useMemo(() => {
     if (emptyStateVariant === "today") {
       const action = canManageCrawl
         ? {
-            label: t("items.empty.todayActionAdmin", { defaultValue: "Manage crawl tasks" }),
-            href: "/admin/ops/crawl-tasks"
+            label: t("items.empty.todayActionAdmin", {
+              defaultValue: "Manage crawl tasks",
+            }),
+            href: "/admin/ops/crawl-tasks",
           }
         : {
             label: t("items.empty.todayActionSubscriber", {
-              defaultValue: "Manage subscriptions"
+              defaultValue: "Manage subscriptions",
             }),
-            href: "/subscriptions"
+            href: "/subscriptions",
           };
       return {
-        title: t("items.empty.todayTitle", { defaultValue: "No news in this window" }),
+        title: t("items.empty.todayTitle", {
+          defaultValue: "No news in this window",
+        }),
         description: t("items.empty.todayDescription", {
-          defaultValue: "Try adjusting filters or check back later."
+          defaultValue: "Try adjusting filters or check back later.",
         }),
         actionLabel: action.label,
-        actionHref: action.href
+        actionHref: action.href,
       };
     }
 
     if (emptyStateVariant === "search") {
       if (isUnsearched) {
         return {
-          title: t("items.empty.searchIdleTitle", { defaultValue: "Start searching" }),
+          title: t("items.empty.searchIdleTitle", {
+            defaultValue: "Start searching",
+          }),
           description: t("items.empty.searchIdleDescription", {
-            defaultValue: "Enter keywords or adjust filters to search processed items."
-          })
+            defaultValue:
+              "Enter keywords or adjust filters to search processed items.",
+          }),
         };
       }
       return {
         title: t("items.empty.searchTitle", { defaultValue: "No results" }),
         description: t("items.empty.searchDescription", {
-          defaultValue: "Try adjusting your keywords or filters."
-        })
+          defaultValue: "Try adjusting your keywords or filters.",
+        }),
       };
     }
 
     return {
       title: t("items.empty.defaultTitle", { defaultValue: "No items found" }),
       description: t("items.empty.defaultDescription", {
-        defaultValue: "Try adjusting filters or refresh."
-      })
+        defaultValue: "Try adjusting filters or refresh.",
+      }),
     };
   }, [canManageCrawl, emptyStateVariant, isUnsearched, t]);
 
   const handlePaginationChange = useCallback(
     (nextPage: number, nextPageSize?: number) => {
-      const { page: normalizedPage, pageSize: normalizedPageSize } = normalizeItemsPaginationChange({
-        nextPage,
-        nextPageSize,
-        currentPageSize: pageSize,
-        totalCount: resolvedTotalCount
-      });
+      const { page: normalizedPage, pageSize: normalizedPageSize } =
+        normalizeItemsPaginationChange({
+          nextPage,
+          nextPageSize,
+          currentPageSize: pageSize,
+          totalCount: resolvedTotalCount,
+        });
 
       setPage(normalizedPage);
       setPageSize(normalizedPageSize);
       setQueryParams({
         page: normalizedPage,
-        pageSize: normalizedPageSize
+        pageSize: normalizedPageSize,
       });
     },
-    [pageSize, resolvedTotalCount, setQueryParams]
+    [pageSize, resolvedTotalCount, setQueryParams],
   );
 
   const handleTableChange = (pager: TablePaginationConfig) => {
@@ -1620,7 +1903,7 @@ export function ItemsView({
     setPage(1);
     setQueryParams({
       q: nextValue || null,
-      page: 1
+      page: 1,
     });
   };
 
@@ -1630,14 +1913,15 @@ export function ItemsView({
         title: t("items.columns.name", { defaultValue: "Title" }),
         dataIndex: "name",
         key: "name",
-        ellipsis: true
+        ellipsis: true,
       },
       {
         title: t("items.columns.source", { defaultValue: "Source" }),
         dataIndex: "source",
         key: "source",
         width: 120,
-        render: (value: string | undefined) => value ?? t("common.notAvailable")
+        render: (value: string | undefined) =>
+          value ?? t("common.notAvailable"),
       },
       {
         title: t("items.columns.time", { defaultValue: "Time" }),
@@ -1645,7 +1929,9 @@ export function ItemsView({
         key: "publishedAt",
         width: 240,
         render: (_: string | undefined, record) => {
-          const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
+          const ingestedLabel = t("items.time.ingested", {
+            defaultValue: "Ingested",
+          });
           const ingestedAt = record.ingestedAt ?? record.createdAt;
           return (
             <Space direction="vertical" size={0}>
@@ -1665,19 +1951,20 @@ export function ItemsView({
                   hour: "2-digit",
                   minute: "2-digit",
                   timeZone,
-                  timeZoneName: "short"
+                  timeZoneName: "short",
                 })}
               </Typography.Text>
             </Space>
           );
-        }
+        },
       },
       {
         title: withMetricTooltip(
           t("items.columns.quality", { defaultValue: "Quality" }),
           t("items.metrics.quality.tooltip", {
-            defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
-          })
+            defaultValue:
+              "Quality score from LLM cleaning stage (0–1, shown as %).",
+          }),
         ),
         dataIndex: "qualityScore",
         key: "qualityScore",
@@ -1692,11 +1979,14 @@ export function ItemsView({
             <div className="text-xs">
               <div>
                 {t("items.metrics.quality.tooltip", {
-                  defaultValue: "Quality score from LLM cleaning stage (0–1, shown as %)."
+                  defaultValue:
+                    "Quality score from LLM cleaning stage (0–1, shown as %).",
                 })}
               </div>
               {record.llm?.model ? <div>Model: {record.llm.model}</div> : null}
-              {record.llm?.promptVersion ? <div>Prompt: {record.llm.promptVersion}</div> : null}
+              {record.llm?.promptVersion ? (
+                <div>Prompt: {record.llm.promptVersion}</div>
+              ) : null}
             </div>
           );
 
@@ -1705,14 +1995,15 @@ export function ItemsView({
               <Tag color="blue">{formatted}</Tag>
             </Tooltip>
           );
-        }
+        },
       },
       {
         title: withMetricTooltip(
           t("items.columns.duplicate", { defaultValue: "Duplicate" }),
           t("items.metrics.duplicate.tooltip", {
-            defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
-          })
+            defaultValue:
+              "Duplicate similarity from dedup stage (0–1, shown as %).",
+          }),
         ),
         dataIndex: "duplicateSimilarity",
         key: "duplicateSimilarity",
@@ -1730,10 +2021,13 @@ export function ItemsView({
             <div className="text-xs">
               <div>
                 {t("items.metrics.duplicate.tooltip", {
-                  defaultValue: "Duplicate similarity from dedup stage (0–1, shown as %)."
+                  defaultValue:
+                    "Duplicate similarity from dedup stage (0–1, shown as %).",
                 })}
               </div>
-              {record.duplicateOf ? <div>Duplicate of: {record.duplicateOf}</div> : null}
+              {record.duplicateOf ? (
+                <div>Duplicate of: {record.duplicateOf}</div>
+              ) : null}
             </div>
           );
 
@@ -1744,7 +2038,7 @@ export function ItemsView({
               </Tag>
             </Tooltip>
           );
-        }
+        },
       },
       {
         title: t("items.columns.open", { defaultValue: "Open" }),
@@ -1759,10 +2053,10 @@ export function ItemsView({
           >
             {t("items.detail.openItem", { defaultValue: "Open item" })}
           </Button>
-        )
-      }
+        ),
+      },
     ],
-    [locale, router, t, timeZone]
+    [locale, router, t, timeZone],
   );
 
   const renderContent = () => {
@@ -1816,9 +2110,12 @@ export function ItemsView({
             <ChartEmptyState
               className="h-auto"
               variant="delayed"
-              title={t("common.loadingDelayedTitle", { defaultValue: "Still loading…" })}
+              title={t("common.loadingDelayedTitle", {
+                defaultValue: "Still loading…",
+              })}
               description={t("common.loadingDelayed", {
-                defaultValue: "Data is taking longer than usual. Please hold on or refresh."
+                defaultValue:
+                  "Data is taking longer than usual. Please hold on or refresh.",
               })}
             />
           ) : null}
@@ -1827,14 +2124,15 @@ export function ItemsView({
     }
 
     if (error && pageData.length === 0) {
-      const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
+      const emptyState = buildRequestErrorEmptyState({
+        t,
+        error,
+        onRetry: () => refetch(),
+      });
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {rerankUnavailableBanner}
-          <ChartEmptyState
-            className="h-auto"
-            {...emptyState}
-          />
+          <ChartEmptyState className="h-auto" {...emptyState} />
         </Space>
       );
     }
@@ -1845,7 +2143,7 @@ export function ItemsView({
         <div className="flex flex-col items-center gap-1">
           <span>
             {t("items.empty.filteredDescription", {
-              defaultValue: "No items match the current search or filters."
+              defaultValue: "No items match the current search or filters.",
             })}
           </span>
           {search ? (
@@ -1854,7 +2152,9 @@ export function ItemsView({
             </span>
           ) : null}
           {filterSummary.text ? (
-            <span className="font-mono text-[10px] opacity-80">{filterSummary.text}</span>
+            <span className="font-mono text-[10px] opacity-80">
+              {filterSummary.text}
+            </span>
           ) : null}
         </div>
       ) : null;
@@ -1886,39 +2186,41 @@ export function ItemsView({
       </Space>
     ) : null;
 
-	    if (view === "list") {
-	      return (
-	        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-	          {errorBanner}
-	          <div ref={listTableContainerRef} className="w-full">
-	            <Table
-	              rowKey="id"
-	              columns={columns}
-	              dataSource={pageData}
-	              loading={loading}
-	              size="large"
-	              virtual={listTableVirtualEnabled}
-	              scroll={listTableScroll}
-	              pagination={{
-	                current: page,
-	                pageSize,
-	                total: totalCount,
-	                showSizeChanger: true,
-	                pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS
-	              }}
-	              onChange={handleTableChange}
-	            />
-	          </div>
-	        </Space>
-	      );
-	    }
+    if (view === "list") {
+      return (
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          {errorBanner}
+          <div ref={listTableContainerRef} className="w-full">
+            <Table
+              rowKey="id"
+              columns={columns}
+              dataSource={pageData}
+              loading={loading}
+              size="large"
+              virtual={listTableVirtualEnabled}
+              scroll={listTableScroll}
+              pagination={{
+                current: page,
+                pageSize,
+                total: totalCount,
+                showSizeChanger: true,
+                pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
+              }}
+              onChange={handleTableChange}
+            />
+          </div>
+        </Space>
+      );
+    }
 
     if (view === "grid") {
       return (
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
           <List
-            className={layoutState.isReaderPreset ? "items-reader-feed-list" : undefined}
+            className={
+              layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
+            }
             grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 3, xl: 4, xxl: 4 }}
             dataSource={pageData}
             rowKey="id"
@@ -1930,7 +2232,7 @@ export function ItemsView({
               pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
               align: "center",
               onChange: handlePaginationChange,
-              onShowSizeChange: handlePaginationChange
+              onShowSizeChange: handlePaginationChange,
             }}
             renderItem={(item) => (
               <List.Item key={item.id}>
@@ -1951,7 +2253,7 @@ export function ItemsView({
                       duplicateSimilarity: item.duplicateSimilarity,
                       duplicateOf: item.duplicateOf,
                       llm: item.llm,
-                      url: item.url
+                      url: item.url,
                     }}
                   />
                 )}
@@ -1967,7 +2269,9 @@ export function ItemsView({
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {errorBanner}
           <List
-            className={layoutState.isReaderPreset ? "items-reader-feed-list" : undefined}
+            className={
+              layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
+            }
             itemLayout="vertical"
             dataSource={pageData}
             rowKey="id"
@@ -1979,7 +2283,7 @@ export function ItemsView({
               pageSizeOptions: ITEMS_PAGE_SIZE_OPTIONS_STRINGS,
               align: "center",
               onChange: handlePaginationChange,
-              onShowSizeChange: handlePaginationChange
+              onShowSizeChange: handlePaginationChange,
             }}
             renderItem={(item) => (
               <List.Item key={item.id}>
@@ -1996,7 +2300,7 @@ export function ItemsView({
                     duplicateSimilarity: item.duplicateSimilarity,
                     duplicateOf: item.duplicateOf,
                     llm: item.llm,
-                    url: item.url
+                    url: item.url,
                   }}
                 />
               </List.Item>
@@ -2005,7 +2309,7 @@ export function ItemsView({
         </Space>
       );
     }
-    
+
     return null;
   };
 
@@ -2033,17 +2337,38 @@ export function ItemsView({
             {t("items.quickNav.events", { defaultValue: "事件脉络" })}
           </Button>
         </div>
-        
+
         {/* Header Controls */}
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
-           <Col flex="auto">
-             <Space>
-                {layoutState.filterBehavior === "layered" ? (
-                  <EnhancedSearchBox
-                    className="w-full min-w-[280px]"
+          <Col flex="auto">
+            <Space>
+              {layoutState.filterBehavior === "layered" ? (
+                <EnhancedSearchBox
+                  className="w-full min-w-[280px]"
+                  placeholder={t("items.search.placeholder")}
+                  value={searchInput}
+                  onChange={(value) => {
+                    setSearchInput(value);
+                    if (!value) {
+                      setSearch("");
+                      setPage(1);
+                      setQueryParams({ q: null, page: 1 });
+                    }
+                  }}
+                  onSearch={(query) => handleSearch(query)}
+                  navigateOnSearch={false}
+                  onSuggestionStatusChange={onSearchSuggestionStatusChange}
+                />
+              ) : (
+                <Space.Compact>
+                  <Input
+                    id="items-search"
+                    name="itemsSearch"
                     placeholder={t("items.search.placeholder")}
+                    allowClear
                     value={searchInput}
-                    onChange={(value) => {
+                    onChange={(event) => {
+                      const value = event.target.value;
                       setSearchInput(value);
                       if (!value) {
                         setSearch("");
@@ -2051,131 +2376,128 @@ export function ItemsView({
                         setQueryParams({ q: null, page: 1 });
                       }
                     }}
-                    onSearch={(query) => handleSearch(query)}
-                    navigateOnSearch={false}
-                    onSuggestionStatusChange={onSearchSuggestionStatusChange}
+                    onPressEnter={() => handleSearch(searchInput)}
                   />
-                ) : (
-                  <Space.Compact>
-                    <Input
-                      id="items-search"
-                      name="itemsSearch"
-                      placeholder={t("items.search.placeholder")}
-                      allowClear
-                      value={searchInput}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setSearchInput(value);
-                        if (!value) {
-                          setSearch("");
-                          setPage(1);
-                          setQueryParams({ q: null, page: 1 });
-                        }
-                      }}
-                      onPressEnter={() => handleSearch(searchInput)}
-                    />
-                    <Button
-                      icon={<SearchOutlined />}
-                      aria-label={t("items.search.placeholder")}
-                      onClick={() => handleSearch(searchInput)}
-                    />
-                  </Space.Compact>
-                )}
-                {emptyStateVariant === "search" || search.length > 0 ? (
-                  <Segmented
+                  <Button
+                    icon={<SearchOutlined />}
+                    aria-label={t("items.search.placeholder")}
+                    onClick={() => handleSearch(searchInput)}
+                  />
+                </Space.Compact>
+              )}
+              {emptyStateVariant === "search" || search.length > 0 ? (
+                <Segmented
+                  size="small"
+                  value={rankingMode}
+                  options={[
+                    {
+                      label: relevanceRankingUnavailable ? (
+                        <Tooltip
+                          title={t(
+                            "items.rerankUnavailable.relevanceDisabledHint",
+                            {
+                              defaultValue:
+                                "Relevance ranking is temporarily unavailable because reranker is down.",
+                            },
+                          )}
+                        >
+                          <span>
+                            {t("items.ranking.relevanceUnavailable", {
+                              defaultValue: "Relevance (Unavailable)",
+                            })}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        t("items.ranking.relevance", {
+                          defaultValue: "Relevance",
+                        })
+                      ),
+                      value: "RELEVANCE",
+                      disabled: relevanceRankingUnavailable,
+                    },
+                    {
+                      label: t("items.ranking.recency", {
+                        defaultValue: "Recency",
+                      }),
+                      value: "RECENCY",
+                    },
+                  ]}
+                  onChange={(value) => {
+                    if (value === "RELEVANCE" && relevanceRankingUnavailable) {
+                      return;
+                    }
+                    setRankingMode(value as ItemsRankingMode);
+                    setPage(1);
+                  }}
+                />
+              ) : null}
+              {sortMode === "default" ? (
+                <Segmented
+                  size="small"
+                  value={effectiveSortMode}
+                  options={[
+                    {
+                      label: t("items.sort.latest", { defaultValue: "Latest" }),
+                      value: "default",
+                    },
+                    {
+                      label: t("items.sort.published", {
+                        defaultValue: "Published",
+                      }),
+                      value: "publishedDesc",
+                    },
+                    {
+                      label: t("items.sort.personalized", {
+                        defaultValue: "Personalized",
+                      }),
+                      value: "personalized",
+                    },
+                  ]}
+                  onChange={(value) => {
+                    setActiveSortMode(value as ItemsSortMode);
+                    setPage(1);
+                  }}
+                />
+              ) : null}
+              <Tooltip
+                title={t("items.filters.excludeDuplicatesHint", {
+                  defaultValue: "Hide entries that are marked as duplicates.",
+                })}
+              >
+                <Space size={6}>
+                  <Typography.Text type="secondary">
+                    {t("items.filters.excludeDuplicates", {
+                      defaultValue: "Hide duplicates",
+                    })}
+                  </Typography.Text>
+                  <Switch
                     size="small"
-                    value={rankingMode}
-                    options={[
-                      {
-                        label: relevanceRankingUnavailable ? (
-                          <Tooltip
-                            title={t(
-                              "items.rerankUnavailable.relevanceDisabledHint",
-                              {
-                                defaultValue:
-                                  "Relevance ranking is temporarily unavailable because reranker is down.",
-                              },
-                            )}
-                          >
-                            <span>
-                              {t("items.ranking.relevanceUnavailable", {
-                                defaultValue: "Relevance (Unavailable)",
-                              })}
-                            </span>
-                          </Tooltip>
-                        ) : (
-                          t("items.ranking.relevance", { defaultValue: "Relevance" })
-                        ),
-                        value: "RELEVANCE",
-                        disabled: relevanceRankingUnavailable,
-                      },
-                      {
-                        label: t("items.ranking.recency", { defaultValue: "Recency" }),
-                        value: "RECENCY"
-                      }
-                    ]}
-                    onChange={(value) => {
-                      if (value === "RELEVANCE" && relevanceRankingUnavailable) {
-                        return;
-                      }
-                      setRankingMode(value as ItemsRankingMode);
-                      setPage(1);
-                    }}
+                    checked={excludeDuplicatesEnabled}
+                    onChange={handleExcludeDuplicatesChange}
                   />
-                ) : null}
-                {sortMode === "default" ? (
-                  <Segmented
-                    size="small"
-                    value={effectiveSortMode}
-                    options={[
-                      {
-                        label: t("items.sort.latest", { defaultValue: "Latest" }),
-                        value: "default"
-                      },
-                      {
-                        label: t("items.sort.published", { defaultValue: "Published" }),
-                        value: "publishedDesc"
-                      },
-                      {
-                        label: t("items.sort.personalized", { defaultValue: "Personalized" }),
-                        value: "personalized"
-                      }
-                    ]}
-                    onChange={(value) => {
-                      setActiveSortMode(value as ItemsSortMode);
-                      setPage(1);
-                    }}
-                  />
-                ) : null}
-                <Tooltip
-                  title={t("items.filters.excludeDuplicatesHint", {
-                    defaultValue: "Hide entries that are marked as duplicates."
-                  })}
-                >
-                  <Space size={6}>
-                    <Typography.Text type="secondary">
-                      {t("items.filters.excludeDuplicates", { defaultValue: "Hide duplicates" })}
-                    </Typography.Text>
-                    <Switch
-                      size="small"
-                      checked={excludeDuplicatesEnabled}
-                      onChange={handleExcludeDuplicatesChange}
-                    />
-                  </Space>
-                </Tooltip>
-                {!screens.lg && (
-                  <Button onClick={() => setShowFilters(true)}>{filterButtonLabel}</Button>
-                )}
-             </Space>
-           </Col>
-           <Col>
-              <Space>
-                {!lockedView ? <ViewSwitcher view={view} onChange={setView} /> : null}
-                <Button onClick={() => refetch()} loading={loading} disabled={isUnsearched}>
-                  {t("common.refresh")}
+                </Space>
+              </Tooltip>
+              {!screens.lg && (
+                <Button onClick={() => setShowFilters(true)}>
+                  {filterButtonLabel}
                 </Button>
-              </Space>
-           </Col>
+              )}
+            </Space>
+          </Col>
+          <Col>
+            <Space>
+              {!lockedView ? (
+                <ViewSwitcher view={view} onChange={setView} />
+              ) : null}
+              <Button
+                onClick={() => refetch()}
+                loading={loading}
+                disabled={isUnsearched}
+              >
+                {t("common.refresh")}
+              </Button>
+            </Space>
+          </Col>
         </Row>
 
         {!isUnsearched ? (
@@ -2195,7 +2517,8 @@ export function ItemsView({
             {filterSummary.text ? (
               <Tooltip title={filterSummary.text}>
                 <Tag className="text-xs" color="purple">
-                  {t("items.stats.filters", { defaultValue: "Filters" })}: {filterSummary.text}
+                  {t("items.stats.filters", { defaultValue: "Filters" })}:{" "}
+                  {filterSummary.text}
                 </Tag>
               </Tooltip>
             ) : null}
@@ -2211,7 +2534,7 @@ export function ItemsView({
                   from: showingRange.from,
                   to: showingRange.to,
                   total: totalCount,
-                  defaultValue: "Showing {{from}}-{{to}} of {{total}}"
+                  defaultValue: "Showing {{from}}-{{to}} of {{total}}",
                 })}
               </Tag>
             ) : null}
@@ -2220,26 +2543,35 @@ export function ItemsView({
 
         {/* Main Layout */}
         <Row gutter={24} align="top">
-           {screens.lg && (
-             <Col flex="300px">
-               <div className={layoutState.isLayeredFilters ? "items-filter-rail" : undefined}>
-                 <FacetedSearch
-                   behavior={layoutState.filterBehavior}
-                   stickySummary={layoutState.isLayeredFilters}
-                   filters={effectiveFilters}
-                   onFilterChange={handleFilterChange}
-                   regions={availableRegions}
-                   topics={availableTopics}
-                   sentiments={availableSentiments}
-                 />
-               </div>
-             </Col>
-           )}
-           <Col flex="auto" className={layoutState.isReaderPreset ? "items-reader-main" : undefined}>
-              {renderContent()}
-           </Col>
+          {screens.lg && (
+            <Col flex="300px">
+              <div
+                className={
+                  layoutState.isLayeredFilters ? "items-filter-rail" : undefined
+                }
+              >
+                <FacetedSearch
+                  behavior={layoutState.filterBehavior}
+                  stickySummary={layoutState.isLayeredFilters}
+                  filters={effectiveFilters}
+                  onFilterChange={handleFilterChange}
+                  regions={availableRegions}
+                  topics={availableTopics}
+                  sentiments={availableSentiments}
+                  contentTypes={availableContentTypes}
+                />
+              </div>
+            </Col>
+          )}
+          <Col
+            flex="auto"
+            className={
+              layoutState.isReaderPreset ? "items-reader-main" : undefined
+            }
+          >
+            {renderContent()}
+          </Col>
         </Row>
-
       </Space>
 
       <Drawer
@@ -2250,15 +2582,16 @@ export function ItemsView({
         onClose={() => setShowFilters(false)}
         open={showFilters}
       >
-         <FacetedSearch
-           behavior={layoutState.filterBehavior}
-           stickySummary={false}
-           filters={effectiveFilters}
-           onFilterChange={handleFilterChange}
-           regions={availableRegions}
-           topics={availableTopics}
-           sentiments={availableSentiments}
-         />
+        <FacetedSearch
+          behavior={layoutState.filterBehavior}
+          stickySummary={false}
+          filters={effectiveFilters}
+          onFilterChange={handleFilterChange}
+          regions={availableRegions}
+          topics={availableTopics}
+          sentiments={availableSentiments}
+          contentTypes={availableContentTypes}
+        />
       </Drawer>
     </div>
   );

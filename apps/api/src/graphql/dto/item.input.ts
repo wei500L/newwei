@@ -130,6 +130,12 @@ export class ItemsFiltersInput {
   @IsString({ each: true })
   sentiments?: string[];
 
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  contentTypes?: string[];
+
   @Field(() => Boolean, { nullable: true, defaultValue: false })
   @IsOptional()
   @IsBoolean()

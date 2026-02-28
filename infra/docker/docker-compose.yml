@@ -436,8 +436,20 @@ services:
         echo '[web] api not ready after 300s';
         exit 1;
       fi;
+      echo '[web] generating graphql artifacts...';
+      attempt=0;
+      max_attempts=$${WEB_CODEGEN_MAX_ATTEMPTS:-30};
+      until pnpm --filter @modular/web run generate; do
+        attempt=$$((attempt + 1));
+        if [ $$attempt -ge $$max_attempts ]; then
+          echo \"[web] graphql codegen failed after $$max_attempts attempts\";
+          exit 1;
+        fi;
+        echo \"[web] graphql codegen failed, retrying ($$attempt/$$max_attempts) in 2s...\";
+        sleep 2;
+      done;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web run dev:turbo
+      pnpm --filter @modular/web exec next dev --turbo --hostname 0.0.0.0
       "
     env_file:
       - ./.env

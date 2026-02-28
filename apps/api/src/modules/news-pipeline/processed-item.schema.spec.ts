@@ -5,5 +5,9 @@ describe("ProcessedItemModel schema", () => {
     const path = ProcessedItemModel.schema.path("result.cleaned_markdown_source");
     expect(path).toBeTruthy();
   });
-});
 
+  it("includes content_type in result payload", () => {
+    const path = ProcessedItemModel.schema.path("result.content_type");
+    expect(path).toBeTruthy();
+  });
+});

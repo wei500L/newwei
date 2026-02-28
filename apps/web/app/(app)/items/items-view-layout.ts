@@ -45,6 +45,9 @@ export function countItemsFilterDimensions(filters: FilterState): number {
   if (filters.sentiments?.length) {
     count += 1;
   }
+  if (filters.contentTypes?.length) {
+    count += 1;
+  }
   if (filters.excludeDuplicates) {
     count += 1;
   }

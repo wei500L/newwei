@@ -6138,6 +6138,7 @@
         "language": "语言",
         "location": "地点",
         "category": "分类",
+        "contentType": "内容类型",
         "quality": "质量",
         "duplicateSimilarity": "重复相似度",
         "duplicateOf": "重复于",
@@ -6183,6 +6184,7 @@
       "region": "地区",
       "topic": "主题",
       "sentiment": "情绪",
+      "contentType": "内容类型",
       "date": "日期范围",
       "empty": "当前结果没有可用筛选项。",
       "clearAll": "清空",
@@ -6234,6 +6236,12 @@
       "positive": "正面",
       "neutral": "中性",
       "negative": "负面"
+    },
+    "contentType": {
+      "newsFact": "新闻事实",
+      "opinion": "观点评论",
+      "analysis": "分析解读",
+      "mixed": "混合"
     },
     "view": {
       "label": "视图模式",

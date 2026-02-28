@@ -37,6 +37,7 @@ query Items(
           language
           publishedAt
           summary
+          contentType
           sentiment
           topics
           entities
@@ -92,6 +93,10 @@ query ItemFacets($search: String, $filters: ItemsFiltersInput) {
       count
     }
     sentiments {
+      value
+      count
+    }
+    contentTypes {
       value
       count
     }

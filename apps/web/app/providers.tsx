@@ -158,18 +158,12 @@ export function AppProviders({ children }: PropsWithChildren) {
 
   const antdTheme = useMemo(() => {
     const isDark = themeMode === "dark";
-    const getVar = (name: string, fallback: string) => {
-      if (typeof window === "undefined") return fallback;
-      const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return value || fallback;
-    };
-
-    const colorPrimary = getVar("--primary", "#1f3b7b");
-    const colorBgBase = getVar("--background", "#f7f6f2");
-    const colorTextBase = getVar("--foreground", "#1f2933");
-    const colorTextSecondary = getVar("--secondary-foreground", "#475569");
-    const colorFillSecondary = getVar("--secondary", "#f1f5f9");
-    const colorBorder = getVar("--border", "#e2e8f0");
+    const colorPrimary = isDark ? "#6f9bff" : "#1f3b7b";
+    const colorBgBase = isDark ? "#0b1220" : "#f7f6f2";
+    const colorTextBase = isDark ? "#e2e8f0" : "#1f2933";
+    const colorTextSecondary = isDark ? "#cbd5e1" : "#475569";
+    const colorFillSecondary = isDark ? "#1e293b" : "#f1f5f9";
+    const colorBorder = isDark ? "#334155" : "#e2e8f0";
     const colorBgContainer = isDark ? "rgba(15, 23, 42, 0.82)" : "#ffffff";
     const colorBgElevated = isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255, 255, 255, 0.98)";
     const colorBgSpotlight = isDark ? "rgba(2, 6, 23, 0.98)" : "rgba(15, 23, 42, 0.95)";

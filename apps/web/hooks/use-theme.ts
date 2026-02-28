@@ -78,7 +78,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: PropsWithChildren) {
-  const [theme, setThemeState] = useState<ThemeMode>(() => resolveTheme());
+  const [theme, setThemeState] = useState<ThemeMode>("light");
 
   const setTheme = useCallback((nextTheme: ThemeMode) => {
     persistTheme(nextTheme);

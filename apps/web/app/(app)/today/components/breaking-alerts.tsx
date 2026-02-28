@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import dayjs from "@/lib/dayjs";
 
 const BREAKING_ALERTS_QUERY = gql`
-  query BreakingAlerts($windowDays: Int, $status: String) {
+  query BreakingAlerts($windowDays: Int, $status: NewsEventStatus) {
     newsEvents(windowDays: $windowDays, status: $status) {
       id
       title
@@ -24,7 +24,7 @@ const BREAKING_ALERTS_QUERY = gql`
 interface NewsEvent {
   id: string;
   title?: string | null;
-  status?: string;
+  status?: "active" | "archived";
   lastAt?: string;
   itemCount?: number;
   breaking?: boolean;

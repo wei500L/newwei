@@ -12,15 +12,10 @@ interface LanguageSwitcherProps {
 export function LanguageSwitcher({ compact = false }: LanguageSwitcherProps) {
   const { i18n, t } = useTranslation();
   const current = resolveLocale(i18n.language);
-  const options = compact
-    ? [
-        { value: "zh-CN", label: "中" },
-        { value: "en-US", label: "EN" }
-      ]
-    : [
-        { value: "zh-CN", label: t("language.chinese") },
-        { value: "en-US", label: t("language.english") }
-      ];
+  const options = [
+    { value: "zh-CN", label: t("language.chinese", { defaultValue: "简体中文" }) },
+    { value: "en-US", label: t("language.english", { defaultValue: "English" }) }
+  ];
 
   return (
     <Select
@@ -30,8 +25,8 @@ export function LanguageSwitcher({ compact = false }: LanguageSwitcherProps) {
       onChange={(value) => void changeLanguage(value as SupportedLocale)}
       options={options}
       aria-label={t("language.label")}
-      style={{ width: compact ? 76 : 112 }}
-      dropdownMatchSelectWidth={false}
+      style={{ width: compact ? 112 : 118 }}
+      popupMatchSelectWidth={false}
     />
   );
 }

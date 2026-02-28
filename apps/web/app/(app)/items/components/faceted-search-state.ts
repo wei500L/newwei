@@ -2,7 +2,7 @@ import type { FilterState } from './faceted-search';
 
 export type FacetedFilterBehavior = 'legacy' | 'layered';
 
-export const FACETED_SECTION_KEYS = ['region', 'topic', 'sentiment'] as const;
+export const FACETED_SECTION_KEYS = ['region', 'topic', 'sentiment', 'contentType'] as const;
 export type FacetedSectionKey = (typeof FACETED_SECTION_KEYS)[number];
 
 export interface FacetedSelectionCounts {
@@ -10,6 +10,7 @@ export interface FacetedSelectionCounts {
   regions: number;
   topics: number;
   sentiments: number;
+  contentTypes: number;
   dateRange: number;
 }
 
@@ -18,6 +19,7 @@ export function getFacetedSelectionCounts(filters: FilterState): FacetedSelectio
   const regions = Array.isArray(filters.regions) ? filters.regions.length : 0;
   const topics = Array.isArray(filters.topics) ? filters.topics.length : 0;
   const sentiments = Array.isArray(filters.sentiments) ? filters.sentiments.length : 0;
+  const contentTypes = Array.isArray(filters.contentTypes) ? filters.contentTypes.length : 0;
   const dateRange = filters.dateRange?.[0] && filters.dateRange?.[1] ? 1 : 0;
 
   return {
@@ -25,6 +27,7 @@ export function getFacetedSelectionCounts(filters: FilterState): FacetedSelectio
     regions,
     topics,
     sentiments,
+    contentTypes,
     dateRange
   };
 }
@@ -46,6 +49,9 @@ export function resolveFacetedDefaultActiveKeys(input: {
     }
     if (key === 'topic') {
       return Boolean(filters.topics?.length);
+    }
+    if (key === 'contentType') {
+      return Boolean(filters.contentTypes?.length);
     }
     return Boolean(filters.sentiments?.length);
   });

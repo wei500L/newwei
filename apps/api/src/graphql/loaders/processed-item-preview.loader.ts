@@ -65,6 +65,8 @@ const PROCESSED_ITEM_PREVIEW_PROJECTION: Record<string, 1> = {
   "result.lang": 1,
   "result.summary": 1,
   "result.abstract": 1,
+  "result.content_type": 1,
+  "result.contentType": 1,
   "result.sentiment": 1,
   "result.sentiment_label": 1,
   "result.sentimentLabel": 1,

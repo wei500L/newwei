@@ -42,6 +42,10 @@ import {
   NewsDedupeJudgeSchema,
 } from "./news-dedupe-llm";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
+import {
+  inferNewsContentType,
+  normalizeNewsContentType,
+} from "./news-content-type";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   CleanedNewsSchema,
@@ -1555,7 +1559,10 @@ export class NewsPipelineService implements OnModuleDestroy {
           existing.cleanedMarkdownRef,
         );
         return {
-          cleaned: cleanedFromExisting,
+          cleaned: this.withResolvedContentType(cleanedFromExisting, {
+            payload,
+            article,
+          }),
           llm: this.buildLlmMetadataFromProcessed(existing),
           contentHash,
           processedArticleId: existing.id,
@@ -1614,10 +1621,13 @@ export class NewsPipelineService implements OnModuleDestroy {
       timeoutMs: completionTimeoutMs,
     });
 
-    const cleaned = this.withPromptMetadata(
-      this.parseResponse(response, { fallbackCleanedMarkdown: truncated }),
-      promptConfig.version,
-      response.model,
+    const cleaned = this.withResolvedContentType(
+      this.withPromptMetadata(
+        this.parseResponse(response, { fallbackCleanedMarkdown: truncated }),
+        promptConfig.version,
+        response.model,
+      ),
+      { payload, article },
     );
     const llm: LlmCallMetadata = {
       model: response.model,
@@ -2353,6 +2363,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const record = parsed as Record<string, unknown>;
+    const contentTypeAlias =
+      typeof record.contentType === "string"
+        ? record.contentType
+        : typeof record.content_type === "string"
+          ? record.content_type
+          : undefined;
+    if (contentTypeAlias) {
+      record.content_type = contentTypeAlias;
+    }
     const candidate =
       typeof record.cleaned_markdown === "string"
         ? record.cleaned_markdown
@@ -2382,6 +2401,30 @@ export class NewsPipelineService implements OnModuleDestroy {
       ...cleaned,
       llm_model: cleaned.llm_model ?? model ?? null,
       llm_prompt_version: cleaned.llm_prompt_version ?? promptVersion ?? null,
+    };
+  }
+
+  private withResolvedContentType(
+    cleaned: CleanedNews,
+    context: {
+      payload: NormalizedNewsPayload;
+      article?: CrawledArticle;
+    },
+  ): CleanedNews {
+    const normalized = normalizeNewsContentType(cleaned.content_type);
+    const resolved =
+      normalized ??
+      inferNewsContentType({
+        title: cleaned.title,
+        summary: cleaned.summary,
+        source: cleaned.source ?? context.payload.sourceName,
+        url: context.article?.sourceUrl ?? context.payload.url,
+        topics: cleaned.topics,
+        tags: context.payload.tags,
+      });
+    return {
+      ...cleaned,
+      content_type: resolved,
     };
   }
 

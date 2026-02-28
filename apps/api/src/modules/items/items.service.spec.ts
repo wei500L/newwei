@@ -600,6 +600,56 @@ describe("ItemsService filters", () => {
     );
   });
 
+  it("applies contentTypes in processed filter aggregation", async () => {
+    mockProcessedItemFind.mockReturnValue({
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([])
+    });
+
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0)
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([])
+      }
+    };
+
+    mockProcessedItemAggregate.mockResolvedValue([]);
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    await (service as any).resolveFilterIds("org-1", {
+      contentTypes: ["news_fact", "analysis"]
+    });
+
+    expect(mockProcessedItemAggregate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            orgId: "org-1",
+            $and: expect.arrayContaining([
+              {
+                $or: [
+                  { "result.content_type": { $in: expect.any(Array) } },
+                  { "result.contentType": { $in: expect.any(Array) } }
+                ]
+              }
+            ])
+          })
+        })
+      ])
+    );
+  });
+
   it("falls back to ProcessedArticle links when ProcessedItem.sourceId is missing", async () => {
     mockProcessedItemAggregate.mockResolvedValue([]);
     mockProcessedItemFind.mockReturnValue({

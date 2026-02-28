@@ -130,7 +130,7 @@ export function OrganizationSwitcher({
 
   const inputWidthClassName =
     mode === "compact"
-      ? "w-[120px] xl:w-[150px] 2xl:w-[170px]"
+      ? "w-[104px] xl:w-[124px] 2xl:w-[140px]"
       : "w-[150px] xl:w-[180px] 2xl:w-[220px]";
   const showSwitchLabel = mode === "full";
 

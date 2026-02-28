@@ -6135,6 +6135,7 @@
         "language": "Language",
         "location": "Location",
         "category": "Category",
+        "contentType": "Content type",
         "quality": "Quality",
         "duplicateSimilarity": "Duplicate similarity",
         "duplicateOf": "Duplicate of",
@@ -6180,6 +6181,7 @@
       "region": "Region",
       "topic": "Topic",
       "sentiment": "Sentiment",
+      "contentType": "Content type",
       "date": "Date Range",
       "empty": "No filter options for current results.",
       "clearAll": "Clear all",
@@ -6231,6 +6233,12 @@
       "positive": "Positive",
       "neutral": "Neutral",
       "negative": "Negative"
+    },
+    "contentType": {
+      "newsFact": "News fact",
+      "opinion": "Opinion",
+      "analysis": "Analysis",
+      "mixed": "Mixed"
     },
     "view": {
       "label": "View mode",

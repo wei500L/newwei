@@ -28,6 +28,7 @@ const ProcessedItemResultSchema = new Schema(
     language: { type: String, default: null },
     location: { type: String, default: null },
     category: { type: String, default: null },
+    content_type: { type: String, default: null },
     category_path: { type: String, default: null },
     category_labels: { type: [String], default: [] },
     category_confidence: { type: Number, min: 0, max: 1, default: null },
@@ -107,6 +108,12 @@ ProcessedItemSchema.index({ orgId: 1, status: 1, sortAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, duplicateOf: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, summaryEmbeddingModel: 1, duplicateOf: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, sourceId: 1, createdAt: -1 });
+ProcessedItemSchema.index({
+  orgId: 1,
+  status: 1,
+  "result.content_type": 1,
+  createdAt: -1,
+});
 ProcessedItemSchema.index({
   orgId: 1,
   status: 1,

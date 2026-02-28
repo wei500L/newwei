@@ -1208,6 +1208,7 @@ export type ItemFacetOption = {
 
 export type ItemFacets = {
   __typename?: 'ItemFacets';
+  contentTypes: Array<ItemFacetOption>;
   regions: Array<ItemFacetOption>;
   sentiments: Array<ItemFacetOption>;
   topics: Array<ItemFacetOption>;
@@ -1251,6 +1252,7 @@ export type ItemsDateRangeInput = {
 };
 
 export type ItemsFiltersInput = {
+  contentTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   dateRange?: InputMaybe<ItemsDateRangeInput>;
   excludeDuplicates?: InputMaybe<Scalars['Boolean']['input']>;
   regions?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -2285,6 +2287,7 @@ export type ProcessedItemModelGraph = {
 
 export type ProcessedItemPreviewModelGraph = {
   __typename?: 'ProcessedItemPreviewModelGraph';
+  contentType?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   duplicateOf?: Maybe<Scalars['String']['output']>;
   duplicateSimilarity?: Maybe<Scalars['Float']['output']>;
@@ -3428,7 +3431,7 @@ export type ItemsQueryVariables = Exact<{
 }>;
 
 
-export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, relevanceScore?: number | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
+export type ItemsQuery = { __typename?: 'Query', items: { __typename?: 'ItemConnection', totalCount: number, edges: Array<{ __typename?: 'ItemEdge', cursor: string, node: { __typename?: 'ItemModel', id: string, title: string, status: string, createdAt: any, ingestedAt: any, publishedAt?: string | null, relevanceScore?: number | null, processedPreview?: { __typename?: 'ProcessedItemPreviewModelGraph', id: string, itemMetaId: string, status: string, tags: Array<string>, duplicateOf?: string | null, duplicateSimilarity?: number | null, source?: string | null, title?: string | null, language?: string | null, publishedAt?: string | null, summary?: string | null, contentType?: string | null, sentiment?: string | null, topics: Array<string>, entities: Array<string>, qualityScore?: number | null, location?: string | null, createdAt: any, eventId?: string | null, llm?: { __typename?: 'ProcessedItemLlmModel', model?: string | null, promptVersion?: string | null, promptTokens?: number | null, completionTokens?: number | null, totalTokens?: number | null, costUsd?: number | null, latencyMs?: number | null } | null } | null, rawPreview?: { __typename?: 'RawItemPreviewModelGraph', url?: string | null, sourceName?: string | null, thumbnail?: string | null, summary?: string | null, sentiment?: string | null, region?: string | null, location?: string | null, ticker?: string | null, price?: number | null, changePercent?: number | null, history?: Array<{ __typename?: 'SeriesPointModel', timestamp: string, value: number }> | null } | null } }>, pageInfo: { __typename?: 'PageInfo', hasNextPage: boolean, endCursor?: string | null } } };
 
 export type ItemFacetsQueryVariables = Exact<{
   search?: InputMaybe<Scalars['String']['input']>;
@@ -3436,7 +3439,7 @@ export type ItemFacetsQueryVariables = Exact<{
 }>;
 
 
-export type ItemFacetsQuery = { __typename?: 'Query', itemFacets: { __typename?: 'ItemFacets', regions: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, topics: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, sentiments: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }> } };
+export type ItemFacetsQuery = { __typename?: 'Query', itemFacets: { __typename?: 'ItemFacets', regions: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, topics: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, sentiments: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }>, contentTypes: Array<{ __typename?: 'ItemFacetOption', value: string, count: number }> } };
 
 export type ItemQueryVariables = Exact<{
   id: Scalars['String']['input'];
@@ -5395,6 +5398,7 @@ export const ItemsDocument = gql`
           language
           publishedAt
           summary
+          contentType
           sentiment
           topics
           entities
@@ -5490,6 +5494,10 @@ export const ItemFacetsDocument = gql`
       count
     }
     sentiments {
+      value
+      count
+    }
+    contentTypes {
       value
       count
     }
