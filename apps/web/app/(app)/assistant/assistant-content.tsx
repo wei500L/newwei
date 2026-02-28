@@ -251,22 +251,22 @@ const ASSISTANT_ECONOMIC_SERIES_SUGGESTIONS = gql`
 const getStatusChipClass = (status: AssistantRunStatus): string => {
   switch (status) {
     case 'pending':
-      return 'bg-slate-100 text-slate-600 ring-slate-300/60';
+      return 'bg-slate-100 text-slate-600 ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60';
     case 'running':
-      return 'bg-sky-100 text-sky-700 ring-sky-300/60';
+      return 'bg-sky-100 text-sky-700 ring-sky-300/60 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/40';
     case 'completed':
-      return 'bg-emerald-100 text-emerald-700 ring-emerald-300/60';
+      return 'bg-emerald-100 text-emerald-700 ring-emerald-300/60 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/40';
     case 'failed':
-      return 'bg-rose-100 text-rose-700 ring-rose-300/60';
+      return 'bg-rose-100 text-rose-700 ring-rose-300/60 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-400/40';
     default:
-      return 'bg-slate-100 text-slate-600 ring-slate-300/60';
+      return 'bg-slate-100 text-slate-600 ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60';
   }
 };
 
 const getStatusRailClass = (status: AssistantRunStatus): string => {
   switch (status) {
     case 'pending':
-      return 'bg-slate-400/70';
+      return 'bg-slate-400/70 dark:bg-slate-500/70';
     case 'running':
       return 'bg-sky-500';
     case 'completed':
@@ -825,10 +825,10 @@ export function AssistantContent() {
               'Active model profile has Assistant web search turned off. Enable it in LLM Gateway settings.',
           });
   const knowledgeSourceCapabilityClass = webSearchCapabilityChecking
-    ? 'text-slate-500'
+    ? 'text-slate-500 dark:text-slate-400'
     : webSearchSupportedByModel
-      ? 'text-emerald-700'
-      : 'text-amber-700';
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : 'text-amber-700 dark:text-amber-300';
 
   useEffect(() => {
     if (knowledgeSource !== 'web_search') {
@@ -1033,8 +1033,8 @@ export function AssistantContent() {
                 aria-pressed={selected}
                 className={`group relative mb-2 w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all last:mb-0 ${
                   selected
-                    ? 'border-sky-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.12)]'
-                    : 'border-transparent bg-white/55 hover:border-slate-200/80 hover:bg-white/80'
+                    ? 'border-sky-200/80 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.12)] dark:border-sky-400/50 dark:bg-slate-900/85 dark:shadow-[0_10px_30px_rgba(2,6,23,0.55)]'
+                    : 'border-transparent bg-white/55 hover:border-slate-200/80 hover:bg-white/80 dark:bg-slate-900/45 dark:hover:border-slate-600/70 dark:hover:bg-slate-900/72'
                 }`}
                 onClick={() => {
                   setActiveRunId(run.id);
@@ -1057,7 +1057,7 @@ export function AssistantContent() {
                   icon={<DeleteOutlined />}
                   loading={deletingRunId === run.id && deleteRunSaving}
                   disabled={!canRunAssistant}
-                  className="absolute right-2 top-2 text-slate-400 transition-colors hover:text-rose-600"
+                  className="absolute right-2 top-2 text-slate-400 transition-colors hover:text-rose-600 dark:text-slate-500 dark:hover:text-rose-400"
                   onClick={(event) => {
                     event.stopPropagation();
                     void confirmDeleteRun(run);
@@ -1074,20 +1074,20 @@ export function AssistantContent() {
                     >
                       {getStatusLabel(run.status)}
                     </span>
-                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300/60">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
                       {getTypeLabel(run.type)}
                     </span>
                     {blocked ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60">
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
                         {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
                       </span>
                     ) : null}
                   </Space>
 
-                  <div className="mb-1 truncate text-sm font-semibold text-slate-900">{userPrompt}</div>
-                  <div className="mb-2 line-clamp-2 text-sm text-slate-600">{preview}</div>
+                  <div className="mb-1 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{userPrompt}</div>
+                  <div className="mb-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{preview}</div>
 
-                  <span className="text-xs font-medium text-slate-400">
+                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
                     {formatDateTime(new Date(run.createdAt), locale, {
                       year: 'numeric',
                       month: 'short',
@@ -1117,19 +1117,19 @@ export function AssistantContent() {
       ) : null}
 
       <section className={styles.pageFrame}>
-        <header className="relative z-[1] border-b border-white/70 px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
+        <header className="relative z-[1] border-b border-white/70 px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5 dark:border-white/10">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-2">
               <p className={styles.heroKicker}>{designKicker}</p>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">{title}</h1>
-              <p className="max-w-3xl text-sm font-medium text-slate-600 sm:text-[15px]">{subtitle}</p>
+              <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">{title}</h1>
+              <p className="max-w-3xl text-sm font-medium text-slate-600 sm:text-[15px] dark:text-slate-300">{subtitle}</p>
             </div>
             <Space size={8} wrap>
               <Button
                 icon={<PlusOutlined />}
                 onClick={handleNewConversation}
                 disabled={!activeRun || querySaving}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md"
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:bg-slate-900/82 dark:hover:text-sky-300"
               >
                 {t('assistant.chat.newConversation', { defaultValue: 'New' })}
               </Button>
@@ -1137,13 +1137,13 @@ export function AssistantContent() {
                 icon={<ReloadOutlined />}
                 onClick={() => refetch()}
                 loading={loading}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md"
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
               >
                 {t('common.refresh', { defaultValue: 'Refresh' })}
               </Button>
               <Button
                 icon={<HistoryOutlined />}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden"
+                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
                 onClick={() => setHistoryDrawerOpen(true)}
               >
                 {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
@@ -1162,17 +1162,17 @@ export function AssistantContent() {
               historyCollapsed ? styles.historyPanelCollapsed : styles.historyPanelExpanded
             } hidden min-h-[40rem] flex-col xl:flex xl:h-[min(80dvh,68rem)]`}
           >
-            <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4">
+            <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                   {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
                 </p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {t('assistant.chat.recentConversations', { defaultValue: 'Recent conversations' })}
                 </p>
               </div>
               <Space size={8}>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
                   {runs.length}
                 </span>
                 <Button
@@ -1191,7 +1191,7 @@ export function AssistantContent() {
 
           <section className={`${styles.panel} overflow-hidden`}>
             <div className="flex min-h-[40rem] flex-col lg:h-[min(80dvh,68rem)]">
-              <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6">
+              <div className="border-b border-slate-200/70 px-4 py-4 sm:px-6 dark:border-slate-700/70">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <Space size={8} wrap>
                     <Button
@@ -1207,11 +1207,11 @@ export function AssistantContent() {
                           : t('assistant.chat.hideHistory', { defaultValue: 'Hide history' })
                       }
                     />
-                    <span className="text-base font-bold text-slate-900">
+                    <span className="text-base font-bold text-slate-900 dark:text-slate-100">
                       {t('assistant.chat.conversationTitle', { defaultValue: 'Conversation' })}
                     </span>
                     {activeRun ? (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300/60">
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300/60 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/60">
                         {getTypeLabel(activeRun.type)}
                       </span>
                     ) : null}
@@ -1223,7 +1223,7 @@ export function AssistantContent() {
                       </span>
                     ) : null}
                     {activeBlocked ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60">
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-300/60 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/40">
                         {t('assistant.blocked.tag', { defaultValue: 'Blocked' })}
                       </span>
                     ) : null}
@@ -1231,13 +1231,13 @@ export function AssistantContent() {
                   <Space size={8} wrap>
                     <Button
                       icon={<HistoryOutlined />}
-                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden"
+                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/88"
                       onClick={() => setHistoryDrawerOpen(true)}
                     >
                       {t('assistant.chat.historyTitle', { defaultValue: 'History' })} ({runs.length})
                     </Button>
                     {activeRun ? (
-                      <span className="text-xs font-semibold text-slate-500">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                         {formatDateTime(new Date(activeRun.createdAt), locale, {
                           year: 'numeric',
                           month: 'short',
@@ -1259,9 +1259,9 @@ export function AssistantContent() {
                 {!activeRun ? (
                   <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                     <div className={styles.emptyOrb}>
-                      <RobotOutlined className="text-3xl text-slate-400" />
+                      <RobotOutlined className="text-3xl text-slate-400 dark:text-slate-300" />
                     </div>
-                    <p className="mt-4 max-w-sm text-sm font-semibold text-slate-500">
+                    <p className="mt-4 max-w-sm text-sm font-semibold text-slate-500 dark:text-slate-300">
                       {t('assistant.chat.emptyConversation', {
                         defaultValue: 'Start by sending a message. Your latest run will appear here.',
                       })}
@@ -1280,10 +1280,10 @@ export function AssistantContent() {
                     <div className={`${styles.messageEnter} mr-auto min-w-0 max-w-[98%] sm:max-w-[96%] xl:max-w-[93%]`}>
                       <div className={styles.assistantBubble}>
                         <Space size={8} align="center" style={{ marginBottom: 14 }}>
-                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs text-white dark:bg-slate-700">
                             <RobotOutlined />
                           </div>
-                          <span className="text-[15px] font-bold text-slate-900">
+                          <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100">
                             {t('assistant.chat.assistantLabel', { defaultValue: 'Assistant' })}
                           </span>
                           {activeIsStreaming ? <Spin size="small" className="text-sky-600" /> : null}
@@ -1299,17 +1299,17 @@ export function AssistantContent() {
 
                         {hasActiveModelInfo ? (
                           <div className={styles.modelInfoCard}>
-                            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
                               {t('assistant.chat.modelInfoTitle', { defaultValue: 'Model info' })}
                             </span>
                             <Space wrap style={{ marginTop: 10 }}>
                               {activeModelInfo?.llmModel ? (
-                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70">
+                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/70 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/40">
                                   {t('assistant.chat.modelLabel', { defaultValue: 'Model' })}: {activeModelInfo.llmModel}
                                 </span>
                               ) : null}
                               {activeModelInfo?.forecastModel ? (
-                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
+                                <span className="inline-flex items-center rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-400/40">
                                   {t('assistant.chat.forecastModelLabel', { defaultValue: 'Forecast model' })}:{' '}
                                   {activeModelInfo.forecastModel}
                                 </span>
@@ -1318,8 +1318,8 @@ export function AssistantContent() {
                                 <span
                                   className={`inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ${
                                     activeModelInfo?.modelServiceUsed
-                                      ? 'bg-white text-emerald-700 ring-emerald-200/70'
-                                      : 'bg-white text-slate-600 ring-slate-200/70'
+                                      ? 'bg-white text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/40'
+                                      : 'bg-white text-slate-600 ring-slate-200/70 dark:bg-slate-700/40 dark:text-slate-300 dark:ring-slate-500/60'
                                   }`}
                                 >
                                   {t('assistant.chat.modelServiceLabel', { defaultValue: 'Model service' })}:{' '}
@@ -1351,15 +1351,15 @@ export function AssistantContent() {
                             message={t('assistant.blocked.title', { defaultValue: 'Blocked by safety checks' })}
                             description={
                               <Space direction="vertical" size={4}>
-                                <span className="font-semibold text-slate-900">{activeBlocked.message}</span>
+                                <span className="font-semibold text-slate-900 dark:text-slate-100">{activeBlocked.message}</span>
                                 {activeBlocked.code ? (
-                                  <span className="text-slate-600">
+                                  <span className="text-slate-600 dark:text-slate-300">
                                     {t('assistant.blocked.details.code', { defaultValue: 'Reason code' })}:{' '}
                                     {activeBlocked.code}
                                   </span>
                                 ) : null}
                                 {activeBlocked.upstreamStatus !== null ? (
-                                  <span className="text-slate-600">
+                                  <span className="text-slate-600 dark:text-slate-300">
                                     {t('assistant.blocked.details.upstreamStatus', {
                                       defaultValue: 'Upstream status',
                                     })}
@@ -1368,7 +1368,7 @@ export function AssistantContent() {
                                 ) : null}
                                 {activeBlocked.appliedGuardrails.length > 0 ? (
                                   <Space wrap>
-                                    <span className="text-slate-600">
+                                    <span className="text-slate-600 dark:text-slate-300">
                                       {t('assistant.blocked.details.guardrails', {
                                         defaultValue: 'Applied guardrails',
                                       })}
@@ -1377,7 +1377,7 @@ export function AssistantContent() {
                                     {activeBlocked.appliedGuardrails.map((name) => (
                                       <span
                                         key={name}
-                                        className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-300/50"
+                                        className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-300/50 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/40"
                                       >
                                         {name}
                                       </span>
@@ -1390,24 +1390,24 @@ export function AssistantContent() {
                         ) : null}
 
                         {canViewAssistantJson ? (
-                          <details className="mt-4 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-1">
-                            <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-700 hover:text-slate-900">
+                          <details className={`${styles.adminDetailsCard} mt-4 p-1`}>
+                            <summary className={`${styles.adminDetailsSummary} cursor-pointer px-4 py-3 text-sm font-bold`}>
                               {t('assistant.chat.adminDetailsTitle', { defaultValue: 'Admin debug details (JSON)' })}
                             </summary>
                             <div className="space-y-4 px-4 pb-4 pt-2">
                               <div>
-                                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                <span className={`${styles.adminJsonLabel} text-xs font-bold uppercase tracking-widest`}>
                                   {t('assistant.chat.inputJsonTitle', { defaultValue: 'Input JSON' })}
                                 </span>
-                                <pre className="mt-2 max-h-48 overflow-auto rounded-xl border border-slate-200 bg-white p-4 text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                <pre className={`${styles.adminJsonPreview} mt-2 max-h-48 overflow-auto rounded-xl p-4 text-xs font-mono whitespace-pre-wrap`}>
                                   {JSON.stringify(activeRun.input ?? null, null, 2)}
                                 </pre>
                               </div>
                               <div>
-                                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                <span className={`${styles.adminJsonLabel} text-xs font-bold uppercase tracking-widest`}>
                                   {t('assistant.chat.outputJsonTitle', { defaultValue: 'Output JSON' })}
                                 </span>
-                                <pre className="mt-2 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-4 text-xs font-mono text-slate-600 whitespace-pre-wrap">
+                                <pre className={`${styles.adminJsonPreview} mt-2 max-h-64 overflow-auto rounded-xl p-4 text-xs font-mono whitespace-pre-wrap`}>
                                   {JSON.stringify(activeRun.output ?? null, null, 2)}
                                 </pre>
                               </div>
@@ -1420,7 +1420,7 @@ export function AssistantContent() {
                 )}
               </div>
 
-              <div className="border-t border-slate-200/70 px-4 py-3 sm:px-6 sm:py-3.5">
+              <div className="border-t border-slate-200/70 px-4 py-3 sm:px-6 sm:py-3.5 dark:border-slate-700/70">
                 {!canRunAssistant ? (
                   <Alert
                     style={{ marginBottom: 16, borderRadius: 14 }}
@@ -1435,7 +1435,7 @@ export function AssistantContent() {
 
                 <div
                   ref={composerRef}
-                  className={`${styles.composerSurface} ${
+                  className={`${styles.composerSurface} ${styles.composerInputTheme} ${
                     composerExpanded ? styles.composerExpanded : styles.composerCollapsed
                   }`}
                   onClick={() => {
@@ -1462,7 +1462,7 @@ export function AssistantContent() {
                       defaultValue: 'Assistant message input',
                     })}
                     disabled={!canRunAssistant || querySaving}
-                    className={`rounded-2xl border-slate-300/70 bg-white/90 px-5 text-[15px] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-500/10 ${
+                    className={`rounded-2xl px-5 text-[15px] transition-all ${
                       composerExpanded ? 'py-4' : 'py-2.5'
                     }`}
                     onPressEnter={(event) => {
@@ -1482,7 +1482,7 @@ export function AssistantContent() {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
                         <Space size={8} wrap>
-                          <span className="text-xs font-semibold text-slate-500">
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                             {t('assistant.chat.knowledgeSource.label', { defaultValue: 'Knowledge source' })}
                           </span>
                           <Segmented
@@ -1513,7 +1513,7 @@ export function AssistantContent() {
                         </Space>
                         <Button
                           icon={<BarChartOutlined />}
-                          className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
+                          className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300`}
                           onClick={() => setReportModalOpen(true)}
                           disabled={!canRunAssistant}
                         >
@@ -1521,13 +1521,13 @@ export function AssistantContent() {
                         </Button>
                         <Button
                           icon={<RobotOutlined />}
-                          className="rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md"
+                          className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-indigo-400/50 dark:hover:text-indigo-300`}
                           onClick={() => setForecastModalOpen(true)}
                           disabled={!canRunAssistant}
                         >
                           {t('assistant.chat.quickForecast', { defaultValue: 'Quick Forecast' })}
                         </Button>
-                        <span className="text-xs font-semibold text-slate-500">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                           {t('assistant.chat.enterHint', { defaultValue: 'Enter to send, Shift+Enter for newline.' })}
                         </span>
                       </div>
@@ -1543,12 +1543,12 @@ export function AssistantContent() {
                       </Button>
                     </div>
                     {knowledgeSourceBlocked ? (
-                      <span className="mt-1 text-xs font-semibold text-amber-700">{knowledgeSourceUnsupportedMessage}</span>
+                      <span className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">{knowledgeSourceUnsupportedMessage}</span>
                     ) : null}
                     <span className={`mt-1 text-xs ${knowledgeSourceCapabilityClass}`}>
                       {knowledgeSourceCapabilityMessage}
                     </span>
-                    <span className="mt-1 text-xs text-slate-500">{knowledgeSourceHint}</span>
+                    <span className="mt-1 text-xs text-slate-500 dark:text-slate-400">{knowledgeSourceHint}</span>
                   </div>
                 </div>
               </div>
@@ -1559,7 +1559,7 @@ export function AssistantContent() {
 
       <Drawer
         title={
-          <span className="text-base font-semibold text-slate-900">
+          <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {t('assistant.chat.historyTitle', { defaultValue: 'History' })}
           </span>
         }
@@ -1579,14 +1579,14 @@ export function AssistantContent() {
               icon={<PlusOutlined />}
               onClick={handleNewConversation}
               disabled={!activeRun || querySaving}
-              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md"
+              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
             >
               {t('assistant.chat.newConversation', { defaultValue: 'New' })}
             </Button>
             <Button
               onClick={() => refetch()}
               loading={loading}
-              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:shadow-md"
+              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
             >
               {t('common.refresh', { defaultValue: 'Refresh' })}
             </Button>

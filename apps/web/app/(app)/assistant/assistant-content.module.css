@@ -221,6 +221,30 @@
   max-width: 100%;
 }
 
+.assistantMarkdown :global(pre) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(148, 163, 184, 0.22),
+    0 10px 20px rgba(15, 23, 42, 0.16);
+}
+
+.assistantMarkdown :global(pre code) {
+  letter-spacing: 0.01em;
+}
+
+.assistantMarkdown :global(table) {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.assistantMarkdown :global(th),
+.assistantMarkdown :global(td) {
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
 .assistantMarkdown :global(.markdown-mermaid svg) {
   display: block;
   height: auto;
@@ -243,6 +267,40 @@
   padding: 14px 16px;
 }
 
+.adminDetailsCard {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background:
+    radial-gradient(420px 120px at 8% 0%, rgba(14, 116, 217, 0.09), transparent 58%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.86), rgba(241, 245, 249, 0.84));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.adminDetailsSummary {
+  color: #334155;
+  transition: color 150ms ease;
+}
+
+.adminDetailsSummary:hover {
+  color: #0f172a;
+}
+
+.adminJsonLabel {
+  color: #64748b;
+}
+
+.adminJsonPreview {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+  color: #334155;
+  line-height: 1.55;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
 .composerSurface {
   border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, 0.3);
@@ -252,6 +310,44 @@
     0 14px 28px rgba(15, 23, 42, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   transition: padding 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.composerInputTheme :global(.ant-input-textarea),
+.composerInputTheme :global(.ant-input-textarea .ant-input) {
+  border-radius: 16px;
+}
+
+.composerInputTheme :global(.ant-input-textarea .ant-input),
+.composerInputTheme :global(textarea.ant-input) {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.composerInputTheme :global(.ant-input-textarea .ant-input:hover),
+.composerInputTheme :global(textarea.ant-input:hover) {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.composerInputTheme :global(.ant-input-textarea .ant-input:focus),
+.composerInputTheme :global(.ant-input-textarea .ant-input-focused),
+.composerInputTheme :global(textarea.ant-input:focus),
+.composerInputTheme :global(textarea.ant-input-focused) {
+  border-color: rgba(14, 116, 217, 0.75);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(14, 116, 217, 0.12);
+}
+
+.composerInputTheme :global(.ant-input-textarea .ant-input::placeholder),
+.composerInputTheme :global(textarea.ant-input::placeholder) {
+  color: rgba(100, 116, 139, 0.92);
+}
+
+.composerActionButton {
+  border-color: rgba(148, 163, 184, 0.42);
+  background: rgba(255, 255, 255, 0.9);
+  color: #334155;
 }
 
 .composerExpanded {
@@ -279,6 +375,191 @@
   max-height: 0;
   opacity: 0;
   pointer-events: none;
+}
+
+:global(.dark) .pageFrame {
+  border-color: rgba(71, 85, 105, 0.56);
+  background:
+    radial-gradient(1200px 360px at -5% -10%, rgba(59, 130, 246, 0.24), transparent 60%),
+    radial-gradient(980px 320px at 98% 2%, rgba(100, 116, 139, 0.24), transparent 62%),
+    linear-gradient(180deg, rgba(8, 14, 24, 0.94) 0%, rgba(10, 18, 31, 0.97) 58%, rgba(10, 20, 36, 0.98) 100%);
+  box-shadow:
+    0 28px 72px rgba(2, 6, 23, 0.55),
+    inset 0 1px 0 rgba(148, 163, 184, 0.16);
+}
+
+:global(.dark) .pageFrame::before {
+  background: rgba(96, 165, 250, 0.22);
+}
+
+:global(.dark) .pageFrame::after {
+  background: rgba(100, 116, 139, 0.22);
+}
+
+:global(.dark) .heroKicker {
+  color: rgba(148, 163, 184, 0.92);
+}
+
+:global(.dark) .panel {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.74));
+  border-color: rgba(71, 85, 105, 0.52);
+  box-shadow:
+    0 18px 40px rgba(2, 6, 23, 0.5),
+    inset 0 1px 0 rgba(148, 163, 184, 0.15);
+}
+
+:global(.dark) .historyDrawerContent {
+  background: linear-gradient(180deg, rgba(9, 13, 22, 0.97), rgba(6, 10, 18, 0.96));
+}
+
+:global(.dark) .chatStage {
+  background:
+    radial-gradient(800px 180px at 8% 8%, rgba(59, 130, 246, 0.18), transparent 64%),
+    radial-gradient(600px 150px at 92% 14%, rgba(100, 116, 139, 0.2), transparent 62%),
+    linear-gradient(180deg, rgba(12, 19, 34, 0.86), rgba(8, 15, 28, 0.92));
+}
+
+:global(.dark) .emptyOrb {
+  border-color: rgba(100, 116, 139, 0.5);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(148, 163, 184, 0.26),
+    0 12px 30px rgba(2, 6, 23, 0.46);
+}
+
+:global(.dark) .userBubble {
+  border-color: rgba(96, 165, 250, 0.36);
+  background: linear-gradient(145deg, #144684 0%, #165ca7 48%, #1d72c7 100%);
+  box-shadow: 0 16px 30px rgba(30, 64, 175, 0.36);
+}
+
+:global(.dark) .assistantBubble {
+  border-color: rgba(100, 116, 139, 0.56);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.95));
+  color: #dbe6f3;
+  box-shadow:
+    0 14px 35px rgba(2, 6, 23, 0.5),
+    inset 0 1px 0 rgba(148, 163, 184, 0.2);
+}
+
+:global(.dark) .assistantMarkdown {
+  color: #dbe6f3;
+}
+
+:global(.dark) .assistantMarkdown :global(strong) {
+  color: #f8fafc;
+}
+
+:global(.dark) .assistantMarkdown :global(li::marker) {
+  color: rgba(148, 163, 184, 0.92);
+}
+
+:global(.dark) .assistantMarkdown :global(pre) {
+  border-color: rgba(71, 85, 105, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(148, 163, 184, 0.18),
+    0 12px 24px rgba(2, 6, 23, 0.46);
+}
+
+:global(.dark) .assistantMarkdown :global(table) {
+  border-color: rgba(71, 85, 105, 0.78);
+}
+
+:global(.dark) .assistantMarkdown :global(th),
+:global(.dark) .assistantMarkdown :global(td) {
+  border-color: rgba(71, 85, 105, 0.56);
+}
+
+:global(.dark) .modelInfoCard {
+  border-color: rgba(71, 85, 105, 0.58);
+  background:
+    radial-gradient(360px 120px at 12% 8%, rgba(59, 130, 246, 0.16), transparent 62%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.84));
+}
+
+:global(.dark) .adminDetailsCard {
+  border-color: rgba(71, 85, 105, 0.72);
+  background:
+    radial-gradient(420px 120px at 8% 0%, rgba(59, 130, 246, 0.2), transparent 58%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.82));
+  box-shadow:
+    inset 0 1px 0 rgba(148, 163, 184, 0.18),
+    0 12px 24px rgba(2, 6, 23, 0.48);
+}
+
+:global(.dark) .adminDetailsSummary {
+  color: #cbd5e1;
+}
+
+:global(.dark) .adminDetailsSummary:hover {
+  color: #f8fafc;
+}
+
+:global(.dark) .adminJsonLabel {
+  color: #94a3b8;
+}
+
+:global(.dark) .adminJsonPreview {
+  border-color: rgba(71, 85, 105, 0.8);
+  background: linear-gradient(180deg, rgba(11, 18, 32, 0.92), rgba(8, 14, 24, 0.92));
+  color: #dbe6f3;
+  box-shadow:
+    inset 0 1px 0 rgba(148, 163, 184, 0.16),
+    0 8px 18px rgba(2, 6, 23, 0.44);
+}
+
+:global(.dark) .composerSurface {
+  border-color: rgba(71, 85, 105, 0.56);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.9));
+  box-shadow:
+    0 14px 28px rgba(2, 6, 23, 0.45),
+    inset 0 1px 0 rgba(148, 163, 184, 0.22);
+}
+
+:global(.dark) .composerInputTheme :global(.ant-input-textarea .ant-input),
+:global(.dark) .composerInputTheme :global(textarea.ant-input) {
+  border-color: rgba(71, 85, 105, 0.82);
+  background: rgba(15, 23, 42, 0.78) !important;
+  color: #e2e8f0 !important;
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.18);
+}
+
+:global(.dark) .composerInputTheme :global(.ant-input-textarea .ant-input:hover),
+:global(.dark) .composerInputTheme :global(textarea.ant-input:hover) {
+  border-color: rgba(96, 165, 250, 0.64);
+}
+
+:global(.dark) .composerInputTheme :global(.ant-input-textarea .ant-input:focus),
+:global(.dark) .composerInputTheme :global(.ant-input-textarea .ant-input-focused),
+:global(.dark) .composerInputTheme :global(textarea.ant-input:focus),
+:global(.dark) .composerInputTheme :global(textarea.ant-input-focused) {
+  border-color: rgba(59, 130, 246, 0.88);
+  background: rgba(15, 23, 42, 0.9) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+:global(.dark) .composerInputTheme :global(.ant-input-textarea .ant-input::placeholder),
+:global(.dark) .composerInputTheme :global(textarea.ant-input::placeholder) {
+  color: rgba(148, 163, 184, 0.85) !important;
+}
+
+:global(.dark) .composerActionButton {
+  border-color: rgba(71, 85, 105, 0.72) !important;
+  background: rgba(15, 23, 42, 0.82) !important;
+  color: #cbd5e1 !important;
+}
+
+:global(.dark) .composerActionButton:hover {
+  border-color: rgba(96, 165, 250, 0.56) !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+}
+
+:global(.dark) .composerActionButton:disabled,
+:global(.dark) .composerActionButton[disabled] {
+  border-color: rgba(71, 85, 105, 0.64) !important;
+  background: rgba(30, 41, 59, 0.78) !important;
+  color: rgba(148, 163, 184, 0.9) !important;
+  opacity: 1 !important;
 }
 
 @keyframes messageEnter {

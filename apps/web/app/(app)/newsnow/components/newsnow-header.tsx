@@ -96,7 +96,7 @@ export function NewsnowHeader() {
                   key={tab.key}
                   href={href}
                   aria-current={isActive ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium tracking-[0.01em] transition-all ${
+                  className={`whitespace-nowrap rounded-xl px-3.5 py-2 text-sm font-medium tracking-[0.01em] transition-[color,background-color,box-shadow,border-color] duration-200 ${
                     isActive
                       ? "bg-slate-900/10 text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] ring-1 ring-slate-900/12 dark:bg-white/12 dark:text-zinc-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] dark:ring-white/20"
                       : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-white/6 dark:hover:text-zinc-100"

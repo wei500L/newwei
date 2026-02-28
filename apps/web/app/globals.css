@@ -632,6 +632,51 @@
     text-shadow: none;
   }
 
+  @keyframes newsnow-aura-float {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.92;
+    }
+    50% {
+      transform: translate3d(0, -10px, 0) scale(1.04);
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes newsnow-aura-drift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.9;
+    }
+    50% {
+      transform: translate3d(-12px, 8px, 0) scale(1.05);
+      opacity: 0.98;
+    }
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.88;
+    }
+  }
+
+  .newsnow-aura-layer {
+    pointer-events: none;
+    will-change: transform, opacity;
+    contain: paint;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .newsnow-aura-layer-primary {
+    animation: newsnow-aura-float 18s ease-in-out infinite;
+  }
+
+  .newsnow-aura-layer-secondary {
+    animation: newsnow-aura-drift 24s ease-in-out infinite;
+  }
+
   /* Ticker Animation */
   @keyframes ticker {
     0% {
@@ -650,6 +695,10 @@
 
   /* Respect user's motion preferences */
   @media (prefers-reduced-motion: reduce) {
+    .newsnow-aura-layer-primary,
+    .newsnow-aura-layer-secondary {
+      animation: none;
+    }
     .animate-ticker {
       animation: none;
     }

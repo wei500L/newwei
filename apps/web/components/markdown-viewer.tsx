@@ -66,27 +66,29 @@ const DEFAULT_CLASSES: MarkdownVariantClasses = {
 };
 
 const CHAT_CLASSES: MarkdownVariantClasses = {
-  container: 'min-w-0 max-w-full text-[15px] leading-8 text-slate-800',
-  h1: 'mb-3 mt-6 text-2xl font-semibold leading-tight text-slate-900 first:mt-0',
-  h2: 'mb-3 mt-5 text-xl font-semibold leading-tight text-slate-900 first:mt-0',
-  h3: 'mb-2 mt-4 text-lg font-semibold leading-tight text-slate-900 first:mt-0',
-  h4: 'mb-2 mt-3 text-base font-semibold leading-tight text-slate-900 first:mt-0',
-  paragraph: 'my-3 break-words text-[15px] leading-8 text-slate-800',
-  ul: 'my-3 list-disc space-y-1.5 pl-6 text-[15px] leading-8 text-slate-800 marker:text-slate-500',
-  ol: 'my-3 list-decimal space-y-1.5 pl-6 text-[15px] leading-8 text-slate-800 marker:text-slate-500',
-  li: 'break-words text-[15px] leading-8 text-slate-800',
+  container: 'min-w-0 max-w-full text-[15px] leading-8 text-slate-800 dark:text-slate-200',
+  h1: 'mb-3 mt-6 text-2xl font-semibold leading-tight text-slate-900 first:mt-0 dark:text-slate-100',
+  h2: 'mb-3 mt-5 text-xl font-semibold leading-tight text-slate-900 first:mt-0 dark:text-slate-100',
+  h3: 'mb-2 mt-4 text-lg font-semibold leading-tight text-slate-900 first:mt-0 dark:text-slate-100',
+  h4: 'mb-2 mt-3 text-base font-semibold leading-tight text-slate-900 first:mt-0 dark:text-slate-100',
+  paragraph: 'my-3 break-words text-[15px] leading-8 text-slate-800 dark:text-slate-200',
+  ul: 'my-3 list-disc space-y-1.5 pl-6 text-[15px] leading-8 text-slate-800 marker:text-slate-500 dark:text-slate-200 dark:marker:text-slate-400',
+  ol: 'my-3 list-decimal space-y-1.5 pl-6 text-[15px] leading-8 text-slate-800 marker:text-slate-500 dark:text-slate-200 dark:marker:text-slate-400',
+  li: 'break-words text-[15px] leading-8 text-slate-800 dark:text-slate-200',
   blockquote:
-    'my-4 border-l-4 border-slate-300/90 bg-slate-50/70 px-4 py-2 text-[15px] italic leading-8 text-slate-700',
-  link: 'break-all text-sky-700 underline decoration-sky-300 decoration-2 underline-offset-2 hover:text-sky-800',
-  mermaidWrapper: 'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white p-3',
-  pre: 'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100',
+    'my-4 border-l-4 border-slate-300/90 bg-slate-50/70 px-4 py-2 text-[15px] italic leading-8 text-slate-700 dark:border-slate-600 dark:bg-slate-900/70 dark:text-slate-300',
+  link: 'break-all text-sky-700 underline decoration-sky-300 decoration-2 underline-offset-2 hover:text-sky-800 dark:text-sky-300 dark:decoration-sky-500/70 dark:hover:text-sky-200',
+  mermaidWrapper:
+    'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white/95 p-3 shadow-[0_8px_18px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/85 dark:shadow-[0_10px_20px_rgba(2,6,23,0.5)]',
+  pre: 'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#0b1324_0%,#0a1222_100%)] px-4 py-3 text-xs leading-6 text-slate-100 shadow-[inset_0_1px_0_rgba(148,163,184,0.18)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,#020617_0%,#0b1324_100%)]',
   blockCode: 'font-mono text-[12px] leading-6 text-slate-100',
-  inlineCode: 'rounded bg-slate-950/10 px-1.5 py-0.5 font-mono text-[12px] leading-5 text-slate-700',
-  tableWrap: 'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200',
+  inlineCode: 'rounded bg-slate-950/10 px-1.5 py-0.5 font-mono text-[12px] leading-5 text-slate-700 dark:bg-slate-200/10 dark:text-slate-200',
+  tableWrap:
+    'my-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white/92 shadow-[0_8px_18px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-slate-900/76 dark:shadow-[0_10px_20px_rgba(2,6,23,0.45)]',
   table: 'w-full border-collapse text-[14px] leading-6',
-  th: 'border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-700',
-  td: 'border-b border-slate-100 px-3 py-2 align-top text-[14px] text-slate-800',
-  hr: 'my-5 border-slate-200',
+  th: 'border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200',
+  td: 'border-b border-slate-100 px-3 py-2 align-top text-[14px] text-slate-800 dark:border-slate-800 dark:text-slate-200',
+  hr: 'my-5 border-slate-200 dark:border-slate-700',
 };
 
 function resolveVariantClasses(variant: MarkdownViewerVariant): MarkdownVariantClasses {

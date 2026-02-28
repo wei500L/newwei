@@ -89,33 +89,29 @@ export default function NewsnowColumnPage() {
     .filter((entry) => sourceIds.includes(entry.sourceId))
     .slice(0, 3);
 
-  const frameClass = "min-h-full";
+  const frameClass = "min-h-full relative overflow-hidden";
   const frameStyle = isDark
     ? {
-        backgroundColor: "#04060b",
+        backgroundColor: "var(--background)",
         backgroundImage:
-          "radial-gradient(1100px 420px at 8% -12%, rgba(59,130,246,0.15), transparent 62%), radial-gradient(960px 360px at 96% -14%, rgba(20,184,166,0.11), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%), linear-gradient(180deg, #04060b 0%, #03050a 62%, #020409 100%)",
+          "radial-gradient(1100px 420px at 8% -12%, var(--aura-color-1), transparent 62%), radial-gradient(960px 360px at 96% -14%, var(--aura-color-2), transparent 62%)",
       }
     : {
-        backgroundColor: "#f5f8ff",
+        backgroundColor: "var(--background)",
         backgroundImage:
-          "radial-gradient(960px 380px at 8% -12%, rgba(59,130,246,0.16), transparent 62%), radial-gradient(900px 360px at 96% -14%, rgba(14,165,233,0.14), transparent 62%), linear-gradient(180deg, rgba(255,255,255,0.94), rgba(241,245,249,0.96) 40%, rgba(236,243,252,0.98) 100%)",
+          "radial-gradient(960px 380px at 8% -12%, var(--aura-color-1), transparent 62%), radial-gradient(900px 360px at 96% -14%, var(--aura-color-2), transparent 62%)",
       };
 
   if (isLoading) {
     return (
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
-        <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8">
+        <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8 relative z-10">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7">
             {[...Array(10)].map((_, i) => (
               <div
                 key={i}
-                className={`h-[430px] rounded-3xl border p-5 sm:h-[470px] lg:h-[500px] ${
-                  isDark
-                    ? "border-zinc-800 bg-zinc-900/80"
-                    : "border-slate-200 bg-white/85"
-                }`}
+                className="h-[430px] rounded-[24px] sm:h-[470px] lg:h-[500px] glass-panel p-5"
               >
                 <Skeleton active paragraph={{ rows: 10 }} />
               </div>
@@ -131,13 +127,13 @@ export default function NewsnowColumnPage() {
     return (
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
-        <div className="flex min-h-[65vh] items-center justify-center p-8">
+        <div className="flex min-h-[65vh] items-center justify-center p-8 relative z-10">
           <Result
             status="error"
-            title="加载失败"
-            subTitle="无法获取新闻源数据，请稍后重试"
+            title={<span className="text-[var(--foreground)] font-serif font-semibold">加载失败</span>}
+            subTitle={<span className="text-[var(--secondary-foreground)]">无法获取新闻源数据，请稍后重试</span>}
             extra={
-              <Button type="primary" onClick={() => refetch()}>
+              <Button type="primary" onClick={() => refetch()} className="glass-panel border-none shadow-sm text-primary-foreground font-semibold">
                 重试
               </Button>
             }
@@ -152,21 +148,19 @@ export default function NewsnowColumnPage() {
     return (
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
-        <div className="flex min-h-[65vh] items-center justify-center p-8 text-center">
+        <div className="flex min-h-[65vh] items-center justify-center p-8 text-center relative z-10">
           <Empty
             image={
               <StarOutlined
-                className={`text-6xl ${isDark ? "text-zinc-500" : "text-slate-400"}`}
+                className="text-6xl text-[var(--secondary-foreground)] opacity-40"
               />
             }
             description={
               <div className="space-y-1">
-                <p
-                  className={`text-lg font-medium ${isDark ? "text-zinc-100" : "text-slate-900"}`}
-                >
+                <p className="text-lg font-medium font-serif tracking-tight text-[var(--foreground)]">
                   还没有关注的源
                 </p>
-                <p className={isDark ? "text-zinc-400" : "text-slate-600"}>
+                <p className="text-[var(--secondary-foreground)] opacity-70">
                   点击搜索按钮或在其他列中点击星标来关注新闻源
                 </p>
               </div>
@@ -180,71 +174,94 @@ export default function NewsnowColumnPage() {
 
   return (
     <div className={frameClass} style={frameStyle}>
-      <NewsnowHeader />
-      {visibleRealtimeUnread > 0 ? (
-        <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
-          <Alert
-            showIcon
-            type="info"
-            message={`实时推送到达 ${visibleRealtimeUnread} 条新内容`}
-            description={
-              <div className="space-y-1">
-                <p>已检测到数据源更新。你可以立即刷新当前栏目并清空未读计数。</p>
-                {visibleRealtimeHighlights.length > 0 ? (
-                  <ul className="list-disc pl-5">
-                    {visibleRealtimeHighlights.map((entry) => {
-                      const sourceName =
-                        metadata?.sources[entry.sourceId]?.name ?? entry.sourceId;
-                      const firstTitle = entry.topTitles[0];
-                      return (
-                        <li key={`${entry.sourceId}:${entry.timestamp}`}>
-                          <span className="font-medium">{sourceName}</span>
-                          <span>{` +${entry.count}`}</span>
-                          {firstTitle ? <span>{` · ${firstTitle}`}</span> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </div>
-            }
-            action={
-              <Space>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    void batchPrefetch(sourceIds);
-                    sourceIds.forEach((sourceId) => clearLiveUnread(sourceId));
-                  }}
-                >
-                  立即刷新
-                </Button>
-                <Button size="small" type="text" onClick={() => clearAllLiveUnread()}>
-                  标记已读
-                </Button>
-              </Space>
-            }
+      {/* Performance-friendly Aura Background layers */}
+      <div
+        className="newsnow-aura-layer newsnow-aura-layer-primary absolute -top-20 left-[-16%] h-[520px] w-[760px] opacity-45 sm:h-[560px] sm:w-[860px] dark:opacity-35 xl:h-[620px] xl:w-[980px]"
+        style={{
+          background:
+            "radial-gradient(circle at 52% 52%, var(--aura-color-1) 0%, transparent 68%)",
+          mixBlendMode: isDark ? "screen" : "multiply",
+        }}
+      />
+      <div
+        className="newsnow-aura-layer newsnow-aura-layer-secondary absolute -top-28 right-[-20%] h-[500px] w-[700px] opacity-30 sm:h-[540px] sm:w-[820px] dark:opacity-24 xl:h-[600px] xl:w-[940px]"
+        style={{
+          background:
+            "radial-gradient(circle at 38% 28%, var(--aura-color-2) 0%, transparent 66%)",
+          mixBlendMode: isDark ? "screen" : "multiply",
+        }}
+      />
+
+      <div className="relative z-10">
+        <NewsnowHeader />
+        {visibleRealtimeUnread > 0 ? (
+          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+            <Alert
+              showIcon
+              type="info"
+              className="glass-panel border-none shadow-sm"
+              message={<span className="font-semibold text-[var(--foreground)]">实时推送到达 {visibleRealtimeUnread} 条新内容</span>}
+              description={
+                <div className="space-y-1 mt-1 text-[var(--secondary-foreground)]">
+                  <p>已检测到数据源更新。你可以立即刷新当前栏目并清空未读计数。</p>
+                  {visibleRealtimeHighlights.length > 0 ? (
+                    <ul className="list-disc pl-5 opacity-90">
+                      {visibleRealtimeHighlights.map((entry) => {
+                        const sourceName =
+                          metadata?.sources[entry.sourceId]?.name ?? entry.sourceId;
+                        const firstTitle = entry.topTitles[0];
+                        return (
+                          <li key={`${entry.sourceId}:${entry.timestamp}`}>
+                            <span className="font-medium text-[var(--foreground)]">{sourceName}</span>
+                            <span className="text-[var(--bullish)]">{` +${entry.count}`}</span>
+                            {firstTitle ? <span>{` · ${firstTitle}`}</span> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </div>
+              }
+              action={
+                <Space>
+                  <Button
+                    size="small"
+                    className="font-medium bg-[var(--primary)] text-white border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
+                    onClick={() => {
+                      void batchPrefetch(sourceIds);
+                      sourceIds.forEach((sourceId) => clearLiveUnread(sourceId));
+                    }}
+                  >
+                    立即刷新
+                  </Button>
+                  <Button size="small" type="text" className="font-medium text-[var(--secondary-foreground)] hover:text-[var(--foreground)]" onClick={() => clearAllLiveUnread()}>
+                    标记已读
+                  </Button>
+                </Space>
+              }
+            />
+          </div>
+        ) : null}
+        {!realtimeConnected && realtimeConnectionError ? (
+          <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+            <Alert
+              showIcon
+              type="warning"
+              className="glass-panel border-none shadow-sm"
+              message={<span className="font-semibold">实时连接不可用</span>}
+              description={<span className="opacity-80">{realtimeConnectionError}</span>}
+            />
+          </div>
+        ) : null}
+        <main>
+          <NewsnowColumn
+            columnKey={resolvedColumnKey}
+            sourceIds={sourceIds}
+            sources={metadata?.sources || {}}
           />
-        </div>
-      ) : null}
-      {!realtimeConnected && realtimeConnectionError ? (
-        <div className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
-          <Alert
-            showIcon
-            type="warning"
-            message="实时连接不可用"
-            description={realtimeConnectionError}
-          />
-        </div>
-      ) : null}
-      <main>
-        <NewsnowColumn
-          columnKey={resolvedColumnKey}
-          sourceIds={sourceIds}
-          sources={metadata?.sources || {}}
-        />
-      </main>
-      <NewsnowAttribution />
+        </main>
+        <NewsnowAttribution />
+      </div>
     </div>
   );
 }

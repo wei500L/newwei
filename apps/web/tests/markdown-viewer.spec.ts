@@ -52,7 +52,8 @@ describe('MarkdownViewer', () => {
     );
 
     expect(html).toContain('Rendering mermaid chart...');
-    expect(html).toContain('rounded-xl border border-slate-200 bg-white p-3');
+    expect(html).toContain('rounded-xl border border-slate-200');
+    expect(html).toContain('bg-white/95 p-3');
     expect(html).not.toContain('bg-slate-950');
   });
 });

@@ -10,7 +10,14 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button, Skeleton, Tooltip, message } from "antd";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { extractApiError } from "@/lib/api-error";
@@ -65,6 +72,19 @@ const colorMap: Record<string, string> = {
   emerald: "bg-emerald-400",
   teal: "bg-teal-400",
   yellow: "bg-amber-400",
+};
+
+const accentRgbMap: Record<string, string> = {
+  slate: "148 163 184",
+  blue: "96 165 250",
+  red: "248 113 113",
+  green: "52 211 153",
+  orange: "251 146 60",
+  gray: "161 161 170",
+  indigo: "129 140 248",
+  emerald: "52 211 153",
+  teal: "45 212 191",
+  yellow: "251 191 36",
 };
 
 const cardShellMap: Record<string, string> = {
@@ -247,6 +267,35 @@ export function NewsnowCard({
   const hasTrackedExposureRef = useRef(false);
   const exposureKeyRef = useRef("");
   const lastResolvedPrefetchRef = useRef<ResolvePrefetchAttemptState | null>(null);
+  const mouseMoveRafRef = useRef<number | null>(null);
+  const pendingMousePosRef = useRef({ x: 0, y: 0 });
+
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (!articleRef.current) return;
+    const rect = articleRef.current.getBoundingClientRect();
+    pendingMousePosRef.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    if (mouseMoveRafRef.current !== null) {
+      return;
+    }
+    mouseMoveRafRef.current = window.requestAnimationFrame(() => {
+      mouseMoveRafRef.current = null;
+      setMousePos(pendingMousePosRef.current);
+    });
+  };
+
+  useEffect(
+    () => () => {
+      if (mouseMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(mouseMoveRafRef.current);
+      }
+    },
+    [],
+  );
 
   const {
     attributes,
@@ -271,13 +320,32 @@ export function NewsnowCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const colorClass = colorMap[source.color] || "bg-blue-400";
-  const cardShellClass =
-    cardShellMap[source.color] || "border-blue-300/28 bg-[#0b1424]";
-  const cardGlowClass =
-    cardGlowMap[source.color] ||
-    "shadow-[0_20px_44px_-34px_rgba(59,130,246,0.54)]";
-  const accentClass = accentMap[source.color] || "text-blue-300";
+  const colorClass = colorMap[source.color] || "bg-[var(--primary)]";
+  const accentRgb = accentRgbMap[source.color] || "111 155 255";
+  const cardStyle: CSSProperties = {
+    ...style,
+    height: "clamp(380px, 56vh, 620px)",
+    ["--newsnow-card-accent-rgb" as string]: accentRgb,
+    ["contentVisibility" as string]: "auto",
+    ["containIntrinsicSize" as string]: "440px",
+  };
+  
+  // Aura color values based on source color, used for the hover glow
+  const auraGlowColorMap: Record<string, string> = {
+    slate: "rgba(148,163,184,0.15)",
+    blue: "rgba(59,130,246,0.15)",
+    red: "rgba(244,63,94,0.15)",
+    green: "rgba(16,185,129,0.15)",
+    orange: "rgba(249,115,22,0.15)",
+    gray: "rgba(161,161,170,0.15)",
+    indigo: "rgba(99,102,241,0.15)",
+    emerald: "rgba(16,185,129,0.15)",
+    teal: "rgba(20,184,166,0.15)",
+    yellow: "rgba(245,158,11,0.15)",
+  };
+  const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
+  
+  const accentClass = accentMap[source.color] || "text-[var(--primary)]";
   const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
   const iconUrl = useMemo(() => resolveSourceIconUrl(source.home), [source.home]);
@@ -821,25 +889,44 @@ export function NewsnowCard({
   return (
     <article
       ref={setArticleNodeRef}
-      style={{
-        ...style,
-        height: "clamp(380px, 56vh, 620px)",
-      }}
-      className={`flex min-h-[380px] flex-col overflow-hidden rounded-[24px] border ring-1 ring-inset ring-white/6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-200 hover:-translate-y-1 hover:ring-white/14 ${cardShellClass} ${cardGlowClass}`}
+      onMouseMove={handleMouseMove}
+      style={cardStyle}
+      className={`relative isolate group flex min-h-[380px] flex-col overflow-hidden rounded-[var(--radius-lg)] glass-panel will-change-transform transition-[transform,box-shadow,filter] duration-300 active:scale-[0.98] active:brightness-105 ${dragDisabled ? "" : "hover:-translate-y-1"}`}
     >
-      <div className={`h-1 w-full ${colorClass}`} />
-      <div className="pointer-events-none h-3 w-full bg-gradient-to-b from-white/8 to-transparent" />
-      <div className="flex items-start justify-between px-4 pb-3 pt-3.5">
-        <div className="flex min-w-0 items-center gap-2">
+      {/* Hover Glow Effect */}
+      <div 
+        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        style={{
+          background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, ${glowColor}, transparent 40%)`,
+          zIndex: 0
+        }}
+      />
+      <div
+        className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${colorClass} opacity-80`}
+        style={{
+          clipPath: "inset(0 round var(--radius-lg) var(--radius-lg) 0 0)",
+          zIndex: 2,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[inherit] border border-transparent"
+        style={{
+          borderTopColor: "rgb(var(--newsnow-card-accent-rgb) / 0.55)",
+          zIndex: 2,
+        }}
+      />
+      
+      <div className="relative z-10 flex items-start justify-between px-5 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-3">
           <a
             href={source.home}
             title={source.desc}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/45 text-xs font-semibold text-zinc-200"
+            className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-secondary border border-[var(--border)] text-xs font-semibold text-[var(--foreground)] shadow-sm transition-transform hover:scale-105"
           >
             {iconLoadError || !iconUrl ? (
-              <span>{source.name.slice(0, 1)}</span>
+              <span className="font-serif text-lg">{source.name.slice(0, 1)}</span>
             ) : (
               <img
                 src={iconUrl}
@@ -851,37 +938,37 @@ export function NewsnowCard({
             )}
           </a>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h3 className="truncate text-[15px] font-semibold tracking-[0.01em] text-zinc-100">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-base font-bold tracking-wide text-[var(--foreground)] font-serif">
                 {source.name}
               </h3>
               {source.title ? (
-                <span className="truncate rounded bg-black/35 px-1.5 py-0.5 text-[10px] text-zinc-300/95">
+                <span className="truncate rounded-md bg-[var(--secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--secondary-foreground)] border border-[var(--border)]">
                   {source.title}
                 </span>
               ) : null}
             </div>
-            <p className="truncate text-[11px] text-zinc-300/80">
+            <p className="truncate text-[11px] text-[var(--secondary-foreground)]/80 mt-0.5 font-medium">
               {updatedText}
             </p>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {duplicateItemsCount > 0 ? (
-                <span className="rounded bg-amber-400/18 px-1.5 py-0.5 text-[10px] text-amber-200">
+                <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                   同题 {duplicateItemsCount}
                 </span>
               ) : null}
               {hideCrossSourceDuplicates && hiddenDuplicatesCount > 0 ? (
-                <span className="rounded bg-emerald-400/18 px-1.5 py-0.5 text-[10px] text-emerald-200">
+                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                   已折叠 {hiddenDuplicatesCount}
                 </span>
               ) : null}
               {unreadCount > 0 ? (
-                <span className="animate-pulse rounded bg-sky-400/18 px-1.5 py-0.5 text-[10px] text-sky-200">
+                <span className="animate-pulse rounded-full bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
                   新 {unreadCount}
                 </span>
               ) : null}
               {realtimeUnreadCount > 0 ? (
-                <span className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] text-cyan-200">
+                <span className="rounded-full bg-[var(--primary)]/10 border border-[var(--primary)]/20 px-2 py-0.5 text-[10px] font-semibold text-[var(--primary)]">
                   推送 {realtimeUnreadCount}
                 </span>
               ) : null}
@@ -907,39 +994,39 @@ export function NewsnowCard({
                     </div>
                   }
                 >
-                  <span className="cursor-help rounded bg-violet-400/20 px-1.5 py-0.5 text-[10px] text-violet-200">
+                  <span className="cursor-help rounded-full bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-600 dark:text-violet-400">
                     综合 {Math.round(personalizedCombinedScore)}
                   </span>
                 </Tooltip>
               ) : null}
               {(sortMode === "personalized" || sortMode === "smart") &&
               affinityScore > 0 ? (
-                <span className="rounded bg-fuchsia-400/18 px-1.5 py-0.5 text-[10px] text-fuchsia-200">
+                <span className="rounded-full bg-fuchsia-500/10 border border-fuchsia-500/20 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400">
                   偏好 {Math.round(affinityScore)}
                 </span>
               ) : null}
               {hideCrossSourceDuplicates && visibleItemsCount > 0 ? (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
                   可见 {visibleItemsCount}
                 </span>
               ) : null}
               {nextRefreshLabel ? (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                <span className="rounded-full bg-[var(--secondary)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--secondary-foreground)]">
                   下次刷新 {nextRefreshLabel}
                 </span>
               ) : null}
               {freshness.level === "fresh" ? (
-                <span className="rounded bg-emerald-400/18 px-1.5 py-0.5 text-[10px] text-emerald-200">
+                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                   {t("common.freshnessFresh", { defaultValue: "Fresh" })}
                 </span>
               ) : null}
               {freshness.level === "aging" ? (
-                <span className="rounded bg-amber-400/18 px-1.5 py-0.5 text-[10px] text-amber-200">
+                <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                   {t("common.freshnessWarm", { defaultValue: "Warm" })} {freshnessDelayLabel}
                 </span>
               ) : null}
               {freshness.level === "stale" ? (
-                <span className="rounded bg-rose-400/20 px-1.5 py-0.5 text-[10px] text-rose-200">
+                <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
                   {t("common.freshnessStale", { defaultValue: "Stale" })} {freshnessDelayLabel}
                 </span>
               ) : null}
@@ -947,7 +1034,7 @@ export function NewsnowCard({
           </div>
         </div>
         <div
-          className={`ml-3 inline-flex shrink-0 items-center gap-1 rounded-xl border border-white/12 bg-black/20 px-1 py-1 ${accentClass}`}
+          className="ml-3 inline-flex shrink-0 items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--secondary)]/50 backdrop-blur-md px-1 py-1 shadow-sm"
         >
           <Tooltip title="刷新">
             <Button
@@ -958,7 +1045,7 @@ export function NewsnowCard({
               onClick={() => {
                 void handleRefresh();
               }}
-              className="h-7 w-7 text-zinc-300 hover:bg-white/10 hover:text-current"
+              className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             />
           </Tooltip>
           <Tooltip title={isFocused ? "取消关注" : "关注"}>
@@ -967,13 +1054,13 @@ export function NewsnowCard({
               size="small"
               icon={
                 isFocused ? (
-                  <StarFilled className="text-yellow-500" />
+                  <StarFilled className="text-amber-500" />
                 ) : (
                   <StarOutlined />
                 )
               }
               onClick={() => toggleFocus(id)}
-              className="h-7 w-7 text-zinc-300 hover:bg-white/10 hover:text-yellow-500"
+              className="h-7 w-7 text-[var(--secondary-foreground)] hover:bg-[var(--background)] hover:text-amber-500"
             />
           </Tooltip>
           <Tooltip title="查看关联事件">
@@ -981,7 +1068,7 @@ export function NewsnowCard({
               type="text"
               size="small"
               onClick={handleOpenEventsHub}
-              className="h-7 px-2 text-zinc-300 hover:bg-white/10 hover:text-current"
+              className="h-7 px-2 text-[var(--secondary-foreground)] font-medium hover:bg-[var(--background)] hover:text-[var(--foreground)]"
             >
               事件
               {prefetchedEventIds.length > 0 ? ` ${prefetchedEventIds.length}` : ""}
@@ -994,7 +1081,7 @@ export function NewsnowCard({
               {...(!dragDisabled ? listeners : {})}
               aria-label="拖动重新排序"
               disabled={dragDisabled}
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-zinc-300 transition-colors hover:bg-white/10 hover:text-zinc-100 ${
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
                 dragDisabled
                   ? "cursor-not-allowed opacity-45"
                   : "cursor-grab active:cursor-grabbing"
@@ -1006,29 +1093,30 @@ export function NewsnowCard({
         </div>
       </div>
 
-      <div className="mx-3 mb-3 flex-1 overflow-y-auto rounded-2xl border border-white/8 bg-[linear-gradient(180deg,#090d14_0%,#070a11_100%)] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_12px_22px_-18px_rgba(0,0,0,0.9)] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <div className="relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] bg-white/40 dark:bg-black/20 backdrop-blur-sm px-2.5 py-2.5 shadow-inner [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {isLoading ? (
-          <div className="space-y-3 p-3">
+          <div className="space-y-3 p-3 opacity-60">
             <Skeleton active paragraph={{ rows: 8 }} />
           </div>
         ) : isError ? (
           <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
-            <p className="text-sm text-zinc-300">获取失败</p>
+            <p className="text-sm font-medium text-[var(--foreground)]">获取失败</p>
             {sourceErrorMessage ? (
-              <p className="max-w-[28rem] break-all text-[11px] text-zinc-400">
+              <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
                 {sourceErrorMessage}
               </p>
             ) : null}
             {needsRuntimeSecret ? (
               <a
                 href="/settings/system?tab=newsSourceRuntimeSecrets"
-                className="text-xs text-blue-300 underline-offset-2 hover:underline"
+                className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
               >
                 去系统设置 &gt; 新闻源密钥
               </a>
             ) : null}
             <Button
               size="small"
+              className="mt-2"
               onClick={() => {
                 void handleRefresh();
               }}
@@ -1062,11 +1150,11 @@ export function NewsnowCard({
           )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-            <p className="text-xs text-zinc-300">暂无数据</p>
+            <p className="text-xs font-medium text-[var(--secondary-foreground)]">暂无数据</p>
             {needsRuntimeSecret ? (
               <a
                 href="/settings/system?tab=newsSourceRuntimeSecrets"
-                className="text-xs text-blue-300 underline-offset-2 hover:underline"
+                className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
               >
                 该源可能需要先配置密钥
               </a>

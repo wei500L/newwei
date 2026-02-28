@@ -23,13 +23,13 @@ interface NewsListHotProps {
 function getRankClass(index: number) {
   switch (index) {
     case 0:
-      return "bg-gradient-to-b from-yellow-400 to-amber-500 text-white";
+      return "bg-gradient-to-b from-amber-400 to-orange-500 text-white shadow-sm ring-1 ring-orange-500/20";
     case 1:
-      return "bg-gradient-to-b from-zinc-300 to-zinc-500 text-white";
+      return "bg-gradient-to-b from-slate-300 to-slate-400 text-slate-800 shadow-sm ring-1 ring-slate-400/20";
     case 2:
-      return "bg-gradient-to-b from-amber-500 to-orange-600 text-white";
+      return "bg-gradient-to-b from-orange-300 to-orange-400 text-orange-900 shadow-sm ring-1 ring-orange-400/20";
     default:
-      return "bg-zinc-700/60 text-zinc-200";
+      return "bg-[var(--secondary)] text-[var(--secondary-foreground)] border border-[var(--border)]";
   }
 }
 
@@ -52,7 +52,7 @@ function DiffBadge({ diff }: { diff: number }) {
 
   return (
     <span
-      className={`pointer-events-none absolute left-[34px] top-[3px] text-[10px] font-medium leading-none opacity-70 transition-opacity ${diff < 0 ? "text-emerald-400" : "text-rose-400"}`}
+      className={`pointer-events-none absolute left-[34px] top-[3px] text-[10px] font-bold leading-none opacity-80 transition-opacity ${diff < 0 ? "text-[var(--bullish)]" : "text-[var(--destructive)]"}`}
     >
       {diff > 0 ? `+${diff}` : diff}
     </span>
@@ -140,7 +140,7 @@ export function NewsListHot({
         return (
           <li
             key={item.id}
-            className="group relative border-b border-white/10 pb-1.5 last:border-b-0"
+            className="group relative border-b border-[var(--border)] pb-1.5 last:border-b-0"
           >
             <div className="flex items-start gap-2">
               <a
@@ -148,15 +148,15 @@ export function NewsListHot({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={item.extra?.hover}
-                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded-lg px-2 py-2 text-zinc-100 transition-colors hover:bg-white/10 hover:text-white visited:text-zinc-500 ${
-                  isFresh ? "animate-[pulse_1.8s_ease-in-out_1] ring-1 ring-sky-300/45" : ""
+                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded-xl px-2 py-2 text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] ${
+                  isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-sky-500/5 ring-1 ring-sky-500/20" : ""
                 }`}
                 onClick={() => {
                   onOpenOriginal?.(item);
                 }}
               >
                 <span
-                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[12px] font-semibold leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] ${getRankClass(index)}`}
+                  className={`mt-[1px] flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] text-[12px] font-bold leading-none ${getRankClass(index)}`}
                 >
                   {index + 1}
                 </span>
@@ -165,25 +165,25 @@ export function NewsListHot({
                 ) : null}
                 <span className="min-w-0 leading-snug">
                   <span
-                    className={`block overflow-hidden transition-colors group-hover:text-white [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
+                    className={`block overflow-hidden transition-colors group-hover:text-[var(--primary)] font-medium [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                       isComfortable
                         ? "text-[14px] leading-[1.45]"
-                        : "text-[13px] leading-[1.35]"
+                        : "text-[13px] leading-[1.4]"
                     }`}
                   >
                     {item.title}
                   </span>
-                  <span className="mt-1 block truncate text-[11px] leading-4 text-zinc-400">
+                  <span className="mt-1 block truncate text-[11px] leading-4 text-[var(--secondary-foreground)] opacity-80">
                     <ExtraInfo item={item} />
                   </span>
-                  <span className="mt-1 flex items-center gap-1 text-[10px] text-zinc-400">
+                  <span className="mt-1 flex items-center gap-1.5 text-[10px]">
                     {isFresh ? (
-                      <span className="rounded bg-sky-400/20 px-1 py-0.5 text-sky-200">
+                      <span className="rounded-[4px] bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 font-bold text-sky-600 dark:text-sky-400">
                         NEW
                       </span>
                     ) : null}
                     {dedupeMeta ? (
-                      <span className="rounded bg-amber-400/20 px-1 py-0.5 text-amber-200">
+                      <span className="rounded-[4px] bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-600 dark:text-amber-400">
                         同题 {dedupeMeta.groupSize} 源
                       </span>
                     ) : null}
@@ -214,19 +214,19 @@ export function NewsListHot({
                     type="text"
                     size="small"
                     icon={<MoreOutlined />}
-                    className="mt-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                    className="mt-1 text-[var(--secondary-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
                     aria-label="更多操作"
                   />
                 </Dropdown>
               ) : null}
             </div>
             {!isMobile ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-[11px] text-zinc-400 opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-1.5 pl-[36px] text-[11px] text-[var(--secondary-foreground)] opacity-0 transition-opacity duration-150 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto">
                 <a
                   href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="transition-colors hover:text-zinc-200"
+                  className="font-medium transition-colors hover:text-[var(--primary)]"
                   onClick={() => {
                     onOpenOriginal?.(item);
                   }}
@@ -236,7 +236,7 @@ export function NewsListHot({
                 {availability.hasEvent ? (
                   <button
                     type="button"
-                    className="transition-colors hover:text-zinc-200"
+                    className="font-medium transition-colors hover:text-[var(--primary)]"
                     onClick={() => {
                       onOpenEvent?.(item);
                     }}
@@ -247,7 +247,7 @@ export function NewsListHot({
                 {availability.hasItem ? (
                   <button
                     type="button"
-                    className="transition-colors hover:text-zinc-200"
+                    className="font-medium transition-colors hover:text-[var(--primary)]"
                     onClick={() => {
                       onOpenItem?.(item);
                     }}
