@@ -135,12 +135,15 @@
   }
 
   .glass-panel {
-    background: linear-gradient(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.4)) padding-box,
-                linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(148, 163, 184, 0.1) 100%) border-box;
+    background: linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)) padding-box,
+                linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.2) 40%, rgba(148, 163, 184, 0.1) 100%) border-box;
     backdrop-filter: blur(28px);
     -webkit-backdrop-filter: blur(28px);
     border: 1px solid transparent;
-    box-shadow: 0 4px 6px rgba(31,59,123,0.04), 0 12px 28px rgba(31,59,123,0.06), 0 24px 48px rgba(31,59,123,0.03);
+    box-shadow: 
+      0 4px 6px rgba(15, 23, 42, 0.02),
+      0 12px 28px rgba(15, 23, 42, 0.04),
+      0 24px 48px rgba(15, 23, 42, 0.03);
     border-radius: var(--radius-lg);
   }
 
@@ -225,12 +228,15 @@
   }
 
   .dark .glass-panel {
-    background: linear-gradient(rgba(20, 20, 22, 0.6), rgba(20, 20, 22, 0.6)) padding-box,
-                linear-gradient(135deg, rgba(148, 163, 184, 0.3) 0%, rgba(51, 65, 85, 0.15) 50%, rgba(15, 23, 42, 0.1) 100%) border-box;
+    background: linear-gradient(rgba(15, 23, 42, 0.65), rgba(15, 23, 42, 0.65)) padding-box,
+                linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 40%, rgba(0, 0, 0, 0.2) 100%) border-box;
     backdrop-filter: blur(32px);
     -webkit-backdrop-filter: blur(32px);
     border: 1px solid transparent;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.2), 0 12px 28px rgba(2,6,23,0.4), 0 0 48px rgba(99,102,241,0.04);
+    box-shadow: 
+      0 4px 6px rgba(0, 0, 0, 0.2),
+      0 12px 28px rgba(2, 6, 23, 0.4),
+      0 0 48px rgba(99, 102, 241, 0.04);
   }
 
   .dark .content-card {

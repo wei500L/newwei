@@ -3,7 +3,7 @@
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
 import { Card, Col, Row, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -21,9 +21,6 @@ import {
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
-// ... Sparkline component (update to use theme colors if possible, but it accepts color prop) ...
-// Actually, I'll update Sparkline to use theme for area gradient properly if needed, but it takes `color` prop.
-
 const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
   const option: EChartsOption = {
     grid: { left: 0, right: 0, top: 5, bottom: 5 },
@@ -35,13 +32,13 @@ const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
         type: "line",
         smooth: true,
         showSymbol: false,
-        lineStyle: { width: 2, color },
+        lineStyle: { width: 2, color, shadowBlur: 8, shadowColor: color + "66" },
         areaStyle: {
           color: {
             type: "linear",
             x: 0, y: 0, x2: 0, y2: 1,
             colorStops: [
-              { offset: 0, color: color + "4D" }, // 30% opacity
+              { offset: 0, color: color + "33" }, 
               { offset: 1, color: "transparent" }
             ]
           }
@@ -52,10 +49,8 @@ const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
     tooltip: { show: false },
   };
 
-  return <DashboardChart option={option} height={50} />;
+  return <DashboardChart option={option} height={40} />;
 };
-
-// ... Metric Component with Flash ...
 
 const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffix?: string, hasData: boolean }) => {
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
@@ -73,16 +68,64 @@ const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffi
   }, [value]);
 
   const flashClass = flash === "up"
-    ? "bg-[var(--bullish)]/10 text-[var(--bullish)]"
+    ? "bg-[var(--bullish)]/15 text-[var(--bullish)]"
     : flash === "down"
-      ? "bg-[var(--bearish)]/10 text-[var(--bearish)]"
+      ? "bg-[var(--bearish)]/15 text-[var(--bearish)]"
       : "";
 
   return (
-    <span className={`text-3xl font-bold tracking-tight transition-all duration-500 px-1 rounded ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/40"}`}>
+    <span className={`text-4xl font-bold tracking-tight transition-all duration-500 px-1 rounded-md tabular-nums ${flash ? flashClass : hasData ? "text-[var(--foreground)]" : "text-secondary-foreground/30"}`}>
       {typeof value === 'number' ? value.toFixed(1) : value}
-      {suffix && <span className="text-sm ml-1 text-secondary-foreground/60 font-medium">{suffix}</span>}
+      {suffix && <span className="text-sm ml-1.5 text-secondary-foreground/50 font-medium">{suffix}</span>}
     </span>
+  );
+};
+
+const AuraMetricCard = ({ 
+  metric, 
+  onClick, 
+  children 
+}: { 
+  metric: HeroMetric, 
+  onClick?: () => void, 
+  children: React.ReactNode 
+}) => {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    setMousePos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  return (
+    <div 
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={onClick}
+      className="relative group overflow-hidden flex flex-col h-full px-5 py-4 transition-all duration-500 cursor-pointer active:scale-[0.98] active:brightness-105 rounded-2xl border-l border-white/10 first:border-l-0"
+    >
+      {/* Hover Glow Effect */}
+      <div 
+        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        style={{
+          background: `radial-gradient(400px circle at ${mousePos.x}px ${mousePos.y}px, ${metric.color}0D, transparent 80%)`,
+        }}
+      />
+      
+      <Typography.Text className="mb-3 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 font-serif group-hover:text-[var(--primary)] transition-colors">
+        {metric.title}
+      </Typography.Text>
+      
+      {children}
+    </div>
   );
 };
 
@@ -312,109 +355,112 @@ export function MarketPulse({
   })();
 
   return (
-    <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <Typography.Text type="secondary" className="text-xs font-medium">
-          Range: {range} ·{" "}
-          {formatDateTime(start, locale, { dateStyle: "medium" })} -{" "}
+    <div className="mb-6 glass-panel p-1.5 overflow-hidden">
+      <div className="px-6 pt-5 pb-2 flex items-center justify-between gap-3">
+        <Typography.Text className="text-[11px] font-bold tracking-[0.08em] text-secondary-foreground/50 uppercase">
+          {range} ·{" "}
+          {formatDateTime(start, locale, { dateStyle: "medium" })} —{" "}
           {formatDateTime(end, locale, { dateStyle: "medium" })}
         </Typography.Text>
         <Space size={6} wrap>
           <Tooltip title={granularityTooltip}>
-            <Tag color={granularityColor} className="text-xs border-none bg-secondary text-secondary-foreground">
+            <Tag className="text-[10px] border-none bg-secondary/60 text-secondary-foreground/80 font-bold px-2 rounded-full backdrop-blur-md">
               {granularityTagText}
             </Tag>
           </Tooltip>
         </Space>
       </div>
-      <Row gutter={[24, 24]} align="middle">
+      
+      <Row gutter={[0, 0]} align="stretch" className="relative z-10">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>
-            <div 
-              className="flex flex-col h-full px-4 py-3 transition-all duration-300 cursor-pointer hover:bg-[var(--secondary)]/40 rounded-xl group border-l border-[var(--border)] first:border-l-0"
+            <AuraMetricCard 
+              metric={metric} 
               onClick={() => onMetricClick?.(metric.key)}
             >
-              <Typography.Text className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-slate-500 group-hover:text-[var(--primary)] transition-colors">
-                {metric.title}
-              </Typography.Text>
-              <div className="flex items-baseline gap-2 mb-2">
-                <Tooltip
-                  title={
-                    metric.hasData && metric.lastTimestamp
-                      ? (() => {
-                          const interval = uiGranularityToInterval(metric.granularity);
-                          const showTime =
-                            metric.granularity === UiTimeGranularity.Hour ||
-                            metric.granularity === UiTimeGranularity.Minute;
-                          const startIso = dayjs(metric.lastTimestamp).toISOString();
-                          const endIso =
-                            interval && startIso
-                              ? dayjs(startIso).add(interval.count, interval.unit).toISOString()
+              <div className="flex flex-col flex-1">
+                <div className="flex items-baseline gap-2 mb-4">
+                  <Tooltip
+                    title={
+                      metric.hasData && metric.lastTimestamp
+                        ? (() => {
+                            const interval = uiGranularityToInterval(metric.granularity);
+                            const showTime =
+                              metric.granularity === UiTimeGranularity.Hour ||
+                              metric.granularity === UiTimeGranularity.Minute;
+                            const startIso = dayjs(metric.lastTimestamp).toISOString();
+                            const endIso =
+                              interval && startIso
+                                ? dayjs(startIso).add(interval.count, interval.unit).toISOString()
+                                : "";
+                            const startLabel = formatDateTime(startIso, locale, showTime
+                              ? { dateStyle: "medium", timeStyle: "short" }
+                              : { dateStyle: "medium" });
+                            const endLabel = endIso
+                              ? formatDateTime(endIso, locale, showTime
+                                  ? { dateStyle: "medium", timeStyle: "short" }
+                                  : { dateStyle: "medium" })
                               : "";
-                          const startLabel = formatDateTime(startIso, locale, showTime
-                            ? { dateStyle: "medium", timeStyle: "short" }
-                            : { dateStyle: "medium" });
-                          const endLabel = endIso
-                            ? formatDateTime(endIso, locale, showTime
-                                ? { dateStyle: "medium", timeStyle: "short" }
-                                : { dateStyle: "medium" })
-                            : "";
-                          const bucketLabel = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
-                          return `Latest bucket: ${bucketLabel} (${formatGranularityLabel(metric.granularity)})`;
-                        })()
-                      : undefined
-                  }
-                >
-                  <span>
-                    <MetricValue
-                      value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
-                      suffix={metric.hasData ? metric.suffix : undefined}
-                      hasData={metric.hasData}
-                    />
-                  </span>
-                </Tooltip>
-                
-                {(() => {
-                  const trend = metric.trend;
-                  const hasTrend = trend !== null && Number.isFinite(trend);
-                  if (!metric.hasData || !hasTrend) return null;
+                            const bucketLabel = endLabel ? `${startLabel} — ${endLabel}` : startLabel;
+                            return `Latest bucket: ${bucketLabel} (${formatGranularityLabel(metric.granularity)})`;
+                          })()
+                        : undefined
+                    }
+                  >
+                    <div className="relative z-20">
+                      <MetricValue
+                        value={metric.hasData && metric.value !== null ? metric.value : notAvailableLabel}
+                        suffix={metric.hasData ? metric.suffix : undefined}
+                        hasData={metric.hasData}
+                      />
+                    </div>
+                  </Tooltip>
+                  
+                  {(() => {
+                    const trend = metric.trend;
+                    const hasTrend = trend !== null && Number.isFinite(trend);
+                    if (!metric.hasData || !hasTrend) return null;
 
-                  const trendLabel = `${Math.abs(trend).toFixed(1)}%`;
-                  const trendClass =
-                    trend > 0
-                      ? "text-[var(--bullish)] bg-[var(--bullish)]/10"
-                      : trend < 0
-                        ? "text-[var(--bearish)] bg-[var(--bearish)]/10"
-                        : "text-slate-400 bg-slate-100 dark:bg-slate-800";
-                  const Icon = trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
-                  return (
-                    <Tooltip
-                      title={
-                        metric.hasData && metric.previousTimestamp && metric.lastTimestamp
-                          ? `Change vs previous ${formatGranularityLabel(metric.granularity).toLowerCase()} bucket`
-                          : "Change vs previous data point"
-                      }
-                    >
-                      <div className={`flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${trendClass}`}>
-                        <Icon className="text-[10px]" />
-                        <span className="ml-1">{trendLabel}</span>
-                      </div>
-                    </Tooltip>
-                  );
-                })()}
+                    const trendLabel = `${Math.abs(trend).toFixed(1)}%`;
+                    const trendClass =
+                      trend > 0
+                        ? "text-[var(--bullish)] bg-[var(--bullish)]/10"
+                        : trend < 0
+                          ? "text-[var(--bearish)] bg-[var(--bearish)]/10"
+                          : "text-slate-400 bg-slate-100 dark:bg-slate-800";
+                    const Icon = trend > 0 ? ArrowUpOutlined : trend < 0 ? ArrowDownOutlined : MinusOutlined;
+                    return (
+                      <Tooltip
+                        title={
+                          metric.hasData && metric.previousTimestamp && metric.lastTimestamp
+                            ? `vs prev. ${formatGranularityLabel(metric.granularity).toLowerCase()}`
+                            : "vs prev. data point"
+                        }
+                      >
+                        <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} backdrop-blur-sm border border-current/5`}>
+                          <Icon className="text-[10px]" />
+                          <span className="ml-1 tracking-tight">{trendLabel}</span>
+                        </div>
+                      </Tooltip>
+                    );
+                  })()}
+                </div>
+                
+                <div className="mt-auto pt-2 w-full opacity-40 group-hover:opacity-100 transition-all duration-700 transform group-hover:translate-y-[-2px]">
+                  {metric.data.length > 1 ? (
+                    <Sparkline data={metric.data} color={metric.color} />
+                  ) : (
+                    <div className="h-[40px] flex items-end">
+                      <Typography.Text className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest italic opacity-50">
+                        {metric.hasData
+                          ? t("dashboard.hero.insufficientData", "Insufficient Data")
+                          : notAvailableLabel}
+                      </Typography.Text>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="mt-auto h-[40px] w-full opacity-60 group-hover:opacity-100 transition-all duration-500">
-                {metric.data.length > 1 ? (
-                  <Sparkline data={metric.data} color={metric.color} />
-                ) : (
-                  <Typography.Text className="text-[11px] text-slate-400 dark:text-slate-600 font-medium italic">
-                    {metric.hasData
-                      ? t("dashboard.hero.insufficientData", { defaultValue: "Insufficient data points" })
-                      : notAvailableLabel}
-                  </Typography.Text>
-                )}
-              </div>
-            </div>
+            </AuraMetricCard>
           </Col>
         ))}
       </Row>
