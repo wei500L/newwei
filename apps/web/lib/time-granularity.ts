@@ -48,7 +48,7 @@ const isConcreteGranularity = (
   Boolean(value) && value !== UiTimeGranularity.Unknown && value !== UiTimeGranularity.Window;
 
 export const pickCoarsestGranularity = (
-  granularities: Array<UiTimeGranularity | null | undefined>,
+  granularities: (UiTimeGranularity | null | undefined)[],
 ): UiTimeGranularity => {
   const candidates = granularities.filter(isConcreteGranularity);
   if (candidates.length === 0) return UiTimeGranularity.Unknown;
@@ -60,7 +60,7 @@ export const pickCoarsestGranularity = (
 };
 
 export const pickFinestGranularity = (
-  granularities: Array<UiTimeGranularity | null | undefined>,
+  granularities: (UiTimeGranularity | null | undefined)[],
 ): UiTimeGranularity => {
   const candidates = granularities.filter(isConcreteGranularity);
   if (candidates.length === 0) return UiTimeGranularity.Unknown;
@@ -94,6 +94,46 @@ export const formatGranularityLabel = (granularity: UiTimeGranularity): string =
     default:
       return "Unknown";
   }
+};
+
+export interface GranularityLabelI18nMeta {
+  key: string;
+  defaultValue: string;
+}
+
+export const getGranularityLabelI18nMeta = (
+  granularity: UiTimeGranularity,
+): GranularityLabelI18nMeta => {
+  switch (granularity) {
+    case UiTimeGranularity.Realtime:
+      return { key: "dashboard.timeRange.granularityLabels.realtime", defaultValue: "Real-time" };
+    case UiTimeGranularity.Minute:
+      return { key: "dashboard.timeRange.granularityLabels.minute", defaultValue: "Minute" };
+    case UiTimeGranularity.Hour:
+      return { key: "dashboard.timeRange.granularityLabels.hour", defaultValue: "Hourly" };
+    case UiTimeGranularity.Day:
+      return { key: "dashboard.timeRange.granularityLabels.day", defaultValue: "Daily" };
+    case UiTimeGranularity.Week:
+      return { key: "dashboard.timeRange.granularityLabels.week", defaultValue: "Weekly" };
+    case UiTimeGranularity.Month:
+      return { key: "dashboard.timeRange.granularityLabels.month", defaultValue: "Monthly" };
+    case UiTimeGranularity.Quarter:
+      return { key: "dashboard.timeRange.granularityLabels.quarter", defaultValue: "Quarterly" };
+    case UiTimeGranularity.Year:
+      return { key: "dashboard.timeRange.granularityLabels.year", defaultValue: "Yearly" };
+    case UiTimeGranularity.Window:
+      return { key: "dashboard.timeRange.granularityLabels.window", defaultValue: "Window" };
+    default:
+      return { key: "dashboard.timeRange.granularityLabels.unknown", defaultValue: "Unknown" };
+  }
+};
+
+export const formatGranularityLabelLocalized = (
+  granularity: UiTimeGranularity,
+  translate: (key: string, options?: Record<string, unknown>) => string,
+): string => {
+  const meta = getGranularityLabelI18nMeta(granularity);
+  return translate(meta.key, { defaultValue: meta.defaultValue });
 };
 
 export const resolveDefaultGranularityForRangePreset = (

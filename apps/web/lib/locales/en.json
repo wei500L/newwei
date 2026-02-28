@@ -575,10 +575,27 @@
     "timeRange": {
       "aggregation": "Aggregation",
       "aggregationHint": "Aggregation is reported by the backend and may differ from the suggested granularity.",
+      "aggregationHintBackend": "Aggregation is reported by the backend.",
+      "aggregationHintPending": "Waiting for backend to report aggregation granularity.",
+      "aggregationHintUnavailable": "This view does not report aggregation granularity.",
+      "aggregationHintHeroCoarsest": "Aggregation is reported by the backend. Displayed value uses the coarsest bucket across hero metrics.",
+      "aggregationHintPerMetric": "Per metric",
       "aggregationMismatchHint": "Suggested granularity is {{suggested}} but backend applied {{observed}}. Use the applied bucket size when interpreting trends.",
       "defaultAggregation": "Suggested aggregation",
       "defaultAggregationHint": "Suggested granularity is derived from the selected window; actual buckets may differ depending on data availability.",
       "defaultAggregationSuffix": "suggested",
+      "granularityLabels": {
+        "realtime": "Real-time",
+        "minute": "Minute",
+        "hour": "Hourly",
+        "day": "Daily",
+        "week": "Weekly",
+        "month": "Monthly",
+        "quarter": "Quarterly",
+        "year": "Yearly",
+        "window": "Window",
+        "unknown": "Unknown"
+      },
       "mixed": "Mixed",
       "helperText": "Time range affects chart granularity and tooltips.",
       "title": "Time Range"
@@ -627,7 +644,10 @@
       "resourceScarcity": "Resource Scarcity",
       "supplyChain": "Supply Chain Stability",
       "emptyDescription": "Hero metrics are unavailable for the selected time range.",
-      "insufficientData": "Not enough data points"
+      "insufficientData": "Not enough data points",
+      "latestBucket": "Latest bucket: {{bucket}} ({{granularity}})",
+      "trendVsPreviousGranularity": "vs prev. {{granularity}}",
+      "trendVsPreviousPoint": "vs prev. data point"
     },
     "nextActions": {
       "title": "Next actions",
@@ -681,7 +701,41 @@
       "geoImpact": "Geographic Impact",
       "noGeoData": "No geographic data detected in recent alerts.",
       "relatedIntelligence": "Related Intelligence",
-      "noEvents": "No related intelligence events found in the recent period."
+      "noEvents": "No related intelligence events found in the recent period.",
+      "rangeLabel": "Range",
+      "rangeTo": "to",
+      "unitLabel": "Unit",
+      "valueLabel": "Value",
+      "aggregationLabel": "Aggregation",
+      "bucketLabel": "Bucket",
+      "eventsLabel": "Events",
+      "unknownCountry": "Unknown",
+      "mapLoading": "Loading map geometry...",
+      "mapLoadFailed": "Failed to load map",
+      "high": "High",
+      "low": "Low",
+      "alertFrequency": "Alert Frequency",
+      "status": {
+        "pending": "Pending",
+        "delivered": "Delivered",
+        "failed": "Failed",
+        "confirmed": "Confirmed",
+        "ignored": "Ignored"
+      }
+    },
+    "candlestick": {
+      "interval": "Interval",
+      "bucket": "Bucket",
+      "open": "Open",
+      "high": "High",
+      "low": "Low",
+      "close": "Close",
+      "timestamp": "Timestamp",
+      "volume": "Volume",
+      "notAvailableShort": "N/A",
+      "degraded": "Trend view",
+      "degradedTooltip": "Only {{count}} data points available. Switched to trend view for readability; candlestick will return when data is sufficient.",
+      "insufficientDataTrendHint": "Insufficient data points, switched to trend view."
     },
     "alertConfig": {
       "title": "Alert config"
@@ -1007,6 +1061,10 @@
     "charts": {
       "noCandlestick": "No candlestick",
       "noDataRange": "No Data Found for Selected Range",
+      "rangeLabel": "Range",
+      "windowLabel": "Window",
+      "sourceLabel": "Source",
+      "aggregationWindowSnapshot": "Aggregation: window snapshot",
       "exportImage": "Export Image",
       "downloadCsv": "Download CSV",
       "exporting": "Exporting...",
@@ -1023,6 +1081,9 @@
         "sectors": "Sectors",
         "grid": "Grid"
       },
+      "sectorHeatmapNoSourceFields": "no source fields",
+      "sectorHeatmapUnknownItem": "Unknown item",
+      "sectorHeatmapError": "Sector heatmap error",
       "sectorHeatmapValueLabel": "Value",
       "sectorHeatmapChangeLabel": "Change",
       "sectorHeatmapConfigErrorTitle": "Sector heatmap configuration error",

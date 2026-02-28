@@ -17,7 +17,7 @@ import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import {
-  formatGranularityLabel,
+  formatGranularityLabelLocalized,
   pickCoarsestGranularity,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
@@ -42,6 +42,19 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapName, setMapName] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+  const rangeLabel = t("dashboard.drilldown.rangeLabel", { defaultValue: "Range" });
+  const rangeToLabel = t("dashboard.drilldown.rangeTo", { defaultValue: "to" });
+  const unitLabel = t("dashboard.drilldown.unitLabel", { defaultValue: "Unit" });
+  const metricValueLabel = t("dashboard.drilldown.valueLabel", { defaultValue: "Value" });
+  const aggregationLabel = t("dashboard.drilldown.aggregationLabel", { defaultValue: "Aggregation" });
+  const bucketLabel = t("dashboard.drilldown.bucketLabel", { defaultValue: "Bucket" });
+  const eventsLabel = t("dashboard.drilldown.eventsLabel", { defaultValue: "Events" });
+  const unknownCountryLabel = t("dashboard.drilldown.unknownCountry", { defaultValue: "Unknown" });
+  const mapLoadingLabel = t("dashboard.drilldown.mapLoading", { defaultValue: "Loading map geometry..." });
+  const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed", { defaultValue: "Failed to load map" });
+  const highLabel = t("dashboard.drilldown.high", { defaultValue: "High" });
+  const lowLabel = t("dashboard.drilldown.low", { defaultValue: "Low" });
+  const alertFrequencyLabel = t("dashboard.drilldown.alertFrequency", { defaultValue: "Alert Frequency" });
   const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
   
   const start = rangeStart.toISOString();
@@ -94,7 +107,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         console.error("Failed to load world map:", err);
         if (!cancelled) {
           const message =
-            err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to load map";
+            err instanceof Error ? err.message : typeof err === "string" ? err : mapLoadFailedLabel;
           setMapError(message);
         }
       });
@@ -102,7 +115,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return () => {
       cancelled = true;
     };
-  }, [end, mapLoaded, session?.accessToken, start, visible]);
+  }, [end, mapLoadFailedLabel, mapLoaded, session?.accessToken, start, visible]);
 
   // Process Real Data for Map
   const geoData = useMemo(() => {
@@ -170,8 +183,8 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   }, [data?.history]);
 
   const activeInterval = useMemo(() => uiGranularityToInterval(activeUiGranularity), [activeUiGranularity]);
-  const activeGranularityLabel = formatGranularityLabel(activeUiGranularity);
-  const granularityTagText = `Aggregation: ${activeGranularityLabel}`;
+  const activeGranularityLabel = formatGranularityLabelLocalized(activeUiGranularity, t);
+  const granularityTagText = `${aggregationLabel}: ${activeGranularityLabel}`;
 
   const trendOption = useMemo<EChartsOption>(() => {
     if (historyData.length === 0) return {};
@@ -194,7 +207,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${label}</div>`,
             `<div>${valueLabel}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
-            `<div style="color:#64748b;margin-top:6px;">Bucket: ${activeGranularityLabel}</div>`
+            `<div style="color:#64748b;margin-top:6px;">${bucketLabel}: ${activeGranularityLabel}</div>`
           ].join("");
         }
       },
@@ -223,7 +236,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         itemStyle: { color: '#1890ff' }
       }]
     };
-  }, [activeGranularityLabel, activeInterval, activeUiGranularity, historyData, seriesUnit]);
+  }, [activeGranularityLabel, activeInterval, activeUiGranularity, bucketLabel, historyData, seriesUnit]);
 
   const mapOption = useMemo<EChartsOption>(() => {
     if (!mapLoaded || !mapName) return {};
@@ -232,9 +245,9 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         trigger: 'item',
         formatter: (params: CallbackDataParams | CallbackDataParams[]) => {
           const payload = Array.isArray(params) ? params[0] : params;
-          const name = getCountryName(payload?.name) ?? payload?.name ?? "Unknown";
+          const name = getCountryName(payload?.name) ?? payload?.name ?? unknownCountryLabel;
           const value = typeof payload?.value === "number" ? payload.value : 0;
-          return `${name}: ${value} Events`;
+          return `${name}: ${value} ${eventsLabel}`;
         }
       },
       visualMap: {
@@ -244,13 +257,13 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         inRange: {
           color: ['#e0ffff', '#006edd']
         },
-        text: ['High', 'Low'],
+        text: [highLabel, lowLabel],
         calculable: true,
         show: geoData.length > 0
       },
       series: [
         {
-          name: 'Alert Frequency',
+          name: alertFrequencyLabel,
           type: 'map',
           roam: true,
           map: mapName,
@@ -263,7 +276,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         }
       ]
     };
-  }, [geoData, mapLoaded, mapName]);
+  }, [alertFrequencyLabel, eventsLabel, geoData, highLabel, lowLabel, mapLoaded, mapName, unknownCountryLabel]);
 
   const title = data?.history?.[0]?.item.displayName ?? metricKey;
 
@@ -296,11 +309,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
           <div className="mb-4 flex flex-wrap gap-2">
             <Tag color="default" className="text-xs">
-              Range: {range} ({formatDashboardDate(rangeStart)} to {formatDashboardDate(rangeEnd)})
+              {rangeLabel}: {range} ({formatDashboardDate(rangeStart)} {rangeToLabel} {formatDashboardDate(rangeEnd)})
             </Tag>
             {seriesUnit ? (
               <Tag color="default" className="text-xs">
-                Unit: {seriesUnit}
+                {unitLabel}: {seriesUnit}
               </Tag>
             ) : null}
             <Tag color="geekblue" className="text-xs">
@@ -331,7 +344,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                   </div>
                 ) : (
                   <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400">
-                    <Spin tip="Loading Map Geometry..." />
+                    <Spin tip={mapLoadingLabel} />
                   </div>
                 )}
                 {geoData.length === 0 && mapLoaded && (
@@ -363,10 +376,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                             </span>
                           </div>
                           <Tag className="mt-1 mr-0" color={statusColor[event.status] ?? "default"}>
-                            {event.status.toUpperCase()}
+                            {t(`dashboard.drilldown.status.${event.status}`, {
+                              defaultValue: event.status.toUpperCase(),
+                            })}
                           </Tag>
                           <span className="text-xs text-gray-500 ml-2">
-                            Value: {event.metricValue}
+                            {metricValueLabel}: {event.metricValue}
                             {seriesUnit ? ` ${seriesUnit}` : ""}
                           </span>
                         </div>

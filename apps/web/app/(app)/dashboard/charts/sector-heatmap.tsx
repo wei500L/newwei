@@ -9,10 +9,10 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
-import { useCsvExport } from "@/hooks/use-csv-export";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { useCsvExport } from "@/hooks/use-csv-export";
 import { createApiClient } from "@/lib/api-client";
 import {
   buildExportBaseName,
@@ -50,10 +50,21 @@ interface SectorHeatmapFieldMismatchPayload {
   items?: unknown;
 }
 
+interface SectorHeatmapFieldMismatchFallbackText {
+  unknownItem: string;
+  genericMessage: string;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 
-const extractSectorHeatmapFieldMismatch = (error: unknown) => {
+const extractSectorHeatmapFieldMismatch = (
+  error: unknown,
+  fallbackText: SectorHeatmapFieldMismatchFallbackText = {
+    unknownItem: "Unknown item",
+    genericMessage: "Sector heatmap error",
+  },
+) => {
   if (!axios.isAxiosError(error)) {
     return null;
   }
@@ -74,7 +85,7 @@ const extractSectorHeatmapFieldMismatch = (error: unknown) => {
       }
       const displayName = typeof item.displayName === "string" ? item.displayName.trim() : "";
       const slug = typeof item.slug === "string" ? item.slug.trim() : "";
-      const name = displayName || slug || "Unknown item";
+      const name = displayName || slug || fallbackText.unknownItem;
       const available = Array.isArray(item.availableSourceFields)
         ? item.availableSourceFields.filter(
             (entry): entry is string => typeof entry === "string" && entry.trim().length > 0
@@ -88,7 +99,7 @@ const extractSectorHeatmapFieldMismatch = (error: unknown) => {
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
   return {
-    message: typeof payload.message === "string" ? payload.message : "Sector heatmap error",
+    message: typeof payload.message === "string" ? payload.message : fallbackText.genericMessage,
     detail: typeof payload.detail === "string" ? payload.detail : undefined,
     items: details
   };
@@ -106,6 +117,21 @@ export function SectorHeatmap() {
   const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
   const emptyHint = t("dashboard.dataEmptyHint", {
     defaultValue: "No data for the selected range. Try expanding the range."
+  });
+  const rangeLabel = t("dashboard.charts.rangeLabel", { defaultValue: "Range" });
+  const windowLabelText = t("dashboard.charts.windowLabel", { defaultValue: "Window" });
+  const sourceLabel = t("dashboard.charts.sourceLabel", { defaultValue: "Source" });
+  const aggregationWindowSnapshot = t("dashboard.charts.aggregationWindowSnapshot", {
+    defaultValue: "Aggregation: window snapshot",
+  });
+  const noSourceFieldsLabel = t("dashboard.charts.sectorHeatmapNoSourceFields", {
+    defaultValue: "no source fields",
+  });
+  const unknownItemLabel = t("dashboard.charts.sectorHeatmapUnknownItem", {
+    defaultValue: "Unknown item",
+  });
+  const genericHeatmapErrorLabel = t("dashboard.charts.sectorHeatmapError", {
+    defaultValue: "Sector heatmap error",
   });
   const valueLabel = t("dashboard.charts.sectorHeatmapValueLabel", { defaultValue: "Value" });
   const changeLabel = t("dashboard.charts.sectorHeatmapChangeLabel", { defaultValue: "Change" });
@@ -234,8 +260,8 @@ export function SectorHeatmap() {
               : null;
           const [, , change, name, valuePoint] = value as HeatmapValue;
           const valueText = unit ? `${valuePoint} ${unit}` : String(valuePoint);
-          const sourceText = sourceField ? `<br/>Source: ${sourceField}` : "";
-          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valueText}${sourceText}<br/>Window: ${windowLabel}`;
+          const sourceText = sourceField ? `<br/>${sourceLabel}: ${sourceField}` : "";
+          return `<b>${name}</b><br/>${changeLabel}: ${change}%<br/>${valueLabel}: ${valueText}${sourceText}<br/>${windowLabelText}: ${windowLabel}`;
         }
       },
       grid: {
@@ -310,7 +336,7 @@ export function SectorHeatmap() {
         }
       ]
     };
-  }, [changeLabel, colors, data, fontFamily, selectedSector, valueLabel, windowLabel]);
+  }, [changeLabel, colors, data, fontFamily, selectedSector, sourceLabel, valueLabel, windowLabel, windowLabelText]);
 
   const handleCsvExport = useCallback(async () => {
     if (!data || data.cells.length === 0) return;
@@ -363,10 +389,13 @@ export function SectorHeatmap() {
   }
 
   if (isError && !data) {
-    const fieldMismatch = extractSectorHeatmapFieldMismatch(error);
+    const fieldMismatch = extractSectorHeatmapFieldMismatch(error, {
+      unknownItem: unknownItemLabel,
+      genericMessage: genericHeatmapErrorLabel,
+    });
     if (fieldMismatch) {
       const list = fieldMismatch.items
-        .map((entry) => `${entry.name}: ${entry.available.join(", ") || "no source fields"}`)
+        .map((entry) => `${entry.name}: ${entry.available.join(", ") || noSourceFieldsLabel}`)
         .join("\n");
       return (
         <div className="h-[300px] transition-all duration-300">
@@ -432,10 +461,10 @@ export function SectorHeatmap() {
       ) : null}
       <div className="flex flex-wrap items-center gap-2 px-2">
         <Tag color="default" className="text-xs">
-          Range: {range}
+          {rangeLabel}: {range}
         </Tag>
         <Tag color="default" className="text-xs">
-          Window: {windowLabel}
+          {windowLabelText}: {windowLabel}
         </Tag>
         <Tag color="default" className="text-xs">
           {t("dashboard.charts.dataStats.points", { defaultValue: "Points" })}:{" "}
@@ -465,7 +494,7 @@ export function SectorHeatmap() {
           </Tag>
         ) : null}
         <Tag color="geekblue" className="text-xs">
-          Aggregation: window snapshot
+          {aggregationWindowSnapshot}
         </Tag>
         {updatedAtLabel ? (
           <Tag color="default" className="text-xs">

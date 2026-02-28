@@ -6,7 +6,10 @@ import type { Dayjs } from "dayjs";
 import { useTranslation } from "react-i18next";
 
 import { toDashboardZonedTime } from "@/lib/dashboard-time";
-import { formatGranularityLabel, UiTimeGranularity } from "@/lib/time-granularity";
+import {
+  formatGranularityLabelLocalized,
+  UiTimeGranularity,
+} from "@/lib/time-granularity";
 import { useDashboardRangeStore, type DashboardRangePreset } from "@/store/time-range";
 
 const presets: { label: string; value: DashboardRangePreset }[] = [
@@ -54,13 +57,14 @@ export function TimeRangeControls({ appliedGranularity, appliedGranularityRange 
     mixedFinest !== mixedCoarsest;
 
   const appliedGranularityLabel = resolvedAppliedGranularity
-    ? formatGranularityLabel(resolvedAppliedGranularity)
+    ? formatGranularityLabelLocalized(resolvedAppliedGranularity, t)
     : null;
 
   const appliedGranularityDisplayLabel = hasMixedGranularity
-    ? `${t("dashboard.timeRange.mixed", { defaultValue: "Mixed" })} (${formatGranularityLabel(
+    ? `${t("dashboard.timeRange.mixed", { defaultValue: "Mixed" })} (${formatGranularityLabelLocalized(
         mixedFinest!,
-      )}-${formatGranularityLabel(mixedCoarsest!)})`
+        t,
+      )}-${formatGranularityLabelLocalized(mixedCoarsest!, t)})`
     : appliedGranularityLabel;
 
   const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });

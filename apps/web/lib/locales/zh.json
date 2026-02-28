@@ -576,12 +576,26 @@
       "aggregation": "聚合粒度",
       "aggregationHint": "聚合粒度由后端返回，可能与建议粒度不同。",
       "aggregationHintBackend": "聚合粒度由后端返回。",
+      "aggregationHintHeroCoarsest": "聚合粒度由后端返回；当前显示值采用概览指标中最粗的分桶。",
+      "aggregationHintPerMetric": "按指标",
       "aggregationHintPending": "正在等待后端返回聚合粒度。",
       "aggregationHintUnavailable": "此页面不提供聚合粒度信息。",
       "aggregationMismatchHint": "建议粒度为 {{suggested}}，但后端实际使用 {{observed}}。解读趋势时请以实际粒度为准。",
       "defaultAggregation": "建议聚合粒度",
       "defaultAggregationHint": "建议粒度由所选时间窗推导；实际数据桶可能因数据可用性而不同。",
       "defaultAggregationSuffix": "建议",
+      "granularityLabels": {
+        "realtime": "实时",
+        "minute": "分钟",
+        "hour": "小时",
+        "day": "每日",
+        "week": "每周",
+        "month": "每月",
+        "quarter": "每季度",
+        "year": "每年",
+        "window": "窗口",
+        "unknown": "未知"
+      },
       "mixed": "混合",
       "helperText": "时间范围会影响图表粒度与提示信息。",
       "title": "时间范围"
@@ -630,7 +644,10 @@
       "resourceScarcity": "资源稀缺",
       "supplyChain": "供应链稳定性",
       "emptyDescription": "所选时间范围内暂无可用的概览指标数据。",
-      "insufficientData": "数据点不足"
+      "insufficientData": "数据点不足",
+      "latestBucket": "最新分桶：{{bucket}}（{{granularity}}）",
+      "trendVsPreviousGranularity": "较上一个{{granularity}}",
+      "trendVsPreviousPoint": "较上一个数据点"
     },
     "nextActions": {
       "title": "下一步操作",
@@ -684,7 +701,41 @@
       "geoImpact": "地理影响",
       "noGeoData": "近期告警中未检测到地理数据。",
       "relatedIntelligence": "相关情报",
-      "noEvents": "近期未找到相关情报事件。"
+      "noEvents": "近期未找到相关情报事件。",
+      "rangeLabel": "范围",
+      "rangeTo": "至",
+      "unitLabel": "单位",
+      "valueLabel": "数值",
+      "aggregationLabel": "聚合粒度",
+      "bucketLabel": "分桶",
+      "eventsLabel": "事件",
+      "unknownCountry": "未知",
+      "mapLoading": "正在加载地图几何数据...",
+      "mapLoadFailed": "地图加载失败",
+      "high": "高",
+      "low": "低",
+      "alertFrequency": "告警频次",
+      "status": {
+        "pending": "待处理",
+        "delivered": "已送达",
+        "failed": "失败",
+        "confirmed": "已确认",
+        "ignored": "已忽略"
+      }
+    },
+    "candlestick": {
+      "interval": "区间粒度",
+      "bucket": "分桶",
+      "open": "开盘",
+      "high": "最高",
+      "low": "最低",
+      "close": "收盘",
+      "timestamp": "时间戳",
+      "volume": "成交量",
+      "notAvailableShort": "暂无",
+      "degraded": "趋势视图",
+      "degradedTooltip": "当前仅 {{count}} 个数据点，已切换为趋势视图以优化可读性；数据充足后将恢复 K 线图。",
+      "insufficientDataTrendHint": "数据点不足，已切换为趋势视图。"
     },
     "alertConfig": {
       "title": "告警配置"
@@ -1010,6 +1061,10 @@
     "charts": {
       "noCandlestick": "无K线图",
       "noDataRange": "所选范围暂无数据",
+      "rangeLabel": "范围",
+      "windowLabel": "窗口",
+      "sourceLabel": "来源",
+      "aggregationWindowSnapshot": "聚合：窗口快照",
       "exportImage": "导出图片",
       "downloadCsv": "下载 CSV",
       "exporting": "导出中...",
@@ -1026,6 +1081,9 @@
         "sectors": "行业",
         "grid": "网格"
       },
+      "sectorHeatmapNoSourceFields": "无来源字段",
+      "sectorHeatmapUnknownItem": "未知项",
+      "sectorHeatmapError": "板块热力图错误",
       "sectorHeatmapValueLabel": "数值",
       "sectorHeatmapChangeLabel": "涨跌幅",
       "sectorHeatmapConfigErrorTitle": "板块热力图配置错误",

@@ -3,7 +3,8 @@
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
 import { Card, Col, Row, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useMemo, useState, useEffect, useRef, MouseEvent } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -13,7 +14,7 @@ import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
 import { resolveLocale, formatDateTime } from "@/lib/i18n";
 import {
-  formatGranularityLabel,
+  formatGranularityLabelLocalized,
   pickCoarsestGranularity,
   timeGranularityToUiGranularity,
   UiTimeGranularity,
@@ -92,7 +93,6 @@ const AuraMetricCard = ({
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
 
   const handleMouseMove = (e: MouseEvent) => {
     if (!cardRef.current) return;
@@ -107,8 +107,6 @@ const AuraMetricCard = ({
     <div 
       ref={cardRef}
       onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
       className="relative group overflow-hidden flex flex-col h-full px-5 py-4 transition-all duration-500 cursor-pointer active:scale-[0.98] active:brightness-105 rounded-2xl border-l border-white/10 first:border-l-0"
     >
@@ -342,16 +340,24 @@ export function MarketPulse({
   const activeGranularity = pickCoarsestGranularity(
     metrics.filter((metric) => metric.hasData).map((metric) => metric.granularity),
   );
-  const granularityLabel = formatGranularityLabel(activeGranularity);
-  const granularityColor =
-    activeGranularity === UiTimeGranularity.Unknown ? "default" : "geekblue";
-  const granularityTagText = `Aggregation: ${granularityLabel}`;
+
+  const aggregationLabel = t("dashboard.timeRange.aggregation", { defaultValue: "Aggregation" });
+  const granularityLabel = formatGranularityLabelLocalized(activeGranularity, t);
+  const granularityTagText = `${aggregationLabel}: ${granularityLabel}`;
   const granularityTooltip = (() => {
     const detailParts = metrics
       .filter((metric) => metric.hasData && metric.granularity !== UiTimeGranularity.Unknown)
-      .map((metric) => `${metric.title}: ${formatGranularityLabel(metric.granularity)}`);
-    const details = detailParts.length ? ` Per metric: ${detailParts.join(" · ")}.` : "";
-    return `Aggregation is reported by the backend. Displayed value uses the coarsest bucket across hero metrics.${details}`;
+      .map((metric) => `${metric.title}: ${formatGranularityLabelLocalized(metric.granularity, t)}`);
+    const baseTooltip = t("dashboard.timeRange.aggregationHintHeroCoarsest", {
+      defaultValue: "Aggregation is reported by the backend. Displayed value uses the coarsest bucket across hero metrics.",
+    });
+    if (!detailParts.length) {
+      return baseTooltip;
+    }
+    const perMetricLabel = t("dashboard.timeRange.aggregationHintPerMetric", {
+      defaultValue: "Per metric",
+    });
+    return `${baseTooltip} ${perMetricLabel}: ${detailParts.join(" · ")}.`;
   })();
 
   return (
@@ -402,7 +408,11 @@ export function MarketPulse({
                                   : { dateStyle: "medium" })
                               : "";
                             const bucketLabel = endLabel ? `${startLabel} — ${endLabel}` : startLabel;
-                            return `Latest bucket: ${bucketLabel} (${formatGranularityLabel(metric.granularity)})`;
+                            return t("dashboard.hero.latestBucket", {
+                              bucket: bucketLabel,
+                              granularity: formatGranularityLabelLocalized(metric.granularity, t),
+                              defaultValue: "Latest bucket: {{bucket}} ({{granularity}})",
+                            });
                           })()
                         : undefined
                     }
@@ -433,8 +443,13 @@ export function MarketPulse({
                       <Tooltip
                         title={
                           metric.hasData && metric.previousTimestamp && metric.lastTimestamp
-                            ? `vs prev. ${formatGranularityLabel(metric.granularity).toLowerCase()}`
-                            : "vs prev. data point"
+                            ? t("dashboard.hero.trendVsPreviousGranularity", {
+                                granularity: formatGranularityLabelLocalized(metric.granularity, t).toLowerCase(),
+                                defaultValue: "vs prev. {{granularity}}",
+                              })
+                            : t("dashboard.hero.trendVsPreviousPoint", {
+                                defaultValue: "vs prev. data point",
+                              })
                         }
                       >
                         <div className={`flex items-center text-[11px] font-black px-2 py-0.5 rounded-full ${trendClass} backdrop-blur-sm border border-current/5`}>
