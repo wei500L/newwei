@@ -1743,6 +1743,13 @@
       "filters": {
         "weightPlaceholder": "All weights"
       },
+      "searchFeedback": {
+        "updating": "Updating search…",
+        "loading": "Searching archive…",
+        "error": "Search failed. Please retry.",
+        "empty": "No matching records.",
+        "ready": "{{count}} records matched"
+      },
       "errors": {
         "searchFailedTitle": "Semantic search failed",
         "digestFailedTitle": "Archive load failed",
@@ -6881,6 +6888,18 @@
     "recent": "Recent Searches",
     "searchFor": "Search for",
     "placeholder": "Search news, topics, or events...",
+    "feedback": {
+      "minChars": "Type {{remaining}} more character(s) to search",
+      "debouncing": "Waiting for you to finish typing...",
+      "loading": "Searching...",
+      "error": "Search is temporarily unavailable. Please retry.",
+      "empty": "No suggestions for current input.",
+      "ready": "{{count}} suggestion(s) available",
+      "sourcesLoading": "Loading source index...",
+      "sourcesIdle": "Type to filter sources.",
+      "sourcesEmpty": "No matching sources.",
+      "sourcesReady": "{{count}} source(s) matched"
+    },
     "suggestions": {
       "server": "Semantic Suggestions",
       "loading": "Loading semantic suggestions...",

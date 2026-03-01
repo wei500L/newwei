@@ -924,8 +924,12 @@ export default function SubscriptionsPage() {
                         await Promise.all([refetchNotifications(), refetchUnread()]);
                       }
                     }}
-                    style={{ cursor: 'pointer' }}
-                    className={!item.readAt ? "bg-slate-50" : undefined}
+                    style={{ cursor: "pointer" }}
+                    className={
+                      !item.readAt
+                        ? "rounded-md bg-slate-100/80 transition-colors dark:bg-slate-800/50"
+                        : "transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/35"
+                    }
                   >
                     <List.Item.Meta
                       title={

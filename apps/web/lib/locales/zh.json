@@ -1743,6 +1743,13 @@
       "filters": {
         "weightPlaceholder": "所有权重"
       },
+      "searchFeedback": {
+        "updating": "正在更新检索…",
+        "loading": "正在检索归档…",
+        "error": "检索失败，请重试。",
+        "empty": "暂无匹配记录。",
+        "ready": "已匹配 {{count}} 条记录"
+      },
       "errors": {
         "searchFailedTitle": "智能搜索失败",
         "digestFailedTitle": "归档加载失败",
@@ -6881,6 +6888,18 @@
     "recent": "最近搜索",
     "searchFor": "搜索",
     "placeholder": "搜索新闻、话题或事件...",
+    "feedback": {
+      "minChars": "还需输入 {{remaining}} 个字符后开始搜索",
+      "debouncing": "正在等待你完成输入…",
+      "loading": "正在搜索…",
+      "error": "搜索暂时不可用，请稍后重试。",
+      "empty": "当前输入暂无建议。",
+      "ready": "共 {{count}} 条建议",
+      "sourcesLoading": "正在加载来源索引…",
+      "sourcesIdle": "输入关键词筛选来源。",
+      "sourcesEmpty": "没有匹配的来源。",
+      "sourcesReady": "已匹配 {{count}} 个来源"
+    },
     "suggestions": {
       "server": "语义建议",
       "loading": "正在加载语义建议...",

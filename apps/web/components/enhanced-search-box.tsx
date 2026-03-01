@@ -1,21 +1,28 @@
 "use client";
 
-import { gql, useLazyQuery } from "@apollo/client";
 import {
+  ExclamationCircleOutlined,
   GlobalOutlined,
   HistoryOutlined,
+  LoadingOutlined,
   QuestionCircleOutlined,
   ReadOutlined,
   SearchOutlined,
   SmileOutlined,
   TagsOutlined
 } from "@ant-design/icons";
-import { AutoComplete, Button, Input, Popover, Spin, Tag } from "antd";
+import { gql, useLazyQuery } from "@apollo/client";
+import { AutoComplete, Button, Input, Popover, Tag } from "antd";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { SearchSuggestionType } from "@/graphql/generated";
+import {
+  getSearchRemainingChars,
+  type SearchFeedbackState,
+  resolveSearchFeedbackState,
+} from "@/lib/search-feedback-state";
 import {
   MAX_SEARCH_HISTORY_ITEMS,
   parseSearchHistory,
@@ -27,12 +34,13 @@ import { resolveSuggestionRequestPlan, type SearchField } from "./enhanced-searc
 const DEBOUNCE_MS = 300;
 const SUGGESTIONS_LIMIT = 8;
 const HEADER_OPTION_PREFIX = "__header__";
+const MIN_PREFIX_WITHOUT_FIELD_CONTEXT = 2;
 
-type SuggestionOption = {
+interface SuggestionOption {
   label: ReactNode;
   value: string;
   disabled?: boolean;
-};
+}
 
 type SearchSuggestionOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
 
@@ -95,6 +103,9 @@ export function EnhancedSearchBox({
   const [internalValue, setInternalValue] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [remoteSuggestions, setRemoteSuggestions] = useState<SearchSuggestionRecord[]>([]);
+  const [suggestionsError, setSuggestionsError] = useState(false);
+  const [isSuggestionDebouncing, setIsSuggestionDebouncing] = useState(false);
+  const [lastSettledPrefix, setLastSettledPrefix] = useState("");
   const requestSeqRef = useRef(0);
 
   const [loadSuggestions, { loading: suggestionsLoading }] = useLazyQuery<
@@ -153,6 +164,7 @@ export function EnhancedSearchBox({
     }
     return inputValue.trim();
   }, [fieldContext, inputValue]);
+  const normalizedSuggestionPrefix = suggestionPrefix.trim();
 
   const parsedQuery = useMemo(() => parseSearchSyntax(inputValue), [inputValue]);
 
@@ -205,12 +217,18 @@ export function EnhancedSearchBox({
     if (!requestPlan.shouldFetch) {
       requestSeqRef.current = requestPlan.nextSeq;
       setRemoteSuggestions([]);
+      setSuggestionsError(false);
+      setIsSuggestionDebouncing(false);
+      setLastSettledPrefix("");
       return;
     }
 
+    setSuggestionsError(false);
+    setIsSuggestionDebouncing(true);
     const timer = window.setTimeout(() => {
       const requestSeq = requestSeqRef.current + 1;
       requestSeqRef.current = requestSeq;
+      setIsSuggestionDebouncing(false);
 
       void loadSuggestions({
         variables: {
@@ -223,12 +241,16 @@ export function EnhancedSearchBox({
             return;
           }
           setRemoteSuggestions(result.data?.searchSuggestions ?? []);
+          setSuggestionsError(false);
+          setLastSettledPrefix(suggestionPrefix);
         })
         .catch(() => {
           if (requestSeqRef.current !== requestSeq) {
             return;
           }
           setRemoteSuggestions([]);
+          setSuggestionsError(true);
+          setLastSettledPrefix(suggestionPrefix);
         });
     }, DEBOUNCE_MS);
 
@@ -269,6 +291,71 @@ export function EnhancedSearchBox({
     }
     return Array.from(byKey.values());
   }, [fieldContext, remoteSuggestions]);
+
+  const suggestionMinChars = fieldContext ? 0 : MIN_PREFIX_WITHOUT_FIELD_CONTEXT;
+  const suggestionRemainingChars = getSearchRemainingChars(normalizedSuggestionPrefix, suggestionMinChars);
+  const suggestionFeedbackState = useMemo<SearchFeedbackState>(() => {
+    const baseState = resolveSearchFeedbackState({
+      query: normalizedSuggestionPrefix,
+      debouncedQuery: lastSettledPrefix,
+      loading: suggestionsLoading,
+      hasResults: serverSuggestions.length > 0,
+      hasError: suggestionsError && lastSettledPrefix === suggestionPrefix,
+      minChars: suggestionMinChars,
+    });
+    if (
+      baseState === "empty" &&
+      normalizedSuggestionPrefix.length >= suggestionMinChars &&
+      lastSettledPrefix !== suggestionPrefix
+    ) {
+      return "debouncing";
+    }
+    if (isSuggestionDebouncing && normalizedSuggestionPrefix.length >= suggestionMinChars) {
+      return "debouncing";
+    }
+    return baseState;
+  }, [
+    isSuggestionDebouncing,
+    lastSettledPrefix,
+    normalizedSuggestionPrefix,
+    serverSuggestions.length,
+    suggestionMinChars,
+    suggestionPrefix,
+    suggestionsError,
+    suggestionsLoading,
+  ]);
+  const suggestionFeedbackMessage = useMemo(() => {
+    switch (suggestionFeedbackState) {
+      case "minChars":
+        return t("search.feedback.minChars", {
+          defaultValue: "Type {{remaining}} more character(s) to search",
+          remaining: suggestionRemainingChars,
+        });
+      case "debouncing":
+        return t("search.feedback.debouncing", {
+          defaultValue: "Waiting for you to finish typing...",
+        });
+      case "loading":
+        return t("search.feedback.loading", {
+          defaultValue: "Searching...",
+        });
+      case "error":
+        return t("search.feedback.error", {
+          defaultValue: "Search is temporarily unavailable. Please retry.",
+        });
+      case "empty":
+        return t("search.feedback.empty", {
+          defaultValue: "No suggestions for current input.",
+        });
+      case "ready":
+        return t("search.feedback.ready", {
+          defaultValue: "{{count}} suggestion(s) available",
+          count: serverSuggestions.length,
+        });
+      default:
+        return null;
+    }
+  }, [serverSuggestions.length, suggestionFeedbackState, suggestionRemainingChars, t]);
 
   const buildSuggestionValue = useCallback(
     (suggestion: SearchSuggestionRecord) => {
@@ -335,20 +422,63 @@ export function EnhancedSearchBox({
     const semanticCount = serverSuggestions.filter((entry) => entry.origin === "SEMANTIC").length;
     const hybridCount = serverSuggestions.filter((entry) => entry.origin === "HYBRID").length;
     onSuggestionStatusChange({
-      loading: suggestionsLoading,
+      loading: suggestionsLoading || suggestionFeedbackState === "debouncing",
       prefix: suggestionPrefix.trim(),
       total: serverSuggestions.length,
       lexicalCount,
       semanticCount,
       hybridCount
     });
-  }, [onSuggestionStatusChange, serverSuggestions, suggestionPrefix, suggestionsLoading]);
+  }, [
+    onSuggestionStatusChange,
+    serverSuggestions,
+    suggestionFeedbackState,
+    suggestionPrefix,
+    suggestionsLoading,
+  ]);
+
+  const feedbackOption = useMemo<SuggestionOption | null>(() => {
+    if (suggestionFeedbackState === "idle" || !suggestionFeedbackMessage) {
+      return null;
+    }
+    if (suggestionFeedbackState === "ready") {
+      return null;
+    }
+    return {
+      label: (
+        <div
+          className={`search-feedback-pill search-feedback-pill--${suggestionFeedbackState} w-full`}
+        >
+          {suggestionFeedbackState === "loading" || suggestionFeedbackState === "debouncing" ? (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <LoadingOutlined className="animate-spin" />
+            </span>
+          ) : suggestionFeedbackState === "error" ? (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <ExclamationCircleOutlined />
+            </span>
+          ) : (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <SearchOutlined />
+            </span>
+          )}
+          <span className="search-feedback-pill__text">{suggestionFeedbackMessage}</span>
+        </div>
+      ),
+      value: `${HEADER_OPTION_PREFIX}_feedback_${suggestionFeedbackState}`,
+      disabled: true,
+    };
+  }, [suggestionFeedbackMessage, suggestionFeedbackState]);
 
   const options = useMemo(() => {
     const suggestions: SuggestionOption[] = [];
     const rawValue = inputValue;
     const trimmed = rawValue.trim();
     const normalized = trimmed.toLowerCase();
+
+    if (feedbackOption) {
+      suggestions.push(feedbackOption);
+    }
 
     if (!trimmed) {
       if (history.length > 0) {
@@ -439,21 +569,6 @@ export function EnhancedSearchBox({
       });
     }
 
-    if (suggestionsLoading && trimmed.length >= 2) {
-      suggestions.push({
-        label: (
-          <div className="px-2 py-1 text-xs text-gray-500 flex items-center gap-2">
-            <Spin size="small" />
-            <span>
-              {t("search.suggestions.loading", { defaultValue: "Loading semantic suggestions..." })}
-            </span>
-          </div>
-        ),
-        value: `${HEADER_OPTION_PREFIX}_loading`,
-        disabled: true,
-      });
-    }
-
     if (normalized.length >= 2) {
       const syntaxSuggestions = [
         { prefix: "topic:", example: "topic:AI" },
@@ -510,10 +625,10 @@ export function EnhancedSearchBox({
     return suggestions;
   }, [
     buildSuggestionValue,
+    feedbackOption,
     history,
     inputValue,
     serverSuggestions,
-    suggestionsLoading,
     suggestionTypeLabel,
     suggestionTypeIcon,
     suggestionOriginLabel,
@@ -679,6 +794,28 @@ export function EnhancedSearchBox({
           <kbd className="border rounded px-1 bg-gray-100 dark:bg-gray-800">Enter</kbd>
         </div>
       </div>
+      {suggestionFeedbackMessage ? (
+        <div
+          className={`mt-1.5 search-feedback-pill search-feedback-pill--${suggestionFeedbackState}`}
+          role="status"
+          aria-live="polite"
+        >
+          {suggestionFeedbackState === "loading" || suggestionFeedbackState === "debouncing" ? (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <LoadingOutlined className="animate-spin" />
+            </span>
+          ) : suggestionFeedbackState === "error" ? (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <ExclamationCircleOutlined />
+            </span>
+          ) : (
+            <span className="search-feedback-pill__icon" aria-hidden>
+              <SearchOutlined />
+            </span>
+          )}
+          <span className="search-feedback-pill__text">{suggestionFeedbackMessage}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

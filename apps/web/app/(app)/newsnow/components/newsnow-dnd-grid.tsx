@@ -8,7 +8,10 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import type { DragEndEvent } from "@dnd-kit/core";
+import type {
+  DragEndEvent,
+  DragStartEvent,
+} from "@dnd-kit/core";
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -50,6 +53,7 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
     liveUnreadBySource,
   } = useNewsnowStore();
   const [items, setItems] = useState<string[]>([]);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -68,7 +72,7 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 4,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -76,7 +80,19 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
     })
   );
 
+  function handleDragStart(event: DragStartEvent) {
+    if (sortMode === "personalized" || isMobile || sortMode === "smart") {
+      return;
+    }
+    setActiveDragId(String(event.active.id));
+  }
+
+  function handleDragCancel() {
+    setActiveDragId(null);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null);
     if (sortMode === "personalized" || isMobile || sortMode === "smart") {
       return;
     }
@@ -163,6 +179,8 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
       <div
@@ -192,6 +210,7 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
                   visibleItemsCount={dedupeResult.visibleItemsBySource[id] ?? 0}
                   realtimeUnreadCount={liveUnreadBySource[id] ?? 0}
                   personalizedScoreDetail={personalizedScoreDetailsBySourceId[id]}
+                  activeDragId={activeDragId}
                 />
               ) : null}
             </div>

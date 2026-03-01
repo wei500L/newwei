@@ -56,8 +56,7 @@ interface TopNavProps {
   showDesktopMenuButton?: boolean;
 }
 
-const resolveInitialViewportWidth = (): number =>
-  typeof window === "undefined" ? NAV_FULL_MIN_WIDTH : window.innerWidth;
+const SSR_SAFE_INITIAL_VIEWPORT_WIDTH = NAV_FULL_MIN_WIDTH;
 
 export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const { t, i18n } = useTranslation();
@@ -68,9 +67,9 @@ export function TopNav({ showDesktopMenuButton = false }: TopNavProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const headerRef = useRef<HTMLElement | null>(null);
-  const [viewportWidth, setViewportWidth] = useState<number>(resolveInitialViewportWidth);
+  const [viewportWidth, setViewportWidth] = useState<number>(SSR_SAFE_INITIAL_VIEWPORT_WIDTH);
   const [densityMode, setDensityMode] = useState<TopNavDensityMode>(() =>
-    resolveBaseDensityMode(resolveInitialViewportWidth())
+    resolveBaseDensityMode(SSR_SAFE_INITIAL_VIEWPORT_WIDTH)
   );
   const isLoadingSession = status === "loading";
   const user = session?.user;

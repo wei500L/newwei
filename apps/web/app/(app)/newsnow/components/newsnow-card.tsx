@@ -53,6 +53,7 @@ interface NewsnowCardProps {
   source: Source;
   dragDisabled?: boolean;
   mobileMode?: boolean;
+  activeDragId?: string | null;
   hideCrossSourceDuplicates?: boolean;
   crossSourceMetaByItemId?: Record<string, CrossSourceItemMeta>;
   duplicateItemsCount?: number;
@@ -85,45 +86,6 @@ const accentRgbMap: Record<string, string> = {
   emerald: "52 211 153",
   teal: "45 212 191",
   yellow: "251 191 36",
-};
-
-const cardShellMap: Record<string, string> = {
-  slate: "border-slate-300/30 bg-[#0f1520]",
-  blue: "border-blue-300/28 bg-[#0b1424]",
-  red: "border-red-300/28 bg-[#1a1018]",
-  green: "border-green-300/28 bg-[#0d1a19]",
-  orange: "border-orange-300/28 bg-[#1b1510]",
-  gray: "border-zinc-300/28 bg-[#111824]",
-  indigo: "border-indigo-300/28 bg-[#10152b]",
-  emerald: "border-emerald-300/28 bg-[#0c1d19]",
-  teal: "border-teal-300/28 bg-[#0b1c22]",
-  yellow: "border-amber-300/28 bg-[#191810]",
-};
-
-const cardGlowMap: Record<string, string> = {
-  slate: "shadow-[0_20px_44px_-34px_rgba(148,163,184,0.54)]",
-  blue: "shadow-[0_20px_44px_-34px_rgba(59,130,246,0.56)]",
-  red: "shadow-[0_20px_44px_-34px_rgba(244,63,94,0.54)]",
-  green: "shadow-[0_20px_44px_-34px_rgba(16,185,129,0.54)]",
-  orange: "shadow-[0_20px_44px_-34px_rgba(249,115,22,0.54)]",
-  gray: "shadow-[0_20px_44px_-34px_rgba(161,161,170,0.5)]",
-  indigo: "shadow-[0_20px_44px_-34px_rgba(99,102,241,0.56)]",
-  emerald: "shadow-[0_20px_44px_-34px_rgba(16,185,129,0.56)]",
-  teal: "shadow-[0_20px_44px_-34px_rgba(20,184,166,0.56)]",
-  yellow: "shadow-[0_20px_44px_-34px_rgba(245,158,11,0.5)]",
-};
-
-const accentMap: Record<string, string> = {
-  slate: "text-slate-300",
-  blue: "text-blue-300",
-  red: "text-red-300",
-  green: "text-green-300",
-  orange: "text-orange-300",
-  gray: "text-gray-300",
-  indigo: "text-indigo-300",
-  emerald: "text-emerald-300",
-  teal: "text-teal-300",
-  yellow: "text-yellow-300",
 };
 
 const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
@@ -219,10 +181,15 @@ function areResolvedTargetsEqual(
   return true;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 export function NewsnowCard({
   id,
   source,
   dragDisabled = false,
+  activeDragId = null,
   hideCrossSourceDuplicates = false,
   crossSourceMetaByItemId,
   duplicateItemsCount = 0,
@@ -273,6 +240,9 @@ export function NewsnowCard({
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (isDragging || activeDragId) {
+      return;
+    }
     if (!articleRef.current) return;
     const rect = articleRef.current.getBoundingClientRect();
     pendingMousePosRef.current = {
@@ -304,7 +274,15 @@ export function NewsnowCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id, disabled: dragDisabled });
+    isSorting,
+  } = useSortable({
+    id,
+    disabled: dragDisabled,
+    transition: {
+      duration: 260,
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+    },
+  });
   const setArticleNodeRef = useCallback(
     (node: HTMLElement | null) => {
       articleRef.current = node;
@@ -313,11 +291,26 @@ export function NewsnowCard({
     [setNodeRef],
   );
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-    opacity: isDragging ? 0.5 : 1,
+  const isAnyCardDragging = Boolean(activeDragId);
+  const isAnotherCardDragging = Boolean(activeDragId && activeDragId !== id);
+  const dragTiltDeg =
+    isDragging && transform ? clamp(transform.x / 28, -3.2, 3.2) : 0;
+  const baseTransform = CSS.Transform.toString(transform);
+  const composedTransform = isDragging
+    ? `${baseTransform ?? ""} rotate(${dragTiltDeg.toFixed(2)}deg) scale(1.01)`
+    : baseTransform;
+
+  const style: CSSProperties = {
+    transform: composedTransform,
+    transition:
+      transition ??
+      "transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease-out",
+    zIndex: isDragging ? 80 : isSorting ? 20 : undefined,
+    opacity: isDragging ? 0.98 : isAnotherCardDragging ? 0.9 : 1,
+    boxShadow: isDragging
+      ? "0 18px 36px -24px rgb(var(--newsnow-card-accent-rgb) / 0.58)"
+      : undefined,
+    pointerEvents: isDragging ? "none" : undefined,
   };
 
   const colorClass = colorMap[source.color] || "bg-[var(--primary)]";
@@ -328,6 +321,7 @@ export function NewsnowCard({
     ["--newsnow-card-accent-rgb" as string]: accentRgb,
     ["contentVisibility" as string]: "auto",
     ["containIntrinsicSize" as string]: "440px",
+    backfaceVisibility: "hidden",
   };
   
   // Aura color values based on source color, used for the hover glow
@@ -345,7 +339,6 @@ export function NewsnowCard({
   };
   const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
   
-  const accentClass = accentMap[source.color] || "text-[var(--primary)]";
   const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
   const iconUrl = useMemo(() => resolveSourceIconUrl(source.home), [source.home]);
@@ -840,7 +833,7 @@ export function NewsnowCard({
     ],
   );
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
       clearLiveUnread(id);
@@ -851,7 +844,7 @@ export function NewsnowCard({
     } finally {
       setIsRefreshing(false);
     }
-  };
+  }, [clearLiveUnread, id, refresh, trackSourceInteraction]);
 
   const updatedText = data?.updatedTime
     ? `${getRelativeTime(data.updatedTime)}更新`
@@ -885,24 +878,135 @@ export function NewsnowCard({
     });
     return map;
   }, [displayItems, resolvedTargetsByItemId]);
+  const cardListContent = useMemo(() => {
+    if (isDragging) {
+      return (
+        <div className="flex h-full items-center justify-center p-4 text-center">
+          <span className="rounded-full border border-[var(--border)] bg-[var(--secondary)]/70 px-3 py-1 text-[11px] font-medium text-[var(--secondary-foreground)]">
+            拖动中
+          </span>
+        </div>
+      );
+    }
+
+    if (isLoading) {
+      return (
+        <div className="space-y-3 p-3 opacity-60">
+          <Skeleton active paragraph={{ rows: 8 }} />
+        </div>
+      );
+    }
+
+    if (isError) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
+          <p className="text-sm font-medium text-[var(--foreground)]">获取失败</p>
+          {sourceErrorMessage ? (
+            <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
+              {sourceErrorMessage}
+            </p>
+          ) : null}
+          {needsRuntimeSecret ? (
+            <a
+              href="/settings/system?tab=newsSourceRuntimeSecrets"
+              className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
+            >
+              去系统设置 &gt; 新闻源密钥
+            </a>
+          ) : null}
+          <Button
+            size="small"
+            className="mt-2"
+            onClick={() => {
+              void handleRefresh();
+            }}
+          >
+            重试
+          </Button>
+        </div>
+      );
+    }
+
+    if (displayItems.length > 0) {
+      return source.type === "hottest" ? (
+        <NewsListHot
+          items={displayItems}
+          onOpenEvent={handleOpenEvent}
+          onOpenItem={handleOpenItem}
+          onOpenOriginal={trackOriginalOpen}
+          freshItemIds={animatedItemIds}
+          crossSourceMetaByItemId={dedupMetaMap}
+          actionAvailabilityByItemId={actionAvailabilityByItemId}
+          densityMode={densityMode}
+        />
+      ) : (
+        <NewsListTimeline
+          items={displayItems}
+          onOpenEvent={handleOpenEvent}
+          onOpenItem={handleOpenItem}
+          onOpenOriginal={trackOriginalOpen}
+          freshItemIds={animatedItemIds}
+          crossSourceMetaByItemId={dedupMetaMap}
+          actionAvailabilityByItemId={actionAvailabilityByItemId}
+          densityMode={densityMode}
+        />
+      );
+    }
+
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+        <p className="text-xs font-medium text-[var(--secondary-foreground)]">暂无数据</p>
+        {needsRuntimeSecret ? (
+          <a
+            href="/settings/system?tab=newsSourceRuntimeSecrets"
+            className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
+          >
+            该源可能需要先配置密钥
+          </a>
+        ) : null}
+      </div>
+    );
+  }, [
+    actionAvailabilityByItemId,
+    animatedItemIds,
+    dedupMetaMap,
+    densityMode,
+    displayItems,
+    handleOpenEvent,
+    handleOpenItem,
+    handleRefresh,
+    isDragging,
+    isError,
+    isLoading,
+    needsRuntimeSecret,
+    source.type,
+    sourceErrorMessage,
+    trackOriginalOpen,
+  ]);
 
   return (
     <article
       ref={setArticleNodeRef}
-      onMouseMove={handleMouseMove}
+      onMouseMove={isAnyCardDragging ? undefined : handleMouseMove}
       style={cardStyle}
-      className={`relative isolate group flex min-h-[380px] flex-col overflow-hidden rounded-[var(--radius-lg)] glass-panel will-change-transform transition-[transform,box-shadow,filter] duration-300 active:scale-[0.98] active:brightness-105 ${dragDisabled ? "" : "hover:-translate-y-1"}`}
+      className={`relative isolate group flex min-h-[380px] flex-col overflow-hidden rounded-[var(--radius-lg)] glass-panel will-change-transform transition-[transform,box-shadow,opacity] duration-300 motion-reduce:transition-none active:scale-[0.99] ${
+        dragDisabled || isAnyCardDragging ? "" : "hover:-translate-y-1"
+      } ${isDragging ? "cursor-grabbing" : ""}`}
     >
       {/* Hover Glow Effect */}
-      <div 
-        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+      <div
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ${
+          isAnyCardDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
+        }`}
         style={{
           background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, ${glowColor}, transparent 40%)`,
-          zIndex: 0
+          zIndex: 0,
         }}
       />
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${colorClass} opacity-80`}
+        className={`pointer-events-none absolute inset-x-0 top-0 h-1.5 ${colorClass} ${
+          isDragging ? "opacity-100" : "opacity-80"
+        }`}
         style={{
           clipPath: "inset(0 round var(--radius-lg) var(--radius-lg) 0 0)",
           zIndex: 2,
@@ -1080,87 +1184,42 @@ export function NewsnowCard({
               {...(!dragDisabled ? attributes : {})}
               {...(!dragDisabled ? listeners : {})}
               aria-label="拖动重新排序"
+              aria-pressed={isDragging}
               disabled={dragDisabled}
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
+              className={`relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)] ${
                 dragDisabled
                   ? "cursor-not-allowed opacity-45"
+                  : isDragging
+                    ? "cursor-grabbing bg-[var(--background)] text-[var(--foreground)] shadow-sm"
+                    : isAnyCardDragging
+                      ? "cursor-grab text-[var(--foreground)]/85"
                   : "cursor-grab active:cursor-grabbing"
               }`}
             >
-              <DragOutlined />
+              <span
+                className={`pointer-events-none absolute inset-0 rounded-lg transition-opacity duration-150 ${
+                  isDragging ? "opacity-100" : "opacity-0"
+                }`}
+                style={{
+                  backgroundColor: "rgb(var(--newsnow-card-accent-rgb) / 0.16)",
+                }}
+              />
+              <span className="relative z-10">
+                <DragOutlined />
+              </span>
             </button>
           </Tooltip>
         </div>
       </div>
 
-      <div className="relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] bg-white/40 dark:bg-black/20 backdrop-blur-sm px-2.5 py-2.5 shadow-inner [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {isLoading ? (
-          <div className="space-y-3 p-3 opacity-60">
-            <Skeleton active paragraph={{ rows: 8 }} />
-          </div>
-        ) : isError ? (
-          <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
-            <p className="text-sm font-medium text-[var(--foreground)]">获取失败</p>
-            {sourceErrorMessage ? (
-              <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
-                {sourceErrorMessage}
-              </p>
-            ) : null}
-            {needsRuntimeSecret ? (
-              <a
-                href="/settings/system?tab=newsSourceRuntimeSecrets"
-                className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
-              >
-                去系统设置 &gt; 新闻源密钥
-              </a>
-            ) : null}
-            <Button
-              size="small"
-              className="mt-2"
-              onClick={() => {
-                void handleRefresh();
-              }}
-            >
-              重试
-            </Button>
-          </div>
-        ) : displayItems.length > 0 ? (
-          source.type === "hottest" ? (
-            <NewsListHot
-              items={displayItems}
-              onOpenEvent={handleOpenEvent}
-              onOpenItem={handleOpenItem}
-              onOpenOriginal={trackOriginalOpen}
-              freshItemIds={animatedItemIds}
-              crossSourceMetaByItemId={dedupMetaMap}
-              actionAvailabilityByItemId={actionAvailabilityByItemId}
-              densityMode={densityMode}
-            />
-          ) : (
-            <NewsListTimeline
-              items={displayItems}
-              onOpenEvent={handleOpenEvent}
-              onOpenItem={handleOpenItem}
-              onOpenOriginal={trackOriginalOpen}
-              freshItemIds={animatedItemIds}
-              crossSourceMetaByItemId={dedupMetaMap}
-              actionAvailabilityByItemId={actionAvailabilityByItemId}
-              densityMode={densityMode}
-            />
-          )
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-            <p className="text-xs font-medium text-[var(--secondary-foreground)]">暂无数据</p>
-            {needsRuntimeSecret ? (
-              <a
-                href="/settings/system?tab=newsSourceRuntimeSecrets"
-                className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
-              >
-                该源可能需要先配置密钥
-              </a>
-            ) : null}
-          </div>
-        )}
+      <div
+        className={`relative z-10 mx-3 mb-3 flex-1 overflow-y-auto rounded-[calc(var(--radius-lg)-2px)] border border-[var(--border)] px-2.5 py-2.5 shadow-inner [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+          isDragging
+            ? "bg-white/25 dark:bg-black/20 backdrop-blur-0"
+            : "bg-white/40 dark:bg-black/20 backdrop-blur-sm"
+        }`}
+      >
+        {cardListContent}
       </div>
     </article>
   );

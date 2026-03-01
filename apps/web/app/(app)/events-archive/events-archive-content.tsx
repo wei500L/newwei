@@ -1,6 +1,6 @@
 "use client";
 
-import { LeftOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, PlusOutlined, RightOutlined, SearchOutlined } from "@ant-design/icons";
 import { gql, type ApolloError, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -23,8 +23,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
-import { useDebounceValue } from "@/lib/use-debounce-value";
 import { safeHttpUrl } from "@/lib/url";
+import { useDebounceValue } from "@/lib/use-debounce-value";
 import {
   buildCalendarCountMap,
   canNavigateToNextDay,
@@ -599,6 +599,9 @@ export function EventsArchiveContent() {
   );
   const detail = detailData?.archiveDetail ?? null;
   const searchMode = debouncedSearch.trim().length > 0;
+  const normalizedSearchInput = searchInput.trim();
+  const normalizedDebouncedSearch = debouncedSearch.trim();
+  const isSearchPending = normalizedSearchInput !== normalizedDebouncedSearch;
   const digestAppCode = useMemo(
     () => extractAppCodeFromError(digestError),
     [digestError],
@@ -700,6 +703,70 @@ export function EventsArchiveContent() {
         return digestError.message;
     }
   }, [digestAppCode, digestError, searchMode, t]);
+  const searchFeedback = useMemo(() => {
+    if (!normalizedSearchInput) {
+      return null;
+    }
+    if (isSearchPending) {
+      return {
+        tone: "pending" as const,
+        message: t("pages.eventsArchive.searchFeedback.updating", {
+          defaultValue: "Updating search…",
+        }),
+      };
+    }
+    if (digestLoading && searchMode) {
+      return {
+        tone: "loading" as const,
+        message: t("pages.eventsArchive.searchFeedback.loading", {
+          defaultValue: "Searching archive…",
+        }),
+      };
+    }
+    if (digestError && searchMode) {
+      return {
+        tone: "error" as const,
+        message: t("pages.eventsArchive.searchFeedback.error", {
+          defaultValue: "Search failed. Please retry.",
+        }),
+      };
+    }
+    if (searchMode && totalCount === 0) {
+      return {
+        tone: "empty" as const,
+        message: t("pages.eventsArchive.searchFeedback.empty", {
+          defaultValue: "No matching records.",
+        }),
+      };
+    }
+    if (searchMode) {
+      return {
+        tone: "ready" as const,
+        message: t("pages.eventsArchive.searchFeedback.ready", {
+          defaultValue: "{{count}} records matched",
+          count: totalCount,
+        }),
+      };
+    }
+    return null;
+  }, [
+    digestError,
+    digestLoading,
+    isSearchPending,
+    normalizedSearchInput,
+    searchMode,
+    t,
+    totalCount,
+  ]);
+  const searchFeedbackVisualState = useMemo(() => {
+    if (!searchFeedback) {
+      return null;
+    }
+    if (searchFeedback.tone === "pending") {
+      return "debouncing";
+    }
+    return searchFeedback.tone;
+  }, [searchFeedback]);
 
   const handleDateSelect = (value: Dayjs | null) => {
     if (!value) {
@@ -817,15 +884,38 @@ export function EventsArchiveContent() {
                   { defaultValue: "所有权重" },
                 )}
               />
-              <Input
-                allowClear
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                style={{ width: screens.md ? 280 : "100%" }}
-                placeholder={t("pages.eventsArchive.searchPlaceholder", {
-                  defaultValue: "搜索国家、事件、关键词...",
-                })}
-              />
+              <div
+                className="flex flex-col gap-1"
+                style={{ width: screens.md ? 300 : "100%" }}
+              >
+                <Input
+                  allowClear
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder={t("pages.eventsArchive.searchPlaceholder", {
+                    defaultValue: "搜索国家、事件、关键词...",
+                  })}
+                />
+                {searchFeedback && searchFeedbackVisualState ? (
+                  <div
+                    className={`search-feedback-pill search-feedback-pill--${searchFeedbackVisualState}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span className="search-feedback-pill__icon" aria-hidden>
+                      {searchFeedbackVisualState === "loading" ||
+                      searchFeedbackVisualState === "debouncing" ? (
+                        <Spin size="small" />
+                      ) : (
+                        <SearchOutlined />
+                      )}
+                    </span>
+                    <span className="search-feedback-pill__text">
+                      {searchFeedback.message}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
               <Button onClick={() => refetchDigest()} loading={digestLoading}>
                 {t("common.refresh", { defaultValue: "Refresh" })}
               </Button>

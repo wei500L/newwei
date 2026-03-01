@@ -36,6 +36,7 @@ import {
 
 const LOCK_WAIT_INTERVAL_MS = 200
 const LOCK_MAX_WAIT_MS = REFRESH_LOCK_TTL_MS
+const FREEBUF_EMPTY_CACHE_RETRY_MS = 2 * 60 * 1000
 const NEWSNOW_SMART_SCORE_MAX_AGE_DAYS = 14
 const NEWSNOW_MAX_SOURCE_IDS = 240
 const NEWSNOW_PERSONALIZATION_CACHE_KEY_PREFIX = `${CACHE_PREFIX}:personalization:order:v1`
@@ -101,10 +102,15 @@ export class NewsAggregatorService {
 
     const cacheKey = this.buildCacheKey(sourceId)
     const staleKey = this.buildStaleKey(sourceId)
+    const skipEmptyCache = sourceId === "freebuf"
 
     const cached = !forceRefresh ? await this.safeGetCache<SourceResponse>(cacheKey) : null
     if (cached && !forceRefresh) {
-      return { ...cached, id: sourceId, status: "cache" }
+      if (skipEmptyCache && this.shouldRetryAfterEmptyCache(cached)) {
+        this.logger.warn(`empty cache ignored for "${sourceId}", forcing refresh`)
+      } else {
+        return { ...cached, id: sourceId, status: "cache" }
+      }
     }
 
     const refresh = async (): Promise<SourceResponse> => {
@@ -149,14 +155,22 @@ export class NewsAggregatorService {
       // Lock not acquired — another process is refreshing. Poll for cache.
       const polled = await this.pollForCache<SourceResponse>(cacheKey, LOCK_WAIT_INTERVAL_MS, LOCK_MAX_WAIT_MS)
       if (polled) {
-        return { ...polled, id: sourceId, status: "cache" }
+        if (skipEmptyCache && this.shouldRetryAfterEmptyCache(polled)) {
+          this.logger.warn(`empty polled cache ignored for "${sourceId}", retrying refresh path`)
+        } else {
+          return { ...polled, id: sourceId, status: "cache" }
+        }
       }
 
       // Poll timed out — try stale fallback instead of redundant refresh
       const stale = await this.safeGetCache<SourceResponse>(staleKey)
       if (stale) {
-        this.logger.warn(`lock contention for "${sourceId}", serving stale data`)
-        return { ...stale, id: sourceId, status: "cache" }
+        if (skipEmptyCache && this.shouldRetryAfterEmptyCache(stale)) {
+          this.logger.warn(`empty stale cache ignored for "${sourceId}", forcing refresh`)
+        } else {
+          this.logger.warn(`lock contention for "${sourceId}", serving stale data`)
+          return { ...stale, id: sourceId, status: "cache" }
+        }
       }
 
       // No stale data available — last resort, do the refresh
@@ -183,6 +197,22 @@ export class NewsAggregatorService {
       },
       HttpStatus.BAD_GATEWAY,
     )
+  }
+
+  private shouldRetryAfterEmptyCache(response: SourceResponse): boolean {
+    if (response.items.length > 0) {
+      return false
+    }
+
+    const updatedTime = typeof response.updatedTime === "number"
+      ? response.updatedTime
+      : Number(response.updatedTime)
+
+    if (!Number.isFinite(updatedTime)) {
+      return true
+    }
+
+    return Date.now() - updatedTime >= FREEBUF_EMPTY_CACHE_RETRY_MS
   }
 
   async fetchBatch(ids: string[]) {

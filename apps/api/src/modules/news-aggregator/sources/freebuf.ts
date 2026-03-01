@@ -1,187 +1,145 @@
-import { myFetch } from "./fetch";
-import { defineSource } from "./source";
-
 import * as cheerio from "cheerio"
 
-// 定义文章统计信息接口
-interface ArticleStats {
-  views: number
-  collections: number
-}
+import type { NewsItem, RSSHubInfo as RSSHubResponse } from "../news-aggregator.types"
 
-// 定义作者信息接口
-interface AuthorInfo {
-  name: string
-  avatar?: string
-  profileUrl?: string
-}
+import { myFetch } from "./fetch"
+import { rss2json } from "./rss2json"
+import { defineSource } from "./source"
 
-// 定义文章数据接口
-interface ArticleData {
-  title: string
-  url: string
-  description: string
-  publishTime: string
-  author: AuthorInfo
-  stats: ArticleStats
-  album?: string
-  image?: string
-  category?: string
-}
+const sourceName = "freebuf"
+const rssHubInstances = [
+  "https://rsshub.rssforever.com",
+  "https://rsshub.app",
+]
+const rssHubTypes = ["web", "system"] as const
+const nativeFeedUrl = "https://www.freebuf.com/feed"
 
-// 辅助函数：安全提取文本
-function safeExtract($element: cheerio.Cheerio<any>, selector: string): string {
-  const result = $element.find(selector).first().text().trim()
-  return result || ""
-}
-
-// 辅助函数：安全提取属性
-function safeExtractAttribute($element: cheerio.Cheerio<any>, selector: string, attribute: string): string {
-  return $element.find(selector).first().attr(attribute) || ""
-}
-
-// 辅助函数：格式化URL
-function formatUrl(url: string | undefined, baseUrl: string = "https://www.freebuf.com"): string {
-  if (!url) return ""
-  return url.startsWith("http") ? url : `${baseUrl}${url}`
-}
-
-// 辅助函数：提取统计信息
-function extractStats($article: cheerio.Cheerio<any>): ArticleStats {
-  const stats: ArticleStats = { views: 0, collections: 0 }
-
-  // 提取围观数
-  const viewElement = $article.find("a:contains(\"围观\")")
-  if (viewElement.length) {
-    const viewText = viewElement.find("span").first().text()
-    stats.views = Number.parseInt(viewText) || 0
+function toTimestamp(value: NewsItem["pubDate"]): number {
+  if (typeof value === "number") {
+    return value
   }
-
-  // 提取收藏数
-  const collectElement = $article.find("a:contains(\"收藏\")")
-  if (collectElement.length) {
-    const collectText = collectElement.find("span").first().text()
-    stats.collections = Number.parseInt(collectText) || 0
+  if (typeof value === "string") {
+    const timestamp = Date.parse(value)
+    return Number.isNaN(timestamp) ? 0 : timestamp
   }
-
-  return stats
+  return 0
 }
 
-// 辅助函数：提取作者信息
-function extractAuthor($article: cheerio.Cheerio<any>): AuthorInfo {
-  const author: AuthorInfo = { name: "" }
+function normalizeUrl(url: string): string {
+  return url.trim()
+}
 
-  const authorLink = $article.find(".item-bottom a").first()
-  if (authorLink.length) {
-    author.name = authorLink.find("span").last().text().trim()
-    author.profileUrl = formatUrl(authorLink.attr("href"))
+function getDedupeKey(item: NewsItem): string {
+  const url = normalizeUrl(item.url)
+  if (url.length > 0) {
+    return url
+  }
+  return `${item.id}`
+}
 
-    const avatarImg = authorLink.find(".ant-avatar img")
-    if (avatarImg.length) {
-      author.avatar = avatarImg.attr("src")
+function stripHtml(content: string | undefined): string {
+  if (!content) {
+    return ""
+  }
+  const $ = cheerio.load(`<div>${content}</div>`)
+  return $("div").text().trim()
+}
+
+function mergeAndSort(items: NewsItem[]): NewsItem[] {
+  const deduped = new Map<string, NewsItem>()
+
+  for (const item of items) {
+    const key = getDedupeKey(item)
+    if (!deduped.has(key)) {
+      deduped.set(key, item)
     }
   }
 
-  return author
+  return [...deduped.values()].sort(
+    (left, right) => toTimestamp(right.pubDate) - toTimestamp(left.pubDate),
+  )
 }
 
-// 辅助函数：提取分类信息
-function extractCategory($article: cheerio.Cheerio<any>): string {
-  // 从URL路径推断分类
-  const articleUrl = $article.find(".title-left .title").parent().attr("href") || ""
-  if (articleUrl.includes("/articles/web/")) return "Web安全"
-  if (articleUrl.includes("/articles/database/")) return "数据安全"
-  if (articleUrl.includes("/articles/network/")) return "网络安全"
-  if (articleUrl.includes("/articles/mobile/")) return "移动安全"
-  if (articleUrl.includes("/articles/cloud/")) return "云安全"
-
-  return ""
+function toRssHubItem(item: RSSHubResponse["items"][number]): NewsItem {
+  return {
+    id: item.id ?? item.url,
+    title: item.title,
+    url: item.url,
+    pubDate: item.date_published,
+  }
 }
 
-// 通过截取freebuf的文章url获取新闻id
-function extractIdFromUrl(url: string): string {
-  // 找到最后一个斜杠
-  const lastPart = url.slice(url.lastIndexOf("/") + 1) // "460614.html"
-  // 去掉 .html，只保留数字
-  const match = lastPart.match(/\d+/)
-  return match ? match[0] : ""
+async function fetchFromRssHubInstance(instance: string): Promise<NewsItem[]> {
+  const settled = await Promise.allSettled(
+    rssHubTypes.map(async (type) => {
+      const routeUrl = new URL(`/freebuf/articles/${type}`, instance)
+      routeUrl.searchParams.set("format", "json")
+      routeUrl.searchParams.set("limit", "40")
+      routeUrl.searchParams.set("sorted", "true")
+      const payload: RSSHubResponse = await myFetch(routeUrl.toString())
+      return payload.items.map(toRssHubItem)
+    }),
+  )
+
+  const collected: NewsItem[] = []
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      collected.push(...result.value)
+      return
+    }
+    const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
+    const type = rssHubTypes[index] ?? "unknown"
+    console.warn(`[${sourceName}] rsshub ${instance} type=${type} failed: ${reason}`)
+  })
+
+  return collected
+}
+
+function isTargetCategoryUrl(url: string): boolean {
+  return url.includes("/articles/web/") || url.includes("/articles/system/")
+}
+
+async function fetchFromNativeFeed(): Promise<NewsItem[]> {
+  try {
+    const data = await rss2json(nativeFeedUrl)
+    if (!data?.items?.length) {
+      return []
+    }
+
+    const mapped = data.items.map((item) => ({
+      id: item.link,
+      title: item.title,
+      url: item.link,
+      pubDate: item.created,
+      extra: {
+        hover: stripHtml(item.description),
+      },
+    }))
+
+    const categoryMatched = mapped.filter(item => isTargetCategoryUrl(item.url))
+    if (categoryMatched.length > 0) {
+      return categoryMatched
+    }
+    return mapped
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.warn(`[${sourceName}] native feed failed: ${reason}`)
+    return []
+  }
 }
 
 export default defineSource(async () => {
-  const baseUrl = "https://www.freebuf.com"
-  const html = await myFetch<any>(baseUrl, {
-    headers: {
-      "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-      "Referer": "https://www.freebuf.com/",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    },
-  })
-  const $ = cheerio.load(html)
-  const articles: ArticleData[] = []
-  // 遍历每个文章项
-  $(".article-item").each((index: number, articleElement) => {
-    const $article = $(articleElement)
-
-    try {
-      // 提取文章标题和URL
-      const titleLink = $article.find(".title-left .title").parent()
-      const title = titleLink.find(".title").text().trim()
-      const url = formatUrl(titleLink.attr("href"), baseUrl)
-
-      // 如果标题为空，跳过此项
-      if (!title) return
-
-      // 提取文章描述
-      const description = safeExtract($article, ".item-right .text-line-2")
-
-      // 提取发布时间
-      const publishTime = safeExtract($article, ".item-bottom span:last-child")
-
-      // 提取作者信息
-      const author = extractAuthor($article)
-
-      // 提取统计信息
-      const stats = extractStats($article)
-
-      // 提取专辑信息
-      const album = safeExtract($article, ".from-column span")
-
-      // 提取图片
-      const image = safeExtractAttribute($article, ".img-view img", "src")
-
-      // 提取分类
-      const category = extractCategory($article)
-
-      // 构建完整的文章对象
-      const article: ArticleData = {
-        title,
-        url,
-        description,
-        publishTime,
-        author,
-        stats,
-        album: album || undefined,
-        image: image || undefined,
-        category: category || undefined,
-      }
-
-      articles.push(article)
-    } catch (error) {
-      console.warn(`解析第${index + 1}篇文章时出错:`, error instanceof Error ? error.message : String(error))
+  for (const instance of rssHubInstances) {
+    const items = await fetchFromRssHubInstance(instance)
+    if (items.length > 0) {
+      return mergeAndSort(items)
     }
-  })
-  // 转换数据格式
-  return articles.map(item => ({
-    id: extractIdFromUrl(item.url),
-    title: item.title,
-    url: item.url,
-    extra: {
-      hover: item.description,
-      time: item.publishTime,
-      author: item.author,
-      stats: item.stats,
-      album: item.album,
-    },
-  }))
+  }
+
+  const fallbackItems = await fetchFromNativeFeed()
+  if (fallbackItems.length > 0) {
+    return mergeAndSort(fallbackItems)
+  }
+
+  return []
 })

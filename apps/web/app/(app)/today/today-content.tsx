@@ -1,6 +1,7 @@
 "use client";
 
 import { Typography } from "antd";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
@@ -14,14 +15,24 @@ import { UserDigestPanel } from "./user-digest-panel";
 
 export function TodayContent() {
   const { t } = useTranslation();
+  const [todayLabel, setTodayLabel] = useState<string>("Today");
+  const [todayDateRange, setTodayDateRange] = useState<
+    [ReturnType<typeof dayjs>, ReturnType<typeof dayjs>] | undefined
+  >(undefined);
+
+  useEffect(() => {
+    const now = dayjs();
+    setTodayLabel(now.format("dddd, MMMM D"));
+    setTodayDateRange([now.startOf("day"), now.endOf("day")]);
+  }, []);
 
   return (
     <div className="space-y-6 pb-10">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            {dayjs().format("dddd, MMMM D")}
+          <Typography.Title level={3} style={{ margin: 0 }} suppressHydrationWarning>
+            {todayLabel}
           </Typography.Title>
           <Typography.Text type="secondary">
             {t("pages.today.subtitle", { defaultValue: "Your daily intelligence briefing." })}
@@ -55,7 +66,7 @@ export function TodayContent() {
                 experiencePreset="reader"
                 density="compact"
                 initialFilters={{
-                  dateRange: [dayjs().startOf("day"), dayjs().endOf("day")]
+                  dateRange: todayDateRange
                 }}
               />
             </div>

@@ -449,7 +449,7 @@ services:
         sleep 2;
       done;
       echo '[web] starting dev server...';
-      pnpm --filter @modular/web exec next dev --turbo --hostname 0.0.0.0
+      pnpm --filter @modular/web exec next dev --hostname 0.0.0.0
       "
     env_file:
       - ./.env

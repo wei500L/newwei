@@ -1,8 +1,9 @@
 "use client";
 
 import { SearchOutlined, StarFilled, StarOutlined } from "@ant-design/icons";
-import { Modal, Input, List, Tag } from "antd";
+import { Input, List, Modal, Spin, Tag } from "antd";
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 import { useNewsMetadata } from "../hooks/use-news-sources";
 import { buildNewsnowSearchSources } from "../lib/newsnow-search";
@@ -14,14 +15,72 @@ interface NewsnowSearchProps {
 }
 
 export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
+  const { t } = useTranslation();
   const [searchText, setSearchText] = useState("");
-  const { data: metadata } = useNewsMetadata();
+  const { data: metadata, isLoading: metadataLoading, error: metadataError } = useNewsMetadata();
   const { focusSources, toggleFocus } = useNewsnowStore();
 
   const filteredSources = useMemo(
     () => buildNewsnowSearchSources(metadata, searchText),
     [metadata, searchText],
   );
+  const normalizedSearchText = searchText.trim();
+  const searchStatus = useMemo(() => {
+    if (metadataError) {
+      return {
+        tone: "error" as const,
+        message: t("search.feedback.error", {
+          defaultValue: "Search is temporarily unavailable. Please retry.",
+        }),
+      };
+    }
+    if (metadataLoading) {
+      return {
+        tone: "loading" as const,
+        message: t("search.feedback.sourcesLoading", {
+          defaultValue: "Loading source index...",
+        }),
+      };
+    }
+    if (!normalizedSearchText) {
+      return {
+        tone: "idle" as const,
+        message: t("search.feedback.sourcesIdle", {
+          defaultValue: "Type to filter sources.",
+        }),
+      };
+    }
+    if (filteredSources.length === 0) {
+      return {
+        tone: "empty" as const,
+        message: t("search.feedback.sourcesEmpty", {
+          defaultValue: "No matching sources.",
+        }),
+      };
+    }
+    return {
+      tone: "ready" as const,
+      message: t("search.feedback.sourcesReady", {
+        defaultValue: "{{count}} source(s) matched",
+        count: filteredSources.length,
+      }),
+    };
+  }, [filteredSources.length, metadataError, metadataLoading, normalizedSearchText, t]);
+  const searchStatusVisualState = useMemo(() => {
+    if (searchStatus.tone === "error") {
+      return "error";
+    }
+    if (searchStatus.tone === "loading") {
+      return "loading";
+    }
+    if (searchStatus.tone === "ready") {
+      return "ready";
+    }
+    if (searchStatus.tone === "empty") {
+      return "empty";
+    }
+    return "idle";
+  }, [searchStatus.tone]);
 
   const colorMap: Record<string, string> = {
     slate: "default",
@@ -67,6 +126,16 @@ export function NewsnowSearch({ isOpen, onClose }: NewsnowSearchProps) {
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
           />
+          <div
+            className={`mt-1.5 search-feedback-pill search-feedback-pill--${searchStatusVisualState}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="search-feedback-pill__icon" aria-hidden>
+              {searchStatus.tone === "loading" ? <Spin size="small" /> : <SearchOutlined />}
+            </span>
+            <span className="search-feedback-pill__text">{searchStatus.message}</span>
+          </div>
         </div>
         <div className="max-h-[500px] overflow-y-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <List
