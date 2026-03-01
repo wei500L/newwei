@@ -100,16 +100,24 @@ export class NewsEventsService {
 
   async listEvents(
     orgId: string,
-    options?: { limit?: number; windowDays?: number; status?: NewsEventStatus },
+    options?: {
+      limit?: number;
+      windowDays?: number;
+      status?: NewsEventStatus;
+      entity?: string;
+    },
   ) {
     const limit = Math.min(Math.max(options?.limit ?? 20, 1), 300);
     const windowDays = Math.min(Math.max(options?.windowDays ?? 30, 1), 365);
     const since = new Date(Date.now() - windowDays * DAY_MS);
+    const entity =
+      typeof options?.entity === "string" ? options.entity.trim().slice(0, 120) : "";
 
     return this.prisma.newsEvent.findMany({
       where: {
         orgId,
         ...(options?.status ? { status: options.status } : {}),
+        ...(entity ? { primaryEntity: { contains: entity } } : {}),
         lastAt: { gte: since },
       },
       orderBy: [{ lastAt: "desc" }, { startAt: "desc" }],
@@ -587,7 +595,7 @@ export class NewsEventsService {
       return { eventId: existing.eventId, created: false };
     }
 
-    const timestamp = signal.timestamp;
+    const timestamp = this.clampFutureDate(signal.timestamp);
     const language = this.normalizeOptionalString(signal.language);
     const primaryTopic = this.pickPrimaryTopic(signal.topics);
     const primaryEntity = this.pickPrimaryEntity(signal.entities);
@@ -638,10 +646,10 @@ export class NewsEventsService {
         });
 
         const startAt = current
-          ? this.minDate(current.startAt, timestamp)
+          ? this.minDate(this.clampFutureDate(current.startAt), timestamp)
           : timestamp;
         const lastAt = current
-          ? this.maxDate(current.lastAt, timestamp)
+          ? this.maxDate(this.clampFutureDate(current.lastAt), timestamp)
           : timestamp;
 
         await tx.newsEvent.update({
@@ -1381,6 +1389,15 @@ export class NewsEventsService {
 
   private maxDate(a: Date, b: Date) {
     return a.getTime() >= b.getTime() ? a : b;
+  }
+
+  private clampFutureDate(value: Date) {
+    const now = Date.now();
+    const ts = value?.getTime?.();
+    if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) {
+      return new Date(now);
+    }
+    return ts > now ? new Date(now) : new Date(ts);
   }
 
   private clamp01(value: number): number {

@@ -1601,6 +1601,24 @@
         "windowOption": "近{{days}}天",
         "limit": "数量",
         "limitOption": "{{value}} 个事件",
+        "sort": {
+          "label": "排序",
+          "latest": "最新",
+          "heat": "热度",
+          "credibility": "可信度"
+        },
+        "sourceType": {
+          "label": "来源类型",
+          "all": "全部",
+          "authoritative": "权威",
+          "mixed": "混合",
+          "blog": "博客",
+          "unknown": "未知"
+        },
+        "minHeat": "最低热度",
+        "minCredibility": "最低可信度",
+        "noMin": "不限",
+        "entityActive": "实体：{{entity}}",
         "status": {
           "label": "状态",
           "active": "进行中",
@@ -1611,7 +1629,15 @@
       "fields": {
         "startAt": "开始",
         "lastAt": "最新",
-        "items": "条目"
+        "items": "条目",
+        "heat": "热度",
+        "credibility": "可信度",
+        "sources": "来源",
+        "sourceType": "类型",
+        "breaking": "突发",
+        "corroborated": "已交叉验证",
+        "futureEvent": "计划/预测",
+        "futureEventHint": "未来事件"
       },
       "status": {
         "active": "进行中",

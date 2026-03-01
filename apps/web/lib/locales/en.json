@@ -1601,6 +1601,24 @@
         "windowOption": "{{days}} days",
         "limit": "Limit",
         "limitOption": "{{value}} events",
+        "sort": {
+          "label": "Sort",
+          "latest": "Latest",
+          "heat": "Heat",
+          "credibility": "Credibility"
+        },
+        "sourceType": {
+          "label": "Source type",
+          "all": "All",
+          "authoritative": "Authoritative",
+          "mixed": "Mixed",
+          "blog": "Blog",
+          "unknown": "Unknown"
+        },
+        "minHeat": "Min heat",
+        "minCredibility": "Min credibility",
+        "noMin": "No minimum",
+        "entityActive": "Entity: {{entity}}",
         "status": {
           "label": "Status",
           "active": "Active",
@@ -1611,7 +1629,15 @@
       "fields": {
         "startAt": "Start",
         "lastAt": "Last",
-        "items": "Items"
+        "items": "Items",
+        "heat": "Heat",
+        "credibility": "Credibility",
+        "sources": "Sources",
+        "sourceType": "Type",
+        "breaking": "Breaking",
+        "corroborated": "Corroborated",
+        "futureEvent": "Scheduled",
+        "futureEventHint": "Future event"
       },
       "status": {
         "active": "Active",

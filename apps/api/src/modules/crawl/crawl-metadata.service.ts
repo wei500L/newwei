@@ -1237,10 +1237,8 @@ export class CrawlMetadataService {
     first?: number,
     second?: number,
   ): number | undefined {
-    const normalizedFirst =
-      typeof first === "number" && Number.isFinite(first) ? first : undefined;
-    const normalizedSecond =
-      typeof second === "number" && Number.isFinite(second) ? second : undefined;
+    const normalizedFirst = this.normalizeTimestamp(first);
+    const normalizedSecond = this.normalizeTimestamp(second);
     if (normalizedFirst === undefined) {
       return normalizedSecond;
     }
@@ -1253,19 +1251,24 @@ export class CrawlMetadataService {
   private resolveEffectiveTimestamp(
     candidate: Pick<CrawlDiscoveryCandidate, "publishedAtTs" | "crawledAtTs">,
   ) {
-    if (
-      typeof candidate.publishedAtTs === "number" &&
-      Number.isFinite(candidate.publishedAtTs)
-    ) {
-      return candidate.publishedAtTs;
+    const publishedAtTs = this.normalizeTimestamp(candidate.publishedAtTs);
+    if (typeof publishedAtTs === "number") {
+      return publishedAtTs;
     }
-    if (
-      typeof candidate.crawledAtTs === "number" &&
-      Number.isFinite(candidate.crawledAtTs)
-    ) {
-      return candidate.crawledAtTs;
+    const crawledAtTs = this.normalizeTimestamp(candidate.crawledAtTs);
+    if (typeof crawledAtTs === "number") {
+      return crawledAtTs;
     }
     return -1;
+  }
+
+  private normalizeTimestamp(value: unknown): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return undefined;
+    }
+    const now = Date.now();
+    const normalized = Math.floor(value);
+    return normalized > now ? now : normalized;
   }
 
   private isLikelySecondaryHubLink(url: string, anchorText?: string) {
@@ -1419,7 +1422,7 @@ export class CrawlMetadataService {
       ) {
         return undefined;
       }
-      return ts;
+      return this.normalizeTimestamp(ts);
     };
 
     const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
@@ -1481,11 +1484,7 @@ export class CrawlMetadataService {
     }
 
     const parseTimestamp = (value: string) => {
-      const ts = Date.parse(value);
-      if (!Number.isFinite(ts) || ts <= 0) {
-        return undefined;
-      }
-      return ts;
+      return this.normalizeTimestamp(Date.parse(value));
     };
     for (const candidate of candidateStrings) {
       const ts = parseTimestamp(candidate);
@@ -1519,11 +1518,7 @@ export class CrawlMetadataService {
       if (typeof candidate !== "string") {
         return undefined;
       }
-      const ts = Date.parse(candidate);
-      if (!Number.isFinite(ts) || ts <= 0) {
-        return undefined;
-      }
-      return ts;
+      return this.normalizeTimestamp(Date.parse(candidate));
     };
 
     if (Array.isArray(value)) {
@@ -2206,15 +2201,8 @@ export class CrawlMetadataService {
       }
       urls.push({
         loc,
-        lastmodTs:
-          typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)
-            ? entry.lastmodTs
-            : undefined,
-        newsPublishedAtTs:
-          typeof entry.newsPublishedAtTs === "number" &&
-          Number.isFinite(entry.newsPublishedAtTs)
-            ? entry.newsPublishedAtTs
-            : undefined,
+        lastmodTs: this.normalizeTimestamp(entry.lastmodTs),
+        newsPublishedAtTs: this.normalizeTimestamp(entry.newsPublishedAtTs),
       });
     }
 
@@ -2230,10 +2218,7 @@ export class CrawlMetadataService {
       }
       childSitemaps.push({
         loc,
-        lastmodTs:
-          typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)
-            ? entry.lastmodTs
-            : undefined,
+        lastmodTs: this.normalizeTimestamp(entry.lastmodTs),
       });
     }
 
@@ -2266,11 +2251,7 @@ export class CrawlMetadataService {
     if (!candidate) {
       return undefined;
     }
-    const ts = Date.parse(candidate);
-    if (!Number.isFinite(ts) || ts <= 0) {
-      return undefined;
-    }
-    return ts;
+    return this.normalizeTimestamp(Date.parse(candidate));
   }
 
   private extractNewsPublicationTimestamp(

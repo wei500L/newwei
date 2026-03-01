@@ -80,6 +80,7 @@ export class NewsEventsResolver {
     windowDays?: number,
     @Args("status", { type: () => NewsEventStatus, nullable: true })
     status?: NewsEventStatus,
+    @Args("entity", { nullable: true }) entity?: string,
     @Args("sourceType", { type: () => NewsEventSourceType, nullable: true })
     sourceType?: NewsEventSourceType,
     @Args("minHeatScore", { type: () => Float, nullable: true })
@@ -102,6 +103,7 @@ export class NewsEventsResolver {
       limit: candidateLimit,
       windowDays,
       status,
+      entity,
     });
 
     const eventIds = rows.map((row) => row.id);

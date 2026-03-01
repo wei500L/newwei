@@ -123,6 +123,19 @@ describe("NewsSourceSchedulerService", () => {
     jest.resetAllMocks();
   });
 
+  it("clamps future seed timestamps to now", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+    try {
+      const { service } = createService();
+      const ts = (service as any).resolveTimestamp(
+        Date.parse("2026-08-05T00:00:00.000Z"),
+      );
+      expect(ts).toBe(Date.parse("2026-02-15T12:00:00.000Z"));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("schedules up to maxNewUrlsPerRun for sitemap seeds", async () => {
     const { service, prisma, metadataService, crawlQueue } = createService();
     const now = new Date("2026-01-01T00:00:00.000Z");

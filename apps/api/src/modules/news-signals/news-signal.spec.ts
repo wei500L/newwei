@@ -1,6 +1,32 @@
 import { buildNewsSignalFromProcessedArticle, NewsSentimentLabel } from "./news-signal";
 
 describe("buildNewsSignalFromProcessedArticle", () => {
+  it("clamps future publishedAt to now", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+    try {
+      const signal = buildNewsSignalFromProcessedArticle({
+        processedArticle: {
+          id: "pa-1",
+          articleId: "a-1",
+          processedAt: new Date("2026-02-10T00:00:00.000Z"),
+          publishedAt: new Date("2026-08-05T00:00:00.000Z"),
+          language: "en",
+          title: "Title",
+          summary: "Summary",
+          topics: [],
+          entities: [],
+          qualityScore: 0.8,
+          cleanedMarkdownRef: "507f1f77bcf86cd799439011"
+        },
+        article: { crawlAt: new Date("2026-02-11T00:00:00.000Z") }
+      });
+
+      expect(signal.timestamp.toISOString()).toBe("2026-02-15T12:00:00.000Z");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("prefers publishedAt over crawlAt and processedAt", () => {
     const signal = buildNewsSignalFromProcessedArticle({
       processedArticle: {
@@ -137,4 +163,3 @@ describe("buildNewsSignalFromProcessedArticle", () => {
     expect(signal.language).toBe("zh");
   });
 });
-

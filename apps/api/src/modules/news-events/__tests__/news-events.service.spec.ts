@@ -245,6 +245,76 @@ describe("NewsEventsService", () => {
     expect(tx.newsEvent.update).not.toHaveBeenCalled();
   });
 
+  it("clamps future signal timestamp to now when creating a new event", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+    try {
+      mockProcessedItemFindById.mockReturnValueOnce(
+        makeEmbeddingQuery({
+          summaryEmbedding: [0.1, 0.2],
+          summaryEmbeddingModel: "embed-1",
+        }),
+      );
+
+      const prisma = {
+        newsEventItem: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        newsEvent: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        runInTransaction: jest.fn(),
+      };
+
+      const tx = {
+        newsEventItem: {
+          create: jest.fn().mockResolvedValue(null),
+        },
+        newsEvent: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+          create: jest.fn().mockResolvedValue({ id: "event-new" }),
+        },
+      };
+
+      prisma.runInTransaction.mockImplementation(async (fn: any) => fn(tx));
+
+      const vectorClient = {
+        searchBestEffort: jest.fn().mockResolvedValue([]),
+      };
+      const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+      await service.assignNewsSignalToEvent(
+        "org-1",
+        {
+          articleId: "a-1",
+          processedArticleId: "pa-1",
+          processedItemId: "pi-1",
+          timestamp: new Date("2026-08-05T00:00:00.000Z"),
+          language: "en",
+          title: "t",
+          summary: "s",
+          topics: ["topic-1"],
+          entities: [{ name: "entity-1", type: null, confidence: 0.9 }],
+          sentiment: null,
+          qualityScore: null,
+        },
+        makeSettings(),
+      );
+
+      expect(tx.newsEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            startAt: new Date("2026-02-15T12:00:00.000Z"),
+            lastAt: new Date("2026-02-15T12:00:00.000Z"),
+          }),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("rejects vector merge when category conflicts under gate settings", async () => {
     mockProcessedItemFindById.mockReturnValueOnce(
       makeEmbeddingQuery({
@@ -430,6 +500,33 @@ describe("NewsEventsService", () => {
         _count: { select: { items: true } },
       },
     });
+  });
+
+  it("applies entity contains filter for listEvents", async () => {
+    const prisma = {
+      newsEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const service = new NewsEventsService(prisma as any, vectorClient as any);
+
+    await service.listEvents("org-1", {
+      limit: 50,
+      windowDays: 30,
+      status: NewsEventStatus.active,
+      entity: "  Douglas Engelbart  ",
+    });
+
+    expect(prisma.newsEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          orgId: "org-1",
+          status: NewsEventStatus.active,
+          primaryEntity: { contains: "Douglas Engelbart" },
+        }),
+      }),
+    );
   });
 
   it("filters event timeline by settings window when loading event detail", async () => {

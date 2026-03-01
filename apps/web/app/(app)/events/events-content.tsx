@@ -1,13 +1,15 @@
 "use client";
 
+import { CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Button, Card, Empty, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Empty, List, Progress, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
+import { isFutureEventTimestamp, normalizeEntityFilter, toCredibilityPercent, toHeatPercent } from "./events-list-helpers";
 
 // Event details now use dedicated page at /events/[id]
 
@@ -43,6 +45,7 @@ const NEWS_EVENTS_QUERY = gql`
     $limit: Int
     $windowDays: Int
     $status: NewsEventStatus
+    $entity: String
     $sourceType: NewsEventSourceType
     $minHeatScore: Float
     $minCredibilityScore: Float
@@ -52,6 +55,7 @@ const NEWS_EVENTS_QUERY = gql`
       limit: $limit
       windowDays: $windowDays
       status: $status
+      entity: $entity
       sourceType: $sourceType
       minHeatScore: $minHeatScore
       minCredibilityScore: $minCredibilityScore
@@ -179,6 +183,10 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
     () => parseNonNegativeFloat(searchParams.get("minCredibility"), DEFAULT_MIN_CREDIBILITY),
     [searchParams]
   );
+  const entityFilter = useMemo(
+    () => normalizeEntityFilter(searchParams.get("entity")),
+    [searchParams]
+  );
 
   const updateFilters = useCallback(
     (updates: {
@@ -189,6 +197,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       sourceType?: string;
       minHeatScore?: number;
       minCredibilityScore?: number;
+      entity?: string | null;
     }) => {
       const next = new URLSearchParams(searchParams.toString());
       const nextWindow = updates.windowDays ?? windowDays;
@@ -198,6 +207,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       const nextSourceType = updates.sourceType ?? sourceType;
       const nextMinHeat = updates.minHeatScore ?? minHeatScore;
       const nextMinCredibility = updates.minCredibilityScore ?? minCredibilityScore;
+      const nextEntity = updates.entity === undefined ? entityFilter : normalizeEntityFilter(updates.entity);
 
       if (nextWindow === DEFAULT_WINDOW_DAYS) {
         next.delete("window");
@@ -236,6 +246,11 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       } else {
         next.set("minCredibility", String(nextMinCredibility));
       }
+      if (!nextEntity) {
+        next.delete("entity");
+      } else {
+        next.set("entity", nextEntity);
+      }
 
       const nextQuery = next.toString();
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
@@ -244,6 +259,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       limit,
       minCredibilityScore,
       minHeatScore,
+      entityFilter,
       pathname,
       router,
       searchParams,
@@ -259,6 +275,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
       limit,
       windowDays,
       status: status === "all" ? undefined : status,
+      entity: entityFilter ?? undefined,
       sourceType: sourceType === "all" ? undefined : sourceType,
       minHeatScore: minHeatScore > 0 ? minHeatScore : undefined,
       minCredibilityScore: minCredibilityScore > 0 ? minCredibilityScore : undefined,
@@ -461,6 +478,21 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   style={{ minWidth: 150 }}
                 />
               </Space>
+              {entityFilter ? (
+                <Tag
+                  color="purple"
+                  closable
+                  onClose={(event) => {
+                    event.preventDefault();
+                    updateFilters({ entity: null });
+                  }}
+                >
+                  {t("pages.events.filters.entityActive", {
+                    defaultValue: "Entity: {{entity}}",
+                    entity: entityFilter
+                  })}
+                </Tag>
+              ) : null}
             </Space>
 
             <Button onClick={() => refetch()} loading={loading}>
@@ -504,6 +536,8 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const credibilityLabel = t("pages.events.fields.credibility", { defaultValue: "Credibility" });
                 const sourcesLabel = t("pages.events.fields.sources", { defaultValue: "Sources" });
                 const sourceTypeLabel = t("pages.events.fields.sourceType", { defaultValue: "Type" });
+                const futureEventLabel = t("pages.events.fields.futureEvent", { defaultValue: "Scheduled" });
+                const futureEventHint = t("pages.events.fields.futureEventHint", { defaultValue: "Future event" });
 
                 const startDate = formatDateTime(event.startAt, locale, {
                   year: "numeric",
@@ -532,10 +566,28 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   timeZoneName: "short"
                 });
                 const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });
+                const isFutureEvent = isFutureEventTimestamp(event.lastAt);
+                const heatPercent = toHeatPercent(event.heatScore);
+                const credibilityPercent = toCredibilityPercent(event.credibilityScore);
+                const heatOverlayOpacity = Math.max(0.04, Math.min(0.2, (heatPercent / 100) * 0.2));
+                const rowStyle: CSSProperties = isFutureEvent
+                  ? {
+                    borderRadius: 8,
+                    border: "1px solid #91d5ff",
+                    background:
+                      "linear-gradient(90deg, rgba(230,247,255,0.75) 0%, rgba(246,255,237,0.65) 100%)",
+                    paddingInline: 12
+                  }
+                  : {
+                    borderRadius: 8,
+                    background: `linear-gradient(90deg, rgba(255,77,79,${heatOverlayOpacity}) 0%, rgba(255,255,255,0) 68%)`,
+                    paddingInline: 12
+                  };
 
                 return (
                   <List.Item
                     key={event.id}
+                    style={rowStyle}
                     actions={[
                       <Button key="open" type="link" onClick={() => router.push(`/events/${event.id}`)}>
                         {t("pages.events.actions.open", { defaultValue: "Open" })}
@@ -556,12 +608,45 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                               {t("pages.events.fields.breaking", { defaultValue: "Breaking" })}
                             </Tag>
                           ) : null}
-                          <Tag color="magenta">
-                            {heatLabel}: {event.heatScore.toFixed(1)}
-                          </Tag>
-                          <Tag color="purple">
-                            {credibilityLabel}: {Math.round(event.credibilityScore)}
-                          </Tag>
+                          {isFutureEvent ? (
+                            <Tag color="cyan" icon={<CalendarOutlined />}>
+                              {futureEventLabel}
+                            </Tag>
+                          ) : null}
+                          <div className="min-w-[136px] rounded-md border border-rose-100 bg-white px-2 py-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <Typography.Text style={{ fontSize: 12 }} strong>
+                                {heatLabel}
+                              </Typography.Text>
+                              <Typography.Text style={{ fontSize: 12 }}>
+                                {event.heatScore.toFixed(1)}
+                              </Typography.Text>
+                            </div>
+                            <Progress
+                              percent={heatPercent}
+                              showInfo={false}
+                              size={[120, 5]}
+                              strokeColor={{ "0%": "#ffb5b5", "100%": "#cf1322" }}
+                              trailColor="#fff1f0"
+                            />
+                          </div>
+                          <div className="min-w-[136px] rounded-md border border-emerald-100 bg-white px-2 py-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <Typography.Text style={{ fontSize: 12 }} strong>
+                                {credibilityLabel}
+                              </Typography.Text>
+                              <Typography.Text style={{ fontSize: 12 }}>
+                                {Math.round(event.credibilityScore)}
+                              </Typography.Text>
+                            </div>
+                            <Progress
+                              percent={credibilityPercent}
+                              showInfo={false}
+                              size={[120, 5]}
+                              strokeColor={{ "0%": "#ff4d4f", "50%": "#faad14", "100%": "#52c41a" }}
+                              trailColor="#f6ffed"
+                            />
+                          </div>
                           <Tag>
                             {sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}
                           </Tag>
@@ -575,7 +660,15 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                           ) : null}
                           {language ? <Tag color="blue">{language}</Tag> : null}
                           {topic ? <Tag color="geekblue">{topic}</Tag> : null}
-                          {entity ? <Tag color="purple">{entity}</Tag> : null}
+                          {entity ? (
+                            <Tag
+                              color="purple"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => updateFilters({ entity: entityFilter === entity ? null : entity })}
+                            >
+                              {entity}
+                            </Tag>
+                          ) : null}
                         </Space>
                       }
                       description={
@@ -598,6 +691,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                                 <span>{lastDate}</span>
                               </Tooltip>
                               {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
+                              {isFutureEvent ? <span className="ml-1 text-cyan-700">[{futureEventHint}]</span> : null}
                             </Typography.Text>
                           </Space>
                         </div>

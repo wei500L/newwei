@@ -11,6 +11,7 @@ const NEWS_EVENTS_QUERY = `
     $limit: Int
     $windowDays: Int
     $status: NewsEventStatus
+    $entity: String
     $sourceType: NewsEventSourceType
     $minHeatScore: Float
     $minCredibilityScore: Float
@@ -20,6 +21,7 @@ const NEWS_EVENTS_QUERY = `
       limit: $limit
       windowDays: $windowDays
       status: $status
+      entity: $entity
       sourceType: $sourceType
       minHeatScore: $minHeatScore
       minCredibilityScore: $minCredibilityScore
@@ -93,6 +95,8 @@ export default async function EventsPage({
   const windowDays = parsePositiveInt(searchParams?.window, DEFAULT_WINDOW_DAYS);
   const limit = parsePositiveInt(searchParams?.limit, DEFAULT_LIMIT);
   const status = typeof searchParams?.status === "string" ? searchParams?.status : undefined;
+  const entity =
+    typeof searchParams?.entity === "string" ? searchParams.entity.trim().slice(0, 120) : undefined;
   const sortBy = typeof searchParams?.sort === "string" ? searchParams.sort : undefined;
   const sourceType =
     typeof searchParams?.sourceType === "string" ? searchParams.sourceType : undefined;
@@ -107,6 +111,7 @@ export default async function EventsPage({
       limit,
       windowDays,
       status: status && ["active", "archived"].includes(status) ? status : undefined,
+      entity: entity && entity.length > 0 ? entity : undefined,
       sourceType:
         sourceType && ["authoritative", "mixed", "blog", "unknown"].includes(sourceType)
           ? sourceType

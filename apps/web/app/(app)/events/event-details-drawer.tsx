@@ -1,18 +1,48 @@
 "use client";
 
+import { CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Divider,
+  Drawer,
+  Empty,
+  List,
+  Progress,
+  Skeleton,
+  Space,
+  Tag,
+  Tabs,
+  Tooltip,
+  Typography,
+} from "antd";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
-import { useNewsEventBriefQuery, useProcessedItemByIdQuery } from "@/graphql/generated";
+import {
+  useNewsEventBriefQuery,
+  useProcessedItemByIdQuery,
+} from "@/graphql/generated";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
+import {
+  formatDateTime,
+  formatRelativeTime,
+  formatTimeZoneOffsetLabel,
+  getDefaultTimeZone,
+  resolveLocale,
+} from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
+import {
+  isFutureEventTimestamp,
+  toCredibilityPercent,
+  toHeatPercent,
+} from "./events-list-helpers";
 
 interface EventItem {
   id: string;
@@ -55,6 +85,13 @@ interface TimelineEntry {
   updatedAt: string;
 }
 
+interface NewsEventSourceEvidence {
+  uniqueSourceCount: number;
+  authoritativeSourceCount: number;
+  blogSourceCount: number;
+  corroborated: boolean;
+}
+
 interface NewsEvent {
   id: string;
   status: "active" | "archived";
@@ -66,6 +103,10 @@ interface NewsEvent {
   startAt: string;
   lastAt: string;
   itemCount: number;
+  heatScore: number;
+  credibilityScore: number;
+  sourceType: "all" | "authoritative" | "mixed" | "blog" | "unknown";
+  sourceEvidence?: NewsEventSourceEvidence | null;
   categoryDistribution?: unknown;
   topicDriftWarning?: boolean | null;
   topicDriftSummary?: string | null;
@@ -88,6 +129,15 @@ const NEWS_EVENT_QUERY = gql`
       startAt
       lastAt
       itemCount
+      heatScore
+      credibilityScore
+      sourceType
+      sourceEvidence {
+        uniqueSourceCount
+        authoritativeSourceCount
+        blogSourceCount
+        corroborated
+      }
       categoryDistribution
       topicDriftWarning
       topicDriftSummary
@@ -165,7 +215,10 @@ const toStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return value.filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim().length > 0,
+  );
 };
 
 const toEntityNames = (value: unknown): string[] => {
@@ -182,7 +235,10 @@ const toEntityNames = (value: unknown): string[] => {
       }
       return undefined;
     })
-    .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+    .filter(
+      (name): name is string =>
+        typeof name === "string" && name.trim().length > 0,
+    );
 };
 
 function getResultObject(value: unknown): Record<string, unknown> | null {
@@ -209,7 +265,9 @@ type TimelinePhaseSummary = {
   summary: string;
 };
 
-function normalizeCategoryDistribution(value: unknown): CategoryDistributionEntry[] {
+function normalizeCategoryDistribution(
+  value: unknown,
+): CategoryDistributionEntry[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -219,16 +277,25 @@ function normalizeCategoryDistribution(value: unknown): CategoryDistributionEntr
         return null;
       }
       const record = entry as Record<string, unknown>;
-      const categoryPath = typeof record.categoryPath === "string" ? record.categoryPath.trim() : "";
-      const count = typeof record.count === "number" && Number.isFinite(record.count) ? record.count : 0;
-      const share = typeof record.share === "number" && Number.isFinite(record.share) ? record.share : 0;
+      const categoryPath =
+        typeof record.categoryPath === "string"
+          ? record.categoryPath.trim()
+          : "";
+      const count =
+        typeof record.count === "number" && Number.isFinite(record.count)
+          ? record.count
+          : 0;
+      const share =
+        typeof record.share === "number" && Number.isFinite(record.share)
+          ? record.share
+          : 0;
       if (!categoryPath || count <= 0) {
         return null;
       }
       return {
         categoryPath,
         count,
-        share: Math.max(0, Math.min(1, share))
+        share: Math.max(0, Math.min(1, share)),
       };
     })
     .filter((entry): entry is CategoryDistributionEntry => Boolean(entry));
@@ -244,14 +311,29 @@ function normalizeTimelinePhases(value: unknown): TimelinePhaseSummary[] {
         return null;
       }
       const record = entry as Record<string, unknown>;
-      const phase = typeof record.phase === "number" && Number.isFinite(record.phase) ? record.phase : 0;
+      const phase =
+        typeof record.phase === "number" && Number.isFinite(record.phase)
+          ? record.phase
+          : 0;
       const label = typeof record.label === "string" ? record.label.trim() : "";
-      const categoryPrefix = typeof record.categoryPrefix === "string" ? record.categoryPrefix.trim() : "";
+      const categoryPrefix =
+        typeof record.categoryPrefix === "string"
+          ? record.categoryPrefix.trim()
+          : "";
       const startAt = typeof record.startAt === "string" ? record.startAt : "";
       const endAt = typeof record.endAt === "string" ? record.endAt : "";
-      const itemCount = typeof record.itemCount === "number" && Number.isFinite(record.itemCount) ? record.itemCount : 0;
-      const bucketCount = typeof record.bucketCount === "number" && Number.isFinite(record.bucketCount) ? record.bucketCount : 0;
-      const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+      const itemCount =
+        typeof record.itemCount === "number" &&
+        Number.isFinite(record.itemCount)
+          ? record.itemCount
+          : 0;
+      const bucketCount =
+        typeof record.bucketCount === "number" &&
+        Number.isFinite(record.bucketCount)
+          ? record.bucketCount
+          : 0;
+      const summary =
+        typeof record.summary === "string" ? record.summary.trim() : "";
       if (!label || !categoryPrefix || !startAt || !endAt) {
         return null;
       }
@@ -263,13 +345,15 @@ function normalizeTimelinePhases(value: unknown): TimelinePhaseSummary[] {
         endAt,
         itemCount,
         bucketCount,
-        summary
+        summary,
       };
     })
     .filter((entry): entry is TimelinePhaseSummary => Boolean(entry));
 }
 
-function formatConfidencePercent(value: number | null | undefined): string | null {
+function formatConfidencePercent(
+  value: number | null | undefined,
+): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
@@ -290,47 +374,66 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
-  const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
+  const timeZoneLabel = useMemo(
+    () => formatTimeZoneOffsetLabel(new Date(), timeZone),
+    [timeZone],
+  );
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("brief");
-  const [selectedProcessedItemId, setSelectedProcessedItemId] = useState<string | null>(null);
+  const [selectedProcessedItemId, setSelectedProcessedItemId] = useState<
+    string | null
+  >(null);
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
 
-  const { data, loading, error } = useQuery<{ newsEvent: NewsEvent | null }>(NEWS_EVENT_QUERY, {
-    variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
-    fetchPolicy: "network-only"
-  });
+  const { data, loading, error } = useQuery<{ newsEvent: NewsEvent | null }>(
+    NEWS_EVENT_QUERY,
+    {
+      variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
+      fetchPolicy: "network-only",
+    },
+  );
 
   const event = data?.newsEvent ?? null;
   const briefLanguage = i18n.language;
   const briefMaxSources = 10;
   const briefQuery = useNewsEventBriefQuery({
-    variables: { eventId, language: briefLanguage, maxSources: briefMaxSources, forceRefresh: false },
+    variables: {
+      eventId,
+      language: briefLanguage,
+      maxSources: briefMaxSources,
+      forceRefresh: false,
+    },
     skip: activeTab !== "brief",
     fetchPolicy: "network-only",
-    notifyOnNetworkStatusChange: true
+    notifyOnNetworkStatusChange: true,
   });
   const brief = briefQuery.data?.newsEventBrief ?? null;
 
   const timeline = useMemo(() => {
     const entries = event?.timeline ?? [];
-    return [...entries].sort((a, b) => dayjs(a.bucketStart).valueOf() - dayjs(b.bucketStart).valueOf());
+    return [...entries].sort(
+      (a, b) => dayjs(a.bucketStart).valueOf() - dayjs(b.bucketStart).valueOf(),
+    );
   }, [event?.timeline]);
   const categoryDistribution = useMemo(
     () => normalizeCategoryDistribution(event?.categoryDistribution),
-    [event?.categoryDistribution]
+    [event?.categoryDistribution],
   );
   const timelinePhases = useMemo(
     () => normalizeTimelinePhases(event?.timelinePhases ?? event?.subEvents),
-    [event?.timelinePhases, event?.subEvents]
+    [event?.timelinePhases, event?.subEvents],
   );
   const items = useMemo(() => {
     const rows = event?.items ?? [];
-    return [...rows].sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf());
+    return [...rows].sort(
+      (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+    );
   }, [event?.items]);
   const itemByProcessedArticleId = useMemo(() => {
-    const entries = items.map((item) => [item.processedArticleId, item] as const);
+    const entries = items.map(
+      (item) => [item.processedArticleId, item] as const,
+    );
     return new Map(entries);
   }, [items]);
   const briefSourcesByIndex = useMemo(() => {
@@ -351,14 +454,17 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           latestUpdate: 0,
           whatToWatch: 0,
           consensus: 0,
-          divergence: 0
+          divergence: 0,
         };
         stats.set(index, current);
       }
       return current;
     };
 
-    const add = (citations: number[] | null | undefined, field: keyof CitationStats) => {
+    const add = (
+      citations: number[] | null | undefined,
+      field: keyof CitationStats,
+    ) => {
       const list = Array.isArray(citations) ? citations : [];
       for (const idx of list) {
         if (typeof idx !== "number" || !Number.isFinite(idx)) {
@@ -369,7 +475,10 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
       }
     };
 
-    const addPoints = (points: Array<{ citations: number[] }> | null | undefined, field: keyof CitationStats) => {
+    const addPoints = (
+      points: Array<{ citations: number[] }> | null | undefined,
+      field: keyof CitationStats,
+    ) => {
       for (const point of points ?? []) {
         add(point.citations, field);
       }
@@ -396,9 +505,10 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   const selectedProcessedQuery = useProcessedItemByIdQuery({
     variables: { id: selectedProcessedItemId ?? "" },
     skip: !selectedProcessedItemId,
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
   });
-  const selectedProcessed = selectedProcessedQuery.data?.processedItemById ?? null;
+  const selectedProcessed =
+    selectedProcessedQuery.data?.processedItemById ?? null;
 
   useEffect(() => {
     if (!error) {
@@ -411,26 +521,35 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     if (!briefQuery.error) {
       return;
     }
-    captureClientError("Failed to load event detailed summary in drawer", briefQuery.error);
+    captureClientError(
+      "Failed to load event detailed summary in drawer",
+      briefQuery.error,
+    );
   }, [briefQuery.error]);
 
   useEffect(() => {
     if (!selectedProcessedQuery.error) {
       return;
     }
-    captureClientError("Failed to load selected processed article in event drawer", selectedProcessedQuery.error);
+    captureClientError(
+      "Failed to load selected processed article in event drawer",
+      selectedProcessedQuery.error,
+    );
   }, [selectedProcessedQuery.error]);
   const selectedProcessedResult = useMemo(
     () => getResultObject(selectedProcessed?.resultJson),
-    [selectedProcessed?.resultJson]
+    [selectedProcessed?.resultJson],
   );
   const selectedSummary = toString(selectedProcessedResult?.summary);
   const selectedKeyPoints = toStringList(selectedProcessedResult?.key_points);
   const selectedTopics = toStringList(selectedProcessedResult?.topics);
   const selectedEntities = toEntityNames(selectedProcessedResult?.entities);
   const selectedMarkdown = toString(selectedProcessedResult?.cleaned_markdown);
-  const selectedMarkdownSource = toString(selectedProcessedResult?.cleaned_markdown_source);
-  const selectedMarkdownFallbackUsed = selectedMarkdownSource === "crawl_fallback";
+  const selectedMarkdownSource = toString(
+    selectedProcessedResult?.cleaned_markdown_source,
+  );
+  const selectedMarkdownFallbackUsed =
+    selectedMarkdownSource === "crawl_fallback";
 
   if (loading && !event) {
     return <Skeleton active paragraph={{ rows: 10 }} />;
@@ -441,8 +560,12 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
       <Alert
         type="error"
         showIcon
-        message={t("pages.events.drawer.loadFailed", { defaultValue: "Failed to load event." })}
-        description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+        message={t("pages.events.drawer.loadFailed", {
+          defaultValue: "Failed to load event.",
+        })}
+        description={t("common.serviceUnavailable", {
+          defaultValue: "Service is unavailable. Please try again.",
+        })}
       />
     );
   }
@@ -451,29 +574,70 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={t("pages.events.drawer.notFound", { defaultValue: "Event not found." })}
+        description={t("pages.events.drawer.notFound", {
+          defaultValue: "Event not found.",
+        })}
       />
     );
   }
 
-  const title = event.title?.trim() ? event.title.trim() : event.primaryEntity?.trim() || event.primaryTopic?.trim() || event.id;
+  const title = event.title?.trim()
+    ? event.title.trim()
+    : event.primaryEntity?.trim() || event.primaryTopic?.trim() || event.id;
   const language = event.language?.trim() ?? "";
   const topic = event.primaryTopic?.trim() ?? "";
   const entity = event.primaryEntity?.trim() ?? "";
-  const statusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
+  const statusLabel = t(`pages.events.status.${event.status}`, {
+    defaultValue: event.status,
+  });
+  const sourceEvidence: NewsEventSourceEvidence = event.sourceEvidence ?? {
+    uniqueSourceCount: 0,
+    authoritativeSourceCount: 0,
+    blogSourceCount: 0,
+    corroborated: false,
+  };
+  const sourceTypeLabelMap: Record<NewsEvent["sourceType"], string> = {
+    all: t("pages.events.filters.sourceType.all", { defaultValue: "All" }),
+    authoritative: t("pages.events.filters.sourceType.authoritative", {
+      defaultValue: "Authoritative",
+    }),
+    mixed: t("pages.events.filters.sourceType.mixed", {
+      defaultValue: "Mixed",
+    }),
+    blog: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }),
+    unknown: t("pages.events.filters.sourceType.unknown", {
+      defaultValue: "Unknown",
+    }),
+  };
+  const credibilitySummary = sourceEvidence.corroborated
+    ? t("pages.events.detail.credibilityStrong", {
+        defaultValue:
+          "Cross-source corroboration detected. Confidence is relatively strong.",
+      })
+    : sourceEvidence.uniqueSourceCount <= 1
+      ? t("pages.events.detail.credibilityWeak", {
+          defaultValue: "Single-source signal. Treat this as preliminary.",
+        })
+      : t("pages.events.detail.credibilityMedium", {
+          defaultValue:
+            "Multiple sources exist, but corroboration is still limited.",
+        });
   const startRelative = formatRelativeTime(event.startAt, locale, { timeZone });
   const lastRelative = formatRelativeTime(event.lastAt, locale, { timeZone });
   const startTooltip = formatDateTime(event.startAt, locale, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
-    timeZoneName: "short"
+    timeZoneName: "short",
   });
+  const isFutureEvent = isFutureEventTimestamp(event.lastAt);
+  const heatPercent = toHeatPercent(event.heatScore);
+  const credibilityPercent = toCredibilityPercent(event.credibilityScore);
   const lastTooltip = formatDateTime(event.lastAt, locale, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
-    timeZoneName: "short"
+    timeZoneName: "short",
   });
 
   const renderCitations = (citations: number[] | null | undefined) => {
@@ -486,7 +650,10 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         {list.slice(0, 12).map((idx) => {
           const source = briefSourcesByIndex.get(idx);
           const url = safeHttpUrl(source?.url ?? null);
-          const processedItemId = typeof source?.processedItemId === "string" ? source.processedItemId.trim() : "";
+          const processedItemId =
+            typeof source?.processedItemId === "string"
+              ? source.processedItemId.trim()
+              : "";
           let label = source?.sourceLabel?.trim() ?? "";
           if (!label && url) {
             try {
@@ -501,7 +668,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             <Tag
               key={`cite-${idx}`}
               color="blue"
-              style={(processedItemId || url) ? { cursor: "pointer" } : undefined}
+              style={processedItemId || url ? { cursor: "pointer" } : undefined}
               onClick={() => {
                 if (processedItemId) {
                   setSelectedProcessedItemId(processedItemId);
@@ -529,13 +696,17 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
     );
   };
 
-  const renderPointList = (points: Array<{ text: string; citations: number[] }> | null | undefined) => {
+  const renderPointList = (
+    points: Array<{ text: string; citations: number[] }> | null | undefined,
+  ) => {
     const dataSource = points ?? [];
     if (dataSource.length === 0) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", { defaultValue: "Not available" })}
+          description={t("common.notAvailable", {
+            defaultValue: "Not available",
+          })}
         />
       );
     }
@@ -561,12 +732,16 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", { defaultValue: "Not available" })}
+          description={t("common.notAvailable", {
+            defaultValue: "Not available",
+          })}
         />
       );
     }
     return (
-      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>{normalized}</Typography.Paragraph>
+      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>
+        {normalized}
+      </Typography.Paragraph>
     );
   };
 
@@ -577,33 +752,141 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           {title}
         </Typography.Title>
         <Space wrap size={[8, 6]}>
-          <Button type="link" onClick={() => router.push(`/events/${event.id}`)}>
+          <Button
+            type="link"
+            onClick={() => router.push(`/events/${event.id}`)}
+          >
             {t("pages.events.actions.open", { defaultValue: "Open" })}
           </Button>
         </Space>
         <Space wrap size={[6, 6]}>
-          <Tag color={event.status === "active" ? "green" : "default"}>{statusLabel}</Tag>
-          <Tag>{t("pages.events.drawer.items", { defaultValue: "Items" })}: {event.itemCount}</Tag>
+          <Tag color={event.status === "active" ? "green" : "default"}>
+            {statusLabel}
+          </Tag>
+          <Tag>
+            {t("pages.events.drawer.items", { defaultValue: "Items" })}:{" "}
+            {event.itemCount}
+          </Tag>
+          {isFutureEvent ? (
+            <Tag color="cyan" icon={<CalendarOutlined />}>
+              {t("pages.events.fields.futureEvent", {
+                defaultValue: "Scheduled",
+              })}
+            </Tag>
+          ) : null}
           {language ? <Tag color="blue">{language}</Tag> : null}
           {topic ? <Tag color="geekblue">{topic}</Tag> : null}
-          {entity ? <Tag color="purple">{entity}</Tag> : null}
+          {entity ? (
+            <Tag
+              color="purple"
+              style={{ cursor: "pointer" }}
+              onClick={() =>
+                router.push(`/events?entity=${encodeURIComponent(entity)}`)
+              }
+            >
+              {entity}
+            </Tag>
+          ) : null}
+          <Tag>
+            {t("pages.events.fields.sourceType", { defaultValue: "Type" })}:{" "}
+            {sourceTypeLabelMap[event.sourceType] ?? event.sourceType}
+          </Tag>
+          <Tag>
+            {t("pages.events.fields.sources", { defaultValue: "Sources" })}:{" "}
+            {sourceEvidence.uniqueSourceCount}
+          </Tag>
+          {sourceEvidence.corroborated ? (
+            <Tag color="success">
+              {t("pages.events.fields.corroborated", {
+                defaultValue: "Corroborated",
+              })}
+            </Tag>
+          ) : null}
           <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
             <Tag>{timeZoneLabel || timeZone}</Tag>
           </Tooltip>
         </Space>
+        <div className="flex flex-wrap gap-2">
+          <div className="min-w-[160px] rounded-md border border-rose-100 bg-white px-2 py-1">
+            <div className="flex items-center justify-between gap-2">
+              <Typography.Text style={{ fontSize: 12 }} strong>
+                {t("pages.events.fields.heat", { defaultValue: "Heat" })}
+              </Typography.Text>
+              <Typography.Text style={{ fontSize: 12 }}>
+                {event.heatScore.toFixed(1)}
+              </Typography.Text>
+            </div>
+            <Progress
+              percent={heatPercent}
+              showInfo={false}
+              size={[144, 6]}
+              strokeColor={{ "0%": "#ffb5b5", "100%": "#cf1322" }}
+              trailColor="#fff1f0"
+            />
+          </div>
+          <div className="min-w-[160px] rounded-md border border-emerald-100 bg-white px-2 py-1">
+            <div className="flex items-center justify-between gap-2">
+              <Typography.Text style={{ fontSize: 12 }} strong>
+                {t("pages.events.fields.credibility", {
+                  defaultValue: "Credibility",
+                })}
+              </Typography.Text>
+              <Typography.Text style={{ fontSize: 12 }}>
+                {Math.round(event.credibilityScore)}
+              </Typography.Text>
+            </div>
+            <Progress
+              percent={credibilityPercent}
+              showInfo={false}
+              size={[144, 6]}
+              strokeColor={{
+                "0%": "#ff4d4f",
+                "50%": "#faad14",
+                "100%": "#52c41a",
+              }}
+              trailColor="#f6ffed"
+            />
+          </div>
+        </div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {credibilitySummary}
+        </Typography.Text>
         <Space wrap size={[12, 0]}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.startAt", { defaultValue: "Start" })}:{" "}
-            <Tooltip title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}>
-              <span>{formatDateTime(event.startAt, locale, { dateStyle: "medium", timeZone })}</span>
+            <Tooltip
+              title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}
+            >
+              <span>
+                {formatDateTime(event.startAt, locale, {
+                  dateStyle: "medium",
+                  timeZone,
+                })}
+              </span>
             </Tooltip>
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.lastAt", { defaultValue: "Last" })}:{" "}
-            <Tooltip title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}>
-              <span>{formatDateTime(event.lastAt, locale, { dateStyle: "medium", timeZone })}</span>
+            <Tooltip
+              title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}
+            >
+              <span>
+                {formatDateTime(event.lastAt, locale, {
+                  dateStyle: "medium",
+                  timeZone,
+                })}
+              </span>
             </Tooltip>
-            {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
+            {lastRelative ? (
+              <span className="ml-1 opacity-80">({lastRelative})</span>
+            ) : null}
+            {isFutureEvent ? (
+              <span className="ml-1 text-cyan-700">
+                {t("pages.events.fields.futureEventHint", {
+                  defaultValue: "Future event",
+                })}
+              </span>
+            ) : null}
           </Typography.Text>
         </Space>
         {event.summary ? (
@@ -621,7 +904,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
         items={[
           {
             key: "brief",
-            label: t("pages.events.drawer.tabs.brief", { defaultValue: "Detailed summary" }),
+            label: t("pages.events.drawer.tabs.brief", {
+              defaultValue: "Detailed summary",
+            }),
             children: (
               <div className="flex flex-col gap-4">
                 <Space wrap>
@@ -631,22 +916,34 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                         eventId,
                         language: briefLanguage,
                         maxSources: briefMaxSources,
-                        forceRefresh: true
+                        forceRefresh: true,
                       })
                     }
                     loading={briefQuery.loading}
                   >
-                    {t("pages.events.drawer.refreshBrief", { defaultValue: "Refresh detailed summary" })}
+                    {t("pages.events.drawer.refreshBrief", {
+                      defaultValue: "Refresh detailed summary",
+                    })}
                   </Button>
                   {brief?.generatedAt ? (
                     <Tag>
-                      {t("pages.events.drawer.generatedAt", { defaultValue: "Generated" })}:{" "}
-                      {formatDateTime(brief.generatedAt, locale, { dateStyle: "medium", timeStyle: "short", timeZone })}
+                      {t("pages.events.drawer.generatedAt", {
+                        defaultValue: "Generated",
+                      })}
+                      :{" "}
+                      {formatDateTime(brief.generatedAt, locale, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                        timeZone,
+                      })}
                     </Tag>
                   ) : null}
                   {brief?.sources?.length ? (
                     <Tag>
-                      {t("pages.events.drawer.briefSources", { defaultValue: "Sources" })}: {brief.sources.length}
+                      {t("pages.events.drawer.briefSources", {
+                        defaultValue: "Sources",
+                      })}
+                      : {brief.sources.length}
                     </Tag>
                   ) : null}
                 </Space>
@@ -655,8 +952,12 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Alert
                     type="error"
                     showIcon
-                    message={t("pages.events.drawer.briefLoadFailed", { defaultValue: "Failed to load detailed summary." })}
-                    description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+                    message={t("pages.events.drawer.briefLoadFailed", {
+                      defaultValue: "Failed to load detailed summary.",
+                    })}
+                    description={t("common.serviceUnavailable", {
+                      defaultValue: "Service is unavailable. Please try again.",
+                    })}
                   />
                 ) : briefQuery.loading && !brief ? (
                   <Skeleton active paragraph={{ rows: 10 }} />
@@ -664,7 +965,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={t("pages.events.drawer.briefEmpty", {
-                      defaultValue: "Detailed summary is not available yet. Click refresh to generate."
+                      defaultValue:
+                        "Detailed summary is not available yet. Click refresh to generate.",
                     })}
                   />
                 ) : (
@@ -672,19 +974,31 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                     <Card
                       size="small"
                       className="content-card"
-                      title={t("pages.events.drawer.detailedSummary", { defaultValue: "Detailed summary" })}
+                      title={t("pages.events.drawer.detailedSummary", {
+                        defaultValue: "Detailed summary",
+                      })}
                     >
                       {renderDetailedSummary(brief.detailedSummary)}
-                    </Card>
-
-                    <Card size="small" className="content-card" title={t("pages.events.drawer.tldr", { defaultValue: "TL;DR" })}>
-                      <Typography.Paragraph style={{ marginBottom: 0 }}>{brief.tldr}</Typography.Paragraph>
                     </Card>
 
                     <Card
                       size="small"
                       className="content-card"
-                      title={t("pages.events.drawer.keyPoints", { defaultValue: "Key points" })}
+                      title={t("pages.events.drawer.tldr", {
+                        defaultValue: "TL;DR",
+                      })}
+                    >
+                      <Typography.Paragraph style={{ marginBottom: 0 }}>
+                        {brief.tldr}
+                      </Typography.Paragraph>
+                    </Card>
+
+                    <Card
+                      size="small"
+                      className="content-card"
+                      title={t("pages.events.drawer.keyPoints", {
+                        defaultValue: "Key points",
+                      })}
                     >
                       {renderPointList(brief.keyPoints)}
                     </Card>
@@ -692,7 +1006,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                     <Card
                       size="small"
                       className="content-card"
-                      title={t("pages.events.drawer.whyMatters", { defaultValue: "Why it matters" })}
+                      title={t("pages.events.drawer.whyMatters", {
+                        defaultValue: "Why it matters",
+                      })}
                     >
                       {renderPointList(brief.whyItMatters)}
                     </Card>
@@ -701,14 +1017,20 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                       <Card
                         size="small"
                         className="content-card"
-                        title={t("pages.events.drawer.latestUpdate", { defaultValue: "Latest update" })}
+                        title={t("pages.events.drawer.latestUpdate", {
+                          defaultValue: "Latest update",
+                        })}
                       >
-                        {brief.latestUpdate ? renderPointList([brief.latestUpdate]) : renderPointList([])}
+                        {brief.latestUpdate
+                          ? renderPointList([brief.latestUpdate])
+                          : renderPointList([])}
                       </Card>
                       <Card
                         size="small"
                         className="content-card"
-                        title={t("pages.events.drawer.watch", { defaultValue: "What to watch" })}
+                        title={t("pages.events.drawer.watch", {
+                          defaultValue: "What to watch",
+                        })}
                       >
                         {renderPointList(brief.whatToWatch)}
                       </Card>
@@ -719,14 +1041,18 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.drawer.consensus", { defaultValue: "Consensus" })}
+                          title={t("pages.events.drawer.consensus", {
+                            defaultValue: "Consensus",
+                          })}
                         >
                           {renderPointList(brief.comparison.consensus)}
                         </Card>
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.drawer.divergence", { defaultValue: "Divergence" })}
+                          title={t("pages.events.drawer.divergence", {
+                            defaultValue: "Divergence",
+                          })}
                         >
                           {renderPointList(brief.comparison.divergence)}
                         </Card>
@@ -737,7 +1063,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                       <Alert
                         type="info"
                         showIcon
-                        message={t("pages.events.drawer.limitations", { defaultValue: "Limitations" })}
+                        message={t("pages.events.drawer.limitations", {
+                          defaultValue: "Limitations",
+                        })}
                         description={brief.limitations}
                       />
                     ) : null}
@@ -745,7 +1073,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                     <Card
                       size="small"
                       className="content-card"
-                      title={t("pages.events.drawer.sourcesTitle", { defaultValue: "Sources" })}
+                      title={t("pages.events.drawer.sourcesTitle", {
+                        defaultValue: "Sources",
+                      })}
                     >
                       <List
                         size="small"
@@ -758,39 +1088,43 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                               ? new URL(url).hostname
                               : `#${source.index}`;
                           const item = source.processedArticleId
-                            ? itemByProcessedArticleId.get(source.processedArticleId)
+                            ? itemByProcessedArticleId.get(
+                                source.processedArticleId,
+                              )
                             : undefined;
-                          const summary = item?.processedArticle.summary ?? null;
-                          const citationStats = briefCitationStatsBySourceIndex.get(source.index);
+                          const summary =
+                            item?.processedArticle.summary ?? null;
+                          const citationStats =
+                            briefCitationStatsBySourceIndex.get(source.index);
                           const citedParts: string[] = [];
                           if (citationStats?.keyPoints) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.keyPoints", { defaultValue: "Key points" })}×${citationStats.keyPoints}`
+                              `${t("pages.events.drawer.citedIn.keyPoints", { defaultValue: "Key points" })}×${citationStats.keyPoints}`,
                             );
                           }
                           if (citationStats?.whyItMatters) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.whyItMatters", { defaultValue: "Why it matters" })}×${citationStats.whyItMatters}`
+                              `${t("pages.events.drawer.citedIn.whyItMatters", { defaultValue: "Why it matters" })}×${citationStats.whyItMatters}`,
                             );
                           }
                           if (citationStats?.latestUpdate) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.latestUpdate", { defaultValue: "Latest update" })}×${citationStats.latestUpdate}`
+                              `${t("pages.events.drawer.citedIn.latestUpdate", { defaultValue: "Latest update" })}×${citationStats.latestUpdate}`,
                             );
                           }
                           if (citationStats?.whatToWatch) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.whatToWatch", { defaultValue: "What to watch" })}×${citationStats.whatToWatch}`
+                              `${t("pages.events.drawer.citedIn.whatToWatch", { defaultValue: "What to watch" })}×${citationStats.whatToWatch}`,
                             );
                           }
                           if (citationStats?.consensus) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.consensus", { defaultValue: "Consensus" })}×${citationStats.consensus}`
+                              `${t("pages.events.drawer.citedIn.consensus", { defaultValue: "Consensus" })}×${citationStats.consensus}`,
                             );
                           }
                           if (citationStats?.divergence) {
                             citedParts.push(
-                              `${t("pages.events.drawer.citedIn.divergence", { defaultValue: "Divergence" })}×${citationStats.divergence}`
+                              `${t("pages.events.drawer.citedIn.divergence", { defaultValue: "Divergence" })}×${citationStats.divergence}`,
                             );
                           }
 
@@ -802,21 +1136,32 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                 if (!source.processedItemId) {
                                   return;
                                 }
-                                setSelectedProcessedItemId(source.processedItemId);
+                                setSelectedProcessedItemId(
+                                  source.processedItemId,
+                                );
                                 setSelectedTitle(source.title ?? sourceName);
                                 setSelectedUrl(url ?? null);
                               }}
                               disabled={!source.processedItemId}
                             >
-                              {t("pages.events.drawer.openLlm", { defaultValue: "LLM content" })}
-                            </Button>
+                              {t("pages.events.drawer.openLlm", {
+                                defaultValue: "LLM content",
+                              })}
+                            </Button>,
                           ];
 
                           if (url) {
                             actions.push(
-                              <a key="open" href={url} target="_blank" rel="noreferrer">
-                                {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
-                              </a>
+                              <a
+                                key="open"
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {t("pages.events.drawer.openOriginal", {
+                                  defaultValue: "Open",
+                                })}
+                              </a>,
                             );
                           }
 
@@ -826,13 +1171,18 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                 title={
                                   <Space wrap size={[6, 6]}>
                                     <Tag>#{source.index}</Tag>
-                                    <Typography.Text strong>{sourceName}</Typography.Text>
+                                    <Typography.Text strong>
+                                      {sourceName}
+                                    </Typography.Text>
                                     <ArticlePublishedTime
                                       publishedAt={source.publishedAt ?? null}
                                       locale={locale}
                                       timeZone={timeZone}
                                       showLabel={false}
-                                      formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                      formatOptions={{
+                                        dateStyle: "medium",
+                                        timeStyle: "short",
+                                      }}
                                       primaryClassName="text-xs"
                                       secondaryClassName="text-[11px]"
                                       secondaryStyle={{ fontSize: 11 }}
@@ -841,15 +1191,29 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                 }
                                 description={
                                   <div className="flex flex-col gap-1">
-                                    {source.title ? <Typography.Text>{source.title}</Typography.Text> : null}
+                                    {source.title ? (
+                                      <Typography.Text>
+                                        {source.title}
+                                      </Typography.Text>
+                                    ) : null}
                                     {summary ? (
-                                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                                      <Typography.Paragraph
+                                        type="secondary"
+                                        ellipsis={{ rows: 3 }}
+                                        style={{ marginBottom: 0 }}
+                                      >
                                         {summary}
                                       </Typography.Paragraph>
                                     ) : null}
                                     {citedParts.length > 0 ? (
-                                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                        {t("pages.events.drawer.citedInLabel", { defaultValue: "Cited in" })}: {citedParts.join(", ")}
+                                      <Typography.Text
+                                        type="secondary"
+                                        style={{ fontSize: 12 }}
+                                      >
+                                        {t("pages.events.drawer.citedInLabel", {
+                                          defaultValue: "Cited in",
+                                        })}
+                                        : {citedParts.join(", ")}
                                       </Typography.Text>
                                     ) : null}
                                   </div>
@@ -863,22 +1227,27 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   </div>
                 )}
               </div>
-            )
+            ),
           },
           {
             key: "timeline",
-            label: t("pages.events.drawer.tabs.timeline", { defaultValue: "Timeline" }),
+            label: t("pages.events.drawer.tabs.timeline", {
+              defaultValue: "Timeline",
+            }),
             children: (
               <div className="flex flex-col gap-3">
                 {event.topicDriftWarning ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message={t("pages.events.drawer.topicDrift", { defaultValue: "Topic drift detected" })}
+                    message={t("pages.events.drawer.topicDrift", {
+                      defaultValue: "Topic drift detected",
+                    })}
                     description={
                       event.topicDriftSummary ??
                       t("pages.events.drawer.topicDriftDescription", {
-                        defaultValue: "Category distribution changed significantly across timeline buckets."
+                        defaultValue:
+                          "Category distribution changed significantly across timeline buckets.",
                       })
                     }
                   />
@@ -888,7 +1257,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Card
                     size="small"
                     className="content-card"
-                    title={t("pages.events.drawer.timelinePhases", { defaultValue: "Timeline phases" })}
+                    title={t("pages.events.drawer.timelinePhases", {
+                      defaultValue: "Timeline phases",
+                    })}
                   >
                     <Space direction="vertical" size={8} className="w-full">
                       {timelinePhases.map((phase) => (
@@ -896,9 +1267,14 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                           <Space wrap size={[6, 6]}>
                             <Tag color="processing">P{phase.phase}</Tag>
                             <Tag>{phase.categoryPrefix}</Tag>
-                            <Typography.Text strong>{phase.label}</Typography.Text>
+                            <Typography.Text strong>
+                              {phase.label}
+                            </Typography.Text>
                           </Space>
-                          <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+                          <Typography.Paragraph
+                            type="secondary"
+                            style={{ margin: "4px 0 0" }}
+                          >
                             {phase.summary}
                           </Typography.Paragraph>
                         </div>
@@ -921,7 +1297,8 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={t("pages.events.drawer.timelineEmpty", {
-                      defaultValue: "No timeline entries yet. Enable timeline generation and wait for the scheduled job."
+                      defaultValue:
+                        "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
                     })}
                   />
                 ) : (
@@ -929,8 +1306,12 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                     dataSource={timeline}
                     renderItem={(entry) => {
                       const keyPoints = normalizeStringArray(entry.keyPoints);
-                      const referencedIds = normalizeStringArray(entry.referencedArticleIds);
-                      const confidence = formatConfidencePercent(entry.categoryConfidence);
+                      const referencedIds = normalizeStringArray(
+                        entry.referencedArticleIds,
+                      );
+                      const confidence = formatConfidencePercent(
+                        entry.categoryConfidence,
+                      );
                       const isTentative = Boolean(entry.tentative);
                       const isAnchor = Boolean(entry.anchor);
                       return (
@@ -939,20 +1320,53 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                             title={
                               <Space wrap size={[8, 6]}>
                                 <Typography.Text strong>
-                                  {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium", timeZone })}
+                                  {formatDateTime(entry.bucketStart, locale, {
+                                    dateStyle: "medium",
+                                    timeZone,
+                                  })}
                                 </Typography.Text>
                                 {referencedIds.length > 0 ? (
-                                  <Tag>{t("pages.events.drawer.references", { defaultValue: "Refs" })}: {referencedIds.length}</Tag>
-                                ) : null}
-                                {entry.categoryPath ? <Tag color="geekblue">{entry.categoryPath}</Tag> : null}
-                                {confidence ? (
-                                  <Tag color={isTentative ? "orange" : isAnchor ? "green" : "default"}>
-                                    {t("pages.events.drawer.confidence", { defaultValue: "Confidence" })}: {confidence}
+                                  <Tag>
+                                    {t("pages.events.drawer.references", {
+                                      defaultValue: "Refs",
+                                    })}
+                                    : {referencedIds.length}
                                   </Tag>
                                 ) : null}
-                                {isAnchor ? <Tag color="success">{t("pages.events.drawer.anchor", { defaultValue: "Anchor" })}</Tag> : null}
+                                {entry.categoryPath ? (
+                                  <Tag color="geekblue">
+                                    {entry.categoryPath}
+                                  </Tag>
+                                ) : null}
+                                {confidence ? (
+                                  <Tag
+                                    color={
+                                      isTentative
+                                        ? "orange"
+                                        : isAnchor
+                                          ? "green"
+                                          : "default"
+                                    }
+                                  >
+                                    {t("pages.events.drawer.confidence", {
+                                      defaultValue: "Confidence",
+                                    })}
+                                    : {confidence}
+                                  </Tag>
+                                ) : null}
+                                {isAnchor ? (
+                                  <Tag color="success">
+                                    {t("pages.events.drawer.anchor", {
+                                      defaultValue: "Anchor",
+                                    })}
+                                  </Tag>
+                                ) : null}
                                 {isTentative ? (
-                                  <Tag color="warning">{t("pages.events.drawer.tentative", { defaultValue: "Tentative" })}</Tag>
+                                  <Tag color="warning">
+                                    {t("pages.events.drawer.tentative", {
+                                      defaultValue: "Tentative",
+                                    })}
+                                  </Tag>
                                 ) : null}
                               </Space>
                             }
@@ -960,19 +1374,32 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                               <div
                                 className={`flex flex-col gap-1 rounded-md ${isTentative ? "border border-dashed border-amber-300 bg-amber-50/40 p-2 opacity-80" : ""}`}
                               >
-                                {entry.title ? <Typography.Text>{entry.title}</Typography.Text> : null}
+                                {entry.title ? (
+                                  <Typography.Text>
+                                    {entry.title}
+                                  </Typography.Text>
+                                ) : null}
                                 {entry.summary ? (
-                                  <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
+                                  <Typography.Paragraph
+                                    type="secondary"
+                                    ellipsis={{ rows: 3 }}
+                                    style={{ marginBottom: 0 }}
+                                  >
                                     {entry.summary}
                                   </Typography.Paragraph>
                                 ) : null}
                                 {keyPoints.length > 0 ? (
                                   <Space wrap size={[6, 6]}>
-                                    {keyPoints.slice(0, 10).map((point, idx) => (
-                                      <Tag key={`${entry.id}-${idx}`} color="default">
-                                        {point}
-                                      </Tag>
-                                    ))}
+                                    {keyPoints
+                                      .slice(0, 10)
+                                      .map((point, idx) => (
+                                        <Tag
+                                          key={`${entry.id}-${idx}`}
+                                          color="default"
+                                        >
+                                          {point}
+                                        </Tag>
+                                      ))}
                                   </Space>
                                 ) : null}
                               </div>
@@ -984,95 +1411,133 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                   />
                 )}
               </div>
-            )
+            ),
           },
           {
             key: "items",
-            label: t("pages.events.drawer.tabs.articles", { defaultValue: "Articles" }),
-            children: items.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.events.drawer.itemsEmpty", { defaultValue: "No articles in this event yet." })}
-              />
-            ) : (
-              <List
-                dataSource={items}
-                renderItem={(item) => {
-                  const processed = item.processedArticle;
-                  const url = safeHttpUrl(processed.article.url);
-                  const similarity = formatSimilarity(item.similarity);
-                  const sourceLabel = processed.article.sourceLabel?.trim() ?? "";
-                  const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
-                  const publishedAt = processed.publishedAt ?? null;
-                  const ingestedAt = processed.article.crawlAt ?? processed.processedAt ?? null;
-                  const canOpenLlm = Boolean(item.processedItemId);
-                  const llmButtonLabel = t("pages.events.drawer.openLlm", { defaultValue: "LLM content" });
+            label: t("pages.events.drawer.tabs.articles", {
+              defaultValue: "Articles",
+            }),
+            children:
+              items.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={t("pages.events.drawer.itemsEmpty", {
+                    defaultValue: "No articles in this event yet.",
+                  })}
+                />
+              ) : (
+                <List
+                  dataSource={items}
+                  renderItem={(item) => {
+                    const processed = item.processedArticle;
+                    const url = safeHttpUrl(processed.article.url);
+                    const similarity = formatSimilarity(item.similarity);
+                    const sourceLabel =
+                      processed.article.sourceLabel?.trim() ?? "";
+                    const ingestedLabel = t("items.time.ingested", {
+                      defaultValue: "Ingested",
+                    });
+                    const publishedAt = processed.publishedAt ?? null;
+                    const ingestedAt =
+                      processed.article.crawlAt ??
+                      processed.processedAt ??
+                      null;
+                    const canOpenLlm = Boolean(item.processedItemId);
+                    const llmButtonLabel = t("pages.events.drawer.openLlm", {
+                      defaultValue: "LLM content",
+                    });
 
-                  const openLlm = () => {
-                    const processedItemId = item.processedItemId ?? null;
-                    if (!processedItemId) {
-                      return;
-                    }
-                    setSelectedProcessedItemId(processedItemId);
-                    setSelectedTitle(processed.title ?? processed.articleId);
-                    setSelectedUrl(url ?? null);
-                  };
-
-                  return (
-                    <List.Item
-                      key={item.id}
-                      extra={
-                        <Space size="small">
-                          <Button type="link" onClick={openLlm} disabled={!canOpenLlm}>
-                            {llmButtonLabel}
-                          </Button>
-                          {url ? (
-                            <a href={url} target="_blank" rel="noreferrer">
-                              {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
-                            </a>
-                          ) : null}
-                        </Space>
+                    const openLlm = () => {
+                      const processedItemId = item.processedItemId ?? null;
+                      if (!processedItemId) {
+                        return;
                       }
-                    >
-                      <List.Item.Meta
-                        title={
-                          <Space wrap size={[6, 6]}>
-                            <Typography.Text strong>{processed.title ?? processed.articleId}</Typography.Text>
-                            <Tag color="default">{item.assignedBy}</Tag>
-                            {similarity ? <Tag color="blue">{similarity}</Tag> : null}
-                            {sourceLabel ? <Tag color="geekblue">{sourceLabel}</Tag> : null}
-                          </Space>
-                        }
-                        description={
-                          <Space direction="vertical" size={0}>
-                            <ArticlePublishedTime
-                              publishedAt={publishedAt}
-                              locale={locale}
-                              timeZone={timeZone}
-                              formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
-                              primaryStrong
-                              secondaryStyle={{ fontSize: 12 }}
-                            />
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {ingestedLabel}:{" "}
-                              {ingestedAt
-                                ? formatDateTime(ingestedAt, locale, { dateStyle: "medium", timeZone })
-                                : t("common.notAvailable")}
-                            </Typography.Text>
-                            {processed.summary ? (
-                              <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
-                                {processed.summary}
-                              </Typography.Paragraph>
+                      setSelectedProcessedItemId(processedItemId);
+                      setSelectedTitle(processed.title ?? processed.articleId);
+                      setSelectedUrl(url ?? null);
+                    };
+
+                    return (
+                      <List.Item
+                        key={item.id}
+                        extra={
+                          <Space size="small">
+                            <Button
+                              type="link"
+                              onClick={openLlm}
+                              disabled={!canOpenLlm}
+                            >
+                              {llmButtonLabel}
+                            </Button>
+                            {url ? (
+                              <a href={url} target="_blank" rel="noreferrer">
+                                {t("pages.events.drawer.openOriginal", {
+                                  defaultValue: "Open",
+                                })}
+                              </a>
                             ) : null}
                           </Space>
                         }
-                      />
-                    </List.Item>
-                  );
-                }}
-              />
-            )
-          }
+                      >
+                        <List.Item.Meta
+                          title={
+                            <Space wrap size={[6, 6]}>
+                              <Typography.Text strong>
+                                {processed.title ?? processed.articleId}
+                              </Typography.Text>
+                              <Tag color="default">{item.assignedBy}</Tag>
+                              {similarity ? (
+                                <Tag color="blue">{similarity}</Tag>
+                              ) : null}
+                              {sourceLabel ? (
+                                <Tag color="geekblue">{sourceLabel}</Tag>
+                              ) : null}
+                            </Space>
+                          }
+                          description={
+                            <Space direction="vertical" size={0}>
+                              <ArticlePublishedTime
+                                publishedAt={publishedAt}
+                                locale={locale}
+                                timeZone={timeZone}
+                                formatOptions={{
+                                  dateStyle: "medium",
+                                  timeStyle: "short",
+                                }}
+                                primaryStrong
+                                secondaryStyle={{ fontSize: 12 }}
+                              />
+                              <Typography.Text
+                                type="secondary"
+                                style={{ fontSize: 12 }}
+                              >
+                                {ingestedLabel}:{" "}
+                                {ingestedAt
+                                  ? formatDateTime(ingestedAt, locale, {
+                                      dateStyle: "medium",
+                                      timeZone,
+                                    })
+                                  : t("common.notAvailable")}
+                              </Typography.Text>
+                              {processed.summary ? (
+                                <Typography.Paragraph
+                                  type="secondary"
+                                  ellipsis={{ rows: 3 }}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  {processed.summary}
+                                </Typography.Paragraph>
+                              ) : null}
+                            </Space>
+                          }
+                        />
+                      </List.Item>
+                    );
+                  }}
+                />
+              ),
+          },
         ]}
       />
 
@@ -1085,42 +1550,69 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           setSelectedTitle(null);
           setSelectedUrl(null);
         }}
-        title={selectedTitle ?? t("pages.events.drawer.articleDrawerTitle", { defaultValue: "LLM content" })}
+        title={
+          selectedTitle ??
+          t("pages.events.drawer.articleDrawerTitle", {
+            defaultValue: "LLM content",
+          })
+        }
       >
         {selectedProcessedQuery.error ? (
           <Alert
             type="error"
             showIcon
-            message={t("pages.events.drawer.articleLoadFailed", { defaultValue: "Failed to load article." })}
-            description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+            message={t("pages.events.drawer.articleLoadFailed", {
+              defaultValue: "Failed to load article.",
+            })}
+            description={t("common.serviceUnavailable", {
+              defaultValue: "Service is unavailable. Please try again.",
+            })}
           />
         ) : selectedProcessedQuery.loading && selectedProcessedItemId ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : !selectedProcessed ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("pages.events.drawer.articleNotFound", { defaultValue: "Processed item not found." })}
+            description={t("pages.events.drawer.articleNotFound", {
+              defaultValue: "Processed item not found.",
+            })}
           />
         ) : (
           <Space direction="vertical" size="middle" className="w-full">
             <Space wrap>
               {selectedProcessed.itemMetaId ? (
-                <Button type="link" onClick={() => router.push(`/items/${selectedProcessed.itemMetaId}`)}>
-                  {t("pages.events.drawer.openItem", { defaultValue: "Open item" })}
+                <Button
+                  type="link"
+                  onClick={() =>
+                    router.push(`/items/${selectedProcessed.itemMetaId}`)
+                  }
+                >
+                  {t("pages.events.drawer.openItem", {
+                    defaultValue: "Open item",
+                  })}
                 </Button>
               ) : null}
               {selectedUrl ? (
                 <a href={selectedUrl} target="_blank" rel="noreferrer">
-                  {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
+                  {t("pages.events.drawer.openOriginal", {
+                    defaultValue: "Open",
+                  })}
                 </a>
               ) : null}
               {selectedMarkdownFallbackUsed ? (
-                <Tag color="orange">{t("pages.events.drawer.markdownFallback", { defaultValue: "Markdown fallback" })}</Tag>
+                <Tag color="orange">
+                  {t("pages.events.drawer.markdownFallback", {
+                    defaultValue: "Markdown fallback",
+                  })}
+                </Tag>
               ) : null}
             </Space>
 
             {selectedSummary ? (
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginBottom: 0 }}
+              >
                 {selectedSummary}
               </Typography.Paragraph>
             ) : null}
@@ -1130,7 +1622,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                 {selectedKeyPoints.slice(0, 12).map((point, idx) => (
                   <Tag key={`sel-kp-${idx}`}>{point}</Tag>
                 ))}
-                {selectedKeyPoints.length > 12 ? <Tag>+{selectedKeyPoints.length - 12}</Tag> : null}
+                {selectedKeyPoints.length > 12 ? (
+                  <Tag>+{selectedKeyPoints.length - 12}</Tag>
+                ) : null}
               </Space>
             ) : null}
 
@@ -1154,7 +1648,9 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.events.drawer.articleEmpty", { defaultValue: "No LLM content available." })}
+                description={t("pages.events.drawer.articleEmpty", {
+                  defaultValue: "No LLM content available.",
+                })}
               />
             )}
           </Space>

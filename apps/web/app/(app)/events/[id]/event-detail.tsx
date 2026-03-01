@@ -1,8 +1,24 @@
 "use client";
 
-import { ArrowLeftOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Alert, Breadcrumb, Button, Card, Divider, Drawer, Empty, List, Skeleton, Space, Tag, Tabs, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  Breadcrumb,
+  Button,
+  Card,
+  Divider,
+  Drawer,
+  Empty,
+  List,
+  Progress,
+  Skeleton,
+  Space,
+  Tag,
+  Tabs,
+  Tooltip,
+  Typography,
+} from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,13 +26,27 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
-import { useNewsEventBriefQuery, useProcessedItemByIdQuery } from "@/graphql/generated";
+import {
+  useNewsEventBriefQuery,
+  useProcessedItemByIdQuery,
+} from "@/graphql/generated";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
-import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
+import {
+  formatDateTime,
+  formatRelativeTime,
+  formatTimeZoneOffsetLabel,
+  getDefaultTimeZone,
+  resolveLocale,
+} from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
+import {
+  isFutureEventTimestamp,
+  toCredibilityPercent,
+  toHeatPercent,
+} from "../events-list-helpers";
 import { pickRepresentativeProcessedItemId } from "../utils";
 
 interface EventItem {
@@ -194,7 +224,10 @@ const toStringList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return value.filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.trim().length > 0,
+  );
 };
 
 const toEntityNames = (value: unknown): string[] => {
@@ -211,7 +244,10 @@ const toEntityNames = (value: unknown): string[] => {
       }
       return undefined;
     })
-    .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+    .filter(
+      (name): name is string =>
+        typeof name === "string" && name.trim().length > 0,
+    );
 };
 
 function getResultObject(value: unknown): Record<string, unknown> | null {
@@ -238,7 +274,9 @@ type TimelinePhaseSummary = {
   summary: string;
 };
 
-function normalizeCategoryDistribution(value: unknown): CategoryDistributionEntry[] {
+function normalizeCategoryDistribution(
+  value: unknown,
+): CategoryDistributionEntry[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -248,16 +286,25 @@ function normalizeCategoryDistribution(value: unknown): CategoryDistributionEntr
         return null;
       }
       const record = entry as Record<string, unknown>;
-      const categoryPath = typeof record.categoryPath === "string" ? record.categoryPath.trim() : "";
-      const count = typeof record.count === "number" && Number.isFinite(record.count) ? record.count : 0;
-      const share = typeof record.share === "number" && Number.isFinite(record.share) ? record.share : 0;
+      const categoryPath =
+        typeof record.categoryPath === "string"
+          ? record.categoryPath.trim()
+          : "";
+      const count =
+        typeof record.count === "number" && Number.isFinite(record.count)
+          ? record.count
+          : 0;
+      const share =
+        typeof record.share === "number" && Number.isFinite(record.share)
+          ? record.share
+          : 0;
       if (!categoryPath || count <= 0) {
         return null;
       }
       return {
         categoryPath,
         count,
-        share: Math.max(0, Math.min(1, share))
+        share: Math.max(0, Math.min(1, share)),
       };
     })
     .filter((entry): entry is CategoryDistributionEntry => Boolean(entry));
@@ -273,14 +320,29 @@ function normalizeTimelinePhases(value: unknown): TimelinePhaseSummary[] {
         return null;
       }
       const record = entry as Record<string, unknown>;
-      const phase = typeof record.phase === "number" && Number.isFinite(record.phase) ? record.phase : 0;
+      const phase =
+        typeof record.phase === "number" && Number.isFinite(record.phase)
+          ? record.phase
+          : 0;
       const label = typeof record.label === "string" ? record.label.trim() : "";
-      const categoryPrefix = typeof record.categoryPrefix === "string" ? record.categoryPrefix.trim() : "";
+      const categoryPrefix =
+        typeof record.categoryPrefix === "string"
+          ? record.categoryPrefix.trim()
+          : "";
       const startAt = typeof record.startAt === "string" ? record.startAt : "";
       const endAt = typeof record.endAt === "string" ? record.endAt : "";
-      const itemCount = typeof record.itemCount === "number" && Number.isFinite(record.itemCount) ? record.itemCount : 0;
-      const bucketCount = typeof record.bucketCount === "number" && Number.isFinite(record.bucketCount) ? record.bucketCount : 0;
-      const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+      const itemCount =
+        typeof record.itemCount === "number" &&
+        Number.isFinite(record.itemCount)
+          ? record.itemCount
+          : 0;
+      const bucketCount =
+        typeof record.bucketCount === "number" &&
+        Number.isFinite(record.bucketCount)
+          ? record.bucketCount
+          : 0;
+      const summary =
+        typeof record.summary === "string" ? record.summary.trim() : "";
       if (!label || !categoryPrefix || !startAt || !endAt) {
         return null;
       }
@@ -292,13 +354,15 @@ function normalizeTimelinePhases(value: unknown): TimelinePhaseSummary[] {
         endAt,
         itemCount,
         bucketCount,
-        summary
+        summary,
       };
     })
     .filter((entry): entry is TimelinePhaseSummary => Boolean(entry));
 }
 
-function formatConfidencePercent(value: number | null | undefined): string | null {
+function formatConfidencePercent(
+  value: number | null | undefined,
+): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
@@ -310,59 +374,81 @@ export function EventDetail({ eventId }: { eventId: string }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
-  const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
+  const timeZoneLabel = useMemo(
+    () => formatTimeZoneOffsetLabel(new Date(), timeZone),
+    [timeZone],
+  );
   const router = useRouter();
 
-  const [selectedProcessedItemId, setSelectedProcessedItemId] = useState<string | null>(null);
+  const [selectedProcessedItemId, setSelectedProcessedItemId] = useState<
+    string | null
+  >(null);
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [markdownExpanded, setMarkdownExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState("brief");
-  const [highlightedSourceIndex, setHighlightedSourceIndex] = useState<number | null>(null);
+  const [highlightedSourceIndex, setHighlightedSourceIndex] = useState<
+    number | null
+  >(null);
   const sourceRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  const { data, loading, error, refetch } = useQuery<{ newsEvent: NewsEvent | null }>(NEWS_EVENT_QUERY, {
+  const { data, loading, error, refetch } = useQuery<{
+    newsEvent: NewsEvent | null;
+  }>(NEWS_EVENT_QUERY, {
     variables: { id: eventId, itemsLimit: 80, timelineLimit: 400 },
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
   });
 
   const event = data?.newsEvent ?? null;
   const briefLanguage = i18n.language;
   const briefMaxSources = 10;
   const briefQuery = useNewsEventBriefQuery({
-    variables: { eventId, language: briefLanguage, maxSources: briefMaxSources, forceRefresh: false },
+    variables: {
+      eventId,
+      language: briefLanguage,
+      maxSources: briefMaxSources,
+      forceRefresh: false,
+    },
     skip: activeTab !== "brief",
     fetchPolicy: "network-only",
-    notifyOnNetworkStatusChange: true
+    notifyOnNetworkStatusChange: true,
   });
   const brief = briefQuery.data?.newsEventBrief ?? null;
 
   const timeline = useMemo(() => {
     const entries = event?.timeline ?? [];
-    return [...entries].sort((a, b) => dayjs(a.bucketStart).valueOf() - dayjs(b.bucketStart).valueOf());
+    return [...entries].sort(
+      (a, b) => dayjs(a.bucketStart).valueOf() - dayjs(b.bucketStart).valueOf(),
+    );
   }, [event?.timeline]);
   const categoryDistribution = useMemo(
     () => normalizeCategoryDistribution(event?.categoryDistribution),
-    [event?.categoryDistribution]
+    [event?.categoryDistribution],
   );
   const timelinePhases = useMemo(
     () => normalizeTimelinePhases(event?.timelinePhases ?? event?.subEvents),
-    [event?.timelinePhases, event?.subEvents]
+    [event?.timelinePhases, event?.subEvents],
   );
 
   const items = useMemo(() => {
     const rows = event?.items ?? [];
-    return [...rows].sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf());
+    return [...rows].sort(
+      (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
+    );
   }, [event?.items]);
   const itemByProcessedArticleId = useMemo(() => {
-    const entries = items.map((item) => [item.processedArticleId, item] as const);
+    const entries = items.map(
+      (item) => [item.processedArticleId, item] as const,
+    );
     return new Map(entries);
   }, [items]);
   const itemMetaIdByProcessedItemId = useMemo(() => {
     const map = new Map<string, string>();
     for (const item of items) {
       const processedItemId =
-        typeof item.processedItemId === "string" ? item.processedItemId.trim() : "";
+        typeof item.processedItemId === "string"
+          ? item.processedItemId.trim()
+          : "";
       const itemMetaId =
         typeof item.itemMetaId === "string" ? item.itemMetaId.trim() : "";
       if (!processedItemId || !itemMetaId || map.has(processedItemId)) {
@@ -390,44 +476,68 @@ export function EventDetail({ eventId }: { eventId: string }) {
     return map;
   }, [brief?.sources]);
 
-  const representativeProcessedItemId = useMemo(() => pickRepresentativeProcessedItemId(event), [event]);
+  const representativeProcessedItemId = useMemo(
+    () => pickRepresentativeProcessedItemId(event),
+    [event],
+  );
   const representativeItem = useMemo(() => {
     if (!representativeProcessedItemId) {
       return null;
     }
     const rows = event?.items ?? [];
-    return rows.find((row) => (row.processedItemId ?? null) === representativeProcessedItemId) ?? null;
+    return (
+      rows.find(
+        (row) =>
+          (row.processedItemId ?? null) === representativeProcessedItemId,
+      ) ?? null
+    );
   }, [event?.items, representativeProcessedItemId]);
-  const representativeUrl = safeHttpUrl(representativeItem?.processedArticle.article.url ?? null);
+  const representativeUrl = safeHttpUrl(
+    representativeItem?.processedArticle.article.url ?? null,
+  );
 
   const {
     data: representativeProcessedData,
     loading: representativeProcessedLoading,
-    error: representativeProcessedError
+    error: representativeProcessedError,
   } = useProcessedItemByIdQuery({
     variables: { id: representativeProcessedItemId ?? "" },
     skip: !representativeProcessedItemId,
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
   });
 
-  const representativeProcessed = representativeProcessedData?.processedItemById ?? null;
-  const representativeResult = useMemo(() => getResultObject(representativeProcessed?.resultJson), [representativeProcessed?.resultJson]);
+  const representativeProcessed =
+    representativeProcessedData?.processedItemById ?? null;
+  const representativeResult = useMemo(
+    () => getResultObject(representativeProcessed?.resultJson),
+    [representativeProcessed?.resultJson],
+  );
   const representativeSummary = toString(representativeResult?.summary);
-  const representativeKeyPoints = toStringList(representativeResult?.key_points);
+  const representativeKeyPoints = toStringList(
+    representativeResult?.key_points,
+  );
   const representativeTopics = toStringList(representativeResult?.topics);
   const representativeEntities = toEntityNames(representativeResult?.entities);
-  const representativeMarkdown = toString(representativeResult?.cleaned_markdown);
-  const representativeMarkdownSource = toString(representativeResult?.cleaned_markdown_source);
-  const representativeMarkdownFallbackUsed = representativeMarkdownSource === "crawl_fallback";
+  const representativeMarkdown = toString(
+    representativeResult?.cleaned_markdown,
+  );
+  const representativeMarkdownSource = toString(
+    representativeResult?.cleaned_markdown_source,
+  );
+  const representativeMarkdownFallbackUsed =
+    representativeMarkdownSource === "crawl_fallback";
   const hasRepresentativeNarrative =
-    Boolean(representativeSummary) || representativeKeyPoints.length > 0 || Boolean(representativeMarkdown);
+    Boolean(representativeSummary) ||
+    representativeKeyPoints.length > 0 ||
+    Boolean(representativeMarkdown);
 
   const selectedProcessedQuery = useProcessedItemByIdQuery({
     variables: { id: selectedProcessedItemId ?? "" },
     skip: !selectedProcessedItemId,
-    fetchPolicy: "network-only"
+    fetchPolicy: "network-only",
   });
-  const selectedProcessed = selectedProcessedQuery.data?.processedItemById ?? null;
+  const selectedProcessed =
+    selectedProcessedQuery.data?.processedItemById ?? null;
 
   useEffect(() => {
     if (!error) {
@@ -440,21 +550,30 @@ export function EventDetail({ eventId }: { eventId: string }) {
     if (!briefQuery.error) {
       return;
     }
-    captureClientError("Failed to load event detailed summary", briefQuery.error);
+    captureClientError(
+      "Failed to load event detailed summary",
+      briefQuery.error,
+    );
   }, [briefQuery.error]);
 
   useEffect(() => {
     if (!representativeProcessedError) {
       return;
     }
-    captureClientError("Failed to load representative article in event detail", representativeProcessedError);
+    captureClientError(
+      "Failed to load representative article in event detail",
+      representativeProcessedError,
+    );
   }, [representativeProcessedError]);
 
   useEffect(() => {
     if (!selectedProcessedQuery.error) {
       return;
     }
-    captureClientError("Failed to load selected processed article in event detail", selectedProcessedQuery.error);
+    captureClientError(
+      "Failed to load selected processed article in event detail",
+      selectedProcessedQuery.error,
+    );
   }, [selectedProcessedQuery.error]);
 
   useEffect(() => {
@@ -463,7 +582,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
     }
     const timer = window.setTimeout(() => {
       setHighlightedSourceIndex((current) =>
-        current === highlightedSourceIndex ? null : current
+        current === highlightedSourceIndex ? null : current,
       );
     }, 4_000);
     return () => {
@@ -482,15 +601,18 @@ export function EventDetail({ eventId }: { eventId: string }) {
   }, [activeTab, brief?.sources, highlightedSourceIndex]);
   const selectedProcessedResult = useMemo(
     () => getResultObject(selectedProcessed?.resultJson),
-    [selectedProcessed?.resultJson]
+    [selectedProcessed?.resultJson],
   );
   const selectedSummary = toString(selectedProcessedResult?.summary);
   const selectedKeyPoints = toStringList(selectedProcessedResult?.key_points);
   const selectedTopics = toStringList(selectedProcessedResult?.topics);
   const selectedEntities = toEntityNames(selectedProcessedResult?.entities);
   const selectedMarkdown = toString(selectedProcessedResult?.cleaned_markdown);
-  const selectedMarkdownSource = toString(selectedProcessedResult?.cleaned_markdown_source);
-  const selectedMarkdownFallbackUsed = selectedMarkdownSource === "crawl_fallback";
+  const selectedMarkdownSource = toString(
+    selectedProcessedResult?.cleaned_markdown_source,
+  );
+  const selectedMarkdownFallbackUsed =
+    selectedMarkdownSource === "crawl_fallback";
 
   if (loading && !event) {
     return (
@@ -505,8 +627,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
       <Alert
         type="error"
         showIcon
-        message={t("pages.events.detail.loadFailed", { defaultValue: "Failed to load event." })}
-        description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+        message={t("pages.events.detail.loadFailed", {
+          defaultValue: "Failed to load event.",
+        })}
+        description={t("common.serviceUnavailable", {
+          defaultValue: "Service is unavailable. Please try again.",
+        })}
       />
     );
   }
@@ -515,39 +641,53 @@ export function EventDetail({ eventId }: { eventId: string }) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={t("pages.events.detail.notFound", { defaultValue: "Event not found." })}
+        description={t("pages.events.detail.notFound", {
+          defaultValue: "Event not found.",
+        })}
       />
     );
   }
 
-  const title = event.title?.trim() ? event.title.trim() : event.primaryEntity?.trim() || event.primaryTopic?.trim() || event.id;
+  const title = event.title?.trim()
+    ? event.title.trim()
+    : event.primaryEntity?.trim() || event.primaryTopic?.trim() || event.id;
   const language = event.language?.trim() ?? "";
   const topic = event.primaryTopic?.trim() ?? "";
   const entity = event.primaryEntity?.trim() ?? "";
-  const statusLabel = t(`pages.events.status.${event.status}`, { defaultValue: event.status });
+  const statusLabel = t(`pages.events.status.${event.status}`, {
+    defaultValue: event.status,
+  });
   const sourceEvidence: NewsEventSourceEvidence = event.sourceEvidence ?? {
     uniqueSourceCount: 0,
     authoritativeSourceCount: 0,
     blogSourceCount: 0,
-    corroborated: false
+    corroborated: false,
   };
   const sourceTypeLabelMap: Record<NewsEvent["sourceType"], string> = {
     all: t("pages.events.filters.sourceType.all", { defaultValue: "All" }),
-    authoritative: t("pages.events.filters.sourceType.authoritative", { defaultValue: "Authoritative" }),
-    mixed: t("pages.events.filters.sourceType.mixed", { defaultValue: "Mixed" }),
+    authoritative: t("pages.events.filters.sourceType.authoritative", {
+      defaultValue: "Authoritative",
+    }),
+    mixed: t("pages.events.filters.sourceType.mixed", {
+      defaultValue: "Mixed",
+    }),
     blog: t("pages.events.filters.sourceType.blog", { defaultValue: "Blog" }),
-    unknown: t("pages.events.filters.sourceType.unknown", { defaultValue: "Unknown" })
+    unknown: t("pages.events.filters.sourceType.unknown", {
+      defaultValue: "Unknown",
+    }),
   };
   const credibilitySummary = sourceEvidence.corroborated
     ? t("pages.events.detail.credibilityStrong", {
-        defaultValue: "Cross-source corroboration detected. Confidence is relatively strong."
+        defaultValue:
+          "Cross-source corroboration detected. Confidence is relatively strong.",
       })
     : sourceEvidence.uniqueSourceCount <= 1
       ? t("pages.events.detail.credibilityWeak", {
-          defaultValue: "Single-source signal. Treat this as preliminary."
+          defaultValue: "Single-source signal. Treat this as preliminary.",
         })
       : t("pages.events.detail.credibilityMedium", {
-          defaultValue: "Multiple sources exist, but corroboration is still limited."
+          defaultValue:
+            "Multiple sources exist, but corroboration is still limited.",
         });
 
   const trackEventBehavior = (input: {
@@ -577,16 +717,21 @@ export function EventDetail({ eventId }: { eventId: string }) {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
-    timeZoneName: "short"
+    timeZoneName: "short",
   });
   const lastTooltip = formatDateTime(event.lastAt, locale, {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone,
-    timeZoneName: "short"
+    timeZoneName: "short",
   });
+  const isFutureEvent = isFutureEventTimestamp(event.lastAt);
+  const heatPercent = toHeatPercent(event.heatScore);
+  const credibilityPercent = toCredibilityPercent(event.credibilityScore);
 
-  const repMarkdownCollapsed = Boolean(representativeMarkdown && representativeMarkdown.length > 2500);
+  const repMarkdownCollapsed = Boolean(
+    representativeMarkdown && representativeMarkdown.length > 2500,
+  );
   const renderCitations = (citations: number[] | null | undefined) => {
     const list = Array.isArray(citations) ? citations : [];
     if (list.length === 0) {
@@ -597,7 +742,10 @@ export function EventDetail({ eventId }: { eventId: string }) {
         {list.slice(0, 12).map((idx) => {
           const source = briefSourcesByIndex.get(idx);
           const url = safeHttpUrl(source?.url ?? null);
-          const processedItemId = typeof source?.processedItemId === "string" ? source.processedItemId.trim() : "";
+          const processedItemId =
+            typeof source?.processedItemId === "string"
+              ? source.processedItemId.trim()
+              : "";
           let label = source?.sourceLabel?.trim() ?? "";
           if (!label && url) {
             try {
@@ -612,10 +760,12 @@ export function EventDetail({ eventId }: { eventId: string }) {
             <Tag
               key={`cite-${idx}`}
               color="blue"
-              style={(processedItemId || url) ? { cursor: "pointer" } : undefined}
+              style={processedItemId || url ? { cursor: "pointer" } : undefined}
               onClick={() => {
                 setHighlightedSourceIndex(idx);
-                const trackedItemId = resolveTrackedItemId(source?.processedItemId);
+                const trackedItemId = resolveTrackedItemId(
+                  source?.processedItemId,
+                );
                 trackEventBehavior({
                   type: "click",
                   source: source?.sourceLabel ?? undefined,
@@ -648,13 +798,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
     );
   };
 
-  const renderPointList = (points: Array<{ text: string; citations: number[] }> | null | undefined) => {
+  const renderPointList = (
+    points: Array<{ text: string; citations: number[] }> | null | undefined,
+  ) => {
     const dataSource = points ?? [];
     if (dataSource.length === 0) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", { defaultValue: "Not available" })}
+          description={t("common.notAvailable", {
+            defaultValue: "Not available",
+          })}
         />
       );
     }
@@ -680,12 +834,16 @@ export function EventDetail({ eventId }: { eventId: string }) {
       return (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t("common.notAvailable", { defaultValue: "Not available" })}
+          description={t("common.notAvailable", {
+            defaultValue: "Not available",
+          })}
         />
       );
     }
     return (
-      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>{normalized}</Typography.Paragraph>
+      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>
+        {normalized}
+      </Typography.Paragraph>
     );
   };
 
@@ -700,14 +858,18 @@ export function EventDetail({ eventId }: { eventId: string }) {
                 <Link href="/events">
                   {t("pages.events.title", { defaultValue: "News Events" })}
                 </Link>
-              )
+              ),
             },
-            { title: title }
+            { title: title },
           ]}
         />
 
         <Space align="center" wrap size={[8, 6]}>
-          <Button icon={<ArrowLeftOutlined />} type="link" onClick={() => router.push("/events")}>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            type="link"
+            onClick={() => router.push("/events")}
+          >
             {t("common.back", { defaultValue: "Back" })}
           </Button>
           <Typography.Title level={4} style={{ margin: 0 }}>
@@ -719,28 +881,71 @@ export function EventDetail({ eventId }: { eventId: string }) {
         </Space>
 
         <Space wrap size={[6, 6]}>
-          <Tag color={event.status === "active" ? "green" : "default"}>{statusLabel}</Tag>
-          <Tag>
-            {t("pages.events.drawer.items", { defaultValue: "Items" })}: {event.itemCount}
+          <Tag color={event.status === "active" ? "green" : "default"}>
+            {statusLabel}
           </Tag>
+          <Tag>
+            {t("pages.events.drawer.items", { defaultValue: "Items" })}:{" "}
+            {event.itemCount}
+          </Tag>
+          {isFutureEvent ? (
+            <Tag color="cyan" icon={<CalendarOutlined />}>
+              {t("pages.events.fields.futureEvent", {
+                defaultValue: "Scheduled",
+              })}
+            </Tag>
+          ) : null}
           {language ? <Tag color="blue">{language}</Tag> : null}
           {topic ? <Tag color="geekblue">{topic}</Tag> : null}
-          {entity ? <Tag color="purple">{entity}</Tag> : null}
+          {entity ? (
+            <Tag
+              color="purple"
+              style={{ cursor: "pointer" }}
+              onClick={() =>
+                router.push(`/events?entity=${encodeURIComponent(entity)}`)
+              }
+            >
+              {entity}
+            </Tag>
+          ) : null}
         </Space>
 
         <Space wrap size={[12, 0]}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.startAt", { defaultValue: "Start" })}:{" "}
-            <Tooltip title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}>
-              <span>{formatDateTime(event.startAt, locale, { dateStyle: "medium", timeZone })}</span>
+            <Tooltip
+              title={`${startTooltip}${startRelative ? ` (${startRelative})` : ""}`}
+            >
+              <span>
+                {formatDateTime(event.startAt, locale, {
+                  dateStyle: "medium",
+                  timeZone,
+                })}
+              </span>
             </Tooltip>
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t("pages.events.fields.lastAt", { defaultValue: "Last" })}:{" "}
-            <Tooltip title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}>
-              <span>{formatDateTime(event.lastAt, locale, { dateStyle: "medium", timeZone })}</span>
+            <Tooltip
+              title={`${lastTooltip}${lastRelative ? ` (${lastRelative})` : ""}`}
+            >
+              <span>
+                {formatDateTime(event.lastAt, locale, {
+                  dateStyle: "medium",
+                  timeZone,
+                })}
+              </span>
             </Tooltip>
-            {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
+            {lastRelative ? (
+              <span className="ml-1 opacity-80">({lastRelative})</span>
+            ) : null}
+            {isFutureEvent ? (
+              <span className="ml-1 text-cyan-700">
+                {t("pages.events.fields.futureEventHint", {
+                  defaultValue: "Future event",
+                })}
+              </span>
+            ) : null}
           </Typography.Text>
         </Space>
 
@@ -755,35 +960,87 @@ export function EventDetail({ eventId }: { eventId: string }) {
         <Space direction="vertical" size={8} className="w-full">
           <Typography.Text strong>
             {t("pages.events.detail.credibilityCardTitle", {
-              defaultValue: "Credibility signal"
+              defaultValue: "Credibility signal",
             })}
           </Typography.Text>
+          <div className="flex flex-wrap gap-2">
+            <div className="min-w-[168px] rounded-md border border-rose-100 bg-white px-2 py-1">
+              <div className="flex items-center justify-between gap-2">
+                <Typography.Text style={{ fontSize: 12 }} strong>
+                  {t("pages.events.fields.heat", { defaultValue: "Heat" })}
+                </Typography.Text>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  {event.heatScore.toFixed(1)}
+                </Typography.Text>
+              </div>
+              <Progress
+                percent={heatPercent}
+                showInfo={false}
+                size={[150, 6]}
+                strokeColor={{ "0%": "#ffb5b5", "100%": "#cf1322" }}
+                trailColor="#fff1f0"
+              />
+            </div>
+            <div className="min-w-[168px] rounded-md border border-emerald-100 bg-white px-2 py-1">
+              <div className="flex items-center justify-between gap-2">
+                <Typography.Text style={{ fontSize: 12 }} strong>
+                  {t("pages.events.fields.credibility", {
+                    defaultValue: "Credibility",
+                  })}
+                </Typography.Text>
+                <Typography.Text style={{ fontSize: 12 }}>
+                  {Math.round(event.credibilityScore)}
+                </Typography.Text>
+              </div>
+              <Progress
+                percent={credibilityPercent}
+                showInfo={false}
+                size={[150, 6]}
+                strokeColor={{
+                  "0%": "#ff4d4f",
+                  "50%": "#faad14",
+                  "100%": "#52c41a",
+                }}
+                trailColor="#f6ffed"
+              />
+            </div>
+          </div>
           <Space wrap size={[8, 8]}>
-            <Tag color="blue">
-              {t("pages.events.fields.heatScore", { defaultValue: "Heat" })}: {Math.round(event.heatScore)}
-            </Tag>
-            <Tag color={event.credibilityScore >= 70 ? "success" : event.credibilityScore >= 45 ? "warning" : "error"}>
-              {t("pages.events.fields.credibility", { defaultValue: "Credibility" })}: {Math.round(event.credibilityScore)}
+            <Tag>
+              {t("pages.events.fields.sourceType", {
+                defaultValue: "Source type",
+              })}
+              : {sourceTypeLabelMap[event.sourceType] ?? event.sourceType}
             </Tag>
             <Tag>
-              {t("pages.events.fields.sourceType", { defaultValue: "Source type" })}: {sourceTypeLabelMap[event.sourceType] ?? event.sourceType}
+              {t("pages.events.detail.uniqueSources", {
+                defaultValue: "Unique sources",
+              })}
+              : {sourceEvidence.uniqueSourceCount}
             </Tag>
             <Tag>
-              {t("pages.events.detail.uniqueSources", { defaultValue: "Unique sources" })}: {sourceEvidence.uniqueSourceCount}
+              {t("pages.events.detail.authoritativeSources", {
+                defaultValue: "Authoritative",
+              })}
+              : {sourceEvidence.authoritativeSourceCount}
             </Tag>
             <Tag>
-              {t("pages.events.detail.authoritativeSources", { defaultValue: "Authoritative" })}: {sourceEvidence.authoritativeSourceCount}
-            </Tag>
-            <Tag>
-              {t("pages.events.detail.blogSources", { defaultValue: "Blog" })}: {sourceEvidence.blogSourceCount}
+              {t("pages.events.detail.blogSources", { defaultValue: "Blog" })}:{" "}
+              {sourceEvidence.blogSourceCount}
             </Tag>
             <Tag color={sourceEvidence.corroborated ? "green" : "orange"}>
               {sourceEvidence.corroborated
-                ? t("pages.events.detail.corroboratedYes", { defaultValue: "Corroborated" })
-                : t("pages.events.detail.corroboratedNo", { defaultValue: "Needs corroboration" })}
+                ? t("pages.events.detail.corroboratedYes", {
+                    defaultValue: "Corroborated",
+                  })
+                : t("pages.events.detail.corroboratedNo", {
+                    defaultValue: "Needs corroboration",
+                  })}
             </Tag>
           </Space>
-          <Typography.Text type="secondary">{credibilitySummary}</Typography.Text>
+          <Typography.Text type="secondary">
+            {credibilitySummary}
+          </Typography.Text>
         </Space>
       </Card>
 
@@ -795,7 +1052,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
             </Button>
             {representativeUrl ? (
               <a href={representativeUrl} target="_blank" rel="noreferrer">
-                {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
+                {t("pages.events.drawer.openOriginal", {
+                  defaultValue: "Open",
+                })}
               </a>
             ) : null}
             {representativeProcessed?.itemMetaId ? (
@@ -805,13 +1064,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
                   trackEventBehavior({
                     type: "open_item",
                     itemId: representativeProcessed.itemMetaId ?? undefined,
-                    source: representativeItem?.processedArticle.article.sourceLabel ?? undefined,
+                    source:
+                      representativeItem?.processedArticle.article
+                        .sourceLabel ?? undefined,
                     url: representativeUrl ?? null,
                   });
                   router.push(`/items/${representativeProcessed.itemMetaId}`);
                 }}
               >
-                {t("pages.events.detail.openItem", { defaultValue: "Open item" })}
+                {t("pages.events.detail.openItem", {
+                  defaultValue: "Open item",
+                })}
               </Button>
             ) : null}
           </Space>
@@ -822,7 +1085,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
             items={[
               {
                 key: "brief",
-                label: t("pages.events.detail.tabs.brief", { defaultValue: "Detailed summary" }),
+                label: t("pages.events.detail.tabs.brief", {
+                  defaultValue: "Detailed summary",
+                }),
                 children: (
                   <div className="flex flex-col gap-4">
                     <Space wrap>
@@ -832,22 +1097,34 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             eventId,
                             language: briefLanguage,
                             maxSources: briefMaxSources,
-                            forceRefresh: true
+                            forceRefresh: true,
                           })
                         }
                         loading={briefQuery.loading && !brief}
                       >
-                        {t("pages.events.detail.refreshBrief", { defaultValue: "Refresh detailed summary" })}
+                        {t("pages.events.detail.refreshBrief", {
+                          defaultValue: "Refresh detailed summary",
+                        })}
                       </Button>
                       {brief?.generatedAt ? (
                         <Tag>
-                          {t("pages.events.detail.generatedAt", { defaultValue: "Generated" })}:{" "}
-                          {formatDateTime(brief.generatedAt, locale, { dateStyle: "medium", timeStyle: "short", timeZone })}
+                          {t("pages.events.detail.generatedAt", {
+                            defaultValue: "Generated",
+                          })}
+                          :{" "}
+                          {formatDateTime(brief.generatedAt, locale, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                            timeZone,
+                          })}
                         </Tag>
                       ) : null}
                       {brief?.sources?.length ? (
                         <Tag>
-                          {t("pages.events.detail.briefSources", { defaultValue: "Sources" })}: {brief.sources.length}
+                          {t("pages.events.detail.briefSources", {
+                            defaultValue: "Sources",
+                          })}
+                          : {brief.sources.length}
                         </Tag>
                       ) : null}
                     </Space>
@@ -856,8 +1133,13 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       <Alert
                         type="error"
                         showIcon
-                        message={t("pages.events.detail.briefLoadFailed", { defaultValue: "Failed to load detailed summary." })}
-                        description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+                        message={t("pages.events.detail.briefLoadFailed", {
+                          defaultValue: "Failed to load detailed summary.",
+                        })}
+                        description={t("common.serviceUnavailable", {
+                          defaultValue:
+                            "Service is unavailable. Please try again.",
+                        })}
                       />
                     ) : briefQuery.loading && !brief ? (
                       <Skeleton active paragraph={{ rows: 10 }} />
@@ -865,7 +1147,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description={t("pages.events.detail.briefEmpty", {
-                          defaultValue: "Detailed summary is not available yet. Click refresh to generate."
+                          defaultValue:
+                            "Detailed summary is not available yet. Click refresh to generate.",
                         })}
                       />
                     ) : (
@@ -873,7 +1156,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.detailedSummary", { defaultValue: "Detailed summary" })}
+                          title={t("pages.events.detail.detailedSummary", {
+                            defaultValue: "Detailed summary",
+                          })}
                         >
                           {renderDetailedSummary(brief.detailedSummary)}
                         </Card>
@@ -881,23 +1166,31 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.tldr", { defaultValue: "TL;DR" })}
+                          title={t("pages.events.detail.tldr", {
+                            defaultValue: "TL;DR",
+                          })}
                         >
-                          <Typography.Paragraph style={{ marginBottom: 0 }}>{brief.tldr}</Typography.Paragraph>
+                          <Typography.Paragraph style={{ marginBottom: 0 }}>
+                            {brief.tldr}
+                          </Typography.Paragraph>
                         </Card>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.keyPoints", { defaultValue: "Key points" })}
+                            title={t("pages.events.detail.keyPoints", {
+                              defaultValue: "Key points",
+                            })}
                           >
                             {renderPointList(brief.keyPoints)}
                           </Card>
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.whyMatters", { defaultValue: "Why it matters" })}
+                            title={t("pages.events.detail.whyMatters", {
+                              defaultValue: "Why it matters",
+                            })}
                           >
                             {renderPointList(brief.whyItMatters)}
                           </Card>
@@ -907,14 +1200,20 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.latestUpdate", { defaultValue: "Latest update" })}
+                            title={t("pages.events.detail.latestUpdate", {
+                              defaultValue: "Latest update",
+                            })}
                           >
-                            {brief.latestUpdate ? renderPointList([brief.latestUpdate]) : renderPointList([])}
+                            {brief.latestUpdate
+                              ? renderPointList([brief.latestUpdate])
+                              : renderPointList([])}
                           </Card>
                           <Card
                             size="small"
                             className="content-card"
-                            title={t("pages.events.detail.watch", { defaultValue: "What to watch" })}
+                            title={t("pages.events.detail.watch", {
+                              defaultValue: "What to watch",
+                            })}
                           >
                             {renderPointList(brief.whatToWatch)}
                           </Card>
@@ -925,14 +1224,18 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             <Card
                               size="small"
                               className="content-card"
-                              title={t("pages.events.detail.consensus", { defaultValue: "Consensus" })}
+                              title={t("pages.events.detail.consensus", {
+                                defaultValue: "Consensus",
+                              })}
                             >
                               {renderPointList(brief.comparison.consensus)}
                             </Card>
                             <Card
                               size="small"
                               className="content-card"
-                              title={t("pages.events.detail.divergence", { defaultValue: "Divergence" })}
+                              title={t("pages.events.detail.divergence", {
+                                defaultValue: "Divergence",
+                              })}
                             >
                               {renderPointList(brief.comparison.divergence)}
                             </Card>
@@ -943,7 +1246,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           <Alert
                             type="info"
                             showIcon
-                            message={t("pages.events.detail.limitations", { defaultValue: "Limitations" })}
+                            message={t("pages.events.detail.limitations", {
+                              defaultValue: "Limitations",
+                            })}
                             description={brief.limitations}
                           />
                         ) : null}
@@ -951,7 +1256,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           className="content-card"
-                          title={t("pages.events.detail.sourcesTitle", { defaultValue: "Sources" })}
+                          title={t("pages.events.detail.sourcesTitle", {
+                            defaultValue: "Sources",
+                          })}
                         >
                           <List
                             size="small"
@@ -964,10 +1271,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                   ? new URL(url).hostname
                                   : `#${source.index}`;
                               const item = source.processedArticleId
-                                ? itemByProcessedArticleId.get(source.processedArticleId)
+                                ? itemByProcessedArticleId.get(
+                                    source.processedArticleId,
+                                  )
                                 : undefined;
-                              const summary = item?.processedArticle.summary ?? null;
-                              const isHighlighted = highlightedSourceIndex === source.index;
+                              const summary =
+                                item?.processedArticle.summary ?? null;
+                              const isHighlighted =
+                                highlightedSourceIndex === source.index;
 
                               const actions: React.ReactNode[] = [
                                 <Button
@@ -986,14 +1297,20 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                       url,
                                       itemId: trackedItemId,
                                     });
-                                    setSelectedProcessedItemId(source.processedItemId);
-                                    setSelectedTitle(source.title ?? sourceName);
+                                    setSelectedProcessedItemId(
+                                      source.processedItemId,
+                                    );
+                                    setSelectedTitle(
+                                      source.title ?? sourceName,
+                                    );
                                     setSelectedUrl(url ?? null);
                                   }}
                                   disabled={!source.processedItemId}
                                 >
-                                  {t("pages.events.detail.openLlm", { defaultValue: "LLM content" })}
-                                </Button>
+                                  {t("pages.events.detail.openLlm", {
+                                    defaultValue: "LLM content",
+                                  })}
+                                </Button>,
                               ];
 
                               if (url) {
@@ -1011,8 +1328,10 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                       });
                                     }}
                                   >
-                                    {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
-                                  </a>
+                                    {t("pages.events.drawer.openOriginal", {
+                                      defaultValue: "Open",
+                                    })}
+                                  </a>,
                                 );
                               }
 
@@ -1020,23 +1339,41 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                 <List.Item key={source.index} actions={actions}>
                                   <div
                                     ref={(node) => {
-                                      sourceRowRefs.current[source.index] = node;
+                                      sourceRowRefs.current[source.index] =
+                                        node;
                                     }}
                                     className={`w-full rounded-md p-2 transition-colors ${
-                                      isHighlighted ? "bg-blue-50 ring-1 ring-blue-300" : ""
+                                      isHighlighted
+                                        ? "bg-blue-50 ring-1 ring-blue-300"
+                                        : ""
                                     }`}
                                   >
                                     <List.Item.Meta
                                       title={
                                         <Space wrap size={[6, 6]}>
-                                          <Tag color={isHighlighted ? "processing" : undefined}>#{source.index}</Tag>
-                                          <Typography.Text strong>{sourceName}</Typography.Text>
+                                          <Tag
+                                            color={
+                                              isHighlighted
+                                                ? "processing"
+                                                : undefined
+                                            }
+                                          >
+                                            #{source.index}
+                                          </Tag>
+                                          <Typography.Text strong>
+                                            {sourceName}
+                                          </Typography.Text>
                                           <ArticlePublishedTime
-                                            publishedAt={source.publishedAt ?? null}
+                                            publishedAt={
+                                              source.publishedAt ?? null
+                                            }
                                             locale={locale}
                                             timeZone={timeZone}
                                             showLabel={false}
-                                            formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
+                                            formatOptions={{
+                                              dateStyle: "medium",
+                                              timeStyle: "short",
+                                            }}
                                             primaryClassName="text-xs"
                                             secondaryClassName="text-[11px]"
                                             secondaryStyle={{ fontSize: 11 }}
@@ -1045,9 +1382,17 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                       }
                                       description={
                                         <div className="flex flex-col gap-1">
-                                          {source.title ? <Typography.Text>{source.title}</Typography.Text> : null}
+                                          {source.title ? (
+                                            <Typography.Text>
+                                              {source.title}
+                                            </Typography.Text>
+                                          ) : null}
                                           {summary ? (
-                                            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                                            <Typography.Paragraph
+                                              type="secondary"
+                                              ellipsis={{ rows: 2 }}
+                                              style={{ marginBottom: 0 }}
+                                            >
                                               {summary}
                                             </Typography.Paragraph>
                                           ) : null}
@@ -1063,49 +1408,72 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       </div>
                     )}
                   </div>
-                )
+                ),
               },
               {
                 key: "narrative",
-                label: t("pages.events.detail.tabs.narrative", { defaultValue: "Narrative" }),
+                label: t("pages.events.detail.tabs.narrative", {
+                  defaultValue: "Narrative",
+                }),
                 children: (
                   <div className="flex flex-col gap-4">
                     <div>
                       <Typography.Title level={5} style={{ marginBottom: 8 }}>
-                        {t("pages.events.detail.representativeTitle", { defaultValue: "Representative article (LLM)" })}
+                        {t("pages.events.detail.representativeTitle", {
+                          defaultValue: "Representative article (LLM)",
+                        })}
                       </Typography.Title>
 
                       {!representativeProcessedItemId ? (
                         <Empty
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={t("pages.events.detail.noRepresentative", {
-                            defaultValue: "No representative processed item available yet."
-                          })}
+                          description={t(
+                            "pages.events.detail.noRepresentative",
+                            {
+                              defaultValue:
+                                "No representative processed item available yet.",
+                            },
+                          )}
                         />
                       ) : representativeProcessedError ? (
                         <Alert
                           type="error"
                           showIcon
-                          message={t("pages.events.detail.representativeLoadFailed", {
-                            defaultValue: "Failed to load representative article."
+                          message={t(
+                            "pages.events.detail.representativeLoadFailed",
+                            {
+                              defaultValue:
+                                "Failed to load representative article.",
+                            },
+                          )}
+                          description={t("common.serviceUnavailable", {
+                            defaultValue:
+                              "Service is unavailable. Please try again.",
                           })}
-                          description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
                         />
                       ) : representativeProcessedLoading ? (
                         <Skeleton active paragraph={{ rows: 8 }} />
                       ) : !representativeProcessed ? (
                         <Empty
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={t("pages.events.detail.representativeMissing", {
-                            defaultValue: "Representative processed item not found."
-                          })}
+                          description={t(
+                            "pages.events.detail.representativeMissing",
+                            {
+                              defaultValue:
+                                "Representative processed item not found.",
+                            },
+                          )}
                         />
                       ) : !hasRepresentativeNarrative ? (
                         <Empty
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          description={t("pages.events.detail.representativeEmpty", {
-                            defaultValue: "No LLM content available for the representative article."
-                          })}
+                          description={t(
+                            "pages.events.detail.representativeEmpty",
+                            {
+                              defaultValue:
+                                "No LLM content available for the representative article.",
+                            },
+                          )}
                         />
                       ) : (
                         <div className="flex flex-col gap-3">
@@ -1113,54 +1481,88 @@ export function EventDetail({ eventId }: { eventId: string }) {
                             <Alert
                               type="warning"
                               showIcon
-                              message={t("items.detail.markdownFallback", { defaultValue: "Markdown fallback" })}
-                              description={t("items.detail.markdownFallbackTooltip", {
-                                defaultValue: "LLM response omitted cleaned_markdown; showing crawled markdown as fallback."
+                              message={t("items.detail.markdownFallback", {
+                                defaultValue: "Markdown fallback",
                               })}
+                              description={t(
+                                "items.detail.markdownFallbackTooltip",
+                                {
+                                  defaultValue:
+                                    "LLM response omitted cleaned_markdown; showing crawled markdown as fallback.",
+                                },
+                              )}
                             />
                           ) : null}
 
                           {representativeSummary ? (
-                            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                            <Typography.Paragraph
+                              type="secondary"
+                              style={{ marginBottom: 0 }}
+                            >
                               {representativeSummary}
                             </Typography.Paragraph>
                           ) : null}
 
                           {representativeKeyPoints.length > 0 ? (
                             <Space wrap size={[6, 6]}>
-                              {representativeKeyPoints.slice(0, 10).map((point, idx) => (
-                                <Tag key={`rep-kp-${idx}`}>{point}</Tag>
-                              ))}
+                              {representativeKeyPoints
+                                .slice(0, 10)
+                                .map((point, idx) => (
+                                  <Tag key={`rep-kp-${idx}`}>{point}</Tag>
+                                ))}
                               {representativeKeyPoints.length > 10 ? (
-                                <Tag>+{representativeKeyPoints.length - 10}</Tag>
+                                <Tag>
+                                  +{representativeKeyPoints.length - 10}
+                                </Tag>
                               ) : null}
                             </Space>
                           ) : null}
 
                           <Space wrap size={[6, 6]}>
-                            {representativeTopics.slice(0, 6).map((entry, idx) => (
-                              <Tag key={`rep-topic-${idx}`} color="geekblue">
-                                {entry}
-                              </Tag>
-                            ))}
-                            {representativeEntities.slice(0, 6).map((entry, idx) => (
-                              <Tag key={`rep-entity-${idx}`} color="purple">
-                                {entry}
-                              </Tag>
-                            ))}
+                            {representativeTopics
+                              .slice(0, 6)
+                              .map((entry, idx) => (
+                                <Tag key={`rep-topic-${idx}`} color="geekblue">
+                                  {entry}
+                                </Tag>
+                              ))}
+                            {representativeEntities
+                              .slice(0, 6)
+                              .map((entry, idx) => (
+                                <Tag key={`rep-entity-${idx}`} color="purple">
+                                  {entry}
+                                </Tag>
+                              ))}
                           </Space>
 
                           {representativeMarkdown ? (
                             <div className="flex flex-col gap-2">
                               {repMarkdownCollapsed ? (
-                                <Button type="link" onClick={() => setMarkdownExpanded((v) => !v)}>
+                                <Button
+                                  type="link"
+                                  onClick={() => setMarkdownExpanded((v) => !v)}
+                                >
                                   {markdownExpanded
-                                    ? t("common.collapse", { defaultValue: "Show less" })
-                                    : t("common.expand", { defaultValue: "Show more" })}
+                                    ? t("common.collapse", {
+                                        defaultValue: "Show less",
+                                      })
+                                    : t("common.expand", {
+                                        defaultValue: "Show more",
+                                      })}
                                 </Button>
                               ) : null}
-                              <div className={markdownExpanded ? "" : repMarkdownCollapsed ? "max-h-[60vh] overflow-auto" : ""}>
-                                <MarkdownViewer markdown={representativeMarkdown} />
+                              <div
+                                className={
+                                  markdownExpanded
+                                    ? ""
+                                    : repMarkdownCollapsed
+                                      ? "max-h-[60vh] overflow-auto"
+                                      : ""
+                                }
+                              >
+                                <MarkdownViewer
+                                  markdown={representativeMarkdown}
+                                />
                               </div>
                             </div>
                           ) : null}
@@ -1172,7 +1574,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
                     <div>
                       <Typography.Title level={5} style={{ marginBottom: 8 }}>
-                        {t("pages.events.drawer.tabs.timeline", { defaultValue: "Timeline" })}
+                        {t("pages.events.drawer.tabs.timeline", {
+                          defaultValue: "Timeline",
+                        })}
                       </Typography.Title>
 
                       {event.topicDriftWarning ? (
@@ -1180,11 +1584,14 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           type="warning"
                           showIcon
                           style={{ marginBottom: 12 }}
-                          message={t("pages.events.detail.topicDrift", { defaultValue: "Topic drift detected" })}
+                          message={t("pages.events.detail.topicDrift", {
+                            defaultValue: "Topic drift detected",
+                          })}
                           description={
                             event.topicDriftSummary ??
                             t("pages.events.detail.topicDriftDescription", {
-                              defaultValue: "Category distribution changed significantly across timeline buckets."
+                              defaultValue:
+                                "Category distribution changed significantly across timeline buckets.",
                             })
                           }
                         />
@@ -1194,17 +1601,28 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Card
                           size="small"
                           style={{ marginBottom: 12 }}
-                          title={t("pages.events.detail.timelinePhases", { defaultValue: "Timeline phases" })}
+                          title={t("pages.events.detail.timelinePhases", {
+                            defaultValue: "Timeline phases",
+                          })}
                         >
-                          <Space direction="vertical" size={8} className="w-full">
+                          <Space
+                            direction="vertical"
+                            size={8}
+                            className="w-full"
+                          >
                             {timelinePhases.map((phase) => (
                               <div key={`${phase.phase}-${phase.startAt}`}>
                                 <Space wrap size={[6, 6]}>
                                   <Tag color="processing">P{phase.phase}</Tag>
                                   <Tag>{phase.categoryPrefix}</Tag>
-                                  <Typography.Text strong>{phase.label}</Typography.Text>
+                                  <Typography.Text strong>
+                                    {phase.label}
+                                  </Typography.Text>
                                 </Space>
-                                <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+                                <Typography.Paragraph
+                                  type="secondary"
+                                  style={{ margin: "4px 0 0" }}
+                                >
                                   {phase.summary}
                                 </Typography.Paragraph>
                               </div>
@@ -1217,7 +1635,8 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Space wrap size={[6, 6]} style={{ marginBottom: 12 }}>
                           {categoryDistribution.slice(0, 8).map((entry) => (
                             <Tag key={entry.categoryPath}>
-                              {entry.categoryPath} · {Math.round(entry.share * 100)}%
+                              {entry.categoryPath} ·{" "}
+                              {Math.round(entry.share * 100)}%
                             </Tag>
                           ))}
                         </Space>
@@ -1228,16 +1647,22 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={t("pages.events.drawer.timelineEmpty", {
                             defaultValue:
-                              "No timeline entries yet. Enable timeline generation and wait for the scheduled job."
+                              "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
                           })}
                         />
                       ) : (
                         <List
                           dataSource={timeline}
                           renderItem={(entry) => {
-                            const keyPoints = normalizeStringArray(entry.keyPoints);
-                            const referencedIds = normalizeStringArray(entry.referencedArticleIds);
-                            const confidence = formatConfidencePercent(entry.categoryConfidence);
+                            const keyPoints = normalizeStringArray(
+                              entry.keyPoints,
+                            );
+                            const referencedIds = normalizeStringArray(
+                              entry.referencedArticleIds,
+                            );
+                            const confidence = formatConfidencePercent(
+                              entry.categoryConfidence,
+                            );
                             const isTentative = Boolean(entry.tentative);
                             const isAnchor = Boolean(entry.anchor);
                             return (
@@ -1246,22 +1671,54 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                   title={
                                     <Space wrap size={[8, 6]}>
                                       <Typography.Text strong>
-                                        {formatDateTime(entry.bucketStart, locale, { dateStyle: "medium", timeZone })}
+                                        {formatDateTime(
+                                          entry.bucketStart,
+                                          locale,
+                                          { dateStyle: "medium", timeZone },
+                                        )}
                                       </Typography.Text>
                                       {referencedIds.length > 0 ? (
                                         <Tag>
-                                          {t("pages.events.drawer.references", { defaultValue: "Refs" })}: {referencedIds.length}
+                                          {t("pages.events.drawer.references", {
+                                            defaultValue: "Refs",
+                                          })}
+                                          : {referencedIds.length}
                                         </Tag>
                                       ) : null}
-                                      {entry.categoryPath ? <Tag color="geekblue">{entry.categoryPath}</Tag> : null}
+                                      {entry.categoryPath ? (
+                                        <Tag color="geekblue">
+                                          {entry.categoryPath}
+                                        </Tag>
+                                      ) : null}
                                       {confidence ? (
-                                        <Tag color={isTentative ? "orange" : isAnchor ? "green" : "default"}>
-                                          {t("pages.events.detail.confidence", { defaultValue: "Confidence" })}: {confidence}
+                                        <Tag
+                                          color={
+                                            isTentative
+                                              ? "orange"
+                                              : isAnchor
+                                                ? "green"
+                                                : "default"
+                                          }
+                                        >
+                                          {t("pages.events.detail.confidence", {
+                                            defaultValue: "Confidence",
+                                          })}
+                                          : {confidence}
                                         </Tag>
                                       ) : null}
-                                      {isAnchor ? <Tag color="success">{t("pages.events.detail.anchor", { defaultValue: "Anchor" })}</Tag> : null}
+                                      {isAnchor ? (
+                                        <Tag color="success">
+                                          {t("pages.events.detail.anchor", {
+                                            defaultValue: "Anchor",
+                                          })}
+                                        </Tag>
+                                      ) : null}
                                       {isTentative ? (
-                                        <Tag color="warning">{t("pages.events.detail.tentative", { defaultValue: "Tentative" })}</Tag>
+                                        <Tag color="warning">
+                                          {t("pages.events.detail.tentative", {
+                                            defaultValue: "Tentative",
+                                          })}
+                                        </Tag>
                                       ) : null}
                                     </Space>
                                   }
@@ -1269,19 +1726,32 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                     <div
                                       className={`flex flex-col gap-1 rounded-md ${isTentative ? "border border-dashed border-amber-300 bg-amber-50/40 p-2 opacity-80" : ""}`}
                                     >
-                                      {entry.title ? <Typography.Text>{entry.title}</Typography.Text> : null}
+                                      {entry.title ? (
+                                        <Typography.Text>
+                                          {entry.title}
+                                        </Typography.Text>
+                                      ) : null}
                                       {entry.summary ? (
-                                        <Typography.Paragraph type="secondary" ellipsis={{ rows: 4 }} style={{ marginBottom: 0 }}>
+                                        <Typography.Paragraph
+                                          type="secondary"
+                                          ellipsis={{ rows: 4 }}
+                                          style={{ marginBottom: 0 }}
+                                        >
                                           {entry.summary}
                                         </Typography.Paragraph>
                                       ) : null}
                                       {keyPoints.length > 0 ? (
                                         <Space wrap size={[6, 6]}>
-                                          {keyPoints.slice(0, 10).map((point, idx) => (
-                                            <Tag key={`${entry.id}-${idx}`} color="default">
-                                              {point}
-                                            </Tag>
-                                          ))}
+                                          {keyPoints
+                                            .slice(0, 10)
+                                            .map((point, idx) => (
+                                              <Tag
+                                                key={`${entry.id}-${idx}`}
+                                                color="default"
+                                              >
+                                                {point}
+                                              </Tag>
+                                            ))}
                                         </Space>
                                       ) : null}
                                     </div>
@@ -1294,101 +1764,146 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       )}
                     </div>
                   </div>
-                )
+                ),
               },
               {
                 key: "articles",
-                label: t("pages.events.drawer.tabs.articles", { defaultValue: "Articles" }),
-                children: items.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("pages.events.drawer.itemsEmpty", { defaultValue: "No articles in this event yet." })}
-                  />
-                ) : (
-                  <List
-                    dataSource={items}
-                    renderItem={(item) => {
-                      const processed = item.processedArticle;
-                      const url = safeHttpUrl(processed.article.url);
-                      const similarity = formatSimilarity(item.similarity);
-                      const sourceLabel = processed.article.sourceLabel?.trim() ?? "";
-                      const ingestedLabel = t("items.time.ingested", { defaultValue: "Ingested" });
-                      const publishedAt = processed.publishedAt ?? null;
-                      const ingestedAt = processed.article.crawlAt ?? processed.processedAt ?? null;
-                      const canOpenLlm = Boolean(item.processedItemId);
-                      const llmButtonLabel = t("pages.events.detail.openLlm", { defaultValue: "LLM content" });
-
-                      const openLlm = () => {
-                        const processedItemId = item.processedItemId ?? null;
-                        if (!processedItemId) {
-                          return;
-                        }
-                        trackEventBehavior({
-                          type: "click",
-                          source: sourceLabel || undefined,
-                          url,
-                          itemId: item.itemMetaId ?? undefined,
+                label: t("pages.events.drawer.tabs.articles", {
+                  defaultValue: "Articles",
+                }),
+                children:
+                  items.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={t("pages.events.drawer.itemsEmpty", {
+                        defaultValue: "No articles in this event yet.",
+                      })}
+                    />
+                  ) : (
+                    <List
+                      dataSource={items}
+                      renderItem={(item) => {
+                        const processed = item.processedArticle;
+                        const url = safeHttpUrl(processed.article.url);
+                        const similarity = formatSimilarity(item.similarity);
+                        const sourceLabel =
+                          processed.article.sourceLabel?.trim() ?? "";
+                        const ingestedLabel = t("items.time.ingested", {
+                          defaultValue: "Ingested",
                         });
-                        setSelectedProcessedItemId(processedItemId);
-                        setSelectedTitle(processed.title ?? processed.articleId);
-                        setSelectedUrl(url ?? null);
-                      };
+                        const publishedAt = processed.publishedAt ?? null;
+                        const ingestedAt =
+                          processed.article.crawlAt ??
+                          processed.processedAt ??
+                          null;
+                        const canOpenLlm = Boolean(item.processedItemId);
+                        const llmButtonLabel = t(
+                          "pages.events.detail.openLlm",
+                          { defaultValue: "LLM content" },
+                        );
 
-                      return (
-                        <List.Item
-                          key={item.id}
-                          extra={
-                            <Space size="small">
-                              <Button type="link" onClick={openLlm} disabled={!canOpenLlm}>
-                                {llmButtonLabel}
-                              </Button>
-                              {url ? (
-                                <a href={url} target="_blank" rel="noreferrer">
-                                  {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
-                                </a>
-                              ) : null}
-                            </Space>
+                        const openLlm = () => {
+                          const processedItemId = item.processedItemId ?? null;
+                          if (!processedItemId) {
+                            return;
                           }
-                        >
-                          <List.Item.Meta
-                            title={
-                              <Space wrap size={[6, 6]}>
-                                <Typography.Text strong>{processed.title ?? processed.articleId}</Typography.Text>
-                                <Tag color="default">{item.assignedBy}</Tag>
-                                {similarity ? <Tag color="blue">{similarity}</Tag> : null}
-                                {sourceLabel ? <Tag color="geekblue">{sourceLabel}</Tag> : null}
-                              </Space>
-                            }
-                            description={
-                              <Space direction="vertical" size={0}>
-                                <ArticlePublishedTime
-                                  publishedAt={publishedAt}
-                                  locale={locale}
-                                  timeZone={timeZone}
-                                  formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
-                                  primaryStrong
-                                  secondaryStyle={{ fontSize: 12 }}
-                                />
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {ingestedLabel}:{" "}
-                                  {ingestedAt
-                                    ? formatDateTime(ingestedAt, locale, { dateStyle: "medium", timeZone })
-                                    : t("common.notAvailable")}
-                                </Typography.Text>
-                                {processed.summary ? (
-                                  <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ marginBottom: 0 }}>
-                                    {processed.summary}
-                                  </Typography.Paragraph>
+                          trackEventBehavior({
+                            type: "click",
+                            source: sourceLabel || undefined,
+                            url,
+                            itemId: item.itemMetaId ?? undefined,
+                          });
+                          setSelectedProcessedItemId(processedItemId);
+                          setSelectedTitle(
+                            processed.title ?? processed.articleId,
+                          );
+                          setSelectedUrl(url ?? null);
+                        };
+
+                        return (
+                          <List.Item
+                            key={item.id}
+                            extra={
+                              <Space size="small">
+                                <Button
+                                  type="link"
+                                  onClick={openLlm}
+                                  disabled={!canOpenLlm}
+                                >
+                                  {llmButtonLabel}
+                                </Button>
+                                {url ? (
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {t("pages.events.drawer.openOriginal", {
+                                      defaultValue: "Open",
+                                    })}
+                                  </a>
                                 ) : null}
                               </Space>
                             }
-                          />
-                        </List.Item>
-                      );
-                    }}
-                  />
-                )
-              }
+                          >
+                            <List.Item.Meta
+                              title={
+                                <Space wrap size={[6, 6]}>
+                                  <Typography.Text strong>
+                                    {processed.title ?? processed.articleId}
+                                  </Typography.Text>
+                                  <Tag color="default">{item.assignedBy}</Tag>
+                                  {similarity ? (
+                                    <Tag color="blue">{similarity}</Tag>
+                                  ) : null}
+                                  {sourceLabel ? (
+                                    <Tag color="geekblue">{sourceLabel}</Tag>
+                                  ) : null}
+                                </Space>
+                              }
+                              description={
+                                <Space direction="vertical" size={0}>
+                                  <ArticlePublishedTime
+                                    publishedAt={publishedAt}
+                                    locale={locale}
+                                    timeZone={timeZone}
+                                    formatOptions={{
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    }}
+                                    primaryStrong
+                                    secondaryStyle={{ fontSize: 12 }}
+                                  />
+                                  <Typography.Text
+                                    type="secondary"
+                                    style={{ fontSize: 12 }}
+                                  >
+                                    {ingestedLabel}:{" "}
+                                    {ingestedAt
+                                      ? formatDateTime(ingestedAt, locale, {
+                                          dateStyle: "medium",
+                                          timeZone,
+                                        })
+                                      : t("common.notAvailable")}
+                                  </Typography.Text>
+                                  {processed.summary ? (
+                                    <Typography.Paragraph
+                                      type="secondary"
+                                      ellipsis={{ rows: 3 }}
+                                      style={{ marginBottom: 0 }}
+                                    >
+                                      {processed.summary}
+                                    </Typography.Paragraph>
+                                  ) : null}
+                                </Space>
+                              }
+                            />
+                          </List.Item>
+                        );
+                      }}
+                    />
+                  ),
+              },
             ]}
           />
         </Space>
@@ -1403,21 +1918,32 @@ export function EventDetail({ eventId }: { eventId: string }) {
           setSelectedTitle(null);
           setSelectedUrl(null);
         }}
-        title={selectedTitle ?? t("pages.events.detail.articleDrawerTitle", { defaultValue: "LLM content" })}
+        title={
+          selectedTitle ??
+          t("pages.events.detail.articleDrawerTitle", {
+            defaultValue: "LLM content",
+          })
+        }
       >
         {selectedProcessedQuery.error ? (
           <Alert
             type="error"
             showIcon
-            message={t("pages.events.detail.articleLoadFailed", { defaultValue: "Failed to load article." })}
-            description={t("common.serviceUnavailable", { defaultValue: "Service is unavailable. Please try again." })}
+            message={t("pages.events.detail.articleLoadFailed", {
+              defaultValue: "Failed to load article.",
+            })}
+            description={t("common.serviceUnavailable", {
+              defaultValue: "Service is unavailable. Please try again.",
+            })}
           />
         ) : selectedProcessedQuery.loading && selectedProcessedItemId ? (
           <Skeleton active paragraph={{ rows: 10 }} />
         ) : !selectedProcessed ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={t("pages.events.detail.articleNotFound", { defaultValue: "Processed item not found." })}
+            description={t("pages.events.detail.articleNotFound", {
+              defaultValue: "Processed item not found.",
+            })}
           />
         ) : (
           <Space direction="vertical" size="middle" className="w-full">
@@ -1434,21 +1960,32 @@ export function EventDetail({ eventId }: { eventId: string }) {
                     router.push(`/items/${selectedProcessed.itemMetaId}`);
                   }}
                 >
-                  {t("pages.events.detail.openItem", { defaultValue: "Open item" })}
+                  {t("pages.events.detail.openItem", {
+                    defaultValue: "Open item",
+                  })}
                 </Button>
               ) : null}
               {selectedUrl ? (
                 <a href={selectedUrl} target="_blank" rel="noreferrer">
-                  {t("pages.events.drawer.openOriginal", { defaultValue: "Open" })}
+                  {t("pages.events.drawer.openOriginal", {
+                    defaultValue: "Open",
+                  })}
                 </a>
               ) : null}
               {selectedMarkdownFallbackUsed ? (
-                <Tag color="orange">{t("items.detail.markdownFallback", { defaultValue: "Markdown fallback" })}</Tag>
+                <Tag color="orange">
+                  {t("items.detail.markdownFallback", {
+                    defaultValue: "Markdown fallback",
+                  })}
+                </Tag>
               ) : null}
             </Space>
 
             {selectedSummary ? (
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginBottom: 0 }}
+              >
                 {selectedSummary}
               </Typography.Paragraph>
             ) : null}
@@ -1458,7 +1995,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                 {selectedKeyPoints.slice(0, 12).map((point, idx) => (
                   <Tag key={`sel-kp-${idx}`}>{point}</Tag>
                 ))}
-                {selectedKeyPoints.length > 12 ? <Tag>+{selectedKeyPoints.length - 12}</Tag> : null}
+                {selectedKeyPoints.length > 12 ? (
+                  <Tag>+{selectedKeyPoints.length - 12}</Tag>
+                ) : null}
               </Space>
             ) : null}
 
@@ -1482,7 +2021,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("pages.events.detail.articleEmpty", { defaultValue: "No LLM content available." })}
+                description={t("pages.events.detail.articleEmpty", {
+                  defaultValue: "No LLM content available.",
+                })}
               />
             )}
           </Space>

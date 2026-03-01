@@ -128,6 +128,14 @@ const normalizeSentimentLabel = (value: unknown): NewsSentimentLabel | null => {
   return null;
 };
 
+const clampFutureTimestamp = (value: number): Date => {
+  const now = Date.now();
+  if (!Number.isFinite(value) || value <= 0) {
+    return new Date(now);
+  }
+  return value > now ? new Date(now) : new Date(value);
+};
+
 const resolveTimestamp = (options: {
   publishedAt: Date | null;
   crawlAt: Date | null;
@@ -135,17 +143,17 @@ const resolveTimestamp = (options: {
 }): Date => {
   const publishedAtMs = options.publishedAt?.getTime();
   if (typeof publishedAtMs === "number" && Number.isFinite(publishedAtMs)) {
-    return new Date(publishedAtMs);
+    return clampFutureTimestamp(publishedAtMs);
   }
 
   const crawlAtMs = options.crawlAt?.getTime();
   if (typeof crawlAtMs === "number" && Number.isFinite(crawlAtMs)) {
-    return new Date(crawlAtMs);
+    return clampFutureTimestamp(crawlAtMs);
   }
 
   const processedAtMs = options.processedAt?.getTime();
   if (typeof processedAtMs === "number" && Number.isFinite(processedAtMs)) {
-    return new Date(processedAtMs);
+    return clampFutureTimestamp(processedAtMs);
   }
 
   return new Date();

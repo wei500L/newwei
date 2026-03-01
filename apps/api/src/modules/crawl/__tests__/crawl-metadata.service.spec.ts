@@ -62,6 +62,19 @@ describe("CrawlMetadataService sitemap discovery", () => {
     global.fetch = originalFetch;
   });
 
+  it("clamps future timestamps parsed from url path to now", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-02-15T12:00:00.000Z"));
+    try {
+      const service = new CrawlMetadataService();
+      const ts = (service as any).parsePublishedAtFromUrl(
+        "https://example.com/2026/08/05/future-story",
+      );
+      expect(ts).toBe(Date.parse("2026-02-15T12:00:00.000Z"));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("discovers urls from nested gzipped sitemap indexes", async () => {
     const sitemapIndexXml = `<?xml version="1.0" encoding="UTF-8"?>
       <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

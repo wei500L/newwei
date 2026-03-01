@@ -2255,10 +2255,12 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   }
 
   private resolveTimestamp(value: unknown) {
-    if (typeof value !== "number" || !Number.isFinite(value)) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
       return undefined;
     }
-    return value;
+    const normalized = Math.floor(value);
+    const now = Date.now();
+    return normalized > now ? now : normalized;
   }
 
   private resolveTimestampMax(first?: number, second?: number) {
@@ -2277,17 +2279,13 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     publishedAtTs?: number;
     crawledAtTs?: number;
   }) {
-    if (
-      typeof input.publishedAtTs === "number" &&
-      Number.isFinite(input.publishedAtTs)
-    ) {
-      return input.publishedAtTs;
+    const publishedAtTs = this.resolveTimestamp(input.publishedAtTs);
+    if (typeof publishedAtTs === "number") {
+      return publishedAtTs;
     }
-    if (
-      typeof input.crawledAtTs === "number" &&
-      Number.isFinite(input.crawledAtTs)
-    ) {
-      return input.crawledAtTs;
+    const crawledAtTs = this.resolveTimestamp(input.crawledAtTs);
+    if (typeof crawledAtTs === "number") {
+      return crawledAtTs;
     }
     return undefined;
   }
@@ -2296,26 +2294,21 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     publishedAtTs?: number;
     crawledAtTs?: number;
   }): CrawlDiscoveryTimestampSource {
-    if (
-      typeof input.publishedAtTs === "number" &&
-      Number.isFinite(input.publishedAtTs)
-    ) {
+    if (typeof this.resolveTimestamp(input.publishedAtTs) === "number") {
       return "published";
     }
-    if (
-      typeof input.crawledAtTs === "number" &&
-      Number.isFinite(input.crawledAtTs)
-    ) {
+    if (typeof this.resolveTimestamp(input.crawledAtTs) === "number") {
       return "crawled";
     }
     return "none";
   }
 
   private toIsoTimestamp(ts?: number) {
-    if (typeof ts !== "number" || !Number.isFinite(ts)) {
+    const resolved = this.resolveTimestamp(ts);
+    if (typeof resolved !== "number") {
       return undefined;
     }
-    return new Date(ts).toISOString();
+    return new Date(resolved).toISOString();
   }
 
   private buildSeedDiscoveryCacheKey(
@@ -2850,7 +2843,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       ) {
         return undefined;
       }
-      return ts;
+      return this.resolveTimestamp(ts);
     };
 
     const slashDate = /\/(20\d{2})\/([01]\d)\/([0-3]\d)(?:\/|$)/.exec(path);
@@ -2919,10 +2912,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         typeof existing.effectiveTs === "number" && Number.isFinite(existing.effectiveTs)
           ? existing.effectiveTs
           : -1;
-      const nextEffectiveTs =
-        typeof job.effectiveTs === "number" && Number.isFinite(job.effectiveTs)
-          ? job.effectiveTs
-          : -1;
+      const nextEffectiveTs = this.resolveTimestamp(job.effectiveTs) ?? -1;
       const existingScore = existing.relevanceScore ?? Number.NEGATIVE_INFINITY;
       const nextScore = job.relevanceScore ?? Number.NEGATIVE_INFINITY;
       const shouldReplace =
