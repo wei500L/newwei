@@ -9,6 +9,7 @@ import { EmailModule } from "../email/email.module";
 import { KnowledgeGraphModule } from "../knowledge-graph/knowledge-graph.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { AlertsQueueEventPublisher } from "./alerts-queue-event.publisher";
@@ -23,6 +24,7 @@ import { EconomicDataMetricProvider } from "./providers/economic-data-metric.pro
 import { EntityAssociationMetricProvider } from "./providers/entity-association-metric.provider";
 import { EntitySentimentMetricProvider } from "./providers/entity-sentiment-metric.provider";
 import { PipelineMetricProvider } from "./providers/pipeline-metric.provider";
+import { RealtimeSignalMetricProvider } from "./providers/realtime-signal-metric.provider";
 import { SystemEventMetricProvider } from "./providers/system-event-metric.provider";
 import { SystemMetricProvider } from "./providers/system-metric.provider";
 
@@ -33,6 +35,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     NotificationsModule,
     ModelServiceModule,
     KnowledgeGraphModule,
+    RealtimeSignalsModule,
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) => ({
@@ -54,6 +57,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
     SystemEventMetricProvider,
     EntitySentimentMetricProvider,
     EntityAssociationMetricProvider,
+    RealtimeSignalMetricProvider,
     {
       provide: ALERT_METRIC_PROVIDERS,
       inject: [
@@ -64,7 +68,8 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
         SystemMetricProvider,
         SystemEventMetricProvider,
         EntitySentimentMetricProvider,
-        EntityAssociationMetricProvider
+        EntityAssociationMetricProvider,
+        RealtimeSignalMetricProvider
       ],
       useFactory: (
         economicDataProvider: EconomicDataMetricProvider,
@@ -74,7 +79,8 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
         systemMetricProvider: SystemMetricProvider,
         systemEventMetricProvider: SystemEventMetricProvider,
         entitySentimentProvider: EntitySentimentMetricProvider,
-        entityAssociationProvider: EntityAssociationMetricProvider
+        entityAssociationProvider: EntityAssociationMetricProvider,
+        realtimeSignalProvider: RealtimeSignalMetricProvider
       ) => [
         economicDataProvider,
         economicAnomalyProvider,
@@ -83,7 +89,8 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
         systemMetricProvider,
         systemEventMetricProvider,
         entitySentimentProvider,
-        entityAssociationProvider
+        entityAssociationProvider,
+        realtimeSignalProvider
       ]
     },
     {

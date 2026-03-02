@@ -102,6 +102,7 @@ enum AlertMetricProvider {
   entity_association
   entity_sentiment
   pipeline_job
+  realtime_signal
   system_event
   system_metric
 }
@@ -2051,7 +2052,7 @@ type Query {
   newsEventSourcePolicyPresets: NewsEventSourcePolicyPresetSettingsModel!
   newsEventSourcePolicyRevisionDiff(baseRevision: Int!, targetRevision: Int!): NewsEventSourcePolicyRevisionDiffModel!
   newsEventSourcePolicySyncStatus: NewsEventSourcePolicySyncStatusModel!
-  newsEvents(dedupeSimilar: Boolean, limit: Int, minAuthoritativeSources: Int, minCredibilityScore: Float, minHeatScore: Float, sortBy: NewsEventSortBy, sourceType: NewsEventSourceType, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
+  newsEvents(dedupeSimilar: Boolean, entity: String, limit: Int, minAuthoritativeSources: Int, minCredibilityScore: Float, minHeatScore: Float, sortBy: NewsEventSortBy, sourceType: NewsEventSourceType, status: NewsEventStatus, windowDays: Int): [NewsEventModel!]!
   newsIndicatorAssociation(backtestsLimit: Int, id: String!): NewsIndicatorAssociationModel
   newsIndicatorAssociations(featureMetric: NewsIndicatorFeatureMetric, indicatorSlug: String, limit: Int, scopeKey: String, scopeType: NewsIndicatorScopeType): [NewsIndicatorAssociationModel!]!
   newsIndicatorSettings: NewsIndicatorSettingsModel!

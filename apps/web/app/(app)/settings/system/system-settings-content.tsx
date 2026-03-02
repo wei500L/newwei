@@ -46,6 +46,7 @@ import { NewsnowPersonalizationSettingsPanel } from "@/components/settings/newsn
 import { RateLimitPoliciesPanel } from "@/components/settings/rate-limit-policies-panel";
 import { RssDiagnosticsPanel } from "@/components/settings/rss-diagnostics-panel";
 import { RssTranslationMetricsPanel } from "@/components/settings/rss-translation-metrics-panel";
+import { RealtimeSignalsSettingsPanel } from "@/components/settings/realtime-signals-settings-panel";
 import { SituationMonitorSettingsPanel } from "@/components/settings/situation-monitor-settings-panel";
 import { SystemSecuritySettingsPanel } from "@/components/settings/system-security-settings-panel";
 import { UnitInputNumber } from "@/components/settings/unit-input-number";
@@ -1667,6 +1668,13 @@ export function SystemSettingsContent() {
         key: "situationMonitor",
         label: t("systemSettings.tabs.situationMonitor"),
         children: <SituationMonitorSettingsPanel />,
+      },
+      {
+        key: "realtimeSignals",
+        label: t("systemSettings.tabs.realtimeSignals", {
+          defaultValue: "Realtime signals",
+        }),
+        children: <RealtimeSignalsSettingsPanel />,
       },
       {
         key: "rssTranslationMetrics",

@@ -90,6 +90,17 @@
       "channels": "Channels: {{channels}}",
       "threshold": "Threshold {{threshold}}"
     },
+    "metricProviders": {
+      "economic_data": "Economic data",
+      "system_event": "System event",
+      "pipeline_job": "Pipeline job",
+      "crawl_task": "Crawl task",
+      "system_metric": "System metric",
+      "economic_anomaly": "Economic anomaly",
+      "entity_sentiment": "Entity sentiment",
+      "entity_association": "Entity association",
+      "realtime_signal": "Realtime signal"
+    },
     "center": {
       "title": "Alert Center",
       "rulesTitle": "Rules",
@@ -368,6 +379,11 @@
         "override": "Override",
         "overrideHint": "Override hint",
         "overridePlaceholder": "Enter Override"
+      },
+      "realtime": {
+        "title": "Realtime signals",
+        "metricPreset": "Realtime metric preset",
+        "metricPresetHint": "Pick one of the canonical realtime signal slugs to align with scheduler snapshots."
       }
     },
     "channels": {
@@ -4933,6 +4949,110 @@
         "cancel": "Cancel"
       }
     },
+    "realtimeSignals": {
+      "description": "Configure realtime signal ingestion sources, thresholds, relay endpoints, and API credentials.",
+      "notice": {
+        "title": "Realtime Signal Aggregation",
+        "body": "These settings control the 8-source realtime pipeline used by alerts, dashboard war-map overlays, and situation monitor predictive signals."
+      },
+      "status": {
+        "label": "Status",
+        "env": "Using env defaults",
+        "saved": "Saved override",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "notConfigured": "Not configured",
+        "relayBaseUrl": "Relay base URL",
+        "polymarketProxyUrl": "Polymarket proxy URL",
+        "relaySharedSecret": "Relay shared secret",
+        "openskyClientId": "OpenSky client ID",
+        "openskyClientSecret": "OpenSky client secret",
+        "aisApiKey": "AIS API key",
+        "acledAccessToken": "ACLED access token",
+        "cloudflareApiToken": "Cloudflare API token",
+        "wingbitsApiKey": "Wingbits API key",
+        "secretSources": {
+          "stored": "System settings (stored)",
+          "env": "Environment variable",
+          "none": "Not configured"
+        }
+      },
+      "sections": {
+        "general": "General",
+        "sources": "Source controls",
+        "thresholds": "Thresholds",
+        "endpoints": "Endpoints",
+        "credentials": "Credentials"
+      },
+      "sources": {
+        "opensky": "OpenSky military flights",
+        "ais": "AIS disruptions",
+        "unrest": "Unrest events",
+        "outages": "Internet outages",
+        "keywordSpike": "Keyword spike",
+        "pizzint": "PizzINT DEFCON",
+        "gdeltTension": "GDELT tension pairs",
+        "polymarketLeads": "Polymarket leads"
+      },
+      "fields": {
+        "enabled": "Enable realtime signal ingestion",
+        "requestTimeoutMs": "Request timeout (ms)",
+        "maxRetries": "Max retries",
+        "sourceEnabled": "Enable {{source}} source",
+        "sourceIntervalSec": "{{source}} interval (sec)",
+        "keywordSpikeMinCount": "Keyword spike minimum count",
+        "keywordSpikeMultiplier": "Keyword spike multiplier",
+        "predictionShiftThreshold": "Prediction shift threshold",
+        "predictionNewsActivityThreshold": "Prediction news-activity threshold",
+        "relayBaseUrl": "Relay base URL",
+        "polymarketProxyUrl": "Polymarket proxy URL",
+        "relaySharedSecret": "Relay shared secret",
+        "openskyClientId": "OpenSky client ID",
+        "openskyClientSecret": "OpenSky client secret",
+        "aisApiKey": "AIS API key",
+        "acledAccessToken": "ACLED access token",
+        "cloudflareApiToken": "Cloudflare API token",
+        "wingbitsApiKey": "Wingbits API key"
+      },
+      "hints": {
+        "relayBaseUrl": "Optional relay URL used for OpenSky/AIS/Polymarket proxying.",
+        "polymarketProxyUrl": "Optional upstream proxy endpoint for Polymarket requests.",
+        "secretOptional": "Leave secret fields empty to keep existing stored values."
+      },
+      "placeholders": {
+        "relayBaseUrl": "https://your-relay.example.com",
+        "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
+        "secretValue": "Leave empty to keep current value"
+      },
+      "actions": {
+        "reset": "Reset to env"
+      },
+      "validation": {
+        "requestTimeoutMs": "Request timeout is required",
+        "maxRetries": "Max retries is required",
+        "sourceIntervalSec": "Source interval is required",
+        "keywordSpikeMinCount": "Keyword spike minimum count is required",
+        "keywordSpikeMultiplier": "Keyword spike multiplier is required",
+        "predictionShiftThreshold": "Prediction shift threshold is required",
+        "predictionNewsActivityThreshold": "Prediction news-activity threshold is required"
+      },
+      "messages": {
+        "saved": "Saved",
+        "reset": "Reset to env defaults"
+      },
+      "errors": {
+        "loadFailed": "Failed to load realtime signals settings",
+        "saveFailed": "Failed to save realtime signals settings",
+        "badRequest": "Invalid input",
+        "resetFailed": "Failed to reset realtime signals settings"
+      },
+      "modal": {
+        "resetTitle": "Reset realtime signals settings",
+        "resetContent": "Remove stored overrides and revert to env values?",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "Load version",
@@ -4964,6 +5084,7 @@
       "email": "Email (SMTP)",
       "security": "Security",
       "situationMonitor": "Situation monitor",
+      "realtimeSignals": "Realtime signals",
       "newsSourceScheduler": "News source scheduler",
       "newsnowPersonalization": "NewsNow personalization",
       "newsSourceRuntimeSecrets": "News source secrets",
@@ -6687,6 +6808,18 @@
       "sourcesList": "Source list",
       "title": "Correlation Engine",
       "hint": "Pattern-based correlation across titles (momentum uses a short Redis history window).",
+      "realtimeOverlayTitle": "Realtime overlays",
+      "pizzint": "PizzINT",
+      "pizzintEmpty": "No PizzINT snapshot in current window.",
+      "tensionsEmpty": "No bilateral tension snapshots.",
+      "tensionPair": "Pair",
+      "changePct": "Change",
+      "trend": "Trend",
+      "updatedAt": "Updated",
+      "adjustedScore": "Adjusted",
+      "openLocations": "Open locations",
+      "activeSpikes": "Active spikes",
+      "avgPop": "Avg pop",
       "crossSourceTitle": "Cross-source",
       "momentumTitle": "Momentum",
       "predictiveTitle": "Predictive",

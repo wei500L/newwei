@@ -90,6 +90,17 @@
       "channels": "通知渠道：{{channels}}",
       "threshold": "阈值 {{threshold}}"
     },
+    "metricProviders": {
+      "economic_data": "经济数据",
+      "system_event": "系统事件",
+      "pipeline_job": "流水线任务",
+      "crawl_task": "抓取任务",
+      "system_metric": "系统指标",
+      "economic_anomaly": "经济异常",
+      "entity_sentiment": "实体情绪",
+      "entity_association": "实体关联",
+      "realtime_signal": "实时信号"
+    },
     "center": {
       "title": "预警中心",
       "rulesTitle": "规则列表",
@@ -368,6 +379,11 @@
         "override": "覆盖",
         "overrideHint": "覆盖提示",
         "overridePlaceholder": "请输入覆盖"
+      },
+      "realtime": {
+        "title": "实时信号",
+        "metricPreset": "实时指标预设",
+        "metricPresetHint": "请选择标准实时信号指标标识，以便与调度快照保持一致。"
       }
     },
     "channels": {
@@ -4933,6 +4949,110 @@
         "cancel": "取消"
       }
     },
+    "realtimeSignals": {
+      "description": "配置实时信号聚合的采集源、阈值、Relay 端点与 API 凭证。",
+      "notice": {
+        "title": "实时信号聚合",
+        "body": "这些配置用于控制 8 路实时信号链路，结果会同步影响告警、Dashboard 战争地图与态势监控预测信号。"
+      },
+      "status": {
+        "label": "状态",
+        "env": "使用环境变量默认值",
+        "saved": "已保存覆盖配置",
+        "enabled": "已启用",
+        "disabled": "已禁用",
+        "notConfigured": "未配置",
+        "relayBaseUrl": "Relay 基础地址",
+        "polymarketProxyUrl": "Polymarket 代理地址",
+        "relaySharedSecret": "Relay 共享密钥",
+        "openskyClientId": "OpenSky Client ID",
+        "openskyClientSecret": "OpenSky Client Secret",
+        "aisApiKey": "AIS API Key",
+        "acledAccessToken": "ACLED Access Token",
+        "cloudflareApiToken": "Cloudflare API Token",
+        "wingbitsApiKey": "Wingbits API Key",
+        "secretSources": {
+          "stored": "系统设置（已保存）",
+          "env": "环境变量",
+          "none": "未配置"
+        }
+      },
+      "sections": {
+        "general": "基础配置",
+        "sources": "信号源开关",
+        "thresholds": "阈值配置",
+        "endpoints": "端点配置",
+        "credentials": "凭证配置"
+      },
+      "sources": {
+        "opensky": "OpenSky 军机",
+        "ais": "AIS 扰动",
+        "unrest": "抗议事件",
+        "outages": "互联网中断",
+        "keywordSpike": "关键词激增",
+        "pizzint": "PizzINT DEFCON",
+        "gdeltTension": "GDELT 双边紧张度",
+        "polymarketLeads": "Polymarket 领先信号"
+      },
+      "fields": {
+        "enabled": "启用实时信号采集",
+        "requestTimeoutMs": "请求超时（毫秒）",
+        "maxRetries": "最大重试次数",
+        "sourceEnabled": "启用 {{source}}",
+        "sourceIntervalSec": "{{source}} 轮询间隔（秒）",
+        "keywordSpikeMinCount": "关键词激增最小计数",
+        "keywordSpikeMultiplier": "关键词激增倍数阈值",
+        "predictionShiftThreshold": "预测价格变化阈值",
+        "predictionNewsActivityThreshold": "预测新闻活跃度阈值",
+        "relayBaseUrl": "Relay 基础地址",
+        "polymarketProxyUrl": "Polymarket 代理地址",
+        "relaySharedSecret": "Relay 共享密钥",
+        "openskyClientId": "OpenSky Client ID",
+        "openskyClientSecret": "OpenSky Client Secret",
+        "aisApiKey": "AIS API Key",
+        "acledAccessToken": "ACLED Access Token",
+        "cloudflareApiToken": "Cloudflare API Token",
+        "wingbitsApiKey": "Wingbits API Key"
+      },
+      "hints": {
+        "relayBaseUrl": "可选。用于 OpenSky/AIS/Polymarket 请求转发的 Relay 地址。",
+        "polymarketProxyUrl": "可选。用于 Polymarket 请求的代理端点。",
+        "secretOptional": "密钥字段留空表示保持当前已保存值。"
+      },
+      "placeholders": {
+        "relayBaseUrl": "https://your-relay.example.com",
+        "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
+        "secretValue": "留空表示保持当前值"
+      },
+      "actions": {
+        "reset": "重置为环境变量"
+      },
+      "validation": {
+        "requestTimeoutMs": "请求超时必填",
+        "maxRetries": "最大重试次数必填",
+        "sourceIntervalSec": "信号源轮询间隔必填",
+        "keywordSpikeMinCount": "关键词激增最小计数必填",
+        "keywordSpikeMultiplier": "关键词激增倍数阈值必填",
+        "predictionShiftThreshold": "预测价格变化阈值必填",
+        "predictionNewsActivityThreshold": "预测新闻活跃度阈值必填"
+      },
+      "messages": {
+        "saved": "已保存",
+        "reset": "已重置为环境变量默认值"
+      },
+      "errors": {
+        "loadFailed": "加载实时信号配置失败",
+        "saveFailed": "保存实时信号配置失败",
+        "badRequest": "输入无效",
+        "resetFailed": "重置实时信号配置失败"
+      },
+      "modal": {
+        "resetTitle": "重置实时信号配置",
+        "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
+        "confirm": "确认",
+        "cancel": "取消"
+      }
+    },
     "akshare": {
       "errors": {
         "loadVersion": "加载版本",
@@ -4964,6 +5084,7 @@
       "email": "邮件（SMTP）",
       "security": "安全",
       "situationMonitor": "态势监控",
+      "realtimeSignals": "实时信号",
       "newsSourceScheduler": "新闻源调度",
       "newsnowPersonalization": "NewsNow 个性化",
       "newsSourceRuntimeSecrets": "新闻源密钥",
@@ -6687,6 +6808,18 @@
       "sourcesList": "来源列表",
       "title": "相关性引擎",
       "hint": "基于模式对标题进行相关性分析（动量使用短期 Redis 历史窗口）。",
+      "realtimeOverlayTitle": "实时叠加信号",
+      "pizzint": "PizzINT",
+      "pizzintEmpty": "当前窗口暂无 PizzINT 快照。",
+      "tensionsEmpty": "当前暂无双边紧张度快照。",
+      "tensionPair": "国家对",
+      "changePct": "变化",
+      "trend": "趋势",
+      "updatedAt": "更新时间",
+      "adjustedScore": "调整分数",
+      "openLocations": "开放点位",
+      "activeSpikes": "活跃峰值",
+      "avgPop": "平均人流",
       "crossSourceTitle": "跨来源",
       "momentumTitle": "动量",
       "predictiveTitle": "预测",

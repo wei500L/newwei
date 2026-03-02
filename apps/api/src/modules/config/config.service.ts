@@ -143,6 +143,48 @@ export interface SituationMonitorTranslationConfig {
   fallbackBaseUrl?: string;
 }
 
+export interface RealtimeSignalSourceEnvConfig {
+  enabled: boolean;
+  intervalSec: number;
+}
+
+export interface RealtimeSignalsEnvConfig {
+  enabled: boolean;
+  requestTimeoutMs: number;
+  maxRetries: number;
+  sources: {
+    opensky: RealtimeSignalSourceEnvConfig;
+    ais: RealtimeSignalSourceEnvConfig;
+    unrest: RealtimeSignalSourceEnvConfig;
+    outages: RealtimeSignalSourceEnvConfig;
+    keywordSpike: RealtimeSignalSourceEnvConfig;
+    pizzint: RealtimeSignalSourceEnvConfig;
+    gdeltTension: RealtimeSignalSourceEnvConfig;
+    polymarketLeads: RealtimeSignalSourceEnvConfig;
+  };
+  thresholds: {
+    keywordSpikeMinCount: number;
+    keywordSpikeMultiplier: number;
+    predictionShiftThreshold: number;
+    predictionNewsActivityThreshold: number;
+  };
+  relay: {
+    baseUrl?: string;
+    sharedSecret?: string;
+  };
+  credentials: {
+    openskyClientId?: string;
+    openskyClientSecret?: string;
+    aisApiKey?: string;
+    acledAccessToken?: string;
+    cloudflareApiToken?: string;
+    wingbitsApiKey?: string;
+  };
+  polymarket: {
+    proxyUrl?: string;
+  };
+}
+
 @Injectable()
 export class EnvService extends ConfigService<ApiEnv> {
   get port() {
@@ -449,6 +491,165 @@ export class EnvService extends ConfigService<ApiEnv> {
         fallbackBaseUrl && fallbackBaseUrl.length > 0
           ? fallbackBaseUrl
           : undefined,
+    };
+  }
+
+  get realtimeSignalsConfig(): RealtimeSignalsEnvConfig {
+    return {
+      enabled:
+        this.get<boolean>("REALTIME_SIGNALS_ENABLED", { infer: true }) ?? true,
+      requestTimeoutMs:
+        this.get<number>("REALTIME_SIGNALS_REQUEST_TIMEOUT_MS", {
+          infer: true,
+        }) ?? 12_000,
+      maxRetries:
+        this.get<number>("REALTIME_SIGNALS_MAX_RETRIES", { infer: true }) ?? 2,
+      sources: {
+        opensky: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_OPENSKY_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        ais: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_AIS_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_AIS_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        unrest: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_UNREST_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_UNREST_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        outages: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_OUTAGES_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_OUTAGES_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        keywordSpike: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_KEYWORD_SPIKE_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_KEYWORD_SPIKE_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        pizzint: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_PIZZINT_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_PIZZINT_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        gdeltTension: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_GDELT_TENSION_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>("REALTIME_SIGNALS_GDELT_TENSION_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
+        },
+        polymarketLeads: {
+          enabled:
+            this.get<boolean>("REALTIME_SIGNALS_POLYMARKET_LEADS_ENABLED", {
+              infer: true,
+            }) ?? true,
+          intervalSec:
+            this.get<number>(
+              "REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC",
+              {
+                infer: true,
+              },
+            ) ?? 600,
+        },
+      },
+      thresholds: {
+        keywordSpikeMinCount:
+          this.get<number>("REALTIME_SIGNALS_KEYWORD_SPIKE_MIN_COUNT", {
+            infer: true,
+          }) ?? 5,
+        keywordSpikeMultiplier:
+          this.get<number>("REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER", {
+            infer: true,
+          }) ?? 3,
+        predictionShiftThreshold:
+          this.get<number>("REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD", {
+            infer: true,
+          }) ?? 5,
+        predictionNewsActivityThreshold:
+          this.get<number>(
+            "REALTIME_SIGNALS_PREDICTION_NEWS_ACTIVITY_THRESHOLD",
+            {
+              infer: true,
+            },
+          ) ?? 3,
+      },
+      relay: {
+        baseUrl: this.get<string | undefined>("REALTIME_SIGNALS_RELAY_BASE_URL", {
+          infer: true,
+        }),
+        sharedSecret: this.get<string | undefined>(
+          "REALTIME_SIGNALS_RELAY_SHARED_SECRET",
+          { infer: true },
+        ),
+      },
+      credentials: {
+        openskyClientId: this.get<string | undefined>(
+          "REALTIME_SIGNALS_OPENSKY_CLIENT_ID",
+          { infer: true },
+        ),
+        openskyClientSecret: this.get<string | undefined>(
+          "REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET",
+          { infer: true },
+        ),
+        aisApiKey: this.get<string | undefined>("REALTIME_SIGNALS_AIS_API_KEY", {
+          infer: true,
+        }),
+        acledAccessToken: this.get<string | undefined>(
+          "REALTIME_SIGNALS_ACLED_ACCESS_TOKEN",
+          { infer: true },
+        ),
+        cloudflareApiToken: this.get<string | undefined>(
+          "REALTIME_SIGNALS_CLOUDFLARE_API_TOKEN",
+          { infer: true },
+        ),
+        wingbitsApiKey: this.get<string | undefined>(
+          "REALTIME_SIGNALS_WINGBITS_API_KEY",
+          { infer: true },
+        ),
+      },
+      polymarket: {
+        proxyUrl: this.get<string | undefined>(
+          "REALTIME_SIGNALS_POLYMARKET_PROXY_URL",
+          { infer: true },
+        ),
+      },
     };
   }
 

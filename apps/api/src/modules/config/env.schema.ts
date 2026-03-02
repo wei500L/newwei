@@ -262,6 +262,124 @@ export const apiEnvSchema = baseEnvSchema.extend({
       typeof value === "string" && value.trim() === "" ? undefined : value,
     z.string().url().optional(),
   ),
+  REALTIME_SIGNALS_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_REQUEST_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(12_000),
+  REALTIME_SIGNALS_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  REALTIME_SIGNALS_OPENSKY_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_AIS_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_AIS_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_UNREST_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_UNREST_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_OUTAGES_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_OUTAGES_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_KEYWORD_SPIKE_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_KEYWORD_SPIKE_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_PIZZINT_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_PIZZINT_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_GDELT_TENSION_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_GDELT_TENSION_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_POLYMARKET_LEADS_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(600),
+  REALTIME_SIGNALS_KEYWORD_SPIKE_MIN_COUNT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
+  REALTIME_SIGNALS_KEYWORD_SPIKE_MULTIPLIER: z.coerce
+    .number()
+    .positive()
+    .default(3),
+  REALTIME_SIGNALS_PREDICTION_SHIFT_THRESHOLD: z.coerce
+    .number()
+    .positive()
+    .default(5),
+  REALTIME_SIGNALS_PREDICTION_NEWS_ACTIVITY_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(3),
+  REALTIME_SIGNALS_RELAY_BASE_URL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
+  ),
+  REALTIME_SIGNALS_RELAY_SHARED_SECRET: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_OPENSKY_CLIENT_ID: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_AIS_API_KEY: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_ACLED_ACCESS_TOKEN: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_CLOUDFLARE_API_TOKEN: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_WINGBITS_API_KEY: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().min(1).optional(),
+  ),
+  REALTIME_SIGNALS_POLYMARKET_PROXY_URL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
+  ),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()

@@ -23,7 +23,6 @@
 - [贡献指南](#贡献指南)
 - [更新日志](#更新日志)
 - [开源复用声明（NewsNow）](#开源复用声明newsnow)
-- [TODO](#todo)
 
 ## 系统架构
 
@@ -428,8 +427,3 @@ pnpm docker:down
 
 - `/newsnow` 页面复用了 `ourongxing/newsnow` 的实现思路与部分源码，遵循 MIT License
 - 许可证文本见 `apps/web/public/licenses/newsnow-mit.txt`（运行时路径：`/licenses/newsnow-mit.txt`）
-
-## TODO
-
-- 添加更完善的前端自动化测试覆盖（`apps/web/tests`）
-- 将更多运维与质量指标沉淀为可配置告警规则（`alerts` + `observability`）

@@ -4,6 +4,7 @@ import { Inject, Injectable } from "@nestjs/common";
 
 import { CacheService } from "../cache/cache.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
+import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
 
 import {
   analyzeCorrelations,
@@ -34,7 +35,9 @@ import type {
   SituationMonitorFedSnapshot,
   SituationMonitorHeadline,
   SituationMonitorMarketsSnapshot,
+  SituationMonitorPizzintSnapshot,
   SituationMonitorSituationPanel,
+  SituationMonitorTensionPair,
   SituationMonitorWorldLeader,
 } from "./situation-monitor.types";
 
@@ -63,6 +66,8 @@ export interface SituationMonitorInsightsResponse {
   markets?: SituationMonitorMarketsSnapshot;
   crypto?: SituationMonitorCryptoItem[];
   fed?: SituationMonitorFedSnapshot;
+  pizzint?: SituationMonitorPizzintSnapshot;
+  tensions?: SituationMonitorTensionPair[];
   correlation?: ReturnType<typeof analyzeCorrelations>["results"];
   correlationSummary?: ReturnType<typeof getCorrelationSummary>;
   narrative?: ReturnType<typeof analyzeNarratives>;
@@ -77,6 +82,7 @@ export class SituationMonitorService {
     private readonly cache: CacheService,
     private readonly external: SituationMonitorExternalService,
     private readonly feedback: SituationMonitorFeedbackService,
+    private readonly realtimeSignals: RealtimeSignalsService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
   ) {
     void this._mongo;
@@ -196,6 +202,26 @@ export class SituationMonitorService {
           learning: correlationOverrides,
         });
         await this.cache.set(currentCountsKey, topicCounts, ttlSeconds);
+        const realtimeSnapshot =
+          await this.realtimeSignals.getSituationMonitorInsightSnapshot(orgId);
+        const realtimePredictiveSignals =
+          this.buildRealtimePredictiveSignals(realtimeSnapshot);
+        const mergedCorrelation = correlation
+          ? {
+              ...correlation,
+              predictiveSignals: [
+                ...(correlation.predictiveSignals ?? []),
+                ...realtimePredictiveSignals,
+              ],
+            }
+          : realtimePredictiveSignals.length > 0
+            ? {
+                emergingPatterns: [],
+                momentumSignals: [],
+                crossSourceCorrelations: [],
+                predictiveSignals: realtimePredictiveSignals,
+              }
+            : correlation;
 
         const narrative = analyzeNarratives(analysisNews, { learning: narrativeOverrides });
         const mainCharacter = calculateMainCharacter(analysisNews);
@@ -206,8 +232,10 @@ export class SituationMonitorService {
           alerts: this.buildAlerts(displayHeadlines),
           leaders: this.buildWorldLeaders(analysisNews),
           situations: this.buildSituations(analysisNews),
-          correlation,
-          correlationSummary: getCorrelationSummary(correlation),
+          correlation: mergedCorrelation,
+          correlationSummary: getCorrelationSummary(mergedCorrelation),
+          pizzint: realtimeSnapshot.pizzint,
+          tensions: realtimeSnapshot.tensions,
           narrative,
           narrativeSummary: getNarrativeSummary(narrative),
           mainCharacter,
@@ -292,6 +320,80 @@ export class SituationMonitorService {
       .map((entry) => entry.trim().toLowerCase())
       .filter((entry) => entry === "core" || entry === "external");
     return new Set(normalized.length > 0 ? normalized : []);
+  }
+
+  private buildRealtimePredictiveSignals(snapshot: {
+    keywordSpikes: Array<{
+      id: string;
+      term: string;
+      count: number;
+      baseline: number;
+      multiplier: number;
+      sourceCount: number;
+      confidence: number;
+    }>;
+    predictionLeads: Array<{
+      id: string;
+      title: string;
+      shift: number;
+      newsActivity: number;
+      confidence: number;
+    }>;
+  }) {
+    const predictiveSignals: NonNullable<
+      ReturnType<typeof analyzeCorrelations>["results"]
+    >["predictiveSignals"] = [];
+
+    for (const spike of snapshot.keywordSpikes) {
+      const confidenceScore = Math.max(
+        0,
+        Math.min(100, Math.round(spike.confidence * 100)),
+      );
+      const level: "high" | "medium" | "low" =
+        confidenceScore >= 70
+          ? "high"
+          : confidenceScore >= 50
+            ? "medium"
+            : "low";
+      predictiveSignals.push({
+        id: `keyword_spike:${spike.id}`,
+        name: `Keyword Spike · ${spike.term}`,
+        category: "Realtime",
+        score: Number((spike.multiplier * 10 + spike.count).toFixed(3)),
+        confidence: confidenceScore,
+        prediction:
+          "Cross-source headline velocity indicates emerging narrative pressure.",
+        level,
+        headlines: [],
+      });
+    }
+
+    for (const lead of snapshot.predictionLeads) {
+      const confidenceScore = Math.max(
+        0,
+        Math.min(100, Math.round(lead.confidence * 100)),
+      );
+      const level: "high" | "medium" | "low" =
+        confidenceScore >= 70
+          ? "high"
+          : confidenceScore >= 50
+            ? "medium"
+            : "low";
+      predictiveSignals.push({
+        id: `prediction_leads_news:${lead.id}`,
+        name: `Prediction Leads · ${lead.title}`,
+        category: "Realtime",
+        score: Number((lead.shift * 10 + (3 - Math.min(3, lead.newsActivity))).toFixed(3)),
+        confidence: confidenceScore,
+        prediction:
+          "Market pricing moved ahead of mainstream coverage; watch for delayed narrative pickup.",
+        level,
+        headlines: [],
+      });
+    }
+
+    predictiveSignals.sort((a, b) => b.score - a.score);
+    return predictiveSignals;
   }
 
   private async buildHeadlinesByCategory(options: {

@@ -777,6 +777,8 @@ const DEFAULT_FILTER_STATE: AlertFilterState = {
   customRangeMs: null
 };
 
+const REALTIME_SIGNAL_PROVIDER = AlertMetricProvider.RealtimeSignal;
+
 const PROVIDER_FILTER_OPTIONS = [
   AlertMetricProvider.EconomicAnomaly,
   AlertMetricProvider.EntitySentiment,
@@ -785,7 +787,8 @@ const PROVIDER_FILTER_OPTIONS = [
   AlertMetricProvider.SystemMetric,
   AlertMetricProvider.SystemEvent,
   AlertMetricProvider.PipelineJob,
-  AlertMetricProvider.CrawlTask
+  AlertMetricProvider.CrawlTask,
+  REALTIME_SIGNAL_PROVIDER,
 ];
 
 const SEVERITY_OPTIONS = ['low', 'medium', 'high'];
@@ -1657,6 +1660,11 @@ export function AlertCenterContent() {
       )
     : t('common.notAvailable');
 
+  const metricProviderLabel = (provider: AlertMetricProvider | string | null | undefined) =>
+    provider
+      ? t(`alerts.metricProviders.${provider}`, { defaultValue: provider })
+      : t('common.notAvailable');
+
   const handleCopyRawContext = async () => {
     if (!context) {
       return;
@@ -1697,7 +1705,7 @@ export function AlertCenterContent() {
       )}`,
       `- **${t('alerts.center.detail.rule', { defaultValue: 'Rule' })}**: ${selectedEvent.ruleName ?? t('common.notAvailable')}`,
       `- **${t('alerts.center.detail.metric', { defaultValue: 'Metric {{metric}}', metric: '' })}**: ${selectedEvent.metricSlug ?? t('common.notAvailable')}`,
-      `- **${t('alerts.center.detail.provider', { defaultValue: 'Provider {{provider}}', provider: '' })}**: ${selectedEvent.metricProvider ?? t('common.notAvailable')}`,
+      `- **${t('alerts.center.detail.provider', { defaultValue: 'Provider {{provider}}', provider: '' })}**: ${metricProviderLabel(selectedEvent.metricProvider)}`,
       `- **${t('alerts.center.detail.status', { defaultValue: 'Status' })}**: ${selectedEvent.status}`,
       `- **${t('alerts.center.detail.metricValue', { defaultValue: 'Metric value' })}**: ${selectedEvent.metricValue}`,
       `- **${t('alerts.center.detail.threshold', { defaultValue: 'Threshold' })}**: ${thresholdSummary}`,
@@ -1757,7 +1765,7 @@ export function AlertCenterContent() {
                   <Typography.Text type="secondary">
                     {t('alerts.center.detail.provider', {
                       defaultValue: 'Provider {{provider}}',
-                      provider: selectedEvent.metricProvider ?? t('common.notAvailable')
+                      provider: metricProviderLabel(selectedEvent.metricProvider)
                     })}
                   </Typography.Text>
                 </Space>
@@ -2469,7 +2477,9 @@ export function AlertCenterContent() {
                         }
                         options={PROVIDER_FILTER_OPTIONS.map((provider) => ({
                           value: provider,
-                          label: provider
+                          label: t(`alerts.metricProviders.${provider}`, {
+                            defaultValue: provider
+                          })
                         }))}
                       />
                     </Col>

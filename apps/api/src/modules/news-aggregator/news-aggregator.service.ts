@@ -1061,12 +1061,13 @@ export class NewsAggregatorService {
   }
 
   private async publishRealtimeUpdate(input: {
+    orgId?: string
     sourceId: SourceID
     intervalMs: number
     previous: SourceResponse | null
     current: SourceResponse
   }) {
-    const { sourceId, intervalMs, previous, current } = input
+    const { orgId, sourceId, intervalMs, previous, current } = input
     if (!previous || !Array.isArray(previous.items) || previous.items.length === 0) {
       return
     }
@@ -1099,6 +1100,7 @@ export class NewsAggregatorService {
 
     try {
       await this.newsnowRealtime.publish({
+        orgId,
         sourceId,
         newItemsCount,
         topTitles,

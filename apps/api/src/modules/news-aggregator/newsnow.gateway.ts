@@ -150,6 +150,10 @@ export class NewsnowGateway
     if (!this.server) {
       return;
     }
+    if (typeof event.orgId === "string" && event.orgId.trim().length > 0) {
+      this.sessions.emitToOrg(this.server, event.orgId, "newsnow:update", event);
+      return;
+    }
     this.server.emit("newsnow:update", event);
   }
 

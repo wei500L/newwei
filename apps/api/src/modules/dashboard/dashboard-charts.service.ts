@@ -566,6 +566,52 @@ const normalizeGeoId = (input?: string | null): string | null => {
   return normalized ? normalized.toUpperCase() : null;
 };
 
+const readCountryCodesFromAlertContext = (
+  context: Record<string, unknown> | null,
+): string[] => {
+  const countries = new Set<string>();
+  const addCandidate = (value: unknown) => {
+    if (typeof value !== "string") {
+      return;
+    }
+    const resolvedCode =
+      normalizeGeoId(value) ?? extractCountryCodeFromText(value) ?? null;
+    if (!resolvedCode) {
+      return;
+    }
+    countries.add(resolvedCode);
+  };
+
+  addCandidate(context?.countryCode);
+  addCandidate(context?.countryName);
+  addCandidate(context?.country);
+
+  if (Array.isArray(context?.countryCodes)) {
+    for (const code of context.countryCodes) {
+      addCandidate(code);
+    }
+  }
+
+  if (Array.isArray(context?.hotspots)) {
+    for (const hotspot of context.hotspots) {
+      if (!hotspot || typeof hotspot !== "object") {
+        continue;
+      }
+      const record = hotspot as Record<string, unknown>;
+      addCandidate(record.countryCode);
+      addCandidate(record.countryName);
+      addCandidate(record.country);
+      if (Array.isArray(record.countryCodes)) {
+        for (const code of record.countryCodes) {
+          addCandidate(code);
+        }
+      }
+    }
+  }
+
+  return Array.from(countries);
+};
+
 const normalizeLocationCandidate = (input: string): string => {
   return input
     .trim()
@@ -883,45 +929,37 @@ export class DashboardChartsService {
         !Array.isArray(event.context)
           ? (event.context as Record<string, unknown>)
           : null;
-      const rawCountry =
-        typeof context?.countryCode === "string"
-          ? context?.countryCode
-          : typeof context?.countryName === "string"
-            ? context?.countryName
-            : typeof context?.country === "string"
-              ? context?.country
-              : null;
-      const resolvedCode =
-        normalizeGeoId(rawCountry) ??
-        extractCountryCodeFromText(rawCountry ?? null);
-      if (!resolvedCode) {
+      const resolvedCodes = readCountryCodesFromAlertContext(context);
+      if (resolvedCodes.length === 0) {
         continue;
       }
-      const geo = geoIndex.get(resolvedCode);
-      if (!geo) {
-        continue;
+      for (const resolvedCode of resolvedCodes) {
+        const geo = geoIndex.get(resolvedCode);
+        if (!geo) {
+          continue;
+        }
+        const entry = signals.get(resolvedCode) ?? {
+          name: geo.name,
+          lat: geo.lat,
+          lng: geo.lng,
+          alertCount: 0,
+          alertScore: 0,
+          maxAlertSeverityRank: 0,
+          newsCount: 0,
+        };
+        const severityValue = alertSeverityRank[event.severity] ?? 1;
+        entry.alertScore += severityValue;
+        entry.alertCount += 1;
+        entry.maxAlertSeverityRank = Math.max(
+          entry.maxAlertSeverityRank,
+          severityValue,
+        );
+        entry.latestAt =
+          !entry.latestAt || event.triggeredAt > entry.latestAt
+            ? event.triggeredAt
+            : entry.latestAt;
+        signals.set(resolvedCode, entry);
       }
-      const entry = signals.get(resolvedCode) ?? {
-        name: geo.name,
-        lat: geo.lat,
-        lng: geo.lng,
-        alertCount: 0,
-        alertScore: 0,
-        maxAlertSeverityRank: 0,
-        newsCount: 0,
-      };
-      const severityValue = alertSeverityRank[event.severity] ?? 1;
-      entry.alertScore += severityValue;
-      entry.alertCount += 1;
-      entry.maxAlertSeverityRank = Math.max(
-        entry.maxAlertSeverityRank,
-        severityValue,
-      );
-      entry.latestAt =
-        !entry.latestAt || event.triggeredAt > entry.latestAt
-          ? event.triggeredAt
-          : entry.latestAt;
-      signals.set(resolvedCode, entry);
     }
 
     for (const record of newsRecords) {

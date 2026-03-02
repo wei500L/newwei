@@ -122,3 +122,22 @@ export interface SituationMonitorFedSnapshot {
   news: SituationMonitorFedNewsItem[];
   error?: string;
 }
+
+export interface SituationMonitorPizzintSnapshot {
+  defcon: number;
+  adjustedScore: number;
+  openLocations: number;
+  activeSpikes: number;
+  avgPop: number;
+  updatedAt: string;
+}
+
+export interface SituationMonitorTensionPair {
+  id: string;
+  label: string;
+  score: number;
+  changePercent: number;
+  trend: "rising" | "stable" | "falling";
+  countries: string[];
+  updatedAt: string;
+}

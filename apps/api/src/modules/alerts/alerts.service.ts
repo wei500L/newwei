@@ -21,6 +21,7 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { REALTIME_SIGNAL_DEFAULT_RULES } from "../realtime-signals/realtime-signals.constants";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
@@ -118,6 +119,8 @@ const DEFAULT_CRAWL_QUALITY_RULES: Array<{
     severity: AlertSeverity.medium
   }
 ];
+
+const DEFAULT_REALTIME_SIGNAL_RULES = REALTIME_SIGNAL_DEFAULT_RULES;
 
 @Injectable()
 export class AlertsService {
@@ -228,6 +231,7 @@ export class AlertsService {
 
   async listRules(orgId: string) {
     await this.ensureDefaultCrawlQualityRules(orgId);
+    await this.ensureDefaultRealtimeSignalRules(orgId);
     return this.prisma.alertRule.findMany({
       where: { orgId },
       include: {
@@ -313,12 +317,103 @@ export class AlertsService {
     }
   }
 
+  private async ensureDefaultRealtimeSignalRules(orgId: string) {
+    const slugs = DEFAULT_REALTIME_SIGNAL_RULES.map((rule) => rule.metricSlug);
+    const existing = await this.prisma.alertRule.findMany({
+      where: {
+        orgId,
+        metricProvider: AlertMetricProvider.realtime_signal,
+        metricSlug: { in: slugs },
+      },
+      select: {
+        id: true,
+        metricSlug: true,
+      },
+    });
+    const existingSlugSet = new Set(existing.map((entry) => entry.metricSlug));
+
+    for (const definition of DEFAULT_REALTIME_SIGNAL_RULES) {
+      if (existingSlugSet.has(definition.metricSlug)) {
+        continue;
+      }
+
+      try {
+        const created = await this.prisma.alertRule.create({
+          data: {
+            id: this.buildDefaultRealtimeSignalRuleId(orgId, definition.key),
+            orgId,
+            name: definition.name,
+            description: definition.description,
+            severity: definition.severity,
+            status: AlertStatus.active,
+            metricProvider: AlertMetricProvider.realtime_signal,
+            metricSlug: definition.metricSlug,
+            operator: definition.operator,
+            thresholdValue: new Prisma.Decimal(definition.thresholdValue),
+            thresholdLower: null,
+            thresholdUpper: null,
+            changeWindowMin: 60,
+            cooldownSeconds: 1800,
+            checkIntervalSec: 300,
+            metadata: toPrismaJsonValue({
+              systemDefault: true,
+              defaultRuleKey: definition.key,
+              version: 1,
+            }),
+            dataItemId: null,
+          },
+        });
+        existingSlugSet.add(definition.metricSlug);
+        await this.ensureRuleSchedule(created);
+        await this.enqueueRuleCheck(created.id, created.orgId);
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          logger.debug(
+            { orgId, metricSlug: definition.metricSlug },
+            "Default realtime signal alert rule already exists",
+          );
+          existingSlugSet.add(definition.metricSlug);
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async ensureDefaultRealtimeSignalRulesForAllOrgs() {
+    const orgs = await this.prisma.org.findMany({
+      select: { id: true },
+    });
+    for (const org of orgs) {
+      await this.ensureDefaultRealtimeSignalRules(org.id);
+    }
+  }
+
   private buildDefaultCrawlQualityRuleId(
     orgId: string,
     key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate"
   ) {
     const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
     return `default-crawl-quality-${key}-${normalizedOrgId}`.slice(0, 191);
+  }
+
+  private buildDefaultRealtimeSignalRuleId(
+    orgId: string,
+    key:
+      | "opensky"
+      | "ais"
+      | "unrest"
+      | "outages"
+      | "keyword_spike"
+      | "pizzint"
+      | "gdelt_tension"
+      | "polymarket_leads",
+  ) {
+    const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return `default-realtime-signal-${key}-${normalizedOrgId}`.slice(0, 191);
   }
 
   async listEvents(orgId: string, limit = 50, metricSlug?: string) {
@@ -759,6 +854,7 @@ export class AlertsService {
 
   async enqueueActiveRuleChecks() {
     await this.ensureDefaultCrawlQualityRulesForAllOrgs();
+    await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active }
     });
@@ -769,6 +865,7 @@ export class AlertsService {
 
   async ensureAllSchedules() {
     await this.ensureDefaultCrawlQualityRulesForAllOrgs();
+    await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active }
     });

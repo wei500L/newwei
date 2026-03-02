@@ -39,6 +39,7 @@ import { ObservabilityModule } from "./modules/observability/observability.modul
 import { QueueAdminModule } from "./modules/queue/queue-admin.module";
 import { QueueModule } from "./modules/queue/queue.module";
 import { RbacModule } from "./modules/rbac/rbac.module";
+import { RealtimeSignalsModule } from "./modules/realtime-signals/realtime-signals.module";
 import { SentimentModule } from "./modules/sentiment/sentiment.module";
 import { SituationMonitorModule } from "./modules/situation-monitor/situation-monitor.module";
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
@@ -84,6 +85,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     AlertsModule,
     AnalysisModule,
     AssistantModule,
+    RealtimeSignalsModule,
     SituationMonitorModule,
     SentimentModule,
     SystemSettingsModule,

@@ -269,6 +269,25 @@ interface SituationMonitorFedSnapshot {
   error?: string;
 }
 
+interface SituationMonitorPizzintSnapshot {
+  defcon: number;
+  adjustedScore: number;
+  openLocations: number;
+  activeSpikes: number;
+  avgPop: number;
+  updatedAt: string;
+}
+
+interface SituationMonitorTensionPair {
+  id: string;
+  label: string;
+  score: number;
+  changePercent: number;
+  trend: "rising" | "stable" | "falling";
+  countries: string[];
+  updatedAt: string;
+}
+
 interface CrossSourceRadarCluster {
   id: string;
   itemCount: number;
@@ -383,6 +402,8 @@ interface SituationMonitorInsightsResponse {
   markets?: SituationMonitorMarketsSnapshot;
   crypto?: SituationMonitorCryptoItem[];
   fed?: SituationMonitorFedSnapshot;
+  pizzint?: SituationMonitorPizzintSnapshot;
+  tensions?: SituationMonitorTensionPair[];
   correlation?: CorrelationResults | null;
   correlationSummary?: { totalSignals: number; status: string; statusZh?: string };
   narrative?: NarrativeResults | null;
@@ -1293,6 +1314,88 @@ export function SituationMonitorContent() {
             </Button>
           </Popover>
         );
+      },
+    },
+  ];
+
+  const tensionColumns: ColumnsType<SituationMonitorTensionPair> = [
+    {
+      title: t("situationMonitor.correlation.tensionPair", {
+        defaultValue: "Pair",
+      }),
+      dataIndex: "label",
+      key: "label",
+    },
+    {
+      title: t("situationMonitor.correlation.score", { defaultValue: "Score" }),
+      dataIndex: "score",
+      key: "score",
+      width: 90,
+      render: (value: number) =>
+        Number.isFinite(value) ? value.toFixed(1) : "—",
+    },
+    {
+      title: t("situationMonitor.correlation.changePct", {
+        defaultValue: "Change",
+      }),
+      dataIndex: "changePercent",
+      key: "changePercent",
+      width: 100,
+      render: (value: number) => (
+        <Typography.Text type={value > 0 ? "danger" : value < 0 ? "success" : "secondary"}>
+          {formatPercent(value)}
+        </Typography.Text>
+      ),
+    },
+    {
+      title: t("situationMonitor.correlation.trend", { defaultValue: "Trend" }),
+      dataIndex: "trend",
+      key: "trend",
+      width: 100,
+      render: (value: SituationMonitorTensionPair["trend"]) => {
+        const normalized = value.toLowerCase();
+        const color =
+          normalized === "rising"
+            ? "red"
+            : normalized === "falling"
+              ? "green"
+              : "default";
+        return (
+          <Tag color={color}>
+            {t(`situationMonitor.correlation.momentumStatus.${normalized}`, {
+              defaultValue: normalized.toUpperCase(),
+            })}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: t("situationMonitor.correlation.sources", {
+        defaultValue: "Sources",
+      }),
+      dataIndex: "countries",
+      key: "countries",
+      render: (value: string[]) =>
+        Array.isArray(value) ? value.join(", ") : "",
+    },
+    {
+      title: t("situationMonitor.correlation.updatedAt", {
+        defaultValue: "Updated",
+      }),
+      dataIndex: "updatedAt",
+      key: "updatedAt",
+      width: 150,
+      render: (value: string) => {
+        const timestamp = dayjs(value);
+        if (!timestamp.isValid()) {
+          return "—";
+        }
+        return formatDateTime(timestamp.toDate(), locale, {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
       },
     },
   ];
@@ -2765,6 +2868,77 @@ export function SituationMonitorContent() {
                 "Pattern-based correlation across titles/summary (momentum uses a short Redis history window; feedback updates matching/suppression).",
             })}
           </Typography.Text>
+        </Col>
+        <Col span={24}>
+          <Typography.Title level={5} style={{ marginBottom: 8 }}>
+            {t("situationMonitor.correlation.realtimeOverlayTitle", {
+              defaultValue: "Realtime overlays",
+            })}
+          </Typography.Title>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {data?.pizzint ? (
+              <Space size={8} wrap>
+                <Tag color={data.pizzint.defcon <= 2 ? "red" : data.pizzint.defcon <= 3 ? "orange" : "default"}>
+                  {t("situationMonitor.correlation.pizzint", {
+                    defaultValue: "PizzINT",
+                  })}{" "}
+                  DEFCON {data.pizzint.defcon}
+                </Tag>
+                <Tag>
+                  {t("situationMonitor.correlation.adjustedScore", {
+                    defaultValue: "Adjusted",
+                  })}: {data.pizzint.adjustedScore}
+                </Tag>
+                <Tag>
+                  {t("situationMonitor.correlation.openLocations", {
+                    defaultValue: "Open locations",
+                  })}: {data.pizzint.openLocations}
+                </Tag>
+                <Tag>
+                  {t("situationMonitor.correlation.activeSpikes", {
+                    defaultValue: "Active spikes",
+                  })}: {data.pizzint.activeSpikes}
+                </Tag>
+                <Tag>
+                  {t("situationMonitor.correlation.avgPop", {
+                    defaultValue: "Avg pop",
+                  })}: {data.pizzint.avgPop}
+                </Tag>
+                <Typography.Text type="secondary">
+                  {t("situationMonitor.correlation.updatedAt", {
+                    defaultValue: "Updated",
+                  })}
+                  :{" "}
+                  {dayjs(data.pizzint.updatedAt).isValid()
+                    ? formatDateTime(dayjs(data.pizzint.updatedAt).toDate(), locale, {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "—"}
+                </Typography.Text>
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">
+                {t("situationMonitor.correlation.pizzintEmpty", {
+                  defaultValue: "No PizzINT snapshot in current window.",
+                })}
+              </Typography.Text>
+            )}
+            <Table
+              rowKey="id"
+              size="small"
+              columns={tensionColumns}
+              dataSource={data?.tensions ?? []}
+              pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
+              locale={{
+                emptyText: t("situationMonitor.correlation.tensionsEmpty", {
+                  defaultValue: "No bilateral tension snapshots.",
+                }),
+              }}
+            />
+          </Space>
         </Col>
         <Col span={24}>
           <Table

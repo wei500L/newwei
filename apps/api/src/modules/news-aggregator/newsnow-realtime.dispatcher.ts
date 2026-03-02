@@ -2,6 +2,7 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 export interface NewsnowRealtimeEvent {
+  orgId?: string;
   sourceId: string;
   newItemsCount: number;
   topTitles: string[];

@@ -36,6 +36,8 @@ import { RateLimitConfigService } from "./rate-limit-config.service";
 import { RateLimitPolicyController } from "./rate-limit-policy.controller";
 import { RateLimitPolicyService } from "./rate-limit-policy.service";
 import { RateLimitSettingsController } from "./rate-limit-settings.controller";
+import { RealtimeSignalsSettingsController } from "./realtime-signals-settings.controller";
+import { RealtimeSignalsSettingsService } from "./realtime-signals-settings.service";
 import { RssDiagnosticsController } from "./rss-diagnostics.controller";
 import { RssDiagnosticsService } from "./rss-diagnostics.service";
 import { RssTranslationMetricsController } from "./rss-translation-metrics.controller";
@@ -69,6 +71,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     NewsSourceSchedulerSettingsController,
     NewsnowPersonalizationSettingsController,
     SituationMonitorSettingsController,
+    RealtimeSignalsSettingsController,
     VectorServiceSettingsController,
     RssTranslationMetricsController,
     RssDiagnosticsController,
@@ -89,6 +92,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     NewsSourceSchedulerSettingsService,
     NewsnowPersonalizationSettingsService,
     SituationMonitorSettingsService,
+    RealtimeSignalsSettingsService,
     VectorServiceSettingsService,
     AssistantSafetySettingsService,
     AssistantSafetyDiagnosticsService,
@@ -114,6 +118,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     NewsSourceSchedulerSettingsService,
     NewsnowPersonalizationSettingsService,
     SituationMonitorSettingsService,
+    RealtimeSignalsSettingsService,
     VectorServiceSettingsService,
     RssTranslationMetricsService,
     RssDiagnosticsService,

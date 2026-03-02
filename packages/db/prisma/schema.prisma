@@ -787,6 +787,7 @@ enum AlertMetricProvider {
   economic_anomaly
   entity_sentiment
   entity_association
+  realtime_signal
 }
 
 enum AlertOperator {
