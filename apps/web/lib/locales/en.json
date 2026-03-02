@@ -6818,6 +6818,20 @@
       "title": "Alerts",
       "empty": "No alerts in the current window."
     },
+    "telegram": {
+      "title": "Telegram Early Signals",
+      "configMissing": "Not configured",
+      "disabled": "Disabled",
+      "configHint": "Configure Telegram API credentials and session in environment variables.",
+      "empty": "No Telegram signals yet."
+    },
+    "oref": {
+      "title": "OREF Alerts",
+      "history24h": "24h {{count}}",
+      "configHint": "Configure OREF proxy auth and enable OREF polling in environment variables.",
+      "empty": "No active OREF alerts.",
+      "recentWaves": "Recent waves"
+    },
     "markets": {
       "title": "Markets",
       "missingKey": "API key needed",
@@ -6855,6 +6869,33 @@
     "map": {
       "title": "Global Map"
     },
+    "liveNews": {
+      "title": "Live News",
+      "hlsFallback": "HLS fallback",
+      "unavailable": "Stream paused",
+      "idle": "Idle pause: move mouse or press key to resume.",
+      "hidden": "Background tab: stream paused.",
+      "region": {
+        "global": "Global",
+        "europe": "Europe",
+        "americas": "Americas",
+        "middleEast": "Middle East",
+        "asia": "Asia"
+      }
+    },
+    "liveWebcams": {
+      "title": "Live Webcams",
+      "idle": "Idle pause: move mouse or press key to resume webcams.",
+      "hidden": "Background tab: webcams paused.",
+      "region": {
+        "iran": "Iran Attacks",
+        "all": "All",
+        "middleEast": "Middle East",
+        "europe": "Europe",
+        "americas": "Americas",
+        "asia": "Asia"
+      }
+    },
     "window": {
       "6h": "Last 6h",
       "24h": "Last 24h",
@@ -6880,6 +6921,11 @@
       "external": "Loading external"
     },
     "sampleSize": "Analyzed: {{count}}",
+    "realtime": {
+      "connected": "RT ON",
+      "disconnected": "RT OFF",
+      "error": "RT ERROR"
+    },
     "presets": {
       "title": "Presets",
       "custom": "Custom",

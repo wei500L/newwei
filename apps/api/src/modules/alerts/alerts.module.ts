@@ -3,6 +3,7 @@ import { getQueueToken } from "@nestjs/bull-shared";
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
+import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 import { EmailModule } from "../email/email.module";
@@ -11,8 +12,8 @@ import { ModelServiceModule } from "../model-service/model-service.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
-import { AlertsQueueEventPublisher } from "./alerts-queue-event.publisher";
 import { AlertsQueueCleanupService } from "./alerts-queue-cleanup.service";
+import { AlertsQueueEventPublisher } from "./alerts-queue-event.publisher";
 import { ALERTS_QUEUE, ALERTS_QUEUE_EVENTS, ALERTS_QUEUE_NAME, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { AlertsProcessor } from "./alerts.processor";
 import { ALERTS_PUBSUB, createAlertsPubSub } from "./alerts.pubsub";
@@ -29,6 +30,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
 @Module({
   imports: [
     DatabaseModule,
+    CacheModule,
     EmailModule,
     NotificationsModule,
     ModelServiceModule,
