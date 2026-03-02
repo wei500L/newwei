@@ -276,6 +276,218 @@ describe("DashboardChartsService", () => {
     ).toBe(false);
   });
 
+  it("returns clustered war map events when clustering is requested", async () => {
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            triggeredAt: new Date("2026-01-01T12:00:00.000Z"),
+            severity: "high",
+            context: { countryCode: "FRA" },
+          },
+          {
+            triggeredAt: new Date("2026-01-01T12:00:00.000Z"),
+            severity: "medium",
+            context: { countryCode: "DEU" },
+          },
+          {
+            triggeredAt: new Date("2026-01-01T12:00:00.000Z"),
+            severity: "low",
+            context: { countryCode: "NLD" },
+          },
+        ]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn(),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const result = await service.getWarMapEvents(range, "org-1", {
+      cluster: true,
+      zoom: 0,
+      bbox: [-10, 45, 20, 60],
+    });
+
+    expect(result.clustered).toBe(true);
+    expect(result.events.length).toBeGreaterThan(0);
+    expect(result.events.some((event) => event.isCluster)).toBe(true);
+    expect(
+      result.events.every(
+        (event) =>
+          event.lng >= -10 &&
+          event.lng <= 20 &&
+          event.lat >= 45 &&
+          event.lat <= 60,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns clustered war map news markers when clustering is requested", async () => {
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "marker-1",
+            title: "headline-1",
+            location: "Paris, France",
+            publishedAt: new Date("2026-01-01T08:00:00.000Z"),
+            processedAt: new Date("2026-01-01T08:01:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/1",
+              crawlAt: new Date("2026-01-01T08:00:30.000Z"),
+              titleGuess: null,
+            },
+          },
+          {
+            id: "marker-2",
+            title: "headline-2",
+            location: "Paris, France",
+            publishedAt: new Date("2026-01-01T08:10:00.000Z"),
+            processedAt: new Date("2026-01-01T08:11:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/2",
+              crawlAt: new Date("2026-01-01T08:10:30.000Z"),
+              titleGuess: null,
+            },
+          },
+          {
+            id: "marker-3",
+            title: "headline-3",
+            location: "Paris, France",
+            publishedAt: new Date("2026-01-01T08:20:00.000Z"),
+            processedAt: new Date("2026-01-01T08:21:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/3",
+              crawlAt: new Date("2026-01-01T08:20:30.000Z"),
+              titleGuess: null,
+            },
+          },
+        ]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn().mockResolvedValue({
+        lat: 48.8566,
+        lng: 2.3522,
+        displayName: "Paris, France",
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const result = await service.getWarMapNewsMarkers(range, "org-1", {
+      cluster: true,
+      zoom: 1,
+      bbox: [-5, 40, 10, 55],
+    });
+
+    expect(result.clustered).toBe(true);
+    expect(result.markers.length).toBe(1);
+    expect(result.markers[0]).toEqual(
+      expect.objectContaining({
+        isCluster: true,
+        clusterCount: 3,
+      }),
+    );
+  });
+
+  it("filters war map news markers by bbox when clustering is disabled", async () => {
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "marker-paris",
+            title: "Paris",
+            location: "Paris, France",
+            publishedAt: new Date("2026-01-01T09:00:00.000Z"),
+            processedAt: new Date("2026-01-01T09:01:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/paris",
+              crawlAt: new Date("2026-01-01T09:00:30.000Z"),
+              titleGuess: null,
+            },
+          },
+          {
+            id: "marker-tokyo",
+            title: "Tokyo",
+            location: "Tokyo, Japan",
+            publishedAt: new Date("2026-01-01T10:00:00.000Z"),
+            processedAt: new Date("2026-01-01T10:01:00.000Z"),
+            entities: [],
+            article: {
+              url: "https://example.com/tokyo",
+              crawlAt: new Date("2026-01-01T10:00:30.000Z"),
+              titleGuess: null,
+            },
+          },
+        ]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest
+        .fn()
+        .mockImplementation(async (candidates: string[]) => {
+          const target = candidates.join(" ").toLowerCase();
+          if (target.includes("tokyo")) {
+            return {
+              lat: 35.6762,
+              lng: 139.6503,
+              displayName: "Tokyo, Japan",
+            };
+          }
+          return {
+            lat: 48.8566,
+            lng: 2.3522,
+            displayName: "Paris, France",
+          };
+        }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const result = await service.getWarMapNewsMarkers(range, "org-1", {
+      cluster: false,
+      bbox: [-10, 40, 20, 60],
+    });
+
+    expect(result.clustered).toBe(false);
+    expect(result.markers).toHaveLength(1);
+    expect(result.markers[0]?.id).toBe("marker-paris");
+  });
+
   it("selects sector heatmap sourceField from item metadata preference (supports label->field mapping)", async () => {
     const prisma = {
       economicDataItem: {

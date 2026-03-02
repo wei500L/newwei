@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { auth } from "@/lib/auth";
 import { ThemeProvider } from "@/hooks/use-theme";
 
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import { AppProviders } from "./providers";
 import { SessionProviders } from "./session-provider";

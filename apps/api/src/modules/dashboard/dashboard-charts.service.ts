@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { AlertSeverity, ProcessedArticleStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
+import Supercluster from "supercluster";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
@@ -33,6 +34,12 @@ const HEATMAP_COLUMNS = 4;
 const MAX_SECTOR_CELLS = 8;
 const MAX_WAR_MAP_NEWS_MARKERS = 500;
 const MAX_WAR_MAP_NEWS_GEOCODE_NETWORK = 3;
+const DEFAULT_WAR_MAP_CLUSTER_ZOOM = 2;
+const MAX_WAR_MAP_CLUSTER_ZOOM = 16;
+const WAR_MAP_CLUSTER_RADIUS = 60;
+const DEFAULT_WAR_MAP_BBOX: [number, number, number, number] = [
+  -180, -85, 180, 85,
+];
 const MAX_SPACETIME_GEO_RECORDS = 2000;
 const MAX_SPACETIME_GEO_LOCATIONS = 500;
 const MAX_SPACETIME_GEO_POINTS = 300;
@@ -345,6 +352,9 @@ interface WarMapEvent {
   lat: number;
   lng: number;
   severity: AlertSeverity;
+  isCluster?: boolean;
+  clusterId?: number;
+  clusterCount?: number;
   /**
    * Aggregated score for the location, derived from alert severities.
    * Current algorithm: sum of severity ranks (low=1, medium=2, high=3).
@@ -359,6 +369,7 @@ interface WarMapEvent {
 export interface WarMapEventsResponse {
   events: WarMapEvent[];
   updatedAt?: string;
+  clustered?: boolean;
 }
 
 type WarMapNewsGeoSource = "geocoded" | "fallback-country";
@@ -377,15 +388,22 @@ interface WarMapNewsMarker {
   displayName?: string;
   displayNameZh?: string;
   geoSource: WarMapNewsGeoSource;
+  isCluster?: boolean;
+  clusterId?: number;
+  clusterCount?: number;
 }
 
 export interface WarMapNewsMarkersResponse {
   markers: WarMapNewsMarker[];
   updatedAt?: string;
+  clustered?: boolean;
 }
 
 interface WarMapNewsMarkersOptions {
   translateTarget?: "zh-CN";
+  bbox?: [number, number, number, number];
+  zoom?: number;
+  cluster?: boolean;
 }
 
 interface WarMapLayersOptions {
@@ -394,6 +412,9 @@ interface WarMapLayersOptions {
 
 interface WarMapEventsOptions {
   translateTarget?: "zh-CN";
+  bbox?: [number, number, number, number];
+  zoom?: number;
+  cluster?: boolean;
 }
 
 export type SpacetimeSentimentLabel =
@@ -622,6 +643,37 @@ const alertSeverityByRank: Record<number, AlertSeverity> = {
   3: AlertSeverity.high,
 };
 
+interface WarMapEventClusterPointProperties {
+  eventId: string;
+  count: number;
+  derivedScore: number;
+  alertScore: number;
+  alertCount: number;
+  newsCount: number;
+  maxSeverityRank: number;
+  latestEpoch: number;
+}
+
+interface WarMapNewsClusterPointProperties {
+  markerId: string;
+  count: number;
+  latestEpoch: number;
+}
+
+const isWarMapClusterFeature = (
+  properties: Record<string, unknown> | null | undefined,
+): properties is Record<string, unknown> & {
+  cluster: true;
+  cluster_id: number;
+  point_count: number;
+} =>
+  Boolean(
+    properties &&
+      properties.cluster === true &&
+      typeof properties.cluster_id === "number" &&
+      typeof properties.point_count === "number",
+  );
+
 @Injectable()
 export class DashboardChartsService {
   private geoIndex: Map<
@@ -671,6 +723,260 @@ export class DashboardChartsService {
     } catch {
       return false;
     }
+  }
+
+  private resolveWarMapClusterBbox(
+    bbox?: [number, number, number, number],
+  ): [number, number, number, number] {
+    if (!bbox) {
+      return DEFAULT_WAR_MAP_BBOX;
+    }
+    const [minLng, minLat, maxLng, maxLat] = bbox;
+    return [
+      clampFinite(minLng, -180, 180),
+      clampFinite(minLat, -90, 90),
+      clampFinite(maxLng, -180, 180),
+      clampFinite(maxLat, -90, 90),
+    ];
+  }
+
+  private resolveWarMapClusterZoom(zoom?: number): number {
+    const normalized =
+      typeof zoom === "number" && Number.isFinite(zoom)
+        ? Math.round(zoom)
+        : DEFAULT_WAR_MAP_CLUSTER_ZOOM;
+    return Math.max(0, Math.min(MAX_WAR_MAP_CLUSTER_ZOOM, normalized));
+  }
+
+  private isWithinWarMapBbox(
+    lat: number,
+    lng: number,
+    bbox: [number, number, number, number],
+  ): boolean {
+    const [minLng, minLat, maxLng, maxLat] = bbox;
+    return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
+  }
+
+  private filterWarMapPointsByBbox<T extends { lat: number; lng: number }>(
+    points: T[],
+    bbox?: [number, number, number, number],
+  ): T[] {
+    if (!bbox) {
+      return points;
+    }
+    return points.filter((point) =>
+      this.isWithinWarMapBbox(point.lat, point.lng, bbox),
+    );
+  }
+
+  private clusterWarMapEvents(
+    events: WarMapEvent[],
+    options: Pick<WarMapEventsOptions, "bbox" | "zoom" | "cluster">,
+  ): WarMapEvent[] {
+    const filteredEvents = this.filterWarMapPointsByBbox(events, options.bbox);
+    if (!options.cluster) {
+      return filteredEvents;
+    }
+    if (filteredEvents.length === 0) {
+      return [];
+    }
+
+    const index = new Supercluster<
+      WarMapEventClusterPointProperties,
+      WarMapEventClusterPointProperties
+    >({
+      radius: WAR_MAP_CLUSTER_RADIUS,
+      maxZoom: MAX_WAR_MAP_CLUSTER_ZOOM,
+      minPoints: 2,
+      map: (props) => ({ ...props }),
+      reduce: (acc, props) => {
+        acc.count += props.count;
+        acc.derivedScore += props.derivedScore;
+        acc.alertScore += props.alertScore;
+        acc.alertCount += props.alertCount;
+        acc.newsCount += props.newsCount;
+        acc.maxSeverityRank = Math.max(acc.maxSeverityRank, props.maxSeverityRank);
+        acc.latestEpoch = Math.max(acc.latestEpoch, props.latestEpoch);
+      },
+    });
+
+    const eventById = new Map<string, WarMapEvent>();
+    const features = filteredEvents.map((event) => {
+      eventById.set(event.id, event);
+      const latestEpoch = Date.now();
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [event.lng, event.lat],
+        },
+        properties: {
+          eventId: event.id,
+          count: 1,
+          derivedScore: event.derivedScore,
+          alertScore: event.alertScore ?? 0,
+          alertCount: event.alertCount ?? 0,
+          newsCount: event.newsCount ?? 0,
+          maxSeverityRank: alertSeverityRank[event.severity] ?? 1,
+          latestEpoch,
+        },
+      };
+    });
+
+    index.load(features as never);
+
+    const clusterZoom = this.resolveWarMapClusterZoom(options.zoom);
+    const clusterBbox = this.resolveWarMapClusterBbox(options.bbox);
+    const clusteredFeatures = index.getClusters(clusterBbox, clusterZoom);
+
+    const result: WarMapEvent[] = [];
+    for (const feature of clusteredFeatures) {
+      const properties =
+        feature.properties &&
+        typeof feature.properties === "object" &&
+        !Array.isArray(feature.properties)
+          ? (feature.properties as Record<string, unknown>)
+          : null;
+      if (isWarMapClusterFeature(properties)) {
+        const maxSeverityRank =
+          typeof properties.maxSeverityRank === "number"
+            ? properties.maxSeverityRank
+            : 1;
+        const severity =
+          alertSeverityByRank[Math.max(1, Math.round(maxSeverityRank))] ??
+          AlertSeverity.low;
+        const derivedScore =
+          typeof properties.derivedScore === "number"
+            ? Number(properties.derivedScore.toFixed(2))
+            : properties.point_count;
+        const alertScore =
+          typeof properties.alertScore === "number"
+            ? Number(properties.alertScore.toFixed(2))
+            : undefined;
+        const alertCount =
+          typeof properties.alertCount === "number"
+            ? Math.round(properties.alertCount)
+            : undefined;
+        const newsCount =
+          typeof properties.newsCount === "number"
+            ? Math.round(properties.newsCount)
+            : undefined;
+        result.push({
+          id: `cluster-${properties.cluster_id}`,
+          name: `Cluster (${properties.point_count})`,
+          lat: feature.geometry.coordinates[1],
+          lng: feature.geometry.coordinates[0],
+          severity,
+          isCluster: true,
+          clusterId: properties.cluster_id,
+          clusterCount: properties.point_count,
+          derivedScore,
+          value: derivedScore,
+          alertScore,
+          alertCount,
+          newsCount,
+        });
+        continue;
+      }
+
+      const eventId = typeof properties?.eventId === "string" ? properties.eventId : "";
+      const event = eventById.get(eventId);
+      if (event) {
+        result.push(event);
+      }
+    }
+
+    return result;
+  }
+
+  private clusterWarMapNewsMarkers(
+    markers: WarMapNewsMarker[],
+    options: Pick<WarMapNewsMarkersOptions, "bbox" | "zoom" | "cluster">,
+  ): WarMapNewsMarker[] {
+    const filteredMarkers = this.filterWarMapPointsByBbox(markers, options.bbox);
+    if (!options.cluster) {
+      return filteredMarkers;
+    }
+    if (filteredMarkers.length === 0) {
+      return [];
+    }
+
+    const index = new Supercluster<
+      WarMapNewsClusterPointProperties,
+      WarMapNewsClusterPointProperties
+    >({
+      radius: WAR_MAP_CLUSTER_RADIUS,
+      maxZoom: MAX_WAR_MAP_CLUSTER_ZOOM,
+      minPoints: 2,
+      map: (props) => ({ ...props }),
+      reduce: (acc, props) => {
+        acc.count += props.count;
+        acc.latestEpoch = Math.max(acc.latestEpoch, props.latestEpoch);
+      },
+    });
+
+    const markerById = new Map<string, WarMapNewsMarker>();
+    const features = filteredMarkers.map((marker) => {
+      markerById.set(marker.id, marker);
+      const latestIso = marker.publishedAt ?? marker.ingestedAt;
+      const latestEpoch = latestIso ? Date.parse(latestIso) : Date.now();
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [marker.lng, marker.lat],
+        },
+        properties: {
+          markerId: marker.id,
+          count: 1,
+          latestEpoch: Number.isFinite(latestEpoch) ? latestEpoch : Date.now(),
+        },
+      };
+    });
+
+    index.load(features as never);
+
+    const clusterZoom = this.resolveWarMapClusterZoom(options.zoom);
+    const clusterBbox = this.resolveWarMapClusterBbox(options.bbox);
+    const clusteredFeatures = index.getClusters(clusterBbox, clusterZoom);
+
+    const result: WarMapNewsMarker[] = [];
+    for (const feature of clusteredFeatures) {
+      const properties =
+        feature.properties &&
+        typeof feature.properties === "object" &&
+        !Array.isArray(feature.properties)
+          ? (feature.properties as Record<string, unknown>)
+          : null;
+      if (isWarMapClusterFeature(properties)) {
+        const latestEpoch =
+          typeof properties.latestEpoch === "number"
+            ? properties.latestEpoch
+            : Date.now();
+        result.push({
+          id: `cluster-${properties.cluster_id}`,
+          title: `Cluster (${properties.point_count})`,
+          location: "Multiple locations",
+          lat: feature.geometry.coordinates[1],
+          lng: feature.geometry.coordinates[0],
+          geoSource: "geocoded",
+          isCluster: true,
+          clusterId: properties.cluster_id,
+          clusterCount: properties.point_count,
+          publishedAt: new Date(latestEpoch).toISOString(),
+        });
+        continue;
+      }
+
+      const markerId =
+        typeof properties?.markerId === "string" ? properties.markerId : "";
+      const marker = markerById.get(markerId);
+      if (marker) {
+        result.push(marker);
+      }
+    }
+
+    return result;
   }
 
   resolveRange(query: DashboardTimeRangeQueryDto): DateRange {
@@ -1020,9 +1326,12 @@ export class DashboardChartsService {
       }
     }
 
+    const shapedEvents = this.clusterWarMapEvents(events, options);
+
     return {
-      events,
+      events: shapedEvents,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
+      clustered: options.cluster === true,
     };
   }
 
@@ -1334,9 +1643,12 @@ export class DashboardChartsService {
       }
     }
 
+    const shapedMarkers = this.clusterWarMapNewsMarkers(markers, options);
+
     return {
-      markers,
+      markers: shapedMarkers,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
+      clustered: options.cluster === true,
     };
   }
 

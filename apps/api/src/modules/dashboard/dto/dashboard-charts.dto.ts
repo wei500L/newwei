@@ -21,6 +21,30 @@ export class DashboardWarMapQueryDto extends DashboardTimeRangeQueryDto {
   @IsOptional()
   @IsString()
   translate?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional bounding box in minLng,minLat,maxLng,maxLat format.",
+    example: "-130,20,-60,55",
+  })
+  @IsOptional()
+  @IsString()
+  bbox?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional map zoom level for clustering and detail shaping.",
+    example: "3.5",
+  })
+  @IsOptional()
+  @IsString()
+  zoom?: string;
+
+  @ApiPropertyOptional({
+    description: "Set to 1/true to request cluster output.",
+    example: "1",
+  })
+  @IsOptional()
+  @IsString()
+  cluster?: string;
 }
 
 export class DashboardWarMapNewsMarkersQueryDto extends DashboardWarMapQueryDto {}

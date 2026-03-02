@@ -1,3 +1,10 @@
+import {
+  type WarMapLayerDataset,
+  type WarMapLayerFeature,
+  type WarMapLayerId,
+  WAR_MAP_LAYER_IDS,
+} from "@modular/utils";
+
 export type WarMapThreatLevel = "critical" | "high" | "elevated" | "low";
 
 export interface WarMapHotspot {
@@ -31,6 +38,7 @@ export interface WarMapStrategicPoint {
 
 export interface WarMapLayersResponse {
   updatedAt: string;
+  layers: Record<WarMapLayerId, WarMapLayerDataset>;
   threatColors: Record<WarMapThreatLevel, string>;
   hotspots: WarMapHotspot[];
   conflictZones: WarMapConflictZone[];
@@ -48,6 +56,17 @@ export const WAR_MAP_THREAT_COLORS: Record<WarMapThreatLevel, string> = {
 } as const;
 
 const UPDATED_AT = new Date().toISOString();
+
+const DEFAULT_GEOMETRY_BY_LAYER: Partial<
+  Record<WarMapLayerId, WarMapLayerDataset["geometryType"]>
+> = {
+  conflicts: "polygon",
+  cables: "path",
+  pipelines: "path",
+  waterways: "point",
+  tradeRoutes: "path",
+  dayNight: "raster",
+};
 
 export const WAR_MAP_HOTSPOTS: WarMapHotspot[] = [
   {
@@ -501,18 +520,135 @@ export const WAR_MAP_MILITARY_BASES: WarMapStrategicPoint[] = [
   },
 ];
 
+function cloneHotspot(item: WarMapHotspot): WarMapHotspot {
+  return { ...item };
+}
+
+function cloneConflictZone(item: WarMapConflictZone): WarMapConflictZone {
+  return {
+    ...item,
+    coords: item.coords.map((coord) => [...coord] as [number, number]),
+  };
+}
+
+function cloneStrategicPoint(item: WarMapStrategicPoint): WarMapStrategicPoint {
+  return { ...item };
+}
+
+function toPointFeature(
+  item: { id: string; lat: number; lng: number },
+  properties?: Record<string, unknown>,
+): WarMapLayerFeature {
+  return {
+    id: item.id,
+    lat: item.lat,
+    lng: item.lng,
+    properties,
+  };
+}
+
+function createBaseLayersMap(): Record<WarMapLayerId, WarMapLayerDataset> {
+  const base = {} as Record<WarMapLayerId, WarMapLayerDataset>;
+  for (const layerId of WAR_MAP_LAYER_IDS) {
+    base[layerId] = {
+      layerId,
+      geometryType: DEFAULT_GEOMETRY_BY_LAYER[layerId] ?? "point",
+      updatedAt: UPDATED_AT,
+      renderHints: {
+        pickable: true,
+      },
+      features: [],
+    };
+  }
+  return base;
+}
+
 export function buildWarMapLayersResponse(): WarMapLayersResponse {
+  const hotspots = WAR_MAP_HOTSPOTS.map(cloneHotspot);
+  const conflictZones = WAR_MAP_CONFLICT_ZONES.map(cloneConflictZone);
+  const chokepoints = WAR_MAP_CHOKEPOINTS.map(cloneStrategicPoint);
+  const cableLandings = WAR_MAP_CABLE_LANDINGS.map(cloneStrategicPoint);
+  const nuclearSites = WAR_MAP_NUCLEAR_SITES.map(cloneStrategicPoint);
+  const militaryBases = WAR_MAP_MILITARY_BASES.map(cloneStrategicPoint);
+
+  const layers = createBaseLayersMap();
+
+  layers.hotspots.features = hotspots.map((item) =>
+    toPointFeature(item, {
+      name: item.name,
+      nameZh: item.nameZh,
+      level: item.level,
+      description: item.description,
+      descriptionZh: item.descriptionZh,
+    }),
+  );
+  layers.hotspots.renderHints = {
+    color: WAR_MAP_THREAT_COLORS.elevated,
+    radiusScale: 1.25,
+    pickable: true,
+  };
+
+  layers.conflicts.features = conflictZones.map((item) => ({
+    id: item.id,
+    polygon: [item.coords.map((coord) => [...coord] as [number, number])],
+    properties: {
+      name: item.name,
+      nameZh: item.nameZh,
+      color: item.color,
+    },
+  }));
+  layers.conflicts.renderHints = {
+    color: "#ff4444",
+    opacity: 0.18,
+    pickable: true,
+  };
+
+  layers.waterways.features = chokepoints.map((item) =>
+    toPointFeature(item, {
+      name: item.name,
+      nameZh: item.nameZh,
+      description: item.description,
+      descriptionZh: item.descriptionZh,
+      category: "chokepoint",
+    }),
+  );
+  layers.cables.features = cableLandings.map((item) =>
+    toPointFeature(item, {
+      name: item.name,
+      nameZh: item.nameZh,
+      description: item.description,
+      descriptionZh: item.descriptionZh,
+      category: "cableLanding",
+    }),
+  );
+  layers.nuclear.features = nuclearSites.map((item) =>
+    toPointFeature(item, {
+      name: item.name,
+      nameZh: item.nameZh,
+      description: item.description,
+      descriptionZh: item.descriptionZh,
+      category: "nuclearSite",
+    }),
+  );
+  layers.bases.features = militaryBases.map((item) =>
+    toPointFeature(item, {
+      name: item.name,
+      nameZh: item.nameZh,
+      description: item.description,
+      descriptionZh: item.descriptionZh,
+      category: "militaryBase",
+    }),
+  );
+
   return {
     updatedAt: UPDATED_AT,
+    layers,
     threatColors: WAR_MAP_THREAT_COLORS,
-    hotspots: WAR_MAP_HOTSPOTS.map((item) => ({ ...item })),
-    conflictZones: WAR_MAP_CONFLICT_ZONES.map((item) => ({
-      ...item,
-      coords: item.coords.map((coord) => [...coord] as [number, number]),
-    })),
-    chokepoints: WAR_MAP_CHOKEPOINTS.map((item) => ({ ...item })),
-    cableLandings: WAR_MAP_CABLE_LANDINGS.map((item) => ({ ...item })),
-    nuclearSites: WAR_MAP_NUCLEAR_SITES.map((item) => ({ ...item })),
-    militaryBases: WAR_MAP_MILITARY_BASES.map((item) => ({ ...item })),
+    hotspots,
+    conflictZones,
+    chokepoints,
+    cableLandings,
+    nuclearSites,
+    militaryBases,
   };
 }
