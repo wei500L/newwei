@@ -1,8 +1,7 @@
 "use client";
 
-import { create } from "zustand";
-
 import type { Layout } from "react-grid-layout";
+import { create } from "zustand";
 
 export type SituationMonitorPanelId =
   | "map"
@@ -13,6 +12,8 @@ export type SituationMonitorPanelId =
   | "feeds-ai"
   | "feeds-intel"
   | "alerts"
+  | "telegram-feed"
+  | "oref-alerts"
   | "markets"
   | "crypto"
   | "fed"
@@ -20,6 +21,8 @@ export type SituationMonitorPanelId =
   | "situation-venezuela"
   | "situation-greenland"
   | "situation-iran"
+  | "live-news"
+  | "live-webcams"
   | "correlation"
   | "narrative"
   | "main-character"
@@ -93,81 +96,109 @@ export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] = 
     defaultLayout: { i: "alerts", x: 0, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
+    id: "telegram-feed",
+    title: "Telegram Early Signals",
+    titleKey: "situationMonitor.telegram.title",
+    defaultVisible: true,
+    defaultLayout: { i: "telegram-feed", x: 4, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
+  },
+  {
+    id: "oref-alerts",
+    title: "OREF Alerts",
+    titleKey: "situationMonitor.oref.title",
+    defaultVisible: true,
+    defaultLayout: { i: "oref-alerts", x: 8, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
+  },
+  {
     id: "markets",
     title: "Markets",
     titleKey: "situationMonitor.markets.title",
     defaultVisible: true,
-    defaultLayout: { i: "markets", x: 4, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
+    defaultLayout: { i: "markets", x: 0, y: 31, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "crypto",
     title: "Crypto",
     titleKey: "situationMonitor.crypto.title",
     defaultVisible: true,
-    defaultLayout: { i: "crypto", x: 8, y: 23, w: 4, h: 8, minW: 3, minH: 6 },
+    defaultLayout: { i: "crypto", x: 4, y: 31, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "fed",
     title: "Federal Reserve",
     titleKey: "situationMonitor.fed.title",
     defaultVisible: true,
-    defaultLayout: { i: "fed", x: 0, y: 31, w: 6, h: 10, minW: 4, minH: 7 },
+    defaultLayout: { i: "fed", x: 8, y: 31, w: 4, h: 8, minW: 4, minH: 7 },
   },
   {
     id: "leaders",
     title: "World Leaders",
     titleKey: "situationMonitor.leaders.title",
     defaultVisible: true,
-    defaultLayout: { i: "leaders", x: 6, y: 31, w: 6, h: 10, minW: 4, minH: 7 },
+    defaultLayout: { i: "leaders", x: 0, y: 39, w: 6, h: 10, minW: 4, minH: 7 },
   },
   {
     id: "situation-venezuela",
     title: "Venezuela Watch",
     titleKey: "situationMonitor.situations.venezuela",
     defaultVisible: true,
-    defaultLayout: { i: "situation-venezuela", x: 0, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
+    defaultLayout: { i: "situation-venezuela", x: 6, y: 39, w: 6, h: 10, minW: 3, minH: 6 },
   },
   {
     id: "situation-greenland",
     title: "Greenland Watch",
     titleKey: "situationMonitor.situations.greenland",
     defaultVisible: true,
-    defaultLayout: { i: "situation-greenland", x: 4, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
+    defaultLayout: { i: "situation-greenland", x: 0, y: 49, w: 4, h: 8, minW: 3, minH: 6 },
   },
   {
     id: "situation-iran",
     title: "Iran Crisis",
     titleKey: "situationMonitor.situations.iran",
     defaultVisible: true,
-    defaultLayout: { i: "situation-iran", x: 8, y: 41, w: 4, h: 8, minW: 3, minH: 6 },
+    defaultLayout: { i: "situation-iran", x: 4, y: 49, w: 4, h: 8, minW: 3, minH: 6 },
+  },
+  {
+    id: "live-news",
+    title: "Live News",
+    titleKey: "situationMonitor.liveNews.title",
+    defaultVisible: true,
+    defaultLayout: { i: "live-news", x: 8, y: 49, w: 4, h: 8, minW: 4, minH: 6 },
+  },
+  {
+    id: "live-webcams",
+    title: "Live Webcams",
+    titleKey: "situationMonitor.liveWebcams.title",
+    defaultVisible: true,
+    defaultLayout: { i: "live-webcams", x: 0, y: 57, w: 12, h: 10, minW: 6, minH: 7 },
   },
   {
     id: "correlation",
     title: "Correlation Engine",
     titleKey: "situationMonitor.correlation.title",
     defaultVisible: true,
-    defaultLayout: { i: "correlation", x: 0, y: 49, w: 8, h: 20, minW: 6, minH: 10 },
+    defaultLayout: { i: "correlation", x: 0, y: 67, w: 8, h: 20, minW: 6, minH: 10 },
   },
   {
     id: "narrative",
     title: "Narrative Tracker",
     titleKey: "situationMonitor.narrative.title",
     defaultVisible: true,
-    defaultLayout: { i: "narrative", x: 8, y: 49, w: 4, h: 12, minW: 4, minH: 8 },
+    defaultLayout: { i: "narrative", x: 8, y: 67, w: 4, h: 12, minW: 4, minH: 8 },
   },
   {
     id: "main-character",
     title: "Main Character",
     titleKey: "situationMonitor.mainCharacter.title",
     defaultVisible: true,
-    defaultLayout: { i: "main-character", x: 8, y: 61, w: 4, h: 8, minW: 4, minH: 6 },
+    defaultLayout: { i: "main-character", x: 8, y: 79, w: 4, h: 8, minW: 4, minH: 6 },
   },
   {
     id: "monitors",
     title: "My Monitors",
     titleKey: "situationMonitor.monitors.title",
     defaultVisible: true,
-    defaultLayout: { i: "monitors", x: 0, y: 69, w: 12, h: 10, minW: 6, minH: 7 },
+    defaultLayout: { i: "monitors", x: 0, y: 87, w: 12, h: 10, minW: 6, minH: 7 },
   },
 ] as const;
 
@@ -204,6 +235,9 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
       "feeds-ai",
       "feeds-intel",
       "alerts",
+      "telegram-feed",
+      "oref-alerts",
+      "live-news",
       "monitors"
     ]
   },
@@ -227,10 +261,13 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
       "feeds-gov",
       "feeds-intel",
       "alerts",
+      "telegram-feed",
+      "oref-alerts",
       "leaders",
       "situation-venezuela",
       "situation-greenland",
       "situation-iran",
+      "live-webcams",
       "correlation",
       "narrative"
     ]
@@ -241,7 +278,7 @@ export const SITUATION_MONITOR_PRESETS: readonly SituationMonitorPreset[] = [
     nameKey: "situationMonitor.presets.intel.name",
     description: "Deep analysis: correlation, narratives, and key figures.",
     descriptionKey: "situationMonitor.presets.intel.description",
-    panels: ["map", "feeds-intel", "correlation", "narrative", "leaders", "main-character", "monitors"]
+    panels: ["map", "feeds-intel", "telegram-feed", "correlation", "narrative", "leaders", "main-character", "monitors"]
   },
   {
     id: "minimal",

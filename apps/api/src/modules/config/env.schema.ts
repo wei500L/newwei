@@ -380,6 +380,81 @@ export const apiEnvSchema = baseEnvSchema.extend({
       typeof value === "string" && value.trim() === "" ? undefined : value,
     z.string().url().optional(),
   ),
+  SITUATION_MONITOR_TELEGRAM_ENABLED: envBoolean.default(false),
+  SITUATION_MONITOR_TELEGRAM_API_ID: z.string().optional(),
+  SITUATION_MONITOR_TELEGRAM_API_HASH: z.string().optional(),
+  SITUATION_MONITOR_TELEGRAM_SESSION: z.string().optional(),
+  SITUATION_MONITOR_TELEGRAM_CHANNEL_SET: z.string().default("full"),
+  SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(200),
+  SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(800),
+  SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15_000),
+  SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(180_000),
+  SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(60_000),
+  SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(800),
+  SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  SITUATION_MONITOR_OREF_ENABLED: envBoolean.default(false),
+  SITUATION_MONITOR_OREF_PROXY_AUTH: z.string().optional(),
+  SITUATION_MONITOR_OREF_ALERTS_URL: z
+    .string()
+    .url()
+    .default("https://www.oref.org.il/WarningMessages/alert/alerts.json"),
+  SITUATION_MONITOR_OREF_HISTORY_URL: z
+    .string()
+    .url()
+    .default("https://www.oref.org.il/WarningMessages/alert/History/AlertsHistory.json"),
+  SITUATION_MONITOR_OREF_HISTORY_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(7),
+  SITUATION_MONITOR_OREF_HISTORY_MAX_WAVES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(200),
+  SITUATION_MONITOR_OREF_CURL_TIMEOUT_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(15),
+  SITUATION_MONITOR_OREF_BOOTSTRAP_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3),
+  SITUATION_MONITOR_OREF_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000),
   NEWS_PIPELINE_CACHE_TTL_SECONDS: z.coerce
     .number()
     .int()

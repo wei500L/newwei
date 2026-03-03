@@ -87,6 +87,7 @@
     "socket.io": "^4.8.1",
     "swagger-ui-express": "^5.0.0",
     "supercluster": "^8.0.1",
+    "telegram": "^2.26.22",
     "winston": "^3.13.0",
     "ws": "^8.17.0",
     "yaml": "^2.4.2",

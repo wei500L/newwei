@@ -7066,6 +7066,26 @@
       "title": "预警",
       "empty": "当前窗口内暂无预警。"
     },
+    "telegram": {
+      "title": "Telegram 早期信号",
+      "configMissing": "未配置",
+      "disabled": "已禁用",
+      "configHint": "请在环境变量中配置 Telegram API 凭据与 session。",
+      "empty": "暂无 Telegram 信号。",
+      "filters": {
+        "label": "筛选",
+        "allTopics": "全部主题",
+        "allChannels": "全部频道"
+      }
+    },
+    "oref": {
+      "title": "OREF 告警",
+      "history24h": "24小时 {{count}}",
+      "configHint": "请在环境变量中配置 OREF 代理认证并启用 OREF 轮询。",
+      "empty": "暂无 OREF 活跃告警。",
+      "recentWaves": "最近波次",
+      "recent": "最新"
+    },
     "markets": {
       "title": "市场",
       "missingKey": "需要 API Key",
@@ -7103,6 +7123,34 @@
     "map": {
       "title": "全球地图"
     },
+    "liveNews": {
+      "title": "实时新闻直播",
+      "hlsFallback": "HLS 回退",
+      "hlsCooldown": "HLS 冷却中",
+      "unavailable": "直播已暂停",
+      "idle": "空闲暂停：移动鼠标或按键后恢复。",
+      "hidden": "后台标签页：直播已暂停。",
+      "region": {
+        "global": "全球",
+        "europe": "欧洲",
+        "americas": "美洲",
+        "middleEast": "中东",
+        "asia": "亚洲"
+      }
+    },
+    "liveWebcams": {
+      "title": "实时摄像头",
+      "idle": "空闲暂停：移动鼠标或按键后恢复摄像头。",
+      "hidden": "后台标签页：摄像头已暂停。",
+      "region": {
+        "iran": "伊朗袭击",
+        "all": "全部",
+        "middleEast": "中东",
+        "europe": "欧洲",
+        "americas": "美洲",
+        "asia": "亚洲"
+      }
+    },
     "window": {
       "6h": "近6小时",
       "24h": "近24小时",
@@ -7128,6 +7176,11 @@
       "external": "加载外部数据"
     },
     "sampleSize": "分析条目：{{count}}",
+    "realtime": {
+      "connected": "实时在线",
+      "disconnected": "实时离线",
+      "error": "实时错误"
+    },
     "presets": {
       "title": "预设",
       "custom": "自定义",

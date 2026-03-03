@@ -2,13 +2,28 @@ import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 import os from "node:os";
 
+import { CacheService } from "../../cache/cache.service";
+import {
+  SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG,
+  SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG,
+  SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
+} from "../../situation-monitor/signal-metrics.constants";
+
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
 
-type MetricFetcher = () => MetricEvaluation;
+interface OrefMetricsSnapshot {
+  activeAlerts?: number;
+  historyCount24h?: number;
+  updatedAt?: string;
+}
+
+type MetricFetcher = () => MetricEvaluation | Promise<MetricEvaluation>;
 
 @Injectable()
 export class SystemMetricProvider implements MetricProvider {
   readonly type = AlertMetricProvider.system_metric;
+
+  constructor(private readonly cache: CacheService) {}
 
   private readonly metricFetchers: Record<string, MetricFetcher> = {
     "system.memory.usage_pct": () => {
@@ -30,7 +45,11 @@ export class SystemMetricProvider implements MetricProvider {
     "system.uptime.seconds": () => {
       const uptime = os.uptime();
       return { latest: uptime, previous: null, changePercent: null, context: { uptime } };
-    }
+    },
+    [SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG]: async () =>
+      this.readOrefMetricSnapshot("activeAlerts"),
+    [SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG]: async () =>
+      this.readOrefMetricSnapshot("historyCount24h"),
   };
 
   supports(rule: Pick<AlertRule, "metricProvider">) {
@@ -54,6 +73,35 @@ export class SystemMetricProvider implements MetricProvider {
     if (!fetcher) {
       return { latest: null, previous: null, changePercent: null, context: { error: "unknown system metric" } };
     }
-    return fetcher();
+
+    return await fetcher();
+  }
+
+  private async readOrefMetricSnapshot(
+    key: "activeAlerts" | "historyCount24h",
+  ): Promise<MetricEvaluation> {
+    const snapshot = await this.cache.get<OrefMetricsSnapshot>(
+      SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
+    );
+    if (!snapshot) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metrics_unavailable" },
+      };
+    }
+
+    const value = Number(snapshot[key]);
+    return {
+      latest: Number.isFinite(value) ? value : null,
+      previous: null,
+      changePercent: null,
+      context: {
+        source: "situation-monitor-signals",
+        updatedAt:
+          typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : undefined,
+      },
+    };
   }
 }

@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
+import { SituationMonitorSignalsService } from "./signals/situation-monitor-signals.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
 import { SituationMonitorService } from "./situation-monitor.service";
@@ -48,6 +49,34 @@ function parseSections(value: unknown): string[] | undefined {
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
   return parts.length > 0 ? Array.from(new Set(parts)) : undefined;
+}
+
+function parsePositiveInt(value: unknown, bounds: { min: number; max: number }): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = Math.floor(value);
+    if (normalized < bounds.min || normalized > bounds.max) {
+      return undefined;
+    }
+    return normalized;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return undefined;
+    }
+    const normalized = Math.floor(parsed);
+    if (normalized < bounds.min || normalized > bounds.max) {
+      return undefined;
+    }
+    return normalized;
+  }
+
+  return undefined;
 }
 
 function parseScope(value: unknown): "tagged" | "all" | undefined {
@@ -95,6 +124,7 @@ export class SituationMonitorController {
     private readonly monitor: SituationMonitorService,
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly translator: SituationMonitorTranslationService,
+    private readonly signals: SituationMonitorSignalsService,
   ) {}
 
   @Get("insights")
@@ -155,5 +185,33 @@ export class SituationMonitorController {
       itemSource: body.itemSource,
       note: body.note,
     });
+  }
+
+  @Get("telegram-feed")
+  @Permissions("items.read")
+  async telegramFeed(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    void user;
+    return await this.signals.getTelegramFeed({
+      limit: parsePositiveInt(query.limit, { min: 1, max: 200 }),
+      topic: typeof query.topic === "string" ? query.topic : undefined,
+      channel: typeof query.channel === "string" ? query.channel : undefined,
+    });
+  }
+
+  @Get("oref-alerts")
+  @Permissions("items.read")
+  async orefAlerts(@CurrentUser() user: AuthenticatedUser) {
+    void user;
+    return await this.signals.getOrefAlerts();
+  }
+
+  @Get("oref-history")
+  @Permissions("items.read")
+  async orefHistory(@CurrentUser() user: AuthenticatedUser) {
+    void user;
+    return await this.signals.getOrefHistory();
   }
 }
