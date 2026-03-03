@@ -3059,6 +3059,42 @@
         "custom": "自定义"
       }
     },
+    "newsClassification": {
+      "description": "配置多层新闻分类能力（LLM + Embedding + Reranker）与分类法。",
+      "notice": {
+        "title": "执行行为",
+        "body": "严格模式下，只要任一已启用分类层失败，整条流水线将中止。"
+      },
+      "fields": {
+        "enabled": "启用",
+        "strictFail": "严格失败",
+        "enableLlm": "启用 LLM 层",
+        "enableEmbedding": "启用 Embedding 层",
+        "enableRerank": "启用 Reranker 层",
+        "llmModel": "覆盖 LLM 模型（可选）",
+        "minConfidence": "最低置信度",
+        "embeddingTopK": "Embedding Top-K",
+        "rerankTopN": "Rerank Top-N",
+        "cacheTtlSeconds": "缓存 TTL（秒）",
+        "taxonomyVersion": "分类法版本",
+        "taxonomyJson": "分类法 JSON"
+      },
+      "hints": {
+        "taxonomyJson": "请提供 taxonomy 节点的 JSON 数组，节点需包含 path/displayName/description/legacyCategory/keywords/synonyms。"
+      },
+      "messages": {
+        "saved": "已保存",
+        "saveFailed": "分类设置保存失败",
+        "loadFailed": "加载设置失败"
+      },
+      "validation": {
+        "required": "必填",
+        "invalidJson": "分类法 JSON 格式错误。",
+        "mustBeArray": "分类法 JSON 必须是数组。",
+        "minItems": "分类法至少需要一个节点。",
+        "nodeInvalid": "分类法第 {{index}} 个节点无效：{{field}}。"
+      }
+    },
     "newsEventSourcePolicy": {
       "description": "管理时间线权威来源识别所使用的权威来源白名单与博客/自媒体黑名单。",
       "notice": {
@@ -4072,6 +4108,7 @@
       "newsEventSourcePolicy": "新闻来源策略",
       "newsIndicator": "新闻-指标",
       "newsDedupe": "新闻去重",
+      "newsClassification": "新闻分类",
       "newsPrompts": "新闻提示词",
       "llmGateway": "LLM 网关",
       "llmRequestLogs": "LLM 请求日志",

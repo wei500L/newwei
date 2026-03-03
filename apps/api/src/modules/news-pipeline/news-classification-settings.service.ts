@@ -1,5 +1,5 @@
 import { createLogger } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
@@ -246,6 +246,7 @@ export class NewsClassificationSettingsService {
     input: NewsClassificationSettingsInput,
   ): Promise<NewsClassificationSettings> {
     const current = await this.getSettings(orgId);
+    this.validateUpdateInput(input, current);
     const normalized = this.normalizeSettings(input, current);
     const key = this.systemSettingKey(orgId);
 
@@ -294,7 +295,14 @@ export class NewsClassificationSettingsService {
       },
     );
 
-    await this.cache.set(this.cacheKey(orgId), normalized, SETTINGS_CACHE_TTL_SECONDS);
+    try {
+      await this.cache.set(this.cacheKey(orgId), normalized, SETTINGS_CACHE_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, orgId },
+        "Failed to write news classification settings to cache after update",
+      );
+    }
     return normalized;
   }
 
@@ -409,6 +417,104 @@ export class NewsClassificationSettingsService {
     return Array.from(dedup.values()).sort((a, b) => a.path.localeCompare(b.path));
   }
 
+  private validateUpdateInput(
+    value: NewsClassificationSettingsInput,
+    fallback: NewsClassificationSettings,
+  ) {
+    const enabled = this.asBoolean(value.enabled, fallback.enabled);
+    const enableLlm = this.asBoolean(value.enableLlm, fallback.enableLlm);
+    const enableEmbedding = this.asBoolean(
+      value.enableEmbedding,
+      fallback.enableEmbedding,
+    );
+    const enableRerank = this.asBoolean(value.enableRerank, fallback.enableRerank);
+    if (enabled && !enableLlm && !enableEmbedding && !enableRerank) {
+      throw new BadRequestException(
+        "At least one classification layer must be enabled when classification is enabled",
+      );
+    }
+
+    if (value.taxonomy === undefined) {
+      return;
+    }
+
+    if (!Array.isArray(value.taxonomy)) {
+      throw new BadRequestException("taxonomy must be an array");
+    }
+
+    if (value.taxonomy.length === 0) {
+      throw new BadRequestException("taxonomy must contain at least one node");
+    }
+
+    if (value.taxonomy.length > MAX_TAXONOMY_NODES) {
+      throw new BadRequestException(
+        `taxonomy must contain at most ${MAX_TAXONOMY_NODES} nodes`,
+      );
+    }
+
+    const dedup = new Set<string>();
+    for (let index = 0; index < value.taxonomy.length; index += 1) {
+      const node = value.taxonomy[index];
+      if (!node || typeof node !== "object" || Array.isArray(node)) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} must be an object`,
+        );
+      }
+
+      const path = this.assertRequiredString(
+        node.path,
+        MAX_TAXONOMY_PATH_LENGTH,
+        "path",
+        index,
+      );
+      const normalizedPath = this.normalizePath(path);
+      if (!normalizedPath) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} path is invalid`,
+        );
+      }
+      if (normalizedPath !== path) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} path must be lowercase slash-separated slug format`,
+        );
+      }
+      if (dedup.has(normalizedPath)) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} path duplicates an earlier node`,
+        );
+      }
+      dedup.add(normalizedPath);
+
+      this.assertRequiredString(
+        node.displayName,
+        MAX_TAXONOMY_TEXT_LENGTH,
+        "displayName",
+        index,
+      );
+      this.assertRequiredString(
+        node.description,
+        MAX_TAXONOMY_TEXT_LENGTH,
+        "description",
+        index,
+      );
+
+      const legacyCategoryRaw = this.assertRequiredString(
+        node.legacyCategory,
+        32,
+        "legacyCategory",
+        index,
+      );
+      if (!LEGACY_CATEGORIES.has(legacyCategoryRaw as NewsLegacyCategory)) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} legacyCategory must be one of politics|tech|finance|gov|ai|intel`,
+        );
+      }
+
+      this.assertStringList(node.keywords, "keywords", index);
+      this.assertStringList(node.synonyms, "synonyms", index);
+    }
+  }
+
   private normalizePath(value: unknown): string | null {
     if (typeof value !== "string") {
       return null;
@@ -437,6 +543,65 @@ export class NewsClassificationSettingsService {
       return null;
     }
     return normalized as NewsLegacyCategory;
+  }
+
+  private assertRequiredString(
+    value: unknown,
+    maxLength: number,
+    field: string,
+    index: number,
+  ): string {
+    if (typeof value !== "string") {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must be a string`,
+      );
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} is required`,
+      );
+    }
+    if (trimmed.length > maxLength) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} exceeds ${maxLength} characters`,
+      );
+    }
+    return trimmed;
+  }
+
+  private assertStringList(value: unknown, field: string, index: number) {
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must be an array`,
+      );
+    }
+    if (value.length > MAX_LIST_SIZE) {
+      throw new BadRequestException(
+        `taxonomy node #${index + 1} ${field} must contain at most ${MAX_LIST_SIZE} entries`,
+      );
+    }
+    for (const entry of value) {
+      if (typeof entry !== "string") {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} must contain only strings`,
+        );
+      }
+      const trimmed = entry.trim();
+      if (!trimmed) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} must not contain empty strings`,
+        );
+      }
+      if (trimmed.length > MAX_LIST_ITEM_LENGTH) {
+        throw new BadRequestException(
+          `taxonomy node #${index + 1} ${field} entries exceed ${MAX_LIST_ITEM_LENGTH} characters`,
+        );
+      }
+    }
   }
 
   private normalizeStringList(value: unknown): string[] {

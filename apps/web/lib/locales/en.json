@@ -3059,6 +3059,42 @@
         "custom": "Custom"
       }
     },
+    "newsClassification": {
+      "description": "Configure multi-layer news classification (LLM + Embedding + Reranker) and taxonomy.",
+      "notice": {
+        "title": "Execution behavior",
+        "body": "Strict mode stops the pipeline when any enabled classification layer fails."
+      },
+      "fields": {
+        "enabled": "Enabled",
+        "strictFail": "Strict fail",
+        "enableLlm": "Enable LLM layer",
+        "enableEmbedding": "Enable Embedding layer",
+        "enableRerank": "Enable Reranker layer",
+        "llmModel": "Override LLM model (optional)",
+        "minConfidence": "Minimum confidence",
+        "embeddingTopK": "Embedding Top-K",
+        "rerankTopN": "Rerank Top-N",
+        "cacheTtlSeconds": "Cache TTL (seconds)",
+        "taxonomyVersion": "Taxonomy version",
+        "taxonomyJson": "Taxonomy JSON"
+      },
+      "hints": {
+        "taxonomyJson": "Provide a JSON array of taxonomy nodes with path/displayName/description/legacyCategory/keywords/synonyms."
+      },
+      "messages": {
+        "saved": "Saved",
+        "saveFailed": "Failed to save classification settings",
+        "loadFailed": "Failed to load settings"
+      },
+      "validation": {
+        "required": "Required",
+        "invalidJson": "Taxonomy JSON is invalid.",
+        "mustBeArray": "Taxonomy JSON must be a JSON array.",
+        "minItems": "Taxonomy must contain at least one node.",
+        "nodeInvalid": "Taxonomy node #{{index}} is invalid: {{field}}."
+      }
+    },
     "newsEventSourcePolicy": {
       "description": "Manage authoritative/news-source allowlist and blog/social denylist for timeline authority classification.",
       "notice": {
@@ -4072,6 +4108,7 @@
       "newsEventSourcePolicy": "News source policy",
       "newsIndicator": "News ↔ indicators",
       "newsDedupe": "News dedupe",
+      "newsClassification": "News classification",
       "newsPrompts": "News prompts",
       "llmGateway": "LLM gateway",
       "llmRequestLogs": "LLM request logs",

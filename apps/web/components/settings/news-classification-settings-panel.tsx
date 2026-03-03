@@ -17,15 +17,11 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { captureClientError } from "@/lib/client-telemetry";
-
-interface NewsClassificationTaxonomyNode {
-  path: string;
-  displayName: string;
-  description: string;
-  legacyCategory: string;
-  keywords: string[];
-  synonyms: string[];
-}
+import {
+  parseNewsClassificationTaxonomyJson,
+  type NewsClassificationTaxonomyNodeInput,
+  type NewsClassificationTaxonomyValidationError,
+} from "@/lib/news-classification-taxonomy";
 
 interface NewsClassificationSettingsModel {
   enabled: boolean;
@@ -39,7 +35,7 @@ interface NewsClassificationSettingsModel {
   rerankTopN: number;
   cacheTtlSeconds: number;
   taxonomyVersion: string;
-  taxonomy: NewsClassificationTaxonomyNode[];
+  taxonomy: NewsClassificationTaxonomyNodeInput[];
 }
 
 interface QueryData {
@@ -63,6 +59,29 @@ interface FormValues {
   cacheTtlSeconds: number;
   taxonomyVersion: string;
   taxonomyJson: string;
+}
+
+function getGraphqlErrorMessage(error: unknown): string | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const graphQLErrors = (
+    error as { graphQLErrors?: Array<{ message?: unknown }> }
+  ).graphQLErrors;
+  if (Array.isArray(graphQLErrors) && graphQLErrors.length > 0) {
+    const firstMessage = graphQLErrors[0]?.message;
+    if (typeof firstMessage === "string" && firstMessage.trim()) {
+      return firstMessage.trim();
+    }
+  }
+
+  const message = (error as { message?: unknown }).message;
+  if (typeof message === "string" && message.trim()) {
+    return message.trim();
+  }
+
+  return null;
 }
 
 const NEWS_CLASSIFICATION_SETTINGS_QUERY = gql`
@@ -135,6 +154,32 @@ export function NewsClassificationSettingsPanel() {
     UPDATE_NEWS_CLASSIFICATION_SETTINGS_MUTATION,
   );
 
+  const getTaxonomyValidationMessage = (
+    validationError: NewsClassificationTaxonomyValidationError,
+  ) => {
+    switch (validationError.code) {
+      case "invalidJson":
+        return t("settings.newsClassification.validation.invalidJson", {
+          defaultValue: "Taxonomy JSON is invalid",
+        });
+      case "mustBeArray":
+        return t("settings.newsClassification.validation.mustBeArray", {
+          defaultValue: "Taxonomy JSON must be an array",
+        });
+      case "minItems":
+        return t("settings.newsClassification.validation.minItems", {
+          defaultValue: "Taxonomy must contain at least one node",
+        });
+      case "nodeInvalid":
+      default:
+        return t("settings.newsClassification.validation.nodeInvalid", {
+          defaultValue: "Taxonomy node #{{index}} is invalid: {{field}}",
+          index: validationError.index ?? "?",
+          field: validationError.field ?? "node",
+        });
+    }
+  };
+
   useEffect(() => {
     if (!data?.newsClassificationSettings) {
       return;
@@ -157,17 +202,15 @@ export function NewsClassificationSettingsPanel() {
   }, [data?.newsClassificationSettings, form]);
 
   const handleSubmit = async (values: FormValues) => {
-    try {
-      let taxonomy: NewsClassificationTaxonomyNode[] | undefined = undefined;
-      const rawTaxonomy = values.taxonomyJson?.trim();
-      if (rawTaxonomy) {
-        const parsed = JSON.parse(rawTaxonomy);
-        if (!Array.isArray(parsed)) {
-          throw new Error("taxonomy must be a JSON array");
-        }
-        taxonomy = parsed as NewsClassificationTaxonomyNode[];
-      }
+    const parsedTaxonomy = parseNewsClassificationTaxonomyJson(
+      values.taxonomyJson?.trim() ?? "",
+    );
+    if (!parsedTaxonomy.ok) {
+      messageApi.error(getTaxonomyValidationMessage(parsedTaxonomy.error));
+      return;
+    }
 
+    try {
       await updateSettings({
         variables: {
           input: {
@@ -182,7 +225,7 @@ export function NewsClassificationSettingsPanel() {
             rerankTopN: values.rerankTopN,
             cacheTtlSeconds: values.cacheTtlSeconds,
             taxonomyVersion: values.taxonomyVersion,
-            taxonomy,
+            taxonomy: parsedTaxonomy.taxonomy,
           },
         },
       });
@@ -195,9 +238,10 @@ export function NewsClassificationSettingsPanel() {
     } catch (err) {
       captureClientError("Failed to save news classification settings", err);
       messageApi.error(
-        t("settings.newsClassification.messages.saveFailed", {
-          defaultValue: "Failed to save classification settings",
-        }),
+        getGraphqlErrorMessage(err) ??
+          t("settings.newsClassification.messages.saveFailed", {
+            defaultValue: "Failed to save classification settings",
+          }),
       );
     }
   };
@@ -314,7 +358,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue: "Minimum confidence",
           })}
           name="minConfidence"
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
         </Form.Item>
@@ -324,7 +375,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue: "Embedding Top-K",
           })}
           name="embeddingTopK"
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={1} max={100} style={{ width: "100%" }} />
         </Form.Item>
@@ -334,7 +392,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue: "Rerank Top-N",
           })}
           name="rerankTopN"
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={1} max={30} style={{ width: "100%" }} />
         </Form.Item>
@@ -344,7 +409,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue: "Cache TTL (seconds)",
           })}
           name="cacheTtlSeconds"
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <InputNumber min={0} max={3600} style={{ width: "100%" }} />
         </Form.Item>
@@ -354,7 +426,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue: "Taxonomy version",
           })}
           name="taxonomyVersion"
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <Input />
         </Form.Item>
@@ -368,7 +447,14 @@ export function NewsClassificationSettingsPanel() {
             defaultValue:
               "Provide a JSON array of taxonomy nodes with path/displayName/description/legacyCategory/keywords/synonyms.",
           })}
-          rules={[{ required: true, message: "Required" }]}
+          rules={[
+            {
+              required: true,
+              message: t("settings.newsClassification.validation.required", {
+                defaultValue: "Required",
+              }),
+            },
+          ]}
         >
           <Input.TextArea rows={16} />
         </Form.Item>
