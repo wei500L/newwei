@@ -88,6 +88,7 @@ describe("UserSettingsService", () => {
       settings: {
         layerVisibility: {
           hotspots: false,
+          conflictZones: false,
           monitors: false,
           nonsense: true,
         },
@@ -95,9 +96,12 @@ describe("UserSettingsService", () => {
     });
 
     expect(response.settings?.layerVisibility.hotspots).toBe(false);
-    expect(response.settings?.layerVisibility.conflictZones).toBe(true);
-    expect(response.settings?.layerVisibility.chokepoints).toBe(false);
+    expect(response.settings?.layerVisibility.conflicts).toBe(false);
+    expect(response.settings?.layerVisibility.waterways).toBe(true);
     expect(response.settings?.layerVisibility.monitors).toBe(false);
+    expect(response.settings?.activePreset).toBe("global");
+    expect(response.settings?.timeRangePreset).toBe("7d");
+    expect(response.settings?.viewState.zoom).toBeGreaterThan(0);
   });
 
   it("returns null payload when no newsnow settings exist", async () => {

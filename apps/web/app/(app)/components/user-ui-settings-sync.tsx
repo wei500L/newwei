@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeWarMapSettings } from "@modular/utils";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -9,7 +10,11 @@ import { SITUATION_MONITOR_PANELS, useSituationMonitorLayoutStore } from "@/stor
 import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
-import { WAR_MAP_DEFAULT_LAYER_VISIBILITY, useWarMapSettingsStore } from "@/store/war-map-settings";
+import {
+  WAR_MAP_DEFAULT_LAYER_VISIBILITY,
+  WAR_MAP_PRESET_VIEW_STATE,
+  useWarMapSettingsStore,
+} from "@/store/war-map-settings";
 
 const LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS = "situation-monitor:monitors:v1";
 const LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT = "situation-monitor:layout:v1";
@@ -64,7 +69,12 @@ const defaultSituationMonitorSettings = {
 
 const defaultLayoutFingerprint = fingerprintLayout(defaultSituationMonitorLayout);
 const defaultSettingsFingerprint = fingerprintSettings(defaultSituationMonitorSettings);
-const defaultWarMapFingerprint = fingerprintWarMapSettings({ layerVisibility: WAR_MAP_DEFAULT_LAYER_VISIBILITY });
+const defaultWarMapFingerprint = fingerprintWarMapSettings({
+  layerVisibility: WAR_MAP_DEFAULT_LAYER_VISIBILITY,
+  viewState: WAR_MAP_PRESET_VIEW_STATE.global,
+  activePreset: "global",
+  timeRangePreset: "7d",
+});
 
 type UiCacheSection = "situation-monitor" | "war-map";
 
@@ -158,26 +168,8 @@ function fingerprintSettings(payload: unknown): string {
 }
 
 function fingerprintWarMapSettings(payload: unknown): string {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return "{}";
-  }
-  const record = payload as Record<string, unknown>;
-  const rawVisibility =
-    record.layerVisibility && typeof record.layerVisibility === "object" && !Array.isArray(record.layerVisibility)
-      ? (record.layerVisibility as Record<string, unknown>)
-      : record;
-
-  const normalized = {
-    hotspots: typeof rawVisibility.hotspots === "boolean" ? rawVisibility.hotspots : WAR_MAP_DEFAULT_LAYER_VISIBILITY.hotspots,
-    conflictZones: typeof rawVisibility.conflictZones === "boolean" ? rawVisibility.conflictZones : WAR_MAP_DEFAULT_LAYER_VISIBILITY.conflictZones,
-    chokepoints: typeof rawVisibility.chokepoints === "boolean" ? rawVisibility.chokepoints : WAR_MAP_DEFAULT_LAYER_VISIBILITY.chokepoints,
-    cableLandings: typeof rawVisibility.cableLandings === "boolean" ? rawVisibility.cableLandings : WAR_MAP_DEFAULT_LAYER_VISIBILITY.cableLandings,
-    nuclearSites: typeof rawVisibility.nuclearSites === "boolean" ? rawVisibility.nuclearSites : WAR_MAP_DEFAULT_LAYER_VISIBILITY.nuclearSites,
-    militaryBases: typeof rawVisibility.militaryBases === "boolean" ? rawVisibility.militaryBases : WAR_MAP_DEFAULT_LAYER_VISIBILITY.militaryBases,
-    monitors: typeof rawVisibility.monitors === "boolean" ? rawVisibility.monitors : WAR_MAP_DEFAULT_LAYER_VISIBILITY.monitors,
-  };
-
-  return JSON.stringify({ layerVisibility: normalized });
+  const normalized = normalizeWarMapSettings(payload);
+  return JSON.stringify(normalized);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -279,7 +271,13 @@ function writeSituationMonitorCache(orgId: string, userId: string) {
 
 function writeWarMapCache(orgId: string, userId: string) {
   const key = buildCacheKey("war-map", orgId, userId);
-  const settings = { layerVisibility: useWarMapSettingsStore.getState().layerVisibility };
+  const state = useWarMapSettingsStore.getState();
+  const settings = {
+    layerVisibility: state.layerVisibility,
+    viewState: state.viewState,
+    activePreset: state.activePreset,
+    timeRangePreset: state.timeRangePreset,
+  };
   writeJsonToStorage(key, {
     version: 1,
     updatedAt: Date.now(),
@@ -322,7 +320,12 @@ export function UserUiSettingsSync() {
     resetLayoutOnPreset: state.resetLayoutOnPreset,
     translateToZh: state.translateToZh,
   }));
-  const warMapLayerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
+  const warMapSettings = useWarMapSettingsStore((state) => ({
+    layerVisibility: state.layerVisibility,
+    viewState: state.viewState,
+    activePreset: state.activePreset,
+    timeRangePreset: state.timeRangePreset,
+  }));
 
   const hydratingRef = useRef(false);
   const lastContextRef = useRef<{ orgId: string; userId: string } | null>(null);
@@ -353,8 +356,8 @@ export function UserUiSettingsSync() {
   );
   const settingsFingerprint = useMemo(() => fingerprintSettings(settings), [settings]);
   const warMapSettingsFingerprint = useMemo(
-    () => fingerprintWarMapSettings({ layerVisibility: warMapLayerVisibility }),
-    [warMapLayerVisibility],
+    () => fingerprintWarMapSettings(warMapSettings),
+    [warMapSettings],
   );
 
   const scheduleSave = (kind: SaveKind, runner: () => void) => {
@@ -380,7 +383,7 @@ export function UserUiSettingsSync() {
         useSituationMonitorMonitorsStore.getState().reset();
         useSituationMonitorLayoutStore.getState().reset();
         useSituationMonitorSettingsStore.getState().reset();
-        useWarMapSettingsStore.getState().resetLayers();
+        useWarMapSettingsStore.getState().resetAll();
       } finally {
         hydratingRef.current = false;
       }
@@ -432,7 +435,7 @@ export function UserUiSettingsSync() {
       useSituationMonitorMonitorsStore.getState().reset();
       useSituationMonitorLayoutStore.getState().reset();
       useSituationMonitorSettingsStore.getState().reset();
-      useWarMapSettingsStore.getState().resetLayers();
+      useWarMapSettingsStore.getState().resetAll();
 
       const smCache = readCacheEnvelope<SituationMonitorCachePayload>(situationMonitorCacheKey);
       if (smCache) {
@@ -598,7 +601,13 @@ export function UserUiSettingsSync() {
               useWarMapSettingsStore.getState().hydrateFromRemote(data.settings);
             }
 
-            const currentSettings = { layerVisibility: useWarMapSettingsStore.getState().layerVisibility };
+            const currentState = useWarMapSettingsStore.getState();
+            const currentSettings = {
+              layerVisibility: currentState.layerVisibility,
+              viewState: currentState.viewState,
+              activePreset: currentState.activePreset,
+              timeRangePreset: currentState.timeRangePreset,
+            };
             const currentFingerprint = fingerprintWarMapSettings(currentSettings);
 
             const shouldMigrateSettings = !remoteHasSettings && currentFingerprint !== defaultWarMapFingerprint;
@@ -765,9 +774,9 @@ export function UserUiSettingsSync() {
     }
     scheduleSave("warMapSettings", () => {
       void apiClient
-        .put("user-settings/ui/war-map", { settings: { layerVisibility: warMapLayerVisibility } })
+        .put("user-settings/ui/war-map", { settings: warMapSettings })
         .then(() => {
-          lastSentRef.current.warMapSettings = fingerprintWarMapSettings({ layerVisibility: warMapLayerVisibility });
+          lastSentRef.current.warMapSettings = fingerprintWarMapSettings(warMapSettings);
           pendingRef.current.warMapSettings = false;
           useUserUiSyncStatusStore.getState().endSaveSuccess("war-map");
 
@@ -780,7 +789,7 @@ export function UserUiSettingsSync() {
           useUserUiSyncStatusStore.getState().endSaveError("war-map", getErrorMessage(error, "Failed to save settings."));
         });
     });
-  }, [accessToken, apiClient, orgId, ready.warMap, userId, warMapLayerVisibility, warMapSettingsFingerprint]);
+  }, [accessToken, apiClient, orgId, ready.warMap, userId, warMapSettings, warMapSettingsFingerprint]);
 
   useEffect(() => {
     return () => {

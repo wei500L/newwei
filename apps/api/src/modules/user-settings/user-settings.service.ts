@@ -1,5 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import {
+  type WarMapLayerId as SharedWarMapLayerId,
+  type WarMapLayerVisibility as SharedWarMapLayerVisibility,
+  type WarMapSettings as SharedWarMapSettings,
+  normalizeWarMapSettings as normalizeSharedWarMapSettings,
+} from "@modular/utils";
 import { randomUUID } from "node:crypto";
 
 import { PrismaService } from "../config/prisma.service";
@@ -31,20 +37,9 @@ export interface SituationMonitorUiSettingsResponse {
   settings: SituationMonitorSettings | null;
 }
 
-export type WarMapLayerId =
-  | "hotspots"
-  | "conflictZones"
-  | "chokepoints"
-  | "cableLandings"
-  | "nuclearSites"
-  | "militaryBases"
-  | "monitors";
-
-export type WarMapLayerVisibility = Record<WarMapLayerId, boolean>;
-
-export interface WarMapSettings {
-  layerVisibility: WarMapLayerVisibility;
-}
+export type WarMapLayerId = SharedWarMapLayerId;
+export type WarMapLayerVisibility = SharedWarMapLayerVisibility;
+export type WarMapSettings = SharedWarMapSettings;
 
 export interface WarMapUiSettingsResponse {
   version: 1;
@@ -407,16 +402,6 @@ function normalizeSettings(value: unknown): SituationMonitorSettings {
   };
 }
 
-const WAR_MAP_DEFAULT_LAYER_VISIBILITY: WarMapLayerVisibility = {
-  hotspots: true,
-  conflictZones: true,
-  chokepoints: false,
-  cableLandings: false,
-  nuclearSites: false,
-  militaryBases: false,
-  monitors: true,
-} as const;
-
 const SPACETIME_TIMELINE_DEFAULT_SETTINGS: SpacetimeTimelineSettings = {
   authoritativeLock: true,
   requireCorroborated: true,
@@ -428,33 +413,6 @@ const SPACETIME_TIMELINE_DEFAULT_SETTINGS: SpacetimeTimelineSettings = {
   speed: 2,
   syncStatusAutoRefresh: true,
 } as const;
-
-function normalizeWarMapSettings(value: unknown): WarMapSettings {
-  const defaults: WarMapSettings = {
-    layerVisibility: { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY },
-  };
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return defaults;
-  }
-  const record = value as Record<string, unknown>;
-  const rawVisibility =
-    record.layerVisibility &&
-    typeof record.layerVisibility === "object" &&
-    !Array.isArray(record.layerVisibility)
-      ? (record.layerVisibility as Record<string, unknown>)
-      : record;
-
-  const next: WarMapLayerVisibility = { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY };
-  for (const key of Object.keys(
-    WAR_MAP_DEFAULT_LAYER_VISIBILITY,
-  ) as WarMapLayerId[]) {
-    const raw = rawVisibility[key];
-    if (typeof raw === "boolean") {
-      next[key] = raw;
-    }
-  }
-  return { layerVisibility: next };
-}
 
 function normalizeSpacetimeTimelineSourceType(
   value: unknown,
@@ -858,7 +816,7 @@ export class UserSettingsService {
       updatedAt: {
         ...(record ? { settings: record.updatedAt.toISOString() } : {}),
       },
-      settings: record ? normalizeWarMapSettings(record.value) : null,
+      settings: record ? normalizeSharedWarMapSettings(record.value) : null,
     };
   }
 
@@ -868,7 +826,7 @@ export class UserSettingsService {
     input: { settings?: Record<string, unknown> },
   ): Promise<WarMapUiSettingsResponse> {
     if (input.settings !== undefined) {
-      const settings = normalizeWarMapSettings(input.settings);
+      const settings = normalizeSharedWarMapSettings(input.settings);
       await this.upsert(
         orgId,
         userId,

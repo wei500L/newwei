@@ -53,6 +53,57 @@ function parseTranslateTarget(
   return undefined;
 }
 
+function parseWarMapBbox(
+  value: unknown,
+): [number, number, number, number] | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parts = value
+    .split(",")
+    .map((part) => Number.parseFloat(part.trim()))
+    .filter((part) => Number.isFinite(part));
+  if (parts.length !== 4) {
+    return undefined;
+  }
+  const [minLng, minLat, maxLng, maxLat] = parts as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (
+    minLng < -180 ||
+    maxLng > 180 ||
+    minLat < -90 ||
+    maxLat > 90 ||
+    minLng > maxLng ||
+    minLat > maxLat
+  ) {
+    return undefined;
+  }
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+function parseWarMapZoom(value: unknown): number | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return clampInt(Math.round(parsed * 100), 50, 1800) / 100;
+}
+
+function parseWarMapCluster(value: unknown): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
 @ApiTags("dashboard")
 @ApiBearerAuth()
 @Controller("dashboard")
@@ -87,9 +138,15 @@ export class DashboardController {
   @Permissions("dashboards.read")
   @Get("war-map/layers")
   @Header("Cache-Control", "no-store")
-  async warMapLayers(@Query() query: DashboardWarMapQueryDto) {
+  async warMapLayers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardWarMapQueryDto,
+  ) {
+    const range = this.chartsService.resolveRange(query);
     return this.chartsService.getWarMapLayers({
       translateTarget: parseTranslateTarget(query.translate),
+      orgId: user.orgId,
+      range,
     });
   }
 
@@ -97,13 +154,14 @@ export class DashboardController {
   @Get("war-map/events")
   async warMapEvents(
     @CurrentUser() user: AuthenticatedUser,
-    @Query("start") start?: string,
-    @Query("end") end?: string,
-    @Query("translate") translate?: string,
+    @Query() query: DashboardWarMapQueryDto,
   ) {
-    const range = this.chartsService.resolveRange({ start, end });
+    const range = this.chartsService.resolveRange(query);
     return this.chartsService.getWarMapEvents(range, user.orgId, {
-      translateTarget: parseTranslateTarget(translate),
+      translateTarget: parseTranslateTarget(query.translate),
+      bbox: parseWarMapBbox(query.bbox),
+      zoom: parseWarMapZoom(query.zoom),
+      cluster: parseWarMapCluster(query.cluster),
     });
   }
 
@@ -116,6 +174,9 @@ export class DashboardController {
     const range = this.chartsService.resolveRange(query);
     return this.chartsService.getWarMapNewsMarkers(range, user.orgId, {
       translateTarget: parseTranslateTarget(query.translate),
+      bbox: parseWarMapBbox(query.bbox),
+      zoom: parseWarMapZoom(query.zoom),
+      cluster: parseWarMapCluster(query.cluster),
     });
   }
 
