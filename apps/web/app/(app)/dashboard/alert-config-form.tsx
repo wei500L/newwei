@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Alert,
   App,
   Button,
   ConfigProvider,
@@ -162,17 +163,6 @@ const systemMetricSlugs = [
   "custom.manual",
 ].map((slug) => ({ label: slug, value: slug }));
 
-const realtimeMetricSlugs = [
-  "realtime.opensky.military_flights",
-  "realtime.ais.disruptions",
-  "realtime.unrest.events",
-  "realtime.outages.internet",
-  "realtime.keyword_spike.count",
-  "realtime.pizzint.defcon",
-  "realtime.gdelt_tension.max_score",
-  "realtime.polymarket_leads.count",
-].map((slug) => ({ label: slug, value: slug }));
-
 type RealtimeMetricSlug =
   | "realtime.opensky.military_flights"
   | "realtime.ais.disruptions"
@@ -182,6 +172,53 @@ type RealtimeMetricSlug =
   | "realtime.pizzint.defcon"
   | "realtime.gdelt_tension.max_score"
   | "realtime.polymarket_leads.count";
+
+const realtimeMetricOptions: {
+  value: RealtimeMetricSlug;
+  labelKey: string;
+  fallbackLabel: string;
+}[] = [
+  {
+    value: "realtime.opensky.military_flights",
+    labelKey: "alerts.config.realtime.metrics.opensky",
+    fallbackLabel: "OpenSky military flights",
+  },
+  {
+    value: "realtime.ais.disruptions",
+    labelKey: "alerts.config.realtime.metrics.ais",
+    fallbackLabel: "AIS disruptions",
+  },
+  {
+    value: "realtime.unrest.events",
+    labelKey: "alerts.config.realtime.metrics.unrest",
+    fallbackLabel: "Unrest events",
+  },
+  {
+    value: "realtime.outages.internet",
+    labelKey: "alerts.config.realtime.metrics.outages",
+    fallbackLabel: "Internet outages",
+  },
+  {
+    value: "realtime.keyword_spike.count",
+    labelKey: "alerts.config.realtime.metrics.keywordSpike",
+    fallbackLabel: "Keyword spike count",
+  },
+  {
+    value: "realtime.pizzint.defcon",
+    labelKey: "alerts.config.realtime.metrics.pizzint",
+    fallbackLabel: "PizzINT DEFCON",
+  },
+  {
+    value: "realtime.gdelt_tension.max_score",
+    labelKey: "alerts.config.realtime.metrics.gdeltTension",
+    fallbackLabel: "GDELT tension max score",
+  },
+  {
+    value: "realtime.polymarket_leads.count",
+    labelKey: "alerts.config.realtime.metrics.polymarketLeads",
+    fallbackLabel: "Polymarket leads count",
+  },
+];
 
 const realtimeMetricPresetConfig: Record<
   RealtimeMetricSlug,
@@ -248,6 +285,16 @@ const realtimeMetricPresetConfig: Record<
       "Alert when prediction market movement leads low-coverage news topics.",
   },
 };
+const DEFAULT_REALTIME_METRIC_SLUG: RealtimeMetricSlug =
+  "realtime.opensky.military_flights";
+const realtimePresetDefaultNames = new Set(
+  Object.values(realtimeMetricPresetConfig).map((preset) => preset.defaultName),
+);
+const realtimePresetDefaultDescriptions = new Set(
+  Object.values(realtimeMetricPresetConfig).map(
+    (preset) => preset.defaultDescription,
+  ),
+);
 
 const isRealtimeMetricSlug = (
   value: string | undefined,
@@ -472,11 +519,40 @@ export function AlertConfigForm() {
                     systemCurrentValue: undefined,
                   });
                 } else if (provider === REALTIME_SIGNAL_PROVIDER) {
-                  form.setFieldsValue({
-                    metricSlug: "realtime.opensky.military_flights",
-                    operator: AlertOperator.Gte,
-                    thresholdValue: 50,
-                  });
+                  const defaultPreset =
+                    realtimeMetricPresetConfig[DEFAULT_REALTIME_METRIC_SLUG];
+                  const currentName = form.getFieldValue("name") as
+                    | string
+                    | undefined;
+                  const currentDescription = form.getFieldValue(
+                    "description",
+                  ) as string | undefined;
+                  const normalizedName =
+                    typeof currentName === "string" ? currentName.trim() : "";
+                  const normalizedDescription =
+                    typeof currentDescription === "string"
+                      ? currentDescription.trim()
+                      : "";
+                  const defaultName = t("alerts.config.defaults.name");
+                  const nextValues: Record<string, unknown> = {
+                    metricSlug: DEFAULT_REALTIME_METRIC_SLUG,
+                    operator: defaultPreset.operator,
+                    thresholdValue: defaultPreset.thresholdValue,
+                  };
+                  const shouldAutoFillName =
+                    normalizedName.length === 0 ||
+                    normalizedName === defaultName ||
+                    realtimePresetDefaultNames.has(normalizedName);
+                  const shouldAutoFillDescription =
+                    normalizedDescription.length === 0 ||
+                    realtimePresetDefaultDescriptions.has(normalizedDescription);
+                  if (shouldAutoFillName) {
+                    nextValues.name = defaultPreset.defaultName;
+                  }
+                  if (shouldAutoFillDescription) {
+                    nextValues.description = defaultPreset.defaultDescription;
+                  }
+                  form.setFieldsValue(nextValues);
                 } else if (provider === AlertMetricProvider.EconomicAnomaly) {
                   form.setFieldsValue({
                     metricSlug: "usd_index_history",
@@ -697,6 +773,35 @@ export function AlertConfigForm() {
                 );
               }
               if (provider === REALTIME_SIGNAL_PROVIDER) {
+                const selectedRealtimeMetricSlug = getFieldValue("metricSlug") as
+                  | string
+                  | undefined;
+                const selectedRealtimePreset = isRealtimeMetricSlug(
+                  selectedRealtimeMetricSlug,
+                )
+                  ? realtimeMetricPresetConfig[selectedRealtimeMetricSlug]
+                  : null;
+                const realtimePresetOptions: { value: string; label: string }[] =
+                  realtimeMetricOptions.map((option) => ({
+                    value: option.value,
+                    label: t(option.labelKey, {
+                      defaultValue: option.fallbackLabel,
+                    }),
+                  }));
+                if (
+                  selectedRealtimeMetricSlug &&
+                  !realtimeMetricOptions.some(
+                    (option) => option.value === selectedRealtimeMetricSlug,
+                  )
+                ) {
+                  realtimePresetOptions.unshift({
+                    value: selectedRealtimeMetricSlug,
+                    label: t("alerts.config.realtime.metrics.custom", {
+                      defaultValue: "Custom: {{slug}}",
+                      slug: selectedRealtimeMetricSlug,
+                    }),
+                  });
+                }
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>
@@ -710,7 +815,9 @@ export function AlertConfigForm() {
                       })}
                     >
                       <Select
-                        options={realtimeMetricSlugs}
+                        options={realtimePresetOptions}
+                        showSearch
+                        optionFilterProp="label"
                         value={getFieldValue("metricSlug")}
                         onChange={(value) => {
                           const currentMetricSlug = getFieldValue("metricSlug") as
@@ -768,6 +875,22 @@ export function AlertConfigForm() {
                         }}
                       />
                     </Form.Item>
+                    {selectedRealtimePreset ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        message={t("alerts.config.realtime.presetDefaults", {
+                          defaultValue:
+                            "Default trigger: {{operator}} {{threshold}}",
+                          operator: t(
+                            `alerts.operators.${selectedRealtimePreset.operator}`,
+                            { defaultValue: selectedRealtimePreset.operator },
+                          ),
+                          threshold: selectedRealtimePreset.thresholdValue,
+                        })}
+                        description={selectedRealtimePreset.defaultDescription}
+                      />
+                    ) : null}
                     <Typography.Text type="secondary">
                       {t("alerts.config.realtime.metricPresetHint", {
                         defaultValue:

@@ -144,7 +144,30 @@
         "targetsEmpty": "No targets.",
         "targetMeta": "weight {{weight}} · conf {{conf}}",
         "ciVisualization": "Confidence interval visualization",
-        "sentimentCompare": "Negative sentiment ratio comparison"
+        "sentimentCompare": "Negative sentiment ratio comparison",
+        "realtime": {
+          "source": "Source",
+          "stale": "Stale snapshot",
+          "maxStaleMinutes": "Max stale {{minutes}} min",
+          "latestTimestamp": "Latest point {{time}}",
+          "emptyStructured": "No structured realtime evidence fields.",
+          "countryCodes": "Country codes",
+          "tensions": "Top tensions",
+          "leads": "Prediction leads",
+          "spikes": "Keyword spikes",
+          "militaryCount": "Military flights",
+          "disruptions": "AIS disruptions",
+          "outages": "Internet outages",
+          "unrest": "Unrest events",
+          "acled": "ACLED",
+          "gdelt": "GDELT",
+          "dedupeReducedBy": "Deduped",
+          "defcon": "DEFCON",
+          "adjustedScore": "Adjusted score",
+          "openLocations": "Open locations",
+          "activeSpikes": "Active spikes",
+          "avgPop": "Avg pop"
+        }
       },
       "detail": {
         "triggeredAt": "Triggered at",
@@ -256,6 +279,7 @@
         "economicAnomaly": "Economic anomaly",
         "entitySentiment": "Entity sentiment",
         "entityAssociation": "Entity association",
+        "realtimeSignal": "Realtime signal",
         "last7Days": "Last 7 days",
         "last30Days": "Last 30 days"
       },
@@ -383,7 +407,19 @@
       "realtime": {
         "title": "Realtime signals",
         "metricPreset": "Realtime metric preset",
-        "metricPresetHint": "Pick one of the canonical realtime signal slugs to align with scheduler snapshots."
+        "metricPresetHint": "Pick one of the canonical realtime signal slugs to align with scheduler snapshots.",
+        "presetDefaults": "Default trigger: {{operator}} {{threshold}}",
+        "metrics": {
+          "opensky": "OpenSky military flights",
+          "ais": "AIS disruptions",
+          "unrest": "Unrest events",
+          "outages": "Internet outages",
+          "keywordSpike": "Keyword spike count",
+          "pizzint": "PizzINT DEFCON",
+          "gdeltTension": "GDELT tension max score",
+          "polymarketLeads": "Polymarket leads count",
+          "custom": "Custom: {{slug}}"
+        }
       }
     },
     "channels": {
@@ -4955,6 +4991,12 @@
         "title": "Realtime Signal Aggregation",
         "body": "These settings control the 8-source realtime pipeline used by alerts, dashboard war-map overlays, and situation monitor predictive signals."
       },
+      "overview": {
+        "enabledSources": "Enabled sources",
+        "disabledSources": "Disabled sources",
+        "fastestInterval": "Fastest interval",
+        "configuredSecrets": "Configured secrets"
+      },
       "status": {
         "label": "Status",
         "env": "Using env defaults",
@@ -4962,6 +5004,7 @@
         "enabled": "Enabled",
         "disabled": "Disabled",
         "notConfigured": "Not configured",
+        "sourceSnapshot": "Source snapshot",
         "relayBaseUrl": "Relay base URL",
         "polymarketProxyUrl": "Polymarket proxy URL",
         "relaySharedSecret": "Relay shared secret",

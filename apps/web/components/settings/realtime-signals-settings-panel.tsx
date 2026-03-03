@@ -3,12 +3,17 @@
 import {
   Alert,
   Button,
+  Card,
+  Col,
+  Divider,
   Form,
   Input,
   InputNumber,
   Modal,
+  Row,
   Space,
   Spin,
+  Statistic,
   Switch,
   Tag,
   Typography,
@@ -455,6 +460,36 @@ export function RealtimeSignalsSettingsPanel() {
     },
   ] as const;
 
+  const sourceStatusRows = SOURCE_CONFIGS.map((sourceConfig) => {
+    const sourceName = t(sourceConfig.nameKey, {
+      defaultValue: sourceConfig.fallbackName,
+    });
+    const enabled = Boolean(settings[sourceConfig.enabledField]);
+    const intervalSec =
+      typeof settings[sourceConfig.intervalField] === "number"
+        ? settings[sourceConfig.intervalField]
+        : null;
+    return {
+      key: sourceConfig.enabledField,
+      sourceName,
+      enabled,
+      intervalSec,
+    };
+  });
+
+  const enabledSourceCount = sourceStatusRows.filter((row) => row.enabled).length;
+  const disabledSourceCount = sourceStatusRows.length - enabledSourceCount;
+  const fastestEnabledInterval = sourceStatusRows
+    .filter((row) => row.enabled && typeof row.intervalSec === "number")
+    .reduce<number | null>(
+      (acc, row) =>
+        acc === null || (row.intervalSec as number) < acc
+          ? (row.intervalSec as number)
+          : acc,
+      null,
+    );
+  const configuredSecretCount = secretStatusRows.filter((row) => row.has).length;
+
   if (loading && !loadedOnce) {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
@@ -486,6 +521,52 @@ export function RealtimeSignalsSettingsPanel() {
           style={{ marginBottom: "1rem" }}
         />
       ) : null}
+
+      <Row gutter={[12, 12]} style={{ marginBottom: "1rem" }}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card size="small">
+            <Statistic
+              title={t("systemSettings.realtimeSignals.overview.enabledSources", {
+                defaultValue: "Enabled sources",
+              })}
+              value={enabledSourceCount}
+              suffix={`/ ${sourceStatusRows.length}`}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card size="small">
+            <Statistic
+              title={t("systemSettings.realtimeSignals.overview.disabledSources", {
+                defaultValue: "Disabled sources",
+              })}
+              value={disabledSourceCount}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card size="small">
+            <Statistic
+              title={t("systemSettings.realtimeSignals.overview.fastestInterval", {
+                defaultValue: "Fastest interval",
+              })}
+              value={fastestEnabledInterval ?? "—"}
+              suffix={fastestEnabledInterval ? "sec" : undefined}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card size="small">
+            <Statistic
+              title={t("systemSettings.realtimeSignals.overview.configuredSecrets", {
+                defaultValue: "Configured secrets",
+              })}
+              value={configuredSecretCount}
+              suffix={`/ ${secretStatusRows.length}`}
+            />
+          </Card>
+        </Col>
+      </Row>
 
       <Space
         direction="vertical"
@@ -523,6 +604,29 @@ export function RealtimeSignalsSettingsPanel() {
             </Tag>
           </Space>
         ))}
+
+        <Divider style={{ margin: "8px 0" }} />
+
+        <Typography.Text type="secondary">
+          {t("systemSettings.realtimeSignals.status.sourceSnapshot", {
+            defaultValue: "Source snapshot",
+          })}
+        </Typography.Text>
+        <Space wrap size={[8, 8]}>
+          {sourceStatusRows.map((row) => (
+            <Tag key={row.key} color={row.enabled ? "green" : "default"}>
+              {row.sourceName} ·{" "}
+              {row.enabled
+                ? t("systemSettings.realtimeSignals.status.enabled", {
+                    defaultValue: "Enabled",
+                  })
+                : t("systemSettings.realtimeSignals.status.disabled", {
+                    defaultValue: "Disabled",
+                  })}
+              {typeof row.intervalSec === "number" ? ` · ${row.intervalSec}s` : ""}
+            </Tag>
+          ))}
+        </Space>
       </Space>
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>

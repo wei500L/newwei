@@ -29,8 +29,8 @@ import {
   Typography,
   message
 } from 'antd';
-import type { EChartsOption } from 'echarts';
 import type { Dayjs } from 'dayjs';
+import type { EChartsOption } from 'echarts';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -48,13 +48,13 @@ import {
   useAlertRuleTuningSuggestionQuery
 } from '@/graphql/generated';
 import { useChartTheme } from '@/hooks/use-chart-theme';
-import dayjs from '@/lib/dayjs';
 import {
   buildCsv,
   downloadCsv,
   downloadTextFile,
   formatDateForFilename
 } from '@/lib/data-export';
+import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
 import {
@@ -766,6 +766,336 @@ const EntityAssociationEvidence = ({
   );
 };
 
+const RealtimeSignalEvidence = ({
+  context,
+  locale,
+  t
+}: {
+  context: Record<string, unknown> | null;
+  locale: LocaleCode;
+  t: TranslateFn;
+}) => {
+  if (!context) {
+    return (
+      <Typography.Text type="secondary">
+        {t("alerts.center.evidence.empty", { defaultValue: "No evidence available." })}
+      </Typography.Text>
+    );
+  }
+
+  const source =
+    toStringValue(context.source) ??
+    toStringValue(context.sourceName) ??
+    toStringValue(context.sourceEndpoint) ??
+    toStringValue(context.sourceFunction) ??
+    toStringValue(context.sourceField);
+  const stale = context.stale === true;
+  const latestTimestamp = toStringValue(context.latestTimestamp);
+  const maxStaleMinutes = toNumber(context.maxStaleMinutes);
+  const countryCodes = Array.isArray(context.countryCodes)
+    ? context.countryCodes
+        .map((entry) => toStringValue(entry))
+        .filter((entry): entry is string => Boolean(entry))
+    : [];
+
+  const summaryRows = [
+    {
+      key: "militaryCount",
+      label: t("alerts.center.evidence.realtime.militaryCount", {
+        defaultValue: "Military flights"
+      }),
+      value: toNumber(context.militaryCount)
+    },
+    {
+      key: "disruptions",
+      label: t("alerts.center.evidence.realtime.disruptions", {
+        defaultValue: "AIS disruptions"
+      }),
+      value: toNumber(context.disruptions)
+    },
+    {
+      key: "outages",
+      label: t("alerts.center.evidence.realtime.outages", {
+        defaultValue: "Internet outages"
+      }),
+      value: toNumber(context.outages)
+    },
+    {
+      key: "unrestCount",
+      label: t("alerts.center.evidence.realtime.unrest", {
+        defaultValue: "Unrest events"
+      }),
+      value: toNumber(context.unrestCount)
+    },
+    {
+      key: "acledCount",
+      label: t("alerts.center.evidence.realtime.acled", {
+        defaultValue: "ACLED"
+      }),
+      value: toNumber(context.acledCount)
+    },
+    {
+      key: "gdeltCount",
+      label: t("alerts.center.evidence.realtime.gdelt", {
+        defaultValue: "GDELT"
+      }),
+      value: toNumber(context.gdeltCount)
+    },
+    {
+      key: "dedupeReducedBy",
+      label: t("alerts.center.evidence.realtime.dedupeReducedBy", {
+        defaultValue: "Deduped"
+      }),
+      value: toNumber(context.dedupeReducedBy)
+    },
+    {
+      key: "defcon",
+      label: t("alerts.center.evidence.realtime.defcon", {
+        defaultValue: "DEFCON"
+      }),
+      value: toNumber(context.defcon)
+    },
+    {
+      key: "adjustedScore",
+      label: t("alerts.center.evidence.realtime.adjustedScore", {
+        defaultValue: "Adjusted score"
+      }),
+      value: toNumber(context.adjustedScore)
+    },
+    {
+      key: "openLocations",
+      label: t("alerts.center.evidence.realtime.openLocations", {
+        defaultValue: "Open locations"
+      }),
+      value: toNumber(context.openLocations)
+    },
+    {
+      key: "activeSpikes",
+      label: t("alerts.center.evidence.realtime.activeSpikes", {
+        defaultValue: "Active spikes"
+      }),
+      value: toNumber(context.activeSpikes)
+    },
+    {
+      key: "avgPop",
+      label: t("alerts.center.evidence.realtime.avgPop", {
+        defaultValue: "Avg pop"
+      }),
+      value: toNumber(context.avgPop)
+    }
+  ].filter((entry) => typeof entry.value === "number");
+
+  const tensions = Array.isArray(context.tensions)
+    ? context.tensions
+        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+        .slice(0, 5)
+    : [];
+  const leads = Array.isArray(context.leads)
+    ? context.leads
+        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+        .slice(0, 5)
+    : [];
+  const spikes = Array.isArray(context.spikes)
+    ? context.spikes
+        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+        .slice(0, 5)
+    : [];
+  const hasStructuredEvidence =
+    summaryRows.length > 0 ||
+    countryCodes.length > 0 ||
+    tensions.length > 0 ||
+    leads.length > 0 ||
+    spikes.length > 0;
+
+  return (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Space size={[6, 6]} wrap>
+        {source ? (
+          <Tag color="blue">
+            {t("alerts.center.evidence.realtime.source", {
+              defaultValue: "Source"
+            })}
+            : {source}
+          </Tag>
+        ) : null}
+        {stale ? (
+          <Tag color="red">
+            {t("alerts.center.evidence.realtime.stale", { defaultValue: "Stale snapshot" })}
+          </Tag>
+        ) : null}
+        {typeof maxStaleMinutes === "number" ? (
+          <Tag>
+            {t("alerts.center.evidence.realtime.maxStaleMinutes", {
+              defaultValue: "Max stale {{minutes}} min",
+              minutes: maxStaleMinutes
+            })}
+          </Tag>
+        ) : null}
+      </Space>
+
+      {latestTimestamp ? (
+        <Typography.Text type="secondary">
+          {t("alerts.center.evidence.realtime.latestTimestamp", {
+            defaultValue: "Latest point {{time}}",
+            time: formatDateTime(latestTimestamp, locale, {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              timeZoneName: "short"
+            })
+          })}
+        </Typography.Text>
+      ) : null}
+
+      {!hasStructuredEvidence ? (
+        <Typography.Text type="secondary">
+          {t("alerts.center.evidence.realtime.emptyStructured", {
+            defaultValue: "No structured realtime evidence fields."
+          })}
+        </Typography.Text>
+      ) : null}
+
+      {summaryRows.length > 0 ? (
+        <Descriptions size="small" bordered column={2}>
+          {summaryRows.map((entry) => (
+            <Descriptions.Item key={entry.key} label={entry.label}>
+              {entry.value}
+            </Descriptions.Item>
+          ))}
+        </Descriptions>
+      ) : null}
+
+      {countryCodes.length > 0 ? (
+        <div>
+          <Typography.Text type="secondary">
+            {t("alerts.center.evidence.realtime.countryCodes", {
+              defaultValue: "Country codes"
+            })}
+          </Typography.Text>
+          <div style={{ marginTop: 6 }}>
+            <Space size={[6, 6]} wrap>
+              {countryCodes.map((code) => (
+                <Tag key={code}>{code}</Tag>
+              ))}
+            </Space>
+          </div>
+        </div>
+      ) : null}
+
+      {tensions.length > 0 ? (
+        <>
+          <Divider style={{ margin: "8px 0" }} />
+          <Typography.Text type="secondary">
+            {t("alerts.center.evidence.realtime.tensions", {
+              defaultValue: "Top tensions"
+            })}
+          </Typography.Text>
+          <List
+            size="small"
+            dataSource={tensions}
+            renderItem={(item, index) => {
+              const label =
+                toStringValue(item.label) ??
+                toStringValue(item.id) ??
+                `tension-${index + 1}`;
+              const score = toNumber(item.score);
+              const changePercent = toNumber(item.changePercent);
+              const trend = toStringValue(item.trend);
+              return (
+                <List.Item key={`${label}-${index}`}>
+                  <Space size={[8, 8]} wrap>
+                    <Typography.Text>{label}</Typography.Text>
+                    {typeof score === "number" ? (
+                      <Tag color="orange">{`score ${score.toFixed(2)}`}</Tag>
+                    ) : null}
+                    {typeof changePercent === "number" ? (
+                      <Tag>{`${changePercent.toFixed(2)}%`}</Tag>
+                    ) : null}
+                    {trend ? <Tag color="blue">{trend}</Tag> : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </>
+      ) : null}
+
+      {leads.length > 0 ? (
+        <>
+          <Divider style={{ margin: "8px 0" }} />
+          <Typography.Text type="secondary">
+            {t("alerts.center.evidence.realtime.leads", {
+              defaultValue: "Prediction leads"
+            })}
+          </Typography.Text>
+          <List
+            size="small"
+            dataSource={leads}
+            renderItem={(item, index) => {
+              const title =
+                toStringValue(item.title) ??
+                toStringValue(item.id) ??
+                `lead-${index + 1}`;
+              const shift = toNumber(item.shift);
+              const confidence = toNumber(item.confidence);
+              return (
+                <List.Item key={`${title}-${index}`}>
+                  <Space size={[8, 8]} wrap>
+                    <Typography.Text>{title}</Typography.Text>
+                    {typeof shift === "number" ? (
+                      <Tag color="purple">{`shift ${shift.toFixed(2)}`}</Tag>
+                    ) : null}
+                    {typeof confidence === "number" ? (
+                      <Tag>{`conf ${confidence.toFixed(2)}`}</Tag>
+                    ) : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </>
+      ) : null}
+
+      {spikes.length > 0 ? (
+        <>
+          <Divider style={{ margin: "8px 0" }} />
+          <Typography.Text type="secondary">
+            {t("alerts.center.evidence.realtime.spikes", {
+              defaultValue: "Keyword spikes"
+            })}
+          </Typography.Text>
+          <List
+            size="small"
+            dataSource={spikes}
+            renderItem={(item, index) => {
+              const term =
+                toStringValue(item.term) ??
+                toStringValue(item.id) ??
+                `spike-${index + 1}`;
+              const count = toNumber(item.count);
+              const multiplier = toNumber(item.multiplier);
+              return (
+                <List.Item key={`${term}-${index}`}>
+                  <Space size={[8, 8]} wrap>
+                    <Typography.Text>{term}</Typography.Text>
+                    {typeof count === "number" ? <Tag>{`count ${count}`}</Tag> : null}
+                    {typeof multiplier === "number" ? (
+                      <Tag color="gold">{`${multiplier.toFixed(2)}x`}</Tag>
+                    ) : null}
+                  </Space>
+                </List.Item>
+              );
+            }}
+          />
+        </>
+      ) : null}
+    </Space>
+  );
+};
+
 const { CheckableTag } = Tag;
 
 const DEFAULT_FILTER_STATE: AlertFilterState = {
@@ -869,14 +1199,14 @@ export function AlertCenterContent() {
     return () => sub.unsubscribe();
   }, [client, refetchEvents]);
 
-  const events = eventsData?.alertEvents ?? [];
   const sortedEvents = useMemo(() => {
+    const events = eventsData?.alertEvents ?? [];
     return [...events].sort((a, b) => {
       const aTime = new Date(a.triggeredAt).getTime();
       const bTime = new Date(b.triggeredAt).getTime();
       return bTime - aTime;
     });
-  }, [events]);
+  }, [eventsData?.alertEvents]);
 
   useEffect(() => {
     if (!filterState.ruleKeyword.trim()) {
@@ -894,14 +1224,7 @@ export function AlertCenterContent() {
       ...filterState,
       ruleKeyword: appliedRuleKeyword
     }),
-    [
-      appliedRuleKeyword,
-      filterState.customRangeMs,
-      filterState.datePreset,
-      filterState.providers,
-      filterState.severities,
-      filterState.statuses
-    ]
+    [appliedRuleKeyword, filterState]
   );
   const filterWindow = useMemo(
     () =>
@@ -1346,11 +1669,11 @@ export function AlertCenterContent() {
         ? selectedEvent.thresholdUpper
         : null;
 
-    const markLineData: Array<{
+    const markLineData: {
       yAxis: number;
       lineStyle?: { type?: 'dashed'; color?: string };
       label?: { formatter?: string };
-    }> = [];
+    }[] = [];
     if (operator && ['gt', 'gte', 'lt', 'lte', 'eq'].includes(operator) && thresholdValue !== null) {
       markLineData.push({
         yAxis: thresholdValue,
@@ -1390,7 +1713,7 @@ export function AlertCenterContent() {
             ? {
                 markLine: {
                   symbol: 'none',
-                  data: markLineData as any
+                  data: markLineData
                 }
               }
             : {})
@@ -1577,6 +1900,30 @@ export function AlertCenterContent() {
       excludedContextKeys.add(key)
     );
   }
+  if (selectedEvent?.metricProvider === AlertMetricProvider.RealtimeSignal) {
+    [
+      'source',
+      'stale',
+      'latestTimestamp',
+      'maxStaleMinutes',
+      'countryCodes',
+      'militaryCount',
+      'disruptions',
+      'outages',
+      'unrestCount',
+      'acledCount',
+      'gdeltCount',
+      'dedupeReducedBy',
+      'defcon',
+      'adjustedScore',
+      'openLocations',
+      'activeSpikes',
+      'avgPop',
+      'tensions',
+      'leads',
+      'spikes'
+    ].forEach((key) => excludedContextKeys.add(key));
+  }
 
   const additionalContext = contextEntries.filter(([key]) => !excludedContextKeys.has(key));
   const visibleAdditionalContext = expandContext ? additionalContext : additionalContext.slice(0, 6);
@@ -1617,7 +1964,9 @@ export function AlertCenterContent() {
     toStringValue(context?.sourceName) ??
     toStringValue(context?.sourceEndpoint) ??
     toStringValue(context?.sourceFunction) ??
-    toStringValue(context?.sourceField);
+    toStringValue(context?.sourceField) ??
+    toStringValue(context?.source) ??
+    toStringValue(selectedEvent?.metricSlug);
   const evidenceSourceDoc = toStringValue(context?.sourceDocUrl);
 
   const feedback =
@@ -1937,6 +2286,8 @@ export function AlertCenterContent() {
                     t={t}
                     onOpenEvent={(eventId) => void handleOpenEvent(eventId)}
                   />
+                ) : selectedEvent.metricProvider === AlertMetricProvider.RealtimeSignal ? (
+                  <RealtimeSignalEvidence context={context} locale={locale} t={t} />
                 ) : (
                   <Typography.Text type="secondary">
                     {t('alerts.center.evidence.unsupported', {
@@ -2608,6 +2959,14 @@ export function AlertCenterContent() {
             })}
           </CheckableTag>
           <CheckableTag
+            checked={filterState.providers.includes(AlertMetricProvider.RealtimeSignal)}
+            onChange={(checked) => toggleProviderTag(AlertMetricProvider.RealtimeSignal, checked)}
+          >
+            {t('alerts.center.quickTags.realtimeSignal', {
+              defaultValue: 'Realtime signal'
+            })}
+          </CheckableTag>
+          <CheckableTag
             checked={filterState.datePreset === '7d'}
             onChange={(checked) => toggleTimeTag('7d', checked)}
           >
@@ -2810,6 +3169,7 @@ export function AlertCenterContent() {
                     toStringValue(eventContext?.sourceEndpoint) ??
                     toStringValue(eventContext?.sourceField) ??
                     toStringValue(eventContext?.sourceFunction) ??
+                    toStringValue(eventContext?.source) ??
                     (event.metricProvider === AlertMetricProvider.EconomicAnomaly
                       ? toStringValue(eventContext?.itemName) ?? toStringValue(event.metricSlug)
                       : null) ??
@@ -2818,7 +3178,8 @@ export function AlertCenterContent() {
                       : null) ??
                     (event.metricProvider === AlertMetricProvider.EntityAssociation
                       ? toStringValue(seed?.name) ?? toStringValue(event.metricSlug)
-                      : null);
+                      : null) ??
+                    toStringValue(event.metricSlug);
 
                   const changeLabel =
                     typeof event.changePercent === 'number'

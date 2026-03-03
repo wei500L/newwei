@@ -144,7 +144,30 @@
         "targetsEmpty": "暂无目标。",
         "targetMeta": "权重 {{weight}} · 置信度 {{conf}}",
         "ciVisualization": "置信区间可视化",
-        "sentimentCompare": "负面情绪占比对比"
+        "sentimentCompare": "负面情绪占比对比",
+        "realtime": {
+          "source": "来源",
+          "stale": "过期快照",
+          "maxStaleMinutes": "最大过期 {{minutes}} 分钟",
+          "latestTimestamp": "最新时间点 {{time}}",
+          "emptyStructured": "暂无结构化实时证据字段。",
+          "countryCodes": "国家/地区代码",
+          "tensions": "高紧张度对",
+          "leads": "预测领先信号",
+          "spikes": "关键词激增",
+          "militaryCount": "军机数量",
+          "disruptions": "AIS 扰动",
+          "outages": "网络中断",
+          "unrest": "抗议事件",
+          "acled": "ACLED 事件",
+          "gdelt": "GDELT 事件",
+          "dedupeReducedBy": "去重减少",
+          "defcon": "DEFCON",
+          "adjustedScore": "调整后分数",
+          "openLocations": "开放地区数",
+          "activeSpikes": "活跃激增",
+          "avgPop": "平均热度"
+        }
       },
       "detail": {
         "triggeredAt": "触发时间",
@@ -256,6 +279,7 @@
         "economicAnomaly": "经济异常",
         "entitySentiment": "实体情感",
         "entityAssociation": "实体关联",
+        "realtimeSignal": "实时信号",
         "last7Days": "最近 7 天",
         "last30Days": "最近 30 天"
       },
@@ -383,7 +407,19 @@
       "realtime": {
         "title": "实时信号",
         "metricPreset": "实时指标预设",
-        "metricPresetHint": "请选择标准实时信号指标标识，以便与调度快照保持一致。"
+        "metricPresetHint": "请选择标准实时信号指标标识，以便与调度快照保持一致。",
+        "presetDefaults": "默认触发条件：{{operator}} {{threshold}}",
+        "metrics": {
+          "opensky": "OpenSky 军机数量",
+          "ais": "AIS 扰动",
+          "unrest": "抗议事件数",
+          "outages": "互联网中断",
+          "keywordSpike": "关键词激增计数",
+          "pizzint": "PizzINT DEFCON",
+          "gdeltTension": "GDELT 紧张度最高分",
+          "polymarketLeads": "Polymarket 领先信号数",
+          "custom": "自定义：{{slug}}"
+        }
       }
     },
     "channels": {
@@ -4955,6 +4991,12 @@
         "title": "实时信号聚合",
         "body": "这些配置用于控制 8 路实时信号链路，结果会同步影响告警、Dashboard 战争地图与态势监控预测信号。"
       },
+      "overview": {
+        "enabledSources": "已启用数据源",
+        "disabledSources": "已禁用数据源",
+        "fastestInterval": "最快轮询间隔",
+        "configuredSecrets": "已配置密钥"
+      },
       "status": {
         "label": "状态",
         "env": "使用环境变量默认值",
@@ -4962,6 +5004,7 @@
         "enabled": "已启用",
         "disabled": "已禁用",
         "notConfigured": "未配置",
+        "sourceSnapshot": "信号源快照",
         "relayBaseUrl": "Relay 基础地址",
         "polymarketProxyUrl": "Polymarket 代理地址",
         "relaySharedSecret": "Relay 共享密钥",
