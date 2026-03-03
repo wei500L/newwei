@@ -61,6 +61,35 @@ describe('war-map url-state', () => {
     expect(next.get('foo')).toBe('bar');
   });
 
+  it('persists all-disabled layers via an empty layers token', () => {
+    const noneVisible = cloneDefaultLayerVisibility();
+    for (const layerId of Object.keys(noneVisible) as Array<keyof WarMapLayerVisibility>) {
+      noneVisible[layerId] = false;
+    }
+
+    const written = writeWarMapUrlState(new URLSearchParams(), {
+      viewState: {
+        lat: 20,
+        lon: 0,
+        zoom: 1.8,
+        bearing: 0,
+        pitch: 30,
+      },
+      activePreset: 'global',
+      timeRangePreset: '7d',
+      layerVisibility: noneVisible,
+      renderer: 'deckgl',
+    });
+
+    expect(written.get('layers')).toBe('');
+
+    const parsed = readWarMapUrlState(written);
+    expect(parsed.layerVisibility).toBeDefined();
+    expect(Object.values(parsed.layerVisibility ?? {}).every((visible) => visible === false)).toBe(
+      true,
+    );
+  });
+
   it('round-trips non-default layer visibility', () => {
     const visibility = cloneDefaultLayerVisibility();
     visibility.conflicts = true;

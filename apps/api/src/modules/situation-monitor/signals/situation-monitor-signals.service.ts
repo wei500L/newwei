@@ -1012,8 +1012,18 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       return new Date().toISOString();
     }
 
-    const [year, month, day] = datePart.split('-').map((entry) => Number(entry));
-    const [hours, minutes, seconds] = timePart.split(':').map((entry) => Number(entry));
+    const dateSegments = datePart.split('-');
+    const timeSegments = timePart.split(':');
+    if (dateSegments.length !== 3 || timeSegments.length !== 3) {
+      return new Date().toISOString();
+    }
+
+    const year = Number(dateSegments[0]);
+    const month = Number(dateSegments[1]);
+    const day = Number(dateSegments[2]);
+    const hours = Number(timeSegments[0]);
+    const minutes = Number(timeSegments[1]);
+    const seconds = Number(timeSegments[2]);
     if (
       !Number.isFinite(year) ||
       !Number.isFinite(month) ||

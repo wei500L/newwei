@@ -142,7 +142,9 @@ export class DashboardController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: DashboardWarMapQueryDto,
   ) {
-    const range = this.chartsService.resolveRange(query);
+    const range = this.chartsService.resolveRange(query, {
+      alignToUtcDay: false,
+    });
     return this.chartsService.getWarMapLayers({
       translateTarget: parseTranslateTarget(query.translate),
       orgId: user.orgId,
@@ -156,7 +158,9 @@ export class DashboardController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: DashboardWarMapQueryDto,
   ) {
-    const range = this.chartsService.resolveRange(query);
+    const range = this.chartsService.resolveRange(query, {
+      alignToUtcDay: false,
+    });
     return this.chartsService.getWarMapEvents(range, user.orgId, {
       translateTarget: parseTranslateTarget(query.translate),
       bbox: parseWarMapBbox(query.bbox),
@@ -171,7 +175,9 @@ export class DashboardController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: DashboardWarMapNewsMarkersQueryDto,
   ) {
-    const range = this.chartsService.resolveRange(query);
+    const range = this.chartsService.resolveRange(query, {
+      alignToUtcDay: false,
+    });
     return this.chartsService.getWarMapNewsMarkers(range, user.orgId, {
       translateTarget: parseTranslateTarget(query.translate),
       bbox: parseWarMapBbox(query.bbox),

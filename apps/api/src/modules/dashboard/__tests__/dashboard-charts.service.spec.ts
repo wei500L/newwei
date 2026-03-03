@@ -9,6 +9,41 @@ const createCache = () => ({
 });
 
 describe("DashboardChartsService", () => {
+  it("resolves aligned UTC day range by default", () => {
+    const service = new DashboardChartsService(
+      {} as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+    );
+
+    const range = service.resolveRange({
+      start: "2026-03-02T10:15:00.000Z",
+      end: "2026-03-03T08:45:30.123Z",
+    });
+
+    expect(range.start.toISOString()).toBe("2026-03-02T00:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-03-03T23:59:59.999Z");
+  });
+
+  it("preserves sub-day precision when day alignment is disabled", () => {
+    const service = new DashboardChartsService(
+      {} as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+    );
+
+    const range = service.resolveRange(
+      {
+        start: "2026-03-02T10:15:00.000Z",
+        end: "2026-03-03T08:45:30.123Z",
+      },
+      { alignToUtcDay: false },
+    );
+
+    expect(range.start.toISOString()).toBe("2026-03-02T10:15:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-03-03T08:45:30.123Z");
+  });
+
   it("filters war map news markers by publishedAt priority (falls back to crawlAt when publishedAt is null)", async () => {
     const prisma = {
       processedArticle: {

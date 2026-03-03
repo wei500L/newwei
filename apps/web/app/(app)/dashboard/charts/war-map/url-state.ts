@@ -128,7 +128,7 @@ export function writeWarMapUrlState(
 
   const serializedLayers = enabledLayers.join(',');
   const serializedDefaults = defaultEnabledLayers.join(',');
-  if (serializedLayers && serializedLayers !== serializedDefaults) {
+  if (serializedLayers !== serializedDefaults) {
     next.set('layers', serializedLayers);
   } else {
     next.delete('layers');

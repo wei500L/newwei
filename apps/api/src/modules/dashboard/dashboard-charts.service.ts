@@ -584,6 +584,10 @@ interface DateRange {
   end: Date;
 }
 
+interface ResolveRangeOptions {
+  alignToUtcDay?: boolean;
+}
+
 const alignUtcDayStart = (value: Date) => {
   const normalized = new Date(value);
   normalized.setUTCHours(0, 0, 0, 0);
@@ -1496,23 +1500,27 @@ export class DashboardChartsService {
     }
   }
 
-  resolveRange(query: DashboardTimeRangeQueryDto): DateRange {
+  resolveRange(
+    query: DashboardTimeRangeQueryDto,
+    options: ResolveRangeOptions = {},
+  ): DateRange {
     const end = query.end ? new Date(query.end) : new Date();
     const start = query.start
       ? new Date(query.start)
       : new Date(end.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
+    const alignToUtcDay = options.alignToUtcDay ?? true;
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException("Invalid date range");
     }
-    const alignedStart = alignUtcDayStart(start);
-    const alignedEnd = alignUtcDayEnd(end);
+    const resolvedStart = alignToUtcDay ? alignUtcDayStart(start) : new Date(start);
+    const resolvedEnd = alignToUtcDay ? alignUtcDayEnd(end) : new Date(end);
 
-    if (alignedStart > alignedEnd) {
+    if (resolvedStart > resolvedEnd) {
       throw new BadRequestException("Start must be before end");
     }
 
-    return { start: alignedStart, end: alignedEnd };
+    return { start: resolvedStart, end: resolvedEnd };
   }
 
   getWarMapGeoJson(): WarMapGeoJsonResponse {

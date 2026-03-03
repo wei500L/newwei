@@ -16,6 +16,7 @@ import {
   type JwtPayload,
 } from '../../auth/auth.service';
 import { EnvService } from '../../config/config.service';
+import { UserSessionManager } from '../../websocket/user-session-manager.service';
 import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
 
 interface RateLimitState {
@@ -46,6 +47,7 @@ export class SituationMonitorSignalsGateway
     private readonly authService: AuthService,
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly dispatcher: SituationMonitorSignalsDispatcher,
+    private readonly sessions: UserSessionManager,
   ) {}
 
   onModuleInit() {
@@ -93,19 +95,28 @@ export class SituationMonitorSignalsGateway
       client.data.user = profile;
       client.data.clientIp = ip;
 
+      const { userConnections } = await this.sessions.register(this.server, client, {
+        userId: profile.id,
+        orgId: profile.orgId,
+        ip,
+      });
+
       client.emit('situation:connected', {
         orgId: profile.orgId,
         userId: profile.id,
       });
 
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip },
+        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
         'Situation monitor socket connected',
       );
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const responseMessage =
-        errorMessage === 'Too many connection attempts' ? errorMessage : 'Unauthorized';
+        errorMessage === 'Too many connections' || errorMessage === 'Too many connection attempts'
+          ? errorMessage
+          : 'Unauthorized';
+      this.sessions.unregister(client);
       this.logger.warn({ socketId: client.id, ip, error: errorMessage }, 'Situation monitor socket auth failed');
       client.emit('situation:error', { message: responseMessage });
       client.disconnect(true);
@@ -114,6 +125,7 @@ export class SituationMonitorSignalsGateway
 
   handleDisconnect(client: Socket) {
     const profile = client.data?.user as AuthenticatedUser | undefined;
+    this.sessions.unregister(client);
     this.logger.info(
       {
         socketId: client.id,

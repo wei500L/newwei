@@ -285,6 +285,11 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
   const setActivePreset = useWarMapSettingsStore((state) => state.setActivePreset);
   const setTimeRangePreset = useWarMapSettingsStore((state) => state.setTimeRangePreset);
   const resetAll = useWarMapSettingsStore((state) => state.resetAll);
+  const viewStateRef = useRef(viewState);
+
+  useEffect(() => {
+    viewStateRef.current = viewState;
+  }, [viewState]);
 
   useEffect(() => {
     const root = wrapperRef.current;
@@ -420,13 +425,14 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       return;
     }
 
+    const initialViewState = viewStateRef.current;
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: MAP_STYLE_URL,
-      center: [viewState.lon, viewState.lat],
-      zoom: viewState.zoom,
-      bearing: viewState.bearing,
-      pitch: viewState.pitch,
+      center: [initialViewState.lon, initialViewState.lat],
+      zoom: initialViewState.zoom,
+      bearing: initialViewState.bearing,
+      pitch: initialViewState.pitch,
       attributionControl: false,
     });
 
@@ -482,7 +488,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       map.remove();
       setMapReady(false);
     };
-  }, [inView, setViewState, viewState.bearing, viewState.lat, viewState.lon, viewState.pitch, viewState.zoom]);
+  }, [inView, setViewState]);
 
   useEffect(() => {
     const map = mapRef.current;
