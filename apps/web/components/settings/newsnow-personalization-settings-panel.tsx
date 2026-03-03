@@ -202,7 +202,7 @@ function buildSettingsFingerprint(
 function topBehaviorEntries(
   record: Record<string, number> | undefined,
   limit = 8,
-): Array<[string, number]> {
+): [string, number][] {
   if (!record) {
     return [];
   }
@@ -423,14 +423,6 @@ export function NewsnowPersonalizationSettingsPanel() {
     }
   };
 
-  if (loading && settings === null) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
-        <Spin />
-      </div>
-    );
-  }
-
   const sourceColor = settings?.source === 'db' ? 'green' : 'default';
   const sourceLabel =
     settings?.source === 'db'
@@ -515,6 +507,14 @@ export function NewsnowPersonalizationSettingsPanel() {
       window.removeEventListener('beforeunload', beforeUnloadHandler);
     };
   }, [isSettingsDirty]);
+
+  if (loading && settings === null) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+        <Spin />
+      </div>
+    );
+  }
 
   return (
     <>

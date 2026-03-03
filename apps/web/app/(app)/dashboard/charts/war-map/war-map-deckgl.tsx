@@ -3,8 +3,6 @@
 import { SettingOutlined } from '@ant-design/icons';
 import { PathLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { useQuery } from '@tanstack/react-query';
-import { Button, Checkbox, Popover, Skeleton, Space, Tag, Tooltip } from 'antd';
 import {
   type WarMapLayerDataset,
   type WarMapLayerFeature,
@@ -15,6 +13,8 @@ import {
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
 } from '@modular/utils';
+import { useQuery } from '@tanstack/react-query';
+import { Button, Checkbox, Popover, Skeleton, Space, Tag, Tooltip } from 'antd';
 import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +30,7 @@ import { useSituationMonitorMonitorsStore } from '@/store/situation-monitor-moni
 import { useDashboardRangeStore } from '@/store/time-range';
 import { useWarMapSettingsStore } from '@/store/war-map-settings';
 
+import { buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
 const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
@@ -92,7 +93,7 @@ interface WarMapLayersResponse {
   layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>>;
 }
 
-type DeckPoint = {
+interface DeckPoint {
   id: string;
   lat: number;
   lng: number;
@@ -106,7 +107,7 @@ type DeckPoint = {
   query?: string;
   kind: 'event' | 'news' | 'news-cluster' | 'event-cluster' | 'layer' | 'monitor';
   description?: string;
-};
+}
 
 export interface WarMapProps {
   className?: string;
@@ -205,13 +206,6 @@ function toRgba(
   const parsed = color ? parseHexColor(color) : null;
   const [r, g, b] = parsed ?? fallback;
   return [r, g, b, clamp(Math.round(alpha * 255), 0, 255)];
-}
-
-function formatBbox(value: [number, number, number, number] | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  return value.map((part) => part.toFixed(5)).join(',');
 }
 
 function extractBbox(map: MapLibreMap): [number, number, number, number] {
@@ -330,7 +324,9 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     };
   }, [end, start, timeRangePreset]);
 
-  const queryBbox = useMemo(() => formatBbox(queryViewport.bbox), [queryViewport.bbox]);
+  const queryBbox = useMemo(() => {
+    return buildWarMapQueryBbox(queryViewport.bbox, queryViewport.zoom);
+  }, [queryViewport.bbox, queryViewport.zoom]);
 
   const eventsQuery = useQuery({
     queryKey: [
@@ -433,6 +429,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       zoom: initialViewState.zoom,
       bearing: initialViewState.bearing,
       pitch: initialViewState.pitch,
+      renderWorldCopies: false,
       attributionControl: false,
     });
 
@@ -463,15 +460,9 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
 
     map.on('load', () => {
       const projectionAwareMap = map as unknown as {
-        setProjection?: (projection: { type: 'globe' }) => void;
-        setFog?: (fog: Record<string, unknown>) => void;
+        setProjection?: (projection: { type: 'mercator' | 'globe' }) => void;
       };
-      projectionAwareMap.setProjection?.({ type: 'globe' });
-      projectionAwareMap.setFog?.({
-        range: [0.5, 10],
-        color: '#dbeafe',
-        'horizon-blend': 0.08,
-      });
+      projectionAwareMap.setProjection?.({ type: 'mercator' });
       setMapReady(true);
       syncFromMap();
     });
@@ -1151,8 +1142,8 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
         <Tooltip
-          title={t('dashboard.charts.warMap.renderer.deckglOnly', {
-            defaultValue: 'Renderer: deck.gl + MapLibre (Globe)',
+          title={t('dashboard.charts.warMap.renderer.deckglMapLibre', {
+            defaultValue: 'Renderer: deck.gl + MapLibre',
           })}
         >
           <Tag color="processing" className="text-xs">
