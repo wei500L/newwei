@@ -38,6 +38,8 @@ import type {
   SituationOrefHistoryResponse,
   SituationTelegramFeedResponse,
 } from "./types/situation-monitor-signals";
+import { isRecentOrefTimestamp, parseOrefTimestamp, translateOrefTextForLocale } from "./utils/oref-display";
+import { buildTelegramFeedQueryParams } from "./utils/telegram-feed";
 
 type GridLayoutComponent = ComponentType<Record<string, unknown>>;
 
@@ -82,6 +84,18 @@ const MD_TWO_COLUMN_PANELS = new Set<string>([
   "situation-greenland",
   "situation-iran",
 ]);
+
+const TELEGRAM_TOPIC_PRESETS = [
+  "breaking",
+  "conflict",
+  "alerts",
+  "osint",
+  "politics",
+  "middleeast",
+  "geopolitics",
+  "cyber",
+  "other",
+] as const;
 
 interface HeadlineRef {
   title: string;
@@ -677,6 +691,8 @@ export function SituationMonitorContent() {
   const [telegramFeed, setTelegramFeed] = useState<SituationTelegramFeedResponse | null>(null);
   const [orefAlerts, setOrefAlerts] = useState<SituationOrefAlertsResponse | null>(null);
   const [orefHistory, setOrefHistory] = useState<SituationOrefHistoryResponse | null>(null);
+  const [telegramTopicFilter, setTelegramTopicFilter] = useState<string>("all");
+  const [telegramChannelFilter, setTelegramChannelFilter] = useState<string>("all");
   const [signalsLoading, setSignalsLoading] = useState<{ telegram: boolean; oref: boolean }>({
     telegram: false,
     oref: false,
@@ -690,12 +706,24 @@ export function SituationMonitorContent() {
   const [missedSignalType, setMissedSignalType] = useState<"narrative" | "correlation">("narrative");
   const [missedSignalId, setMissedSignalId] = useState<string>("");
   const [missedHeadlineId, setMissedHeadlineId] = useState<string>("");
+  const [pageVisible, setPageVisible] = useState(
+    typeof document === "undefined" ? true : !document.hidden,
+  );
   const refreshIdRef = useRef(0);
   const loading = refreshStage !== "idle";
 
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
   const monitorMatches = useSituationMonitorMonitorsStore((state) => state.matches);
   const scanMonitors = useSituationMonitorMonitorsStore((state) => state.scan);
+  const telegramPanelVisible = useSituationMonitorLayoutStore(
+    (state) => state.visibility["telegram-feed"],
+  );
+  const orefPanelVisible = useSituationMonitorLayoutStore(
+    (state) => state.visibility["oref-alerts"],
+  );
+
+  const telegramSignalActive = Boolean(session?.accessToken && pageVisible && telegramPanelVisible);
+  const orefSignalActive = Boolean(session?.accessToken && pageVisible && orefPanelVisible);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -732,7 +760,13 @@ export function SituationMonitorContent() {
         const response = await apiClient.get<SituationTelegramFeedResponse>(
           "situation-monitor/telegram-feed",
           {
-            params: { limit: 80 },
+            params: buildTelegramFeedQueryParams(
+              {
+                topic: telegramTopicFilter,
+                channel: telegramChannelFilter,
+              },
+              { limit: 80 },
+            ),
           },
         );
         setTelegramFeed(response.data ?? null);
@@ -744,7 +778,7 @@ export function SituationMonitorContent() {
         }
       }
     },
-    [apiClient, session?.accessToken],
+    [apiClient, session?.accessToken, telegramChannelFilter, telegramTopicFilter],
   );
 
   const loadOrefSignals = useCallback(
@@ -918,9 +952,31 @@ export function SituationMonitorContent() {
   }, [load]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const onVisibilityChange = () => {
+      setPageVisible(!document.hidden);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!telegramSignalActive) {
+      return;
+    }
     void loadTelegramFeed();
+  }, [loadTelegramFeed, telegramSignalActive]);
+
+  useEffect(() => {
+    if (!orefSignalActive) {
+      return;
+    }
     void loadOrefSignals();
-  }, [loadOrefSignals, loadTelegramFeed]);
+  }, [loadOrefSignals, orefSignalActive]);
 
   useEffect(() => {
     if (!autoRefresh) {
@@ -931,34 +987,41 @@ export function SituationMonitorContent() {
   }, [autoRefresh, load]);
 
   useEffect(() => {
-    if (!session?.accessToken) {
+    if (!telegramSignalActive) {
       return;
     }
     const timer = setInterval(() => {
       void loadTelegramFeed({ silent: true });
     }, 60_000);
     return () => clearInterval(timer);
-  }, [loadTelegramFeed, session?.accessToken]);
+  }, [loadTelegramFeed, telegramSignalActive]);
 
   useEffect(() => {
-    if (!session?.accessToken) {
+    if (!orefSignalActive) {
       return;
     }
     const timer = setInterval(() => {
       void loadOrefSignals({ silent: true });
     }, 120_000);
     return () => clearInterval(timer);
-  }, [loadOrefSignals, session?.accessToken]);
+  }, [loadOrefSignals, orefSignalActive]);
 
   const handleRealtimeTelegramUpdate = useCallback(() => {
+    if (!telegramSignalActive) {
+      return;
+    }
     void loadTelegramFeed({ silent: true });
-  }, [loadTelegramFeed]);
+  }, [loadTelegramFeed, telegramSignalActive]);
 
   const handleRealtimeOrefUpdate = useCallback(() => {
+    if (!orefSignalActive) {
+      return;
+    }
     void loadOrefSignals({ silent: true });
-  }, [loadOrefSignals]);
+  }, [loadOrefSignals, orefSignalActive]);
 
   const realtimeState = useSituationMonitorStream({
+    enabled: telegramSignalActive || orefSignalActive,
     onTelegramUpdate: handleRealtimeTelegramUpdate,
     onOrefUpdate: handleRealtimeOrefUpdate,
   });
@@ -2008,6 +2071,52 @@ export function SituationMonitorContent() {
   const orefAlertsPerPanel = screens.lg ? 12 : 8;
   const orefHistoryPerPanel = screens.lg ? 6 : 4;
 
+  const telegramTopicOptions = useMemo(() => {
+    const dynamicTopics = new Set<string>(TELEGRAM_TOPIC_PRESETS);
+    for (const item of telegramFeed?.items ?? []) {
+      const topic = typeof item.topic === "string" ? item.topic.trim() : "";
+      if (topic) {
+        dynamicTopics.add(topic);
+      }
+    }
+    if (telegramTopicFilter !== "all") {
+      dynamicTopics.add(telegramTopicFilter);
+    }
+
+    return [
+      {
+        label: t("situationMonitor.telegram.filters.allTopics", { defaultValue: "All topics" }),
+        value: "all",
+      },
+      ...Array.from(dynamicTopics)
+        .sort((a, b) => a.localeCompare(b))
+        .map((topic) => ({ label: topic, value: topic })),
+    ];
+  }, [telegramFeed?.items, telegramTopicFilter, t]);
+
+  const telegramChannelOptions = useMemo(() => {
+    const channels = new Set<string>();
+    for (const item of telegramFeed?.items ?? []) {
+      const channel = typeof item.channel === "string" ? item.channel.trim() : "";
+      if (channel) {
+        channels.add(channel);
+      }
+    }
+    if (telegramChannelFilter !== "all") {
+      channels.add(telegramChannelFilter);
+    }
+
+    return [
+      {
+        label: t("situationMonitor.telegram.filters.allChannels", { defaultValue: "All channels" }),
+        value: "all",
+      },
+      ...Array.from(channels)
+        .sort((a, b) => a.localeCompare(b))
+        .map((channel) => ({ label: channel, value: channel })),
+    ];
+  }, [telegramChannelFilter, telegramFeed?.items, t]);
+
   const updatedAt = data?.generatedAt ? dayjs(data.generatedAt).toDate() : null;
   const marketsSnapshot = data?.markets;
   const cryptoSnapshot = data?.crypto;
@@ -2860,6 +2969,27 @@ export function SituationMonitorContent() {
       loading={signalsLoading.telegram && !telegramFeed}
     >
       {telegramFeed?.error ? <Alert type="warning" showIcon message={telegramFeed.error} /> : null}
+      <Space wrap size={8} style={{ marginBottom: 10 }}>
+        <Typography.Text type="secondary">
+          {t("situationMonitor.telegram.filters.label", { defaultValue: "Filters" })}
+        </Typography.Text>
+        <Select
+          size="small"
+          style={{ minWidth: 150 }}
+          value={telegramTopicFilter}
+          options={telegramTopicOptions}
+          onChange={(value) => setTelegramTopicFilter(String(value))}
+        />
+        <Select
+          size="small"
+          style={{ minWidth: 180 }}
+          value={telegramChannelFilter}
+          options={telegramChannelOptions}
+          showSearch
+          optionFilterProp="label"
+          onChange={(value) => setTelegramChannelFilter(String(value))}
+        />
+      </Space>
       {!telegramFeed ? (
         <Typography.Text type="secondary">
           {t("common.loading", { defaultValue: "Loading" })}
@@ -2962,24 +3092,52 @@ export function SituationMonitorContent() {
             <List
               size="small"
               dataSource={orefAlerts.alerts.slice(0, orefAlertsPerPanel)}
-              renderItem={(alert) => (
-                <List.Item key={alert.id}>
-                  <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                    <Space size={8} wrap>
-                      <Tag color="red">{alert.cat || "alert"}</Tag>
-                      <Typography.Text>{alert.title}</Typography.Text>
+              renderItem={(alert) => {
+                const alertDate = parseOrefTimestamp(alert.alertDate);
+                const alertDateText =
+                  alertDate && !Number.isNaN(alertDate.getTime())
+                    ? formatDateTime(alertDate, locale, {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : alert.alertDate;
+                const recent = isRecentOrefTimestamp(alert.alertDate);
+
+                return (
+                  <List.Item key={alert.id}>
+                    <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                      <Space size={8} wrap>
+                        <Tag color="red">
+                          {translateOrefTextForLocale(alert.cat || "alert", { translateToZh })}
+                        </Tag>
+                        <Typography.Text>
+                          {translateOrefTextForLocale(alert.title, { translateToZh })}
+                        </Typography.Text>
+                        {recent ? (
+                          <Tag color="volcano">
+                            {t("situationMonitor.oref.recent", { defaultValue: "Recent" })}
+                          </Tag>
+                        ) : null}
+                      </Space>
+                      {Array.isArray(alert.data) && alert.data.length > 0 ? (
+                        <Typography.Text type="secondary">
+                          {alert.data
+                            .slice(0, 4)
+                            .map((area) =>
+                              translateOrefTextForLocale(area, { translateToZh }),
+                            )
+                            .join(" · ")}
+                        </Typography.Text>
+                      ) : null}
+                      {alertDateText ? (
+                        <Typography.Text type="secondary">{alertDateText}</Typography.Text>
+                      ) : null}
                     </Space>
-                    {Array.isArray(alert.data) && alert.data.length > 0 ? (
-                      <Typography.Text type="secondary">
-                        {alert.data.slice(0, 4).join(" · ")}
-                      </Typography.Text>
-                    ) : null}
-                    {alert.alertDate ? (
-                      <Typography.Text type="secondary">{alert.alertDate}</Typography.Text>
-                    ) : null}
-                  </Space>
-                </List.Item>
-              )}
+                  </List.Item>
+                );
+              }}
             />
           )}
 
@@ -2993,15 +3151,21 @@ export function SituationMonitorContent() {
                 size="small"
                 dataSource={[...orefHistory.history].reverse().slice(0, orefHistoryPerPanel)}
                 renderItem={(entry) => {
-                  const date = entry.timestamp ? new Date(entry.timestamp) : null;
+                  const date = parseOrefTimestamp(entry.timestamp);
                   const waveCount = (entry.alerts ?? []).reduce((sum, item) => {
                     const count = Array.isArray(item.data) && item.data.length > 0 ? item.data.length : 1;
                     return sum + count;
                   }, 0);
+                  const recent = isRecentOrefTimestamp(entry.timestamp);
                   return (
                     <List.Item key={entry.timestamp}>
                       <Space size={8} wrap>
                         <Tag color="default">{waveCount}</Tag>
+                        {recent ? (
+                          <Tag color="volcano">
+                            {t("situationMonitor.oref.recent", { defaultValue: "Recent" })}
+                          </Tag>
+                        ) : null}
                         {date && !Number.isNaN(date.getTime()) ? (
                           <Typography.Text type="secondary">
                             {formatDateTime(date, locale, {

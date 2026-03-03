@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Space, Tag, Typography } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useMediaActivation } from "./use-media-activation";
@@ -61,6 +61,8 @@ const LIVE_NEWS_CHANNELS: LiveNewsChannel[] = [
   { id: "nhk", name: "NHK World", region: "asia", youtubeVideoId: "f0lYfG_vY_U" },
 ];
 
+const HLS_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
+
 function buildYoutubeEmbedUrl(videoId: string): string {
   const params = new URLSearchParams({
     autoplay: "1",
@@ -77,17 +79,49 @@ function LiveNewsVideoTile(props: {
   channel: LiveNewsChannel;
   active: boolean;
   fallbackLabel: string;
+  cooldownLabel: string;
   unavailableLabel: string;
 }) {
-  const { channel, active, fallbackLabel, unavailableLabel } = props;
+  const { channel, active, fallbackLabel, cooldownLabel, unavailableLabel } = props;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [forceYoutube, setForceYoutube] = useState(!channel.hlsUrl);
+  const [hlsCooldownUntil, setHlsCooldownUntil] = useState<number | null>(null);
 
-  const shouldUseYoutube = forceYoutube || !channel.hlsUrl;
+  const cooldownActive =
+    typeof hlsCooldownUntil === "number" && hlsCooldownUntil > Date.now();
+  const shouldUseYoutube = forceYoutube || !channel.hlsUrl || cooldownActive;
+
+  const enableYoutubeFallback = useCallback(() => {
+    setForceYoutube(true);
+    if (channel.hlsUrl) {
+      setHlsCooldownUntil(Date.now() + HLS_RETRY_COOLDOWN_MS);
+    }
+  }, [channel.hlsUrl]);
 
   useEffect(() => {
     setForceYoutube(!channel.hlsUrl);
+    setHlsCooldownUntil(null);
   }, [channel.id, channel.hlsUrl]);
+
+  useEffect(() => {
+    if (typeof hlsCooldownUntil !== "number") {
+      return;
+    }
+
+    const remaining = hlsCooldownUntil - Date.now();
+    if (remaining <= 0) {
+      setHlsCooldownUntil(null);
+      setForceYoutube(!channel.hlsUrl);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setHlsCooldownUntil(null);
+      setForceYoutube(!channel.hlsUrl);
+    }, remaining);
+
+    return () => clearTimeout(timer);
+  }, [channel.hlsUrl, hlsCooldownUntil]);
 
   useEffect(() => {
     if (!active) {
@@ -117,7 +151,7 @@ function LiveNewsVideoTile(props: {
         try {
           await video.play();
         } catch {
-          setForceYoutube(true);
+          enableYoutubeFallback();
         }
         return;
       }
@@ -138,7 +172,7 @@ function LiveNewsVideoTile(props: {
         };
 
         if (destroyed || !hlsModule.isSupported()) {
-          setForceYoutube(true);
+          enableYoutubeFallback();
           return;
         }
 
@@ -150,11 +184,11 @@ function LiveNewsVideoTile(props: {
         hlsInstance.attachMedia(video);
         hlsInstance.on(hlsModule.Events.ERROR, (_event, data) => {
           if (data?.fatal) {
-            setForceYoutube(true);
+            enableYoutubeFallback();
           }
         });
       } catch {
-        setForceYoutube(true);
+        enableYoutubeFallback();
       }
     };
 
@@ -169,7 +203,7 @@ function LiveNewsVideoTile(props: {
       video.removeAttribute("src");
       video.load();
     };
-  }, [active, channel.hlsUrl, shouldUseYoutube]);
+  }, [active, channel.hlsUrl, enableYoutubeFallback, shouldUseYoutube]);
 
   if (!active) {
     return (
@@ -184,7 +218,7 @@ function LiveNewsVideoTile(props: {
       <div className="relative h-[180px] overflow-hidden rounded border border-[var(--border)] bg-black">
         {channel.hlsUrl ? (
           <Tag color="orange" style={{ position: "absolute", top: 8, left: 8, zIndex: 2 }}>
-            {fallbackLabel}
+            {cooldownActive ? cooldownLabel : fallbackLabel}
           </Tag>
         ) : null}
         <iframe
@@ -259,6 +293,9 @@ export function SituationMonitorLiveNewsPanel() {
                   active={activation.active}
                   fallbackLabel={t("situationMonitor.liveNews.hlsFallback", {
                     defaultValue: "HLS fallback",
+                  })}
+                  cooldownLabel={t("situationMonitor.liveNews.hlsCooldown", {
+                    defaultValue: "HLS cooldown",
                   })}
                   unavailableLabel={t("situationMonitor.liveNews.unavailable", {
                     defaultValue: "Stream paused",

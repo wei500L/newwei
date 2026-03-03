@@ -17,6 +17,7 @@ export interface SituationMonitorStreamState {
 }
 
 export interface UseSituationMonitorStreamOptions {
+  enabled?: boolean;
   onTelegramUpdate?: (payload: SituationTelegramRealtimePayload) => void;
   onOrefUpdate?: (payload: SituationOrefRealtimePayload) => void;
 }
@@ -28,16 +29,20 @@ export function useSituationMonitorStream(
   const token = session?.accessToken as string | undefined;
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadItems = permissions.includes("items.read");
+  const isEnabled = options?.enabled ?? true;
   const socketRef = useRef<Socket | null>(null);
   const [state, setState] = useState<SituationMonitorStreamState>({
     connected: false,
   });
 
-  const onTelegramUpdate = options?.onTelegramUpdate;
-  const onOrefUpdate = options?.onOrefUpdate;
+  const optionsRef = useRef<UseSituationMonitorStreamOptions | undefined>(options);
 
   useEffect(() => {
-    if (status !== "authenticated" || !token || !canReadItems) {
+    optionsRef.current = options;
+  }, [options]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !token || !canReadItems || !isEnabled) {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -47,10 +52,15 @@ export function useSituationMonitorStream(
     }
 
     const socket = io(`${env.apiRoot}/situation-monitor`, {
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
       auth: { token },
       withCredentials: true,
       autoConnect: false,
+      timeout: 10_000,
+      reconnection: true,
+      reconnectionAttempts: 8,
+      reconnectionDelay: 1_000,
+      reconnectionDelayMax: 10_000,
     });
     socketRef.current = socket;
 
@@ -67,11 +77,11 @@ export function useSituationMonitorStream(
     };
 
     const handleTelegramUpdate = (payload: SituationTelegramRealtimePayload) => {
-      onTelegramUpdate?.(payload);
+      optionsRef.current?.onTelegramUpdate?.(payload);
     };
 
     const handleOrefUpdate = (payload: SituationOrefRealtimePayload) => {
-      onOrefUpdate?.(payload);
+      optionsRef.current?.onOrefUpdate?.(payload);
     };
 
     socket.on("connect", handleConnect);
@@ -103,7 +113,7 @@ export function useSituationMonitorStream(
       socketRef.current = null;
       setState({ connected: false });
     };
-  }, [canReadItems, onOrefUpdate, onTelegramUpdate, status, token]);
+  }, [canReadItems, isEnabled, status, token]);
 
   return state;
 }

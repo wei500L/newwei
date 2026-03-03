@@ -6823,14 +6823,20 @@
       "configMissing": "Not configured",
       "disabled": "Disabled",
       "configHint": "Configure Telegram API credentials and session in environment variables.",
-      "empty": "No Telegram signals yet."
+      "empty": "No Telegram signals yet.",
+      "filters": {
+        "label": "Filters",
+        "allTopics": "All topics",
+        "allChannels": "All channels"
+      }
     },
     "oref": {
       "title": "OREF Alerts",
       "history24h": "24h {{count}}",
       "configHint": "Configure OREF proxy auth and enable OREF polling in environment variables.",
       "empty": "No active OREF alerts.",
-      "recentWaves": "Recent waves"
+      "recentWaves": "Recent waves",
+      "recent": "Recent"
     },
     "markets": {
       "title": "Markets",
@@ -6872,6 +6878,7 @@
     "liveNews": {
       "title": "Live News",
       "hlsFallback": "HLS fallback",
+      "hlsCooldown": "HLS cooldown",
       "unavailable": "Stream paused",
       "idle": "Idle pause: move mouse or press key to resume.",
       "hidden": "Background tab: stream paused.",

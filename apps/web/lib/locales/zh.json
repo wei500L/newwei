@@ -6823,14 +6823,20 @@
       "configMissing": "未配置",
       "disabled": "已禁用",
       "configHint": "请在环境变量中配置 Telegram API 凭据与 session。",
-      "empty": "暂无 Telegram 信号。"
+      "empty": "暂无 Telegram 信号。",
+      "filters": {
+        "label": "筛选",
+        "allTopics": "全部主题",
+        "allChannels": "全部频道"
+      }
     },
     "oref": {
       "title": "OREF 告警",
       "history24h": "24小时 {{count}}",
       "configHint": "请在环境变量中配置 OREF 代理认证并启用 OREF 轮询。",
       "empty": "暂无 OREF 活跃告警。",
-      "recentWaves": "最近波次"
+      "recentWaves": "最近波次",
+      "recent": "最新"
     },
     "markets": {
       "title": "市场",
@@ -6872,6 +6878,7 @@
     "liveNews": {
       "title": "实时新闻直播",
       "hlsFallback": "HLS 回退",
+      "hlsCooldown": "HLS 冷却中",
       "unavailable": "直播已暂停",
       "idle": "空闲暂停：移动鼠标或按键后恢复。",
       "hidden": "后台标签页：直播已暂停。",

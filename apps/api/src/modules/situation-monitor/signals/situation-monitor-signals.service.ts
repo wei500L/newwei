@@ -22,15 +22,7 @@ import {
   SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG,
   SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
 } from '../signal-metrics.constants';
-import type {
-  SituationOrefAlertsResponse,
-  SituationOrefHistoryResponse,
-  SituationTelegramFeedResponse,
-  TelegramChannelConfig,
-  TelegramSignalItem,
-  OrefAlert,
-  OrefHistoryEntry,
-} from './situation-monitor-signals.types';
+
 import {
   OREF_POLL_JOB_NAME,
   SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY,
@@ -38,8 +30,17 @@ import {
   SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
   TELEGRAM_POLL_JOB_NAME,
 } from './situation-monitor-signals.constants';
-import telegramChannelsConfig from './telegram-channels.json';
 import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
+import type {
+  SituationOrefAlertsResponse,
+  SituationOrefHistoryResponse,
+  SituationTelegramFeedResponse,
+  OrefAlert,
+  OrefHistoryEntry,
+  TelegramChannelConfig,
+  TelegramSignalItem,
+} from './situation-monitor-signals.types';
+import telegramChannelsConfig from './telegram-channels.json';
 
 const logger = createLogger({ name: 'situation-monitor-signals' });
 const execFileAsync = promisify(execFile);
@@ -107,6 +108,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private telegramPollInFlight = false;
   private telegramPollStartedAt = 0;
+  private serviceStartedAt = Date.now();
   private orefBootstrapped = false;
   private orefEnsureRulesAt = 0;
   private lastOrefAlertRuleCheckAt = 0;
@@ -240,7 +242,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const startupDelayMs = this.getTelegramStartupDelayMs();
     if (startupDelayMs > 0 && this.telegramState.lastPollAt === 0) {
-      const sinceStart = Date.now() - (this.telegramPollStartedAt || Date.now());
+      const sinceStart = Date.now() - this.serviceStartedAt;
       if (sinceStart < startupDelayMs) {
         return;
       }
@@ -262,7 +264,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       getMessages: (
         entity: unknown,
         options: { limit: number; minId?: number },
-      ) => Promise<Array<Record<string, unknown>>>;
+      ) => Promise<Record<string, unknown>[]>;
     };
 
     const pollStartAt = Date.now();
@@ -403,8 +405,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     if (!this.orefBootstrapped) {
-      await this.bootstrapOrefHistoryWithRetry();
-      this.orefBootstrapped = true;
+      this.orefBootstrapped = await this.bootstrapOrefHistoryWithRetry();
     }
 
     try {
@@ -459,9 +460,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         });
       }
 
-      if (changed && alerts.length > 0) {
-        await this.triggerOrefAlertChecks();
-      }
+      await this.triggerOrefAlertChecks();
     } catch (error) {
       this.orefState.lastError = this.redactOrefError(this.toErrorMessage(error));
       logger.warn({ error }, 'OREF poll failed');
@@ -487,7 +486,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           getMessages: (
             entity: unknown,
             options: { limit: number; minId?: number },
-          ) => Promise<Array<Record<string, unknown>>>;
+          ) => Promise<Record<string, unknown>[]>;
         };
       };
       const sessionsModule = (await import('telegram/sessions')) as {
@@ -605,14 +604,20 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     };
   }
 
-  private async bootstrapOrefHistoryWithRetry() {
+  private async bootstrapOrefHistoryWithRetry(): Promise<boolean> {
     const cached = await this.cache.get<SituationOrefHistoryResponse>(SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY);
-    if (cached && Array.isArray(cached.history) && cached.history.length > 0) {
+    if (cached && Array.isArray(cached.history)) {
       this.orefState.history = cached.history;
       this.orefState.historyCount24h = cached.historyCount24h ?? 0;
       this.orefState.totalHistoryCount = cached.totalHistoryCount ?? 0;
+      if (typeof cached.timestamp === 'string' && cached.timestamp.trim().length > 0) {
+        const ts = Date.parse(cached.timestamp);
+        if (Number.isFinite(ts)) {
+          this.orefState.lastPollAt = ts;
+        }
+      }
       this.orefState.bootstrapSource = 'cache';
-      return;
+      return true;
     }
 
     const maxAttempts = this.getOrefBootstrapRetries();
@@ -621,16 +626,18 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         await this.bootstrapOrefHistoryFromUpstream();
         this.orefState.bootstrapSource = 'upstream';
         await this.persistOrefHistory();
-        return;
+        return true;
       } catch (error) {
         if (attempt >= maxAttempts) {
           logger.warn({ error }, 'OREF history bootstrap exhausted all retries');
-          return;
+          return false;
         }
         const delayMs = 3_000 * 2 ** (attempt - 1) + Math.floor(Math.random() * 800);
         await this.delay(delayMs);
       }
     }
+
+    return false;
   }
 
   private async bootstrapOrefHistoryFromUpstream() {
@@ -647,7 +654,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       return;
     }
 
-    const parsed = JSON.parse(cleaned) as Array<Record<string, unknown>>;
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>[];
     const records = Array.isArray(parsed) ? parsed.slice(0, 500) : [];
 
     const waves = new Map<string, OrefAlert[]>();
