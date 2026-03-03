@@ -84,6 +84,15 @@ const SIMPLE_STOPWORDS = new Set([
   "live",
 ]);
 
+const REALTIME_SIGNAL_INSIGHT_SOURCES = [
+  "keyword_spike",
+  "polymarket_leads",
+  "gdelt_tension",
+  "pizzint",
+] as const;
+
+type RealtimeSignalInsightSource = (typeof REALTIME_SIGNAL_INSIGHT_SOURCES)[number];
+
 const MILITARY_QUERY_REGIONS = [
   {
     id: "indo_pacific",
@@ -148,14 +157,15 @@ export class RealtimeSignalsService {
       return;
     }
 
+    const orgs = await this.prisma.org.findMany({
+      where: { isActive: true },
+      select: { id: true },
+    });
+
     await this.cache.withLock(
       "cron:realtime-signals",
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       async () => {
-        const orgs = await this.prisma.org.findMany({
-          where: { isActive: true },
-          select: { id: true },
-        });
         for (const org of orgs) {
           try {
             await this.refreshOrg(org.id, runtime);
@@ -173,15 +183,15 @@ export class RealtimeSignalsService {
   async refreshOrg(orgId: string, runtimeConfig?: RealtimeSignalsRuntimeConfig) {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
+      await this.store.setInsightSnapshot(orgId, this.createEmptyInsightSnapshot());
       return;
     }
 
-    const currentInsight = (await this.store.getInsightSnapshot(orgId)) ?? {
-      keywordSpikes: [],
-      predictionLeads: [],
-      tensions: [],
-    };
-    const nextInsight: RealtimeSignalsInsightSnapshot = { ...currentInsight };
+    const currentInsight =
+      (await this.store.getInsightSnapshot(orgId)) ??
+      this.createEmptyInsightSnapshot();
+    const nextInsight = this.createEmptyInsightSnapshot();
+    const nowMs = Date.now();
 
     for (const source of REALTIME_SIGNAL_SOURCES) {
       const sourceConfig = runtime.sources[source];
@@ -189,12 +199,20 @@ export class RealtimeSignalsService {
         continue;
       }
 
-      const shouldRun = await this.shouldRefreshSource(
+      const refreshState = await this.resolveRefreshState(
         orgId,
         source,
         sourceConfig.intervalSec,
       );
-      if (!shouldRun) {
+      if (!refreshState.shouldRun) {
+        this.carryForwardInsightSnapshot(
+          nextInsight,
+          currentInsight,
+          source,
+          refreshState.lastRunMs,
+          sourceConfig.intervalSec,
+          nowMs,
+        );
         continue;
       }
 
@@ -230,26 +248,106 @@ export class RealtimeSignalsService {
   }
 
   async getSituationMonitorInsightSnapshot(orgId: string) {
-    return (
-      (await this.store.getInsightSnapshot(orgId)) ?? {
-        keywordSpikes: [],
-        predictionLeads: [],
-        tensions: [],
+    const runtime = await this.getRuntimeConfig();
+    if (!runtime.enabled) {
+      return this.createEmptyInsightSnapshot();
+    }
+
+    const currentInsight =
+      (await this.store.getInsightSnapshot(orgId)) ??
+      this.createEmptyInsightSnapshot();
+    const nextInsight = this.createEmptyInsightSnapshot();
+    const nowMs = Date.now();
+
+    for (const source of REALTIME_SIGNAL_INSIGHT_SOURCES) {
+      const sourceConfig = runtime.sources[source];
+      if (!sourceConfig?.enabled) {
+        continue;
       }
-    );
+      const lastRunMs = await this.store.getLastRun(orgId, source);
+      this.carryForwardInsightSnapshot(
+        nextInsight,
+        currentInsight,
+        source,
+        lastRunMs,
+        sourceConfig.intervalSec,
+        nowMs,
+      );
+    }
+
+    return nextInsight;
   }
 
-  private async shouldRefreshSource(
+  private async resolveRefreshState(
     orgId: string,
     source: RealtimeSignalSource,
     intervalSec: number,
   ) {
-    const lastRun = await this.store.getLastRun(orgId, source);
-    if (!lastRun) {
-      return true;
+    const lastRunMs = await this.store.getLastRun(orgId, source);
+    if (!lastRunMs) {
+      return { shouldRun: true, lastRunMs: null };
     }
     const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
-    return Date.now() - lastRun >= safeIntervalSec * 1_000;
+    return {
+      shouldRun: Date.now() - lastRunMs >= safeIntervalSec * 1_000,
+      lastRunMs,
+    };
+  }
+
+  private createEmptyInsightSnapshot(): RealtimeSignalsInsightSnapshot {
+    return {
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    };
+  }
+
+  private carryForwardInsightSnapshot(
+    nextInsight: RealtimeSignalsInsightSnapshot,
+    currentInsight: RealtimeSignalsInsightSnapshot,
+    source: RealtimeSignalSource,
+    lastRunMs: number | null,
+    intervalSec: number,
+    nowMs: number,
+  ) {
+    if (!this.isInsightSource(source)) {
+      return;
+    }
+    if (lastRunMs === null) {
+      return;
+    }
+    if (!this.isInsightFresh(lastRunMs, intervalSec, nowMs)) {
+      return;
+    }
+
+    if (source === "keyword_spike") {
+      nextInsight.keywordSpikes = currentInsight.keywordSpikes;
+      return;
+    }
+
+    if (source === "polymarket_leads") {
+      nextInsight.predictionLeads = currentInsight.predictionLeads;
+      return;
+    }
+
+    if (source === "gdelt_tension") {
+      nextInsight.tensions = currentInsight.tensions;
+      return;
+    }
+
+    nextInsight.pizzint = currentInsight.pizzint;
+  }
+
+  private isInsightSource(source: RealtimeSignalSource): source is RealtimeSignalInsightSource {
+    return REALTIME_SIGNAL_INSIGHT_SOURCES.includes(
+      source as RealtimeSignalInsightSource,
+    );
+  }
+
+  private isInsightFresh(lastRunMs: number, intervalSec: number, nowMs: number) {
+    const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
+    const freshnessMs = Math.max(5 * 60 * 1_000, safeIntervalSec * 2 * 1_000);
+    return nowMs - lastRunMs <= freshnessMs;
   }
 
   private async fetchSource(
@@ -896,7 +994,7 @@ export class RealtimeSignalsService {
       }
     }
 
-    const spikes: Array<{
+    const spikes: {
       id: string;
       term: string;
       count: number;
@@ -904,7 +1002,7 @@ export class RealtimeSignalsService {
       multiplier: number;
       sourceCount: number;
       confidence: number;
-    }> = [];
+    }[] = [];
 
     const minCount = Math.max(1, runtime.thresholds.keywordSpikeMinCount);
     const requiredMultiplier = Math.max(1, runtime.thresholds.keywordSpikeMultiplier);
@@ -1084,13 +1182,13 @@ export class RealtimeSignalsService {
       )) ?? {};
     const nextPrices: Record<string, number> = {};
 
-    const leads: Array<{
+    const leads: {
       id: string;
       title: string;
       shift: number;
       newsActivity: number;
       confidence: number;
-    }> = [];
+    }[] = [];
 
     for (const entry of events.slice(0, 60)) {
       if (!entry || typeof entry !== "object") {
@@ -1228,7 +1326,7 @@ export class RealtimeSignalsService {
   }
 
   private parseTensionPayload(payload: unknown) {
-    const rows: Array<{
+    const rows: {
       id: string;
       label: string;
       score: number;
@@ -1236,7 +1334,7 @@ export class RealtimeSignalsService {
       trend: "rising" | "stable" | "falling";
       countries: string[];
       updatedAt: string;
-    }> = [];
+    }[] = [];
 
     if (!payload || typeof payload !== "object") {
       return rows;

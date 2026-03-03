@@ -1,6 +1,6 @@
-import { SituationMonitorSignalsService } from "./situation-monitor-signals.service";
+import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
 
-describe("SituationMonitorSignalsService", () => {
+describe('SituationMonitorSignalsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -26,17 +26,36 @@ describe("SituationMonitorSignalsService", () => {
     return { service };
   }
 
-  it("allows first Telegram poll once startup delay has elapsed", async () => {
+  it('computes Telegram startup delay from service start in guarded polling', async () => {
     const { service } = createService();
 
     (service as any).serviceStartedAt = Date.now() - 120_000;
     (service as any).telegramState.lastPollAt = 0;
 
-    jest.spyOn(service as any, "isTelegramEnabled").mockReturnValue(true);
-    jest.spyOn(service as any, "isTelegramConfigured").mockReturnValue(true);
-    jest.spyOn(service as any, "getTelegramStartupDelayMs").mockReturnValue(60_000);
+    jest.spyOn(service as any, 'isTelegramEnabled').mockReturnValue(true);
+    jest.spyOn(service as any, 'isTelegramConfigured').mockReturnValue(true);
+    jest.spyOn(service as any, 'getTelegramStartupDelayMs').mockReturnValue(60_000);
+    jest.spyOn(service as any, 'getTelegramPollCycleTimeoutMs').mockReturnValue(30_000);
     const initTelegramClientSpy = jest
-      .spyOn(service as any, "initTelegramClientIfNeeded")
+      .spyOn(service as any, 'initTelegramClientIfNeeded')
+      .mockResolvedValue(false);
+
+    await (service as any).guardedTelegramPoll();
+
+    expect(initTelegramClientSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows first Telegram poll once startup delay has elapsed', async () => {
+    const { service } = createService();
+
+    (service as any).serviceStartedAt = Date.now() - 120_000;
+    (service as any).telegramState.lastPollAt = 0;
+
+    jest.spyOn(service as any, 'isTelegramEnabled').mockReturnValue(true);
+    jest.spyOn(service as any, 'isTelegramConfigured').mockReturnValue(true);
+    jest.spyOn(service as any, 'getTelegramStartupDelayMs').mockReturnValue(60_000);
+    const initTelegramClientSpy = jest
+      .spyOn(service as any, 'initTelegramClientIfNeeded')
       .mockResolvedValue(false);
 
     await (service as any).pollTelegramOnce();
@@ -44,23 +63,52 @@ describe("SituationMonitorSignalsService", () => {
     expect(initTelegramClientSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("triggers OREF alert checks even when upstream payload is unchanged", async () => {
+  it('retries OREF bootstrap on next poll after a transient bootstrap failure', async () => {
+    const { service } = createService();
+
+    jest.spyOn(service as any, 'isOrefEnabled').mockReturnValue(true);
+    jest.spyOn(service as any, 'isOrefConfigured').mockReturnValue(true);
+    const bootstrapSpy = jest
+      .spyOn(service as any, 'bootstrapOrefHistoryWithRetry')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    jest.spyOn(service as any, 'orefCurlFetch').mockResolvedValue('[]');
+    jest
+      .spyOn(service as any, 'recomputeOrefHistoryCounts')
+      .mockImplementation(() => undefined);
+    jest.spyOn(service as any, 'persistOrefAlerts').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'persistOrefHistory').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'persistOrefMetrics').mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, 'triggerOrefAlertChecks')
+      .mockResolvedValue(undefined);
+
+    await (service as any).pollOrefOnce();
+    expect((service as any).orefBootstrapped).toBe(false);
+
+    await (service as any).pollOrefOnce();
+
+    expect(bootstrapSpy).toHaveBeenCalledTimes(2);
+    expect((service as any).orefBootstrapped).toBe(true);
+  });
+
+  it('triggers OREF alert checks even when upstream payload is unchanged', async () => {
     const { service } = createService();
 
     (service as any).orefBootstrapped = true;
-    (service as any).orefState.lastAlertsJson = "[]";
+    (service as any).orefState.lastAlertsJson = '[]';
 
-    jest.spyOn(service as any, "isOrefEnabled").mockReturnValue(true);
-    jest.spyOn(service as any, "isOrefConfigured").mockReturnValue(true);
-    jest.spyOn(service as any, "orefCurlFetch").mockResolvedValue("[]");
+    jest.spyOn(service as any, 'isOrefEnabled').mockReturnValue(true);
+    jest.spyOn(service as any, 'isOrefConfigured').mockReturnValue(true);
+    jest.spyOn(service as any, 'orefCurlFetch').mockResolvedValue('[]');
     jest
-      .spyOn(service as any, "recomputeOrefHistoryCounts")
+      .spyOn(service as any, 'recomputeOrefHistoryCounts')
       .mockImplementation(() => undefined);
-    jest.spyOn(service as any, "persistOrefAlerts").mockResolvedValue(undefined);
-    jest.spyOn(service as any, "persistOrefHistory").mockResolvedValue(undefined);
-    jest.spyOn(service as any, "persistOrefMetrics").mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'persistOrefAlerts').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'persistOrefHistory').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'persistOrefMetrics').mockResolvedValue(undefined);
     const triggerChecksSpy = jest
-      .spyOn(service as any, "triggerOrefAlertChecks")
+      .spyOn(service as any, 'triggerOrefAlertChecks')
       .mockResolvedValue(undefined);
 
     await (service as any).pollOrefOnce();

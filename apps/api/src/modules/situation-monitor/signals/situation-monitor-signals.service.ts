@@ -242,8 +242,9 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const startupDelayMs = this.getTelegramStartupDelayMs();
     if (startupDelayMs > 0 && this.telegramState.lastPollAt === 0) {
-      const sinceStart = Date.now() - this.serviceStartedAt;
-      if (sinceStart < startupDelayMs) {
+      // Delay is measured from service startup, not from per-cycle poll timestamps.
+      const sinceServiceStartMs = Date.now() - this.serviceStartedAt;
+      if (sinceServiceStartMs < startupDelayMs) {
         return;
       }
     }
@@ -405,7 +406,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     if (!this.orefBootstrapped) {
-      this.orefBootstrapped = await this.bootstrapOrefHistoryWithRetry();
+      const bootstrapSucceeded = await this.bootstrapOrefHistoryWithRetry();
+      if (bootstrapSucceeded) {
+        this.orefBootstrapped = true;
+      }
     }
 
     try {

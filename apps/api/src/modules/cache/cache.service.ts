@@ -184,9 +184,35 @@ export class CacheService implements OnModuleDestroy {
       return null;
     }
 
+    const normalizedTtlMs = Math.max(1_000, Math.floor(ttlMs));
+    const renewIntervalMs = Math.max(500, Math.floor(normalizedTtlMs / 3));
+    let renewTimer: NodeJS.Timeout | null = null;
+    let renewInFlight = false;
+    const renewLock = async () => {
+      if (renewInFlight) {
+        return;
+      }
+      renewInFlight = true;
+      try {
+        await this.extendLock(lockKey, lockToken, normalizedTtlMs);
+      } catch {
+        // best-effort
+      } finally {
+        renewInFlight = false;
+      }
+    };
+
+    renewTimer = setInterval(() => {
+      void renewLock();
+    }, renewIntervalMs);
+    renewTimer.unref?.();
+
     try {
       return await runner();
     } finally {
+      if (renewTimer) {
+        clearInterval(renewTimer);
+      }
       try {
         await this.releaseLock(lockKey, lockToken);
       } catch {
@@ -213,6 +239,17 @@ export class CacheService implements OnModuleDestroy {
       return 0
     `;
     await this.redis.eval(releaseScript, 1, key, token);
+  }
+
+  private async extendLock(key: string, token: string, ttlMs: number) {
+    const ttl = Math.max(1_000, Math.floor(ttlMs));
+    const renewScript = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("pexpire", KEYS[1], ARGV[2])
+      end
+      return 0
+    `;
+    await this.redis.eval(renewScript, 1, key, token, String(ttl));
   }
 
   private delay(ms: number) {

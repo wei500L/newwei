@@ -26,6 +26,11 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  applyRealtimeSignalsSecretFields,
+  REALTIME_SIGNALS_SECRET_FIELD_NAMES,
+  type RealtimeSignalsSecretFieldName,
+} from "@/lib/realtime-signals-settings-payload";
 
 type RealtimeSignalsSettingsSource = "env" | "db";
 type RealtimeSignalsSecretSource = "stored" | "env" | "none";
@@ -202,16 +207,6 @@ const SOURCE_CONFIGS = [
   },
 ] as const;
 
-const SECRET_FIELD_NAMES = [
-  "relaySharedSecret",
-  "openskyClientId",
-  "openskyClientSecret",
-  "aisApiKey",
-  "acledAccessToken",
-  "cloudflareApiToken",
-  "wingbitsApiKey",
-] as const;
-
 function toFormValues(
   settings: RealtimeSignalsSettingsResponse,
 ): RealtimeSignalsSettingsFormValues {
@@ -333,12 +328,14 @@ export function RealtimeSignalsSettingsPanel() {
           : null,
       };
 
-      for (const fieldName of SECRET_FIELD_NAMES) {
-        const nextValue = values[fieldName]?.trim();
-        if (nextValue) {
-          payload[fieldName] = nextValue;
-        }
-      }
+      const touchedSecrets = Object.fromEntries(
+        REALTIME_SIGNALS_SECRET_FIELD_NAMES.map((fieldName) => [
+          fieldName,
+          form.isFieldTouched(fieldName),
+        ]),
+      ) as Partial<Record<RealtimeSignalsSecretFieldName, boolean>>;
+
+      applyRealtimeSignalsSecretFields(payload, values, touchedSecrets);
 
       const response = await apiClient.put<RealtimeSignalsSettingsResponse>(
         "system-settings/realtime-signals",
