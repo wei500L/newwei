@@ -300,7 +300,7 @@ services:
     command: >
       sh -ec "
       echo '[api] pnpm install...';
-      pnpm install --unsafe-perm;
+      pnpm install --unsafe-perm --frozen-lockfile;
       echo '[api] pnpm rebuild bcrypt...';
       pnpm rebuild bcrypt --unsafe-perm;
       echo '[api] prisma migrate (deploy) + generate...';
@@ -369,7 +369,7 @@ services:
     command: >
       sh -ec "
       echo '[vector] pnpm install...';
-      pnpm install --unsafe-perm;
+      pnpm install --unsafe-perm --frozen-lockfile;
       echo '[vector] starting dev server...';
       pnpm --filter @modular/vector run dev
       "
@@ -421,7 +421,9 @@ services:
     command: >
       sh -ec "
       echo '[web] pnpm install...';
-      pnpm install --unsafe-perm;
+      pnpm install --unsafe-perm --frozen-lockfile;
+      echo '[web] syncing @modular/utils dist...';
+      pnpm --filter @modular/utils exec tsc -p tsconfig.build.json;
       echo '[web] waiting for api...';
       i=0;
       while [ $$i -lt 150 ]; do

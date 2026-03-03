@@ -1,6 +1,5 @@
 "use client";
 
-import { normalizeWarMapSettings } from "@modular/utils";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,6 +12,7 @@ import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
 import {
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   WAR_MAP_PRESET_VIEW_STATE,
+  normalizeWarMapSettingsSafe,
   useWarMapSettingsStore,
 } from "@/store/war-map-settings";
 
@@ -168,7 +168,7 @@ function fingerprintSettings(payload: unknown): string {
 }
 
 function fingerprintWarMapSettings(payload: unknown): string {
-  const normalized = normalizeWarMapSettings(payload);
+  const normalized = normalizeWarMapSettingsSafe(payload);
   return JSON.stringify(normalized);
 }
 

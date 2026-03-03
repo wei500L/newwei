@@ -62,6 +62,9 @@ const runWithStatusCapture = (command, args, cwd) =>
     shell: false
   });
 
+const captureOutput = (result) =>
+  `${(result.stdout ?? '').toString()}${(result.stderr ?? '').toString()}`;
+
 const printCapturedOutput = (result) => {
   const stdout = (result.stdout ?? '').toString();
   const stderr = (result.stderr ?? '').toString();
@@ -365,6 +368,46 @@ const validateRedisAofForDockerUp = (composeBaseArgs, cwd) => {
   process.exit(result.status ?? 1);
 };
 
+const ensurePnpmLockfileForDockerUp = (repoRoot) => {
+  log('Validating pnpm lockfile consistency...');
+  const checkArgs = ['install', '--frozen-lockfile', '--lockfile-only', '--ignore-scripts'];
+  const checkResult = runWithStatusCapture('pnpm', checkArgs, repoRoot);
+
+  if (checkResult.error) {
+    logError(`Failed to execute command: ${summarizeCommand('pnpm', checkArgs)}`);
+    logError(`           ${checkResult.error.message}`);
+    process.exit(1);
+  }
+
+  if (checkResult.status === 0) return;
+
+  const isOutdatedLockfile = captureOutput(checkResult).includes('ERR_PNPM_OUTDATED_LOCKFILE');
+  if (!isOutdatedLockfile) {
+    printCapturedOutput(checkResult);
+    logError('pnpm lockfile preflight failed.');
+    process.exit(checkResult.status ?? 1);
+  }
+
+  printCapturedOutput(checkResult);
+  log('pnpm-lock.yaml is outdated; synchronizing lockfile...');
+  const syncArgs = ['install', '--lockfile-only', '--ignore-scripts'];
+  const syncResult = runWithStatusCapture('pnpm', syncArgs, repoRoot);
+  printCapturedOutput(syncResult);
+
+  if (syncResult.error) {
+    logError(`Failed to execute command: ${summarizeCommand('pnpm', syncArgs)}`);
+    logError(`           ${syncResult.error.message}`);
+    process.exit(1);
+  }
+
+  if (syncResult.status !== 0) {
+    logError('Unable to synchronize pnpm-lock.yaml automatically.');
+    process.exit(syncResult.status ?? 1);
+  }
+
+  log('pnpm-lock.yaml synchronized.');
+};
+
 const resolveUpServices = (upArgs, services) => {
   const serviceNames = new Set(Object.keys(services));
   const explicit = upArgs.filter((arg) => arg && !arg.startsWith('-') && serviceNames.has(arg));
@@ -543,6 +586,14 @@ const main = () => {
   if (upServices.has('api')) {
     log('Validating Prisma migration identifiers...');
     validateMigrationIdentifiersForDockerUp(repoRoot);
+  }
+
+  const nodeWorkspaceServices = ['api', 'vector', 'web'];
+  const shouldValidatePnpmLockfile = nodeWorkspaceServices.some((serviceName) =>
+    upServices.has(serviceName)
+  );
+  if (shouldValidatePnpmLockfile) {
+    ensurePnpmLockfileForDockerUp(repoRoot);
   }
 
   if (upServices.has('redis')) {
