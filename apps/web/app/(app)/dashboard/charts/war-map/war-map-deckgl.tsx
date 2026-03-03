@@ -15,7 +15,10 @@ import {
 } from '@modular/utils';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Checkbox, Popover, Skeleton, Space, Tag, Tooltip } from 'antd';
-import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl';
+import maplibregl, {
+  type Map as MapLibreMap,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +37,28 @@ import { buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
 const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+const MAP_STYLE_FALLBACK: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution: '\u00a9 OpenStreetMap contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'osm-raster',
+      type: 'raster',
+      source: 'osm',
+    },
+  ],
+};
 const DEFAULT_MAP_BBOX: [number, number, number, number] = [-180, -85, 180, 85];
 const ALL_TIME_START = new Date('1970-01-01T00:00:00.000Z');
 
@@ -421,6 +446,9 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       return;
     }
 
+    let mapLoaded = false;
+    let fallbackApplied = false;
+
     const initialViewState = viewStateRef.current;
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -458,7 +486,30 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       }, 0);
     };
 
+    const applyFallbackStyle = () => {
+      if (fallbackApplied) {
+        return;
+      }
+      fallbackApplied = true;
+      try {
+        map.setStyle(MAP_STYLE_FALLBACK);
+        toast.warning(
+          'Primary basemap is unavailable. Switched to fallback style.',
+        );
+      } catch {
+        // Ignore style swap errors; the map load skeleton will remain visible.
+      }
+    };
+
+    const handleMapError = (_event: { error?: unknown }) => {
+      if (mapLoaded || fallbackApplied) {
+        return;
+      }
+      applyFallbackStyle();
+    };
+
     map.on('load', () => {
+      mapLoaded = true;
       const projectionAwareMap = map as unknown as {
         setProjection?: (projection: { type: 'mercator' | 'globe' }) => void;
       };
@@ -468,12 +519,14 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     });
 
     map.on('moveend', syncFromMap);
+    map.on('error', handleMapError);
 
     mapRef.current = map;
     deckOverlayRef.current = overlay;
 
     return () => {
       map.off('moveend', syncFromMap);
+      map.off('error', handleMapError);
       deckOverlayRef.current = null;
       mapRef.current = null;
       map.remove();
@@ -524,19 +577,12 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     if (parsed.timeRangePreset) {
       setTimeRangePreset(parsed.timeRangePreset);
     }
-    if (parsed.renderer === 'echarts') {
-      toast.info(
-        t('dashboard.charts.warMap.renderer.echartsDeprecated', {
-          defaultValue: 'ECharts renderer has been removed. Switched to deck.gl.',
-        }),
-      );
-    }
     if (parsed.viewState) {
       setViewState(parsed.viewState);
     }
 
     hasHydratedUrlRef.current = true;
-  }, [setActivePreset, setLayerVisibility, setTimeRangePreset, setViewState, t]);
+  }, [setActivePreset, setLayerVisibility, setTimeRangePreset, setViewState]);
 
   useEffect(() => {
     if (!hasHydratedUrlRef.current || typeof window === 'undefined') {
@@ -1142,7 +1188,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
         <Tooltip
-          title={t('dashboard.charts.warMap.renderer.deckglMapLibre', {
+          title={t('dashboard.charts.warMap.renderer.deckglOnly', {
             defaultValue: 'Renderer: deck.gl + MapLibre',
           })}
         >

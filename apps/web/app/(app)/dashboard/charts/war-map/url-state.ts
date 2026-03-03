@@ -15,7 +15,7 @@ export interface WarMapUrlState {
   activePreset?: WarMapPreset;
   timeRangePreset?: WarMapTimeRangePreset;
   layerVisibility?: WarMapLayerVisibility;
-  renderer?: 'deckgl' | 'echarts';
+  renderer?: 'deckgl';
 }
 
 function parseFiniteNumber(value: string | null): number | undefined {
@@ -87,8 +87,7 @@ export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
   const timeRangePreset = parseTimeRangePreset(search.get('tr'));
   const layerVisibility = parseLayerVisibility(search.get('layers'));
   const rendererRaw = search.get('renderer');
-  const renderer =
-    rendererRaw === 'deckgl' || rendererRaw === 'echarts' ? rendererRaw : undefined;
+  const renderer = rendererRaw === 'deckgl' ? rendererRaw : undefined;
 
   return {
     viewState,
@@ -106,7 +105,7 @@ export function writeWarMapUrlState(
     activePreset: WarMapPreset;
     timeRangePreset: WarMapTimeRangePreset;
     layerVisibility: WarMapLayerVisibility;
-    renderer: 'deckgl' | 'echarts';
+    renderer: 'deckgl';
   },
 ): URLSearchParams {
   const next = new URLSearchParams(search.toString());

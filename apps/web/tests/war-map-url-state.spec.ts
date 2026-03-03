@@ -37,6 +37,11 @@ describe('war-map url-state', () => {
     expect(parsed.layerVisibility?.bases).toBe(false);
   });
 
+  it('ignores legacy echarts renderer token', () => {
+    const parsed = readWarMapUrlState(new URLSearchParams('renderer=echarts'));
+    expect(parsed.renderer).toBeUndefined();
+  });
+
   it('serializes state and strips default layers token', () => {
     const params = new URLSearchParams('foo=bar');
 

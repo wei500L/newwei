@@ -1,4 +1,4 @@
-import { ProcessedItemModel } from "@modular/mongo";
+import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import {
   extractCountryCodeFromText,
   getCountryAlpha2,
@@ -420,6 +420,36 @@ interface WarMapEventsOptions {
   bbox?: [number, number, number, number];
   zoom?: number;
   cluster?: boolean;
+}
+
+interface WarMapCleanedEntity {
+  name: string;
+  type: string;
+  confidence: number;
+}
+
+interface WarMapMongoLocationRecord {
+  id: string;
+  location: string;
+  entities: unknown;
+  title?: string;
+  url?: string | null;
+  sortAt?: Date;
+  ingestedAt?: Date;
+  createdAt?: Date;
+  publishedAt?: Date;
+}
+
+interface WarMapSourceNewsRecord {
+  id: string;
+  title?: string | null;
+  location: string;
+  entities: unknown;
+  url?: string | null;
+  publishedAt?: Date;
+  processedAt?: Date;
+  crawlAt?: Date;
+  titleGuess?: string | null;
 }
 
 interface WarMapRealtimeLayerSeedPoint {
@@ -851,6 +881,297 @@ export class DashboardChartsService {
     } catch {
       return false;
     }
+  }
+
+  private parseWarMapDate(value: unknown): Date | undefined {
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+      return value;
+    }
+    if (typeof value === "string" || typeof value === "number") {
+      const parsed = new Date(value);
+      if (Number.isFinite(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private buildWarMapMongoRangeFilter(range: DateRange): Record<string, unknown> {
+    return {
+      $or: [
+        { sortAt: { $gte: range.start, $lte: range.end } },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $gte: range.start, $lte: range.end },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $gte: range.start, $lte: range.end },
+        },
+        {
+          sortAt: { $exists: false },
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: range.start, $lte: range.end },
+        },
+        {
+          sortAt: null,
+          ingestedAt: { $exists: false },
+          createdAt: { $gte: range.start, $lte: range.end },
+        },
+      ],
+    };
+  }
+
+  private normalizeWarMapEntities(input: unknown): WarMapCleanedEntity[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+    const entities: WarMapCleanedEntity[] = [];
+    for (const entry of input) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const type = typeof record.type === "string" ? record.type.trim() : "";
+      const confidenceRaw = record.confidence;
+      const confidence =
+        typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
+          ? confidenceRaw
+          : 0;
+      if (!name || !type) {
+        continue;
+      }
+      entities.push({ name, type, confidence });
+    }
+    return entities;
+  }
+
+  private isWarMapLocationEntityType(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    return (
+      normalized === "location" ||
+      normalized.includes("loc") ||
+      normalized.includes("place") ||
+      normalized.includes("geo") ||
+      normalized.includes("city") ||
+      normalized.includes("country") ||
+      normalized.includes("region") ||
+      normalized.includes("state") ||
+      normalized.includes("province") ||
+      normalized.includes("地点") ||
+      normalized.includes("地點") ||
+      normalized.includes("地区") ||
+      normalized.includes("地區") ||
+      normalized.includes("城市") ||
+      normalized.includes("国家") ||
+      normalized.includes("國家")
+    );
+  }
+
+  private resolveWarMapCountryAlpha3(
+    location: string,
+    entities: WarMapCleanedEntity[],
+  ): string | null {
+    const fromLocation =
+      extractCountryCodeFromText(location) ?? normalizeCountryCode(location);
+    if (fromLocation) {
+      return fromLocation;
+    }
+    for (const entity of entities) {
+      const code =
+        normalizeCountryCode(entity.name) ??
+        extractCountryCodeFromText(entity.name);
+      if (code) {
+        return code;
+      }
+    }
+    return null;
+  }
+
+  private buildWarMapGeocodeCandidates(
+    location: string,
+    entities: WarMapCleanedEntity[],
+    countryName?: string | null,
+  ): string[] {
+    const candidates: string[] = [];
+    const pushCandidate = (value: string) => {
+      const normalized = value.trim();
+      if (!normalized) return;
+      candidates.push(normalized);
+    };
+
+    const locationEntities = entities
+      .filter(
+        (entity) =>
+          entity.confidence >= 0.5 &&
+          this.isWarMapLocationEntityType(entity.type),
+      )
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 3);
+
+    for (const entity of locationEntities) {
+      if (
+        countryName &&
+        !entity.name.toLowerCase().includes(countryName.toLowerCase())
+      ) {
+        pushCandidate(`${entity.name}, ${countryName}`);
+      }
+      pushCandidate(entity.name);
+    }
+
+    const primaryLocationChunk =
+      location.split(/[,，;；/|]/)[0]?.trim() ?? "";
+    if (primaryLocationChunk && primaryLocationChunk !== location) {
+      if (
+        countryName &&
+        !primaryLocationChunk.toLowerCase().includes(countryName.toLowerCase())
+      ) {
+        pushCandidate(`${primaryLocationChunk}, ${countryName}`);
+      }
+      pushCandidate(primaryLocationChunk);
+    }
+
+    if (
+      countryName &&
+      !location.toLowerCase().includes(countryName.toLowerCase())
+    ) {
+      pushCandidate(`${location}, ${countryName}`);
+    }
+    pushCandidate(location);
+    if (countryName) {
+      pushCandidate(countryName);
+    }
+
+    return candidates;
+  }
+
+  private async loadMongoWarMapLocationRecords(
+    range: DateRange,
+    orgId: string,
+    limit: number,
+  ): Promise<WarMapMongoLocationRecord[]> {
+    const normalizedLimit = Math.max(1, Math.min(2_500, Math.round(limit)));
+    const rawDocs = (await ProcessedItemModel.find(
+      {
+        orgId,
+        status: "completed",
+        duplicateOf: null,
+        "result.location": { $exists: true, $nin: [null, ""] },
+        ...this.buildWarMapMongoRangeFilter(range),
+      },
+      {
+        _id: 1,
+        rawItemId: 1,
+        sortAt: 1,
+        ingestedAt: 1,
+        createdAt: 1,
+        "result.location": 1,
+        "result.title": 1,
+        "result.entities": 1,
+        "result.published_at": 1,
+      },
+    )
+      .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
+      .limit(normalizedLimit)
+      .lean()
+      .exec()) as unknown;
+
+    if (!Array.isArray(rawDocs) || rawDocs.length === 0) {
+      return [];
+    }
+
+    const rawItemIds = Array.from(
+      new Set(
+        rawDocs
+          .map((entry) =>
+            entry && typeof entry === "object"
+              ? normalizeMongoId((entry as Record<string, unknown>).rawItemId)
+              : "",
+          )
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const rawUrlByRawItemId = new Map<string, string>();
+    if (rawItemIds.length > 0) {
+      try {
+        const rawItems = (await RawItemModel.find(
+          { _id: { $in: rawItemIds } },
+          { _id: 1, payload: 1 },
+        )
+          .lean()
+          .exec()) as unknown;
+
+        if (Array.isArray(rawItems)) {
+          for (const rawItem of rawItems) {
+            if (!rawItem || typeof rawItem !== "object") {
+              continue;
+            }
+            const payload = rawItem as Record<string, unknown>;
+            const rawItemId = normalizeMongoId(payload._id);
+            if (!rawItemId) {
+              continue;
+            }
+            const rawPayload =
+              payload.payload &&
+              typeof payload.payload === "object" &&
+              !Array.isArray(payload.payload)
+                ? (payload.payload as Record<string, unknown>)
+                : null;
+            const url =
+              typeof rawPayload?.url === "string"
+                ? rawPayload.url.trim()
+                : "";
+            if (url) {
+              rawUrlByRawItemId.set(rawItemId, url);
+            }
+          }
+        }
+      } catch {
+        // URL enrichment is best-effort for Mongo fallback records.
+      }
+    }
+
+    const records: WarMapMongoLocationRecord[] = [];
+    for (const entry of rawDocs) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const doc = entry as Record<string, unknown>;
+      const result =
+        doc.result && typeof doc.result === "object" && !Array.isArray(doc.result)
+          ? (doc.result as Record<string, unknown>)
+          : null;
+      const location =
+        typeof result?.location === "string" ? result.location.trim() : "";
+      if (!location) {
+        continue;
+      }
+
+      const id = normalizeMongoId(doc._id);
+      if (!id) {
+        continue;
+      }
+      const rawItemId = normalizeMongoId(doc.rawItemId);
+      const url = rawItemId ? rawUrlByRawItemId.get(rawItemId) ?? null : null;
+      const title =
+        typeof result?.title === "string" ? result.title.trim() : undefined;
+
+      records.push({
+        id,
+        location,
+        entities: result?.entities,
+        title: title && title.length > 0 ? title : undefined,
+        url,
+        sortAt: this.parseWarMapDate(doc.sortAt),
+        ingestedAt: this.parseWarMapDate(doc.ingestedAt),
+        createdAt: this.parseWarMapDate(doc.createdAt),
+        publishedAt: this.parseWarMapDate(result?.published_at),
+      });
+    }
+
+    return records;
   }
 
   private resolveWarMapClusterBbox(
@@ -1721,6 +2042,19 @@ export class DashboardChartsService {
       }),
     ]);
 
+    let mongoFallbackRecords: WarMapMongoLocationRecord[] = [];
+    if (newsRecords.length === 0) {
+      try {
+        mongoFallbackRecords = await this.loadMongoWarMapLocationRecords(
+          range,
+          orgId,
+          2_500,
+        );
+      } catch {
+        // Mongo fallback is best-effort for War Map event aggregation.
+      }
+    }
+
     for (const event of alertEvents) {
       const context =
         event.context &&
@@ -1790,6 +2124,47 @@ export class DashboardChartsService {
       entry.newsCount += 1;
       const latestAt =
         record.publishedAt ?? record.article.crawlAt ?? record.processedAt;
+      entry.latestAt =
+        !entry.latestAt || latestAt > entry.latestAt
+          ? latestAt
+          : entry.latestAt;
+      signals.set(resolvedCode, entry);
+    }
+
+    for (const record of mongoFallbackRecords) {
+      const location = record.location.trim();
+      if (!location) {
+        continue;
+      }
+      const entities = this.normalizeWarMapEntities(record.entities);
+      const resolvedCode =
+        this.resolveWarMapCountryAlpha3(location, entities) ?? null;
+      if (!resolvedCode) {
+        continue;
+      }
+      const geo = geoIndex.get(resolvedCode);
+      if (!geo) {
+        continue;
+      }
+      const latestAt =
+        record.publishedAt ??
+        record.sortAt ??
+        record.ingestedAt ??
+        record.createdAt;
+      if (!latestAt) {
+        continue;
+      }
+      const entry = signals.get(resolvedCode) ?? {
+        name: geo.name,
+        lat: geo.lat,
+        lng: geo.lng,
+        alertCount: 0,
+        alertScore: 0,
+        maxAlertSeverityRank: 0,
+        newsCount: 0,
+        latestAt: undefined,
+      };
+      entry.newsCount += 1;
       entry.latestAt =
         !entry.latestAt || latestAt > entry.latestAt
           ? latestAt
@@ -1873,7 +2248,7 @@ export class DashboardChartsService {
     options: WarMapNewsMarkersOptions = {},
   ): Promise<WarMapNewsMarkersResponse> {
     const geoIndex = this.getGeoIndex();
-    const records = await this.prisma.processedArticle.findMany({
+    const prismaRecords = await this.prisma.processedArticle.findMany({
       where: {
         status: ProcessedArticleStatus.completed,
         location: { not: null },
@@ -1916,158 +2291,64 @@ export class DashboardChartsService {
       take: MAX_WAR_MAP_NEWS_MARKERS,
     });
 
-    interface CleanedEntity {
-      name: string;
-      type: string;
-      confidence: number;
+    let records: WarMapSourceNewsRecord[] = prismaRecords.map((record) => ({
+      id: record.id,
+      title: record.title,
+      location: typeof record.location === "string" ? record.location : "",
+      entities: record.entities,
+      url: record.article.url ?? null,
+      publishedAt: record.publishedAt ?? undefined,
+      processedAt: record.processedAt ?? undefined,
+      crawlAt: record.article.crawlAt ?? undefined,
+      titleGuess: record.article.titleGuess ?? null,
+    }));
+
+    if (records.length === 0) {
+      try {
+        const mongoFallbackRecords = await this.loadMongoWarMapLocationRecords(
+          range,
+          orgId,
+          MAX_WAR_MAP_NEWS_MARKERS,
+        );
+        records = mongoFallbackRecords.map((record) => ({
+          id: record.id,
+          title: record.title ?? null,
+          location: record.location,
+          entities: record.entities,
+          url: record.url ?? null,
+          publishedAt: record.publishedAt,
+          processedAt: record.sortAt ?? record.ingestedAt ?? record.createdAt,
+          crawlAt: record.ingestedAt,
+          titleGuess: null,
+        }));
+      } catch {
+        // Mongo fallback is best-effort for War Map marker rendering.
+      }
     }
-
-    const normalizeEntities = (input: unknown): CleanedEntity[] => {
-      if (!Array.isArray(input)) {
-        return [];
-      }
-      const entities: CleanedEntity[] = [];
-      for (const entry of input) {
-        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-          continue;
-        }
-        const record = entry as Record<string, unknown>;
-        const name = typeof record.name === "string" ? record.name.trim() : "";
-        const type = typeof record.type === "string" ? record.type.trim() : "";
-        const confidenceRaw = record.confidence;
-        const confidence =
-          typeof confidenceRaw === "number" && Number.isFinite(confidenceRaw)
-            ? confidenceRaw
-            : 0;
-        if (!name || !type) {
-          continue;
-        }
-        entities.push({ name, type, confidence });
-      }
-      return entities;
-    };
-
-    const isLocationEntityType = (value: string) => {
-      const normalized = value.trim().toLowerCase();
-      return (
-        normalized === "location" ||
-        normalized.includes("loc") ||
-        normalized.includes("place") ||
-        normalized.includes("geo") ||
-        normalized.includes("city") ||
-        normalized.includes("country") ||
-        normalized.includes("region") ||
-        normalized.includes("state") ||
-        normalized.includes("province") ||
-        normalized.includes("地点") ||
-        normalized.includes("地點") ||
-        normalized.includes("地区") ||
-        normalized.includes("地區") ||
-        normalized.includes("城市") ||
-        normalized.includes("国家") ||
-        normalized.includes("國家")
-      );
-    };
-
-    const resolveCountryAlpha3 = (
-      location: string,
-      entities: CleanedEntity[],
-    ): string | null => {
-      const fromLocation =
-        extractCountryCodeFromText(location) ?? normalizeCountryCode(location);
-      if (fromLocation) {
-        return fromLocation;
-      }
-      for (const entity of entities) {
-        const code =
-          normalizeCountryCode(entity.name) ??
-          extractCountryCodeFromText(entity.name);
-        if (code) {
-          return code;
-        }
-      }
-      return null;
-    };
-
-    const buildCandidates = (
-      location: string,
-      entities: CleanedEntity[],
-      countryName?: string | null,
-    ) => {
-      const candidates: string[] = [];
-      const pushCandidate = (value: string) => {
-        const normalized = value.trim();
-        if (!normalized) return;
-        candidates.push(normalized);
-      };
-
-      const locationEntities = entities
-        .filter(
-          (entity) =>
-            entity.confidence >= 0.5 && isLocationEntityType(entity.type),
-        )
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 3);
-
-      for (const entity of locationEntities) {
-        if (
-          countryName &&
-          !entity.name.toLowerCase().includes(countryName.toLowerCase())
-        ) {
-          pushCandidate(`${entity.name}, ${countryName}`);
-        }
-        pushCandidate(entity.name);
-      }
-
-      const primaryLocationChunk =
-        location.split(/[,，;；/|]/)[0]?.trim() ?? "";
-      if (primaryLocationChunk && primaryLocationChunk !== location) {
-        if (
-          countryName &&
-          !primaryLocationChunk
-            .toLowerCase()
-            .includes(countryName.toLowerCase())
-        ) {
-          pushCandidate(`${primaryLocationChunk}, ${countryName}`);
-        }
-        pushCandidate(primaryLocationChunk);
-      }
-
-      if (
-        countryName &&
-        !location.toLowerCase().includes(countryName.toLowerCase())
-      ) {
-        pushCandidate(`${location}, ${countryName}`);
-      }
-      pushCandidate(location);
-      if (countryName) {
-        pushCandidate(countryName);
-      }
-
-      return candidates;
-    };
 
     let updatedAt: Date | undefined;
     let networkBudget = MAX_WAR_MAP_NEWS_GEOCODE_NETWORK;
     const markers: WarMapNewsMarker[] = [];
 
     for (const record of records) {
-      const locationRaw = record.location;
-      const location =
-        typeof locationRaw === "string" ? locationRaw.trim() : "";
+      const location = record.location.trim();
       if (!location) {
         continue;
       }
 
-      const entities = normalizeEntities(record.entities);
-      const countryAlpha3 = resolveCountryAlpha3(location, entities);
+      const entities = this.normalizeWarMapEntities(record.entities);
+      const countryAlpha3 = this.resolveWarMapCountryAlpha3(location, entities);
       const directCountryAlpha3 = normalizeCountryCode(location);
       const countryAlpha2 = countryAlpha3
         ? (getCountryAlpha2(countryAlpha3) ?? undefined)
         : undefined;
       const countryName = countryAlpha3 ? getCountryName(countryAlpha3) : null;
 
-      const candidates = buildCandidates(location, entities, countryName);
+      const candidates = this.buildWarMapGeocodeCandidates(
+        location,
+        entities,
+        countryName,
+      );
 
       let geocode = await this.geocoding.resolveCandidates(candidates, {
         countryCodeAlpha2: countryAlpha2,
@@ -2108,30 +2389,26 @@ export class DashboardChartsService {
       }
 
       const title =
-        (
-          record.title ??
-          record.article.titleGuess ??
-          record.article.url ??
-          ""
-        ).trim() || location;
+        (record.title ?? record.titleGuess ?? record.url ?? "").trim() ||
+        location;
       const latestAt =
         record.publishedAt ??
-        record.article.crawlAt ??
+        record.crawlAt ??
         record.processedAt ??
         undefined;
 
       markers.push({
         id: record.id,
         title,
-        url: record.article.url ?? null,
+        url: record.url ?? null,
         location,
         lat,
         lng,
         publishedAt: record.publishedAt
           ? record.publishedAt.toISOString()
           : undefined,
-        ingestedAt: record.article.crawlAt
-          ? record.article.crawlAt.toISOString()
+        ingestedAt: record.crawlAt
+          ? record.crawlAt.toISOString()
           : undefined,
         displayName,
         geoSource,

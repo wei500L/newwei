@@ -1234,8 +1234,7 @@
           "all": "All"
         },
         "renderer": {
-          "deckglOnly": "Renderer: deck.gl + MapLibre (Globe)",
-          "echartsDeprecated": "ECharts renderer has been removed. Switched to deck.gl."
+          "deckglOnly": "Renderer: deck.gl + MapLibre (Globe)"
         },
         "stats": {
           "window": "Window",

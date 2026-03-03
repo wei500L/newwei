@@ -1234,8 +1234,7 @@
           "all": "全部"
         },
         "renderer": {
-          "deckglOnly": "渲染器：deck.gl + MapLibre（地球）",
-          "echartsDeprecated": "ECharts 渲染器已移除，已切换到 deck.gl。"
+          "deckglOnly": "渲染器：deck.gl + MapLibre（地球）"
         },
         "stats": {
           "window": "窗口",
