@@ -1,4 +1,11 @@
-import { createLogger, ensureTraceId, getCountryName, getCurrentTraceId, normalizeCountryCode } from "@modular/utils";
+import {
+  createLogger,
+  CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+  ensureTraceId,
+  getCountryName,
+  getCurrentTraceId,
+  normalizeCountryCode,
+} from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { Inject, Injectable } from "@nestjs/common";
 import {
@@ -82,6 +89,8 @@ export type AlertJobPayload =
 
 const logger = createLogger({ name: "alerts" });
 const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
+const normalizeMetricSlug = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
 const DEFAULT_CRAWL_QUALITY_RULES: Array<{
   key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate";
   name: string;
@@ -232,7 +241,7 @@ export class AlertsService {
   async listRules(orgId: string) {
     await this.ensureDefaultCrawlQualityRules(orgId);
     await this.ensureDefaultRealtimeSignalRules(orgId);
-    return this.prisma.alertRule.findMany({
+    const rules = await this.prisma.alertRule.findMany({
       where: { orgId },
       include: {
         channels: { include: { channel: true } },
@@ -240,22 +249,25 @@ export class AlertsService {
       },
       orderBy: { createdAt: "asc" }
     });
+    return rules.map((rule) => ({
+      ...rule,
+      metricSlug: normalizeMetricSlug(rule.metricSlug)
+    }));
   }
 
   private async ensureDefaultCrawlQualityRules(orgId: string) {
-    const slugs = DEFAULT_CRAWL_QUALITY_RULES.map((rule) => rule.metricSlug);
     const existing = await this.prisma.alertRule.findMany({
       where: {
         orgId,
-        metricProvider: AlertMetricProvider.crawl_task,
-        metricSlug: { in: slugs }
+        metricProvider: AlertMetricProvider.crawl_task
       },
       select: {
-        id: true,
         metricSlug: true
       }
     });
-    const existingSlugSet = new Set(existing.map((entry) => entry.metricSlug));
+    const existingSlugSet = new Set(
+      existing.map((entry) => normalizeMetricSlug(entry.metricSlug)).filter((slug) => slug.length > 0)
+    );
 
     for (const definition of DEFAULT_CRAWL_QUALITY_RULES) {
       if (existingSlugSet.has(definition.metricSlug)) {
@@ -318,19 +330,18 @@ export class AlertsService {
   }
 
   private async ensureDefaultRealtimeSignalRules(orgId: string) {
-    const slugs = DEFAULT_REALTIME_SIGNAL_RULES.map((rule) => rule.metricSlug);
     const existing = await this.prisma.alertRule.findMany({
       where: {
         orgId,
         metricProvider: AlertMetricProvider.realtime_signal,
-        metricSlug: { in: slugs },
       },
       select: {
-        id: true,
         metricSlug: true,
       },
     });
-    const existingSlugSet = new Set(existing.map((entry) => entry.metricSlug));
+    const existingSlugSet = new Set(
+      existing.map((entry) => normalizeMetricSlug(entry.metricSlug)).filter((slug) => slug.length > 0),
+    );
 
     for (const definition of DEFAULT_REALTIME_SIGNAL_RULES) {
       if (existingSlugSet.has(definition.metricSlug)) {
@@ -417,18 +428,79 @@ export class AlertsService {
   }
 
   async listEvents(orgId: string, limit = 50, metricSlug?: string) {
-    const normalizedMetricSlug = metricSlug?.trim();
-    return this.prisma.alertEvent.findMany({
-      where: {
-        rule: {
-          orgId,
-          ...(normalizedMetricSlug ? { metricSlug: normalizedMetricSlug } : {})
-        }
-      },
-      include: { rule: true, deliveries: { include: { channel: true } } },
-      orderBy: { triggeredAt: "desc" },
-      take: limit
+    const normalizedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 50;
+    const boundedLimit = Math.min(Math.max(normalizedLimit, 1), 500);
+    const normalizedMetricSlug = normalizeMetricSlug(metricSlug);
+    const include = { rule: true, deliveries: { include: { channel: true } } } as const;
+    const orderBy = { triggeredAt: "desc" } as const;
+    const toNormalizedEvents = <T extends { rule?: { metricSlug: string } | null }>(
+      events: T[]
+    ) =>
+      events.map((event) => ({
+        ...event,
+        rule: event.rule
+          ? {
+              ...event.rule,
+              metricSlug: normalizeMetricSlug(event.rule.metricSlug)
+            }
+          : event.rule
+      }));
+
+    if (!normalizedMetricSlug) {
+      const events = await this.prisma.alertEvent.findMany({
+        where: { rule: { orgId } },
+        include,
+        orderBy,
+        take: boundedLimit
+      });
+      return toNormalizedEvents(events);
+    }
+
+    const exactEvents = await this.prisma.alertEvent.findMany({
+      where: { rule: { orgId, metricSlug: normalizedMetricSlug } },
+      include,
+      orderBy,
+      take: boundedLimit
     });
+    if (exactEvents.length >= boundedLimit) {
+      return toNormalizedEvents(exactEvents);
+    }
+
+    // Backward compatibility: legacy rows may contain leading/trailing spaces in metricSlug.
+    const fallbackTake = Math.max(boundedLimit * 10, 200);
+    const fallbackEvents = await this.prisma.alertEvent.findMany({
+      where: { rule: { orgId } },
+      include,
+      orderBy,
+      take: fallbackTake
+    });
+    const mergedById = new Map<string, (typeof exactEvents)[number]>();
+    for (const event of exactEvents) {
+      mergedById.set(event.id, event);
+    }
+    for (const event of fallbackEvents) {
+      if (normalizeMetricSlug(event.rule?.metricSlug) !== normalizedMetricSlug) {
+        continue;
+      }
+      if (!mergedById.has(event.id)) {
+        mergedById.set(event.id, event);
+      }
+    }
+    const toEpochMs = (value: unknown): number => {
+      if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      }
+      if (typeof value === "string" || typeof value === "number") {
+        const ms = new Date(value).getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      }
+      return 0;
+    };
+    const mergedEvents = Array.from(mergedById.values())
+      .sort((a, b) => toEpochMs(b.triggeredAt) - toEpochMs(a.triggeredAt))
+      .slice(0, boundedLimit);
+    return toNormalizedEvents(mergedEvents);
   }
 
   async getEventReplay(orgId: string, eventId: string, windowDays = 30) {
@@ -446,7 +518,10 @@ export class AlertsService {
     ) {
       return null;
     }
-    const metricSlug = event.rule.metricSlug;
+    const metricSlug = normalizeMetricSlug(event.rule.metricSlug);
+    if (!metricSlug) {
+      return null;
+    }
     const context =
       event.context && typeof event.context === "object" && !Array.isArray(event.context)
         ? (event.context as Record<string, unknown>)
@@ -739,11 +814,20 @@ export class AlertsService {
           }
         : undefined;
 
-    return this.prisma.alertEvent.update({
+    const updated = await this.prisma.alertEvent.update({
       where: { id: eventId },
       data: { status, ...(nextContext ? { context: nextContext } : {}) },
       include: { rule: true, deliveries: { include: { channel: true } } }
     });
+    return {
+      ...updated,
+      rule: updated.rule
+        ? {
+            ...updated.rule,
+            metricSlug: normalizeMetricSlug(updated.rule.metricSlug)
+          }
+        : updated.rule
+    };
   }
 
   async upsertRule(orgId: string, input: UpsertAlertRuleInput, createdById?: string) {
@@ -752,14 +836,31 @@ export class AlertsService {
       throw new Error("Alert rule not found for this org");
     }
 
+    const metricSlug = normalizeMetricSlug(input.metricSlug);
+    if (!metricSlug) {
+      throw new Error("metricSlug is required");
+    }
+
     const metricProvider = input.metricProvider ?? existingRule?.metricProvider ?? AlertMetricProvider.economic_data;
     if (!this.resolveMetricProvider({ metricProvider })) {
       throw new Error(`No metric provider registered for type ${metricProvider}`);
     }
+    if (
+      metricProvider === AlertMetricProvider.system_metric &&
+      metricSlug === CUSTOM_MANUAL_SYSTEM_METRIC_SLUG
+    ) {
+      const currentValue =
+        input.metadata && typeof input.metadata.currentValue === "number"
+          ? input.metadata.currentValue
+          : undefined;
+      if (!Number.isFinite(currentValue)) {
+        throw new Error("custom.manual metric requires metadata.currentValue");
+      }
+    }
     const dataItem =
       metricProvider === AlertMetricProvider.economic_data
         ? await this.prisma.economicDataItem.findUnique({
-            where: { slug: input.metricSlug }
+            where: { slug: metricSlug }
           })
         : null;
     const baseData: Prisma.AlertRuleUncheckedCreateInput = {
@@ -769,7 +870,7 @@ export class AlertsService {
       severity: input.severity ?? AlertSeverity.medium,
       status: input.status ?? AlertStatus.active,
       metricProvider,
-      metricSlug: input.metricSlug,
+      metricSlug,
       operator: input.operator,
       thresholdValue: input.thresholdValue !== undefined ? new Prisma.Decimal(input.thresholdValue) : null,
       thresholdLower: input.thresholdLower !== undefined ? new Prisma.Decimal(input.thresholdLower) : null,
@@ -977,6 +1078,7 @@ export class AlertsService {
     }
 
     const streamStatus = hasAnyDeliveries ? event.status : AlertEventStatus.delivered;
+    const normalizedRuleMetricSlug = normalizeMetricSlug(rule.metricSlug);
     await this.pubsub.publish("alertEvents", {
       orgId: rule.orgId,
       event: {
@@ -984,7 +1086,7 @@ export class AlertsService {
         ruleId: rule.id,
         ruleName: rule.name,
         metricProvider: rule.metricProvider,
-        metricSlug: rule.metricSlug,
+        metricSlug: normalizedRuleMetricSlug,
         triggeredAt: event.triggeredAt,
         message: triggered.message,
         severity: rule.severity,
@@ -1037,6 +1139,7 @@ export class AlertsService {
     deliveries: { id: string; userId: string }[]
   ) {
     const metricValue = Number(event.metricValue);
+    const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const title = `Alert triggered: ${rule.name}`;
     const changeText =
       typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
@@ -1044,7 +1147,7 @@ export class AlertsService {
         : "";
     const body =
       event.message ??
-      `Metric ${rule.metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}${changeText}`;
+      `Metric ${metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}${changeText}`;
     const context =
       event.context && typeof event.context === "object" && !Array.isArray(event.context)
         ? (event.context as Record<string, unknown>)
@@ -1074,7 +1177,7 @@ export class AlertsService {
               data: {
                 alertEventId: event.id,
                 ruleId: rule.id,
-                metricSlug: rule.metricSlug,
+                metricSlug,
                 metricValue,
                 ...(typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
                   ? { changePercent: event.changePercent }
@@ -1504,6 +1607,7 @@ export class AlertsService {
     event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string | null; changePercent?: number | null },
     rule: { name: string; metricSlug: string; operator?: AlertOperator; thresholdValue?: Prisma.Decimal | null; thresholdLower?: Prisma.Decimal | null; thresholdUpper?: Prisma.Decimal | null }
   ) {
+    const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const threshold =
       rule.thresholdValue !== null && rule.thresholdValue !== undefined
         ? Number(rule.thresholdValue)
@@ -1514,7 +1618,7 @@ export class AlertsService {
             : null;
     const html = this.email.buildAlertTemplate({
       ruleName: rule.name,
-      metric: rule.metricSlug,
+      metric: metricSlug,
       value: Number(event.metricValue),
       threshold,
       triggeredAt: event.triggeredAt.toISOString(),
@@ -1523,7 +1627,7 @@ export class AlertsService {
     });
     const text = this.email.buildAlertTextTemplate({
       ruleName: rule.name,
-      metric: rule.metricSlug,
+      metric: metricSlug,
       value: Number(event.metricValue),
       threshold,
       triggeredAt: event.triggeredAt.toISOString(),
@@ -1550,10 +1654,11 @@ export class AlertsService {
       thresholdUpper?: Prisma.Decimal | null;
     }
   ) {
+    const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const payload = {
       alertId: event.id,
       ruleName: rule.name,
-      metric: rule.metricSlug,
+      metric: metricSlug,
       currentValue: Number(event.metricValue),
       threshold:
         rule.thresholdValue !== null && rule.thresholdValue !== undefined

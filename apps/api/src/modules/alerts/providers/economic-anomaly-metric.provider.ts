@@ -50,6 +50,16 @@ export class EconomicAnomalyMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" }
+      };
+    }
     const metadata = toMetadata(rule.metadata);
     const lookbackDays = clampInt(typeof metadata?.lookbackDays === "number" ? metadata.lookbackDays : 365, 30, 3650);
     const maxPoints = clampInt(typeof metadata?.maxPoints === "number" ? metadata.maxPoints : 1000, 50, 5000);
@@ -64,7 +74,7 @@ export class EconomicAnomalyMetricProvider implements MetricProvider {
 
     const latestPoint = await this.prisma.economicDataPoint.findFirst({
       where: {
-        item: { slug: rule.metricSlug },
+        item: { slug: metricSlug },
         ...(desiredSourceField ? { sourceField: desiredSourceField } : {})
       },
       orderBy: { recordedAt: "desc" },
@@ -98,7 +108,7 @@ export class EconomicAnomalyMetricProvider implements MetricProvider {
           error: "insufficient_points",
           points: points.length,
           lookbackDays,
-          metricSlug: rule.metricSlug
+          metricSlug
         }
       };
     }
@@ -145,7 +155,7 @@ export class EconomicAnomalyMetricProvider implements MetricProvider {
               sigma,
               residual,
               score,
-              metricSlug: rule.metricSlug,
+              metricSlug,
               itemName: latestPoint.item.displayName,
               recordedAt: latestPoint.recordedAt.toISOString(),
               model: forecast.model,
@@ -162,7 +172,7 @@ export class EconomicAnomalyMetricProvider implements MetricProvider {
           context: {
             observed,
             fallback: fallback.context,
-            metricSlug: rule.metricSlug,
+            metricSlug,
             itemName: latestPoint.item.displayName,
             recordedAt: latestPoint.recordedAt.toISOString(),
             model: { kind: "fallback" }

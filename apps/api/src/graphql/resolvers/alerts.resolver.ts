@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, UseGuards } from "@nestjs/common";
 import { Args, Context, Int, Mutation, Query, Resolver, Subscription } from "@nestjs/graphql";
-import { PubSubEngine , withFilter } from "graphql-subscriptions";
+import { PubSubEngine, withFilter } from "graphql-subscriptions";
 
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
@@ -12,6 +12,13 @@ import { AlertChannelInput, UpdateAlertChannelInput, UpdateAlertEventStatusInput
 import type { GqlRequest } from "../graphql.types";
 import { AlertChannelModel, AlertEventModel, AlertEventReplayModel, AlertRuleModel, AlertRuleTuningSuggestionModel } from "../models/alert.model";
 
+const normalizeRequiredMetricSlug = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
+const normalizeOptionalMetricSlug = (value: unknown): string | undefined => {
+  const normalized = normalizeRequiredMetricSlug(value);
+  return normalized || undefined;
+};
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -53,7 +60,7 @@ export class AlertsResolver {
       severity: rule.severity,
       status: rule.status,
       metricProvider: rule.metricProvider,
-      metricSlug: rule.metricSlug,
+      metricSlug: normalizeRequiredMetricSlug(rule.metricSlug),
       operator: rule.operator,
       thresholdValue: rule.thresholdValue ? Number(rule.thresholdValue) : null,
       thresholdLower: rule.thresholdLower ? Number(rule.thresholdLower) : null,
@@ -102,7 +109,7 @@ export class AlertsResolver {
       ruleId: event.ruleId,
       ruleName: event.rule?.name ?? undefined,
       metricProvider: event.rule?.metricProvider ?? undefined,
-      metricSlug: event.rule?.metricSlug ?? undefined,
+      metricSlug: normalizeOptionalMetricSlug(event.rule?.metricSlug),
       operator: event.rule?.operator ?? undefined,
       thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
       thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
@@ -186,7 +193,7 @@ export class AlertsResolver {
       severity: updated.severity,
       status: updated.status,
       metricProvider: updated.metricProvider,
-      metricSlug: updated.metricSlug,
+      metricSlug: normalizeRequiredMetricSlug(updated.metricSlug),
       operator: updated.operator,
       thresholdValue: updated.thresholdValue ? Number(updated.thresholdValue) : null,
       thresholdLower: updated.thresholdLower ? Number(updated.thresholdLower) : null,
@@ -307,7 +314,7 @@ export class AlertsResolver {
       ruleId: event.ruleId,
       ruleName: event.rule?.name ?? undefined,
       metricProvider: event.rule?.metricProvider ?? undefined,
-      metricSlug: event.rule?.metricSlug ?? undefined,
+      metricSlug: normalizeOptionalMetricSlug(event.rule?.metricSlug),
       operator: event.rule?.operator ?? undefined,
       thresholdValue: event.rule?.thresholdValue ? Number(event.rule.thresholdValue) : null,
       thresholdLower: event.rule?.thresholdLower ? Number(event.rule.thresholdLower) : null,
@@ -356,7 +363,7 @@ export class AlertsResolver {
         ruleId: payload.event.ruleId ?? undefined,
         ruleName: payload.event.ruleName ?? undefined,
         metricProvider: payload.event.metricProvider ?? undefined,
-        metricSlug: payload.event.metricSlug ?? undefined,
+        metricSlug: normalizeOptionalMetricSlug(payload.event.metricSlug),
         context: payload.event.context ?? null,
         deliveries: []
       };

@@ -9,6 +9,7 @@ import {
   Sse,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { createHash } from "node:crypto";
 import { Observable } from "rxjs";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -36,6 +37,22 @@ function readEnvInt(key: string, fallback: number): number {
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function hashText(value: string): string {
+  return createHash("sha1").update(value).digest("base64url");
+}
+
+export function createDashboardStreamFingerprint(payload: unknown): string {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (typeof serialized === "string") {
+      return hashText(serialized);
+    }
+    return hashText(String(payload));
+  } catch {
+    return hashText(String(payload));
+  }
 }
 
 type DashboardTranslateTarget = "zh-CN";
@@ -312,13 +329,14 @@ export class DashboardController {
           ]);
           const geoHeatmap = await geoHeatmapPromise;
 
-          const warFingerprint = `${warEvents.updatedAt ?? "none"}:${warEvents.events.length}`;
+          const warFingerprint = createDashboardStreamFingerprint(warEvents);
           if (force || warFingerprint !== lastWarFingerprint) {
             subscriber.next({ type: "war-map-events", data: warEvents });
             lastWarFingerprint = warFingerprint;
           }
 
-          const candleFingerprint = `${candlestick.updatedAt ?? "none"}:${candlestick.points.length}`;
+          const candleFingerprint =
+            createDashboardStreamFingerprint(candlestick);
           if (force || candleFingerprint !== lastCandleFingerprint) {
             subscriber.next({
               type: "financial-candlestick",
@@ -328,7 +346,8 @@ export class DashboardController {
           }
 
           if (geoHeatmap) {
-            const geoHeatmapFingerprint = `${geoHeatmap.updatedAt ?? "none"}:${geoHeatmap.points.length}`;
+            const geoHeatmapFingerprint =
+              createDashboardStreamFingerprint(geoHeatmap);
             if (force || geoHeatmapFingerprint !== lastGeoHeatmapFingerprint) {
               subscriber.next({
                 type: "spacetime-geo-heatmap",

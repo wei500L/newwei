@@ -21,9 +21,19 @@ export class RealtimeSignalMetricProvider implements MetricProvider {
       "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId"
     >,
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" },
+      };
+    }
     const evaluation = await this.realtimeSignals.evaluateMetric(
       rule.orgId,
-      rule.metricSlug,
+      metricSlug,
       rule.changeWindowMin ?? 60,
     );
     return {

@@ -203,14 +203,10 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     hasLiveRef.current = false;
     const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso, null] as const;
     const warEventsLegacyKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
+    const warEventsDeckglPrefixKey = ['dashboard', 'war-map', 'deckgl', 'events'] as const;
     const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
     const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
-    const geoHeatmapEventPrefixKey = [
-      'dashboard',
-      'spacetime',
-      'geo-heatmap',
-      'event',
-    ] as const;
+    const geoHeatmapPrefixKey = ['dashboard', 'spacetime', 'geo-heatmap'] as const;
     let active = true;
     let connecting = false;
     let authBlocked = false;
@@ -220,6 +216,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (!Array.isArray(queryKey)) return false;
       if (queryKey[0] !== 'dashboard') return false;
       if (queryKey[1] === 'war-map' && queryKey[2] === 'events') return true;
+      if (
+        queryKey[1] === 'war-map' &&
+        queryKey[2] === 'deckgl' &&
+        queryKey[3] === 'events'
+      ) {
+        return true;
+      }
       if (queryKey[1] === 'financial-candlestick') return true;
       if (
         queryKey[1] === 'spacetime' &&
@@ -229,6 +232,57 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         return true;
       }
       return false;
+    };
+
+    const invalidateWarMapEventQueries = (includeLegacyKeys: boolean) => {
+      if (includeLegacyKeys) {
+        void queryClient.invalidateQueries({
+          queryKey: warEventsKey,
+          exact: true,
+          refetchType: 'active'
+        });
+        void queryClient.invalidateQueries({
+          queryKey: warEventsLegacyKey,
+          exact: true,
+          refetchType: 'active'
+        });
+      }
+      void queryClient.invalidateQueries({
+        queryKey: warEventsDeckglPrefixKey,
+        exact: false,
+        refetchType: 'active',
+      });
+    };
+
+    const isGeoHeatmapBaseQueryKey = (queryKey: readonly unknown[]) =>
+      queryKey.length === geoHeatmapKey.length &&
+      queryKey[0] === geoHeatmapKey[0] &&
+      queryKey[1] === geoHeatmapKey[1] &&
+      queryKey[2] === geoHeatmapKey[2] &&
+      queryKey[3] === geoHeatmapKey[3] &&
+      queryKey[4] === geoHeatmapKey[4];
+
+    const invalidateGeoHeatmapQueries = (includeBaseKey: boolean) => {
+      if (includeBaseKey) {
+        void queryClient.invalidateQueries({
+          queryKey: geoHeatmapKey,
+          exact: true,
+          refetchType: 'active'
+        });
+      }
+      void queryClient.invalidateQueries({
+        predicate: (query) => {
+          const queryKey = query.queryKey;
+          if (!Array.isArray(queryKey)) return false;
+          if (queryKey[0] !== geoHeatmapPrefixKey[0]) return false;
+          if (queryKey[1] !== geoHeatmapPrefixKey[1]) return false;
+          if (queryKey[2] !== geoHeatmapPrefixKey[2]) return false;
+          if (queryKey[3] === 'articles') return false;
+          if (isGeoHeatmapBaseQueryKey(queryKey)) return false;
+          return true;
+        },
+        refetchType: 'active',
+      });
     };
 
     const recordMessage = (timestamp = Date.now()) => {
@@ -277,26 +331,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       const wasLive = statusRef.current === 'live';
       statusRef.current = 'live';
       if (!wasLive && hasLiveRef.current) {
-        void queryClient.invalidateQueries({
-          queryKey: warEventsKey,
-          exact: true,
-          refetchType: 'active'
-        });
+        invalidateWarMapEventQueries(true);
         void queryClient.invalidateQueries({
           queryKey: candlestickKey,
           exact: true,
           refetchType: 'active'
         });
-        void queryClient.invalidateQueries({
-          queryKey: geoHeatmapKey,
-          exact: true,
-          refetchType: 'active'
-        });
-        void queryClient.invalidateQueries({
-          queryKey: geoHeatmapEventPrefixKey,
-          exact: false,
-          refetchType: 'active'
-        });
+        invalidateGeoHeatmapQueries(true);
       }
       hasLiveRef.current = true;
       setState((prev) =>
@@ -383,6 +424,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
         queryClient.setQueryData(warEventsKey, payload);
         queryClient.setQueryData(warEventsLegacyKey, payload);
+        // deckgl queries include bbox/zoom/cluster dimensions; refetch active ones instead of writing mismatched payload.
+        invalidateWarMapEventQueries(false);
         markHealthy();
         return;
       }
@@ -393,11 +436,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       }
       if (eventType === 'spacetime-geo-heatmap' && isSpacetimeGeoHeatmapResponse(payload)) {
         queryClient.setQueryData(geoHeatmapKey, payload);
-        void queryClient.invalidateQueries({
-          queryKey: geoHeatmapEventPrefixKey,
-          exact: false,
-          refetchType: 'active',
-        });
+        invalidateGeoHeatmapQueries(false);
         markHealthy();
         return;
       }

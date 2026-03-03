@@ -1,11 +1,16 @@
+import {
+  SITUATION_OREF_ACTIVE_ALERTS_METRIC_SLUG,
+  SITUATION_OREF_HISTORY_24H_METRIC_SLUG,
+} from '@modular/utils';
+
 export const SITUATION_MONITOR_OREF_METRICS_CACHE_KEY =
   'situation-monitor:signals:metrics:oref:v1';
 
 export const SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG =
-  'situation.oref.active_alerts';
+  SITUATION_OREF_ACTIVE_ALERTS_METRIC_SLUG;
 
 export const SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG =
-  'situation.oref.history_24h';
+  SITUATION_OREF_HISTORY_24H_METRIC_SLUG;
 
 export interface SituationMonitorDefaultAlertRuleDefinition {
   slug: string;

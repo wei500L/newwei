@@ -19,8 +19,18 @@ export class PipelineMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
-    if (rule.metricSlug.startsWith("mongo_outbox.")) {
-      return this.fetchMongoOutboxMetric(rule);
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" }
+      };
+    }
+    if (metricSlug.startsWith("mongo_outbox.")) {
+      return this.fetchMongoOutboxMetric({ ...rule, metricSlug });
     }
 
     const windowMinutes = rule.changeWindowMin ?? 60;

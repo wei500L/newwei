@@ -530,6 +530,15 @@ export default function SubscriptionsPage() {
     if (!activeRule) {
       return;
     }
+    const metricSlug = activeRule.metricSlug.trim();
+    if (!metricSlug) {
+      message.error(
+        t("alerts.config.errors.metricSlugRequired", {
+          defaultValue: "Metric slug is required.",
+        }),
+      );
+      return;
+    }
     const existingMetadata = toRecord(activeRule.metadata) ?? {};
     const nextMetadata: Record<string, unknown> = { ...existingMetadata };
     if (values.muteUntil) {
@@ -555,7 +564,7 @@ export default function SubscriptionsPage() {
             severity: activeRule.severity,
             status: activeRule.status,
             metricProvider: activeRule.metricProvider,
-            metricSlug: activeRule.metricSlug,
+            metricSlug,
             operator: activeRule.operator,
             thresholdValue: typeof activeRule.thresholdValue === "number" ? activeRule.thresholdValue : undefined,
             thresholdLower: typeof activeRule.thresholdLower === "number" ? activeRule.thresholdLower : undefined,

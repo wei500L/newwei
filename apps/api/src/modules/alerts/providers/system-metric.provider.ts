@@ -1,4 +1,10 @@
 import { Injectable } from "@nestjs/common";
+import {
+  CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+  SYSTEM_LOAD_1M_METRIC_SLUG,
+  SYSTEM_MEMORY_USAGE_METRIC_SLUG,
+  SYSTEM_UPTIME_SECONDS_METRIC_SLUG,
+} from "@modular/utils";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 import os from "node:os";
 
@@ -26,7 +32,7 @@ export class SystemMetricProvider implements MetricProvider {
   constructor(private readonly cache: CacheService) {}
 
   private readonly metricFetchers: Record<string, MetricFetcher> = {
-    "system.memory.usage_pct": () => {
+    [SYSTEM_MEMORY_USAGE_METRIC_SLUG]: () => {
       const total = os.totalmem();
       const free = os.freemem();
       const used = total - free;
@@ -38,11 +44,11 @@ export class SystemMetricProvider implements MetricProvider {
         context: { totalBytes: total, usedBytes: used, freeBytes: free }
       };
     },
-    "system.load.1m": () => {
+    [SYSTEM_LOAD_1M_METRIC_SLUG]: () => {
       const load1 = os.loadavg()[0] ?? 0;
       return { latest: load1, previous: null, changePercent: null, context: { load1 } };
     },
-    "system.uptime.seconds": () => {
+    [SYSTEM_UPTIME_SECONDS_METRIC_SLUG]: () => {
       const uptime = os.uptime();
       return { latest: uptime, previous: null, changePercent: null, context: { uptime } };
     },
@@ -59,17 +65,30 @@ export class SystemMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
     const metadata =
       rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
         ? (rule.metadata as Record<string, unknown>)
         : null;
     const directValue =
-      typeof metadata?.currentValue === "number" ? metadata.currentValue : undefined;
+      typeof metadata?.currentValue === "number" &&
+      Number.isFinite(metadata.currentValue)
+        ? metadata.currentValue
+        : undefined;
     if (directValue !== undefined) {
       return { latest: directValue, previous: null, changePercent: null, context: { source: "metadata" } };
     }
+    if (metricSlug === CUSTOM_MANUAL_SYSTEM_METRIC_SLUG) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "custom_manual_requires_current_value" },
+      };
+    }
 
-    const fetcher = this.metricFetchers[rule.metricSlug];
+    const fetcher = this.metricFetchers[metricSlug];
     if (!fetcher) {
       return { latest: null, previous: null, changePercent: null, context: { error: "unknown system metric" } };
     }

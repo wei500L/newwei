@@ -61,7 +61,7 @@ const DEFAULT_GEOMETRY_BY_LAYER: Partial<
   Record<WarMapLayerId, WarMapLayerDataset["geometryType"]>
 > = {
   conflicts: "polygon",
-  cables: "path",
+  cables: "point",
   pipelines: "path",
   waterways: "point",
   tradeRoutes: "path",

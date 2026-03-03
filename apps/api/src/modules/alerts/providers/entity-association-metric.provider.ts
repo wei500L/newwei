@@ -42,6 +42,11 @@ export class EntityAssociationMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return { latest: null, previous: null, changePercent: null, context: { error: "seed_missing" } };
+    }
     const metadata = toMetadata(rule.metadata);
     const windowMinutes = clampInt(
       typeof metadata?.sourceWindowMinutes === "number" ? metadata.sourceWindowMinutes : 180,
@@ -63,7 +68,7 @@ export class EntityAssociationMetricProvider implements MetricProvider {
         rule: {
           orgId: rule.orgId,
           metricProvider: AlertMetricProvider.entity_sentiment,
-          metricSlug: rule.metricSlug
+          metricSlug
         }
       },
       include: { rule: true },
@@ -74,10 +79,7 @@ export class EntityAssociationMetricProvider implements MetricProvider {
       return { latest: null, previous: null, changePercent: null, context: { source: "none" } };
     }
 
-    const seedName = rule.metricSlug.trim();
-    if (!seedName) {
-      return { latest: null, previous: null, changePercent: null, context: { error: "seed_missing" } };
-    }
+    const seedName = metricSlug;
 
     const seed = await this.kg.resolveEntity(rule.orgId, seedName);
     if (!seed) {

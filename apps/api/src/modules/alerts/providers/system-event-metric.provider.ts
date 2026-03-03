@@ -18,6 +18,8 @@ export class SystemEventMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
     const windowMinutes = rule.changeWindowMin ?? 60;
     const windowMs = windowMinutes * 60 * 1000;
     const now = Date.now();
@@ -28,8 +30,22 @@ export class SystemEventMetricProvider implements MetricProvider {
       rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
         ? (rule.metadata as Record<string, unknown>)
         : null;
-    const resource = typeof metadata?.resource === "string" ? metadata.resource : rule.metricSlug;
-    const action = typeof metadata?.action === "string" ? metadata.action : undefined;
+    const resource =
+      typeof metadata?.resource === "string" && metadata.resource.trim().length > 0
+        ? metadata.resource.trim()
+        : metricSlug;
+    if (!resource) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" }
+      };
+    }
+    const action =
+      typeof metadata?.action === "string" && metadata.action.trim().length > 0
+        ? metadata.action.trim()
+        : undefined;
 
     const baseWhere: Prisma.AuditLogWhereInput = {
       orgId: rule.orgId,

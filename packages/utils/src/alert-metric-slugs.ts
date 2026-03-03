@@ -1,0 +1,21 @@
+export const SYSTEM_MEMORY_USAGE_METRIC_SLUG = "system.memory.usage_pct";
+export const SYSTEM_LOAD_1M_METRIC_SLUG = "system.load.1m";
+export const SYSTEM_UPTIME_SECONDS_METRIC_SLUG = "system.uptime.seconds";
+export const SITUATION_OREF_ACTIVE_ALERTS_METRIC_SLUG =
+  "situation.oref.active_alerts";
+export const SITUATION_OREF_HISTORY_24H_METRIC_SLUG =
+  "situation.oref.history_24h";
+export const CUSTOM_MANUAL_SYSTEM_METRIC_SLUG = "custom.manual";
+
+export const DEFAULT_SYSTEM_METRIC_SLUG = SYSTEM_MEMORY_USAGE_METRIC_SLUG;
+
+export const SYSTEM_METRIC_SLUGS = [
+  DEFAULT_SYSTEM_METRIC_SLUG,
+  SYSTEM_LOAD_1M_METRIC_SLUG,
+  SYSTEM_UPTIME_SECONDS_METRIC_SLUG,
+  SITUATION_OREF_ACTIVE_ALERTS_METRIC_SLUG,
+  SITUATION_OREF_HISTORY_24H_METRIC_SLUG,
+  CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+] as const;
+
+export type SystemMetricSlug = (typeof SYSTEM_METRIC_SLUGS)[number];

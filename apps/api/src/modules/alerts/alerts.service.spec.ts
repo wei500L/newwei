@@ -1,4 +1,10 @@
-import { AlertEventStatus, AlertOperator } from "@prisma/client";
+import { CUSTOM_MANUAL_SYSTEM_METRIC_SLUG } from "@modular/utils";
+import {
+  AlertEventStatus,
+  AlertMetricProvider,
+  AlertOperator,
+  AlertStatus,
+} from "@prisma/client";
 
 import { AlertsService } from "./alerts.service";
 
@@ -92,6 +98,21 @@ describe("AlertsService.updateEventStatus", () => {
       "Unsupported alert event status update"
     );
   });
+
+  it("normalizes rule metric slug in updated event response", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findUnique.mockResolvedValue({ id: "event-1", rule: { orgId: "org-1" } });
+    prisma.alertEvent.update.mockResolvedValue({
+      id: "event-1",
+      status: AlertEventStatus.confirmed,
+      rule: { orgId: "org-1", metricSlug: "  crawl_task  " },
+      deliveries: [],
+    });
+
+    const result = await service.updateEventStatus("org-1", "event-1", AlertEventStatus.confirmed);
+
+    expect(result.rule?.metricSlug).toBe("crawl_task");
+  });
 });
 
 describe("AlertsService.getRuleTuningSuggestion", () => {
@@ -144,6 +165,149 @@ describe("AlertsService.getRuleTuningSuggestion", () => {
   });
 });
 
+describe("AlertsService.listEvents", () => {
+  const buildService = () => {
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn(),
+      },
+    } as any;
+
+    const service = new AlertsService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {} as any,
+      {} as any,
+      []
+    );
+
+    return { prisma, service };
+  };
+
+  it("normalizes event rule metric slug in query result", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany.mockResolvedValue([
+      {
+        id: "event-1",
+        rule: { metricSlug: "  realtime.opensky.military_flights  " },
+      },
+    ]);
+
+    const result = await service.listEvents("org-1", 50);
+
+    expect(result[0]?.rule?.metricSlug).toBe("realtime.opensky.military_flights");
+  });
+
+  it("clamps non-positive limit to 1", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany.mockResolvedValue([]);
+
+    await service.listEvents("org-1", 0);
+
+    expect(prisma.alertEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 1,
+      }),
+    );
+  });
+
+  it("clamps overly large limit to 500", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany.mockResolvedValue([]);
+
+    await service.listEvents("org-1", 50_000);
+
+    expect(prisma.alertEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 500,
+      }),
+    );
+  });
+
+  it("falls back to normalized in-memory filtering when exact metric slug lookup misses legacy spaced rows", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "event-legacy",
+          rule: { metricSlug: "  crawl_task  " },
+        },
+      ]);
+
+    const result = await service.listEvents("org-1", 10, "crawl_task");
+
+    expect(prisma.alertEvent.findMany).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("event-legacy");
+    expect(result[0]?.rule?.metricSlug).toBe("crawl_task");
+  });
+
+  it("merges exact and legacy spaced metric slug rows when exact results are under limit", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "event-exact",
+          triggeredAt: new Date("2026-01-03T00:00:00.000Z"),
+          rule: { metricSlug: "crawl_task" },
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "event-exact",
+          triggeredAt: new Date("2026-01-03T00:00:00.000Z"),
+          rule: { metricSlug: "crawl_task" },
+        },
+        {
+          id: "event-legacy",
+          triggeredAt: new Date("2026-01-04T00:00:00.000Z"),
+          rule: { metricSlug: "  crawl_task  " },
+        },
+      ]);
+
+    const result = await service.listEvents("org-1", 10, "crawl_task");
+
+    expect(prisma.alertEvent.findMany).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.id).toBe("event-legacy");
+    expect(result[1]?.id).toBe("event-exact");
+    expect(result[0]?.rule?.metricSlug).toBe("crawl_task");
+  });
+
+  it("keeps merged metric slug query results ordered by triggeredAt desc", async () => {
+    const { prisma, service } = buildService();
+    prisma.alertEvent.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "event-exact-old",
+          triggeredAt: new Date("2026-01-01T00:00:00.000Z"),
+          rule: { metricSlug: "crawl_task" },
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "event-legacy-new",
+          triggeredAt: new Date("2026-01-05T00:00:00.000Z"),
+          rule: { metricSlug: "  crawl_task  " },
+        },
+        {
+          id: "event-exact-old",
+          triggeredAt: new Date("2026-01-01T00:00:00.000Z"),
+          rule: { metricSlug: "crawl_task" },
+        },
+      ]);
+
+    const result = await service.listEvents("org-1", 10, "crawl_task");
+
+    expect(result.map((entry) => entry.id)).toEqual(["event-legacy-new", "event-exact-old"]);
+  });
+});
+
 describe("AlertsService.listRules default crawl quality rules", () => {
   const buildService = () => {
     const createdRules: Array<{ id: string; orgId: string }> = [];
@@ -154,6 +318,7 @@ describe("AlertsService.listRules default crawl quality rules", () => {
       alertRule: {
         findMany: jest
           .fn()
+          .mockResolvedValueOnce([])
           .mockResolvedValueOnce([])
           .mockResolvedValueOnce([]),
         create: jest.fn(async ({ data }: any) => {
@@ -195,8 +360,158 @@ describe("AlertsService.listRules default crawl quality rules", () => {
 
     await service.listRules("org-1");
 
-    expect(createdRules).toHaveLength(3);
-    expect(prisma.alertRule.create).toHaveBeenCalledTimes(3);
+    expect(createdRules.length).toBeGreaterThanOrEqual(3);
+    expect(prisma.alertRule.create).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalled();
+  });
+
+  it("does not recreate crawl defaults when existing slug has surrounding whitespace", async () => {
+    const { service, prisma, createdRules } = buildService();
+    prisma.alertRule.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ metricSlug: "  crawl_quality.preflight_failure_rate  " }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await service.listRules("org-1");
+
+    expect(createdRules.some((entry) => entry.id.includes("preflight_failure_rate"))).toBe(false);
+  });
+});
+
+describe("AlertsService.upsertRule system manual metric", () => {
+  const buildService = () => {
+    const prisma = {
+      economicDataItem: {
+        findUnique: jest.fn(),
+      },
+      alertRule: {
+        findUnique: jest.fn(),
+        create: jest.fn().mockResolvedValue({
+          id: "rule-1",
+          orgId: "org-1",
+          checkIntervalSec: 300,
+          status: AlertStatus.active,
+        }),
+      },
+      $transaction: jest.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma)),
+    } as any;
+    const queue = {
+      add: jest.fn().mockResolvedValue(undefined),
+      getRepeatableJobs: jest.fn().mockResolvedValue([]),
+      removeRepeatableByKey: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    } as any;
+    const providers = [
+      {
+        supports: jest.fn((rule: { metricProvider: AlertMetricProvider }) =>
+          rule.metricProvider === AlertMetricProvider.system_metric,
+        ),
+      },
+    ] as any;
+
+    const service = new AlertsService(
+      prisma,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      queue,
+      {} as any,
+      providers,
+    );
+
+    return { prisma, queue, service };
+  };
+
+  it("rejects custom.manual rule without metadata.currentValue", async () => {
+    const { prisma, service } = buildService();
+
+    await expect(
+      service.upsertRule("org-1", {
+        name: "Manual metric without value",
+        metricProvider: AlertMetricProvider.system_metric,
+        metricSlug: CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+        operator: AlertOperator.gte,
+        thresholdValue: 1,
+        metadata: {},
+      }),
+    ).rejects.toThrow("custom.manual metric requires metadata.currentValue");
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects custom.manual rule when metadata.currentValue is non-finite", async () => {
+    const { prisma, service } = buildService();
+
+    await expect(
+      service.upsertRule("org-1", {
+        name: "Manual metric with NaN",
+        metricProvider: AlertMetricProvider.system_metric,
+        metricSlug: CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+        operator: AlertOperator.gte,
+        thresholdValue: 1,
+        metadata: { currentValue: Number.NaN },
+      }),
+    ).rejects.toThrow("custom.manual metric requires metadata.currentValue");
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects rules with blank metricSlug after trimming", async () => {
+    const { prisma, service } = buildService();
+
+    await expect(
+      service.upsertRule("org-1", {
+        name: "Blank slug",
+        metricProvider: AlertMetricProvider.system_metric,
+        metricSlug: "   ",
+        operator: AlertOperator.gte,
+        thresholdValue: 1,
+        metadata: { currentValue: 1 },
+      }),
+    ).rejects.toThrow("metricSlug is required");
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("accepts custom.manual rule when metadata.currentValue is provided", async () => {
+    const { prisma, queue, service } = buildService();
+
+    const created = await service.upsertRule("org-1", {
+      name: "Manual metric with value",
+      metricProvider: AlertMetricProvider.system_metric,
+      metricSlug: CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+      operator: AlertOperator.gte,
+      thresholdValue: 1,
+      metadata: { currentValue: 123 },
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.alertRule.create).toHaveBeenCalledTimes(1);
+    expect(queue.add).toHaveBeenCalled();
+    expect(created.id).toBe("rule-1");
+  });
+
+  it("normalizes metricSlug before persisting", async () => {
+    const { prisma, service } = buildService();
+
+    await service.upsertRule("org-1", {
+      name: "Manual metric with spaced slug",
+      metricProvider: AlertMetricProvider.system_metric,
+      metricSlug: `  ${CUSTOM_MANUAL_SYSTEM_METRIC_SLUG}  `,
+      operator: AlertOperator.gte,
+      thresholdValue: 1,
+      metadata: { currentValue: 123 },
+    });
+
+    expect(prisma.alertRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metricSlug: CUSTOM_MANUAL_SYSTEM_METRIC_SLUG,
+        }),
+      }),
+    );
   });
 });

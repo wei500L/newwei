@@ -355,7 +355,8 @@
       "errors": {
         "pipelineStatus": "流水线状态",
         "crawlStatus": "抓取状态",
-        "systemMetricSlug": "系统指标标识"
+        "systemMetricSlug": "系统指标标识",
+        "metricSlugRequired": "指标标识不能为空。"
       },
       "saved": "已保存",
       "saveFailed": "保存失败。",

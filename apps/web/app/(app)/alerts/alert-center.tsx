@@ -1123,7 +1123,7 @@ const PROVIDER_FILTER_OPTIONS = [
 
 const SEVERITY_OPTIONS = ['low', 'medium', 'high'];
 const STATUS_OPTIONS = ['delivered', 'pending', 'failed', 'confirmed', 'ignored'];
-const MAX_EVENTS_LIMIT = 1000;
+const MAX_EVENTS_LIMIT = 500;
 const CONTEXT_OBJECT_KEYS = [
   { key: 'countryName', labelKey: 'alerts.center.detail.object.country', defaultLabel: 'Country' },
   { key: 'countryCode', labelKey: 'alerts.center.detail.object.countryCode', defaultLabel: 'Country code' },

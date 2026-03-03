@@ -18,9 +18,19 @@ export class EconomicDataMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metricProvider" | "metadata" | "orgId">
   ): Promise<MetricEvaluation> {
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" }
+      };
+    }
     const take = rule.operator === AlertOperator.change_up_pct || rule.operator === AlertOperator.change_down_pct ? 2 : 1;
     const where: Prisma.EconomicDataPointWhereInput = {
-      item: { slug: rule.metricSlug }
+      item: { slug: metricSlug }
     };
     if (rule.changeWindowMin) {
       const windowStart = new Date(Date.now() - rule.changeWindowMin * 60 * 1000);

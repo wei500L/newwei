@@ -355,7 +355,8 @@
       "errors": {
         "pipelineStatus": "Pipeline status",
         "crawlStatus": "Crawl status",
-        "systemMetricSlug": "System metric slug"
+        "systemMetricSlug": "System metric slug",
+        "metricSlugRequired": "Metric slug is required."
       },
       "saved": "Saved",
       "saveFailed": "Failed to save.",

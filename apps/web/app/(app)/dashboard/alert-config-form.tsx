@@ -15,7 +15,7 @@ import {
   Switch,
   Typography,
 } from "antd";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -29,6 +29,14 @@ import {
   useUpsertAlertRuleMutation,
 } from "@/graphql/generated";
 import dayjs, { toUtcIsoString } from "@/lib/dayjs";
+import {
+  DEFAULT_SYSTEM_METRIC_SLUG,
+  systemMetricSlugs,
+} from "./alert-config.constants";
+import {
+  isCustomManualMetricSlug,
+  normalizeMetricSlug,
+} from "./alert-config.slug";
 
 const parseDateValue = (value: unknown) => {
   if (typeof value !== "string" && typeof value !== "number") {
@@ -155,13 +163,6 @@ const isCrawlQualityMetricSlug = (
   value === "crawl_quality.preflight_failure_rate" ||
   value === "crawl_quality.http_304_hit_rate" ||
   value === "crawl_quality.org_hash_dedupe_hit_rate";
-
-const systemMetricSlugs = [
-  "system.memory.usage_pct",
-  "system.load.1m",
-  "system.uptime.seconds",
-  "custom.manual",
-].map((slug) => ({ label: slug, value: slug }));
 
 type RealtimeMetricSlug =
   | "realtime.opensky.military_flights"
@@ -321,6 +322,67 @@ export function AlertConfigForm() {
   const existingRule = useMemo(() => data?.alertRules?.[0], [data]);
   const [form] = Form.useForm();
   const [channelForm] = Form.useForm();
+  const formInitialValues = useMemo(() => {
+    const existingMetricSlug = normalizeMetricSlug(existingRule?.metricSlug);
+    return {
+      id: existingRule?.id,
+      name: existingRule?.name ?? t("alerts.config.defaults.name"),
+      description: existingRule?.description ?? undefined,
+      metricProvider:
+        existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
+      metricSlug:
+        (existingMetricSlug.length > 0 ? existingMetricSlug : undefined) ??
+        (existingRule?.metricProvider === AlertMetricProvider.SystemMetric
+          ? DEFAULT_SYSTEM_METRIC_SLUG
+          : existingRule?.metricProvider ===
+              AlertMetricProvider.PipelineJob
+            ? "pipeline_job"
+            : existingRule?.metricProvider === REALTIME_SIGNAL_PROVIDER
+              ? "realtime.opensky.military_flights"
+              : existingRule?.metricProvider ===
+                  AlertMetricProvider.CrawlTask
+                ? "crawl_task"
+                : "usd_index_history"),
+      pipelineStatuses: existingRule?.metadata?.statuses ?? ["failed"],
+      pipelineQueueName: existingRule?.metadata?.queueName,
+      pipelineSourceId: existingRule?.metadata?.sourceId,
+      crawlStatuses: existingRule?.metadata?.statuses ?? ["failed"],
+      crawlCreatedById: existingRule?.metadata?.createdById,
+      systemCurrentValue: existingRule?.metadata?.currentValue,
+      muteUntil: parseDateValue(existingRule?.metadata?.muteUntil),
+      notifyAllMembers: existingRule?.metadata?.notifyAllMembers ?? false,
+      metadataJson: existingRule?.metadata
+        ? JSON.stringify(existingRule.metadata, null, 2)
+        : "",
+      operator: existingRule?.operator ?? AlertOperator.Gt,
+      thresholdValue: existingRule?.thresholdValue ?? 100,
+      thresholdLower: existingRule?.thresholdLower ?? undefined,
+      thresholdUpper: existingRule?.thresholdUpper ?? undefined,
+      severity: existingRule?.severity ?? AlertSeverity.Medium,
+      status: existingRule?.status ?? AlertStatus.Active,
+      cooldownSeconds: existingRule?.cooldownSeconds ?? 3600,
+      checkIntervalSec: existingRule?.checkIntervalSec ?? 300,
+      channelIds: existingRule?.channels?.map((c) => c.id) ?? [],
+    };
+  }, [existingRule, t]);
+
+  useEffect(() => {
+    if (!existingRule?.id) {
+      return;
+    }
+    const currentId = form.getFieldValue("id") as string | undefined;
+    if (currentId === existingRule.id) {
+      return;
+    }
+
+    if (!form.isFieldsTouched()) {
+      form.setFieldsValue(formInitialValues);
+      return;
+    }
+
+    // Ensure late-arriving query data cannot turn an intended update into a create.
+    form.setFieldsValue({ id: existingRule.id });
+  }, [existingRule?.id, form, formInitialValues]);
 
   return (
     <ConfigProvider input={{ autoComplete: "off" }} textArea={{ autoComplete: "off" }}>
@@ -331,46 +393,7 @@ export function AlertConfigForm() {
           form={form}
           autoComplete="off"
           layout="vertical"
-          initialValues={{
-            id: existingRule?.id,
-            name: existingRule?.name ?? t("alerts.config.defaults.name"),
-            description: existingRule?.description ?? undefined,
-            metricProvider:
-              existingRule?.metricProvider ?? AlertMetricProvider.EconomicData,
-            metricSlug:
-              existingRule?.metricSlug ??
-              (existingRule?.metricProvider === AlertMetricProvider.SystemMetric
-                ? "system.memory.usage_pct"
-                : existingRule?.metricProvider ===
-                    AlertMetricProvider.PipelineJob
-                  ? "pipeline_job"
-                  : existingRule?.metricProvider === REALTIME_SIGNAL_PROVIDER
-                    ? "realtime.opensky.military_flights"
-                  : existingRule?.metricProvider ===
-                      AlertMetricProvider.CrawlTask
-                    ? "crawl_task"
-                    : "usd_index_history"),
-            pipelineStatuses: existingRule?.metadata?.statuses ?? ["failed"],
-            pipelineQueueName: existingRule?.metadata?.queueName,
-            pipelineSourceId: existingRule?.metadata?.sourceId,
-            crawlStatuses: existingRule?.metadata?.statuses ?? ["failed"],
-            crawlCreatedById: existingRule?.metadata?.createdById,
-            systemCurrentValue: existingRule?.metadata?.currentValue,
-            muteUntil: parseDateValue(existingRule?.metadata?.muteUntil),
-            notifyAllMembers: existingRule?.metadata?.notifyAllMembers ?? false,
-            metadataJson: existingRule?.metadata
-              ? JSON.stringify(existingRule.metadata, null, 2)
-              : "",
-            operator: existingRule?.operator ?? AlertOperator.Gt,
-            thresholdValue: existingRule?.thresholdValue ?? 100,
-            thresholdLower: existingRule?.thresholdLower ?? undefined,
-            thresholdUpper: existingRule?.thresholdUpper ?? undefined,
-            severity: existingRule?.severity ?? AlertSeverity.Medium,
-            status: existingRule?.status ?? AlertStatus.Active,
-            cooldownSeconds: existingRule?.cooldownSeconds ?? 3600,
-            checkIntervalSec: existingRule?.checkIntervalSec ?? 300,
-            channelIds: existingRule?.channels?.map((c) => c.id) ?? [],
-          }}
+          initialValues={formInitialValues}
           onFinish={async (values) => {
             const description =
               typeof values.description === "string" &&
@@ -382,6 +405,18 @@ export function AlertConfigForm() {
               message.error(parsedMetadata.error);
               return;
             }
+            const metricSlug = normalizeMetricSlug(values.metricSlug);
+            if (!metricSlug) {
+              message.error(
+                t("alerts.config.errors.metricSlugRequired", {
+                  defaultValue: "Metric slug is required.",
+                }),
+              );
+              return;
+            }
+            if (metricSlug !== values.metricSlug) {
+              form.setFieldsValue({ metricSlug });
+            }
             if (
               values.metricProvider === AlertMetricProvider.PipelineJob &&
               (!values.pipelineStatuses || !values.pipelineStatuses.length)
@@ -391,7 +426,7 @@ export function AlertConfigForm() {
             }
             if (
               values.metricProvider === AlertMetricProvider.CrawlTask &&
-              values.metricSlug === "crawl_task" &&
+              metricSlug === "crawl_task" &&
               (!values.crawlStatuses || !values.crawlStatuses.length)
             ) {
               message.error(t("alerts.config.errors.crawlStatus"));
@@ -399,9 +434,23 @@ export function AlertConfigForm() {
             }
             if (
               values.metricProvider === AlertMetricProvider.SystemMetric &&
-              !values.metricSlug
+              !metricSlug
             ) {
               message.error(t("alerts.config.errors.systemMetricSlug"));
+              return;
+            }
+            if (
+              values.metricProvider === AlertMetricProvider.SystemMetric &&
+              isCustomManualMetricSlug(metricSlug) &&
+              (typeof values.systemCurrentValue !== "number" ||
+                !Number.isFinite(values.systemCurrentValue))
+            ) {
+              message.error(
+                t("alerts.config.errors.systemCurrentValueRequired", {
+                  defaultValue:
+                    "Manual system metric requires a current value override.",
+                }),
+              );
               return;
             }
             const baseMetadata: Record<string, unknown> = {};
@@ -419,7 +468,7 @@ export function AlertConfigForm() {
                     sourceId: values.pipelineSourceId,
                   }
                 : values.metricProvider === AlertMetricProvider.CrawlTask
-                  ? values.metricSlug === "crawl_task"
+                  ? metricSlug === "crawl_task"
                     ? {
                         statuses: values.crawlStatuses,
                         createdById: values.crawlCreatedById,
@@ -444,7 +493,7 @@ export function AlertConfigForm() {
                     name: values.name,
                     description,
                     metricProvider: values.metricProvider,
-                    metricSlug: values.metricSlug,
+                    metricSlug,
                     operator: values.operator,
                     thresholdValue: values.thresholdValue ?? undefined,
                     thresholdLower: values.thresholdLower ?? undefined,
@@ -515,7 +564,7 @@ export function AlertConfigForm() {
                   });
                 } else if (provider === AlertMetricProvider.SystemMetric) {
                   form.setFieldsValue({
-                    metricSlug: "system.memory.usage_pct",
+                    metricSlug: DEFAULT_SYSTEM_METRIC_SLUG,
                     systemCurrentValue: undefined,
                   });
                 } else if (provider === REALTIME_SIGNAL_PROVIDER) {
@@ -744,6 +793,12 @@ export function AlertConfigForm() {
                 );
               }
               if (provider === AlertMetricProvider.SystemMetric) {
+                const selectedSystemMetricSlug = getFieldValue("metricSlug") as
+                  | string
+                  | undefined;
+                const requireSystemCurrentValue = isCustomManualMetricSlug(
+                  selectedSystemMetricSlug,
+                );
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Typography.Text strong>
@@ -763,6 +818,22 @@ export function AlertConfigForm() {
                       label={t("alerts.config.system.override")}
                       name="systemCurrentValue"
                       tooltip={t("alerts.config.system.overrideHint")}
+                      rules={
+                        requireSystemCurrentValue
+                          ? [
+                              {
+                                required: true,
+                                message: t(
+                                  "alerts.config.errors.systemCurrentValueRequired",
+                                  {
+                                    defaultValue:
+                                      "Manual system metric requires a current value override.",
+                                  },
+                                ),
+                              },
+                            ]
+                          : undefined
+                      }
                     >
                       <InputNumber
                         style={{ width: "100%" }}

@@ -166,4 +166,30 @@ describe("CrawlMetricProvider", () => {
     expect(result.previous).toBeNull();
     expect(result.changePercent).toBeNull();
   });
+
+  it("returns metric_slug_missing for blank metric slug", async () => {
+    const prisma = {
+      crawlTask: {
+        count: jest.fn(),
+      },
+    } as any;
+    const provider = new CrawlMetricProvider(prisma);
+
+    const result = await provider.fetch({
+      orgId: "org-1",
+      metricProvider: AlertMetricProvider.crawl_task,
+      metricSlug: "   ",
+      operator: "gte" as any,
+      changeWindowMin: 60,
+      metadata: null,
+    });
+
+    expect(prisma.crawlTask.count).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      latest: null,
+      previous: null,
+      changePercent: null,
+      context: { error: "metric_slug_missing" },
+    });
+  });
 });

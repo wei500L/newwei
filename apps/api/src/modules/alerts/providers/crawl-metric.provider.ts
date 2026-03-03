@@ -32,7 +32,16 @@ export class CrawlMetricProvider implements MetricProvider {
   async fetch(
     rule: Pick<AlertRule, "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId">
   ): Promise<MetricEvaluation> {
-    const metricSlug = rule.metricSlug.trim();
+    const metricSlug =
+      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    if (!metricSlug) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: { error: "metric_slug_missing" }
+      };
+    }
     if (this.isQualityMetricSlug(metricSlug)) {
       return this.fetchQualityRateMetric(rule.orgId, rule.changeWindowMin ?? 60, metricSlug);
     }
