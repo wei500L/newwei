@@ -274,6 +274,93 @@ describe("DashboardChartsService", () => {
     expect(
       plain.hotspots.some((item) => typeof item.descriptionZh === "string"),
     ).toBe(false);
+    const translatedHotspotFeature = translated.layers.hotspots.features[0];
+    const translatedProps =
+      translatedHotspotFeature?.properties &&
+      typeof translatedHotspotFeature.properties === "object"
+        ? (translatedHotspotFeature.properties as Record<string, unknown>)
+        : {};
+    expect(typeof translatedProps.nameZh).toBe("string");
+    expect(typeof translatedProps.descriptionZh).toBe("string");
+  });
+
+  it("enriches war map layers from realtime backend signals when org/range are provided", async () => {
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            triggeredAt: new Date("2026-01-01T11:00:00.000Z"),
+            severity: "high",
+            context: {
+              countryCode: "USA",
+            },
+          },
+        ]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockImplementation(async (args: any) => {
+          const forNewsMarkers = Boolean(args?.select?.id);
+          if (forNewsMarkers) {
+            return [
+              {
+                id: "news-1",
+                title: "Major cyber attack disrupts cloud region operations",
+                location: "San Francisco, United States",
+                publishedAt: new Date("2026-01-01T10:00:00.000Z"),
+                processedAt: new Date("2026-01-01T10:05:00.000Z"),
+                entities: [],
+                article: {
+                  url: "https://example.com/news/1",
+                  crawlAt: new Date("2026-01-01T10:01:00.000Z"),
+                  titleGuess: null,
+                },
+              },
+            ];
+          }
+          return [
+            {
+              location: "United States",
+              processedAt: new Date("2026-01-01T09:05:00.000Z"),
+              publishedAt: new Date("2026-01-01T09:00:00.000Z"),
+              article: {
+                crawlAt: new Date("2026-01-01T09:01:00.000Z"),
+              },
+            },
+          ];
+        }),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn().mockResolvedValue({
+        lat: 37.7749,
+        lng: -122.4194,
+        displayName: "San Francisco, United States",
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range,
+    });
+
+    expect(response.layers.cyberThreats.features.length).toBeGreaterThan(0);
+    expect(response.layers.economic.features.length).toBeGreaterThan(0);
+    expect(response.layers.cloudRegions.features.length).toBeGreaterThan(0);
+    expect(
+      response.layers.cyberThreats.features.some((feature) =>
+        feature.id.includes("news-"),
+      ),
+    ).toBe(true);
   });
 
   it("returns clustered war map events when clustering is requested", async () => {

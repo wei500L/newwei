@@ -138,9 +138,15 @@ export class DashboardController {
   @Permissions("dashboards.read")
   @Get("war-map/layers")
   @Header("Cache-Control", "no-store")
-  async warMapLayers(@Query() query: DashboardWarMapQueryDto) {
+  async warMapLayers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardWarMapQueryDto,
+  ) {
+    const range = this.chartsService.resolveRange(query);
     return this.chartsService.getWarMapLayers({
       translateTarget: parseTranslateTarget(query.translate),
+      orgId: user.orgId,
+      range,
     });
   }
 

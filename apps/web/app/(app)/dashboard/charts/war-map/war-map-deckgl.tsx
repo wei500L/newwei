@@ -34,6 +34,7 @@ import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
 const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 const DEFAULT_MAP_BBOX: [number, number, number, number] = [-180, -85, 180, 85];
+const ALL_TIME_START = new Date('1970-01-01T00:00:00.000Z');
 
 type WarEventSeverity = 'low' | 'medium' | 'high';
 type WarMapNewsGeoSource = 'geocoded' | 'fallback-country';
@@ -102,6 +103,7 @@ type DeckPoint = {
   clusterCount?: number;
   url?: string | null;
   publishedAt?: string;
+  query?: string;
   kind: 'event' | 'news' | 'news-cluster' | 'event-cluster' | 'layer' | 'monitor';
   description?: string;
 };
@@ -178,9 +180,12 @@ function parseHexColor(color: string): [number, number, number] | null {
   const trimmed = color.trim();
   const hex = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
   if (/^[0-9a-fA-F]{3}$/.test(hex)) {
-    const r = Number.parseInt(hex[0] + hex[0], 16);
-    const g = Number.parseInt(hex[1] + hex[1], 16);
-    const b = Number.parseInt(hex[2] + hex[2], 16);
+    const rChar = hex.charAt(0);
+    const gChar = hex.charAt(1);
+    const bChar = hex.charAt(2);
+    const r = Number.parseInt(rChar + rChar, 16);
+    const g = Number.parseInt(gChar + gChar, 16);
+    const b = Number.parseInt(bChar + bChar, 16);
     return [r, g, b];
   }
   if (/^[0-9a-fA-F]{6}$/.test(hex)) {
@@ -311,7 +316,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
 
   const effectiveRange = useMemo(() => {
     if (timeRangePreset === 'all') {
-      return { start, end };
+      return { start: ALL_TIME_START, end };
     }
     const duration = TIME_RANGE_MS[timeRangePreset];
     return {
@@ -386,17 +391,28 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
   });
 
   const layersQuery = useQuery({
-    queryKey: ['dashboard', 'war-map', 'deckgl', 'layers', translateTarget ?? null],
+    queryKey: [
+      'dashboard',
+      'war-map',
+      'deckgl',
+      'layers',
+      effectiveRange.start.toISOString(),
+      effectiveRange.end.toISOString(),
+      translateTarget ?? null,
+    ],
     queryFn: async () => {
       const response = await apiClient.get<WarMapLayersResponse>('dashboard/war-map/layers', {
         params: {
+          start: effectiveRange.start.toISOString(),
+          end: effectiveRange.end.toISOString(),
           translate: translateTarget,
         },
       });
       return response.data;
     },
-    staleTime: translateTarget === 'zh-CN' ? 30_000 : 6 * 60 * 60 * 1000,
+    staleTime: 30_000,
     enabled,
+    placeholderData: (previous) => previous,
   });
 
   useEffect(() => {
@@ -411,7 +427,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       zoom: viewState.zoom,
       bearing: viewState.bearing,
       pitch: viewState.pitch,
-      antialias: true,
       attributionControl: false,
     });
 
@@ -512,12 +527,19 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     if (parsed.timeRangePreset) {
       setTimeRangePreset(parsed.timeRangePreset);
     }
+    if (parsed.renderer === 'echarts') {
+      toast.info(
+        t('dashboard.charts.warMap.renderer.echartsDeprecated', {
+          defaultValue: 'ECharts renderer has been removed. Switched to deck.gl.',
+        }),
+      );
+    }
     if (parsed.viewState) {
       setViewState(parsed.viewState);
     }
 
     hasHydratedUrlRef.current = true;
-  }, [setActivePreset, setLayerVisibility, setTimeRangePreset, setViewState]);
+  }, [setActivePreset, setLayerVisibility, setTimeRangePreset, setViewState, t]);
 
   useEffect(() => {
     if (!hasHydratedUrlRef.current || typeof window === 'undefined') {
@@ -550,6 +572,9 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
         .filter((monitor) => monitor.enabled && monitor.location)
         .filter((monitor) => isValidLatLng(monitor.location!.lat, monitor.location!.lng))
         .map((monitor) => ({
+          query:
+            monitor.keywords.find((keyword) => keyword.trim().length > 0)?.trim() ??
+            monitor.name,
           id: monitor.id,
           lat: monitor.location!.lat,
           lng: monitor.location!.lng,
@@ -731,6 +756,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
           ? marker.titleZh
           : marker.title;
       const baseColor = marker.geoSource === 'fallback-country' ? [8, 145, 178] : [5, 150, 105];
+      const [baseR = 8, baseG = 145, baseB = 178] = baseColor;
       const point: DeckPoint = {
         id: marker.id,
         lat: marker.lat,
@@ -739,7 +765,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
         kind: marker.isCluster ? 'news-cluster' : 'news',
         color: marker.isCluster
           ? [21, 128, 61, 204]
-          : [baseColor[0], baseColor[1], baseColor[2], marker.geoSource === 'fallback-country' ? 110 : 200],
+          : [baseR, baseG, baseB, marker.geoSource === 'fallback-country' ? 110 : 200],
         radius: marker.isCluster
           ? Math.max(12, Math.min(42, Math.sqrt(marker.clusterCount ?? 1) * 7))
           : 5,
@@ -768,6 +794,26 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
           getRadius: (point: DeckPoint) => point.radius,
           radiusMinPixels: 5,
           radiusMaxPixels: 24,
+          onClick: (info: { object?: DeckPoint }) => {
+            const object = info.object;
+            if (!object) {
+              return;
+            }
+            const query = (object.query ?? object.label).trim();
+            if (!query) {
+              toast.warning(
+                t('dashboard.charts.warMap.missingMonitorQuery', {
+                  defaultValue: 'No keywords available for this monitor.',
+                }),
+              );
+              return;
+            }
+            window.open(
+              `/search?q=${encodeURIComponent(query)}`,
+              '_blank',
+              'noopener,noreferrer',
+            );
+          },
         }),
       );
     }
