@@ -119,23 +119,6 @@ const optionNeedsGrid = (
   return false;
 };
 
-const optionNeedsGeo = (
-  option: echarts.EChartsCoreOption,
-  seriesTypes: Set<string>,
-) => {
-  const o = option as Record<string, unknown>;
-  if (o.geo) return true;
-  if (seriesTypes.has("map")) return true;
-  const series = normalizeToArray(o.series);
-  return series.some((s) => {
-    if (!s || typeof s !== "object") return false;
-    const coord = (s as { coordinateSystem?: unknown }).coordinateSystem;
-    if (coord === "geo") return true;
-    const map = (s as { map?: unknown }).map;
-    return typeof map === "string";
-  });
-};
-
 const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
   const seriesTypes = inferSeriesTypes(option);
   const o = option as Record<string, unknown>;
@@ -176,14 +159,6 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
     promises.push(
       installOnce("component:grid", async () => {
         const m = await import("echarts/lib/component/grid/install.js");
-        return m.install;
-      }),
-    );
-  }
-  if (optionNeedsGeo(option, seriesTypes)) {
-    promises.push(
-      installOnce("component:geo", async () => {
-        const m = await import("echarts/lib/component/geo/install.js");
         return m.install;
       }),
     );
@@ -307,14 +282,6 @@ const ensureOptionModules = async (option: echarts.EChartsCoreOption) => {
         promises.push(
           installOnce("chart:heatmap", async () => {
             const m = await import("echarts/lib/chart/heatmap/install.js");
-            return m.install;
-          }),
-        );
-        break;
-      case "map":
-        promises.push(
-          installOnce("chart:map", async () => {
-            const m = await import("echarts/lib/chart/map/install.js");
             return m.install;
           }),
         );

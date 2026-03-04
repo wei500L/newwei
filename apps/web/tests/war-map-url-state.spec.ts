@@ -14,9 +14,9 @@ function cloneDefaultLayerVisibility(): WarMapLayerVisibility {
 }
 
 describe('war-map url-state', () => {
-  it('parses view/preset/time-range/layers/renderer from url', () => {
+  it('parses view/preset/time-range/layers from url', () => {
     const params = new URLSearchParams(
-      'lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&renderer=deckgl&layers=conflicts,weather,monitors',
+      'lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&layers=conflicts,weather,monitors',
     );
 
     const parsed = readWarMapUrlState(params);
@@ -30,16 +30,10 @@ describe('war-map url-state', () => {
     });
     expect(parsed.activePreset).toBe('asia');
     expect(parsed.timeRangePreset).toBe('24h');
-    expect(parsed.renderer).toBe('deckgl');
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.monitors).toBe(true);
     expect(parsed.layerVisibility?.bases).toBe(false);
-  });
-
-  it('ignores legacy echarts renderer token', () => {
-    const parsed = readWarMapUrlState(new URLSearchParams('renderer=echarts'));
-    expect(parsed.renderer).toBeUndefined();
   });
 
   it('serializes state and strips default layers token', () => {
@@ -56,10 +50,8 @@ describe('war-map url-state', () => {
       activePreset: 'global',
       timeRangePreset: '7d',
       layerVisibility: cloneDefaultLayerVisibility(),
-      renderer: 'deckgl',
     });
 
-    expect(next.get('renderer')).toBe('deckgl');
     expect(next.get('preset')).toBe('global');
     expect(next.get('tr')).toBe('7d');
     expect(next.get('layers')).toBeNull();
@@ -83,7 +75,6 @@ describe('war-map url-state', () => {
       activePreset: 'global',
       timeRangePreset: '7d',
       layerVisibility: noneVisible,
-      renderer: 'deckgl',
     });
 
     expect(written.get('layers')).toBe('');
@@ -113,14 +104,12 @@ describe('war-map url-state', () => {
       activePreset: 'oceania',
       timeRangePreset: '48h',
       layerVisibility: visibility,
-      renderer: 'deckgl',
     });
 
     const parsed = readWarMapUrlState(written);
 
     expect(parsed.activePreset).toBe('oceania');
     expect(parsed.timeRangePreset).toBe('48h');
-    expect(parsed.renderer).toBe('deckgl');
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.hotspots).toBe(false);

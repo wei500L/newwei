@@ -14,11 +14,8 @@ import {
   WAR_MAP_TIME_RANGE_PRESETS,
 } from '@modular/utils';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Checkbox, Popover, Skeleton, Space, Tag, Tooltip } from 'antd';
-import maplibregl, {
-  type Map as MapLibreMap,
-  type StyleSpecification,
-} from 'maplibre-gl';
+import { Button, Checkbox, Popover, Skeleton, Space, Tag } from 'antd';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +25,8 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
+import { createDeckMapRuntime, extractMapBbox } from '@/lib/map/map-runtime';
+import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from '@/lib/map/map-style';
 import { safeHttpUrl } from '@/lib/url';
 import { useSituationMonitorMonitorsStore } from '@/store/situation-monitor-monitors';
 import { useDashboardRangeStore } from '@/store/time-range';
@@ -36,30 +35,6 @@ import { useWarMapSettingsStore } from '@/store/war-map-settings';
 import { buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
-const MAP_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
-const MAP_STYLE_FALLBACK: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      attribution: '\u00a9 OpenStreetMap contributors',
-    },
-  },
-  layers: [
-    {
-      id: 'osm-raster',
-      type: 'raster',
-      source: 'osm',
-    },
-  ],
-};
-const DEFAULT_MAP_BBOX: [number, number, number, number] = [-180, -85, 180, 85];
 const ALL_TIME_START = new Date('1970-01-01T00:00:00.000Z');
 
 type WarEventSeverity = 'low' | 'medium' | 'high';
@@ -233,19 +208,6 @@ function toRgba(
   return [r, g, b, clamp(Math.round(alpha * 255), 0, 255)];
 }
 
-function extractBbox(map: MapLibreMap): [number, number, number, number] {
-  const bounds = map.getBounds();
-  if (!bounds) {
-    return DEFAULT_MAP_BBOX;
-  }
-  return [
-    clamp(bounds.getWest(), -180, 180),
-    clamp(bounds.getSouth(), -90, 90),
-    clamp(bounds.getEast(), -180, 180),
-    clamp(bounds.getNorth(), -90, 90),
-  ];
-}
-
 function getErrorMessage(error: unknown): string | undefined {
   if (!error) {
     return undefined;
@@ -272,7 +234,7 @@ function severityColor(severity: WarEventSeverity): [number, number, number, num
   }
 }
 
-export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
+export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
@@ -291,7 +253,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     zoom: number;
   }>({ zoom: 2 });
 
-  const { start, end } = useDashboardRangeStore();
+  const { end } = useDashboardRangeStore();
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
 
   const layerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
@@ -347,7 +309,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       end,
       start: new Date(end.getTime() - duration),
     };
-  }, [end, start, timeRangePreset]);
+  }, [end, timeRangePreset]);
 
   const queryBbox = useMemo(() => {
     return buildWarMapQueryBbox(queryViewport.bbox, queryViewport.zoom);
@@ -357,7 +319,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     queryKey: [
       'dashboard',
       'war-map',
-      'deckgl',
       'events',
       effectiveRange.start.toISOString(),
       effectiveRange.end.toISOString(),
@@ -387,7 +348,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     queryKey: [
       'dashboard',
       'war-map',
-      'deckgl',
       'news-markers',
       effectiveRange.start.toISOString(),
       effectiveRange.end.toISOString(),
@@ -420,7 +380,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
     queryKey: [
       'dashboard',
       'war-map',
-      'deckgl',
       'layers',
       effectiveRange.start.toISOString(),
       effectiveRange.end.toISOString(),
@@ -446,28 +405,8 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       return;
     }
 
-    let mapLoaded = false;
-    let fallbackApplied = false;
-
     const initialViewState = viewStateRef.current;
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: MAP_STYLE_URL,
-      center: [initialViewState.lon, initialViewState.lat],
-      zoom: initialViewState.zoom,
-      bearing: initialViewState.bearing,
-      pitch: initialViewState.pitch,
-      renderWorldCopies: false,
-      attributionControl: false,
-    });
-
-    const overlay = new MapboxOverlay({
-      interleaved: true,
-      layers: [],
-    });
-    map.addControl(overlay);
-
-    const syncFromMap = () => {
+    const syncFromMap = (map: MapLibreMap) => {
       const center = map.getCenter();
       syncFromMapRef.current = true;
       setViewState({
@@ -478,7 +417,7 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
         pitch: map.getPitch(),
       });
       setQueryViewport({
-        bbox: extractBbox(map),
+        bbox: extractMapBbox(map),
         zoom: map.getZoom(),
       });
       window.setTimeout(() => {
@@ -486,50 +425,28 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       }, 0);
     };
 
-    const applyFallbackStyle = () => {
-      if (fallbackApplied) {
-        return;
-      }
-      fallbackApplied = true;
-      try {
-        map.setStyle(MAP_STYLE_FALLBACK);
-        toast.warning(
-          'Primary basemap is unavailable. Switched to fallback style.',
-        );
-      } catch {
-        // Ignore style swap errors; the map load skeleton will remain visible.
-      }
-    };
-
-    const handleMapError = (_event: { error?: unknown }) => {
-      if (mapLoaded || fallbackApplied) {
-        return;
-      }
-      applyFallbackStyle();
-    };
-
-    map.on('load', () => {
-      mapLoaded = true;
-      const projectionAwareMap = map as unknown as {
-        setProjection?: (projection: { type: 'mercator' | 'globe' }) => void;
-      };
-      projectionAwareMap.setProjection?.({ type: 'mercator' });
-      setMapReady(true);
-      syncFromMap();
+    const runtime = createDeckMapRuntime({
+      container: mapContainerRef.current,
+      initialViewState,
+      style: MAP_STYLE_URL,
+      fallbackStyle: MAP_STYLE_FALLBACK,
+      onMoveEnd: syncFromMap,
+      onMapReady: (map) => {
+        setMapReady(true);
+        syncFromMap(map);
+      },
+      onFallbackApplied: () => {
+        toast.warning('Primary basemap is unavailable. Switched to fallback style.');
+      },
     });
 
-    map.on('moveend', syncFromMap);
-    map.on('error', handleMapError);
-
-    mapRef.current = map;
-    deckOverlayRef.current = overlay;
+    mapRef.current = runtime.map;
+    deckOverlayRef.current = runtime.overlay;
 
     return () => {
-      map.off('moveend', syncFromMap);
-      map.off('error', handleMapError);
       deckOverlayRef.current = null;
       mapRef.current = null;
-      map.remove();
+      runtime.destroy();
       setMapReady(false);
     };
   }, [inView, setViewState]);
@@ -561,6 +478,14 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       essential: true,
     });
   }, [mapReady, viewState]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !inView) {
+      return;
+    }
+    map.resize();
+  }, [inView, mapReady]);
 
   useEffect(() => {
     if (hasHydratedUrlRef.current || typeof window === 'undefined') {
@@ -596,7 +521,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
         activePreset,
         timeRangePreset,
         layerVisibility,
-        renderer: 'deckgl',
       });
       const nextSearch = nextParams.toString();
       const currentSearch = current.searchParams.toString();
@@ -1187,15 +1111,6 @@ export function WarMapDeckGl({ className, translateTarget }: WarMapProps = {}) {
       </div>
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        <Tooltip
-          title={t('dashboard.charts.warMap.renderer.deckglOnly', {
-            defaultValue: 'Renderer: deck.gl + MapLibre',
-          })}
-        >
-          <Tag color="processing" className="text-xs">
-            deckgl
-          </Tag>
-        </Tooltip>
         <Popover
           content={layerSelector}
           title={t('dashboard.charts.warMap.layers', { defaultValue: 'Layers' })}

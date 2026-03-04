@@ -201,9 +201,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     retryRef.current = 0;
     statusRef.current = 'offline';
     hasLiveRef.current = false;
-    const warEventsKey = ['dashboard', 'war-map', 'events', startIso, endIso, null] as const;
-    const warEventsLegacyKey = ['dashboard', 'war-map', 'events', startIso, endIso] as const;
-    const warEventsDeckglPrefixKey = ['dashboard', 'war-map', 'deckgl', 'events'] as const;
+    const warEventsPrefixKey = ['dashboard', 'war-map', 'events'] as const;
     const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
     const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
     const geoHeatmapPrefixKey = ['dashboard', 'spacetime', 'geo-heatmap'] as const;
@@ -215,12 +213,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     const isStreamDataQueryKey = (queryKey: unknown) => {
       if (!Array.isArray(queryKey)) return false;
       if (queryKey[0] !== 'dashboard') return false;
-      if (queryKey[1] === 'war-map' && queryKey[2] === 'events') return true;
-      if (
-        queryKey[1] === 'war-map' &&
-        queryKey[2] === 'deckgl' &&
-        queryKey[3] === 'events'
-      ) {
+      if (queryKey[1] === 'war-map' && queryKey[2] === 'events') {
         return true;
       }
       if (queryKey[1] === 'financial-candlestick') return true;
@@ -234,21 +227,9 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       return false;
     };
 
-    const invalidateWarMapEventQueries = (includeLegacyKeys: boolean) => {
-      if (includeLegacyKeys) {
-        void queryClient.invalidateQueries({
-          queryKey: warEventsKey,
-          exact: true,
-          refetchType: 'active'
-        });
-        void queryClient.invalidateQueries({
-          queryKey: warEventsLegacyKey,
-          exact: true,
-          refetchType: 'active'
-        });
-      }
+    const invalidateWarMapEventQueries = () => {
       void queryClient.invalidateQueries({
-        queryKey: warEventsDeckglPrefixKey,
+        queryKey: warEventsPrefixKey,
         exact: false,
         refetchType: 'active',
       });
@@ -331,7 +312,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       const wasLive = statusRef.current === 'live';
       statusRef.current = 'live';
       if (!wasLive && hasLiveRef.current) {
-        invalidateWarMapEventQueries(true);
+        invalidateWarMapEventQueries();
         void queryClient.invalidateQueries({
           queryKey: candlestickKey,
           exact: true,
@@ -422,10 +403,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       recordMessage();
       const payload = parseStreamData(rawData);
       if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
-        queryClient.setQueryData(warEventsKey, payload);
-        queryClient.setQueryData(warEventsLegacyKey, payload);
-        // deckgl queries include bbox/zoom/cluster dimensions; refetch active ones instead of writing mismatched payload.
-        invalidateWarMapEventQueries(false);
+        // War-map queries include bbox/zoom/cluster dimensions; refetch active ones instead of writing mismatched payload.
+        invalidateWarMapEventQueries();
         markHealthy();
         return;
       }

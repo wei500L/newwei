@@ -1233,9 +1233,6 @@
           "7d": "7天",
           "all": "全部"
         },
-        "renderer": {
-          "deckglOnly": "渲染器：deck.gl + MapLibre（地球）"
-        },
         "stats": {
           "window": "窗口",
           "signals": "信号",

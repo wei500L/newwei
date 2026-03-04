@@ -1,13 +1,18 @@
 "use client";
 
+import { GeoJsonLayer } from "@deck.gl/layers";
+import { MapboxOverlay } from "@deck.gl/mapbox";
 import { GlobalOutlined, LineChartOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import { extractCountryCodeFromText, getCountryName, normalizeCountryCode } from "@modular/utils";
+import {
+  extractCountryCodeFromText,
+  getCountryName,
+  normalizeCountryCode,
+} from "@modular/utils";
 import { Badge, Card, Col, Modal, Row, Spin, Tag, Timeline, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import * as echarts from "echarts/core";
-import type { CallbackDataParams } from "echarts/types/dist/shared";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
@@ -16,6 +21,8 @@ import { createApiClient } from "@/lib/api-client";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
+import { createDeckMapRuntime } from "@/lib/map/map-runtime";
+import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
 import {
   formatGranularityLabelLocalized,
   pickCoarsestGranularity,
@@ -25,9 +32,38 @@ import {
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
+interface GeoJsonGeometry {
+  type:
+    | "Point"
+    | "MultiPoint"
+    | "LineString"
+    | "MultiLineString"
+    | "Polygon"
+    | "MultiPolygon"
+    | "GeometryCollection";
+  coordinates?: unknown;
+  geometries?: GeoJsonGeometry[];
+  [key: string]: unknown;
+}
+
+interface GeoJsonFeature {
+  type: "Feature";
+  geometry: GeoJsonGeometry | null;
+  properties?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+interface GeoJsonFeatureCollection {
+  type: "FeatureCollection";
+  features: GeoJsonFeature[];
+  [key: string]: unknown;
+}
+
 interface WarMapGeoJsonResponse {
   name: string;
-  geoJson: unknown;
+  geoJson: GeoJsonFeatureCollection;
+  center?: [number, number];
+  zoom?: number;
 }
 
 interface MetricDrillDownProps {
@@ -36,27 +72,57 @@ interface MetricDrillDownProps {
   onClose: () => void;
 }
 
+function normalizeCountryKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function resolveGeoFillColor(value: number, max: number): [number, number, number, number] {
+  const safeMax = Math.max(1, max);
+  const ratio = Math.max(0, Math.min(1, value / safeMax));
+  const start: [number, number, number] = [224, 255, 255];
+  const end: [number, number, number] = [0, 110, 221];
+  const r = Math.round(start[0] + (end[0] - start[0]) * ratio);
+  const g = Math.round(start[1] + (end[1] - start[1]) * ratio);
+  const b = Math.round(start[2] + (end[2] - start[2]) * ratio);
+  return [r, g, b, value > 0 ? 210 : 70];
+}
+
 export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDownProps) {
   const { t } = useTranslation();
   const { data: session } = useSession();
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapName, setMapName] = useState<string | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
   const rangeLabel = t("dashboard.drilldown.rangeLabel", { defaultValue: "Range" });
   const rangeToLabel = t("dashboard.drilldown.rangeTo", { defaultValue: "to" });
   const unitLabel = t("dashboard.drilldown.unitLabel", { defaultValue: "Unit" });
   const metricValueLabel = t("dashboard.drilldown.valueLabel", { defaultValue: "Value" });
-  const aggregationLabel = t("dashboard.drilldown.aggregationLabel", { defaultValue: "Aggregation" });
+  const aggregationLabel = t("dashboard.drilldown.aggregationLabel", {
+    defaultValue: "Aggregation",
+  });
   const bucketLabel = t("dashboard.drilldown.bucketLabel", { defaultValue: "Bucket" });
   const eventsLabel = t("dashboard.drilldown.eventsLabel", { defaultValue: "Events" });
-  const unknownCountryLabel = t("dashboard.drilldown.unknownCountry", { defaultValue: "Unknown" });
-  const mapLoadingLabel = t("dashboard.drilldown.mapLoading", { defaultValue: "Loading map geometry..." });
-  const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed", { defaultValue: "Failed to load map" });
+  const unknownCountryLabel = t("dashboard.drilldown.unknownCountry", {
+    defaultValue: "Unknown",
+  });
+  const mapLoadingLabel = t("dashboard.drilldown.mapLoading", {
+    defaultValue: "Loading map geometry...",
+  });
+  const mapLoadFailedLabel = t("dashboard.drilldown.mapLoadFailed", {
+    defaultValue: "Failed to load map",
+  });
   const highLabel = t("dashboard.drilldown.high", { defaultValue: "High" });
   const lowLabel = t("dashboard.drilldown.low", { defaultValue: "Low" });
-  const alertFrequencyLabel = t("dashboard.drilldown.alertFrequency", { defaultValue: "Alert Frequency" });
   const { range, start: rangeStart, end: rangeEnd } = useDashboardRangeStore();
-  
+
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const overlayRef = useRef<MapboxOverlay | null>(null);
+  const hasAlignedMapViewRef = useRef(false);
+
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [geoJsonData, setGeoJsonData] = useState<GeoJsonFeatureCollection | null>(null);
+  const [geoMapCenter, setGeoMapCenter] = useState<[number, number] | null>(null);
+  const [geoMapZoom, setGeoMapZoom] = useState<number | null>(null);
+
   const start = rangeStart.toISOString();
   const end = rangeEnd.toISOString();
 
@@ -65,10 +131,9 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       category: metricKey ?? "",
       start,
       end,
-      // "Auto" negotiation: backend picks the effective aggregation granularity.
-      granularity: null
+      granularity: null,
     },
-    skip: !visible || !metricKey
+    skip: !visible || !metricKey,
   });
 
   const statusColor: Record<string, string> = {
@@ -76,14 +141,19 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     delivered: "success",
     failed: "error",
     confirmed: "success",
-    ignored: "default"
+    ignored: "default",
   };
 
-  // Load World Map
   useEffect(() => {
-    if (!visible) return;
-    if (mapLoaded) return;
-    if (!session?.accessToken) return;
+    if (!visible) {
+      return;
+    }
+    if (!session?.accessToken) {
+      return;
+    }
+    if (geoJsonData) {
+      return;
+    }
 
     const apiClient = createApiClient({ accessToken: session.accessToken });
     let cancelled = false;
@@ -91,46 +161,113 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
     apiClient
       .get<WarMapGeoJsonResponse>("dashboard/war-map/geojson", {
-        params: {
-          start,
-          end
-        }
+        params: { start, end },
       })
       .then((response) => {
-        if (cancelled) return;
-        const name = response.data.name || "world";
-        echarts.registerMap(name, response.data.geoJson as any);
-        setMapName(name);
-        setMapLoaded(true);
-      })
-      .catch((err) => {
-        console.error("Failed to load world map:", err);
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : typeof err === "string" ? err : mapLoadFailedLabel;
-          setMapError(message);
+        if (cancelled) {
+          return;
         }
+        setGeoJsonData(response.data.geoJson);
+        setGeoMapCenter(response.data.center ?? null);
+        setGeoMapZoom(
+          typeof response.data.zoom === "number" ? response.data.zoom : null,
+        );
+      })
+      .catch((err: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : mapLoadFailedLabel;
+        setMapError(message);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [end, mapLoadFailedLabel, mapLoaded, session?.accessToken, start, visible]);
+  }, [end, geoJsonData, mapLoadFailedLabel, session?.accessToken, start, visible]);
 
-  // Process Real Data for Map
+  useEffect(() => {
+    if (!visible || !mapContainerRef.current || mapRef.current) {
+      return;
+    }
+
+    const runtime = createDeckMapRuntime({
+      container: mapContainerRef.current,
+      initialViewState: {
+        lat: 20,
+        lon: 0,
+        zoom: 1.1,
+        bearing: 0,
+        pitch: 0,
+      },
+      style: MAP_STYLE_URL,
+      fallbackStyle: MAP_STYLE_FALLBACK,
+      onMapReady: (map) => {
+        setMapReady(true);
+        map.resize();
+      },
+    });
+
+    mapRef.current = runtime.map;
+    overlayRef.current = runtime.overlay;
+
+    return () => {
+      overlayRef.current = null;
+      mapRef.current = null;
+      hasAlignedMapViewRef.current = false;
+      runtime.destroy();
+      setMapReady(false);
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!visible || !map || !mapReady) {
+      return;
+    }
+    map.resize();
+  }, [mapReady, visible]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || hasAlignedMapViewRef.current) {
+      return;
+    }
+
+    if (!geoMapCenter && typeof geoMapZoom !== "number") {
+      return;
+    }
+
+    map.easeTo({
+      center: geoMapCenter ?? [0, 20],
+      zoom: typeof geoMapZoom === "number" ? geoMapZoom : map.getZoom(),
+      duration: 300,
+      essential: true,
+    });
+    hasAlignedMapViewRef.current = true;
+  }, [geoMapCenter, geoMapZoom, mapReady]);
+
   const geoData = useMemo(() => {
     if (!data?.relatedAlerts) return [];
-    
+
     const counts: Record<string, number> = {};
-    
-    data.relatedAlerts.forEach(alert => {
+
+    data.relatedAlerts.forEach((alert) => {
       let found = false;
       const ctx = alert.context as Record<string, unknown>;
-      
-      // 1. Try structural context first
+
       if (ctx?.country || ctx?.countryCode) {
         const code = normalizeCountryCode(
-          typeof ctx?.countryCode === "string" ? ctx.countryCode : typeof ctx?.country === "string" ? ctx.country : null
+          typeof ctx.countryCode === "string"
+            ? ctx.countryCode
+            : typeof ctx.country === "string"
+              ? ctx.country
+              : null,
         );
         if (code) {
           const name = getCountryName(code) ?? code;
@@ -138,8 +275,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           found = true;
         }
       }
-      
-      // 2. Fallback to text analysis of message
+
       if (!found && alert.message) {
         const code = extractCountryCodeFromText(alert.message);
         if (code) {
@@ -150,7 +286,76 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     });
 
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [data]);
+  }, [data?.relatedAlerts]);
+
+  const geoValueByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of geoData) {
+      map.set(normalizeCountryKey(item.name), item.value);
+    }
+    return map;
+  }, [geoData]);
+
+  const maxGeoValue = useMemo(
+    () => Math.max(5, ...geoData.map((item) => item.value)),
+    [geoData],
+  );
+
+  const mapLayers = useMemo<any[]>(() => {
+    if (!geoJsonData) {
+      return [];
+    }
+
+    return [
+      new GeoJsonLayer({
+        id: "metric-drilldown-geo-impact",
+        data: geoJsonData as any,
+        pickable: true,
+        autoHighlight: true,
+        filled: true,
+        stroked: true,
+        lineWidthMinPixels: 1,
+        getLineColor: [148, 163, 184, 200],
+        getFillColor: (feature) => {
+          const properties = (feature as { properties?: Record<string, unknown> }).properties;
+          const rawName =
+            typeof properties?.name === "string" ? properties.name.trim() : "";
+          const value = geoValueByName.get(normalizeCountryKey(rawName)) ?? 0;
+          return resolveGeoFillColor(value, maxGeoValue);
+        },
+      }),
+    ];
+  }, [geoJsonData, geoValueByName, maxGeoValue]);
+
+  const mapTooltipGetter = useMemo(
+    () =>
+      ({ object }: { object?: unknown }) => {
+        if (!object) {
+          return null;
+        }
+
+        const properties = (object as { properties?: Record<string, unknown> }).properties;
+        const rawName =
+          typeof properties?.name === "string" ? properties.name.trim() : "";
+        const label = rawName || unknownCountryLabel;
+        const value = geoValueByName.get(normalizeCountryKey(rawName)) ?? 0;
+
+        return {
+          text: `${label}: ${value} ${eventsLabel}`,
+        };
+      },
+    [eventsLabel, geoValueByName, unknownCountryLabel],
+  );
+
+  useEffect(() => {
+    if (!overlayRef.current) {
+      return;
+    }
+    overlayRef.current.setProps({
+      layers: mapLayers,
+      getTooltip: mapTooltipGetter,
+    });
+  }, [mapLayers, mapTooltipGetter]);
 
   const seriesUnit = useMemo(() => {
     const series = data?.history ?? [];
@@ -167,23 +372,33 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     return null;
   }, [data?.history]);
 
-  const historyData = useMemo(() => 
-    data?.history?.map(point => ({
-      timestamp: point.timestamp,
-      date: dayjs(point.timestamp).format("YYYY-MM-DD"),
-      value: point.value
-    })) ?? [], 
-  [data]);
+  const historyData = useMemo(
+    () =>
+      data?.history?.map((point) => ({
+        timestamp: point.timestamp,
+        date: dayjs(point.timestamp).format("YYYY-MM-DD"),
+        value: point.value,
+      })) ?? [],
+    [data],
+  );
 
-  const activeUiGranularity = useMemo(() => {
+  const activeUiGranularity = useMemo<UiTimeGranularity>(() => {
     const backendGranularity = pickCoarsestGranularity(
-      (data?.history ?? []).map((point) => timeGranularityToUiGranularity(point.effectiveGranularity)),
+      (data?.history ?? []).map((point) =>
+        timeGranularityToUiGranularity(point.effectiveGranularity),
+      ),
     );
     return backendGranularity;
   }, [data?.history]);
 
-  const activeInterval = useMemo(() => uiGranularityToInterval(activeUiGranularity), [activeUiGranularity]);
-  const activeGranularityLabel = formatGranularityLabelLocalized(activeUiGranularity, t);
+  const activeInterval = useMemo(
+    () => uiGranularityToInterval(activeUiGranularity),
+    [activeUiGranularity],
+  );
+  const activeGranularityLabel = formatGranularityLabelLocalized(
+    activeUiGranularity,
+    t,
+  );
   const granularityTagText = `${aggregationLabel}: ${activeGranularityLabel}`;
 
   const trendOption = useMemo<EChartsOption>(() => {
@@ -192,91 +407,82 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       grid: { top: 20, right: 20, bottom: 20, left: 40, containLabel: true },
       tooltip: {
         trigger: "axis",
-        formatter: (params: any) => {
+        formatter: (params: unknown) => {
           const payload = Array.isArray(params) ? params[0] : params;
-          const axisValue = payload?.axisValue as string | undefined;
-          const value = payload?.value as number | undefined;
-          const startIso = axisValue ?? "";
-          const endIso = startIso && activeInterval
-            ? dayjs(startIso).add(activeInterval.count, activeInterval.unit).toISOString()
+          const axisValue =
+            typeof (payload as { axisValue?: unknown })?.axisValue === "string"
+              ? ((payload as { axisValue: string }).axisValue ?? "")
+              : "";
+          const value =
+            typeof (payload as { value?: unknown })?.value === "number"
+              ? ((payload as { value: number }).value ?? undefined)
+              : undefined;
+
+          const bucketStartIso = axisValue;
+          const bucketEndIso =
+            bucketStartIso && activeInterval
+              ? dayjs(bucketStartIso)
+                  .add(activeInterval.count, activeInterval.unit)
+                  .toISOString()
+              : "";
+
+          const startLabel = bucketStartIso
+            ? dayjs(bucketStartIso).format("YYYY-MM-DD")
             : "";
-          const startLabel = startIso ? dayjs(startIso).format("YYYY-MM-DD") : "";
-          const endLabel = endIso ? dayjs(endIso).format("YYYY-MM-DD") : "";
+          const endLabel = bucketEndIso ? dayjs(bucketEndIso).format("YYYY-MM-DD") : "";
           const label = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
-          const valueLabel = typeof value === "number" ? value : payload?.data;
+          const valueLabel =
+            typeof value === "number"
+              ? value
+              : (payload as { data?: unknown })?.data;
+
           return [
             `<div style="font-weight:600;margin-bottom:6px;">${label}</div>`,
-            `<div>${valueLabel}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
-            `<div style="color:#64748b;margin-top:6px;">${bucketLabel}: ${activeGranularityLabel}</div>`
+            `<div>${valueLabel ?? ""}${seriesUnit ? ` ${seriesUnit}` : ""}</div>`,
+            `<div style="color:#64748b;margin-top:6px;">${bucketLabel}: ${activeGranularityLabel}</div>`,
           ].join("");
-        }
+        },
       },
-      xAxis: { 
-        type: 'category', 
+      xAxis: {
+        type: "category",
         data: historyData.map((h) => h.timestamp),
         boundaryGap: false,
         axisLabel: {
           formatter: (value: unknown) => {
             if (typeof value !== "string") return "";
-            if (activeUiGranularity === UiTimeGranularity.Year) return dayjs(value).format("YYYY");
-            if (activeUiGranularity === UiTimeGranularity.Quarter || activeUiGranularity === UiTimeGranularity.Month) {
+            if (activeUiGranularity === UiTimeGranularity.Year) {
+              return dayjs(value).format("YYYY");
+            }
+            if (
+              activeUiGranularity === UiTimeGranularity.Quarter ||
+              activeUiGranularity === UiTimeGranularity.Month
+            ) {
               return dayjs(value).format("YYYY-MM");
             }
             return dayjs(value).format("MM-DD");
-          }
-        }
-      },
-      yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
-      series: [{
-        data: historyData.map((h) => h.value),
-        type: 'line',
-        smooth: true,
-        areaStyle: { opacity: 0.2 },
-        lineStyle: { width: 3 },
-        itemStyle: { color: '#1890ff' }
-      }]
-    };
-  }, [activeGranularityLabel, activeInterval, activeUiGranularity, bucketLabel, historyData, seriesUnit]);
-
-  const mapOption = useMemo<EChartsOption>(() => {
-    if (!mapLoaded || !mapName) return {};
-    return {
-      tooltip: {
-        trigger: 'item',
-        formatter: (params: CallbackDataParams | CallbackDataParams[]) => {
-          const payload = Array.isArray(params) ? params[0] : params;
-          const name = getCountryName(payload?.name) ?? payload?.name ?? unknownCountryLabel;
-          const value = typeof payload?.value === "number" ? payload.value : 0;
-          return `${name}: ${value} ${eventsLabel}`;
-        }
-      },
-      visualMap: {
-        left: 'right',
-        min: 0,
-        max: Math.max(5, ...geoData.map(d => d.value)),
-        inRange: {
-          color: ['#e0ffff', '#006edd']
+          },
         },
-        text: [highLabel, lowLabel],
-        calculable: true,
-        show: geoData.length > 0
       },
+      yAxis: { type: "value", splitLine: { lineStyle: { type: "dashed" } } },
       series: [
         {
-          name: alertFrequencyLabel,
-          type: 'map',
-          roam: true,
-          map: mapName,
-          nameProperty: 'name',
-          emphasis: {
-            label: { show: true },
-            itemStyle: { areaColor: '#ffbb00' }
-          },
-          data: geoData
-        }
-      ]
+          data: historyData.map((h) => h.value),
+          type: "line",
+          smooth: true,
+          areaStyle: { opacity: 0.2 },
+          lineStyle: { width: 3 },
+          itemStyle: { color: "#1890ff" },
+        },
+      ],
     };
-  }, [alertFrequencyLabel, eventsLabel, geoData, highLabel, lowLabel, mapLoaded, mapName, unknownCountryLabel]);
+  }, [
+    activeGranularityLabel,
+    activeInterval,
+    activeUiGranularity,
+    bucketLabel,
+    historyData,
+    seriesUnit,
+  ]);
 
   const title = data?.history?.[0]?.item.displayName ?? metricKey;
 
@@ -286,7 +492,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         <div className="flex items-center gap-2">
           <LineChartOutlined className="text-blue-600" />
           <span>{title}</span>
-          <Badge status="processing" text={t("dashboard.drilldown.liveAnalysis", "Live Analysis")} className="ml-2" />
+          <Badge
+            status="processing"
+            text={t("dashboard.drilldown.liveAnalysis", "Live Analysis")}
+            className="ml-2"
+          />
         </div>
       }
       open={visible}
@@ -304,12 +514,17 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       ) : (
         <>
           <Typography.Paragraph type="secondary" className="mb-6">
-             {t("dashboard.drilldown.description", "Detailed analysis and historical trend for {{metric}}", { metric: title })}
+            {t(
+              "dashboard.drilldown.description",
+              "Detailed analysis and historical trend for {{metric}}",
+              { metric: title },
+            )}
           </Typography.Paragraph>
 
           <div className="mb-4 flex flex-wrap gap-2">
             <Tag color="default" className="text-xs">
-              {rangeLabel}: {range} ({formatDashboardDate(rangeStart)} {rangeToLabel} {formatDashboardDate(rangeEnd)})
+              {rangeLabel}: {range} ({formatDashboardDate(rangeStart)} {rangeToLabel}{" "}
+              {formatDashboardDate(rangeEnd)})
             </Tag>
             {seriesUnit ? (
               <Tag color="default" className="text-xs">
@@ -322,57 +537,88 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           </div>
 
           <Row gutter={[24, 24]}>
-            {/* Top Row: Detailed Trend */}
             <Col span={24}>
-              <Card size="small" title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")} variant="borderless" className="bg-gray-50">
+              <Card
+                size="small"
+                title={t("dashboard.drilldown.historicalTrend", "Historical Trend Analysis")}
+                variant="borderless"
+                className="bg-gray-50"
+              >
                 <DashboardChart option={trendOption} height={250} />
               </Card>
             </Col>
 
-             {/* Bottom Left: Geographic Distribution */}
-             <Col xs={24} lg={14}>
-              <Card 
-                title={<><GlobalOutlined /> {t("dashboard.drilldown.geoImpact", "Geographic Impact")}</>} 
+            <Col xs={24} lg={14}>
+              <Card
+                title={
+                  <>
+                    <GlobalOutlined /> {t("dashboard.drilldown.geoImpact", "Geographic Impact")}
+                  </>
+                }
                 variant="borderless"
                 className="h-full border border-gray-100"
               >
-                {mapLoaded ? (
-                   <DashboardChart option={mapOption} height={400} />
-                ) : mapError ? (
+                {mapError ? (
                   <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400 text-sm px-6 text-center">
                     {mapError}
                   </div>
                 ) : (
-                  <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400">
-                    <Spin tip={mapLoadingLabel} />
+                  <div className="relative h-[400px] overflow-hidden rounded-md bg-gray-50">
+                    <div ref={mapContainerRef} className="h-full w-full" />
+                    {!mapReady || !geoJsonData ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                        <Spin tip={mapLoadingLabel} />
+                      </div>
+                    ) : null}
                   </div>
                 )}
-                {geoData.length === 0 && mapLoaded && (
+
+                {geoData.length > 0 ? (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                    <span>{lowLabel}</span>
+                    <div className="h-2 flex-1 rounded bg-gradient-to-r from-cyan-100 to-blue-700" />
+                    <span>{highLabel}</span>
+                  </div>
+                ) : null}
+
+                {geoData.length === 0 && mapReady && geoJsonData ? (
                   <div className="text-center text-gray-400 text-xs mt-2">
-                    {t("dashboard.drilldown.noGeoData", "No geographic data detected in recent alerts.")}
+                    {t(
+                      "dashboard.drilldown.noGeoData",
+                      "No geographic data detected in recent alerts.",
+                    )}
                   </div>
-                )}
+                ) : null}
               </Card>
             </Col>
 
-            {/* Bottom Right: Context/News Feed */}
             <Col xs={24} lg={10}>
-              <Card 
-                title={<><UnorderedListOutlined /> {t("dashboard.drilldown.relatedIntelligence", "Related Intelligence")}</>} 
+              <Card
+                title={
+                  <>
+                    <UnorderedListOutlined />{" "}
+                    {t("dashboard.drilldown.relatedIntelligence", "Related Intelligence")}
+                  </>
+                }
                 variant="borderless"
                 className="h-full border border-gray-100"
                 styles={{ body: { maxHeight: 400, overflowY: "auto" } }}
               >
                 {data?.relatedAlerts && data.relatedAlerts.length > 0 ? (
-                   <Timeline
-                    items={data.relatedAlerts.map(event => ({
-                      color: event.severity === 'high' ? 'red' : event.severity === 'medium' ? 'orange' : 'green',
+                  <Timeline
+                    items={data.relatedAlerts.map((event) => ({
+                      color:
+                        event.severity === "high"
+                          ? "red"
+                          : event.severity === "medium"
+                            ? "orange"
+                            : "green",
                       children: (
                         <div className="pb-2">
                           <div className="flex justify-between items-start">
                             <span className="font-medium text-sm">{event.message}</span>
                             <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
-                              {dayjs(event.triggeredAt).format('MMM D, HH:mm')}
+                              {dayjs(event.triggeredAt).format("MMM D, HH:mm")}
                             </span>
                           </div>
                           <Tag className="mt-1 mr-0" color={statusColor[event.status] ?? "default"}>
@@ -385,12 +631,15 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                             {seriesUnit ? ` ${seriesUnit}` : ""}
                           </span>
                         </div>
-                      )
+                      ),
                     }))}
                   />
                 ) : (
                   <div className="text-gray-400 text-center py-8">
-                    {t("dashboard.drilldown.noEvents", "No related intelligence events found in the recent period.")}
+                    {t(
+                      "dashboard.drilldown.noEvents",
+                      "No related intelligence events found in the recent period.",
+                    )}
                   </div>
                 )}
               </Card>

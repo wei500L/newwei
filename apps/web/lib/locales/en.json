@@ -1233,9 +1233,6 @@
           "7d": "7D",
           "all": "All"
         },
-        "renderer": {
-          "deckglOnly": "Renderer: deck.gl + MapLibre (Globe)"
-        },
         "stats": {
           "window": "Window",
           "signals": "Signals",
