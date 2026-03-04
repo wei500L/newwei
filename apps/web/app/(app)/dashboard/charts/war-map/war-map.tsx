@@ -311,9 +311,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     };
   }, [end, timeRangePreset]);
 
+  const queryZoom = useMemo(() => Number(queryViewport.zoom.toFixed(2)), [queryViewport.zoom]);
+
   const queryBbox = useMemo(() => {
-    return buildWarMapQueryBbox(queryViewport.bbox, queryViewport.zoom);
-  }, [queryViewport.bbox, queryViewport.zoom]);
+    return buildWarMapQueryBbox(queryViewport.bbox, queryZoom);
+  }, [queryViewport.bbox, queryZoom]);
 
   const eventsQuery = useQuery({
     queryKey: [
@@ -323,7 +325,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       effectiveRange.start.toISOString(),
       effectiveRange.end.toISOString(),
       queryBbox ?? null,
-      queryViewport.zoom,
+      queryZoom,
       translateTarget ?? null,
     ],
     queryFn: async () => {
@@ -333,7 +335,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           end: effectiveRange.end.toISOString(),
           translate: translateTarget,
           bbox: queryBbox,
-          zoom: queryViewport.zoom.toFixed(2),
+          zoom: queryZoom.toFixed(2),
           cluster: '1',
         },
       });
@@ -352,7 +354,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       effectiveRange.start.toISOString(),
       effectiveRange.end.toISOString(),
       queryBbox ?? null,
-      queryViewport.zoom,
+      queryZoom,
       translateTarget ?? null,
     ],
     queryFn: async () => {
@@ -364,7 +366,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             end: effectiveRange.end.toISOString(),
             translate: translateTarget,
             bbox: queryBbox,
-            zoom: queryViewport.zoom.toFixed(2),
+            zoom: queryZoom.toFixed(2),
             cluster: '1',
           },
         },
@@ -575,8 +577,8 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       const minZoom = dataset.renderHints?.minZoom;
       const maxZoom = dataset.renderHints?.maxZoom;
       const isZoomVisible =
-        (typeof minZoom !== 'number' || queryViewport.zoom >= minZoom) &&
-        (typeof maxZoom !== 'number' || queryViewport.zoom <= maxZoom);
+        (typeof minZoom !== 'number' || queryZoom >= minZoom) &&
+        (typeof maxZoom !== 'number' || queryZoom <= maxZoom);
       if (!isZoomVisible) {
         continue;
       }
@@ -897,7 +899,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     layersQuery.data?.layers,
     monitorPoints,
     newsQuery.data?.markers,
-    queryViewport.zoom,
+    queryZoom,
     t,
     translateTarget,
   ]);

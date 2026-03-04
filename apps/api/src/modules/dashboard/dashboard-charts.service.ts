@@ -4140,7 +4140,7 @@ export class DashboardChartsService {
           ? feature.properties?.name
           : null;
       const id = typeof feature.id === "string" ? feature.id : null;
-      const code = normalizeGeoId(id ?? name);
+      const code = normalizeGeoId(id) ?? normalizeGeoId(name);
       if (!code || !name || !feature.geometry) {
         continue;
       }

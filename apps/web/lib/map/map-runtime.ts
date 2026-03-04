@@ -99,6 +99,14 @@ export function createDeckMapRuntime(
   });
   map.addControl(overlay);
 
+  const resizeObserver =
+    typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => {
+          map.resize();
+        })
+      : null;
+  resizeObserver?.observe(container);
+
   let mapLoaded = false;
   let fallbackApplied = false;
 
@@ -143,6 +151,7 @@ export function createDeckMapRuntime(
     map,
     overlay,
     destroy: () => {
+      resizeObserver?.disconnect();
       map.off("load", handleLoad);
       map.off("moveend", handleMoveEnd);
       map.off("error", handleMapError);

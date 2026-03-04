@@ -72,8 +72,10 @@ interface MetricDrillDownProps {
   onClose: () => void;
 }
 
-function normalizeCountryKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+interface GeoImpactEntry {
+  code: string;
+  name: string;
+  value: number;
 }
 
 function resolveGeoFillColor(value: number, max: number): [number, number, number, number] {
@@ -252,10 +254,26 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     hasAlignedMapViewRef.current = true;
   }, [geoMapCenter, geoMapZoom, mapReady]);
 
-  const geoData = useMemo(() => {
+  const geoData = useMemo<GeoImpactEntry[]>(() => {
     if (!data?.relatedAlerts) return [];
 
-    const counts: Record<string, number> = {};
+    const counts = new Map<string, GeoImpactEntry>();
+    const addCode = (code: string) => {
+      const normalized = normalizeCountryCode(code);
+      if (!normalized) {
+        return;
+      }
+      const existing = counts.get(normalized);
+      if (existing) {
+        existing.value += 1;
+        return;
+      }
+      counts.set(normalized, {
+        code: normalized,
+        name: getCountryName(normalized) ?? normalized,
+        value: 1,
+      });
+    };
 
     data.relatedAlerts.forEach((alert) => {
       let found = false;
@@ -270,8 +288,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
               : null,
         );
         if (code) {
-          const name = getCountryName(code) ?? code;
-          counts[name] = (counts[name] || 0) + 1;
+          addCode(code);
           found = true;
         }
       }
@@ -279,19 +296,18 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       if (!found && alert.message) {
         const code = extractCountryCodeFromText(alert.message);
         if (code) {
-          const name = getCountryName(code) ?? code;
-          counts[name] = (counts[name] || 0) + 1;
+          addCode(code);
         }
       }
     });
 
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+    return Array.from(counts.values());
   }, [data?.relatedAlerts]);
 
-  const geoValueByName = useMemo(() => {
+  const geoValueByCode = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of geoData) {
-      map.set(normalizeCountryKey(item.name), item.value);
+      map.set(item.code, item.value);
     }
     return map;
   }, [geoData]);
@@ -320,12 +336,17 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
           const properties = (feature as { properties?: Record<string, unknown> }).properties;
           const rawName =
             typeof properties?.name === "string" ? properties.name.trim() : "";
-          const value = geoValueByName.get(normalizeCountryKey(rawName)) ?? 0;
+          const rawId = typeof (feature as { id?: unknown }).id === "string"
+            ? (feature as { id?: string }).id?.trim() ?? ""
+            : "";
+          const resolvedCode =
+            normalizeCountryCode(rawId) ?? normalizeCountryCode(rawName);
+          const value = resolvedCode ? (geoValueByCode.get(resolvedCode) ?? 0) : 0;
           return resolveGeoFillColor(value, maxGeoValue);
         },
       }),
     ];
-  }, [geoJsonData, geoValueByName, maxGeoValue]);
+  }, [geoJsonData, geoValueByCode, maxGeoValue]);
 
   const mapTooltipGetter = useMemo(
     () =>
@@ -338,13 +359,18 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         const rawName =
           typeof properties?.name === "string" ? properties.name.trim() : "";
         const label = rawName || unknownCountryLabel;
-        const value = geoValueByName.get(normalizeCountryKey(rawName)) ?? 0;
+        const rawId = typeof (object as { id?: unknown }).id === "string"
+          ? (object as { id?: string }).id?.trim() ?? ""
+          : "";
+        const resolvedCode =
+          normalizeCountryCode(rawId) ?? normalizeCountryCode(rawName);
+        const value = resolvedCode ? (geoValueByCode.get(resolvedCode) ?? 0) : 0;
 
         return {
           text: `${label}: ${value} ${eventsLabel}`,
         };
       },
-    [eventsLabel, geoValueByName, unknownCountryLabel],
+    [eventsLabel, geoValueByCode, unknownCountryLabel],
   );
 
   useEffect(() => {
