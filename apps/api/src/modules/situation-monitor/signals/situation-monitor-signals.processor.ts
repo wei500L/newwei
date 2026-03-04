@@ -11,7 +11,15 @@ import {
   SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
   TELEGRAM_POLL_JOB_NAME,
 } from './situation-monitor-signals.constants';
+import {
+  removeLegacyTelegramRepeatJobs,
+  removeQueuedTelegramPollJobs,
+  removeTelegramPollScheduler,
+  TelegramSchedulerJobPayload,
+  upsertTelegramPollScheduler,
+} from './situation-monitor-telegram-scheduler';
 import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
+import { SituationMonitorSettingsService } from '../../system-settings/situation-monitor-settings.service';
 
 interface SituationMonitorSignalsJobPayload {
   type: 'poll';
@@ -27,6 +35,7 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
   constructor(
     private readonly env: EnvService,
     private readonly signals: SituationMonitorSignalsService,
+    private readonly settings: SituationMonitorSettingsService,
     @Inject(SITUATION_MONITOR_SIGNALS_QUEUE)
     private readonly queue: Queue<SituationMonitorSignalsJobPayload>,
     @Inject(SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS)
@@ -83,29 +92,29 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
   }
 
   private async ensureRepeatableJobs() {
-    const telegramIntervalMs = this.readNumberEnv(
-      'SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS',
-      60_000,
-      15_000,
-    );
+    const telegramScheduler = await this.resolveTelegramPollSchedulerConfig();
     const orefIntervalMs = this.readNumberEnv(
       'SITUATION_MONITOR_OREF_POLL_INTERVAL_MS',
       300_000,
       30_000,
     );
 
-    await this.queue.add(
-      TELEGRAM_POLL_JOB_NAME,
-      { type: 'poll', source: 'telegram' },
-      {
-        jobId: `${TELEGRAM_POLL_JOB_NAME}:repeat`,
-        removeOnComplete: true,
-        removeOnFail: false,
-        repeat: {
-          every: telegramIntervalMs,
-        },
-      },
+    await removeLegacyTelegramRepeatJobs(
+      this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
     );
+    if (telegramScheduler.enabled) {
+      await upsertTelegramPollScheduler(
+        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
+        telegramScheduler.intervalMs,
+      );
+    } else {
+      await removeTelegramPollScheduler(
+        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
+      );
+      await removeQueuedTelegramPollJobs(
+        this.queue as unknown as Queue<TelegramSchedulerJobPayload>,
+      );
+    }
 
     await this.queue.add(
       OREF_POLL_JOB_NAME,
@@ -121,18 +130,68 @@ export class SituationMonitorSignalsProcessor implements OnModuleInit, OnModuleD
     );
 
     // Fast first run.
-    await Promise.allSettled([
-      this.queue.add(
-        `${TELEGRAM_POLL_JOB_NAME}:bootstrap`,
-        { type: 'poll', source: 'telegram' },
-        { removeOnComplete: true, removeOnFail: false },
-      ),
+    const bootstrapJobs: Promise<unknown>[] = [
       this.queue.add(
         `${OREF_POLL_JOB_NAME}:bootstrap`,
         { type: 'poll', source: 'oref' },
         { removeOnComplete: true, removeOnFail: false },
       ),
-    ]);
+    ];
+    if (telegramScheduler.enabled) {
+      bootstrapJobs.push(
+        this.queue.add(
+          `${TELEGRAM_POLL_JOB_NAME}:bootstrap`,
+          { type: 'poll', source: 'telegram' },
+          { removeOnComplete: true, removeOnFail: false },
+        ),
+      );
+    }
+    await Promise.allSettled(bootstrapJobs);
+  }
+
+  private async resolveTelegramPollSchedulerConfig(): Promise<{
+    enabled: boolean;
+    intervalMs: number;
+  }> {
+    const fallback = this.readNumberEnv(
+      'SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS',
+      60_000,
+      15_000,
+    );
+    const fallbackEnabled =
+      this.readBooleanEnv('SITUATION_MONITOR_TELEGRAM_ENABLED', 'TELEGRAM_ENABLED') ?? false;
+    try {
+      const runtime = await this.settings.getTelegramRuntimeConfig();
+      return {
+        enabled: runtime.enabled,
+        intervalMs: Math.max(15_000, Math.floor(runtime.pollIntervalMs)),
+      };
+    } catch (error) {
+      logger.warn({ error }, 'Failed to load telegram poll interval from settings; using env fallback');
+      return {
+        enabled: fallbackEnabled,
+        intervalMs: fallback,
+      };
+    }
+  }
+
+  private readBooleanEnv(...keys: string[]): boolean | undefined {
+    for (const key of keys) {
+      const raw = this.env.get<boolean | string | undefined>(key, { infer: true }) ?? process.env[key];
+      if (typeof raw === 'boolean') {
+        return raw;
+      }
+      if (typeof raw === 'string') {
+        const normalized = raw.trim().toLowerCase();
+        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+          return true;
+        }
+        if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+          return false;
+        }
+      }
+    }
+    return undefined;
   }
 
   private readNumberEnv(key: string, fallback: number, min: number): number {

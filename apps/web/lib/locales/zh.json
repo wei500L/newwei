@@ -5023,6 +5023,14 @@
         "translationFallbackApi": "备用翻译 API",
         "finnhubApiKeySource": "Finnhub API Key 来源",
         "fredApiKeySource": "FRED API Key 来源",
+        "telegramApiIdSource": "Telegram API ID 来源",
+        "telegramApiHashSource": "Telegram API Hash 来源",
+        "telegramSessionSource": "Telegram Session 来源",
+        "telegramPollInterval": "轮询 {{ms}} 毫秒",
+        "telegramCodeDelivery": "验证码发送方式：{{via}}",
+        "telegramCodeViaApp": "Telegram 应用内",
+        "telegramCodeViaSms": "短信",
+        "telegramAuthExpiresAt": "认证过期时间：{{time}}",
         "apiKeySources": {
           "stored": "系统设置（已保存）",
           "env": "环境变量",
@@ -5031,7 +5039,9 @@
       },
       "sections": {
         "translationApi": "翻译 API",
-        "externalApis": "外部数据 API"
+        "externalApis": "外部数据 API",
+        "telegram": "Telegram 采集",
+        "telegramAuth": "Telegram Session 授权"
       },
       "fields": {
         "translationMaxConcurrency": "翻译最大并发数",
@@ -5043,7 +5053,22 @@
         "finnhubApiKey": "Finnhub API Key",
         "fredApiKey": "FRED API Key",
         "translationApiTimeoutMs": "翻译超时（毫秒）",
-        "translationApiMaxRetries": "翻译重试次数"
+        "translationApiMaxRetries": "翻译重试次数",
+        "telegramEnabled": "启用 Telegram 轮询",
+        "telegramApiId": "Telegram API ID",
+        "telegramApiHash": "Telegram API Hash",
+        "telegramSession": "Telegram StringSession",
+        "telegramChannelSet": "Telegram 频道集合",
+        "telegramMaxFeedItems": "Telegram 最大 Feed 条数",
+        "telegramMaxTextChars": "Telegram 文本最大字符数",
+        "telegramChannelTimeoutMs": "Telegram 单频道超时（毫秒）",
+        "telegramPollCycleTimeoutMs": "Telegram 单轮超时（毫秒）",
+        "telegramStartupDelayMs": "Telegram 启动延迟（毫秒）",
+        "telegramRateLimitMs": "Telegram 频道间延迟（毫秒）",
+        "telegramPollIntervalMs": "Telegram 轮询间隔（毫秒）",
+        "telegramPhoneNumber": "手机号",
+        "telegramPhoneCode": "Telegram 验证码",
+        "telegram2faPassword": "Telegram 二步验证密码"
       },
       "hints": {
         "translationMaxConcurrency": "态势监控翻译的最大并发请求数；同时影响 RSS 的 LLM 翻译并发（包含正文分块翻译）。",
@@ -5055,40 +5080,95 @@
         "finnhubApiKey": "用于指数/行业/大宗商品行情。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
         "fredApiKey": "用于美联储指标与资产负债表。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
         "translationApiTimeoutMs": "单次翻译请求超时时间。",
-        "translationApiMaxRetries": "翻译请求失败后的最大重试次数。"
+        "translationApiMaxRetries": "翻译请求失败后的最大重试次数。",
+        "telegramEnabled": "控制 Telegram 轮询任务是否启用。",
+        "telegramApiId": "可在 https://my.telegram.org/apps 获取。",
+        "telegramApiHash": "留空表示保持当前 hash。开启系统密钥加密后将加密存储。",
+        "telegramSession": "留空表示保持当前 session。开启系统密钥加密后将加密存储。",
+        "telegramChannelSet": "对应 telegram-channels.json 的桶名，例如 full/tech/finance。",
+        "telegramPhoneNumber": "使用带国家区号的完整手机号，例如 +971xxxxxxxxx。",
+        "telegramPhoneCode": "点击发送验证码后，输入 Telegram 收到的验证码。",
+        "telegram2faPassword": "如果账号未开启 2FA，可留空。"
       },
       "placeholders": {
         "translationApiBaseUrl": "https://api.deeplx.org",
         "translationApiKey": "留空表示保持当前 key",
         "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
         "finnhubApiKey": "留空表示保持当前 key",
-        "fredApiKey": "留空表示保持当前 key"
+        "fredApiKey": "留空表示保持当前 key",
+        "telegramApiId": "例如 12345678",
+        "telegramApiHash": "留空表示保持当前 hash",
+        "telegramSession": "留空表示保持当前 session",
+        "telegramChannelSet": "full",
+        "telegramPhoneNumber": "+971xxxxxxxxx",
+        "telegramPhoneCode": "Telegram 发来的验证码",
+        "telegram2faPassword": "未开启可直接回车"
       },
       "actions": {
         "reset": "重置为环境变量",
         "clearApiKey": "清空 API Key",
-        "keepApiKey": "保留 API Key"
+        "keepApiKey": "保留 API Key",
+        "telegramSendCode": "发送验证码",
+        "telegramCompleteAuth": "生成并保存 Session",
+        "telegramClearAuthState": "清空认证状态"
       },
       "validation": {
         "translationMaxConcurrency": "并发数必填",
         "translationApiTimeoutMs": "翻译超时必填",
-        "translationApiMaxRetries": "翻译重试次数必填"
+        "translationApiMaxRetries": "翻译重试次数必填",
+        "telegramMaxFeedItems": "最大 Feed 条数必填",
+        "telegramMaxTextChars": "最大文本字符数必填",
+        "telegramChannelTimeoutMs": "单频道超时必填",
+        "telegramPollCycleTimeoutMs": "单轮超时必填",
+        "telegramStartupDelayMs": "启动延迟必填",
+        "telegramRateLimitMs": "频道间延迟必填",
+        "telegramPollIntervalMs": "轮询间隔必填"
       },
       "messages": {
         "saved": "已保存",
-        "reset": "已重置为环境变量默认值"
+        "reset": "已重置为环境变量默认值",
+        "telegramCodeSent": "验证码已发送。",
+        "telegramAuthRequestReady": "认证请求已创建，请输入验证码并完成授权。",
+        "telegramSessionSaved": "Telegram Session 已生成并保存。"
       },
       "errors": {
         "loadFailed": "加载态势监控配置失败",
         "saveFailed": "保存态势监控配置失败",
         "badRequest": "输入无效",
-        "resetFailed": "重置态势监控配置失败"
+        "resetFailed": "重置态势监控配置失败",
+        "telegramApiCredentialsRequired": "发送验证码前需要先填写 Telegram API ID 和 API Hash。",
+        "telegramPhoneRequired": "手机号不能为空。",
+        "telegramAuthStartFailed": "发送 Telegram 验证码失败。",
+        "telegramAuthCompleteFailed": "生成 Telegram Session 失败。",
+        "telegramAuthRequestMissing": "请先发送验证码。",
+        "telegramCodeRequired": "验证码不能为空。",
+        "telegramAuthInvalidInput": "Telegram 授权输入无效。",
+        "telegramPhoneFormatInvalid": "手机号必须为 E.164 格式（例如 +971xxxxxxxxx）。",
+        "telegramAuthRequestExpired": "认证请求已过期，请重新发送验证码。",
+        "telegramAuthRequestMismatch": "认证请求不匹配，请重新发起 Telegram 授权。",
+        "telegramAuthCodeInvalid": "验证码无效。",
+        "telegramAuthCodeExpired": "验证码已过期，请重新发送。",
+        "telegramAuthPasswordRequired": "需要 Telegram 二步验证密码。",
+        "telegramAuthPasswordInvalid": "Telegram 二步验证密码错误。",
+        "telegramAuthRateLimited": "Telegram 授权请求过于频繁，请稍后再试。",
+        "telegramPhoneInvalid": "Telegram 手机号无效。",
+        "telegramPhoneBanned": "该 Telegram 手机号已被封禁。",
+        "telegramPhoneUnoccupied": "该手机号未注册 Telegram 账号。",
+        "telegramApiIdInvalid": "Telegram API ID 无效。",
+        "telegramAuthRestartRequired": "Telegram 授权需要重启，请重新发送验证码。",
+        "telegramAuthSignupRequired": "该手机号需要先完成 Telegram 注册。",
+        "telegramAuthFailed": "Telegram 授权失败，请重试。",
+        "telegramAuthPermissionDenied": "缺少执行 Telegram 授权的权限。"
       },
       "modal": {
         "resetTitle": "重置态势监控配置",
         "resetContent": "将删除已保存的覆盖配置并回退到环境变量默认值，是否继续？",
         "confirm": "确认",
-        "cancel": "取消"
+        "cancel": "取消",
+        "telegramEnableTitle": "立即启用 Telegram 轮询？",
+        "telegramEnableContent": "Session 会被保存。请选择是否同时启用 Telegram 轮询。",
+        "telegramEnableConfirm": "保存并启用",
+        "telegramEnableSkip": "仅保存"
       }
     },
     "realtimeSignals": {

@@ -19,6 +19,7 @@ export type SituationMonitorTranslationProvider = "deeplx";
 type SituationMonitorApiKeySource = "stored" | "env" | "none";
 export type SituationMonitorTranslationApiKeySource = SituationMonitorApiKeySource;
 export type SituationMonitorExternalApiKeySource = SituationMonitorApiKeySource;
+export type SituationMonitorTelegramSecretSource = SituationMonitorApiKeySource;
 
 export interface SituationMonitorSettingsPublic {
   source: SituationMonitorSettingsSource;
@@ -36,6 +37,22 @@ export interface SituationMonitorSettingsPublic {
   finnhubApiKeySource: SituationMonitorExternalApiKeySource;
   hasFredApiKey: boolean;
   fredApiKeySource: SituationMonitorExternalApiKeySource;
+  telegramEnabled: boolean;
+  hasTelegramApiId: boolean;
+  telegramApiIdSource: SituationMonitorTelegramSecretSource;
+  telegramApiId?: string;
+  hasTelegramApiHash: boolean;
+  telegramApiHashSource: SituationMonitorTelegramSecretSource;
+  hasTelegramSession: boolean;
+  telegramSessionSource: SituationMonitorTelegramSecretSource;
+  telegramChannelSet: string;
+  telegramMaxFeedItems: number;
+  telegramMaxTextChars: number;
+  telegramChannelTimeoutMs: number;
+  telegramPollCycleTimeoutMs: number;
+  telegramStartupDelayMs: number;
+  telegramRateLimitMs: number;
+  telegramPollIntervalMs: number;
 }
 
 export interface SituationMonitorTranslationRuntimeConfig {
@@ -55,6 +72,21 @@ export interface SituationMonitorExternalApiRuntimeConfig {
   fredApiKey?: string;
 }
 
+export interface SituationMonitorTelegramRuntimeConfig {
+  enabled: boolean;
+  apiId?: string;
+  apiHash?: string;
+  session?: string;
+  channelSet: string;
+  maxFeedItems: number;
+  maxTextChars: number;
+  channelTimeoutMs: number;
+  pollCycleTimeoutMs: number;
+  startupDelayMs: number;
+  rateLimitMs: number;
+  pollIntervalMs: number;
+}
+
 interface StoredSituationMonitorSettings {
   translationMaxConcurrency?: unknown;
   translationApiEnabled?: unknown;
@@ -66,6 +98,18 @@ interface StoredSituationMonitorSettings {
   fredApiKey?: unknown;
   translationApiTimeoutMs?: unknown;
   translationApiMaxRetries?: unknown;
+  telegramEnabled?: unknown;
+  telegramApiId?: unknown;
+  telegramApiHash?: unknown;
+  telegramSession?: unknown;
+  telegramChannelSet?: unknown;
+  telegramMaxFeedItems?: unknown;
+  telegramMaxTextChars?: unknown;
+  telegramChannelTimeoutMs?: unknown;
+  telegramPollCycleTimeoutMs?: unknown;
+  telegramStartupDelayMs?: unknown;
+  telegramRateLimitMs?: unknown;
+  telegramPollIntervalMs?: unknown;
 }
 
 interface CachedSituationMonitorSettings {
@@ -73,8 +117,33 @@ interface CachedSituationMonitorSettings {
   value?: StoredSituationMonitorSettings;
 }
 
+interface EffectiveSituationMonitorSettings {
+  translationMaxConcurrency: number;
+  translationApiEnabled: boolean;
+  translationApiBaseUrl: string;
+  translationApiKey?: string;
+  translationFallbackApiEnabled: boolean;
+  translationFallbackApiBaseUrl: string;
+  finnhubApiKey?: string;
+  fredApiKey?: string;
+  translationApiTimeoutMs: number;
+  translationApiMaxRetries: number;
+  telegramEnabled: boolean;
+  telegramApiId?: string;
+  telegramApiHash?: string;
+  telegramSession?: string;
+  telegramChannelSet: string;
+  telegramMaxFeedItems: number;
+  telegramMaxTextChars: number;
+  telegramChannelTimeoutMs: number;
+  telegramPollCycleTimeoutMs: number;
+  telegramStartupDelayMs: number;
+  telegramRateLimitMs: number;
+  telegramPollIntervalMs: number;
+}
+
 const SETTINGS_KEY = "situation_monitor_settings";
-const SETTINGS_DESCRIPTION = "Situation monitor settings (DeepLX translation + fallback translation endpoint + Finnhub/FRED API keys).";
+const SETTINGS_DESCRIPTION = "Situation monitor settings (DeepLX translation + fallback endpoint + Finnhub/FRED API keys + Telegram ingestion config).";
 const CACHE_KEY = "situation_monitor:settings";
 const CACHE_TTL_SECONDS = 30;
 const DEFAULT_TRANSLATION_MAX_CONCURRENCY = 2;
@@ -84,6 +153,14 @@ const DEFAULT_TRANSLATION_API_MAX_RETRIES = 2;
 const DEFAULT_TRANSLATION_API_BASE_URL = "https://api.deeplx.org";
 const DEFAULT_TRANSLATION_FALLBACK_API_ENABLED = false;
 const DEFAULT_TRANSLATION_PROVIDER: SituationMonitorTranslationProvider = "deeplx";
+const DEFAULT_TELEGRAM_CHANNEL_SET = "full";
+const DEFAULT_TELEGRAM_MAX_FEED_ITEMS = 200;
+const DEFAULT_TELEGRAM_MAX_TEXT_CHARS = 800;
+const DEFAULT_TELEGRAM_CHANNEL_TIMEOUT_MS = 15_000;
+const DEFAULT_TELEGRAM_POLL_CYCLE_TIMEOUT_MS = 180_000;
+const DEFAULT_TELEGRAM_STARTUP_DELAY_MS = 60_000;
+const DEFAULT_TELEGRAM_RATE_LIMIT_MS = 800;
+const DEFAULT_TELEGRAM_POLL_INTERVAL_MS = 60_000;
 
 @Injectable()
 export class SituationMonitorSettingsService {
@@ -99,9 +176,13 @@ export class SituationMonitorSettingsService {
   async getPublicSettings(): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
+
     const storedTranslationApiKey = this.resolveStoredApiKey(stored?.translationApiKey, "translation api key");
     const storedFinnhubApiKey = this.resolveStoredApiKey(stored?.finnhubApiKey, "finnhub api key");
     const storedFredApiKey = this.resolveStoredApiKey(stored?.fredApiKey, "fred api key");
+    const storedTelegramApiId = this.normalizeString(stored?.telegramApiId);
+    const storedTelegramApiHash = this.resolveStoredApiKey(stored?.telegramApiHash, "telegram api hash");
+    const storedTelegramSession = this.resolveStoredApiKey(stored?.telegramSession, "telegram session");
 
     return {
       source: stored ? "db" : "env",
@@ -118,7 +199,23 @@ export class SituationMonitorSettingsService {
       hasFinnhubApiKey: Boolean(effective.finnhubApiKey),
       finnhubApiKeySource: this.resolveApiKeySource(storedFinnhubApiKey, effective.finnhubApiKey),
       hasFredApiKey: Boolean(effective.fredApiKey),
-      fredApiKeySource: this.resolveApiKeySource(storedFredApiKey, effective.fredApiKey)
+      fredApiKeySource: this.resolveApiKeySource(storedFredApiKey, effective.fredApiKey),
+      telegramEnabled: effective.telegramEnabled,
+      hasTelegramApiId: Boolean(effective.telegramApiId),
+      telegramApiIdSource: this.resolveApiKeySource(storedTelegramApiId, effective.telegramApiId),
+      telegramApiId: effective.telegramApiId,
+      hasTelegramApiHash: Boolean(effective.telegramApiHash),
+      telegramApiHashSource: this.resolveApiKeySource(storedTelegramApiHash, effective.telegramApiHash),
+      hasTelegramSession: Boolean(effective.telegramSession),
+      telegramSessionSource: this.resolveApiKeySource(storedTelegramSession, effective.telegramSession),
+      telegramChannelSet: effective.telegramChannelSet,
+      telegramMaxFeedItems: effective.telegramMaxFeedItems,
+      telegramMaxTextChars: effective.telegramMaxTextChars,
+      telegramChannelTimeoutMs: effective.telegramChannelTimeoutMs,
+      telegramPollCycleTimeoutMs: effective.telegramPollCycleTimeoutMs,
+      telegramStartupDelayMs: effective.telegramStartupDelayMs,
+      telegramRateLimitMs: effective.telegramRateLimitMs,
+      telegramPollIntervalMs: effective.telegramPollIntervalMs
     };
   }
 
@@ -152,6 +249,25 @@ export class SituationMonitorSettingsService {
     };
   }
 
+  async getTelegramRuntimeConfig(): Promise<SituationMonitorTelegramRuntimeConfig> {
+    const stored = await this.loadStoredSettings();
+    const effective = this.resolveEffectiveConfig(stored);
+    return {
+      enabled: effective.telegramEnabled,
+      apiId: effective.telegramApiId,
+      apiHash: effective.telegramApiHash,
+      session: effective.telegramSession,
+      channelSet: effective.telegramChannelSet,
+      maxFeedItems: effective.telegramMaxFeedItems,
+      maxTextChars: effective.telegramMaxTextChars,
+      channelTimeoutMs: effective.telegramChannelTimeoutMs,
+      pollCycleTimeoutMs: effective.telegramPollCycleTimeoutMs,
+      startupDelayMs: effective.telegramStartupDelayMs,
+      rateLimitMs: effective.telegramRateLimitMs,
+      pollIntervalMs: effective.telegramPollIntervalMs
+    };
+  }
+
   async updateSettings(
     orgId: string,
     actorId: string,
@@ -166,36 +282,48 @@ export class SituationMonitorSettingsService {
       fredApiKey?: string | null;
       translationApiTimeoutMs?: number;
       translationApiMaxRetries?: number;
+      telegramEnabled?: boolean;
+      telegramApiId?: string | null;
+      telegramApiHash?: string | null;
+      telegramSession?: string | null;
+      telegramChannelSet?: string | null;
+      telegramMaxFeedItems?: number;
+      telegramMaxTextChars?: number;
+      telegramChannelTimeoutMs?: number;
+      telegramPollCycleTimeoutMs?: number;
+      telegramStartupDelayMs?: number;
+      telegramRateLimitMs?: number;
+      telegramPollIntervalMs?: number;
     }
   ): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const current = this.resolveEffectiveConfig(stored);
 
-    const nextConcurrency = this.asBoundedInt(
+    const nextTranslationMaxConcurrency = this.asBoundedInt(
       input.translationMaxConcurrency,
       current.translationMaxConcurrency,
       1,
       MAX_TRANSLATION_MAX_CONCURRENCY
     );
-    const nextApiEnabled = this.asBoolean(input.translationApiEnabled, current.translationApiEnabled);
-    const nextApiTimeoutMs = this.asBoundedInt(
+    const nextTranslationApiEnabled = this.asBoolean(input.translationApiEnabled, current.translationApiEnabled);
+    const nextTranslationApiTimeoutMs = this.asBoundedInt(
       input.translationApiTimeoutMs,
       current.translationApiTimeoutMs,
       1_000,
       120_000
     );
-    const nextApiMaxRetries = this.asBoundedInt(
+    const nextTranslationApiMaxRetries = this.asBoundedInt(
       input.translationApiMaxRetries,
       current.translationApiMaxRetries,
       0,
       5
     );
-    const nextApiBaseUrl = this.resolveNextApiBaseUrl(stored, input.translationApiBaseUrl);
-    const nextFallbackApiEnabled = this.asBoolean(
+    const nextTranslationApiBaseUrl = this.resolveNextApiBaseUrl(stored, input.translationApiBaseUrl);
+    const nextTranslationFallbackApiEnabled = this.asBoolean(
       input.translationFallbackApiEnabled,
       current.translationFallbackApiEnabled
     );
-    const nextFallbackApiBaseUrl = this.resolveNextFallbackApiBaseUrl(
+    const nextTranslationFallbackApiBaseUrl = this.resolveNextFallbackApiBaseUrl(
       stored,
       input.translationFallbackApiBaseUrl
     );
@@ -203,17 +331,81 @@ export class SituationMonitorSettingsService {
     const nextFinnhubApiKey = await this.resolveNextApiKey(stored?.finnhubApiKey, input.finnhubApiKey);
     const nextFredApiKey = await this.resolveNextApiKey(stored?.fredApiKey, input.fredApiKey);
 
+    const nextTelegramEnabled = this.asBoolean(input.telegramEnabled, current.telegramEnabled);
+    const nextTelegramApiId = this.resolveNextString(stored?.telegramApiId, input.telegramApiId);
+    const nextTelegramApiHash = await this.resolveNextApiKey(stored?.telegramApiHash, input.telegramApiHash);
+    const nextTelegramSession = await this.resolveNextApiKey(stored?.telegramSession, input.telegramSession);
+    const nextTelegramChannelSet = this.asString(
+      input.telegramChannelSet,
+      current.telegramChannelSet,
+      DEFAULT_TELEGRAM_CHANNEL_SET
+    );
+    const nextTelegramMaxFeedItems = this.asBoundedInt(
+      input.telegramMaxFeedItems,
+      current.telegramMaxFeedItems,
+      50,
+      500
+    );
+    const nextTelegramMaxTextChars = this.asBoundedInt(
+      input.telegramMaxTextChars,
+      current.telegramMaxTextChars,
+      200,
+      10_000
+    );
+    const nextTelegramChannelTimeoutMs = this.asBoundedInt(
+      input.telegramChannelTimeoutMs,
+      current.telegramChannelTimeoutMs,
+      3_000,
+      120_000
+    );
+    const nextTelegramPollCycleTimeoutMs = this.asBoundedInt(
+      input.telegramPollCycleTimeoutMs,
+      current.telegramPollCycleTimeoutMs,
+      30_000,
+      600_000
+    );
+    const nextTelegramStartupDelayMs = this.asBoundedInt(
+      input.telegramStartupDelayMs,
+      current.telegramStartupDelayMs,
+      0,
+      600_000
+    );
+    const nextTelegramRateLimitMs = this.asBoundedInt(
+      input.telegramRateLimitMs,
+      current.telegramRateLimitMs,
+      100,
+      60_000
+    );
+    const nextTelegramPollIntervalMs = this.asBoundedInt(
+      input.telegramPollIntervalMs,
+      current.telegramPollIntervalMs,
+      15_000,
+      3_600_000
+    );
+
     const nextStored: StoredSituationMonitorSettings = {
-      translationMaxConcurrency: nextConcurrency,
-      translationApiEnabled: nextApiEnabled,
-      translationApiBaseUrl: nextApiBaseUrl,
+      translationMaxConcurrency: nextTranslationMaxConcurrency,
+      translationApiEnabled: nextTranslationApiEnabled,
+      translationApiBaseUrl: nextTranslationApiBaseUrl,
       translationApiKey: nextTranslationApiKey,
-      translationFallbackApiEnabled: nextFallbackApiEnabled,
-      translationFallbackApiBaseUrl: nextFallbackApiBaseUrl,
+      translationFallbackApiEnabled: nextTranslationFallbackApiEnabled,
+      translationFallbackApiBaseUrl: nextTranslationFallbackApiBaseUrl,
       finnhubApiKey: nextFinnhubApiKey,
       fredApiKey: nextFredApiKey,
-      translationApiTimeoutMs: nextApiTimeoutMs,
-      translationApiMaxRetries: nextApiMaxRetries
+      translationApiTimeoutMs: nextTranslationApiTimeoutMs,
+      translationApiMaxRetries: nextTranslationApiMaxRetries,
+      telegramEnabled: nextTelegramEnabled,
+      telegramApiId: nextTelegramApiId,
+      telegramApiHash: nextTelegramApiHash,
+      telegramSession: nextTelegramSession,
+      telegramChannelSet: nextTelegramChannelSet,
+      telegramMaxFeedItems: nextTelegramMaxFeedItems,
+      telegramMaxTextChars: nextTelegramMaxTextChars,
+      telegramChannelTimeoutMs: nextTelegramChannelTimeoutMs,
+      telegramPollCycleTimeoutMs: nextTelegramPollCycleTimeoutMs,
+      telegramStartupDelayMs: nextTelegramStartupDelayMs,
+      telegramRateLimitMs: nextTelegramRateLimitMs,
+      telegramPollIntervalMs: nextTelegramPollIntervalMs
     };
 
     await this.prisma.systemSetting.upsert({
@@ -239,16 +431,28 @@ export class SituationMonitorSettingsService {
           action: "situation_monitor_update",
           metadata: this.toPrismaJson({
             ok: true,
-            translationMaxConcurrency: nextConcurrency,
-            translationApiEnabled: nextApiEnabled,
-            translationApiBaseUrl: nextApiBaseUrl,
-            translationFallbackApiEnabled: nextFallbackApiEnabled,
-            translationFallbackApiBaseUrl: nextFallbackApiBaseUrl,
-            translationApiTimeoutMs: nextApiTimeoutMs,
-            translationApiMaxRetries: nextApiMaxRetries,
+            translationMaxConcurrency: nextTranslationMaxConcurrency,
+            translationApiEnabled: nextTranslationApiEnabled,
+            translationApiBaseUrl: nextTranslationApiBaseUrl,
+            translationFallbackApiEnabled: nextTranslationFallbackApiEnabled,
+            translationFallbackApiBaseUrl: nextTranslationFallbackApiBaseUrl,
+            translationApiTimeoutMs: nextTranslationApiTimeoutMs,
+            translationApiMaxRetries: nextTranslationApiMaxRetries,
             translationApiKeyUpdated: input.translationApiKey !== undefined,
             finnhubApiKeyUpdated: input.finnhubApiKey !== undefined,
-            fredApiKeyUpdated: input.fredApiKey !== undefined
+            fredApiKeyUpdated: input.fredApiKey !== undefined,
+            telegramEnabled: nextTelegramEnabled,
+            telegramChannelSet: nextTelegramChannelSet,
+            telegramMaxFeedItems: nextTelegramMaxFeedItems,
+            telegramMaxTextChars: nextTelegramMaxTextChars,
+            telegramChannelTimeoutMs: nextTelegramChannelTimeoutMs,
+            telegramPollCycleTimeoutMs: nextTelegramPollCycleTimeoutMs,
+            telegramStartupDelayMs: nextTelegramStartupDelayMs,
+            telegramRateLimitMs: nextTelegramRateLimitMs,
+            telegramPollIntervalMs: nextTelegramPollIntervalMs,
+            telegramApiIdUpdated: input.telegramApiId !== undefined,
+            telegramApiHashUpdated: input.telegramApiHash !== undefined,
+            telegramSessionUpdated: input.telegramSession !== undefined
           } satisfies Prisma.InputJsonObject)
         }
       },
@@ -280,11 +484,16 @@ export class SituationMonitorSettingsService {
     return this.getPublicSettings();
   }
 
-  private resolveEffectiveConfig(stored: StoredSituationMonitorSettings | null) {
-    const envDefaults = this.env.situationMonitorTranslationConfig;
+  private resolveEffectiveConfig(stored: StoredSituationMonitorSettings | null): EffectiveSituationMonitorSettings {
+    const envTranslation = this.env.situationMonitorTranslationConfig;
+    const envTelegram = this.resolveTelegramEnvDefaults();
+
     const storedTranslationApiKey = this.resolveStoredApiKey(stored?.translationApiKey, "translation api key");
     const storedFinnhubApiKey = this.resolveStoredApiKey(stored?.finnhubApiKey, "finnhub api key");
     const storedFredApiKey = this.resolveStoredApiKey(stored?.fredApiKey, "fred api key");
+    const storedTelegramApiId = this.normalizeString(stored?.telegramApiId);
+    const storedTelegramApiHash = this.resolveStoredApiKey(stored?.telegramApiHash, "telegram api hash");
+    const storedTelegramSession = this.resolveStoredApiKey(stored?.telegramSession, "telegram session");
 
     return {
       translationMaxConcurrency: this.asBoundedInt(
@@ -293,35 +502,197 @@ export class SituationMonitorSettingsService {
         1,
         MAX_TRANSLATION_MAX_CONCURRENCY
       ),
-      translationApiEnabled: this.asBoolean(stored?.translationApiEnabled, envDefaults.enabled),
+      translationApiEnabled: this.asBoolean(stored?.translationApiEnabled, envTranslation.enabled),
       translationApiBaseUrl:
         this.normalizeUrl(stored?.translationApiBaseUrl) ??
-        this.normalizeUrl(envDefaults.baseUrl) ??
+        this.normalizeUrl(envTranslation.baseUrl) ??
         DEFAULT_TRANSLATION_API_BASE_URL,
       translationFallbackApiEnabled: this.asBoolean(
         stored?.translationFallbackApiEnabled,
-        this.asBoolean(envDefaults.fallbackEnabled, DEFAULT_TRANSLATION_FALLBACK_API_ENABLED)
+        this.asBoolean(envTranslation.fallbackEnabled, DEFAULT_TRANSLATION_FALLBACK_API_ENABLED)
       ),
       translationFallbackApiBaseUrl:
         this.normalizeUrl(stored?.translationFallbackApiBaseUrl) ??
-        this.normalizeUrl(envDefaults.fallbackBaseUrl) ??
+        this.normalizeUrl(envTranslation.fallbackBaseUrl) ??
         "",
       translationApiTimeoutMs: this.asBoundedInt(
         stored?.translationApiTimeoutMs,
-        this.asBoundedInt(envDefaults.timeoutMs, DEFAULT_TRANSLATION_API_TIMEOUT_MS, 1_000, 120_000),
+        this.asBoundedInt(envTranslation.timeoutMs, DEFAULT_TRANSLATION_API_TIMEOUT_MS, 1_000, 120_000),
         1_000,
         120_000
       ),
       translationApiMaxRetries: this.asBoundedInt(
         stored?.translationApiMaxRetries,
-        this.asBoundedInt(envDefaults.maxRetries, DEFAULT_TRANSLATION_API_MAX_RETRIES, 0, 5),
+        this.asBoundedInt(envTranslation.maxRetries, DEFAULT_TRANSLATION_API_MAX_RETRIES, 0, 5),
         0,
         5
       ),
       translationApiKey: storedTranslationApiKey,
       finnhubApiKey: storedFinnhubApiKey,
-      fredApiKey: storedFredApiKey
+      fredApiKey: storedFredApiKey,
+      telegramEnabled: this.asBoolean(stored?.telegramEnabled, envTelegram.enabled),
+      telegramApiId: storedTelegramApiId ?? envTelegram.apiId,
+      telegramApiHash: storedTelegramApiHash ?? envTelegram.apiHash,
+      telegramSession: storedTelegramSession ?? envTelegram.session,
+      telegramChannelSet:
+        this.normalizeString(stored?.telegramChannelSet) ?? envTelegram.channelSet,
+      telegramMaxFeedItems: this.asBoundedInt(
+        stored?.telegramMaxFeedItems,
+        envTelegram.maxFeedItems,
+        50,
+        500
+      ),
+      telegramMaxTextChars: this.asBoundedInt(
+        stored?.telegramMaxTextChars,
+        envTelegram.maxTextChars,
+        200,
+        10_000
+      ),
+      telegramChannelTimeoutMs: this.asBoundedInt(
+        stored?.telegramChannelTimeoutMs,
+        envTelegram.channelTimeoutMs,
+        3_000,
+        120_000
+      ),
+      telegramPollCycleTimeoutMs: this.asBoundedInt(
+        stored?.telegramPollCycleTimeoutMs,
+        envTelegram.pollCycleTimeoutMs,
+        30_000,
+        600_000
+      ),
+      telegramStartupDelayMs: this.asBoundedInt(
+        stored?.telegramStartupDelayMs,
+        envTelegram.startupDelayMs,
+        0,
+        600_000
+      ),
+      telegramRateLimitMs: this.asBoundedInt(
+        stored?.telegramRateLimitMs,
+        envTelegram.rateLimitMs,
+        100,
+        60_000
+      ),
+      telegramPollIntervalMs: this.asBoundedInt(
+        stored?.telegramPollIntervalMs,
+        envTelegram.pollIntervalMs,
+        15_000,
+        3_600_000
+      )
     };
+  }
+
+  private resolveTelegramEnvDefaults() {
+    return {
+      enabled: this.readBooleanEnv("SITUATION_MONITOR_TELEGRAM_ENABLED", "TELEGRAM_ENABLED") ?? false,
+      apiId: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_API_ID", "TELEGRAM_API_ID"),
+      apiHash: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_API_HASH", "TELEGRAM_API_HASH"),
+      session: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_SESSION", "TELEGRAM_SESSION"),
+      channelSet:
+        this.readStringEnv("SITUATION_MONITOR_TELEGRAM_CHANNEL_SET", "TELEGRAM_CHANNEL_SET") ??
+        DEFAULT_TELEGRAM_CHANNEL_SET,
+      maxFeedItems: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS", "TELEGRAM_MAX_FEED_ITEMS"],
+        DEFAULT_TELEGRAM_MAX_FEED_ITEMS,
+        50,
+        500
+      ),
+      maxTextChars: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS", "TELEGRAM_MAX_TEXT_CHARS"],
+        DEFAULT_TELEGRAM_MAX_TEXT_CHARS,
+        200,
+        10_000
+      ),
+      channelTimeoutMs: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS", "TELEGRAM_CHANNEL_TIMEOUT_MS"],
+        DEFAULT_TELEGRAM_CHANNEL_TIMEOUT_MS,
+        3_000,
+        120_000
+      ),
+      pollCycleTimeoutMs: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS", "TELEGRAM_POLL_CYCLE_TIMEOUT_MS"],
+        DEFAULT_TELEGRAM_POLL_CYCLE_TIMEOUT_MS,
+        30_000,
+        600_000
+      ),
+      startupDelayMs: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS", "TELEGRAM_STARTUP_DELAY_MS"],
+        DEFAULT_TELEGRAM_STARTUP_DELAY_MS,
+        0,
+        600_000
+      ),
+      rateLimitMs: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS", "TELEGRAM_RATE_LIMIT_MS"],
+        DEFAULT_TELEGRAM_RATE_LIMIT_MS,
+        100,
+        60_000
+      ),
+      pollIntervalMs: this.readNumberEnv(
+        ["SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS", "TELEGRAM_POLL_INTERVAL_MS"],
+        DEFAULT_TELEGRAM_POLL_INTERVAL_MS,
+        15_000,
+        3_600_000
+      )
+    };
+  }
+
+  private readStringEnv(...keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = this.env.get<string | undefined>(key, { infer: true }) ?? process.env[key];
+      const normalized = this.normalizeString(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return undefined;
+  }
+
+  private readBooleanEnv(...keys: string[]): boolean | undefined {
+    for (const key of keys) {
+      const raw = this.env.get<boolean | string | undefined>(key, { infer: true }) ?? process.env[key];
+      if (typeof raw === "boolean") {
+        return raw;
+      }
+      if (typeof raw === "string") {
+        const normalized = raw.trim().toLowerCase();
+        if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+          return true;
+        }
+        if (["false", "0", "no", "n", "off"].includes(normalized)) {
+          return false;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private readNumberEnv(keys: string[], fallback: number, min: number, max: number): number {
+    for (const key of keys) {
+      const raw = this.env.get<number | string | undefined>(key, { infer: true }) ?? process.env[key];
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) {
+        continue;
+      }
+      const normalized = Math.trunc(parsed);
+      return Math.max(min, Math.min(max, normalized));
+    }
+    return Math.max(min, Math.min(max, Math.trunc(fallback)));
+  }
+
+  private asString(value: unknown, fallback: string, defaultValue: string): string {
+    if (typeof value === "string") {
+      const normalized = value.trim();
+      return normalized.length > 0 ? normalized : defaultValue;
+    }
+    return fallback;
+  }
+
+  private resolveNextString(current: unknown, next: string | null | undefined): string | null {
+    if (next === undefined) {
+      const currentValue = this.normalizeString(current);
+      return currentValue ?? null;
+    }
+    const normalized = this.normalizeString(next);
+    return normalized ?? null;
   }
 
   private resolveNextApiBaseUrl(

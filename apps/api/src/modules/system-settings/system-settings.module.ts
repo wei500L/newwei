@@ -44,6 +44,7 @@ import { RssTranslationMetricsController } from "./rss-translation-metrics.contr
 import { RssTranslationMetricsService } from "./rss-translation-metrics.service";
 import { SituationMonitorSettingsController } from "./situation-monitor-settings.controller";
 import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
+import { SituationMonitorTelegramAuthService } from "./situation-monitor-telegram-auth.service";
 import { SystemSecuritySettingsController } from "./system-security-settings.controller";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 import { VectorServiceSettingsController } from "./vector-service-settings.controller";
@@ -92,6 +93,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     NewsSourceSchedulerSettingsService,
     NewsnowPersonalizationSettingsService,
     SituationMonitorSettingsService,
+    SituationMonitorTelegramAuthService,
     RealtimeSignalsSettingsService,
     VectorServiceSettingsService,
     AssistantSafetySettingsService,

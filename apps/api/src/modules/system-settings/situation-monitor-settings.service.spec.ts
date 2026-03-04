@@ -44,6 +44,18 @@ describe("SituationMonitorSettingsService", () => {
     envExternalKeys = {
       SITUATION_MONITOR_FINNHUB_API_KEY: undefined,
       SITUATION_MONITOR_FRED_API_KEY: undefined,
+      SITUATION_MONITOR_TELEGRAM_ENABLED: undefined,
+      SITUATION_MONITOR_TELEGRAM_API_ID: undefined,
+      SITUATION_MONITOR_TELEGRAM_API_HASH: undefined,
+      SITUATION_MONITOR_TELEGRAM_SESSION: undefined,
+      SITUATION_MONITOR_TELEGRAM_CHANNEL_SET: undefined,
+      SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS: undefined,
+      SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS: undefined,
+      SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS: undefined,
+      SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS: undefined,
+      SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS: undefined,
+      SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS: undefined,
+      SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS: undefined,
     };
     securitySettingsMock = {
       encodeSecretForStorage: jest.fn(async (value: string) => value),
@@ -109,6 +121,38 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.finnhubApiKeySource).toBe("none");
     expect(response.hasFredApiKey).toBe(false);
     expect(response.fredApiKeySource).toBe("none");
+    expect(response.telegramEnabled).toBe(false);
+    expect(response.telegramChannelSet).toBe("full");
+    expect(response.telegramPollIntervalMs).toBe(60_000);
+    expect(response.hasTelegramSession).toBe(false);
+    expect(response.telegramSessionSource).toBe("none");
+  });
+
+  it("uses telegram env fallback when no stored telegram secret exists", async () => {
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_ENABLED = "true";
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_API_ID = "100001";
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_API_HASH = "env-hash";
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_SESSION = "env-session";
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_CHANNEL_SET = "tech";
+    envExternalKeys.SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS = "90000";
+
+    const response = await service.getPublicSettings();
+    expect(response.telegramEnabled).toBe(true);
+    expect(response.hasTelegramApiId).toBe(true);
+    expect(response.telegramApiIdSource).toBe("env");
+    expect(response.hasTelegramApiHash).toBe(true);
+    expect(response.telegramApiHashSource).toBe("env");
+    expect(response.hasTelegramSession).toBe(true);
+    expect(response.telegramSessionSource).toBe("env");
+    expect(response.telegramChannelSet).toBe("tech");
+    expect(response.telegramPollIntervalMs).toBe(90_000);
+
+    const runtime = await service.getTelegramRuntimeConfig();
+    expect(runtime.apiId).toBe("100001");
+    expect(runtime.apiHash).toBe("env-hash");
+    expect(runtime.session).toBe("env-session");
+    expect(runtime.channelSet).toBe("tech");
+    expect(runtime.pollIntervalMs).toBe(90_000);
   });
 
   it("stores overrides and returns db source", async () => {
@@ -123,6 +167,18 @@ describe("SituationMonitorSettingsService", () => {
       fredApiKey: "fred-key",
       translationApiTimeoutMs: 8_000,
       translationApiMaxRetries: 1,
+      telegramEnabled: true,
+      telegramApiId: "2222",
+      telegramApiHash: "telegram-hash",
+      telegramSession: "telegram-session",
+      telegramChannelSet: "finance",
+      telegramMaxFeedItems: 260,
+      telegramMaxTextChars: 1200,
+      telegramChannelTimeoutMs: 9000,
+      telegramPollCycleTimeoutMs: 210_000,
+      telegramStartupDelayMs: 45_000,
+      telegramRateLimitMs: 1200,
+      telegramPollIntervalMs: 75_000,
     });
 
     expect(response.source).toBe("db");
@@ -137,6 +193,15 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.finnhubApiKeySource).toBe("stored");
     expect(response.hasFredApiKey).toBe(true);
     expect(response.fredApiKeySource).toBe("stored");
+    expect(response.telegramEnabled).toBe(true);
+    expect(response.telegramChannelSet).toBe("finance");
+    expect(response.telegramPollIntervalMs).toBe(75_000);
+    expect(response.hasTelegramApiId).toBe(true);
+    expect(response.telegramApiIdSource).toBe("stored");
+    expect(response.hasTelegramApiHash).toBe(true);
+    expect(response.telegramApiHashSource).toBe("stored");
+    expect(response.hasTelegramSession).toBe(true);
+    expect(response.telegramSessionSource).toBe("stored");
     expect(persistedValue?.translationMaxConcurrency).toBe(3);
     expect(persistedValue?.translationApiBaseUrl).toBe("https://api.deeplx.org");
     expect(persistedValue?.translationApiKey).toBe("test-key");
@@ -144,9 +209,15 @@ describe("SituationMonitorSettingsService", () => {
     expect(persistedValue?.translationFallbackApiBaseUrl).toBe("https://translates.shisihua.dpdns.org/fallback/v1");
     expect(persistedValue?.finnhubApiKey).toBe("finnhub-key");
     expect(persistedValue?.fredApiKey).toBe("fred-key");
+    expect(persistedValue?.telegramEnabled).toBe(true);
+    expect(persistedValue?.telegramApiId).toBe("2222");
+    expect(persistedValue?.telegramChannelSet).toBe("finance");
+    expect(persistedValue?.telegramPollIntervalMs).toBe(75_000);
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("test-key");
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("finnhub-key");
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("fred-key");
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("telegram-hash");
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("telegram-session");
   });
 
   it("ignores env api keys when no stored key exists", async () => {

@@ -5023,6 +5023,14 @@
         "translationFallbackApi": "Fallback translation API",
         "finnhubApiKeySource": "Finnhub API key source",
         "fredApiKeySource": "FRED API key source",
+        "telegramApiIdSource": "Telegram API ID source",
+        "telegramApiHashSource": "Telegram API hash source",
+        "telegramSessionSource": "Telegram session source",
+        "telegramPollInterval": "Poll {{ms}} ms",
+        "telegramCodeDelivery": "Code delivery: {{via}}",
+        "telegramCodeViaApp": "Telegram app",
+        "telegramCodeViaSms": "SMS",
+        "telegramAuthExpiresAt": "Auth expires at: {{time}}",
         "apiKeySources": {
           "stored": "System settings (stored)",
           "env": "Environment variable",
@@ -5031,7 +5039,9 @@
       },
       "sections": {
         "translationApi": "Translation API",
-        "externalApis": "External data APIs"
+        "externalApis": "External data APIs",
+        "telegram": "Telegram ingestion",
+        "telegramAuth": "Telegram session auth"
       },
       "fields": {
         "translationMaxConcurrency": "Translation max concurrency",
@@ -5043,7 +5053,22 @@
         "finnhubApiKey": "Finnhub API key",
         "fredApiKey": "FRED API key",
         "translationApiTimeoutMs": "Translation timeout (ms)",
-        "translationApiMaxRetries": "Translation max retries"
+        "translationApiMaxRetries": "Translation max retries",
+        "telegramEnabled": "Enable Telegram polling",
+        "telegramApiId": "Telegram API ID",
+        "telegramApiHash": "Telegram API hash",
+        "telegramSession": "Telegram StringSession",
+        "telegramChannelSet": "Telegram channel set",
+        "telegramMaxFeedItems": "Telegram max feed items",
+        "telegramMaxTextChars": "Telegram max text chars",
+        "telegramChannelTimeoutMs": "Telegram channel timeout (ms)",
+        "telegramPollCycleTimeoutMs": "Telegram cycle timeout (ms)",
+        "telegramStartupDelayMs": "Telegram startup delay (ms)",
+        "telegramRateLimitMs": "Telegram per-channel delay (ms)",
+        "telegramPollIntervalMs": "Telegram poll interval (ms)",
+        "telegramPhoneNumber": "Phone number",
+        "telegramPhoneCode": "Telegram verification code",
+        "telegram2faPassword": "Telegram 2FA password"
       },
       "hints": {
         "translationMaxConcurrency": "Max concurrent translation requests for Situation Monitor; this also affects RSS LLM translation concurrency (including article body chunk translation).",
@@ -5055,40 +5080,95 @@
         "finnhubApiKey": "Used for indices/sectors/commodities. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
         "fredApiKey": "Used for Fed indicators and balance sheet data. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
         "translationApiTimeoutMs": "Timeout for each translation request.",
-        "translationApiMaxRetries": "Maximum retry count after translation request failures."
+        "translationApiMaxRetries": "Maximum retry count after translation request failures.",
+        "telegramEnabled": "Controls whether Telegram polling jobs are active.",
+        "telegramApiId": "Get it from https://my.telegram.org/apps.",
+        "telegramApiHash": "Leave empty to keep current hash. Stored encrypted when secret encryption is enabled.",
+        "telegramSession": "Leave empty to keep current session. Stored encrypted when secret encryption is enabled.",
+        "telegramChannelSet": "Channel bucket key in telegram-channels.json, e.g. full/tech/finance.",
+        "telegramPhoneNumber": "Use full phone number with country code, e.g. +971xxxxxxxxx.",
+        "telegramPhoneCode": "Enter the code Telegram sent after clicking Send code.",
+        "telegram2faPassword": "Leave empty if 2FA password is not enabled."
       },
       "placeholders": {
         "translationApiBaseUrl": "https://api.deeplx.org",
         "translationApiKey": "Leave empty to keep current key",
         "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
         "finnhubApiKey": "Leave empty to keep current key",
-        "fredApiKey": "Leave empty to keep current key"
+        "fredApiKey": "Leave empty to keep current key",
+        "telegramApiId": "e.g. 12345678",
+        "telegramApiHash": "Leave empty to keep current hash",
+        "telegramSession": "Leave empty to keep current session",
+        "telegramChannelSet": "full",
+        "telegramPhoneNumber": "+971xxxxxxxxx",
+        "telegramPhoneCode": "Code from Telegram",
+        "telegram2faPassword": "Press enter if not enabled"
       },
       "actions": {
         "reset": "Reset to env",
         "clearApiKey": "Clear API key",
-        "keepApiKey": "Keep API key"
+        "keepApiKey": "Keep API key",
+        "telegramSendCode": "Send code",
+        "telegramCompleteAuth": "Generate & save session",
+        "telegramClearAuthState": "Clear auth state"
       },
       "validation": {
         "translationMaxConcurrency": "Concurrency is required",
         "translationApiTimeoutMs": "Translation timeout is required",
-        "translationApiMaxRetries": "Translation max retries is required"
+        "translationApiMaxRetries": "Translation max retries is required",
+        "telegramMaxFeedItems": "Max feed items is required",
+        "telegramMaxTextChars": "Max text chars is required",
+        "telegramChannelTimeoutMs": "Channel timeout is required",
+        "telegramPollCycleTimeoutMs": "Cycle timeout is required",
+        "telegramStartupDelayMs": "Startup delay is required",
+        "telegramRateLimitMs": "Per-channel delay is required",
+        "telegramPollIntervalMs": "Poll interval is required"
       },
       "messages": {
         "saved": "Saved",
-        "reset": "Reset to env defaults"
+        "reset": "Reset to env defaults",
+        "telegramCodeSent": "Verification code sent.",
+        "telegramAuthRequestReady": "Verification request created. Enter code and complete auth.",
+        "telegramSessionSaved": "Telegram session generated and saved."
       },
       "errors": {
         "loadFailed": "Failed to load situation monitor settings",
         "saveFailed": "Failed to save situation monitor settings",
         "badRequest": "Invalid input",
-        "resetFailed": "Failed to reset situation monitor settings"
+        "resetFailed": "Failed to reset situation monitor settings",
+        "telegramApiCredentialsRequired": "Telegram API ID and API hash are required to send verification code.",
+        "telegramPhoneRequired": "Phone number is required.",
+        "telegramAuthStartFailed": "Failed to send Telegram verification code.",
+        "telegramAuthCompleteFailed": "Failed to generate Telegram session.",
+        "telegramAuthRequestMissing": "Send verification code first.",
+        "telegramCodeRequired": "Verification code is required.",
+        "telegramAuthInvalidInput": "Invalid Telegram auth input.",
+        "telegramPhoneFormatInvalid": "Phone number must be E.164 format (for example +971xxxxxxxxx).",
+        "telegramAuthRequestExpired": "Auth request expired. Send a new code.",
+        "telegramAuthRequestMismatch": "Auth request mismatch. Restart Telegram auth.",
+        "telegramAuthCodeInvalid": "Verification code is invalid.",
+        "telegramAuthCodeExpired": "Verification code expired. Send a new code.",
+        "telegramAuthPasswordRequired": "Telegram 2FA password is required.",
+        "telegramAuthPasswordInvalid": "Telegram 2FA password is invalid.",
+        "telegramAuthRateLimited": "Too many Telegram auth attempts. Please try again later.",
+        "telegramPhoneInvalid": "Telegram phone number is invalid.",
+        "telegramPhoneBanned": "Telegram phone number is banned.",
+        "telegramPhoneUnoccupied": "Telegram phone number is not registered.",
+        "telegramApiIdInvalid": "Telegram API ID is invalid.",
+        "telegramAuthRestartRequired": "Telegram auth needs restart. Send a new code.",
+        "telegramAuthSignupRequired": "Telegram account signup is required for this number.",
+        "telegramAuthFailed": "Telegram auth failed. Please try again.",
+        "telegramAuthPermissionDenied": "Missing permission to perform Telegram auth."
       },
       "modal": {
         "resetTitle": "Reset situation monitor settings",
         "resetContent": "Remove stored overrides and revert to env values?",
         "confirm": "Confirm",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "telegramEnableTitle": "Enable Telegram polling now?",
+        "telegramEnableContent": "Session will be saved either way. Choose whether to enable Telegram polling immediately.",
+        "telegramEnableConfirm": "Save and enable",
+        "telegramEnableSkip": "Save only"
       }
     },
     "realtimeSignals": {

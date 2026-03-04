@@ -8,6 +8,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +18,10 @@ import { AlertsService } from '../../alerts/alerts.service';
 import { CacheService } from '../../cache/cache.service';
 import { EnvService } from '../../config/config.service';
 import { PrismaService } from '../../config/prisma.service';
+import {
+  SituationMonitorSettingsService,
+  type SituationMonitorTelegramRuntimeConfig,
+} from '../../system-settings/situation-monitor-settings.service';
 import {
   SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES,
   SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG,
@@ -53,11 +58,13 @@ const OREF_PERSIST_MAX_WAVES_DEFAULT = 200;
 interface TelegramState {
   client: unknown | null;
   channels: TelegramChannelConfig[];
+  channelSet: string | null;
   cursorByHandle: Record<string, number>;
   items: TelegramSignalItem[];
   lastPollAt: number;
   lastError: string | null;
   permanentlyDisabled: boolean;
+  credentialsFingerprint: string | null;
 }
 
 interface OrefState {
@@ -85,11 +92,13 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   private telegramState: TelegramState = {
     client: null,
     channels: [],
+    channelSet: null,
     cursorByHandle: {},
     items: [],
     lastPollAt: 0,
     lastError: null,
     permanentlyDisabled: false,
+    credentialsFingerprint: null,
   };
 
   private orefState: OrefState = {
@@ -118,6 +127,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     private readonly cache: CacheService,
     private readonly dispatcher: SituationMonitorSignalsDispatcher,
     private readonly alerts: AlertsService,
+    private readonly settings: SituationMonitorSettingsService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -142,14 +152,15 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     channel?: string;
   }): Promise<SituationTelegramFeedResponse> {
     await this.restoreCachedTelegramState();
+    const runtime = await this.getTelegramRuntimeConfig();
 
     const topic = options?.topic?.trim().toLowerCase();
     const channel = options?.channel?.trim().toLowerCase();
     const limitRaw = Number(options?.limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
 
-    const configured = this.isTelegramConfigured();
-    const enabled = this.isTelegramEnabled();
+    const configured = Boolean(runtime.apiId && runtime.apiHash && runtime.session);
+    const enabled = runtime.enabled;
 
     const filtered = this.telegramState.items
       .filter((item) => {
@@ -204,7 +215,8 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }
 
   private async guardedTelegramPoll() {
-    const cycleTimeoutMs = this.getTelegramPollCycleTimeoutMs();
+    const runtime = await this.getTelegramRuntimeConfig();
+    const cycleTimeoutMs = runtime.pollCycleTimeoutMs;
     if (this.telegramPollInFlight) {
       const stuckForMs = Date.now() - this.telegramPollStartedAt;
       if (stuckForMs <= cycleTimeoutMs + 30_000) {
@@ -226,12 +238,14 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }
 
   private async pollTelegramOnce() {
-    if (!this.isTelegramEnabled()) {
+    const runtime = await this.getTelegramRuntimeConfig();
+
+    if (!runtime.enabled) {
       this.telegramState.lastError = 'Telegram polling is disabled';
       return;
     }
 
-    if (!this.isTelegramConfigured()) {
+    if (!runtime.apiId || !runtime.apiHash || !runtime.session) {
       this.telegramState.lastError = 'Telegram credentials are not configured';
       return;
     }
@@ -240,7 +254,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       return;
     }
 
-    const startupDelayMs = this.getTelegramStartupDelayMs();
+    const startupDelayMs = runtime.startupDelayMs;
     if (startupDelayMs > 0 && this.telegramState.lastPollAt === 0) {
       // Delay is measured from service startup, not from per-cycle poll timestamps.
       const sinceServiceStartMs = Date.now() - this.serviceStartedAt;
@@ -249,12 +263,15 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       }
     }
 
-    const ok = await this.initTelegramClientIfNeeded();
+    const ok = await this.initTelegramClientIfNeeded(runtime);
     if (!ok) {
       return;
     }
 
-    const channels = this.telegramState.channels.length > 0 ? this.telegramState.channels : this.loadTelegramChannels();
+    const channels =
+      this.telegramState.channels.length > 0 && this.telegramState.channelSet === runtime.channelSet
+        ? this.telegramState.channels
+        : this.loadTelegramChannels(runtime.channelSet);
     if (channels.length === 0) {
       this.telegramState.lastError = 'No Telegram channels configured';
       return;
@@ -269,10 +286,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     };
 
     const pollStartAt = Date.now();
-    const maxFeedItems = this.getTelegramMaxFeedItems();
-    const cycleTimeoutMs = this.getTelegramPollCycleTimeoutMs();
-    const perChannelTimeoutMs = this.getTelegramChannelTimeoutMs();
-    const perChannelDelayMs = this.getTelegramRateLimitMs();
+    const maxFeedItems = runtime.maxFeedItems;
+    const cycleTimeoutMs = runtime.pollCycleTimeoutMs;
+    const perChannelTimeoutMs = runtime.channelTimeoutMs;
+    const perChannelDelayMs = runtime.rateLimitMs;
 
     let channelsPolled = 0;
     let channelsFailed = 0;
@@ -320,7 +337,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
             continue;
           }
 
-          const item = this.normalizeTelegramMessage(message, channel, handle);
+          const item = this.normalizeTelegramMessage(
+            message,
+            channel,
+            handle,
+            runtime.maxTextChars,
+          );
           newItems.push(item);
 
           const currentCursor = this.telegramState.cursorByHandle[handle] ?? 0;
@@ -471,20 +493,46 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
   }
 
-  private async initTelegramClientIfNeeded(): Promise<boolean> {
-    if (this.telegramState.client) {
+  private async initTelegramClientIfNeeded(
+    runtime: SituationMonitorTelegramRuntimeConfig,
+  ): Promise<boolean> {
+    const apiId = Number(runtime.apiId);
+    const apiHash = runtime.apiHash;
+    const session = runtime.session;
+    if (!Number.isFinite(apiId) || !apiHash || !session) {
+      this.telegramState.lastError = 'Telegram credentials are incomplete';
+      return false;
+    }
+
+    const credentialsFingerprint = this.computeTelegramCredentialsFingerprint(
+      apiId,
+      apiHash,
+      session,
+    );
+    if (
+      this.telegramState.client &&
+      this.telegramState.credentialsFingerprint === credentialsFingerprint
+    ) {
       return true;
     }
 
+    if (
+      this.telegramState.client &&
+      this.telegramState.credentialsFingerprint !== credentialsFingerprint
+    ) {
+      await this.disconnectTelegramClient();
+      this.telegramState.permanentlyDisabled = false;
+    }
+
     try {
-      const telegramModule = (await import('telegram')) as {
+      const telegramModule = (await import('telegram')) as unknown as {
         TelegramClient: new (
           session: unknown,
           apiId: number,
           apiHash: string,
           options: { connectionRetries: number },
         ) => {
-          connect: () => Promise<void>;
+          connect: () => Promise<unknown>;
           disconnect: () => Promise<void>;
           getEntity: (input: string) => Promise<unknown>;
           getMessages: (
@@ -493,17 +541,9 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           ) => Promise<Record<string, unknown>[]>;
         };
       };
-      const sessionsModule = (await import('telegram/sessions')) as {
+      const sessionsModule = (await import('telegram/sessions')) as unknown as {
         StringSession: new (session: string) => unknown;
       };
-
-      const apiId = Number(this.getTelegramApiId());
-      const apiHash = this.getTelegramApiHash();
-      const session = this.getTelegramSession();
-      if (!Number.isFinite(apiId) || !apiHash || !session) {
-        this.telegramState.lastError = 'Telegram credentials are incomplete';
-        return false;
-      }
 
       const client = new telegramModule.TelegramClient(
         new sessionsModule.StringSession(session),
@@ -514,6 +554,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
       await client.connect();
       this.telegramState.client = client;
+      this.telegramState.credentialsFingerprint = credentialsFingerprint;
       this.telegramState.lastError = null;
       return true;
     } catch (error) {
@@ -540,10 +581,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       // best-effort
     }
     this.telegramState.client = null;
+    this.telegramState.credentialsFingerprint = null;
   }
 
-  private loadTelegramChannels(): TelegramChannelConfig[] {
-    const setName = this.getTelegramChannelSet();
+  private loadTelegramChannels(setName: string): TelegramChannelConfig[] {
     const channelsRecord =
       telegramChannelsConfig && typeof telegramChannelsConfig === 'object'
         ? (telegramChannelsConfig as { channels?: Record<string, unknown> }).channels
@@ -577,6 +618,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       })
       .filter((entry): entry is TelegramChannelConfig => Boolean(entry));
 
+    this.telegramState.channelSet = setName;
     return this.telegramState.channels;
   }
 
@@ -584,9 +626,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     message: Record<string, unknown>,
     channel: TelegramChannelConfig,
     handle: string,
+    maxTextChars: number,
   ): TelegramSignalItem {
     const textRaw = typeof message.message === 'string' ? message.message : '';
-    const text = textRaw.slice(0, this.getTelegramMaxTextChars());
+    const text = textRaw.slice(0, maxTextChars);
     const messageId = Number(message.id);
     const messageDate = Number(message.date);
 
@@ -1101,53 +1144,49 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     return String(error);
   }
 
-  private isTelegramEnabled(): boolean {
-    const value = this.readBooleanEnv('SITUATION_MONITOR_TELEGRAM_ENABLED', 'TELEGRAM_ENABLED');
-    return value ?? false;
+  private async getTelegramRuntimeConfig(): Promise<SituationMonitorTelegramRuntimeConfig> {
+    try {
+      return await this.settings.getTelegramRuntimeConfig();
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read telegram runtime config from system settings; using env fallback');
+      return {
+        enabled:
+          this.readBooleanEnv('SITUATION_MONITOR_TELEGRAM_ENABLED', 'TELEGRAM_ENABLED') ?? false,
+        apiId: this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_ID', 'TELEGRAM_API_ID') || undefined,
+        apiHash:
+          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_HASH', 'TELEGRAM_API_HASH') || undefined,
+        session:
+          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_SESSION', 'TELEGRAM_SESSION') || undefined,
+        channelSet:
+          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_CHANNEL_SET', 'TELEGRAM_CHANNEL_SET') ||
+          'full',
+        maxFeedItems: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS', 200, 50),
+        maxTextChars: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS', 800, 200),
+        channelTimeoutMs: this.readNumberEnv(
+          'SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS',
+          15_000,
+          3_000,
+        ),
+        pollCycleTimeoutMs: this.readNumberEnv(
+          'SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS',
+          180_000,
+          30_000,
+        ),
+        startupDelayMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS', 60_000, 0),
+        rateLimitMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS', 800, 100),
+        pollIntervalMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS', 60_000, 15_000),
+      };
+    }
   }
 
-  private isTelegramConfigured(): boolean {
-    return Boolean(this.getTelegramApiId() && this.getTelegramApiHash() && this.getTelegramSession());
-  }
-
-  private getTelegramApiId(): string {
-    return this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_ID', 'TELEGRAM_API_ID');
-  }
-
-  private getTelegramApiHash(): string {
-    return this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_HASH', 'TELEGRAM_API_HASH');
-  }
-
-  private getTelegramSession(): string {
-    return this.readStringEnv('SITUATION_MONITOR_TELEGRAM_SESSION', 'TELEGRAM_SESSION');
-  }
-
-  private getTelegramChannelSet(): string {
-    return this.readStringEnv('SITUATION_MONITOR_TELEGRAM_CHANNEL_SET', 'TELEGRAM_CHANNEL_SET') || 'full';
-  }
-
-  private getTelegramMaxFeedItems(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS', 200, 50);
-  }
-
-  private getTelegramMaxTextChars(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS', 800, 200);
-  }
-
-  private getTelegramChannelTimeoutMs(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS', 15_000, 3_000);
-  }
-
-  private getTelegramPollCycleTimeoutMs(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS', 180_000, 30_000);
-  }
-
-  private getTelegramStartupDelayMs(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS', 60_000, 0);
-  }
-
-  private getTelegramRateLimitMs(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS', 800, 100);
+  private computeTelegramCredentialsFingerprint(
+    apiId: number,
+    apiHash: string,
+    session: string,
+  ): string {
+    return createHash('sha256')
+      .update(`${apiId}|${apiHash}|${session}`)
+      .digest('hex');
   }
 
   private isOrefEnabled(): boolean {

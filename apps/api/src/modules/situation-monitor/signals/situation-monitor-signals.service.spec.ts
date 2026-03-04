@@ -10,6 +10,22 @@ describe('SituationMonitorSignalsService', () => {
     const cache = { get: jest.fn(), set: jest.fn() } as any;
     const dispatcher = { publish: jest.fn() } as any;
     const alerts = { enqueueRuleCheck: jest.fn() } as any;
+    const settings = {
+      getTelegramRuntimeConfig: jest.fn().mockResolvedValue({
+        enabled: true,
+        apiId: '123456',
+        apiHash: 'hash',
+        session: 'session',
+        channelSet: 'full',
+        maxFeedItems: 200,
+        maxTextChars: 800,
+        channelTimeoutMs: 15_000,
+        pollCycleTimeoutMs: 30_000,
+        startupDelayMs: 60_000,
+        rateLimitMs: 800,
+        pollIntervalMs: 60_000,
+      }),
+    } as any;
     const prisma = {
       org: { findMany: jest.fn() },
       alertRule: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
@@ -20,6 +36,7 @@ describe('SituationMonitorSignalsService', () => {
       cache,
       dispatcher,
       alerts,
+      settings,
       prisma,
     );
 
@@ -32,10 +49,20 @@ describe('SituationMonitorSignalsService', () => {
     (service as any).serviceStartedAt = Date.now() - 120_000;
     (service as any).telegramState.lastPollAt = 0;
 
-    jest.spyOn(service as any, 'isTelegramEnabled').mockReturnValue(true);
-    jest.spyOn(service as any, 'isTelegramConfigured').mockReturnValue(true);
-    jest.spyOn(service as any, 'getTelegramStartupDelayMs').mockReturnValue(60_000);
-    jest.spyOn(service as any, 'getTelegramPollCycleTimeoutMs').mockReturnValue(30_000);
+    jest.spyOn(service as any, 'getTelegramRuntimeConfig').mockResolvedValue({
+      enabled: true,
+      apiId: '123456',
+      apiHash: 'hash',
+      session: 'session',
+      channelSet: 'full',
+      maxFeedItems: 200,
+      maxTextChars: 800,
+      channelTimeoutMs: 15_000,
+      pollCycleTimeoutMs: 30_000,
+      startupDelayMs: 60_000,
+      rateLimitMs: 800,
+      pollIntervalMs: 60_000,
+    });
     const initTelegramClientSpy = jest
       .spyOn(service as any, 'initTelegramClientIfNeeded')
       .mockResolvedValue(false);
@@ -51,9 +78,20 @@ describe('SituationMonitorSignalsService', () => {
     (service as any).serviceStartedAt = Date.now() - 120_000;
     (service as any).telegramState.lastPollAt = 0;
 
-    jest.spyOn(service as any, 'isTelegramEnabled').mockReturnValue(true);
-    jest.spyOn(service as any, 'isTelegramConfigured').mockReturnValue(true);
-    jest.spyOn(service as any, 'getTelegramStartupDelayMs').mockReturnValue(60_000);
+    jest.spyOn(service as any, 'getTelegramRuntimeConfig').mockResolvedValue({
+      enabled: true,
+      apiId: '123456',
+      apiHash: 'hash',
+      session: 'session',
+      channelSet: 'full',
+      maxFeedItems: 200,
+      maxTextChars: 800,
+      channelTimeoutMs: 15_000,
+      pollCycleTimeoutMs: 30_000,
+      startupDelayMs: 60_000,
+      rateLimitMs: 800,
+      pollIntervalMs: 60_000,
+    });
     const initTelegramClientSpy = jest
       .spyOn(service as any, 'initTelegramClientIfNeeded')
       .mockResolvedValue(false);
