@@ -7,6 +7,7 @@ import { StringSession } from "telegram/sessions";
 import { CacheService } from "../cache/cache.service";
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
+import { SituationMonitorSettingsService } from "./situation-monitor-settings.service";
 
 interface PendingTelegramAuthRequest {
   requestId: string;
@@ -21,8 +22,8 @@ interface PendingTelegramAuthRequest {
 }
 
 interface StartTelegramAuthInput {
-  telegramApiId: string;
-  telegramApiHash: string;
+  telegramApiId?: string;
+  telegramApiHash?: string;
   phoneNumber: string;
 }
 
@@ -56,7 +57,8 @@ export class SituationMonitorTelegramAuthService {
 
   constructor(
     private readonly cache: CacheService,
-    private readonly rateLimiter: RateLimiterService
+    private readonly rateLimiter: RateLimiterService,
+    private readonly settings: SituationMonitorSettingsService
   ) {}
 
   async startAuth(
@@ -65,9 +67,10 @@ export class SituationMonitorTelegramAuthService {
     input: StartTelegramAuthInput,
     context?: StartAuthContext
   ): Promise<{ requestId: string; isCodeViaApp: boolean; expiresAt: string }> {
-    const telegramApiId = this.normalizeApiId(input.telegramApiId);
+    const credentials = await this.resolveStartCredentials(input);
+    const telegramApiId = credentials.telegramApiId;
+    const telegramApiHash = credentials.telegramApiHash;
     const apiId = Number(telegramApiId);
-    const telegramApiHash = this.requireValue(input.telegramApiHash, "telegramApiHash");
     const phoneNumber = this.normalizePhoneNumber(input.phoneNumber);
     await this.enforceStartAuthRateLimit(orgId, actorId, phoneNumber, context?.clientIp);
 
@@ -198,8 +201,29 @@ export class SituationMonitorTelegramAuthService {
     return `${AUTH_CACHE_KEY_PREFIX}:${requestId}`;
   }
 
-  private normalizeApiId(value: string): string {
-    const normalized = this.requireValue(value, "telegramApiId");
+  private async resolveStartCredentials(
+    input: StartTelegramAuthInput
+  ): Promise<{ telegramApiId: string; telegramApiHash: string }> {
+    const runtime = await this.settings.getTelegramRuntimeConfig();
+    const inputApiId = this.normalizeApiIdIfProvided(input.telegramApiId);
+    const inputApiHash = this.normalizeString(input.telegramApiHash);
+    const storedApiId = this.normalizeApiIdIfProvided(runtime.apiId);
+    const storedApiHash = this.normalizeString(runtime.apiHash);
+    const telegramApiId = inputApiId ?? storedApiId;
+    const telegramApiHash = inputApiHash ?? storedApiHash;
+
+    if (!telegramApiId || !telegramApiHash) {
+      throw this.badRequest("TELEGRAM_AUTH_API_CREDENTIALS_REQUIRED");
+    }
+
+    return { telegramApiId, telegramApiHash };
+  }
+
+  private normalizeApiIdIfProvided(value: unknown): string | undefined {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return undefined;
+    }
     if (!/^\d+$/.test(normalized)) {
       throw this.badRequest("TELEGRAM_AUTH_API_ID_INVALID");
     }

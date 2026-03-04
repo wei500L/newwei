@@ -81,7 +81,6 @@ interface SituationMonitorSettingsFormValues {
   telegramEnabled: boolean;
   telegramApiId?: string;
   telegramApiHash?: string;
-  telegramSession?: string;
   telegramChannelSet?: string;
   telegramMaxFeedItems: number;
   telegramMaxTextChars: number;
@@ -113,6 +112,8 @@ const TELEGRAM_AUTH_ERROR_CODE_I18N_KEY: Record<string, string> = {
   TELEGRAM_AUTH_PHONE_BANNED: "systemSettings.situationMonitor.errors.telegramPhoneBanned",
   TELEGRAM_AUTH_PHONE_UNOCCUPIED: "systemSettings.situationMonitor.errors.telegramPhoneUnoccupied",
   TELEGRAM_AUTH_API_ID_INVALID: "systemSettings.situationMonitor.errors.telegramApiIdInvalid",
+  TELEGRAM_AUTH_API_CREDENTIALS_REQUIRED:
+    "systemSettings.situationMonitor.errors.telegramApiCredentialsRequired",
   TELEGRAM_AUTH_RESTART_REQUIRED: "systemSettings.situationMonitor.errors.telegramAuthRestartRequired",
   TELEGRAM_AUTH_SIGNUP_REQUIRED: "systemSettings.situationMonitor.errors.telegramAuthSignupRequired",
   TELEGRAM_AUTH_FAILED: "systemSettings.situationMonitor.errors.telegramAuthFailed",
@@ -192,7 +193,6 @@ function toFormValues(settings: SituationMonitorSettingsResponse): SituationMoni
     telegramEnabled: settings.telegramEnabled,
     telegramApiId: settings.telegramApiId ?? "",
     telegramApiHash: "",
-    telegramSession: "",
     telegramChannelSet: settings.telegramChannelSet,
     telegramMaxFeedItems: settings.telegramMaxFeedItems,
     telegramMaxTextChars: settings.telegramMaxTextChars,
@@ -277,7 +277,6 @@ export function SituationMonitorSettingsPanel() {
         translationApiTimeoutMs: values.translationApiTimeoutMs,
         translationApiMaxRetries: values.translationApiMaxRetries,
         telegramEnabled: values.telegramEnabled,
-        telegramApiId: values.telegramApiId?.trim() ? values.telegramApiId.trim() : null,
         telegramChannelSet: values.telegramChannelSet?.trim() ? values.telegramChannelSet.trim() : "full",
         telegramMaxFeedItems: values.telegramMaxFeedItems,
         telegramMaxTextChars: values.telegramMaxTextChars,
@@ -361,24 +360,30 @@ export function SituationMonitorSettingsPanel() {
   const handleTelegramStartAuth = async () => {
     const apiId = form.getFieldValue("telegramApiId")?.trim();
     const apiHash = form.getFieldValue("telegramApiHash")?.trim();
-    if (!apiId || !apiHash) {
-      messageApi.error(t("systemSettings.situationMonitor.errors.telegramApiCredentialsRequired"));
-      return;
-    }
     if (!telegramPhoneNumber.trim()) {
       messageApi.error(t("systemSettings.situationMonitor.errors.telegramPhoneRequired"));
       return;
+    }
+
+    const startPayload: {
+      phoneNumber: string;
+      telegramApiId?: string;
+      telegramApiHash?: string;
+    } = {
+      phoneNumber: telegramPhoneNumber.trim(),
+    };
+    if (apiId) {
+      startPayload.telegramApiId = apiId;
+    }
+    if (apiHash) {
+      startPayload.telegramApiHash = apiHash;
     }
 
     setTelegramAuthStarting(true);
     try {
       const response = await apiClient.post<StartTelegramAuthResponse>(
         "system-settings/situation-monitor/telegram-auth/start",
-        {
-          telegramApiId: apiId,
-          telegramApiHash: apiHash,
-          phoneNumber: telegramPhoneNumber.trim(),
-        }
+        startPayload
       );
 
       const data = response.data;
@@ -719,30 +724,6 @@ export function SituationMonitorSettingsPanel() {
         </Form.Item>
 
         <Form.Item
-          label={t("systemSettings.situationMonitor.fields.telegramApiId")}
-          name="telegramApiId"
-          extra={t("systemSettings.situationMonitor.hints.telegramApiId")}
-        >
-          <Input placeholder={t("systemSettings.situationMonitor.placeholders.telegramApiId")} />
-        </Form.Item>
-
-        <Form.Item
-          label={t("systemSettings.situationMonitor.fields.telegramApiHash")}
-          name="telegramApiHash"
-          extra={t("systemSettings.situationMonitor.hints.telegramApiHash")}
-        >
-          <Input.Password placeholder={t("systemSettings.situationMonitor.placeholders.telegramApiHash")} />
-        </Form.Item>
-
-        <Form.Item
-          label={t("systemSettings.situationMonitor.fields.telegramSession")}
-          name="telegramSession"
-          extra={t("systemSettings.situationMonitor.hints.telegramSession")}
-        >
-          <Input.Password placeholder={t("systemSettings.situationMonitor.placeholders.telegramSession")} />
-        </Form.Item>
-
-        <Form.Item
           label={t("systemSettings.situationMonitor.fields.telegramChannelSet")}
           name="telegramChannelSet"
           extra={t("systemSettings.situationMonitor.hints.telegramChannelSet")}
@@ -826,6 +807,22 @@ export function SituationMonitorSettingsPanel() {
         <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
           {t("systemSettings.situationMonitor.sections.telegramAuth")}
         </Typography.Title>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.telegramApiId")}
+          name="telegramApiId"
+          extra={t("systemSettings.situationMonitor.hints.telegramApiId")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.telegramApiId")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.telegramApiHash")}
+          name="telegramApiHash"
+          extra={t("systemSettings.situationMonitor.hints.telegramApiHash")}
+        >
+          <Input.Password placeholder={t("systemSettings.situationMonitor.placeholders.telegramApiHash")} />
+        </Form.Item>
 
         <Form.Item
           label={t("systemSettings.situationMonitor.fields.telegramPhoneNumber")}

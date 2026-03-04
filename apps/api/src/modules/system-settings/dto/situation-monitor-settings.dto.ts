@@ -52,18 +52,6 @@ export class UpdateSituationMonitorSettingsDto {
 
   @IsOptional()
   @IsString()
-  telegramApiId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  telegramApiHash?: string | null;
-
-  @IsOptional()
-  @IsString()
-  telegramSession?: string | null;
-
-  @IsOptional()
-  @IsString()
   telegramChannelSet?: string | null;
 
   @IsOptional()

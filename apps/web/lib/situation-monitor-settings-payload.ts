@@ -2,8 +2,6 @@ export const SITUATION_MONITOR_SECRET_FIELD_NAMES = [
   "translationApiKey",
   "finnhubApiKey",
   "fredApiKey",
-  "telegramApiHash",
-  "telegramSession",
 ] as const;
 
 export type SituationMonitorSecretFieldName =
