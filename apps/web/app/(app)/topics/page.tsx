@@ -64,6 +64,7 @@ const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
+type TopicsPageSearchParams = Record<string, string | string[] | undefined>;
 
 const parsePositiveInt = (value: string | string[] | undefined, fallback: number) => {
   if (!value || Array.isArray(value)) {
@@ -79,15 +80,20 @@ const parsePositiveInt = (value: string | string[] | undefined, fallback: number
 export default async function TopicsPage({
   searchParams
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<TopicsPageSearchParams>;
 }) {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  const windowDays = parsePositiveInt(searchParams?.window, DEFAULT_WINDOW_DAYS);
-  const minGroupSize = parsePositiveInt(searchParams?.minGroup, DEFAULT_EVENT_MIN_GROUP_SIZE);
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+
+  const windowDays = parsePositiveInt(resolvedSearchParams?.window, DEFAULT_WINDOW_DAYS);
+  const minGroupSize = parsePositiveInt(
+    resolvedSearchParams?.minGroup,
+    DEFAULT_EVENT_MIN_GROUP_SIZE,
+  );
 
   const initialData = await fetchGraphql<{
     topicGroups: TopicGroup[];

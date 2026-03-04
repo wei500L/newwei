@@ -22,14 +22,14 @@ export {
 } from "@modular/utils";
 
 export const WAR_MAP_PRESET_VIEW_STATE: Record<WarMapPreset, WarMapViewState> = {
-  global: { lat: 20, lon: 0, zoom: 1.8, bearing: 0, pitch: 30 },
-  america: { lat: 38, lon: -95, zoom: 2.8, bearing: 0, pitch: 35 },
-  mena: { lat: 28, lon: 45, zoom: 3.2, bearing: 0, pitch: 35 },
-  eu: { lat: 50, lon: 15, zoom: 3.2, bearing: 0, pitch: 35 },
-  asia: { lat: 35, lon: 105, zoom: 2.9, bearing: 0, pitch: 35 },
-  latam: { lat: -15, lon: -60, zoom: 2.9, bearing: 0, pitch: 35 },
-  africa: { lat: 5, lon: 20, zoom: 3.1, bearing: 0, pitch: 35 },
-  oceania: { lat: -25, lon: 135, zoom: 3.2, bearing: 0, pitch: 35 },
+  global: { lat: 20, lon: 0, zoom: 1.8, bearing: 0, pitch: 0 },
+  america: { lat: 38, lon: -95, zoom: 2.8, bearing: 0, pitch: 0 },
+  mena: { lat: 28, lon: 45, zoom: 3.2, bearing: 0, pitch: 0 },
+  eu: { lat: 50, lon: 15, zoom: 3.2, bearing: 0, pitch: 0 },
+  asia: { lat: 35, lon: 105, zoom: 2.9, bearing: 0, pitch: 0 },
+  latam: { lat: -15, lon: -60, zoom: 2.9, bearing: 0, pitch: 0 },
+  africa: { lat: 5, lon: 20, zoom: 3.1, bearing: 0, pitch: 0 },
+  oceania: { lat: -25, lon: 135, zoom: 3.2, bearing: 0, pitch: 0 },
 };
 
 const DEFAULT_SETTINGS: WarMapSettings = {
@@ -86,14 +86,9 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
       typeof nextViewStateSource.zoom === "number"
         ? clamp(nextViewStateSource.zoom, 0.5, 18)
         : DEFAULT_SETTINGS.viewState.zoom,
-    bearing:
-      typeof nextViewStateSource.bearing === "number"
-        ? clamp(nextViewStateSource.bearing, -180, 180)
-        : DEFAULT_SETTINGS.viewState.bearing,
-    pitch:
-      typeof nextViewStateSource.pitch === "number"
-        ? clamp(nextViewStateSource.pitch, 0, 85)
-        : DEFAULT_SETTINGS.viewState.pitch,
+    // Force a flat camera when hydrating fallback state.
+    bearing: DEFAULT_SETTINGS.viewState.bearing,
+    pitch: DEFAULT_SETTINGS.viewState.pitch,
   };
 
   const presetCandidates = Object.keys(WAR_MAP_PRESET_VIEW_STATE) as WarMapPreset[];
@@ -167,14 +162,9 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
           typeof nextViewState.zoom === "number"
             ? clamp(nextViewState.zoom, 0.5, 18)
             : state.viewState.zoom,
-        bearing:
-          typeof nextViewState.bearing === "number"
-            ? clamp(nextViewState.bearing, -180, 180)
-            : state.viewState.bearing,
-        pitch:
-          typeof nextViewState.pitch === "number"
-            ? clamp(nextViewState.pitch, 0, 85)
-            : state.viewState.pitch,
+        // Keep the map in 2D regardless of incoming values.
+        bearing: 0,
+        pitch: 0,
       },
     })),
   setActivePreset: (preset) =>

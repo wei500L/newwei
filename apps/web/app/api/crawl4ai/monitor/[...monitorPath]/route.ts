@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
 
@@ -129,9 +129,15 @@ async function proxyMonitorRequest(request: Request, monitorPath: string) {
   }
 }
 
+interface MonitorRouteContext {
+  params: Promise<{
+    monitorPath: string[];
+  }>;
+}
+
 export async function GET(
-  request: Request,
-  context: { params: { monitorPath?: string[] } },
+  request: NextRequest,
+  context: MonitorRouteContext,
 ) {
   const session = await auth();
   if (!session) {
@@ -143,7 +149,8 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const monitorPath = normalizeMonitorPath(context.params.monitorPath);
+  const { monitorPath: monitorPathParts } = await context.params;
+  const monitorPath = normalizeMonitorPath(monitorPathParts);
   if (!monitorPath || !GET_ALLOWLIST.has(monitorPath)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
@@ -152,8 +159,8 @@ export async function GET(
 }
 
 export async function POST(
-  request: Request,
-  context: { params: { monitorPath?: string[] } },
+  request: NextRequest,
+  context: MonitorRouteContext,
 ) {
   const session = await auth();
   if (!session) {
@@ -165,7 +172,8 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const monitorPath = normalizeMonitorPath(context.params.monitorPath);
+  const { monitorPath: monitorPathParts } = await context.params;
+  const monitorPath = normalizeMonitorPath(monitorPathParts);
   if (!monitorPath || !POST_ALLOWLIST.has(monitorPath)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

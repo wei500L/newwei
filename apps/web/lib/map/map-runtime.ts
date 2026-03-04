@@ -17,6 +17,7 @@ export interface DeckMapInitialViewState {
 export interface CreateDeckMapRuntimeOptions {
   container: HTMLElement;
   initialViewState: DeckMapInitialViewState;
+  force2D?: boolean;
   style?: string | StyleSpecification;
   fallbackStyle?: StyleSpecification;
   onMoveEnd?: (map: MapLibreMap) => void;
@@ -71,6 +72,7 @@ export function createDeckMapRuntime(
   const {
     container,
     initialViewState,
+    force2D = false,
     style = MAP_STYLE_URL,
     fallbackStyle = MAP_STYLE_FALLBACK,
     onMoveEnd,
@@ -83,11 +85,25 @@ export function createDeckMapRuntime(
     style,
     center: [initialViewState.lon, initialViewState.lat],
     zoom: initialViewState.zoom,
-    bearing: initialViewState.bearing ?? 0,
-    pitch: initialViewState.pitch ?? 0,
+    bearing: force2D ? 0 : initialViewState.bearing ?? 0,
+    pitch: force2D ? 0 : initialViewState.pitch ?? 0,
+    ...(force2D
+      ? {
+          minPitch: 0,
+          maxPitch: 0,
+          dragRotate: false,
+          touchPitch: false,
+          pitchWithRotate: false,
+        }
+      : {}),
     renderWorldCopies: false,
     attributionControl: false,
   });
+  if (force2D) {
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    map.touchPitch.disable();
+  }
 
   const useDevicePixels =
     typeof window !== "undefined" && window.devicePixelRatio > 2 ? 2 : true;
@@ -140,6 +156,10 @@ export function createDeckMapRuntime(
       setProjection?: (projection: { type: "mercator" | "globe" }) => void;
     };
     projectionAwareMap.setProjection?.({ type: "mercator" });
+    if (force2D) {
+      map.setBearing(0);
+      map.setPitch(0);
+    }
     onMapReady?.(map);
   };
 

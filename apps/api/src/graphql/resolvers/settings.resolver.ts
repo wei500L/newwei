@@ -187,8 +187,6 @@ export class SettingsResolver {
     const settingsInput: KnowledgeGraphSettingsInput = {
       enabled: input.enabled,
       ingestionEnabled: input.ingestionEnabled,
-      seedIngestionEnabled: input.seedIngestionEnabled,
-      seedSwIndustriesPerRun: input.seedSwIndustriesPerRun,
       maxBatchSize: input.maxBatchSize,
       maxRelationsPerArticle: input.maxRelationsPerArticle,
       minEdgeConfidence: input.minEdgeConfidence ?? current.minEdgeConfidence,

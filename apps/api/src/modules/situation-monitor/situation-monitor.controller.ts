@@ -4,6 +4,10 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
+import {
+  isSituationMonitorLiveHlsProxyChannel,
+  SituationMonitorSettingsService,
+} from "../system-settings/situation-monitor-settings.service";
 
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
@@ -125,6 +129,7 @@ export class SituationMonitorController {
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly translator: SituationMonitorTranslationService,
     private readonly signals: SituationMonitorSignalsService,
+    private readonly settings: SituationMonitorSettingsService,
   ) {}
 
   @Get("insights")
@@ -213,5 +218,25 @@ export class SituationMonitorController {
   async orefHistory(@CurrentUser() user: AuthenticatedUser) {
     void user;
     return await this.signals.getOrefHistory();
+  }
+
+  @Get("live-hls-proxy-config")
+  @Permissions("items.read")
+  async liveHlsProxyConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("channel") channel: string,
+  ) {
+    void user;
+    const normalized = channel?.trim().toLowerCase();
+    if (!normalized || !isSituationMonitorLiveHlsProxyChannel(normalized)) {
+      return {
+        channel: normalized ?? "",
+        configured: false,
+        upstreamUrl: null,
+        referer: null,
+        allowedHosts: [],
+      };
+    }
+    return this.settings.getLiveHlsProxyRuntimeConfig(normalized);
   }
 }

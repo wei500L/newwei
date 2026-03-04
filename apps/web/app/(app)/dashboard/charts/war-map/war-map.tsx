@@ -2,7 +2,7 @@
 
 import { SettingOutlined } from '@ant-design/icons';
 import { PathLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { MapboxOverlay } from '@deck.gl/mapbox';
+import type { MapboxOverlay } from '@deck.gl/mapbox';
 import {
   type WarMapLayerDataset,
   type WarMapLayerFeature,
@@ -430,6 +430,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     const runtime = createDeckMapRuntime({
       container: mapContainerRef.current,
       initialViewState,
+      force2D: true,
       style: MAP_STYLE_URL,
       fallbackStyle: MAP_STYLE_FALLBACK,
       onMoveEnd: syncFromMap,

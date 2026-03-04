@@ -58,7 +58,7 @@ const NEWS_EVENTS_QUERY = `
 const DEFAULT_LIMIT = 30;
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_SORT_BY = "latest";
-const DEFAULT_SOURCE_TYPE = "all";
+type EventsPageSearchParams = Record<string, string | string[] | undefined>;
 
 const parseNonNegativeFloat = (value: string | string[] | undefined, fallback: number) => {
   if (!value || Array.isArray(value)) {
@@ -85,23 +85,27 @@ const parsePositiveInt = (value: string | string[] | undefined, fallback: number
 export default async function EventsPage({
   searchParams
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<EventsPageSearchParams>;
 }) {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  const windowDays = parsePositiveInt(searchParams?.window, DEFAULT_WINDOW_DAYS);
-  const limit = parsePositiveInt(searchParams?.limit, DEFAULT_LIMIT);
-  const status = typeof searchParams?.status === "string" ? searchParams?.status : undefined;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+
+  const windowDays = parsePositiveInt(resolvedSearchParams?.window, DEFAULT_WINDOW_DAYS);
+  const limit = parsePositiveInt(resolvedSearchParams?.limit, DEFAULT_LIMIT);
+  const status = typeof resolvedSearchParams?.status === "string" ? resolvedSearchParams.status : undefined;
   const entity =
-    typeof searchParams?.entity === "string" ? searchParams.entity.trim().slice(0, 120) : undefined;
-  const sortBy = typeof searchParams?.sort === "string" ? searchParams.sort : undefined;
+    typeof resolvedSearchParams?.entity === "string"
+      ? resolvedSearchParams.entity.trim().slice(0, 120)
+      : undefined;
+  const sortBy = typeof resolvedSearchParams?.sort === "string" ? resolvedSearchParams.sort : undefined;
   const sourceType =
-    typeof searchParams?.sourceType === "string" ? searchParams.sourceType : undefined;
-  const minHeatScore = parseNonNegativeFloat(searchParams?.minHeat, 0);
-  const minCredibilityScore = parseNonNegativeFloat(searchParams?.minCredibility, 0);
+    typeof resolvedSearchParams?.sourceType === "string" ? resolvedSearchParams.sourceType : undefined;
+  const minHeatScore = parseNonNegativeFloat(resolvedSearchParams?.minHeat, 0);
+  const minCredibilityScore = parseNonNegativeFloat(resolvedSearchParams?.minCredibility, 0);
 
   const initialData = await fetchGraphql<{
     newsEvents: NewsEventListItem[];

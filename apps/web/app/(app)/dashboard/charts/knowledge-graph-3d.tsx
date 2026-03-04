@@ -25,6 +25,7 @@ const NODE_TYPE_CONFIG: Record<string, { color: string; index: number }> = {
 };
 
 const DEFAULT_NODE_TYPE = { color: "#94a3b8", index: 7 };
+const LAST_ENTITY_STORAGE_KEY = "dashboard.knowledgeGraph.lastEntity";
 
 const getNodeTypeConfig = (type: string) => {
   const normalized = type.trim().toLowerCase();
@@ -81,28 +82,45 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
   });
 
   const settings = settingsData?.knowledgeGraphSettings;
-  const enabled = settings?.enabled ?? false;
+  const isDisabledByAdmin = settings?.enabled === false;
 
   useEffect(() => {
     const normalized = (defaultSeed ?? "").trim();
-    if (!normalized) {
+    if (normalized) {
+      if (!seedName) {
+        setSeedDraft(normalized);
+        setSeedName(normalized);
+      }
       return;
     }
-    if (seedName) {
+    if (seedName || !authenticated || !canReadDashboards) {
       return;
     }
-    setSeedDraft(normalized);
-    setSeedName(normalized);
-  }, [defaultSeed, seedName]);
+    try {
+      const saved = window.localStorage.getItem(LAST_ENTITY_STORAGE_KEY)?.trim();
+      if (!saved) {
+        return;
+      }
+      setSeedDraft(saved);
+      setSeedName(saved);
+    } catch {
+      // ignore storage failures
+    }
+  }, [authenticated, canReadDashboards, defaultSeed, seedName]);
 
   const handleSearch = useCallback(
     (value?: string) => {
       const next = (value ?? seedDraft).trim();
       if (!next) {
-        messageApi.warning(t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter a seed entity" }));
+        messageApi.warning(t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter an entity name" }));
         return;
       }
       setSeedName(next);
+      try {
+        window.localStorage.setItem(LAST_ENTITY_STORAGE_KEY, next);
+      } catch {
+        // ignore storage failures
+      }
     },
     [messageApi, seedDraft, t]
   );
@@ -116,7 +134,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       }
     },
     fetchPolicy: "cache-first",
-    skip: !authenticated || !canReadDashboards || !enabled || !seedName
+    skip: !authenticated || !canReadDashboards || isDisabledByAdmin || !seedName
   });
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
@@ -483,7 +501,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     );
   }
 
-  if (enabled === false) {
+  if (isDisabledByAdmin) {
     return (
       <div className="h-[420px]">
         <ChartEmptyState
@@ -504,7 +522,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
             value={seedDraft}
             onChange={(evt) => setSeedDraft(evt.target.value)}
             onPressEnter={(event) => handleSearch(event.currentTarget.value)}
-            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
+            placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Entity name" })}
             allowClear
           />
           <Button
@@ -584,8 +602,10 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       {!seedName ? (
         <div className="h-[380px]">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No seed" })}
-            description={t("dashboard.charts.knowledgeGraphEmptyDescription", { defaultValue: "Enter a seed entity to explore" })}
+            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No data" })}
+            description={t("dashboard.charts.knowledgeGraphEmptyDescription", {
+              defaultValue: "Search an entity to load real graph data"
+            })}
           />
         </div>
       ) : loading ? (
@@ -608,7 +628,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         <div className="h-[380px]">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
-            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", { defaultValue: "No graph data found for this seed" })}
+            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", {
+              defaultValue: "No graph data found for this entity"
+            })}
           />
         </div>
       )}

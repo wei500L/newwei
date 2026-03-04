@@ -50,14 +50,11 @@ function ensureWorkspacePrismaClient() {
   const workspaceRoot = path.resolve(dbPackageDir, '../..');
 
   const workspacePrismaDir = path.resolve(workspaceRoot, 'node_modules/.prisma');
-  if (hasPrismaClient(workspacePrismaDir)) {
-    return;
-  }
-
   const candidatePrismaDirs = new Set<string>([
     path.resolve(dbPackageDir, 'node_modules/.prisma'),
     resolvePrismaDirNearClient(workspaceRoot),
-    path.resolve(workspaceRoot, 'node_modules/.pnpm/node_modules/.prisma')
+    path.resolve(workspaceRoot, 'node_modules/.pnpm/node_modules/.prisma'),
+    workspacePrismaDir
   ]);
 
   let sourcePrismaDir: string | undefined;
@@ -80,9 +77,14 @@ function ensureWorkspacePrismaClient() {
     );
   }
 
-  rmSync(workspacePrismaDir, { recursive: true, force: true });
-  mkdirSync(path.dirname(workspacePrismaDir), { recursive: true });
-  cpSync(sourcePrismaDir, workspacePrismaDir, { recursive: true, dereference: true });
+  if (sourcePrismaDir !== workspacePrismaDir) {
+    rmSync(workspacePrismaDir, { recursive: true, force: true });
+    mkdirSync(path.dirname(workspacePrismaDir), { recursive: true });
+    cpSync(sourcePrismaDir, workspacePrismaDir, {
+      recursive: true,
+      dereference: true
+    });
+  }
 
   if (!hasPrismaClient(workspacePrismaDir)) {
     throw new Error(

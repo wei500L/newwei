@@ -1,5 +1,5 @@
 const { spawnSync } = require('node:child_process');
-const { existsSync, readdirSync, readFileSync } = require('node:fs');
+const { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } = require('node:fs');
 const path = require('node:path');
 
 const formatCommand = (command, args) => [command, ...args].join(' ');
@@ -13,10 +13,31 @@ const summarizeCommand = (command, args) => {
 const nowIso = () => new Date().toISOString();
 const log = (message) => process.stdout.write(`${nowIso()} [docker-up] ${message}\n`);
 const logError = (message) => process.stderr.write(`${nowIso()} [docker-up] ${message}\n`);
+const resolveCommandForSpawn = (command, args) => {
+  if (process.platform !== 'win32' || command !== 'pnpm') {
+    return { command, args };
+  }
+
+  const npmExecPath = process.env.npm_execpath;
+  const npmExecBaseName = npmExecPath ? path.basename(npmExecPath) : '';
+  if (npmExecPath && /pnpm(?:\.c?js)?$/i.test(npmExecBaseName)) {
+    return {
+      command: process.execPath,
+      args: [npmExecPath, ...args]
+    };
+  }
+
+  const comspec = process.env.ComSpec || 'cmd.exe';
+  return {
+    command: comspec,
+    args: ['/d', '/s', '/c', 'pnpm', ...args]
+  };
+};
 
 const run = (command, args, cwd) => {
   const startedAt = Date.now();
-  const result = spawnSync(command, args, {
+  const resolved = resolveCommandForSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd,
     stdio: 'inherit',
     shell: false
@@ -35,7 +56,8 @@ const run = (command, args, cwd) => {
 
 const runCapture = (command, args, cwd) => {
   const startedAt = Date.now();
-  const result = spawnSync(command, args, {
+  const resolved = resolveCommandForSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     cwd,
     encoding: 'utf8',
     stdio: ['inherit', 'pipe', 'inherit'],
@@ -54,13 +76,17 @@ const runCapture = (command, args, cwd) => {
   return (result.stdout ?? "").toString();
 };
 
-const runWithStatusCapture = (command, args, cwd) =>
-  spawnSync(command, args, {
+const runWithStatusCapture = (command, args, cwd, options = {}) => {
+  const resolved = resolveCommandForSpawn(command, args);
+  return spawnSync(resolved.command, resolved.args, {
     cwd,
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: options.stdio ?? ['inherit', 'pipe', 'pipe'],
     encoding: 'utf8',
+    env: options.env,
+    timeout: options.timeout,
     shell: false
   });
+};
 
 const captureOutput = (result) =>
   `${(result.stdout ?? '').toString()}${(result.stderr ?? '').toString()}`;
@@ -370,42 +396,99 @@ const validateRedisAofForDockerUp = (composeBaseArgs, cwd) => {
 
 const ensurePnpmLockfileForDockerUp = (repoRoot) => {
   log('Validating pnpm lockfile consistency...');
-  const checkArgs = ['install', '--frozen-lockfile', '--lockfile-only', '--ignore-scripts'];
-  const checkResult = runWithStatusCapture('pnpm', checkArgs, repoRoot);
+  const pnpmEnv = {
+    ...process.env,
+    CI: process.env.CI ?? 'true'
+  };
+  const lockfileCheckWorkspaceDir = path.resolve(repoRoot, '.cache/docker-up/pnpm-lockfile-check');
+  const tempModulesDir = path.join(lockfileCheckWorkspaceDir, 'node_modules');
+  const tempVirtualStoreDir = path.join(lockfileCheckWorkspaceDir, '.pnpm');
+  const isolatedInstallArgs = [
+    '--modules-dir',
+    tempModulesDir,
+    '--virtual-store-dir',
+    tempVirtualStoreDir,
+    '--config.confirmModulesPurge=false'
+  ];
+  const checkArgs = [
+    'install',
+    '--frozen-lockfile',
+    '--lockfile-only',
+    '--ignore-scripts',
+    ...isolatedInstallArgs
+  ];
+  try {
+    rmSync(lockfileCheckWorkspaceDir, { recursive: true, force: true });
+    mkdirSync(lockfileCheckWorkspaceDir, { recursive: true });
+    log(`Using isolated pnpm workspace: ${lockfileCheckWorkspaceDir}`);
 
-  if (checkResult.error) {
-    logError(`Failed to execute command: ${summarizeCommand('pnpm', checkArgs)}`);
-    logError(`           ${checkResult.error.message}`);
-    process.exit(1);
-  }
+    const checkResult = runWithStatusCapture('pnpm', checkArgs, repoRoot, {
+      env: pnpmEnv,
+      timeout: 120_000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
 
-  if (checkResult.status === 0) return;
+    if (checkResult.error) {
+      if (checkResult.error.code === 'ETIMEDOUT') {
+        logError('pnpm lockfile preflight timed out after 120s (likely waiting on an interactive prompt or lock).');
+        logError(`           Try manually: ${summarizeCommand('pnpm', checkArgs)}`);
+      }
+      logError(`Failed to execute command: ${summarizeCommand('pnpm', checkArgs)}`);
+      logError(`           ${checkResult.error.message}`);
+      process.exit(1);
+    }
 
-  const isOutdatedLockfile = captureOutput(checkResult).includes('ERR_PNPM_OUTDATED_LOCKFILE');
-  if (!isOutdatedLockfile) {
+    if (checkResult.status === 0) {
+      log('pnpm lockfile consistency verified.');
+      return;
+    }
+
+    const isOutdatedLockfile = captureOutput(checkResult).includes('ERR_PNPM_OUTDATED_LOCKFILE');
+    if (!isOutdatedLockfile) {
+      printCapturedOutput(checkResult);
+      logError('pnpm lockfile preflight failed.');
+      process.exit(checkResult.status ?? 1);
+    }
+
     printCapturedOutput(checkResult);
-    logError('pnpm lockfile preflight failed.');
-    process.exit(checkResult.status ?? 1);
+    log('pnpm-lock.yaml is outdated; synchronizing lockfile...');
+    const syncArgs = [
+      'install',
+      '--lockfile-only',
+      '--ignore-scripts',
+      ...isolatedInstallArgs
+    ];
+    const syncResult = runWithStatusCapture('pnpm', syncArgs, repoRoot, {
+      env: pnpmEnv,
+      timeout: 120_000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    printCapturedOutput(syncResult);
+
+    if (syncResult.error) {
+      if (syncResult.error.code === 'ETIMEDOUT') {
+        logError('pnpm lockfile synchronization timed out after 120s (likely waiting on an interactive prompt or lock).');
+        logError(`           Try manually: ${summarizeCommand('pnpm', syncArgs)}`);
+      }
+      logError(`Failed to execute command: ${summarizeCommand('pnpm', syncArgs)}`);
+      logError(`           ${syncResult.error.message}`);
+      process.exit(1);
+    }
+
+    if (syncResult.status !== 0) {
+      logError('Unable to synchronize pnpm-lock.yaml automatically.');
+      process.exit(syncResult.status ?? 1);
+    }
+
+    log('pnpm-lock.yaml synchronized.');
+  } finally {
+    try {
+      rmSync(lockfileCheckWorkspaceDir, { recursive: true, force: true });
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'message' in error ? error.message : String(error);
+      logError(`Failed to clean isolated pnpm workspace: ${message}`);
+    }
   }
-
-  printCapturedOutput(checkResult);
-  log('pnpm-lock.yaml is outdated; synchronizing lockfile...');
-  const syncArgs = ['install', '--lockfile-only', '--ignore-scripts'];
-  const syncResult = runWithStatusCapture('pnpm', syncArgs, repoRoot);
-  printCapturedOutput(syncResult);
-
-  if (syncResult.error) {
-    logError(`Failed to execute command: ${summarizeCommand('pnpm', syncArgs)}`);
-    logError(`           ${syncResult.error.message}`);
-    process.exit(1);
-  }
-
-  if (syncResult.status !== 0) {
-    logError('Unable to synchronize pnpm-lock.yaml automatically.');
-    process.exit(syncResult.status ?? 1);
-  }
-
-  log('pnpm-lock.yaml synchronized.');
 };
 
 const resolveUpServices = (upArgs, services) => {

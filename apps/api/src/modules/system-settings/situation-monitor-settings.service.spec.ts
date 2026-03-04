@@ -126,6 +126,10 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.telegramPollIntervalMs).toBe(60_000);
     expect(response.hasTelegramSession).toBe(false);
     expect(response.telegramSessionSource).toBe("none");
+    expect(response.liveHlsProxyCnnConfigured).toBe(false);
+    expect(response.liveHlsProxyCnnSource).toBe("none");
+    expect(response.liveHlsProxyCnbcConfigured).toBe(false);
+    expect(response.liveHlsProxyCnbcSource).toBe("none");
   });
 
   it("uses telegram env fallback when no stored telegram secret exists", async () => {
@@ -179,6 +183,12 @@ describe("SituationMonitorSettingsService", () => {
       telegramStartupDelayMs: 45_000,
       telegramRateLimitMs: 1200,
       telegramPollIntervalMs: 75_000,
+      liveHlsProxyCnnUpstreamUrl: "https://media.example.net/live/cnn/master.m3u8",
+      liveHlsProxyCnnReferer: "https://example.com",
+      liveHlsProxyCnnAllowedHosts: "media.example.net,edge.example.net",
+      liveHlsProxyCnbcUpstreamUrl: "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
+      liveHlsProxyCnbcReferer: "https://livenewschat.eu/",
+      liveHlsProxyCnbcAllowedHosts: "cdn-ca2-na.lncnetworks.host",
     });
 
     expect(response.source).toBe("db");
@@ -202,6 +212,12 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.telegramApiHashSource).toBe("stored");
     expect(response.hasTelegramSession).toBe(true);
     expect(response.telegramSessionSource).toBe("stored");
+    expect(response.liveHlsProxyCnnConfigured).toBe(true);
+    expect(response.liveHlsProxyCnnSource).toBe("stored");
+    expect(response.liveHlsProxyCnbcConfigured).toBe(true);
+    expect(response.liveHlsProxyCnbcSource).toBe("stored");
+    expect(response.liveHlsProxyCnnAllowedHosts).toEqual(["media.example.net", "edge.example.net"]);
+    expect(response.liveHlsProxyCnbcAllowedHosts).toEqual(["cdn-ca2-na.lncnetworks.host"]);
     expect(persistedValue?.translationMaxConcurrency).toBe(3);
     expect(persistedValue?.translationApiBaseUrl).toBe("https://api.deeplx.org");
     expect(persistedValue?.translationApiKey).toBe("test-key");
@@ -213,6 +229,11 @@ describe("SituationMonitorSettingsService", () => {
     expect(persistedValue?.telegramApiId).toBe("2222");
     expect(persistedValue?.telegramChannelSet).toBe("finance");
     expect(persistedValue?.telegramPollIntervalMs).toBe(75_000);
+    expect(persistedValue?.liveHlsProxyCnnUpstreamUrl).toBe("https://media.example.net/live/cnn/master.m3u8");
+    expect(persistedValue?.liveHlsProxyCnnAllowedHosts).toEqual(["media.example.net", "edge.example.net"]);
+    expect(persistedValue?.liveHlsProxyCnbcUpstreamUrl).toBe(
+      "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
+    );
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("test-key");
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("finnhub-key");
     expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("fred-key");
@@ -253,6 +274,8 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.hasTranslationApiKey).toBe(false);
     expect(response.hasFinnhubApiKey).toBe(false);
     expect(response.hasFredApiKey).toBe(false);
+    expect(response.liveHlsProxyCnnConfigured).toBe(false);
+    expect(response.liveHlsProxyCnbcConfigured).toBe(false);
     expect(persistedValue).toBeUndefined();
   });
 
@@ -330,5 +353,32 @@ describe("SituationMonitorSettingsService", () => {
         translationFallbackApiBaseUrl: "not-a-url",
       })
     ).rejects.toThrow("translationFallbackApiBaseUrl must be a valid http(s) URL");
+  });
+
+  it("returns live hls runtime config without env fallback", async () => {
+    const before = await service.getLiveHlsProxyRuntimeConfig("cnn");
+    expect(before.configured).toBe(false);
+    expect(before.allowedHosts).toEqual([]);
+
+    await service.updateSettings("org-1", "actor-1", {
+      translationMaxConcurrency: 2,
+      liveHlsProxyCnnUpstreamUrl: "https://media.example.net/live/cnn/master.m3u8",
+      liveHlsProxyCnnAllowedHosts: "edge.example.net",
+    });
+
+    const after = await service.getLiveHlsProxyRuntimeConfig("cnn");
+    expect(after.configured).toBe(true);
+    expect(after.upstreamUrl).toBe("https://media.example.net/live/cnn/master.m3u8");
+    expect(after.allowedHosts).toContain("media.example.net");
+    expect(after.allowedHosts).toContain("edge.example.net");
+  });
+
+  it("validates hls proxy upstream as https URL", async () => {
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        translationMaxConcurrency: 2,
+        liveHlsProxyCnnUpstreamUrl: "http://media.example.net/live/cnn/master.m3u8",
+      }),
+    ).rejects.toThrow("liveHlsProxyCnnUpstreamUrl must be a valid https URL");
   });
 });

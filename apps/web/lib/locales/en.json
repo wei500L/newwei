@@ -1143,16 +1143,16 @@
       "sectorHeatmapConfigErrorDescription": "Some economic indicators have no matching source field for the heatmap.",
       "entityImpactGraph": "Entity Impact Graph",
       "knowledgeGraph": "Knowledge Graph",
-      "knowledgeGraphSeedRequired": "Enter a seed entity",
+      "knowledgeGraphSeedRequired": "Enter an entity name",
       "knowledgeGraphDisabledTitle": "Disabled",
       "knowledgeGraphDisabledDescription": "Disabled by admin",
-      "knowledgeGraphSeedPlaceholder": "Seed entity name",
+      "knowledgeGraphSeedPlaceholder": "Entity name",
       "knowledgeGraphDepth": "Depth",
       "knowledgeGraphMaxNodes": "Max nodes",
-      "knowledgeGraphEmptyTitle": "No seed",
-      "knowledgeGraphEmptyDescription": "Enter a seed entity to explore",
+      "knowledgeGraphEmptyTitle": "No data",
+      "knowledgeGraphEmptyDescription": "Search an entity to load real graph data",
       "knowledgeGraphNotFoundTitle": "Not found",
-      "knowledgeGraphNotFoundDescription": "No graph data found for this seed",
+      "knowledgeGraphNotFoundDescription": "No graph data found for this entity",
       "financialCandlestick": {
         "title": "Market Index"
       },
@@ -1347,7 +1347,7 @@
       },
       "sectorSelected": "Selected: {{sector}}",
       "knowledgeGraphReflow": "Reflow",
-      "knowledgeGraphSeedLabel": "Seed",
+      "knowledgeGraphSeedLabel": "Entity",
       "knowledgeGraphSearching": "Searching...",
       "knowledgeGraphNodeTitle": "Node",
       "knowledgeGraphNodeType": "Type",
@@ -2880,8 +2880,6 @@
       "fields": {
         "enabled": "Enabled",
         "ingestionEnabled": "Ingestion enabled",
-        "seedIngestionEnabled": "Seed ingestion enabled",
-        "seedSwIndustriesPerRun": "SW industries per run",
         "maxBatchSize": "Max batch size",
         "maxRelationsPerArticle": "Max relations per article",
         "minEdgeConfidence": "Min edge confidence",
@@ -2898,8 +2896,6 @@
       "hints": {
         "note": "Enable ingestion to incrementally build the knowledge graph from processed articles.",
         "ingestionEnabled": "When disabled, the cron job will not ingest new articles into the graph.",
-        "seedIngestionEnabled": "When disabled, structured seed sources will not be ingested into the graph.",
-        "seedSwIndustriesPerRun": "Max Shenwan third-level industries ingested per run.",
         "maxBatchSize": "Max processed articles to ingest per run.",
         "maxRelationsPerArticle": "Upper bound on relations ingested from a single article.",
         "minEdgeConfidence": "Filter out relations below this confidence.",
@@ -5007,7 +5003,7 @@
       "empty": "No runtime secrets configured."
     },
     "situationMonitor": {
-      "description": "Configure situation monitor translation behavior (concurrency + DeepLX primary API + fallback endpoint).",
+      "description": "Configure situation monitor translation behavior, Telegram ingestion, and live HLS proxy channels (CNN/CNBC).",
       "notice": {
         "title": "Translation API (DeepLX)",
         "body": "Translate to Simplified Chinese uses DeepLX as primary and can fall back to a backup translation endpoint. If both requests fail, the page keeps original text and shows a translation error tag."
@@ -5018,9 +5014,12 @@
         "saved": "Saved override",
         "enabled": "Enabled",
         "disabled": "Disabled",
+        "configured": "Configured",
         "notConfigured": "Not configured",
         "translationApiKeySource": "Translation API key source",
         "translationFallbackApi": "Fallback translation API",
+        "liveHlsProxyCnn": "Live HLS proxy (CNN)",
+        "liveHlsProxyCnbc": "Live HLS proxy (CNBC)",
         "finnhubApiKeySource": "Finnhub API key source",
         "fredApiKeySource": "FRED API key source",
         "telegramApiIdSource": "Telegram API ID source",
@@ -5035,11 +5034,16 @@
           "stored": "System settings (stored)",
           "env": "Environment variable",
           "none": "Not configured"
+        },
+        "liveHlsProxySources": {
+          "stored": "Stored in database",
+          "none": "Not configured"
         }
       },
       "sections": {
         "translationApi": "Translation API",
         "externalApis": "External data APIs",
+        "liveHlsProxy": "Live HLS proxy",
         "telegram": "Telegram ingestion",
         "telegramAuth": "Telegram session auth"
       },
@@ -5065,6 +5069,12 @@
         "telegramStartupDelayMs": "Telegram startup delay (ms)",
         "telegramRateLimitMs": "Telegram per-channel delay (ms)",
         "telegramPollIntervalMs": "Telegram poll interval (ms)",
+        "liveHlsProxyCnnUpstreamUrl": "CNN upstream .m3u8 URL",
+        "liveHlsProxyCnnReferer": "CNN referer header",
+        "liveHlsProxyCnnAllowedHosts": "CNN allowed hosts",
+        "liveHlsProxyCnbcUpstreamUrl": "CNBC upstream .m3u8 URL",
+        "liveHlsProxyCnbcReferer": "CNBC referer header",
+        "liveHlsProxyCnbcAllowedHosts": "CNBC allowed hosts",
         "telegramPhoneNumber": "Phone number",
         "telegramPhoneCode": "Telegram verification code",
         "telegram2faPassword": "Telegram 2FA password"
@@ -5080,6 +5090,13 @@
         "fredApiKey": "Used for Fed indicators and balance sheet data. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
         "translationApiTimeoutMs": "Timeout for each translation request.",
         "translationApiMaxRetries": "Maximum retry count after translation request failures.",
+        "liveHlsProxyGeneral": "These values are stored in MySQL only. No environment fallback is used for live HLS proxy channels.",
+        "liveHlsProxyCnnUpstreamUrl": "Primary CNN HLS playlist URL. Must be https and point to a .m3u8 manifest.",
+        "liveHlsProxyCnnReferer": "Optional referer header sent when fetching CNN HLS upstream resources.",
+        "liveHlsProxyCnnAllowedHosts": "Comma-separated host allowlist for CNN segment/key fetches. Upstream host is auto-allowed.",
+        "liveHlsProxyCnbcUpstreamUrl": "Primary CNBC HLS playlist URL. Must be https and point to a .m3u8 manifest.",
+        "liveHlsProxyCnbcReferer": "Optional referer header sent when fetching CNBC HLS upstream resources.",
+        "liveHlsProxyCnbcAllowedHosts": "Comma-separated host allowlist for CNBC segment/key fetches. Upstream host is auto-allowed.",
         "telegramEnabled": "Controls whether Telegram polling jobs are active.",
         "telegramApiId": "Used to start Telegram auth (from https://my.telegram.org/apps). It is not persisted by regular Save; it is stored automatically after auth completes.",
         "telegramApiHash": "Used to start Telegram auth. It is not persisted by regular Save; it is stored automatically after auth completes.",
@@ -5094,6 +5111,11 @@
         "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
         "finnhubApiKey": "Leave empty to keep current key",
         "fredApiKey": "Leave empty to keep current key",
+        "liveHlsProxyCnnUpstreamUrl": "https://media.example.net/live/cnn/master.m3u8",
+        "liveHlsProxyCnnReferer": "https://example.com",
+        "liveHlsProxyCnbcUpstreamUrl": "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
+        "liveHlsProxyCnbcReferer": "https://livenewschat.eu/",
+        "liveHlsProxyAllowedHosts": "host-a.example.com, host-b.example.com",
         "telegramApiId": "e.g. 12345678",
         "telegramApiHash": "Used to send verification code (can be empty if already configured)",
         "telegramChannelSet": "full",
@@ -7236,8 +7258,18 @@
     },
     "liveNews": {
       "title": "Live News",
+      "manage": "Manage",
+      "manageHint": "Manage visible channels and drag to reorder.",
+      "visibleCount": "Showing {{count}} / {{max}}",
+      "noChannelSelected": "No channel selected for this region.",
+      "resetRegion": "Reset region",
+      "inGrid": "In grid",
       "hlsFallback": "HLS fallback",
       "hlsCooldown": "HLS cooldown",
+      "hlsOnly": "HLS only",
+      "proxyUnavailable": "Proxy unavailable",
+      "resolvingYoutube": "Resolving live stream...",
+      "youtubeUnavailable": "YouTube live unavailable",
       "unavailable": "Stream paused",
       "idle": "Idle pause: move mouse or press key to resume.",
       "hidden": "Background tab: stream paused.",
@@ -7246,7 +7278,9 @@
         "europe": "Europe",
         "americas": "Americas",
         "middleEast": "Middle East",
-        "asia": "Asia"
+        "asia": "Asia",
+        "africa": "Africa",
+        "oceania": "Oceania"
       }
     },
     "liveWebcams": {

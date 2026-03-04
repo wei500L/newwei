@@ -95,4 +95,28 @@ export class UpdateSituationMonitorSettingsDto {
   @Min(15_000)
   @Max(3_600_000)
   telegramPollIntervalMs?: number;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnnUpstreamUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnnReferer?: string | null;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnnAllowedHosts?: string | null;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnbcUpstreamUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnbcReferer?: string | null;
+
+  @IsOptional()
+  @IsString()
+  liveHlsProxyCnbcAllowedHosts?: string | null;
 }

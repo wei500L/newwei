@@ -1337,8 +1337,6 @@ type KnowledgeGraphSettingsModel {
   multiModelValidationMaxRelationsPerArticle: Int!
   multiModelValidationModelCount: Int!
   multiModelValidationModels: [String!]!
-  seedIngestionEnabled: Boolean!
-  seedSwIndustriesPerRun: Int!
 }
 
 input KnowledgeGraphSubgraphInput {
@@ -2396,8 +2394,6 @@ input UpdateKnowledgeGraphSettingsInput {
   multiModelValidationMaxRelationsPerArticle: Int
   multiModelValidationModelCount: Int
   multiModelValidationModels: [String!]
-  seedIngestionEnabled: Boolean!
-  seedSwIndustriesPerRun: Int!
 }
 
 input UpdateNewsClassificationSettingsInput {

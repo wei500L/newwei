@@ -20,6 +20,16 @@ type SituationMonitorApiKeySource = "stored" | "env" | "none";
 export type SituationMonitorTranslationApiKeySource = SituationMonitorApiKeySource;
 export type SituationMonitorExternalApiKeySource = SituationMonitorApiKeySource;
 export type SituationMonitorTelegramSecretSource = SituationMonitorApiKeySource;
+export type SituationMonitorLiveHlsProxyChannel = "cnn" | "cnbc";
+export type SituationMonitorLiveHlsProxySource = "stored" | "none";
+
+export interface SituationMonitorLiveHlsProxyRuntimeConfig {
+  channel: SituationMonitorLiveHlsProxyChannel;
+  configured: boolean;
+  upstreamUrl: string | null;
+  referer: string | null;
+  allowedHosts: string[];
+}
 
 export interface SituationMonitorSettingsPublic {
   source: SituationMonitorSettingsSource;
@@ -53,6 +63,16 @@ export interface SituationMonitorSettingsPublic {
   telegramStartupDelayMs: number;
   telegramRateLimitMs: number;
   telegramPollIntervalMs: number;
+  liveHlsProxyCnnConfigured: boolean;
+  liveHlsProxyCnnSource: SituationMonitorLiveHlsProxySource;
+  liveHlsProxyCnnUpstreamUrl: string;
+  liveHlsProxyCnnReferer: string;
+  liveHlsProxyCnnAllowedHosts: string[];
+  liveHlsProxyCnbcConfigured: boolean;
+  liveHlsProxyCnbcSource: SituationMonitorLiveHlsProxySource;
+  liveHlsProxyCnbcUpstreamUrl: string;
+  liveHlsProxyCnbcReferer: string;
+  liveHlsProxyCnbcAllowedHosts: string[];
 }
 
 export interface SituationMonitorTranslationRuntimeConfig {
@@ -110,6 +130,12 @@ interface StoredSituationMonitorSettings {
   telegramStartupDelayMs?: unknown;
   telegramRateLimitMs?: unknown;
   telegramPollIntervalMs?: unknown;
+  liveHlsProxyCnnUpstreamUrl?: unknown;
+  liveHlsProxyCnnReferer?: unknown;
+  liveHlsProxyCnnAllowedHosts?: unknown;
+  liveHlsProxyCnbcUpstreamUrl?: unknown;
+  liveHlsProxyCnbcReferer?: unknown;
+  liveHlsProxyCnbcAllowedHosts?: unknown;
 }
 
 interface CachedSituationMonitorSettings {
@@ -140,10 +166,17 @@ interface EffectiveSituationMonitorSettings {
   telegramStartupDelayMs: number;
   telegramRateLimitMs: number;
   telegramPollIntervalMs: number;
+  liveHlsProxyCnnUpstreamUrl: string | null;
+  liveHlsProxyCnnReferer: string | null;
+  liveHlsProxyCnnAllowedHosts: string[];
+  liveHlsProxyCnbcUpstreamUrl: string | null;
+  liveHlsProxyCnbcReferer: string | null;
+  liveHlsProxyCnbcAllowedHosts: string[];
 }
 
 const SETTINGS_KEY = "situation_monitor_settings";
-const SETTINGS_DESCRIPTION = "Situation monitor settings (DeepLX translation + fallback endpoint + Finnhub/FRED API keys + Telegram ingestion config).";
+const SETTINGS_DESCRIPTION =
+  "Situation monitor settings (DeepLX translation + fallback endpoint + Finnhub/FRED API keys + Telegram ingestion config + live HLS proxy config).";
 const CACHE_KEY = "situation_monitor:settings";
 const CACHE_TTL_SECONDS = 30;
 const DEFAULT_TRANSLATION_MAX_CONCURRENCY = 2;
@@ -161,6 +194,16 @@ const DEFAULT_TELEGRAM_POLL_CYCLE_TIMEOUT_MS = 180_000;
 const DEFAULT_TELEGRAM_STARTUP_DELAY_MS = 60_000;
 const DEFAULT_TELEGRAM_RATE_LIMIT_MS = 800;
 const DEFAULT_TELEGRAM_POLL_INTERVAL_MS = 60_000;
+const LIVE_HLS_PROXY_CHANNELS: readonly SituationMonitorLiveHlsProxyChannel[] = [
+  "cnn",
+  "cnbc",
+];
+
+export function isSituationMonitorLiveHlsProxyChannel(
+  value: string,
+): value is SituationMonitorLiveHlsProxyChannel {
+  return LIVE_HLS_PROXY_CHANNELS.includes(value as SituationMonitorLiveHlsProxyChannel);
+}
 
 @Injectable()
 export class SituationMonitorSettingsService {
@@ -215,7 +258,17 @@ export class SituationMonitorSettingsService {
       telegramPollCycleTimeoutMs: effective.telegramPollCycleTimeoutMs,
       telegramStartupDelayMs: effective.telegramStartupDelayMs,
       telegramRateLimitMs: effective.telegramRateLimitMs,
-      telegramPollIntervalMs: effective.telegramPollIntervalMs
+      telegramPollIntervalMs: effective.telegramPollIntervalMs,
+      liveHlsProxyCnnConfigured: Boolean(effective.liveHlsProxyCnnUpstreamUrl),
+      liveHlsProxyCnnSource: effective.liveHlsProxyCnnUpstreamUrl ? "stored" : "none",
+      liveHlsProxyCnnUpstreamUrl: effective.liveHlsProxyCnnUpstreamUrl ?? "",
+      liveHlsProxyCnnReferer: effective.liveHlsProxyCnnReferer ?? "",
+      liveHlsProxyCnnAllowedHosts: [...effective.liveHlsProxyCnnAllowedHosts],
+      liveHlsProxyCnbcConfigured: Boolean(effective.liveHlsProxyCnbcUpstreamUrl),
+      liveHlsProxyCnbcSource: effective.liveHlsProxyCnbcUpstreamUrl ? "stored" : "none",
+      liveHlsProxyCnbcUpstreamUrl: effective.liveHlsProxyCnbcUpstreamUrl ?? "",
+      liveHlsProxyCnbcReferer: effective.liveHlsProxyCnbcReferer ?? "",
+      liveHlsProxyCnbcAllowedHosts: [...effective.liveHlsProxyCnbcAllowedHosts],
     };
   }
 
@@ -268,6 +321,51 @@ export class SituationMonitorSettingsService {
     };
   }
 
+  async getLiveHlsProxyRuntimeConfig(
+    channel: SituationMonitorLiveHlsProxyChannel,
+  ): Promise<SituationMonitorLiveHlsProxyRuntimeConfig> {
+    const stored = await this.loadStoredSettings();
+    const effective = this.resolveEffectiveConfig(stored);
+
+    const upstreamUrl =
+      channel === "cnn"
+        ? effective.liveHlsProxyCnnUpstreamUrl
+        : effective.liveHlsProxyCnbcUpstreamUrl;
+    const referer =
+      channel === "cnn"
+        ? effective.liveHlsProxyCnnReferer
+        : effective.liveHlsProxyCnbcReferer;
+    const configuredAllowedHosts =
+      channel === "cnn"
+        ? effective.liveHlsProxyCnnAllowedHosts
+        : effective.liveHlsProxyCnbcAllowedHosts;
+
+    if (!upstreamUrl) {
+      return {
+        channel,
+        configured: false,
+        upstreamUrl: null,
+        referer: null,
+        allowedHosts: [],
+      };
+    }
+
+    const allowedHosts = new Set(configuredAllowedHosts);
+    try {
+      allowedHosts.add(new URL(upstreamUrl).hostname.toLowerCase());
+    } catch {
+      // ignore invalid URL: configured=false is already handled during update validation.
+    }
+
+    return {
+      channel,
+      configured: true,
+      upstreamUrl,
+      referer,
+      allowedHosts: [...allowedHosts],
+    };
+  }
+
   async updateSettings(
     orgId: string,
     actorId: string,
@@ -294,6 +392,12 @@ export class SituationMonitorSettingsService {
       telegramStartupDelayMs?: number;
       telegramRateLimitMs?: number;
       telegramPollIntervalMs?: number;
+      liveHlsProxyCnnUpstreamUrl?: string | null;
+      liveHlsProxyCnnReferer?: string | null;
+      liveHlsProxyCnnAllowedHosts?: string | null;
+      liveHlsProxyCnbcUpstreamUrl?: string | null;
+      liveHlsProxyCnbcReferer?: string | null;
+      liveHlsProxyCnbcAllowedHosts?: string | null;
     }
   ): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
@@ -382,6 +486,36 @@ export class SituationMonitorSettingsService {
       15_000,
       3_600_000
     );
+    const nextLiveHlsProxyCnnUpstreamUrl = this.resolveNextHttpsUrl(
+      stored?.liveHlsProxyCnnUpstreamUrl,
+      input.liveHlsProxyCnnUpstreamUrl,
+      "liveHlsProxyCnnUpstreamUrl",
+    );
+    const nextLiveHlsProxyCnnReferer = this.resolveNextHttpUrl(
+      stored?.liveHlsProxyCnnReferer,
+      input.liveHlsProxyCnnReferer,
+      "liveHlsProxyCnnReferer",
+    );
+    const nextLiveHlsProxyCnnAllowedHosts = this.resolveNextHostList(
+      stored?.liveHlsProxyCnnAllowedHosts,
+      input.liveHlsProxyCnnAllowedHosts,
+      "liveHlsProxyCnnAllowedHosts",
+    );
+    const nextLiveHlsProxyCnbcUpstreamUrl = this.resolveNextHttpsUrl(
+      stored?.liveHlsProxyCnbcUpstreamUrl,
+      input.liveHlsProxyCnbcUpstreamUrl,
+      "liveHlsProxyCnbcUpstreamUrl",
+    );
+    const nextLiveHlsProxyCnbcReferer = this.resolveNextHttpUrl(
+      stored?.liveHlsProxyCnbcReferer,
+      input.liveHlsProxyCnbcReferer,
+      "liveHlsProxyCnbcReferer",
+    );
+    const nextLiveHlsProxyCnbcAllowedHosts = this.resolveNextHostList(
+      stored?.liveHlsProxyCnbcAllowedHosts,
+      input.liveHlsProxyCnbcAllowedHosts,
+      "liveHlsProxyCnbcAllowedHosts",
+    );
 
     const nextStored: StoredSituationMonitorSettings = {
       translationMaxConcurrency: nextTranslationMaxConcurrency,
@@ -405,7 +539,13 @@ export class SituationMonitorSettingsService {
       telegramPollCycleTimeoutMs: nextTelegramPollCycleTimeoutMs,
       telegramStartupDelayMs: nextTelegramStartupDelayMs,
       telegramRateLimitMs: nextTelegramRateLimitMs,
-      telegramPollIntervalMs: nextTelegramPollIntervalMs
+      telegramPollIntervalMs: nextTelegramPollIntervalMs,
+      liveHlsProxyCnnUpstreamUrl: nextLiveHlsProxyCnnUpstreamUrl,
+      liveHlsProxyCnnReferer: nextLiveHlsProxyCnnReferer,
+      liveHlsProxyCnnAllowedHosts: nextLiveHlsProxyCnnAllowedHosts,
+      liveHlsProxyCnbcUpstreamUrl: nextLiveHlsProxyCnbcUpstreamUrl,
+      liveHlsProxyCnbcReferer: nextLiveHlsProxyCnbcReferer,
+      liveHlsProxyCnbcAllowedHosts: nextLiveHlsProxyCnbcAllowedHosts,
     };
 
     await this.prisma.systemSetting.upsert({
@@ -452,7 +592,19 @@ export class SituationMonitorSettingsService {
             telegramPollIntervalMs: nextTelegramPollIntervalMs,
             telegramApiIdUpdated: input.telegramApiId !== undefined,
             telegramApiHashUpdated: input.telegramApiHash !== undefined,
-            telegramSessionUpdated: input.telegramSession !== undefined
+            telegramSessionUpdated: input.telegramSession !== undefined,
+            liveHlsProxyCnnConfigured: Boolean(nextLiveHlsProxyCnnUpstreamUrl),
+            liveHlsProxyCnnAllowedHostsCount: nextLiveHlsProxyCnnAllowedHosts.length,
+            liveHlsProxyCnbcConfigured: Boolean(nextLiveHlsProxyCnbcUpstreamUrl),
+            liveHlsProxyCnbcAllowedHostsCount: nextLiveHlsProxyCnbcAllowedHosts.length,
+            liveHlsProxyCnnUpdated:
+              input.liveHlsProxyCnnUpstreamUrl !== undefined ||
+              input.liveHlsProxyCnnReferer !== undefined ||
+              input.liveHlsProxyCnnAllowedHosts !== undefined,
+            liveHlsProxyCnbcUpdated:
+              input.liveHlsProxyCnbcUpstreamUrl !== undefined ||
+              input.liveHlsProxyCnbcReferer !== undefined ||
+              input.liveHlsProxyCnbcAllowedHosts !== undefined,
           } satisfies Prisma.InputJsonObject)
         }
       },
@@ -577,7 +729,13 @@ export class SituationMonitorSettingsService {
         envTelegram.pollIntervalMs,
         15_000,
         3_600_000
-      )
+      ),
+      liveHlsProxyCnnUpstreamUrl: this.normalizeHttpsUrl(stored?.liveHlsProxyCnnUpstreamUrl),
+      liveHlsProxyCnnReferer: this.normalizeHttpUrl(stored?.liveHlsProxyCnnReferer),
+      liveHlsProxyCnnAllowedHosts: this.normalizeHostList(stored?.liveHlsProxyCnnAllowedHosts),
+      liveHlsProxyCnbcUpstreamUrl: this.normalizeHttpsUrl(stored?.liveHlsProxyCnbcUpstreamUrl),
+      liveHlsProxyCnbcReferer: this.normalizeHttpUrl(stored?.liveHlsProxyCnbcReferer),
+      liveHlsProxyCnbcAllowedHosts: this.normalizeHostList(stored?.liveHlsProxyCnbcAllowedHosts),
     };
   }
 
@@ -727,6 +885,51 @@ export class SituationMonitorSettingsService {
     return this.validateUrl(normalized, "translationFallbackApiBaseUrl");
   }
 
+  private resolveNextHttpsUrl(
+    current: unknown,
+    next: string | null | undefined,
+    fieldName: string,
+  ): string | null {
+    if (next === undefined) {
+      return this.normalizeHttpsUrl(current);
+    }
+    const normalized = this.normalizeString(next);
+    if (!normalized) {
+      return null;
+    }
+    return this.validateUrl(normalized, fieldName, ["https:"]);
+  }
+
+  private resolveNextHttpUrl(
+    current: unknown,
+    next: string | null | undefined,
+    fieldName: string,
+  ): string | null {
+    if (next === undefined) {
+      return this.normalizeHttpUrl(current);
+    }
+    const normalized = this.normalizeString(next);
+    if (!normalized) {
+      return null;
+    }
+    return this.validateUrl(normalized, fieldName, ["http:", "https:"]);
+  }
+
+  private resolveNextHostList(
+    current: unknown,
+    next: string | null | undefined,
+    fieldName: string,
+  ): string[] {
+    if (next === undefined) {
+      return this.normalizeHostList(current);
+    }
+    const normalized = this.normalizeString(next);
+    if (!normalized) {
+      return [];
+    }
+    return this.parseHostCsv(normalized, fieldName);
+  }
+
   private async resolveNextApiKey(
     current: unknown,
     next: string | null | undefined
@@ -781,15 +984,23 @@ export class SituationMonitorSettingsService {
     return "none";
   }
 
-  private validateUrl(value: string, fieldName: string): string {
+  private validateUrl(
+    value: string,
+    fieldName: string,
+    allowedProtocols: readonly string[] = ["http:", "https:"],
+  ): string {
     try {
       const parsed = new URL(value);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      if (!allowedProtocols.includes(parsed.protocol)) {
         throw new Error("Invalid protocol");
       }
       return parsed.toString().replace(/\/+$/, "");
     } catch {
-      throw new BadRequestException(`${fieldName} must be a valid http(s) URL`);
+      const protocolHint =
+        allowedProtocols.length === 1 && allowedProtocols[0] === "https:"
+          ? "https URL"
+          : "http(s) URL";
+      throw new BadRequestException(`${fieldName} must be a valid ${protocolHint}`);
     }
   }
 
@@ -817,6 +1028,76 @@ export class SituationMonitorSettingsService {
       return undefined;
     }
     return normalized.replace(/\/+$/, "");
+  }
+
+  private normalizeHttpsUrl(value: unknown): string | null {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return null;
+    }
+    try {
+      return this.validateUrl(normalized, "url", ["https:"]);
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeHttpUrl(value: unknown): string | null {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return null;
+    }
+    try {
+      return this.validateUrl(normalized, "url", ["http:", "https:"]);
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeHostList(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const normalized = value
+      .map((entry) => this.normalizeHostEntry(entry))
+      .filter((entry): entry is string => Boolean(entry));
+    return [...new Set(normalized)];
+  }
+
+  private parseHostCsv(value: string, fieldName: string): string[] {
+    const entries = value
+      .split(/[\n,]/)
+      .map((entry) => this.normalizeHostEntry(entry))
+      .filter((entry): entry is string => Boolean(entry));
+    if (entries.length === 0) {
+      return [];
+    }
+
+    const unique = [...new Set(entries)];
+    if (unique.length > 64) {
+      throw new BadRequestException(`${fieldName} must have at most 64 hosts`);
+    }
+    return unique;
+  }
+
+  private normalizeHostEntry(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(`https://${normalized}`);
+      if (parsed.hostname !== normalized || parsed.pathname !== "/") {
+        return null;
+      }
+      return parsed.hostname;
+    } catch {
+      return null;
+    }
   }
 
   private async loadStoredSettings(): Promise<StoredSituationMonitorSettings | null> {

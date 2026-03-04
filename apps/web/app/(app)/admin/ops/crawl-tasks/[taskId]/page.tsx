@@ -10,12 +10,13 @@ interface CrawlTaskDetailPageParams {
 export default async function AdminCrawlTaskDetailPage({
   params
 }: {
-  params: CrawlTaskDetailPageParams;
+  params: Promise<CrawlTaskDetailPageParams>;
 }) {
   const session = await auth();
   if (!session) {
     redirect("/login");
   }
 
-  return <CrawlTaskDetail taskId={params.taskId} />;
+  const { taskId } = await params;
+  return <CrawlTaskDetail taskId={taskId} />;
 }

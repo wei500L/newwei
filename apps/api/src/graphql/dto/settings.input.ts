@@ -243,15 +243,6 @@ export class UpdateKnowledgeGraphSettingsInput {
   @IsBoolean()
   ingestionEnabled!: boolean;
 
-  @Field(() => Boolean)
-  @IsBoolean()
-  seedIngestionEnabled!: boolean;
-
-  @Field(() => Int)
-  @Min(1)
-  @Max(50)
-  seedSwIndustriesPerRun!: number;
-
   @Field(() => Int)
   @Min(1)
   @Max(500)

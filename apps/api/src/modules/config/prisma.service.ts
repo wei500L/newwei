@@ -4,6 +4,15 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 import { EnvService } from "./config.service";
 
+const REQUIRED_KNOWLEDGE_GRAPH_DELEGATES = [
+  "knowledgeEntity",
+  "knowledgeEntityAlias",
+  "knowledgeEdge",
+  "knowledgeEdgeEvidence",
+  "knowledgeGraphIngestionState",
+  "articleEntityLink"
+] as const;
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger({ name: "prisma" });
@@ -48,6 +57,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         }
         throw migrationError;
       }
+
+      this.ensureKnowledgeGraphDelegates();
     }
   }
 
@@ -57,5 +68,22 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async runInTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.$transaction(fn, { timeout: 15000 });
+  }
+
+  private ensureKnowledgeGraphDelegates() {
+    const delegates = this as unknown as Record<string, unknown>;
+    const missingDelegates = REQUIRED_KNOWLEDGE_GRAPH_DELEGATES.filter((delegate) => {
+      const candidate = delegates[delegate];
+      return !candidate || typeof candidate !== "object";
+    });
+
+    if (missingDelegates.length === 0) {
+      return;
+    }
+
+    const message =
+      "Prisma client is missing knowledge graph delegates. Run `pnpm --filter @modular/db prisma:generate` and restart the API.";
+    this.logger.error({ missingDelegates }, message);
+    throw new Error(`${message} Missing: ${missingDelegates.join(", ")}`);
   }
 }

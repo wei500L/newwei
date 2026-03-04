@@ -8,7 +8,23 @@ import { useKnowledgeGraphSettingsQuery, useUpdateKnowledgeGraphSettingsMutation
 import type { UpdateKnowledgeGraphSettingsMutationVariables } from "@/graphql/generated";
 import { captureClientError } from "@/lib/client-telemetry";
 
-type FormValues = UpdateKnowledgeGraphSettingsMutationVariables["input"];
+type FullInput = UpdateKnowledgeGraphSettingsMutationVariables["input"];
+interface FormValues {
+  enabled: boolean;
+  ingestionEnabled: boolean;
+  maxBatchSize: number;
+  maxRelationsPerArticle: number;
+  minEdgeConfidence?: number;
+  dynamicEdgeConfidenceEnabled?: boolean;
+  dynamicEdgeConfidenceQuantile?: number;
+  multiModelValidationEnabled?: boolean;
+  multiModelValidationModels?: string[];
+  multiModelValidationModelCount?: number;
+  multiModelValidationMaxRelationsPerArticle?: number;
+  entityDisambiguationEnabled?: boolean;
+  entityDisambiguationMaxCandidates?: number;
+  cacheTtlSeconds: number;
+}
 
 export function KnowledgeGraphSettingsPanel() {
   const { t } = useTranslation();
@@ -26,13 +42,39 @@ export function KnowledgeGraphSettingsPanel() {
 
   useEffect(() => {
     if (data?.knowledgeGraphSettings) {
-      form.setFieldsValue(data.knowledgeGraphSettings);
+      const source = data.knowledgeGraphSettings;
+      const visibleValues: FormValues = {
+        enabled: source.enabled,
+        ingestionEnabled: source.ingestionEnabled,
+        maxBatchSize: source.maxBatchSize,
+        maxRelationsPerArticle: source.maxRelationsPerArticle,
+        minEdgeConfidence: source.minEdgeConfidence,
+        dynamicEdgeConfidenceEnabled: source.dynamicEdgeConfidenceEnabled,
+        dynamicEdgeConfidenceQuantile: source.dynamicEdgeConfidenceQuantile,
+        multiModelValidationEnabled: source.multiModelValidationEnabled,
+        multiModelValidationModels: source.multiModelValidationModels,
+        multiModelValidationModelCount: source.multiModelValidationModelCount,
+        multiModelValidationMaxRelationsPerArticle: source.multiModelValidationMaxRelationsPerArticle,
+        entityDisambiguationEnabled: source.entityDisambiguationEnabled,
+        entityDisambiguationMaxCandidates: source.entityDisambiguationMaxCandidates,
+        cacheTtlSeconds: source.cacheTtlSeconds
+      };
+      form.setFieldsValue(visibleValues);
     }
   }, [data?.knowledgeGraphSettings, form]);
 
   const handleSubmit = async (values: FormValues) => {
+    if (!data?.knowledgeGraphSettings) {
+      messageApi.error(t("settings.knowledgeGraph.saveFailed"));
+      return;
+    }
+
+    const input: FullInput = {
+      ...values
+    };
+
     try {
-      await updateSettings({ variables: { input: values } });
+      await updateSettings({ variables: { input } });
       await refetch();
       messageApi.success(t("settings.knowledgeGraph.saved"));
     } catch (error) {
@@ -77,24 +119,6 @@ export function KnowledgeGraphSettingsPanel() {
           extra={t("settings.knowledgeGraph.hints.ingestionEnabled")}
         >
           <Switch />
-        </Form.Item>
-
-        <Form.Item
-          label={t("settings.knowledgeGraph.fields.seedIngestionEnabled")}
-          name="seedIngestionEnabled"
-          valuePropName="checked"
-          extra={t("settings.knowledgeGraph.hints.seedIngestionEnabled")}
-        >
-          <Switch />
-        </Form.Item>
-
-        <Form.Item
-          label={t("settings.knowledgeGraph.fields.seedSwIndustriesPerRun")}
-          name="seedSwIndustriesPerRun"
-          extra={t("settings.knowledgeGraph.hints.seedSwIndustriesPerRun")}
-          rules={[{ required: true, message: t("settings.knowledgeGraph.validation.required") }]}
-        >
-          <InputNumber min={1} max={50} style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item

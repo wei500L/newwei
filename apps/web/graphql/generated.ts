@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -1379,8 +1381,6 @@ export type KnowledgeGraphSettingsModel = {
   multiModelValidationMaxRelationsPerArticle: Scalars['Int']['output'];
   multiModelValidationModelCount: Scalars['Int']['output'];
   multiModelValidationModels: Array<Scalars['String']['output']>;
-  seedIngestionEnabled: Scalars['Boolean']['output'];
-  seedSwIndustriesPerRun: Scalars['Int']['output'];
 };
 
 export type KnowledgeGraphSubgraphInput = {
@@ -3008,8 +3008,6 @@ export type UpdateKnowledgeGraphSettingsInput = {
   multiModelValidationMaxRelationsPerArticle?: InputMaybe<Scalars['Int']['input']>;
   multiModelValidationModelCount?: InputMaybe<Scalars['Int']['input']>;
   multiModelValidationModels?: InputMaybe<Array<Scalars['String']['input']>>;
-  seedIngestionEnabled: Scalars['Boolean']['input'];
-  seedSwIndustriesPerRun: Scalars['Int']['input'];
 };
 
 export type UpdateNewsClassificationSettingsInput = {
@@ -3674,14 +3672,14 @@ export type UpdateEntityImpactGraphSettingsMutation = { __typename?: 'Mutation',
 export type KnowledgeGraphSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type KnowledgeGraphSettingsQuery = { __typename?: 'Query', knowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
+export type KnowledgeGraphSettingsQuery = { __typename?: 'Query', knowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
 
 export type UpdateKnowledgeGraphSettingsMutationVariables = Exact<{
   input: UpdateKnowledgeGraphSettingsInput;
 }>;
 
 
-export type UpdateKnowledgeGraphSettingsMutation = { __typename?: 'Mutation', updateKnowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, seedIngestionEnabled: boolean, seedSwIndustriesPerRun: number, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
+export type UpdateKnowledgeGraphSettingsMutation = { __typename?: 'Mutation', updateKnowledgeGraphSettings: { __typename?: 'KnowledgeGraphSettingsModel', enabled: boolean, ingestionEnabled: boolean, maxBatchSize: number, maxRelationsPerArticle: number, minEdgeConfidence: number, dynamicEdgeConfidenceEnabled: boolean, dynamicEdgeConfidenceQuantile: number, multiModelValidationEnabled: boolean, multiModelValidationModels: Array<string>, multiModelValidationModelCount: number, multiModelValidationMaxRelationsPerArticle: number, entityDisambiguationEnabled: boolean, entityDisambiguationMaxCandidates: number, cacheTtlSeconds: number } };
 
 
 export const AlertRulesDocument = gql`
@@ -7235,8 +7233,6 @@ export const KnowledgeGraphSettingsDocument = gql`
   knowledgeGraphSettings {
     enabled
     ingestionEnabled
-    seedIngestionEnabled
-    seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
     minEdgeConfidence
@@ -7289,8 +7285,6 @@ export const UpdateKnowledgeGraphSettingsDocument = gql`
   updateKnowledgeGraphSettings(input: $input) {
     enabled
     ingestionEnabled
-    seedIngestionEnabled
-    seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
     minEdgeConfidence

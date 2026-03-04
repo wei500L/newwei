@@ -9,8 +9,6 @@ import { PrismaService } from "../config/prisma.service";
 export interface KnowledgeGraphSettings {
   enabled: boolean;
   ingestionEnabled: boolean;
-  seedIngestionEnabled: boolean;
-  seedSwIndustriesPerRun: number;
   maxBatchSize: number;
   maxRelationsPerArticle: number;
   minEdgeConfidence: number;
@@ -28,8 +26,6 @@ export interface KnowledgeGraphSettings {
 export interface KnowledgeGraphSettingsInput {
   enabled: boolean;
   ingestionEnabled: boolean;
-  seedIngestionEnabled: boolean;
-  seedSwIndustriesPerRun: number;
   maxBatchSize: number;
   maxRelationsPerArticle: number;
   minEdgeConfidence: number;
@@ -62,8 +58,6 @@ const MIN_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE = 0;
 const MAX_MULTI_MODEL_VALIDATION_MAX_RELATIONS_PER_ARTICLE = 20;
 const MIN_ENTITY_DISAMBIGUATION_MAX_CANDIDATES = 2;
 const MAX_ENTITY_DISAMBIGUATION_MAX_CANDIDATES = 20;
-const MIN_SW_INDUSTRIES_PER_RUN = 1;
-const MAX_SW_INDUSTRIES_PER_RUN = 50;
 const MIN_CACHE_TTL_SECONDS = 0;
 const MAX_CACHE_TTL_SECONDS = 3600;
 
@@ -161,10 +155,27 @@ export class KnowledgeGraphSettingsService {
 
   private async loadSettings(orgId: string): Promise<KnowledgeGraphSettings> {
     const fallback = this.getFallbackSettings();
+    const key = this.systemSettingKey(orgId);
     const record = await this.prisma.systemSetting.findUnique({
-      where: { key: this.systemSettingKey(orgId) }
+      where: { key }
     });
-    const raw = record?.value as Partial<KnowledgeGraphSettingsInput> | undefined;
+
+    if (!record) {
+      const bootstrap = this.getBootstrapSettings();
+      const persisted = await this.prisma.systemSetting.upsert({
+        where: { key },
+        update: {},
+        create: {
+          key,
+          value: toPrismaJsonValue(bootstrap),
+          description: `Knowledge graph settings (org=${orgId})`
+        }
+      });
+      const persistedValue = persisted.value as Partial<KnowledgeGraphSettingsInput> | undefined;
+      return this.normalizeSettings(persistedValue ?? {}, fallback);
+    }
+
+    const raw = record.value as Partial<KnowledgeGraphSettingsInput> | undefined;
     return this.normalizeSettings(raw ?? {}, fallback);
   }
 
@@ -172,8 +183,6 @@ export class KnowledgeGraphSettingsService {
     return {
       enabled: false,
       ingestionEnabled: false,
-      seedIngestionEnabled: false,
-      seedSwIndustriesPerRun: 5,
       maxBatchSize: 100,
       maxRelationsPerArticle: 20,
       minEdgeConfidence: 0.55,
@@ -189,6 +198,15 @@ export class KnowledgeGraphSettingsService {
     };
   }
 
+  private getBootstrapSettings(): KnowledgeGraphSettings {
+    const fallback = this.getFallbackSettings();
+    return {
+      ...fallback,
+      enabled: true,
+      ingestionEnabled: true
+    };
+  }
+
   private normalizeSettings(
     value: Partial<KnowledgeGraphSettingsInput>,
     fallback?: KnowledgeGraphSettings
@@ -199,14 +217,6 @@ export class KnowledgeGraphSettingsService {
       enabled: typeof value.enabled === "boolean" ? value.enabled : defaults.enabled,
       ingestionEnabled:
         typeof value.ingestionEnabled === "boolean" ? value.ingestionEnabled : defaults.ingestionEnabled,
-      seedIngestionEnabled:
-        typeof value.seedIngestionEnabled === "boolean" ? value.seedIngestionEnabled : defaults.seedIngestionEnabled,
-      seedSwIndustriesPerRun: this.clampInt(
-        value.seedSwIndustriesPerRun,
-        MIN_SW_INDUSTRIES_PER_RUN,
-        MAX_SW_INDUSTRIES_PER_RUN,
-        defaults.seedSwIndustriesPerRun
-      ),
       maxBatchSize: this.clampInt(value.maxBatchSize, MIN_MAX_BATCH_SIZE, MAX_MAX_BATCH_SIZE, defaults.maxBatchSize),
       maxRelationsPerArticle: this.clampInt(
         value.maxRelationsPerArticle,

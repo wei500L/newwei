@@ -187,7 +187,7 @@ const DEFAULT_WAR_MAP_VIEW_STATE: WarMapViewState = {
   lon: 0,
   zoom: 1.8,
   bearing: 0,
-  pitch: 30,
+  pitch: 0,
 };
 
 export function createDefaultWarMapViewState(): WarMapViewState {
@@ -212,8 +212,9 @@ export function normalizeWarMapViewState(value: unknown): WarMapViewState {
     lat: isFiniteNumber(record.lat) ? clamp(record.lat, -90, 90) : DEFAULT_WAR_MAP_VIEW_STATE.lat,
     lon: isFiniteNumber(record.lon) ? clamp(record.lon, -180, 180) : DEFAULT_WAR_MAP_VIEW_STATE.lon,
     zoom: isFiniteNumber(record.zoom) ? clamp(record.zoom, 0.5, 18) : DEFAULT_WAR_MAP_VIEW_STATE.zoom,
-    bearing: isFiniteNumber(record.bearing) ? clamp(record.bearing, -180, 180) : DEFAULT_WAR_MAP_VIEW_STATE.bearing,
-    pitch: isFiniteNumber(record.pitch) ? clamp(record.pitch, 0, 85) : DEFAULT_WAR_MAP_VIEW_STATE.pitch,
+    // Force a flat camera in the normalized shared contract.
+    bearing: DEFAULT_WAR_MAP_VIEW_STATE.bearing,
+    pitch: DEFAULT_WAR_MAP_VIEW_STATE.pitch,
   };
 }
 

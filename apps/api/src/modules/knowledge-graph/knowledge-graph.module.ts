@@ -9,8 +9,6 @@ import { KnowledgeGraphEntityDisambiguationService } from "./knowledge-graph-ent
 import { KnowledgeGraphImpactService } from "./knowledge-graph-impact.service";
 import { KnowledgeGraphQualityService } from "./knowledge-graph-quality.service";
 import { KnowledgeGraphReviewService } from "./knowledge-graph-review.service";
-import { KnowledgeGraphSeedIngestionService } from "./knowledge-graph-seed.ingestion.service";
-import { KnowledgeGraphSeedService } from "./knowledge-graph-seed.service";
 import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
 import { KnowledgeGraphIngestionService } from "./knowledge-graph.ingestion.service";
 import { KnowledgeGraphService } from "./knowledge-graph.service";
@@ -23,11 +21,14 @@ import { KnowledgeGraphService } from "./knowledge-graph.service";
     KnowledgeGraphQualityService,
     KnowledgeGraphSettingsService,
     KnowledgeGraphIngestionService,
-    KnowledgeGraphSeedService,
-    KnowledgeGraphSeedIngestionService,
     KnowledgeGraphImpactService,
     KnowledgeGraphReviewService
   ],
-  exports: [KnowledgeGraphService, KnowledgeGraphSettingsService, KnowledgeGraphImpactService, KnowledgeGraphReviewService]
+  exports: [
+    KnowledgeGraphService,
+    KnowledgeGraphSettingsService,
+    KnowledgeGraphImpactService,
+    KnowledgeGraphReviewService
+  ]
 })
 export class KnowledgeGraphModule {}

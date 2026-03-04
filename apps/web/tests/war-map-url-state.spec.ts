@@ -1,13 +1,18 @@
 import {
+  WAR_MAP_PRESETS,
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   type WarMapLayerVisibility,
 } from '@modular/utils';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   readWarMapUrlState,
   writeWarMapUrlState,
 } from '@/app/(app)/dashboard/charts/war-map/url-state';
+import {
+  WAR_MAP_PRESET_VIEW_STATE,
+  useWarMapSettingsStore,
+} from '@/store/war-map-settings';
 
 function cloneDefaultLayerVisibility(): WarMapLayerVisibility {
   return { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY };
@@ -25,8 +30,8 @@ describe('war-map url-state', () => {
       lat: 34.1,
       lon: 108.9,
       zoom: 4.2,
-      bearing: 12,
-      pitch: 41,
+      bearing: 0,
+      pitch: 0,
     });
     expect(parsed.activePreset).toBe('asia');
     expect(parsed.timeRangePreset).toBe('24h');
@@ -45,7 +50,7 @@ describe('war-map url-state', () => {
         lon: 0,
         zoom: 1.8,
         bearing: 0,
-        pitch: 30,
+        pitch: 0,
       },
       activePreset: 'global',
       timeRangePreset: '7d',
@@ -70,7 +75,7 @@ describe('war-map url-state', () => {
         lon: 0,
         zoom: 1.8,
         bearing: 0,
-        pitch: 30,
+        pitch: 0,
       },
       activePreset: 'global',
       timeRangePreset: '7d',
@@ -110,9 +115,68 @@ describe('war-map url-state', () => {
 
     expect(parsed.activePreset).toBe('oceania');
     expect(parsed.timeRangePreset).toBe('48h');
+    expect(parsed.viewState?.bearing).toBe(0);
+    expect(parsed.viewState?.pitch).toBe(0);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.hotspots).toBe(false);
     expect(parsed.layerVisibility?.monitors).toBe(false);
+  });
+});
+
+describe('war-map settings store', () => {
+  beforeEach(() => {
+    useWarMapSettingsStore.getState().resetAll();
+  });
+
+  it('forces 2D camera in setViewState', () => {
+    useWarMapSettingsStore.getState().setViewState({
+      lat: 10,
+      lon: 20,
+      zoom: 5,
+      bearing: 45,
+      pitch: 35,
+    });
+
+    const { viewState } = useWarMapSettingsStore.getState();
+    expect(viewState.lat).toBe(10);
+    expect(viewState.lon).toBe(20);
+    expect(viewState.zoom).toBe(5);
+    expect(viewState.bearing).toBe(0);
+    expect(viewState.pitch).toBe(0);
+  });
+
+  it('keeps all presets in flat 2D view', () => {
+    for (const preset of WAR_MAP_PRESETS) {
+      useWarMapSettingsStore.getState().setActivePreset(preset);
+      const { activePreset, viewState } = useWarMapSettingsStore.getState();
+      expect(activePreset).toBe(preset);
+      expect(viewState).toEqual(WAR_MAP_PRESET_VIEW_STATE[preset]);
+      expect(viewState.bearing).toBe(0);
+      expect(viewState.pitch).toBe(0);
+    }
+  });
+
+  it('normalizes remote settings to 2D camera', () => {
+    useWarMapSettingsStore.getState().hydrateFromRemote({
+      viewState: {
+        lat: -15,
+        lon: 130,
+        zoom: 3.5,
+        bearing: 80,
+        pitch: 45,
+      },
+      activePreset: 'asia',
+      timeRangePreset: '24h',
+    });
+
+    const { viewState, activePreset, timeRangePreset } = useWarMapSettingsStore.getState();
+    expect(activePreset).toBe('asia');
+    expect(timeRangePreset).toBe('24h');
+    expect(viewState.lat).toBe(-15);
+    expect(viewState.lon).toBe(130);
+    expect(viewState.zoom).toBe(3.5);
+    expect(viewState.bearing).toBe(0);
+    expect(viewState.pitch).toBe(0);
   });
 });

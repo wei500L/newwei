@@ -163,12 +163,6 @@ export class KnowledgeGraphSettingsModel {
   @Field(() => Boolean)
   ingestionEnabled!: boolean;
 
-  @Field(() => Boolean)
-  seedIngestionEnabled!: boolean;
-
-  @Field(() => Int)
-  seedSwIndustriesPerRun!: number;
-
   @Field(() => Int)
   maxBatchSize!: number;
 

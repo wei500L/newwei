@@ -32,6 +32,7 @@ type SituationMonitorTranslationProvider = "deeplx";
 type SituationMonitorTranslationApiKeySource = "stored" | "env" | "none";
 type SituationMonitorExternalApiKeySource = "stored" | "env" | "none";
 type SituationMonitorTelegramSecretSource = "stored" | "env" | "none";
+type SituationMonitorLiveHlsProxySource = "stored" | "none";
 
 interface SituationMonitorSettingsResponse {
   source: SituationMonitorSettingsSource;
@@ -65,6 +66,16 @@ interface SituationMonitorSettingsResponse {
   telegramStartupDelayMs: number;
   telegramRateLimitMs: number;
   telegramPollIntervalMs: number;
+  liveHlsProxyCnnConfigured: boolean;
+  liveHlsProxyCnnSource: SituationMonitorLiveHlsProxySource;
+  liveHlsProxyCnnUpstreamUrl: string;
+  liveHlsProxyCnnReferer: string;
+  liveHlsProxyCnnAllowedHosts: string[];
+  liveHlsProxyCnbcConfigured: boolean;
+  liveHlsProxyCnbcSource: SituationMonitorLiveHlsProxySource;
+  liveHlsProxyCnbcUpstreamUrl: string;
+  liveHlsProxyCnbcReferer: string;
+  liveHlsProxyCnbcAllowedHosts: string[];
 }
 
 interface SituationMonitorSettingsFormValues {
@@ -89,6 +100,12 @@ interface SituationMonitorSettingsFormValues {
   telegramStartupDelayMs: number;
   telegramRateLimitMs: number;
   telegramPollIntervalMs: number;
+  liveHlsProxyCnnUpstreamUrl?: string;
+  liveHlsProxyCnnReferer?: string;
+  liveHlsProxyCnnAllowedHosts?: string;
+  liveHlsProxyCnbcUpstreamUrl?: string;
+  liveHlsProxyCnbcReferer?: string;
+  liveHlsProxyCnbcAllowedHosts?: string;
 }
 
 interface StartTelegramAuthResponse {
@@ -176,6 +193,16 @@ const EMPTY_SETTINGS: SituationMonitorSettingsResponse = {
   telegramStartupDelayMs: 60_000,
   telegramRateLimitMs: 800,
   telegramPollIntervalMs: 60_000,
+  liveHlsProxyCnnConfigured: false,
+  liveHlsProxyCnnSource: "none",
+  liveHlsProxyCnnUpstreamUrl: "",
+  liveHlsProxyCnnReferer: "",
+  liveHlsProxyCnnAllowedHosts: [],
+  liveHlsProxyCnbcConfigured: false,
+  liveHlsProxyCnbcSource: "none",
+  liveHlsProxyCnbcUpstreamUrl: "",
+  liveHlsProxyCnbcReferer: "",
+  liveHlsProxyCnbcAllowedHosts: [],
 };
 
 function toFormValues(settings: SituationMonitorSettingsResponse): SituationMonitorSettingsFormValues {
@@ -201,6 +228,12 @@ function toFormValues(settings: SituationMonitorSettingsResponse): SituationMoni
     telegramStartupDelayMs: settings.telegramStartupDelayMs,
     telegramRateLimitMs: settings.telegramRateLimitMs,
     telegramPollIntervalMs: settings.telegramPollIntervalMs,
+    liveHlsProxyCnnUpstreamUrl: settings.liveHlsProxyCnnUpstreamUrl ?? "",
+    liveHlsProxyCnnReferer: settings.liveHlsProxyCnnReferer ?? "",
+    liveHlsProxyCnnAllowedHosts: settings.liveHlsProxyCnnAllowedHosts.join(", "),
+    liveHlsProxyCnbcUpstreamUrl: settings.liveHlsProxyCnbcUpstreamUrl ?? "",
+    liveHlsProxyCnbcReferer: settings.liveHlsProxyCnbcReferer ?? "",
+    liveHlsProxyCnbcAllowedHosts: settings.liveHlsProxyCnbcAllowedHosts.join(", "),
   };
 }
 
@@ -285,6 +318,24 @@ export function SituationMonitorSettingsPanel() {
         telegramStartupDelayMs: values.telegramStartupDelayMs,
         telegramRateLimitMs: values.telegramRateLimitMs,
         telegramPollIntervalMs: values.telegramPollIntervalMs,
+        liveHlsProxyCnnUpstreamUrl: values.liveHlsProxyCnnUpstreamUrl?.trim()
+          ? values.liveHlsProxyCnnUpstreamUrl.trim()
+          : null,
+        liveHlsProxyCnnReferer: values.liveHlsProxyCnnReferer?.trim()
+          ? values.liveHlsProxyCnnReferer.trim()
+          : null,
+        liveHlsProxyCnnAllowedHosts: values.liveHlsProxyCnnAllowedHosts?.trim()
+          ? values.liveHlsProxyCnnAllowedHosts.trim()
+          : null,
+        liveHlsProxyCnbcUpstreamUrl: values.liveHlsProxyCnbcUpstreamUrl?.trim()
+          ? values.liveHlsProxyCnbcUpstreamUrl.trim()
+          : null,
+        liveHlsProxyCnbcReferer: values.liveHlsProxyCnbcReferer?.trim()
+          ? values.liveHlsProxyCnbcReferer.trim()
+          : null,
+        liveHlsProxyCnbcAllowedHosts: values.liveHlsProxyCnbcAllowedHosts?.trim()
+          ? values.liveHlsProxyCnbcAllowedHosts.trim()
+          : null,
       };
 
       const touchedSecrets = Object.fromEntries(
@@ -514,6 +565,14 @@ export function SituationMonitorSettingsPanel() {
     `systemSettings.situationMonitor.status.apiKeySources.${settings.telegramSessionSource}`,
     { defaultValue: settings.telegramSessionSource }
   );
+  const liveHlsProxyCnnSourceLabel = t(
+    `systemSettings.situationMonitor.status.liveHlsProxySources.${settings.liveHlsProxyCnnSource}`,
+    { defaultValue: settings.liveHlsProxyCnnSource }
+  );
+  const liveHlsProxyCnbcSourceLabel = t(
+    `systemSettings.situationMonitor.status.liveHlsProxySources.${settings.liveHlsProxyCnbcSource}`,
+    { defaultValue: settings.liveHlsProxyCnbcSource }
+  );
 
   if (loading && !loadedOnce) {
     return (
@@ -562,6 +621,34 @@ export function SituationMonitorSettingsPanel() {
           <Tag color={fallbackEnabledColor}>{fallbackEnabledLabel}</Tag>
           <Tag color="geekblue">
             {settings.translationFallbackApiBaseUrl || t("systemSettings.situationMonitor.status.notConfigured")}
+          </Tag>
+        </Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            {t("systemSettings.situationMonitor.status.liveHlsProxyCnn")}
+          </Typography.Text>
+          <Tag color={settings.liveHlsProxyCnnConfigured ? "green" : "default"}>
+            {settings.liveHlsProxyCnnConfigured
+              ? t("systemSettings.situationMonitor.status.configured")
+              : t("systemSettings.situationMonitor.status.notConfigured")}
+          </Tag>
+          <Tag color="blue">{liveHlsProxyCnnSourceLabel}</Tag>
+          <Tag color="geekblue">
+            {settings.liveHlsProxyCnnUpstreamUrl || t("systemSettings.situationMonitor.status.notConfigured")}
+          </Tag>
+        </Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            {t("systemSettings.situationMonitor.status.liveHlsProxyCnbc")}
+          </Typography.Text>
+          <Tag color={settings.liveHlsProxyCnbcConfigured ? "green" : "default"}>
+            {settings.liveHlsProxyCnbcConfigured
+              ? t("systemSettings.situationMonitor.status.configured")
+              : t("systemSettings.situationMonitor.status.notConfigured")}
+          </Tag>
+          <Tag color="blue">{liveHlsProxyCnbcSourceLabel}</Tag>
+          <Tag color="geekblue">
+            {settings.liveHlsProxyCnbcUpstreamUrl || t("systemSettings.situationMonitor.status.notConfigured")}
           </Tag>
         </Space>
         <Space wrap>
@@ -709,6 +796,62 @@ export function SituationMonitorSettingsPanel() {
             <InputNumber min={0} max={5} step={1} style={{ width: "100%" }} />
           </Form.Item>
         </Space>
+
+        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+          {t("systemSettings.situationMonitor.sections.liveHlsProxy")}
+        </Typography.Title>
+
+        <Typography.Text type="secondary">
+          {t("systemSettings.situationMonitor.hints.liveHlsProxyGeneral")}
+        </Typography.Text>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnnUpstreamUrl")}
+          name="liveHlsProxyCnnUpstreamUrl"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnnUpstreamUrl")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyCnnUpstreamUrl")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnnReferer")}
+          name="liveHlsProxyCnnReferer"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnnReferer")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyCnnReferer")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnnAllowedHosts")}
+          name="liveHlsProxyCnnAllowedHosts"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnnAllowedHosts")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyAllowedHosts")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnbcUpstreamUrl")}
+          name="liveHlsProxyCnbcUpstreamUrl"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnbcUpstreamUrl")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyCnbcUpstreamUrl")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnbcReferer")}
+          name="liveHlsProxyCnbcReferer"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnbcReferer")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyCnbcReferer")} />
+        </Form.Item>
+
+        <Form.Item
+          label={t("systemSettings.situationMonitor.fields.liveHlsProxyCnbcAllowedHosts")}
+          name="liveHlsProxyCnbcAllowedHosts"
+          extra={t("systemSettings.situationMonitor.hints.liveHlsProxyCnbcAllowedHosts")}
+        >
+          <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyAllowedHosts")} />
+        </Form.Item>
 
         <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
           {t("systemSettings.situationMonitor.sections.telegram")}

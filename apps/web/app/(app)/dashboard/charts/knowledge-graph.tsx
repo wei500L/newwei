@@ -4,7 +4,7 @@ import { SearchOutlined, WarningOutlined } from "@ant-design/icons";
 import { Alert, Button, Drawer, Input, Skeleton, Slider, Space, Tag, Tooltip, Typography, message } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ const NODE_TYPE_CONFIG: Record<string, { color: string; symbol: string; index: n
 };
 
 const DEFAULT_NODE_TYPE = { color: "#94a3b8", symbol: "circle", index: 7 };
+const LAST_ENTITY_STORAGE_KEY = "dashboard.knowledgeGraph.lastEntity";
 const EMPTY_DEGRADATION_STATS = {
   filteredNodes: 0,
   totalNodes: 0,
@@ -88,19 +89,40 @@ export function KnowledgeGraph() {
   });
 
   const settings = settingsData?.knowledgeGraphSettings;
-  const enabled = settings?.enabled ?? false;
+  const isDisabledByAdmin = settings?.enabled === false;
+
+  useEffect(() => {
+    if (!authenticated || !canReadDashboards || seedName) {
+      return;
+    }
+    try {
+      const saved = window.localStorage.getItem(LAST_ENTITY_STORAGE_KEY)?.trim();
+      if (!saved) {
+        return;
+      }
+      setSeedDraft(saved);
+      setSeedName(saved);
+    } catch {
+      // ignore storage failures
+    }
+  }, [authenticated, canReadDashboards, seedName]);
 
   const handleSearch = useCallback(
     (value?: string) => {
       const next = (value ?? seedDraft).trim();
       if (!next) {
-        const warning = t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter a seed entity" });
+        const warning = t("dashboard.charts.knowledgeGraphSeedRequired", { defaultValue: "Enter an entity name" });
         setSeedError(warning);
         messageApi.warning(warning);
         return;
       }
       setSeedError(null);
       setSeedName(next);
+      try {
+        window.localStorage.setItem(LAST_ENTITY_STORAGE_KEY, next);
+      } catch {
+        // ignore storage failures
+      }
     },
     [messageApi, seedDraft, t]
   );
@@ -114,7 +136,7 @@ export function KnowledgeGraph() {
       }
     },
     fetchPolicy: "cache-first",
-    skip: !authenticated || !canReadDashboards || !enabled || !seedName
+    skip: !authenticated || !canReadDashboards || isDisabledByAdmin || !seedName
   });
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
@@ -351,7 +373,7 @@ export function KnowledgeGraph() {
     );
   }
 
-  if (enabled === false) {
+  if (isDisabledByAdmin) {
     return (
       <div className="h-[420px]">
         <ChartEmptyState
@@ -377,7 +399,7 @@ export function KnowledgeGraph() {
                 setSeedError(null);
               }}
               onPressEnter={(event) => handleSearch(event.currentTarget.value)}
-              placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Seed entity name" })}
+              placeholder={t("dashboard.charts.knowledgeGraphSeedPlaceholder", { defaultValue: "Entity name" })}
               allowClear
             />
             <Button
@@ -413,7 +435,7 @@ export function KnowledgeGraph() {
       {seedName ? (
         <Space size="small" wrap style={{ marginBottom: "0.75rem" }}>
           <Tag color="geekblue" className="text-xs">
-            {t("dashboard.charts.knowledgeGraphSeedLabel", { defaultValue: "Seed" })}: {seedName}
+            {t("dashboard.charts.knowledgeGraphSeedLabel", { defaultValue: "Entity" })}: {seedName}
           </Tag>
           {loading ? (
             <Tag color="processing" className="text-xs">
@@ -493,8 +515,10 @@ export function KnowledgeGraph() {
       {!seedName ? (
         <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
-            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No seed" })}
-            description={t("dashboard.charts.knowledgeGraphEmptyDescription", { defaultValue: "Enter a seed entity to explore" })}
+            title={t("dashboard.charts.knowledgeGraphEmptyTitle", { defaultValue: "No data" })}
+            description={t("dashboard.charts.knowledgeGraphEmptyDescription", {
+              defaultValue: "Search an entity to load real graph data"
+            })}
           />
         </div>
       ) : loading ? (
@@ -537,7 +561,9 @@ export function KnowledgeGraph() {
         <div className="h-[360px] transition-all duration-300">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphNotFoundTitle", { defaultValue: "Not found" })}
-            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", { defaultValue: "No graph data found for this seed" })}
+            description={t("dashboard.charts.knowledgeGraphNotFoundDescription", {
+              defaultValue: "No graph data found for this entity"
+            })}
           />
         </div>
       )}

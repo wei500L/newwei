@@ -154,8 +154,6 @@ query KnowledgeGraphSettings {
   knowledgeGraphSettings {
     enabled
     ingestionEnabled
-    seedIngestionEnabled
-    seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
     minEdgeConfidence
@@ -175,8 +173,6 @@ mutation UpdateKnowledgeGraphSettings($input: UpdateKnowledgeGraphSettingsInput!
   updateKnowledgeGraphSettings(input: $input) {
     enabled
     ingestionEnabled
-    seedIngestionEnabled
-    seedSwIndustriesPerRun
     maxBatchSize
     maxRelationsPerArticle
     minEdgeConfidence

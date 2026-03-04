@@ -11,12 +11,13 @@ interface ItemDetailPageParams {
 export default async function ItemDetailPage({
   params
 }: {
-  params: ItemDetailPageParams;
+  params: Promise<ItemDetailPageParams>;
 }) {
   const session = await auth();
   if (!session) {
     redirect('/login');
   }
 
-  return <ItemDetail itemId={params.id} />;
+  const { id } = await params;
+  return <ItemDetail itemId={id} />;
 }

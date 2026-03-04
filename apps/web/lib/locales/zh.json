@@ -1143,16 +1143,16 @@
       "sectorHeatmapConfigErrorDescription": "部分经济指标无法映射到热力图数据字段。",
       "entityImpactGraph": "实体影响图谱",
       "knowledgeGraph": "知识图谱",
-      "knowledgeGraphSeedRequired": "请输入种子实体",
+      "knowledgeGraphSeedRequired": "请输入实体名称",
       "knowledgeGraphDisabledTitle": "已禁用",
       "knowledgeGraphDisabledDescription": "已被管理员禁用",
-      "knowledgeGraphSeedPlaceholder": "种子实体名称",
+      "knowledgeGraphSeedPlaceholder": "实体名称",
       "knowledgeGraphDepth": "深度",
       "knowledgeGraphMaxNodes": "最大节点数",
-      "knowledgeGraphEmptyTitle": "未选择种子",
-      "knowledgeGraphEmptyDescription": "请输入一个种子实体以探索图谱",
+      "knowledgeGraphEmptyTitle": "暂无数据",
+      "knowledgeGraphEmptyDescription": "请输入实体名称以加载真实图谱数据",
       "knowledgeGraphNotFoundTitle": "未找到",
-      "knowledgeGraphNotFoundDescription": "该种子实体暂无图谱数据",
+      "knowledgeGraphNotFoundDescription": "该实体暂无图谱数据",
       "financialCandlestick": {
         "title": "市场指数"
       },
@@ -1347,7 +1347,7 @@
       },
       "sectorSelected": "已选择：{{sector}}",
       "knowledgeGraphReflow": "重新布局",
-      "knowledgeGraphSeedLabel": "种子",
+      "knowledgeGraphSeedLabel": "实体",
       "knowledgeGraphSearching": "搜索中...",
       "knowledgeGraphNodeTitle": "节点",
       "knowledgeGraphNodeType": "类型",
@@ -2880,8 +2880,6 @@
       "fields": {
         "enabled": "启用",
         "ingestionEnabled": "入库任务启用",
-        "seedIngestionEnabled": "结构化种子入库启用",
-        "seedSwIndustriesPerRun": "申万行业每次处理上限",
         "maxBatchSize": "单批处理上限",
         "maxRelationsPerArticle": "单篇关系上限",
         "minEdgeConfidence": "最小边置信度",
@@ -2898,8 +2896,6 @@
       "hints": {
         "note": "启用入库任务后，系统会从已处理文章中增量抽取关系并写入知识图谱。",
         "ingestionEnabled": "关闭后定时任务不会把新文章写入知识图谱。",
-        "seedIngestionEnabled": "关闭后定时任务不会从结构化种子源补充知识图谱。",
-        "seedSwIndustriesPerRun": "每次任务最多处理的申万三级行业数量。",
         "maxBatchSize": "每次任务最多处理的文章数。",
         "maxRelationsPerArticle": "每篇文章最多入库的关系条数。",
         "minEdgeConfidence": "过滤掉置信度低于该值的关系。",
@@ -5007,7 +5003,7 @@
       "empty": "暂无运行时密钥配置。"
     },
     "situationMonitor": {
-      "description": "配置态势监控翻译能力（并发、DeepLX 主翻译与备用端点）。",
+      "description": "配置态势监控的翻译能力、Telegram 采集，以及直播 HLS 代理频道（CNN/CNBC）。",
       "notice": {
         "title": "翻译 API（DeepLX）",
         "body": "“翻译为简体中文”默认使用 DeepLX，并可在 DeepLX 失败后自动切换到备用翻译端点。若两者都失败，页面会保留原文并显示翻译错误标识。"
@@ -5018,9 +5014,12 @@
         "saved": "已保存覆盖配置",
         "enabled": "已启用",
         "disabled": "已禁用",
+        "configured": "已配置",
         "notConfigured": "未配置",
         "translationApiKeySource": "翻译 API Key 来源",
         "translationFallbackApi": "备用翻译 API",
+        "liveHlsProxyCnn": "直播 HLS 代理（CNN）",
+        "liveHlsProxyCnbc": "直播 HLS 代理（CNBC）",
         "finnhubApiKeySource": "Finnhub API Key 来源",
         "fredApiKeySource": "FRED API Key 来源",
         "telegramApiIdSource": "Telegram API ID 来源",
@@ -5035,11 +5034,16 @@
           "stored": "系统设置（已保存）",
           "env": "环境变量",
           "none": "未配置"
+        },
+        "liveHlsProxySources": {
+          "stored": "数据库已保存",
+          "none": "未配置"
         }
       },
       "sections": {
         "translationApi": "翻译 API",
         "externalApis": "外部数据 API",
+        "liveHlsProxy": "直播 HLS 代理",
         "telegram": "Telegram 采集",
         "telegramAuth": "Telegram Session 授权"
       },
@@ -5065,6 +5069,12 @@
         "telegramStartupDelayMs": "Telegram 启动延迟（毫秒）",
         "telegramRateLimitMs": "Telegram 频道间延迟（毫秒）",
         "telegramPollIntervalMs": "Telegram 轮询间隔（毫秒）",
+        "liveHlsProxyCnnUpstreamUrl": "CNN 上游 .m3u8 URL",
+        "liveHlsProxyCnnReferer": "CNN Referer 请求头",
+        "liveHlsProxyCnnAllowedHosts": "CNN 允许主机",
+        "liveHlsProxyCnbcUpstreamUrl": "CNBC 上游 .m3u8 URL",
+        "liveHlsProxyCnbcReferer": "CNBC Referer 请求头",
+        "liveHlsProxyCnbcAllowedHosts": "CNBC 允许主机",
         "telegramPhoneNumber": "手机号",
         "telegramPhoneCode": "Telegram 验证码",
         "telegram2faPassword": "Telegram 二步验证密码"
@@ -5080,6 +5090,13 @@
         "fredApiKey": "用于美联储指标与资产负债表。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
         "translationApiTimeoutMs": "单次翻译请求超时时间。",
         "translationApiMaxRetries": "翻译请求失败后的最大重试次数。",
+        "liveHlsProxyGeneral": "这些值只存 MySQL，不再使用环境变量兜底。",
+        "liveHlsProxyCnnUpstreamUrl": "CNN 主播放清单 URL。必须是 https 且指向 .m3u8 清单。",
+        "liveHlsProxyCnnReferer": "抓取 CNN 上游 HLS 资源时附带的可选 Referer 请求头。",
+        "liveHlsProxyCnnAllowedHosts": "CNN 分片/密钥抓取允许主机列表，逗号分隔。上游主机会自动加入允许列表。",
+        "liveHlsProxyCnbcUpstreamUrl": "CNBC 主播放清单 URL。必须是 https 且指向 .m3u8 清单。",
+        "liveHlsProxyCnbcReferer": "抓取 CNBC 上游 HLS 资源时附带的可选 Referer 请求头。",
+        "liveHlsProxyCnbcAllowedHosts": "CNBC 分片/密钥抓取允许主机列表，逗号分隔。上游主机会自动加入允许列表。",
         "telegramEnabled": "控制 Telegram 轮询任务是否启用。",
         "telegramApiId": "用于发起 Telegram 授权（可在 https://my.telegram.org/apps 获取）。不会通过“保存配置”单独写入，完成授权后会自动保存。",
         "telegramApiHash": "用于发起 Telegram 授权。不会通过“保存配置”单独写入，完成授权后会自动保存。",
@@ -5094,6 +5111,11 @@
         "translationFallbackApiBaseUrl": "https://translates.shisihua.dpdns.org/<token>/v1",
         "finnhubApiKey": "留空表示保持当前 key",
         "fredApiKey": "留空表示保持当前 key",
+        "liveHlsProxyCnnUpstreamUrl": "https://media.example.net/live/cnn/master.m3u8",
+        "liveHlsProxyCnnReferer": "https://example.com",
+        "liveHlsProxyCnbcUpstreamUrl": "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
+        "liveHlsProxyCnbcReferer": "https://livenewschat.eu/",
+        "liveHlsProxyAllowedHosts": "host-a.example.com, host-b.example.com",
         "telegramApiId": "例如 12345678",
         "telegramApiHash": "用于发送验证码（如系统中已存在可留空）",
         "telegramChannelSet": "full",
@@ -7236,8 +7258,18 @@
     },
     "liveNews": {
       "title": "实时新闻直播",
+      "manage": "管理",
+      "manageHint": "管理可见频道并拖拽调整顺序。",
+      "visibleCount": "显示 {{count}} / {{max}}",
+      "noChannelSelected": "该地区未选择频道。",
+      "resetRegion": "重置地区",
+      "inGrid": "已在网格",
       "hlsFallback": "HLS 回退",
       "hlsCooldown": "HLS 冷却中",
+      "hlsOnly": "仅 HLS",
+      "proxyUnavailable": "代理不可用",
+      "resolvingYoutube": "正在解析直播流...",
+      "youtubeUnavailable": "YouTube 直播不可用",
       "unavailable": "直播已暂停",
       "idle": "空闲暂停：移动鼠标或按键后恢复。",
       "hidden": "后台标签页：直播已暂停。",
@@ -7246,7 +7278,9 @@
         "europe": "欧洲",
         "americas": "美洲",
         "middleEast": "中东",
-        "asia": "亚洲"
+        "asia": "亚洲",
+        "africa": "非洲",
+        "oceania": "大洋洲"
       }
     },
     "liveWebcams": {
