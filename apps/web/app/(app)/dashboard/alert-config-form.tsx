@@ -165,7 +165,7 @@ const isCrawlQualityMetricSlug = (
   value === "crawl_quality.org_hash_dedupe_hit_rate";
 
 type RealtimeMetricSlug =
-  | "realtime.opensky.military_flights"
+  | "realtime.adsb.military_flights"
   | "realtime.ais.disruptions"
   | "realtime.unrest.events"
   | "realtime.outages.internet"
@@ -180,9 +180,9 @@ const realtimeMetricOptions: {
   fallbackLabel: string;
 }[] = [
   {
-    value: "realtime.opensky.military_flights",
-    labelKey: "alerts.config.realtime.metrics.opensky",
-    fallbackLabel: "OpenSky military flights",
+    value: "realtime.adsb.military_flights",
+    labelKey: "alerts.config.realtime.metrics.adsb",
+    fallbackLabel: "ADS-B military flights",
   },
   {
     value: "realtime.ais.disruptions",
@@ -230,7 +230,7 @@ const realtimeMetricPresetConfig: Record<
     defaultDescription: string;
   }
 > = {
-  "realtime.opensky.military_flights": {
+  "realtime.adsb.military_flights": {
     operator: AlertOperator.Gte,
     thresholdValue: 50,
     defaultName: "Realtime Signal: Military Flight Activity Surge",
@@ -287,7 +287,7 @@ const realtimeMetricPresetConfig: Record<
   },
 };
 const DEFAULT_REALTIME_METRIC_SLUG: RealtimeMetricSlug =
-  "realtime.opensky.military_flights";
+  "realtime.adsb.military_flights";
 const realtimePresetDefaultNames = new Set(
   Object.values(realtimeMetricPresetConfig).map((preset) => preset.defaultName),
 );
@@ -300,7 +300,7 @@ const realtimePresetDefaultDescriptions = new Set(
 const isRealtimeMetricSlug = (
   value: string | undefined,
 ): value is RealtimeMetricSlug =>
-  value === "realtime.opensky.military_flights" ||
+  value === "realtime.adsb.military_flights" ||
   value === "realtime.ais.disruptions" ||
   value === "realtime.unrest.events" ||
   value === "realtime.outages.internet" ||
@@ -338,7 +338,7 @@ export function AlertConfigForm() {
               AlertMetricProvider.PipelineJob
             ? "pipeline_job"
             : existingRule?.metricProvider === REALTIME_SIGNAL_PROVIDER
-              ? "realtime.opensky.military_flights"
+              ? "realtime.adsb.military_flights"
               : existingRule?.metricProvider ===
                   AlertMetricProvider.CrawlTask
                 ? "crawl_task"

@@ -1,5 +1,5 @@
 export type RealtimeSignalSource =
-  | "opensky"
+  | "adsb"
   | "ais"
   | "unrest"
   | "outages"
@@ -53,9 +53,10 @@ export interface RealtimeSignalsRuntimeConfig {
     baseUrl?: string;
     sharedSecret?: string;
   };
+  adsb: {
+    baseUrl?: string;
+  };
   credentials: {
-    openskyClientId?: string;
-    openskyClientSecret?: string;
     aisApiKey?: string;
     acledAccessToken?: string;
     cloudflareApiToken?: string;

@@ -7,7 +7,7 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
   requestTimeoutMs: 10_000,
   maxRetries: 0,
   sources: {
-    opensky: { enabled: true, intervalSec: 60 },
+    adsb: { enabled: true, intervalSec: 60 },
     ais: { enabled: true, intervalSec: 60 },
     unrest: { enabled: true, intervalSec: 60 },
     outages: { enabled: true, intervalSec: 60 },
@@ -23,6 +23,7 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
     predictionNewsActivityThreshold: 5,
   },
   relay: {},
+  adsb: {},
   credentials: {
     acledAccessToken: "token",
   },
@@ -38,6 +39,35 @@ describe("RealtimeSignalsService unrest merge", () => {
       {} as any,
       {} as any,
     );
+
+  it("fetches ADS-B military feed from configured endpoint", async () => {
+    const service = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      adsb: { baseUrl: "https://api.adsb.lol/" },
+    } satisfies RealtimeSignalsRuntimeConfig;
+    const fetchJsonSpy = jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
+      total: 3,
+      ac: [{ r: "USAF1" }],
+    });
+
+    const result = await (service as any).fetchAdsbSignal(runtime);
+
+    expect(fetchJsonSpy).toHaveBeenCalledWith(
+      "https://api.adsb.lol/v2/mil",
+      runtime,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      metricSlug: "realtime.adsb.military_flights",
+      value: 3,
+      context: {
+        source: "adsb",
+        totalAircraft: 1,
+        militaryCount: 3,
+      },
+    });
+  });
 
   it("deduplicates unrest events by rounded geo/date key and prefers ACLED", () => {
     const service = buildService();

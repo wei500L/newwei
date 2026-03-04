@@ -10,6 +10,12 @@ describe("alert-config metric slug normalization", () => {
     expect(normalizeMetricSlug("  custom.manual  ")).toBe("custom.manual");
   });
 
+  it("maps legacy opensky realtime slug to adsb", () => {
+    expect(normalizeMetricSlug("  realtime.opensky.military_flights  ")).toBe(
+      "realtime.adsb.military_flights",
+    );
+  });
+
   it("returns empty string for non-string inputs", () => {
     expect(normalizeMetricSlug(undefined)).toBe("");
     expect(normalizeMetricSlug(null)).toBe("");

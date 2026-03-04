@@ -269,8 +269,8 @@ export const apiEnvSchema = baseEnvSchema.extend({
     .positive()
     .default(12_000),
   REALTIME_SIGNALS_MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
-  REALTIME_SIGNALS_OPENSKY_ENABLED: envBoolean.default(true),
-  REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC: z.coerce
+  REALTIME_SIGNALS_ADSB_ENABLED: envBoolean.default(true),
+  REALTIME_SIGNALS_ADSB_INTERVAL_SEC: z.coerce
     .number()
     .int()
     .positive()
@@ -345,15 +345,10 @@ export const apiEnvSchema = baseEnvSchema.extend({
       typeof value === "string" && value.trim() === "" ? undefined : value,
     z.string().min(1).optional(),
   ),
-  REALTIME_SIGNALS_OPENSKY_CLIENT_ID: z.preprocess(
+  REALTIME_SIGNALS_ADSB_BASE_URL: z.preprocess(
     (value) =>
       typeof value === "string" && value.trim() === "" ? undefined : value,
-    z.string().min(1).optional(),
-  ),
-  REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET: z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim() === "" ? undefined : value,
-    z.string().min(1).optional(),
+    z.string().url().default("https://api.adsb.lol"),
   ),
   REALTIME_SIGNALS_AIS_API_KEY: z.preprocess(
     (value) =>

@@ -93,37 +93,6 @@ const REALTIME_SIGNAL_INSIGHT_SOURCES = [
 
 type RealtimeSignalInsightSource = (typeof REALTIME_SIGNAL_INSIGHT_SOURCES)[number];
 
-const MILITARY_QUERY_REGIONS = [
-  {
-    id: "indo_pacific",
-    lamin: -10,
-    lomin: 90,
-    lamax: 60,
-    lomax: 170,
-  },
-  {
-    id: "centcom",
-    lamin: 5,
-    lomin: 30,
-    lamax: 45,
-    lomax: 75,
-  },
-  {
-    id: "eucom",
-    lamin: 35,
-    lomin: -15,
-    lamax: 70,
-    lomax: 45,
-  },
-  {
-    id: "arctic",
-    lamin: 60,
-    lomin: -180,
-    lamax: 85,
-    lomax: 180,
-  },
-] as const;
-
 interface UnrestEventCandidate {
   id: string;
   lat: number;
@@ -356,8 +325,8 @@ export class RealtimeSignalsService {
     runtime: RealtimeSignalsRuntimeConfig,
   ): Promise<RealtimeSignalFetchResult[]> {
     switch (source) {
-      case "opensky":
-        return this.fetchOpenSkySignal(runtime);
+      case "adsb":
+        return this.fetchAdsbSignal(runtime);
       case "ais":
         return this.fetchAisSignal(runtime);
       case "unrest":
@@ -377,89 +346,43 @@ export class RealtimeSignalsService {
     }
   }
 
-  private async fetchOpenSkySignal(runtime: RealtimeSignalsRuntimeConfig) {
-    const relayBase = this.normalizeUrl(runtime.relay.baseUrl);
-    const headers = this.buildRelayHeaders(runtime);
+  private async fetchAdsbSignal(runtime: RealtimeSignalsRuntimeConfig) {
+    const baseUrl = this.normalizeUrl(runtime.adsb.baseUrl) ?? "https://api.adsb.lol";
+    const endpoint = `${baseUrl}/v2/mil`;
+    const payload = await this.fetchJsonWithRetry(endpoint, runtime);
+    const aircraft = this.readArray((payload as { ac?: unknown[] })?.ac);
+    const totalFromPayload = this.toFiniteNumber(
+      (payload as { total?: unknown })?.total,
+    );
+    const militaryCount =
+      totalFromPayload === null ? aircraft.length : Math.max(0, Math.trunc(totalFromPayload));
 
-    const relayUrl = relayBase ? `${relayBase}/opensky` : null;
-    const directUrl = "https://opensky-network.org/api/states/all";
-    let source = relayUrl ? "relay" : "opensky";
-    let states: unknown[] = [];
-    let queriedRegions = 0;
-    let failedRegions = 0;
-
-    if (relayUrl) {
-      try {
-        const payload = await this.fetchJsonWithRetry(
-          relayUrl,
-          runtime,
-          headers ? { headers } : undefined,
-        );
-        states = this.readArray((payload as { states?: unknown[] })?.states);
-      } catch (error) {
-        logger.warn(
-          { err: error },
-          "OpenSky relay request failed, fallback to direct regional pull",
-        );
-        source = "opensky";
-      }
-    }
-
-    if (source === "opensky") {
-      const regionalStates = await this.fetchOpenSkyRegionalStates(runtime, directUrl);
-      states = regionalStates.states;
-      queriedRegions = regionalStates.queriedRegions;
-      failedRegions = regionalStates.failedRegions;
-    }
-
-    const militaryPrefixes = [
-      "RCH",
-      "AMC",
-      "CNV",
-      "FORTE",
-      "LAGR",
-      "QID",
-      "RRR",
-      "BAF",
-      "MMF",
-      "NAVY",
-      "ARMY",
-      "USAF",
-      "RAF",
-      "RUAF",
-      "CHAF",
-      "IAF",
-    ];
-    let militaryCount = 0;
     const countries = new Set<string>();
-    for (const entry of states) {
-      if (!Array.isArray(entry)) {
+    for (const entry of aircraft) {
+      if (!entry || typeof entry !== "object") {
         continue;
       }
-      const callsign = typeof entry[1] === "string" ? entry[1].trim().toUpperCase() : "";
-      const countryCode = this.extractCountryCode(entry[2]);
+      const record = entry as Record<string, unknown>;
+      const countryCode =
+        this.extractCountryCode(record.countryCode) ??
+        this.extractCountryCode(record.country) ??
+        this.extractCountryCode(record.r) ??
+        this.extractCountryCode(record.flight);
       if (countryCode) {
         countries.add(countryCode);
-      }
-      if (!callsign) {
-        continue;
-      }
-      if (militaryPrefixes.some((prefix) => callsign.startsWith(prefix))) {
-        militaryCount += 1;
       }
     }
 
     return [
       {
-        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
         value: militaryCount,
         context: {
-          source,
-          totalStates: states.length,
+          source: "adsb",
+          sourceEndpoint: endpoint,
+          totalAircraft: aircraft.length,
           militaryCount,
           countryCodes: Array.from(countries),
-          queriedRegions,
-          failedRegions,
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
@@ -564,59 +487,6 @@ export class RealtimeSignalsService {
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
-  }
-
-  private async fetchOpenSkyRegionalStates(
-    runtime: RealtimeSignalsRuntimeConfig,
-    directUrl: string,
-  ) {
-    const states: unknown[] = [];
-    const seenIcao24 = new Set<string>();
-    let queriedRegions = 0;
-    let failedRegions = 0;
-
-    for (const region of MILITARY_QUERY_REGIONS) {
-      queriedRegions += 1;
-      const url = new URL(directUrl);
-      url.searchParams.set("lamin", String(region.lamin));
-      url.searchParams.set("lamax", String(region.lamax));
-      url.searchParams.set("lomin", String(region.lomin));
-      url.searchParams.set("lomax", String(region.lomax));
-
-      try {
-        const payload = await this.fetchJsonWithRetry(url.toString(), runtime);
-        const regionStates = this.readArray(
-          (payload as { states?: unknown[] })?.states,
-        );
-
-        for (const entry of regionStates) {
-          let dedupeKey: string | null = null;
-          if (Array.isArray(entry)) {
-            const icao24 = this.normalizeString(entry[0]);
-            dedupeKey = icao24 ? icao24.toLowerCase() : null;
-          }
-          if (dedupeKey) {
-            if (seenIcao24.has(dedupeKey)) {
-              continue;
-            }
-            seenIcao24.add(dedupeKey);
-          }
-          states.push(entry);
-        }
-      } catch (error) {
-        failedRegions += 1;
-        logger.warn(
-          { region: region.id, err: error },
-          "OpenSky regional request failed",
-        );
-      }
-    }
-
-    return {
-      states,
-      queriedRegions,
-      failedRegions,
-    };
   }
 
   private async fetchAcledUnrestEvents(runtime: RealtimeSignalsRuntimeConfig) {
@@ -1508,7 +1378,7 @@ export class RealtimeSignalsService {
       requestTimeoutMs: cfg.requestTimeoutMs,
       maxRetries: cfg.maxRetries,
       sources: {
-        opensky: cfg.sources.opensky,
+        adsb: cfg.sources.adsb,
         ais: cfg.sources.ais,
         unrest: cfg.sources.unrest,
         outages: cfg.sources.outages,
@@ -1519,6 +1389,7 @@ export class RealtimeSignalsService {
       },
       thresholds: cfg.thresholds,
       relay: cfg.relay,
+      adsb: cfg.adsb,
       credentials: cfg.credentials,
       polymarket: cfg.polymarket,
     };

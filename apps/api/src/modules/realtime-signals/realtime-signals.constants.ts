@@ -3,7 +3,7 @@ import { AlertOperator, AlertSeverity } from "@prisma/client";
 import type { RealtimeSignalSource } from "./realtime-signals.types";
 
 export const REALTIME_SIGNAL_METRIC_SLUGS = {
-  opensky: "realtime.opensky.military_flights",
+  adsb: "realtime.adsb.military_flights",
   ais: "realtime.ais.disruptions",
   unrest: "realtime.unrest.events",
   outages: "realtime.outages.internet",
@@ -16,8 +16,25 @@ export const REALTIME_SIGNAL_METRIC_SLUGS = {
 export type RealtimeSignalMetricSlug =
   (typeof REALTIME_SIGNAL_METRIC_SLUGS)[keyof typeof REALTIME_SIGNAL_METRIC_SLUGS];
 
+const REALTIME_SIGNAL_METRIC_SLUG_ALIASES: Readonly<
+  Record<string, RealtimeSignalMetricSlug>
+> = {
+  "realtime.opensky.military_flights": REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+};
+
+export function normalizeRealtimeSignalMetricSlug(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return REALTIME_SIGNAL_METRIC_SLUG_ALIASES[trimmed] ?? trimmed;
+}
+
 export const REALTIME_SIGNAL_SOURCES: RealtimeSignalSource[] = [
-  "opensky",
+  "adsb",
   "ais",
   "unrest",
   "outages",
@@ -29,7 +46,7 @@ export const REALTIME_SIGNAL_SOURCES: RealtimeSignalSource[] = [
 
 export interface RealtimeSignalDefaultRuleDefinition {
   key:
-    | "opensky"
+    | "adsb"
     | "ais"
     | "unrest"
     | "outages"
@@ -48,11 +65,11 @@ export interface RealtimeSignalDefaultRuleDefinition {
 export const REALTIME_SIGNAL_DEFAULT_RULES: RealtimeSignalDefaultRuleDefinition[] =
   [
     {
-      key: "opensky",
+      key: "adsb",
       name: "Realtime Signal: Military Flight Activity Surge",
       description:
         "Alert when detected military flight count exceeds baseline threshold.",
-      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
       operator: AlertOperator.gte,
       thresholdValue: 50,
       severity: AlertSeverity.medium,

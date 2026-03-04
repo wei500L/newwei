@@ -153,7 +153,7 @@ export interface RealtimeSignalsEnvConfig {
   requestTimeoutMs: number;
   maxRetries: number;
   sources: {
-    opensky: RealtimeSignalSourceEnvConfig;
+    adsb: RealtimeSignalSourceEnvConfig;
     ais: RealtimeSignalSourceEnvConfig;
     unrest: RealtimeSignalSourceEnvConfig;
     outages: RealtimeSignalSourceEnvConfig;
@@ -172,9 +172,10 @@ export interface RealtimeSignalsEnvConfig {
     baseUrl?: string;
     sharedSecret?: string;
   };
+  adsb: {
+    baseUrl?: string;
+  };
   credentials: {
-    openskyClientId?: string;
-    openskyClientSecret?: string;
     aisApiKey?: string;
     acledAccessToken?: string;
     cloudflareApiToken?: string;
@@ -505,13 +506,13 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries:
         this.get<number>("REALTIME_SIGNALS_MAX_RETRIES", { infer: true }) ?? 2,
       sources: {
-        opensky: {
+        adsb: {
           enabled:
-            this.get<boolean>("REALTIME_SIGNALS_OPENSKY_ENABLED", {
+            this.get<boolean>("REALTIME_SIGNALS_ADSB_ENABLED", {
               infer: true,
             }) ?? true,
           intervalSec:
-            this.get<number>("REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC", {
+            this.get<number>("REALTIME_SIGNALS_ADSB_INTERVAL_SEC", {
               infer: true,
             }) ?? 600,
         },
@@ -619,15 +620,13 @@ export class EnvService extends ConfigService<ApiEnv> {
           { infer: true },
         ),
       },
+      adsb: {
+        baseUrl:
+          this.get<string | undefined>("REALTIME_SIGNALS_ADSB_BASE_URL", {
+            infer: true,
+          }) ?? "https://api.adsb.lol",
+      },
       credentials: {
-        openskyClientId: this.get<string | undefined>(
-          "REALTIME_SIGNALS_OPENSKY_CLIENT_ID",
-          { infer: true },
-        ),
-        openskyClientSecret: this.get<string | undefined>(
-          "REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET",
-          { infer: true },
-        ),
         aisApiKey: this.get<string | undefined>("REALTIME_SIGNALS_AIS_API_KEY", {
           infer: true,
         }),

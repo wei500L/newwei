@@ -22,8 +22,8 @@ interface StoredRealtimeSignalsSettings {
   enabled?: unknown;
   requestTimeoutMs?: unknown;
   maxRetries?: unknown;
-  openskyEnabled?: unknown;
-  openskyIntervalSec?: unknown;
+  adsbEnabled?: unknown;
+  adsbIntervalSec?: unknown;
   aisEnabled?: unknown;
   aisIntervalSec?: unknown;
   unrestEnabled?: unknown;
@@ -42,10 +42,9 @@ interface StoredRealtimeSignalsSettings {
   keywordSpikeMultiplier?: unknown;
   predictionShiftThreshold?: unknown;
   predictionNewsActivityThreshold?: unknown;
+  adsbBaseUrl?: unknown;
   relayBaseUrl?: unknown;
   relaySharedSecret?: unknown;
-  openskyClientId?: unknown;
-  openskyClientSecret?: unknown;
   aisApiKey?: unknown;
   acledAccessToken?: unknown;
   cloudflareApiToken?: unknown;
@@ -62,8 +61,8 @@ interface EffectiveRealtimeSignalsSettings {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
-  openskyEnabled: boolean;
-  openskyIntervalSec: number;
+  adsbEnabled: boolean;
+  adsbIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -82,10 +81,9 @@ interface EffectiveRealtimeSignalsSettings {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
+  adsbBaseUrl?: string;
   relayBaseUrl?: string;
   relaySharedSecret?: string;
-  openskyClientId?: string;
-  openskyClientSecret?: string;
   aisApiKey?: string;
   acledAccessToken?: string;
   cloudflareApiToken?: string;
@@ -103,8 +101,8 @@ export interface RealtimeSignalsSettingsPublic {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
-  openskyEnabled: boolean;
-  openskyIntervalSec: number;
+  adsbEnabled: boolean;
+  adsbIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -123,14 +121,11 @@ export interface RealtimeSignalsSettingsPublic {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
+  adsbBaseUrl?: string;
   relayBaseUrl?: string;
   polymarketProxyUrl?: string;
   hasRelaySharedSecret: boolean;
   relaySharedSecretSource: RealtimeSignalsSecretSource;
-  hasOpenskyClientId: boolean;
-  openskyClientIdSource: RealtimeSignalsSecretSource;
-  hasOpenskyClientSecret: boolean;
-  openskyClientSecretSource: RealtimeSignalsSecretSource;
   hasAisApiKey: boolean;
   aisApiKeySource: RealtimeSignalsSecretSource;
   hasAcledAccessToken: boolean;
@@ -163,8 +158,6 @@ export class RealtimeSignalsSettingsService {
     const effective = this.resolveEffectiveConfig(stored);
 
     const relaySharedSecret = this.resolveStoredSecret(stored?.relaySharedSecret, "relay shared secret");
-    const openskyClientId = this.resolveStoredSecret(stored?.openskyClientId, "opensky client id");
-    const openskyClientSecret = this.resolveStoredSecret(stored?.openskyClientSecret, "opensky client secret");
     const aisApiKey = this.resolveStoredSecret(stored?.aisApiKey, "ais api key");
     const acledAccessToken = this.resolveStoredSecret(stored?.acledAccessToken, "acled access token");
     const cloudflareApiToken = this.resolveStoredSecret(stored?.cloudflareApiToken, "cloudflare api token");
@@ -173,14 +166,6 @@ export class RealtimeSignalsSettingsService {
     const relaySharedSecretPresence = this.resolveSecretPresence(
       relaySharedSecret,
       effective.relaySharedSecret,
-    );
-    const openskyClientIdPresence = this.resolveSecretPresence(
-      openskyClientId,
-      effective.openskyClientId,
-    );
-    const openskyClientSecretPresence = this.resolveSecretPresence(
-      openskyClientSecret,
-      effective.openskyClientSecret,
     );
     const aisApiKeyPresence = this.resolveSecretPresence(
       aisApiKey,
@@ -204,8 +189,8 @@ export class RealtimeSignalsSettingsService {
       enabled: effective.enabled,
       requestTimeoutMs: effective.requestTimeoutMs,
       maxRetries: effective.maxRetries,
-      openskyEnabled: effective.openskyEnabled,
-      openskyIntervalSec: effective.openskyIntervalSec,
+      adsbEnabled: effective.adsbEnabled,
+      adsbIntervalSec: effective.adsbIntervalSec,
       aisEnabled: effective.aisEnabled,
       aisIntervalSec: effective.aisIntervalSec,
       unrestEnabled: effective.unrestEnabled,
@@ -224,14 +209,11 @@ export class RealtimeSignalsSettingsService {
       keywordSpikeMultiplier: effective.keywordSpikeMultiplier,
       predictionShiftThreshold: effective.predictionShiftThreshold,
       predictionNewsActivityThreshold: effective.predictionNewsActivityThreshold,
+      adsbBaseUrl: effective.adsbBaseUrl,
       relayBaseUrl: effective.relayBaseUrl,
       polymarketProxyUrl: effective.polymarketProxyUrl,
       hasRelaySharedSecret: relaySharedSecretPresence.has,
       relaySharedSecretSource: relaySharedSecretPresence.source,
-      hasOpenskyClientId: openskyClientIdPresence.has,
-      openskyClientIdSource: openskyClientIdPresence.source,
-      hasOpenskyClientSecret: openskyClientSecretPresence.has,
-      openskyClientSecretSource: openskyClientSecretPresence.source,
       hasAisApiKey: aisApiKeyPresence.has,
       aisApiKeySource: aisApiKeyPresence.source,
       hasAcledAccessToken: acledAccessTokenPresence.has,
@@ -251,9 +233,9 @@ export class RealtimeSignalsSettingsService {
       requestTimeoutMs: effective.requestTimeoutMs,
       maxRetries: effective.maxRetries,
       sources: {
-        opensky: {
-          enabled: effective.openskyEnabled,
-          intervalSec: effective.openskyIntervalSec,
+        adsb: {
+          enabled: effective.adsbEnabled,
+          intervalSec: effective.adsbIntervalSec,
         },
         ais: {
           enabled: effective.aisEnabled,
@@ -294,9 +276,10 @@ export class RealtimeSignalsSettingsService {
         baseUrl: effective.relayBaseUrl,
         sharedSecret: effective.relaySharedSecret,
       },
+      adsb: {
+        baseUrl: effective.adsbBaseUrl,
+      },
       credentials: {
-        openskyClientId: effective.openskyClientId,
-        openskyClientSecret: effective.openskyClientSecret,
         aisApiKey: effective.aisApiKey,
         acledAccessToken: effective.acledAccessToken,
         cloudflareApiToken: effective.cloudflareApiToken,
@@ -315,8 +298,8 @@ export class RealtimeSignalsSettingsService {
       enabled?: boolean;
       requestTimeoutMs?: number;
       maxRetries?: number;
-      openskyEnabled?: boolean;
-      openskyIntervalSec?: number;
+      adsbEnabled?: boolean;
+      adsbIntervalSec?: number;
       aisEnabled?: boolean;
       aisIntervalSec?: number;
       unrestEnabled?: boolean;
@@ -335,10 +318,9 @@ export class RealtimeSignalsSettingsService {
       keywordSpikeMultiplier?: number;
       predictionShiftThreshold?: number;
       predictionNewsActivityThreshold?: number;
+      adsbBaseUrl?: string | null;
       relayBaseUrl?: string | null;
       relaySharedSecret?: string | null;
-      openskyClientId?: string | null;
-      openskyClientSecret?: string | null;
       aisApiKey?: string | null;
       acledAccessToken?: string | null;
       cloudflareApiToken?: string | null;
@@ -353,8 +335,8 @@ export class RealtimeSignalsSettingsService {
       enabled: this.asBoolean(input.enabled, effective.enabled),
       requestTimeoutMs: this.asBoundedInt(input.requestTimeoutMs, effective.requestTimeoutMs, 1_000, 120_000),
       maxRetries: this.asBoundedInt(input.maxRetries, effective.maxRetries, 0, 6),
-      openskyEnabled: this.asBoolean(input.openskyEnabled, effective.openskyEnabled),
-      openskyIntervalSec: this.asBoundedInt(input.openskyIntervalSec, effective.openskyIntervalSec, 30, 86_400),
+      adsbEnabled: this.asBoolean(input.adsbEnabled, effective.adsbEnabled),
+      adsbIntervalSec: this.asBoundedInt(input.adsbIntervalSec, effective.adsbIntervalSec, 30, 86_400),
       aisEnabled: this.asBoolean(input.aisEnabled, effective.aisEnabled),
       aisIntervalSec: this.asBoundedInt(input.aisIntervalSec, effective.aisIntervalSec, 30, 86_400),
       unrestEnabled: this.asBoolean(input.unrestEnabled, effective.unrestEnabled),
@@ -403,10 +385,9 @@ export class RealtimeSignalsSettingsService {
         0,
         1_000,
       ),
+      adsbBaseUrl: this.resolveNextUrl(stored?.adsbBaseUrl, input.adsbBaseUrl, "adsbBaseUrl"),
       relayBaseUrl: this.resolveNextUrl(stored?.relayBaseUrl, input.relayBaseUrl, "relayBaseUrl"),
       relaySharedSecret: await this.resolveNextSecret(stored?.relaySharedSecret, input.relaySharedSecret),
-      openskyClientId: await this.resolveNextSecret(stored?.openskyClientId, input.openskyClientId),
-      openskyClientSecret: await this.resolveNextSecret(stored?.openskyClientSecret, input.openskyClientSecret),
       aisApiKey: await this.resolveNextSecret(stored?.aisApiKey, input.aisApiKey),
       acledAccessToken: await this.resolveNextSecret(stored?.acledAccessToken, input.acledAccessToken),
       cloudflareApiToken: await this.resolveNextSecret(stored?.cloudflareApiToken, input.cloudflareApiToken),
@@ -444,8 +425,6 @@ export class RealtimeSignalsSettingsService {
             updatedFields: Object.keys(input),
             secretsUpdated: {
               relaySharedSecret: input.relaySharedSecret !== undefined,
-              openskyClientId: input.openskyClientId !== undefined,
-              openskyClientSecret: input.openskyClientSecret !== undefined,
               aisApiKey: input.aisApiKey !== undefined,
               acledAccessToken: input.acledAccessToken !== undefined,
               cloudflareApiToken: input.cloudflareApiToken !== undefined,
@@ -500,8 +479,8 @@ export class RealtimeSignalsSettingsService {
       enabled: this.asBoolean(stored?.enabled, envConfig.enabled),
       requestTimeoutMs: this.asBoundedInt(stored?.requestTimeoutMs, envConfig.requestTimeoutMs, 1_000, 120_000),
       maxRetries: this.asBoundedInt(stored?.maxRetries, envConfig.maxRetries, 0, 6),
-      openskyEnabled: this.asBoolean(stored?.openskyEnabled, envConfig.sources.opensky.enabled),
-      openskyIntervalSec: this.asBoundedInt(stored?.openskyIntervalSec, envConfig.sources.opensky.intervalSec, 30, 86_400),
+      adsbEnabled: this.asBoolean(stored?.adsbEnabled, envConfig.sources.adsb.enabled),
+      adsbIntervalSec: this.asBoundedInt(stored?.adsbIntervalSec, envConfig.sources.adsb.intervalSec, 30, 86_400),
       aisEnabled: this.asBoolean(stored?.aisEnabled, envConfig.sources.ais.enabled),
       aisIntervalSec: this.asBoundedInt(stored?.aisIntervalSec, envConfig.sources.ais.intervalSec, 30, 86_400),
       unrestEnabled: this.asBoolean(stored?.unrestEnabled, envConfig.sources.unrest.enabled),
@@ -550,18 +529,16 @@ export class RealtimeSignalsSettingsService {
         0,
         1_000,
       ),
+      adsbBaseUrl:
+        this.normalizeUrl(stored?.adsbBaseUrl) ??
+        this.normalizeUrl(envConfig.adsb.baseUrl) ??
+        "https://api.adsb.lol",
       relayBaseUrl:
         this.normalizeUrl(stored?.relayBaseUrl) ??
         this.normalizeUrl(envConfig.relay.baseUrl),
       relaySharedSecret:
         this.resolveStoredSecret(stored?.relaySharedSecret, "relay shared secret") ??
         this.normalizeString(envConfig.relay.sharedSecret),
-      openskyClientId:
-        this.resolveStoredSecret(stored?.openskyClientId, "opensky client id") ??
-        this.normalizeString(envConfig.credentials.openskyClientId),
-      openskyClientSecret:
-        this.resolveStoredSecret(stored?.openskyClientSecret, "opensky client secret") ??
-        this.normalizeString(envConfig.credentials.openskyClientSecret),
       aisApiKey:
         this.resolveStoredSecret(stored?.aisApiKey, "ais api key") ??
         this.normalizeString(envConfig.credentials.aisApiKey),

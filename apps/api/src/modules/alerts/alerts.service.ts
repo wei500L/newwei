@@ -28,7 +28,10 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { REALTIME_SIGNAL_DEFAULT_RULES } from "../realtime-signals/realtime-signals.constants";
+import {
+  normalizeRealtimeSignalMetricSlug,
+  REALTIME_SIGNAL_DEFAULT_RULES,
+} from "../realtime-signals/realtime-signals.constants";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
 import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
@@ -90,7 +93,7 @@ export type AlertJobPayload =
 const logger = createLogger({ name: "alerts" });
 const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const normalizeMetricSlug = (value: unknown): string =>
-  typeof value === "string" ? value.trim() : "";
+  normalizeRealtimeSignalMetricSlug(value);
 const DEFAULT_CRAWL_QUALITY_RULES: Array<{
   key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate";
   name: string;
@@ -414,7 +417,7 @@ export class AlertsService {
   private buildDefaultRealtimeSignalRuleId(
     orgId: string,
     key:
-      | "opensky"
+      | "adsb"
       | "ais"
       | "unrest"
       | "outages"

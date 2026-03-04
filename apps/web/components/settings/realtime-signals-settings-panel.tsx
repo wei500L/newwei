@@ -40,8 +40,8 @@ interface RealtimeSignalsSettingsResponse {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
-  openskyEnabled: boolean;
-  openskyIntervalSec: number;
+  adsbEnabled: boolean;
+  adsbIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -60,14 +60,11 @@ interface RealtimeSignalsSettingsResponse {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
+  adsbBaseUrl?: string;
   relayBaseUrl?: string;
   polymarketProxyUrl?: string;
   hasRelaySharedSecret: boolean;
   relaySharedSecretSource: RealtimeSignalsSecretSource;
-  hasOpenskyClientId: boolean;
-  openskyClientIdSource: RealtimeSignalsSecretSource;
-  hasOpenskyClientSecret: boolean;
-  openskyClientSecretSource: RealtimeSignalsSecretSource;
   hasAisApiKey: boolean;
   aisApiKeySource: RealtimeSignalsSecretSource;
   hasAcledAccessToken: boolean;
@@ -82,8 +79,8 @@ interface RealtimeSignalsSettingsFormValues {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
-  openskyEnabled: boolean;
-  openskyIntervalSec: number;
+  adsbEnabled: boolean;
+  adsbIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -102,11 +99,10 @@ interface RealtimeSignalsSettingsFormValues {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
+  adsbBaseUrl?: string;
   relayBaseUrl?: string;
   polymarketProxyUrl?: string;
   relaySharedSecret?: string;
-  openskyClientId?: string;
-  openskyClientSecret?: string;
   aisApiKey?: string;
   acledAccessToken?: string;
   cloudflareApiToken?: string;
@@ -118,8 +114,8 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   enabled: true,
   requestTimeoutMs: 12_000,
   maxRetries: 2,
-  openskyEnabled: true,
-  openskyIntervalSec: 600,
+  adsbEnabled: true,
+  adsbIntervalSec: 600,
   aisEnabled: true,
   aisIntervalSec: 600,
   unrestEnabled: true,
@@ -138,14 +134,11 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   keywordSpikeMultiplier: 3,
   predictionShiftThreshold: 5,
   predictionNewsActivityThreshold: 3,
+  adsbBaseUrl: "https://api.adsb.lol",
   relayBaseUrl: "",
   polymarketProxyUrl: "",
   hasRelaySharedSecret: false,
   relaySharedSecretSource: "none",
-  hasOpenskyClientId: false,
-  openskyClientIdSource: "none",
-  hasOpenskyClientSecret: false,
-  openskyClientSecretSource: "none",
   hasAisApiKey: false,
   aisApiKeySource: "none",
   hasAcledAccessToken: false,
@@ -158,10 +151,10 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
 
 const SOURCE_CONFIGS = [
   {
-    nameKey: "systemSettings.realtimeSignals.sources.opensky",
-    fallbackName: "OpenSky",
-    enabledField: "openskyEnabled",
-    intervalField: "openskyIntervalSec",
+    nameKey: "systemSettings.realtimeSignals.sources.adsb",
+    fallbackName: "ADS-B military flights",
+    enabledField: "adsbEnabled",
+    intervalField: "adsbIntervalSec",
   },
   {
     nameKey: "systemSettings.realtimeSignals.sources.ais",
@@ -214,8 +207,8 @@ function toFormValues(
     enabled: settings.enabled,
     requestTimeoutMs: settings.requestTimeoutMs,
     maxRetries: settings.maxRetries,
-    openskyEnabled: settings.openskyEnabled,
-    openskyIntervalSec: settings.openskyIntervalSec,
+    adsbEnabled: settings.adsbEnabled,
+    adsbIntervalSec: settings.adsbIntervalSec,
     aisEnabled: settings.aisEnabled,
     aisIntervalSec: settings.aisIntervalSec,
     unrestEnabled: settings.unrestEnabled,
@@ -234,11 +227,10 @@ function toFormValues(
     keywordSpikeMultiplier: settings.keywordSpikeMultiplier,
     predictionShiftThreshold: settings.predictionShiftThreshold,
     predictionNewsActivityThreshold: settings.predictionNewsActivityThreshold,
+    adsbBaseUrl: settings.adsbBaseUrl ?? "",
     relayBaseUrl: settings.relayBaseUrl ?? "",
     polymarketProxyUrl: settings.polymarketProxyUrl ?? "",
     relaySharedSecret: "",
-    openskyClientId: "",
-    openskyClientSecret: "",
     aisApiKey: "",
     acledAccessToken: "",
     cloudflareApiToken: "",
@@ -300,8 +292,8 @@ export function RealtimeSignalsSettingsPanel() {
         enabled: values.enabled,
         requestTimeoutMs: values.requestTimeoutMs,
         maxRetries: values.maxRetries,
-        openskyEnabled: values.openskyEnabled,
-        openskyIntervalSec: values.openskyIntervalSec,
+        adsbEnabled: values.adsbEnabled,
+        adsbIntervalSec: values.adsbIntervalSec,
         aisEnabled: values.aisEnabled,
         aisIntervalSec: values.aisIntervalSec,
         unrestEnabled: values.unrestEnabled,
@@ -320,6 +312,9 @@ export function RealtimeSignalsSettingsPanel() {
         keywordSpikeMultiplier: values.keywordSpikeMultiplier,
         predictionShiftThreshold: values.predictionShiftThreshold,
         predictionNewsActivityThreshold: values.predictionNewsActivityThreshold,
+        adsbBaseUrl: values.adsbBaseUrl?.trim()
+          ? values.adsbBaseUrl.trim()
+          : null,
         relayBaseUrl: values.relayBaseUrl?.trim()
           ? values.relayBaseUrl.trim()
           : null,
@@ -418,18 +413,6 @@ export function RealtimeSignalsSettingsPanel() {
       label: t("systemSettings.realtimeSignals.status.relaySharedSecret"),
       has: settings.hasRelaySharedSecret,
       source: settings.relaySharedSecretSource,
-    },
-    {
-      key: "openskyClientId",
-      label: t("systemSettings.realtimeSignals.status.openskyClientId"),
-      has: settings.hasOpenskyClientId,
-      source: settings.openskyClientIdSource,
-    },
-    {
-      key: "openskyClientSecret",
-      label: t("systemSettings.realtimeSignals.status.openskyClientSecret"),
-      has: settings.hasOpenskyClientSecret,
-      source: settings.openskyClientSecretSource,
     },
     {
       key: "aisApiKey",
@@ -578,6 +561,13 @@ export function RealtimeSignalsSettingsPanel() {
           <Tag color={enabledTagColor}>{enabledTagLabel}</Tag>
         </Space>
         <Space wrap>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.adsbBaseUrl")}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {settings.adsbBaseUrl ||
+              t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.relayBaseUrl")}
           </Typography.Text>
@@ -866,6 +856,18 @@ export function RealtimeSignalsSettingsPanel() {
         </Typography.Title>
         <Space wrap style={{ display: "flex", width: "100%" }}>
           <Form.Item
+            label={t("systemSettings.realtimeSignals.fields.adsbBaseUrl")}
+            name="adsbBaseUrl"
+            style={{ minWidth: 280, flex: 1 }}
+            extra={t("systemSettings.realtimeSignals.hints.adsbBaseUrl")}
+          >
+            <Input
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.adsbBaseUrl",
+              )}
+            />
+          </Form.Item>
+          <Form.Item
             label={t("systemSettings.realtimeSignals.fields.relayBaseUrl")}
             name="relayBaseUrl"
             style={{ minWidth: 280, flex: 1 }}
@@ -901,28 +903,6 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t("systemSettings.realtimeSignals.fields.relaySharedSecret")}
             name="relaySharedSecret"
-          >
-            <Input.Password
-              autoComplete="new-password"
-              placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.secretValue",
-              )}
-            />
-          </Form.Item>
-          <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyClientId")}
-            name="openskyClientId"
-          >
-            <Input.Password
-              autoComplete="new-password"
-              placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.secretValue",
-              )}
-            />
-          </Form.Item>
-          <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyClientSecret")}
-            name="openskyClientSecret"
           >
             <Input.Password
               autoComplete="new-password"

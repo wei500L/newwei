@@ -411,7 +411,7 @@
         "metricPresetHint": "Pick one of the canonical realtime signal slugs to align with scheduler snapshots.",
         "presetDefaults": "Default trigger: {{operator}} {{threshold}}",
         "metrics": {
-          "opensky": "OpenSky military flights",
+          "adsb": "ADS-B military flights",
           "ais": "AIS disruptions",
           "unrest": "Unrest events",
           "outages": "Internet outages",
@@ -5188,11 +5188,10 @@
         "disabled": "Disabled",
         "notConfigured": "Not configured",
         "sourceSnapshot": "Source snapshot",
+        "adsbBaseUrl": "ADS-B base URL",
         "relayBaseUrl": "Relay base URL",
         "polymarketProxyUrl": "Polymarket proxy URL",
         "relaySharedSecret": "Relay shared secret",
-        "openskyClientId": "OpenSky client ID",
-        "openskyClientSecret": "OpenSky client secret",
         "aisApiKey": "AIS API key",
         "acledAccessToken": "ACLED access token",
         "cloudflareApiToken": "Cloudflare API token",
@@ -5211,7 +5210,7 @@
         "credentials": "Credentials"
       },
       "sources": {
-        "opensky": "OpenSky military flights",
+        "adsb": "ADS-B military flights",
         "ais": "AIS disruptions",
         "unrest": "Unrest events",
         "outages": "Internet outages",
@@ -5230,22 +5229,23 @@
         "keywordSpikeMultiplier": "Keyword spike multiplier",
         "predictionShiftThreshold": "Prediction shift threshold",
         "predictionNewsActivityThreshold": "Prediction news-activity threshold",
+        "adsbBaseUrl": "ADS-B base URL",
         "relayBaseUrl": "Relay base URL",
         "polymarketProxyUrl": "Polymarket proxy URL",
         "relaySharedSecret": "Relay shared secret",
-        "openskyClientId": "OpenSky client ID",
-        "openskyClientSecret": "OpenSky client secret",
         "aisApiKey": "AIS API key",
         "acledAccessToken": "ACLED access token",
         "cloudflareApiToken": "Cloudflare API token",
         "wingbitsApiKey": "Wingbits API key"
       },
       "hints": {
-        "relayBaseUrl": "Optional relay URL used for OpenSky/AIS/Polymarket proxying.",
+        "adsbBaseUrl": "ADS-B API base URL for military flight ingestion.",
+        "relayBaseUrl": "Optional relay URL used for AIS/Polymarket proxying.",
         "polymarketProxyUrl": "Optional upstream proxy endpoint for Polymarket requests.",
         "secretOptional": "Leave secret fields empty to keep existing stored values."
       },
       "placeholders": {
+        "adsbBaseUrl": "https://api.adsb.lol",
         "relayBaseUrl": "https://your-relay.example.com",
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
         "secretValue": "Leave empty to keep current value"

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 
+import { normalizeRealtimeSignalMetricSlug } from "../../realtime-signals/realtime-signals.constants";
 import { RealtimeSignalsService } from "../../realtime-signals/realtime-signals.service";
 
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
@@ -21,8 +22,7 @@ export class RealtimeSignalMetricProvider implements MetricProvider {
       "metricSlug" | "operator" | "changeWindowMin" | "metadata" | "metricProvider" | "orgId"
     >,
   ): Promise<MetricEvaluation> {
-    const metricSlug =
-      typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    const metricSlug = normalizeRealtimeSignalMetricSlug(rule.metricSlug);
     if (!metricSlug) {
       return {
         latest: null,
