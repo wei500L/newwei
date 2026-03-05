@@ -125,9 +125,20 @@ export class ArchiveService {
       input.pageSize ?? input.limitPerVertical,
     );
     const cursorOffsetByVertical = this.resolveCursorOffsetMap(input.cursors);
+    const maxCursorOffset = Math.min(
+      MAX_BASE_SCAN,
+      Array.from(cursorOffsetByVertical.values()).reduce(
+        (maxOffset, offset) => Math.max(maxOffset, offset),
+        0,
+      ),
+    );
     const targetRows = Math.min(
       MAX_BASE_SCAN,
-      Math.max(pageSize * ARCHIVE_VERTICAL_ORDER.length * 6, 1200),
+      Math.max(
+        pageSize * ARCHIVE_VERTICAL_ORDER.length * 6,
+        maxCursorOffset + pageSize,
+        1200,
+      ),
     );
 
     const searchResult = search
@@ -1227,7 +1238,7 @@ export class ArchiveService {
   private tokenizeSearch(search: string, minLength: number) {
     return search
       .split(/\s+/)
-      .map((token) => token.replace(/[+-><()~"*@]+/g, "").trim())
+      .map((token) => token.replace(/[+\-><()~"*@]+/g, "").trim())
       .filter((token) => token.length >= minLength);
   }
 

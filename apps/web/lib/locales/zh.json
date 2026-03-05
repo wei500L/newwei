@@ -2313,7 +2313,7 @@
       "template": "爬取模板",
       "seedEnabled": "启用种子发现",
       "seedMode": "种子模式",
-      "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL；列表页模式会用 Crawl4AI 从新闻源 URL（如 /latest/）提取文章链接，并对每篇文章进行抓取。",
+      "seedModeHint": "站点地图模式会从 sitemap.xml 发现 URL；RSS 模式会从订阅源地址发现 URL，并直接将订阅内容写入流水线（不走 Crawl4AI 正文抓取）；列表页模式会用 Crawl4AI 从新闻源 URL（如 /latest/）提取文章链接，并对每篇文章进行抓取。",
       "seedFeedUrl": "订阅源 URL（可选）",
       "seedFeedUrlHint": "为空时，将使用新闻源 URL 作为订阅源 URL。",
       "seedRssAdaptiveEnabled": "启用 RSS 自适应轮询",
@@ -2389,7 +2389,9 @@
       "nextRunAt": "下次运行：{{time}}",
       "noNewUrls": "暂无新的 URL 可调度。",
       "runQueuedCount": "已加入 {{count}} 个任务。",
+      "runQueuedJobsCount": "已加入 {{count}} 个作业。",
       "runSkippedCount": "已跳过 {{count}} 个。",
+      "runRssNoBodySkipped": "RSS 中有 {{count}} 条因缺少可用正文被跳过。",
       "runEnqueueFailures": "入队失败 {{count}} 个。",
       "dispatchInProgress": "调度正在进行中，请稍等并刷新。",
       "batchTogglePartial": "已更新 {{ok}}/{{total}} 个数据源。",
@@ -2397,6 +2399,7 @@
       "disabledBatch": "已禁用 {{count}} 个数据源。",
       "groupUpdatedBatch": "已为 {{count}} 个数据源更新分组。",
       "batchDispatch": "已调度 {{sources}} 个数据源：入队 {{tasks}} 个任务，跳过 {{skipped}} 个，入队失败 {{enqueueFailures}} 个，冲突 {{conflicts}} 个，请求失败 {{failures}} 个。",
+      "batchDispatchDetailed": "已调度 {{sources}} 个数据源：入队 {{tasks}} 个任务、{{jobs}} 个流水线作业，跳过 {{skipped}} 个（RSS 无正文 {{rssNoBody}} 个），入队失败 {{enqueueFailures}} 个，冲突 {{conflicts}} 个，请求失败 {{failures}} 个。",
       "scheduledBatchPartial": "已为 {{ok}}/{{total}} 个数据源设置运行时间：{{time}}。",
       "scheduledBatch": "已为 {{count}} 个数据源设置运行时间：{{time}}。"
     },
@@ -2496,9 +2499,11 @@
       },
       "retryLatest": {
         "skipped": "最新任务不是失败状态（status: {{status}}）。",
+        "skippedPipeline": "最新流水线作业不是失败状态（status: {{status}}）。",
         "done": "已重试最新任务。",
+        "donePipeline": "已重试最新流水线任务。",
         "failed": "重试最新任务失败。",
-        "label": "重试最近失败任务"
+        "label": "重试最近失败运行"
       }
     },
     "schedule": {
@@ -2561,7 +2566,9 @@
       "jobError": "作业失败：{{error}}",
       "jobId": "作业：{{id}}",
       "taskError": "任务失败：{{error}}",
-      "taskId": "任务：{{id}}"
+      "taskId": "任务：{{id}}",
+      "rssPrefetched": "RSS 预取",
+      "noCrawlTask": "流水线直入（无抓取任务）。"
     },
     "queue": {
       "title": "Crawl4AI 队列",

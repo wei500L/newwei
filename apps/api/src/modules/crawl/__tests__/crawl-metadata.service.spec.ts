@@ -994,3 +994,88 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
     );
   });
 });
+
+describe("CrawlMetadataService RSS prefetched candidates", () => {
+  const originalFetch = global.fetch;
+  const makeHeaders = (headers: Record<string, string>) => ({
+    get: (key: string) => headers[key.toLowerCase()] ?? null,
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("prefers RSS content over description and falls back when needed", async () => {
+    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+        <channel>
+          <item>
+            <title>Story A</title>
+            <link>https://example.com/a</link>
+            <description><![CDATA[Description A]]></description>
+            <content:encoded><![CDATA[<p>Body A</p>]]></content:encoded>
+            <author>Alice</author>
+            <pubDate>Thu, 01 Jan 2026 00:00:00 GMT</pubDate>
+          </item>
+          <item>
+            <title>Story B</title>
+            <link>https://example.com/b</link>
+            <description><![CDATA[Description B only]]></description>
+          </item>
+          <item>
+            <title>Story C</title>
+            <link>https://example.com/c</link>
+            <description><![CDATA[   ]]></description>
+          </item>
+        </channel>
+      </rss>`;
+
+    global.fetch = jest.fn(async () => {
+      const buffer = Buffer.from(rssXml, "utf8");
+      return {
+        ok: true,
+        status: 200,
+        headers: makeHeaders({ "content-type": "application/rss+xml" }),
+        arrayBuffer: async () => buffer,
+        text: async () => buffer.toString("utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const candidates = await service.discoverRssCandidates({
+      feedUrl: "https://example.com/feed.xml",
+      maxUrls: 10,
+      requestTimeoutMs: 5000,
+    });
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates[0]).toMatchObject({
+      url: "https://example.com/a",
+      prefetchedArticle: {
+        title: "Story A",
+        author: "Alice",
+        markdown: "Body A",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+        metadata: {
+          source: "rss",
+          markdownSource: "content",
+        },
+      },
+    });
+    expect(candidates[1]).toMatchObject({
+      url: "https://example.com/b",
+      prefetchedArticle: {
+        title: "Story B",
+        markdown: "Description B only",
+        metadata: {
+          source: "rss",
+          markdownSource: "description",
+        },
+      },
+    });
+    expect(candidates[2]).toMatchObject({
+      url: "https://example.com/c",
+      prefetchedArticle: undefined,
+    });
+  });
+});

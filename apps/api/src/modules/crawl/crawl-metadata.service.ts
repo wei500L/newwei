@@ -54,11 +54,30 @@ export type CrawlDiscoveryTimestampSource =
   | "crawled"
   | "none";
 
+export interface CrawlDiscoveryPrefetchedArticle {
+  title?: string;
+  description?: string;
+  author?: string;
+  markdown?: string;
+  publishedAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CrawlDiscoveryCandidate {
   url: string;
   relevanceScore?: number;
   publishedAtTs?: number;
   crawledAtTs?: number;
+  prefetchedArticle?: CrawlDiscoveryPrefetchedArticle;
+}
+
+interface RssDiscoveryEntry {
+  url: string;
+  title?: string;
+  description?: string;
+  author?: string;
+  content?: string;
+  publishedAtTs?: number;
 }
 
 interface ParsedSitemapUrlEntry {
@@ -107,6 +126,10 @@ const DEEP_DISCOVERY_ERROR_CODES = {
 } as const;
 const DISCOVERY_HTTP_STATE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DISCOVERY_HTTP_STATE_CACHE_KEY_PREFIX = "crawl:discover:http-state";
+const RSS_PREFETCH_MAX_MARKDOWN_CHARS = 20_000;
+const RSS_PREFETCH_MAX_TITLE_CHARS = 500;
+const RSS_PREFETCH_MAX_AUTHOR_CHARS = 200;
+const RSS_PREFETCH_MAX_DESCRIPTION_CHARS = 4_000;
 
 @Injectable()
 export class CrawlMetadataService {
@@ -220,7 +243,9 @@ export class CrawlMetadataService {
       return [];
     }
 
-    return this.extractFromRssPayload(xml, feedUrl).slice(0, maxUrls);
+    return this.extractFromRssPayload(xml, feedUrl)
+      .map((entry) => entry.url)
+      .slice(0, maxUrls);
   }
 
   async discoverRssCandidates(input: {
@@ -228,13 +253,61 @@ export class CrawlMetadataService {
     maxUrls?: number;
     requestTimeoutMs?: number;
   }): Promise<CrawlDiscoveryCandidate[]> {
-    const urls = await this.discoverRssUrls(input);
     const crawledAtTs = Date.now();
-    return urls.map((url) => ({
-      url,
-      publishedAtTs: this.parsePublishedAtFromUrl(url),
-      crawledAtTs,
-    }));
+    const feedUrl = this.normalizeUrl(input.feedUrl);
+    if (!feedUrl) {
+      return [];
+    }
+
+    const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const requestTimeoutMs =
+      typeof input.requestTimeoutMs === "number" &&
+      Number.isFinite(input.requestTimeoutMs)
+        ? Math.max(1000, Math.round(input.requestTimeoutMs))
+        : 15_000;
+
+    const xml = await this.fetchMaybe(feedUrl, requestTimeoutMs);
+    if (!xml) {
+      return [];
+    }
+
+    return this.extractFromRssPayload(xml, feedUrl)
+      .slice(0, maxUrls)
+      .map((entry) => {
+        const publishedAtTs =
+          entry.publishedAtTs ?? this.parsePublishedAtFromUrl(entry.url);
+        const contentMarkdown = this.toPrefetchedMarkdown(entry.content);
+        const descriptionMarkdown = this.toPrefetchedMarkdown(entry.description);
+        const markdown = contentMarkdown ?? descriptionMarkdown;
+        const markdownSource =
+          contentMarkdown && contentMarkdown.length > 0
+            ? "content"
+            : "description";
+        return {
+          url: entry.url,
+          publishedAtTs,
+          crawledAtTs,
+          prefetchedArticle: markdown
+            ? {
+                title: this.truncateText(entry.title, RSS_PREFETCH_MAX_TITLE_CHARS),
+                description: this.truncateText(
+                  entry.description,
+                  RSS_PREFETCH_MAX_DESCRIPTION_CHARS,
+                ),
+                author: this.truncateText(
+                  entry.author,
+                  RSS_PREFETCH_MAX_AUTHOR_CHARS,
+                ),
+                markdown,
+                publishedAt: this.toIsoTimestamp(publishedAtTs),
+                metadata: {
+                  source: "rss",
+                  markdownSource,
+                },
+              }
+            : undefined,
+        } satisfies CrawlDiscoveryCandidate;
+      });
   }
 
   async discoverListUrls(input: {
@@ -2319,7 +2392,7 @@ export class CrawlMetadataService {
     return undefined;
   }
 
-  private extractFromRssPayload(xml: string, feedUrl: string): string[] {
+  private extractFromRssPayload(xml: string, feedUrl: string): RssDiscoveryEntry[] {
     let parsed: Record<string, unknown> | null = null;
     try {
       parsed = this.parser.parse(xml) as Record<string, unknown>;
@@ -2328,72 +2401,14 @@ export class CrawlMetadataService {
       return [];
     }
 
-    const collected: string[] = [];
+    const collected: RssDiscoveryEntry[] = [];
     const seen = new Set<string>();
-
-    const toArray = <T>(value: T | T[] | undefined): T[] => {
-      if (!value) {
-        return [];
-      }
-      return Array.isArray(value) ? value : [value];
-    };
-
-    const extractText = (value: unknown): string | undefined => {
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : undefined;
-      }
-      if (value && typeof value === "object") {
-        const record = value as Record<string, unknown>;
-        const textCandidate =
-          typeof record["#text"] === "string"
-            ? record["#text"]
-            : typeof record.text === "string"
-              ? record.text
-              : undefined;
-        if (textCandidate) {
-          const trimmed = textCandidate.trim();
-          return trimmed.length > 0 ? trimmed : undefined;
-        }
-        const hrefCandidate =
-          typeof record.href === "string"
-            ? record.href
-            : typeof record.url === "string"
-              ? record.url
-              : undefined;
-        if (hrefCandidate) {
-          const trimmed = hrefCandidate.trim();
-          return trimmed.length > 0 ? trimmed : undefined;
-        }
-      }
-      return undefined;
-    };
-
-    const pushCandidate = (candidate: string | undefined) => {
-      if (!candidate) {
-        return;
-      }
-      let resolved: string;
-      try {
-        resolved = new URL(candidate, feedUrl).toString();
-      } catch {
-        return;
-      }
-      if (!/^https?:\/\//i.test(resolved)) {
-        return;
-      }
-      if (seen.has(resolved)) {
-        return;
-      }
-      seen.add(resolved);
-      collected.push(resolved);
-    };
 
     // RSS 2.0: rss.channel.item[]
     const rss = parsed.rss as Record<string, unknown> | undefined;
     const channel =
       (rss?.channel as Record<string, unknown> | undefined) ?? undefined;
-    const rssItems = toArray(
+    const rssItems = this.toArray(
       (channel?.item as
         | Record<string, unknown>[]
         | Record<string, unknown>
@@ -2406,20 +2421,36 @@ export class CrawlMetadataService {
 
     for (const item of rssItems) {
       const record = item as Record<string, unknown>;
-      const link = extractText(record.link);
-      if (link) {
-        pushCandidate(link);
-        continue;
-      }
-      const guid = extractText(record.guid);
-      if (guid && /^https?:\/\//i.test(guid)) {
-        pushCandidate(guid);
-      }
+      const linkRaw = this.extractRssText(record.link) ?? this.extractRssText(record.guid);
+      this.pushRssDiscoveryEntry({
+        feedUrl,
+        seen,
+        collected,
+        rawUrl: linkRaw,
+        title: this.extractRssText(record.title),
+        description:
+          this.extractRssText(record.description) ??
+          this.extractRssText(record.summary),
+        content:
+          this.extractRssText(record["content:encoded"]) ??
+          this.extractRssText(record.content),
+        author:
+          this.extractRssAuthor(record.author) ??
+          this.extractRssText(record["dc:creator"]),
+        publishedAtTs: this.parseRssTimestamp(
+          record.pubDate ??
+            record.published ??
+            record.updated ??
+            record.created ??
+            record.issued ??
+            record["dc:date"],
+        ),
+      });
     }
 
     // Atom: feed.entry[].link[@href]
     const feed = parsed.feed as Record<string, unknown> | undefined;
-    const entries = toArray(
+    const entries = this.toArray(
       (feed?.entry as
         | Record<string, unknown>[]
         | Record<string, unknown>
@@ -2428,7 +2459,7 @@ export class CrawlMetadataService {
 
     for (const entry of entries) {
       const record = entry as Record<string, unknown>;
-      const links = toArray(
+      const links = this.toArray(
         record.link as
           | Record<string, unknown>[]
           | Record<string, unknown>
@@ -2449,7 +2480,7 @@ export class CrawlMetadataService {
         const linkRecord = link as Record<string, unknown>;
         const rel =
           typeof linkRecord.rel === "string" ? linkRecord.rel.trim() : "";
-        const href = extractText(linkRecord);
+        const href = this.extractRssText(linkRecord);
         if (!href) {
           continue;
         }
@@ -2459,10 +2490,196 @@ export class CrawlMetadataService {
         }
       }
 
-      pushCandidate(picked);
+      this.pushRssDiscoveryEntry({
+        feedUrl,
+        seen,
+        collected,
+        rawUrl: picked,
+        title: this.extractRssText(record.title),
+        description:
+          this.extractRssText(record.summary) ??
+          this.extractRssText(record.description),
+        content: this.extractRssText(record.content),
+        author:
+          this.extractRssAuthor(record.author) ??
+          this.extractRssText(record["dc:creator"]),
+        publishedAtTs: this.parseRssTimestamp(
+          record.published ??
+            record.updated ??
+            record.created ??
+            record.issued ??
+            record["dc:date"],
+        ),
+      });
     }
 
     return collected;
+  }
+
+  private toArray<T>(value: T | T[] | undefined): T[] {
+    if (!value) {
+      return [];
+    }
+    return Array.isArray(value) ? value : [value];
+  }
+
+  private extractRssText(value: unknown): string | undefined {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const textCandidate =
+      typeof record["#text"] === "string"
+        ? record["#text"]
+        : typeof record.text === "string"
+          ? record.text
+          : typeof record["#cdata-section"] === "string"
+            ? record["#cdata-section"]
+            : undefined;
+    if (textCandidate) {
+      const trimmed = textCandidate.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    const hrefCandidate =
+      typeof record.href === "string"
+        ? record.href
+        : typeof record.url === "string"
+          ? record.url
+          : undefined;
+    if (!hrefCandidate) {
+      return undefined;
+    }
+    const trimmed = hrefCandidate.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private extractRssAuthor(value: unknown): string | undefined {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const author = this.extractRssAuthor(entry);
+        if (author) {
+          return author;
+        }
+      }
+      return undefined;
+    }
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    return (
+      this.extractRssText(record.name) ??
+      this.extractRssText(record["dc:creator"]) ??
+      this.extractRssText(record.author)
+    );
+  }
+
+  private parseRssTimestamp(value: unknown): number | undefined {
+    const raw = this.extractRssText(value);
+    if (!raw) {
+      return undefined;
+    }
+    return this.normalizeTimestamp(Date.parse(raw));
+  }
+
+  private toIsoTimestamp(value?: number) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return undefined;
+    }
+    return new Date(value).toISOString();
+  }
+
+  private toPrefetchedMarkdown(value?: string) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalizedInput = value.replace(/\r\n?/g, "\n").trim();
+    if (!normalizedInput) {
+      return undefined;
+    }
+
+    let normalized = normalizedInput;
+    if (/<[a-z][\s\S]*>/i.test(normalizedInput)) {
+      const $ = load(`<body>${normalizedInput}</body>`);
+      normalized = $("body").text();
+    }
+
+    const collapsed = normalized
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!collapsed) {
+      return undefined;
+    }
+
+    if (collapsed.length <= RSS_PREFETCH_MAX_MARKDOWN_CHARS) {
+      return collapsed;
+    }
+    return `${collapsed.slice(0, RSS_PREFETCH_MAX_MARKDOWN_CHARS - 1).trimEnd()}…`;
+  }
+
+  private truncateText(value: string | undefined, maxChars: number) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return undefined;
+    }
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return `${normalized.slice(0, maxChars - 1).trimEnd()}…`;
+  }
+
+  private pushRssDiscoveryEntry(input: {
+    feedUrl: string;
+    seen: Set<string>;
+    collected: RssDiscoveryEntry[];
+    rawUrl?: string;
+    title?: string;
+    description?: string;
+    content?: string;
+    author?: string;
+    publishedAtTs?: number;
+  }) {
+    if (!input.rawUrl) {
+      return;
+    }
+    let resolved: string;
+    try {
+      resolved = new URL(input.rawUrl, input.feedUrl).toString();
+    } catch {
+      return;
+    }
+    if (!/^https?:\/\//i.test(resolved)) {
+      return;
+    }
+    if (input.seen.has(resolved)) {
+      return;
+    }
+    input.seen.add(resolved);
+    input.collected.push({
+      url: resolved,
+      title: this.truncateText(input.title, RSS_PREFETCH_MAX_TITLE_CHARS),
+      description: this.truncateText(
+        input.description,
+        RSS_PREFETCH_MAX_DESCRIPTION_CHARS,
+      ),
+      content: input.content,
+      author: this.truncateText(input.author, RSS_PREFETCH_MAX_AUTHOR_CHARS),
+      publishedAtTs: input.publishedAtTs,
+    });
   }
 
   private shouldIncludeUrl(

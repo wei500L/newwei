@@ -264,6 +264,7 @@ interface NewsSourceDispatchResponse {
   nextRunAt: string;
   scheduledCount: number;
   skippedCount: number;
+  rssSkippedNoBodyCount?: number;
   enqueueFailures: number;
   pipelineJobIds: string[];
   crawlTaskIds: string[];
@@ -288,7 +289,9 @@ interface NewsSourceClearInflightResponse {
 
 interface NewsSourceRetryLatestResponse {
   sourceId: string;
-  crawlTaskId: string;
+  retryType: "crawl" | "pipeline";
+  crawlTaskId?: string;
+  pipelineJobId?: string;
   status: string;
   retried: boolean;
 }
@@ -3010,10 +3013,18 @@ export function NewsSourcesContent() {
         return;
       }
 
-      const queuedText = t("newsSources.messages.runQueuedCount", {
-        defaultValue: "Queued {{count}} task(s).",
-        count: payload?.scheduledCount ?? 0,
-      });
+      const queuedText = t(
+        payload?.mode === "rss"
+          ? "newsSources.messages.runQueuedJobsCount"
+          : "newsSources.messages.runQueuedCount",
+        {
+          defaultValue:
+            payload?.mode === "rss"
+              ? "Queued {{count}} job(s)."
+              : "Queued {{count}} task(s).",
+          count: payload?.scheduledCount ?? 0,
+        },
+      );
       const skippedText =
         typeof payload?.skippedCount === "number" && payload.skippedCount > 0
           ? t("newsSources.messages.runSkippedCount", {
@@ -3029,6 +3040,15 @@ export function NewsSourcesContent() {
               count: payload.enqueueFailures,
             })
           : null;
+      const rssNoBodySkippedText =
+        typeof payload?.rssSkippedNoBodyCount === "number" &&
+        payload.rssSkippedNoBodyCount > 0
+          ? t("newsSources.messages.runRssNoBodySkipped", {
+              defaultValue:
+                "RSS skipped {{count}} item(s) without usable body content.",
+              count: payload.rssSkippedNoBodyCount,
+            })
+          : null;
 
       const toastType =
         typeof payload?.enqueueFailures === "number" &&
@@ -3042,6 +3062,7 @@ export function NewsSourcesContent() {
             <span>
               {queuedText}
               {skippedText ? ` ${skippedText}` : ""}
+              {rssNoBodySkippedText ? ` ${rssNoBodySkippedText}` : ""}
               {failureText ? ` ${failureText}` : ""}
               {nextRunAtLabel
                 ? ` ${t("newsSources.messages.nextRunAt", { defaultValue: "Next run: {{time}}", time: nextRunAtLabel })}`
@@ -3225,12 +3246,32 @@ export function NewsSourcesContent() {
         (sum, result) => sum + (result.payload.scheduledCount ?? 0),
         0,
       );
+      const queuedTaskTotal = okResults.reduce(
+        (sum, result) =>
+          sum +
+          (result.payload.mode === "rss"
+            ? 0
+            : (result.payload.scheduledCount ?? 0)),
+        0,
+      );
+      const queuedJobTotal = okResults.reduce(
+        (sum, result) =>
+          sum +
+          (result.payload.mode === "rss"
+            ? (result.payload.scheduledCount ?? 0)
+            : 0),
+        0,
+      );
       const enqueueFailuresTotal = okResults.reduce(
         (sum, result) => sum + (result.payload.enqueueFailures ?? 0),
         0,
       );
       const skippedTotal = okResults.reduce(
         (sum, result) => sum + (result.payload.skippedCount ?? 0),
+        0,
+      );
+      const rssNoBodySkippedTotal = okResults.reduce(
+        (sum, result) => sum + (result.payload.rssSkippedNoBodyCount ?? 0),
         0,
       );
 
@@ -3245,18 +3286,33 @@ export function NewsSourcesContent() {
         : conflictCount > 0
           ? "info"
           : "success";
+      const useDetailedBatchMessage =
+        queuedJobTotal > 0 || rssNoBodySkippedTotal > 0;
       messageApi.open({
         type: messageType,
-        content: t("newsSources.messages.batchDispatch", {
-          defaultValue:
-            "Dispatched {{sources}} source(s): queued {{tasks}} task(s), skipped {{skipped}}, enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
-          sources: targets.length,
-          tasks: scheduledTotal,
-          skipped: skippedTotal,
-          enqueueFailures: enqueueFailuresTotal,
-          conflicts: conflictCount,
-          failures: requestFailureCount,
-        }),
+        content: useDetailedBatchMessage
+          ? t("newsSources.messages.batchDispatchDetailed", {
+              defaultValue:
+                "Dispatched {{sources}} source(s): queued {{tasks}} task(s), queued {{jobs}} pipeline job(s), skipped {{skipped}} (RSS no-body {{rssNoBody}}), enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
+              sources: targets.length,
+              tasks: queuedTaskTotal,
+              jobs: queuedJobTotal,
+              skipped: skippedTotal,
+              rssNoBody: rssNoBodySkippedTotal,
+              enqueueFailures: enqueueFailuresTotal,
+              conflicts: conflictCount,
+              failures: requestFailureCount,
+            })
+          : t("newsSources.messages.batchDispatch", {
+              defaultValue:
+                "Dispatched {{sources}} source(s): queued {{tasks}} task(s), skipped {{skipped}}, enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
+              sources: targets.length,
+              tasks: scheduledTotal,
+              skipped: skippedTotal,
+              enqueueFailures: enqueueFailuresTotal,
+              conflicts: conflictCount,
+              failures: requestFailureCount,
+            }),
       });
 
       setSelectedSourceIds([]);
@@ -3383,31 +3439,45 @@ export function NewsSourcesContent() {
 
       if (!payload?.retried) {
         messageApi.info(
-          t("newsSources.ops.retryLatest.skipped", {
-            defaultValue: "Latest task is not failed (status: {{status}}).",
-            status: payload?.status ?? "unknown",
-          }),
+          t(
+            payload?.retryType === "pipeline"
+              ? "newsSources.ops.retryLatest.skippedPipeline"
+              : "newsSources.ops.retryLatest.skipped",
+            {
+              defaultValue:
+                payload?.retryType === "pipeline"
+                  ? "Latest pipeline job is not failed (status: {{status}})."
+                  : "Latest task is not failed (status: {{status}}).",
+              status: payload?.status ?? "unknown",
+            },
+          ),
         );
         return;
       }
 
       messageApi.success(
-        <Space size={8} wrap>
-          <span>
-            {t("newsSources.ops.retryLatest.done", {
-              defaultValue: "Retried latest task.",
-            })}
-          </span>
-          <Button
-            type="link"
-            size="small"
-            onClick={() =>
-              router.push(`/admin/ops/crawl-tasks/${payload.crawlTaskId}`)
-            }
-          >
-            {t("newsSources.actions.openTask", { defaultValue: "Open task" })}
-          </Button>
-        </Space>,
+        payload.retryType === "crawl" && payload.crawlTaskId ? (
+          <Space size={8} wrap>
+            <span>
+              {t("newsSources.ops.retryLatest.done", {
+                defaultValue: "Retried latest task.",
+              })}
+            </span>
+            <Button
+              type="link"
+              size="small"
+              onClick={() =>
+                router.push(`/admin/ops/crawl-tasks/${payload.crawlTaskId}`)
+              }
+            >
+              {t("newsSources.actions.openTask", { defaultValue: "Open task" })}
+            </Button>
+          </Space>
+        ) : (
+          t("newsSources.ops.retryLatest.donePipeline", {
+            defaultValue: "Retried latest pipeline job.",
+          })
+        ),
       );
     } catch (error) {
       captureClientError("Failed to retry latest failed task", error);
@@ -4148,6 +4218,11 @@ export function NewsSourcesContent() {
         const article = record.latestArticle ?? null;
         const jobError = job?.error ?? null;
         const taskError = task?.lastError ?? null;
+        const ingestPath =
+          job?.metadata && isPlainObject(job.metadata)
+            ? (job.metadata.ingestPath as string | undefined)
+            : undefined;
+        const isRssPrefetched = ingestPath === "rss_prefetched";
 
         const jobTag = job ? (
           <Tooltip
@@ -4170,6 +4245,13 @@ export function NewsSourcesContent() {
         ) : (
           <Typography.Text type="secondary">-</Typography.Text>
         );
+        const ingestPathTag = isRssPrefetched ? (
+          <Tag color="cyan">
+            {t("newsSources.latest.rssPrefetched", {
+              defaultValue: "RSS prefetched",
+            })}
+          </Tag>
+        ) : null;
 
         const taskTag = task ? (
           <Tooltip
@@ -4189,6 +4271,13 @@ export function NewsSourcesContent() {
               {task.status}
             </Tag>
           </Tooltip>
+        ) : null;
+        const noTaskHint = !task && isRssPrefetched ? (
+          <Typography.Text type="secondary">
+            {t("newsSources.latest.noCrawlTask", {
+              defaultValue: "Pipeline direct ingest (no crawl task).",
+            })}
+          </Typography.Text>
         ) : null;
 
         const openTaskButton = task ? (
@@ -4218,6 +4307,7 @@ export function NewsSourcesContent() {
           <Space direction="vertical" size={2}>
             <Space size={6} wrap>
               {jobTag}
+              {ingestPathTag}
               {taskTag}
               {openTaskButton}
             </Space>
@@ -4230,6 +4320,7 @@ export function NewsSourcesContent() {
               </Typography.Text>
             ) : null}
             {articleLink}
+            {noTaskHint}
           </Space>
         );
       },
@@ -4312,7 +4403,7 @@ export function NewsSourcesContent() {
                   {
                     key: "retry-latest",
                     label: t("newsSources.ops.retryLatest.label", {
-                      defaultValue: "Retry latest failed task",
+                      defaultValue: "Retry latest failed run",
                     }),
                     onClick: () => void handleRetryLatestFailedTask(record),
                   },

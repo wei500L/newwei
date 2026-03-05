@@ -794,6 +794,47 @@ export class NewsPipelineService implements OnModuleDestroy {
     job: PipelineJobContext,
     payload: NormalizedNewsPayload
   ): Promise<CrawledArticle & { fromCache: boolean }> {
+    const prefetchedMarkdown = payload.prefetchedArticle?.markdown?.trim();
+    if (prefetchedMarkdown) {
+      const prefetchedMetadataRaw = payload.prefetchedArticle?.metadata;
+      const prefetchedMetadata =
+        prefetchedMetadataRaw &&
+        typeof prefetchedMetadataRaw === "object" &&
+        !Array.isArray(prefetchedMetadataRaw)
+          ? (prefetchedMetadataRaw as Record<string, unknown>)
+          : {};
+      const prefetchedPublishedAt =
+        this.parseDate(payload.prefetchedArticle?.publishedAt)?.toISOString() ??
+        null;
+      const fetchedAt = new Date().toISOString();
+      const contentHash = createHash("sha256")
+        .update(prefetchedMarkdown)
+        .digest("hex");
+      return {
+        sourceUrl: payload.url,
+        markdown: prefetchedMarkdown,
+        metadata: {
+          ...payload.metadata,
+          ...prefetchedMetadata,
+          prefetchedArticle: true,
+          ...(payload.prefetchedArticle?.title
+            ? { title: payload.prefetchedArticle.title }
+            : {}),
+          ...(payload.prefetchedArticle?.description
+            ? { description: payload.prefetchedArticle.description }
+            : {}),
+          ...(payload.prefetchedArticle?.author
+            ? { author: payload.prefetchedArticle.author }
+            : {}),
+        },
+        publishedAt: prefetchedPublishedAt,
+        runId: null,
+        fetchedAt,
+        contentHash,
+        fromCache: false,
+      };
+    }
+
     const queryParamAllowlist = this.extractUrlQueryParamAllowlist(payload);
     if (!payload.forceRefresh) {
       const crawlResultId = this.extractCrawlResultId(payload);

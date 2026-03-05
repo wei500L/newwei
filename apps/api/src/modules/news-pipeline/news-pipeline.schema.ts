@@ -157,6 +157,16 @@ export const NormalizedNewsPayloadSchema = z
           : undefined,
       crawlOptionsSchema.optional(),
     ),
+    prefetchedArticle: z
+      .object({
+        title: optionalTrimmedString,
+        description: optionalTrimmedString,
+        author: optionalTrimmedString,
+        markdown: optionalTrimmedString,
+        publishedAt: optionalNullableIsoDateTimeString,
+        metadata: optionalJsonObject,
+      })
+      .optional(),
     forceRefresh: z.preprocess((value) => Boolean(value), z.boolean()),
   });
 

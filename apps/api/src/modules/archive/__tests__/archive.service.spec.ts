@@ -64,6 +64,13 @@ const makeRow = (id: string, publishedAtIso: string): ArchiveRowFixture => ({
   newsEventItems: [{ eventId: `event-${id}` }],
 });
 
+const makeCacheMock = () => ({
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(undefined),
+  hincrby: jest.fn().mockResolvedValue(1),
+  expire: jest.fn().mockResolvedValue(1),
+});
+
 describe("ArchiveService", () => {
   const classifierResult = {
     region: ArchiveRegion.APAC,
@@ -80,6 +87,7 @@ describe("ArchiveService", () => {
       },
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue(null),
       embedding: jest.fn(),
@@ -89,6 +97,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -129,6 +138,7 @@ describe("ArchiveService", () => {
       },
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
       embedding: jest.fn().mockResolvedValue({
@@ -141,6 +151,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -174,6 +185,7 @@ describe("ArchiveService", () => {
       },
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
       embedding: jest.fn().mockResolvedValue({
@@ -186,6 +198,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -220,6 +233,7 @@ describe("ArchiveService", () => {
       $queryRaw: jest.fn().mockResolvedValue([]),
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
       embedding: jest.fn().mockResolvedValue({
@@ -236,6 +250,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -287,6 +302,7 @@ describe("ArchiveService", () => {
       $queryRaw: jest.fn().mockResolvedValue([]),
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
       embedding: jest.fn().mockResolvedValue({
@@ -309,6 +325,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -360,6 +377,7 @@ describe("ArchiveService", () => {
       $queryRaw: jest.fn().mockResolvedValue([]),
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
       embedding: jest.fn().mockResolvedValue({
@@ -383,6 +401,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
@@ -414,6 +433,100 @@ describe("ArchiveService", () => {
     );
   });
 
+  it("extends scan depth for deep cursor offsets before deriving hasMore", async () => {
+    const baseTime = new Date("2025-05-28T10:00:00.000Z").getTime();
+    const makeBatch = (startIndex: number, count: number) =>
+      Array.from({ length: count }, (_, index) => {
+        const absoluteIndex = startIndex + index;
+        return makeRow(
+          `deep-row-${String(absoluteIndex + 1).padStart(5, "0")}`,
+          new Date(baseTime - absoluteIndex * 1_000).toISOString(),
+        );
+      });
+
+    const prisma = {
+      processedArticle: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(makeBatch(0, 400))
+          .mockResolvedValueOnce(makeBatch(400, 400))
+          .mockResolvedValueOnce(makeBatch(800, 400))
+          .mockResolvedValueOnce(makeBatch(1200, 400))
+          .mockResolvedValueOnce([]),
+      },
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+    );
+
+    const cursor = Buffer.from(
+      JSON.stringify({ v: ArchiveVertical.EAST_SEA, o: 1500 }),
+      "utf8",
+    ).toString("base64url");
+
+    const result = await service.getDigest("org-1", {
+      anchorDate: new Date("2025-05-28T00:00:00.000Z"),
+      region: ArchiveRegion.APAC,
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      pageSize: 20,
+      cursors: [{ vertical: ArchiveVertical.EAST_SEA, cursor }],
+    });
+
+    const eastSeaGroup = result.groups.find(
+      (group) => group.vertical === ArchiveVertical.EAST_SEA,
+    );
+    expect(eastSeaGroup?.items).toHaveLength(20);
+    expect(eastSeaGroup?.pageInfo.hasMore).toBe(true);
+    expect(eastSeaGroup?.pageInfo.nextCursor).not.toBeNull();
+    expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps numeric terms when tokenizing search input", () => {
+    const prisma = {
+      processedArticle: { findMany: jest.fn() },
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+    );
+
+    const tokens = (service as any).tokenizeSearch("F-35 2025 +policy", 2);
+    expect(tokens).toContain("F35");
+    expect(tokens).toContain("2025");
+    expect(tokens).toContain("policy");
+  });
+
   it("paginates calendar queries and aggregates all matching rows", async () => {
     const firstBatch = Array.from({ length: 600 }, (_, index) =>
       makeRow(
@@ -431,6 +544,7 @@ describe("ArchiveService", () => {
       },
       newsEvent: { findFirst: jest.fn() },
     };
+    const cache = makeCacheMock();
     const liteLlm = {
       getEmbeddingModel: jest.fn(),
       embedding: jest.fn(),
@@ -440,6 +554,7 @@ describe("ArchiveService", () => {
     const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
     const service = new ArchiveService(
       prisma as any,
+      cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,

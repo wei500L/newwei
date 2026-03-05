@@ -2313,7 +2313,7 @@
       "template": "Crawl template",
       "seedEnabled": "Enable seed discovery",
       "seedMode": "Seed mode",
-      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL; List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and will crawl each discovered article.",
+      "seedModeHint": "Sitemap mode discovers URLs from sitemap.xml; RSS mode discovers URLs from a feed URL and directly ingests feed content into the pipeline (no Crawl4AI body crawl); List mode uses Crawl4AI to extract article links from the source URL (e.g. /latest/) and crawls each discovered article.",
       "seedFeedUrl": "Feed URL (optional)",
       "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
       "seedRssAdaptiveEnabled": "Enable RSS adaptive polling",
@@ -2389,7 +2389,9 @@
       "nextRunAt": "Next run: {{time}}",
       "noNewUrls": "No new URLs to schedule.",
       "runQueuedCount": "Queued {{count}} task(s).",
+      "runQueuedJobsCount": "Queued {{count}} job(s).",
       "runSkippedCount": "Skipped {{count}}.",
+      "runRssNoBodySkipped": "RSS skipped {{count}} item(s) without usable body content.",
       "runEnqueueFailures": "Failed to enqueue {{count}}.",
       "dispatchInProgress": "Dispatch already in progress. Please wait and refresh.",
       "batchTogglePartial": "Updated {{ok}}/{{total}} sources.",
@@ -2397,6 +2399,7 @@
       "disabledBatch": "Disabled {{count}} source(s).",
       "groupUpdatedBatch": "Group updated for {{count}} source(s).",
       "batchDispatch": "Dispatched {{sources}} source(s): queued {{tasks}} task(s), skipped {{skipped}}, enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
+      "batchDispatchDetailed": "Dispatched {{sources}} source(s): queued {{tasks}} task(s), queued {{jobs}} pipeline job(s), skipped {{skipped}} (RSS no-body {{rssNoBody}}), enqueue failures {{enqueueFailures}}, conflicts {{conflicts}}, request failures {{failures}}.",
       "scheduledBatchPartial": "Scheduled {{ok}}/{{total}} sources for {{time}}.",
       "scheduledBatch": "Scheduled {{count}} source(s) for {{time}}."
     },
@@ -2496,9 +2499,11 @@
       },
       "retryLatest": {
         "skipped": "Latest task is not failed (status: {{status}}).",
+        "skippedPipeline": "Latest pipeline job is not failed (status: {{status}}).",
         "done": "Retried latest task.",
+        "donePipeline": "Retried latest pipeline job.",
         "failed": "Failed to retry latest task.",
-        "label": "Retry latest failed task"
+        "label": "Retry latest failed run"
       }
     },
     "schedule": {
@@ -2561,7 +2566,9 @@
       "jobError": "Job failed: {{error}}",
       "jobId": "Job: {{id}}",
       "taskError": "Task failed: {{error}}",
-      "taskId": "Task: {{id}}"
+      "taskId": "Task: {{id}}",
+      "rssPrefetched": "RSS prefetched",
+      "noCrawlTask": "Pipeline direct ingest (no crawl task)."
     },
     "queue": {
       "title": "Crawl4AI queue",

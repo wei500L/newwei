@@ -13,6 +13,10 @@ interface PipelineJobMeta {
   processedItemId?: string;
 }
 
+interface EnqueueItemBehavior {
+  retryIfFailed?: boolean;
+}
+
 @Injectable()
 export class QueueService {
   private readonly logger = createLogger({ name: "queue-service" });
@@ -39,7 +43,8 @@ export class QueueService {
     itemMetaId: string,
     rawItemId: string,
     opts: JobsOptions = {},
-    meta: PipelineJobMeta = {}
+    meta: PipelineJobMeta = {},
+    behavior: EnqueueItemBehavior = {}
   ) {
     const jobId = `${itemMetaId}-${rawItemId}`;
     const traceId = ensureTraceId(getCurrentTraceId());
@@ -74,6 +79,19 @@ export class QueueService {
       if (error instanceof Error && error.message.includes("already exists")) {
         const existing = await this.queue.getJob(jobId);
         if (existing) {
+          if (behavior.retryIfFailed) {
+            try {
+              const state = await existing.getState();
+              if (state === "failed") {
+                await existing.retry();
+              }
+            } catch (retryError) {
+              this.logger.warn(
+                { retryError, orgId, itemMetaId, rawItemId, jobId },
+                "Failed to retry existing failed queue job",
+              );
+            }
+          }
           return existing;
         }
       }

@@ -682,6 +682,30 @@ describe("NewsPipelineService", () => {
     expect(CrawlResultContentModel.findById).toHaveBeenCalledTimes(1);
   });
 
+  it("uses prefetched RSS markdown without creating crawl tasks", async () => {
+    await service.process(job, {
+      ...raw,
+      payload: {
+        ...raw.payload,
+        prefetchedArticle: {
+          title: "RSS headline",
+          markdown: "# RSS headline\n\nRSS body content",
+          publishedAt: "2026-01-01T00:00:00.000Z",
+          metadata: {
+            source: "rss",
+            markdownSource: "content",
+          },
+        },
+      },
+    });
+    await flushOutbox();
+
+    expect(prisma.crawlResult.findFirst).not.toHaveBeenCalled();
+    expect(prisma.crawlTask.create).not.toHaveBeenCalled();
+    expect(crawlExecution.runTask).not.toHaveBeenCalled();
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to crawling when stored crawl result is missing", async () => {
     prisma.crawlResult.findFirst.mockResolvedValueOnce(null);
 
@@ -1028,6 +1052,12 @@ describe("NewsPipelineService", () => {
       tags: [" breaking "],
       summaryHints: [" focus "],
       metadata: { foo: "bar" },
+      prefetchedArticle: {
+        title: " RSS title ",
+        markdown: " RSS markdown ",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+        metadata: { source: "rss" },
+      },
       forceRefresh: "",
       crawlOptions: { userAgent: "UA" },
     });
@@ -1040,6 +1070,14 @@ describe("NewsPipelineService", () => {
     expect(parsed.summaryHints).toEqual(["focus"]);
     expect(parsed.forceRefresh).toBe(false);
     expect(parsed.crawlOptions).toEqual({ userAgent: "UA" });
+    expect(parsed.prefetchedArticle).toEqual({
+      title: "RSS title",
+      description: undefined,
+      author: undefined,
+      markdown: "RSS markdown",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      metadata: { source: "rss" },
+    });
   });
 
   it("logs failed stage when LLM cleaning fails", async () => {

@@ -1,3 +1,4 @@
+import { RawItemModel } from "@modular/mongo";
 import { createLogger, DEFAULT_URL_QUERY_PARAM_ALLOWLIST } from "@modular/utils";
 import { Injectable, NotFoundException, type OnModuleInit } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
@@ -5,6 +6,7 @@ import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
 import { createHash } from "node:crypto";
 
+import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { CacheService } from "../cache/cache.service";
 import { EnvService } from "../config/config.service";
@@ -12,6 +14,7 @@ import { PrismaService } from "../config/prisma.service";
 import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
+  type CrawlDiscoveryPrefetchedArticle,
   type CrawlDiscoveryTimestampSource,
 } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
@@ -36,6 +39,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { NewsSourceSchedulerSettingsService } from "../system-settings/news-source-scheduler-settings.service";
 
 import { ITEM_PIPELINE_QUEUE_NAME } from "./queue.constants";
+import { QueueService } from "./queue.service";
 
 const logger = createLogger({ name: "news-source-scheduler" });
 const ACTIVE_PIPELINE_JOB_STATUSES: PipelineJobStatus[] = [
@@ -69,6 +73,10 @@ const RSS_SEED_CACHE_TTL_MIGRATION_DONE_KEY =
   "migration:news-source:rss-seed-cache-ttl-600:done";
 const RSS_SEED_CACHE_TTL_MIGRATION_DONE_TTL_SECONDS = 365 * 24 * 60 * 60;
 const RSS_SEED_CACHE_TTL_MIGRATION_MAX_RETRIES = 3;
+const SOURCE_METRIC_WINDOW_TTL_SECONDS = 24 * 60 * 60;
+const SOURCE_METRIC_ALERT_COOLDOWN_SECONDS = 60 * 60;
+const RSS_NO_BODY_SKIP_ALERT_THRESHOLD = 20;
+const PIPELINE_RETRY_ALERT_THRESHOLD = 10;
 
 type NewsSourceWithTemplate = Prisma.NewsSourceGetPayload<{
   include: {
@@ -105,6 +113,7 @@ interface CanonicalSeedJob {
   crawledAtTs?: number;
   effectiveTs?: number;
   timestampSource?: CrawlDiscoveryTimestampSource;
+  prefetchedArticle?: CrawlDiscoveryPrefetchedArticle;
 }
 
 interface DeepSeedConfig {
@@ -193,6 +202,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
     private readonly crawlQueue: CrawlQueueService,
+    private readonly queueService: QueueService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
     private readonly crawlTaskService: CrawlTaskService,
@@ -467,6 +477,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           const pipelineJobIds: string[] = [];
           const crawlTaskIds: string[] = [];
           let enqueueFailures = 0;
+          let rssSkippedNoBodyCount = 0;
 
           for (const job of newJobs) {
             const publishedAtTs =
@@ -498,6 +509,30 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 }
                 : undefined,
             );
+
+            if (seedConfig?.mode === "rss") {
+              const rssResult = await this.enqueueRssSeedPipelineJob({
+                source,
+                job,
+                scheduledFor,
+                payload: payload as Record<string, unknown>,
+                seedConfig,
+                seedParentUrl: seedParentUrl ?? source.url,
+                actorId: triggeredById,
+                bullPriority,
+              });
+              if (rssResult.skippedNoBody) {
+                rssSkippedNoBodyCount += 1;
+                continue;
+              }
+              if (rssResult.pipelineJobId) {
+                pipelineJobIds.push(rssResult.pipelineJobId);
+              }
+              if (rssResult.enqueueFailed) {
+                enqueueFailures += 1;
+              }
+              continue;
+            }
 
             const displayNamePrefix = `NewsSource:${source.id}:`;
             const displayName =
@@ -707,14 +742,26 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               ]);
             }
           }
+          const totalSkippedCount = skippedCount + rssSkippedNoBodyCount;
+          const scheduledCount = Math.max(0, newJobs.length - rssSkippedNoBodyCount);
+          if (rssSkippedNoBodyCount > 0) {
+            await this.recordRssNoBodySkipMetric({
+              orgId: source.orgId,
+              sourceId: source.id,
+              skippedCount: rssSkippedNoBodyCount,
+              context: "dispatch_now",
+            });
+          }
 
           return {
             sourceId: source.id,
             mode: seedConfig ? seedConfig.mode : "single",
             scheduledFor: scheduledFor.toISOString(),
             nextRunAt: nextRunAt.toISOString(),
-            scheduledCount: newJobs.length,
-            skippedCount,
+            scheduledCount,
+            skippedCount: totalSkippedCount,
+            rssSkippedNoBodyCount:
+              rssSkippedNoBodyCount > 0 ? rssSkippedNoBodyCount : undefined,
             enqueueFailures,
             pipelineJobIds,
             crawlTaskIds,
@@ -843,47 +890,270 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     const latestJob = await this.prisma.pipelineJob.findFirst({
       where: { orgId, sourceId: source.id },
       orderBy: { createdAt: "desc" },
-      select: { metadata: true },
+      select: { id: true, status: true, metadata: true },
     });
+    if (!latestJob) {
+      throw new NotFoundException("No pipeline job found for source");
+    }
 
     const isRecord = (value: unknown): value is Record<string, unknown> =>
       Boolean(value) && typeof value === "object" && !Array.isArray(value);
-    const crawlTaskId = isRecord(latestJob?.metadata)
-      ? latestJob?.metadata.crawlTaskId
-      : null;
-    if (typeof crawlTaskId !== "string" || crawlTaskId.length === 0) {
-      throw new NotFoundException("No crawl task found for latest job");
-    }
+    const metadata = isRecord(latestJob.metadata) ? latestJob.metadata : {};
+    const crawlTaskId = metadata.crawlTaskId;
+    if (typeof crawlTaskId === "string" && crawlTaskId.length > 0) {
+      const task = await this.prisma.crawlTask.findFirst({
+        where: { orgId, id: crawlTaskId },
+        select: { status: true },
+      });
+      if (!task) {
+        throw new NotFoundException("crawl task not found");
+      }
+      if (task.status !== "failed") {
+        return {
+          sourceId: source.id,
+          retryType: "crawl" as const,
+          crawlTaskId,
+          status: task.status,
+          retried: false,
+        };
+      }
 
-    const task = await this.prisma.crawlTask.findFirst({
-      where: { orgId, id: crawlTaskId },
-      select: { status: true },
-    });
-    if (!task) {
-      throw new NotFoundException("crawl task not found");
-    }
-    if (task.status !== "failed") {
+      const retried = await this.crawlTaskService.retryTask(
+        orgId,
+        userId,
+        crawlTaskId,
+        ip,
+        actorPermissions,
+      );
       return {
         sourceId: source.id,
+        retryType: "crawl" as const,
         crawlTaskId,
-        status: task.status,
+        status: retried.status,
+        retried: true,
+      };
+    }
+
+    const itemMetaId = metadata.itemMetaId;
+    const rawItemId = metadata.rawItemId;
+    if (
+      typeof itemMetaId !== "string" ||
+      itemMetaId.length === 0 ||
+      typeof rawItemId !== "string" ||
+      rawItemId.length === 0
+    ) {
+      throw new NotFoundException("No retryable task found for latest job");
+    }
+
+    if (latestJob.status !== PipelineJobStatus.failed) {
+      return {
+        sourceId: source.id,
+        retryType: "pipeline" as const,
+        pipelineJobId: latestJob.id,
+        status: latestJob.status,
         retried: false,
       };
     }
 
-    const retried = await this.crawlTaskService.retryTask(
+    await this.prisma.pipelineJob.updateMany({
+      where: { id: latestJob.id },
+      data: {
+        status: PipelineJobStatus.queued,
+        startedAt: null,
+        completedAt: null,
+        error: null,
+      },
+    });
+
+    try {
+      await this.queueService.enqueueItem(
+        orgId,
+        itemMetaId,
+        rawItemId,
+        {},
+        {
+          pipelineJobId: latestJob.id,
+          sourceId: source.id,
+        },
+        { retryIfFailed: true },
+      );
+    } catch (error) {
+      await this.prisma.pipelineJob.updateMany({
+        where: { id: latestJob.id },
+        data: {
+          status: PipelineJobStatus.failed,
+          error: error instanceof Error ? error.message : String(error),
+          completedAt: new Date(),
+        },
+      });
+      throw error;
+    }
+    await this.recordPipelineRetryMetric({
       orgId,
-      userId,
-      crawlTaskId,
-      ip,
-      actorPermissions,
-    );
+      sourceId: source.id,
+      pipelineJobId: latestJob.id,
+    });
     return {
       sourceId: source.id,
-      crawlTaskId,
-      status: retried.status,
+      retryType: "pipeline" as const,
+      pipelineJobId: latestJob.id,
+      status: PipelineJobStatus.queued,
       retried: true,
     };
+  }
+
+  private async recordRssNoBodySkipMetric(options: {
+    orgId: string;
+    sourceId: string;
+    skippedCount: number;
+    context: "dispatch_now" | "schedule";
+  }) {
+    const skippedCount = Math.max(0, Math.floor(options.skippedCount));
+    if (skippedCount <= 0) {
+      return;
+    }
+    const sourceKey = `news-source:metric:rss-no-body-skip:source:${options.sourceId}:24h`;
+    const orgKey = `news-source:metric:rss-no-body-skip:org:${options.orgId}:24h`;
+
+    try {
+      const [sourceCount, orgCount] = await Promise.all([
+        this.cache.hincrby(sourceKey, "count", skippedCount),
+        this.cache.hincrby(orgKey, "count", skippedCount),
+      ]);
+      await Promise.allSettled([
+        this.cache.expire(sourceKey, SOURCE_METRIC_WINDOW_TTL_SECONDS),
+        this.cache.expire(orgKey, SOURCE_METRIC_WINDOW_TTL_SECONDS),
+      ]);
+
+      logger.warn(
+        {
+          orgId: options.orgId,
+          sourceId: options.sourceId,
+          skippedCount,
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+          context: options.context,
+        },
+        "Recorded RSS no-body skip metric",
+      );
+
+      if (sourceCount < RSS_NO_BODY_SKIP_ALERT_THRESHOLD) {
+        return;
+      }
+
+      const notifyKey = `news-source:metric:rss-no-body-skip:alert:${options.sourceId}`;
+      const shouldNotify = await this.cache.setIfAbsent(
+        notifyKey,
+        {
+          at: new Date().toISOString(),
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+          context: options.context,
+        },
+        SOURCE_METRIC_ALERT_COOLDOWN_SECONDS,
+      );
+      if (!shouldNotify) {
+        return;
+      }
+
+      await this.notifications.notify({
+        orgId: options.orgId,
+        userId: null,
+        type: NotificationType.system,
+        title: "News source RSS body-missing spike",
+        body: `Source ${options.sourceId} skipped ${sourceCount} RSS item(s) without usable body in the last 24h.`,
+        data: {
+          sourceId: options.sourceId,
+          skippedCount,
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+          context: options.context,
+          threshold: RSS_NO_BODY_SKIP_ALERT_THRESHOLD,
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        { error, orgId: options.orgId, sourceId: options.sourceId, skippedCount },
+        "Failed to record RSS no-body skip metric",
+      );
+    }
+  }
+
+  private async recordPipelineRetryMetric(options: {
+    orgId: string;
+    sourceId: string;
+    pipelineJobId: string;
+  }) {
+    const sourceKey = `news-source:metric:pipeline-retry:source:${options.sourceId}:24h`;
+    const orgKey = `news-source:metric:pipeline-retry:org:${options.orgId}:24h`;
+
+    try {
+      const [sourceCount, orgCount] = await Promise.all([
+        this.cache.hincrby(sourceKey, "count", 1),
+        this.cache.hincrby(orgKey, "count", 1),
+      ]);
+      await Promise.allSettled([
+        this.cache.expire(sourceKey, SOURCE_METRIC_WINDOW_TTL_SECONDS),
+        this.cache.expire(orgKey, SOURCE_METRIC_WINDOW_TTL_SECONDS),
+      ]);
+
+      logger.info(
+        {
+          orgId: options.orgId,
+          sourceId: options.sourceId,
+          pipelineJobId: options.pipelineJobId,
+          retryType: "pipeline",
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+        },
+        "Recorded pipeline retry metric",
+      );
+
+      if (sourceCount < PIPELINE_RETRY_ALERT_THRESHOLD) {
+        return;
+      }
+
+      const notifyKey = `news-source:metric:pipeline-retry:alert:${options.sourceId}`;
+      const shouldNotify = await this.cache.setIfAbsent(
+        notifyKey,
+        {
+          at: new Date().toISOString(),
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+          pipelineJobId: options.pipelineJobId,
+        },
+        SOURCE_METRIC_ALERT_COOLDOWN_SECONDS,
+      );
+      if (!shouldNotify) {
+        return;
+      }
+
+      await this.notifications.notify({
+        orgId: options.orgId,
+        userId: null,
+        type: NotificationType.system,
+        title: "News source pipeline retry spike",
+        body: `Source ${options.sourceId} retried ${sourceCount} pipeline job(s) in the last 24h.`,
+        data: {
+          sourceId: options.sourceId,
+          pipelineJobId: options.pipelineJobId,
+          retryType: "pipeline",
+          sourceCount24h: sourceCount,
+          orgCount24h: orgCount,
+          threshold: PIPELINE_RETRY_ALERT_THRESHOLD,
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          error,
+          orgId: options.orgId,
+          sourceId: options.sourceId,
+          pipelineJobId: options.pipelineJobId,
+        },
+        "Failed to record pipeline retry metric",
+      );
+    }
   }
 
   private normalizeStringList(value: unknown) {
@@ -1694,6 +1964,216 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     };
   }
 
+  private toItemMetaName(value: string) {
+    const trimmed = value.trim();
+    if (trimmed.length <= 191) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, 190).trimEnd()}…`;
+  }
+
+  private buildRssPrefetchedPayload(input: {
+    basePayload: Record<string, unknown>;
+    prefetchedArticle: CrawlDiscoveryPrefetchedArticle;
+  }) {
+    const baseMetadata =
+      input.basePayload.metadata &&
+      typeof input.basePayload.metadata === "object" &&
+      !Array.isArray(input.basePayload.metadata)
+        ? (input.basePayload.metadata as Record<string, unknown>)
+        : {};
+    const prefetchedMetadata =
+      input.prefetchedArticle.metadata &&
+      typeof input.prefetchedArticle.metadata === "object" &&
+      !Array.isArray(input.prefetchedArticle.metadata)
+        ? (input.prefetchedArticle.metadata as Record<string, unknown>)
+        : {};
+
+    return {
+      ...input.basePayload,
+      metadata: {
+        ...baseMetadata,
+        prefetchedArticle: true,
+      },
+      prefetchedArticle: {
+        title: input.prefetchedArticle.title,
+        description: input.prefetchedArticle.description,
+        author: input.prefetchedArticle.author,
+        markdown: input.prefetchedArticle.markdown,
+        publishedAt: input.prefetchedArticle.publishedAt,
+        metadata: {
+          source: "rss",
+          ...prefetchedMetadata,
+        },
+      },
+      // RSS seed bypasses Crawl4AI; force pipeline to use prefetched markdown.
+      forceRefresh: false,
+    } satisfies Record<string, unknown>;
+  }
+
+  private async enqueueRssSeedPipelineJob(options: {
+    source: NewsSourceWithTemplate;
+    job: {
+      url: string;
+      urlFingerprint?: string;
+      relevanceScore?: number;
+      publishedAtTs?: number;
+      crawledAtTs?: number;
+      effectiveTs?: number;
+      timestampSource?: CrawlDiscoveryTimestampSource;
+      prefetchedArticle?: CrawlDiscoveryPrefetchedArticle;
+    };
+    scheduledFor: Date;
+    payload: Record<string, unknown>;
+    seedConfig: SeedConfig;
+    seedParentUrl: string;
+    actorId: string;
+    bullPriority: number;
+  }) {
+    const prefetchedArticle = this.normalizePrefetchedArticle(
+      options.job.prefetchedArticle,
+    );
+    if (!prefetchedArticle?.markdown) {
+      return {
+        skippedNoBody: true,
+        enqueueFailed: false,
+      } as const;
+    }
+
+    const publishedAt = this.toIsoTimestamp(options.job.publishedAtTs);
+    const crawledAt = this.toIsoTimestamp(options.job.crawledAtTs);
+    const effectiveAt = this.toIsoTimestamp(options.job.effectiveTs);
+    const itemPayload = this.buildRssPrefetchedPayload({
+      basePayload: options.payload,
+      prefetchedArticle,
+    });
+    const itemNameBase =
+      typeof options.payload.sourceName === "string" &&
+      options.payload.sourceName.trim().length > 0
+        ? `${options.payload.sourceName.trim()}: ${options.job.url}`
+        : options.job.url;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const pipelineJob = await tx.pipelineJob.create({
+        data: {
+          orgId: options.source.orgId,
+          sourceId: options.source.id,
+          url: options.job.url,
+          urlFingerprint: options.job.urlFingerprint,
+          priority: options.source.priority,
+          status: PipelineJobStatus.queued,
+          queueName: ITEM_PIPELINE_QUEUE_NAME,
+          scheduledFor: options.scheduledFor,
+          metadata: {
+            sourceName: options.source.name,
+            sourceType: options.source.siteType,
+            seedMode: options.seedConfig.mode,
+            seedParentUrl: options.seedParentUrl,
+            relevanceScore: options.job.relevanceScore,
+            publishedAt,
+            crawledAt,
+            effectiveAt,
+            timestampSource: options.job.timestampSource,
+            urlFingerprint: options.job.urlFingerprint,
+            ingestPath: "rss_prefetched",
+          },
+        },
+      });
+
+      const itemMeta = await tx.itemMeta.create({
+        data: {
+          orgId: options.source.orgId,
+          externalId: `newsSourceRss:${pipelineJob.id}`,
+          name: this.toItemMetaName(itemNameBase),
+          status: ItemStatus.Pending,
+          mongoRef: "",
+        },
+        select: { id: true },
+      });
+
+      const rawItem = await RawItemModel.create({
+        itemMetaId: itemMeta.id,
+        payload: itemPayload,
+        source: "news-source-rss",
+      });
+
+      await tx.itemMeta.update({
+        where: { id: itemMeta.id },
+        data: { mongoRef: rawItem.id },
+      });
+
+      await tx.pipelineJob.update({
+        where: { id: pipelineJob.id },
+        data: {
+          metadata: {
+            ...(pipelineJob.metadata as
+              | Record<string, unknown>
+              | null
+              | undefined),
+            itemMetaId: itemMeta.id,
+            rawItemId: rawItem.id,
+          },
+        },
+      });
+
+      return {
+        pipelineJobId: pipelineJob.id,
+        itemMetaId: itemMeta.id,
+        rawItemId: rawItem.id,
+      };
+    });
+
+    try {
+      await this.queueService.enqueueItem(
+        options.source.orgId,
+        created.itemMetaId,
+        created.rawItemId,
+        { priority: options.bullPriority },
+        {
+          pipelineJobId: created.pipelineJobId,
+          sourceId: options.source.id,
+        },
+      );
+      return {
+        skippedNoBody: false,
+        enqueueFailed: false,
+        pipelineJobId: created.pipelineJobId,
+      } as const;
+    } catch (queueError) {
+      await Promise.allSettled([
+        this.prisma.pipelineJob.updateMany({
+          where: { id: created.pipelineJobId },
+          data: {
+            status: PipelineJobStatus.failed,
+            error:
+              queueError instanceof Error
+                ? queueError.message
+                : String(queueError),
+            completedAt: new Date(),
+          },
+        }),
+        this.prisma.itemMeta.updateMany({
+          where: { id: created.itemMetaId, status: { not: ItemStatus.Duplicate } },
+          data: { status: ItemStatus.Failed },
+        }),
+      ]);
+      logger.error(
+        {
+          error: queueError,
+          orgId: options.source.orgId,
+          sourceId: options.source.id,
+          pipelineJobId: created.pipelineJobId,
+        },
+        "Failed to enqueue RSS prefetched pipeline job",
+      );
+      return {
+        skippedNoBody: false,
+        enqueueFailed: true,
+        pipelineJobId: created.pipelineJobId,
+      } as const;
+    }
+  }
+
   private normalizeSeedConfig(
     source: NewsSourceWithTemplate,
     runtimeSettings: SeedRuntimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS,
@@ -2003,6 +2483,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           crawledAtTs,
           effectiveTs,
           timestampSource,
+          prefetchedArticle: this.normalizePrefetchedArticle(
+            entry.prefetchedArticle,
+          ),
         };
       })
       .filter((entry) =>
@@ -2073,6 +2556,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       publishedAtTs:
         this.resolveTimestamp(entry.publishedAtTs) ?? fallbackPathPublishedAtTs,
       crawledAtTs: this.resolveTimestamp(entry.crawledAtTs),
+      prefetchedArticle: this.normalizePrefetchedArticle(
+        entry.prefetchedArticle,
+      ),
     };
   }
 
@@ -2251,6 +2737,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         existing.crawledAtTs,
         incoming.crawledAtTs,
       ),
+      prefetchedArticle: this.mergePrefetchedArticle(
+        existing.prefetchedArticle,
+        incoming.prefetchedArticle,
+      ),
     };
   }
 
@@ -2273,6 +2763,87 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       return left;
     }
     return Math.max(left, right);
+  }
+
+  private normalizePrefetchedArticle(
+    value: unknown,
+  ): CrawlDiscoveryPrefetchedArticle | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const markdown =
+      typeof record.markdown === "string" ? record.markdown.trim() : "";
+    if (!markdown) {
+      return undefined;
+    }
+    const title =
+      typeof record.title === "string" ? record.title.trim() : undefined;
+    const description =
+      typeof record.description === "string"
+        ? record.description.trim()
+        : undefined;
+    const author =
+      typeof record.author === "string" ? record.author.trim() : undefined;
+    const publishedAt =
+      typeof record.publishedAt === "string" ? record.publishedAt.trim() : "";
+    const metadata =
+      record.metadata &&
+      typeof record.metadata === "object" &&
+      !Array.isArray(record.metadata)
+        ? ({ ...(record.metadata as Record<string, unknown>) } as Record<
+            string,
+            unknown
+          >)
+        : undefined;
+    return {
+      title: title && title.length > 0 ? title : undefined,
+      description:
+        description && description.length > 0 ? description : undefined,
+      author: author && author.length > 0 ? author : undefined,
+      markdown,
+      publishedAt: publishedAt.length > 0 ? publishedAt : undefined,
+      metadata,
+    };
+  }
+
+  private mergePrefetchedArticle(
+    existing: CrawlDiscoveryPrefetchedArticle | undefined,
+    incoming: CrawlDiscoveryPrefetchedArticle | undefined,
+  ): CrawlDiscoveryPrefetchedArticle | undefined {
+    if (!existing) {
+      return incoming;
+    }
+    if (!incoming) {
+      return existing;
+    }
+    const existingLen = existing.markdown?.length ?? 0;
+    const incomingLen = incoming.markdown?.length ?? 0;
+    const primary = incomingLen > existingLen ? incoming : existing;
+    const secondary = primary === incoming ? existing : incoming;
+    const primaryMetadata =
+      primary.metadata &&
+      typeof primary.metadata === "object" &&
+      !Array.isArray(primary.metadata)
+        ? primary.metadata
+        : undefined;
+    const secondaryMetadata =
+      secondary.metadata &&
+      typeof secondary.metadata === "object" &&
+      !Array.isArray(secondary.metadata)
+        ? secondary.metadata
+        : undefined;
+    return {
+      title: primary.title ?? secondary.title,
+      description: primary.description ?? secondary.description,
+      author: primary.author ?? secondary.author,
+      markdown: primary.markdown ?? secondary.markdown,
+      publishedAt: primary.publishedAt ?? secondary.publishedAt,
+      metadata:
+        primaryMetadata || secondaryMetadata
+          ? { ...(secondaryMetadata ?? {}), ...(primaryMetadata ?? {}) }
+          : undefined,
+    };
   }
 
   private resolveEffectiveSeedTimestamp(input: {
@@ -2879,6 +3450,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       crawledAtTs?: number;
       effectiveTs?: number;
       timestampSource?: CrawlDiscoveryTimestampSource;
+      prefetchedArticle?: CrawlDiscoveryPrefetchedArticle;
     }[],
     queryParamAllowlist: string[],
   ): CanonicalSeedJob[] {
@@ -2905,6 +3477,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           crawledAtTs: this.resolveTimestamp(job.crawledAtTs),
           effectiveTs: this.resolveTimestamp(job.effectiveTs),
           timestampSource: job.timestampSource,
+          prefetchedArticle: this.normalizePrefetchedArticle(
+            job.prefetchedArticle,
+          ),
         });
         continue;
       }
@@ -2927,6 +3502,17 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           crawledAtTs: this.resolveTimestamp(job.crawledAtTs),
           effectiveTs: this.resolveTimestamp(job.effectiveTs),
           timestampSource: job.timestampSource,
+          prefetchedArticle: this.normalizePrefetchedArticle(
+            job.prefetchedArticle,
+          ),
+        });
+      } else {
+        byFingerprint.set(normalized.fingerprint, {
+          ...existing,
+          prefetchedArticle: this.mergePrefetchedArticle(
+            existing.prefetchedArticle,
+            this.normalizePrefetchedArticle(job.prefetchedArticle),
+          ),
         });
       }
     }
@@ -3469,6 +4055,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             ? (seedConfig.feedUrl ?? source.url)
             : source.url
           : undefined;
+        let rssSkippedNoBodyCount = 0;
 
         for (const job of jobsToEnqueue) {
           const publishedAtTs =
@@ -3500,6 +4087,27 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 }
               : undefined,
           );
+
+          if (seedConfig?.mode === "rss") {
+            const rssResult = await this.enqueueRssSeedPipelineJob({
+              source,
+              job,
+              scheduledFor,
+              payload: payload as Record<string, unknown>,
+              seedConfig,
+              seedParentUrl: seedParentUrl ?? source.url,
+              actorId: crawlActorId,
+              bullPriority,
+            });
+            if (rssResult.skippedNoBody) {
+              rssSkippedNoBodyCount += 1;
+              continue;
+            }
+            if (!rssResult.enqueueFailed) {
+              enqueuedThisTick += 1;
+            }
+            continue;
+          }
 
           const displayNamePrefix = `NewsSource:${source.id}:`;
           const displayName = `${displayNamePrefix}${source.name ?? ""}`.slice(
@@ -3705,6 +4313,23 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               }),
             ]);
           }
+        }
+        if (rssSkippedNoBodyCount > 0) {
+          await this.recordRssNoBodySkipMetric({
+            orgId: source.orgId,
+            sourceId: source.id,
+            skippedCount: rssSkippedNoBodyCount,
+            context: "schedule",
+          });
+          logger.info(
+            {
+              sourceId: source.id,
+              orgId: source.orgId,
+              mode: seedConfig?.mode ?? "single",
+              rssSkippedNoBodyCount,
+            },
+            "Skipped RSS candidates without prefetched body markdown",
+          );
         }
 
         if (maxEnqueuePerTick > 0 && enqueuedThisTick >= maxEnqueuePerTick) {
