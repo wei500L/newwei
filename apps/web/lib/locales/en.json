@@ -1623,7 +1623,8 @@
     },
     "search": {
       "title": "Search",
-      "subtitle": "Search across processed items.",
+      "subtitle": "Search across processed items and historical headlines.",
+      "searchPlaceholder": "Search news, topics, entities, or historical headlines...",
       "noticeTitle": "Search scope",
       "noticeDescription": "Searches titles, summaries, topics, entities, locations, and external IDs.",
       "featuresTitle": "Active search capabilities",
@@ -1646,7 +1647,30 @@
       "hotTopicsEmpty": "No hot topics available yet.",
       "hotTopicsLoadFailed": "Failed to load hot topics.",
       "recentSearches": "Recent searches",
-      "clearHistory": "Clear history"
+      "clearHistory": "Clear history",
+      "mode": {
+        "items": "Items",
+        "headlines": "History Headlines",
+        "headlinesHint": "Archive headlines mode"
+      },
+      "archive": {
+        "title": "History Headlines",
+        "weightsPlaceholder": "All weights",
+        "openFull": "Open Full Archive",
+        "loadFailedTitle": "Failed to load archive headlines",
+        "empty": "No historical headlines found for current filters.",
+        "count": "{{count}} headlines matched",
+        "untitled": "Untitled headline",
+        "relevance": "Relevance {{percent}}%",
+        "originHybrid": "Hybrid",
+        "originSemantic": "Semantic",
+        "originLexical": "Lexical",
+        "queryTooShortTitle": "Need more query text",
+        "queryTooShortDescription": "Enter at least {{min}} characters to enable semantic headline search. Showing latest archive headlines for current filters.",
+        "loadMore": "Load more",
+        "expandMore": "Show {{count}} more",
+        "collapse": "Collapse"
+      }
     },
     "rss": {
       "title": "RSS Reader",
@@ -1887,6 +1911,14 @@
       "unknownCountry": "Unknown",
       "expand": "Expand more",
       "collapse": "Collapse",
+      "loadMore": "Load more",
+      "searchPlaceholder": "Search historical headlines, entities, or countries...",
+      "matchOrigin": {
+        "hybrid": "Hybrid",
+        "semantic": "Semantic",
+        "lexical": "Lexical"
+      },
+      "relevanceTag": "Relevance {{percent}}%",
       "filters": {
         "weightPlaceholder": "All weights"
       },
@@ -1895,6 +1927,7 @@
         "loading": "Searching archive…",
         "error": "Search failed. Please retry.",
         "empty": "No matching records.",
+        "tooShort": "Enter at least {{min}} characters to start semantic archive search.",
         "ready": "{{count}} records matched"
       },
       "errors": {

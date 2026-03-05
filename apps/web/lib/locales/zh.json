@@ -1623,7 +1623,8 @@
     },
     "search": {
       "title": "搜索",
-      "subtitle": "检索已处理内容。",
+      "subtitle": "检索已处理内容与历史头条。",
+      "searchPlaceholder": "搜索新闻、主题、实体或历史头条...",
       "noticeTitle": "检索范围",
       "noticeDescription": "支持标题、摘要、专题、实体、地点与外部 ID 的检索。",
       "featuresTitle": "当前启用功能",
@@ -1646,7 +1647,30 @@
       "hotTopicsEmpty": "暂无可用热门话题。",
       "hotTopicsLoadFailed": "热门话题加载失败。",
       "recentSearches": "最近搜索",
-      "clearHistory": "清空历史"
+      "clearHistory": "清空历史",
+      "mode": {
+        "items": "条目",
+        "headlines": "历史头条",
+        "headlinesHint": "历史档案头条模式"
+      },
+      "archive": {
+        "title": "历史头条",
+        "weightsPlaceholder": "所有权重",
+        "openFull": "打开完整归档",
+        "loadFailedTitle": "历史头条加载失败",
+        "empty": "当前筛选条件下暂无历史头条。",
+        "count": "匹配到 {{count}} 条头条",
+        "untitled": "未命名头条",
+        "relevance": "相关度 {{percent}}%",
+        "originHybrid": "混合",
+        "originSemantic": "语义",
+        "originLexical": "词法",
+        "queryTooShortTitle": "查询词过短",
+        "queryTooShortDescription": "至少输入 {{min}} 个字符后才会启用语义头条检索。当前展示的是该筛选下的最新归档头条。",
+        "loadMore": "加载更多",
+        "expandMore": "再展开 {{count}} 条",
+        "collapse": "收起"
+      }
     },
     "rss": {
       "title": "RSS 阅读",
@@ -1887,6 +1911,14 @@
       "unknownCountry": "未知",
       "expand": "展开更多",
       "collapse": "收起",
+      "loadMore": "加载更多",
+      "searchPlaceholder": "搜索历史头条、实体或国家...",
+      "matchOrigin": {
+        "hybrid": "混合",
+        "semantic": "语义",
+        "lexical": "词法"
+      },
+      "relevanceTag": "相关度 {{percent}}%",
       "filters": {
         "weightPlaceholder": "所有权重"
       },
@@ -1895,6 +1927,7 @@
         "loading": "正在检索归档…",
         "error": "检索失败，请重试。",
         "empty": "暂无匹配记录。",
+        "tooShort": "至少输入 {{min}} 个字符后才会触发语义归档检索。",
         "ready": "已匹配 {{count}} 条记录"
       },
       "errors": {

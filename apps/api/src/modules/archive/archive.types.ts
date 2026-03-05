@@ -23,6 +23,12 @@ export enum ArchiveWeight {
   FIVE = "FIVE",
 }
 
+export enum ArchiveMatchOrigin {
+  LEXICAL = "LEXICAL",
+  SEMANTIC = "SEMANTIC",
+  HYBRID = "HYBRID",
+}
+
 export type ArchiveWeightValue = 1 | 2 | 3 | 4 | 5;
 
 export const ARCHIVE_WEIGHT_TO_VALUE: Record<
@@ -58,6 +64,13 @@ export interface ArchiveDigestQueryInput {
   search?: string;
   weights?: ArchiveWeight[];
   limitPerVertical?: number;
+  pageSize?: number;
+  cursors?: ArchiveVerticalCursorInput[];
+}
+
+export interface ArchiveVerticalCursorInput {
+  vertical: ArchiveVertical;
+  cursor?: string;
 }
 
 export interface ArchiveCalendarQueryInput {
@@ -82,6 +95,8 @@ export interface ArchiveDigestItem {
   sourceUrl: string | null;
   entityTags: string[];
   keywordHighlights: string[];
+  matchOrigin?: ArchiveMatchOrigin | null;
+  relevanceScore?: number | null;
   rerankScore?: number | null;
 }
 
@@ -90,6 +105,12 @@ export interface ArchiveVerticalGroup {
   displayName: string;
   totalCount: number;
   items: ArchiveDigestItem[];
+  pageInfo: ArchiveVerticalPageInfo;
+}
+
+export interface ArchiveVerticalPageInfo {
+  hasMore: boolean;
+  nextCursor: string | null;
 }
 
 export interface ArchiveDigestResult {

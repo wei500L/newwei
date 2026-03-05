@@ -1,6 +1,11 @@
 "use client";
 
-import { LeftOutlined, PlusOutlined, RightOutlined, SearchOutlined } from "@ant-design/icons";
+import {
+  LeftOutlined,
+  PlusOutlined,
+  RightOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
 import { gql, type ApolloError, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -23,6 +28,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import dayjs from "@/lib/dayjs";
+import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
 import {
@@ -47,6 +53,7 @@ type ArchiveVertical =
   | "FOREIGN_AFFAIRS"
   | "DOMESTIC_AFFAIRS";
 type ArchiveWeight = "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE";
+type ArchiveMatchOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
 
 interface ArchiveEventItem {
   processedArticleId: string;
@@ -64,6 +71,8 @@ interface ArchiveEventItem {
   sourceUrl?: string | null;
   entityTags: string[];
   keywordHighlights: string[];
+  matchOrigin?: ArchiveMatchOrigin | null;
+  relevanceScore?: number | null;
 }
 
 interface ArchiveVerticalGroup {
@@ -71,6 +80,10 @@ interface ArchiveVerticalGroup {
   displayName: string;
   totalCount: number;
   items: ArchiveEventItem[];
+  pageInfo: {
+    hasMore: boolean;
+    nextCursor?: string | null;
+  };
 }
 
 interface ArchiveDigestData {
@@ -119,6 +132,10 @@ const ARCHIVE_DIGEST_QUERY = gql`
         vertical
         displayName
         totalCount
+        pageInfo {
+          hasMore
+          nextCursor
+        }
         items {
           processedArticleId
           eventId
@@ -135,6 +152,8 @@ const ARCHIVE_DIGEST_QUERY = gql`
           sourceUrl
           entityTags
           keywordHighlights
+          matchOrigin
+          relevanceScore
         }
       }
     }
@@ -210,19 +229,27 @@ const VERTICAL_FALLBACK_LABEL: Record<ArchiveVertical, string> = {
 };
 
 const WEIGHT_OPTIONS = [5, 4, 3, 2, 1] as const;
-const WEIGHT_LABEL_KEY: Record<number, "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE"> =
-  {
-    1: "ONE",
-    2: "TWO",
-    3: "THREE",
-    4: "FOUR",
-    5: "FIVE",
-  };
+const WEIGHT_LABEL_KEY: Record<
+  number,
+  "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE"
+> = {
+  1: "ONE",
+  2: "TWO",
+  3: "THREE",
+  4: "FOUR",
+  5: "FIVE",
+};
+const MATCH_ORIGIN_TAG_COLOR: Record<ArchiveMatchOrigin, string> = {
+  LEXICAL: "blue",
+  SEMANTIC: "purple",
+  HYBRID: "geekblue",
+};
 
 const DEFAULT_REGION: ArchiveRegion = "APAC";
 const DEFAULT_WEIGHTS = [5, 4, 3, 2, 1];
 const SEARCH_DEBOUNCE_MS = 300;
-const INITIAL_VISIBLE_ITEMS = 6;
+const ARCHIVE_PAGE_SIZE = 6;
+const MIN_ARCHIVE_SEARCH_QUERY_LENGTH = 2;
 
 const weightToEnum = (value: number): ArchiveWeight | null => {
   if (value === 1) return "ONE";
@@ -348,15 +375,9 @@ export function EventsArchiveContent() {
   );
 
   const [searchInput, setSearchInput] = useState(currentSearch);
-  const [expandedByVertical, setExpandedByVertical] = useState<
-    Record<ArchiveVertical, boolean>
-  >({
-    EAST_SEA: false,
-    SOUTH_SEA: false,
-    WEST_FRONT: false,
-    FOREIGN_AFFAIRS: false,
-    DOMESTIC_AFFAIRS: false,
-  });
+  const [loadingMoreByVertical, setLoadingMoreByVertical] = useState<
+    Partial<Record<ArchiveVertical, boolean>>
+  >({});
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -483,18 +504,23 @@ export function EventsArchiveContent() {
       })),
     [t],
   );
+  const normalizedDebouncedSearch = debouncedSearch.trim();
+  const isSearchQueryTooShort =
+    normalizedDebouncedSearch.length > 0 &&
+    normalizedDebouncedSearch.length < MIN_ARCHIVE_SEARCH_QUERY_LENGTH;
+  const archiveSearchQuery = isSearchQueryTooShort
+    ? ""
+    : normalizedDebouncedSearch;
 
   const archiveInput = useMemo(
     () => ({
       anchorDate: toAnchorIso(currentDate),
       region: currentRegion,
-      ...(debouncedSearch.trim().length > 0
-        ? { search: debouncedSearch.trim() }
-        : {}),
+      ...(archiveSearchQuery ? { search: archiveSearchQuery } : {}),
       weights: selectedWeightEnums,
-      limitPerVertical: 60,
+      pageSize: ARCHIVE_PAGE_SIZE,
     }),
-    [currentDate, currentRegion, debouncedSearch, selectedWeightEnums],
+    [archiveSearchQuery, currentDate, currentRegion, selectedWeightEnums],
   );
 
   const {
@@ -502,6 +528,7 @@ export function EventsArchiveContent() {
     loading: digestLoading,
     error: digestError,
     refetch: refetchDigest,
+    fetchMore: fetchMoreDigest,
   } = useQuery<{ archiveDigest: ArchiveDigestData }>(ARCHIVE_DIGEST_QUERY, {
     variables: { input: archiveInput },
     fetchPolicy: "network-only",
@@ -532,20 +559,24 @@ export function EventsArchiveContent() {
     () => selectedDate.add(1, "day").format("YYYY-MM-DD"),
     [selectedDate],
   );
-  const nextMonthParam = useMemo(() => nextDateParam.slice(0, 7), [nextDateParam]);
+  const nextMonthParam = useMemo(
+    () => nextDateParam.slice(0, 7),
+    [nextDateParam],
+  );
   const needsNextMonthCalendar = nextMonthParam !== monthParam;
-  const { data: nextMonthCalendarData, error: nextMonthCalendarError } = useQuery<{
-    archiveCalendar: ArchiveCalendarDay[];
-  }>(ARCHIVE_CALENDAR_QUERY, {
-    variables: {
-      input: {
-        month: nextMonthParam,
-        region: currentRegion,
+  const { data: nextMonthCalendarData, error: nextMonthCalendarError } =
+    useQuery<{
+      archiveCalendar: ArchiveCalendarDay[];
+    }>(ARCHIVE_CALENDAR_QUERY, {
+      variables: {
+        input: {
+          month: nextMonthParam,
+          region: currentRegion,
+        },
       },
-    },
-    skip: !needsNextMonthCalendar,
-    fetchPolicy: "cache-and-network",
-  });
+      skip: !needsNextMonthCalendar,
+      fetchPolicy: "cache-and-network",
+    });
   const digest = digestData?.archiveDigest;
   const totalCount = digest?.totalCount ?? 0;
   const groupMap = useMemo(
@@ -598,9 +629,8 @@ export function EventsArchiveContent() {
     },
   );
   const detail = detailData?.archiveDetail ?? null;
-  const searchMode = debouncedSearch.trim().length > 0;
+  const searchMode = archiveSearchQuery.length > 0;
   const normalizedSearchInput = searchInput.trim();
-  const normalizedDebouncedSearch = debouncedSearch.trim();
   const isSearchPending = normalizedSearchInput !== normalizedDebouncedSearch;
   const digestAppCode = useMemo(
     () => extractAppCodeFromError(digestError),
@@ -625,13 +655,13 @@ export function EventsArchiveContent() {
       traceId: digestTraceId,
       anchorDate: currentDate,
       region: currentRegion,
-      search: debouncedSearch.trim(),
+      search: archiveSearchQuery,
       message: digestError.message,
     });
   }, [
+    archiveSearchQuery,
     currentDate,
     currentRegion,
-    debouncedSearch,
     digestAppCode,
     digestError,
     digestTraceId,
@@ -660,6 +690,29 @@ export function EventsArchiveContent() {
       message: detailError.message,
     });
   }, [detailError, selectedDetailId]);
+
+  useEffect(() => {
+    setLoadingMoreByVertical({});
+  }, [archiveInput, currentDate, currentRegion]);
+
+  useEffect(() => {
+    if (!normalizedDebouncedSearch) {
+      return;
+    }
+    if (isSearchQueryTooShort) {
+      void trackSearchTelemetry({
+        eventType: "archive_query_too_short",
+        surface: "events_archive",
+        queryLength: normalizedDebouncedSearch.length,
+      });
+      return;
+    }
+    void trackSearchTelemetry({
+      eventType: "archive_search_submit",
+      surface: "events_archive",
+      queryLength: normalizedDebouncedSearch.length,
+    });
+  }, [isSearchQueryTooShort, normalizedDebouncedSearch]);
 
   const digestErrorDescription = useMemo(() => {
     if (!digestError) {
@@ -715,6 +768,16 @@ export function EventsArchiveContent() {
         }),
       };
     }
+    if (isSearchQueryTooShort) {
+      return {
+        tone: "info" as const,
+        message: t("pages.eventsArchive.searchFeedback.tooShort", {
+          defaultValue:
+            "Enter at least {{min}} characters to start semantic archive search.",
+          min: MIN_ARCHIVE_SEARCH_QUERY_LENGTH,
+        }),
+      };
+    }
     if (digestLoading && searchMode) {
       return {
         tone: "loading" as const,
@@ -754,6 +817,7 @@ export function EventsArchiveContent() {
     digestLoading,
     isSearchPending,
     normalizedSearchInput,
+    isSearchQueryTooShort,
     searchMode,
     t,
     totalCount,
@@ -764,6 +828,9 @@ export function EventsArchiveContent() {
     }
     if (searchFeedback.tone === "pending") {
       return "debouncing";
+    }
+    if (searchFeedback.tone === "info") {
+      return "ready";
     }
     return searchFeedback.tone;
   }, [searchFeedback]);
@@ -784,6 +851,96 @@ export function EventsArchiveContent() {
       weights: normalized.length > 0 ? normalized : DEFAULT_WEIGHTS,
     });
   };
+
+  const mergeArchiveItems = useCallback(
+    (current: ArchiveEventItem[], incoming: ArchiveEventItem[]) => {
+      const seen = new Set(current.map((item) => item.processedArticleId));
+      const merged = [...current];
+      for (const item of incoming) {
+        if (seen.has(item.processedArticleId)) {
+          continue;
+        }
+        seen.add(item.processedArticleId);
+        merged.push(item);
+      }
+      return merged;
+    },
+    [],
+  );
+
+  const handleLoadMore = useCallback(
+    async (vertical: ArchiveVertical) => {
+      const group = groupMap.get(vertical);
+      if (!group?.pageInfo.hasMore || !group.pageInfo.nextCursor) {
+        return;
+      }
+      if (loadingMoreByVertical[vertical]) {
+        return;
+      }
+
+      setLoadingMoreByVertical((current) => ({
+        ...current,
+        [vertical]: true,
+      }));
+      void trackSearchTelemetry({
+        eventType: "archive_load_more_click",
+        surface: "events_archive",
+        vertical,
+      });
+      try {
+        await fetchMoreDigest({
+          variables: {
+            input: {
+              ...archiveInput,
+              cursors: [{ vertical, cursor: group.pageInfo.nextCursor }],
+            },
+          },
+          updateQuery: (previous, { fetchMoreResult }) => {
+            if (!fetchMoreResult?.archiveDigest) {
+              return previous;
+            }
+            const incomingDigest = fetchMoreResult.archiveDigest;
+            const incomingGroup = incomingDigest.groups.find(
+              (entry) => entry.vertical === vertical,
+            );
+            if (!incomingGroup) {
+              return previous;
+            }
+
+            return {
+              archiveDigest: {
+                ...incomingDigest,
+                groups: previous.archiveDigest.groups.map((entry) => {
+                  if (entry.vertical !== vertical) {
+                    return entry;
+                  }
+                  return {
+                    ...entry,
+                    displayName: incomingGroup.displayName,
+                    totalCount: incomingGroup.totalCount,
+                    pageInfo: incomingGroup.pageInfo,
+                    items: mergeArchiveItems(entry.items, incomingGroup.items),
+                  };
+                }),
+              },
+            };
+          },
+        });
+      } finally {
+        setLoadingMoreByVertical((current) => ({
+          ...current,
+          [vertical]: false,
+        }));
+      }
+    },
+    [
+      archiveInput,
+      fetchMoreDigest,
+      groupMap,
+      loadingMoreByVertical,
+      mergeArchiveItems,
+    ],
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -834,7 +991,9 @@ export function EventsArchiveContent() {
                   value={selectedDate}
                   format="YYYY/M/D"
                   onChange={handleDateSelect}
-                  disabledDate={(value) => value.utc().isAfter(dayjs.utc(), "day")}
+                  disabledDate={(value) =>
+                    value.utc().isAfter(dayjs.utc(), "day")
+                  }
                   cellRender={(current, info) => {
                     if (info.type !== "date") {
                       return info.originNode;
@@ -1003,10 +1162,6 @@ export function EventsArchiveContent() {
                     {section.verticals.map((vertical) => {
                       const group = groupMap.get(vertical);
                       const items = group?.items ?? [];
-                      const expanded = expandedByVertical[vertical] ?? false;
-                      const visibleItems = expanded
-                        ? items
-                        : items.slice(0, INITIAL_VISIBLE_ITEMS);
                       const title = verticalLabels[vertical];
                       return (
                         <Card
@@ -1025,7 +1180,7 @@ export function EventsArchiveContent() {
                               <Tag>{group?.totalCount ?? 0}</Tag>
                             </div>
 
-                            {visibleItems.length === 0 ? (
+                            {items.length === 0 ? (
                               <Typography.Text type="secondary">
                                 {t("pages.eventsArchive.groupEmpty", {
                                   defaultValue: "暂无动态",
@@ -1033,7 +1188,7 @@ export function EventsArchiveContent() {
                               </Typography.Text>
                             ) : (
                               <div className="flex flex-col gap-2">
-                                {visibleItems.map((item) => {
+                                {items.map((item) => {
                                   const country =
                                     item.countryLabel?.trim() ||
                                     t("pages.eventsArchive.unknownCountry", {
@@ -1043,6 +1198,33 @@ export function EventsArchiveContent() {
                                     item.summary?.trim() ||
                                     item.title?.trim() ||
                                     "";
+                                  const relevancePercent =
+                                    typeof item.relevanceScore === "number"
+                                      ? Math.round(item.relevanceScore * 100)
+                                      : null;
+                                  const matchOriginLabel =
+                                    item.matchOrigin === "HYBRID"
+                                      ? t(
+                                          "pages.eventsArchive.matchOrigin.hybrid",
+                                          {
+                                            defaultValue: "混合",
+                                          },
+                                        )
+                                      : item.matchOrigin === "SEMANTIC"
+                                        ? t(
+                                            "pages.eventsArchive.matchOrigin.semantic",
+                                            {
+                                              defaultValue: "语义",
+                                            },
+                                          )
+                                        : item.matchOrigin === "LEXICAL"
+                                          ? t(
+                                              "pages.eventsArchive.matchOrigin.lexical",
+                                              {
+                                                defaultValue: "词法",
+                                              },
+                                            )
+                                          : null;
                                   return (
                                     <div
                                       key={item.processedArticleId}
@@ -1090,7 +1272,45 @@ export function EventsArchiveContent() {
                                               item.publishedAt ?? item.sortAt,
                                             ).format("YYYY/MM/DD")}
                                           </Typography.Text>
+                                          {item.matchOrigin &&
+                                          matchOriginLabel ? (
+                                            <Tag
+                                              color={
+                                                MATCH_ORIGIN_TAG_COLOR[
+                                                  item.matchOrigin
+                                                ]
+                                              }
+                                            >
+                                              {matchOriginLabel}
+                                            </Tag>
+                                          ) : null}
+                                          {relevancePercent !== null ? (
+                                            <Tag color="cyan">
+                                              {t(
+                                                "pages.eventsArchive.relevanceTag",
+                                                {
+                                                  defaultValue:
+                                                    "相关度 {{percent}}%",
+                                                  percent: relevancePercent,
+                                                },
+                                              )}
+                                            </Tag>
+                                          ) : null}
                                         </Space>
+                                        {item.keywordHighlights.length > 0 ? (
+                                          <Space size={[4, 4]} wrap>
+                                            {item.keywordHighlights
+                                              .slice(0, 4)
+                                              .map((keyword) => (
+                                                <Tag key={keyword} color="cyan">
+                                                  {renderHighlightedText(
+                                                    keyword,
+                                                    highlightTokens,
+                                                  )}
+                                                </Tag>
+                                              ))}
+                                          </Space>
+                                        ) : null}
                                       </div>
                                       <Button
                                         type="text"
@@ -1109,24 +1329,18 @@ export function EventsArchiveContent() {
                               </div>
                             )}
 
-                            {items.length > INITIAL_VISIBLE_ITEMS ? (
+                            {group?.pageInfo.hasMore ? (
                               <Button
                                 type="link"
                                 className="!px-0 self-start"
-                                onClick={() =>
-                                  setExpandedByVertical((current) => ({
-                                    ...current,
-                                    [vertical]: !current[vertical],
-                                  }))
-                                }
+                                loading={Boolean(
+                                  loadingMoreByVertical[vertical],
+                                )}
+                                onClick={() => handleLoadMore(vertical)}
                               >
-                                {expanded
-                                  ? t("pages.eventsArchive.collapse", {
-                                      defaultValue: "收起",
-                                    })
-                                  : t("pages.eventsArchive.expand", {
-                                      defaultValue: "展开更多",
-                                    })}
+                                {t("pages.eventsArchive.loadMore", {
+                                  defaultValue: "加载更多",
+                                })}
                               </Button>
                             ) : null}
                           </div>

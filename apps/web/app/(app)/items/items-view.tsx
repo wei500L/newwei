@@ -852,6 +852,7 @@ interface ItemsViewProps {
   rssTranslationConfig?: ItemsRssTranslationConfig;
   onTranslationError?: (message: string | null) => void;
   onSearchSuggestionStatusChange?: (status: SearchSuggestionStatus) => void;
+  hideSearchControl?: boolean;
 }
 
 interface ParsedItem {
@@ -907,6 +908,7 @@ export function ItemsView({
   rssTranslationConfig,
   onTranslationError,
   onSearchSuggestionStatusChange,
+  hideSearchControl = false,
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -2342,33 +2344,13 @@ export function ItemsView({
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
           <Col flex="auto">
             <Space>
-              {layoutState.filterBehavior === "layered" ? (
-                <EnhancedSearchBox
-                  className="w-full min-w-[280px]"
-                  placeholder={t("items.search.placeholder")}
-                  value={searchInput}
-                  onChange={(value) => {
-                    setSearchInput(value);
-                    if (!value) {
-                      setSearch("");
-                      setPage(1);
-                      setQueryParams({ q: null, page: 1 });
-                    }
-                  }}
-                  onSearch={(query) => handleSearch(query)}
-                  navigateOnSearch={false}
-                  onSuggestionStatusChange={onSearchSuggestionStatusChange}
-                />
-              ) : (
-                <Space.Compact>
-                  <Input
-                    id="items-search"
-                    name="itemsSearch"
+              {!hideSearchControl ? (
+                layoutState.filterBehavior === "layered" ? (
+                  <EnhancedSearchBox
+                    className="w-full min-w-[280px]"
                     placeholder={t("items.search.placeholder")}
-                    allowClear
                     value={searchInput}
-                    onChange={(event) => {
-                      const value = event.target.value;
+                    onChange={(value) => {
                       setSearchInput(value);
                       if (!value) {
                         setSearch("");
@@ -2376,14 +2358,38 @@ export function ItemsView({
                         setQueryParams({ q: null, page: 1 });
                       }
                     }}
-                    onPressEnter={() => handleSearch(searchInput)}
+                    onSearch={(query) => handleSearch(query)}
+                    navigateOnSearch={false}
+                    onSuggestionStatusChange={onSearchSuggestionStatusChange}
                   />
-                  <Button
-                    icon={<SearchOutlined />}
-                    aria-label={t("items.search.placeholder")}
-                    onClick={() => handleSearch(searchInput)}
-                  />
-                </Space.Compact>
+                ) : (
+                  <Space.Compact>
+                    <Input
+                      id="items-search"
+                      name="itemsSearch"
+                      placeholder={t("items.search.placeholder")}
+                      allowClear
+                      value={searchInput}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSearchInput(value);
+                        if (!value) {
+                          setSearch("");
+                          setPage(1);
+                          setQueryParams({ q: null, page: 1 });
+                        }
+                      }}
+                      onPressEnter={() => handleSearch(searchInput)}
+                    />
+                    <Button
+                      icon={<SearchOutlined />}
+                      aria-label={t("items.search.placeholder")}
+                      onClick={() => handleSearch(searchInput)}
+                    />
+                  </Space.Compact>
+                )
+              ) : (
+                null
               )}
               {emptyStateVariant === "search" || search.length > 0 ? (
                 <Segmented

@@ -11,6 +11,7 @@ import type { ProcessedArticleStatus } from "@prisma/client";
 
 import { ArchiveService } from "../archive.service";
 import {
+  ArchiveMatchOrigin,
   ArchiveRegion,
   ArchiveVertical,
   ArchiveWeight,
@@ -216,6 +217,7 @@ describe("ArchiveService", () => {
       processedArticle: {
         findMany: jest.fn().mockResolvedValue([row]),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       newsEvent: { findFirst: jest.fn() },
     };
     const liteLlm = {
@@ -256,6 +258,160 @@ describe("ArchiveService", () => {
       thrown as { getResponse?: () => { code?: string } } | undefined
     )?.getResponse?.();
     expect(response?.code).toBe("ARCHIVE_RERANK_FAILED");
+  });
+
+  it("ranks search-mode archive items by relevance before weight", async () => {
+    const lowRelevanceHighWeight = makeRow(
+      "row-high-weight",
+      "2025-05-27T02:00:00.000Z",
+    );
+    lowRelevanceHighWeight.qualityScore = 0.95;
+    lowRelevanceHighWeight.cleanedMarkdownRef = "ref-high-weight";
+
+    const highRelevanceLowWeight = makeRow(
+      "row-low-weight",
+      "2025-05-27T01:30:00.000Z",
+    );
+    highRelevanceLowWeight.qualityScore = 0.05;
+    highRelevanceLowWeight.cleanedMarkdownRef = "ref-low-weight";
+    highRelevanceLowWeight.title = "South China Sea latest escalation";
+    highRelevanceLowWeight.summary = "Key maritime developments";
+
+    const prisma = {
+      processedArticle: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([lowRelevanceHighWeight, highRelevanceLowWeight])
+          .mockResolvedValueOnce([]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const liteLlm = {
+      getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
+      embedding: jest.fn().mockResolvedValue({
+        model: "embedding-model",
+        data: [{ embedding: [0.1, 0.2] }],
+      }),
+      rerank: jest.fn().mockResolvedValue({
+        results: [
+          { index: 0, score: 0.95 },
+          { index: 1, score: 0.1 },
+        ],
+      }),
+    };
+    const vectorClient = {
+      searchBestEffort: jest.fn().mockResolvedValue([
+        { processedItemId: "ref-low-weight", score: 0.96 },
+        { processedItemId: "ref-high-weight", score: 0.58 },
+      ]),
+    };
+    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const service = new ArchiveService(
+      prisma as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+    );
+
+    const result = await service.getDigest("org-1", {
+      anchorDate: new Date("2025-05-28T00:00:00.000Z"),
+      region: ArchiveRegion.APAC,
+      search: "south china sea",
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      limitPerVertical: 20,
+    });
+
+    const items = result.groups[0]?.items ?? [];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.processedArticleId).toBe(highRelevanceLowWeight.id);
+    expect(items[1]?.processedArticleId).toBe(lowRelevanceHighWeight.id);
+    expect(items[0]?.relevanceScore ?? 0).toBeGreaterThan(
+      items[1]?.relevanceScore ?? 0,
+    );
+  });
+
+  it("labels match origin as lexical, semantic, or hybrid", async () => {
+    const hybridRow = makeRow("row-hybrid", "2025-05-27T02:00:00.000Z");
+    hybridRow.cleanedMarkdownRef = "ref-hybrid";
+    hybridRow.title = "Hybrid query hit";
+
+    const semanticOnlyRow = makeRow("row-semantic", "2025-05-27T01:00:00.000Z");
+    semanticOnlyRow.cleanedMarkdownRef = "ref-semantic";
+    semanticOnlyRow.title = "Semantic-only hit";
+
+    const lexicalOnlyRow = makeRow("row-lexical", "2025-05-27T00:30:00.000Z");
+    lexicalOnlyRow.cleanedMarkdownRef = "ref-lexical";
+    lexicalOnlyRow.title = "Hybrid lexical hit";
+
+    const prisma = {
+      processedArticle: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([hybridRow, semanticOnlyRow])
+          .mockResolvedValueOnce([hybridRow, lexicalOnlyRow]),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const liteLlm = {
+      getEmbeddingModel: jest.fn().mockResolvedValue("embedding-model"),
+      embedding: jest.fn().mockResolvedValue({
+        model: "embedding-model",
+        data: [{ embedding: [0.1, 0.2] }],
+      }),
+      rerank: jest.fn().mockResolvedValue({
+        results: [
+          { index: 0, score: 0.9 },
+          { index: 1, score: 0.6 },
+          { index: 2, score: 0.3 },
+        ],
+      }),
+    };
+    const vectorClient = {
+      searchBestEffort: jest.fn().mockResolvedValue([
+        { processedItemId: "ref-hybrid", score: 0.93 },
+        { processedItemId: "ref-semantic", score: 0.89 },
+      ]),
+    };
+    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const service = new ArchiveService(
+      prisma as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+    );
+
+    const result = await service.getDigest("org-1", {
+      anchorDate: new Date("2025-05-28T00:00:00.000Z"),
+      region: ArchiveRegion.APAC,
+      search: "hybrid",
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      limitPerVertical: 20,
+    });
+
+    const itemById = new Map(
+      (result.groups[0]?.items ?? []).map((item) => [item.processedArticleId, item]),
+    );
+    expect(itemById.get(hybridRow.id)?.matchOrigin).toBe(ArchiveMatchOrigin.HYBRID);
+    expect(itemById.get(semanticOnlyRow.id)?.matchOrigin).toBe(
+      ArchiveMatchOrigin.SEMANTIC,
+    );
+    expect(itemById.get(lexicalOnlyRow.id)?.matchOrigin).toBe(
+      ArchiveMatchOrigin.LEXICAL,
+    );
   });
 
   it("paginates calendar queries and aggregates all matching rows", async () => {

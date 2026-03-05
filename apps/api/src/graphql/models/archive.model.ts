@@ -8,6 +8,7 @@ import {
 } from "@nestjs/graphql";
 
 import {
+  ArchiveMatchOrigin,
   ArchiveRegion,
   ArchiveVertical,
   ArchiveWeight,
@@ -16,6 +17,7 @@ import {
 registerEnumType(ArchiveRegion, { name: "ArchiveRegion" });
 registerEnumType(ArchiveVertical, { name: "ArchiveVertical" });
 registerEnumType(ArchiveWeight, { name: "ArchiveWeight" });
+registerEnumType(ArchiveMatchOrigin, { name: "ArchiveMatchOrigin" });
 
 @ObjectType()
 export class ArchiveEventItemModel {
@@ -63,6 +65,12 @@ export class ArchiveEventItemModel {
 
   @Field(() => [String])
   keywordHighlights!: string[];
+
+  @Field(() => ArchiveMatchOrigin, { nullable: true })
+  matchOrigin?: ArchiveMatchOrigin | null;
+
+  @Field(() => Float, { nullable: true })
+  relevanceScore?: number | null;
 }
 
 @ObjectType()
@@ -78,6 +86,18 @@ export class ArchiveVerticalGroupModel {
 
   @Field(() => [ArchiveEventItemModel])
   items!: ArchiveEventItemModel[];
+
+  @Field(() => ArchiveVerticalPageInfoModel)
+  pageInfo!: ArchiveVerticalPageInfoModel;
+}
+
+@ObjectType()
+export class ArchiveVerticalPageInfoModel {
+  @Field(() => Boolean)
+  hasMore!: boolean;
+
+  @Field(() => String, { nullable: true })
+  nextCursor!: string | null;
 }
 
 @ObjectType()

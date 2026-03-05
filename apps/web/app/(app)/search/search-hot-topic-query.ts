@@ -1,4 +1,11 @@
-const PRESERVED_QUERY_KEYS = ["ranking", "pageSize"] as const;
+const PRESERVED_QUERY_KEYS = [
+  "mode",
+  "ranking",
+  "pageSize",
+  "archiveDate",
+  "archiveRegion",
+  "archiveWeights",
+] as const;
 
 export function buildHotTopicQueryString(
   currentParams: URLSearchParams,

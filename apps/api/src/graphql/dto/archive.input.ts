@@ -26,6 +26,19 @@ import {
 } from "../../modules/archive/archive.types";
 
 @InputType()
+export class ArchiveVerticalCursorInput {
+  @Field(() => ArchiveVertical)
+  @IsEnum(ArchiveVertical)
+  vertical!: ArchiveVertical;
+
+  @Field(() => String, { nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  cursor?: string;
+}
+
+@InputType()
 export class ArchiveQueryInput {
   @Field(() => GraphQLISODateTime)
   @IsDate()
@@ -54,6 +67,19 @@ export class ArchiveQueryInput {
   @Min(1)
   @Max(100)
   limitPerVertical?: number;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+
+  @Field(() => [ArchiveVerticalCursorInput], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  cursors?: ArchiveVerticalCursorInput[];
 }
 
 @InputType()

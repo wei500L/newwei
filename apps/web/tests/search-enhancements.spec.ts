@@ -35,15 +35,19 @@ describe("search suggestion request planning", () => {
 describe("hot topic query building", () => {
   it("resets layered filters while preserving ranking and pageSize", () => {
     const current = new URLSearchParams(
-      "q=old&topic=AI&region=US&sentiment=positive&from=2025-01-01&to=2025-01-31&page=3&ranking=relevance&pageSize=40"
+      "q=old&topic=AI&region=US&sentiment=positive&from=2025-01-01&to=2025-01-31&page=3&mode=headlines&ranking=relevance&pageSize=40&archiveDate=2025-01-15&archiveRegion=APAC&archiveWeights=5,4,3"
     );
 
     const query = buildHotTopicQueryString(current, "Nvidia");
     const next = new URLSearchParams(query);
 
     expect(next.get("q")).toBe("Nvidia");
+    expect(next.get("mode")).toBe("headlines");
     expect(next.get("ranking")).toBe("relevance");
     expect(next.get("pageSize")).toBe("40");
+    expect(next.get("archiveDate")).toBe("2025-01-15");
+    expect(next.get("archiveRegion")).toBe("APAC");
+    expect(next.get("archiveWeights")).toBe("5,4,3");
     expect(next.has("topic")).toBe(false);
     expect(next.has("region")).toBe(false);
     expect(next.has("sentiment")).toBe(false);
