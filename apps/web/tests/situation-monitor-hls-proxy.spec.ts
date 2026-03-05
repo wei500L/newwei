@@ -130,6 +130,47 @@ describe("situation monitor hls proxy route", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("blocks redirects to non-allowlisted hosts", async () => {
+    getTokenMock.mockResolvedValue({ accessToken: "token-redirect-block" } as never);
+
+    const initialUpstream = "https://media.example.net/live/cnn/master.m3u8";
+    const redirectTarget = "https://forbidden.example.com/live/cnn/master.m3u8";
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/situation-monitor/live-hls-proxy-config?channel=cnn")) {
+        return new Response(
+          JSON.stringify({
+            configured: true,
+            upstreamUrl: initialUpstream,
+            referer: "https://example.com",
+            allowedHosts: ["media.example.net"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      expect(url).toBe(initialUpstream);
+      expect(init?.redirect).toBe("manual");
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: redirectTarget,
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new Request("http://localhost/api/situation-monitor/hls-proxy?channel=cnn"),
+    );
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("Upstream redirect host not allowed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("rewrites manifest segment and key URIs to proxy URLs", async () => {
     getTokenMock.mockResolvedValue({ accessToken: "token-4" } as never);
 
@@ -189,6 +230,69 @@ describe("situation monitor hls proxy route", () => {
     const upstreamRequestInit = (fetchMock.mock.calls[1]?.[1] ?? {}) as RequestInit;
     const headers = new Headers((upstreamRequestInit.headers ?? {}) as HeadersInit);
     expect(headers.get("referer")).toBe("https://livenewschat.eu/");
+  });
+
+  it("rewrites manifest against final redirected URL", async () => {
+    getTokenMock.mockResolvedValue({ accessToken: "token-redirect-rewrite" } as never);
+
+    const initialUpstream = "https://media.example.net/live/cnn/master.m3u8";
+    const finalUpstream = "https://cdn.example.net/edge/cnn/final/index.m3u8?token=abc123";
+    const manifest = [
+      "#EXTM3U",
+      "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"",
+      "segment-001.ts",
+      "",
+    ].join("\n");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/situation-monitor/live-hls-proxy-config?channel=cnn")) {
+        return new Response(
+          JSON.stringify({
+            configured: true,
+            upstreamUrl: initialUpstream,
+            referer: "https://example.com/player",
+            allowedHosts: ["media.example.net", "cdn.example.net"],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      expect(init?.redirect).toBe("manual");
+      if (url === initialUpstream) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: finalUpstream,
+          },
+        });
+      }
+
+      expect(url).toBe(finalUpstream);
+      return new Response(manifest, {
+        status: 200,
+        headers: { "content-type": "application/vnd.apple.mpegurl" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new Request("http://localhost/api/situation-monitor/hls-proxy?channel=cnn"),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+
+    const expectedSegment = encodeURIComponent("https://cdn.example.net/edge/cnn/final/segment-001.ts");
+    const expectedKey = encodeURIComponent("https://cdn.example.net/edge/cnn/final/key.bin");
+
+    expect(body).toContain(
+      `/api/situation-monitor/hls-proxy?channel=cnn&upstream=${expectedSegment}`,
+    );
+    expect(body).toContain(
+      `URI=\"/api/situation-monitor/hls-proxy?channel=cnn&upstream=${expectedKey}\"`,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("forwards range headers and streams non-manifest payload", async () => {

@@ -50,9 +50,57 @@ describe("situation monitor youtube live route", () => {
     };
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=300, s-maxage=300, stale-while-revalidate=60",
+    );
     expect(body.videoId).toBe("w_Ma8oQLmSM");
     expect(body.isLive).toBe(true);
     expect(body.channelName).toBe("CNN");
     expect(body.hlsUrl).toBe("https://example.com/live.m3u8&foo=bar");
+  });
+
+  it("returns non-cacheable non-2xx response when upstream fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("service unavailable", {
+          status: 503,
+          headers: { "content-type": "text/plain" },
+        }),
+      ),
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/situation-monitor/youtube-live?channel=@CNN"),
+    );
+    const body = (await response.json()) as {
+      videoId?: string | null;
+      isLive?: boolean;
+      channelExists?: boolean;
+      upstreamStatus?: number;
+    };
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(body.videoId).toBeNull();
+    expect(body.isLive).toBe(false);
+    expect(body.channelExists).toBe(false);
+    expect(body.upstreamStatus).toBe(503);
+  });
+
+  it("returns non-cacheable timeout response", async () => {
+    const abortError = new Error("timeout");
+    abortError.name = "AbortError";
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
+
+    const response = await GET(
+      new Request("http://localhost/api/situation-monitor/youtube-live?channel=@CNN"),
+    );
+    const body = (await response.json()) as { timeout?: boolean };
+
+    expect(response.status).toBe(504);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(body.timeout).toBe(true);
   });
 });

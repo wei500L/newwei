@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 const YOUTUBE_FETCH_TIMEOUT_MS = 12_000;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const SUCCESS_CACHE_CONTROL = "public, max-age=300, s-maxage=300, stale-while-revalidate=60";
 
 interface YouTubeLiveResponse {
   videoId: string | null;
@@ -13,12 +14,12 @@ interface YouTubeLiveResponse {
   hlsUrl: string | null;
 }
 
-function json(status: number, payload: unknown): Response {
+function json(status: number, payload: unknown, cacheControl: string): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
       "content-type": "application/json",
-      "cache-control": "public, max-age=300, s-maxage=300, stale-while-revalidate=60",
+      "cache-control": cacheControl,
     },
   });
 }
@@ -86,7 +87,7 @@ export async function GET(request: Request): Promise<Response> {
   const channelHandle = normalizeChannelHandle(requestUrl.searchParams.get("channel"));
 
   if (!channelHandle) {
-    return json(400, { error: "Invalid channel handle" });
+    return json(400, { error: "Invalid channel handle" }, "no-store");
   }
 
   const controller = new AbortController();
@@ -104,27 +105,36 @@ export async function GET(request: Request): Promise<Response> {
     });
 
     if (!youtubeResponse.ok) {
-      return json(200, {
+      return json(
+        youtubeResponse.status === 404 ? 404 : 502,
+        {
+          videoId: null,
+          isLive: false,
+          channelExists: false,
+          channelName: null,
+          hlsUrl: null,
+          upstreamStatus: youtubeResponse.status,
+        },
+        "no-store",
+      );
+    }
+
+    const html = await youtubeResponse.text();
+    return json(200, extractYouTubeLiveInfo(html), SUCCESS_CACHE_CONTROL);
+  } catch (error) {
+    const isAbortError = error instanceof Error && error.name === "AbortError";
+    return json(
+      isAbortError ? 504 : 502,
+      {
         videoId: null,
         isLive: false,
         channelExists: false,
         channelName: null,
         hlsUrl: null,
-      });
-    }
-
-    const html = await youtubeResponse.text();
-    return json(200, extractYouTubeLiveInfo(html));
-  } catch (error) {
-    const isAbortError = error instanceof Error && error.name === "AbortError";
-    return json(200, {
-      videoId: null,
-      isLive: false,
-      channelExists: false,
-      channelName: null,
-      hlsUrl: null,
-      timeout: isAbortError,
-    });
+        timeout: isAbortError,
+      },
+      "no-store",
+    );
   } finally {
     clearTimeout(timeout);
   }

@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const CONFIG_TIMEOUT_MS = 8_000;
+const MAX_REDIRECTS = 5;
 const PROXY_ROUTE_PATH = "/api/situation-monitor/hls-proxy";
 
 interface ProxiedHlsConfig {
@@ -29,6 +30,11 @@ interface LiveHlsProxyConfigResponse {
   upstreamUrl?: string | null;
   referer?: string | null;
   allowedHosts?: string[];
+}
+
+interface UpstreamFetchResult {
+  upstreamResponse: Response;
+  finalUpstream: URL;
 }
 
 function json(status: number, payload: Record<string, unknown>): Response {
@@ -115,6 +121,10 @@ function isAllowedUpstream(upstream: URL, allowedHosts: Set<string>): boolean {
     return false;
   }
   return allowedHosts.has(upstream.hostname.toLowerCase());
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
 function buildUpstreamHeaders(request: Request, referer?: string): Headers {
@@ -248,6 +258,56 @@ async function fetchProxyConfig(
   }
 }
 
+async function fetchValidatedUpstream(
+  request: Request,
+  upstream: URL,
+  config: ProxiedHlsConfig,
+  signal: AbortSignal,
+): Promise<UpstreamFetchResult | Response> {
+  let currentUpstream = upstream;
+  let redirectCount = 0;
+
+  while (true) {
+    const upstreamResponse = await fetch(currentUpstream, {
+      method: "GET",
+      headers: buildUpstreamHeaders(request, config.referer),
+      redirect: "manual",
+      cache: "no-store",
+      signal,
+    });
+
+    if (!isRedirectStatus(upstreamResponse.status)) {
+      return {
+        upstreamResponse,
+        finalUpstream: currentUpstream,
+      };
+    }
+
+    if (redirectCount >= MAX_REDIRECTS) {
+      return json(502, { error: "Too many upstream redirects" });
+    }
+
+    const location = upstreamResponse.headers.get("location");
+    if (!location) {
+      return json(502, { error: "Upstream redirect missing location" });
+    }
+
+    let redirectTarget: URL;
+    try {
+      redirectTarget = new URL(location, currentUpstream);
+    } catch {
+      return json(502, { error: "Invalid upstream redirect location" });
+    }
+
+    if (!isAllowedUpstream(redirectTarget, config.allowedHosts)) {
+      return json(403, { error: "Upstream redirect host not allowed" });
+    }
+
+    currentUpstream = redirectTarget;
+    redirectCount += 1;
+  }
+}
+
 export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   const channelParam = requestUrl.searchParams.get("channel")?.trim().toLowerCase();
@@ -298,12 +358,17 @@ export async function GET(request: Request): Promise<Response> {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const upstreamResponse = await fetch(upstream, {
-      method: "GET",
-      headers: buildUpstreamHeaders(request, config.referer),
-      cache: "no-store",
-      signal: controller.signal,
-    });
+    const upstreamFetchResult = await fetchValidatedUpstream(
+      request,
+      upstream,
+      config,
+      controller.signal,
+    );
+    if (upstreamFetchResult instanceof Response) {
+      return upstreamFetchResult;
+    }
+
+    const { upstreamResponse, finalUpstream } = upstreamFetchResult;
 
     if (!upstreamResponse.ok) {
       return json(upstreamResponse.status, {
@@ -313,9 +378,9 @@ export async function GET(request: Request): Promise<Response> {
 
     const contentType = (upstreamResponse.headers.get("content-type") ?? "").toLowerCase();
 
-    if (isManifest(upstream, contentType)) {
+    if (isManifest(finalUpstream, contentType)) {
       const manifest = await upstreamResponse.text();
-      const rewritten = rewriteManifest(manifest, upstream, channelParam);
+      const rewritten = rewriteManifest(manifest, finalUpstream, channelParam);
       return new Response(rewritten, {
         status: 200,
         headers: {
