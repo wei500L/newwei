@@ -46,6 +46,68 @@ export interface NewsResolveResponse {
   matchedUrl?: string;
 }
 
+export type NewsnowContentKind =
+  | 'article'
+  | 'discussion'
+  | 'video'
+  | 'mixed'
+  | 'unknown';
+
+export interface NewsnowAnalyzedItem {
+  sourceId: string;
+  itemId: string;
+  clusterId: string;
+  theme: string | null;
+  candidateLabel: string | null;
+  candidateSummary: string | null;
+  reason: string | null;
+  topics: string[];
+  entities: string[];
+  contentKind: NewsnowContentKind;
+  sourceCount: number;
+  heatScore: number;
+  freshnessScore: number;
+  candidateScore: number;
+  isNew: boolean;
+  isRising: boolean;
+  bridgeEligible: boolean;
+  bridgeStatus: 'existing' | 'queued' | 'eligible' | 'not_supported';
+  matchedItemId?: string;
+  matchedEventId?: string;
+}
+
+export interface NewsnowEventCandidate {
+  candidateId: string;
+  label: string;
+  summary: string | null;
+  reason: string | null;
+  themes: string[];
+  entities: string[];
+  sourceIds: string[];
+  sourceCount: number;
+  itemCount: number;
+  heatScore: number;
+  freshnessScore: number;
+  candidateScore: number;
+  itemRefs: Array<{
+    sourceId: string;
+    itemId: string;
+    title: string;
+    matchedItemId?: string;
+    matchedEventId?: string;
+  }>;
+}
+
+export interface NewsnowHottestAnalysisResponse {
+  generatedAt: string;
+  cached: boolean;
+  sourcesAnalyzed: number;
+  itemsAnalyzed: number;
+  bySource: Record<string, Record<string, NewsnowAnalyzedItem>>;
+  candidates: NewsnowEventCandidate[];
+  errors: Array<{ sourceId: string; message: string }>;
+}
+
 interface ResolveNewsUrlOptions {
   signal?: AbortSignal;
   forceRefresh?: boolean;
@@ -119,6 +181,11 @@ async function fetchResolvedByUrl(
     options?.signal ? { signal: options.signal } : undefined,
   );
   return (data ?? { matched: false }) as NewsResolveResponse;
+}
+
+async function fetchHottestAnalysis(): Promise<NewsnowHottestAnalysisResponse> {
+  const { data } = await api.get('/news-aggregator/hottest-analysis');
+  return data as NewsnowHottestAnalysisResponse;
 }
 
 export function useNewsMetadata() {
@@ -209,4 +276,15 @@ export function useResolveNewsUrl() {
     },
     [queryClient],
   );
+}
+
+export function useHottestAnalysis(enabled: boolean) {
+  return useQuery<NewsnowHottestAnalysisResponse>({
+    queryKey: ['newsnow-hottest-analysis'],
+    queryFn: fetchHottestAnalysis,
+    enabled,
+    staleTime: 1000 * 60,
+    refetchInterval: enabled ? 1000 * 60 * 2 : false,
+    refetchOnWindowFocus: false,
+  });
 }

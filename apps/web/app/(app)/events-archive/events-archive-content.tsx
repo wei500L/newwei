@@ -19,7 +19,6 @@ import {
   Select,
   Space,
   Spin,
-  Tag,
   Typography,
 } from "antd";
 import type { Dayjs } from "dayjs";
@@ -32,48 +31,31 @@ import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
 import { useDebounceValue } from "@/lib/use-debounce-value";
 import {
+  ARCHIVE_PAGE_SIZE,
+  DEFAULT_REGION,
+  DEFAULT_WEIGHTS,
+  MIN_ARCHIVE_SEARCH_QUERY_LENGTH,
+  REGION_OPTIONS,
+  VERTICAL_FALLBACK_LABEL,
+  VERTICAL_SECTIONS,
+  type ArchiveEventItem,
+  type ArchiveMatchOrigin,
+  type ArchiveRegion,
+  resolveArchiveItemPreview,
+  resolveArchiveRelevancePercent,
+  resolveArchiveSearchFeedbackVisualState,
+  resolveArchiveVerticalTone,
+  resolveArchiveWeightStars,
+  type ArchiveVertical,
+  type ArchiveWeight,
+} from "./events-archive-display";
+import {
   buildCalendarCountMap,
   canNavigateToNextDay,
   formatSelectedDateParam,
   parseDateParamUtc,
   toAnchorIso,
 } from "./events-archive-helpers";
-
-type ArchiveRegion =
-  | "APAC"
-  | "MIDDLE_EAST"
-  | "AMERICAS"
-  | "EUROPE"
-  | "AFRICA"
-  | "OTHER";
-type ArchiveVertical =
-  | "EAST_SEA"
-  | "SOUTH_SEA"
-  | "WEST_FRONT"
-  | "FOREIGN_AFFAIRS"
-  | "DOMESTIC_AFFAIRS";
-type ArchiveWeight = "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE";
-type ArchiveMatchOrigin = "LEXICAL" | "SEMANTIC" | "HYBRID";
-
-interface ArchiveEventItem {
-  processedArticleId: string;
-  eventId?: string | null;
-  title?: string | null;
-  summary?: string | null;
-  countryLabel?: string | null;
-  region: ArchiveRegion;
-  vertical: ArchiveVertical;
-  weight: number;
-  qualityScore?: number | null;
-  publishedAt?: string | null;
-  sortAt: string;
-  sourceLabel?: string | null;
-  sourceUrl?: string | null;
-  entityTags: string[];
-  keywordHighlights: string[];
-  matchOrigin?: ArchiveMatchOrigin | null;
-  relevanceScore?: number | null;
-}
 
 interface ArchiveVerticalGroup {
   vertical: ArchiveVertical;
@@ -197,37 +179,6 @@ const ARCHIVE_DETAIL_QUERY = gql`
   }
 `;
 
-const REGION_OPTIONS: ArchiveRegion[] = [
-  "APAC",
-  "MIDDLE_EAST",
-  "AMERICAS",
-  "EUROPE",
-  "AFRICA",
-  "OTHER",
-];
-
-const VERTICAL_SECTIONS: Array<{
-  key: string;
-  verticals: ArchiveVertical[];
-}> = [
-  {
-    key: "geo",
-    verticals: ["EAST_SEA", "SOUTH_SEA", "WEST_FRONT"],
-  },
-  {
-    key: "macro",
-    verticals: ["FOREIGN_AFFAIRS", "DOMESTIC_AFFAIRS"],
-  },
-];
-
-const VERTICAL_FALLBACK_LABEL: Record<ArchiveVertical, string> = {
-  EAST_SEA: "【东海】",
-  SOUTH_SEA: "【南海】",
-  WEST_FRONT: "【西面】",
-  FOREIGN_AFFAIRS: "【外务】",
-  DOMESTIC_AFFAIRS: "【内务】",
-};
-
 const WEIGHT_OPTIONS = [5, 4, 3, 2, 1] as const;
 const WEIGHT_LABEL_KEY: Record<
   number,
@@ -239,17 +190,15 @@ const WEIGHT_LABEL_KEY: Record<
   4: "FOUR",
   5: "FIVE",
 };
-const MATCH_ORIGIN_TAG_COLOR: Record<ArchiveMatchOrigin, string> = {
-  LEXICAL: "blue",
-  SEMANTIC: "purple",
-  HYBRID: "geekblue",
-};
-
-const DEFAULT_REGION: ArchiveRegion = "APAC";
-const DEFAULT_WEIGHTS = [5, 4, 3, 2, 1];
 const SEARCH_DEBOUNCE_MS = 300;
-const ARCHIVE_PAGE_SIZE = 6;
-const MIN_ARCHIVE_SEARCH_QUERY_LENGTH = 2;
+const MATCH_ORIGIN_BADGE_CLASS_NAME: Record<ArchiveMatchOrigin, string> = {
+  LEXICAL:
+    'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200',
+  SEMANTIC:
+    'border-violet-500/20 bg-violet-500/10 text-violet-700 dark:border-violet-400/30 dark:bg-violet-400/15 dark:text-violet-200',
+  HYBRID:
+    'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/15 dark:text-fuchsia-200',
+};
 
 const weightToEnum = (value: number): ArchiveWeight | null => {
   if (value === 1) return "ONE";
@@ -273,14 +222,14 @@ const parseRegionParam = (value: string | null): ArchiveRegion => {
 
 const parseWeightsParam = (value: string | null) => {
   if (!value) {
-    return DEFAULT_WEIGHTS;
+    return [...DEFAULT_WEIGHTS];
   }
   const parsed = value
     .split(",")
     .map((entry) => Number.parseInt(entry.trim(), 10))
     .filter((entry) => Number.isFinite(entry) && entry >= 1 && entry <= 5);
   if (parsed.length === 0) {
-    return DEFAULT_WEIGHTS;
+    return [...DEFAULT_WEIGHTS];
   }
   return Array.from(new Set(parsed)).sort((a, b) => b - a);
 };
@@ -313,7 +262,7 @@ function renderHighlightedText(text: string, tokens: string[]) {
         const key = `${part}-${index}`;
         if (tokenSet.has(part.toLowerCase())) {
           return (
-            <mark key={key} className="bg-amber-200 px-0.5 rounded-sm">
+            <mark key={key} className="rounded-sm bg-amber-200 px-0.5 text-amber-950 dark:bg-amber-400/30 dark:text-amber-100">
               {part}
             </mark>
           );
@@ -822,18 +771,23 @@ export function EventsArchiveContent() {
     t,
     totalCount,
   ]);
-  const searchFeedbackVisualState = useMemo(() => {
-    if (!searchFeedback) {
-      return null;
-    }
-    if (searchFeedback.tone === "pending") {
-      return "debouncing";
-    }
-    if (searchFeedback.tone === "info") {
-      return "ready";
-    }
-    return searchFeedback.tone;
-  }, [searchFeedback]);
+  const searchFeedbackVisualState = useMemo(
+    () =>
+      searchFeedback
+        ? resolveArchiveSearchFeedbackVisualState(searchFeedback.tone)
+        : null,
+    [searchFeedback],
+  );
+  const archiveDateDisplay = selectedDate.format("YYYY/MM/DD");
+  const currentRegionLabel =
+    regionOptions.find((region) => region.value === currentRegion)?.label ??
+    currentRegion;
+  const unknownCountryLabel = t("pages.eventsArchive.unknownCountry", {
+    defaultValue: "未知",
+  });
+  const untitledArchiveLabel = t("pages.eventsArchive.untitled", {
+    defaultValue: "未命名事件",
+  });
 
   const handleDateSelect = (value: Dayjs | null) => {
     if (!value) {
@@ -848,7 +802,7 @@ export function EventsArchiveContent() {
       .filter((value) => Number.isFinite(value) && value >= 1 && value <= 5)
       .sort((a, b) => b - a);
     updateUrl({
-      weights: normalized.length > 0 ? normalized : DEFAULT_WEIGHTS,
+      weights: normalized.length > 0 ? normalized : [...DEFAULT_WEIGHTS],
     });
   };
 
@@ -943,32 +897,52 @@ export function EventsArchiveContent() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.eventsArchive.title", { defaultValue: "历史档案日报" })}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("pages.eventsArchive.subtitle", {
-            defaultValue: "按日期回溯已处理新闻情报，并按预设领域编年归档。",
-          })}
-        </Typography.Text>
-      </Space>
+    <div className="flex flex-col gap-5">
+      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/75 px-5 py-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)] dark:border-slate-700/70 dark:bg-slate-900/45 sm:px-6">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_30%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.18),transparent_30%)]" />
+        <div className="relative flex flex-col gap-3">
+          <Space direction="vertical" size={2}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {t("pages.eventsArchive.title", { defaultValue: "历史档案日报" })}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {t("pages.eventsArchive.subtitle", {
+                defaultValue: "按日期回溯已处理新闻情报，并按预设领域编年归档。",
+              })}
+            </Typography.Text>
+          </Space>
 
-      <Card className="content-card">
-        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
+              {currentRegionLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
+              {archiveDateDisplay}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 shadow-sm dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200">
+              {t("pages.eventsArchive.dailyCount", {
+                defaultValue: "本日 {{count}} 条动态",
+                count: totalCount,
+              })}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <Card className="content-card !overflow-hidden">
+        <div className="flex flex-col gap-5">
           <div className="overflow-x-auto">
-            <div className="inline-flex min-w-full border-b border-slate-200">
+            <div className="inline-flex min-w-full rounded-2xl border border-slate-200/70 bg-white/40 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:border-slate-700/70 dark:bg-slate-950/35">
               {regionOptions.map((region) => {
                 const active = region.value === currentRegion;
                 return (
                   <button
                     key={region.value}
                     type="button"
-                    className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                    className={`rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap transition-[background-color,color,box-shadow] ${
                       active
-                        ? "border-amber-500 text-amber-700 font-semibold"
-                        : "border-transparent text-slate-500 hover:text-slate-700"
+                        ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950"
+                        : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/8 dark:hover:text-white"
                     }`}
                     onClick={() => updateUrl({ region: region.value })}
                   >
@@ -979,106 +953,118 @@ export function EventsArchiveContent() {
             </div>
           </div>
 
-          <div className="flex flex-col xl:flex-row xl:items-center gap-3 justify-between">
-            <Space wrap size="small">
-              <Space size={8}>
-                <Button
-                  icon={<LeftOutlined />}
-                  onClick={() => updateUrl({ date: prevDateParam })}
-                />
-                <DatePicker
-                  allowClear={false}
-                  value={selectedDate}
-                  format="YYYY/M/D"
-                  onChange={handleDateSelect}
-                  disabledDate={(value) =>
-                    value.utc().isAfter(dayjs.utc(), "day")
-                  }
-                  cellRender={(current, info) => {
-                    if (info.type !== "date") {
-                      return info.originNode;
-                    }
-                    const dateCell = dayjs(current as Dayjs).utc();
-                    if (!dateCell.isValid()) {
-                      return info.originNode;
-                    }
-                    const key = dateCell.format("YYYY-MM-DD");
-                    const count = calendarCountByDate.get(key) ?? 0;
-                    if (count <= 0) {
-                      return info.originNode;
-                    }
-                    return (
-                      <div className="relative h-full">
-                        {info.originNode}
-                        <span className="absolute left-1/2 -translate-x-1/2 bottom-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      </div>
-                    );
-                  }}
-                />
-                <Button
-                  icon={<RightOutlined />}
-                  onClick={() => updateUrl({ date: nextDateParam })}
-                  disabled={!canGoNext}
-                />
-              </Space>
-              <Typography.Text type="secondary">
-                {t("pages.eventsArchive.dailyCount", {
-                  defaultValue: "本日 {{count}} 条动态",
-                  count: totalCount,
-                })}
-              </Typography.Text>
-            </Space>
-
-            <Space wrap size="small">
-              <Select
-                mode="multiple"
-                size="small"
-                value={currentWeights}
-                options={weightOptions}
-                onChange={handleWeightChange}
-                style={{ minWidth: 220 }}
-                maxTagCount="responsive"
-                placeholder={t(
-                  "pages.eventsArchive.filters.weightPlaceholder",
-                  { defaultValue: "所有权重" },
-                )}
-              />
-              <div
-                className="flex flex-col gap-1"
-                style={{ width: screens.md ? 300 : "100%" }}
-              >
-                <Input
-                  allowClear
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder={t("pages.eventsArchive.searchPlaceholder", {
-                    defaultValue: "搜索国家、事件、关键词...",
+          <div className="rounded-[24px] border border-slate-200/70 bg-slate-50/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:border-slate-700/70 dark:bg-slate-900/50">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex flex-col gap-2">
+                <Space wrap size={[8, 12]}>
+                  <Space size={8}>
+                    <Button
+                      className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
+                      icon={<LeftOutlined />}
+                      onClick={() => updateUrl({ date: prevDateParam })}
+                    />
+                    <DatePicker
+                      allowClear={false}
+                      value={selectedDate}
+                      format="YYYY/M/D"
+                      onChange={handleDateSelect}
+                      disabledDate={(value) =>
+                        value.utc().isAfter(dayjs.utc(), "day")
+                      }
+                      cellRender={(current, info) => {
+                        if (info.type !== "date") {
+                          return info.originNode;
+                        }
+                        const dateCell = dayjs(current as Dayjs).utc();
+                        if (!dateCell.isValid()) {
+                          return info.originNode;
+                        }
+                        const key = dateCell.format("YYYY-MM-DD");
+                        const count = calendarCountByDate.get(key) ?? 0;
+                        if (count <= 0) {
+                          return info.originNode;
+                        }
+                        return (
+                          <div className="relative h-full">
+                            {info.originNode}
+                            <span className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-500" />
+                          </div>
+                        );
+                      }}
+                    />
+                    <Button
+                      className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
+                      icon={<RightOutlined />}
+                      onClick={() => updateUrl({ date: nextDateParam })}
+                      disabled={!canGoNext}
+                    />
+                  </Space>
+                </Space>
+                <Typography.Text className="pl-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("pages.eventsArchive.dailyCount", {
+                    defaultValue: "本日 {{count}} 条动态",
+                    count: totalCount,
                   })}
-                />
-                {searchFeedback && searchFeedbackVisualState ? (
-                  <div
-                    className={`search-feedback-pill search-feedback-pill--${searchFeedbackVisualState}`}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <span className="search-feedback-pill__icon" aria-hidden>
-                      {searchFeedbackVisualState === "loading" ||
-                      searchFeedbackVisualState === "debouncing" ? (
-                        <Spin size="small" />
-                      ) : (
-                        <SearchOutlined />
-                      )}
-                    </span>
-                    <span className="search-feedback-pill__text">
-                      {searchFeedback.message}
-                    </span>
-                  </div>
-                ) : null}
+                </Typography.Text>
               </div>
-              <Button onClick={() => refetchDigest()} loading={digestLoading}>
-                {t("common.refresh", { defaultValue: "Refresh" })}
-              </Button>
-            </Space>
+
+              <div className="flex flex-1 flex-col gap-3 xl:max-w-[720px]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-end">
+                  <Select
+                    mode="multiple"
+                    size="small"
+                    value={currentWeights}
+                    options={weightOptions}
+                    onChange={handleWeightChange}
+                    style={{ minWidth: screens.md ? 220 : undefined, width: screens.md ? undefined : "100%" }}
+                    maxTagCount="responsive"
+                    placeholder={t(
+                      "pages.eventsArchive.filters.weightPlaceholder",
+                      { defaultValue: "所有权重" },
+                    )}
+                  />
+                  <div className="min-w-0 flex-1" style={{ width: screens.md ? 320 : "100%" }}>
+                    <div className="flex flex-col gap-2">
+                      <Input
+                        allowClear
+                        prefix={<SearchOutlined className="text-slate-400 dark:text-slate-500" />}
+                        value={searchInput}
+                        onChange={(event) => setSearchInput(event.target.value)}
+                        placeholder={t("pages.eventsArchive.searchPlaceholder", {
+                          defaultValue: "搜索国家、事件、关键词...",
+                        })}
+                      />
+                      {searchFeedback && searchFeedbackVisualState ? (
+                        <div
+                          className={`search-feedback-pill search-feedback-pill--${searchFeedbackVisualState}`}
+                          role="status"
+                          aria-live="polite"
+                        >
+                          <span className="search-feedback-pill__icon" aria-hidden>
+                            {searchFeedbackVisualState === "loading" ||
+                            searchFeedbackVisualState === "debouncing" ? (
+                              <Spin size="small" />
+                            ) : (
+                              <SearchOutlined />
+                            )}
+                          </span>
+                          <span className="search-feedback-pill__text">
+                            {searchFeedback.message}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Button
+                    className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
+                    onClick={() => refetchDigest()}
+                    loading={digestLoading}
+                  >
+                    {t("common.refresh", { defaultValue: "Refresh" })}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {digestError ? (
@@ -1152,56 +1138,71 @@ export function EventsArchiveContent() {
               ) : null}
             </Empty>
           ) : (
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-6">
               {VERTICAL_SECTIONS.map((section) => (
-                <div key={section.key} className="flex flex-col gap-3">
-                  <Typography.Text strong className="text-slate-700">
-                    {sectionLabels[section.key as keyof typeof sectionLabels]}
-                  </Typography.Text>
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <section key={section.key} className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/80" />
+                    <Typography.Text className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                      {sectionLabels[section.key as keyof typeof sectionLabels]}
+                    </Typography.Text>
+                    <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/80" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     {section.verticals.map((vertical) => {
                       const group = groupMap.get(vertical);
                       const items = group?.items ?? [];
                       const title = verticalLabels[vertical];
+                      const tone = resolveArchiveVerticalTone(vertical);
                       return (
                         <Card
                           key={vertical}
+                          size="small"
                           styles={{
                             body: {
-                              backgroundColor: "#f8f1dc",
-                              borderRadius: 12,
+                              padding: 0,
                             },
                           }}
-                          className="shadow-sm hover:shadow-md transition-all duration-200"
+                          className="overflow-hidden border border-slate-200/80 bg-white/72 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.55)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_24px_50px_-36px_rgba(15,23,42,0.28)] dark:border-slate-800/80 dark:bg-slate-950/58 dark:hover:border-slate-700/80"
                         >
-                          <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                              <Typography.Text strong>{title}</Typography.Text>
-                              <Tag>{group?.totalCount ?? 0}</Tag>
+                          <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accentGlowClassName}`} />
+                          <div className="flex flex-col gap-4 p-4 sm:p-5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex items-start gap-3">
+                                <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ${tone.accentDotClassName}`} />
+                                <div className="min-w-0">
+                                  <span
+                                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone.titlePillClassName}`}
+                                  >
+                                    {title}
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-600/80 dark:bg-slate-950/70 dark:text-slate-200">
+                                {group?.totalCount ?? 0}
+                              </span>
                             </div>
 
                             {items.length === 0 ? (
-                              <Typography.Text type="secondary">
-                                {t("pages.eventsArchive.groupEmpty", {
-                                  defaultValue: "暂无动态",
-                                })}
-                              </Typography.Text>
+                              <div className="rounded-2xl border border-dashed border-slate-300/80 bg-slate-50/80 px-4 py-6 text-center dark:border-slate-700/80 dark:bg-slate-900/65">
+                                <Typography.Text type="secondary">
+                                  {t("pages.eventsArchive.groupEmpty", {
+                                    defaultValue: "暂无动态",
+                                  })}
+                                </Typography.Text>
+                              </div>
                             ) : (
-                              <div className="flex flex-col gap-2">
+                              <div className="flex flex-col gap-3">
                                 {items.map((item) => {
-                                  const country =
-                                    item.countryLabel?.trim() ||
-                                    t("pages.eventsArchive.unknownCountry", {
-                                      defaultValue: "未知",
+                                  const { country, summary } =
+                                    resolveArchiveItemPreview(item, {
+                                      countryLabel: unknownCountryLabel,
+                                      summary: untitledArchiveLabel,
                                     });
-                                  const summary =
-                                    item.summary?.trim() ||
-                                    item.title?.trim() ||
-                                    "";
                                   const relevancePercent =
-                                    typeof item.relevanceScore === "number"
-                                      ? Math.round(item.relevanceScore * 100)
-                                      : null;
+                                    resolveArchiveRelevancePercent(
+                                      item.relevanceScore,
+                                    );
                                   const matchOriginLabel =
                                     item.matchOrigin === "HYBRID"
                                       ? t(
@@ -1228,101 +1229,103 @@ export function EventsArchiveContent() {
                                   return (
                                     <div
                                       key={item.processedArticleId}
-                                      className="flex items-start gap-2"
+                                      className="group rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.75)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)] dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
                                     >
-                                      <span className="text-slate-500 mt-1">
-                                        ●
-                                      </span>
-                                      <div className="min-w-0 flex-1">
-                                        <Typography.Paragraph
-                                          className="!mb-1 text-sm leading-6"
-                                          ellipsis={{
-                                            rows: 2,
-                                            expandable: false,
-                                          }}
-                                        >
-                                          <span className="font-semibold">
-                                            {renderHighlightedText(
-                                              country,
-                                              highlightTokens,
-                                            )}
-                                          </span>
-                                          <span>：</span>
-                                          <span>
-                                            {renderHighlightedText(
-                                              summary,
-                                              highlightTokens,
-                                            )}
-                                          </span>
-                                        </Typography.Paragraph>
-                                        <Space size={6} wrap>
-                                          <Tag color="gold">
-                                            {`★`.repeat(
-                                              Math.max(
-                                                1,
-                                                Math.min(item.weight, 5),
-                                              ),
-                                            )}
-                                          </Tag>
-                                          <Typography.Text
-                                            type="secondary"
-                                            className="text-xs"
+                                      <div className="flex items-start gap-3">
+                                        <span
+                                          className={`mt-2 h-2 w-2 shrink-0 rounded-full ${tone.accentDotClassName}`}
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <Typography.Paragraph
+                                            className="!mb-2 text-sm leading-6 text-slate-700 dark:text-slate-300"
+                                            ellipsis={{
+                                              rows: 2,
+                                              expandable: false,
+                                            }}
                                           >
-                                            {dayjs(
-                                              item.publishedAt ?? item.sortAt,
-                                            ).format("YYYY/MM/DD")}
-                                          </Typography.Text>
-                                          {item.matchOrigin &&
-                                          matchOriginLabel ? (
-                                            <Tag
-                                              color={
-                                                MATCH_ORIGIN_TAG_COLOR[
-                                                  item.matchOrigin
-                                                ]
-                                              }
-                                            >
-                                              {matchOriginLabel}
-                                            </Tag>
-                                          ) : null}
-                                          {relevancePercent !== null ? (
-                                            <Tag color="cyan">
-                                              {t(
-                                                "pages.eventsArchive.relevanceTag",
-                                                {
-                                                  defaultValue:
-                                                    "相关度 {{percent}}%",
-                                                  percent: relevancePercent,
-                                                },
+                                            <span className="font-semibold text-slate-950 dark:text-slate-50">
+                                              {renderHighlightedText(
+                                                country,
+                                                highlightTokens,
                                               )}
-                                            </Tag>
+                                            </span>
+                                            <span className="text-slate-400 dark:text-slate-500">
+                                              ：
+                                            </span>
+                                            <span>
+                                              {renderHighlightedText(
+                                                summary,
+                                                highlightTokens,
+                                              )}
+                                            </span>
+                                          </Typography.Paragraph>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200">
+                                              {resolveArchiveWeightStars(
+                                                item.weight,
+                                              )}
+                                            </span>
+                                            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                              {dayjs(
+                                                item.publishedAt ?? item.sortAt,
+                                              ).format("YYYY/MM/DD")}
+                                            </span>
+                                            {item.matchOrigin &&
+                                            matchOriginLabel ? (
+                                              <span
+                                                className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${MATCH_ORIGIN_BADGE_CLASS_NAME[item.matchOrigin]}`}
+                                              >
+                                                {matchOriginLabel}
+                                              </span>
+                                            ) : null}
+                                            {relevancePercent !== null ? (
+                                              <span className="inline-flex rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-700 dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-200">
+                                                {t(
+                                                  "pages.eventsArchive.relevanceTag",
+                                                  {
+                                                    defaultValue:
+                                                      "相关度 {{percent}}%",
+                                                    percent: relevancePercent,
+                                                  },
+                                                )}
+                                              </span>
+                                            ) : null}
+                                            {item.sourceLabel ? (
+                                              <span className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300">
+                                                {item.sourceLabel}
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                          {item.keywordHighlights.length > 0 ? (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                              {item.keywordHighlights
+                                                .slice(0, 4)
+                                                .map((keyword) => (
+                                                  <span
+                                                    key={`${item.processedArticleId}-${keyword}`}
+                                                    className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300"
+                                                  >
+                                                    {renderHighlightedText(
+                                                      keyword,
+                                                      highlightTokens,
+                                                    )}
+                                                  </span>
+                                                ))}
+                                            </div>
                                           ) : null}
-                                        </Space>
-                                        {item.keywordHighlights.length > 0 ? (
-                                          <Space size={[4, 4]} wrap>
-                                            {item.keywordHighlights
-                                              .slice(0, 4)
-                                              .map((keyword) => (
-                                                <Tag key={keyword} color="cyan">
-                                                  {renderHighlightedText(
-                                                    keyword,
-                                                    highlightTokens,
-                                                  )}
-                                                </Tag>
-                                              ))}
-                                          </Space>
-                                        ) : null}
+                                        </div>
+                                        <Button
+                                          type="text"
+                                          size="small"
+                                          className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-transparent transition-colors ${tone.actionClassName}`}
+                                          icon={<PlusOutlined />}
+                                          onClick={() =>
+                                            setSelectedDetailId(
+                                              item.processedArticleId,
+                                            )
+                                          }
+                                        />
                                       </div>
-                                      <Button
-                                        type="text"
-                                        size="small"
-                                        icon={<PlusOutlined />}
-                                        style={{ color: "#dc2626" }}
-                                        onClick={() =>
-                                          setSelectedDetailId(
-                                            item.processedArticleId,
-                                          )
-                                        }
-                                      />
                                     </div>
                                   );
                                 })}
@@ -1332,10 +1335,8 @@ export function EventsArchiveContent() {
                             {group?.pageInfo.hasMore ? (
                               <Button
                                 type="link"
-                                className="!px-0 self-start"
-                                loading={Boolean(
-                                  loadingMoreByVertical[vertical],
-                                )}
+                                className="!px-0 !text-slate-600 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!text-white"
+                                loading={Boolean(loadingMoreByVertical[vertical])}
                                 onClick={() => handleLoadMore(vertical)}
                               >
                                 {t("pages.eventsArchive.loadMore", {
@@ -1348,7 +1349,7 @@ export function EventsArchiveContent() {
                       );
                     })}
                   </div>
-                </div>
+                </section>
               ))}
             </div>
           )}
@@ -1364,6 +1365,11 @@ export function EventsArchiveContent() {
         open={Boolean(selectedDetailId)}
         onClose={() => setSelectedDetailId(null)}
         destroyOnClose
+        styles={{
+          body: {
+            paddingTop: 0,
+          },
+        }}
       >
         {detailLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -1384,168 +1390,179 @@ export function EventsArchiveContent() {
             })}
           />
         ) : (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <Typography.Title level={5} style={{ margin: 0 }}>
-                {detail.title ||
-                  t("pages.eventsArchive.detail.untitled", {
-                    defaultValue: "未命名事件",
-                  })}
-              </Typography.Title>
-              {detail.summary ? (
-                <Typography.Paragraph className="!mb-0">
-                  {detail.summary}
-                </Typography.Paragraph>
-              ) : null}
-            </div>
+          <div className="flex flex-col gap-4 pb-2">
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.5)] dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-2">
+                <Typography.Title level={5} style={{ margin: 0 }}>
+                  {detail.title || untitledArchiveLabel}
+                </Typography.Title>
+                {detail.summary ? (
+                  <Typography.Paragraph className="!mb-0 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                    {detail.summary}
+                  </Typography.Paragraph>
+                ) : null}
+              </div>
+            </section>
 
-            <div className="flex flex-col gap-2">
-              <Typography.Text strong>
-                {t("pages.eventsArchive.detail.entities", {
-                  defaultValue: "涉及国家/实体",
-                })}
-              </Typography.Text>
-              {detail.fullEntities.length > 0 ? (
-                <Space wrap>
-                  {detail.fullEntities.map((entity) => (
-                    <Tag key={entity}>{entity}</Tag>
-                  ))}
-                </Space>
-              ) : (
-                <Typography.Text type="secondary">
-                  {t("pages.eventsArchive.detail.entitiesEmpty", {
-                    defaultValue: "暂无标签",
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-3">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {t("pages.eventsArchive.detail.entities", {
+                    defaultValue: "涉及国家/实体",
                   })}
                 </Typography.Text>
-              )}
-            </div>
+                {detail.fullEntities.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detail.fullEntities.map((entity) => (
+                      <span
+                        key={entity}
+                        className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-200"
+                      >
+                        {entity}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <Typography.Text type="secondary">
+                    {t("pages.eventsArchive.detail.entitiesEmpty", {
+                      defaultValue: "暂无标签",
+                    })}
+                  </Typography.Text>
+                )}
+              </div>
+            </section>
 
-            <div className="flex flex-col gap-1">
-              <Typography.Text strong>
-                {t("pages.eventsArchive.detail.source", {
-                  defaultValue: "来源",
-                })}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {detail.sourceLabel ||
-                  t("pages.eventsArchive.detail.sourceUnknown", {
-                    defaultValue: "未知来源",
-                  })}
-              </Typography.Text>
-              {safeHttpUrl(detail.sourceUrl) ? (
-                <a
-                  href={safeHttpUrl(detail.sourceUrl) ?? undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sky-600"
-                >
-                  {t("pages.eventsArchive.detail.openOriginal", {
-                    defaultValue: "打开原文链接",
-                  })}
-                </a>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Typography.Text strong>
-                {t("pages.eventsArchive.detail.timeline", {
-                  defaultValue: "时间线",
-                })}
-              </Typography.Text>
-              {detail.timeline.length === 0 ? (
-                <Typography.Text type="secondary">
-                  {t("pages.eventsArchive.detail.timelineEmpty", {
-                    defaultValue: "暂无关联时间线",
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-2">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {t("pages.eventsArchive.detail.source", {
+                    defaultValue: "来源",
                   })}
                 </Typography.Text>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {detail.timeline.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="rounded-md border border-slate-200 p-2"
-                    >
-                      <Typography.Text type="secondary" className="text-xs">
-                        {dayjs(entry.bucketStart).format("YYYY/MM/DD")}
-                      </Typography.Text>
-                      {entry.title ? (
-                        <Typography.Paragraph className="!mb-0">
-                          {entry.title}
-                        </Typography.Paragraph>
-                      ) : null}
-                      {entry.summary ? (
-                        <Typography.Paragraph className="!mb-0 text-sm text-slate-600">
-                          {entry.summary}
-                        </Typography.Paragraph>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                <Typography.Text className="text-sm text-slate-700 dark:text-slate-200">
+                  {detail.sourceLabel ||
+                    t("pages.eventsArchive.detail.sourceUnknown", {
+                      defaultValue: "未知来源",
+                    })}
+                </Typography.Text>
+                {safeHttpUrl(detail.sourceUrl) ? (
+                  <a
+                    href={safeHttpUrl(detail.sourceUrl) ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm font-medium text-sky-700 transition-colors hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                  >
+                    {t("pages.eventsArchive.detail.openOriginal", {
+                      defaultValue: "打开原文链接",
+                    })}
+                  </a>
+                ) : null}
+              </div>
+            </section>
 
-            <div className="flex flex-col gap-2">
-              <Typography.Text strong>
-                {t("pages.eventsArchive.detail.related", {
-                  defaultValue: "关联原文",
-                })}
-              </Typography.Text>
-              {detail.relatedArticles.length === 0 ? (
-                <Typography.Text type="secondary">
-                  {t("pages.eventsArchive.detail.relatedEmpty", {
-                    defaultValue: "暂无关联原文",
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-3">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {t("pages.eventsArchive.detail.timeline", {
+                    defaultValue: "时间线",
                   })}
                 </Typography.Text>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {detail.relatedArticles.map((article) => (
-                    <div
-                      key={article.processedArticleId}
-                      className="rounded-md border border-slate-200 p-2"
-                    >
-                      <Typography.Text strong className="block">
-                        {article.title ||
-                          t("pages.eventsArchive.detail.untitled", {
-                            defaultValue: "未命名事件",
-                          })}
-                      </Typography.Text>
-                      {article.summary ? (
-                        <Typography.Paragraph className="!mb-1 text-sm text-slate-600">
-                          {article.summary}
-                        </Typography.Paragraph>
-                      ) : null}
-                      <Space size={8} wrap>
-                        {article.sourceLabel ? (
-                          <Tag>{article.sourceLabel}</Tag>
+                {detail.timeline.length === 0 ? (
+                  <Typography.Text type="secondary">
+                    {t("pages.eventsArchive.detail.timelineEmpty", {
+                      defaultValue: "暂无关联时间线",
+                    })}
+                  </Typography.Text>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {detail.timeline.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                      >
+                        <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          {dayjs(entry.bucketStart).format("YYYY/MM/DD")}
+                        </Typography.Text>
+                        {entry.title ? (
+                          <Typography.Paragraph className="!mb-0 mt-1 font-medium text-slate-900 dark:text-slate-100">
+                            {entry.title}
+                          </Typography.Paragraph>
                         ) : null}
-                        {article.publishedAt ? (
-                          <Typography.Text type="secondary" className="text-xs">
-                            {dayjs(article.publishedAt).format(
-                              "YYYY/MM/DD HH:mm",
-                            )}
-                          </Typography.Text>
+                        {entry.summary ? (
+                          <Typography.Paragraph className="!mb-0 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                            {entry.summary}
+                          </Typography.Paragraph>
                         ) : null}
-                        {safeHttpUrl(article.sourceUrl) ? (
-                          <a
-                            href={safeHttpUrl(article.sourceUrl) ?? undefined}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sky-600 text-sm"
-                          >
-                            {t("pages.eventsArchive.detail.openOriginal", {
-                              defaultValue: "打开原文链接",
-                            })}
-                          </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-3">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {t("pages.eventsArchive.detail.related", {
+                    defaultValue: "关联原文",
+                  })}
+                </Typography.Text>
+                {detail.relatedArticles.length === 0 ? (
+                  <Typography.Text type="secondary">
+                    {t("pages.eventsArchive.detail.relatedEmpty", {
+                      defaultValue: "暂无关联原文",
+                    })}
+                  </Typography.Text>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {detail.relatedArticles.map((article) => (
+                      <div
+                        key={article.processedArticleId}
+                        className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                      >
+                        <Typography.Text strong className="block text-slate-900 dark:text-slate-100">
+                          {article.title || untitledArchiveLabel}
+                        </Typography.Text>
+                        {article.summary ? (
+                          <Typography.Paragraph className="!mb-1 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                            {article.summary}
+                          </Typography.Paragraph>
                         ) : null}
-                      </Space>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {article.sourceLabel ? (
+                            <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                              {article.sourceLabel}
+                            </span>
+                          ) : null}
+                          {article.publishedAt ? (
+                            <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                              {dayjs(article.publishedAt).format(
+                                "YYYY/MM/DD HH:mm",
+                              )}
+                            </Typography.Text>
+                          ) : null}
+                          {safeHttpUrl(article.sourceUrl) ? (
+                            <a
+                              href={safeHttpUrl(article.sourceUrl) ?? undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm font-medium text-sky-700 transition-colors hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                            >
+                              {t("pages.eventsArchive.detail.openOriginal", {
+                                defaultValue: "打开原文链接",
+                              })}
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
         )}
       </Drawer>
     </div>
-  );
+    );
 }

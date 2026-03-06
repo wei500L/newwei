@@ -1,0 +1,126 @@
+import { describe, expect, it } from '@jest/globals';
+
+import {
+  buildBridgeExternalId,
+  buildHeuristicClusters,
+  buildSignalKey,
+  computeCandidateScore,
+  computeFreshness,
+  computeHeatScore,
+  computeTitleSimilarity,
+  normalizeTitle,
+  parseHeatValue,
+} from './newsnow-hottest-analysis.utils';
+
+describe('newsnow hottest analysis utils', () => {
+  it('parses chinese heat units', () => {
+    expect(parseHeatValue('1016 万热度')).toBe(10_160_000);
+    expect(parseHeatValue('6.3万讨论')).toBe(63_000);
+    expect(parseHeatValue('1.2亿热度')).toBe(120_000_000);
+  });
+
+  it('normalizes title punctuation and casing', () => {
+    expect(normalizeTitle(' OpenAI：发布 GPT-5.4！ ')).toBe('openai 发布 gpt 5 4');
+  });
+
+  it('scores similar chinese titles above threshold', () => {
+    const similarity = computeTitleSimilarity(
+      'OpenAI发布最强专业模型GPT-5.4，自动操作电脑',
+      'OpenAI发布最强专业模型GPT-5.4 自动操作电脑',
+    );
+    expect(similarity).toBeGreaterThan(0.7);
+  });
+
+  it('clusters cross-source similar titles', () => {
+    const cluster = buildHeuristicClusters([
+      {
+        signalKey: buildSignalKey({ sourceId: 'a', title: 'OpenAI发布最强专业模型GPT-5.4', url: 'https://a.com/1' }),
+        sourceId: 'a',
+        sourceName: 'A',
+        sourceHome: null,
+        sourceUpdatedTime: null,
+        itemId: '1',
+        title: 'OpenAI发布最强专业模型GPT-5.4',
+        url: 'https://a.com/1',
+        mobileUrl: null,
+        hoverSummary: null,
+        heatText: '10万热度',
+        heatValue: 100_000,
+        rank: 1,
+        capturedAt: new Date().toISOString(),
+        normalizedTitle: normalizeTitle('OpenAI发布最强专业模型GPT-5.4'),
+        authority: 0.6,
+        state: null,
+        isNew: true,
+        isRising: false,
+        freshnessScore: 1,
+      },
+      {
+        signalKey: buildSignalKey({ sourceId: 'b', title: 'OpenAI发布最强专业模型GPT-5.4 自动操作电脑', url: 'https://b.com/2' }),
+        sourceId: 'b',
+        sourceName: 'B',
+        sourceHome: null,
+        sourceUpdatedTime: null,
+        itemId: '2',
+        title: 'OpenAI发布最强专业模型GPT-5.4 自动操作电脑',
+        url: 'https://b.com/2',
+        mobileUrl: null,
+        hoverSummary: null,
+        heatText: '9万热度',
+        heatValue: 90_000,
+        rank: 2,
+        capturedAt: new Date().toISOString(),
+        normalizedTitle: normalizeTitle('OpenAI发布最强专业模型GPT-5.4 自动操作电脑'),
+        authority: 0.7,
+        state: null,
+        isNew: true,
+        isRising: false,
+        freshnessScore: 1,
+      },
+    ]);
+
+    expect(cluster).toHaveLength(1);
+    expect(cluster[0]?.sourceIds).toEqual(['a', 'b']);
+  });
+
+  it('boosts freshness for new and rising entries', () => {
+    expect(computeFreshness({ nowMs: Date.now(), state: null, rank: 1 })).toMatchObject({
+      freshnessScore: 1,
+      isNew: true,
+    });
+
+    const state = {
+      firstSeenAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      lastRank: 8,
+    };
+    const scored = computeFreshness({ nowMs: Date.now(), state, rank: 2 });
+    expect(scored.freshnessScore).toBeGreaterThan(0.7);
+    expect(scored.isRising).toBe(true);
+  });
+
+  it('generates deterministic bridge ids and bounded scores', () => {
+    expect(buildBridgeExternalId('weibo', 'https://example.com/article')).toBe(
+      buildBridgeExternalId('weibo', 'https://example.com/article'),
+    );
+    expect(
+      computeHeatScore({
+        rank: 1,
+        rankCap: 10,
+        heatValue: 100_000,
+        maxHeatValue: 200_000,
+        sourceCount: 3,
+        authority: 0.5,
+      }),
+    ).toBeGreaterThan(0.5);
+    expect(
+      computeCandidateScore({
+        heatScore: 0.8,
+        freshnessScore: 0.7,
+        sourceCount: 3,
+        authority: 0.6,
+        confidence: 0.9,
+      }),
+    ).toBeLessThanOrEqual(1);
+  });
+});

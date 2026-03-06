@@ -22,7 +22,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
-import { type Source } from "../hooks/use-news-sources";
+import { type NewsnowAnalyzedItem, type Source } from "../hooks/use-news-sources";
 import {
   type PersonalizedSourceScoreDetail,
   useNewsnowPersonalizedOrder,
@@ -39,9 +39,15 @@ interface NewsnowDndGridProps {
   columnKey: string;
   sourceIds: string[];
   sourcesMap: Record<string, Source>;
+  analysisBySource?: Record<string, Record<string, NewsnowAnalyzedItem>>;
 }
 
-function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndGridProps) {
+function NewsnowDndGridContent({
+  columnKey,
+  sourceIds,
+  sourcesMap,
+  analysisBySource,
+}: NewsnowDndGridProps) {
   const {
     columnOrders,
     setColumnOrder,
@@ -210,6 +216,7 @@ function NewsnowDndGridContent({ columnKey, sourceIds, sourcesMap }: NewsnowDndG
                   visibleItemsCount={dedupeResult.visibleItemsBySource[id] ?? 0}
                   realtimeUnreadCount={liveUnreadBySource[id] ?? 0}
                   personalizedScoreDetail={personalizedScoreDetailsBySourceId[id]}
+                  analysisByItemId={analysisBySource?.[id]}
                   activeDragId={activeDragId}
                 />
               ) : null}

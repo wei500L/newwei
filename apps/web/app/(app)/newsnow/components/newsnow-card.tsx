@@ -27,6 +27,7 @@ import {
   useNewsSource,
   useResolveNewsUrl,
   type NewsItem,
+  type NewsnowAnalyzedItem,
   type NewsResolveResponse,
   type Source,
 } from "../hooks/use-news-sources";
@@ -60,6 +61,7 @@ interface NewsnowCardProps {
   visibleItemsCount?: number;
   realtimeUnreadCount?: number;
   personalizedScoreDetail?: PersonalizedSourceScoreDetail;
+  analysisByItemId?: Record<string, NewsnowAnalyzedItem>;
 }
 
 const colorMap: Record<string, string> = {
@@ -196,6 +198,7 @@ export function NewsnowCard({
   visibleItemsCount = 0,
   realtimeUnreadCount = 0,
   personalizedScoreDetail,
+  analysisByItemId,
 }: NewsnowCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -937,6 +940,7 @@ export function NewsnowCard({
           freshItemIds={animatedItemIds}
           crossSourceMetaByItemId={dedupMetaMap}
           actionAvailabilityByItemId={actionAvailabilityByItemId}
+          analysisByItemId={analysisByItemId}
           densityMode={densityMode}
         />
       ) : (

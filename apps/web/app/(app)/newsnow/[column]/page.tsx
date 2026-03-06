@@ -8,8 +8,13 @@ import { useEffect, useMemo } from "react";
 import { useTheme } from "@/hooks/use-theme";
 
 import { NewsnowColumn } from "../components/newsnow-column";
+import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
 import { NewsnowHeader } from "../components/newsnow-header";
-import { useNewsMetadata, useBatchPrefetch } from "../hooks/use-news-sources";
+import {
+  useBatchPrefetch,
+  useHottestAnalysis,
+  useNewsMetadata,
+} from "../hooks/use-news-sources";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
 import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
 import { useNewsnowStore } from "../store/newsnow-store";
@@ -73,6 +78,9 @@ export default function NewsnowColumnPage() {
         ? focusSources
         : metadata?.columns[resolvedColumnKey]?.sources || [],
     [focusSources, metadata?.columns, resolvedColumnKey],
+  );
+  const hottestAnalysis = useHottestAnalysis(
+    resolvedColumnKey === "hottest" && sourceIds.length > 0,
   );
 
   useEffect(() => {
@@ -254,10 +262,22 @@ export default function NewsnowColumnPage() {
           </div>
         ) : null}
         <main>
+          {resolvedColumnKey === "hottest" ? (
+            <NewsnowHottestCandidates
+              candidates={hottestAnalysis.data?.candidates}
+              isLoading={hottestAnalysis.isLoading}
+              isError={hottestAnalysis.isError}
+            />
+          ) : null}
           <NewsnowColumn
             columnKey={resolvedColumnKey}
             sourceIds={sourceIds}
             sources={metadata?.sources || {}}
+            analysisBySource={
+              resolvedColumnKey === "hottest"
+                ? hottestAnalysis.data?.bySource
+                : undefined
+            }
           />
         </main>
         <NewsnowAttribution />

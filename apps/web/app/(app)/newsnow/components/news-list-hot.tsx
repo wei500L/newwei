@@ -5,7 +5,8 @@ import { Button, Dropdown, type MenuProps } from "antd";
 import { useEffect, useState } from "react";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
-import type { NewsItem } from "../hooks/use-news-sources";
+import type { NewsItem, NewsnowAnalyzedItem } from "../hooks/use-news-sources";
+import { buildItemAnalysisBadges } from "../lib/newsnow-hottest-analysis";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
@@ -17,6 +18,7 @@ interface NewsListHotProps {
   freshItemIds?: string[];
   crossSourceMetaByItemId?: Record<string, CrossSourceItemMeta>;
   actionAvailabilityByItemId?: Record<string, { hasEvent: boolean; hasItem: boolean }>;
+  analysisByItemId?: Record<string, NewsnowAnalyzedItem>;
   densityMode?: NewsnowDensityMode;
 }
 
@@ -108,6 +110,7 @@ export function NewsListHot({
   freshItemIds,
   crossSourceMetaByItemId,
   actionAvailabilityByItemId,
+  analysisByItemId,
   densityMode = "compact",
 }: NewsListHotProps) {
   const isMobile = useIsMobile();
@@ -121,6 +124,7 @@ export function NewsListHot({
         const itemKey = toItemKey(item);
         const dedupeMeta = crossSourceMetaByItemId?.[itemKey];
         const isFresh = freshSet.has(itemKey);
+        const analysisBadges = buildItemAnalysisBadges(analysisByItemId?.[itemKey]);
         const availability = actionAvailabilityByItemId?.[itemKey] ?? {
           hasEvent: false,
           hasItem: false,
@@ -187,6 +191,26 @@ export function NewsListHot({
                         同题 {dedupeMeta.groupSize} 源
                       </span>
                     ) : null}
+                    {analysisBadges.map((badge) => {
+                      const className =
+                        badge.tone === "emerald"
+                          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                          : badge.tone === "amber"
+                            ? "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+                            : badge.tone === "violet"
+                              ? "border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                              : badge.tone === "sky"
+                                ? "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                                : "border-white/10 bg-white/5 text-[var(--secondary-foreground)]";
+                      return (
+                        <span
+                          key={badge.key}
+                          className={`rounded-[4px] border px-1.5 py-0.5 font-medium ${className}`}
+                        >
+                          {badge.label}
+                        </span>
+                      );
+                    })}
                   </span>
                 </span>
               </a>

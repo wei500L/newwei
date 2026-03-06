@@ -10,12 +10,18 @@ describe("NewsAggregatorController", () => {
     resolveByUrl: jest.fn(),
     getPersonalizedSourceOrderForUser: jest.fn(),
   }
+  const hottestAnalysisService = {
+    getHottestAnalysis: jest.fn(),
+  }
 
   let controller: NewsAggregatorController
 
   beforeEach(() => {
     jest.resetAllMocks()
-    controller = new NewsAggregatorController(newsAggregatorService as any)
+    controller = new NewsAggregatorController(
+      newsAggregatorService as any,
+      hottestAnalysisService as any,
+    )
   })
 
   it.each(["true", "1", "yes", "y", "on"])(
@@ -51,12 +57,12 @@ describe("NewsAggregatorController", () => {
   )
 
   it("throws when forceRefresh query is invalid", async () => {
-    await expect(controller.getSource("baidu", "maybe")).rejects.toBeInstanceOf(BadRequestException)
+    expect(() => controller.getSource("baidu", "maybe")).toThrow(BadRequestException)
     expect(newsAggregatorService.fetchSource).not.toHaveBeenCalled()
   })
 
   it("throws when source id format is invalid", async () => {
-    await expect(controller.getSource("bad id", "true")).rejects.toBeInstanceOf(BadRequestException)
+    expect(() => controller.getSource("bad id", "true")).toThrow(BadRequestException)
     expect(newsAggregatorService.fetchSource).not.toHaveBeenCalled()
   })
 
@@ -89,6 +95,55 @@ describe("NewsAggregatorController", () => {
   it("rejects malformed URL for resolve endpoint", () => {
     expect(() => controller.resolveByUrl("not-a-url")).toThrow(BadRequestException)
     expect(newsAggregatorService.resolveByUrl).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, "", "false", "0", "no", "n", "off"])(
+    "delegates hottest analysis with forceRefresh=false for query %s",
+    async (queryValue) => {
+      hottestAnalysisService.getHottestAnalysis.mockResolvedValue({
+        generatedAt: new Date().toISOString(),
+        cached: false,
+        sourcesAnalyzed: 1,
+        itemsAnalyzed: 1,
+        bySource: {},
+        candidates: [],
+        errors: [],
+      })
+
+      await controller.getHottestAnalysis(
+        { id: "user-1", orgId: "org-1" } as any,
+        queryValue,
+      )
+
+      expect(hottestAnalysisService.getHottestAnalysis).toHaveBeenCalledWith({
+        orgId: "org-1",
+        userId: "user-1",
+        forceRefresh: false,
+      })
+    },
+  )
+
+  it("delegates hottest analysis with forceRefresh=true", async () => {
+    hottestAnalysisService.getHottestAnalysis.mockResolvedValue({
+      generatedAt: new Date().toISOString(),
+      cached: false,
+      sourcesAnalyzed: 1,
+      itemsAnalyzed: 1,
+      bySource: {},
+      candidates: [],
+      errors: [],
+    })
+
+    await controller.getHottestAnalysis(
+      { id: "user-1", orgId: "org-1" } as any,
+      "true",
+    )
+
+    expect(hottestAnalysisService.getHottestAnalysis).toHaveBeenCalledWith({
+      orgId: "org-1",
+      userId: "user-1",
+      forceRefresh: true,
+    })
   })
 
   it("delegates personalized order request for authenticated users", async () => {

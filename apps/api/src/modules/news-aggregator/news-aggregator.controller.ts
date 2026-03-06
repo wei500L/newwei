@@ -6,6 +6,7 @@ import { Public } from "../../common/decorators/public.decorator"
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { NewsAggregatorService } from "./news-aggregator.service"
+import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
 
 interface BatchFetchDto {
   sources?: string[]
@@ -23,7 +24,10 @@ const MAX_PERSONALIZED_ORDER_SOURCES = 240
 
 @Controller("news-aggregator")
 export class NewsAggregatorController {
-  constructor(private readonly newsAggregatorService: NewsAggregatorService) {}
+  constructor(
+    private readonly newsAggregatorService: NewsAggregatorService,
+    private readonly hottestAnalysisService: NewsnowHottestAnalysisService,
+  ) {}
 
   @Public()
   @Get("source")
@@ -77,6 +81,19 @@ export class NewsAggregatorController {
   resolveByUrl(@Query("url") url: string) {
     const normalizedUrl = this.validateHttpUrl(url)
     return this.newsAggregatorService.resolveByUrl(normalizedUrl)
+  }
+
+  @Permissions("items.read")
+  @Get("hottest-analysis")
+  getHottestAnalysis(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("latest") latest?: string,
+  ) {
+    return this.hottestAnalysisService.getHottestAnalysis({
+      orgId: user.orgId,
+      userId: user.id,
+      forceRefresh: this.parseBooleanFlag(latest),
+    })
   }
 
   private validateSourceId(id: unknown): string {
