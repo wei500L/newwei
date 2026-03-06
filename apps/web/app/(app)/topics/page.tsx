@@ -5,6 +5,7 @@ import { fetchGraphql } from '@/lib/server-graphql';
 
 import type { EventGroup, TopicGroup } from './topics-content';
 import { TopicsContent } from './topics-content';
+import { DEFAULT_EVENT_MIN_GROUP_SIZE, DEFAULT_WINDOW_DAYS, parsePositiveInt } from './topics-view-state';
 
 const TOPIC_GROUPS_QUERY = `
   query TopicGroups(
@@ -60,22 +61,9 @@ const TOPIC_GROUPS_QUERY = `
 
 const DEFAULT_LIMIT = 12;
 const DEFAULT_ITEMS_PER_GROUP = 4;
-const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
-const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
 type TopicsPageSearchParams = Record<string, string | string[] | undefined>;
-
-const parsePositiveInt = (value: string | string[] | undefined, fallback: number) => {
-  if (!value || Array.isArray(value)) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return fallback;
-  }
-  return parsed;
-};
 
 export default async function TopicsPage({
   searchParams

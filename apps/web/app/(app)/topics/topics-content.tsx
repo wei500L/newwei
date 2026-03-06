@@ -11,6 +11,15 @@ import { ArticlePublishedTime } from '@/components/article-published-time';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
+import {
+  DEFAULT_EVENT_MIN_GROUP_SIZE,
+  DEFAULT_TAB,
+  DEFAULT_WINDOW_DAYS,
+  parsePositiveInt,
+  resolveTopicsFilterLayoutMode,
+  type TopicsTabKey
+} from './topics-view-state';
+
 export interface TopicGroupItem {
   id: string;
   itemMetaId: string;
@@ -105,11 +114,8 @@ const TOPIC_GROUPS_QUERY = gql`
 
 const DEFAULT_LIMIT = 12;
 const DEFAULT_ITEMS_PER_GROUP = 4;
-const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_LIMIT = 8;
 const DEFAULT_EVENT_ITEMS_PER_GROUP = 4;
-const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
-const DEFAULT_TAB = 'events' as const;
 
 const DATE_TIME_FORMAT = {
   year: 'numeric',
@@ -119,25 +125,12 @@ const DATE_TIME_FORMAT = {
   minute: '2-digit'
 } as const;
 
-type TopicsTabKey = 'events' | 'topics';
-
 interface TopicsContentProps {
   initialData?: {
     topicGroups: TopicGroup[];
     eventGroups: EventGroup[];
   } | null;
 }
-
-const parsePositiveInt = (value: string | null, fallback: number) => {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return fallback;
-  }
-  return parsed;
-};
 
 const uniqueLabels = (values: (string | null | undefined)[]) => {
   return Array.from(
@@ -164,6 +157,8 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     defaultValue: 'Sorted by Published time when available; falls back to Ingested time.'
   });
   const screens = Grid.useBreakpoint();
+  const filterLayoutMode = resolveTopicsFilterLayoutMode(screens);
+  const isDesktopStickyFilter = filterLayoutMode === 'desktopSticky';
   const [selectedEvent, setSelectedEvent] = useState<EventGroup | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<TopicGroup | null>(null);
   const pathname = usePathname();
@@ -349,7 +344,7 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
   } else {
     content = (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-2">
           <Space direction="vertical" size={2}>
             <Typography.Title level={4} style={{ margin: 0 }}>
               {t('pages.topics.title', { defaultValue: 'Topics & Events' })}
@@ -360,19 +355,21 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
               })}
             </Typography.Text>
           </Space>
-          <Button size="small" onClick={() => void refetch()} loading={loading}>
-            {t('common.refresh', { defaultValue: 'Refresh' })}
-          </Button>
         </div>
 
-        <Card className="content-card sticky top-2 z-10">
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {t('pages.topics.filters.title', { defaultValue: 'Filters' })}
-            </Typography.Text>
-            <Space size={[16, 8]} wrap>
-              <Space size="small" align="center">
-                <Typography.Text type="secondary">
+        <Card
+          size="small"
+          className={`content-card ${isDesktopStickyFilter ? 'sticky top-2 z-10' : ''}`}
+          styles={{
+            body: {
+              padding: isDesktopStickyFilter ? '12px 16px' : '14px 16px'
+            }
+          }}
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {t('pages.topics.filters.windowLabel', { defaultValue: 'Window' })}
                 </Typography.Text>
                 <Select
@@ -380,12 +377,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                   value={windowDays}
                   options={windowOptions}
                   onChange={(value) => updateFilters({ windowDays: value })}
-                  style={{ minWidth: 140 }}
+                  style={isDesktopStickyFilter ? { minWidth: 132 } : { width: '100%' }}
                 />
-              </Space>
+              </div>
 
-              <Space size="small" align="center">
-                <Typography.Text type="secondary">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {t('pages.topics.filters.groupLabel', { defaultValue: 'Min group size' })}
                 </Typography.Text>
                 <Select
@@ -393,11 +390,20 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
                   value={minGroupSize}
                   options={groupSizeOptions}
                   onChange={(value) => updateFilters({ minGroupSize: value })}
-                  style={{ minWidth: 160 }}
+                  style={isDesktopStickyFilter ? { minWidth: 152 } : { width: '100%' }}
                 />
-              </Space>
-            </Space>
-          </Space>
+              </div>
+            </div>
+
+            <Button
+              size="small"
+              onClick={() => void refetch()}
+              loading={loading}
+              className="self-start lg:self-auto"
+            >
+              {t('common.refresh', { defaultValue: 'Refresh' })}
+            </Button>
+          </div>
         </Card>
 
         <Card className="content-card">
