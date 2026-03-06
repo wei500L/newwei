@@ -1203,20 +1203,46 @@ export function CrawlMonitorContent({
     }
 
     let mounted = true;
+    let coreInFlight = false;
+    let extendedInFlight = false;
+    let pendingCore = false;
+    let pendingExtended = false;
     const runCore = async () => {
+      if (coreInFlight) {
+        pendingCore = true;
+        return;
+      }
+      coreInFlight = true;
       try {
         await refreshPollingSnapshot("core");
         if (mounted) setPollError(null);
       } catch (error) {
         if (!mounted) return;
         setPollError(error instanceof Error ? error.message : "Polling failed");
+      } finally {
+        coreInFlight = false;
+        if (mounted && pendingCore) {
+          pendingCore = false;
+          void runCore();
+        }
       }
     };
     const runExtended = async () => {
+      if (extendedInFlight) {
+        pendingExtended = true;
+        return;
+      }
+      extendedInFlight = true;
       try {
         await refreshPollingSnapshot("extended");
       } catch {
         // ignore extended errors
+      } finally {
+        extendedInFlight = false;
+        if (mounted && pendingExtended) {
+          pendingExtended = false;
+          void runExtended();
+        }
       }
     };
 

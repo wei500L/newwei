@@ -206,12 +206,96 @@
 
   .sm-panel-card > .ant-card-head {
     flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .sm-panel-card > .ant-card-head .ant-card-head-wrapper,
+  .sm-panel-card > .ant-card-head .ant-card-head-title {
+    min-width: 0;
+  }
+
+  .sm-panel-card > .ant-card-head .ant-card-head-title {
+    white-space: normal;
+  }
+
+  .sm-panel-card > .ant-card-head .ant-space {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    max-width: 100%;
+  }
+
+  .sm-panel-card > .ant-card-head .ant-space-item {
+    max-width: 100%;
+  }
+
+  .sm-panel-card > .ant-card-head .ant-btn {
+    flex-shrink: 0;
   }
 
   .sm-panel-card > .ant-card-body {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .sm-panel-card > .ant-card-body::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .sm-layout-grid--readonly .sm-panel-card > .ant-card-head {
+    cursor: default;
+    touch-action: manipulation;
+  }
+
+  .sm-layout-grid--editing .sm-panel-card > .ant-card-head {
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .sm-layout-grid--editing .sm-panel-card > .ant-card-head:active {
+    cursor: grabbing;
+  }
+
+  .sm-layout-grid .react-resizable-handle {
+    width: 20px;
+    height: 20px;
+    touch-action: none;
+  }
+
+  .sm-layout-grid--compact .react-grid-item {
+    touch-action: pan-y;
+  }
+
+  .sm-layout-grid--compact.sm-layout-grid--editing .react-grid-item {
+    touch-action: none;
+  }
+
+  .sm-layout-grid--compact .sm-panel-card > .ant-card-head {
+    padding-inline: 12px;
+  }
+
+  .sm-layout-grid--compact .sm-panel-card > .ant-card-head .ant-card-head-wrapper {
+    align-items: flex-start;
+  }
+
+  .sm-layout-grid--compact .react-resizable-handle {
+    width: 24px;
+    height: 24px;
+  }
+
+  .sm-layout-grid--compact .react-resizable-handle::after {
+    right: 6px;
+    bottom: 6px;
+    width: 8px;
+    height: 8px;
+    border-right-width: 2px;
+    border-bottom-width: 2px;
   }
 
   .content-card {

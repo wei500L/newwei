@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSearchOutlined, InfoCircleOutlined, SettingOutlined } from "@ant-design/icons";
+import { DragOutlined, FileSearchOutlined, InfoCircleOutlined, SettingOutlined } from "@ant-design/icons";
 import { Alert, Button, Card, Col, Divider, Drawer, Grid, List, Popover, Progress, Row, Select, Space, Switch, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dynamic from "next/dynamic";
@@ -38,6 +38,13 @@ import type {
   SituationOrefHistoryResponse,
   SituationTelegramFeedResponse,
 } from "./types/situation-monitor-signals";
+import {
+  buildPackedResponsiveLayout,
+  GRID_BREAKPOINTS,
+  GRID_COLS,
+  GRID_LAYOUT_METRICS,
+  type GridBreakpoint,
+} from "./utils/layout-grid";
 import { isRecentOrefTimestamp, parseOrefTimestamp, translateOrefTextForLocale } from "./utils/oref-display";
 import { buildTelegramFeedQueryParams } from "./utils/telegram-feed";
 
@@ -68,22 +75,6 @@ const ResponsiveGridLayout = dynamic(
     ssr: false,
   },
 );
-
-const GRID_BREAKPOINTS = { lg: 992, md: 768, sm: 576, xs: 480, xxs: 0 } as const;
-
-const GRID_COLS = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 } as const;
-
-const MD_TWO_COLUMN_PANELS = new Set<string>([
-  "feeds-politics",
-  "feeds-tech",
-  "feeds-finance",
-  "feeds-gov",
-  "feeds-ai",
-  "feeds-intel",
-  "situation-venezuela",
-  "situation-greenland",
-  "situation-iran",
-]);
 
 const TELEGRAM_TOPIC_PRESETS = [
   "breaking",
@@ -544,83 +535,11 @@ function mergePanelLayouts(existing: Layout[], updates: Layout[]): Layout[] {
   return merged;
 }
 
-function clampColsConstraint(value: unknown, cols: number): number | undefined {
-  return typeof value === "number" ? Math.min(value, cols) : undefined;
-}
-
-function desiredPanelWidth(panelId: string, cols: number): number {
-  if (cols <= 6) {
-    return cols;
-  }
-  if (cols === 10 && MD_TWO_COLUMN_PANELS.has(panelId)) {
-    return 5;
-  }
-  return cols;
-}
-
-function buildPackedResponsiveLayout(base: Layout[], cols: number): Layout[] {
-  const ordered = base
-    .slice()
-    .sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
-
-  let cursorX = 0;
-  let cursorY = 0;
-  let rowH = 0;
-
-  return ordered.map((item) => {
-    const w = Math.min(cols, desiredPanelWidth(item.i, cols));
-    const h = typeof item.h === "number" && item.h > 0 ? item.h : 6;
-
-    if (cursorX + w > cols) {
-      cursorX = 0;
-      cursorY += rowH;
-      rowH = 0;
-    }
-
-    const next: Layout = {
-      ...item,
-      x: cursorX,
-      y: cursorY,
-      w,
-      h,
-      minW: clampColsConstraint(item.minW, cols),
-      maxW: clampColsConstraint(item.maxW, cols),
-      i: item.i,
-    };
-
-    cursorX += w;
-    rowH = Math.max(rowH, h);
-
-    return next;
-  });
-}
-
-function projectLayoutToLg(nextLayout: Layout[], fromCols: number): Layout[] {
-  const lgCols = GRID_COLS.lg;
-  if (fromCols >= lgCols) {
-    return nextLayout.map((item) => ({
-      i: item.i,
-      x: typeof item.x === "number" ? item.x : 0,
-      y: typeof item.y === "number" ? item.y : 0,
-      w: typeof item.w === "number" ? item.w : 1,
-      h: typeof item.h === "number" ? item.h : 1,
-    }));
-  }
-
-  const scale = lgCols / fromCols;
-  return nextLayout.map((item) => {
-    const rawW = Math.max(1, Math.round((typeof item.w === "number" ? item.w : 1) * scale));
-    const w = Math.min(lgCols, rawW);
-    const rawX = Math.max(0, Math.round((typeof item.x === "number" ? item.x : 0) * scale));
-    const x = Math.min(Math.max(0, lgCols - w), rawX);
-    return {
-      i: item.i,
-      x,
-      y: typeof item.y === "number" ? item.y : 0,
-      w,
-      h: typeof item.h === "number" ? item.h : 1,
-    };
-  });
+function filterVisibleLayoutItems(
+  layout: Layout[],
+  visibility: Record<SituationMonitorPanelId, boolean>,
+): Layout[] {
+  return layout.filter((item) => visibility[item.i as SituationMonitorPanelId]);
 }
 
 function spansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
@@ -731,6 +650,21 @@ export function SituationMonitorContent() {
     typeof document === "undefined" ? true : !document.hidden,
   );
   const refreshIdRef = useRef(0);
+  const telegramFeedLoadingRef = useRef(false);
+  const pendingTelegramFeedLoadRef = useRef<{ silent: boolean } | null>(null);
+  const loadTelegramFeedRef = useRef<(options?: { silent?: boolean }) => Promise<void>>(
+    async () => undefined,
+  );
+  const telegramFeedRequestKeyRef = useRef(
+    JSON.stringify({ topic: telegramTopicFilter, channel: telegramChannelFilter }),
+  );
+  const telegramRealtimeRefreshTimerRef = useRef<number | null>(null);
+  const orefSignalsLoadingRef = useRef(false);
+  const pendingOrefSignalsLoadRef = useRef<{ silent: boolean } | null>(null);
+  const loadOrefSignalsRef = useRef<(options?: { silent?: boolean }) => Promise<void>>(
+    async () => undefined,
+  );
+  const orefRealtimeRefreshTimerRef = useRef<number | null>(null);
   const loading = refreshStage !== "idle";
 
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
@@ -750,6 +684,13 @@ export function SituationMonitorContent() {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken]
   );
+
+  useEffect(() => {
+    telegramFeedRequestKeyRef.current = JSON.stringify({
+      topic: telegramTopicFilter,
+      channel: telegramChannelFilter,
+    });
+  }, [telegramChannelFilter, telegramTopicFilter]);
 
   const loadSignalCatalog = useCallback(async () => {
     if (!session?.accessToken || signalCatalog || catalogLoading) {
@@ -773,6 +714,19 @@ export function SituationMonitorContent() {
       }
 
       const silent = options?.silent ?? false;
+      if (telegramFeedLoadingRef.current) {
+        const pending = pendingTelegramFeedLoadRef.current;
+        pendingTelegramFeedLoadRef.current = {
+          silent: pending ? pending.silent && silent : silent,
+        };
+        return;
+      }
+
+      telegramFeedLoadingRef.current = true;
+      const requestKey = JSON.stringify({
+        topic: telegramTopicFilter,
+        channel: telegramChannelFilter,
+      });
       if (!silent) {
         setSignalsLoading((prev) => ({ ...prev, telegram: true }));
       }
@@ -790,12 +744,21 @@ export function SituationMonitorContent() {
             ),
           },
         );
+        if (telegramFeedRequestKeyRef.current != requestKey) {
+          return;
+        }
         setTelegramFeed(response.data ?? null);
       } catch (err) {
         captureClientError("Failed to load situation monitor telegram feed", err);
       } finally {
+        telegramFeedLoadingRef.current = false;
         if (!silent) {
           setSignalsLoading((prev) => ({ ...prev, telegram: false }));
+        }
+        const pending = pendingTelegramFeedLoadRef.current;
+        pendingTelegramFeedLoadRef.current = null;
+        if (pending) {
+          void loadTelegramFeedRef.current(pending);
         }
       }
     },
@@ -809,6 +772,15 @@ export function SituationMonitorContent() {
       }
 
       const silent = options?.silent ?? false;
+      if (orefSignalsLoadingRef.current) {
+        const pending = pendingOrefSignalsLoadRef.current;
+        pendingOrefSignalsLoadRef.current = {
+          silent: pending ? pending.silent && silent : silent,
+        };
+        return;
+      }
+
+      orefSignalsLoadingRef.current = true;
       if (!silent) {
         setSignalsLoading((prev) => ({ ...prev, oref: true }));
       }
@@ -824,13 +796,27 @@ export function SituationMonitorContent() {
       } catch (err) {
         captureClientError("Failed to load situation monitor OREF signals", err);
       } finally {
+        orefSignalsLoadingRef.current = false;
         if (!silent) {
           setSignalsLoading((prev) => ({ ...prev, oref: false }));
+        }
+        const pending = pendingOrefSignalsLoadRef.current;
+        pendingOrefSignalsLoadRef.current = null;
+        if (pending) {
+          void loadOrefSignalsRef.current(pending);
         }
       }
     },
     [apiClient, session?.accessToken],
   );
+
+  useEffect(() => {
+    loadTelegramFeedRef.current = loadTelegramFeed;
+  }, [loadTelegramFeed]);
+
+  useEffect(() => {
+    loadOrefSignalsRef.current = loadOrefSignals;
+  }, [loadOrefSignals]);
 
   const load = useCallback(async (options?: { includeExternal?: boolean }) => {
     if (!session?.accessToken) {
@@ -1031,15 +1017,42 @@ export function SituationMonitorContent() {
     if (!telegramSignalActive) {
       return;
     }
-    void loadTelegramFeed({ silent: true });
-  }, [loadTelegramFeed, telegramSignalActive]);
+    if (telegramRealtimeRefreshTimerRef.current) {
+      return;
+    }
+    telegramRealtimeRefreshTimerRef.current = window.setTimeout(() => {
+      telegramRealtimeRefreshTimerRef.current = null;
+      void loadTelegramFeedRef.current({ silent: true });
+    }, 800);
+  }, [telegramSignalActive]);
 
   const handleRealtimeOrefUpdate = useCallback(() => {
     if (!orefSignalActive) {
       return;
     }
-    void loadOrefSignals({ silent: true });
-  }, [loadOrefSignals, orefSignalActive]);
+    if (orefRealtimeRefreshTimerRef.current) {
+      return;
+    }
+    orefRealtimeRefreshTimerRef.current = window.setTimeout(() => {
+      orefRealtimeRefreshTimerRef.current = null;
+      void loadOrefSignalsRef.current({ silent: true });
+    }, 800);
+  }, [orefSignalActive]);
+
+  useEffect(() => {
+    return () => {
+      if (telegramRealtimeRefreshTimerRef.current) {
+        window.clearTimeout(telegramRealtimeRefreshTimerRef.current);
+        telegramRealtimeRefreshTimerRef.current = null;
+      }
+      if (orefRealtimeRefreshTimerRef.current) {
+        window.clearTimeout(orefRealtimeRefreshTimerRef.current);
+        orefRealtimeRefreshTimerRef.current = null;
+      }
+      pendingTelegramFeedLoadRef.current = null;
+      pendingOrefSignalsLoadRef.current = null;
+    };
+  }, []);
 
   const realtimeState = useSituationMonitorStream({
     enabled: telegramSignalActive || orefSignalActive,
@@ -2226,6 +2239,7 @@ export function SituationMonitorContent() {
   const fedSnapshot = data?.fed;
 
   const layout = useSituationMonitorLayoutStore((state) => state.layout);
+  const responsiveLayouts = useSituationMonitorLayoutStore((state) => state.layouts);
   const visibility = useSituationMonitorLayoutStore((state) => state.visibility);
   const setLayout = useSituationMonitorLayoutStore((state) => state.setLayout);
   const setPanelVisible = useSituationMonitorLayoutStore((state) => state.setPanelVisible);
@@ -2254,15 +2268,52 @@ export function SituationMonitorContent() {
     [visibility],
   );
 
-  const visibleLayout = useMemo(
-    () => stretchCorrelationToMonitorArea(layout.filter((item) => visibility[item.i as SituationMonitorPanelId])),
-    [layout, visibility],
+  const resolvedLayouts = useMemo(
+    () => ({
+      lg: layout.map((item) => ({ ...item })),
+      md: mergePanelLayouts(buildPackedResponsiveLayout(layout, "md"), responsiveLayouts.md ?? []),
+      sm: mergePanelLayouts(buildPackedResponsiveLayout(layout, "sm"), responsiveLayouts.sm ?? []),
+      xs: mergePanelLayouts(buildPackedResponsiveLayout(layout, "xs"), responsiveLayouts.xs ?? []),
+      xxs: mergePanelLayouts(buildPackedResponsiveLayout(layout, "xxs"), responsiveLayouts.xxs ?? []),
+    }),
+    [layout, responsiveLayouts],
   );
 
-  const gridMargin: [number, number] = screens.md ? [16, 16] : [12, 12];
+  const visibleLayout = useMemo(
+    () => stretchCorrelationToMonitorArea(filterVisibleLayoutItems(resolvedLayouts.lg, visibility)),
+    [resolvedLayouts.lg, visibility],
+  );
 
-  type GridBreakpoint = keyof typeof GRID_COLS;
-  const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>("xxs");
+  const inferredGridBreakpoint = useMemo<GridBreakpoint>(() => {
+    if (screens.lg) {
+      return "lg";
+    }
+    if (screens.md) {
+      return "md";
+    }
+    if (screens.sm) {
+      return "sm";
+    }
+    if (screens.xs) {
+      return "xs";
+    }
+    return "xxs";
+  }, [screens.lg, screens.md, screens.sm, screens.xs]);
+
+  const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>(inferredGridBreakpoint);
+
+  useEffect(() => {
+    setGridBreakpoint(inferredGridBreakpoint);
+  }, [inferredGridBreakpoint]);
+
+  const isCompactGrid = gridBreakpoint === "sm" || gridBreakpoint === "xs" || gridBreakpoint === "xxs";
+  const [compactLayoutEdit, setCompactLayoutEdit] = useState(false);
+
+  useEffect(() => {
+    if (!isCompactGrid) {
+      setCompactLayoutEdit(false);
+    }
+  }, [isCompactGrid]);
 
   const handleGridBreakpointChange = useCallback((next: string) => {
     if (next in GRID_COLS) {
@@ -2271,27 +2322,62 @@ export function SituationMonitorContent() {
     }
   }, []);
 
-  const canEditLayout = gridBreakpoint === "lg" || gridBreakpoint === "md";
+  const canEditLayout = !isCompactGrid || compactLayoutEdit;
+
+  const gridMetrics = GRID_LAYOUT_METRICS[gridBreakpoint];
+  const gridMargin = gridMetrics.margin;
 
   const gridLayouts = useMemo(
     () => ({
       lg: visibleLayout.map((item) => ({ ...item })),
-      md: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.md),
-      sm: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.sm),
-      xs: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.xs),
-      xxs: buildPackedResponsiveLayout(visibleLayout, GRID_COLS.xxs),
+      md: mergePanelLayouts(
+        buildPackedResponsiveLayout(visibleLayout, "md"),
+        filterVisibleLayoutItems(resolvedLayouts.md, visibility),
+      ),
+      sm: mergePanelLayouts(
+        buildPackedResponsiveLayout(visibleLayout, "sm"),
+        filterVisibleLayoutItems(resolvedLayouts.sm, visibility),
+      ),
+      xs: mergePanelLayouts(
+        buildPackedResponsiveLayout(visibleLayout, "xs"),
+        filterVisibleLayoutItems(resolvedLayouts.xs, visibility),
+      ),
+      xxs: mergePanelLayouts(
+        buildPackedResponsiveLayout(visibleLayout, "xxs"),
+        filterVisibleLayoutItems(resolvedLayouts.xxs, visibility),
+      ),
     }),
-    [visibleLayout],
+    [resolvedLayouts.md, resolvedLayouts.sm, resolvedLayouts.xs, resolvedLayouts.xxs, visibility, visibleLayout],
   );
 
   const handleLayoutChange = useCallback(
     (nextLayout: Layout[]) => {
-      const cols = GRID_COLS[gridBreakpoint] ?? GRID_COLS.lg;
-      const normalized = projectLayoutToLg(nextLayout, cols);
-      setLayout(mergePanelLayouts(layout, normalized));
+      const currentLayout = resolvedLayouts[gridBreakpoint] ?? resolvedLayouts.lg;
+      setLayout(mergePanelLayouts(currentLayout, nextLayout), gridBreakpoint);
     },
-    [gridBreakpoint, layout, setLayout],
+    [gridBreakpoint, resolvedLayouts, setLayout],
   );
+
+  const layoutHint = isCompactGrid
+    ? canEditLayout
+      ? t("situationMonitor.panels.hint", {
+          defaultValue: "Drag cards by their headers and use the corner handle to resize them.",
+        })
+      : t("situationMonitor.panels.hintCompact", {
+          defaultValue: "Enable Edit layout on smaller screens before dragging or resizing cards.",
+        })
+    : t("situationMonitor.panels.hint", {
+        defaultValue: "Drag cards by their headers and use the corner handle to resize them.",
+      });
+
+  const gridClassName = [
+    "layout",
+    "sm-layout-grid",
+    isCompactGrid ? "sm-layout-grid--compact" : null,
+    canEditLayout ? "sm-layout-grid--editing" : "sm-layout-grid--readonly",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const initialLoading = loading && !data;
 
@@ -3676,6 +3762,17 @@ export function SituationMonitorContent() {
           <Button icon={<SettingOutlined />} onClick={() => setPanelsOpen(true)}>
             {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
           </Button>
+          {isCompactGrid ? (
+            <Button
+              type={canEditLayout ? "primary" : "default"}
+              icon={<DragOutlined />}
+              onClick={() => setCompactLayoutEdit((prev) => !prev)}
+            >
+              {canEditLayout
+                ? t("situationMonitor.layout.done", { defaultValue: "Done" })
+                : t("situationMonitor.layout.edit", { defaultValue: "Edit layout" })}
+            </Button>
+          ) : null}
           {session?.accessToken ? (
             <Space size={6} align="center">
               {uiSync.state === "error" ? (
@@ -3796,15 +3893,19 @@ export function SituationMonitorContent() {
         width={screens.sm ? 360 : "100%"}
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Typography.Text type="secondary">
-            {canEditLayout
-              ? t("situationMonitor.panels.hint", {
-                  defaultValue: "Drag cards by their headers to rearrange the dashboard.",
-                })
-              : t("situationMonitor.panels.hintReadonly", {
-                  defaultValue: "Panel reordering is available on wider screens.",
-                })}
-          </Typography.Text>
+          <Typography.Text type="secondary">{layoutHint}</Typography.Text>
+          {isCompactGrid ? (
+            <Button
+              block
+              type={canEditLayout ? "primary" : "default"}
+              icon={<DragOutlined />}
+              onClick={() => setCompactLayoutEdit((prev) => !prev)}
+            >
+              {canEditLayout
+                ? t("situationMonitor.layout.done", { defaultValue: "Done" })
+                : t("situationMonitor.layout.edit", { defaultValue: "Edit layout" })}
+            </Button>
+          ) : null}
           <Divider style={{ margin: "12px 0" }} />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Space size={8} wrap>
@@ -4039,15 +4140,16 @@ export function SituationMonitorContent() {
         />
       ) : (
         <ResponsiveGridLayout
-          className="layout"
+          className={gridClassName}
           layouts={gridLayouts}
           breakpoints={GRID_BREAKPOINTS}
           cols={GRID_COLS}
-          rowHeight={30}
+          rowHeight={gridMetrics.rowHeight}
           isResizable={canEditLayout}
           isDraggable={canEditLayout}
           margin={gridMargin}
           draggableHandle=".ant-card-head"
+          draggableCancel=".ant-btn,.ant-select,.ant-select-selector,.ant-switch,a,button,input,textarea,[role='button']"
           onBreakpointChange={(nextBreakpoint: string) => handleGridBreakpointChange(nextBreakpoint)}
           onDragStop={(nextLayout: Layout[]) => {
             handleLayoutChange(nextLayout);

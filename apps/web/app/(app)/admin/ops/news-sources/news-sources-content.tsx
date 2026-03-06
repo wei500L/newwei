@@ -1004,6 +1004,7 @@ export function NewsSourcesContent() {
   const liveUiBusyRef = useRef(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const refreshRef = useRef(false);
+  const pendingRefreshRef = useRef<{ silent: boolean } | null>(null);
   const seedModeRef = useRef<NewsSourceFormValues["seedMode"]>("sitemap");
 
   const selectedSourceIdSet = useMemo(
@@ -1377,11 +1378,15 @@ export function NewsSourcesContent() {
 
   const refreshAll = useCallback(
     async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
       if (refreshRef.current) {
+        const pending = pendingRefreshRef.current;
+        pendingRefreshRef.current = {
+          silent: pending ? pending.silent && silent : silent,
+        };
         return;
       }
       refreshRef.current = true;
-      const silent = options?.silent === true;
       try {
         const [sourcesOk] = await Promise.all([
           loadSources({ silent }),
@@ -1393,6 +1398,11 @@ export function NewsSourcesContent() {
         }
       } finally {
         refreshRef.current = false;
+        const pending = pendingRefreshRef.current;
+        pendingRefreshRef.current = null;
+        if (pending) {
+          void refreshAll(pending);
+        }
       }
     },
     [loadCrawlQualityStats, loadCrawlQueueStats, loadSources],
@@ -1573,7 +1583,7 @@ export function NewsSourcesContent() {
         [source]: (prev[source] ?? 0) + 1,
       }));
 
-      if (liveRefreshSourcesRef.current[source]) {
+      if (event !== "PROGRESS" && liveRefreshSourcesRef.current[source]) {
         scheduleLiveRefresh();
       }
     };
@@ -1598,6 +1608,7 @@ export function NewsSourcesContent() {
         window.clearTimeout(liveRefreshTimerRef.current);
         liveRefreshTimerRef.current = null;
       }
+      pendingRefreshRef.current = null;
     };
   }, [canView, liveUpdatesEnabled, scheduleLiveRefresh, session?.accessToken]);
 

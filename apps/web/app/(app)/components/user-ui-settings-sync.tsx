@@ -5,7 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
-import { SITUATION_MONITOR_PANELS, useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
+import {
+  buildDefaultSituationMonitorLayoutPayload,
+  fingerprintSituationMonitorLayout,
+  type SituationMonitorLayoutPayload,
+} from "@/lib/situation-monitor-layout-serialization";
+import { useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
 import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
@@ -52,12 +57,7 @@ const debounceMsByKind: Record<SaveKind, number> = {
   warMapSettings: 700,
 };
 
-const defaultSituationMonitorLayout = {
-  layout: SITUATION_MONITOR_PANELS.map((panel) => panel.defaultLayout),
-  visibility: Object.fromEntries(
-    SITUATION_MONITOR_PANELS.map((panel) => [panel.id, panel.defaultVisible]),
-  ) as Record<string, boolean>,
-};
+const defaultSituationMonitorLayout = buildDefaultSituationMonitorLayoutPayload();
 
 const defaultSituationMonitorSettings = {
   windowHours: 24,
@@ -67,7 +67,7 @@ const defaultSituationMonitorSettings = {
   translateToZh: false,
 };
 
-const defaultLayoutFingerprint = fingerprintLayout(defaultSituationMonitorLayout);
+const defaultLayoutFingerprint = fingerprintSituationMonitorLayout(defaultSituationMonitorLayout);
 const defaultSettingsFingerprint = fingerprintSettings(defaultSituationMonitorSettings);
 const defaultWarMapFingerprint = fingerprintWarMapSettings({
   layerVisibility: WAR_MAP_DEFAULT_LAYER_VISIBILITY,
@@ -86,7 +86,7 @@ interface UiCacheEnvelope<T> {
 
 interface SituationMonitorCachePayload {
   monitors?: unknown[];
-  layout?: { layout: unknown[]; visibility: Record<string, boolean> };
+  layout?: SituationMonitorLayoutPayload;
   settings?: Record<string, unknown>;
 }
 
@@ -113,44 +113,6 @@ function fingerprintMonitors(monitors: unknown): string {
     .sort((a, b) => a.id.localeCompare(b.id));
 
   return JSON.stringify(normalized);
-}
-
-function fingerprintLayout(payload: unknown): string {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return JSON.stringify({ layout: [], visibility: {} });
-  }
-
-  const record = payload as Record<string, unknown>;
-  const rawLayout = record.layout;
-  const rawVisibility = record.visibility;
-
-  const normalizedLayout = Array.isArray(rawLayout)
-    ? rawLayout
-        .filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry))
-        .map((entry) => entry as Record<string, unknown>)
-        .map((entry) => ({
-          i: typeof entry.i === "string" ? entry.i : "",
-          x: typeof entry.x === "number" ? entry.x : 0,
-          y: typeof entry.y === "number" ? entry.y : 0,
-          w: typeof entry.w === "number" ? entry.w : 0,
-          h: typeof entry.h === "number" ? entry.h : 0,
-          minW: typeof entry.minW === "number" ? entry.minW : null,
-          minH: typeof entry.minH === "number" ? entry.minH : null,
-          static: typeof entry.static === "boolean" ? entry.static : null,
-        }))
-        .sort((a, b) => a.i.localeCompare(b.i))
-    : [];
-
-  const visibilityEntries =
-    rawVisibility && typeof rawVisibility === "object" && !Array.isArray(rawVisibility)
-      ? Object.entries(rawVisibility as Record<string, unknown>)
-          .filter(([key, val]) => typeof key === "string" && typeof val === "boolean")
-          .sort(([a], [b]) => a.localeCompare(b))
-      : [];
-
-  const visibility = Object.fromEntries(visibilityEntries);
-
-  return JSON.stringify({ layout: normalizedLayout, visibility });
 }
 
 function fingerprintSettings(payload: unknown): string {
@@ -248,7 +210,7 @@ function writeSituationMonitorCache(orgId: string, userId: string) {
   const key = buildCacheKey("situation-monitor", orgId, userId);
   const monitors = useSituationMonitorMonitorsStore.getState().monitors;
   const layout = {
-    layout: useSituationMonitorLayoutStore.getState().layout,
+    layouts: useSituationMonitorLayoutStore.getState().layouts,
     visibility: useSituationMonitorLayoutStore.getState().visibility,
   };
   const settings = {
@@ -311,7 +273,7 @@ export function UserUiSettingsSync() {
   const reloadToken = useUserUiSyncStatusStore((state) => state.reloadToken);
 
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
-  const layout = useSituationMonitorLayoutStore((state) => state.layout);
+  const layouts = useSituationMonitorLayoutStore((state) => state.layouts);
   const visibility = useSituationMonitorLayoutStore((state) => state.visibility);
   const settings = useSituationMonitorSettingsStore((state) => ({
     windowHours: state.windowHours,
@@ -351,8 +313,8 @@ export function UserUiSettingsSync() {
 
   const monitorsFingerprint = useMemo(() => fingerprintMonitors(monitors), [monitors]);
   const layoutFingerprint = useMemo(
-    () => fingerprintLayout({ layout, visibility }),
-    [layout, visibility],
+    () => fingerprintSituationMonitorLayout({ layouts, visibility }),
+    [layouts, visibility],
   );
   const settingsFingerprint = useMemo(() => fingerprintSettings(settings), [settings]);
   const warMapSettingsFingerprint = useMemo(
@@ -496,7 +458,8 @@ export function UserUiSettingsSync() {
             if (remoteHasMonitors && data?.monitors) {
               useSituationMonitorMonitorsStore.getState().hydrateFromRemote(data.monitors);
             }
-            const remoteLayoutFingerprint = remoteHasLayout && data?.layout ? fingerprintLayout(data.layout) : "";
+            const remoteLayoutFingerprint =
+              remoteHasLayout && data?.layout ? fingerprintSituationMonitorLayout(data.layout) : "";
             const layoutRepaired =
               remoteHasLayout && data?.layout
                 ? useSituationMonitorLayoutStore.getState().hydrateFromRemote(data.layout)
@@ -507,7 +470,7 @@ export function UserUiSettingsSync() {
 
             const currentMonitors = useSituationMonitorMonitorsStore.getState().monitors;
             const currentLayout = {
-              layout: useSituationMonitorLayoutStore.getState().layout,
+              layouts: useSituationMonitorLayoutStore.getState().layouts,
               visibility: useSituationMonitorLayoutStore.getState().visibility,
             };
             const currentSettings = {
@@ -519,7 +482,7 @@ export function UserUiSettingsSync() {
             };
 
             const currentMonitorsFingerprint = fingerprintMonitors(currentMonitors);
-            const currentLayoutFingerprint = fingerprintLayout(currentLayout);
+            const currentLayoutFingerprint = fingerprintSituationMonitorLayout(currentLayout);
             const currentSettingsFingerprint = fingerprintSettings(currentSettings);
 
             const shouldMigrateMonitors = !remoteHasMonitors && currentMonitors.length > 0;
@@ -708,9 +671,9 @@ export function UserUiSettingsSync() {
     }
     scheduleSave("layout", () => {
       void apiClient
-        .put("user-settings/ui/situation-monitor", { layout: { layout, visibility } })
+        .put("user-settings/ui/situation-monitor", { layout: { layouts, visibility } })
         .then(() => {
-          lastSentRef.current.layout = fingerprintLayout({ layout, visibility });
+          lastSentRef.current.layout = fingerprintSituationMonitorLayout({ layouts, visibility });
           pendingRef.current.layout = false;
           useUserUiSyncStatusStore.getState().endSaveSuccess("situation-monitor");
 
@@ -725,7 +688,7 @@ export function UserUiSettingsSync() {
             .endSaveError("situation-monitor", getErrorMessage(error, "Failed to save settings."));
         });
     });
-  }, [accessToken, apiClient, layout, layoutFingerprint, orgId, ready.situationMonitor, userId, visibility]);
+  }, [accessToken, apiClient, layoutFingerprint, layouts, orgId, ready.situationMonitor, userId, visibility]);
 
   useEffect(() => {
     if (!ready.situationMonitor || hydratingRef.current || !accessToken || !orgId || !userId) {

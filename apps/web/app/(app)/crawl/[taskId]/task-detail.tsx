@@ -850,10 +850,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           },
         );
         setTaskLogs(Array.isArray(res.data) ? res.data : []);
+        setTaskLogsError(null);
       } catch (error: unknown) {
         const reason = error instanceof Error ? error.message : String(error);
-        setTaskLogsError(reason);
         if (!silent) {
+          setTaskLogsError(reason);
           message.error(reason);
         }
       } finally {
@@ -1019,6 +1020,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       }
 
       if (!relevant) {
+        return;
+      }
+      if (record.event === "PROGRESS") {
+        scheduleOpsRefresh({ task: false, logs: canViewTaskLogs });
         return;
       }
       scheduleOpsRefresh({ task: true, logs: canViewTaskLogs });
@@ -3548,7 +3553,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
           </Space>
         }
       >
-        {loading ? (
+        {loading && results.length === 0 ? (
           <Spin />
         ) : (
           <List

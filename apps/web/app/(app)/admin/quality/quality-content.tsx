@@ -375,6 +375,11 @@ export function QualityContent() {
   const liveRefreshTimerRef = useRef<number | null>(null);
   const liveSocketRef = useRef<Socket | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const pendingOverviewLoadRef = useRef<{ silent: boolean } | null>(null);
+  const pendingClassificationLoadRef = useRef<{ silent: boolean } | null>(null);
+  const activeTabRef = useRef(activeTab);
+  const overviewRequestKeyRef = useRef("");
+  const classificationRequestKeyRef = useRef("");
   const screens = Grid.useBreakpoint();
   const loading = activeTab === "classification" ? classificationLoading : overviewLoading;
 
@@ -397,9 +402,42 @@ export function QualityContent() {
     liveRefreshSourcesRef.current = liveRefreshSources;
   }, [liveRefreshSources]);
 
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    overviewRequestKeyRef.current = JSON.stringify({
+      windowMinutes,
+      queue: taskLogsQueue,
+      stage: taskLogsStage,
+      status: taskLogsStatus,
+      limit: taskLogsLimit,
+      sinceMinutes: taskLogsSinceMinutes
+    });
+  }, [taskLogsLimit, taskLogsQueue, taskLogsSinceMinutes, taskLogsStage, taskLogsStatus, windowMinutes]);
+
+  useEffect(() => {
+    classificationRequestKeyRef.current = JSON.stringify({
+      window: classificationWindow,
+      sourceId: classificationFilterSourceId,
+      categoryPrefix: classificationFilterCategoryPrefix,
+      onlyPending: classificationReviewOnlyPending
+    });
+  }, [
+    classificationFilterCategoryPrefix,
+    classificationFilterSourceId,
+    classificationReviewOnlyPending,
+    classificationWindow
+  ]);
+
   const loadOverview = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (overviewLoadingRef.current) {
+      const pending = pendingOverviewLoadRef.current;
+      pendingOverviewLoadRef.current = {
+        silent: pending ? pending.silent && silent : silent
+      };
       return;
     }
     overviewLoadingRef.current = true;
@@ -408,6 +446,14 @@ export function QualityContent() {
     }
     try {
       const currentFilters = taskLogFiltersRef.current;
+      const requestKey = JSON.stringify({
+        windowMinutes,
+        queue: currentFilters.queue,
+        stage: currentFilters.stage,
+        status: currentFilters.status,
+        limit: currentFilters.limit,
+        sinceMinutes: currentFilters.sinceMinutes
+      });
       const taskLogParams: Record<string, unknown> = {
         limit: currentFilters.limit,
         sinceMinutes: currentFilters.sinceMinutes
@@ -437,6 +483,10 @@ export function QualityContent() {
         apiClient.get<TaskLogsSummary>("admin/quality/task-logs/summary", { params: taskLogSummaryParams })
       ]);
 
+      if (overviewRequestKeyRef.current !== requestKey) {
+        return;
+      }
+
       setPipeline(pipelineRes.data ?? null);
       setSources(sourcesRes.data ?? null);
       setTaskLogs(Array.isArray(taskLogsRes.data) ? taskLogsRes.data : []);
@@ -454,12 +504,21 @@ export function QualityContent() {
         setOverviewLoading(false);
       }
       overviewLoadingRef.current = false;
+      const pending = pendingOverviewLoadRef.current;
+      pendingOverviewLoadRef.current = null;
+      if (pending) {
+        void loadOverview(pending);
+      }
     }
   }, [apiClient, messageApi, t, windowMinutes]);
 
   const loadClassification = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     if (classificationLoadingRef.current) {
+      const pending = pendingClassificationLoadRef.current;
+      pendingClassificationLoadRef.current = {
+        silent: pending ? pending.silent && silent : silent
+      };
       return;
     }
     classificationLoadingRef.current = true;
@@ -467,6 +526,12 @@ export function QualityContent() {
       setClassificationLoading(true);
     }
     try {
+      const requestKey = JSON.stringify({
+        window: classificationWindow,
+        sourceId: classificationFilterSourceId,
+        categoryPrefix: classificationFilterCategoryPrefix,
+        onlyPending: classificationReviewOnlyPending
+      });
       const classificationParams: Record<string, unknown> = {
         window: classificationWindow
       };
@@ -490,6 +555,10 @@ export function QualityContent() {
         })
       ]);
 
+      if (classificationRequestKeyRef.current !== requestKey) {
+        return;
+      }
+
       setClassification(classificationRes.data ?? null);
       setClassificationReviewQueue(
         Array.isArray(classificationReviewsRes.data) ? classificationReviewsRes.data : []
@@ -510,6 +579,11 @@ export function QualityContent() {
         setClassificationLoading(false);
       }
       classificationLoadingRef.current = false;
+      const pending = pendingClassificationLoadRef.current;
+      pendingClassificationLoadRef.current = null;
+      if (pending) {
+        void loadClassification(pending);
+      }
     }
   }, [
     apiClient,
@@ -536,13 +610,21 @@ export function QualityContent() {
   const applyTaskLogFilters = useCallback((next: Partial<(typeof taskLogFiltersRef)["current"]>) => {
     const merged = { ...taskLogFiltersRef.current, ...next };
     taskLogFiltersRef.current = merged;
+    overviewRequestKeyRef.current = JSON.stringify({
+      windowMinutes,
+      queue: merged.queue,
+      stage: merged.stage,
+      status: merged.status,
+      limit: merged.limit,
+      sinceMinutes: merged.sinceMinutes
+    });
     setTaskLogsQueue(merged.queue);
     setTaskLogsStage(merged.stage);
     setTaskLogsStatus(merged.status);
     setTaskLogsLimit(merged.limit);
     setTaskLogsSinceMinutes(merged.sinceMinutes);
     void load({ tab: "overview" });
-  }, [load]);
+  }, [load, windowMinutes]);
 
   useEffect(() => {
     setClassificationDrilldownSourceId(null);
@@ -743,9 +825,9 @@ export function QualityContent() {
     }
     liveRefreshTimerRef.current = window.setTimeout(() => {
       liveRefreshTimerRef.current = null;
-      void load({ silent: true, tab: activeTab });
+      void load({ silent: true, tab: activeTabRef.current });
     }, 1200);
-  }, [activeTab, load]);
+  }, [load]);
 
   const resetLiveCounters = useCallback(() => {
     setLiveEventCount(0);
@@ -807,7 +889,7 @@ export function QualityContent() {
       setLiveEventCount((prev) => prev + 1);
       setLiveEventCountsBySource((prev) => ({ ...prev, [source]: (prev[source] ?? 0) + 1 }));
 
-      if (liveRefreshSourcesRef.current[source]) {
+      if (event !== "PROGRESS" && liveRefreshSourcesRef.current[source]) {
         scheduleLiveRefresh();
       }
     };
@@ -832,6 +914,8 @@ export function QualityContent() {
         window.clearTimeout(liveRefreshTimerRef.current);
         liveRefreshTimerRef.current = null;
       }
+      pendingOverviewLoadRef.current = null;
+      pendingClassificationLoadRef.current = null;
     };
   }, [canView, liveUpdatesEnabled, scheduleLiveRefresh, session?.accessToken]);
 

@@ -392,6 +392,7 @@ export function DashboardContent() {
   useEffect(() => {
     if (!lastEvent) return;
     if (!canManageQueue) return;
+    if (lastEvent.event === "PROGRESS") return;
     void refetch();
     if (lastEvent.event === "FAILED") {
       message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));

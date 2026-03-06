@@ -3,6 +3,12 @@
 import type { Layout } from "react-grid-layout";
 import { create } from "zustand";
 
+import {
+  SITUATION_MONITOR_GRID_BREAKPOINT_ORDER,
+  type SituationMonitorGridBreakpoint,
+  type SituationMonitorResponsiveLayouts,
+} from "@/lib/situation-monitor-grid";
+
 export type SituationMonitorPanelId =
   | "map"
   | "feeds-politics"
@@ -36,6 +42,10 @@ export interface SituationMonitorPanelConfig {
   defaultLayout: Layout;
   locked?: boolean;
 }
+
+export type SituationMonitorLayoutBreakpoint = SituationMonitorGridBreakpoint;
+
+export type SituationMonitorLayouts = SituationMonitorResponsiveLayouts;
 
 export const SITUATION_MONITOR_PANELS: readonly SituationMonitorPanelConfig[] = [
   {
@@ -308,21 +318,33 @@ function buildDefaults() {
   ) as Record<SituationMonitorPanelId, boolean>;
 
   const layout = SITUATION_MONITOR_PANELS.map((panel) => ({ ...panel.defaultLayout }));
-  return { visibility, layout };
+  const layouts: SituationMonitorLayouts = {
+    lg: layout.map((entry) => ({ ...entry })),
+  };
+
+  return { visibility, layout, layouts };
 }
 
 function getLayoutItem(layout: Layout[], id: SituationMonitorPanelId): Layout | undefined {
   return layout.find((item) => item.i === id);
 }
 
-function isLockedPanelLayoutValid(layout: Layout[], defaults: Layout[]): boolean {
+function isLockedPanelLayoutValid(
+  layout: Layout[],
+  defaults: Layout[],
+  options?: { enforceGeometry?: boolean },
+): boolean {
+  const enforceGeometry = options?.enforceGeometry ?? true;
   for (const panelId of LOCKED_PANEL_IDS) {
     const actual = getLayoutItem(layout, panelId);
     const expected = getLayoutItem(defaults, panelId);
     if (!actual || !expected) {
       return false;
     }
-    if (actual.x !== expected.x || actual.y !== expected.y || actual.w !== expected.w || actual.h !== expected.h) {
+    if (
+      enforceGeometry &&
+      (actual.x !== expected.x || actual.y !== expected.y || actual.w !== expected.w || actual.h !== expected.h)
+    ) {
       return false;
     }
     if (expected.static === true && actual.static !== true) {
@@ -332,9 +354,13 @@ function isLockedPanelLayoutValid(layout: Layout[], defaults: Layout[]): boolean
   return true;
 }
 
-function repairLayoutIfNeeded(layout: Layout[], defaults: Layout[]): { layout: Layout[]; repaired: boolean } {
-  if (!isLockedPanelLayoutValid(layout, defaults)) {
-    return { layout: defaults, repaired: true };
+function repairLayoutIfNeeded(
+  layout: Layout[],
+  defaults: Layout[],
+  options?: { enforceGeometry?: boolean },
+): { layout: Layout[]; repaired: boolean } {
+  if (!isLockedPanelLayoutValid(layout, defaults, options)) {
+    return { layout: defaults.map((entry) => ({ ...entry })), repaired: true };
   }
   return { layout, repaired: false };
 }
@@ -371,10 +397,67 @@ function mergeLayout(existing: Layout[], defaults: Layout[]): Layout[] {
   return merged;
 }
 
+function normalizeResponsiveLayouts(
+  rawLayouts: unknown,
+  rawLayout: unknown,
+  defaults: Layout[],
+): { layouts: SituationMonitorLayouts; repaired: boolean } {
+  const layouts: SituationMonitorLayouts = {};
+  let repaired = false;
+
+  if (rawLayouts && typeof rawLayouts === "object" && !Array.isArray(rawLayouts)) {
+    const record = rawLayouts as Record<string, unknown>;
+    for (const breakpoint of SITUATION_MONITOR_GRID_BREAKPOINT_ORDER) {
+      const value = record[breakpoint];
+      if (!Array.isArray(value) || value.length === 0) {
+        continue;
+      }
+      const merged = mergeLayout(value as Layout[], defaults);
+      const repairedLayout = repairLayoutIfNeeded(merged, defaults, {
+        enforceGeometry: breakpoint === "lg",
+      });
+      layouts[breakpoint] = repairedLayout.layout;
+      repaired = repaired || repairedLayout.repaired;
+    }
+  }
+
+  if (!layouts.lg) {
+    const merged = mergeLayout(Array.isArray(rawLayout) ? (rawLayout as Layout[]) : [], defaults);
+    const repairedLayout = repairLayoutIfNeeded(merged, defaults, { enforceGeometry: true });
+    layouts.lg = repairedLayout.layout;
+    repaired = repaired || repairedLayout.repaired;
+  }
+
+  return { layouts, repaired };
+}
+
+function reconcileResponsiveLayouts(layouts: SituationMonitorLayouts, defaults: Layout[]): SituationMonitorLayouts {
+  const nextLayouts: SituationMonitorLayouts = {};
+
+  for (const breakpoint of SITUATION_MONITOR_GRID_BREAKPOINT_ORDER) {
+    const currentLayout = breakpoint === "lg" ? layouts.lg : layouts[breakpoint];
+    if (!currentLayout || currentLayout.length === 0) {
+      continue;
+    }
+
+    const mergedLayout = mergeLayout(currentLayout, defaults);
+    nextLayouts[breakpoint] = repairLayoutIfNeeded(mergedLayout, defaults, {
+      enforceGeometry: breakpoint === "lg",
+    }).layout;
+  }
+
+  if (!nextLayouts.lg) {
+    nextLayouts.lg = defaults.map((entry) => ({ ...entry }));
+  }
+
+  return nextLayouts;
+}
+
 export interface SituationMonitorLayoutState {
   layout: Layout[];
+  layouts: SituationMonitorLayouts;
   visibility: Record<SituationMonitorPanelId, boolean>;
-  setLayout: (layout: Layout[]) => void;
+  setLayout: (layout: Layout[], breakpoint?: SituationMonitorLayoutBreakpoint) => void;
   setPanelVisible: (id: SituationMonitorPanelId, visible: boolean) => void;
   togglePanel: (id: SituationMonitorPanelId) => void;
   hydrateFromRemote: (payload: unknown) => boolean;
@@ -387,8 +470,21 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
   const defaults = buildDefaults();
   return {
     layout: defaults.layout,
+    layouts: defaults.layouts,
     visibility: defaults.visibility,
-    setLayout: (layout) => set({ layout }),
+    setLayout: (layout, breakpoint = "lg") =>
+      set((state) => {
+        const nextLayout = layout.map((entry) => ({ ...entry }));
+        const nextLayouts: SituationMonitorLayouts = {
+          ...state.layouts,
+          [breakpoint]: nextLayout,
+        };
+
+        return {
+          layout: breakpoint === "lg" ? nextLayout : state.layout,
+          layouts: nextLayouts,
+        };
+      }),
     setPanelVisible: (id, visible) =>
       set((state) => ({
         visibility: { ...state.visibility, [id]: visible },
@@ -405,7 +501,6 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
       }
 
       const record = payload as Record<string, unknown>;
-      const rawLayout = record.layout;
       const rawVisibility = record.visibility;
 
       const visibilityPatch: Partial<Record<SituationMonitorPanelId, boolean>> = {};
@@ -419,15 +514,16 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
         }
       }
 
-      const mergedLayout = mergeLayout(Array.isArray(rawLayout) ? (rawLayout as Layout[]) : [], defaults.layout);
-      const repairedLayout = repairLayoutIfNeeded(mergedLayout, defaults.layout);
+      const normalizedLayouts = normalizeResponsiveLayouts(record.layouts, record.layout, defaults.layout);
+      const nextLgLayout = normalizedLayouts.layouts.lg ?? defaults.layout;
 
       set({
         visibility: { ...defaults.visibility, ...visibilityPatch },
-        layout: repairedLayout.layout,
+        layout: nextLgLayout,
+        layouts: normalizedLayouts.layouts,
       });
 
-      return repairedLayout.repaired;
+      return normalizedLayouts.repaired;
     },
     applyPreset: (presetId, options) => {
       const preset = SITUATION_MONITOR_PRESETS.find((entry) => entry.id === presetId);
@@ -439,6 +535,9 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
       set((state) => ({
         visibility: presetVisibility,
         layout: options?.resetLayout ? defaults.layout : mergeLayout(state.layout, defaults.layout),
+        layouts: options?.resetLayout
+          ? defaults.layouts
+          : reconcileResponsiveLayouts({ ...state.layouts, lg: mergeLayout(state.layout, defaults.layout) }, defaults.layout),
       }));
     },
     reset: () => set(buildDefaults()),
@@ -450,6 +549,7 @@ export const useSituationMonitorLayoutStore = create<SituationMonitorLayoutState
       set({
         visibility: { ...nextDefaults.visibility, ...state.visibility },
         layout: repairedLayout.layout,
+        layouts: reconcileResponsiveLayouts({ ...state.layouts, lg: repairedLayout.layout }, nextDefaults.layout),
       });
     },
   };

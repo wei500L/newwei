@@ -28,7 +28,12 @@ export function useNotificationStream(onNotification?: (notification: Notificati
   const { data: session, status } = useSession();
   const [state, setState] = useState<NotificationStreamState>({ connected: false });
   const socketRef = useRef<Socket | null>(null);
+  const onNotificationRef = useRef(onNotification);
   const token = session?.accessToken as string | undefined;
+
+  useEffect(() => {
+    onNotificationRef.current = onNotification;
+  }, [onNotification]);
 
   useEffect(() => {
     if (status !== "authenticated" || !token) {
@@ -53,41 +58,43 @@ export function useNotificationStream(onNotification?: (notification: Notificati
     }, 0);
 
     const handleNotification = (payload: NotificationMessage) => {
-      onNotification?.(payload);
+      onNotificationRef.current?.(payload);
     };
     const handleConnect = () => setState({ connected: true, connectionError: undefined });
     const handleDisconnect = () => setState((prev) => ({ ...prev, connected: false }));
-
-    socket.on("connect", handleConnect);
-    socket.on("notification", handleNotification);
-    socket.on("notification:error", (payload: { message?: string } | undefined) => {
+    const handleSocketError = (payload: { message?: string } | undefined) => {
       setState((prev) => ({
         ...prev,
         connectionError: payload?.message ?? "Notification socket error",
         connected: false
       }));
-    });
-    socket.on("connect_error", (error) => {
+    };
+    const handleConnectError = (error: { message?: string } | undefined) => {
       setState((prev) => ({
         ...prev,
         connectionError: error?.message ?? "Notification socket connect error",
         connected: false
       }));
-    });
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("notification", handleNotification);
+    socket.on("notification:error", handleSocketError);
+    socket.on("connect_error", handleConnectError);
     socket.on("disconnect", handleDisconnect);
 
     return () => {
       clearTimeout(connectTimer);
       socket.off("connect", handleConnect);
       socket.off("notification", handleNotification);
-      socket.off("notification:error");
-      socket.off("connect_error");
+      socket.off("notification:error", handleSocketError);
+      socket.off("connect_error", handleConnectError);
       socket.off("disconnect", handleDisconnect);
       socket.disconnect();
       socketRef.current = null;
       setState({ connected: false });
     };
-  }, [status, token, onNotification]);
+  }, [status, token]);
 
   return state;
 }

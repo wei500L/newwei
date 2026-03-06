@@ -365,6 +365,7 @@ export function CrawlTasksView() {
   });
   const pageInfoRef = useRef(pageInfo);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const totalCountRef = useRef(0);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const ensureLoadingRef = useRef(false);
@@ -374,6 +375,7 @@ export function CrawlTasksView() {
   const [opsLiveStatus, setOpsLiveStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
+  const currentPageRef = useRef(current);
 
   const [createTask, { loading: creating }] = useCreateCrawlTaskMutation();
   const [retryTask, { loading: retrying }] = useRetryCrawlTaskMutation();
@@ -408,6 +410,13 @@ export function CrawlTasksView() {
     () => JSON.stringify({ search, statusFilter, pageSize }),
     [pageSize, search, statusFilter],
   );
+  const queryKeyRef = useRef(queryKey);
+  const pendingEnsureRef = useRef<{
+    targetPage: number;
+    force: boolean;
+    silent: boolean;
+    queryKey: string;
+  } | null>(null);
 
   useEffect(() => {
     taskEdgesRef.current = taskEdges;
@@ -418,6 +427,18 @@ export function CrawlTasksView() {
   }, [pageInfo]);
 
   useEffect(() => {
+    queryKeyRef.current = queryKey;
+  }, [queryKey]);
+
+  useEffect(() => {
+    totalCountRef.current = totalCount;
+  }, [totalCount]);
+
+  useEffect(() => {
+    currentPageRef.current = current;
+  }, [current]);
+
+  useEffect(() => {
     if (!crawlClientSettingsData?.crawlClientSettings) {
       return;
     }
@@ -426,11 +447,13 @@ export function CrawlTasksView() {
     );
   }, [clientSettingsForm, crawlClientSettingsData?.crawlClientSettings]);
 
-  const loadQueueStats = useCallback(async () => {
+  const loadQueueStats = useCallback(async (options?: { silent?: boolean }) => {
     if (!canView) {
       return;
     }
-    setQueueStatsLoading(true);
+    if (!options?.silent) {
+      setQueueStatsLoading(true);
+    }
     try {
       const response = await apiClient.get<CrawlQueueOpsStats>(
         "admin/crawl4ai/queue",
@@ -443,12 +466,16 @@ export function CrawlTasksView() {
         setMaxConcurrencyInput(response.data.maxConcurrency);
       }
     } catch (error: unknown) {
-      message.error(
-        (error as Error).message ??
-          t("common.failed", { defaultValue: "Failed" }),
-      );
+      if (!options?.silent) {
+        message.error(
+          (error as Error).message ??
+            t("common.failed", { defaultValue: "Failed" }),
+        );
+      }
     } finally {
-      setQueueStatsLoading(false);
+      if (!options?.silent) {
+        setQueueStatsLoading(false);
+      }
     }
   }, [apiClient, canView, message, t]);
 
@@ -459,6 +486,8 @@ export function CrawlTasksView() {
   const resetTaskCache = useCallback(() => {
     taskEdgesRef.current = [];
     pageInfoRef.current = { hasNextPage: true, endCursor: null };
+    totalCountRef.current = 0;
+    pendingEnsureRef.current = null;
     setTaskEdges([]);
     setPageInfo({ hasNextPage: true, endCursor: null });
     setTotalCount(0);
@@ -476,33 +505,60 @@ export function CrawlTasksView() {
   }, [canView, queryKey, resetTaskCache]);
 
   const ensureTasksLoaded = useCallback(
-    async (targetPage: number) => {
+    async (
+      targetPage: number,
+      options?: { force?: boolean; silent?: boolean },
+    ) => {
       if (!canView) {
         return;
       }
 
+      const requestQueryKey = queryKey;
       const required = Math.max(1, targetPage) * pageSize;
-      if (taskEdgesRef.current.length >= required) {
+      if (!options?.force && taskEdgesRef.current.length >= required) {
         return;
       }
 
       // If we already know there is no next page and we have at least one page loaded, stop.
-      if (taskEdgesRef.current.length > 0 && !pageInfoRef.current.hasNextPage) {
+      if (
+        !options?.force &&
+        taskEdgesRef.current.length > 0 &&
+        !pageInfoRef.current.hasNextPage
+      ) {
         return;
       }
 
       if (ensureLoadingRef.current) {
+        const pending = pendingEnsureRef.current;
+        const nextRequest = {
+          targetPage,
+          force: Boolean(options?.force),
+          silent: Boolean(options?.silent),
+          queryKey: requestQueryKey,
+        };
+        if (!pending || pending.queryKey !== requestQueryKey) {
+          pendingEnsureRef.current = nextRequest;
+        } else {
+          pendingEnsureRef.current = {
+            targetPage: Math.max(pending.targetPage, nextRequest.targetPage),
+            force: pending.force || nextRequest.force,
+            silent: pending.silent && nextRequest.silent,
+            queryKey: requestQueryKey,
+          };
+        }
         return;
       }
 
       ensureLoadingRef.current = true;
-      setTasksLoading(true);
-      setTasksError(null);
+      if (!options?.silent) {
+        setTasksLoading(true);
+        setTasksError(null);
+      }
       try {
-        let nextEdges = taskEdgesRef.current;
-        let after = pageInfoRef.current.endCursor;
-        let hasNext = pageInfoRef.current.hasNextPage;
-        let nextTotal = totalCount;
+        let nextEdges = options?.force ? [] : taskEdgesRef.current;
+        let after = options?.force ? null : pageInfoRef.current.endCursor;
+        let hasNext = options?.force ? true : pageInfoRef.current.hasNextPage;
+        let nextTotal = totalCountRef.current;
 
         if (nextEdges.length === 0) {
           // First page always starts from the beginning (after=null).
@@ -545,37 +601,69 @@ export function CrawlTasksView() {
           }
         }
 
+        if (queryKeyRef.current !== requestQueryKey) {
+          return;
+        }
+
         taskEdgesRef.current = nextEdges;
         pageInfoRef.current = {
           hasNextPage: hasNext,
           endCursor: after ?? null,
         };
 
+        setTasksError(null);
         setTaskEdges(nextEdges);
         setPageInfo(pageInfoRef.current);
+        totalCountRef.current = nextTotal;
         setTotalCount(nextTotal);
       } catch (error: unknown) {
-        setTasksError(
-          (error as Error).message ??
-            t("common.failed", { defaultValue: "Failed" }),
-        );
+        if (!options?.silent) {
+          setTasksError(
+            (error as Error).message ??
+              t("common.failed", { defaultValue: "Failed" }),
+          );
+        }
       } finally {
         ensureLoadingRef.current = false;
-        setTasksLoading(false);
+        if (!options?.silent) {
+          setTasksLoading(false);
+        }
+        const pending = pendingEnsureRef.current;
+        pendingEnsureRef.current = null;
+        if (pending) {
+          void ensureTasksLoaded(pending.targetPage, {
+            force: pending.force,
+            silent: pending.silent,
+          });
+        }
       }
     },
-    [canView, fetchTasks, pageSize, search, statusFilter, t, totalCount],
+    [canView, fetchTasks, pageSize, queryKey, search, statusFilter, t],
   );
 
   useEffect(() => {
     void ensureTasksLoaded(current);
   }, [current, ensureTasksLoaded]);
 
-  const reloadTasks = useCallback(async () => {
-    resetTaskCache();
-    setPagination((prev) => ({ ...prev, current: 1 }));
-    await ensureTasksLoaded(1);
-  }, [ensureTasksLoaded, resetTaskCache]);
+  const reloadTasks = useCallback(
+    async (options?: { preservePage?: boolean; silent?: boolean }) => {
+      const targetPage = options?.preservePage ? currentPageRef.current : 1;
+      if (!options?.preservePage) {
+        setPagination((prev) => ({ ...prev, current: 1 }));
+      }
+      await ensureTasksLoaded(targetPage, {
+        force: true,
+        silent: options?.silent,
+      });
+      if (options?.preservePage) {
+        const maxPage = Math.max(1, Math.ceil(totalCountRef.current / pageSize));
+        if (currentPageRef.current > maxPage) {
+          setPagination((prev) => ({ ...prev, current: maxPage }));
+        }
+      }
+    },
+    [ensureTasksLoaded, pageSize],
+  );
 
   const scheduleOpsRefresh = useCallback(
     (options?: { tasks?: boolean; queue?: boolean }) => {
@@ -594,10 +682,10 @@ export function CrawlTasksView() {
         const pending = pendingOpsRefreshRef.current;
         pendingOpsRefreshRef.current = { tasks: false, queue: false };
         if (pending.tasks) {
-          void reloadTasks();
+          void reloadTasks({ preservePage: true, silent: true });
         }
         if (pending.queue) {
-          void loadQueueStats();
+          void loadQueueStats({ silent: true });
         }
       }, 800);
     },
@@ -633,6 +721,9 @@ export function CrawlTasksView() {
       }
       const record = payload as Partial<OpsLiveEventPayload>;
       if (record.source !== "pipeline" && record.source !== "crawl") {
+        return;
+      }
+      if (record.event === "PROGRESS") {
         return;
       }
       scheduleOpsRefresh();
@@ -673,6 +764,7 @@ export function CrawlTasksView() {
         opsRefreshTimerRef.current = null;
       }
       pendingOpsRefreshRef.current = { tasks: false, queue: false };
+      pendingEnsureRef.current = null;
     };
   }, []);
 

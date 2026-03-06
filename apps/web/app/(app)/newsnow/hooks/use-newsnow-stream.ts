@@ -52,6 +52,39 @@ export function useNewsnowStream() {
     const connectTimer = setTimeout(() => {
       socket.connect();
     }, 0);
+    const pendingSourceIds = new Set<string>();
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushPendingRefetches = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      const sourceIds = Array.from(pendingSourceIds);
+      pendingSourceIds.clear();
+      if (sourceIds.length === 0) {
+        return;
+      }
+      void Promise.all(
+        sourceIds.map((sourceId) =>
+          queryClient.refetchQueries({
+            queryKey: ["news-source", sourceId],
+            exact: true,
+            type: "active",
+          }),
+        ),
+      );
+    };
+
+    const scheduleSourceRefetch = (sourceId: string) => {
+      pendingSourceIds.add(sourceId);
+      if (flushTimer) {
+        return;
+      }
+      flushTimer = setTimeout(() => {
+        flushPendingRefetches();
+      }, 800);
+    };
 
     const handleUpdate = (payload: NewsnowRealtimeMessage) => {
       const sourceId =
@@ -75,11 +108,7 @@ export function useNewsnowStream() {
         updatedTime:
           typeof payload.updatedTime === "string" ? payload.updatedTime : undefined,
       });
-      void queryClient.refetchQueries({
-        queryKey: ["news-source", sourceId],
-        exact: true,
-        type: "active",
-      });
+      scheduleSourceRefetch(sourceId);
     };
 
     const handleConnect = () => {
@@ -107,6 +136,11 @@ export function useNewsnowStream() {
 
     return () => {
       clearTimeout(connectTimer);
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      pendingSourceIds.clear();
       socket.off("connect", handleConnect);
       socket.off("newsnow:update", handleUpdate);
       socket.off("newsnow:error");
