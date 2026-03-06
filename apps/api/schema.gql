@@ -242,10 +242,12 @@ type ArchiveEventItemModel {
   entityTags: [String!]!
   eventId: String
   keywordHighlights: [String!]!
+  matchOrigin: ArchiveMatchOrigin
   processedArticleId: String!
   publishedAt: DateTime
   qualityScore: Float
   region: ArchiveRegion!
+  relevanceScore: Float
   sortAt: DateTime!
   sourceLabel: String
   sourceUrl: String
@@ -255,9 +257,17 @@ type ArchiveEventItemModel {
   weight: Int!
 }
 
+enum ArchiveMatchOrigin {
+  HYBRID
+  LEXICAL
+  SEMANTIC
+}
+
 input ArchiveQueryInput {
   anchorDate: DateTime!
+  cursors: [ArchiveVerticalCursorInput!]
   limitPerVertical: Int
+  pageSize: Int
   region: ArchiveRegion!
   search: String
   weights: [ArchiveWeight!]
@@ -296,11 +306,22 @@ enum ArchiveVertical {
   WEST_FRONT
 }
 
+input ArchiveVerticalCursorInput {
+  cursor: String
+  vertical: ArchiveVertical!
+}
+
 type ArchiveVerticalGroupModel {
   displayName: String!
   items: [ArchiveEventItemModel!]!
+  pageInfo: ArchiveVerticalPageInfoModel!
   totalCount: Int!
   vertical: ArchiveVertical!
+}
+
+type ArchiveVerticalPageInfoModel {
+  hasMore: Boolean!
+  nextCursor: String
 }
 
 enum ArchiveWeight {

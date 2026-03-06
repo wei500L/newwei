@@ -15,9 +15,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
-  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -263,10 +261,12 @@ export type ArchiveEventItemModel = {
   entityTags: Array<Scalars['String']['output']>;
   eventId?: Maybe<Scalars['String']['output']>;
   keywordHighlights: Array<Scalars['String']['output']>;
+  matchOrigin?: Maybe<ArchiveMatchOrigin>;
   processedArticleId: Scalars['String']['output'];
   publishedAt?: Maybe<Scalars['DateTime']['output']>;
   qualityScore?: Maybe<Scalars['Float']['output']>;
   region: ArchiveRegion;
+  relevanceScore?: Maybe<Scalars['Float']['output']>;
   sortAt: Scalars['DateTime']['output'];
   sourceLabel?: Maybe<Scalars['String']['output']>;
   sourceUrl?: Maybe<Scalars['String']['output']>;
@@ -276,9 +276,17 @@ export type ArchiveEventItemModel = {
   weight: Scalars['Int']['output'];
 };
 
+export enum ArchiveMatchOrigin {
+  Hybrid = 'HYBRID',
+  Lexical = 'LEXICAL',
+  Semantic = 'SEMANTIC'
+}
+
 export type ArchiveQueryInput = {
   anchorDate: Scalars['DateTime']['input'];
+  cursors?: InputMaybe<Array<ArchiveVerticalCursorInput>>;
   limitPerVertical?: InputMaybe<Scalars['Int']['input']>;
+  pageSize?: InputMaybe<Scalars['Int']['input']>;
   region: ArchiveRegion;
   search?: InputMaybe<Scalars['String']['input']>;
   weights?: InputMaybe<Array<ArchiveWeight>>;
@@ -319,12 +327,24 @@ export enum ArchiveVertical {
   WestFront = 'WEST_FRONT'
 }
 
+export type ArchiveVerticalCursorInput = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  vertical: ArchiveVertical;
+};
+
 export type ArchiveVerticalGroupModel = {
   __typename?: 'ArchiveVerticalGroupModel';
   displayName: Scalars['String']['output'];
   items: Array<ArchiveEventItemModel>;
+  pageInfo: ArchiveVerticalPageInfoModel;
   totalCount: Scalars['Int']['output'];
   vertical: ArchiveVertical;
+};
+
+export type ArchiveVerticalPageInfoModel = {
+  __typename?: 'ArchiveVerticalPageInfoModel';
+  hasMore: Scalars['Boolean']['output'];
+  nextCursor?: Maybe<Scalars['String']['output']>;
 };
 
 export enum ArchiveWeight {

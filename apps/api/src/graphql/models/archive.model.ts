@@ -74,6 +74,15 @@ export class ArchiveEventItemModel {
 }
 
 @ObjectType()
+export class ArchiveVerticalPageInfoModel {
+  @Field(() => Boolean)
+  hasMore!: boolean;
+
+  @Field(() => String, { nullable: true })
+  nextCursor!: string | null;
+}
+
+@ObjectType()
 export class ArchiveVerticalGroupModel {
   @Field(() => ArchiveVertical)
   vertical!: ArchiveVertical;
@@ -89,15 +98,6 @@ export class ArchiveVerticalGroupModel {
 
   @Field(() => ArchiveVerticalPageInfoModel)
   pageInfo!: ArchiveVerticalPageInfoModel;
-}
-
-@ObjectType()
-export class ArchiveVerticalPageInfoModel {
-  @Field(() => Boolean)
-  hasMore!: boolean;
-
-  @Field(() => String, { nullable: true })
-  nextCursor!: string | null;
 }
 
 @ObjectType()
