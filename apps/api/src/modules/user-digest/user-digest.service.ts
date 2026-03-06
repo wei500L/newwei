@@ -3,9 +3,11 @@ import { NewsEventStatus, NewsIndicatorFeatureMetric, NewsIndicatorScopeType, Pr
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
+import { UserContentSubscriptionsService } from "../user-content-subscriptions/user-content-subscriptions.service";
+
+import { USER_DIGEST_PREFERENCE_KEY } from "./user-digest.constants";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const USER_DIGEST_PREFERENCE_KEY = "ai:digest:preference:v1";
 
 export interface UserDigestPreferenceV1 {
   version: 1;
@@ -127,9 +129,22 @@ function normalizePreference(value: unknown, fallback?: UserDigestPreferenceV1):
 
 @Injectable()
 export class UserDigestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contentSubscriptions: UserContentSubscriptionsService,
+  ) {}
 
   async getPreference(orgId: string, userId: string): Promise<UserDigestPreferenceV1> {
+    const stored = await this.getStoredPreference(orgId, userId);
+    const contentPreference = await this.contentSubscriptions.getDigestPreferenceValues(orgId, userId);
+    return {
+      ...stored,
+      focusTopics: contentPreference.focusTopics,
+      focusEntities: contentPreference.focusEntities,
+    };
+  }
+
+  private async getStoredPreference(orgId: string, userId: string): Promise<UserDigestPreferenceV1> {
     const record = await this.prisma.userSetting.findUnique({
       where: {
         orgId_userId_key: {
@@ -148,8 +163,25 @@ export class UserDigestService {
     userId: string,
     input: Partial<UserDigestPreferenceV1>
   ): Promise<UserDigestPreferenceV1> {
-    const current = await this.getPreference(orgId, userId);
-    const merged: UserDigestPreferenceV1 = normalizePreference({ ...current, ...input }, current);
+    const current = await this.getStoredPreference(orgId, userId);
+
+    if (input.focusTopics !== undefined || input.focusEntities !== undefined) {
+      await this.contentSubscriptions.replaceSubscriptionsFromDigestPreference(orgId, userId, {
+        ...(input.focusTopics !== undefined ? { focusTopics: input.focusTopics } : {}),
+        ...(input.focusEntities !== undefined ? { focusEntities: input.focusEntities } : {}),
+      });
+    }
+
+    const contentPreference = await this.contentSubscriptions.getDigestPreferenceValues(orgId, userId);
+    const merged: UserDigestPreferenceV1 = normalizePreference(
+      {
+        ...current,
+        ...input,
+        focusTopics: contentPreference.focusTopics,
+        focusEntities: contentPreference.focusEntities,
+      },
+      current,
+    );
 
     await this.prisma.userSetting.upsert({
       where: {
@@ -385,4 +417,3 @@ export class UserDigestService {
     }));
   }
 }
-

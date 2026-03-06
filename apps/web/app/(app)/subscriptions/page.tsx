@@ -1,12 +1,13 @@
 'use client';
 
-import { App, Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Popconfirm, Row, Select, Skeleton, Space, Switch, Tag, Typography } from "antd";
-import { useRouter } from "next/navigation";
+import { App, Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Popconfirm, Row, Select, Skeleton, Space, Switch, Tabs, Tag, Typography } from "antd";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { ContentSubscriptionsTab } from "./content-subscriptions-tab";
 import {
   NotificationType,
   useAlertEventsQuery,
@@ -223,11 +224,19 @@ export default function SubscriptionsPage() {
   const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: session, status: sessionStatus } = useSession();
   const authenticated = sessionStatus === "authenticated";
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadAlerts = permissions.includes("alerts.read");
   const canManageAlerts = permissions.includes("alerts.manage");
+  const activeTab = useMemo(() => {
+    const value = searchParams.get('tab');
+    return value === 'rules' || value === 'channels' || value === 'notifications'
+      ? value
+      : 'content';
+  }, [searchParams]);
   const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery({
     skip: !authenticated || !canReadAlerts
   });
@@ -585,6 +594,422 @@ export default function SubscriptionsPage() {
     }
   };
 
+  const handleTabChange = (key: string) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (key === 'content') {
+      next.delete('tab');
+    } else {
+      next.set('tab', key);
+    }
+    const nextQuery = next.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+  };
+
+  const rulesTabContent = (
+    <Card
+      className="content-card"
+      title={
+        <Space size="middle" align="center">
+          <Typography.Text strong>
+            {t("subscriptions.rulesTitle", { defaultValue: "Rule Subscriptions" })}
+          </Typography.Text>
+        </Space>
+      }
+      extra={
+        <Button
+          size="small"
+          onClick={async () => {
+            const tasks: Promise<unknown>[] = [refetchNotifications()];
+            if (canReadAlerts) {
+              tasks.push(refetchRules(), refetchEvents());
+            }
+            await Promise.all(tasks);
+          }}
+        >
+          {t("common.refresh")}
+        </Button>
+      }
+    >
+      {authenticated && !canReadAlerts ? (
+        <ChartEmptyState
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("common.accessDeniedDescription", {
+            defaultValue:
+              "You don't have permission to view this data. Contact an administrator if you need access."
+          })}
+        />
+      ) : isRulesInitialLoading || isEventsInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 4 }} />
+      ) : (
+        <List
+          dataSource={rules}
+          locale={{
+            emptyText: t("subscriptions.rulesEmpty", {
+              defaultValue: "No alert rules configured."
+            })
+          }}
+          renderItem={(rule) => {
+            const ruleMetadata = toRecord(rule.metadata);
+            const ruleMuteUntil = parseDateValue(ruleMetadata?.muteUntil);
+            const isRuleMuted = !!ruleMuteUntil && ruleMuteUntil.isAfter(dayjs());
+            const ruleNotifications = notificationsByRuleId.get(rule.id) ?? [];
+            const latestNotification = ruleNotifications[0];
+            const latestNotificationTime = latestNotification
+              ? formatDateTime(latestNotification.createdAt, locale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  hour12: false
+                })
+              : t("common.notAvailable");
+            return (
+              <List.Item>
+                <List.Item.Meta
+                  title={
+                    <Space size="small">
+                      <Typography.Text strong>{rule.name}</Typography.Text>
+                      <Tag>{rule.severity}</Tag>
+                      <Tag>{rule.operator}</Tag>
+                      {isRuleMuted ? (
+                        <Tag color="gold">
+                          {t("subscriptions.mutedUntil", {
+                            defaultValue: "Muted until {{time}}",
+                            time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm")
+                          })}
+                        </Tag>
+                      ) : null}
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={2}>
+                      <Typography.Text type="secondary">
+                        {t("alerts.rules.threshold", {
+                          defaultValue: "Threshold {{threshold}}",
+                          threshold: buildThresholdSummary(
+                            rule.operator,
+                            rule.thresholdValue ?? undefined,
+                            rule.thresholdLower ?? undefined,
+                            rule.thresholdUpper ?? undefined,
+                            t
+                          )
+                        })}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t("alerts.center.detail.window", {
+                          defaultValue: "Window {{minutes}} min",
+                          minutes: rule.changeWindowMin ?? t("common.notAvailable")
+                        })}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t("subscriptions.ruleCooldown", {
+                          defaultValue: "Cooldown {{seconds}}s",
+                          seconds: rule.cooldownSeconds
+                        })}
+                      </Typography.Text>
+                      <Space size={[4, 4]} wrap>
+                        {(rule.channels ?? []).length > 0 ? (
+                          rule.channels.map((channel) => (
+                            <Tag key={channel.id}>{channel.name}</Tag>
+                          ))
+                        ) : (
+                          <Typography.Text type="secondary">
+                            {t("subscriptions.channelsEmpty", { defaultValue: "No alert channels configured." })}
+                          </Typography.Text>
+                        )}
+                      </Space>
+                      <Typography.Text type="secondary">
+                        {t("subscriptions.ruleNotifications", {
+                          defaultValue: "Notifications {{count}} · Latest {{time}}",
+                          count: ruleNotifications.length,
+                          time: latestNotificationTime
+                        })}
+                      </Typography.Text>
+                    </Space>
+                  }
+                />
+                {canManageAlerts ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setActiveRuleId(rule.id);
+                      setRuleModalOpen(true);
+                    }}
+                  >
+                    {t("subscriptions.manageRule", { defaultValue: "Manage" })}
+                  </Button>
+                ) : null}
+              </List.Item>
+            );
+          }}
+        />
+      )}
+    </Card>
+  );
+
+  const channelsTabContent = (
+    <Card
+      className="content-card"
+      title={
+        <Space size="middle" align="center">
+          <Typography.Text strong>
+            {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
+          </Typography.Text>
+        </Space>
+      }
+      extra={
+        <Space size="small">
+          <Button
+            size="small"
+            onClick={() => {
+              if (canReadAlerts) {
+                void refetchChannels();
+              }
+            }}
+            disabled={!canReadAlerts}
+          >
+            {t('common.refresh')}
+          </Button>
+          {canManageAlerts && canReadAlerts ? (
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => {
+                setChannelModalMode("create");
+                setActiveChannelId(null);
+                setChannelModalOpen(true);
+              }}
+            >
+              {t("subscriptions.addChannel", { defaultValue: "Add channel" })}
+            </Button>
+          ) : null}
+        </Space>
+      }
+    >
+      {authenticated && !canReadAlerts ? (
+        <ChartEmptyState
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("common.accessDeniedDescription", {
+            defaultValue:
+              "You don't have permission to view this data. Contact an administrator if you need access."
+          })}
+        />
+      ) : isChannelsInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 3 }} />
+      ) : (
+        <List
+          dataSource={channels}
+          locale={{
+            emptyText: t("subscriptions.channelsEmpty", {
+              defaultValue: "No alert channels configured."
+            })
+          }}
+          renderItem={(channel) => (
+            <List.Item
+              actions={
+                canManageAlerts
+                  ? [
+                      <Switch
+                        key="active"
+                        size="small"
+                        checked={channel.isActive ?? true}
+                        onChange={(checked) => void handleToggleChannelActive(channel.id, checked)}
+                      />,
+                      <Button
+                        key="edit"
+                        size="small"
+                        onClick={() => {
+                          setChannelModalMode("edit");
+                          setActiveChannelId(channel.id);
+                          setChannelModalOpen(true);
+                        }}
+                      >
+                        {t("common.edit")}
+                      </Button>,
+                      <Popconfirm
+                        key="delete"
+                        title={t("subscriptions.deleteChannelConfirm", {
+                          defaultValue: "Delete this channel?"
+                        })}
+                        onConfirm={() => void handleDeleteChannel(channel.id)}
+                      >
+                        <Button size="small" danger loading={deletingChannel}>
+                          {t("common.delete")}
+                        </Button>
+                      </Popconfirm>
+                    ]
+                  : undefined
+              }
+            >
+              <List.Item.Meta
+                title={
+                  <Space size="small">
+                    <Typography.Text strong>{channel.name}</Typography.Text>
+                    <Tag>{channel.type}</Tag>
+                    {channel.isActive ? (
+                      <Tag color="green">{t("common.enabled")}</Tag>
+                    ) : (
+                      <Tag color="default">{t("common.disabled")}</Tag>
+                    )}
+                  </Space>
+                }
+                description={
+                  (() => {
+                    const config = toRecord(channel.config);
+                    const muteUntil = extractMuteUntil(config);
+                    const isMuted = !!muteUntil && muteUntil.isAfter(dayjs());
+                    const intervalSeconds = extractNotifyIntervalSeconds(config);
+                    const intervalLabel = intervalSeconds
+                      ? t("subscriptions.notifyEvery", {
+                          defaultValue: "Every {{minutes}} min",
+                          minutes: Math.max(1, Math.round(intervalSeconds / 60))
+                        })
+                      : t("subscriptions.notifyImmediate", { defaultValue: "Immediate" });
+                    return (
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text type="secondary">{channel.target}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {t("subscriptions.channelFrequency", {
+                            defaultValue: "Frequency: {{frequency}}",
+                            frequency: intervalLabel
+                          })}
+                          {isMuted
+                            ? ` · ${t("subscriptions.mutedUntil", {
+                                defaultValue: "Muted until {{time}}",
+                                time: muteUntil?.format("YYYY-MM-DD HH:mm")
+                              })}`
+                            : ""}
+                        </Typography.Text>
+                      </Space>
+                    );
+                  })()
+                }
+              />
+            </List.Item>
+          )}
+        />
+      )}
+    </Card>
+  );
+
+  const notificationsTabContent = (
+    <Card
+      className="content-card"
+      title={
+        <Space size="middle" align="center">
+          <Typography.Text strong>
+            {t("subscriptions.notificationsTitle", { defaultValue: "Notifications" })}
+          </Typography.Text>
+          <Badge count={unreadCount} size="small" />
+        </Space>
+      }
+      extra={
+        <Space size="small">
+          <Button size="small" onClick={() => void refetchNotifications()}>
+            {t('common.refresh')}
+          </Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              await markAll();
+              await Promise.all([refetchNotifications(), refetchUnread()]);
+            }}
+          >
+            {t('notifications.markAllRead')}
+          </Button>
+        </Space>
+      }
+    >
+      {isNotificationsInitialLoading ? (
+        <Skeleton active paragraph={{ rows: 4 }} />
+      ) : (
+        <List
+          dataSource={orderedNotifications}
+          locale={{ emptyText: t('notifications.empty') }}
+          renderItem={(item) => {
+            const action = resolveNotificationLink(item.data ?? null, t);
+            const isAlertNotification = item.type === NotificationType.AlertTriggered;
+            return (
+              <List.Item
+                onClick={async () => {
+                  if (!item.readAt) {
+                    await markRead({ variables: { id: item.id } });
+                    await Promise.all([refetchNotifications(), refetchUnread()]);
+                  }
+                }}
+                style={{ cursor: "pointer" }}
+                className={
+                  !item.readAt
+                    ? "rounded-md bg-slate-100/80 transition-colors dark:bg-slate-800/50"
+                    : "transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/35"
+                }
+              >
+                <List.Item.Meta
+                  title={
+                    <Space size="small" align="center">
+                      <Tag color={typeColor[item.type] ?? 'default'}>
+                        {t(`notifications.type.${item.type}`)}
+                      </Tag>
+                      <Typography.Text strong>{item.title}</Typography.Text>
+                      {!item.readAt ? <Badge status="processing" /> : null}
+                    </Space>
+                  }
+                  description={
+                    <Space direction="vertical" size={0}>
+                      {item.body ? (
+                        <Typography.Paragraph
+                          style={{ marginBottom: 6 }}
+                          ellipsis={{ rows: 2, expandable: false }}
+                        >
+                          {item.body}
+                        </Typography.Paragraph>
+                      ) : null}
+                      {isAlertNotification ? renderAlertEvidence(item) : null}
+                      <Space size="small" align="center">
+                        <Typography.Text type="secondary">
+                          {formatDateTime(item.createdAt, locale, {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          })}
+                        </Typography.Text>
+                        {action ? (
+                          <Button
+                            type="link"
+                            size="small"
+                            onClick={async (event) => {
+                              event.stopPropagation();
+                              if (!item.readAt) {
+                                await markRead({ variables: { id: item.id } });
+                                await Promise.all([refetchNotifications(), refetchUnread()]);
+                              }
+                              router.push(action.href);
+                            }}
+                            className="px-0"
+                          >
+                            {action.label}
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Space>
+                  }
+                />
+              </List.Item>
+            );
+          }}
+        />
+      )}
+    </Card>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <Space direction="vertical" size={2}>
@@ -593,415 +1018,37 @@ export default function SubscriptionsPage() {
         </Typography.Title>
         <Typography.Text type="secondary">
           {t("subscriptions.subtitle", {
-            defaultValue: "Review channels, rules, and notification history in one place."
+            defaultValue: "Review content subscriptions, alert rules, channels, and notification history in one place."
           })}
         </Typography.Text>
       </Space>
 
-      <Card
-        className="content-card"
-        title={
-          <Space size="middle" align="center">
-            <Typography.Text strong>
-              {t("subscriptions.rulesTitle", { defaultValue: "Rule Subscriptions" })}
-            </Typography.Text>
-          </Space>
-        }
-        extra={
-          <Button
-            size="small"
-            onClick={async () => {
-              const tasks: Promise<unknown>[] = [refetchNotifications()];
-              if (canReadAlerts) {
-                tasks.push(refetchRules(), refetchEvents());
-              }
-              await Promise.all(tasks);
-            }}
-          >
-            {t("common.refresh")}
-          </Button>
-        }
-      >
-        {authenticated && !canReadAlerts ? (
-          <ChartEmptyState
-            variant="permission"
-            title={t("common.accessDenied", { defaultValue: "Access denied" })}
-            description={t("common.accessDeniedDescription", {
-              defaultValue:
-                "You don't have permission to view this data. Contact an administrator if you need access."
-            })}
-          />
-        ) : isRulesInitialLoading || isEventsInitialLoading ? (
-          <Skeleton active paragraph={{ rows: 4 }} />
-        ) : (
-          <List
-            dataSource={rules}
-            locale={{
-              emptyText: t("subscriptions.rulesEmpty", {
-                defaultValue: "No alert rules configured."
-              })
-            }}
-            renderItem={(rule) => {
-              const ruleMetadata = toRecord(rule.metadata);
-              const ruleMuteUntil = parseDateValue(ruleMetadata?.muteUntil);
-              const isRuleMuted = !!ruleMuteUntil && ruleMuteUntil.isAfter(dayjs());
-              const ruleNotifications = notificationsByRuleId.get(rule.id) ?? [];
-              const latestNotification = ruleNotifications[0];
-              const latestNotificationTime = latestNotification
-                ? formatDateTime(latestNotification.createdAt, locale, {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                    hour12: false
-                  })
-                : t("common.notAvailable");
-              return (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <Space size="small">
-                        <Typography.Text strong>{rule.name}</Typography.Text>
-                        <Tag>{rule.severity}</Tag>
-                        <Tag>{rule.operator}</Tag>
-                        {isRuleMuted ? (
-                          <Tag color="gold">
-                            {t("subscriptions.mutedUntil", {
-                              defaultValue: "Muted until {{time}}",
-                              time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm")
-                            })}
-                          </Tag>
-                        ) : null}
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" size={2}>
-                        <Typography.Text type="secondary">
-                          {t("alerts.rules.threshold", {
-                            defaultValue: "Threshold {{threshold}}",
-                            threshold: buildThresholdSummary(
-                              rule.operator,
-                              rule.thresholdValue ?? undefined,
-                              rule.thresholdLower ?? undefined,
-                              rule.thresholdUpper ?? undefined,
-                              t
-                            )
-                          })}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("alerts.center.detail.window", {
-                            defaultValue: "Window {{minutes}} min",
-                            minutes: rule.changeWindowMin ?? t("common.notAvailable")
-                          })}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("subscriptions.ruleCooldown", {
-                            defaultValue: "Cooldown {{seconds}}s",
-                            seconds: rule.cooldownSeconds
-                          })}
-                        </Typography.Text>
-                        <Space size={[4, 4]} wrap>
-                          {(rule.channels ?? []).length > 0 ? (
-                            rule.channels.map((channel) => (
-                              <Tag key={channel.id}>{channel.name}</Tag>
-                            ))
-                          ) : (
-                            <Typography.Text type="secondary">
-                              {t("subscriptions.channelsEmpty", { defaultValue: "No alert channels configured." })}
-                            </Typography.Text>
-                          )}
-                        </Space>
-                        <Typography.Text type="secondary">
-                          {t("subscriptions.ruleNotifications", {
-                            defaultValue: "Notifications {{count}} · Latest {{time}}",
-                            count: ruleNotifications.length,
-                            time: latestNotificationTime
-                          })}
-                        </Typography.Text>
-                      </Space>
-                    }
-                  />
-                  {canManageAlerts ? (
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setActiveRuleId(rule.id);
-                        setRuleModalOpen(true);
-                      }}
-                    >
-                      {t("subscriptions.manageRule", { defaultValue: "Manage" })}
-                    </Button>
-                  ) : null}
-                </List.Item>
-              );
-            }}
-          />
-        )}
-      </Card>
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={12}>
-          <Card
-            className="content-card"
-            title={
-              <Space size="middle" align="center">
-            <Typography.Text strong>
-              {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
-            </Typography.Text>
-          </Space>
-        }
-        extra={
-          <Space size="small">
-            <Button
-              size="small"
-              onClick={() => {
-                if (canReadAlerts) {
-                  void refetchChannels();
-                }
-              }}
-              disabled={!canReadAlerts}
-            >
-                  {t('common.refresh')}
-            </Button>
-            {canManageAlerts && canReadAlerts ? (
-              <Button
-                size="small"
-                type="primary"
-                onClick={() => {
-                  setChannelModalMode("create");
-                      setActiveChannelId(null);
-                      setChannelModalOpen(true);
-                    }}
-                  >
-                    {t("subscriptions.addChannel", { defaultValue: "Add channel" })}
-                  </Button>
-                ) : null}
-          </Space>
-        }
-      >
-        {authenticated && !canReadAlerts ? (
-          <ChartEmptyState
-            variant="permission"
-            title={t("common.accessDenied", { defaultValue: "Access denied" })}
-            description={t("common.accessDeniedDescription", {
-              defaultValue:
-                "You don't have permission to view this data. Contact an administrator if you need access."
-            })}
-          />
-        ) : isChannelsInitialLoading ? (
-          <Skeleton active paragraph={{ rows: 3 }} />
-        ) : (
-          <List
-            dataSource={channels}
-            locale={{
-                  emptyText: t("subscriptions.channelsEmpty", {
-                    defaultValue: "No alert channels configured."
-                  })
-                }}
-                renderItem={(channel) => (
-                  <List.Item
-                    actions={
-                      canManageAlerts
-                        ? [
-                            <Switch
-                              key="active"
-                              size="small"
-                              checked={channel.isActive ?? true}
-                              onChange={(checked) => void handleToggleChannelActive(channel.id, checked)}
-                            />,
-                            <Button
-                              key="edit"
-                              size="small"
-                              onClick={() => {
-                                setChannelModalMode("edit");
-                                setActiveChannelId(channel.id);
-                                setChannelModalOpen(true);
-                              }}
-                            >
-                              {t("common.edit")}
-                            </Button>,
-                            <Popconfirm
-                              key="delete"
-                              title={t("subscriptions.deleteChannelConfirm", {
-                                defaultValue: "Delete this channel?"
-                              })}
-                              onConfirm={() => void handleDeleteChannel(channel.id)}
-                            >
-                              <Button size="small" danger loading={deletingChannel}>
-                                {t("common.delete")}
-                              </Button>
-                            </Popconfirm>
-                          ]
-                        : undefined
-                    }
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space size="small">
-                          <Typography.Text strong>{channel.name}</Typography.Text>
-                          <Tag>{channel.type}</Tag>
-                          {channel.isActive ? (
-                            <Tag color="green">{t("common.enabled")}</Tag>
-                          ) : (
-                            <Tag color="default">{t("common.disabled")}</Tag>
-                          )}
-                        </Space>
-                      }
-                      description={
-                        (() => {
-                          const config = toRecord(channel.config);
-                          const muteUntil = extractMuteUntil(config);
-                          const isMuted = !!muteUntil && muteUntil.isAfter(dayjs());
-                          const intervalSeconds = extractNotifyIntervalSeconds(config);
-                          const intervalLabel = intervalSeconds
-                            ? t("subscriptions.notifyEvery", {
-                                defaultValue: "Every {{minutes}} min",
-                                minutes: Math.max(1, Math.round(intervalSeconds / 60))
-                              })
-                            : t("subscriptions.notifyImmediate", { defaultValue: "Immediate" });
-                          return (
-                            <Space direction="vertical" size={0}>
-                              <Typography.Text type="secondary">{channel.target}</Typography.Text>
-                              <Typography.Text type="secondary">
-                                {t("subscriptions.channelFrequency", {
-                                  defaultValue: "Frequency: {{frequency}}",
-                                  frequency: intervalLabel
-                                })}
-                                {isMuted
-                                  ? ` · ${t("subscriptions.mutedUntil", {
-                                      defaultValue: "Muted until {{time}}",
-                                      time: muteUntil?.format("YYYY-MM-DD HH:mm")
-                                    })}`
-                                  : ""}
-                              </Typography.Text>
-                            </Space>
-                          );
-                        })()
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
-
-        <Col xs={24} xl={12}>
-          <Card
-            className="content-card"
-            title={
-              <Space size="middle" align="center">
-                <Typography.Text strong>
-                  {t("subscriptions.notificationsTitle", { defaultValue: "Notifications" })}
-                </Typography.Text>
-                <Badge count={unreadCount} size="small" />
-              </Space>
-            }
-            extra={
-              <Space size="small">
-                <Button size="small" onClick={() => void refetchNotifications()}>
-                  {t('common.refresh')}
-                </Button>
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    await markAll();
-                    await Promise.all([refetchNotifications(), refetchUnread()]);
-                  }}
-                >
-                  {t('notifications.markAllRead')}
-                </Button>
-              </Space>
-            }
-          >
-            {isNotificationsInitialLoading ? (
-              <Skeleton active paragraph={{ rows: 4 }} />
-            ) : (
-              <List
-                dataSource={orderedNotifications}
-                locale={{ emptyText: t('notifications.empty') }}
-                renderItem={(item) => {
-                  const action = resolveNotificationLink(item.data ?? null, t);
-                  const isAlertNotification = item.type === NotificationType.AlertTriggered;
-                  return (
-                  <List.Item
-                    onClick={async () => {
-                      if (!item.readAt) {
-                        await markRead({ variables: { id: item.id } });
-                        await Promise.all([refetchNotifications(), refetchUnread()]);
-                      }
-                    }}
-                    style={{ cursor: "pointer" }}
-                    className={
-                      !item.readAt
-                        ? "rounded-md bg-slate-100/80 transition-colors dark:bg-slate-800/50"
-                        : "transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/35"
-                    }
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space size="small" align="center">
-                          <Tag color={typeColor[item.type] ?? 'default'}>
-                            {t(`notifications.type.${item.type}`)}
-                          </Tag>
-                          <Typography.Text strong>{item.title}</Typography.Text>
-                          {!item.readAt ? <Badge status="processing" /> : null}
-                        </Space>
-                      }
-                      description={
-                        <Space direction="vertical" size={0}>
-                          {item.body ? (
-                            <Typography.Paragraph
-                              style={{ marginBottom: 6 }}
-                              ellipsis={{ rows: 2, expandable: false }}
-                            >
-                              {item.body}
-                            </Typography.Paragraph>
-                          ) : null}
-                          {isAlertNotification ? renderAlertEvidence(item) : null}
-                          <Space size="small" align="center">
-                            <Typography.Text type="secondary">
-                              {formatDateTime(item.createdAt, locale, {
-                                year: 'numeric',
-                                month: '2-digit',
-                                day: '2-digit',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                                hour12: false
-                              })}
-                            </Typography.Text>
-                            {action ? (
-                              <Button
-                                type="link"
-                                size="small"
-                                onClick={async (event) => {
-                                  event.stopPropagation();
-                                  if (!item.readAt) {
-                                    await markRead({ variables: { id: item.id } });
-                                    await Promise.all([refetchNotifications(), refetchUnread()]);
-                                  }
-                                  router.push(action.href);
-                                }}
-                                className="px-0"
-                              >
-                                {action.label}
-                              </Button>
-                            ) : null}
-                          </Space>
-                        </Space>
-                      }
-                    />
-                  </List.Item>
-                  );
-                }}
-              />
-            )}
-          </Card>
-        </Col>
-      </Row>
+      <Tabs
+        activeKey={activeTab}
+        onChange={handleTabChange}
+        items={[
+          {
+            key: 'content',
+            label: t('subscriptions.content.tabTitle', { defaultValue: 'Content subscriptions' }),
+            children: <ContentSubscriptionsTab accessToken={session?.accessToken} active={activeTab === 'content'} />,
+          },
+          {
+            key: 'rules',
+            label: t('subscriptions.rulesTitle', { defaultValue: 'Rule Subscriptions' }),
+            children: rulesTabContent,
+          },
+          {
+            key: 'channels',
+            label: t('subscriptions.channelsTitle', { defaultValue: 'Alert Channels' }),
+            children: channelsTabContent,
+          },
+          {
+            key: 'notifications',
+            label: t('subscriptions.notificationsTitle', { defaultValue: 'Notifications' }),
+            children: notificationsTabContent,
+          },
+        ]}
+      />
 
       <Form
         form={channelForm}

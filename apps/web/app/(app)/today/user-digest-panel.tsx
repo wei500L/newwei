@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Switch, Tag, Typography, message } from "antd";
+import { Button, Empty, Form, InputNumber, List, Modal, Space, Spin, Switch, Tag, Typography, message } from "antd";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -71,8 +71,6 @@ interface UserDigestV1 {
 }
 
 interface PreferenceFormValues {
-  focusEntities: string[];
-  focusTopics: string[];
   windowDays: number;
   maxEvents: number;
   includeIndicators: boolean;
@@ -87,11 +85,6 @@ const EMPTY_PREFERENCE: UserDigestPreferenceV1 = {
   maxEvents: 8,
   includeIndicators: true,
   maxIndicatorsPerEvent: 5
-};
-
-const normalizeTagValues = (values: string[]) => {
-  const trimmed = values.map((value) => value.trim()).filter((value) => value.length > 0);
-  return Array.from(new Set(trimmed)).slice(0, 50);
 };
 
 function formatSigned(value: number | null | undefined) {
@@ -166,8 +159,6 @@ export function UserDigestPanel() {
     setSavingPreference(true);
     try {
       const payload: Partial<UserDigestPreferenceV1> = {
-        focusEntities: normalizeTagValues(values.focusEntities ?? []),
-        focusTopics: normalizeTagValues(values.focusTopics ?? []),
         windowDays: values.windowDays,
         maxEvents: values.maxEvents,
         includeIndicators: values.includeIndicators,
@@ -214,6 +205,9 @@ export function UserDigestPanel() {
           <Space>
             <Button onClick={() => loadDigest()} loading={loadingDigest} size="small">
               {t("common.refresh", { defaultValue: "Refresh" })}
+            </Button>
+            <Button onClick={() => router.push('/subscriptions?tab=content')} size="small">
+              {t("pages.digest.manageSubscriptions", { defaultValue: "Manage subscriptions" })}
             </Button>
             <Button onClick={handleOpenModal} disabled={loadingPreference} size="small">
               {t("pages.digest.customize", { defaultValue: "Customize" })}
@@ -366,8 +360,6 @@ export function UserDigestPanel() {
           id="user-digest-preference-form"
           layout="vertical"
           initialValues={{
-            focusEntities: preference.focusEntities,
-            focusTopics: preference.focusTopics,
             windowDays: preference.windowDays,
             maxEvents: preference.maxEvents,
             includeIndicators: preference.includeIndicators,
@@ -375,6 +367,12 @@ export function UserDigestPanel() {
           }}
           onFinish={handleSavePreference}
         >
+          <Typography.Paragraph type="secondary">
+            {t("pages.digest.preferences.contentSubscriptionHint", {
+              defaultValue: "Topic and entity subscriptions now live in My Subscriptions > Content subscriptions.",
+            })}
+          </Typography.Paragraph>
+
           <Form.Item
             label={t("pages.digest.preferences.windowDays", { defaultValue: "Window days" })}
             name="windowDays"
@@ -389,30 +387,6 @@ export function UserDigestPanel() {
             rules={[{ required: true, message: t("pages.digest.preferences.required", { defaultValue: "Required" }) }]}
           >
             <InputNumber min={1} max={30} style={{ width: "100%" }} />
-          </Form.Item>
-
-          <Form.Item
-            label={t("pages.digest.preferences.focusTopics", { defaultValue: "Focus topics" })}
-            name="focusTopics"
-            extra={t("pages.digest.preferences.focusTopicsHint", { defaultValue: "Optional; leave empty for global feed." })}
-          >
-            <Select
-              mode="tags"
-              tokenSeparators={[",", "\n", "\t"]}
-              placeholder={t("pages.digest.preferences.focusTopicsPlaceholder", { defaultValue: "Enter topics" })}
-            />
-          </Form.Item>
-
-          <Form.Item
-            label={t("pages.digest.preferences.focusEntities", { defaultValue: "Focus entities" })}
-            name="focusEntities"
-            extra={t("pages.digest.preferences.focusEntitiesHint", { defaultValue: "Optional; leave empty for global feed." })}
-          >
-            <Select
-              mode="tags"
-              tokenSeparators={[",", "\n", "\t"]}
-              placeholder={t("pages.digest.preferences.focusEntitiesPlaceholder", { defaultValue: "Enter entities" })}
-            />
           </Form.Item>
 
           <Form.Item label={t("pages.digest.preferences.includeIndicators", { defaultValue: "Include indicators" })} name="includeIndicators" valuePropName="checked">

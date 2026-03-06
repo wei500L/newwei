@@ -34,6 +34,11 @@ import { NewsImage } from "@/components/news-image";
 import { useItemQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  type ContentSubscriptionBatchResponse,
+  type ContentSubscriptionCatalogItem,
+  type ContentSubscriptionCatalogResponse,
+} from "@/lib/content-subscriptions";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import {
   isChineseLanguage,
@@ -279,6 +284,12 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     useState<RssItemTranslation | null>(null);
   const [digestPreference, setDigestPreference] =
     useState<UserDigestPreferenceV1 | null>(null);
+  const [contentMetadataByKey, setContentMetadataByKey] = useState<
+    Record<string, ContentSubscriptionCatalogItem>
+  >({});
+  const [relatedTopics, setRelatedTopics] = useState<
+    ContentSubscriptionCatalogItem[]
+  >([]);
   const [subscriptionBusyByKey, setSubscriptionBusyByKey] = useState<
     Record<string, boolean>
   >({});
@@ -441,6 +452,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const entitiesDisplay = entities.slice(0, 5);
   const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
   const extraEntities = Math.max(entities.length - entitiesDisplay.length, 0);
+  const primaryTopic = topics[0]?.trim() ?? "";
   const duplicateScore = formatRatioAsPercent(duplicateSimilarity, locale);
   const duplicateScoreLabel = duplicateScore ?? t("common.notAvailable");
   const llmModel = llm?.model ?? t("common.notAvailable");
@@ -485,6 +497,92 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     if (!trimmed) return;
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
+  useEffect(() => {
+    if (sessionStatus !== "authenticated" || !session?.accessToken) {
+      setContentMetadataByKey({});
+      setRelatedTopics([]);
+      return;
+    }
+
+    const entries = [
+      ...topics.slice(0, 8).map((topic) => ({ kind: "topic" as const, value: topic })),
+      ...entities.slice(0, 8).map((entity) => ({ kind: "entity" as const, value: entity })),
+    ];
+    if (entries.length === 0) {
+      setContentMetadataByKey({});
+      return;
+    }
+
+    let cancelled = false;
+    const loadMetadata = async () => {
+      try {
+        const response = await apiClient.post<ContentSubscriptionCatalogResponse>(
+          "user-content-subscriptions/catalog/lookup",
+          { entries },
+        );
+        if (cancelled) {
+          return;
+        }
+        const next = Object.fromEntries(
+          (response.data?.items ?? []).map((entry) => [
+            buildDigestSubscriptionKey(entry.kind, entry.normalizedValue),
+            entry,
+          ]),
+        ) as Record<string, ContentSubscriptionCatalogItem>;
+        setContentMetadataByKey(next);
+      } catch (lookupError) {
+        if (cancelled) {
+          return;
+        }
+        captureClientError(
+          "Failed to load content subscription metadata from item detail",
+          lookupError,
+        );
+      }
+    };
+    void loadMetadata();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, entities, session?.accessToken, sessionStatus, topics]);
+
+  useEffect(() => {
+    if (
+      sessionStatus !== "authenticated" ||
+      !session?.accessToken ||
+      !primaryTopic
+    ) {
+      setRelatedTopics([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadRelatedTopics = async () => {
+      try {
+        const response = await apiClient.get<ContentSubscriptionCatalogResponse>(
+          `user-content-subscriptions/related-topics?topic=${encodeURIComponent(primaryTopic)}&limit=6`,
+        );
+        if (cancelled) {
+          return;
+        }
+        setRelatedTopics(response.data?.items ?? []);
+      } catch (relatedError) {
+        if (cancelled) {
+          return;
+        }
+        captureClientError(
+          "Failed to load related topics from item detail",
+          relatedError,
+        );
+        setRelatedTopics([]);
+      }
+    };
+    void loadRelatedTopics();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, primaryTopic, session?.accessToken, sessionStatus]);
+
   const handleBookmarkPreference = async (
     kind: "topic" | "entity",
     value: string,
@@ -538,27 +636,60 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
         return;
       }
 
-      const nextTags = normalizeDigestTagValues([...currentTags, trimmed]);
-      const updatePayload =
-        kind === "topic"
-          ? { focusTopics: nextTags }
-          : { focusEntities: nextTags };
-      const response = await apiClient.put<UserDigestPreferenceV1>(
-        "user-digest/preference",
-        updatePayload,
-      );
-      const updatedPreference = normalizeDigestPreference(
-        response.data ?? {
-          ...currentPreference,
-          ...updatePayload,
+      const response = await apiClient.post<ContentSubscriptionBatchResponse>(
+        "user-content-subscriptions/batch-upsert",
+        {
+          subscriptions: [{ kind, value: trimmed, source: "manual" }],
         },
       );
+      const result = response.data?.items?.[0];
+      if (!result || result.status === "already_subscribed") {
+        message.info(
+          t("items.detail.subscribeAlready", {
+            defaultValue: "Already in subscription list",
+          }),
+        );
+        setDigestPreference(currentPreference);
+        return;
+      }
+      if (result.status === "limit_reached") {
+        message.warning(
+          t("items.detail.subscribeLimitReached", {
+            defaultValue: "Subscription limit reached for this type.",
+          }),
+        );
+        setDigestPreference(currentPreference);
+        return;
+      }
+
+      const savedValue = result.displayValue ?? trimmed;
+      const nextTags = normalizeDigestTagValues([...currentTags, savedValue]);
+      const updatedPreference =
+        kind === "topic"
+          ? { ...currentPreference, focusTopics: nextTags }
+          : { ...currentPreference, focusEntities: nextTags };
       setDigestPreference(updatedPreference);
+      setContentMetadataByKey((current) => ({
+        ...current,
+        [buildDigestSubscriptionKey(kind, result.normalizedValue || savedValue)]: {
+          kind,
+          normalizedValue: result.normalizedValue,
+          displayValue: savedValue,
+          count: 0,
+          lastSeenAt: new Date().toISOString(),
+          taxonomyPath: result.taxonomyPath,
+          taxonomyDisplayName: result.taxonomyDisplayName,
+          taxonomyLabels: result.taxonomyLabels,
+        },
+      }));
       message.success(
         t("items.detail.subscribeSaved", {
           defaultValue:
             "Added to subscriptions and used by personalized digest",
-        }),
+        }) +
+          (result.taxonomyDisplayName
+            ? ` · ${result.taxonomyDisplayName}`
+            : ""),
       );
     } catch (subscriptionError) {
       captureClientError(
@@ -1409,6 +1540,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                         "topic",
                         topic,
                       );
+                      const metadata = contentMetadataByKey[subscriptionKey];
                       const isBusy = Boolean(
                         subscriptionBusyByKey[subscriptionKey],
                       );
@@ -1433,6 +1565,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           >
                             {topic}
                           </Tag>
+                          {metadata?.taxonomyDisplayName ? (
+                            <Tag>{metadata.taxonomyDisplayName}</Tag>
+                          ) : null}
                           <Tooltip
                             title={
                               isSubscribed
@@ -1476,6 +1611,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                         "entity",
                         entity,
                       );
+                      const metadata = contentMetadataByKey[subscriptionKey];
                       const isBusy = Boolean(
                         subscriptionBusyByKey[subscriptionKey],
                       );
@@ -1500,6 +1636,9 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           >
                             {entity}
                           </Tag>
+                          {metadata?.taxonomyDisplayName ? (
+                            <Tag>{metadata.taxonomyDisplayName}</Tag>
+                          ) : null}
                           <Tooltip
                             title={
                               isSubscribed
@@ -1534,6 +1673,89 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                       );
                     })}
                     {extraEntities > 0 ? <Tag>+{extraEntities}</Tag> : null}
+                  </Space>
+                ) : null}
+                {relatedTopics.length > 0 ? (
+                  <Space
+                    direction="vertical"
+                    size={8}
+                    style={{ width: "100%" }}
+                  >
+                    <Typography.Text type="secondary">
+                      {t("items.detail.relatedTopics", {
+                        defaultValue: "Related topics",
+                      })}
+                    </Typography.Text>
+                    <Space wrap size={[6, 6]}>
+                      {relatedTopics.map((topic) => {
+                        const subscriptionKey = buildDigestSubscriptionKey(
+                          "topic",
+                          topic.displayValue,
+                        );
+                        const isBusy = Boolean(
+                          subscriptionBusyByKey[subscriptionKey],
+                        );
+                        const isSubscribed = hasDigestSubscription(
+                          digestPreference?.focusTopics,
+                          topic.displayValue,
+                        );
+                        return (
+                          <Space key={`related-${topic.normalizedValue}`} size={4}>
+                            <Tag
+                              color="geekblue"
+                              className="cursor-pointer"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleSearch(topic.displayValue)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  handleSearch(topic.displayValue);
+                                }
+                              }}
+                            >
+                              {topic.displayValue}
+                            </Tag>
+                            {topic.taxonomyDisplayName ? (
+                              <Tag>{topic.taxonomyDisplayName}</Tag>
+                            ) : null}
+                            <Tooltip
+                              title={
+                                isSubscribed
+                                  ? t("items.detail.subscribedTopic", {
+                                      defaultValue: "Topic subscribed",
+                                    })
+                                  : t("items.detail.subscribeRelatedTopic", {
+                                      defaultValue: "Subscribe related topic",
+                                    })
+                              }
+                            >
+                              <Button
+                                type="link"
+                                size="small"
+                                className="px-0"
+                                loading={isBusy}
+                                disabled={isSubscribed}
+                                onClick={() => {
+                                  void handleBookmarkPreference(
+                                    "topic",
+                                    topic.displayValue,
+                                  );
+                                }}
+                              >
+                                {isSubscribed
+                                  ? t("items.detail.subscribedAction", {
+                                      defaultValue: "Subscribed",
+                                    })
+                                  : t("items.detail.subscribeAction", {
+                                      defaultValue: "Subscribe",
+                                    })}
+                              </Button>
+                            </Tooltip>
+                          </Space>
+                        );
+                      })}
+                    </Space>
                   </Space>
                 ) : null}
               </Space>

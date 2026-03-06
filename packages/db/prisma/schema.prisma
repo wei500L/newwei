@@ -54,6 +54,8 @@ model Org {
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
   rssTranslationMetricsDaily RssTranslationMetricsDaily[]
   userSettings UserSetting[]
+  contentSubscriptionCatalog ContentSubscriptionCatalog[]
+  userContentSubscriptions UserContentSubscription[]
   archiveArticleClassifications ArchiveArticleClassification[]
 }
 
@@ -78,6 +80,7 @@ model User {
   dashboardsCreated Dashboard[] @relation("DashboardCreatedBy")
   alertRulesCreated AlertRule[] @relation("AlertRuleCreatedBy")
   alertChannelsCreated AlertNotificationChannel[] @relation("AlertChannelCreatedBy")
+  contentSubscriptions UserContentSubscription[]
   systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
   rateLimitPoliciesUpdated RateLimitPolicy[] @relation("RateLimitPolicyUpdatedBy")
   notifications Notification[]
@@ -305,6 +308,63 @@ model UserSetting {
   @@unique([orgId, userId, key])
   @@index([orgId, userId])
   @@index([orgId, key])
+}
+
+enum ContentSubscriptionKind {
+  topic
+  entity
+}
+
+enum ContentSubscriptionSource {
+  manual
+  recommendation
+  related
+  legacy
+}
+
+model UserContentSubscription {
+  id              String                    @id @default(cuid())
+  org             Org                       @relation(fields: [orgId], references: [id])
+  orgId           String
+  user            User                      @relation(fields: [userId], references: [id])
+  userId          String
+  kind            ContentSubscriptionKind
+  normalizedValue String
+  displayValue    String
+  taxonomyPath    String?
+  taxonomyVersion String?
+  source          ContentSubscriptionSource @default(manual)
+  metadata        Json?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@unique([orgId, userId, kind, normalizedValue])
+  @@index([orgId, userId, kind, createdAt])
+  @@index([orgId, userId, updatedAt])
+  @@index([orgId, taxonomyPath, kind])
+}
+
+model ContentSubscriptionCatalog {
+  id              String                  @id @default(cuid())
+  org             Org                     @relation(fields: [orgId], references: [id])
+  orgId           String
+  kind            ContentSubscriptionKind
+  normalizedValue String
+  displayValue    String
+  count           Int
+  lastSeenAt      DateTime
+  taxonomyPath    String?
+  taxonomyVersion String?
+  embeddingModel  String?
+  embeddingVector Json?
+  metadata        Json?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([orgId, kind, normalizedValue])
+  @@index([orgId, kind, count])
+  @@index([orgId, kind, lastSeenAt])
+  @@index([orgId, taxonomyPath, kind])
 }
 
 model RateLimitPolicy {

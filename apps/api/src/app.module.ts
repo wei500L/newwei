@@ -46,6 +46,7 @@ import { SituationMonitorModule } from "./modules/situation-monitor/situation-mo
 import { SystemSettingsModule } from "./modules/system-settings/system-settings.module";
 import { UserDigestModule } from "./modules/user-digest/user-digest.module";
 import { UserNewsBehaviorModule } from "./modules/user-news-behavior/user-news-behavior.module";
+import { UserContentSubscriptionsModule } from "./modules/user-content-subscriptions/user-content-subscriptions.module";
 import { UserSettingsModule } from "./modules/user-settings/user-settings.module";
 import { VectorModule } from "./modules/vector/vector.module";
 import { WebSocketModule } from "./modules/websocket/websocket.module";
@@ -93,6 +94,7 @@ const bullBoardEnabled = process.env.BULL_BOARD_ENABLED !== "false";
     SystemSettingsModule,
     UserSettingsModule,
     UserNewsBehaviorModule,
+    UserContentSubscriptionsModule,
     UserDigestModule,
     NotificationsModule,
     ObservabilityModule,

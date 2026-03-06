@@ -7,8 +7,14 @@ describe("UserDigestService", () => {
         findUnique: jest.fn().mockResolvedValue(null)
       }
     };
+    const contentSubscriptions = {
+      getDigestPreferenceValues: jest.fn().mockResolvedValue({
+        focusTopics: [],
+        focusEntities: [],
+      }),
+    };
 
-    const service = new UserDigestService(prisma as any);
+    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
     const pref = await service.getPreference("org-1", "user-1");
 
     expect(pref).toEqual(
@@ -37,8 +43,15 @@ describe("UserDigestService", () => {
         upsert: jest.fn().mockResolvedValue(null)
       }
     };
+    const contentSubscriptions = {
+      replaceSubscriptionsFromDigestPreference: jest.fn().mockResolvedValue(undefined),
+      getDigestPreferenceValues: jest.fn().mockResolvedValue({
+        focusEntities: ["ACME", "MegaCorp"],
+        focusTopics: ["macro", "policy"],
+      }),
+    };
 
-    const service = new UserDigestService(prisma as any);
+    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
     const pref = await service.updatePreference("org-1", "user-1", {
       focusTopics: ["  macro  ", "policy"],
       includeIndicators: true
@@ -50,6 +63,11 @@ describe("UserDigestService", () => {
     expect(pref.maxEvents).toBe(1);
     expect(pref.includeIndicators).toBe(true);
     expect(pref.maxIndicatorsPerEvent).toBe(50);
+    expect(contentSubscriptions.replaceSubscriptionsFromDigestPreference).toHaveBeenCalledWith(
+      "org-1",
+      "user-1",
+      { focusTopics: ["  macro  ", "policy"] },
+    );
 
     expect(prisma.userSetting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -62,5 +80,31 @@ describe("UserDigestService", () => {
       })
     );
   });
-});
 
+  it("projects focus arrays from content subscriptions on read", async () => {
+    const prisma = {
+      userSetting: {
+        findUnique: jest.fn().mockResolvedValue({
+          value: {
+            focusEntities: ["stale entity"],
+            focusTopics: ["stale topic"],
+            windowDays: 5,
+          },
+        }),
+      },
+    };
+    const contentSubscriptions = {
+      getDigestPreferenceValues: jest.fn().mockResolvedValue({
+        focusEntities: ["NVIDIA"],
+        focusTopics: ["AI chips"],
+      }),
+    };
+
+    const service = new UserDigestService(prisma as any, contentSubscriptions as any);
+    const pref = await service.getPreference("org-1", "user-1");
+
+    expect(pref.focusEntities).toEqual(["NVIDIA"]);
+    expect(pref.focusTopics).toEqual(["AI chips"]);
+    expect(pref.windowDays).toBe(5);
+  });
+});
