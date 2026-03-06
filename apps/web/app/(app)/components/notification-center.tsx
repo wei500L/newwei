@@ -16,6 +16,7 @@ import {
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { dedupeNotifications, getNotificationDedupeKey, upsertNotification } from "@/lib/notification-dedupe";
 import { resolveNotificationLink } from "@/lib/notifications";
+import { useBufferedBatch, useScheduledAction, useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
 import { useNotificationStream, type NotificationMessage } from "./use-notification-stream";
 
@@ -32,6 +33,9 @@ const typeColor: Record<NotificationType, string> = {
 };
 
 const MAX_ITEMS = 30;
+const LIVE_NOTIFICATION_TOAST_KEY = "notification-center-live";
+const LIVE_NOTIFICATION_TOAST_FLUSH_MS = 800;
+const LIVE_NOTIFICATION_UNREAD_SYNC_MS = 1200;
 
 export function NotificationCenter() {
   const { t, i18n } = useTranslation();
@@ -48,6 +52,34 @@ export function NotificationCenter() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState<number>(0);
   const seenKeysRef = useRef<Set<string>>(new Set());
+  const shouldShowConnectionError = useTimedValueDeduper(30_000);
+
+  const { add: enqueueNotificationToast } = useBufferedBatch<string>({
+    delayMs: LIVE_NOTIFICATION_TOAST_FLUSH_MS,
+    onFlush: (titles) => {
+      const uniqueTitles = Array.from(new Set(titles.filter((title) => title.trim().length > 0)));
+      if (uniqueTitles.length === 0) {
+        return;
+      }
+      const content =
+        uniqueTitles.length === 1
+          ? uniqueTitles[0]
+          : t("notifications.live.batchMessage", {
+              defaultValue: "{{count}} new notifications · {{titles}}",
+              count: uniqueTitles.length,
+              titles: uniqueTitles.slice(0, 3).join(" · ") || t("notifications.title"),
+            });
+      message.open({
+        type: "info",
+        key: LIVE_NOTIFICATION_TOAST_KEY,
+        content,
+      });
+    },
+  });
+
+  const { schedule: scheduleUnreadCountSync } = useScheduledAction(() => {
+    void refetchUnread();
+  }, LIVE_NOTIFICATION_UNREAD_SYNC_MS);
 
   useEffect(() => {
     if (data?.notifications) {
@@ -93,20 +125,21 @@ export function NotificationCenter() {
         return dedupeNotifications(upsertNotification(prev, incoming)).slice(0, MAX_ITEMS);
       });
       if (!alreadySeen) {
-        message.info(incoming.title);
+        enqueueNotificationToast(incoming.title);
       }
-      void refetchUnread();
+      scheduleUnreadCountSync();
     },
-    [message, refetchUnread]
+    [enqueueNotificationToast, scheduleUnreadCountSync]
   );
 
   const { connectionError } = useNotificationStream(handleIncoming);
 
   useEffect(() => {
-    if (connectionError) {
-      message.warning(connectionError);
+    if (!connectionError || !shouldShowConnectionError(connectionError)) {
+      return;
     }
-  }, [connectionError, message]);
+    message.warning(connectionError);
+  }, [connectionError, message, shouldShowConnectionError]);
 
   const markOneAsRead = useCallback(
     async (id: string) => {

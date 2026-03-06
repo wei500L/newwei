@@ -34,10 +34,14 @@ import {
 import { dashboardNow } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 
 const { RangePicker } = DatePicker;
 const MAX_TAG_ITEMS = 50;
 const MAX_SERIES_POINTS = 200;
+const LIVE_UPDATES_LIMIT = 50;
+const LIVE_SUMMARY_LIMIT = 4000;
+const STREAM_ERROR_TOAST_WINDOW_MS = 30_000;
 
 function normalizeTags(values?: string[]): string[] {
   return Array.from(
@@ -75,6 +79,7 @@ export function AnalysisPanel() {
   const [liveUpdates, setLiveUpdates] = useState<
     Record<string, AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }>
   >({});
+  const shouldShowStreamError = useTimedValueDeduper(STREAM_ERROR_TOAST_WINDOW_MS);
   const [requestCorrelation, { loading: savingCorr }] =
     useRequestCorrelationMutation();
   const [requestAnomaly, { loading: savingAnomaly }] =
@@ -88,20 +93,57 @@ export function AnalysisPanel() {
         const existing = prev[event.id];
         const previousText = existing?.summaryText ?? "";
         const delta = typeof event.summary === "string" ? event.summary : "";
-        const summaryText =
+        const summaryTextRaw =
           event.status === "running" ? previousText + delta : delta || previousText;
-        return {
-          ...prev,
-          [event.id]: {
-            ...event,
-            summaryText,
-          },
+        const summaryText =
+          summaryTextRaw.length > LIVE_SUMMARY_LIMIT
+            ? summaryTextRaw.slice(-LIVE_SUMMARY_LIMIT)
+            : summaryTextRaw;
+        const nextRecord = {
+          ...event,
+          summaryText,
         };
+        if (
+          existing &&
+          existing.status === nextRecord.status &&
+          existing.type === nextRecord.type &&
+          existing.summaryText === nextRecord.summaryText &&
+          existing.createdAt === nextRecord.createdAt
+        ) {
+          return prev;
+        }
+        const next = {
+          ...prev,
+          [event.id]: nextRecord,
+        };
+        const ids = Object.keys(next);
+        if (ids.length <= LIVE_UPDATES_LIMIT) {
+          return next;
+        }
+        const keptIds = ids
+          .map((id) => ({
+            id,
+            sortAt: dayjs(next[id]?.createdAt).valueOf() || 0,
+          }))
+          .sort((a, b) => b.sortAt - a.sortAt)
+          .slice(0, LIVE_UPDATES_LIMIT)
+          .map((entry) => entry.id);
+        return keptIds.reduce<typeof next>((acc, id) => {
+          const value = next[id];
+          if (value) {
+            acc[id] = value;
+          }
+          return acc;
+        }, {});
       });
     },
     onError: (error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      message.error(t("analysis.streamError", { error: errorMessage }));
+      const toastMessage = t("analysis.streamError", { error: errorMessage });
+      if (!shouldShowStreamError(toastMessage)) {
+        return;
+      }
+      message.error(toastMessage);
     },
   });
 

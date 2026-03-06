@@ -58,6 +58,18 @@ export const ARCHIVE_VERTICAL_ORDER: ArchiveVertical[] = [
   ArchiveVertical.DOMESTIC_AFFAIRS,
 ];
 
+export type ArchiveVerticalScores = Record<ArchiveVertical, number>;
+
+export const createArchiveVerticalScoreMap = (
+  initialValue = 0,
+): ArchiveVerticalScores => ({
+  [ArchiveVertical.EAST_SEA]: initialValue,
+  [ArchiveVertical.SOUTH_SEA]: initialValue,
+  [ArchiveVertical.WEST_FRONT]: initialValue,
+  [ArchiveVertical.FOREIGN_AFFAIRS]: initialValue,
+  [ArchiveVertical.DOMESTIC_AFFAIRS]: initialValue,
+});
+
 export interface ArchiveDigestQueryInput {
   anchorDate: Date;
   region: ArchiveRegion;

@@ -93,6 +93,7 @@ export class NewsAggregatorController {
       orgId: user.orgId,
       userId: user.id,
       forceRefresh: this.parseBooleanFlag(latest),
+      allowAutoBridge: user.permissions.includes("items.write"),
     })
   }
 

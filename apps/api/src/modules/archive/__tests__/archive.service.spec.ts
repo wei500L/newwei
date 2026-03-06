@@ -15,6 +15,7 @@ import {
   ArchiveRegion,
   ArchiveVertical,
   ArchiveWeight,
+  createArchiveVerticalScoreMap,
 } from "../archive.types";
 
 interface ArchiveRowFixture {
@@ -79,6 +80,49 @@ describe("ArchiveService", () => {
     countryLabel: "Philippines",
     entityTags: ["Philippines"],
   };
+  const classifierSignalsResult = {
+    region: ArchiveRegion.APAC,
+    ruleVertical: ArchiveVertical.EAST_SEA,
+    countryCode: "PHL",
+    countryLabel: "Philippines",
+    entityTags: ["Philippines"],
+    ruleScores: {
+      ...createArchiveVerticalScoreMap(),
+      [ArchiveVertical.EAST_SEA]: 1,
+    },
+  };
+
+  const makeClassifierMock = () => ({
+    classify: jest.fn().mockReturnValue(classifierResult),
+    classifyRuleSignals: jest.fn().mockReturnValue(classifierSignalsResult),
+  });
+
+  const makeArchiveClassificationServiceMock = () => ({
+    classifyHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) =>
+      inputs.map((input) => ({
+        processedArticleId: input.processedArticleId,
+        articleId: input.articleId,
+        region: input.ruleContext.region,
+        vertical: ArchiveVertical.EAST_SEA,
+        countryCode: input.ruleContext.countryCode,
+        countryLabel: input.ruleContext.countryLabel,
+        entityTags: input.ruleContext.entityTags,
+        ruleScores: input.ruleContext.ruleScores,
+        embeddingScores: createArchiveVerticalScoreMap(),
+        rerankScores: createArchiveVerticalScoreMap(),
+        fusedScores: {
+          ...createArchiveVerticalScoreMap(),
+          [ArchiveVertical.EAST_SEA]: 1,
+        },
+        classificationTextHash: `hash-${input.processedArticleId}`,
+        classificationTextVersion: "archive-text-v1",
+        taxonomyVersion: "archive-vertical-v1",
+        pipelineVersion: "archive-hybrid-v1",
+        embeddingModel: "embedding-model",
+        rerankModel: "rerank-model",
+      })),
+    ),
+  });
 
   it("throws when embedding model is unavailable", async () => {
     const prisma = {
@@ -94,13 +138,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn().mockResolvedValue({ results: [] }),
     };
     const vectorClient = { searchBestEffort: jest.fn() };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     let thrown: unknown;
@@ -148,13 +194,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn().mockResolvedValue({ results: [] }),
     };
     const vectorClient = { searchBestEffort: jest.fn() };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     let thrown: unknown;
@@ -195,13 +243,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn(),
     };
     const vectorClient = { searchBestEffort: jest.fn().mockResolvedValue(null) };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     let thrown: unknown;
@@ -247,13 +297,15 @@ describe("ArchiveService", () => {
         .fn()
         .mockResolvedValue([{ processedItemId: row.cleanedMarkdownRef, score: 0.92 }]),
     };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     let thrown: unknown;
@@ -322,13 +374,15 @@ describe("ArchiveService", () => {
         { processedItemId: "ref-high-weight", score: 0.58 },
       ]),
     };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     const result = await service.getDigest("org-1", {
@@ -398,13 +452,15 @@ describe("ArchiveService", () => {
         { processedItemId: "ref-semantic", score: 0.89 },
       ]),
     };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     const result = await service.getDigest("org-1", {
@@ -463,13 +519,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn(),
     };
     const vectorClient = { searchBestEffort: jest.fn() };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     const cursor = Buffer.from(
@@ -512,13 +570,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn(),
     };
     const vectorClient = { searchBestEffort: jest.fn() };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     const tokens = (service as any).tokenizeSearch("F-35 2025 +policy", 2);
@@ -551,13 +611,15 @@ describe("ArchiveService", () => {
       rerank: jest.fn(),
     };
     const vectorClient = { searchBestEffort: jest.fn() };
-    const classifier = { classify: jest.fn().mockReturnValue(classifierResult) };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
     const service = new ArchiveService(
       prisma as any,
       cache as any,
       liteLlm as any,
       vectorClient as any,
       classifier as any,
+      archiveClassification as any,
     );
 
     const result = await service.getCalendar("org-1", {
@@ -568,5 +630,106 @@ describe("ArchiveService", () => {
     const total = result.reduce((sum, day) => sum + day.count, 0);
     expect(total).toBe(601);
     expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("batch-calls hybrid classification and uses hybrid vertical output", async () => {
+    const eastRow = makeRow("row-east", "2025-05-28T08:00:00.000Z");
+    const southRow = makeRow("row-south", "2025-05-27T08:00:00.000Z");
+    const prisma = {
+      processedArticle: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([eastRow, southRow])
+          .mockResolvedValueOnce([]),
+      },
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      classifyHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) => [
+        {
+          processedArticleId: inputs[0].processedArticleId,
+          articleId: inputs[0].articleId,
+          region: ArchiveRegion.APAC,
+          vertical: ArchiveVertical.EAST_SEA,
+          countryCode: 'PHL',
+          countryLabel: 'Philippines',
+          entityTags: ['Philippines'],
+          ruleScores: classifierSignalsResult.ruleScores,
+          embeddingScores: createArchiveVerticalScoreMap(),
+          rerankScores: createArchiveVerticalScoreMap(),
+          fusedScores: {
+            ...createArchiveVerticalScoreMap(),
+            [ArchiveVertical.EAST_SEA]: 1,
+          },
+          classificationTextHash: 'hash-east',
+          classificationTextVersion: 'archive-text-v1',
+          taxonomyVersion: 'archive-vertical-v1',
+          pipelineVersion: 'archive-hybrid-v1',
+          embeddingModel: 'embedding-model',
+          rerankModel: 'rerank-model',
+        },
+        {
+          processedArticleId: inputs[1].processedArticleId,
+          articleId: inputs[1].articleId,
+          region: ArchiveRegion.APAC,
+          vertical: ArchiveVertical.SOUTH_SEA,
+          countryCode: 'PHL',
+          countryLabel: 'Philippines',
+          entityTags: ['Philippines'],
+          ruleScores: classifierSignalsResult.ruleScores,
+          embeddingScores: createArchiveVerticalScoreMap(),
+          rerankScores: createArchiveVerticalScoreMap(),
+          fusedScores: {
+            ...createArchiveVerticalScoreMap(),
+            [ArchiveVertical.SOUTH_SEA]: 1,
+          },
+          classificationTextHash: 'hash-south',
+          classificationTextVersion: 'archive-text-v1',
+          taxonomyVersion: 'archive-vertical-v1',
+          pipelineVersion: 'archive-hybrid-v1',
+          embeddingModel: 'embedding-model',
+          rerankModel: 'rerank-model',
+        },
+      ]),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+    );
+
+    const result = await service.getDigest('org-1', {
+      anchorDate: new Date('2025-05-29T00:00:00.000Z'),
+      region: ArchiveRegion.APAC,
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      limitPerVertical: 20,
+    });
+
+    expect(classifier.classifyRuleSignals).toHaveBeenCalledTimes(2);
+    expect(archiveClassification.classifyHybridBatch).toHaveBeenCalledTimes(1);
+    expect(archiveClassification.classifyHybridBatch.mock.calls[0]?.[1]).toHaveLength(2);
+    expect(
+      result.groups.find((group) => group.vertical === ArchiveVertical.EAST_SEA)?.items,
+    ).toHaveLength(1);
+    expect(
+      result.groups.find((group) => group.vertical === ArchiveVertical.SOUTH_SEA)?.items,
+    ).toHaveLength(1);
   });
 });

@@ -972,6 +972,7 @@ export function NewsnowCard({
     );
   }, [
     actionAvailabilityByItemId,
+    analysisByItemId,
     animatedItemIds,
     dedupMetaMap,
     densityMode,

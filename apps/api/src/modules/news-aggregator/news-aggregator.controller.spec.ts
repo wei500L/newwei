@@ -111,7 +111,7 @@ describe("NewsAggregatorController", () => {
       })
 
       await controller.getHottestAnalysis(
-        { id: "user-1", orgId: "org-1" } as any,
+        { id: "user-1", orgId: "org-1", permissions: ["items.read"] } as any,
         queryValue,
       )
 
@@ -119,6 +119,7 @@ describe("NewsAggregatorController", () => {
         orgId: "org-1",
         userId: "user-1",
         forceRefresh: false,
+        allowAutoBridge: false,
       })
     },
   )
@@ -135,7 +136,7 @@ describe("NewsAggregatorController", () => {
     })
 
     await controller.getHottestAnalysis(
-      { id: "user-1", orgId: "org-1" } as any,
+      { id: "user-1", orgId: "org-1", permissions: ["items.read", "items.write"] } as any,
       "true",
     )
 
@@ -143,6 +144,7 @@ describe("NewsAggregatorController", () => {
       orgId: "org-1",
       userId: "user-1",
       forceRefresh: true,
+      allowAutoBridge: true,
     })
   })
 

@@ -239,6 +239,21 @@ export class LiteLlmService {
     }
   }
 
+  async getRerankModel(): Promise<string | undefined> {
+    try {
+      const cfg = await this.resolveRerankConfig();
+      return cfg.rerankModel;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === ERROR_RERANK_MODEL_NOT_CONFIGURED
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
   async getCompletionModels(): Promise<string[]> {
     const cfg = await this.resolveCompletionConfig();
     const models = [cfg.model, ...cfg.fallbackModels].filter(

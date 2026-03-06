@@ -54,6 +54,7 @@ model Org {
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
   rssTranslationMetricsDaily RssTranslationMetricsDaily[]
   userSettings UserSetting[]
+  archiveArticleClassifications ArchiveArticleClassification[]
 }
 
 model User {
@@ -434,6 +435,7 @@ model Article {
   processed ProcessedArticle?
   knowledgeEdgeEvidences KnowledgeEdgeEvidence[]
   entityLinks ArticleEntityLink[]
+  archiveClassification ArchiveArticleClassification?
 
   @@unique([url, contentHash])
   @@index([orgId, sourceId, crawlAt])
@@ -474,8 +476,50 @@ model ProcessedArticle {
 
   newsEventItems     NewsEventItem[]
   representativeOfNewsEvents NewsEvent[] @relation("NewsEventRepresentative")
+  archiveClassification ArchiveArticleClassification?
 
   @@fulltext([title, summary])
+}
+
+model ArchiveArticleClassification {
+  id                 String           @id @default(cuid())
+  org                Org              @relation(fields: [orgId], references: [id])
+  orgId              String
+  article            Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  articleId          String           @unique
+  processedArticle   ProcessedArticle @relation(fields: [processedArticleId], references: [id], onDelete: Cascade)
+  processedArticleId String           @unique
+  region             String
+  vertical           String
+  ruleScores         Json
+  embeddingScores    Json
+  rerankScores       Json
+  fusedScores        Json
+  classificationTextHash String
+  classificationTextVersion String
+  taxonomyVersion    String
+  pipelineVersion    String
+  embeddingModel     String
+  rerankModel        String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([orgId, updatedAt])
+  @@index([orgId, vertical, updatedAt])
+}
+
+model ArchiveVerticalAnchorEmbedding {
+  id              String   @id @default(cuid())
+  vertical        String
+  taxonomyVersion String
+  anchorText      String   @db.Text
+  anchorTextHash  String
+  embeddingModel  String
+  embeddingVector Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([vertical, taxonomyVersion, embeddingModel, anchorTextHash])
 }
 
 model ArticleEntityLink {

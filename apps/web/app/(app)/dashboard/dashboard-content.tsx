@@ -27,6 +27,7 @@ import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/gene
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
+import { useScheduledAction, useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 import {
   pickCoarsestGranularity,
   pickFinestGranularity,
@@ -219,7 +220,17 @@ function DashboardStreamStatusLine({
       toast.error(
         t("dashboard.stream.offline", {
           defaultValue: "Live updates unavailable"
-        })
+        }),
+        { id: DASHBOARD_STREAM_TOAST_ID }
+      );
+      return;
+    }
+    if (prevStatus === "offline" && streamState.status === "live") {
+      toast.success(
+        t("dashboard.stream.liveRecovered", {
+          defaultValue: "Live updates restored"
+        }),
+        { id: DASHBOARD_STREAM_TOAST_ID, duration: 4_000 }
       );
     }
   }, [accessToken, streamState.status, t]);
@@ -350,6 +361,11 @@ export function DashboardContent() {
   const { queueStatus, selectedSector, setQueueStatus } =
     useDashboardFiltersStore();
   const queueFilterMounted = useRef(false);
+  const lastHandledQueueEventKeyRef = useRef<string | null>(null);
+  const shouldShowQueueConnectionError = useTimedValueDeduper(30_000);
+  const { schedule: scheduleQueueRefetch } = useScheduledAction(() => {
+    void refetch();
+  }, DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
   const [showSystemStats, setShowSystemStats] = useState(false);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
@@ -378,10 +394,15 @@ export function DashboardContent() {
   }, [isDashboardUpdating, isRangeUpdating]);
 
   useEffect(() => {
-    if (connectionError) {
-      message.error(t("dashboard.queue.connectionFailed", { error: connectionError }));
+    if (!connectionError) {
+      return;
     }
-  }, [connectionError, message, t]);
+    const nextMessage = t("dashboard.queue.connectionFailed", { error: connectionError });
+    if (!shouldShowQueueConnectionError(nextMessage)) {
+      return;
+    }
+    message.error(nextMessage);
+  }, [connectionError, message, shouldShowQueueConnectionError, t]);
 
   useEffect(() => {
     if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
@@ -393,7 +414,12 @@ export function DashboardContent() {
     if (!lastEvent) return;
     if (!canManageQueue) return;
     if (lastEvent.event === "PROGRESS") return;
-    void refetch();
+    const eventKey = `${lastEvent.event}:${lastEvent.jobId}:${lastEvent.timestamp}`;
+    if (lastHandledQueueEventKeyRef.current === eventKey) {
+      return;
+    }
+    lastHandledQueueEventKeyRef.current = eventKey;
+    scheduleQueueRefetch();
     if (lastEvent.event === "FAILED") {
       message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
     } else if (lastEvent.event === "COMPLETED") {
@@ -401,7 +427,7 @@ export function DashboardContent() {
     } else if (lastEvent.event === "ACTIVE") {
       message.info(t("dashboard.queue.jobStarted", { jobId: lastEvent.jobId }));
     }
-  }, [canManageQueue, lastEvent, message, refetch, t]);
+  }, [canManageQueue, lastEvent, message, scheduleQueueRefetch, t]);
 
   useEffect(() => {
     if (!queueFilterMounted.current) {

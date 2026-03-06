@@ -45,6 +45,8 @@ const logger = createLogger({ name: 'newsnow-hottest-analysis' });
 const ANALYSIS_FRESH_TTL_SECONDS = 120;
 const ANALYSIS_STALE_TTL_SECONDS = 600;
 const ANALYSIS_LOCK_TTL_MS = 45_000;
+const ANALYSIS_WAIT_TIMEOUT_MS = 120_000;
+const ANALYSIS_WAIT_POLL_MS = 50;
 const SIGNAL_STATE_TTL_SECONDS = 36 * 60 * 60;
 const MAX_ITEMS_PER_SOURCE = 8;
 const MAX_TOTAL_ITEMS = 160;
@@ -124,6 +126,8 @@ interface CandidateClusterAggregate {
 
 @Injectable()
 export class NewsnowHottestAnalysisService {
+  private readonly inflightRefreshes = new Map<string, Promise<NewsnowHottestAnalysisResponse>>();
+
   constructor(
     private readonly cache: CacheService,
     private readonly aggregator: NewsAggregatorService,
@@ -135,6 +139,7 @@ export class NewsnowHottestAnalysisService {
     orgId: string;
     userId: string;
     forceRefresh?: boolean;
+    allowAutoBridge?: boolean;
   }): Promise<NewsnowHottestAnalysisResponse> {
     const freshKey = buildAnalysisCacheKey(input.orgId);
     const staleKey = buildAnalysisStaleCacheKey(input.orgId);
@@ -145,6 +150,34 @@ export class NewsnowHottestAnalysisService {
         return { ...cached, cached: true };
       }
     }
+
+    const inflightRefresh = this.inflightRefreshes.get(freshKey);
+    if (inflightRefresh) {
+      return await inflightRefresh;
+    }
+
+    const refreshPromise = this.refreshAnalysisWithLock(input, freshKey, staleKey);
+    this.inflightRefreshes.set(freshKey, refreshPromise);
+
+    try {
+      return await refreshPromise;
+    } finally {
+      if (this.inflightRefreshes.get(freshKey) === refreshPromise) {
+        this.inflightRefreshes.delete(freshKey);
+      }
+    }
+  }
+
+  private async refreshAnalysisWithLock(
+    input: {
+      orgId: string;
+      userId: string;
+      forceRefresh?: boolean;
+      allowAutoBridge?: boolean;
+    },
+    freshKey: string,
+    staleKey: string,
+  ): Promise<NewsnowHottestAnalysisResponse> {
 
     const refresh = async (): Promise<NewsnowHottestAnalysisResponse> => {
       const next = await this.buildAnalysis(input);
@@ -160,15 +193,33 @@ export class NewsnowHottestAnalysisService {
       if (locked) {
         return locked;
       }
-      const cached = await this.safeGet<NewsnowHottestAnalysisResponse>(freshKey);
-      if (cached) {
-        return { ...cached, cached: true };
+
+      if (!input.forceRefresh) {
+        const cached = await this.safeGet<NewsnowHottestAnalysisResponse>(freshKey);
+        if (cached) {
+          return { ...cached, cached: true };
+        }
       }
+
       const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
+      if (stale && !input.forceRefresh) {
+        return { ...stale, cached: true };
+      }
+
+      const waited = await this.waitForReadyAnalysis({
+        freshKey,
+        staleKey,
+        allowStale: !input.forceRefresh,
+      });
+      if (waited) {
+        return waited;
+      }
+
       if (stale) {
         return { ...stale, cached: true };
       }
-      return await refresh();
+
+      throw new Error('Timed out waiting for in-flight hottest analysis refresh');
     } catch (error) {
       const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
       if (stale) {
@@ -183,6 +234,7 @@ export class NewsnowHottestAnalysisService {
     orgId: string;
     userId: string;
     forceRefresh?: boolean;
+    allowAutoBridge?: boolean;
   }): Promise<NewsnowHottestAnalysisResponse> {
     const metadata = this.aggregator.getMetadata();
     const hottestSourceIds = (metadata.columns?.hottest?.sources ?? []).slice(0, 64);
@@ -248,7 +300,7 @@ export class NewsnowHottestAnalysisService {
     });
 
     const analysisBySignalKey = new Map<string, NewsnowAnalyzedItem>();
-    const resolvableSignals = clusterAggregates
+    const prioritizedResolvableSignals = clusterAggregates
       .flatMap((aggregate) => aggregate.items.map((item) => ({ aggregate, item })))
       .filter(({ aggregate, item }) => item.rank <= 6 || aggregate.cluster.sourceIds.length > 1)
       .sort((left, right) => {
@@ -256,10 +308,34 @@ export class NewsnowHottestAnalysisService {
           return right.aggregate.candidateScore - left.aggregate.candidateScore;
         }
         return left.item.rank - right.item.rank;
-      })
-      .slice(0, MAX_RESOLVE_ITEMS);
+      });
 
-    const resolvedMatches = await this.resolveMatches(resolvableSignals.map((entry) => entry.item));
+    const guaranteedBridgeSignalKeys = new Set(
+      prioritizedResolvableSignals
+        .filter(({ aggregate, item }) =>
+          item.rank <= 3 &&
+          this.isBridgeEligible({
+            signal: item,
+            contentKind: this.resolveContentKind(aggregate.insight?.contentKind ?? 'unknown'),
+            candidateScore: aggregate.candidateScore,
+            suggested: aggregate.insight?.bridgeEligibleSuggestion ?? false,
+          }),
+        )
+        .map(({ item }) => item.signalKey),
+    );
+
+    const signalsToResolve = Array.from(
+      new Map(
+        prioritizedResolvableSignals
+          .filter(
+            ({ item }, index) =>
+              index < MAX_RESOLVE_ITEMS || guaranteedBridgeSignalKeys.has(item.signalKey),
+          )
+          .map(({ item }) => [item.signalKey, item] as const),
+      ).values(),
+    );
+
+    const resolvedMatches = await this.resolveMatches(signalsToResolve);
 
     for (const signal of normalizedSignals) {
       const aggregate = clusterBySignalKey.get(signal.signalKey);
@@ -319,7 +395,9 @@ export class NewsnowHottestAnalysisService {
       });
     }
 
-    await this.bridgeEligibleItems(input, normalizedSignals, analysisBySignalKey);
+    if (input.allowAutoBridge) {
+      await this.bridgeEligibleItems(input, normalizedSignals, analysisBySignalKey);
+    }
     await this.persistSignalState(input.orgId, normalizedSignals);
 
     const bySource: Record<string, Record<string, NewsnowAnalyzedItem>> = {};
@@ -783,6 +861,36 @@ export class NewsnowHottestAnalysisService {
       logger.warn({ error, count: keys.length }, 'Cache batch read failed for hottest analysis');
       return keys.map(() => null);
     }
+  }
+
+  private async waitForReadyAnalysis(input: {
+    freshKey: string;
+    staleKey: string;
+    allowStale: boolean;
+  }): Promise<NewsnowHottestAnalysisResponse | null> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < ANALYSIS_WAIT_TIMEOUT_MS) {
+      const fresh = await this.safeGet<NewsnowHottestAnalysisResponse>(input.freshKey);
+      if (fresh) {
+        return { ...fresh, cached: true };
+      }
+
+      if (input.allowStale) {
+        const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(input.staleKey);
+        if (stale) {
+          return { ...stale, cached: true };
+        }
+      }
+
+      await this.delay(ANALYSIS_WAIT_POLL_MS);
+    }
+
+    return null;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async mapWithConcurrency<T, R>(

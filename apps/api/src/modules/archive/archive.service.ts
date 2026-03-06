@@ -12,6 +12,10 @@ import { PrismaService } from "../config/prisma.service";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
 import { VectorClientService } from "../vector/vector-client.service";
 
+import {
+  ArchiveClassificationService,
+  type ArchiveHybridClassificationResult,
+} from "./archive-classification.service";
 import { ArchiveClassifier } from "./archive.classifier";
 import {
   ARCHIVE_VERTICAL_DISPLAY_NAME,
@@ -112,6 +116,7 @@ export class ArchiveService {
     private readonly liteLlm: LiteLlmService,
     private readonly vectorClient: VectorClientService,
     private readonly classifier: ArchiveClassifier,
+    private readonly archiveClassification: ArchiveClassificationService,
   ) {}
 
   async getDigest(
@@ -164,8 +169,16 @@ export class ArchiveService {
     const grouped = new Map<ArchiveVertical, ArchiveDigestItem[]>(
       ARCHIVE_VERTICAL_ORDER.map((vertical) => [vertical, []]),
     );
+    const classificationById = await this.classifyRows(
+      orgId,
+      searchResult.rows,
+    );
 
     for (const row of searchResult.rows) {
+      const classification = classificationById.get(row.id);
+      if (!classification) {
+        continue;
+      }
       const sortAt = this.resolveSortAt(row);
       if (sortAt.getTime() > anchorDate.getTime()) {
         continue;
@@ -175,14 +188,6 @@ export class ArchiveService {
       if (!allowedWeights.has(weight)) {
         continue;
       }
-
-      const classification = this.classifier.classify({
-        title: row.title,
-        summary: row.summary,
-        topics: row.topics,
-        entities: row.entities,
-        location: row.location,
-      });
       if (classification.region !== input.region) {
         continue;
       }
@@ -269,8 +274,13 @@ export class ArchiveService {
     const { start, end } = this.resolveMonthRange(input.month);
     const rows = await this.loadRangeCandidates(orgId, start, end);
     const buckets = new Map<string, number>();
+    const classificationById = await this.classifyRows(orgId, rows);
 
     for (const row of rows) {
+      const classification = classificationById.get(row.id);
+      if (!classification) {
+        continue;
+      }
       const sortAt = this.resolveSortAt(row);
       if (
         sortAt.getTime() < start.getTime() ||
@@ -279,13 +289,6 @@ export class ArchiveService {
         continue;
       }
 
-      const classification = this.classifier.classify({
-        title: row.title,
-        summary: row.summary,
-        topics: row.topics,
-        entities: row.entities,
-        location: row.location,
-      });
       if (input.region && classification.region !== input.region) {
         continue;
       }
@@ -300,6 +303,39 @@ export class ArchiveService {
     return Array.from(buckets.entries())
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  private async classifyRows(
+    orgId: string,
+    rows: ArchiveProcessedRow[],
+  ): Promise<Map<string, ArchiveHybridClassificationResult>> {
+    if (rows.length === 0) {
+      return new Map();
+    }
+
+    const results = await this.archiveClassification.classifyHybridBatch(
+      orgId,
+      rows.map((row) => ({
+        processedArticleId: row.id,
+        articleId: row.article.id,
+        title: row.title,
+        summary: row.summary,
+        topics: row.topics,
+        entities: row.entities,
+        location: row.location,
+        ruleContext: this.classifier.classifyRuleSignals({
+          title: row.title,
+          summary: row.summary,
+          topics: row.topics,
+          entities: row.entities,
+          location: row.location,
+        }),
+      })),
+    );
+
+    return new Map(
+      results.map((result) => [result.processedArticleId, result]),
+    );
   }
 
   async getDetail(

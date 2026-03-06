@@ -22,7 +22,8 @@ export function useNewsnowStream() {
   const { data: session, status } = useSession();
   const token = session?.accessToken as string | undefined;
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadItems = permissions.includes("items.read");
+  const canReadItems =
+    permissions.includes("items.read") || permissions.includes("items.write");
   const socketRef = useRef<Socket | null>(null);
   const queryClient = useQueryClient();
 
