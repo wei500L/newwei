@@ -5,6 +5,8 @@ import { GeoModule } from "../geo/geo.module";
 
 import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
 import { AssistantSafetyMetricsService } from "./assistant-safety-metrics.service";
+import { ArchivePreparationSettingsController } from "./archive-preparation-settings.controller";
+import { ArchivePreparationSettingsService } from "./archive-preparation-settings.service";
 import { AssistantSafetySettingsController } from "./assistant-safety-settings.controller";
 import { AssistantSafetySettingsService } from "./assistant-safety-settings.service";
 import { AuditLogSettingsController } from "./audit-log-settings.controller";
@@ -56,6 +58,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
   controllers: [
     RateLimitSettingsController,
     RateLimitPolicyController,
+    ArchivePreparationSettingsController,
     AuditLogSettingsController,
     AuthCacheSettingsController,
     EmailSettingsController,
@@ -80,6 +83,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
   providers: [
     RateLimitConfigService,
     RateLimitPolicyService,
+    ArchivePreparationSettingsService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,
@@ -106,6 +110,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
   exports: [
     RateLimitConfigService,
     RateLimitPolicyService,
+    ArchivePreparationSettingsService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     LlmGatewaySettingsService,

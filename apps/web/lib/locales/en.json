@@ -1966,6 +1966,17 @@
         "timelineEmpty": "No related timeline entries.",
         "related": "Related articles",
         "relatedEmpty": "No related articles."
+      },
+      "preparation": {
+        "failedTitle": "Archive background preparation failed",
+        "failedBody": "Background preparation stopped. Refresh to retry.",
+        "partialTitle": "Archive preparation is still running",
+        "partialBody": "Showing {{ready}} ready records while {{missing}} records are still preparing. Calendar markers and daily counts only cover the prepared subset.",
+        "loadingTitle": "Archive data is preparing",
+        "loadingBody": "Archive classification is warming in the background. Calendar markers and daily counts currently cover only the prepared subset.",
+        "searchCoverageTitle": "Search state is separate from archive warmup",
+        "searchCoverageBody": "Search remains available, but the archive baseline is still warming up. Results only cover records whose archive classification is already prepared.",
+        "calendarCoverageHint": "Calendar markers and the daily total currently cover only the subset with completed archive classification."
       }
     },
     "digest": {
@@ -5453,9 +5464,61 @@
       "newsSourceRuntimeSecrets": "News source secrets",
       "vectorService": "Vector service",
       "modelService": "Model service",
-      "akshare": "AKShare"
+      "akshare": "AKShare",
+      "archivePreparation": "Archive preparation"
     },
-    "description": "System settings description"
+    "description": "System settings description",
+    "archivePreparation": {
+      "description": "Configure archive background preparation batch sizes and embedding/rerank concurrency. Lower values reduce memory and rate-limit pressure.",
+      "notice": {
+        "title": "Background preparation only",
+        "body": "These limits apply only to archive preparation workers. Model selection still follows the active LLM gateway embedding/rerank profiles."
+      },
+      "cardTitle": "Archive preparation settings",
+      "source": {
+        "default": "Using defaults",
+        "db": "Saved in DB"
+      },
+      "fields": {
+        "jobBatchSize": "Job batch size",
+        "embeddingBatchSize": "Embedding batch size",
+        "embeddingMaxConcurrency": "Embedding max concurrency",
+        "rerankMaxConcurrency": "Rerank max concurrency"
+      },
+      "hint": {
+        "title": "Recommended starting point",
+        "body": "Start with batch size 20 and concurrency 1/1. Increase gradually only after confirming rerank RPM headroom is stable."
+      },
+      "actions": {
+        "refreshStatus": "Refresh status"
+      },
+      "messages": {
+        "saved": "Archive preparation settings saved.",
+        "reset": "Archive preparation settings reset."
+      },
+      "errors": {
+        "loadFailed": "Failed to load archive preparation settings.",
+        "saveFailed": "Failed to save archive preparation settings.",
+        "resetFailed": "Failed to reset archive preparation settings."
+      },
+      "modal": {
+        "resetTitle": "Reset archive preparation settings?",
+        "resetBody": "This restores the default low-memory batch and concurrency limits."
+      },
+      "ops": {
+        "title": "Operational visibility",
+        "updatedAt": "Updated {{value}}",
+        "pending": "Pending: {{count}}",
+        "active": "Active: {{count}}",
+        "waiting": "Waiting: {{count}}",
+        "failed": "Failed: {{count}}",
+        "completed": "Completed: {{count}}",
+        "latestFailure": "Latest failure",
+        "empty": "No recent archive preparation activity.",
+        "scopeDigest": "Digest {{value}}",
+        "scopeCalendar": "Calendar {{value}}"
+      }
+    }
   },
   "analysis": {
     "streamError": "Analysis stream error: {{error}}",

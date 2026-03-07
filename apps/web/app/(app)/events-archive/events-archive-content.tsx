@@ -72,6 +72,13 @@ interface ArchiveDigestData {
   anchorDate: string;
   region: ArchiveRegion;
   totalCount: number;
+  preparation: {
+    state: 'IDLE' | 'QUEUED' | 'PROCESSING' | 'PARTIAL' | 'READY' | 'FAILED';
+    readyCount: number;
+    missingCount: number;
+    updatedAt: string;
+    errorMessage?: string | null;
+  };
   groups: ArchiveVerticalGroup[];
 }
 
@@ -110,6 +117,13 @@ const ARCHIVE_DIGEST_QUERY = gql`
       anchorDate
       region
       totalCount
+      preparation {
+        state
+        readyCount
+        missingCount
+        updatedAt
+        errorMessage
+      }
       groups {
         vertical
         displayName
@@ -528,9 +542,12 @@ export function EventsArchiveContent() {
     });
   const digest = digestData?.archiveDigest;
   const totalCount = digest?.totalCount ?? 0;
-  const groupMap = useMemo(
+  const preparation = digest?.preparation ?? null;
+  const groupMap = useMemo<Map<ArchiveVertical, ArchiveVerticalGroup>>(
     () =>
-      new Map((digest?.groups ?? []).map((group) => [group.vertical, group])),
+      new Map<ArchiveVertical, ArchiveVerticalGroup>(
+        (digest?.groups ?? []).map((group) => [group.vertical, group]),
+      ),
     [digest?.groups],
   );
   const calendarCountByDate = useMemo(
@@ -541,22 +558,41 @@ export function EventsArchiveContent() {
     () => buildCalendarCountMap(nextMonthCalendarData?.archiveCalendar),
     [nextMonthCalendarData?.archiveCalendar],
   );
-  const canGoNext = useMemo(
+  const todayDateParam = useMemo(
+    () => dayjs.utc().format("YYYY-MM-DD"),
+    [],
+  );
+  const hasPreparationPending = useMemo(
     () =>
-      canNavigateToNextDay({
+      Boolean(
+        preparation &&
+          preparation.state !== "READY" &&
+          preparation.state !== "IDLE",
+      ),
+    [preparation],
+  );
+  const canGoNext = useMemo(
+    () => {
+      if (hasPreparationPending) {
+        return nextDateParam <= todayDateParam;
+      }
+      return canNavigateToNextDay({
         nextDateParam,
         currentMonthParam: monthParam,
         currentMonthCountByDate: calendarCountByDate,
         nextMonthCountByDate: needsNextMonthCalendar
           ? nextMonthCountByDate
           : undefined,
-      }),
+      });
+    },
     [
       calendarCountByDate,
+      hasPreparationPending,
       monthParam,
       needsNextMonthCalendar,
       nextDateParam,
       nextMonthCountByDate,
+      todayDateParam,
     ],
   );
 
@@ -705,6 +741,72 @@ export function EventsArchiveContent() {
         return digestError.message;
     }
   }, [digestAppCode, digestError, searchMode, t]);
+  const preparationAlert = useMemo(() => {
+    if (!preparation || preparation.state === "READY" || preparation.state === "IDLE") {
+      return null;
+    }
+
+    if (preparation.state === "FAILED") {
+      return {
+        type: "warning" as const,
+        message: t("pages.eventsArchive.preparation.failedTitle", {
+          defaultValue: "归档后台补齐失败",
+        }),
+        description:
+          preparation.errorMessage?.trim() ||
+          t("pages.eventsArchive.preparation.failedBody", {
+            defaultValue: "后台任务已中断，请点击刷新后重试。",
+          }),
+      };
+    }
+
+    if (preparation.state === "PARTIAL") {
+      return {
+        type: "info" as const,
+        message: t("pages.eventsArchive.preparation.partialTitle", {
+          defaultValue: "归档数据正在后台补齐",
+        }),
+        description: t("pages.eventsArchive.preparation.partialBody", {
+          defaultValue:
+            "当前已展示 {{ready}} 条就绪结果，仍有 {{missing}} 条待补齐；日历标记与每日计数仅覆盖已准备部分。",
+          ready: preparation.readyCount,
+          missing: preparation.missingCount,
+        }),
+      };
+    }
+
+    if (searchMode) {
+      return {
+        type: "info" as const,
+        message: t("pages.eventsArchive.preparation.searchCoverageTitle", {
+          defaultValue: "搜索状态与归档预热分离显示",
+        }),
+        description: t("pages.eventsArchive.preparation.searchCoverageBody", {
+          defaultValue:
+            "当前搜索功能可用，但归档底库仍在后台补齐，搜索结果只覆盖已完成归档分类的记录。",
+        }),
+      };
+    }
+
+    return {
+      type: "info" as const,
+      message: t("pages.eventsArchive.preparation.loadingTitle", {
+        defaultValue: "归档数据准备中",
+      }),
+      description: t("pages.eventsArchive.preparation.loadingBody", {
+        defaultValue:
+          "后台正在预热归档分类；日历标记与每日计数暂只覆盖已准备部分，请稍后刷新查看完整结果。",
+      }),
+    };
+  }, [preparation, searchMode, t]);
+  const calendarCoverageHint = useMemo(() => {
+    if (!hasPreparationPending || searchMode) {
+      return null;
+    }
+    return t("pages.eventsArchive.preparation.calendarCoverageHint", {
+      defaultValue: "日历标记和本日统计当前仅覆盖已完成归档分类的部分数据。",
+    });
+  }, [hasPreparationPending, searchMode, t]);
   const searchFeedback = useMemo(() => {
     if (!normalizedSearchInput) {
       return null;
@@ -1006,6 +1108,11 @@ export function EventsArchiveContent() {
                     count: totalCount,
                   })}
                 </Typography.Text>
+                {calendarCoverageHint ? (
+                  <Typography.Text type="secondary" className="pl-2 text-xs">
+                    {calendarCoverageHint}
+                  </Typography.Text>
+                ) : null}
               </div>
 
               <div className="flex flex-1 flex-col gap-3 xl:max-w-[720px]">
@@ -1090,6 +1197,15 @@ export function EventsArchiveContent() {
                   ) : null}
                 </div>
               }
+            />
+          ) : null}
+
+          {!digestError && preparationAlert ? (
+            <Alert
+              type={preparationAlert.type}
+              showIcon
+              message={preparationAlert.message}
+              description={preparationAlert.description}
             />
           ) : null}
 

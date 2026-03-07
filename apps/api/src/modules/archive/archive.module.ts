@@ -1,14 +1,63 @@
 import { Module } from "@nestjs/common";
+import { Queue, QueueEvents } from "bullmq";
+
+import { EnvService } from "../config/config.service";
+import { CacheModule } from "../cache/cache.module";
 
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
+import {
+  ARCHIVE_PREPARATION_QUEUE,
+  ARCHIVE_PREPARATION_QUEUE_EVENTS,
+  ARCHIVE_PREPARATION_QUEUE_NAME,
+} from "./archive-preparation.constants";
+import { ArchivePreparationController } from "./archive-preparation.controller";
+import { ArchivePreparationProcessor } from "./archive-preparation.processor";
+import { ArchivePreparationQueueCleanupService } from "./archive-preparation-queue-cleanup.service";
+import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
 import { ArchiveClassificationService } from "./archive-classification.service";
 import { ArchiveClassifier } from "./archive.classifier";
 import { ArchiveService } from "./archive.service";
 
 @Module({
-  imports: [NewsPipelineModule],
-  providers: [ArchiveClassifier, ArchiveClassificationService, ArchiveService],
+  imports: [NewsPipelineModule, CacheModule],
+  controllers: [ArchivePreparationController],
+  providers: [
+    ArchiveClassifier,
+    ArchiveClassificationService,
+    ArchivePreparationQueueCleanupService,
+    ArchivePreparationQueueService,
+    ArchivePreparationProcessor,
+    ArchiveService,
+    {
+      provide: ARCHIVE_PREPARATION_QUEUE,
+      inject: [EnvService, ArchivePreparationQueueCleanupService],
+      useFactory: (
+        env: EnvService,
+        cleanup: ArchivePreparationQueueCleanupService,
+      ) => {
+        const queue = new Queue(ARCHIVE_PREPARATION_QUEUE_NAME, {
+          connection: env.redisConfig,
+        });
+        cleanup.track(queue);
+        return queue;
+      },
+    },
+    {
+      provide: ARCHIVE_PREPARATION_QUEUE_EVENTS,
+      inject: [EnvService, ArchivePreparationQueueCleanupService],
+      useFactory: (
+        env: EnvService,
+        cleanup: ArchivePreparationQueueCleanupService,
+      ) => {
+        const events = new QueueEvents(ARCHIVE_PREPARATION_QUEUE_NAME, {
+          connection: env.redisConfig,
+        });
+        cleanup.track(events);
+        return events;
+      },
+    },
+  ],
   exports: [ArchiveService],
 })
 export class ArchiveModule {}

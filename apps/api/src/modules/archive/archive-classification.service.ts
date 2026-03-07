@@ -33,7 +33,7 @@ import {
 } from './archive.types';
 
 const SCORE_TIE_EPSILON = 1e-9;
-const VERTICAL_ORDER_INDEX = new Map(
+const VERTICAL_ORDER_INDEX = new Map<ArchiveVertical, number>(
   ARCHIVE_VERTICAL_ORDER.map((vertical, index) => [vertical, index]),
 );
 
@@ -46,6 +46,13 @@ interface ClassifiedArchiveInput extends ArchiveClassifierInput {
 interface PreparedArchiveInput extends ClassifiedArchiveInput {
   classificationText: string;
   classificationTextHash: string;
+}
+
+export interface ArchiveClassificationRuntimeOptions {
+  jobBatchSize: number;
+  embeddingBatchSize: number;
+  embeddingMaxConcurrency: number;
+  rerankMaxConcurrency: number;
 }
 
 interface StoredArchiveClassificationRow {
@@ -124,10 +131,13 @@ export class ArchiveClassificationService {
   async classifyHybridBatch(
     orgId: string,
     inputs: ArchiveHybridClassificationInput[],
+    options?: Partial<ArchiveClassificationRuntimeOptions>,
   ): Promise<ArchiveHybridClassificationResult[]> {
     if (inputs.length === 0) {
       return [];
     }
+
+    const runtime = this.resolveRuntimeOptions(options);
 
     const [embeddingModel, rerankModel] = await Promise.all([
       this.liteLlm.getEmbeddingModel(),
@@ -183,57 +193,66 @@ export class ArchiveClassificationService {
         embeddingModel,
         missingInputs,
       );
-      const embeddingScores = await this.computeEmbeddingScores(
-        orgId,
-        missingInputs,
-        embeddingModel,
-        anchorVectors,
-      );
-      const rerankScores = await this.computeRerankScores(
-        orgId,
-        missingInputs,
-        rerankModel,
-      );
-
-      const computedResults = missingInputs.map((input) => {
-        const embeddingScoreMap =
-          embeddingScores.get(input.processedArticleId) ?? createArchiveVerticalScoreMap();
-        const rerankScoreMap =
-          rerankScores.get(input.processedArticleId) ?? createArchiveVerticalScoreMap();
-        const fusedScores = this.combineScores(
-          input.ruleContext.ruleScores,
-          embeddingScoreMap,
-          rerankScoreMap,
+      for (
+        let start = 0;
+        start < missingInputs.length;
+        start += runtime.jobBatchSize
+      ) {
+        const slice = missingInputs.slice(start, start + runtime.jobBatchSize);
+        const embeddingScores = await this.computeEmbeddingScores(
+          orgId,
+          slice,
+          embeddingModel,
+          anchorVectors,
+          runtime,
+        );
+        const rerankScores = await this.computeRerankScores(
+          orgId,
+          slice,
+          rerankModel,
+          runtime,
         );
 
-        return {
-          processedArticleId: input.processedArticleId,
-          articleId: input.articleId,
-          region: input.ruleContext.region,
-          vertical: this.selectVertical(
-            fusedScores,
+        const computedResults = slice.map((input) => {
+          const embeddingScoreMap =
+            embeddingScores.get(input.processedArticleId) ?? createArchiveVerticalScoreMap();
+          const rerankScoreMap =
+            rerankScores.get(input.processedArticleId) ?? createArchiveVerticalScoreMap();
+          const fusedScores = this.combineScores(
             input.ruleContext.ruleScores,
+            embeddingScoreMap,
             rerankScoreMap,
-          ),
-          countryCode: input.ruleContext.countryCode,
-          countryLabel: input.ruleContext.countryLabel,
-          entityTags: input.ruleContext.entityTags,
-          ruleScores: input.ruleContext.ruleScores,
-          embeddingScores: embeddingScoreMap,
-          rerankScores: rerankScoreMap,
-          fusedScores,
-          classificationTextHash: input.classificationTextHash,
-          classificationTextVersion: ARCHIVE_CLASSIFICATION_TEXT_VERSION,
-          taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
-          pipelineVersion: ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
-          embeddingModel,
-          rerankModel,
-        } satisfies ArchiveHybridClassificationResult;
-      });
+          );
 
-      await this.persistResults(orgId, computedResults);
-      for (const result of computedResults) {
-        cachedResults.set(result.processedArticleId, result);
+          return {
+            processedArticleId: input.processedArticleId,
+            articleId: input.articleId,
+            region: input.ruleContext.region,
+            vertical: this.selectVertical(
+              fusedScores,
+              input.ruleContext.ruleScores,
+              rerankScoreMap,
+            ),
+            countryCode: input.ruleContext.countryCode,
+            countryLabel: input.ruleContext.countryLabel,
+            entityTags: input.ruleContext.entityTags,
+            ruleScores: input.ruleContext.ruleScores,
+            embeddingScores: embeddingScoreMap,
+            rerankScores: rerankScoreMap,
+            fusedScores,
+            classificationTextHash: input.classificationTextHash,
+            classificationTextVersion: ARCHIVE_CLASSIFICATION_TEXT_VERSION,
+            taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
+            pipelineVersion: ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
+            embeddingModel,
+            rerankModel,
+          } satisfies ArchiveHybridClassificationResult;
+        });
+
+        await this.persistResults(orgId, computedResults);
+        for (const result of computedResults) {
+          cachedResults.set(result.processedArticleId, result);
+        }
       }
     }
 
@@ -252,6 +271,39 @@ export class ArchiveClassificationService {
       }
       return result;
     });
+  }
+
+  async getCachedHybridBatch(
+    orgId: string,
+    inputs: ArchiveHybridClassificationInput[],
+  ): Promise<Map<string, ArchiveHybridClassificationResult>> {
+    if (inputs.length === 0) {
+      return new Map();
+    }
+
+    const [embeddingModel, rerankModel] = await Promise.all([
+      this.liteLlm.getEmbeddingModel(),
+      this.liteLlm.getRerankModel(),
+    ]);
+    if (!embeddingModel || !rerankModel) {
+      return new Map();
+    }
+
+    const preparedInputs = inputs.map((input) => {
+      const classificationText = this.buildClassificationText(input);
+      return {
+        ...input,
+        classificationText,
+        classificationTextHash: this.hashText(classificationText),
+      } satisfies PreparedArchiveInput;
+    });
+
+    return this.loadCachedResults(
+      orgId,
+      preparedInputs,
+      embeddingModel,
+      rerankModel,
+    );
   }
 
   private async loadCachedResults(
@@ -488,6 +540,7 @@ export class ArchiveClassificationService {
     inputs: PreparedArchiveInput[],
     embeddingModel: string,
     anchorVectors: Map<ArchiveVertical, number[]>,
+    runtime: ArchiveClassificationRuntimeOptions,
   ): Promise<Map<string, ArchiveVerticalScores>> {
     const normalizedAnchors = new Map<ArchiveVertical, number[]>();
     for (const vertical of ARCHIVE_VERTICAL_ORDER) {
@@ -522,113 +575,127 @@ export class ArchiveClassificationService {
       normalizedAnchors.set(vertical, normalizedVector);
     }
 
-    const scoresById = new Map<string, ArchiveVerticalScores>();
+    const chunks: PreparedArchiveInput[][] = [];
     for (
       let start = 0;
       start < inputs.length;
-      start += ARCHIVE_CLASSIFICATION_EMBEDDING_BATCH_SIZE
+      start += runtime.embeddingBatchSize
     ) {
-      const chunk = inputs.slice(
-        start,
-        start + ARCHIVE_CLASSIFICATION_EMBEDDING_BATCH_SIZE,
-      );
-      let response;
-      try {
-        response = await this.liteLlm.embedding({
-          orgId,
-          model: embeddingModel,
-          input: chunk.map((input) => input.classificationText),
-          metadata: {
-            source: ARCHIVE_CLASSIFICATION_SOURCE,
-            layer: 'embedding',
-            orgId,
-            taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
-            processedArticleIds: chunk.map((input) => input.processedArticleId),
-          },
-        });
-      } catch (error) {
-        throw this.buildLayerFailureException(
-          'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-          'embedding',
-          error,
-          {
-            orgId,
-            embeddingModel,
-            processedArticleIds: chunk.map((input) => input.processedArticleId),
-          },
-        );
-      }
+      chunks.push(inputs.slice(start, start + runtime.embeddingBatchSize));
+    }
 
-      const vectorsByIndex = new Map<number, number[]>();
-      for (const row of response.data ?? []) {
-        if (
-          !row ||
-          typeof row.index !== 'number' ||
-          !Array.isArray(row.embedding) ||
-          row.embedding.length === 0
-        ) {
-          continue;
-        }
-        vectorsByIndex.set(row.index, row.embedding);
-      }
-
-      for (let index = 0; index < chunk.length; index += 1) {
-        const input = chunk[index];
-        if (!input) {
-          continue;
-        }
-        const vector = vectorsByIndex.get(index);
-        if (!vector || vector.length === 0) {
-          throw this.buildException(
-            'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-            'Archive article embedding response is missing a usable vector.',
-            {
-              orgId,
-              processedArticleId: input.processedArticleId,
-              articleId: input.articleId,
+    const scoresById = new Map<string, ArchiveVerticalScores>();
+    const chunkScores = await this.mapWithConcurrency(
+      chunks,
+      runtime.embeddingMaxConcurrency,
+      async (chunk) => {
+        let response;
+        try {
+          response = await this.liteLlm.embedding({
+            orgId,
+            model: embeddingModel,
+            input: chunk.map((input) => input.classificationText),
+            metadata: {
+              source: ARCHIVE_CLASSIFICATION_SOURCE,
               layer: 'embedding',
-              embeddingModel,
+              orgId,
+              taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
+              processedArticleIds: chunk.map((input) => input.processedArticleId),
             },
-          );
-        }
-        const normalizedQuery = this.normalizeVector(vector);
-        if (normalizedQuery.length === 0) {
-          throw this.buildException(
+          });
+        } catch (error) {
+          throw this.buildLayerFailureException(
             'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-            'Archive article embedding vector is invalid.',
+            'embedding',
+            error,
             {
               orgId,
-              processedArticleId: input.processedArticleId,
-              articleId: input.articleId,
-              layer: 'embedding',
               embeddingModel,
+              processedArticleIds: chunk.map((input) => input.processedArticleId),
             },
           );
         }
 
-        const scores = createArchiveVerticalScoreMap();
-        for (const vertical of ARCHIVE_VERTICAL_ORDER) {
-          const normalizedAnchor = normalizedAnchors.get(vertical);
-          if (!normalizedAnchor || normalizedAnchor.length !== normalizedQuery.length) {
+        const vectorsByIndex = new Map<number, number[]>();
+        for (const row of response.data ?? []) {
+          if (
+            !row ||
+            typeof row.index !== 'number' ||
+            !Array.isArray(row.embedding) ||
+            row.embedding.length === 0
+          ) {
+            continue;
+          }
+          vectorsByIndex.set(row.index, row.embedding);
+        }
+
+        const result = new Map<string, ArchiveVerticalScores>();
+        for (let index = 0; index < chunk.length; index += 1) {
+          const input = chunk[index];
+          if (!input) {
+            continue;
+          }
+          const vector = vectorsByIndex.get(index);
+          if (!vector || vector.length === 0) {
             throw this.buildException(
               'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-              'Archive embedding vectors use inconsistent dimensions.',
+              'Archive article embedding response is missing a usable vector.',
               {
                 orgId,
                 processedArticleId: input.processedArticleId,
                 articleId: input.articleId,
                 layer: 'embedding',
                 embeddingModel,
-                vertical,
+              },
+            );
+          }
+          const normalizedQuery = this.normalizeVector(vector);
+          if (normalizedQuery.length === 0) {
+            throw this.buildException(
+              'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
+              'Archive article embedding vector is invalid.',
+              {
+                orgId,
+                processedArticleId: input.processedArticleId,
+                articleId: input.articleId,
+                layer: 'embedding',
+                embeddingModel,
               },
             );
           }
 
-          const cosine = this.dot(normalizedQuery, normalizedAnchor);
-          scores[vertical] = this.clamp01((cosine + 1) / 2);
+          const scores = createArchiveVerticalScoreMap();
+          for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+            const normalizedAnchor = normalizedAnchors.get(vertical);
+            if (!normalizedAnchor || normalizedAnchor.length !== normalizedQuery.length) {
+              throw this.buildException(
+                'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
+                'Archive embedding vectors use inconsistent dimensions.',
+                {
+                  orgId,
+                  processedArticleId: input.processedArticleId,
+                  articleId: input.articleId,
+                  layer: 'embedding',
+                  embeddingModel,
+                  vertical,
+                },
+              );
+            }
+
+            const cosine = this.dot(normalizedQuery, normalizedAnchor);
+            scores[vertical] = this.clamp01((cosine + 1) / 2);
+          }
+          result.set(input.processedArticleId, scores);
         }
-        scoresById.set(input.processedArticleId, scores);
-      }
+
+        return result;
+      },
+    );
+
+    for (const batch of chunkScores) {
+      batch.forEach((scores, processedArticleId) => {
+        scoresById.set(processedArticleId, scores);
+      });
     }
 
     return scoresById;
@@ -638,108 +705,101 @@ export class ArchiveClassificationService {
     orgId: string,
     inputs: PreparedArchiveInput[],
     rerankModel: string,
+    runtime: ArchiveClassificationRuntimeOptions,
   ): Promise<Map<string, ArchiveVerticalScores>> {
     const scoresById = new Map<string, ArchiveVerticalScores>();
     const documents = ARCHIVE_VERTICAL_ORDER.map(
       (vertical) => ARCHIVE_VERTICAL_ANCHORS[vertical],
     );
 
-    for (
-      let start = 0;
-      start < inputs.length;
-      start += ARCHIVE_CLASSIFICATION_RERANK_CONCURRENCY
-    ) {
-      const batch = inputs.slice(
-        start,
-        start + ARCHIVE_CLASSIFICATION_RERANK_CONCURRENCY,
-      );
-      const batchResults = await Promise.all(
-        batch.map(async (input) => {
-          let response;
-          try {
-            response = await this.liteLlm.rerank({
+    const results = await this.mapWithConcurrency(
+      inputs,
+      runtime.rerankMaxConcurrency,
+      async (input) => {
+        let response;
+        try {
+          response = await this.liteLlm.rerank({
+            orgId,
+            model: rerankModel,
+            query: input.classificationText,
+            documents,
+            topN: documents.length,
+            metadata: {
+              source: ARCHIVE_CLASSIFICATION_SOURCE,
+              layer: 'rerank',
               orgId,
-              model: rerankModel,
-              query: input.classificationText,
-              documents,
-              topN: documents.length,
-              metadata: {
-                source: ARCHIVE_CLASSIFICATION_SOURCE,
-                layer: 'rerank',
-                orgId,
-                processedArticleId: input.processedArticleId,
-                articleId: input.articleId,
-                taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
-              },
-            });
-          } catch (error) {
-            throw this.buildLayerFailureException(
-              'ARCHIVE_CLASSIFICATION_RERANK_FAILED',
-              'rerank',
-              error,
-              {
-                orgId,
-                processedArticleId: input.processedArticleId,
-                articleId: input.articleId,
-                rerankModel,
-              },
-            );
-          }
+              processedArticleId: input.processedArticleId,
+              articleId: input.articleId,
+              taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
+            },
+          });
+        } catch (error) {
+          throw this.buildLayerFailureException(
+            'ARCHIVE_CLASSIFICATION_RERANK_FAILED',
+            'rerank',
+            error,
+            {
+              orgId,
+              processedArticleId: input.processedArticleId,
+              articleId: input.articleId,
+              rerankModel,
+            },
+          );
+        }
 
-          const rawResults = (response.results ?? [])
-            .map((entry) => {
-              const index = typeof entry.index === 'number' ? entry.index : -1;
-              const score = typeof entry.score === 'number' ? entry.score : null;
-              if (index < 0 || index >= ARCHIVE_VERTICAL_ORDER.length || score === null) {
-                return null;
-              }
-              return {
-                vertical: ARCHIVE_VERTICAL_ORDER[index]!,
-                score,
-              };
-            })
-            .filter(
-              (
-                entry,
-              ): entry is { vertical: ArchiveVertical; score: number } =>
-                Boolean(entry),
-            );
+        const rawResults = (response.results ?? [])
+          .map((entry) => {
+            const index = typeof entry.index === 'number' ? entry.index : -1;
+            const score = typeof entry.score === 'number' ? entry.score : null;
+            if (index < 0 || index >= ARCHIVE_VERTICAL_ORDER.length || score === null) {
+              return null;
+            }
+            return {
+              vertical: ARCHIVE_VERTICAL_ORDER[index]!,
+              score,
+            };
+          })
+          .filter(
+            (
+              entry,
+            ): entry is { vertical: ArchiveVertical; score: number } =>
+              Boolean(entry),
+          );
 
-          if (rawResults.length === 0) {
-            throw this.buildException(
-              'ARCHIVE_CLASSIFICATION_RERANK_FAILED',
-              'Archive rerank returned no usable results.',
-              {
-                orgId,
-                processedArticleId: input.processedArticleId,
-                articleId: input.articleId,
-                layer: 'rerank',
-                rerankModel,
-              },
-            );
-          }
+        if (rawResults.length === 0) {
+          throw this.buildException(
+            'ARCHIVE_CLASSIFICATION_RERANK_FAILED',
+            'Archive rerank returned no usable results.',
+            {
+              orgId,
+              processedArticleId: input.processedArticleId,
+              articleId: input.articleId,
+              layer: 'rerank',
+              rerankModel,
+            },
+          );
+        }
 
-          const minScore = Math.min(...rawResults.map((entry) => entry.score));
-          const maxScore = Math.max(...rawResults.map((entry) => entry.score));
-          const normalized = createArchiveVerticalScoreMap();
+        const minScore = Math.min(...rawResults.map((entry) => entry.score));
+        const maxScore = Math.max(...rawResults.map((entry) => entry.score));
+        const normalized = createArchiveVerticalScoreMap();
 
-          for (const entry of rawResults) {
-            normalized[entry.vertical] =
-              maxScore === minScore
-                ? 1
-                : this.clamp01((entry.score - minScore) / (maxScore - minScore));
-          }
+        for (const entry of rawResults) {
+          normalized[entry.vertical] =
+            maxScore === minScore
+              ? 1
+              : this.clamp01((entry.score - minScore) / (maxScore - minScore));
+        }
 
-          return {
-            processedArticleId: input.processedArticleId,
-            scores: normalized,
-          };
-        }),
-      );
+        return {
+          processedArticleId: input.processedArticleId,
+          scores: normalized,
+        };
+      },
+    );
 
-      for (const result of batchResults) {
-        scoresById.set(result.processedArticleId, result.scores);
-      }
+    for (const result of results) {
+      scoresById.set(result.processedArticleId, result.scores);
     }
 
     return scoresById;
@@ -885,7 +945,7 @@ export class ArchiveClassificationService {
     }
   }
 
-  private buildClassificationText(input: ArchiveHybridClassificationInput): string {
+  private buildClassificationText(input: ArchiveClassifierInput): string {
     const title = this.normalizeOptionalString(input.title);
     const summary = this.normalizeOptionalString(input.summary);
     const topics = this.normalizeStringArray(input.topics);
@@ -1022,6 +1082,61 @@ export class ArchiveClassificationService {
       return 1;
     }
     return value;
+  }
+
+  private resolveRuntimeOptions(
+    options?: Partial<ArchiveClassificationRuntimeOptions>,
+  ): ArchiveClassificationRuntimeOptions {
+    return {
+      jobBatchSize: this.toPositiveInt(
+        options?.jobBatchSize,
+        ARCHIVE_CLASSIFICATION_EMBEDDING_BATCH_SIZE,
+      ),
+      embeddingBatchSize: this.toPositiveInt(
+        options?.embeddingBatchSize,
+        ARCHIVE_CLASSIFICATION_EMBEDDING_BATCH_SIZE,
+      ),
+      embeddingMaxConcurrency: this.toPositiveInt(options?.embeddingMaxConcurrency, 1),
+      rerankMaxConcurrency: this.toPositiveInt(
+        options?.rerankMaxConcurrency,
+        ARCHIVE_CLASSIFICATION_RERANK_CONCURRENCY,
+      ),
+    };
+  }
+
+  private toPositiveInt(value: unknown, fallback: number): number {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    return Math.max(1, Math.round(parsed));
+  }
+
+  private async mapWithConcurrency<TInput, TResult>(
+    items: TInput[],
+    concurrency: number,
+    mapper: (item: TInput) => Promise<TResult>,
+  ): Promise<TResult[]> {
+    if (items.length === 0) {
+      return [];
+    }
+    const results = new Array<TResult>(items.length);
+    const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: safeConcurrency }, async () => {
+      for (;;) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        if (currentIndex >= items.length) {
+          return;
+        }
+        results[currentIndex] = await mapper(items[currentIndex]!);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
   }
 
   private hashText(value: string): string {

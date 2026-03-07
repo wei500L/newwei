@@ -98,6 +98,35 @@ describe("ArchiveService", () => {
   });
 
   const makeArchiveClassificationServiceMock = () => ({
+    getCachedHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) =>
+      new Map(
+        inputs.map((input) => [
+          input.processedArticleId,
+          {
+            processedArticleId: input.processedArticleId,
+            articleId: input.articleId,
+            region: input.ruleContext.region,
+            vertical: ArchiveVertical.EAST_SEA,
+            countryCode: input.ruleContext.countryCode,
+            countryLabel: input.ruleContext.countryLabel,
+            entityTags: input.ruleContext.entityTags,
+            ruleScores: input.ruleContext.ruleScores,
+            embeddingScores: createArchiveVerticalScoreMap(),
+            rerankScores: createArchiveVerticalScoreMap(),
+            fusedScores: {
+              ...createArchiveVerticalScoreMap(),
+              [ArchiveVertical.EAST_SEA]: 1,
+            },
+            classificationTextHash: `hash-${input.processedArticleId}`,
+            classificationTextVersion: "archive-text-v1",
+            taxonomyVersion: "archive-vertical-v1",
+            pipelineVersion: "archive-hybrid-v1",
+            embeddingModel: "embedding-model",
+            rerankModel: "rerank-model",
+          },
+        ]),
+      ),
+    ),
     classifyHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) =>
       inputs.map((input) => ({
         processedArticleId: input.processedArticleId,
@@ -632,7 +661,7 @@ describe("ArchiveService", () => {
     expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(2);
   });
 
-  it("batch-calls hybrid classification and uses hybrid vertical output", async () => {
+  it("uses cached hybrid vertical output when classification cache is ready", async () => {
     const eastRow = makeRow("row-east", "2025-05-28T08:00:00.000Z");
     const southRow = makeRow("row-south", "2025-05-27T08:00:00.000Z");
     const prisma = {
@@ -653,6 +682,56 @@ describe("ArchiveService", () => {
     const vectorClient = { searchBestEffort: jest.fn() };
     const classifier = makeClassifierMock();
     const archiveClassification = {
+      getCachedHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) =>
+        new Map(
+          [
+            {
+              processedArticleId: inputs[0].processedArticleId,
+              articleId: inputs[0].articleId,
+              region: ArchiveRegion.APAC,
+              vertical: ArchiveVertical.EAST_SEA,
+              countryCode: 'PHL',
+              countryLabel: 'Philippines',
+              entityTags: ['Philippines'],
+              ruleScores: classifierSignalsResult.ruleScores,
+              embeddingScores: createArchiveVerticalScoreMap(),
+              rerankScores: createArchiveVerticalScoreMap(),
+              fusedScores: {
+                ...createArchiveVerticalScoreMap(),
+                [ArchiveVertical.EAST_SEA]: 1,
+              },
+              classificationTextHash: 'hash-east',
+              classificationTextVersion: 'archive-text-v1',
+              taxonomyVersion: 'archive-vertical-v1',
+              pipelineVersion: 'archive-hybrid-v1',
+              embeddingModel: 'embedding-model',
+              rerankModel: 'rerank-model',
+            },
+            {
+              processedArticleId: inputs[1].processedArticleId,
+              articleId: inputs[1].articleId,
+              region: ArchiveRegion.APAC,
+              vertical: ArchiveVertical.SOUTH_SEA,
+              countryCode: 'PHL',
+              countryLabel: 'Philippines',
+              entityTags: ['Philippines'],
+              ruleScores: classifierSignalsResult.ruleScores,
+              embeddingScores: createArchiveVerticalScoreMap(),
+              rerankScores: createArchiveVerticalScoreMap(),
+              fusedScores: {
+                ...createArchiveVerticalScoreMap(),
+                [ArchiveVertical.SOUTH_SEA]: 1,
+              },
+              classificationTextHash: 'hash-south',
+              classificationTextVersion: 'archive-text-v1',
+              taxonomyVersion: 'archive-vertical-v1',
+              pipelineVersion: 'archive-hybrid-v1',
+              embeddingModel: 'embedding-model',
+              rerankModel: 'rerank-model',
+            },
+          ].map((result) => [result.processedArticleId, result]),
+        ),
+      ),
       classifyHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) => [
         {
           processedArticleId: inputs[0].processedArticleId,
@@ -723,8 +802,7 @@ describe("ArchiveService", () => {
     });
 
     expect(classifier.classifyRuleSignals).toHaveBeenCalledTimes(2);
-    expect(archiveClassification.classifyHybridBatch).toHaveBeenCalledTimes(1);
-    expect(archiveClassification.classifyHybridBatch.mock.calls[0]?.[1]).toHaveLength(2);
+    expect(archiveClassification.getCachedHybridBatch).toHaveBeenCalledTimes(1);
     expect(
       result.groups.find((group) => group.vertical === ArchiveVertical.EAST_SEA)?.items,
     ).toHaveLength(1);

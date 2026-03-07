@@ -565,7 +565,9 @@ model ArchiveArticleClassification {
   updatedAt          DateTime         @updatedAt
 
   @@index([orgId, updatedAt])
+  @@index([orgId, region, updatedAt])
   @@index([orgId, vertical, updatedAt])
+  @@index([orgId, region, vertical, updatedAt])
 }
 
 model ArchiveVerticalAnchorEmbedding {

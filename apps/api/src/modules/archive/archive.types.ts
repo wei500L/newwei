@@ -29,6 +29,15 @@ export enum ArchiveMatchOrigin {
   HYBRID = "HYBRID",
 }
 
+export enum ArchivePreparationState {
+  IDLE = "IDLE",
+  QUEUED = "QUEUED",
+  PROCESSING = "PROCESSING",
+  PARTIAL = "PARTIAL",
+  READY = "READY",
+  FAILED = "FAILED",
+}
+
 export type ArchiveWeightValue = 1 | 2 | 3 | 4 | 5;
 
 export const ARCHIVE_WEIGHT_TO_VALUE: Record<
@@ -130,6 +139,15 @@ export interface ArchiveDigestResult {
   region: ArchiveRegion;
   totalCount: number;
   groups: ArchiveVerticalGroup[];
+  preparation: ArchivePreparationStatus;
+}
+
+export interface ArchivePreparationStatus {
+  state: ArchivePreparationState;
+  readyCount: number;
+  missingCount: number;
+  updatedAt: Date;
+  errorMessage?: string | null;
 }
 
 export interface ArchiveCalendarDayResult {

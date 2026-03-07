@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AssistantSafetySettingsPanel } from "@/components/settings/assistant-safety-settings-panel";
+import { ArchivePreparationSettingsPanel } from "@/components/settings/archive-preparation-settings-panel";
 import { EmailSettingsPanel } from "@/components/settings/email-settings-panel";
 import { EntityImpactGraphSettingsPanel } from "@/components/settings/entity-impact-graph-settings-panel";
 import {
@@ -1656,6 +1657,13 @@ export function SystemSettingsContent() {
           defaultValue: "LLM request logs",
         }),
         children: <LlmRequestLogsPanel />,
+      },
+      {
+        key: "archivePreparation",
+        label: t("systemSettings.tabs.archivePreparation", {
+          defaultValue: "Archive preparation",
+        }),
+        children: <ArchivePreparationSettingsPanel />,
       },
       {
         key: "assistantSafety",

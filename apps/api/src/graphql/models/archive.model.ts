@@ -8,6 +8,7 @@ import {
 } from "@nestjs/graphql";
 
 import {
+  ArchivePreparationState,
   ArchiveMatchOrigin,
   ArchiveRegion,
   ArchiveVertical,
@@ -18,6 +19,25 @@ registerEnumType(ArchiveRegion, { name: "ArchiveRegion" });
 registerEnumType(ArchiveVertical, { name: "ArchiveVertical" });
 registerEnumType(ArchiveWeight, { name: "ArchiveWeight" });
 registerEnumType(ArchiveMatchOrigin, { name: "ArchiveMatchOrigin" });
+registerEnumType(ArchivePreparationState, { name: "ArchivePreparationState" });
+
+@ObjectType()
+export class ArchivePreparationStatusModel {
+  @Field(() => ArchivePreparationState)
+  state!: ArchivePreparationState;
+
+  @Field(() => Int)
+  readyCount!: number;
+
+  @Field(() => Int)
+  missingCount!: number;
+
+  @Field(() => GraphQLISODateTime)
+  updatedAt!: Date;
+
+  @Field(() => String, { nullable: true })
+  errorMessage?: string | null;
+}
 
 @ObjectType()
 export class ArchiveEventItemModel {
@@ -113,6 +133,9 @@ export class ArchiveDigestModel {
 
   @Field(() => [ArchiveVerticalGroupModel])
   groups!: ArchiveVerticalGroupModel[];
+
+  @Field(() => ArchivePreparationStatusModel)
+  preparation!: ArchivePreparationStatusModel;
 }
 
 @ObjectType()

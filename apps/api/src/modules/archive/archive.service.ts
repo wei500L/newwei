@@ -14,10 +14,14 @@ import { VectorClientService } from "../vector/vector-client.service";
 
 import {
   ArchiveClassificationService,
+  type ArchiveClassificationRuntimeOptions,
   type ArchiveHybridClassificationResult,
 } from "./archive-classification.service";
 import { ArchiveClassifier } from "./archive.classifier";
+import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
 import {
+  ArchivePreparationState,
+  type ArchivePreparationStatus,
   ARCHIVE_VERTICAL_DISPLAY_NAME,
   ARCHIVE_VERTICAL_ORDER,
   ARCHIVE_WEIGHT_TO_VALUE,
@@ -65,7 +69,7 @@ interface SharedVectorRecallPayload {
   score: number;
 }
 
-interface ArchiveProcessedRow {
+export interface ArchiveProcessedRow {
   id: string;
   title: string | null;
   summary: string | null;
@@ -117,6 +121,7 @@ export class ArchiveService {
     private readonly vectorClient: VectorClientService,
     private readonly classifier: ArchiveClassifier,
     private readonly archiveClassification: ArchiveClassificationService,
+    private readonly archivePreparationQueue: ArchivePreparationQueueService,
   ) {}
 
   async getDigest(
@@ -169,10 +174,25 @@ export class ArchiveService {
     const grouped = new Map<ArchiveVertical, ArchiveDigestItem[]>(
       ARCHIVE_VERTICAL_ORDER.map((vertical) => [vertical, []]),
     );
-    const classificationById = await this.classifyRows(
+    const classificationById = await this.getCachedClassifications(
       orgId,
       searchResult.rows,
     );
+    const readyCount = classificationById.size;
+    const missingCount = Math.max(0, searchResult.rows.length - readyCount);
+    if (missingCount > 0) {
+      try {
+        await this.archivePreparationQueue.ensureDigestCoverage(
+          orgId,
+          this.toDateKey(anchorDate),
+        );
+      } catch (error) {
+        this.logger.warn(
+          { orgId, anchorDate: this.toDateKey(anchorDate), error },
+          "Failed to enqueue archive digest preparation job.",
+        );
+      }
+    }
 
     for (const row of searchResult.rows) {
       const classification = classificationById.get(row.id);
@@ -264,6 +284,12 @@ export class ArchiveService {
       region: input.region,
       totalCount,
       groups,
+      preparation: await this.buildDigestPreparationStatus(
+        orgId,
+        anchorDate,
+        readyCount,
+        missingCount,
+      ),
     };
   }
 
@@ -272,32 +298,68 @@ export class ArchiveService {
     input: ArchiveCalendarQueryInput,
   ): Promise<ArchiveCalendarDayResult[]> {
     const { start, end } = this.resolveMonthRange(input.month);
-    const rows = await this.loadRangeCandidates(orgId, start, end);
     const buckets = new Map<string, number>();
-    const classificationById = await this.classifyRows(orgId, rows);
+    let cursor: { processedAt: Date; id: string } | null = null;
+    let hasMissing = false;
 
-    for (const row of rows) {
-      const classification = classificationById.get(row.id);
-      if (!classification) {
-        continue;
-      }
-      const sortAt = this.resolveSortAt(row);
-      if (
-        sortAt.getTime() < start.getTime() ||
-        sortAt.getTime() > end.getTime()
-      ) {
-        continue;
-      }
-
-      if (input.region && classification.region !== input.region) {
-        continue;
-      }
-      if (input.vertical && classification.vertical !== input.vertical) {
-        continue;
+    for (;;) {
+      const rows = await this.findRangeCandidateBatch(
+        orgId,
+        start,
+        end,
+        cursor,
+        CALENDAR_SCAN_BATCH,
+      );
+      if (rows.length === 0) {
+        break;
       }
 
-      const dateKey = this.toDateKey(sortAt);
-      buckets.set(dateKey, (buckets.get(dateKey) ?? 0) + 1);
+      const classificationById = await this.getCachedClassifications(orgId, rows);
+      for (const row of rows) {
+        const classification = classificationById.get(row.id);
+        if (!classification) {
+          hasMissing = true;
+          continue;
+        }
+
+        const sortAt = this.resolveSortAt(row);
+        if (
+          sortAt.getTime() < start.getTime() ||
+          sortAt.getTime() > end.getTime()
+        ) {
+          continue;
+        }
+
+        if (input.region && classification.region !== input.region) {
+          continue;
+        }
+        if (input.vertical && classification.vertical !== input.vertical) {
+          continue;
+        }
+
+        const dateKey = this.toDateKey(sortAt);
+        buckets.set(dateKey, (buckets.get(dateKey) ?? 0) + 1);
+      }
+
+      const last = rows[rows.length - 1];
+      if (!last) {
+        break;
+      }
+      cursor = { processedAt: last.processedAt, id: last.id };
+      if (rows.length < CALENDAR_SCAN_BATCH) {
+        break;
+      }
+    }
+
+    if (hasMissing) {
+      try {
+        await this.archivePreparationQueue.ensureCalendarCoverage(orgId, input.month);
+      } catch (error) {
+        this.logger.warn(
+          { orgId, month: input.month, error },
+          "Failed to enqueue archive calendar preparation job.",
+        );
+      }
     }
 
     return Array.from(buckets.entries())
@@ -305,9 +367,10 @@ export class ArchiveService {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  private async classifyRows(
+  async classifyRowsBatch(
     orgId: string,
     rows: ArchiveProcessedRow[],
+    options?: Partial<ArchiveClassificationRuntimeOptions>,
   ): Promise<Map<string, ArchiveHybridClassificationResult>> {
     if (rows.length === 0) {
       return new Map();
@@ -315,27 +378,101 @@ export class ArchiveService {
 
     const results = await this.archiveClassification.classifyHybridBatch(
       orgId,
-      rows.map((row) => ({
-        processedArticleId: row.id,
-        articleId: row.article.id,
-        title: row.title,
-        summary: row.summary,
-        topics: row.topics,
-        entities: row.entities,
-        location: row.location,
-        ruleContext: this.classifier.classifyRuleSignals({
-          title: row.title,
-          summary: row.summary,
-          topics: row.topics,
-          entities: row.entities,
-          location: row.location,
-        }),
-      })),
+      this.buildClassificationInputs(rows),
+      options,
     );
 
-    return new Map(
-      results.map((result) => [result.processedArticleId, result]),
-    );
+    return new Map(results.map((result) => [result.processedArticleId, result]));
+  }
+
+  async getMissingRecentClassificationBatch(
+    orgId: string,
+    anchorDate: Date,
+    limit: number,
+  ): Promise<{ rows: ArchiveProcessedRow[]; hasMoreMissing: boolean }> {
+    let cursor: { processedAt: Date; id: string } | null = null;
+    let scanned = 0;
+    const missingRows: ArchiveProcessedRow[] = [];
+
+    while (scanned < MAX_BASE_SCAN) {
+      const remaining = MAX_BASE_SCAN - scanned;
+      const take = Math.min(DIGEST_SCAN_BATCH, remaining);
+      const batch = await this.findRecentCandidateBatch(
+        orgId,
+        anchorDate,
+        cursor,
+        take,
+      );
+      if (batch.length === 0) {
+        return { rows: missingRows, hasMoreMissing: false };
+      }
+
+      const cached = await this.getCachedClassifications(orgId, batch);
+      for (const row of batch) {
+        if (!cached.has(row.id)) {
+          missingRows.push(row);
+          if (missingRows.length > limit) {
+            return { rows: missingRows.slice(0, limit), hasMoreMissing: true };
+          }
+        }
+      }
+
+      scanned += batch.length;
+      const last = batch[batch.length - 1];
+      if (!last) {
+        break;
+      }
+      cursor = { processedAt: last.processedAt, id: last.id };
+      if (batch.length < take) {
+        break;
+      }
+    }
+
+    return { rows: missingRows, hasMoreMissing: false };
+  }
+
+  async getMissingMonthClassificationBatch(
+    orgId: string,
+    month: string,
+    limit: number,
+  ): Promise<{ rows: ArchiveProcessedRow[]; hasMoreMissing: boolean }> {
+    const { start, end } = this.resolveMonthRange(month);
+    let cursor: { processedAt: Date; id: string } | null = null;
+    const missingRows: ArchiveProcessedRow[] = [];
+
+    for (;;) {
+      const batch = await this.findRangeCandidateBatch(
+        orgId,
+        start,
+        end,
+        cursor,
+        CALENDAR_SCAN_BATCH,
+      );
+      if (batch.length === 0) {
+        return { rows: missingRows, hasMoreMissing: false };
+      }
+
+      const cached = await this.getCachedClassifications(orgId, batch);
+      for (const row of batch) {
+        if (!cached.has(row.id)) {
+          missingRows.push(row);
+          if (missingRows.length > limit) {
+            return { rows: missingRows.slice(0, limit), hasMoreMissing: true };
+          }
+        }
+      }
+
+      const last = batch[batch.length - 1];
+      if (!last) {
+        break;
+      }
+      cursor = { processedAt: last.processedAt, id: last.id };
+      if (batch.length < CALENDAR_SCAN_BATCH) {
+        break;
+      }
+    }
+
+    return { rows: missingRows, hasMoreMissing: false };
   }
 
   async getDetail(
@@ -993,6 +1130,20 @@ export class ArchiveService {
     return rows;
   }
 
+  async findRecentCandidateBatch(
+    orgId: string,
+    anchorDate: Date,
+    cursor: { processedAt: Date; id: string } | null,
+    take: number,
+  ): Promise<ArchiveProcessedRow[]> {
+    return (await this.prisma.processedArticle.findMany({
+      where: this.buildRecentCandidatesWhere(orgId, anchorDate, cursor),
+      include: this.buildArchiveRowInclude(orgId),
+      orderBy: [{ processedAt: "desc" }, { id: "desc" }],
+      take,
+    })) as ArchiveProcessedRow[];
+  }
+
   private async loadRangeCandidates(orgId: string, start: Date, end: Date) {
     const rows: ArchiveProcessedRow[] = [];
     let cursor: { processedAt: Date; id: string } | null = null;
@@ -1030,6 +1181,100 @@ export class ArchiveService {
     }
 
     return rows;
+  }
+
+  async findRangeCandidateBatch(
+    orgId: string,
+    start: Date,
+    end: Date,
+    cursor: { processedAt: Date; id: string } | null,
+    take: number,
+  ): Promise<ArchiveProcessedRow[]> {
+    return (await this.prisma.processedArticle.findMany({
+      where: this.buildRangeCandidatesWhere(orgId, start, end, cursor),
+      include: this.buildArchiveRowInclude(orgId),
+      orderBy: [{ processedAt: "desc" }, { id: "desc" }],
+      take,
+    })) as ArchiveProcessedRow[];
+  }
+
+  private buildClassificationInputs(rows: ArchiveProcessedRow[]) {
+    return rows.map((row) => ({
+      processedArticleId: row.id,
+      articleId: row.article.id,
+      title: row.title,
+      summary: row.summary,
+      topics: row.topics,
+      entities: row.entities,
+      location: row.location,
+      ruleContext: this.classifier.classifyRuleSignals({
+        title: row.title,
+        summary: row.summary,
+        topics: row.topics,
+        entities: row.entities,
+        location: row.location,
+      }),
+    }));
+  }
+
+  private async getCachedClassifications(
+    orgId: string,
+    rows: ArchiveProcessedRow[],
+  ): Promise<Map<string, ArchiveHybridClassificationResult>> {
+    if (rows.length === 0) {
+      return new Map();
+    }
+    return this.archiveClassification.getCachedHybridBatch(
+      orgId,
+      this.buildClassificationInputs(rows),
+    );
+  }
+
+  private async buildDigestPreparationStatus(
+    orgId: string,
+    anchorDate: Date,
+    readyCount: number,
+    missingCount: number,
+  ): Promise<ArchivePreparationStatus> {
+    if (missingCount <= 0) {
+      return {
+        state: ArchivePreparationState.READY,
+        readyCount,
+        missingCount: 0,
+        updatedAt: new Date(),
+        errorMessage: null,
+      };
+    }
+
+    let queuedStatus: ArchivePreparationStatus | null = null;
+    try {
+      queuedStatus = await this.archivePreparationQueue.getDigestStatus(
+        orgId,
+        this.toDateKey(anchorDate),
+      );
+    } catch (error) {
+      this.logger.warn(
+        { orgId, anchorDate: this.toDateKey(anchorDate), error },
+        "Failed to read archive digest preparation status.",
+      );
+    }
+    if (readyCount > 0) {
+      return {
+        state: ArchivePreparationState.PARTIAL,
+        readyCount,
+        missingCount,
+        updatedAt: queuedStatus?.updatedAt ?? new Date(),
+        errorMessage: queuedStatus?.errorMessage ?? null,
+      };
+    }
+
+    return {
+      state: queuedStatus?.state ?? ArchivePreparationState.QUEUED,
+      readyCount,
+      missingCount,
+      updatedAt: queuedStatus?.updatedAt ?? new Date(),
+      errorMessage: queuedStatus?.errorMessage ?? null,
+    };
   }
 
   private buildArchiveRowInclude(orgId: string) {

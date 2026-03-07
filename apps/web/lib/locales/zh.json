@@ -1966,6 +1966,17 @@
         "timelineEmpty": "暂无关联时间线",
         "related": "关联原文",
         "relatedEmpty": "暂无关联原文"
+      },
+      "preparation": {
+        "failedTitle": "归档后台补齐失败",
+        "failedBody": "后台任务已中断，请点击刷新后重试。",
+        "partialTitle": "归档数据正在后台补齐",
+        "partialBody": "当前已展示 {{ready}} 条就绪结果，仍有 {{missing}} 条待补齐；日历标记与每日计数仅覆盖已准备部分。",
+        "loadingTitle": "归档数据准备中",
+        "loadingBody": "后台正在预热归档分类；日历标记与每日计数暂只覆盖已准备部分，请稍后刷新查看完整结果。",
+        "searchCoverageTitle": "搜索与归档预热状态已分离",
+        "searchCoverageBody": "当前搜索功能可用，但归档底库仍在后台补齐，搜索结果只覆盖已完成归档分类的记录。",
+        "calendarCoverageHint": "日历标记和本日统计当前仅覆盖已完成归档分类的部分数据。"
       }
     },
     "digest": {
@@ -5453,9 +5464,61 @@
       "newsSourceRuntimeSecrets": "新闻源密钥",
       "vectorService": "向量服务",
       "modelService": "模型服务",
-      "akshare": "AKShare"
+      "akshare": "AKShare",
+      "archivePreparation": "归档预热"
     },
-    "description": "系统设置说明"
+    "description": "系统设置说明",
+    "archivePreparation": {
+      "description": "配置归档后台预热的分批大小和 embedding/rerank 并发。较低数值可以减少内存占用与限流压力。",
+      "notice": {
+        "title": "仅影响后台预热任务",
+        "body": "这些限制仅作用于归档预热 worker。模型选择仍然跟随当前启用的 LLM Gateway embedding/rerank profile。"
+      },
+      "cardTitle": "归档预热设置",
+      "source": {
+        "default": "使用默认值",
+        "db": "已保存到数据库"
+      },
+      "fields": {
+        "jobBatchSize": "任务批大小",
+        "embeddingBatchSize": "Embedding 批大小",
+        "embeddingMaxConcurrency": "Embedding 最大并发",
+        "rerankMaxConcurrency": "Rerank 最大并发"
+      },
+      "hint": {
+        "title": "推荐起始值",
+        "body": "建议先使用批大小 20、并发 1/1。只有在确认 rerank RPM 稳定后再逐步上调。"
+      },
+      "actions": {
+        "refreshStatus": "刷新状态"
+      },
+      "messages": {
+        "saved": "归档预热设置已保存。",
+        "reset": "归档预热设置已重置。"
+      },
+      "errors": {
+        "loadFailed": "加载归档预热设置失败。",
+        "saveFailed": "保存归档预热设置失败。",
+        "resetFailed": "重置归档预热设置失败。"
+      },
+      "modal": {
+        "resetTitle": "重置归档预热设置？",
+        "resetBody": "这会恢复默认的低内存批量和并发限制。"
+      },
+      "ops": {
+        "title": "运维可见性",
+        "updatedAt": "更新时间 {{value}}",
+        "pending": "待处理：{{count}}",
+        "active": "执行中：{{count}}",
+        "waiting": "等待中：{{count}}",
+        "failed": "失败：{{count}}",
+        "completed": "完成：{{count}}",
+        "latestFailure": "最近失败原因",
+        "empty": "暂无最近的归档预热活动。",
+        "scopeDigest": "日报 {{value}}",
+        "scopeCalendar": "月历 {{value}}"
+      }
+    }
   },
   "analysis": {
     "streamError": "分析流错误：{{error}}",
