@@ -1,8 +1,13 @@
+import { ProcessedItemModel } from '@modular/mongo';
 import { ContentSubscriptionKind } from '@prisma/client';
 
 import { UserContentSubscriptionsService } from '../user-content-subscriptions.service';
 
 describe('UserContentSubscriptionsService', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('falls back to top catalog items when behavior profile is empty', async () => {
     const prisma = {
       userSetting: {
@@ -90,5 +95,102 @@ describe('UserContentSubscriptionsService', () => {
     expect(result.items.map((item) => item.displayValue)).toEqual(['NVIDIA', 'AI chips']);
     expect(liteLlm.embedding).not.toHaveBeenCalled();
     expect(liteLlm.rerank).not.toHaveBeenCalled();
+  });
+
+  it('normalizes invalid catalog limit before querying Prisma', async () => {
+    const prisma = {
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    jest.spyOn(service as any, 'ensureCatalogFresh').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+
+    const result = await service.listCatalog('org-1', { limit: Number.NaN });
+
+    expect(prisma.contentSubscriptionCatalog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 200 }),
+    );
+    expect(result.limit).toBe(200);
+  });
+
+  it('filters uncategorized catalog entries when taxonomy sentinel is used', async () => {
+    const prisma = {
+      contentSubscriptionCatalog: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    jest.spyOn(service as any, 'ensureCatalogFresh').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+
+    await service.listCatalog('org-1', { taxonomyPath: '__uncategorized__' });
+
+    expect(prisma.contentSubscriptionCatalog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ taxonomyPath: null }),
+      }),
+    );
+  });
+
+  it('merges duplicate entity candidates from different entity types', async () => {
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        {
+          displayValue: 'NVIDIA',
+          entityType: 'organization',
+          count: 5,
+          lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
+        },
+        {
+          displayValue: 'NVIDIA',
+          entityType: 'company',
+          count: 3,
+          lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
+        },
+      ]),
+    };
+    jest.spyOn(ProcessedItemModel, 'aggregate').mockResolvedValue([]);
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const candidates = await (service as any).loadEntityCandidates('org-1');
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: ContentSubscriptionKind.entity,
+      normalizedValue: 'nvidia',
+      displayValue: 'NVIDIA',
+      count: 8,
+    });
+    expect(candidates[0].lastSeenAt.toISOString()).toBe('2026-03-06T00:00:00.000Z');
   });
 });

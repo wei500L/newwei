@@ -25,6 +25,7 @@ const CATALOG_SYNC_TTL_SECONDS = 6 * 60 * 60;
 const CATALOG_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
 const CATALOG_MAX_CANDIDATES_PER_KIND = 240;
 const CATALOG_LIST_LIMIT = 200;
+const UNCATEGORIZED_TAXONOMY_FILTER = '__uncategorized__';
 const EMBEDDING_BATCH_SIZE = 64;
 const RECOMMENDATION_LIMIT = 12;
 const RECOMMENDATION_CANDIDATE_LIMIT = 48;
@@ -339,14 +340,17 @@ export class UserContentSubscriptionsService {
     await this.ensureCatalogFresh(orgId);
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
-    const limit = Math.min(Math.max(options?.limit ?? CATALOG_LIST_LIMIT, 1), CATALOG_LIST_LIMIT);
+    const limit = this.normalizeCatalogLimit(options?.limit);
+    const taxonomyPathFilter = options?.taxonomyPath?.trim();
     const where: Prisma.ContentSubscriptionCatalogWhereInput = {
       orgId,
       count: { gte: CATALOG_MIN_COUNT },
       lastSeenAt: { gte: since },
       ...(options?.kind ? { kind: options.kind } : {}),
-      ...(options?.taxonomyPath
-        ? { taxonomyPath: { startsWith: options.taxonomyPath.trim() } }
+      ...(taxonomyPathFilter
+        ? taxonomyPathFilter === UNCATEGORIZED_TAXONOMY_FILTER
+          ? { taxonomyPath: null }
+          : { taxonomyPath: { startsWith: taxonomyPathFilter } }
         : {}),
       ...(options?.query?.trim()
         ? {
@@ -1110,12 +1114,30 @@ export class UserContentSubscriptionsService {
       if (!normalized.normalizedValue) {
         continue;
       }
-      merged.set(this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue), {
+      const key = this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue);
+      const count = this.toPositiveInt(row.count);
+      const lastSeenAt = row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
+      const existing = merged.get(key);
+      if (existing) {
+        existing.count += count;
+        if (lastSeenAt > existing.lastSeenAt) {
+          existing.lastSeenAt = lastSeenAt;
+        }
+        const existingEntityType =
+          typeof existing.metadata?.entityType === 'string'
+            ? existing.metadata.entityType
+            : null;
+        if (!existingEntityType && row.entityType) {
+          existing.metadata = { ...(existing.metadata ?? {}), entityType: row.entityType };
+        }
+        continue;
+      }
+      merged.set(key, {
         kind: ContentSubscriptionKind.entity,
         normalizedValue: normalized.normalizedValue,
         displayValue: normalized.displayValue,
-        count: this.toPositiveInt(row.count),
-        lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date(),
+        count,
+        lastSeenAt,
         metadata: row.entityType ? { entityType: row.entityType } : undefined,
       });
     }
@@ -1668,6 +1690,13 @@ export class UserContentSubscriptionsService {
       return Math.round(value);
     }
     return 0;
+  }
+
+  private normalizeCatalogLimit(limit: number | undefined) {
+    if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+      return CATALOG_LIST_LIMIT;
+    }
+    return Math.min(Math.max(Math.floor(limit), 1), CATALOG_LIST_LIMIT);
   }
 
   private toAdHocResolution(

@@ -5,6 +5,8 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
+import { createApiClient } from '@/lib/api-client';
+import { captureClientError } from '@/lib/client-telemetry';
 import {
   type ContentSubscriptionBatchResponse,
   type ContentSubscriptionCatalogItem,
@@ -14,8 +16,6 @@ import {
   type ContentSubscriptionListResponse,
   buildContentSubscriptionKey,
 } from '@/lib/content-subscriptions';
-import { createApiClient } from '@/lib/api-client';
-import { captureClientError } from '@/lib/client-telemetry';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
 interface ContentSubscriptionsTabProps {
@@ -30,6 +30,7 @@ const DATE_TIME_FORMAT = {
   hour: '2-digit',
   minute: '2-digit',
 } as const;
+const UNCATEGORIZED_TAXONOMY_FILTER = '__uncategorized__';
 
 interface GroupedItems<T extends { taxonomyPath: string | null; taxonomyDisplayName: string | null; taxonomyLabels: string[] }> {
   groupKey: string;
@@ -72,7 +73,9 @@ export function ContentSubscriptionsTab({ accessToken, active }: ContentSubscrip
       if (catalogQuery.trim()) {
         params.set('query', catalogQuery.trim());
       }
-      if (taxonomyFilter) {
+      if (taxonomyFilter === UNCATEGORIZED_TAXONOMY_FILTER) {
+        params.set('taxonomyPath', UNCATEGORIZED_TAXONOMY_FILTER);
+      } else if (taxonomyFilter) {
         params.set('taxonomyPath', taxonomyFilter);
       }
       params.set('limit', '200');
@@ -157,7 +160,7 @@ export function ContentSubscriptionsTab({ accessToken, active }: ContentSubscrip
   const taxonomyOptions = useMemo(() => {
     const groups = groupByTaxonomy(catalog?.items ?? []);
     return groups.map((group) => ({
-      value: group.groupKey === '__uncategorized__' ? null : group.groupKey,
+      value: group.groupKey,
       label: `${group.title} (${group.items.length})`,
     }));
   }, [catalog?.items]);
@@ -446,7 +449,7 @@ export function ContentSubscriptionsTab({ accessToken, active }: ContentSubscrip
             </Button>
             {taxonomyOptions.map((option) => (
               <Button
-                key={option.label}
+                key={option.value}
                 size="small"
                 type={taxonomyFilter === option.value ? 'primary' : 'default'}
                 onClick={() => setTaxonomyFilter(option.value)}
@@ -632,7 +635,7 @@ function groupByTaxonomy<T extends { taxonomyPath: string | null; taxonomyDispla
 ): GroupedItems<T>[] {
   const groups = new Map<string, GroupedItems<T>>();
   for (const item of items) {
-    const groupKey = item.taxonomyPath ?? '__uncategorized__';
+    const groupKey = item.taxonomyPath ?? UNCATEGORIZED_TAXONOMY_FILTER;
     const current = groups.get(groupKey);
     if (current) {
       current.items.push(item);

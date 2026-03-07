@@ -579,7 +579,10 @@ model ArchiveVerticalAnchorEmbedding {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@unique([vertical, taxonomyVersion, embeddingModel, anchorTextHash])
+  @@unique(
+    [vertical, taxonomyVersion, embeddingModel, anchorTextHash],
+    map: "ArchiveVerticalAnchorEmbedding_vertical_taxVer_embModel_hash_uq"
+  )
 }
 
 model ArticleEntityLink {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation, useQuery } from "@apollo/client";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import { useMutation, useQuery } from "@apollo/client";
 import {
   Alert,
   Button,
@@ -357,8 +357,14 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const processedErrorName = toString(processedError?.name);
 
   const keyPoints = toStringList(processedResult?.key_points);
-  const topics = toStringList(processedResult?.topics);
-  const entities = toEntityNames(processedResult?.entities);
+  const topics = useMemo(
+    () => toStringList(processedResult?.topics),
+    [processedResult?.topics],
+  );
+  const entities = useMemo(
+    () => toEntityNames(processedResult?.entities),
+    [processedResult?.entities],
+  );
   const publishedAt =
     toString(item?.publishedAt) ?? toString(processedResult?.published_at);
   const source =
@@ -453,6 +459,17 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   const extraTopics = Math.max(topics.length - topicsDisplay.length, 0);
   const extraEntities = Math.max(entities.length - entitiesDisplay.length, 0);
   const primaryTopic = topics[0]?.trim() ?? "";
+  const metadataLookupEntries = useMemo(
+    () => [
+      ...topics
+        .slice(0, 8)
+        .map((topic) => ({ kind: "topic" as const, value: topic })),
+      ...entities
+        .slice(0, 8)
+        .map((entity) => ({ kind: "entity" as const, value: entity })),
+    ],
+    [entities, topics],
+  );
   const duplicateScore = formatRatioAsPercent(duplicateSimilarity, locale);
   const duplicateScoreLabel = duplicateScore ?? t("common.notAvailable");
   const llmModel = llm?.model ?? t("common.notAvailable");
@@ -499,17 +516,17 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
   };
   useEffect(() => {
     if (sessionStatus !== "authenticated" || !session?.accessToken) {
-      setContentMetadataByKey({});
-      setRelatedTopics([]);
+      setContentMetadataByKey((current) =>
+        Object.keys(current).length === 0 ? current : {},
+      );
+      setRelatedTopics((current) => (current.length === 0 ? current : []));
       return;
     }
 
-    const entries = [
-      ...topics.slice(0, 8).map((topic) => ({ kind: "topic" as const, value: topic })),
-      ...entities.slice(0, 8).map((entity) => ({ kind: "entity" as const, value: entity })),
-    ];
-    if (entries.length === 0) {
-      setContentMetadataByKey({});
+    if (metadataLookupEntries.length === 0) {
+      setContentMetadataByKey((current) =>
+        Object.keys(current).length === 0 ? current : {},
+      );
       return;
     }
 
@@ -518,7 +535,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       try {
         const response = await apiClient.post<ContentSubscriptionCatalogResponse>(
           "user-content-subscriptions/catalog/lookup",
-          { entries },
+          { entries: metadataLookupEntries },
         );
         if (cancelled) {
           return;
@@ -544,7 +561,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     return () => {
       cancelled = true;
     };
-  }, [apiClient, entities, session?.accessToken, sessionStatus, topics]);
+  }, [apiClient, metadataLookupEntries, session?.accessToken, sessionStatus]);
 
   useEffect(() => {
     if (
@@ -552,7 +569,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       !session?.accessToken ||
       !primaryTopic
     ) {
-      setRelatedTopics([]);
+      setRelatedTopics((current) => (current.length === 0 ? current : []));
       return;
     }
 
@@ -574,7 +591,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           "Failed to load related topics from item detail",
           relatedError,
         );
-        setRelatedTopics([]);
+        setRelatedTopics((current) => (current.length === 0 ? current : []));
       }
     };
     void loadRelatedTopics();

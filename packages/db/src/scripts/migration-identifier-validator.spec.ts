@@ -24,6 +24,16 @@ function writeMigrationSql(relativeDir: string, content: string): string {
 }
 
 describe('migration-identifier-validator', () => {
+  it('accepts checked-in migrations in this package', () => {
+    const repoMigrationsDir = path.resolve(process.cwd(), 'prisma/migrations');
+    const violations = findMigrationIdentifierViolations({
+      migrationsDir: repoMigrationsDir,
+      maxLength: 64
+    });
+
+    assert.equal(violations.length, 0, JSON.stringify(violations, null, 2));
+  });
+
   it('returns no violations for valid identifier lengths', () => {
     writeMigrationSql(
       'ok_case',
