@@ -611,26 +611,38 @@ const validateMigrationIdentifiersForDockerUp = (repoRoot) => {
   process.exit(1);
 };
 
-const validatePrismaSchemaForDockerUp = (repoRoot) => {
-  const args = ['--filter', '@modular/db', 'exec', 'prisma', 'validate', '--schema', 'prisma/schema.prisma'];
-  const validationEnv = {
-    ...process.env,
-    DATABASE_URL: process.env.DATABASE_URL ?? 'mysql://root:secret@127.0.0.1:3306/app'
-  };
-
-  const result = runWithStatusCapture('pnpm', args, repoRoot, {
-    env: validationEnv,
+const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd) => {
+  const checkScript = [
+    'set -eu',
+    "echo '[docker-up][prisma-preflight] pnpm install...'",
+    'pnpm install --unsafe-perm --frozen-lockfile >/dev/null',
+    "export DATABASE_URL=\"${DATABASE_URL:-mysql://root:secret@mysql:3306/app}\"",
+    "echo '[docker-up][prisma-preflight] prisma validate...'",
+    'pnpm --filter @modular/db exec prisma validate --schema prisma/schema.prisma'
+  ].join('\n');
+  const args = [
+    ...composeBaseArgs,
+    'run',
+    '--rm',
+    '--no-deps',
+    '--entrypoint',
+    'sh',
+    'api',
+    '-ec',
+    checkScript
+  ];
+  const result = runWithStatusCapture('docker', args, cwd, {
     stdio: ['inherit', 'pipe', 'pipe'],
-    timeout: 120_000
+    timeout: 300_000
   });
   printCapturedOutput(result);
 
   if (result.error) {
     if (result.error.code === 'ETIMEDOUT') {
-      logError('Prisma schema preflight timed out after 120s.');
-      logError(`           Try manually: ${summarizeCommand('pnpm', args)}`);
+      logError('Prisma schema preflight timed out after 300s.');
+      logError(`           Try manually: ${summarizeCommand('docker', args)}`);
     }
-    logError(`Failed to execute command: ${summarizeCommand('pnpm', args)}`);
+    logError(`Failed to execute command: ${summarizeCommand('docker', args)}`);
     logError(`           ${result.error.message}`);
     process.exit(1);
   }
@@ -702,8 +714,13 @@ const main = () => {
   if (upServices.has('api')) {
     log('Validating Prisma migration identifiers...');
     validateMigrationIdentifiersForDockerUp(repoRoot);
+    const apiImageRef = `${projectName}-api:latest`;
+    if (!dockerImageExists(apiImageRef, scriptsDir)) {
+      log('API image is missing; building api image for Prisma schema preflight...');
+      run('docker', [...composeBaseArgs, 'build', 'api'], scriptsDir);
+    }
     log('Validating Prisma schema syntax...');
-    validatePrismaSchemaForDockerUp(repoRoot);
+    validatePrismaSchemaForDockerUp(composeBaseArgs, scriptsDir);
   }
 
   const nodeWorkspaceServices = ['api', 'vector', 'web'];

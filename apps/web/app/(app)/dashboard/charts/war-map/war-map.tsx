@@ -25,8 +25,9 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
-import { createDeckMapRuntime, extractMapBbox } from '@/lib/map/map-runtime';
+import { createDeckMapRuntime, extractMapBbox, setDeckOverlayProps } from '@/lib/map/map-runtime';
 import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from '@/lib/map/map-style';
+import { useRenderableContainer } from '@/lib/map/use-renderable-container';
 import { safeHttpUrl } from '@/lib/url';
 import { useSituationMonitorMonitorsStore } from '@/store/situation-monitor-monitors';
 import { useDashboardRangeStore } from '@/store/time-range';
@@ -248,6 +249,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [queryViewport, setQueryViewport] = useState<{
     bbox?: [number, number, number, number];
     zoom: number;
@@ -294,7 +296,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     return () => observer.disconnect();
   }, []);
 
-  const enabled = Boolean(session?.accessToken && inView);
+  const enabled = Boolean(session?.accessToken && inView && hasRenderableMapContainer);
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
@@ -403,7 +405,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   });
 
   useEffect(() => {
-    if (!mapContainerRef.current || !inView || mapRef.current) {
+    if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || mapRef.current) {
       return;
     }
 
@@ -452,7 +454,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       runtime.destroy();
       setMapReady(false);
     };
-  }, [inView, setViewState]);
+  }, [hasRenderableMapContainer, inView, setViewState]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -484,11 +486,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !inView) {
+    if (!map || !mapReady || !inView || !hasRenderableMapContainer) {
       return;
     }
     map.resize();
-  }, [inView, mapReady]);
+  }, [hasRenderableMapContainer, inView, mapReady]);
 
   useEffect(() => {
     if (hasHydratedUrlRef.current || typeof window === 'undefined') {
@@ -955,11 +957,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     if (!deckOverlayRef.current) {
       return;
     }
-    deckOverlayRef.current.setProps({
-      layers: deckData.deckLayers,
+    setDeckOverlayProps(deckOverlayRef.current, {
+      layers: hasRenderableMapContainer ? deckData.deckLayers : [],
       getTooltip: tooltipGetter,
     });
-  }, [deckData.deckLayers, tooltipGetter]);
+  }, [deckData.deckLayers, hasRenderableMapContainer, tooltipGetter]);
 
   const anyLoading = eventsQuery.isLoading || newsQuery.isLoading || layersQuery.isLoading;
   const errors = [eventsQuery.error, newsQuery.error, layersQuery.error].filter(Boolean);

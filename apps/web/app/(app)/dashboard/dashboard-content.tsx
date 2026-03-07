@@ -82,6 +82,8 @@ function SpacetimeVizSkeleton() {
 
 const QUEUE_STATS_CARD_MIN_HEIGHT = 360;
 const QUEUE_STATS_CHART_HEIGHT = 260;
+const DASHBOARD_STREAM_TOAST_ID = "dashboard-stream-connection";
+const DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS = 1_200;
 
 const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
   loading: () => <DashboardSkeleton className="min-h-[200px]" rows={4} />

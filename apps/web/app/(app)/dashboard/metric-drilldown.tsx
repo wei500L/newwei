@@ -21,8 +21,9 @@ import { createApiClient } from "@/lib/api-client";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
-import { createDeckMapRuntime } from "@/lib/map/map-runtime";
+import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
 import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
+import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import {
   formatGranularityLabelLocalized,
   pickCoarsestGranularity,
@@ -120,6 +121,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   const hasAlignedMapViewRef = useRef(false);
 
   const [mapReady, setMapReady] = useState(false);
+  const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, visible);
   const [mapError, setMapError] = useState<string | null>(null);
   const [geoJsonData, setGeoJsonData] = useState<GeoJsonFeatureCollection | null>(null);
   const [geoMapCenter, setGeoMapCenter] = useState<[number, number] | null>(null);
@@ -194,7 +196,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
   }, [end, geoJsonData, mapLoadFailedLabel, session?.accessToken, start, visible]);
 
   useEffect(() => {
-    if (!visible || !mapContainerRef.current || mapRef.current) {
+    if (!visible || !mapContainerRef.current || !hasRenderableMapContainer || mapRef.current) {
       return;
     }
 
@@ -225,15 +227,15 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
       runtime.destroy();
       setMapReady(false);
     };
-  }, [visible]);
+  }, [hasRenderableMapContainer, visible]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!visible || !map || !mapReady) {
+    if (!visible || !map || !mapReady || !hasRenderableMapContainer) {
       return;
     }
     map.resize();
-  }, [mapReady, visible]);
+  }, [hasRenderableMapContainer, mapReady, visible]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -377,11 +379,11 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
     if (!overlayRef.current) {
       return;
     }
-    overlayRef.current.setProps({
-      layers: mapLayers,
+    setDeckOverlayProps(overlayRef.current, {
+      layers: hasRenderableMapContainer ? mapLayers : [],
       getTooltip: mapTooltipGetter,
     });
-  }, [mapLayers, mapTooltipGetter]);
+  }, [hasRenderableMapContainer, mapLayers, mapTooltipGetter]);
 
   const seriesUnit = useMemo(() => {
     const series = data?.history ?? [];

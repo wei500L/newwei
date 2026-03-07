@@ -1,7 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { useCallback, useMemo } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+
+import { getNewsItemStableKey, sanitizeNewsItems } from "../lib/newsnow-items";
 
 export interface NewsItem {
   id: string | number;
@@ -128,7 +131,7 @@ const api = createApiClient();
 function coerceSourceResponse(data: SourceResponse): SourceResponse {
   return {
     ...data,
-    items: Array.isArray(data.items) ? data.items : [],
+    items: sanitizeNewsItems(data.items) as NewsItem[],
   };
 }
 
@@ -142,13 +145,13 @@ function normalizeSourceResponse(
 
   const previousPositions = new Map<string, number>();
   previous.items.forEach((item, index) => {
-    previousPositions.set(String(item.id), index);
+    previousPositions.set(getNewsItemStableKey(item, index), index);
   });
 
   return {
     ...incoming,
     items: incoming.items.map((item, index) => {
-      const previousIndex = previousPositions.get(String(item.id));
+      const previousIndex = previousPositions.get(getNewsItemStableKey(item, index));
       if (previousIndex === undefined) {
         return item;
       }
@@ -183,8 +186,10 @@ async function fetchResolvedByUrl(
   return (data ?? { matched: false }) as NewsResolveResponse;
 }
 
-async function fetchHottestAnalysis(): Promise<NewsnowHottestAnalysisResponse> {
-  const { data } = await api.get('/news-aggregator/hottest-analysis');
+async function fetchHottestAnalysis(
+  apiClient: ReturnType<typeof createApiClient>,
+): Promise<NewsnowHottestAnalysisResponse> {
+  const { data } = await apiClient.get('/news-aggregator/hottest-analysis');
   return data as NewsnowHottestAnalysisResponse;
 }
 
@@ -279,12 +284,27 @@ export function useResolveNewsUrl() {
 }
 
 export function useHottestAnalysis(enabled: boolean) {
+  const { data: session, status } = useSession();
+  const accessToken = session?.accessToken as string | undefined;
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadItems =
+    permissions.includes('items.read') || permissions.includes('items.write');
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken }),
+    [accessToken],
+  );
+  const queryEnabled = enabled && status === 'authenticated' && !!accessToken && canReadItems;
+
   return useQuery<NewsnowHottestAnalysisResponse>({
-    queryKey: ['newsnow-hottest-analysis'],
-    queryFn: fetchHottestAnalysis,
-    enabled,
+    queryKey: [
+      'newsnow-hottest-analysis',
+      session?.orgId ?? 'anonymous-org',
+      session?.user?.id ?? 'anonymous-user',
+    ],
+    queryFn: () => fetchHottestAnalysis(apiClient),
+    enabled: queryEnabled,
     staleTime: 1000 * 60,
-    refetchInterval: enabled ? 1000 * 60 * 2 : false,
+    refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
     refetchOnWindowFocus: false,
   });
 }

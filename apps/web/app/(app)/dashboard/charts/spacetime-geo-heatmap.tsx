@@ -16,8 +16,9 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { createDeckMapRuntime } from "@/lib/map/map-runtime";
+import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
 import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
+import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -279,6 +280,7 @@ export function SpacetimeGeoHeatmap({
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [articlePageState, setArticlePageState] = useState<{
     scopeKey: string;
@@ -315,7 +317,7 @@ export function SpacetimeGeoHeatmap({
     return () => observer.disconnect();
   }, []);
 
-  const enabled = Boolean(session?.accessToken && inView);
+  const enabled = Boolean(session?.accessToken && inView && hasRenderableMapContainer);
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
@@ -467,7 +469,7 @@ export function SpacetimeGeoHeatmap({
   });
 
   useEffect(() => {
-    if (!mapContainerRef.current || !inView || mapRef.current) {
+    if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || mapRef.current) {
       return;
     }
 
@@ -500,7 +502,7 @@ export function SpacetimeGeoHeatmap({
       runtime.destroy();
       setMapReady(false);
     };
-  }, [inView]);
+  }, [hasRenderableMapContainer, inView]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -526,11 +528,11 @@ export function SpacetimeGeoHeatmap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !inView) {
+    if (!map || !mapReady || !inView || !hasRenderableMapContainer) {
       return;
     }
     map.resize();
-  }, [inView, mapReady]);
+  }, [hasRenderableMapContainer, inView, mapReady]);
 
   const rawPoints = heatmapQuery.data?.points ?? [];
   const effectiveBucketGranularity = useMemo<
@@ -783,11 +785,11 @@ export function SpacetimeGeoHeatmap({
     if (!overlayRef.current) {
       return;
     }
-    overlayRef.current.setProps({
-      layers: deckLayers,
+    setDeckOverlayProps(overlayRef.current, {
+      layers: hasRenderableMapContainer ? deckLayers : [],
       getTooltip: tooltipGetter,
     });
-  }, [deckLayers, tooltipGetter]);
+  }, [deckLayers, hasRenderableMapContainer, tooltipGetter]);
 
   const updatedAtLabel = useMemo(() => {
     const iso = heatmapQuery.data?.updatedAt;

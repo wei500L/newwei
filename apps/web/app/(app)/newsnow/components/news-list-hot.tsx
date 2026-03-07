@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem, NewsnowAnalyzedItem } from "../hooks/use-news-sources";
 import { buildItemAnalysisBadges } from "../lib/newsnow-hottest-analysis";
+import { getNewsItemStableKey } from "../lib/newsnow-items";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
@@ -98,10 +99,6 @@ function ExtraInfo({ item }: { item: NewsItem }) {
   );
 }
 
-function toItemKey(item: NewsItem): string {
-  return String(item.id);
-}
-
 export function NewsListHot({
   items,
   onOpenEvent,
@@ -121,7 +118,7 @@ export function NewsListHot({
     <ol className="flex flex-col gap-2.5">
       {items.map((item, index) => {
         const href = isMobile ? item.mobileUrl || item.url : item.url;
-        const itemKey = toItemKey(item);
+        const itemKey = getNewsItemStableKey(item, index);
         const dedupeMeta = crossSourceMetaByItemId?.[itemKey];
         const isFresh = freshSet.has(itemKey);
         const analysisBadges = buildItemAnalysisBadges(analysisByItemId?.[itemKey]);
@@ -143,7 +140,7 @@ export function NewsListHot({
         };
         return (
           <li
-            key={item.id}
+            key={itemKey}
             className="group relative border-b border-[var(--border)] pb-1.5 last:border-b-0"
           >
             <div className="flex items-start gap-2">

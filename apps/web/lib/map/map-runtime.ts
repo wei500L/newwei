@@ -1,10 +1,11 @@
-import { MapboxOverlay } from "@deck.gl/mapbox";
+import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox";
 import maplibregl, {
   type Map as MapLibreMap,
   type StyleSpecification,
 } from "maplibre-gl";
 
 import { DEFAULT_WORLD_BBOX, MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "./map-style";
+import { hasRenderableContainerSize } from "./renderable-container";
 
 export interface DeckMapInitialViewState {
   lat: number;
@@ -31,8 +32,37 @@ export interface DeckMapRuntime {
   destroy: () => void;
 }
 
+type DeckLayerCandidate = {
+  id?: unknown;
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+export function sanitizeDeckLayers<T>(layers: readonly T[] | null | undefined): T[] {
+  return (layers ?? []).filter((layer): layer is T => {
+    if (!layer || typeof layer !== 'object') {
+      return false;
+    }
+    const id = (layer as DeckLayerCandidate).id;
+    return typeof id === 'string' && id.trim().length > 0;
+  });
+}
+
+export function setDeckOverlayProps(
+  overlay: Pick<MapboxOverlay, 'setProps'>,
+  props: Partial<MapboxOverlayProps>,
+): void {
+  const nextProps =
+    props.layers === undefined
+      ? props
+      : {
+          ...props,
+          layers: sanitizeDeckLayers(props.layers as unknown[]),
+        };
+
+  overlay.setProps(nextProps as MapboxOverlayProps);
 }
 
 export function extractMapBbox(
@@ -118,6 +148,9 @@ export function createDeckMapRuntime(
   const resizeObserver =
     typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(() => {
+          if (!hasRenderableContainerSize(container)) {
+            return;
+          }
           map.resize();
         })
       : null;
@@ -175,6 +208,16 @@ export function createDeckMapRuntime(
       map.off("load", handleLoad);
       map.off("moveend", handleMoveEnd);
       map.off("error", handleMapError);
+      try {
+        setDeckOverlayProps(overlay, { layers: [] });
+      } catch {
+        // Ignore teardown races; finalize/remove below is authoritative.
+      }
+      try {
+        overlay.finalize();
+      } catch {
+        // Ignore duplicate finalization during fast refresh or parent map teardown.
+      }
       map.remove();
     },
   };

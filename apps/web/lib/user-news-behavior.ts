@@ -1,4 +1,4 @@
-import { createApiClient } from './api-client';
+import { createApiClient, getCachedApiSession } from './api-client';
 
 export type UserNewsBehaviorType =
   | 'view'
@@ -25,6 +25,14 @@ const MAX_SESSION_VIEW_ENTRIES = 1200;
 const recentEvents = new Map<string, number>();
 const sessionViewedEvents = new Map<string, number>();
 let sessionViewCacheHydrated = false;
+
+function canReadItems(permissions: unknown): boolean {
+  if (!Array.isArray(permissions)) {
+    return false;
+  }
+
+  return permissions.includes('items.read') || permissions.includes('items.write');
+}
 
 function normalizeValue(value?: string | null, maxLength = 160): string | undefined {
   if (typeof value !== 'string') {
@@ -148,6 +156,12 @@ function shouldSkipViewInSession(key: string, now: number) {
 
 export async function trackUserNewsBehavior(payload: UserNewsBehaviorPayload) {
   if (typeof window === 'undefined') {
+    return;
+  }
+
+  const session = await getCachedApiSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  if (!session?.accessToken || !canReadItems(permissions)) {
     return;
   }
 

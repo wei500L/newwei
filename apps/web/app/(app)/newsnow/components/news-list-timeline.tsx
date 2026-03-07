@@ -6,6 +6,7 @@ import { Button, Dropdown, type MenuProps } from "antd";
 import { useIsMobile } from "../hooks/use-is-mobile";
 import type { NewsItem } from "../hooks/use-news-sources";
 import { useRelativeTime } from "../hooks/use-relative-time";
+import { getNewsItemStableKey } from "../lib/newsnow-items";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
 import type { NewsnowDensityMode } from "../store/newsnow-store";
 
@@ -57,10 +58,6 @@ function ExtraInfo({ item }: { item: NewsItem }) {
   );
 }
 
-function toItemKey(item: NewsItem): string {
-  return String(item.id);
-}
-
 export function NewsListTimeline({
   items,
   onOpenEvent,
@@ -78,10 +75,10 @@ export function NewsListTimeline({
 
   return (
     <ol className="ml-2 flex flex-col border-l border-[var(--border)]">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const href = isMobile ? item.mobileUrl || item.url : item.url;
         const displayTime = getRelativeTime(item.pubDate || item.extra?.date);
-        const itemKey = toItemKey(item);
+        const itemKey = getNewsItemStableKey(item, index);
         const dedupeMeta = crossSourceMetaByItemId?.[itemKey];
         const isFresh = freshSet.has(itemKey);
         const availability = actionAvailabilityByItemId?.[itemKey] ?? {
@@ -103,7 +100,7 @@ export function NewsListTimeline({
 
         return (
           <li
-            key={`${item.id}-${item.pubDate || item.extra?.date || ""}`}
+            key={itemKey}
             className="group relative ml-3.5 border-b border-[var(--border)] pb-2.5 pt-2 last:border-b-0"
           >
             <span className="absolute -left-[18px] top-[12px] h-[7px] w-[7px] rounded-full bg-[var(--primary)] ring-[3px] ring-[var(--background)] shadow-sm" />

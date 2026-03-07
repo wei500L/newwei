@@ -38,6 +38,7 @@ import {
   formatShortDuration,
   resolveNewsFreshnessState,
 } from "../lib/newsnow-freshness";
+import { getNewsItemStableKey } from "../lib/newsnow-items";
 import {
   RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
   buildResolvePrefetchAttemptState,
@@ -140,10 +141,6 @@ async function mapWithConcurrency<T, R>(
     }),
   );
   return results;
-}
-
-function toItemKey(item: NewsItem): string {
-  return String(item.id);
 }
 
 function areStringArraysEqual(current: string[], next: string[]): boolean {
@@ -381,7 +378,7 @@ export function NewsnowCard({
       return sourceItems;
     }
     return sourceItems.filter((item) => {
-      const meta = dedupMetaMap[toItemKey(item)];
+      const meta = dedupMetaMap[getNewsItemStableKey(item)];
       return !meta || meta.isPrimary;
     });
   }, [data?.items, dedupMetaMap, hideCrossSourceDuplicates]);
@@ -392,7 +389,7 @@ export function NewsnowCard({
   );
   const exposurePrimaryItem = displayItems[0];
   const exposurePrimaryKey = exposurePrimaryItem
-    ? `${toItemKey(exposurePrimaryItem)}::${exposurePrimaryItem.url}`
+    ? `${getNewsItemStableKey(exposurePrimaryItem)}::${exposurePrimaryItem.url}`
     : "";
 
   useEffect(() => {
@@ -416,7 +413,7 @@ export function NewsnowCard({
       hasTrackedExposureRef.current = true;
       void trackUserNewsBehavior({
         type: "view",
-        itemId: toItemKey(firstItem),
+        itemId: getNewsItemStableKey(firstItem),
         source: sourceBehaviorKey,
         url: firstItem.url,
       });
@@ -490,7 +487,9 @@ export function NewsnowCard({
   );
 
   useEffect(() => {
-    const currentIds = (data?.items ?? []).map(toItemKey);
+    const currentIds = (data?.items ?? []).map((item, index) =>
+      getNewsItemStableKey(item, index),
+    );
     if (currentIds.length === 0) {
       previousIdsRef.current = [];
       return;
@@ -557,7 +556,7 @@ export function NewsnowCard({
       typeof AbortController !== "undefined" ? new AbortController() : null;
     const candidates = displayItems;
     const prefetchKey = candidates
-      .map((item) => `${toItemKey(item)}::${item.url}`)
+      .map((item) => `${getNewsItemStableKey(item)}::${item.url}`)
       .join("|");
     const nowMs = Date.now();
     const previousPrefetch = lastResolvedPrefetchRef.current;
@@ -618,7 +617,7 @@ export function NewsnowCard({
           return;
         }
         matchedCount += 1;
-        const itemKey = toItemKey(item);
+        const itemKey = getNewsItemStableKey(item);
         nextByItemId[itemKey] = {
           ...(entry.eventId ? { eventId: entry.eventId } : {}),
           ...(entry.itemId ? { itemId: entry.itemId } : {}),
@@ -653,7 +652,7 @@ export function NewsnowCard({
   }, [displayItems, resolveNewsUrl]);
 
   const markItemSeen = useCallback((item: NewsItem) => {
-    const itemId = toItemKey(item);
+    const itemId = getNewsItemStableKey(item);
     setNewItemIds((prev) => {
       if (!prev.includes(itemId)) {
         return prev;
@@ -709,7 +708,7 @@ export function NewsnowCard({
     async (item: NewsItem) => {
       markItemSeen(item);
       clearLiveUnread(id);
-      const cached = resolvedTargetsByItemId[toItemKey(item)];
+      const cached = resolvedTargetsByItemId[getNewsItemStableKey(item)];
       if (cached?.eventId) {
         trackSourceInteraction(id, "open_event");
         void trackUserNewsBehavior({
@@ -774,7 +773,7 @@ export function NewsnowCard({
     async (item: NewsItem) => {
       markItemSeen(item);
       clearLiveUnread(id);
-      const cached = resolvedTargetsByItemId[toItemKey(item)];
+      const cached = resolvedTargetsByItemId[getNewsItemStableKey(item)];
       if (cached?.itemId) {
         trackSourceInteraction(id, "open_item");
         void trackUserNewsBehavior({
@@ -872,7 +871,7 @@ export function NewsnowCard({
   const actionAvailabilityByItemId = useMemo(() => {
     const map: Record<string, { hasEvent: boolean; hasItem: boolean }> = {};
     displayItems.forEach((item) => {
-      const key = toItemKey(item);
+      const key = getNewsItemStableKey(item);
       const resolved = resolvedTargetsByItemId[key];
       map[key] = {
         hasEvent: Boolean(resolved?.eventId),
