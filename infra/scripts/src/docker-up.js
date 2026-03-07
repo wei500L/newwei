@@ -611,6 +611,39 @@ const validateMigrationIdentifiersForDockerUp = (repoRoot) => {
   process.exit(1);
 };
 
+const validatePrismaSchemaForDockerUp = (repoRoot) => {
+  const args = ['--filter', '@modular/db', 'exec', 'prisma', 'validate', '--schema', 'prisma/schema.prisma'];
+  const validationEnv = {
+    ...process.env,
+    DATABASE_URL: process.env.DATABASE_URL ?? 'mysql://root:secret@127.0.0.1:3306/app'
+  };
+
+  const result = runWithStatusCapture('pnpm', args, repoRoot, {
+    env: validationEnv,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    timeout: 120_000
+  });
+  printCapturedOutput(result);
+
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      logError('Prisma schema preflight timed out after 120s.');
+      logError(`           Try manually: ${summarizeCommand('pnpm', args)}`);
+    }
+    logError(`Failed to execute command: ${summarizeCommand('pnpm', args)}`);
+    logError(`           ${result.error.message}`);
+    process.exit(1);
+  }
+
+  if (result.status === 0) {
+    log('Prisma schema syntax verified.');
+    return;
+  }
+
+  logError('Prisma schema validation failed. Fix packages/db/prisma/schema.prisma and retry.');
+  process.exit(result.status ?? 1);
+};
+
 const main = () => {
   const scriptsDir = path.resolve(__dirname, "..");
   const repoRoot = path.resolve(scriptsDir, "../..");
@@ -669,6 +702,8 @@ const main = () => {
   if (upServices.has('api')) {
     log('Validating Prisma migration identifiers...');
     validateMigrationIdentifiersForDockerUp(repoRoot);
+    log('Validating Prisma schema syntax...');
+    validatePrismaSchemaForDockerUp(repoRoot);
   }
 
   const nodeWorkspaceServices = ['api', 'vector', 'web'];
