@@ -1695,6 +1695,14 @@
         "failed": "Translation failed."
       }
     },
+    "newsnow": {
+      "runtimeSecrets": {
+        "openSettings": "Go to System Settings > News source secrets",
+        "openSettingsWithKey": "Go to System Settings > News source secrets (Suggested: {{key}})",
+        "maybeRequired": "This source may require a runtime secret first",
+        "maybeRequiredWithKey": "This source may require a runtime secret first (Suggested: {{key}})"
+      }
+    },
     "topics": {
       "title": "Topics & Events",
       "subtitle": "Track clustered events and topic momentum with a focused reading flow.",
@@ -5040,8 +5048,11 @@
         "default": "Using environment/default secrets",
         "saved": "Database-managed runtime secrets",
         "unavailable": "Unavailable (settings load failed)",
+        "configured": "Configured",
+        "draft": "Draft",
         "notStored": "Not stored",
         "entryCount": "Entries: {{count}}",
+        "visibleCount": "Visible: {{count}}",
         "pendingRemoves": "Pending removes: {{count}}"
       },
       "fields": {
@@ -5057,13 +5068,37 @@
         "value": "Paste secret value",
         "keepExistingValue": "Leave empty to keep existing value"
       },
+      "hints": {
+        "suggestedKeys": "Suggested keys: {{keys}}",
+        "envFallback": "Env fallback: {{keys}}",
+        "requiredAnyOf": "Need one of: {{keys}}",
+        "optionalOverride": "This source supports optional runtime-secret overrides."
+      },
       "actions": {
-        "addRow": "Add entry"
+        "addRow": "Add entry",
+        "quickAdd": "Quick add supported sources"
       },
       "messages": {
         "saved": "Saved",
-        "noChanges": "No changes to save"
+        "noChanges": "No changes to save",
+        "focusedExisting": "Focused existing entry: {{sourceId}} / {{key}}"
       },
+      "sections": {
+        "required": "Required secrets",
+        "optional": "Optional overrides"
+      },
+      "groups": {
+        "totalCount": "Keys: {{count}}",
+        "persistedCount": "Configured: {{count}}",
+        "draftCount": "Drafts: {{count}}"
+      },
+      "filters": {
+        "onlyConfigured": "Configured only",
+        "onlyRequired": "Required only",
+        "search": "Search source ID / name / key",
+        "clear": "Clear filters"
+      },
+      "emptyFiltered": "No entries match the current source search or filters.",
       "errors": {
         "loadFailed": "Failed to load runtime secrets settings",
         "saveFailed": "Failed to save runtime secrets settings",

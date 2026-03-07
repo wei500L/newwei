@@ -1,6 +1,7 @@
 import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 import type { NewsItem } from "../news-aggregator.types";
+import { WEIBO_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog';
 
 import * as cheerio from "cheerio"
 
@@ -23,11 +24,10 @@ function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys:
 export default defineSource(async (context) => {
   const baseurl = "https://s.weibo.com"
   const url = `${baseurl}/top/summary?cate=realtimehot`
-  const runtimeCookie = resolveRuntimeSecret(context?.secrets, [
-    "cookie",
-    "weibo.cookie",
-    "weibo_cookie",
-  ])
+  const runtimeCookie = resolveRuntimeSecret(
+    context?.secrets,
+    WEIBO_RUNTIME_SECRETS_CONFIG.suggestedKeys ?? [],
+  )
 
   const html = await myFetch(url, {
     headers: {

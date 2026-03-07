@@ -1,4 +1,6 @@
 import { BadRequestException, HttpException } from '@nestjs/common';
+
+import { NewsSourceRuntimeSecretRequiredError } from './news-aggregator.errors';
 import { NewsAggregatorService } from './news-aggregator.service';
 
 const metadataFixture = {
@@ -385,6 +387,32 @@ describe('NewsAggregatorService personalization order', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
       expect(error).toMatchObject({ status: 400 });
+    }
+  });
+
+  it('maps missing runtime secrets to a structured 424 response', async () => {
+    cacheServiceMock.withLock.mockRejectedValue(
+      new NewsSourceRuntimeSecretRequiredError({
+        sourceId: 'producthunt',
+        requiredKeys: ['token', 'api_token'],
+        message: 'Product Hunt API token is required',
+      }),
+    );
+
+    try {
+      await service.fetchSource('producthunt');
+      throw new Error('expected fetchSource to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error).toMatchObject({
+        status: 424,
+        response: expect.objectContaining({
+          code: 'NEWS_SOURCE_RUNTIME_SECRET_REQUIRED',
+          message: 'Runtime secret required for news source: producthunt',
+          sourceId: 'producthunt',
+          requiredKeys: ['token', 'api_token'],
+        }),
+      });
     }
   });
 });

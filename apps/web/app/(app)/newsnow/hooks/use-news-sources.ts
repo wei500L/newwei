@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useMemo } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+import type { NewsSourceRuntimeSecretsConfig } from '@/lib/news-source-runtime-secrets';
 
 import { getNewsItemStableKey, sanitizeNewsItems } from "../lib/newsnow-items";
 
@@ -31,6 +32,7 @@ export interface Source {
   column?: string;
   home?: string;
   disable?: boolean;
+  runtimeSecrets?: NewsSourceRuntimeSecretsConfig;
   redirect?: string;
 }
 

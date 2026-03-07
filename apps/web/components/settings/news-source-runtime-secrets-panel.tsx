@@ -1,8 +1,9 @@
 "use client";
 
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { Alert, AutoComplete, Button, Input, Space, Spin, Table, Tag, Typography, message } from "antd";
+import { Alert, AutoComplete, Button, Collapse, Empty, Input, Space, Spin, Switch, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +11,19 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { extractApiError } from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
+import {
+  filterRuntimeSecretSources,
+  findExistingRuntimeSecretRow,
+  getPrimaryRuntimeSecretKey,
+  getRuntimeSecretEnvFallbackKeys,
+  getRuntimeSecretRequirementLevel,
+  getRuntimeSecretSuggestedKeys,
+  listConfiguredRuntimeSecretSourceIds,
+  matchesRuntimeSecretRowQuery,
+  matchesRuntimeSecretSourceQuery,
+  sourceSupportsRuntimeSecrets,
+  type NewsSourceRuntimeSecretsConfig,
+} from '@/lib/news-source-runtime-secrets';
 
 type RuntimeSecretsSource = "none" | "db";
 
@@ -31,8 +45,13 @@ interface RuntimeSecretsUpdatePayload {
   removes: Array<{ sourceId: string; key: string }>;
 }
 
+interface NewsAggregatorSourceMetadata {
+  name?: string;
+  runtimeSecrets?: NewsSourceRuntimeSecretsConfig;
+}
+
 interface NewsAggregatorMetadataResponse {
-  sources?: Record<string, unknown>;
+  sources?: Record<string, NewsAggregatorSourceMetadata>;
 }
 
 interface SecretRow {
@@ -104,18 +123,32 @@ function toRows(entries: RuntimeSecretPublicEntry[]): SecretRow[] {
 
 export function NewsSourceRuntimeSecretsPanel() {
   const { t } = useTranslation();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
 
   const [settings, setSettings] = useState<RuntimeSecretsResponse>(EMPTY_SETTINGS);
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [removed, setRemoved] = useState<Array<{ sourceId: string; key: string }>>([]);
-  const [sourceSuggestions, setSourceSuggestions] = useState<string[]>([]);
+  const [sourceCatalog, setSourceCatalog] = useState<Record<string, NewsAggregatorSourceMetadata>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
+  const [showOnlyConfiguredSources, setShowOnlyConfiguredSources] = useState(
+    () => searchParams.get('configuredOnly') === '1',
+  );
+  const [showOnlyRequiredSources, setShowOnlyRequiredSources] = useState(
+    () => searchParams.get('requiredOnly') === '1',
+  );
+  const [sourceQuery, setSourceQuery] = useState(() => searchParams.get('sourceId')?.trim() ?? '');
+  const [expandedSourceIds, setExpandedSourceIds] = useState<string[]>([]);
 
   const rowCounterRef = useRef(0);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const handledDeepLinkSourceIdRef = useRef<string | null>(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -135,6 +168,18 @@ export function NewsSourceRuntimeSecretsPanel() {
     };
   }, []);
 
+  const createPrefilledDraftRow = useCallback(
+    (sourceId: string, secretKey?: string): SecretRow => {
+      const row = createDraftRow();
+      return {
+        ...row,
+        sourceId,
+        key: secretKey ?? '',
+      };
+    },
+    [createDraftRow],
+  );
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
@@ -152,8 +197,7 @@ export function NewsSourceRuntimeSecretsPanel() {
 
       try {
         const metadataResponse = await apiClient.get<NewsAggregatorMetadataResponse>("news-aggregator/metadata");
-        const sourceIds = Object.keys(metadataResponse.data?.sources ?? {}).sort((a, b) => a.localeCompare(b));
-        setSourceSuggestions(sourceIds);
+        setSourceCatalog(metadataResponse.data?.sources ?? {});
       } catch (metadataError) {
         captureClientError("Failed to load news-aggregator metadata for runtime secrets panel", metadataError);
       }
@@ -168,6 +212,7 @@ export function NewsSourceRuntimeSecretsPanel() {
       setSettings(EMPTY_SETTINGS);
       setRows([]);
       setRemoved([]);
+      setSourceCatalog({});
       messageApi.error(detail);
     } finally {
       setLoading(false);
@@ -178,26 +223,320 @@ export function NewsSourceRuntimeSecretsPanel() {
     void loadSettings();
   }, [loadSettings]);
 
+  useEffect(() => {
+    const nextSourceId = searchParams.get('sourceId')?.trim() ?? '';
+    setSourceQuery((current) => (current === nextSourceId ? current : nextSourceId));
+    setShowOnlyConfiguredSources(searchParams.get('configuredOnly') === '1');
+    setShowOnlyRequiredSources(searchParams.get('requiredOnly') === '1');
+  }, [searchParams]);
+
+  const filteredSourceEntries = useMemo(
+    () =>
+      filterRuntimeSecretSources(
+        Object.entries(sourceCatalog).map(([sourceId, metadata]) => ({ sourceId, metadata })),
+        rows,
+        {
+          onlyConfigured: showOnlyConfiguredSources,
+          onlyRequired: showOnlyRequiredSources,
+        },
+      ).filter((entry) => matchesRuntimeSecretSourceQuery(entry, sourceQuery)),
+    [rows, showOnlyConfiguredSources, showOnlyRequiredSources, sourceCatalog, sourceQuery],
+  );
+
+  const configuredSourceIds = useMemo(
+    () => new Set(listConfiguredRuntimeSecretSourceIds(rows)),
+    [rows],
+  );
+
   const sourceOptions = useMemo(
     () =>
       Array.from(
         new Set([
-          ...sourceSuggestions,
+          ...filteredSourceEntries.map(({ sourceId }) => sourceId),
           ...rows.map((row) => normalizeSourceId(row.sourceId)).filter((value) => value.length > 0)
         ])
       )
         .sort((a, b) => a.localeCompare(b))
-        .map((value) => ({ value })),
-    [rows, sourceSuggestions]
+        .map((value) => {
+          const sourceMetadata = sourceCatalog[value];
+          const supportedKeys = getRuntimeSecretSuggestedKeys(sourceMetadata?.runtimeSecrets);
+          return {
+            value,
+            label: sourceMetadata?.name
+              ? `${sourceMetadata.name} (${value})${supportedKeys.length > 0 ? ` · ${supportedKeys.join(', ')}` : ''}`
+              : value,
+          };
+        }),
+    [filteredSourceEntries, rows, sourceCatalog]
   );
+
+  const quickAddSources = useMemo(
+    () =>
+      filteredSourceEntries
+        .map(({ sourceId, metadata }) => [sourceId, metadata] as const)
+        .sort(([leftId, leftMeta], [rightId, rightMeta]) => {
+          const leftName = leftMeta.name?.trim() || leftId;
+          const rightName = rightMeta.name?.trim() || rightId;
+          return leftName.localeCompare(rightName);
+        }),
+    [filteredSourceEntries],
+  );
+
+  const quickAddSections = useMemo(
+    () => [
+      {
+        level: 'required' as const,
+        title: t('systemSettings.newsSourceRuntimeSecrets.sections.required', {
+          defaultValue: 'Required secrets',
+        }),
+        sources: quickAddSources.filter(
+          ([, metadata]) => getRuntimeSecretRequirementLevel(metadata) === 'required',
+        ),
+      },
+      {
+        level: 'optional' as const,
+        title: t('systemSettings.newsSourceRuntimeSecrets.sections.optional', {
+          defaultValue: 'Optional overrides',
+        }),
+        sources: quickAddSources.filter(
+          ([, metadata]) => getRuntimeSecretRequirementLevel(metadata) === 'optional',
+        ),
+      },
+    ].filter((section) => section.sources.length > 0),
+    [quickAddSources, t],
+  );
+
+  const activeSourceMetadata = useMemo(
+    () => sourceCatalog[normalizeSourceId(sourceQuery)],
+    [sourceCatalog, sourceQuery],
+  );
+
+  const hasViewFilters = Boolean(
+    sourceQuery.trim() || showOnlyConfiguredSources || showOnlyRequiredSources,
+  );
+
+  const keyOptionsBySourceId = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(sourceCatalog).map(([sourceId, metadata]) => [
+        sourceId,
+        getRuntimeSecretSuggestedKeys(metadata.runtimeSecrets).map((value) => ({ value })),
+      ]),
+    ) as Record<string, Array<{ value: string }>>;
+  }, [sourceCatalog]);
 
   const updateRow = useCallback((rowKey: string, patch: Partial<SecretRow>) => {
     setRows((prev) => prev.map((row) => (row.rowKey === rowKey ? { ...row, ...patch } : row)));
   }, []);
 
+  const focusRow = useCallback(
+    (rowKey: string, sourceId?: string) => {
+      if (sourceId) {
+        const normalizedSourceId = normalizeSourceId(sourceId);
+        setExpandedSourceIds((current) =>
+          current.includes(normalizedSourceId)
+            ? current
+            : [...current, normalizedSourceId],
+        );
+      }
+      setHighlightedRowKey(rowKey);
+      window.setTimeout(() => {
+        setHighlightedRowKey((current) => (current === rowKey ? null : current));
+      }, 2400);
+      window.requestAnimationFrame(() => {
+        const rowElement = tableContainerRef.current?.querySelector<HTMLElement>(
+          `[data-row-key="${rowKey}"]`,
+        );
+        rowElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+    [],
+  );
+
+  const replaceViewStateQueryParams = useCallback(
+    (input: {
+      sourceId?: string;
+      configuredOnly?: boolean;
+      requiredOnly?: boolean;
+    }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      const nextSourceId = input.sourceId?.trim() ?? '';
+      if (nextSourceId) {
+        next.set('sourceId', nextSourceId);
+      } else {
+        next.delete('sourceId');
+      }
+      if (input.configuredOnly) {
+        next.set('configuredOnly', '1');
+      } else {
+        next.delete('configuredOnly');
+      }
+      if (input.requiredOnly) {
+        next.set('requiredOnly', '1');
+      } else {
+        next.delete('requiredOnly');
+      }
+      const nextQuery = next.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
   const handleAddRow = useCallback(() => {
     setRows((prev) => [...prev, createDraftRow()]);
   }, [createDraftRow]);
+
+  const handleQuickAddSource = useCallback(
+    (sourceId: string) => {
+      setSourceQuery(sourceId);
+      setShowOnlyConfiguredSources(false);
+      setShowOnlyRequiredSources(false);
+      replaceViewStateQueryParams({
+        sourceId,
+        configuredOnly: false,
+        requiredOnly: false,
+      });
+      const sourceMetadata = sourceCatalog[sourceId];
+      const preferredKey = getPrimaryRuntimeSecretKey(sourceMetadata?.runtimeSecrets);
+      const existingRow = findExistingRuntimeSecretRow(rows, sourceId, preferredKey);
+      if (existingRow) {
+        focusRow(existingRow.rowKey, sourceId);
+        messageApi.info(
+          t('systemSettings.newsSourceRuntimeSecrets.messages.focusedExisting', {
+            defaultValue: 'Existing entry focused: {{sourceId}} / {{key}}',
+            sourceId,
+            key: existingRow.key || preferredKey || '-',
+          }),
+        );
+        return;
+      }
+      const nextRow = createPrefilledDraftRow(sourceId, preferredKey);
+      setRows((prev) => [...prev, nextRow]);
+      focusRow(nextRow.rowKey, sourceId);
+    },
+    [createPrefilledDraftRow, focusRow, messageApi, replaceViewStateQueryParams, rows, sourceCatalog, t],
+  );
+
+  const resetViewFilters = useCallback(() => {
+    setSourceQuery('');
+    setShowOnlyConfiguredSources(false);
+    setShowOnlyRequiredSources(false);
+    replaceViewStateQueryParams({
+      sourceId: '',
+      configuredOnly: false,
+      requiredOnly: false,
+    });
+  }, [replaceViewStateQueryParams]);
+
+  useEffect(() => {
+    const deepLinkedSourceId = searchParams.get('sourceId')?.trim();
+    if (!deepLinkedSourceId) {
+      handledDeepLinkSourceIdRef.current = null;
+      return;
+    }
+    if (loading) {
+      return;
+    }
+    if (handledDeepLinkSourceIdRef.current === deepLinkedSourceId) {
+      return;
+    }
+
+    handledDeepLinkSourceIdRef.current = deepLinkedSourceId;
+    setShowOnlyConfiguredSources(false);
+    setShowOnlyRequiredSources(false);
+    setSourceQuery(deepLinkedSourceId);
+
+    const existingRow = findExistingRuntimeSecretRow(rows, deepLinkedSourceId);
+    if (existingRow) {
+      focusRow(existingRow.rowKey, deepLinkedSourceId);
+      return;
+    }
+
+    const sourceMetadata = sourceCatalog[normalizeSourceId(deepLinkedSourceId)];
+    if (!sourceSupportsRuntimeSecrets(sourceMetadata)) {
+      return;
+    }
+
+    const preferredKey = getPrimaryRuntimeSecretKey(sourceMetadata?.runtimeSecrets);
+    const nextRow = createPrefilledDraftRow(deepLinkedSourceId, preferredKey);
+    setRows((prev) => [...prev, nextRow]);
+    focusRow(nextRow.rowKey, deepLinkedSourceId);
+  }, [createPrefilledDraftRow, focusRow, loading, rows, searchParams, sourceCatalog]);
+
+  const visibleRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (showOnlyConfiguredSources && !row.persisted) {
+          return false;
+        }
+
+        if (showOnlyRequiredSources) {
+          const sourceMetadata = sourceCatalog[normalizeSourceId(row.sourceId)];
+          if (getRuntimeSecretRequirementLevel(sourceMetadata) !== 'required') {
+            return false;
+          }
+        }
+
+        const sourceMetadata = sourceCatalog[normalizeSourceId(row.sourceId)];
+        return matchesRuntimeSecretRowQuery(row, sourceMetadata, sourceQuery);
+      }),
+    [rows, showOnlyConfiguredSources, showOnlyRequiredSources, sourceCatalog, sourceQuery],
+  );
+
+  const groupedVisibleRows = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        sourceId: string;
+        metadata?: NewsAggregatorSourceMetadata;
+        rows: SecretRow[];
+      }
+    >();
+
+    visibleRows.forEach((row) => {
+      const sourceId = normalizeSourceId(row.sourceId) || row.sourceId;
+      const existing = groups.get(sourceId);
+      if (existing) {
+        existing.rows.push(row);
+        return;
+      }
+      groups.set(sourceId, {
+        sourceId,
+        metadata: sourceCatalog[sourceId],
+        rows: [row],
+      });
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        totalCount: group.rows.length,
+        persistedCount: group.rows.filter((row) => row.persisted).length,
+        draftCount: group.rows.filter((row) => !row.persisted).length,
+        requirementLevel: getRuntimeSecretRequirementLevel(group.metadata),
+      }))
+      .sort((left, right) => {
+        const leftName = left.metadata?.name?.trim() || left.sourceId;
+        const rightName = right.metadata?.name?.trim() || right.sourceId;
+        return leftName.localeCompare(rightName);
+      });
+  }, [sourceCatalog, visibleRows]);
+
+  useEffect(() => {
+    const visibleSourceIds = groupedVisibleRows.map((group) => group.sourceId);
+    setExpandedSourceIds((current) => {
+      const kept = current.filter((sourceId) => visibleSourceIds.includes(sourceId));
+      if (kept.length === 0) {
+        return visibleSourceIds;
+      }
+      if (sourceQuery.trim()) {
+        const focusedSourceId = normalizeSourceId(sourceQuery);
+        if (visibleSourceIds.includes(focusedSourceId) && !kept.includes(focusedSourceId)) {
+          return [...kept, focusedSourceId];
+        }
+      }
+      return kept;
+    });
+  }, [groupedVisibleRows, sourceQuery]);
 
   const handleRemoveRow = useCallback((row: SecretRow) => {
     setRows((prev) => prev.filter((item) => item.rowKey !== row.rowKey));
@@ -336,30 +675,111 @@ export function NewsSourceRuntimeSecretsPanel() {
         dataIndex: "sourceId",
         key: "sourceId",
         width: 210,
-        render: (_value, record) => (
-          <AutoComplete
-            value={record.sourceId}
-            options={sourceOptions}
-            onChange={(nextValue) => updateRow(record.rowKey, { sourceId: String(nextValue ?? "") })}
-            placeholder={t("systemSettings.newsSourceRuntimeSecrets.placeholders.sourceId")}
-            style={{ width: "100%" }}
-            disabled={record.persisted}
-          />
-        )
+        render: (_value, record) => {
+          const normalizedSourceId = normalizeSourceId(record.sourceId);
+          const sourceMetadata = normalizedSourceId ? sourceCatalog[normalizedSourceId] : undefined;
+          const supportedKeys = getRuntimeSecretSuggestedKeys(sourceMetadata?.runtimeSecrets);
+          const envFallbackKeys = getRuntimeSecretEnvFallbackKeys(sourceMetadata?.runtimeSecrets);
+          const sourceDescription = sourceMetadata?.runtimeSecrets?.description?.trim();
+          return (
+            <Space direction="vertical" size={2} style={{ display: "flex" }}>
+              <AutoComplete
+                value={record.sourceId}
+                options={sourceOptions}
+                onChange={(nextValue) => {
+                  const nextSourceId = String(nextValue ?? '');
+                  const normalizedNextSourceId = normalizeSourceId(nextSourceId);
+                  const nextSourceMetadata = normalizedNextSourceId
+                    ? sourceCatalog[normalizedNextSourceId]
+                    : undefined;
+                  const preferredKey = !record.key.trim()
+                    ? getPrimaryRuntimeSecretKey(nextSourceMetadata?.runtimeSecrets)
+                    : undefined;
+                  updateRow(record.rowKey, {
+                    sourceId: nextSourceId,
+                    ...(preferredKey ? { key: preferredKey } : {}),
+                  });
+                }}
+                placeholder={t("systemSettings.newsSourceRuntimeSecrets.placeholders.sourceId")}
+                style={{ width: "100%" }}
+                disabled={record.persisted}
+              />
+              {sourceMetadata?.name ? (
+                <Typography.Text type="secondary">{sourceMetadata.name}</Typography.Text>
+              ) : null}
+              {!record.persisted ? (
+                <Tag color="gold">
+                  {t('systemSettings.newsSourceRuntimeSecrets.status.draft', {
+                    defaultValue: 'Draft',
+                  })}
+                </Tag>
+              ) : null}
+              {sourceDescription ? (
+                <Typography.Text type="secondary">{sourceDescription}</Typography.Text>
+              ) : null}
+              {supportedKeys.length > 0 ? (
+                <Typography.Text type="secondary">
+                  {t('systemSettings.newsSourceRuntimeSecrets.hints.suggestedKeys', {
+                    defaultValue: 'Suggested keys: {{keys}}',
+                    keys: supportedKeys.join(', '),
+                  })}
+                </Typography.Text>
+              ) : null}
+              {envFallbackKeys.length > 0 ? (
+                <Typography.Text type="secondary">
+                  {t('systemSettings.newsSourceRuntimeSecrets.hints.envFallback', {
+                    defaultValue: 'Env fallback: {{keys}}',
+                    keys: envFallbackKeys.join(', '),
+                  })}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          );
+        }
       },
       {
         title: t("systemSettings.newsSourceRuntimeSecrets.fields.key"),
         dataIndex: "key",
         key: "key",
         width: 220,
-        render: (_value, record) => (
-          <Input
-            value={record.key}
-            onChange={(event) => updateRow(record.rowKey, { key: event.target.value })}
-            placeholder={t("systemSettings.newsSourceRuntimeSecrets.placeholders.key")}
-            disabled={record.persisted}
-          />
-        )
+        render: (_value, record) => {
+          const normalizedSourceId = normalizeSourceId(record.sourceId);
+          const sourceMetadata = normalizedSourceId ? sourceCatalog[normalizedSourceId] : undefined;
+          const keyOptions = keyOptionsBySourceId[normalizedSourceId] ?? [];
+          const requiredAnyOfKeys = sourceMetadata?.runtimeSecrets?.requiredAnyOfKeys ?? [];
+
+          return (
+            <Space direction="vertical" size={2} style={{ display: "flex" }}>
+              <AutoComplete
+                value={record.key}
+                options={keyOptions}
+                onChange={(nextValue) => updateRow(record.rowKey, { key: String(nextValue ?? "") })}
+                placeholder={t("systemSettings.newsSourceRuntimeSecrets.placeholders.key")}
+                disabled={record.persisted}
+                style={{ width: '100%' }}
+                filterOption={(inputValue, option) =>
+                  String(option?.value ?? '').toLowerCase().includes(inputValue.toLowerCase())
+                }
+              >
+                <Input disabled={record.persisted} />
+              </AutoComplete>
+              {requiredAnyOfKeys.length > 0 ? (
+                <Typography.Text type="secondary">
+                  {t('systemSettings.newsSourceRuntimeSecrets.hints.requiredAnyOf', {
+                    defaultValue: 'Need one of: {{keys}}',
+                    keys: requiredAnyOfKeys.join(', '),
+                  })}
+                </Typography.Text>
+              ) : sourceSupportsRuntimeSecrets(sourceMetadata) ? (
+                <Typography.Text type="secondary">
+                  {t('systemSettings.newsSourceRuntimeSecrets.hints.optionalOverride', {
+                    defaultValue: 'This source supports optional runtime-secret overrides.',
+                  })}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          );
+        }
       },
       {
         title: t("systemSettings.newsSourceRuntimeSecrets.fields.value"),
@@ -427,7 +847,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         )
       }
     ],
-    [handleRemoveRow, sourceOptions, t, updateRow]
+    [handleRemoveRow, keyOptionsBySourceId, sourceCatalog, sourceOptions, t, updateRow]
   );
 
   if (loading && rows.length === 0) {
@@ -445,6 +865,21 @@ export function NewsSourceRuntimeSecretsPanel() {
       : settings.source === "none"
         ? t("systemSettings.newsSourceRuntimeSecrets.status.default")
         : t("systemSettings.newsSourceRuntimeSecrets.status.unavailable");
+  const emptyState = hasViewFilters ? (
+    <Empty
+      description={t('systemSettings.newsSourceRuntimeSecrets.emptyFiltered', {
+        defaultValue: 'No entries match the current source search or filters.',
+      })}
+    >
+      <Button onClick={resetViewFilters}>
+        {t('systemSettings.newsSourceRuntimeSecrets.filters.clear', {
+          defaultValue: 'Clear filters',
+        })}
+      </Button>
+    </Empty>
+  ) : (
+    t("systemSettings.newsSourceRuntimeSecrets.empty")
+  );
 
   return (
     <>
@@ -470,12 +905,46 @@ export function NewsSourceRuntimeSecretsPanel() {
           <Typography.Text>{t("systemSettings.newsSourceRuntimeSecrets.status.label")}</Typography.Text>
           <Tag color={sourceColor}>{sourceLabel}</Tag>
           <Tag>{t("systemSettings.newsSourceRuntimeSecrets.status.entryCount", { count: rows.length })}</Tag>
+          {(showOnlyConfiguredSources || showOnlyRequiredSources) ? (
+            <Tag color="blue">
+              {t('systemSettings.newsSourceRuntimeSecrets.status.visibleCount', {
+                defaultValue: 'Visible: {{count}}',
+                count: visibleRows.length,
+              })}
+            </Tag>
+          ) : null}
+          {showOnlyConfiguredSources ? (
+            <Tag color="geekblue">
+              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured', {
+                defaultValue: 'Configured only',
+              })}
+            </Tag>
+          ) : null}
+          {showOnlyRequiredSources ? (
+            <Tag color="purple">
+              {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired', {
+                defaultValue: 'Required only',
+              })}
+            </Tag>
+          ) : null}
           {removed.length > 0 ? (
             <Tag color="orange">
               {t("systemSettings.newsSourceRuntimeSecrets.status.pendingRemoves", { count: removed.length })}
             </Tag>
           ) : null}
+          {sourceQuery.trim() ? (
+            <Tag color="cyan">
+              {activeSourceMetadata?.name
+                ? `${activeSourceMetadata.name} (${sourceQuery.trim()})`
+                : sourceQuery.trim()}
+            </Tag>
+          ) : null}
         </Space>
+        {activeSourceMetadata?.runtimeSecrets?.description ? (
+          <Typography.Text type="secondary">
+            {activeSourceMetadata.runtimeSecrets.description}
+          </Typography.Text>
+        ) : null}
       </Space>
 
       <Space style={{ marginBottom: "1rem" }}>
@@ -487,14 +956,197 @@ export function NewsSourceRuntimeSecretsPanel() {
         </Button>
       </Space>
 
-      <Table<SecretRow>
-        rowKey="rowKey"
-        columns={columns}
-        dataSource={rows}
-        pagination={false}
-        size="small"
-        locale={{ emptyText: t("systemSettings.newsSourceRuntimeSecrets.empty") }}
-      />
+      <Space wrap style={{ marginBottom: '1rem' }}>
+        <Input.Search
+          allowClear
+          value={sourceQuery}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setSourceQuery(nextValue);
+            if (!nextValue.trim()) {
+              replaceViewStateQueryParams({
+                sourceId: '',
+                configuredOnly: showOnlyConfiguredSources,
+                requiredOnly: showOnlyRequiredSources,
+              });
+            }
+          }}
+          onSearch={(value) => {
+            setSourceQuery(value);
+            replaceViewStateQueryParams({
+              sourceId: value,
+              configuredOnly: showOnlyConfiguredSources,
+              requiredOnly: showOnlyRequiredSources,
+            });
+          }}
+          placeholder={t('systemSettings.newsSourceRuntimeSecrets.filters.search', {
+            defaultValue: 'Search source ID / name / key',
+          })}
+          style={{ width: 280 }}
+        />
+        {hasViewFilters ? (
+          <Button onClick={resetViewFilters}>
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.clear', {
+              defaultValue: 'Clear filters',
+            })}
+          </Button>
+        ) : null}
+        <Space size={6}>
+          <Switch
+            size="small"
+            checked={showOnlyConfiguredSources}
+            onChange={(checked) => {
+              setShowOnlyConfiguredSources(checked);
+              replaceViewStateQueryParams({
+                sourceId: sourceQuery,
+                configuredOnly: checked,
+                requiredOnly: showOnlyRequiredSources,
+              });
+            }}
+          />
+          <Typography.Text>
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured', {
+              defaultValue: 'Configured only',
+            })}
+          </Typography.Text>
+        </Space>
+        <Space size={6}>
+          <Switch
+            size="small"
+            checked={showOnlyRequiredSources}
+            onChange={(checked) => {
+              setShowOnlyRequiredSources(checked);
+              replaceViewStateQueryParams({
+                sourceId: sourceQuery,
+                configuredOnly: showOnlyConfiguredSources,
+                requiredOnly: checked,
+              });
+            }}
+          />
+          <Typography.Text>
+            {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired', {
+              defaultValue: 'Required only',
+            })}
+          </Typography.Text>
+        </Space>
+      </Space>
+
+      {quickAddSections.length > 0 ? (
+        <Space direction="vertical" size="small" style={{ display: 'flex', marginBottom: '1rem' }}>
+          <Typography.Text type="secondary">
+            {t('systemSettings.newsSourceRuntimeSecrets.actions.quickAdd', {
+              defaultValue: 'Quick add supported sources',
+            })}
+          </Typography.Text>
+          {quickAddSections.map((section) => (
+            <Space key={section.level} direction="vertical" size={4} style={{ display: 'flex' }}>
+              <Typography.Text type="secondary">{section.title}</Typography.Text>
+              <Space wrap>
+                {section.sources.map(([sourceId, metadata]) => {
+                  const preferredKey = getPrimaryRuntimeSecretKey(metadata.runtimeSecrets);
+                  const isConfigured = configuredSourceIds.has(normalizeSourceId(sourceId));
+                  return (
+                    <Space key={sourceId} size={4}>
+                      <Button
+                        size="small"
+                        type={isConfigured ? 'primary' : 'default'}
+                        onClick={() => handleQuickAddSource(sourceId)}
+                      >
+                        {metadata.name ?? sourceId}
+                        {preferredKey ? ` · ${preferredKey}` : ''}
+                      </Button>
+                      {isConfigured ? (
+                        <Tag color="green">
+                          {t('systemSettings.newsSourceRuntimeSecrets.status.configured', {
+                            defaultValue: 'Configured',
+                          })}
+                        </Tag>
+                      ) : null}
+                    </Space>
+                  );
+                })}
+              </Space>
+            </Space>
+          ))}
+        </Space>
+      ) : null}
+
+      <div ref={tableContainerRef}>
+        {groupedVisibleRows.length > 0 ? (
+          <Collapse
+            activeKey={expandedSourceIds}
+            onChange={(keys) => {
+              const normalized = Array.isArray(keys) ? keys.map(String) : [String(keys)];
+              setExpandedSourceIds(normalized.filter((key) => key.length > 0));
+            }}
+            items={groupedVisibleRows.map((group) => {
+              const sourceName = group.metadata?.name?.trim() || group.sourceId;
+              const requirementColor =
+                group.requirementLevel === 'required'
+                  ? 'red'
+                  : group.requirementLevel === 'optional'
+                    ? 'blue'
+                    : 'default';
+              const requirementLabel =
+                group.requirementLevel === 'required'
+                  ? t('systemSettings.newsSourceRuntimeSecrets.sections.required', {
+                      defaultValue: 'Required secrets',
+                    })
+                  : group.requirementLevel === 'optional'
+                    ? t('systemSettings.newsSourceRuntimeSecrets.sections.optional', {
+                        defaultValue: 'Optional overrides',
+                      })
+                    : t('systemSettings.newsSourceRuntimeSecrets.status.notStored');
+
+              return {
+                key: group.sourceId,
+                label: (
+                  <Space wrap>
+                    <Typography.Text strong>{sourceName}</Typography.Text>
+                    <Typography.Text type="secondary">{group.sourceId}</Typography.Text>
+                    <Tag color={requirementColor}>{requirementLabel}</Tag>
+                    <Tag>
+                      {t('systemSettings.newsSourceRuntimeSecrets.groups.totalCount', {
+                        defaultValue: 'Keys: {{count}}',
+                        count: group.totalCount,
+                      })}
+                    </Tag>
+                    <Tag color="green">
+                      {t('systemSettings.newsSourceRuntimeSecrets.groups.persistedCount', {
+                        defaultValue: 'Configured: {{count}}',
+                        count: group.persistedCount,
+                      })}
+                    </Tag>
+                    {group.draftCount > 0 ? (
+                      <Tag color="gold">
+                        {t('systemSettings.newsSourceRuntimeSecrets.groups.draftCount', {
+                          defaultValue: 'Drafts: {{count}}',
+                          count: group.draftCount,
+                        })}
+                      </Tag>
+                    ) : null}
+                  </Space>
+                ),
+                children: (
+                  <Table<SecretRow>
+                    rowKey="rowKey"
+                    columns={columns}
+                    dataSource={group.rows}
+                    pagination={false}
+                    size="small"
+                    rowClassName={(record) =>
+                      record.rowKey === highlightedRowKey ? 'bg-amber-50 dark:!bg-amber-500/10' : ''
+                    }
+                    locale={{ emptyText: emptyState }}
+                  />
+                ),
+              };
+            })}
+          />
+        ) : (
+          emptyState
+        )}
+      </div>
     </>
   );
 }

@@ -1,4 +1,8 @@
 import { Time } from "../news-aggregator.constants"
+import {
+  PRODUCTHUNT_RUNTIME_SECRETS_CONFIG,
+  WEIBO_RUNTIME_SECRETS_CONFIG,
+} from '../news-source-runtime-secrets.catalog'
 import type { OriginSource, Source, SourceID } from "../news-aggregator.types"
 
 function typeSafeObjectFromEntries<
@@ -34,6 +38,7 @@ export const originSources = {
     color: "red",
     interval: Time.Realtime,
     home: "https://weibo.com",
+    runtimeSecrets: WEIBO_RUNTIME_SECRETS_CONFIG,
   },
   "zaobao": {
     name: "联合早报",
@@ -259,6 +264,7 @@ export const originSources = {
     column: "tech",
     type: "hottest",
     home: "https://www.producthunt.com/",
+    runtimeSecrets: PRODUCTHUNT_RUNTIME_SECRETS_CONFIG,
   },
   "github": {
     name: "Github",
@@ -491,6 +497,7 @@ export function genSources() {
       desc: source.desc,
       column: source.column,
       home: source.home,
+      runtimeSecrets: source.runtimeSecrets,
       color: source.color ?? "primary",
       interval: source.interval ?? Time.Default,
     }

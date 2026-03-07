@@ -2,6 +2,8 @@ import { myFetch } from "./fetch";
 import { defineSource } from "./source";
 
 import process from "node:process"
+import { NewsSourceRuntimeSecretRequiredError } from "../news-aggregator.errors"
+import { PRODUCTHUNT_RUNTIME_SECRETS_CONFIG } from '../news-source-runtime-secrets.catalog'
 import type { NewsItem } from "../news-aggregator.types"
 
 function resolveRuntimeSecret(secrets: Record<string, string> | undefined, keys: string[]) {
@@ -22,15 +24,18 @@ function stripBearerPrefix(value: string) {
 }
 
 export default defineSource(async (context) => {
-  const runtimeToken = resolveRuntimeSecret(context?.secrets, [
-    "token",
-    "api_token",
-    "producthunt.api_token",
-    "producthunt.token",
-  ])
+  const runtimeToken = resolveRuntimeSecret(
+    context?.secrets,
+    PRODUCTHUNT_RUNTIME_SECRETS_CONFIG.suggestedKeys ?? [],
+  )
   const apiToken = runtimeToken || process.env.PRODUCTHUNT_API_TOKEN
   if (!apiToken) {
-    throw new Error("PRODUCTHUNT_API_TOKEN is not set; configure producthunt runtime secret or env token")
+    throw new NewsSourceRuntimeSecretRequiredError({
+      sourceId: context?.requestedSourceId ?? context?.sourceId ?? "producthunt",
+      requiredKeys: PRODUCTHUNT_RUNTIME_SECRETS_CONFIG.requiredAnyOfKeys ?? [],
+      message:
+        "Product Hunt API token is required; configure a runtime secret or PRODUCTHUNT_API_TOKEN",
+    })
   }
   const token = `Bearer ${stripBearerPrefix(apiToken)}`
   const query = `

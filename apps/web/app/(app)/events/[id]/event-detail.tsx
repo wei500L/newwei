@@ -11,7 +11,6 @@ import {
   Drawer,
   Empty,
   List,
-  Progress,
   Skeleton,
   Space,
   Tag,
@@ -26,6 +25,7 @@ import { useTranslation } from "react-i18next";
 
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
+import { useTheme } from "@/hooks/use-theme";
 import {
   useNewsEventBriefQuery,
   useProcessedItemByIdQuery,
@@ -47,6 +47,8 @@ import {
   toCredibilityPercent,
   toHeatPercent,
 } from "../events-list-helpers";
+import { EventSignalCard } from "../components/event-signal-card";
+import { resolveFutureEventHintStyle } from "../components/event-visuals";
 import { pickRepresentativeProcessedItemId } from "../utils";
 
 interface EventItem {
@@ -372,11 +374,16 @@ function formatConfidencePercent(
 
 export function EventDetail({ eventId }: { eventId: string }) {
   const { t, i18n } = useTranslation();
+  const { isDark } = useTheme();
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
   const timeZoneLabel = useMemo(
     () => formatTimeZoneOffsetLabel(new Date(), timeZone),
     [timeZone],
+  );
+  const futureEventHintStyle = useMemo(
+    () => resolveFutureEventHintStyle(isDark),
+    [isDark],
   );
   const router = useRouter();
 
@@ -940,7 +947,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
               <span className="ml-1 opacity-80">({lastRelative})</span>
             ) : null}
             {isFutureEvent ? (
-              <span className="ml-1 text-cyan-700">
+              <span className="ml-1" style={futureEventHintStyle}>
                 {t("pages.events.fields.futureEventHint", {
                   defaultValue: "Future event",
                 })}
@@ -964,46 +971,24 @@ export function EventDetail({ eventId }: { eventId: string }) {
             })}
           </Typography.Text>
           <div className="flex flex-wrap gap-2">
-            <div className="min-w-[168px] rounded-md border border-rose-100 bg-white px-2 py-1">
-              <div className="flex items-center justify-between gap-2">
-                <Typography.Text style={{ fontSize: 12 }} strong>
-                  {t("pages.events.fields.heat", { defaultValue: "Heat" })}
-                </Typography.Text>
-                <Typography.Text style={{ fontSize: 12 }}>
-                  {event.heatScore.toFixed(1)}
-                </Typography.Text>
-              </div>
-              <Progress
-                percent={heatPercent}
-                showInfo={false}
-                size={[150, 6]}
-                strokeColor={{ "0%": "#ffb5b5", "100%": "#cf1322" }}
-                trailColor="#fff1f0"
-              />
-            </div>
-            <div className="min-w-[168px] rounded-md border border-emerald-100 bg-white px-2 py-1">
-              <div className="flex items-center justify-between gap-2">
-                <Typography.Text style={{ fontSize: 12 }} strong>
-                  {t("pages.events.fields.credibility", {
-                    defaultValue: "Credibility",
-                  })}
-                </Typography.Text>
-                <Typography.Text style={{ fontSize: 12 }}>
-                  {Math.round(event.credibilityScore)}
-                </Typography.Text>
-              </div>
-              <Progress
-                percent={credibilityPercent}
-                showInfo={false}
-                size={[150, 6]}
-                strokeColor={{
-                  "0%": "#ff4d4f",
-                  "50%": "#faad14",
-                  "100%": "#52c41a",
-                }}
-                trailColor="#f6ffed"
-              />
-            </div>
+            <EventSignalCard
+              tone="heat"
+              label={t("pages.events.fields.heat", { defaultValue: "Heat" })}
+              value={event.heatScore.toFixed(1)}
+              percent={heatPercent}
+              minWidth={168}
+              progressSize={[150, 6]}
+            />
+            <EventSignalCard
+              tone="credibility"
+              label={t("pages.events.fields.credibility", {
+                defaultValue: "Credibility",
+              })}
+              value={Math.round(event.credibilityScore)}
+              percent={credibilityPercent}
+              minWidth={168}
+              progressSize={[150, 6]}
+            />
           </div>
           <Space wrap size={[8, 8]}>
             <Tag>

@@ -2,13 +2,16 @@
 
 import { CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
-import { Button, Card, Empty, List, Progress, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, Empty, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
+import { EventSignalCard } from "./components/event-signal-card";
+import { resolveEventRowSurface, resolveFutureEventHintStyle } from "./components/event-visuals";
 import { isFutureEventTimestamp, normalizeEntityFilter, toCredibilityPercent, toHeatPercent } from "./events-list-helpers";
 
 // Event details now use dedicated page at /events/[id]
@@ -141,9 +144,11 @@ function resolveEventTitle(event: NewsEventListItem) {
 
 export function EventsContent({ initialData = null }: EventsContentProps) {
   const { t, i18n } = useTranslation();
+  const { isDark } = useTheme();
   const locale = resolveLocale(i18n.language);
   const timeZone = getDefaultTimeZone();
   const timeZoneLabel = useMemo(() => formatTimeZoneOffsetLabel(new Date(), timeZone), [timeZone]);
+  const futureEventHintStyle = useMemo(() => resolveFutureEventHintStyle(isDark), [isDark]);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -522,6 +527,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
             </Empty>
           ) : (
             <List
+              split={false}
               dataSource={sortedEvents}
               renderItem={(event) => {
                 const title = resolveEventTitle(event);
@@ -569,20 +575,11 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 const isFutureEvent = isFutureEventTimestamp(event.lastAt);
                 const heatPercent = toHeatPercent(event.heatScore);
                 const credibilityPercent = toCredibilityPercent(event.credibilityScore);
-                const heatOverlayOpacity = Math.max(0.04, Math.min(0.2, (heatPercent / 100) * 0.2));
-                const rowStyle: CSSProperties = isFutureEvent
-                  ? {
-                    borderRadius: 8,
-                    border: "1px solid #91d5ff",
-                    background:
-                      "linear-gradient(90deg, rgba(230,247,255,0.75) 0%, rgba(246,255,237,0.65) 100%)",
-                    paddingInline: 12
-                  }
-                  : {
-                    borderRadius: 8,
-                    background: `linear-gradient(90deg, rgba(255,77,79,${heatOverlayOpacity}) 0%, rgba(255,255,255,0) 68%)`,
-                    paddingInline: 12
-                  };
+                const rowStyle: CSSProperties = {
+                  ...resolveEventRowSurface({ heatPercent, isDark, isFutureEvent }),
+                  alignItems: "flex-start",
+                  marginBottom: 14
+                };
 
                 return (
                   <List.Item
@@ -599,80 +596,68 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                   >
                     <List.Item.Meta
                       title={
-                        <Space wrap size={[6, 6]}>
-                          <Typography.Text strong>{title}</Typography.Text>
-                          <Tag>{itemCountLabel}: {event.itemCount}</Tag>
-                          <Tag color={event.status === "active" ? "green" : "default"}>{eventStatusLabel}</Tag>
-                          {event.breaking ? (
-                            <Tag color="volcano">
-                              {t("pages.events.fields.breaking", { defaultValue: "Breaking" })}
-                            </Tag>
-                          ) : null}
-                          {isFutureEvent ? (
-                            <Tag color="cyan" icon={<CalendarOutlined />}>
-                              {futureEventLabel}
-                            </Tag>
-                          ) : null}
-                          <div className="min-w-[136px] rounded-md border border-rose-100 bg-white px-2 py-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <Typography.Text style={{ fontSize: 12 }} strong>
-                                {heatLabel}
-                              </Typography.Text>
-                              <Typography.Text style={{ fontSize: 12 }}>
-                                {event.heatScore.toFixed(1)}
-                              </Typography.Text>
-                            </div>
-                            <Progress
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Typography.Text strong style={{ fontSize: 16 }}>
+                              {title}
+                            </Typography.Text>
+                            <Tag>{itemCountLabel}: {event.itemCount}</Tag>
+                            <Tag color={event.status === "active" ? "green" : "default"}>{eventStatusLabel}</Tag>
+                            {event.breaking ? (
+                              <Tag color="volcano">
+                                {t("pages.events.fields.breaking", { defaultValue: "Breaking" })}
+                              </Tag>
+                            ) : null}
+                            {isFutureEvent ? (
+                              <Tag color="cyan" icon={<CalendarOutlined />}>
+                                {futureEventLabel}
+                              </Tag>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <EventSignalCard
+                              tone="heat"
+                              label={heatLabel}
+                              value={event.heatScore.toFixed(1)}
                               percent={heatPercent}
-                              showInfo={false}
-                              size={[120, 5]}
-                              strokeColor={{ "0%": "#ffb5b5", "100%": "#cf1322" }}
-                              trailColor="#fff1f0"
+                              minWidth={136}
+                              progressSize={[120, 5]}
                             />
-                          </div>
-                          <div className="min-w-[136px] rounded-md border border-emerald-100 bg-white px-2 py-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <Typography.Text style={{ fontSize: 12 }} strong>
-                                {credibilityLabel}
-                              </Typography.Text>
-                              <Typography.Text style={{ fontSize: 12 }}>
-                                {Math.round(event.credibilityScore)}
-                              </Typography.Text>
-                            </div>
-                            <Progress
+                            <EventSignalCard
+                              tone="credibility"
+                              label={credibilityLabel}
+                              value={Math.round(event.credibilityScore)}
                               percent={credibilityPercent}
-                              showInfo={false}
-                              size={[120, 5]}
-                              strokeColor={{ "0%": "#ff4d4f", "50%": "#faad14", "100%": "#52c41a" }}
-                              trailColor="#f6ffed"
+                              minWidth={136}
+                              progressSize={[120, 5]}
                             />
+                            <Tag>
+                              {sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}
+                            </Tag>
+                            <Tag>
+                              {sourceTypeLabel}: {event.sourceType}
+                            </Tag>
+                            {event.sourceEvidence.corroborated ? (
+                              <Tag color="success">
+                                {t("pages.events.fields.corroborated", { defaultValue: "Corroborated" })}
+                              </Tag>
+                            ) : null}
+                            {language ? <Tag color="blue">{language}</Tag> : null}
+                            {topic ? <Tag color="geekblue">{topic}</Tag> : null}
+                            {entity ? (
+                              <Tag
+                                color="purple"
+                                style={{ cursor: "pointer" }}
+                                onClick={() => updateFilters({ entity: entityFilter === entity ? null : entity })}
+                              >
+                                {entity}
+                              </Tag>
+                            ) : null}
                           </div>
-                          <Tag>
-                            {sourcesLabel}: {event.sourceEvidence.uniqueSourceCount}
-                          </Tag>
-                          <Tag>
-                            {sourceTypeLabel}: {event.sourceType}
-                          </Tag>
-                          {event.sourceEvidence.corroborated ? (
-                            <Tag color="success">
-                              {t("pages.events.fields.corroborated", { defaultValue: "Corroborated" })}
-                            </Tag>
-                          ) : null}
-                          {language ? <Tag color="blue">{language}</Tag> : null}
-                          {topic ? <Tag color="geekblue">{topic}</Tag> : null}
-                          {entity ? (
-                            <Tag
-                              color="purple"
-                              style={{ cursor: "pointer" }}
-                              onClick={() => updateFilters({ entity: entityFilter === entity ? null : entity })}
-                            >
-                              {entity}
-                            </Tag>
-                          ) : null}
-                        </Space>
+                        </div>
                       }
                       description={
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-2">
                           {event.summary ? (
                             <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
                               {event.summary}
@@ -691,7 +676,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                                 <span>{lastDate}</span>
                               </Tooltip>
                               {lastRelative ? <span className="ml-1 opacity-80">({lastRelative})</span> : null}
-                              {isFutureEvent ? <span className="ml-1 text-cyan-700">[{futureEventHint}]</span> : null}
+                              {isFutureEvent ? <span className="ml-1" style={futureEventHintStyle}>[{futureEventHint}]</span> : null}
                             </Typography.Text>
                           </Space>
                         </div>

@@ -1695,6 +1695,14 @@
         "failed": "翻译失败。"
       }
     },
+    "newsnow": {
+      "runtimeSecrets": {
+        "openSettings": "去系统设置 > 新闻源密钥",
+        "openSettingsWithKey": "去系统设置 > 新闻源密钥（推荐：{{key}}）",
+        "maybeRequired": "该源可能需要先配置密钥",
+        "maybeRequiredWithKey": "该源可能需要先配置密钥（推荐：{{key}}）"
+      }
+    },
     "topics": {
       "title": "专题/事件",
       "subtitle": "聚焦查看事件聚类与专题脉络，减少干扰并提升阅读效率。",
@@ -5040,8 +5048,11 @@
         "default": "使用环境变量/默认密钥",
         "saved": "使用数据库管理的运行时密钥",
         "unavailable": "不可用（配置加载失败）",
+        "configured": "已配置",
+        "draft": "草稿",
         "notStored": "未保存",
         "entryCount": "条目数：{{count}}",
+        "visibleCount": "显示：{{count}}",
         "pendingRemoves": "待删除：{{count}}"
       },
       "fields": {
@@ -5057,13 +5068,37 @@
         "value": "输入密钥值",
         "keepExistingValue": "留空表示保留当前值"
       },
+      "hints": {
+        "suggestedKeys": "可用键名：{{keys}}",
+        "envFallback": "环境变量回退：{{keys}}",
+        "requiredAnyOf": "至少配置其一：{{keys}}",
+        "optionalOverride": "该源支持可选的运行时密钥覆盖。"
+      },
       "actions": {
-        "addRow": "新增条目"
+        "addRow": "新增条目",
+        "quickAdd": "快捷新增支持的来源"
       },
       "messages": {
         "saved": "已保存",
-        "noChanges": "没有可保存的变更"
+        "noChanges": "没有可保存的变更",
+        "focusedExisting": "已定位到现有条目：{{sourceId}} / {{key}}"
       },
+      "sections": {
+        "required": "必需密钥",
+        "optional": "可选覆盖"
+      },
+      "groups": {
+        "totalCount": "键数：{{count}}",
+        "persistedCount": "已配置：{{count}}",
+        "draftCount": "草稿：{{count}}"
+      },
+      "filters": {
+        "onlyConfigured": "仅看已配置",
+        "onlyRequired": "仅看必需源",
+        "search": "搜索来源 ID / 名称 / 键名",
+        "clear": "清空筛选"
+      },
+      "emptyFiltered": "当前来源搜索或筛选条件下没有匹配条目。",
       "errors": {
         "loadFailed": "加载运行时密钥配置失败",
         "saveFailed": "保存运行时密钥配置失败",

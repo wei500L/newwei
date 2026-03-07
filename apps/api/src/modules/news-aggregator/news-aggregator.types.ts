@@ -48,7 +48,15 @@ export interface Source {
   column?: HiddenColumnID
   home?: string
   disable?: boolean | "cf"
+  runtimeSecrets?: SourceRuntimeSecretsConfig
   redirect?: SourceID
+}
+
+export interface SourceRuntimeSecretsConfig {
+  description?: string
+  requiredAnyOfKeys?: string[]
+  suggestedKeys?: string[]
+  envFallbackKeys?: string[]
 }
 
 export interface Column {

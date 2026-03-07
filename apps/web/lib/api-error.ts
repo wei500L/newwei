@@ -4,7 +4,12 @@ export interface ApiErrorInfo {
   code?: string;
   message: string;
   detail?: string;
+  sourceId?: string;
+  requiredKeys?: string[];
 }
+
+export const NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE =
+  'NEWS_SOURCE_RUNTIME_SECRET_REQUIRED';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -29,7 +34,11 @@ const extractFromPayload = (payload: unknown): ApiErrorInfo | null => {
     return {
       code: directCode,
       message: typeof directMessage === "string" && directMessage.trim() ? directMessage : "Request failed",
-      detail: typeof directDetail === "string" && directDetail.trim() ? directDetail : undefined
+      detail: typeof directDetail === "string" && directDetail.trim() ? directDetail : undefined,
+      sourceId: typeof payload.sourceId === 'string' && payload.sourceId.trim() ? payload.sourceId : undefined,
+      requiredKeys: Array.isArray(payload.requiredKeys)
+        ? payload.requiredKeys.filter((key): key is string => typeof key === 'string' && key.trim().length > 0)
+        : undefined,
     };
   }
 
@@ -46,7 +55,16 @@ const extractFromPayload = (payload: unknown): ApiErrorInfo | null => {
             : typeof payload.error === "string" && payload.error.trim()
               ? payload.error
               : "Request failed",
-        detail: typeof nestedDetail === "string" && nestedDetail.trim() ? nestedDetail : undefined
+        detail: typeof nestedDetail === "string" && nestedDetail.trim() ? nestedDetail : undefined,
+        sourceId:
+          typeof directMessage.sourceId === 'string' && directMessage.sourceId.trim()
+            ? directMessage.sourceId
+            : undefined,
+        requiredKeys: Array.isArray(directMessage.requiredKeys)
+          ? directMessage.requiredKeys.filter(
+              (key): key is string => typeof key === 'string' && key.trim().length > 0,
+            )
+          : undefined,
       };
     }
   }
@@ -83,4 +101,3 @@ export const extractApiError = (error: unknown): ApiErrorInfo => {
 
   return { message: "Request failed" };
 };
-

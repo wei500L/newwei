@@ -20,6 +20,10 @@ import {
   normalizeNewsnowUiSettings,
   UserSettingsService,
 } from "../user-settings/user-settings.service";
+import {
+  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
+  NewsSourceRuntimeSecretRequiredError,
+} from "./news-aggregator.errors"
 import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
 import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
@@ -187,6 +191,22 @@ export class NewsAggregatorService {
   }
 
   private buildSourceFetchException(sourceId: string, error: unknown): HttpException {
+    if (error instanceof NewsSourceRuntimeSecretRequiredError) {
+      return new HttpException(
+        {
+          code: NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
+          message: `Runtime secret required for news source: ${sourceId}`,
+          detail:
+            error.requiredKeys.length > 0
+              ? `Configure at least one runtime secret: ${error.requiredKeys.join(", ")}`
+              : "Configure the required runtime secret in system settings.",
+          sourceId,
+          requiredKeys: error.requiredKeys,
+        },
+        HttpStatus.FAILED_DEPENDENCY,
+      )
+    }
+
     const detailRaw = error instanceof Error ? error.message : String(error)
     const detail = detailRaw.length > 240 ? `${detailRaw.slice(0, 237)}...` : detailRaw
     return new HttpException(

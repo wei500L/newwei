@@ -20,7 +20,14 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
-import { extractApiError } from "@/lib/api-error";
+import {
+  extractApiError,
+  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
+} from "@/lib/api-error";
+import {
+  getPrimaryRuntimeSecretKey,
+  sourceRequiresRuntimeSecrets,
+} from '@/lib/news-source-runtime-secrets';
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 import {
@@ -91,7 +98,6 @@ const accentRgbMap: Record<string, string> = {
   yellow: "251 191 36",
 };
 
-const secretRequiredSourceIds = new Set(["weibo", "producthunt"]);
 const VIEW_EXPOSURE_THRESHOLD = 0.35;
 const VIEW_EXPOSURE_DWELL_MS = 1200;
 const RESOLVE_PREFETCH_CONCURRENCY = 6;
@@ -339,17 +345,53 @@ export function NewsnowCard({
   };
   const glowColor = auraGlowColorMap[source.color] || "rgba(59,130,246,0.15)";
   
-  const sourceBaseId = useMemo(() => id.split("-")[0] ?? id, [id]);
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
+  const runtimeSecretsSettingsHref = useMemo(
+    () => `/settings/system?tab=newsSourceRuntimeSecrets&sourceId=${encodeURIComponent(id)}`,
+    [id],
+  );
+  const runtimeSecretPrimaryKey = useMemo(
+    () => getPrimaryRuntimeSecretKey(source.runtimeSecrets),
+    [source.runtimeSecrets],
+  );
   const iconUrl = useMemo(() => resolveSourceIconUrl(source.home), [source.home]);
-  const needsRuntimeSecret = secretRequiredSourceIds.has(sourceBaseId);
+  const sourceError = useMemo(
+    () => (isError ? extractApiError(error) : null),
+    [error, isError],
+  );
+  const needsRuntimeSecret =
+    sourceError?.code === NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE ||
+    sourceRequiresRuntimeSecrets(source);
   const sourceErrorMessage = useMemo(() => {
-    if (!isError) {
+    if (!sourceError) {
       return null;
     }
-    const parsed = extractApiError(error);
-    return parsed.detail ? `${parsed.message} (${parsed.detail})` : parsed.message;
-  }, [error, isError]);
+    return sourceError.detail
+      ? `${sourceError.message} (${sourceError.detail})`
+      : sourceError.message;
+  }, [sourceError]);
+  const runtimeSecretsLinkLabel = useMemo(() => {
+    if (runtimeSecretPrimaryKey) {
+      return t('pages.newsnow.runtimeSecrets.openSettingsWithKey', {
+        defaultValue: 'Go to System Settings > News source secrets (Suggested: {{key}})',
+        key: runtimeSecretPrimaryKey,
+      });
+    }
+    return t('pages.newsnow.runtimeSecrets.openSettings', {
+      defaultValue: 'Go to System Settings > News source secrets',
+    });
+  }, [runtimeSecretPrimaryKey, t]);
+  const runtimeSecretsEmptyLabel = useMemo(() => {
+    if (runtimeSecretPrimaryKey) {
+      return t('pages.newsnow.runtimeSecrets.maybeRequiredWithKey', {
+        defaultValue: 'This source may require a runtime secret first (Suggested: {{key}})',
+        key: runtimeSecretPrimaryKey,
+      });
+    }
+    return t('pages.newsnow.runtimeSecrets.maybeRequired', {
+      defaultValue: 'This source may require a runtime secret first',
+    });
+  }, [runtimeSecretPrimaryKey, t]);
 
   useEffect(() => {
     setIconLoadError(false);
@@ -910,10 +952,10 @@ export function NewsnowCard({
           ) : null}
           {needsRuntimeSecret ? (
             <a
-              href="/settings/system?tab=newsSourceRuntimeSecrets"
+              href={runtimeSecretsSettingsHref}
               className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
             >
-              去系统设置 &gt; 新闻源密钥
+              {runtimeSecretsLinkLabel}
             </a>
           ) : null}
           <Button
@@ -961,10 +1003,10 @@ export function NewsnowCard({
         <p className="text-xs font-medium text-[var(--secondary-foreground)]">暂无数据</p>
         {needsRuntimeSecret ? (
           <a
-            href="/settings/system?tab=newsSourceRuntimeSecrets"
+            href={runtimeSecretsSettingsHref}
             className="text-xs text-[var(--primary)] underline-offset-2 hover:underline"
           >
-            该源可能需要先配置密钥
+            {runtimeSecretsEmptyLabel}
           </a>
         ) : null}
       </div>
@@ -983,6 +1025,9 @@ export function NewsnowCard({
     isError,
     isLoading,
     needsRuntimeSecret,
+    runtimeSecretsEmptyLabel,
+    runtimeSecretsLinkLabel,
+    runtimeSecretsSettingsHref,
     source.type,
     sourceErrorMessage,
     trackOriginalOpen,
