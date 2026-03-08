@@ -23,9 +23,11 @@ export interface TelegramSignalItem {
 
 export interface SituationTelegramFeedResponse {
   source: 'telegram';
+  scope: 'global';
   earlySignal: true;
   configured: boolean;
   enabled: boolean;
+  channelSet: string;
   count: number;
   updatedAt: string | null;
   items: TelegramSignalItem[];
@@ -47,6 +49,7 @@ export interface OrefHistoryEntry {
 }
 
 export interface SituationOrefAlertsResponse {
+  scope: 'global';
   configured: boolean;
   alerts: OrefAlert[];
   historyCount24h: number;
@@ -56,6 +59,7 @@ export interface SituationOrefAlertsResponse {
 }
 
 export interface SituationOrefHistoryResponse {
+  scope: 'global';
   configured: boolean;
   history: OrefHistoryEntry[];
   historyCount24h: number;

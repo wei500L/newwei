@@ -53,11 +53,24 @@ const PLACEHOLDER_HEADLINE_TITLE_PATTERN =
 
 type SituationMonitorCategory = (typeof SITUATION_MONITOR_CATEGORIES)[number];
 
+export interface SituationMonitorInsightsCategoryDiagnostics {
+  internalCount: number;
+  gdeltFallbackCount: number;
+  totalCount: number;
+}
+
+export interface SituationMonitorInsightsDiagnostics {
+  requestedScope: "tagged" | "all";
+  effectiveScope: "tagged" | "all";
+  categories: Record<SituationMonitorCategory, SituationMonitorInsightsCategoryDiagnostics>;
+}
+
 export interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
+  diagnostics?: SituationMonitorInsightsDiagnostics;
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -227,6 +240,7 @@ export class SituationMonitorService {
         const mainCharacter = calculateMainCharacter(analysisNews);
 
         return {
+          diagnostics: this.buildDiagnostics(headlines, scope),
           headlines: displayHeadlines,
           analyzedItems,
           alerts: this.buildAlerts(displayHeadlines),
@@ -310,6 +324,30 @@ export class SituationMonitorService {
     ].join(":");
 
     return `${INSIGHTS_CACHE_KEY_PREFIX}:core:${flags}`;
+  }
+
+  private buildDiagnostics(
+    headlines: Record<SituationMonitorCategory, SituationMonitorHeadline[]>,
+    scope: "tagged" | "all",
+  ): SituationMonitorInsightsDiagnostics {
+    const categories = {} as Record<SituationMonitorCategory, SituationMonitorInsightsCategoryDiagnostics>;
+
+    for (const category of SITUATION_MONITOR_CATEGORIES) {
+      const entries = headlines[category] ?? [];
+      const internalCount = entries.filter((entry) => entry.origin === "items").length;
+      const gdeltFallbackCount = entries.filter((entry) => entry.origin === "gdelt").length;
+      categories[category] = {
+        internalCount,
+        gdeltFallbackCount,
+        totalCount: entries.length,
+      };
+    }
+
+    return {
+      requestedScope: scope,
+      effectiveScope: scope,
+      categories,
+    };
   }
 
   private normalizeSections(sections: string[] | undefined) {

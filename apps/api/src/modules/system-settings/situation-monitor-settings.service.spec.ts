@@ -381,4 +381,26 @@ describe("SituationMonitorSettingsService", () => {
       }),
     ).rejects.toThrow("liveHlsProxyCnnUpstreamUrl must be a valid https URL");
   });
+
+  it("clears stored telegram credentials and disables polling", async () => {
+    await service.updateSettings("org-1", "actor-1", {
+      translationMaxConcurrency: 2,
+      telegramEnabled: true,
+      telegramApiId: "2222",
+      telegramApiHash: "telegram-hash",
+      telegramSession: "telegram-session",
+      telegramChannelSet: "finance",
+    });
+
+    const response = await service.clearTelegramConfiguration("org-1", "actor-1");
+
+    expect(response.telegramEnabled).toBe(false);
+    expect(response.hasTelegramApiId).toBe(false);
+    expect(response.hasTelegramApiHash).toBe(false);
+    expect(response.hasTelegramSession).toBe(false);
+    expect(persistedValue.telegramEnabled).toBe(false);
+    expect(persistedValue.telegramApiId).toBeNull();
+    expect(persistedValue.telegramApiHash).toBeNull();
+    expect(persistedValue.telegramSession).toBeNull();
+  });
 });

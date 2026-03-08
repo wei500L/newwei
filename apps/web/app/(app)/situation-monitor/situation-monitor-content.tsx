@@ -14,6 +14,7 @@ import "react-resizable/css/styles.css";
 
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
 import { ArticlePublishedTime } from "@/components/article-published-time";
+import { extractApiError } from "@/lib/api-error";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -402,11 +403,24 @@ interface MainCharacterEntry {
   rank: number;
 }
 
+interface SituationMonitorCategoryDiagnostics {
+  internalCount: number;
+  gdeltFallbackCount: number;
+  totalCount: number;
+}
+
+interface SituationMonitorInsightsDiagnostics {
+  requestedScope: "tagged" | "all";
+  effectiveScope: "tagged" | "all";
+  categories: Record<SituationMonitorCategory, SituationMonitorCategoryDiagnostics>;
+}
+
 interface SituationMonitorInsightsResponse {
   generatedAt: string;
   windowHours: number;
   maxItems: number;
   analyzedItems: number;
+  diagnostics?: SituationMonitorInsightsDiagnostics;
   translation?: { target: "zh-CN"; applied: boolean; error?: string };
   headlines?: Record<SituationMonitorCategory, SituationMonitorHeadline[]>;
   alerts?: SituationMonitorAlertHeadline[];
@@ -447,6 +461,14 @@ function mergeTranslationStatus(
     applied: false,
     ...(error ? { error } : {}),
   };
+}
+
+function getHttpStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return null;
+  }
+  const response = (error as { response?: { status?: unknown } }).response;
+  return typeof response?.status === "number" ? response.status : null;
 }
 
 function toTagColor(level: string) {
@@ -611,10 +633,13 @@ function isVisibilityMatchingPreset(
 export function SituationMonitorContent() {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const screens = Grid.useBreakpoint();
   const uiSync = useUserUiSyncStatusStore((state) => state.sections["situation-monitor"]);
   const requestUiSyncReload = useUserUiSyncStatusStore((state) => state.requestReload);
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadItems = permissions.includes("items.read") || permissions.includes("items.write");
+  const hasSignalSession = status === "authenticated" && Boolean(session?.accessToken);
 
   const windowHours = useSituationMonitorSettingsStore((state) => state.windowHours);
   const setWindowHours = useSituationMonitorSettingsStore((state) => state.setWindowHours);
@@ -636,6 +661,10 @@ export function SituationMonitorContent() {
   const [signalsLoading, setSignalsLoading] = useState<{ telegram: boolean; oref: boolean }>({
     telegram: false,
     oref: false,
+  });
+  const [signalErrors, setSignalErrors] = useState<{ telegram: string | null; oref: string | null }>({
+    telegram: null,
+    oref: null,
   });
   const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -677,8 +706,8 @@ export function SituationMonitorContent() {
     (state) => state.visibility["oref-alerts"],
   );
 
-  const telegramSignalActive = Boolean(session?.accessToken && pageVisible && telegramPanelVisible);
-  const orefSignalActive = Boolean(session?.accessToken && pageVisible && orefPanelVisible);
+  const telegramSignalActive = Boolean(hasSignalSession && canReadItems && pageVisible && telegramPanelVisible);
+  const orefSignalActive = Boolean(hasSignalSession && canReadItems && pageVisible && orefPanelVisible);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -693,7 +722,7 @@ export function SituationMonitorContent() {
   }, [telegramChannelFilter, telegramTopicFilter]);
 
   const loadSignalCatalog = useCallback(async () => {
-    if (!session?.accessToken || signalCatalog || catalogLoading) {
+    if (!session?.accessToken || !canReadItems || signalCatalog || catalogLoading) {
       return;
     }
     setCatalogLoading(true);
@@ -705,11 +734,11 @@ export function SituationMonitorContent() {
     } finally {
       setCatalogLoading(false);
     }
-  }, [apiClient, catalogLoading, session?.accessToken, signalCatalog]);
+  }, [apiClient, canReadItems, catalogLoading, session?.accessToken, signalCatalog]);
 
   const loadTelegramFeed = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!session?.accessToken) {
+      if (!session?.accessToken || !canReadItems) {
         return;
       }
 
@@ -730,6 +759,7 @@ export function SituationMonitorContent() {
       if (!silent) {
         setSignalsLoading((prev) => ({ ...prev, telegram: true }));
       }
+      setSignalErrors((prev) => ({ ...prev, telegram: null }));
 
       try {
         const response = await apiClient.get<SituationTelegramFeedResponse>(
@@ -748,8 +778,17 @@ export function SituationMonitorContent() {
           return;
         }
         setTelegramFeed(response.data ?? null);
+        setSignalErrors((prev) => ({ ...prev, telegram: null }));
       } catch (err) {
         captureClientError("Failed to load situation monitor telegram feed", err);
+        const statusCode = getHttpStatus(err);
+        if (statusCode === 401 || statusCode === 403) {
+          setTelegramFeed(null);
+        }
+        setSignalErrors((prev) => ({
+          ...prev,
+          telegram: extractApiError(err).message || "Failed to load Telegram signals.",
+        }));
       } finally {
         telegramFeedLoadingRef.current = false;
         if (!silent) {
@@ -762,12 +801,12 @@ export function SituationMonitorContent() {
         }
       }
     },
-    [apiClient, session?.accessToken, telegramChannelFilter, telegramTopicFilter],
+    [apiClient, canReadItems, session?.accessToken, telegramChannelFilter, telegramTopicFilter],
   );
 
   const loadOrefSignals = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!session?.accessToken) {
+      if (!session?.accessToken || !canReadItems) {
         return;
       }
 
@@ -784,6 +823,7 @@ export function SituationMonitorContent() {
       if (!silent) {
         setSignalsLoading((prev) => ({ ...prev, oref: true }));
       }
+      setSignalErrors((prev) => ({ ...prev, oref: null }));
 
       try {
         const [alertsResponse, historyResponse] = await Promise.all([
@@ -793,8 +833,18 @@ export function SituationMonitorContent() {
 
         setOrefAlerts(alertsResponse.data ?? null);
         setOrefHistory(historyResponse.data ?? null);
+        setSignalErrors((prev) => ({ ...prev, oref: null }));
       } catch (err) {
         captureClientError("Failed to load situation monitor OREF signals", err);
+        const statusCode = getHttpStatus(err);
+        if (statusCode === 401 || statusCode === 403) {
+          setOrefAlerts(null);
+          setOrefHistory(null);
+        }
+        setSignalErrors((prev) => ({
+          ...prev,
+          oref: extractApiError(err).message || "Failed to load OREF signals.",
+        }));
       } finally {
         orefSignalsLoadingRef.current = false;
         if (!silent) {
@@ -807,7 +857,7 @@ export function SituationMonitorContent() {
         }
       }
     },
-    [apiClient, session?.accessToken],
+    [apiClient, canReadItems, session?.accessToken],
   );
 
   useEffect(() => {
@@ -2234,6 +2284,20 @@ export function SituationMonitorContent() {
   }, [telegramChannelFilter, telegramFeed?.items, t]);
 
   const updatedAt = data?.generatedAt ? dayjs(data.generatedAt).toDate() : null;
+  const globalTelegramTooltip = t("situationMonitor.shared.telegramTooltip", {
+    defaultValue:
+      "Global shared Telegram signal feed. All signed-in users with items.read access see the same source and updates.",
+  });
+  const globalOrefTooltip = t("situationMonitor.shared.orefTooltip", {
+    defaultValue:
+      "Global shared OREF alert feed. All signed-in users with items.read access see the same source and updates.",
+  });
+  const internalFeedTooltip = t("situationMonitor.feeds.internalTooltip", {
+    defaultValue: "Processed internal headlines from this project.",
+  });
+  const gdeltFeedTooltip = t("situationMonitor.feeds.gdeltTooltip", {
+    defaultValue: "Fallback headlines from GDELT when internal coverage is thin.",
+  });
   const marketsSnapshot = data?.markets;
   const cryptoSnapshot = data?.crypto;
   const fedSnapshot = data?.fed;
@@ -2560,12 +2624,27 @@ export function SituationMonitorContent() {
 
   const renderFeedPanel = (category: SituationMonitorCategory) => {
     const entries = data?.headlines?.[category] ?? [];
+    const diagnostics = data?.diagnostics?.categories?.[category];
     return (
       <Card
         title={
           <Space size={10}>
             <span>{categoryLabels[category]}</span>
             <Tag color="geekblue">{entries.length}</Tag>
+            {diagnostics ? (
+              <Popover content={internalFeedTooltip}>
+                <Tag color="blue" className="cursor-help">
+                  {t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })} {diagnostics.internalCount}
+                </Tag>
+              </Popover>
+            ) : null}
+            {diagnostics?.gdeltFallbackCount ? (
+              <Popover content={gdeltFeedTooltip}>
+                <Tag color="purple" className="cursor-help">
+                  {t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })} {diagnostics.gdeltFallbackCount}
+                </Tag>
+              </Popover>
+            ) : null}
           </Space>
         }
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
@@ -2573,9 +2652,18 @@ export function SituationMonitorContent() {
         loading={initialLoading}
       >
         {entries.length === 0 ? (
-          <Typography.Text type="secondary">
-            {t("situationMonitor.feeds.empty", { defaultValue: "No headlines yet." })}
-          </Typography.Text>
+          <Space direction="vertical" size={4}>
+            <Typography.Text type="secondary">
+              {t("situationMonitor.feeds.empty", { defaultValue: "No headlines yet." })}
+            </Typography.Text>
+            {data?.diagnostics?.effectiveScope === "tagged" ? (
+              <Typography.Text type="secondary">
+                {t("situationMonitor.feeds.taggedHint", {
+                  defaultValue: "Tagged scope is active. Switch to All items if you want broader coverage.",
+                })}
+              </Typography.Text>
+            ) : null}
+          </Space>
         ) : (
           <List
             size="small"
@@ -2590,7 +2678,13 @@ export function SituationMonitorContent() {
                       {entry.isAlert ? (
                         <Tag color="red">{t("situationMonitor.feeds.alert", { defaultValue: "ALERT" })}</Tag>
                       ) : null}
-                      {entry.origin === "gdelt" ? <Tag color="purple">GDELT</Tag> : null}
+                      {entry.origin === "gdelt" ? (
+                        <Popover content={gdeltFeedTooltip}>
+                          <Tag color="purple" className="cursor-help">
+                            {t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}
+                          </Tag>
+                        </Popover>
+                      ) : null}
                       {renderHeadlineMonitorMatches(entry)}
 	                      {href ? (
 	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
@@ -3141,7 +3235,13 @@ export function SituationMonitorContent() {
       title={
         <Space size={10}>
           <span>{t("situationMonitor.telegram.title", { defaultValue: "Telegram Early Signals" })}</span>
+          <Popover content={globalTelegramTooltip}>
+            <Tag color="default" className="cursor-help">
+              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })} <InfoCircleOutlined />
+            </Tag>
+          </Popover>
           <Tag color="geekblue">{telegramFeed?.count ?? telegramFeed?.items?.length ?? 0}</Tag>
+          {telegramFeed?.channelSet ? <Tag color="cyan">{telegramFeed.channelSet}</Tag> : null}
           {telegramFeed && !telegramFeed.configured ? (
             <Tag color="default">
               {t("situationMonitor.telegram.configMissing", { defaultValue: "Not configured" })}
@@ -3158,6 +3258,7 @@ export function SituationMonitorContent() {
       loading={signalsLoading.telegram && !telegramFeed}
     >
       {telegramFeed?.error ? <Alert type="warning" showIcon message={telegramFeed.error} /> : null}
+      {signalErrors.telegram ? <Alert type="warning" showIcon message={signalErrors.telegram} style={{ marginBottom: 12 }} /> : null}
       <Space wrap size={8} style={{ marginBottom: 10 }}>
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.filters.label", { defaultValue: "Filters" })}
@@ -3179,14 +3280,26 @@ export function SituationMonitorContent() {
           onChange={(value) => setTelegramChannelFilter(String(value))}
         />
       </Space>
-      {!telegramFeed ? (
+      {!session?.accessToken ? (
+        <Typography.Text type="secondary">
+          {t("situationMonitor.telegram.signInRequired", {
+            defaultValue: "Sign in to view global Telegram signals.",
+          })}
+        </Typography.Text>
+      ) : !canReadItems ? (
+        <Typography.Text type="secondary">
+          {t("situationMonitor.telegram.permissionRequired", {
+            defaultValue: "You need items.read permission to view global Telegram signals.",
+          })}
+        </Typography.Text>
+      ) : !telegramFeed ? (
         <Typography.Text type="secondary">
           {t("common.loading", { defaultValue: "Loading" })}
         </Typography.Text>
       ) : !telegramFeed.configured ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.configHint", {
-            defaultValue: "Configure Telegram API credentials and session in environment variables.",
+            defaultValue: "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
           })}
         </Typography.Text>
       ) : telegramFeed.items.length === 0 ? (
@@ -3248,6 +3361,11 @@ export function SituationMonitorContent() {
       title={
         <Space size={10}>
           <span>{t("situationMonitor.oref.title", { defaultValue: "OREF Alerts" })}</span>
+          <Popover content={globalOrefTooltip}>
+            <Tag color="default" className="cursor-help">
+              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })} <InfoCircleOutlined />
+            </Tag>
+          </Popover>
           <Tag color="geekblue">{orefAlerts?.alerts?.length ?? 0}</Tag>
           <Tag color="purple">
             {t("situationMonitor.oref.history24h", {
@@ -3261,7 +3379,20 @@ export function SituationMonitorContent() {
       loading={signalsLoading.oref && !orefAlerts}
     >
       {orefAlerts?.error ? <Alert type="warning" showIcon message={orefAlerts.error} /> : null}
-      {!orefAlerts ? (
+      {signalErrors.oref ? <Alert type="warning" showIcon message={signalErrors.oref} style={{ marginBottom: 12 }} /> : null}
+      {!session?.accessToken ? (
+        <Typography.Text type="secondary">
+          {t("situationMonitor.oref.signInRequired", {
+            defaultValue: "Sign in to view global OREF signals.",
+          })}
+        </Typography.Text>
+      ) : !canReadItems ? (
+        <Typography.Text type="secondary">
+          {t("situationMonitor.oref.permissionRequired", {
+            defaultValue: "You need items.read permission to view global OREF signals.",
+          })}
+        </Typography.Text>
+      ) : !orefAlerts ? (
         <Typography.Text type="secondary">
           {t("common.loading", { defaultValue: "Loading" })}
         </Typography.Text>
@@ -3756,6 +3887,9 @@ export function SituationMonitorContent() {
             ]}
             style={{ width: 160 }}
           />
+          <Tag color="default">
+            {(data?.diagnostics?.effectiveScope ?? scope).toUpperCase()}
+          </Tag>
           <Button onClick={() => void load()} loading={loading}>
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
@@ -3866,6 +4000,41 @@ export function SituationMonitorContent() {
         </Space>
       </div>
 
+      <Alert
+        type="info"
+        showIcon
+        message={t("situationMonitor.notice.title", {
+          defaultValue: "Signal scope and feed legend",
+        })}
+        description={
+          <Space direction="vertical" size={6}>
+            <Space wrap size={8}>
+              <Tag color="default">{t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}</Tag>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.notice.globalSignals", {
+                  defaultValue:
+                    "Telegram and OREF are shared global signals. Access still requires login and items.read permission.",
+                })}
+              </Typography.Text>
+            </Space>
+            <Space wrap size={8}>
+              <Tag color="blue">{t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })}</Tag>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.notice.internalDescription", {
+                  defaultValue: "Processed internal headlines from this project.",
+                })}
+              </Typography.Text>
+              <Tag color="purple">{t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}</Tag>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.notice.gdeltDescription", {
+                  defaultValue: "Fallback headlines from GDELT when internal coverage is thin.",
+                })}
+              </Typography.Text>
+            </Space>
+          </Space>
+        }
+      />
+
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {feedbackNotice ? (
         <div className="mt-3">
@@ -3894,6 +4063,30 @@ export function SituationMonitorContent() {
       >
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">{layoutHint}</Typography.Text>
+          {isCompactGrid ? (
+            <Alert
+              type="info"
+              showIcon
+              message={t("situationMonitor.notice.title", {
+                defaultValue: "Signal scope and feed legend",
+              })}
+              description={
+                <Space direction="vertical" size={6}>
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.notice.globalSignals", {
+                      defaultValue:
+                        "Telegram and OREF are shared global signals. Access still requires login and items.read permission.",
+                    })}
+                  </Typography.Text>
+                  <Space wrap size={8}>
+                    <Tag color="default">{t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}</Tag>
+                    <Tag color="blue">{t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })}</Tag>
+                    <Tag color="purple">{t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}</Tag>
+                  </Space>
+                </Space>
+              }
+            />
+          ) : null}
           {isCompactGrid ? (
             <Button
               block

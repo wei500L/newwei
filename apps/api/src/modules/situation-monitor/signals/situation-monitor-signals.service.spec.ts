@@ -7,7 +7,7 @@ describe('SituationMonitorSignalsService', () => {
 
   function createService() {
     const env = { get: jest.fn() } as any;
-    const cache = { get: jest.fn(), set: jest.fn() } as any;
+    const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn() } as any;
     const dispatcher = { publish: jest.fn() } as any;
     const alerts = { enqueueRuleCheck: jest.fn() } as any;
     const settings = {
@@ -42,6 +42,50 @@ describe('SituationMonitorSignalsService', () => {
 
     return { service };
   }
+
+  it('returns global telegram feed metadata', async () => {
+    const { service } = createService();
+    jest.spyOn(service as any, 'restoreCachedTelegramState').mockResolvedValue(undefined);
+
+    (service as any).telegramState.channelSet = 'full';
+    (service as any).telegramState.lastPollAt = Date.now();
+    (service as any).telegramState.items = [
+      {
+        id: 'demo:1',
+        source: 'telegram',
+        channel: 'demo',
+        channelTitle: 'Demo',
+        url: 'https://t.me/demo/1',
+        ts: new Date().toISOString(),
+        text: 'hello',
+        topic: 'breaking',
+        tags: [],
+        earlySignal: true,
+      },
+    ];
+
+    const result = await service.getTelegramFeed();
+
+    expect(result.scope).toBe('global');
+    expect(result.channelSet).toBe('full');
+    expect(result.count).toBe(1);
+  });
+
+  it('restores telegram cursor state from cache', async () => {
+    const { service } = createService();
+    (service as any).cache.get.mockResolvedValue({
+      channelSet: 'full',
+      cursorByHandle: { alpha: 10, beta: 20 },
+      items: [],
+      lastPollAt: Date.now(),
+      lastError: null,
+    });
+
+    await (service as any).restoreCachedTelegramState();
+
+    expect((service as any).telegramState.channelSet).toBe('full');
+    expect((service as any).telegramState.cursorByHandle).toEqual({ alpha: 10, beta: 20 });
+  });
 
   it('computes Telegram startup delay from service start in guarded polling', async () => {
     const { service } = createService();

@@ -636,6 +636,53 @@ export class SituationMonitorSettingsService {
     return this.getPublicSettings();
   }
 
+  async clearTelegramConfiguration(orgId: string, actorId: string): Promise<SituationMonitorSettingsPublic> {
+    const stored = await this.loadStoredSettings();
+    const nextStored: StoredSituationMonitorSettings = {
+      ...(stored ?? {}),
+      telegramEnabled: false,
+      telegramApiId: null,
+      telegramApiHash: null,
+      telegramSession: null,
+    };
+
+    await this.prisma.systemSetting.upsert({
+      where: { key: SETTINGS_KEY },
+      create: {
+        key: SETTINGS_KEY,
+        description: SETTINGS_DESCRIPTION,
+        value: this.toPrismaJson(nextStored),
+      },
+      update: {
+        description: SETTINGS_DESCRIPTION,
+        value: this.toPrismaJson(nextStored),
+      },
+    });
+
+    await writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId,
+          resource: "system_settings",
+          action: "situation_monitor_telegram_clear",
+          metadata: this.toPrismaJson({
+            ok: true,
+            telegramEnabled: false,
+            telegramApiIdCleared: true,
+            telegramApiHashCleared: true,
+            telegramSessionCleared: true,
+          } satisfies Prisma.InputJsonObject),
+        },
+      },
+      { orgId, actorId, resource: "system_settings", action: "situation_monitor_telegram_clear" },
+    );
+
+    await this.invalidateCache();
+    return this.getPublicSettings();
+  }
+
   private resolveEffectiveConfig(stored: StoredSituationMonitorSettings | null): EffectiveSituationMonitorSettings {
     const envTranslation = this.env.situationMonitorTranslationConfig;
     const envTelegram = this.resolveTelegramEnvDefaults();

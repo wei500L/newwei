@@ -29,7 +29,7 @@ const normalizeWindowHours = (value: unknown): number => {
 };
 
 const normalizeScope = (value: unknown): SituationMonitorScope => {
-  return value === "all" ? "all" : "tagged";
+  return value === "tagged" ? "tagged" : "all";
 };
 
 const normalizeBoolean = (value: unknown, fallback: boolean): boolean => {
@@ -38,7 +38,7 @@ const normalizeBoolean = (value: unknown, fallback: boolean): boolean => {
 
 export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsState>((set) => ({
   windowHours: 24,
-  scope: "tagged",
+  scope: "all",
   autoRefresh: true,
   resetLayoutOnPreset: false,
   translateToZh: false,
@@ -63,7 +63,7 @@ export const useSituationMonitorSettingsStore = create<SituationMonitorSettingsS
   reset: () =>
     set({
       windowHours: 24,
-      scope: "tagged",
+      scope: "all",
       autoRefresh: true,
       resetLayoutOnPreset: false,
       translateToZh: false,

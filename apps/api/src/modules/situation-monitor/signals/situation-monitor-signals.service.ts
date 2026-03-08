@@ -67,6 +67,14 @@ interface TelegramState {
   credentialsFingerprint: string | null;
 }
 
+interface CachedTelegramState {
+  channelSet?: string | null;
+  cursorByHandle?: Record<string, number>;
+  items?: TelegramSignalItem[];
+  lastPollAt?: number;
+  lastError?: string | null;
+}
+
 interface OrefState {
   lastAlerts: OrefAlert[];
   lastAlertsJson: string;
@@ -172,9 +180,11 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     return {
       source: 'telegram',
+      scope: 'global',
       earlySignal: true,
       configured,
       enabled,
+      channelSet: this.telegramState.channelSet ?? runtime.channelSet,
       count: filtered.length,
       updatedAt: this.telegramState.lastPollAt ? new Date(this.telegramState.lastPollAt).toISOString() : null,
       items: filtered,
@@ -187,6 +197,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const configured = this.isOrefConfigured();
     return {
+      scope: 'global',
       configured,
       alerts: this.orefState.lastAlerts,
       historyCount24h: this.orefState.historyCount24h,
@@ -203,6 +214,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const configured = this.isOrefConfigured();
     return {
+      scope: 'global',
       configured,
       history: this.orefState.history,
       historyCount24h: this.orefState.historyCount24h,
@@ -261,6 +273,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       if (sinceServiceStartMs < startupDelayMs) {
         return;
       }
+    }
+
+    if (this.telegramState.channelSet && this.telegramState.channelSet !== runtime.channelSet) {
+      this.telegramState.cursorByHandle = {};
     }
 
     const ok = await this.initTelegramClientIfNeeded(runtime);
@@ -785,7 +801,9 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }
 
   private async persistTelegramState() {
-    const payload = {
+    const payload: CachedTelegramState = {
+      channelSet: this.telegramState.channelSet,
+      cursorByHandle: this.telegramState.cursorByHandle,
       items: this.telegramState.items,
       lastPollAt: this.telegramState.lastPollAt,
       lastError: this.telegramState.lastError,
@@ -797,6 +815,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private async persistOrefAlerts() {
     const payload: SituationOrefAlertsResponse = {
+      scope: 'global',
       configured: this.isOrefConfigured(),
       alerts: this.orefState.lastAlerts,
       historyCount24h: this.orefState.historyCount24h,
@@ -831,6 +850,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           : this.orefState.history;
 
       const payload: SituationOrefHistoryResponse = {
+        scope: 'global',
         configured: this.isOrefConfigured(),
         history,
         historyCount24h: this.orefState.historyCount24h,
@@ -877,16 +897,29 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     try {
-      const cached = await this.cache.get<{
-        items?: TelegramSignalItem[];
-        lastPollAt?: number;
-        lastError?: string | null;
-      }>(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY);
+      const cached = await this.cache.get<CachedTelegramState>(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY);
 
       if (!cached || !Array.isArray(cached.items)) {
         return;
       }
 
+      this.telegramState.channelSet =
+        typeof cached.channelSet === 'string' && cached.channelSet.trim().length > 0
+          ? cached.channelSet.trim()
+          : null;
+      this.telegramState.cursorByHandle =
+        cached.cursorByHandle && typeof cached.cursorByHandle === 'object' && !Array.isArray(cached.cursorByHandle)
+          ? Object.fromEntries(
+              Object.entries(cached.cursorByHandle)
+                .flatMap(([handle, cursor]) => {
+                  const normalizedHandle = handle.trim();
+                  const normalizedCursor = Number(cursor);
+                  return normalizedHandle.length > 0 && Number.isFinite(normalizedCursor) && normalizedCursor > 0
+                    ? [[normalizedHandle, normalizedCursor] as const]
+                    : [];
+                }),
+            )
+          : {};
       this.telegramState.items = cached.items;
       this.telegramState.lastPollAt = Number.isFinite(Number(cached.lastPollAt))
         ? Number(cached.lastPollAt)
@@ -896,6 +929,21 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     } catch {
       // best-effort
     }
+  }
+
+  async clearTelegramState(options?: { clearItems?: boolean }): Promise<void> {
+    await this.disconnectTelegramClient();
+    this.telegramState.channels = [];
+    this.telegramState.channelSet = null;
+    this.telegramState.cursorByHandle = {};
+    if (options?.clearItems ?? true) {
+      this.telegramState.items = [];
+      this.telegramState.lastPollAt = 0;
+    }
+    this.telegramState.lastError = null;
+    this.telegramState.permanentlyDisabled = false;
+
+    await this.cache.del(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY).catch(() => undefined);
   }
 
   private async restoreCachedOrefState() {

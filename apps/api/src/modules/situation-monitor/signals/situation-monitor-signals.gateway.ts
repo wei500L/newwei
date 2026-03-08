@@ -17,6 +17,7 @@ import {
 } from '../../auth/auth.service';
 import { EnvService } from '../../config/config.service';
 import { UserSessionManager } from '../../websocket/user-session-manager.service';
+import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from './situation-monitor-signals.constants';
 import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
 
 interface RateLimitState {
@@ -52,7 +53,7 @@ export class SituationMonitorSignalsGateway
 
   onModuleInit() {
     this.unsubscribe = this.dispatcher.registerListener(async (event) => {
-      this.server.emit(event.type, event.payload);
+      this.server.to(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM).emit(event.type, event.payload);
     });
   }
 
@@ -100,6 +101,7 @@ export class SituationMonitorSignalsGateway
         orgId: profile.orgId,
         ip,
       });
+      await client.join(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM);
 
       client.emit('situation:connected', {
         orgId: profile.orgId,

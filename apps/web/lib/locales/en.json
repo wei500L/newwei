@@ -5159,6 +5159,8 @@
         "saved": "Saved override",
         "enabled": "Enabled",
         "disabled": "Disabled",
+        "globalSignalLabel": "GLOBAL SHARED",
+        "globalSignalHint": "Telegram and OREF are global shared signals. Any signed-in user with items.read can view the same feed and updates.",
         "configured": "Configured",
         "notConfigured": "Not configured",
         "translationApiKeySource": "Translation API key source",
@@ -5274,7 +5276,8 @@
         "keepApiKey": "Keep API key",
         "telegramSendCode": "Send code",
         "telegramCompleteAuth": "Generate & save session",
-        "telegramClearAuthState": "Clear auth state"
+        "telegramClearAuthState": "Clear auth state",
+        "telegramClearSavedSession": "Clear saved Telegram session"
       },
       "validation": {
         "translationMaxConcurrency": "Concurrency is required",
@@ -5293,7 +5296,8 @@
         "reset": "Reset to env defaults",
         "telegramCodeSent": "Verification code sent.",
         "telegramAuthRequestReady": "Verification request created. Enter code and complete auth.",
-        "telegramSessionSaved": "Telegram session generated and saved."
+        "telegramSessionSaved": "Telegram session generated and saved.",
+        "telegramSessionCleared": "Telegram session cleared and polling disabled."
       },
       "errors": {
         "loadFailed": "Failed to load situation monitor settings",
@@ -5322,7 +5326,8 @@
         "telegramAuthRestartRequired": "Telegram auth needs restart. Send a new code.",
         "telegramAuthSignupRequired": "Telegram account signup is required for this number.",
         "telegramAuthFailed": "Telegram auth failed. Please try again.",
-        "telegramAuthPermissionDenied": "Missing permission to perform Telegram auth."
+        "telegramAuthPermissionDenied": "Missing permission to perform Telegram auth.",
+        "telegramAuthClearFailed": "Failed to clear saved Telegram session."
       },
       "modal": {
         "resetTitle": "Reset situation monitor settings",
@@ -7393,7 +7398,23 @@
     },
     "feeds": {
       "empty": "No headlines yet.",
-      "alert": "ALERT"
+      "alert": "ALERT",
+      "taggedHint": "Tagged scope is active. Switch to All items if you want broader coverage.",
+      "internalTooltip": "Processed internal headlines from this project.",
+      "gdeltTooltip": "Fallback headlines from GDELT when internal coverage is thin."
+    },
+    "notice": {
+      "title": "Signal scope and feed legend",
+      "globalSignals": "Telegram and OREF are shared global signals. Access still requires login and items.read permission.",
+      "internalLabel": "INT",
+      "internalDescription": "Processed internal headlines from this project.",
+      "gdeltLabel": "GDELT",
+      "gdeltDescription": "Fallback headlines from GDELT when internal coverage is thin."
+    },
+    "shared": {
+      "label": "GLOBAL",
+      "telegramTooltip": "Global shared Telegram signal feed. All signed-in users with items.read access see the same source and updates.",
+      "orefTooltip": "Global shared OREF alert feed. All signed-in users with items.read access see the same source and updates."
     },
     "alerts": {
       "title": "Alerts",
@@ -7403,8 +7424,10 @@
       "title": "Telegram Early Signals",
       "configMissing": "Not configured",
       "disabled": "Disabled",
-      "configHint": "Configure Telegram API credentials and session in environment variables.",
+      "configHint": "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
       "empty": "No Telegram signals yet.",
+      "signInRequired": "Sign in to view global Telegram signals.",
+      "permissionRequired": "You need items.read permission to view global Telegram signals.",
       "filters": {
         "label": "Filters",
         "allTopics": "All topics",
@@ -7416,6 +7439,8 @@
       "history24h": "24h {{count}}",
       "configHint": "Configure OREF proxy auth and enable OREF polling in environment variables.",
       "empty": "No active OREF alerts.",
+      "signInRequired": "Sign in to view global OREF signals.",
+      "permissionRequired": "You need items.read permission to view global OREF signals.",
       "recentWaves": "Recent waves",
       "recent": "Recent"
     },

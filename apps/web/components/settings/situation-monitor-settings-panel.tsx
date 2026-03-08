@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoCircleOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
@@ -7,6 +8,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popover,
   Space,
   Spin,
   Switch,
@@ -257,6 +259,7 @@ export function SituationMonitorSettingsPanel() {
   const [telegramAuthExpiresAt, setTelegramAuthExpiresAt] = useState<string | null>(null);
   const [telegramAuthStarting, setTelegramAuthStarting] = useState(false);
   const [telegramAuthCompleting, setTelegramAuthCompleting] = useState(false);
+  const [telegramAuthClearing, setTelegramAuthClearing] = useState(false);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -522,6 +525,40 @@ export function SituationMonitorSettingsPanel() {
     }
   };
 
+  const handleTelegramClearSavedSession = async () => {
+    setTelegramAuthClearing(true);
+    try {
+      const response = await apiClient.delete<SituationMonitorSettingsResponse>(
+        "system-settings/situation-monitor/telegram-auth"
+      );
+      const data: SituationMonitorSettingsResponse = {
+        ...EMPTY_SETTINGS,
+        ...(response.data ?? {}),
+      };
+      applySettings(data);
+      setTelegramAuthRequestId(null);
+      setTelegramAuthCode("");
+      setTelegramAuthPassword("");
+      setTelegramAuthExpiresAt(null);
+      setTelegramAuthCodeViaApp(false);
+      messageApi.success(
+        t("systemSettings.situationMonitor.messages.telegramSessionCleared", {
+          defaultValue: "Telegram session cleared and polling disabled.",
+        })
+      );
+    } catch (error) {
+      captureClientError("Failed to clear telegram session", error);
+      messageApi.error(
+        extractApiError(error).message ||
+          t("systemSettings.situationMonitor.errors.telegramAuthClearFailed", {
+            defaultValue: "Failed to clear saved Telegram session.",
+          })
+      );
+    } finally {
+      setTelegramAuthClearing(false);
+    }
+  };
+
   const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
@@ -573,6 +610,10 @@ export function SituationMonitorSettingsPanel() {
     `systemSettings.situationMonitor.status.liveHlsProxySources.${settings.liveHlsProxyCnbcSource}`,
     { defaultValue: settings.liveHlsProxyCnbcSource }
   );
+  const globalSignalHint = t("systemSettings.situationMonitor.status.globalSignalHint", {
+    defaultValue:
+      "Telegram and OREF are global shared signals. Any signed-in user with items.read can view the same feed and updates.",
+  });
 
   if (loading && !loadedOnce) {
     return (
@@ -606,6 +647,11 @@ export function SituationMonitorSettingsPanel() {
           <Tag color={translationEnabledColor}>{translationEnabledLabel}</Tag>
           <Tag>{providerLabel}</Tag>
           <Tag color={telegramEnabledColor}>{telegramEnabledLabel}</Tag>
+          <Popover content={globalSignalHint}>
+            <Tag color="default" className="cursor-help">
+              {t("systemSettings.situationMonitor.status.globalSignalLabel", { defaultValue: "GLOBAL SHARED" })} <InfoCircleOutlined />
+            </Tag>
+          </Popover>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
@@ -1051,6 +1097,16 @@ export function SituationMonitorSettingsPanel() {
             disabled={!telegramAuthRequestId || telegramAuthCompleting}
           >
             {t("systemSettings.situationMonitor.actions.telegramClearAuthState")}
+          </Button>
+          <Button
+            danger
+            onClick={handleTelegramClearSavedSession}
+            loading={telegramAuthClearing}
+            disabled={!settings.hasTelegramSession || telegramAuthCompleting}
+          >
+            {t("systemSettings.situationMonitor.actions.telegramClearSavedSession", {
+              defaultValue: "Clear saved Telegram session",
+            })}
           </Button>
         </Space>
 

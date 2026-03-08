@@ -13,6 +13,7 @@ import {
   SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
   TELEGRAM_POLL_JOB_NAME,
 } from "../situation-monitor/signals/situation-monitor-signals.constants";
+import { SituationMonitorSignalsService } from "../situation-monitor/signals/situation-monitor-signals.service";
 import {
   removeLegacyTelegramRepeatJobs,
   removeQueuedTelegramPollJobs,
@@ -39,7 +40,8 @@ export class SituationMonitorSettingsController {
   constructor(
     private readonly settings: SituationMonitorSettingsService,
     private readonly telegramAuth: SituationMonitorTelegramAuthService,
-    private readonly env: EnvService
+    private readonly env: EnvService,
+    private readonly signals: SituationMonitorSignalsService,
   ) {}
 
   @Get()
@@ -61,7 +63,18 @@ export class SituationMonitorSettingsController {
   async reset(@CurrentUser() user: AuthenticatedUser) {
     const reset = await this.settings.resetToEnv(user.orgId, user.id);
     await this.syncTelegramScheduleBestEffort(reset.telegramEnabled, reset.telegramPollIntervalMs);
+    if (!reset.hasTelegramSession) {
+      await this.signals.clearTelegramState({ clearItems: true });
+    }
     return reset;
+  }
+
+  @Delete("telegram-auth")
+  async clearTelegramAuth(@CurrentUser() user: AuthenticatedUser) {
+    const updated = await this.settings.clearTelegramConfiguration(user.orgId, user.id);
+    await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
+    await this.signals.clearTelegramState({ clearItems: true });
+    return updated;
   }
 
   @Post("telegram-auth/start")

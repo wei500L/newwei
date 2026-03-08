@@ -11,3 +11,5 @@ export const SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY =
 
 export const TELEGRAM_POLL_JOB_NAME = 'telegram-poll';
 export const OREF_POLL_JOB_NAME = 'oref-poll';
+
+export const SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM = 'global:situation-monitor-signals';

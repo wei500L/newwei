@@ -5159,6 +5159,8 @@
         "saved": "已保存覆盖配置",
         "enabled": "已启用",
         "disabled": "已禁用",
+        "globalSignalLabel": "全局共享",
+        "globalSignalHint": "Telegram 与 OREF 属于全局共享信号；任何已登录且具备 items.read 权限的用户都会看到同一份 feed 与更新。",
         "configured": "已配置",
         "notConfigured": "未配置",
         "translationApiKeySource": "翻译 API Key 来源",
@@ -5274,7 +5276,8 @@
         "keepApiKey": "保留 API Key",
         "telegramSendCode": "发送验证码",
         "telegramCompleteAuth": "生成并保存 Session",
-        "telegramClearAuthState": "清空认证状态"
+        "telegramClearAuthState": "清空认证状态",
+        "telegramClearSavedSession": "清除已保存的 Telegram Session"
       },
       "validation": {
         "translationMaxConcurrency": "并发数必填",
@@ -5293,7 +5296,8 @@
         "reset": "已重置为环境变量默认值",
         "telegramCodeSent": "验证码已发送。",
         "telegramAuthRequestReady": "认证请求已创建，请输入验证码并完成授权。",
-        "telegramSessionSaved": "Telegram Session 已生成并保存。"
+        "telegramSessionSaved": "Telegram Session 已生成并保存。",
+        "telegramSessionCleared": "已清除 Telegram Session，并关闭轮询。"
       },
       "errors": {
         "loadFailed": "加载态势监控配置失败",
@@ -5322,7 +5326,8 @@
         "telegramAuthRestartRequired": "Telegram 授权需要重启，请重新发送验证码。",
         "telegramAuthSignupRequired": "该手机号需要先完成 Telegram 注册。",
         "telegramAuthFailed": "Telegram 授权失败，请重试。",
-        "telegramAuthPermissionDenied": "缺少执行 Telegram 授权的权限。"
+        "telegramAuthPermissionDenied": "缺少执行 Telegram 授权的权限。",
+        "telegramAuthClearFailed": "清除已保存的 Telegram Session 失败。"
       },
       "modal": {
         "resetTitle": "重置态势监控配置",
@@ -7393,7 +7398,23 @@
     },
     "feeds": {
       "empty": "暂无新闻。",
-      "alert": "预警"
+      "alert": "预警",
+      "taggedHint": "当前使用“已标注来源”范围；如果想看更广的覆盖，可切换到“全部条目”。",
+      "internalTooltip": "来自本项目内部处理后的新闻条目。",
+      "gdeltTooltip": "当内部覆盖不足时，使用 GDELT 作为补充回退来源。"
+    },
+    "notice": {
+      "title": "信号范围与来源说明",
+      "globalSignals": "Telegram 与 OREF 属于全局共享信号；仍然需要登录并具备 items.read 权限才能查看。",
+      "internalLabel": "INT",
+      "internalDescription": "来自本项目内部处理后的新闻条目。",
+      "gdeltLabel": "GDELT",
+      "gdeltDescription": "当内部覆盖不足时，使用 GDELT 作为补充回退来源。"
+    },
+    "shared": {
+      "label": "全局共享",
+      "telegramTooltip": "全局共享的 Telegram 信号流。所有具备 items.read 权限的已登录用户看到的是同一份来源和更新。",
+      "orefTooltip": "全局共享的 OREF 告警流。所有具备 items.read 权限的已登录用户看到的是同一份来源和更新。"
     },
     "alerts": {
       "title": "预警",
@@ -7403,8 +7424,10 @@
       "title": "Telegram 早期信号",
       "configMissing": "未配置",
       "disabled": "已禁用",
-      "configHint": "请在环境变量中配置 Telegram API 凭据与 session。",
+      "configHint": "请在 管理员设置 > 系统设置 > 态势监控 中完成 Telegram 授权配置。",
       "empty": "暂无 Telegram 信号。",
+      "signInRequired": "登录后可查看全局 Telegram 信号。",
+      "permissionRequired": "需要具备 items.read 权限才能查看全局 Telegram 信号。",
       "filters": {
         "label": "筛选",
         "allTopics": "全部主题",
@@ -7416,6 +7439,8 @@
       "history24h": "24小时 {{count}}",
       "configHint": "请在环境变量中配置 OREF 代理认证并启用 OREF 轮询。",
       "empty": "暂无 OREF 活跃告警。",
+      "signInRequired": "登录后可查看全局 OREF 信号。",
+      "permissionRequired": "需要具备 items.read 权限才能查看全局 OREF 信号。",
       "recentWaves": "最近波次",
       "recent": "最新"
     },
