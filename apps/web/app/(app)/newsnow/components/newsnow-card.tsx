@@ -22,12 +22,11 @@ import { useTranslation } from "react-i18next";
 
 import {
   extractApiError,
-  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
 } from "@/lib/api-error";
 import {
   getPrimaryRuntimeSecretKey,
-  sourceRequiresRuntimeSecrets,
 } from '@/lib/news-source-runtime-secrets';
+import { shouldShowRuntimeSecretCta } from '@/lib/news-source-runtime-secrets-ui';
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
 
 import {
@@ -359,9 +358,10 @@ export function NewsnowCard({
     () => (isError ? extractApiError(error) : null),
     [error, isError],
   );
-  const needsRuntimeSecret =
-    sourceError?.code === NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE ||
-    sourceRequiresRuntimeSecrets(source);
+  const needsRuntimeSecret = useMemo(
+    () => shouldShowRuntimeSecretCta(source, sourceError?.code),
+    [source, sourceError?.code],
+  );
   const sourceErrorMessage = useMemo(() => {
     if (!sourceError) {
       return null;

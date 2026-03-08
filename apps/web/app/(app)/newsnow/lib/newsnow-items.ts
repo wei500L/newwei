@@ -78,6 +78,20 @@ function buildNewsItemFallbackKey(item: NewsnowItemLike, index: number): string 
   return `fallback:${index}`;
 }
 
+function resolveNormalizedNewsItemId(item: NewsnowItemLike, index: number): string {
+  const url = normalizeNewsItemUrl(item.url) ?? normalizeNewsItemUrl(item.mobileUrl);
+  if (url) {
+    return url;
+  }
+
+  const normalizedId = normalizeNewsItemId(item.id);
+  if (normalizedId) {
+    return normalizedId;
+  }
+
+  return getNewsItemStableKey(item, index);
+}
+
 export function getNewsItemStableKey(item: NewsnowItemLike, index = 0): string {
   const normalizedId = normalizeNewsItemId(item.id);
   if (normalizedId) {
@@ -134,11 +148,12 @@ export function sanitizeNewsItems(items: unknown): NormalizedNewsnowItem[] {
     const rawItem = entry as NewsnowItemLike;
     const extra = normalizeNewsItemExtra(rawItem.extra);
     const mobileUrl = normalizeNewsItemUrl(rawItem.mobileUrl);
+    const url = normalizeNewsItemUrl(rawItem.url) ?? '';
     const pubDate = normalizeNewsItemDate(rawItem.pubDate);
     const normalizedItem: NormalizedNewsnowItem = {
-      id: normalizeNewsItemId(rawItem.id) ?? getNewsItemStableKey({ ...rawItem, extra }, index),
+      id: resolveNormalizedNewsItemId({ ...rawItem, extra, mobileUrl, url }, index),
       title: normalizeNewsItemTitle(rawItem.title),
-      url: normalizeNewsItemUrl(rawItem.url) ?? '',
+      url,
       ...(mobileUrl ? { mobileUrl } : {}),
       ...(pubDate !== undefined ? { pubDate } : {}),
       ...(extra ? { extra } : {}),

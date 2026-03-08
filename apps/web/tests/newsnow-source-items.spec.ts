@@ -30,7 +30,7 @@ describe('newsnow source item normalization', () => {
     expect(items).toHaveLength(2);
     expect(items.map((item) => item.id)).toEqual([
       'https://news.ifeng.com/c/8rIrbm4QTxl',
-      'second-item',
+      'https://example.com/b',
     ]);
     expect(items[0]?.title).toBe('Item A');
   });
@@ -46,5 +46,44 @@ describe('newsnow source item normalization', () => {
     expect(item).toBeDefined();
     expect(item?.id).toBe('https://example.com/no-id');
     expect(getNewsItemStableKey(item ?? {}, 0)).toBe('https://example.com/no-id');
+  });
+
+  it('keeps the deduped item id stable when duplicate order changes', () => {
+    const firstPass = sanitizeNewsItems([
+      {
+        id: 'alpha-id',
+        title: 'Stable article',
+        url: 'https://example.com/stable',
+        pubDate: 1,
+      },
+      {
+        id: 'beta-id',
+        title: 'Stable article duplicate',
+        url: 'https://example.com/stable',
+        pubDate: 2,
+      },
+    ]);
+
+    const secondPass = sanitizeNewsItems([
+      {
+        id: 'beta-id',
+        title: 'Stable article duplicate',
+        url: 'https://example.com/stable',
+        pubDate: 2,
+      },
+      {
+        id: 'alpha-id',
+        title: 'Stable article',
+        url: 'https://example.com/stable',
+        pubDate: 1,
+      },
+    ]);
+
+    expect(firstPass).toHaveLength(1);
+    expect(secondPass).toHaveLength(1);
+    expect(firstPass[0]?.id).toBe('https://example.com/stable');
+    expect(secondPass[0]?.id).toBe('https://example.com/stable');
+    expect(getNewsItemStableKey(firstPass[0] ?? {}, 0)).toBe('https://example.com/stable');
+    expect(getNewsItemStableKey(secondPass[0] ?? {}, 0)).toBe('https://example.com/stable');
   });
 });

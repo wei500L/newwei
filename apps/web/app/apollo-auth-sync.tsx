@@ -4,6 +4,7 @@ import { getSession, useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 
 import { setApolloAccessToken } from "@/lib/apollo-client";
+import { invalidateApiSessionCache, syncApiSessionCache } from "@/lib/api-client";
 
 type SessionWithAccessToken = { accessToken?: string; accessTokenExpires?: number } & Record<string, unknown>;
 
@@ -17,6 +18,13 @@ export function ApolloAuthSync() {
 
   useEffect(() => {
     setApolloAccessToken(status === "authenticated" ? accessToken ?? null : null);
+
+    if (status === "authenticated") {
+      void syncApiSessionCache().catch(() => null);
+      return;
+    }
+
+    invalidateApiSessionCache();
   }, [accessToken, status]);
 
   useEffect(() => {

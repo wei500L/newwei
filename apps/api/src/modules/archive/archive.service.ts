@@ -180,6 +180,7 @@ export class ArchiveService {
     );
     const readyCount = classificationById.size;
     const missingCount = Math.max(0, searchResult.rows.length - readyCount);
+    let enqueueErrorMessage: string | null = null;
     if (missingCount > 0) {
       try {
         await this.archivePreparationQueue.ensureDigestCoverage(
@@ -187,6 +188,8 @@ export class ArchiveService {
           this.toDateKey(anchorDate),
         );
       } catch (error) {
+        enqueueErrorMessage =
+          error instanceof Error ? error.message : String(error);
         this.logger.warn(
           { orgId, anchorDate: this.toDateKey(anchorDate), error },
           "Failed to enqueue archive digest preparation job.",
@@ -289,6 +292,7 @@ export class ArchiveService {
         anchorDate,
         readyCount,
         missingCount,
+        enqueueErrorMessage,
       ),
     };
   }
@@ -1235,6 +1239,7 @@ export class ArchiveService {
     anchorDate: Date,
     readyCount: number,
     missingCount: number,
+    enqueueErrorMessage: string | null = null,
   ): Promise<ArchivePreparationStatus> {
     if (missingCount <= 0) {
       return {
@@ -1257,6 +1262,19 @@ export class ArchiveService {
         { orgId, anchorDate: this.toDateKey(anchorDate), error },
         "Failed to read archive digest preparation status.",
       );
+    }
+    if (
+      enqueueErrorMessage ||
+      queuedStatus?.state === ArchivePreparationState.FAILED
+    ) {
+      return {
+        state: ArchivePreparationState.FAILED,
+        readyCount,
+        missingCount,
+        updatedAt: queuedStatus?.updatedAt ?? new Date(),
+        errorMessage:
+          enqueueErrorMessage ?? queuedStatus?.errorMessage ?? null,
+      };
     }
     if (readyCount > 0) {
       return {

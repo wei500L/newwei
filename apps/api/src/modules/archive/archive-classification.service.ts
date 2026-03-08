@@ -180,8 +180,10 @@ export class ArchiveClassificationService {
     const cachedResults = await this.loadCachedResults(
       orgId,
       preparedInputs,
-      embeddingModel,
-      rerankModel,
+      {
+        embeddingModel,
+        rerankModel,
+      },
     );
     const missingInputs = preparedInputs.filter(
       (input) => !cachedResults.has(input.processedArticleId),
@@ -285,10 +287,6 @@ export class ArchiveClassificationService {
       this.liteLlm.getEmbeddingModel(),
       this.liteLlm.getRerankModel(),
     ]);
-    if (!embeddingModel || !rerankModel) {
-      return new Map();
-    }
-
     const preparedInputs = inputs.map((input) => {
       const classificationText = this.buildClassificationText(input);
       return {
@@ -301,16 +299,20 @@ export class ArchiveClassificationService {
     return this.loadCachedResults(
       orgId,
       preparedInputs,
-      embeddingModel,
-      rerankModel,
+      {
+        embeddingModel,
+        rerankModel,
+      },
     );
   }
 
   private async loadCachedResults(
     orgId: string,
     inputs: PreparedArchiveInput[],
-    embeddingModel: string,
-    rerankModel: string,
+    modelSelection?: {
+      embeddingModel?: string | null;
+      rerankModel?: string | null;
+    },
   ): Promise<Map<string, ArchiveHybridClassificationResult>> {
     const rows = (await this.prisma.archiveArticleClassification.findMany({
       where: {
@@ -352,8 +354,10 @@ export class ArchiveClassificationService {
         row.classificationTextVersion !== ARCHIVE_CLASSIFICATION_TEXT_VERSION ||
         row.taxonomyVersion !== ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION ||
         row.pipelineVersion !== ARCHIVE_CLASSIFICATION_PIPELINE_VERSION ||
-        row.embeddingModel !== embeddingModel ||
-        row.rerankModel !== rerankModel
+        (modelSelection?.embeddingModel != null &&
+          row.embeddingModel !== modelSelection.embeddingModel) ||
+        (modelSelection?.rerankModel != null &&
+          row.rerankModel !== modelSelection.rerankModel)
       ) {
         continue;
       }

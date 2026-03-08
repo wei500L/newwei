@@ -26,10 +26,34 @@ const SESSION_CACHE_TTL_MS = 5_000;
 let cachedSession: ApiAuthSession | null | undefined;
 let cachedSessionAt = 0;
 let cachedSessionPromise: Promise<ApiAuthSession | null> | null = null;
+let sessionCacheVersion = 0;
+
+function startSessionFetch(): Promise<ApiAuthSession | null> {
+  const requestVersion = sessionCacheVersion;
+  const sessionPromise = fetchSession()
+    .then((session) => {
+      if (requestVersion === sessionCacheVersion) {
+        cachedSession = session;
+        cachedSessionAt = Date.now();
+      }
+      return session;
+    })
+    .finally(() => {
+      if (requestVersion === sessionCacheVersion && cachedSessionPromise === sessionPromise) {
+        cachedSessionPromise = null;
+      }
+    });
+
+  cachedSessionPromise = sessionPromise;
+  return sessionPromise;
+}
 
 export const invalidateApiSessionCache = () => {
+  sessionCacheVersion += 1;
   cachedSession = undefined;
   cachedSessionAt = 0;
+  cachedSessionPromise = null;
+  refreshSessionPromise = null;
 };
 
 async function fetchSession(): Promise<ApiAuthSession | null> {
@@ -57,17 +81,16 @@ export async function getCachedApiSession(): Promise<ApiAuthSession | null> {
     return cachedSession;
   }
 
-  cachedSessionPromise = fetchSession()
-    .then((session) => {
-      cachedSession = session;
-      cachedSessionAt = Date.now();
-      return session;
-    })
-    .finally(() => {
-      cachedSessionPromise = null;
-    });
+  return startSessionFetch();
+}
 
-  return cachedSessionPromise;
+export async function syncApiSessionCache(): Promise<ApiAuthSession | null> {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  invalidateApiSessionCache();
+  return startSessionFetch();
 }
 
 const refreshAccessToken = async () => {
@@ -76,10 +99,13 @@ const refreshAccessToken = async () => {
   }
 
   if (!refreshSessionPromise) {
+    const requestVersion = sessionCacheVersion;
     refreshSessionPromise = fetchSession()
       .then((session) => {
-        cachedSession = session;
-        cachedSessionAt = Date.now();
+        if (requestVersion === sessionCacheVersion) {
+          cachedSession = session;
+          cachedSessionAt = Date.now();
+        }
         return session?.accessToken ?? null;
       })
       .catch(() => null)

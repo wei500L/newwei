@@ -24,6 +24,10 @@ import {
   sourceSupportsRuntimeSecrets,
   type NewsSourceRuntimeSecretsConfig,
 } from '@/lib/news-source-runtime-secrets';
+import {
+  resolveExpandedRuntimeSecretSourceIds,
+  resolveRuntimeSecretDeepLinkAction,
+} from '@/lib/news-source-runtime-secrets-ui';
 
 type RuntimeSecretsSource = "none" | "db";
 
@@ -149,6 +153,7 @@ export function NewsSourceRuntimeSecretsPanel() {
   const rowCounterRef = useRef(0);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const handledDeepLinkSourceIdRef = useRef<string | null>(null);
+  const expandedSourceIdsInitializedRef = useRef(false);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -436,30 +441,31 @@ export function NewsSourceRuntimeSecretsPanel() {
     if (loading) {
       return;
     }
-    if (handledDeepLinkSourceIdRef.current === deepLinkedSourceId) {
-      return;
-    }
-
-    handledDeepLinkSourceIdRef.current = deepLinkedSourceId;
     setShowOnlyConfiguredSources(false);
     setShowOnlyRequiredSources(false);
     setSourceQuery(deepLinkedSourceId);
 
-    const existingRow = findExistingRuntimeSecretRow(rows, deepLinkedSourceId);
-    if (existingRow) {
-      focusRow(existingRow.rowKey, deepLinkedSourceId);
+    const action = resolveRuntimeSecretDeepLinkAction(rows, sourceCatalog, deepLinkedSourceId);
+    if (action.type === 'pending') {
+      return;
+    }
+    if (handledDeepLinkSourceIdRef.current === deepLinkedSourceId) {
+      return;
+    }
+    handledDeepLinkSourceIdRef.current = deepLinkedSourceId;
+
+    if (action.type === 'focus') {
+      focusRow(action.row.rowKey, deepLinkedSourceId);
       return;
     }
 
-    const sourceMetadata = sourceCatalog[normalizeSourceId(deepLinkedSourceId)];
-    if (!sourceSupportsRuntimeSecrets(sourceMetadata)) {
+    if (action.type === 'ignore') {
       return;
     }
 
-    const preferredKey = getPrimaryRuntimeSecretKey(sourceMetadata?.runtimeSecrets);
-    const nextRow = createPrefilledDraftRow(deepLinkedSourceId, preferredKey);
+    const nextRow = createPrefilledDraftRow(action.sourceId, action.secretKey);
     setRows((prev) => [...prev, nextRow]);
-    focusRow(nextRow.rowKey, deepLinkedSourceId);
+    focusRow(nextRow.rowKey, action.sourceId);
   }, [createPrefilledDraftRow, focusRow, loading, rows, searchParams, sourceCatalog]);
 
   const visibleRows = useMemo(
@@ -524,17 +530,14 @@ export function NewsSourceRuntimeSecretsPanel() {
   useEffect(() => {
     const visibleSourceIds = groupedVisibleRows.map((group) => group.sourceId);
     setExpandedSourceIds((current) => {
-      const kept = current.filter((sourceId) => visibleSourceIds.includes(sourceId));
-      if (kept.length === 0) {
-        return visibleSourceIds;
-      }
-      if (sourceQuery.trim()) {
-        const focusedSourceId = normalizeSourceId(sourceQuery);
-        if (visibleSourceIds.includes(focusedSourceId) && !kept.includes(focusedSourceId)) {
-          return [...kept, focusedSourceId];
-        }
-      }
-      return kept;
+      const result = resolveExpandedRuntimeSecretSourceIds({
+        currentExpandedSourceIds: current,
+        visibleSourceIds,
+        sourceQuery,
+        hasInitialized: expandedSourceIdsInitializedRef.current,
+      });
+      expandedSourceIdsInitializedRef.current = result.hasInitialized;
+      return result.nextExpandedSourceIds;
     });
   }, [groupedVisibleRows, sourceQuery]);
 

@@ -1094,7 +1094,7 @@ export class UserContentSubscriptionsService {
     >(Prisma.sql`
       SELECT
         e.canonicalName AS displayValue,
-        e.type AS entityType,
+        MAX(e.type) AS entityType,
         COUNT(*) AS count,
         MAX(COALESCE(a.publishedAt, a.crawlAt, a.createdAt)) AS lastSeenAt
       FROM ArticleEntityLink l
@@ -1102,7 +1102,7 @@ export class UserContentSubscriptionsService {
       INNER JOIN Article a ON a.id = l.articleId
       WHERE l.orgId = ${orgId}
         AND COALESCE(a.publishedAt, a.crawlAt, a.createdAt) >= ${since}
-      GROUP BY e.canonicalName, e.type
+      GROUP BY e.canonicalName
       HAVING COUNT(*) >= ${CATALOG_MIN_COUNT}
       ORDER BY COUNT(*) DESC, MAX(COALESCE(a.publishedAt, a.crawlAt, a.createdAt)) DESC
       LIMIT ${CATALOG_MAX_CANDIDATES_PER_KIND}
@@ -1110,43 +1110,17 @@ export class UserContentSubscriptionsService {
 
     const merged = new Map<string, CatalogCandidate>();
     for (const row of kgRows) {
-      const normalized = this.normalizeValue(row.displayValue);
-      if (!normalized.normalizedValue) {
-        continue;
-      }
-      const key = this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue);
-      const count = this.toPositiveInt(row.count);
-      const lastSeenAt = row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
-      const existing = merged.get(key);
-      if (existing) {
-        existing.count += count;
-        if (lastSeenAt > existing.lastSeenAt) {
-          existing.lastSeenAt = lastSeenAt;
-        }
-        const existingEntityType =
-          typeof existing.metadata?.entityType === 'string'
-            ? existing.metadata.entityType
-            : null;
-        if (!existingEntityType && row.entityType) {
-          existing.metadata = { ...(existing.metadata ?? {}), entityType: row.entityType };
-        }
-        continue;
-      }
-      merged.set(key, {
-        kind: ContentSubscriptionKind.entity,
-        normalizedValue: normalized.normalizedValue,
-        displayValue: normalized.displayValue,
-        count,
-        lastSeenAt,
-        metadata: row.entityType ? { entityType: row.entityType } : undefined,
+      this.mergeEntityCandidate(merged, {
+        displayValue: row.displayValue,
+        entityType: row.entityType,
+        count: row.count,
+        lastSeenAt: row.lastSeenAt,
       });
     }
 
     const fallbackRows = await ProcessedItemModel.aggregate<{
-      _id?: {
-        name?: string | null;
-        type?: string | null;
-      } | null;
+      _id?: string | null;
+      entityType?: string | null;
       count: number;
       lastSeenAt: Date;
     }>([
@@ -1192,10 +1166,8 @@ export class UserContentSubscriptionsService {
       },
       {
         $group: {
-          _id: {
-            name: '$result.entities.name',
-            type: '$result.entities.type',
-          },
+          _id: '$result.entities.name',
+          entityType: { $max: '$result.entities.type' },
           count: { $sum: 1 },
           lastSeenAt: { $max: '$activityAt' },
         },
@@ -1208,29 +1180,68 @@ export class UserContentSubscriptionsService {
       },
     ]);
 
+    const fallbackMerged = new Map<string, CatalogCandidate>();
     for (const row of fallbackRows) {
-      const normalized = this.normalizeValue(row._id?.name);
-      if (!normalized.normalizedValue) {
-        continue;
-      }
-      const key = this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue);
-      if (merged.has(key)) {
-        continue;
-      }
-      merged.set(key, {
-        kind: ContentSubscriptionKind.entity,
-        normalizedValue: normalized.normalizedValue,
-        displayValue: normalized.displayValue,
-        count: this.toPositiveInt(row.count),
-        lastSeenAt: row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date(),
-        metadata: row._id?.type ? { entityType: row._id.type } : undefined,
+      this.mergeEntityCandidate(fallbackMerged, {
+        displayValue: row._id,
+        entityType: row.entityType,
+        count: row.count,
+        lastSeenAt: row.lastSeenAt,
       });
+    }
+
+    for (const entry of fallbackMerged.values()) {
+      const key = this.subscriptionKey(entry.kind, entry.normalizedValue);
+      if (!merged.has(key)) {
+        merged.set(key, entry);
+      }
     }
 
     return Array.from(merged.values())
       .filter((entry) => entry.count >= CATALOG_MIN_COUNT)
       .sort((a, b) => b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
       .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND);
+  }
+
+  private mergeEntityCandidate(
+    target: Map<string, CatalogCandidate>,
+    row: {
+      displayValue: unknown;
+      entityType?: string | null;
+      count: number | bigint | null | undefined;
+      lastSeenAt: Date | null | undefined;
+    },
+  ) {
+    const normalized = this.normalizeValue(row.displayValue);
+    if (!normalized.normalizedValue) {
+      return;
+    }
+
+    const key = this.subscriptionKey(ContentSubscriptionKind.entity, normalized.normalizedValue);
+    const count = this.toPositiveInt(row.count);
+    const lastSeenAt = row.lastSeenAt instanceof Date ? row.lastSeenAt : new Date();
+    const existing = target.get(key);
+    if (existing) {
+      existing.count += count;
+      if (lastSeenAt > existing.lastSeenAt) {
+        existing.lastSeenAt = lastSeenAt;
+      }
+      const existingEntityType =
+        typeof existing.metadata?.entityType === 'string' ? existing.metadata.entityType : null;
+      if (!existingEntityType && row.entityType) {
+        existing.metadata = { ...(existing.metadata ?? {}), entityType: row.entityType };
+      }
+      return;
+    }
+
+    target.set(key, {
+      kind: ContentSubscriptionKind.entity,
+      normalizedValue: normalized.normalizedValue,
+      displayValue: normalized.displayValue,
+      count,
+      lastSeenAt,
+      metadata: row.entityType ? { entityType: row.entityType } : undefined,
+    });
   }
 
   private async getTaxonomyDescriptor(orgId: string): Promise<TaxonomyDescriptor> {

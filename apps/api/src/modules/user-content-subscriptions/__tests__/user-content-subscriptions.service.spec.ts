@@ -162,13 +162,13 @@ describe('UserContentSubscriptionsService', () => {
         {
           displayValue: 'NVIDIA',
           entityType: 'organization',
-          count: 5,
+          count: 1,
           lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
         },
         {
           displayValue: 'NVIDIA',
           entityType: 'company',
-          count: 3,
+          count: 1,
           lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
         },
       ]),
@@ -189,8 +189,50 @@ describe('UserContentSubscriptionsService', () => {
       kind: ContentSubscriptionKind.entity,
       normalizedValue: 'nvidia',
       displayValue: 'NVIDIA',
-      count: 8,
+      count: 2,
     });
     expect(candidates[0].lastSeenAt.toISOString()).toBe('2026-03-06T00:00:00.000Z');
+
+    const query = prisma.$queryRaw.mock.calls[0]?.[0] as { strings?: readonly string[] };
+    const queryText = query.strings?.join(' ') ?? '';
+    expect(queryText).toContain('GROUP BY e.canonicalName');
+    expect(queryText).not.toContain('GROUP BY e.canonicalName, e.type');
+  });
+
+  it('merges fallback entity candidates after deduplicating normalized names', async () => {
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    };
+    jest.spyOn(ProcessedItemModel, 'aggregate').mockResolvedValue([
+      {
+        _id: 'NVIDIA',
+        entityType: 'organization',
+        count: 1,
+        lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
+      },
+      {
+        _id: '  nvidia  ',
+        entityType: 'company',
+        count: 1,
+        lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
+      },
+    ]);
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const candidates = await (service as any).loadEntityCandidates('org-1');
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      kind: ContentSubscriptionKind.entity,
+      normalizedValue: 'nvidia',
+      displayValue: 'NVIDIA',
+      count: 2,
+    });
   });
 });

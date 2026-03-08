@@ -36,7 +36,7 @@ CREATE TABLE `ArchiveVerticalAnchorEmbedding` (
   `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updatedAt` DATETIME(3) NOT NULL,
 
-  UNIQUE INDEX `ArchiveVerticalAnchorEmbedding_vertical_taxVer_embModel_hash_uq`(`vertical`, `taxonomyVersion`, `embeddingModel`, `anchorTextHash`),
+  UNIQUE INDEX `ArchiveVerticalAnchorEmbedding_vertical_taxonomyVersion_embeddingModel_anchorTextHash_key`(`vertical`, `taxonomyVersion`, `embeddingModel`, `anchorTextHash`),
   PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

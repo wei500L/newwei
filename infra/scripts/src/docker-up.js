@@ -611,14 +611,77 @@ const validateMigrationIdentifiersForDockerUp = (repoRoot) => {
   process.exit(1);
 };
 
+const resolvePrismaCliPackageForDockerUp = (repoRoot) => {
+  const lockfilePath = path.resolve(repoRoot, 'pnpm-lock.yaml');
+  const dbPackageJsonPath = path.resolve(repoRoot, 'packages/db/package.json');
+
+  try {
+    const lockfileLines = readFileSync(lockfilePath, 'utf8').split(/\r?\n/u);
+    let inPackagesDbImporter = false;
+    let inPrismaDependency = false;
+
+    for (const line of lockfileLines) {
+      if (!inPackagesDbImporter) {
+        if (line === '  packages/db:') {
+          inPackagesDbImporter = true;
+        }
+        continue;
+      }
+
+      if (/^  \S/u.test(line)) {
+        break;
+      }
+
+      if (!inPrismaDependency) {
+        if (line === '      prisma:') {
+          inPrismaDependency = true;
+        }
+        continue;
+      }
+
+      if (/^      \S/u.test(line)) {
+        inPrismaDependency = false;
+        continue;
+      }
+
+      const prismaVersionMatch = line.match(/^        version: ([^\s]+)\s*$/u);
+      if (typeof prismaVersionMatch?.[1] === 'string' && prismaVersionMatch[1].trim().length > 0) {
+        return `prisma@${prismaVersionMatch[1].trim()}`;
+      }
+    }
+  } catch {
+    // Ignore and fall back to the package manifest below.
+  }
+
+  try {
+    const packageJson = JSON.parse(readFileSync(dbPackageJsonPath, 'utf8'));
+    const prismaVersion =
+      packageJson?.devDependencies?.prisma ?? packageJson?.dependencies?.prisma;
+
+    if (typeof prismaVersion === 'string' && prismaVersion.trim().length > 0) {
+      return `prisma@${prismaVersion.trim()}`;
+    }
+  } catch {
+    // Ignore and fall back to the default package name below.
+  }
+
+  return 'prisma';
+};
+
 const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd) => {
+  const repoRoot = path.resolve(cwd, '../..');
+  const prismaCliPackage = resolvePrismaCliPackageForDockerUp(repoRoot);
   const checkScript = [
     'set -eu',
-    "echo '[docker-up][prisma-preflight] pnpm install...'",
-    'pnpm install --unsafe-perm --frozen-lockfile >/dev/null',
-    "export DATABASE_URL=\"${DATABASE_URL:-mysql://root:secret@mysql:3306/app}\"",
+    "export DATABASE_URL='mysql://root:secret@mysql:3306/app'",
     "echo '[docker-up][prisma-preflight] prisma validate...'",
-    'pnpm --filter @modular/db exec prisma validate --schema prisma/schema.prisma'
+    'if [ -x packages/db/node_modules/.bin/prisma ]; then',
+    "  echo '[docker-up][prisma-preflight] using installed Prisma CLI'",
+    '  pnpm --filter @modular/db exec prisma validate --schema prisma/schema.prisma',
+    'else',
+    `  echo '[docker-up][prisma-preflight] using temporary Prisma CLI (${prismaCliPackage})'`,
+    `  pnpm dlx '${prismaCliPackage}' validate --schema packages/db/prisma/schema.prisma`,
+    'fi'
   ].join('\n');
   const args = [
     ...composeBaseArgs,
@@ -631,8 +694,11 @@ const validatePrismaSchemaForDockerUp = (composeBaseArgs, cwd) => {
     '-ec',
     checkScript
   ];
+  const composeEnv = { ...process.env };
+  delete composeEnv.DATABASE_URL;
   const result = runWithStatusCapture('docker', args, cwd, {
     stdio: ['inherit', 'pipe', 'pipe'],
+    env: composeEnv,
     timeout: 300_000
   });
   printCapturedOutput(result);

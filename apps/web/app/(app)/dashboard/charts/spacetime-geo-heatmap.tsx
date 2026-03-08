@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -16,7 +16,7 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
+import { createDeckMapRuntime, setDeckOverlayProps, type DeckMapRuntime } from "@/lib/map/map-runtime";
 import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
 import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import { safeHttpUrl } from "@/lib/url";
@@ -276,6 +276,7 @@ export function SpacetimeGeoHeatmap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
+  const runtimeRef = useRef<DeckMapRuntime | null>(null);
   const hasAlignedGeoViewRef = useRef(false);
 
   const [inView, setInView] = useState(false);
@@ -468,8 +469,22 @@ export function SpacetimeGeoHeatmap({
     refetchOnWindowFocus: false,
   });
 
+  const destroyMapRuntime = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) {
+      return;
+    }
+
+    runtimeRef.current = null;
+    overlayRef.current = null;
+    mapRef.current = null;
+    hasAlignedGeoViewRef.current = false;
+    runtime.destroy();
+    setMapReady(false);
+  }, []);
+
   useEffect(() => {
-    if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || mapRef.current) {
+    if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || runtimeRef.current) {
       return;
     }
 
@@ -492,17 +507,22 @@ export function SpacetimeGeoHeatmap({
       },
     });
 
+    runtimeRef.current = runtime;
     mapRef.current = runtime.map;
     overlayRef.current = runtime.overlay;
-
-    return () => {
-      overlayRef.current = null;
-      mapRef.current = null;
-      hasAlignedGeoViewRef.current = false;
-      runtime.destroy();
-      setMapReady(false);
-    };
   }, [hasRenderableMapContainer, inView]);
+
+  useEffect(() => {
+    if (inView) {
+      return;
+    }
+
+    destroyMapRuntime();
+  }, [destroyMapRuntime, inView]);
+
+  useEffect(() => () => {
+    destroyMapRuntime();
+  }, [destroyMapRuntime]);
 
   useEffect(() => {
     const map = mapRef.current;

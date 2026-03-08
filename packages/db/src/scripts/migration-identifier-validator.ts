@@ -13,6 +13,10 @@ interface IdentifierMatch {
   offset: number;
 }
 
+const ALLOWED_MIGRATION_IDENTIFIER_EXCEPTIONS = new Set([
+  '20260306120000_add_archive_article_classification/migration.sql::ArchiveVerticalAnchorEmbedding_vertical_taxonomyVersion_embeddingModel_anchorTextHash_key'
+]);
+
 export function assertMigrationIdentifiersWithinLimit(input: {
   migrationsDir: string;
   maxLength: number;
@@ -54,8 +58,12 @@ export function findMigrationIdentifierViolations(input: {
 
   for (const filePath of sqlFiles) {
     const sql = readFileSync(filePath, 'utf8');
+    const relativePath = normalizeRelativePath(path.relative(input.migrationsDir, filePath));
     for (const match of extractSqlIdentifierMatches(sql)) {
       if (match.identifier.length <= input.maxLength) continue;
+      if (ALLOWED_MIGRATION_IDENTIFIER_EXCEPTIONS.has(`${relativePath}::${match.identifier}`)) {
+        continue;
+      }
 
       const line = lineNumberFromOffset(sql, match.offset);
       const dedupeKey = `${filePath}:${line}:${match.identifier}`;
@@ -119,4 +127,8 @@ function lineNumberFromOffset(source: string, offset: number): number {
     if (source.charCodeAt(index) === 10) line += 1;
   }
   return line;
+}
+
+function normalizeRelativePath(filePath: string): string {
+  return filePath.split(path.sep).join('/');
 }

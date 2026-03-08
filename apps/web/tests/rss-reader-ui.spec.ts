@@ -5,8 +5,11 @@ import {
   applyRssTranslationsToListItems,
   buildRssReaderPreferencesFingerprint,
   buildRssReaderPreferencesStorageKey,
+  buildRssSourceSelectionRestoreFingerprint,
   filterRssSourcesByLanguages,
+  hasExactRssSourceSelection,
   normalizeRssReaderPreferences,
+  resolveNextRssSelectedSourceIds,
   resolveRssSourceLanguageOptions,
   resolveRssSourceSelectionOptions,
   resolveRssReaderPersistedPayload,
@@ -333,6 +336,83 @@ describe('rss reader ui helpers', () => {
         showOriginalContent: true,
       }),
     );
+  });
+
+  it('builds a restore fingerprint that changes across org or source scope switches', () => {
+    expect(
+      buildRssSourceSelectionRestoreFingerprint({
+        storageKey: 'modular:rss-reader:v1:org=org-1:user=user-1',
+        availableSourceIds: ['source-a', 'source-b'],
+        restoredSelectedSourceIds: ['source-a'],
+      }),
+    ).not.toBe(
+      buildRssSourceSelectionRestoreFingerprint({
+        storageKey: 'modular:rss-reader:v1:org=org-2:user=user-1',
+        availableSourceIds: ['source-a', 'source-b'],
+        restoredSelectedSourceIds: ['source-a'],
+      }),
+    );
+
+    expect(
+      buildRssSourceSelectionRestoreFingerprint({
+        storageKey: 'modular:rss-reader:v1:org=org-1:user=user-1',
+        availableSourceIds: ['source-a', 'source-b'],
+        restoredSelectedSourceIds: null,
+      }),
+    ).not.toBe(
+      buildRssSourceSelectionRestoreFingerprint({
+        storageKey: 'modular:rss-reader:v1:org=org-1:user=user-1',
+        availableSourceIds: ['source-a', 'source-b', 'source-c'],
+        restoredSelectedSourceIds: null,
+      }),
+    );
+  });
+
+  it('reapplies restored source ids after the selection scope changes', () => {
+    expect(
+      resolveNextRssSelectedSourceIds({
+        currentSelectedSourceIds: ['source-stale'],
+        availableSourceIds: ['source-a', 'source-b'],
+        restoredSelectedSourceIds: ['source-b'],
+        shouldApplyRestoredSelection: true,
+      }),
+    ).toEqual(['source-b']);
+
+    expect(
+      resolveNextRssSelectedSourceIds({
+        currentSelectedSourceIds: ['source-stale'],
+        availableSourceIds: ['source-a', 'source-b'],
+        restoredSelectedSourceIds: null,
+        shouldApplyRestoredSelection: true,
+      }),
+    ).toEqual(['source-a', 'source-b']);
+  });
+
+  it('keeps only still-available source ids when no restore is pending', () => {
+    expect(
+      resolveNextRssSelectedSourceIds({
+        currentSelectedSourceIds: ['source-a', 'source-missing', 'source-b'],
+        availableSourceIds: ['source-a', 'source-b', 'source-c'],
+        restoredSelectedSourceIds: ['source-c'],
+        shouldApplyRestoredSelection: false,
+      }),
+    ).toEqual(['source-a', 'source-b']);
+  });
+
+  it('matches shortcut targets only when the current selection is exact', () => {
+    expect(
+      hasExactRssSourceSelection({
+        selectedSourceIds: ['source-a', 'source-b'],
+        targetSourceIds: ['source-b', 'source-a'],
+      }),
+    ).toBe(true);
+
+    expect(
+      hasExactRssSourceSelection({
+        selectedSourceIds: ['source-a', 'source-b', 'source-hidden'],
+        targetSourceIds: ['source-a', 'source-b'],
+      }),
+    ).toBe(false);
   });
 
   it('leaves filters untouched when no fixed source ids are present', () => {

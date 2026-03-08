@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
-import { createApiClient } from "@/lib/api-client";
+import { createApiClient, syncApiSessionCache } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
 const { Title, Text } = Typography;
@@ -153,6 +153,7 @@ export default function LoginPage() {
         return;
       }
 
+      await syncApiSessionCache().catch(() => null);
       redirectAfterLogin();
     } catch (error) {
       captureClientError("Password login failed", error);
@@ -195,6 +196,7 @@ export default function LoginPage() {
         return;
       }
 
+      await syncApiSessionCache().catch(() => null);
       redirectAfterLogin();
     } catch (error) {
       captureClientError("Code login failed", error);

@@ -262,6 +262,63 @@ export function buildRssReaderPreferencesFingerprint(
   });
 }
 
+export function buildRssSourceSelectionRestoreFingerprint(input: {
+  storageKey?: string | null;
+  availableSourceIds: string[];
+  restoredSelectedSourceIds: string[] | null;
+}): string {
+  return JSON.stringify({
+    storageKey: input.storageKey ?? null,
+    availableSourceIds: normalizeStringList(input.availableSourceIds) ?? [],
+    restoredSelectedSourceIds: input.restoredSelectedSourceIds
+      ? normalizeStringList(input.restoredSelectedSourceIds) ?? []
+      : null,
+  });
+}
+
+export function resolveNextRssSelectedSourceIds(input: {
+  currentSelectedSourceIds: string[];
+  availableSourceIds: string[];
+  restoredSelectedSourceIds: string[] | null;
+  shouldApplyRestoredSelection: boolean;
+}): string[] {
+  const normalizedAvailableSourceIds = normalizeStringList(input.availableSourceIds) ?? [];
+
+  if (normalizedAvailableSourceIds.length === 0) {
+    return [];
+  }
+
+  const availableSourceIdSet = new Set(normalizedAvailableSourceIds);
+  const normalizedRestoredSelectedSourceIds = input.restoredSelectedSourceIds
+    ? (normalizeStringList(input.restoredSelectedSourceIds) ?? []).filter((id) =>
+        availableSourceIdSet.has(id),
+      )
+    : null;
+
+  if (input.shouldApplyRestoredSelection) {
+    return normalizedRestoredSelectedSourceIds ?? normalizedAvailableSourceIds;
+  }
+
+  return (normalizeStringList(input.currentSelectedSourceIds) ?? []).filter((id) =>
+    availableSourceIdSet.has(id),
+  );
+}
+
+export function hasExactRssSourceSelection(input: {
+  selectedSourceIds: string[];
+  targetSourceIds: string[];
+}): boolean {
+  const normalizedSelectedSourceIds = normalizeStringList(input.selectedSourceIds) ?? [];
+  const normalizedTargetSourceIds = normalizeStringList(input.targetSourceIds) ?? [];
+
+  if (normalizedSelectedSourceIds.length !== normalizedTargetSourceIds.length) {
+    return false;
+  }
+
+  const selectedSourceIdSet = new Set(normalizedSelectedSourceIds);
+  return normalizedTargetSourceIds.every((id) => selectedSourceIdSet.has(id));
+}
+
 export function resolveRssSourceSelectionUiState(
   input: ResolveRssSourceSelectionUiStateInput,
 ): RssSourceSelectionUiState {

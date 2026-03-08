@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import type { AuthenticatedUser } from '../auth/auth.service';
 
 import { ArchivePreparationQueueService } from './archive-preparation-queue.service';
 
@@ -15,7 +17,7 @@ export class ArchivePreparationController {
 
   @Get('status')
   @Permissions('settings.manage')
-  async getStatus() {
-    return this.archivePreparationQueue.getOperationalStatus();
+  async getStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.archivePreparationQueue.getOperationalStatus(user.orgId);
   }
 }

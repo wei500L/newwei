@@ -19,6 +19,11 @@ import type {
 } from './archive-preparation.types';
 import { ArchivePreparationState, type ArchivePreparationStatus } from './archive.types';
 
+interface StoredArchivePreparationStatusRecord
+  extends ArchivePreparationStatusRecord {
+  orgId: string;
+}
+
 @Injectable()
 export class ArchivePreparationQueueService {
   private readonly logger = createLogger({ name: 'archive-preparation-queue' });
@@ -44,27 +49,16 @@ export class ArchivePreparationQueueService {
     return this.getStatus('digest', orgId, anchorDate);
   }
 
-  async getOperationalStatus(): Promise<ArchivePreparationOperationalStatus> {
-    const counts = await this.queue.getJobCounts(
-      'waiting',
-      'active',
-      'completed',
-      'failed',
-      'delayed',
-    );
-    const pending =
-      (counts.waiting ?? 0) + (counts.active ?? 0) + (counts.delayed ?? 0);
-    const recentStatuses = await this.getRecentStatuses(10);
+  async getOperationalStatus(
+    orgId: string,
+  ): Promise<ArchivePreparationOperationalStatus> {
+    const recentStatuses = await this.getRecentStatuses(orgId, 10);
+    const counts = await this.getScopedCounts(orgId);
+    const pending = counts.waiting + counts.active + counts.delayed;
     return {
       updatedAt: new Date().toISOString(),
       pending,
-      counts: {
-        waiting: counts.waiting ?? 0,
-        active: counts.active ?? 0,
-        completed: counts.completed ?? 0,
-        failed: counts.failed ?? 0,
-        delayed: counts.delayed ?? 0,
-      },
+      counts,
       recentStatuses,
     };
   }
@@ -99,7 +93,6 @@ export class ArchivePreparationQueueService {
       await existing.remove();
     }
 
-    await this.setStatus(payload, ArchivePreparationState.QUEUED);
     try {
       await this.queue.add(ARCHIVE_PREPARATION_QUEUE_NAME, {
         ...payload,
@@ -119,10 +112,24 @@ export class ArchivePreparationQueueService {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('already exists')) {
-        this.logger.error({ error, jobId, payload }, 'Failed to enqueue archive preparation job');
-        throw error;
+      if (message.includes('already exists')) {
+        return;
       }
+
+      this.logger.error(
+        { error, jobId, payload },
+        'Failed to enqueue archive preparation job',
+      );
+      throw error;
+    }
+
+    try {
+      await this.setStatus(payload, ArchivePreparationState.QUEUED);
+    } catch (error) {
+      this.logger.warn(
+        { error, jobId, payload },
+        'Queued archive preparation job but failed to persist queued status',
+      );
     }
   }
 
@@ -131,7 +138,7 @@ export class ArchivePreparationQueueService {
     orgId: string,
     scopeValue: string,
   ): Promise<ArchivePreparationStatus | null> {
-    const record = await this.cache.get<ArchivePreparationStatusRecord>(
+    const record = await this.cache.get<StoredArchivePreparationStatusRecord>(
       this.buildStatusKey(scope, orgId, scopeValue),
     );
     if (!record) {
@@ -153,14 +160,15 @@ export class ArchivePreparationQueueService {
   ): Promise<void> {
     const scopeValue = this.resolveScopeValue(payload);
     const statusKey = this.buildStatusKey(payload.scope, payload.orgId, scopeValue);
-    const record: ArchivePreparationStatusRecord = {
+    const record: StoredArchivePreparationStatusRecord = {
+      orgId: payload.orgId,
       scope: payload.scope,
       scopeValue,
       state,
       updatedAt: new Date().toISOString(),
       ...(errorMessage ? { errorMessage } : {}),
     };
-    await this.cache.set<ArchivePreparationStatusRecord>(
+    await this.cache.set<StoredArchivePreparationStatusRecord>(
       statusKey,
       record,
       ARCHIVE_PREPARATION_STATUS_TTL_SECONDS,
@@ -174,20 +182,104 @@ export class ArchivePreparationQueueService {
   }
 
   private async getRecentStatuses(
+    orgId: string,
     limit: number,
   ): Promise<ArchivePreparationStatusRecord[]> {
+    const records = await this.getScopedStatusRecords(orgId);
+    return records.slice(0, limit).map((record) => this.toPublicStatusRecord(record));
+  }
+
+  private async getScopedCounts(orgId: string): Promise<ArchivePreparationOperationalStatus['counts']> {
+    const records = await this.getScopedStatusRecords(orgId);
+    return records.reduce<ArchivePreparationOperationalStatus['counts']>(
+      (counts, record) => {
+        switch (record.state) {
+          case ArchivePreparationState.QUEUED:
+            counts.waiting += 1;
+            break;
+          case ArchivePreparationState.PROCESSING:
+          case ArchivePreparationState.PARTIAL:
+            counts.active += 1;
+            break;
+          case ArchivePreparationState.READY:
+            counts.completed += 1;
+            break;
+          case ArchivePreparationState.FAILED:
+            counts.failed += 1;
+            break;
+          default:
+            break;
+        }
+        return counts;
+      },
+      {
+        waiting: 0,
+        active: 0,
+        completed: 0,
+        failed: 0,
+        delayed: 0,
+      },
+    );
+  }
+
+  private async getScopedStatusRecords(
+    orgId: string,
+  ): Promise<StoredArchivePreparationStatusRecord[]> {
     const total = await this.cache.zcard(ARCHIVE_PREPARATION_STATUS_INDEX_KEY);
     if (total <= 0) {
       return [];
     }
-    const start = Math.max(0, total - limit);
+
     const keys = await this.cache.zrange(
       ARCHIVE_PREPARATION_STATUS_INDEX_KEY,
-      start,
+      0,
       total - 1,
     );
-    const records = await this.cache.getMany<ArchivePreparationStatusRecord>(keys);
-    return records.filter((value): value is ArchivePreparationStatusRecord => Boolean(value)).reverse();
+    const records = await this.cache.getMany<StoredArchivePreparationStatusRecord>(keys);
+
+    return keys
+      .map((key, index) => this.normalizeStatusRecord(key, records[index]))
+      .filter(
+        (record): record is StoredArchivePreparationStatusRecord => record != null,
+      )
+      .filter((record) => record.orgId === orgId)
+      .reverse();
+  }
+
+  private normalizeStatusRecord(
+    statusKey: string,
+    record: StoredArchivePreparationStatusRecord | null | undefined,
+  ): StoredArchivePreparationStatusRecord | null {
+    if (!record) {
+      return null;
+    }
+
+    const orgId = record.orgId ?? this.parseOrgIdFromStatusKey(statusKey);
+    if (!orgId) {
+      return null;
+    }
+
+    return {
+      ...record,
+      orgId,
+    };
+  }
+
+  private toPublicStatusRecord(
+    record: StoredArchivePreparationStatusRecord,
+  ): ArchivePreparationStatusRecord {
+    return {
+      scope: record.scope,
+      scopeValue: record.scopeValue,
+      state: record.state,
+      updatedAt: record.updatedAt,
+      errorMessage: record.errorMessage ?? null,
+    };
+  }
+
+  private parseOrgIdFromStatusKey(statusKey: string): string | null {
+    const segments = statusKey.split(':');
+    return segments.length >= 6 ? segments[4] ?? null : null;
   }
 
   private async trimStatusIndex(): Promise<void> {

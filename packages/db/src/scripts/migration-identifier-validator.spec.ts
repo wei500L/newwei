@@ -108,4 +108,31 @@ describe('migration-identifier-validator', () => {
       }
     );
   });
+
+  it('allows grandfathered identifiers in preserved historical migrations', () => {
+    writeMigrationSql(
+      '20260306120000_add_archive_article_classification',
+      [
+        'CREATE TABLE `ArchiveVerticalAnchorEmbedding` (',
+        '  `id` VARCHAR(191) NOT NULL,',
+        '  UNIQUE INDEX `ArchiveVerticalAnchorEmbedding_vertical_taxonomyVersion_embeddingModel_anchorTextHash_key`(`id`),',
+        '  PRIMARY KEY (`id`)',
+        ');'
+      ].join('\n')
+    );
+
+    const violations = findMigrationIdentifierViolations({
+      migrationsDir: tempDir,
+      maxLength: 64
+    });
+
+    assert.equal(
+      violations.some(
+        (item) =>
+          item.identifier ===
+          'ArchiveVerticalAnchorEmbedding_vertical_taxonomyVersion_embeddingModel_anchorTextHash_key'
+      ),
+      false
+    );
+  });
 });

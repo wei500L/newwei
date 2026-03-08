@@ -12,8 +12,11 @@ import dayjs from "@/lib/dayjs";
 import {
   buildRssReaderPreferencesFingerprint,
   buildRssReaderPreferencesStorageKey,
+  buildRssSourceSelectionRestoreFingerprint,
   filterRssSourcesByLanguages,
+  hasExactRssSourceSelection,
   normalizeRssReaderPreferences,
+  resolveNextRssSelectedSourceIds,
   resolveRssReaderPersistedPayload,
   resolveRssSourceLanguageOptions,
   resolveRssSourceSelectionOptions,
@@ -128,6 +131,8 @@ export function RssContent() {
   const [translationError, setTranslationError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedFingerprintRef = useRef<string | null>(null);
+  const hydratedStorageKeyRef = useRef<string | null>(null);
+  const appliedSelectionRestoreFingerprintRef = useRef<string | null>(null);
   const initialFilters = useMemo<FilterState>(
     () => ({
       dateRange: [dayjs().subtract(DEFAULT_WINDOW_DAYS - 1, "day").startOf("day"), dayjs().endOf("day")]
@@ -174,6 +179,9 @@ export function RssContent() {
         : buildRssReaderPreferencesStorageKey(session?.orgId, session?.user?.id),
     [session?.orgId, session?.user?.id, status]
   );
+  const preferencesReady = Boolean(
+    storageKey && preferencesHydrated && hydratedStorageKeyRef.current === storageKey
+  );
   const sourceUiState = useMemo(
     () =>
       resolveRssSourceSelectionUiState({
@@ -194,9 +202,9 @@ export function RssContent() {
     [selectedSourceIds, sourceUiState.selectionReady, sources]
   );
   const showItemsLoadingSkeleton =
-    sourceUiState.showLoading || !preferencesHydrated || (sources.length > 0 && !sourceUiState.selectionReady);
+    sourceUiState.showLoading || !preferencesReady || (sources.length > 0 && !sourceUiState.selectionReady);
   const showSourceControls =
-    preferencesHydrated && !sourceUiState.showLoading && sources.length > 0;
+    preferencesReady && !sourceUiState.showLoading && sources.length > 0;
 
   const { data: translationStatusData } = useQuery<
     RssTranslationStatusQuery,
@@ -248,6 +256,7 @@ export function RssContent() {
       setTranslationProvider(restored.translationProvider);
       setTargetLanguage(restored.targetLanguage);
       setShowOriginalContent(restored.showOriginalContent);
+      hydratedStorageKeyRef.current = storageKey;
       lastSavedFingerprintRef.current = buildRssReaderPreferencesFingerprint(
         resolveRssReaderPersistedPayload(restored)
       );
@@ -302,34 +311,44 @@ export function RssContent() {
   ]);
 
   useEffect(() => {
-    if (!preferencesHydrated) {
+    if (!preferencesReady) {
       return;
     }
     if (sources.length === 0) {
       setSelectedSourceIds([]);
       setSelectionInitialized(false);
+      appliedSelectionRestoreFingerprintRef.current = null;
       return;
     }
 
-    const sourceIdSet = new Set(sources.map((source) => source.id));
-    const restoredSourceIds =
-      persistedSelectedSourceIds === null
-        ? null
-        : persistedSelectedSourceIds.filter((id) => sourceIdSet.has(id));
+    const availableSourceIds = sources.map((source) => source.id);
+    const selectionRestoreFingerprint = buildRssSourceSelectionRestoreFingerprint({
+      storageKey,
+      availableSourceIds,
+      restoredSelectedSourceIds: persistedSelectedSourceIds
+    });
+    const shouldApplyRestoredSelection =
+      !selectionInitialized ||
+      appliedSelectionRestoreFingerprintRef.current !== selectionRestoreFingerprint;
 
     setSelectedSourceIds((prev) => {
-      if (!selectionInitialized) {
-        return restoredSourceIds ?? sources.map((source) => source.id);
-      }
-      return prev.filter((id) => sourceIdSet.has(id));
+      return resolveNextRssSelectedSourceIds({
+        currentSelectedSourceIds: prev,
+        availableSourceIds,
+        restoredSelectedSourceIds: persistedSelectedSourceIds,
+        shouldApplyRestoredSelection
+      });
     });
+    if (shouldApplyRestoredSelection) {
+      appliedSelectionRestoreFingerprintRef.current = selectionRestoreFingerprint;
+    }
     if (!selectionInitialized) {
       setSelectionInitialized(true);
     }
-  }, [persistedSelectedSourceIds, preferencesHydrated, selectionInitialized, sources]);
+  }, [persistedSelectedSourceIds, preferencesReady, selectionInitialized, sources, storageKey]);
 
   useEffect(() => {
-    if (!preferencesHydrated || !storageKey || !selectionInitialized) {
+    if (!preferencesReady || !storageKey || !selectionInitialized) {
       return;
     }
 
@@ -379,7 +398,7 @@ export function RssContent() {
     accessToken,
     apiClient,
     hasExplicitSourceSelection,
-    preferencesHydrated,
+    preferencesReady,
     selectedSourceIds,
     selectionInitialized,
     showOriginalContent,
@@ -394,6 +413,10 @@ export function RssContent() {
     () => filterRssSourcesByLanguages(sortedSources, sourceLanguageFilters),
     [sortedSources, sourceLanguageFilters]
   );
+  const visibleSourceIds = useMemo(
+    () => visibleSources.map((source) => source.id),
+    [visibleSources]
+  );
   const topSourceIds = useMemo(
     () => resolveTopRssSourceIds(visibleSources, TOP_RSS_SOURCES_SHORTCUT_COUNT),
     [visibleSources]
@@ -401,10 +424,6 @@ export function RssContent() {
   const visibleSourceIdSet = useMemo(
     () => new Set(visibleSources.map((source) => source.id)),
     [visibleSources]
-  );
-  const displayedSelectedSourceIdSet = useMemo(
-    () => new Set(displayedSelectedSourceIds),
-    [displayedSelectedSourceIds]
   );
   const visibleSelectedSourceIds = useMemo(
     () => displayedSelectedSourceIds.filter((id) => visibleSourceIdSet.has(id)),
@@ -414,11 +433,14 @@ export function RssContent() {
     () => displayedSelectedSourceIds.filter((id) => !visibleSourceIdSet.has(id)),
     [displayedSelectedSourceIds, visibleSourceIdSet]
   );
-  const hasAllSourcesSelected =
-    visibleSources.length > 0 && visibleSources.every((source) => displayedSelectedSourceIdSet.has(source.id));
-  const hasTopSourcesSelected =
-    topSourceIds.length > 0 &&
-    topSourceIds.every((id) => displayedSelectedSourceIdSet.has(id));
+  const hasAllSourcesSelected = hasExactRssSourceSelection({
+    selectedSourceIds: displayedSelectedSourceIds,
+    targetSourceIds: visibleSourceIds
+  });
+  const hasTopSourcesSelected = hasExactRssSourceSelection({
+    selectedSourceIds: displayedSelectedSourceIds,
+    targetSourceIds: topSourceIds
+  });
   const selectOptions = useMemo(
     () =>
       visibleSources.map((source) => ({
@@ -530,7 +552,7 @@ export function RssContent() {
                   size="small"
                   onClick={() => {
                     setHasExplicitSourceSelection(true);
-                    setSelectedSourceIds(visibleSources.map((source) => source.id));
+                    setSelectedSourceIds(visibleSourceIds);
                   }}
                   disabled={hasAllSourcesSelected}
                 >
@@ -627,6 +649,7 @@ export function RssContent() {
                 </Typography.Text>
                 <Switch
                   checked={translationEnabled}
+                  disabled={!preferencesReady}
                   onChange={(checked) => {
                     setTranslationError(null);
                     setTranslationEnabled(checked);
@@ -642,7 +665,7 @@ export function RssContent() {
                 }}
                 optionType="button"
                 buttonStyle="solid"
-                disabled={!translationEnabled}
+                disabled={!preferencesReady || !translationEnabled}
               >
                 <Radio.Button value="deeplx">
                   {t("pages.rss.translation.provider.deeplx", { defaultValue: "DeepLX API" })}
@@ -659,11 +682,11 @@ export function RssContent() {
                   setTranslationError(null);
                   setTargetLanguage(next);
                 }}
-                disabled={!translationEnabled || translationProvider === "deeplx"}
+                disabled={!preferencesReady || !translationEnabled || translationProvider === "deeplx"}
                 options={RSS_TRANSLATION_TARGET_LANGUAGE_OPTIONS}
               />
 
-              {translationEnabled ? (
+              {preferencesReady && translationEnabled ? (
                 <Space>
                   <Typography.Text>
                     {t("pages.rss.translation.showOriginal", {
@@ -672,6 +695,7 @@ export function RssContent() {
                   </Typography.Text>
                   <Switch
                     checked={showOriginalContent}
+                    disabled={!preferencesReady}
                     onChange={(checked) => setShowOriginalContent(checked)}
                   />
                 </Space>
@@ -685,7 +709,7 @@ export function RssContent() {
               })}
             </Typography.Text>
 
-            {translationEnabled && selectedProviderStatus && !selectedProviderStatus.available ? (
+            {preferencesReady && translationEnabled && selectedProviderStatus && !selectedProviderStatus.available ? (
               <Alert
                 type="warning"
                 showIcon
@@ -696,7 +720,8 @@ export function RssContent() {
               />
             ) : null}
 
-            {translationEnabled &&
+            {preferencesReady &&
+            translationEnabled &&
             selectedProviderStatus &&
             selectedProviderStatus.available &&
             !selectedProviderStatus.targetLanguageSupported ? (
@@ -710,7 +735,7 @@ export function RssContent() {
               />
             ) : null}
 
-            {translationEnabled && translationError ? (
+            {preferencesReady && translationEnabled && translationError ? (
               <Alert
                 type="error"
                 showIcon

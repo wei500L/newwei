@@ -12,6 +12,7 @@ import type { ProcessedArticleStatus } from "@prisma/client";
 import { ArchiveService } from "../archive.service";
 import {
   ArchiveMatchOrigin,
+  ArchivePreparationState,
   ArchiveRegion,
   ArchiveVertical,
   ArchiveWeight,
@@ -70,6 +71,12 @@ const makeCacheMock = () => ({
   set: jest.fn().mockResolvedValue(undefined),
   hincrby: jest.fn().mockResolvedValue(1),
   expire: jest.fn().mockResolvedValue(1),
+});
+
+const makeArchivePreparationQueueServiceMock = () => ({
+  ensureDigestCoverage: jest.fn().mockResolvedValue(undefined),
+  ensureCalendarCoverage: jest.fn().mockResolvedValue(undefined),
+  getDigestStatus: jest.fn().mockResolvedValue(null),
 });
 
 describe("ArchiveService", () => {
@@ -176,6 +183,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     let thrown: unknown;
@@ -232,6 +240,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     let thrown: unknown;
@@ -281,6 +290,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     let thrown: unknown;
@@ -335,6 +345,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     let thrown: unknown;
@@ -412,6 +423,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const result = await service.getDigest("org-1", {
@@ -490,6 +502,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const result = await service.getDigest("org-1", {
@@ -557,6 +570,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const cursor = Buffer.from(
@@ -608,6 +622,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const tokens = (service as any).tokenizeSearch("F-35 2025 +policy", 2);
@@ -649,6 +664,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const result = await service.getCalendar("org-1", {
@@ -786,6 +802,7 @@ describe("ArchiveService", () => {
       vectorClient as any,
       classifier as any,
       archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
     );
 
     const result = await service.getDigest('org-1', {
@@ -809,5 +826,63 @@ describe("ArchiveService", () => {
     expect(
       result.groups.find((group) => group.vertical === ArchiveVertical.SOUTH_SEA)?.items,
     ).toHaveLength(1);
+  });
+
+  it("surfaces failed preparation when digest enqueue does not succeed", async () => {
+    const row = makeRow("row-missing", "2025-05-28T08:00:00.000Z");
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValueOnce([row]).mockResolvedValueOnce([]),
+      },
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      getCachedHybridBatch: jest.fn().mockResolvedValue(new Map()),
+      classifyHybridBatch: jest.fn(),
+    };
+    const archivePreparationQueue = {
+      ensureDigestCoverage: jest
+        .fn()
+        .mockRejectedValue(new Error("BullMQ unavailable")),
+      ensureCalendarCoverage: jest.fn().mockResolvedValue(undefined),
+      getDigestStatus: jest.fn().mockResolvedValue(null),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      archivePreparationQueue as any,
+    );
+
+    const result = await service.getDigest("org-1", {
+      anchorDate: new Date("2025-05-29T00:00:00.000Z"),
+      region: ArchiveRegion.APAC,
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      limitPerVertical: 20,
+    });
+
+    expect(archivePreparationQueue.ensureDigestCoverage).toHaveBeenCalledWith(
+      "org-1",
+      "2025-05-29",
+    );
+    expect(result.preparation.state).toBe(ArchivePreparationState.FAILED);
+    expect(result.preparation.errorMessage).toBe("BullMQ unavailable");
   });
 });

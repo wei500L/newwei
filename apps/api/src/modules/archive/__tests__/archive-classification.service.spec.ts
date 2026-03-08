@@ -152,6 +152,50 @@ describe('ArchiveClassificationService', () => {
     expect(prisma.archiveArticleClassification.upsert).not.toHaveBeenCalled();
   });
 
+  it('reads persisted classifications even when active models are unavailable', async () => {
+    const prisma = makePrismaMock();
+    const liteLlm = makeLiteLlmMock();
+    liteLlm.getEmbeddingModel.mockResolvedValue(undefined);
+    liteLlm.getRerankModel.mockResolvedValue(undefined);
+
+    const input = makeInput();
+    const classificationText = [
+      'Title: Japan updates East China Sea posture',
+      'Summary: Tokyo reviews maritime security coordination.',
+      'Topics: east china sea | security',
+      'Entities: Japan',
+      'Location: Japan',
+    ].join('\n');
+    prisma.archiveArticleClassification.findMany.mockResolvedValue([
+      {
+        processedArticleId: input.processedArticleId,
+        articleId: input.articleId,
+        region: ArchiveRegion.APAC,
+        vertical: ArchiveVertical.EAST_SEA,
+        ruleScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        embeddingScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        rerankScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        fusedScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        classificationTextHash: hashText(classificationText),
+        classificationTextVersion: ARCHIVE_CLASSIFICATION_TEXT_VERSION,
+        taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
+        pipelineVersion: ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
+        embeddingModel: 'cached-embedding-model',
+        rerankModel: 'cached-rerank-model',
+      },
+    ]);
+
+    const service = new ArchiveClassificationService(prisma as any, liteLlm as any);
+    const result = await service.getCachedHybridBatch('org-1', [input]);
+
+    expect(result.get(input.processedArticleId)?.vertical).toBe(
+      ArchiveVertical.EAST_SEA,
+    );
+    expect(prisma.archiveArticleClassification.findMany).toHaveBeenCalledTimes(1);
+    expect(liteLlm.embedding).not.toHaveBeenCalled();
+    expect(liteLlm.rerank).not.toHaveBeenCalled();
+  });
+
   it('reuses stored anchor embeddings instead of recalculating them', async () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
