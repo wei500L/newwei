@@ -16,6 +16,7 @@ const KEY_SITUATION_MONITOR_SETTINGS = "ui:situation-monitor:settings:v1";
 const KEY_WAR_MAP_SETTINGS = "ui:war-map:settings:v1";
 const KEY_SPACETIME_TIMELINE_SETTINGS = "ui:spacetime-timeline:settings:v1";
 const KEY_NEWSNOW_SETTINGS = "ui:newsnow:settings:v1";
+const KEY_RSS_READER_SETTINGS = "ui:rss-reader:settings:v1";
 
 const MAX_MONITORS = 20;
 const MAX_LAYOUT_ITEMS = 120;
@@ -23,6 +24,8 @@ const MAX_VISIBILITY_KEYS = 64;
 const MAX_NEWSNOW_SOURCE_IDS = 200;
 const MAX_NEWSNOW_COLUMNS = 32;
 const MAX_NEWSNOW_AFFINITIES = 300;
+const MAX_RSS_READER_SOURCE_IDS = 500;
+const MAX_RSS_READER_LANGUAGE_FILTERS = 24;
 const NEWSNOW_SOURCE_ID_PATTERN = /^[a-z0-9_-]{1,64}$/i;
 
 export interface SituationMonitorUiSettingsResponse {
@@ -110,6 +113,25 @@ export interface NewsnowUiSettingsResponse {
   settings: NewsnowUiSettings | null;
 }
 
+export type RssReaderTranslationProvider = "deeplx" | "llm";
+
+export interface RssReaderUiSettings {
+  selectedSourceIds: string[] | null;
+  sourceLanguageFilters: string[];
+  translationEnabled: boolean;
+  translationProvider: RssReaderTranslationProvider;
+  targetLanguage: string;
+  showOriginalContent: boolean;
+}
+
+export interface RssReaderUiSettingsResponse {
+  version: 1;
+  updatedAt: {
+    settings?: string;
+  };
+  settings: RssReaderUiSettings | null;
+}
+
 export function createDefaultNewsnowUiSettings(): NewsnowUiSettings {
   return {
     focusSources: [],
@@ -118,6 +140,17 @@ export function createDefaultNewsnowUiSettings(): NewsnowUiSettings {
     sortMode: "manual",
     densityMode: "compact",
     sourceAffinity: {},
+  };
+}
+
+export function createDefaultRssReaderUiSettings(): RssReaderUiSettings {
+  return {
+    selectedSourceIds: null,
+    sourceLanguageFilters: [],
+    translationEnabled: false,
+    translationProvider: "deeplx",
+    targetLanguage: "zh-CN",
+    showOriginalContent: false,
   };
 }
 
@@ -681,6 +714,98 @@ export function normalizeNewsnowUiSettings(value: unknown): NewsnowUiSettings {
   };
 }
 
+function normalizeRssReaderSourceId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().slice(0, 128);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeRssReaderSourceIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    const normalized = normalizeRssReaderSourceId(entry);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= MAX_RSS_READER_SOURCE_IDS) {
+      break;
+    }
+  }
+
+  return out;
+}
+
+function normalizeRssReaderLanguage(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toUpperCase().slice(0, 24);
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeRssReaderLanguageFilters(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    const normalized = normalizeRssReaderLanguage(entry);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.push(normalized);
+    if (out.length >= MAX_RSS_READER_LANGUAGE_FILTERS) {
+      break;
+    }
+  }
+
+  return out;
+}
+
+function normalizeRssReaderTranslationProvider(
+  value: unknown,
+): RssReaderTranslationProvider {
+  return value === "llm" ? "llm" : "deeplx";
+}
+
+function normalizeRssReaderTargetLanguage(value: unknown): string {
+  if (typeof value !== "string") {
+    return "zh-CN";
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.slice(0, 32) : "zh-CN";
+}
+
+export function normalizeRssReaderUiSettings(value: unknown): RssReaderUiSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return createDefaultRssReaderUiSettings();
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    selectedSourceIds: normalizeRssReaderSourceIds(record.selectedSourceIds),
+    sourceLanguageFilters: normalizeRssReaderLanguageFilters(record.sourceLanguageFilters),
+    translationEnabled: record.translationEnabled === true,
+    translationProvider: normalizeRssReaderTranslationProvider(record.translationProvider),
+    targetLanguage: normalizeRssReaderTargetLanguage(record.targetLanguage),
+    showOriginalContent: record.showOriginalContent === true,
+  };
+}
+
 @Injectable()
 export class UserSettingsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -922,6 +1047,48 @@ export class UserSettingsService {
     }
 
     return this.getNewsnowUiSettings(orgId, userId);
+  }
+
+  async getRssReaderUiSettings(
+    orgId: string,
+    userId: string,
+  ): Promise<RssReaderUiSettingsResponse> {
+    const record = await this.prisma.userSetting.findUnique({
+      where: {
+        orgId_userId_key: {
+          orgId,
+          userId,
+          key: KEY_RSS_READER_SETTINGS,
+        },
+      },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return {
+      version: 1,
+      updatedAt: {
+        ...(record ? { settings: record.updatedAt.toISOString() } : {}),
+      },
+      settings: record ? normalizeRssReaderUiSettings(record.value) : null,
+    };
+  }
+
+  async updateRssReaderUiSettings(
+    orgId: string,
+    userId: string,
+    input: { settings?: Record<string, unknown> },
+  ): Promise<RssReaderUiSettingsResponse> {
+    if (input.settings !== undefined) {
+      const settings = normalizeRssReaderUiSettings(input.settings);
+      await this.upsert(
+        orgId,
+        userId,
+        KEY_RSS_READER_SETTINGS,
+        this.toPrismaJson(settings),
+      );
+    }
+
+    return this.getRssReaderUiSettings(orgId, userId);
   }
 
   private async upsert(

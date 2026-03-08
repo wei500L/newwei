@@ -50,6 +50,8 @@ export interface NewsCardProps {
     };
     url?: string;
     eventId?: string | null;
+    rssHasTranslation?: boolean;
+    rssTranslationState?: 'translated' | 'original';
   };
   variant?: NewsCardVariant;
   density?: NewsCardDensity;
@@ -76,6 +78,12 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
   const readModeLabel = t("items.readMode", { defaultValue: "Read mode" });
   const shareLabel = t("common.share", { defaultValue: "Share" });
   const readingTimeLabel = t("items.readingTime", { defaultValue: "min read" });
+  const translatedLabel = t("pages.rss.translation.translatedBadge", {
+    defaultValue: "Translated"
+  });
+  const originalLabel = t("pages.rss.translation.originalBadge", {
+    defaultValue: "Original"
+  });
 
   const qualityScore = formatRatioAsPercent(item.qualityScore, locale);
   const duplicateScore = formatRatioAsPercent(item.duplicateSimilarity, locale);
@@ -346,6 +354,27 @@ export function NewsCard({ item, variant = "default", density = "compact" }: New
           <SentimentBadge sentiment={item.sentiment} />
           {item.source ? (
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.source}</span>
+          ) : null}
+          {item.rssTranslationState ? (
+            <Tooltip
+              title={
+                item.rssTranslationState === "translated"
+                  ? t("pages.rss.translation.translatedHint", {
+                      defaultValue: "Showing translated title and summary."
+                    })
+                  : item.rssHasTranslation
+                    ? t("pages.rss.translation.originalWithTranslationHint", {
+                        defaultValue: "Translation is available, but this card is showing original text."
+                      })
+                    : t("pages.rss.translation.originalHint", {
+                        defaultValue: "No translated content was returned for this item, so it remains in the original language."
+                      })
+              }
+            >
+              <Tag color={item.rssTranslationState === "translated" ? "cyan" : "default"} className="m-0">
+                {item.rssTranslationState === "translated" ? translatedLabel : originalLabel}
+              </Tag>
+            </Tooltip>
           ) : null}
         </div>
         <ArticlePublishedTime

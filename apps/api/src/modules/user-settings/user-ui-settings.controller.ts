@@ -6,6 +6,7 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { UpdateNewsnowUiSettingsDto } from "./dto/newsnow-ui-settings.dto";
+import { UpdateRssReaderUiSettingsDto } from "./dto/rss-reader-ui-settings.dto";
 import { UpdateSituationMonitorUiSettingsDto } from "./dto/situation-monitor-ui-settings.dto";
 import { UpdateSpacetimeTimelineUiSettingsDto } from "./dto/spacetime-timeline-ui-settings.dto";
 import { UpdateWarMapUiSettingsDto } from "./dto/war-map-ui-settings.dto";
@@ -87,5 +88,21 @@ export class UserUiSettingsController {
     @Body() body: UpdateNewsnowUiSettingsDto,
   ) {
     return this.settings.updateNewsnowUiSettings(user.orgId, user.id, body);
+  }
+
+  @Get("rss-reader")
+  @Header("Cache-Control", "no-store")
+  @Permissions("items.read")
+  async getRssReaderUiSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.settings.getRssReaderUiSettings(user.orgId, user.id);
+  }
+
+  @Put("rss-reader")
+  @Permissions("items.read")
+  async updateRssReaderUiSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateRssReaderUiSettingsDto,
+  ) {
+    return this.settings.updateRssReaderUiSettings(user.orgId, user.id, body);
   }
 }

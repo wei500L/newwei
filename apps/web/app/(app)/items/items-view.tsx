@@ -46,6 +46,10 @@ import { resolveDisplaySummary, resolveDisplayTitle } from "@/lib/item-display";
 import { formatRatioAsPercent } from "@/lib/metrics-format";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import {
+  applyRssTranslationsToListItems,
+  resolveItemsViewFiltersWithFixedSources,
+} from "@/lib/rss-reader-ui";
+import {
   type RssItemTranslation,
   type RssTranslationField,
   type RssTranslationProvider,
@@ -836,6 +840,7 @@ interface ItemsRssTranslationConfig {
   provider: RssTranslationProvider;
   targetLanguage: string;
   fields?: RssTranslationField[];
+  showOriginal?: boolean;
 }
 
 interface ItemsViewProps {
@@ -853,6 +858,7 @@ interface ItemsViewProps {
   onTranslationError?: (message: string | null) => void;
   onSearchSuggestionStatusChange?: (status: SearchSuggestionStatus) => void;
   hideSearchControl?: boolean;
+  hideQuickNav?: boolean;
 }
 
 interface ParsedItem {
@@ -892,6 +898,8 @@ interface ParsedItem {
   url?: string;
   history?: { timestamp: string; value: number }[];
   eventId?: string | null;
+  rssHasTranslation?: boolean;
+  rssTranslationState?: 'translated' | 'original';
 }
 
 export function ItemsView({
@@ -909,6 +917,7 @@ export function ItemsView({
   onTranslationError,
   onSearchSuggestionStatusChange,
   hideSearchControl = false,
+  hideQuickNav = false,
 }: ItemsViewProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -976,19 +985,18 @@ export function ItemsView({
     TranslateRssItemsMutation,
     TranslateRssItemsMutationVariables
   >(TRANSLATE_RSS_ITEMS_MUTATION);
-  const normalizedFixedSourceIds = useMemo(
-    () => normalizeFilterList(fixedSourceIds),
-    [fixedSourceIds],
+  const {
+    queryFilters,
+    displayFilters,
+    normalizedFixedSourceIds,
+  } = useMemo(
+    () =>
+      resolveItemsViewFiltersWithFixedSources({
+        filters,
+        fixedSourceIds,
+      }),
+    [filters, fixedSourceIds],
   );
-  const effectiveFilters = useMemo<FilterState>(() => {
-    if (!normalizedFixedSourceIds || normalizedFixedSourceIds.length === 0) {
-      return filters;
-    }
-    return {
-      ...filters,
-      sourceIds: normalizedFixedSourceIds,
-    };
-  }, [filters, normalizedFixedSourceIds]);
 
   const updateListTableScroll = useCallback(() => {
     const container = listTableContainerRef.current;
@@ -1153,17 +1161,22 @@ export function ItemsView({
     setPage(1);
   }, [debouncedSearchInput, search]);
 
-  const filtersInput = useMemo(
-    () => buildFiltersInput(effectiveFilters),
-    [effectiveFilters],
+  const queryFiltersInput = useMemo(
+    () => buildFiltersInput(queryFilters),
+    [queryFilters],
   );
-  const hasActiveFilters = filtersInput !== null;
+  const displayFiltersInput = useMemo(
+    () => buildFiltersInput(displayFilters),
+    [displayFilters],
+  );
+  const hasQueryFilters = queryFiltersInput !== null;
+  const hasVisibleFilters = displayFiltersInput !== null;
   const activeFilterDimensionCount = useMemo(
-    () => countItemsFilterDimensions(effectiveFilters),
-    [effectiveFilters],
+    () => countItemsFilterDimensions(displayFilters),
+    [displayFilters],
   );
   const isUnsearched =
-    emptyStateVariant === "search" && search.length === 0 && !hasActiveFilters;
+    emptyStateVariant === "search" && search.length === 0 && !hasQueryFilters;
   const defaultRankingMode: ItemsRankingMode =
     emptyStateVariant === "search" ? "RELEVANCE" : "RECENCY";
   const rankingModeQueryValue =
@@ -1360,7 +1373,7 @@ export function ItemsView({
       after: null,
       page,
       search: search || null,
-      filters: filtersInput,
+      filters: queryFiltersInput,
       orderBy,
       rankingMode,
     },
@@ -1383,7 +1396,7 @@ export function ItemsView({
   >(ITEM_FACETS_QUERY, {
     variables: {
       search: search || null,
-      filters: filtersInput,
+      filters: queryFiltersInput,
     },
     fetchPolicy: "cache-and-network",
   });
@@ -1400,46 +1413,46 @@ export function ItemsView({
   const resolvedData = isUnsearched
     ? undefined
     : (data ??
-      (filtersInput === null ? (initialData ?? undefined) : undefined));
+      (queryFiltersInput === null ? (initialData ?? undefined) : undefined));
   const edges = resolvedData?.items.edges ?? EMPTY_EDGES;
   const resolvedTotalCount = resolvedData?.items.totalCount;
   const totalCount =
     typeof resolvedTotalCount === "number" ? resolvedTotalCount : 0;
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
-    if (filtersInput?.sourceIds?.length) {
+    if (displayFiltersInput?.sourceIds?.length) {
       parts.push(
-        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${filtersInput.sourceIds.length.toLocaleString(locale)}`,
+        `${t("pages.rss.sourceLabel", { defaultValue: "RSS Sources" })}: ${displayFiltersInput.sourceIds.length.toLocaleString(locale)}`,
       );
     }
-    if (filtersInput?.regions?.length) {
+    if (displayFiltersInput?.regions?.length) {
       parts.push(
-        `${t("items.filters.region", { defaultValue: "Region" })}: ${filtersInput.regions.length.toLocaleString(locale)}`,
+        `${t("items.filters.region", { defaultValue: "Region" })}: ${displayFiltersInput.regions.length.toLocaleString(locale)}`,
       );
     }
-    if (filtersInput?.topics?.length) {
+    if (displayFiltersInput?.topics?.length) {
       parts.push(
-        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${filtersInput.topics.length.toLocaleString(locale)}`,
+        `${t("items.filters.topic", { defaultValue: "Topic" })}: ${displayFiltersInput.topics.length.toLocaleString(locale)}`,
       );
     }
-    if (filtersInput?.sentiments?.length) {
+    if (displayFiltersInput?.sentiments?.length) {
       parts.push(
-        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${filtersInput.sentiments.length.toLocaleString(locale)}`,
+        `${t("items.filters.sentiment", { defaultValue: "Sentiment" })}: ${displayFiltersInput.sentiments.length.toLocaleString(locale)}`,
       );
     }
-    if (filtersInput?.contentTypes?.length) {
+    if (displayFiltersInput?.contentTypes?.length) {
       parts.push(
-        `${t("items.filters.contentType", { defaultValue: "Content type" })}: ${filtersInput.contentTypes.length.toLocaleString(locale)}`,
+        `${t("items.filters.contentType", { defaultValue: "Content type" })}: ${displayFiltersInput.contentTypes.length.toLocaleString(locale)}`,
       );
     }
-    if (filtersInput?.excludeDuplicates) {
+    if (displayFiltersInput?.excludeDuplicates) {
       parts.push(
         t("items.filters.excludeDuplicates", {
           defaultValue: "Hide duplicates",
         }),
       );
     }
-    if (filtersInput?.dateRange) {
+    if (displayFiltersInput?.dateRange) {
       parts.push(
         `${t("items.filters.date", { defaultValue: "Date Range" })}: 1`,
       );
@@ -1448,7 +1461,7 @@ export function ItemsView({
       parts,
       text: parts.join(" | "),
     };
-  }, [filtersInput, locale, t]);
+  }, [displayFiltersInput, locale, t]);
 
   const showingRange = useMemo(() => {
     if (totalCount === 0 || edges.length === 0) {
@@ -1702,24 +1715,41 @@ export function ItemsView({
     if (!rssTranslationConfig?.enabled) {
       return basePageData;
     }
-    if (Object.keys(translatedByItemId).length === 0) {
-      return basePageData;
-    }
-    return basePageData.map((item) => {
-      const translated = translatedByItemId[item.id];
-      if (!translated) {
-        return item;
-      }
-      const title = toNonEmptyString(translated.title) ?? item.title;
-      const summary = toNonEmptyString(translated.summary) ?? item.summary;
-      return {
-        ...item,
-        title,
-        name: title,
-        summary,
-      };
+    return applyRssTranslationsToListItems({
+      items: basePageData,
+      translatedByItemId,
+      enabled: rssTranslationConfig?.enabled,
+      showOriginal: rssTranslationConfig?.showOriginal,
     });
-  }, [basePageData, rssTranslationConfig?.enabled, translatedByItemId]);
+  }, [
+    basePageData,
+    rssTranslationConfig?.enabled,
+    rssTranslationConfig?.showOriginal,
+    translatedByItemId,
+  ]);
+  const rssTranslationStats = useMemo(() => {
+    if (!rssTranslationConfig?.enabled || pageData.length === 0) {
+      return null;
+    }
+
+    let translated = 0;
+    let original = 0;
+    pageData.forEach((item) => {
+      if (item.rssTranslationState === 'translated') {
+        translated += 1;
+        return;
+      }
+      if (item.rssTranslationState === 'original') {
+        original += 1;
+      }
+    });
+
+    if (translated === 0 && original === 0) {
+      return null;
+    }
+
+    return { translated, original };
+  }, [pageData, rssTranslationConfig?.enabled]);
 
   useEffect(() => {
     if (view !== "list") {
@@ -1728,7 +1758,7 @@ export function ItemsView({
     updateListTableScroll();
   }, [
     error,
-    hasActiveFilters,
+    hasVisibleFilters,
     pageData.length,
     search,
     updateListTableScroll,
@@ -2140,7 +2170,7 @@ export function ItemsView({
     }
 
     if (!loading && pageData.length === 0) {
-      const isFiltered = Boolean(search.length > 0 || hasActiveFilters);
+      const isFiltered = Boolean(search.length > 0 || hasVisibleFilters);
       const filteredDescription = isFiltered ? (
         <div className="flex flex-col items-center gap-1">
           <span>
@@ -2303,6 +2333,8 @@ export function ItemsView({
                     duplicateOf: item.duplicateOf,
                     llm: item.llm,
                     url: item.url,
+                    rssHasTranslation: item.rssHasTranslation,
+                    rssTranslationState: item.rssTranslationState,
                   }}
                 />
               </List.Item>
@@ -2319,7 +2351,7 @@ export function ItemsView({
     activeFilterDimensionCount > 0
       ? `${t("items.filters.button", { defaultValue: "Filters" })} (${activeFilterDimensionCount})`
       : t("items.filters.button", { defaultValue: "Filters" });
-  const excludeDuplicatesEnabled = effectiveFilters.excludeDuplicates === true;
+  const excludeDuplicatesEnabled = displayFilters.excludeDuplicates === true;
 
   const containerClassName = layoutState.isReaderPreset
     ? "content-card items-reader-shell"
@@ -2328,26 +2360,28 @@ export function ItemsView({
   return (
     <div className={containerClassName} style={{ padding: "24px" }}>
       <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="small" onClick={() => router.push("/news-hub")}>
-            {t("items.quickNav.hub", { defaultValue: "News Hub" })}
-          </Button>
-          <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
-            {t("items.quickNav.newsnow", { defaultValue: "实时热榜" })}
-          </Button>
-          <Button size="small" onClick={() => router.push("/events")}>
-            {t("items.quickNav.events", { defaultValue: "事件脉络" })}
-          </Button>
-        </div>
+        {!hideQuickNav ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="small" onClick={() => router.push("/news-hub")}>
+              {t("items.quickNav.hub", { defaultValue: "News Hub" })}
+            </Button>
+            <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
+              {t("items.quickNav.newsnow", { defaultValue: "实时热榜" })}
+            </Button>
+            <Button size="small" onClick={() => router.push("/events")}>
+              {t("items.quickNav.events", { defaultValue: "事件脉络" })}
+            </Button>
+          </div>
+        ) : null}
 
         {/* Header Controls */}
         <Row justify="space-between" align="middle" gutter={[16, 16]}>
           <Col flex="auto">
-            <Space>
+            <Space wrap className="w-full">
               {!hideSearchControl ? (
                 layoutState.filterBehavior === "layered" ? (
                   <EnhancedSearchBox
-                    className="w-full min-w-[280px]"
+                    className="min-w-0 sm:min-w-[280px]"
                     placeholder={t("items.search.placeholder")}
                     value={searchInput}
                     onChange={(value) => {
@@ -2544,6 +2578,22 @@ export function ItemsView({
                 })}
               </Tag>
             ) : null}
+            {rssTranslationStats ? (
+              <Tag className="text-xs" color="cyan">
+                {t("pages.rss.translation.translatedCount", {
+                  count: rssTranslationStats.translated,
+                  defaultValue: "Translated: {{count}}"
+                })}
+              </Tag>
+            ) : null}
+            {rssTranslationStats ? (
+              <Tag className="text-xs">
+                {t("pages.rss.translation.originalCount", {
+                  count: rssTranslationStats.original,
+                  defaultValue: "Original: {{count}}"
+                })}
+              </Tag>
+            ) : null}
           </div>
         ) : null}
 
@@ -2559,7 +2609,7 @@ export function ItemsView({
                 <FacetedSearch
                   behavior={layoutState.filterBehavior}
                   stickySummary={layoutState.isLayeredFilters}
-                  filters={effectiveFilters}
+                  filters={displayFilters}
                   onFilterChange={handleFilterChange}
                   regions={availableRegions}
                   topics={availableTopics}
@@ -2591,7 +2641,7 @@ export function ItemsView({
         <FacetedSearch
           behavior={layoutState.filterBehavior}
           stickySummary={false}
-          filters={effectiveFilters}
+          filters={displayFilters}
           onFilterChange={handleFilterChange}
           regions={availableRegions}
           topics={availableTopics}

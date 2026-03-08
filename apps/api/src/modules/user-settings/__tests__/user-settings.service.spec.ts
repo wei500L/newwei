@@ -148,4 +148,32 @@ describe("UserSettingsService", () => {
     expect(response.settings?.sourceAffinity.weibo?.openOriginalCount).toBe(3);
     expect(response.settings?.sourceAffinity).not.toHaveProperty("bad source");
   });
+
+  it("returns null payload when no rss reader settings exist", async () => {
+    const response = await service.getRssReaderUiSettings("org-1", "user-1");
+    expect(response.settings).toBeNull();
+    expect(response.updatedAt).toEqual({});
+  });
+
+  it("normalizes and persists rss reader settings", async () => {
+    const response = await service.updateRssReaderUiSettings("org-1", "user-1", {
+      settings: {
+        selectedSourceIds: [" source-a ", "source-a", "source-b"],
+        sourceLanguageFilters: [" en ", "zh-cn", "EN"],
+        translationEnabled: 1,
+        translationProvider: "llm",
+        targetLanguage: " en ",
+        showOriginalContent: true,
+      },
+    });
+
+    expect(response.settings).toEqual({
+      selectedSourceIds: ["source-a", "source-b"],
+      sourceLanguageFilters: ["EN", "ZH-CN"],
+      translationEnabled: false,
+      translationProvider: "llm",
+      targetLanguage: "en",
+      showOriginalContent: true,
+    });
+  });
 });
