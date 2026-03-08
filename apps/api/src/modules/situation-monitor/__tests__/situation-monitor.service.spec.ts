@@ -165,4 +165,64 @@ describe("SituationMonitorService", () => {
     expect(result.tech).toHaveLength(1);
     expect(result.tech[0]?.title).toBe("Semiconductor exports face new review");
   });
+
+  it("builds diagnostics from the same displayed headlines returned to clients", async () => {
+    const cache = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn().mockResolvedValue(undefined),
+      wrap: jest.fn(async (_key: string, _ttl: number, factory: () => Promise<unknown>) => await factory()),
+    } as any;
+    const external = {
+      isGdeltEnabled: jest.fn().mockReturnValue(false),
+    } as any;
+    const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
+    const realtimeSignals = {
+      getSituationMonitorInsightSnapshot: jest.fn().mockResolvedValue({
+        keywordSpikes: [],
+        predictionLeads: [],
+        pizzint: undefined,
+        tensions: [],
+      }),
+    } as any;
+    const service = new SituationMonitorService(cache, external, feedback, realtimeSignals, {} as any);
+
+    const makeHeadline = (index: number, origin: "items" | "gdelt") => ({
+      id: `tech-${index}`,
+      title: `Tech headline ${index}`,
+      titleZh: null,
+      link: `https://example.com/tech-${index}`,
+      source: origin === "items" ? "Internal" : "GDELT",
+      timestamp: Date.parse(`2026-01-02T${String(index % 24).padStart(2, "0")}:00:00.000Z`),
+      category: "tech",
+      origin,
+      isAlert: false,
+      itemMetaId: `meta-${index}`,
+      summary: null,
+      keyPoints: [],
+      topics: [],
+    });
+
+    const headlines = {
+      politics: [],
+      tech: [
+        ...Array.from({ length: 10 }, (_, index) => makeHeadline(index + 1, "items")),
+        ...Array.from({ length: 5 }, (_, index) => makeHeadline(index + 11, "gdelt")),
+      ],
+      finance: [],
+      gov: [],
+      ai: [],
+      intel: [],
+    };
+
+    jest.spyOn(service as any, "buildHeadlinesByCategory").mockResolvedValue(headlines);
+
+    const result = await service.getInsights("org-1", { sections: ["core"] });
+
+    expect(result.headlines?.tech).toHaveLength(12);
+    expect(result.diagnostics?.categories.tech).toEqual({
+      internalCount: 10,
+      gdeltFallbackCount: 2,
+      totalCount: 12,
+    });
+  });
 });

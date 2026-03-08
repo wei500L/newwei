@@ -240,7 +240,7 @@ export class SituationMonitorService {
         const mainCharacter = calculateMainCharacter(analysisNews);
 
         return {
-          diagnostics: this.buildDiagnostics(headlines, scope),
+          diagnostics: this.buildDiagnostics(displayHeadlines, scope),
           headlines: displayHeadlines,
           analyzedItems,
           alerts: this.buildAlerts(displayHeadlines),

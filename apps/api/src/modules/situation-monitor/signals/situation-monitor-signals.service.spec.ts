@@ -7,7 +7,11 @@ describe('SituationMonitorSignalsService', () => {
 
   function createService() {
     const env = { get: jest.fn() } as any;
-    const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn() } as any;
+    const cache = {
+      get: jest.fn(),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
+    } as any;
     const dispatcher = { publish: jest.fn() } as any;
     const alerts = { enqueueRuleCheck: jest.fn() } as any;
     const settings = {
@@ -69,6 +73,104 @@ describe('SituationMonitorSignalsService', () => {
     expect(result.scope).toBe('global');
     expect(result.channelSet).toBe('full');
     expect(result.count).toBe(1);
+  });
+
+  it('drops cached telegram items when the runtime channel set changes before serving feed', async () => {
+    const { service } = createService();
+
+    jest.spyOn(service as any, 'restoreCachedTelegramState').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getTelegramRuntimeConfig').mockResolvedValue({
+      enabled: true,
+      apiId: '123456',
+      apiHash: 'hash',
+      session: 'session',
+      channelSet: 'tech',
+      maxFeedItems: 200,
+      maxTextChars: 800,
+      channelTimeoutMs: 15_000,
+      pollCycleTimeoutMs: 30_000,
+      startupDelayMs: 60_000,
+      rateLimitMs: 800,
+      pollIntervalMs: 60_000,
+    });
+
+    (service as any).telegramState.channelSet = 'full';
+    (service as any).telegramState.channels = [{ handle: 'legacy' }];
+    (service as any).telegramState.cursorByHandle = { legacy: 42 };
+    (service as any).telegramState.lastPollAt = Date.now();
+    (service as any).telegramState.items = [
+      {
+        id: 'legacy:1',
+        source: 'telegram',
+        channel: 'legacy',
+        channelTitle: 'Legacy',
+        url: 'https://t.me/legacy/1',
+        ts: new Date().toISOString(),
+        text: 'stale item',
+        topic: 'breaking',
+        tags: [],
+        earlySignal: true,
+      },
+    ];
+
+    const result = await service.getTelegramFeed();
+
+    expect(result.channelSet).toBe('tech');
+    expect(result.count).toBe(0);
+    expect((service as any).telegramState.items).toEqual([]);
+    expect((service as any).telegramState.cursorByHandle).toEqual({});
+  });
+
+  it('drops previous channel-set items during polling when the new set has no fresh posts', async () => {
+    const { service } = createService();
+
+    jest.spyOn(service as any, 'getTelegramRuntimeConfig').mockResolvedValue({
+      enabled: true,
+      apiId: '123456',
+      apiHash: 'hash',
+      session: 'session',
+      channelSet: 'tech',
+      maxFeedItems: 200,
+      maxTextChars: 800,
+      channelTimeoutMs: 15_000,
+      pollCycleTimeoutMs: 30_000,
+      startupDelayMs: 0,
+      rateLimitMs: 0,
+      pollIntervalMs: 60_000,
+    });
+    jest.spyOn(service as any, 'initTelegramClientIfNeeded').mockResolvedValue(true);
+    jest.spyOn(service as any, 'loadTelegramChannels').mockReturnValue([
+      { handle: 'new-feed', topic: 'intel', enabled: true, maxMessages: 10 },
+    ]);
+    jest.spyOn(service as any, 'delay').mockResolvedValue(undefined);
+
+    (service as any).telegramState.channelSet = 'full';
+    (service as any).telegramState.channels = [{ handle: 'legacy' }];
+    (service as any).telegramState.cursorByHandle = { legacy: 42 };
+    (service as any).telegramState.items = [
+      {
+        id: 'legacy:1',
+        source: 'telegram',
+        channel: 'legacy',
+        channelTitle: 'Legacy',
+        url: 'https://t.me/legacy/1',
+        ts: new Date().toISOString(),
+        text: 'stale item',
+        topic: 'breaking',
+        tags: [],
+        earlySignal: true,
+      },
+    ];
+    (service as any).telegramState.client = {
+      getEntity: jest.fn().mockResolvedValue({}),
+      getMessages: jest.fn().mockResolvedValue([]),
+    };
+
+    await (service as any).pollTelegramOnce();
+
+    expect((service as any).telegramState.channelSet).toBe('tech');
+    expect((service as any).telegramState.items).toEqual([]);
+    expect((service as any).telegramState.cursorByHandle).toEqual({});
   });
 
   it('restores telegram cursor state from cache', async () => {

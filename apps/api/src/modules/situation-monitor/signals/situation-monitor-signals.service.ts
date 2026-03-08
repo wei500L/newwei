@@ -161,6 +161,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }): Promise<SituationTelegramFeedResponse> {
     await this.restoreCachedTelegramState();
     const runtime = await this.getTelegramRuntimeConfig();
+    await this.syncTelegramStateWithRuntime(runtime.channelSet);
 
     const topic = options?.topic?.trim().toLowerCase();
     const channel = options?.channel?.trim().toLowerCase();
@@ -251,6 +252,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private async pollTelegramOnce() {
     const runtime = await this.getTelegramRuntimeConfig();
+    await this.syncTelegramStateWithRuntime(runtime.channelSet);
 
     if (!runtime.enabled) {
       this.telegramState.lastError = 'Telegram polling is disabled';
@@ -273,10 +275,6 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       if (sinceServiceStartMs < startupDelayMs) {
         return;
       }
-    }
-
-    if (this.telegramState.channelSet && this.telegramState.channelSet !== runtime.channelSet) {
-      this.telegramState.cursorByHandle = {};
     }
 
     const ok = await this.initTelegramClientIfNeeded(runtime);
@@ -929,6 +927,40 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     } catch {
       // best-effort
     }
+  }
+
+  private async syncTelegramStateWithRuntime(runtimeChannelSet: string): Promise<void> {
+    if (this.telegramState.channelSet === runtimeChannelSet) {
+      return;
+    }
+
+    const hasCachedState =
+      this.telegramState.channels.length > 0 ||
+      this.telegramState.items.length > 0 ||
+      this.telegramState.lastPollAt > 0 ||
+      Object.keys(this.telegramState.cursorByHandle).length > 0;
+
+    if (!hasCachedState && this.telegramState.channelSet === null) {
+      return;
+    }
+
+    logger.info(
+      {
+        previousChannelSet: this.telegramState.channelSet,
+        runtimeChannelSet,
+        itemCount: this.telegramState.items.length,
+      },
+      'Telegram channel set changed; clearing cached feed state',
+    );
+
+    this.telegramState.channels = [];
+    this.telegramState.channelSet = runtimeChannelSet;
+    this.telegramState.cursorByHandle = {};
+    this.telegramState.items = [];
+    this.telegramState.lastPollAt = 0;
+    this.telegramState.lastError = null;
+
+    await this.persistTelegramState();
   }
 
   async clearTelegramState(options?: { clearItems?: boolean }): Promise<void> {
