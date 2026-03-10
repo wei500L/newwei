@@ -1,4 +1,0 @@
-
-> @modular/utils@0.1.0 typecheck D:\wei\packages\utils
-> tsc -p tsconfig.build.json --noEmit
-

@@ -1,4 +1,0 @@
-
-> @modular/mongo@0.1.0 typecheck D:\wei\packages\mongo
-> tsc -p tsconfig.build.json --noEmit
-

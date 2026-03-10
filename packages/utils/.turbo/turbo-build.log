@@ -1,4 +1,0 @@
-
-> @modular/utils@0.1.0 build D:\wei\packages\utils
-> rimraf dist && tsc -p tsconfig.build.json
-
