@@ -179,8 +179,14 @@ describe("RealtimeSignalsService unrest merge", () => {
         Object.assign(new Error("HTTP 401 Unauthorized"), { status: 401 }),
       )
       .mockResolvedValueOnce({ data: [] });
+    const runtime = {
+      ...runtimeConfig,
+      credentials: {
+        ...runtimeConfig.credentials,
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
 
-    const rows = await (service as any).fetchAcledUnrestEvents(runtimeConfig);
+    const rows = await (service as any).fetchAcledUnrestEvents(runtime);
 
     expect(settings.forceRefreshAcledAccessToken).toHaveBeenCalledTimes(1);
     expect(fetchJsonSpy.mock.calls[0]?.[2]).toMatchObject({
@@ -189,6 +195,7 @@ describe("RealtimeSignalsService unrest merge", () => {
     expect(fetchJsonSpy.mock.calls[1]?.[2]).toMatchObject({
       headers: { Authorization: "Bearer fresh-token" },
     });
+    expect(runtime.credentials.acledAccessToken).toBe("fresh-token");
     expect(rows).toEqual([]);
   });
 });
@@ -283,6 +290,22 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     );
 
     nowSpy.mockRestore();
+  });
+
+  it("reads runtime config for insight snapshots without ACLED refresh", async () => {
+    const { service, settings, store } = buildService();
+    store.getInsightSnapshot.mockResolvedValue({
+      keywordSpikes: [],
+      predictionLeads: [],
+      tensions: [],
+    });
+    store.getLastRun.mockResolvedValue(null);
+
+    await service.getSituationMonitorInsightSnapshot("org-1");
+
+    expect(settings.getRuntimeConfig).toHaveBeenCalledWith({
+      refreshAcledToken: false,
+    });
   });
 
   it("clears stale insight snapshots when due refresh attempts fail", async () => {

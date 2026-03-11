@@ -126,6 +126,19 @@ describe("RealtimeSignalsSettingsService", () => {
     global.fetch = originalFetch;
   });
 
+  it("does not refresh ACLED token when only reading public settings", async () => {
+    envConfig.credentials.acledOauthUsername = "env-user@example.com";
+    envConfig.credentials.acledOauthPassword = "env-password";
+    envConfig.credentials.acledOauthClientId = "acled";
+    global.fetch = jest.fn();
+
+    const response = await service.getPublicSettings();
+
+    expect(response.hasAcledAccessToken).toBe(false);
+    expect(response.acledAccessTokenStatus).toBe("missing");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("refreshes ACLED token from env OAuth credentials and persists derived state", async () => {
     envConfig.credentials.acledOauthUsername = "env-user@example.com";
     envConfig.credentials.acledOauthPassword = "env-password";
@@ -213,7 +226,7 @@ describe("RealtimeSignalsSettingsService", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("respects refresh cooldown after an ACLED OAuth failure", async () => {
+  it("respects refresh cooldown while the current ACLED token is still usable", async () => {
     envConfig.credentials.acledOauthUsername = "env-user@example.com";
     envConfig.credentials.acledOauthPassword = "env-password";
     envConfig.credentials.acledOauthClientId = "acled";
@@ -221,9 +234,9 @@ describe("RealtimeSignalsSettingsService", () => {
     const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
     store.set(ACLED_AUTH_STATE_KEY, {
       version: 1,
-      accessToken: null,
-      expiresAt: null,
-      refreshedAt: null,
+      accessToken: "still-valid-token",
+      expiresAt: new Date(now + 60_000).toISOString(),
+      refreshedAt: new Date(now - 120_000).toISOString(),
       lastAttemptAt: new Date(now - 60_000).toISOString(),
       lastError: "bad credentials",
     });
@@ -231,11 +244,78 @@ describe("RealtimeSignalsSettingsService", () => {
 
     const result = await service.getPublicSettings();
 
-    expect(result.acledAccessTokenStatus).toBe("refresh_failed");
+    expect(result.acledAccessTokenStatus).toBe("expiring");
     expect(result.acledAccessTokenLastAttemptAt).toBe(
       new Date(now - 60_000).toISOString(),
     );
     expect(global.fetch).not.toHaveBeenCalled();
     nowSpy.mockRestore();
+  });
+
+  it("refreshes again when the previous failed ACLED token is already expired", async () => {
+    envConfig.credentials.acledOauthUsername = "env-user@example.com";
+    envConfig.credentials.acledOauthPassword = "env-password";
+    envConfig.credentials.acledOauthClientId = "acled";
+    const now = Date.parse("2026-03-11T00:00:00.000Z");
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
+    store.set(ACLED_AUTH_STATE_KEY, {
+      version: 1,
+      accessToken: "expired-token",
+      expiresAt: new Date(now - 1_000).toISOString(),
+      refreshedAt: new Date(now - 120_000).toISOString(),
+      lastAttemptAt: new Date(now - 60_000).toISOString(),
+      lastError: "bad credentials",
+    });
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({
+        access_token: "new-token",
+        expires_in: 3600,
+      }),
+    } as any);
+
+    const runtime = await service.getRuntimeConfig();
+
+    expect(runtime.credentials.acledAccessToken).toBe("new-token");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    nowSpy.mockRestore();
+  });
+
+  it("waits for ACLED refresh result when another request holds the lock", async () => {
+    envConfig.credentials.acledOauthUsername = "env-user@example.com";
+    envConfig.credentials.acledOauthPassword = "env-password";
+    envConfig.credentials.acledOauthClientId = "acled";
+    store.set(ACLED_AUTH_STATE_KEY, {
+      version: 1,
+      accessToken: null,
+      expiresAt: null,
+      refreshedAt: null,
+      lastAttemptAt: null,
+      lastError: null,
+    });
+    cacheMock.withLock = jest.fn(async () => null);
+    const sleepSpy = jest
+      .spyOn(service as any, "sleep")
+      .mockImplementation(async () => {
+        cacheStore.clear();
+        store.set(ACLED_AUTH_STATE_KEY, {
+          version: 1,
+          accessToken: "fresh-token",
+          expiresAt: "2030-01-01T00:00:00.000Z",
+          refreshedAt: "2030-01-01T00:00:00.000Z",
+          lastAttemptAt: "2030-01-01T00:00:00.000Z",
+          lastError: null,
+        });
+      });
+    global.fetch = jest.fn();
+
+    const runtime = await service.getRuntimeConfig();
+
+    expect(runtime.credentials.acledAccessToken).toBe("fresh-token");
+    expect(cacheMock.withLock).toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    sleepSpy.mockRestore();
   });
 });

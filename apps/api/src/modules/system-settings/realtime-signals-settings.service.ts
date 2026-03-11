@@ -23,6 +23,7 @@ export type RealtimeSignalsAcledAccessTokenStatus =
   | "expiring"
   | "missing"
   | "refresh_failed";
+type AcledAccessTokenRefreshMode = "none" | "if_needed" | "force";
 
 interface StoredRealtimeSignalsSettings {
   enabled?: unknown;
@@ -209,6 +210,7 @@ const DEFAULT_ACLED_CLIENT_ID = "acled";
 const ACLED_TOKEN_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const ACLED_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const ACLED_REFRESH_LOCK_TTL_MS = 30_000;
+const ACLED_REFRESH_POLL_INTERVAL_MS = 250;
 
 @Injectable()
 export class RealtimeSignalsSettingsService {
@@ -225,7 +227,7 @@ export class RealtimeSignalsSettingsService {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
     const resolvedAcledToken = await this.resolveAcledAccessToken(effective, {
-      forceRefresh: false,
+      refreshMode: "none",
     });
 
     const relaySharedSecretPresence = this.resolveSecretPresence(
@@ -304,11 +306,13 @@ export class RealtimeSignalsSettingsService {
     };
   }
 
-  async getRuntimeConfig(): Promise<RealtimeSignalsRuntimeConfig> {
+  async getRuntimeConfig(options?: {
+    refreshAcledToken?: boolean;
+  }): Promise<RealtimeSignalsRuntimeConfig> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
     const resolvedAcledToken = await this.resolveAcledAccessToken(effective, {
-      forceRefresh: false,
+      refreshMode: options?.refreshAcledToken === false ? "none" : "if_needed",
     });
     return {
       enabled: effective.enabled,
@@ -378,7 +382,7 @@ export class RealtimeSignalsSettingsService {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
     const resolved = await this.resolveAcledAccessToken(effective, {
-      forceRefresh: true,
+      refreshMode: "force",
     });
     return resolved.token;
   }
@@ -638,7 +642,7 @@ export class RealtimeSignalsSettingsService {
     const nextEffective = this.resolveEffectiveConfig(nextStored);
     if (this.hasAcledOauthCredentials(nextEffective)) {
       await this.resolveAcledAccessToken(nextEffective, {
-        forceRefresh: true,
+        refreshMode: "force",
       });
     }
 
@@ -1073,19 +1077,20 @@ export class RealtimeSignalsSettingsService {
 
   private async resolveAcledAccessToken(
     effective: EffectiveRealtimeSignalsSettings,
-    options: { forceRefresh: boolean },
+    options: { refreshMode: AcledAccessTokenRefreshMode },
   ): Promise<ResolvedAcledAccessToken> {
     let state = await this.loadAcledAuthState();
     const hasUsableToken = Boolean(
       state?.accessToken && this.isAcledTokenUsable(state.expiresAt),
     );
     const shouldRefresh =
-      options.forceRefresh ||
-      !hasUsableToken ||
-      this.isAcledTokenExpiring(state?.expiresAt);
+      options.refreshMode === "force" ||
+      (options.refreshMode === "if_needed" &&
+        (!hasUsableToken || this.isAcledTokenExpiring(state?.expiresAt)));
     const coolingDown =
-      !options.forceRefresh &&
+      options.refreshMode !== "force" &&
       Boolean(state?.lastError) &&
+      hasUsableToken &&
       this.isAcledRefreshCoolingDown(state?.lastAttemptAt);
 
     if (
@@ -1094,7 +1099,7 @@ export class RealtimeSignalsSettingsService {
       !coolingDown
     ) {
       state = await this.refreshAcledAccessToken(effective, state, {
-        forceRefresh: options.forceRefresh,
+        forceRefresh: options.refreshMode === "force",
       });
     }
 
@@ -1200,8 +1205,7 @@ export class RealtimeSignalsSettingsService {
       return result;
     }
 
-    await this.sleep(200);
-    return (await this.loadAcledAuthState()) ?? currentState;
+    return await this.waitForAcledAuthStateUpdate(currentState);
   }
 
   private async requestAcledAccessToken(
@@ -1475,6 +1479,38 @@ export class RealtimeSignalsSettingsService {
     });
 
     await this.invalidateAcledAuthStateCache();
+  }
+
+  private acledAuthStateSignature(
+    state: ParsedRealtimeSignalsAcledAuthState | null,
+  ) {
+    if (!state) {
+      return "null";
+    }
+    return JSON.stringify({
+      hasAccessToken: Boolean(state.accessToken),
+      expiresAt: state.expiresAt ?? null,
+      refreshedAt: state.refreshedAt ?? null,
+      lastAttemptAt: state.lastAttemptAt ?? null,
+      lastError: state.lastError ?? null,
+    });
+  }
+
+  private async waitForAcledAuthStateUpdate(
+    previousState: ParsedRealtimeSignalsAcledAuthState | null,
+  ) {
+    const previousSignature = this.acledAuthStateSignature(previousState);
+    const deadline = Date.now() + ACLED_REFRESH_LOCK_TTL_MS + 1_000;
+
+    while (Date.now() < deadline) {
+      await this.sleep(ACLED_REFRESH_POLL_INTERVAL_MS);
+      const nextState = await this.loadAcledAuthState();
+      if (this.acledAuthStateSignature(nextState) !== previousSignature) {
+        return nextState;
+      }
+    }
+
+    return (await this.loadAcledAuthState()) ?? previousState;
   }
 
   private async clearAcledAuthState() {

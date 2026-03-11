@@ -228,7 +228,7 @@ export class RealtimeSignalsService {
   }
 
   async getSituationMonitorInsightSnapshot(orgId: string) {
-    const runtime = await this.getRuntimeConfig();
+    const runtime = await this.getRuntimeConfig({ refreshAcledToken: false });
     if (!runtime.enabled) {
       return this.createEmptyInsightSnapshot();
     }
@@ -550,6 +550,7 @@ export class RealtimeSignalsService {
           const refreshedToken =
             await this.settings.forceRefreshAcledAccessToken();
           if (refreshedToken?.trim()) {
+            runtime.credentials.acledAccessToken = refreshedToken.trim();
             try {
               return await fetchRows(refreshedToken.trim());
             } catch (retryError) {
@@ -1386,9 +1387,11 @@ export class RealtimeSignalsService {
     }
   }
 
-  private async getRuntimeConfig(): Promise<RealtimeSignalsRuntimeConfig> {
+  private async getRuntimeConfig(options?: {
+    refreshAcledToken?: boolean;
+  }): Promise<RealtimeSignalsRuntimeConfig> {
     try {
-      return await this.settings.getRuntimeConfig();
+      return await this.settings.getRuntimeConfig(options);
     } catch (error) {
       logger.warn(
         { err: error },
