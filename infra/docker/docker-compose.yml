@@ -204,12 +204,15 @@ services:
     restart: unless-stopped
     working_dir: /app
     shm_size: 1g
+    volumes:
+      - ./crawl4ai/ssrf_proxy.py:/opt/modular/crawl4ai-ssrf-proxy.py:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       CRAWL4AI_XVFB_ENABLED: ${CRAWL4AI_XVFB_ENABLED:-true}
       CRAWL4AI_XVFB_DISPLAY_NUM: ${CRAWL4AI_XVFB_DISPLAY_NUM:-99}
       CRAWL4AI_XVFB_SCREEN: ${CRAWL4AI_XVFB_SCREEN:-1920x1080x24}
+      CRAWL4AI_SSRF_PROXY_PORT: ${CRAWL4AI_SSRF_PROXY_PORT:-18080}
       CRAWL4AI_HTTP_PROXY: ${CRAWL4AI_HTTP_PROXY:-}
       CRAWL4AI_HTTPS_PROXY: ${CRAWL4AI_HTTPS_PROXY:-}
       CRAWL4AI_NO_PROXY: ${CRAWL4AI_NO_PROXY:-localhost,127.0.0.1,crawl4ai,api,web,db,redis,host.docker.internal}
@@ -254,6 +257,10 @@ services:
                 server_path.write_text(updated, encoding="utf-8")
                 print(f"[crawl4ai] /health version patched to {version.strip()}")
         PY
+        fi
+
+        if [ -f /opt/modular/crawl4ai-ssrf-proxy.py ]; then
+          python /opt/modular/crawl4ai-ssrf-proxy.py &
         fi
 
         if [ "$$CRAWL4AI_XVFB_ENABLED" = "true" ]; then

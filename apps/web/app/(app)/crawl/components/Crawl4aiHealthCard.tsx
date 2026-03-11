@@ -24,6 +24,11 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import {
+  getCrawl4aiSsrfProxyStatus,
+  parseCrawl4aiSsrfProxyRuntimeState,
+  type Crawl4aiSsrfProxyRuntimeState,
+} from "@/lib/crawl4ai-ssrf-proxy";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 type HealthStatus = "loading" | "healthy" | "unreachable";
@@ -50,6 +55,7 @@ interface Crawl4aiRuntimeSnapshot {
   headedError?: string;
   xvfbReason?: string;
   xvfbSupported?: boolean;
+  ssrfProxy: Crawl4aiSsrfProxyRuntimeState;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -239,6 +245,7 @@ function parseRuntimeSnapshot(
   const headedError = asString(getPath(payload, ["headed", "error"]));
   const xvfbReason = asString(getPath(payload, ["xvfb", "reason"]));
   const xvfbSupported = getBoolean(payload, ["xvfb", "supported"]);
+  const ssrfProxy = parseCrawl4aiSsrfProxyRuntimeState(payload);
 
   return {
     receivedAt,
@@ -249,6 +256,7 @@ function parseRuntimeSnapshot(
     headedError,
     xvfbReason,
     xvfbSupported,
+    ssrfProxy,
   };
 }
 
@@ -480,6 +488,28 @@ export function Crawl4aiHealthCard({
       </Tag>
     ) : null;
 
+  const ssrfProxyStatus = getCrawl4aiSsrfProxyStatus(runtime?.ssrfProxy);
+  const ssrfProxyTag =
+    ssrfProxyStatus === "healthy" ? (
+      <Tag color="green">
+        {t("crawl.monitor.runtime.ssrfProxyOk", {
+          defaultValue: "SSRF proxy OK",
+        })}
+      </Tag>
+    ) : ssrfProxyStatus === "failing" ? (
+      <Tag color="red">
+        {t("crawl.monitor.runtime.ssrfProxyFailed", {
+          defaultValue: "SSRF proxy failed",
+        })}
+      </Tag>
+    ) : ssrfProxyStatus === "disabled" ? (
+      <Tag color="orange">
+        {t("crawl.monitor.runtime.ssrfProxyDisabled", {
+          defaultValue: "SSRF proxy OFF",
+        })}
+      </Tag>
+    ) : null;
+
   const updatedText = snapshot?.receivedAt
     ? t("crawl.monitor.quickStatus.updatedAt", {
         defaultValue: "Updated {{time}}",
@@ -508,6 +538,7 @@ export function Crawl4aiHealthCard({
           </Typography.Text>
           {statusTag}
           {headedTag}
+          {ssrfProxyTag}
           {updatedText ? (
             <Typography.Text type="secondary">{updatedText}</Typography.Text>
           ) : null}
@@ -619,14 +650,72 @@ export function Crawl4aiHealthCard({
           <Typography.Text type="secondary">
             {t("crawl.monitor.runtime.summary", {
               defaultValue:
-                "Runtime: headless={{headless}} · headed={{headed}}",
+                "Runtime: headless={{headless}} · headed={{headed}} · SSRF proxy={{proxy}}",
               headless: runtime.headlessOk ? "OK" : "FAILED",
               headed: runtime.headedOk ? "OK" : "FAILED",
+              proxy:
+                ssrfProxyStatus === "healthy"
+                  ? "OK"
+                  : ssrfProxyStatus === "disabled"
+                    ? "OFF"
+                    : ssrfProxyStatus === "failing"
+                      ? "FAILED"
+                      : "UNKNOWN",
             })}
             {typeof runtime.headedDurationMs === "number"
               ? ` (${runtime.headedDurationMs}ms)`
               : null}
           </Typography.Text>
+          {ssrfProxyStatus === "disabled" ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t("crawl.monitor.runtime.ssrfProxyRiskTitle", {
+                defaultValue: "Worker-side SSRF proxy is disabled",
+              })}
+              description={
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>
+                    {t("crawl.monitor.runtime.ssrfProxyRiskBody", {
+                      defaultValue:
+                        "CRAWL4AI_SSRF_PROXY_URL is not configured. API-side URL validation still runs, but the worker no longer pins/blocks DNS resolution at fetch time, so DNS rebinding protection is incomplete.",
+                    })}
+                  </Typography.Text>
+                  <Typography.Text code>
+                    CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080
+                  </Typography.Text>
+                </Space>
+              }
+            />
+          ) : ssrfProxyStatus === "failing" ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t("crawl.monitor.runtime.ssrfProxyFailedTitle", {
+                defaultValue: "Worker-side SSRF proxy is configured but unreachable",
+              })}
+              description={
+                <Space direction="vertical" size={2}>
+                  {runtime.ssrfProxy.error ? (
+                    <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
+                      {runtime.ssrfProxy.error}
+                    </Typography.Text>
+                  ) : null}
+                  {runtime.ssrfProxy.url ? (
+                    <Typography.Text code>
+                      CRAWL4AI_SSRF_PROXY_URL={runtime.ssrfProxy.url}
+                    </Typography.Text>
+                  ) : null}
+                  <Typography.Text type="secondary">
+                    {t("crawl.monitor.runtime.ssrfProxyFailedBody", {
+                      defaultValue:
+                        "Crawl4AI accepted the proxy configuration, but the browser could not use it. Verify the local proxy process is started inside the crawl4ai container and recreate the service if needed.",
+                    })}
+                  </Typography.Text>
+                </Space>
+              }
+            />
+          ) : null}
           {!runtime.headedOk && runtimeHeadedReason ? (
             <Alert
               type={runtimeHeadedIssue === "unknown" ? "info" : "warning"}

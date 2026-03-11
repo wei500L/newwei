@@ -21,10 +21,18 @@ import {
 } from "@prisma/client";
 import { DelayedError, Job, Queue } from "bullmq";
 import { PubSubEngine } from "graphql-subscriptions";
+import { Agent as HttpAgent } from "http";
+import { Agent as HttpsAgent } from "https";
+import type { LookupFunction } from "net";
 import { firstValueFrom } from "rxjs";
 
 import { toPrismaJsonValue, toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
-import { validateSsrfUrl, validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
+import {
+  resolveValidatedSsrfUrlAsync,
+  type SsrfResolvedAddress,
+  validateSsrfUrl,
+  validateSsrfUrlAsync,
+} from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -1656,7 +1664,7 @@ export class AlertsService {
       thresholdUpper?: Prisma.Decimal | null;
     }
   ) {
-    await this.assertSafeWebhookTarget(target, { runtime: true });
+    const resolvedTarget = await this.resolveSafeWebhookTarget(target);
     const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const payload = {
       alertId: event.id,
@@ -1676,7 +1684,18 @@ export class AlertsService {
       operator: rule.operator,
       message: event.message
     };
-    await firstValueFrom(this.http.post(target, payload, { timeout: this.env.alertingConfig.webhookTimeoutMs }));
+    const pinnedLookup = this.createPinnedLookup(
+      resolvedTarget.hostname,
+      resolvedTarget.addresses,
+    );
+    await firstValueFrom(
+      this.http.post(target, payload, {
+        timeout: this.env.alertingConfig.webhookTimeoutMs,
+        maxRedirects: 0,
+        httpAgent: new HttpAgent({ keepAlive: false, lookup: pinnedLookup }),
+        httpsAgent: new HttpsAgent({ keepAlive: false, lookup: pinnedLookup }),
+      }),
+    );
   }
 
   private async normalizeChannelTarget(type: AlertChannelType, target: string): Promise<string> {
@@ -1703,6 +1722,71 @@ export class AlertsService {
     if (!asyncResult.valid) {
       throw this.createWebhookTargetError(asyncResult.reason, options);
     }
+  }
+
+  private async resolveSafeWebhookTarget(target: string): Promise<{
+    hostname: string;
+    addresses: SsrfResolvedAddress[];
+  }> {
+    const result = await resolveValidatedSsrfUrlAsync(target, {
+      allowUnresolved: false,
+    });
+    if (!result.valid || !result.hostname || !result.addresses?.length) {
+      throw this.createWebhookTargetError(
+        result.reason ?? "Hostname could not be resolved",
+        { runtime: true },
+      );
+    }
+    return {
+      hostname: result.hostname,
+      addresses: result.addresses,
+    };
+  }
+
+  private createPinnedLookup(
+    expectedHostname: string,
+    addresses: SsrfResolvedAddress[],
+  ): LookupFunction {
+    const normalizedExpectedHostname = expectedHostname.toLowerCase();
+    return ((hostname: string, options: any, callback: (...args: unknown[]) => void) => {
+      if (hostname.toLowerCase() !== normalizedExpectedHostname) {
+        callback(new Error(`Pinned lookup rejected unexpected hostname: ${hostname}`));
+        return;
+      }
+
+      const requestedFamily =
+        typeof options === "number"
+          ? options
+          : typeof options?.family === "number"
+            ? Number(options.family)
+            : 0;
+      const filtered =
+        requestedFamily === 4 || requestedFamily === 6
+          ? addresses.filter((entry) => entry.family === requestedFamily)
+          : addresses;
+
+      if (typeof options === "object" && options?.all === true) {
+        if (filtered.length === 0) {
+          callback(new Error(`Pinned lookup has no ${requestedFamily || "usable"} addresses for ${hostname}`));
+          return;
+        }
+        callback(
+          null,
+          filtered.map((entry) => ({
+            address: entry.address,
+            family: entry.family,
+          })),
+        );
+        return;
+      }
+
+      const selected = filtered[0] ?? addresses[0];
+      if (!selected) {
+        callback(new Error(`Pinned lookup has no usable addresses for ${hostname}`));
+        return;
+      }
+      callback(null, selected.address, selected.family);
+    }) as LookupFunction;
   }
 
   private createWebhookTargetError(

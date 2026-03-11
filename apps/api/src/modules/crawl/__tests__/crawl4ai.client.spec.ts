@@ -15,12 +15,15 @@ describe("Crawl4aiClient", () => {
 
   const envMock = {
     crawl4aiConfig: {
+      baseUrl: "http://crawl4ai:11235",
       jsCodeEnabled: true,
+      ssrfProxyUrl: undefined,
     },
   } as any;
 
   beforeEach(() => {
     jest.resetAllMocks();
+    envMock.crawl4aiConfig.ssrfProxyUrl = undefined;
     crawlSettingsMock.getSettings = jest.fn().mockResolvedValue({
       healthCheckTtlMs: 0,
       requestTimeoutMs: 1000,
@@ -711,5 +714,36 @@ describe("Crawl4aiClient", () => {
 
     const payload = httpMock.post.mock.calls[0]?.[1];
     expect(payload.crawler_config.params.wait_for_timeout).toBe(500);
+  });
+
+  it("routes crawl traffic through the worker SSRF proxy and preserves upstream proxy overrides", async () => {
+    envMock.crawl4aiConfig.ssrfProxyUrl = "http://127.0.0.1:18080";
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        proxyConfig: {
+          server: "http://localhost:7890",
+          username: "user-1",
+          password: "secret-1",
+        },
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.browser_config.params.proxy).toBeUndefined();
+    expect(payload.browser_config.params.proxy_config).toEqual({
+      server: "http://127.0.0.1:18080",
+      username: "__modular_ssrf_proxy__",
+      password: Buffer.from(
+        JSON.stringify({
+          server: "http://host.docker.internal:7890",
+          username: "user-1",
+          password: "secret-1",
+        }),
+        "utf8",
+      ).toString("base64url"),
+    });
   });
 });

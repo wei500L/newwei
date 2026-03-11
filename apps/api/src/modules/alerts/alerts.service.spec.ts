@@ -5,6 +5,9 @@ import {
   AlertOperator,
   AlertStatus,
 } from "@prisma/client";
+import { of } from "rxjs";
+
+import * as ssrfValidator from "../../common/validators/ssrf-url.validator";
 
 import { AlertsService } from "./alerts.service";
 
@@ -538,6 +541,10 @@ describe("AlertsService.upsertRule system manual metric", () => {
 });
 
 describe("AlertsService channel target validation", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   const buildService = () => {
     const prisma = {
       alertNotificationChannel: {
@@ -610,5 +617,68 @@ describe("AlertsService channel target validation", () => {
     ).rejects.toThrow("Unsafe webhook target");
 
     expect(http.post).not.toHaveBeenCalled();
+  });
+
+  it("pins webhook delivery to the vetted DNS answer and disables redirects", async () => {
+    const { http, service } = buildService();
+    jest
+      .spyOn(ssrfValidator, "resolveValidatedSsrfUrlAsync")
+      .mockResolvedValue({
+        valid: true,
+        hostname: "hooks.example.com",
+        addresses: [{ address: "93.184.216.34", family: 4 }],
+      });
+    http.post.mockReturnValue(of({ data: { ok: true } }));
+
+    await (service as any).sendWebhook(
+      "https://hooks.example.com/webhook",
+      {
+        id: "event-1",
+        triggeredAt: new Date("2024-01-01T00:00:00.000Z"),
+        metricValue: { toString: () => "1" } as any,
+        severity: "high",
+        ruleId: "rule-1",
+        message: null,
+      },
+      {
+        name: "Pinned rule",
+        metricSlug: "crawl_task",
+        operator: "gte",
+        thresholdValue: null,
+        thresholdLower: null,
+        thresholdUpper: null,
+      },
+    );
+
+    expect(http.post).toHaveBeenCalledTimes(1);
+    const [, , config] = http.post.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      {
+        maxRedirects: number;
+        httpAgent: { options?: { lookup?: (...args: unknown[]) => void } };
+        httpsAgent: { options?: { lookup?: (...args: unknown[]) => void } };
+      },
+    ];
+
+    expect(config.maxRedirects).toBe(0);
+    expect(typeof config.httpAgent.options?.lookup).toBe("function");
+    expect(typeof config.httpsAgent.options?.lookup).toBe("function");
+
+    await new Promise<void>((resolve, reject) => {
+      config.httpsAgent.options?.lookup?.(
+        "hooks.example.com",
+        { family: 4 },
+        (error: Error | null, address?: string, family?: number) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          expect(address).toBe("93.184.216.34");
+          expect(family).toBe(4);
+          resolve();
+        },
+      );
+    });
   });
 });

@@ -7,6 +7,7 @@ import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
 
 import { Crawl4aiHealthIndicator } from "./crawl4ai.health";
+import { Crawl4aiSsrfProxyHealthIndicator } from "./crawl4ai-ssrf-proxy.health";
 import { HealthController } from "./health.controller";
 import { LlmGatewayHealthIndicator } from "./llm-gateway.health";
 import { MongoHealthIndicator } from "./mongo.health";
@@ -37,6 +38,7 @@ import { RedisHealthIndicator } from "./redis.health";
   providers: [
     RedisHealthIndicator,
     Crawl4aiHealthIndicator,
+    Crawl4aiSsrfProxyHealthIndicator,
     MongoHealthIndicator,
     LlmGatewayHealthIndicator,
   ]

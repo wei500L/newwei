@@ -26,6 +26,7 @@ import type {
   CrawlMarkdownOptions,
   CrawlMarkdownFilter,
   Crawl4aiMedia,
+  CrawlProxyConfig,
   CrawlBrowserHeader,
   CrawlBrowserCookie,
   CrawlUserAgentGeneratorConfig,
@@ -117,6 +118,8 @@ interface CrawlScanProfile {
   pageTimeoutMs?: number;
   adjustViewportToContent?: boolean;
 }
+
+const CRAWL4AI_SSRF_PROXY_AUTH_USER = "__modular_ssrf_proxy__";
 
 @Injectable()
 export class Crawl4aiClient {
@@ -800,8 +803,7 @@ export class Crawl4aiClient {
     const useManagedBrowser = options.useManagedBrowser ?? false;
     const headless =
       typeof options.headless === "boolean" ? options.headless : undefined;
-    const proxyConfig = this.resolveProxyConfig(options);
-    const proxy = this.resolveProxyUrl(options);
+    const { proxy, proxyConfig } = this.resolveBrowserProxy(options);
     const multiConfigurations = this.buildMultiConfigurations(options);
     const markdownGenerator = this.buildMarkdownGenerator(options);
     const cleanMarkdown = this.buildCleanMarkdownOptions(options.cleanMarkdown);
@@ -986,11 +988,11 @@ export class Crawl4aiClient {
       options.proxyConfig.server,
       this.env.crawl4aiConfig.baseUrl,
     );
-    return this.compact({
+    return {
       server: normalizedServer,
       username: options.proxyConfig.username ?? undefined,
       password: options.proxyConfig.password ?? undefined,
-    });
+    } satisfies CrawlProxyConfig;
   }
 
   private resolveProxyUrl(options: CrawlTaskOptions) {
@@ -1004,6 +1006,49 @@ export class Crawl4aiClient {
       options.proxyUrl,
       this.env.crawl4aiConfig.baseUrl,
     );
+  }
+
+  private resolveBrowserProxy(options: CrawlTaskOptions) {
+    const directProxyConfig = this.resolveProxyConfig(options);
+    const directProxyUrl = this.resolveProxyUrl(options);
+    const ssrfProxyUrl = this.normalizeSsrfProxyUrl(
+      this.env.crawl4aiConfig.ssrfProxyUrl,
+    );
+
+    if (!ssrfProxyUrl) {
+      return {
+        proxy: directProxyUrl,
+        proxyConfig: directProxyConfig,
+      };
+    }
+
+    const encodedUpstream = this.encodeSsrfProxyUpstream(
+      directProxyConfig ??
+        (directProxyUrl ? { server: directProxyUrl } : undefined),
+    );
+
+    return {
+      proxy: undefined,
+      proxyConfig: this.compact({
+        server: ssrfProxyUrl,
+        username: encodedUpstream
+          ? CRAWL4AI_SSRF_PROXY_AUTH_USER
+          : undefined,
+        password: encodedUpstream,
+      }),
+    };
+  }
+
+  private normalizeSsrfProxyUrl(proxyUrl?: string) {
+    const normalized = proxyUrl?.trim();
+    return normalized && /^https?:\/\//i.test(normalized) ? normalized : undefined;
+  }
+
+  private encodeSsrfProxyUpstream(proxyConfig?: CrawlProxyConfig) {
+    if (!proxyConfig) {
+      return undefined;
+    }
+    return Buffer.from(JSON.stringify(proxyConfig), "utf8").toString("base64url");
   }
 
   private buildMarkdownGenerator(options: CrawlTaskOptions) {

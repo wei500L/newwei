@@ -38,6 +38,7 @@ const FULLTEXT_MIN_TOKEN_LENGTH = 3;
 const MONGO_MIN_TOKEN_LENGTH = 2;
 const MAX_SEARCH_MATCHES = 5000;
 const MAX_TOPIC_GROUPS = 50;
+const LATEST_PROCESSED_SNAPSHOT_BATCH_SIZE = 500;
 const MAX_TOPIC_ITEMS = 8;
 const DEFAULT_TOPIC_WINDOW_DAYS = 30;
 const MAX_EVENT_GROUPS = 50;
@@ -217,8 +218,20 @@ interface LatestProcessedItemSnapshot {
   tags?: unknown;
   result?: unknown;
   sourceId?: string | null;
-  duplicateOf?: string | null;
+  duplicateOf?: Types.ObjectId | string | null;
   sortAt?: Date | null;
+}
+
+interface LatestProcessedSnapshotRecord {
+  _id: Types.ObjectId;
+  itemMetaId: string;
+  tags?: unknown;
+  result?: unknown;
+  sourceId?: string | null;
+  duplicateOf?: Types.ObjectId | string | null;
+  sortAt?: Date | null;
+  ingestedAt?: Date | null;
+  createdAt?: Date | null;
 }
 
 type SearchCandidateSource =
@@ -1483,6 +1496,42 @@ export class ItemsService {
     };
   }
 
+  private resolveProcessedSortAt(record: {
+    sortAt?: Date | string | null;
+    ingestedAt?: Date | string | null;
+    createdAt?: Date | string | null;
+    result?: unknown;
+  }): Date | null {
+    const directSortAt = this.asDate(record.sortAt);
+    if (directSortAt) {
+      return directSortAt;
+    }
+
+    const result =
+      record.result && typeof record.result === "object" && !Array.isArray(record.result)
+        ? (record.result as Record<string, unknown>)
+        : null;
+    const publishedAt = this.asDate(result?.published_at ?? null);
+    if (publishedAt) {
+      return publishedAt;
+    }
+
+    return this.asDate(record.ingestedAt) ?? this.asDate(record.createdAt);
+  }
+
+  private asDate(value: unknown): Date | null {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
   private async listLatestProcessedSnapshots(
     orgId: string,
     itemMetaIds?: string[],
@@ -1495,38 +1544,81 @@ export class ItemsService {
     if (Array.isArray(itemMetaIds) && itemMetaIds.length > 0) {
       match.itemMetaId = { $in: itemMetaIds };
     }
+    const seen = new Set<string>();
+    const snapshots: LatestProcessedItemSnapshot[] = [];
+    const pendingIds = itemMetaIds ? new Set(itemMetaIds) : null;
+    let cursor:
+      | {
+          createdAt: Date;
+          id: Types.ObjectId;
+        }
+      | undefined;
 
-    return ProcessedItemModel.aggregate<LatestProcessedItemSnapshot>([
-      { $match: match },
-      {
-        $addFields: {
-          normalizedSortAt: this.buildProcessedSortAtExpression(),
-        },
-      },
-      { $sort: { itemMetaId: 1, createdAt: -1, _id: -1 } },
-      {
-        $group: {
-          _id: "$itemMetaId",
-          itemMetaId: { $first: "$itemMetaId" },
-          tags: { $first: "$tags" },
-          result: { $first: "$result" },
-          sourceId: { $first: "$sourceId" },
-          duplicateOf: { $first: "$duplicateOf" },
-          sortAt: { $first: "$normalizedSortAt" },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
+    while (true) {
+      const pageMatch: Record<string, unknown> = { ...match };
+      if (cursor) {
+        pageMatch.$or = [
+          { createdAt: { $lt: cursor.createdAt } },
+          { createdAt: cursor.createdAt, _id: { $lt: cursor.id } },
+        ];
+      }
+
+      const batch = (await ProcessedItemModel.find(
+        pageMatch,
+        {
           itemMetaId: 1,
           tags: 1,
           result: 1,
           sourceId: 1,
           duplicateOf: 1,
           sortAt: 1,
+          ingestedAt: 1,
+          createdAt: 1,
         },
-      },
-    ]);
+      )
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(LATEST_PROCESSED_SNAPSHOT_BATCH_SIZE)
+        .lean()) as unknown as LatestProcessedSnapshotRecord[];
+
+      if (batch.length === 0) {
+        break;
+      }
+
+      for (const record of batch) {
+        if (!record.itemMetaId || seen.has(record.itemMetaId)) {
+          continue;
+        }
+        seen.add(record.itemMetaId);
+        pendingIds?.delete(record.itemMetaId);
+        snapshots.push({
+          itemMetaId: record.itemMetaId,
+          tags: record.tags,
+          result: record.result,
+          sourceId: record.sourceId ?? null,
+          duplicateOf: record.duplicateOf ?? null,
+          sortAt: this.resolveProcessedSortAt(record),
+        });
+      }
+
+      if (pendingIds && pendingIds.size === 0) {
+        break;
+      }
+
+      const last = batch[batch.length - 1];
+      if (!last?.createdAt || !last?._id) {
+        break;
+      }
+      cursor = {
+        createdAt: last.createdAt,
+        id: last._id,
+      };
+
+      if (batch.length < LATEST_PROCESSED_SNAPSHOT_BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return snapshots;
   }
 
   private dedupeItemMetaIds(ids: string[]): string[] {

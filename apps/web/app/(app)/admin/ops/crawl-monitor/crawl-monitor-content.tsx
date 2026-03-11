@@ -26,6 +26,10 @@ import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import {
+  getCrawl4aiSsrfProxyStatus,
+  parseCrawl4aiSsrfProxyRuntimeState,
+} from "@/lib/crawl4ai-ssrf-proxy";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 
 interface CrawlMonitorContentProps {
@@ -87,6 +91,11 @@ interface Crawl4aiRuntimeProbeState {
   headed: Crawl4aiRuntimeProbeResult;
   xvfb?: { supported?: boolean; reason?: string };
   xvfbEnv?: { enabled?: string; displayNum?: string; screen?: string };
+  ssrfProxy?: {
+    enabled?: boolean;
+    url?: string;
+    probe?: Crawl4aiRuntimeProbeResult;
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2003,6 +2012,11 @@ export function CrawlMonitorContent({
   const runtimeHeadedIssue = classifyHeadedIssue(
     runtimeHeadedError ?? undefined,
   );
+  const ssrfProxyState = useMemo(
+    () => parseCrawl4aiSsrfProxyRuntimeState(runtimeProbe),
+    [runtimeProbe],
+  );
+  const ssrfProxyStatus = getCrawl4aiSsrfProxyStatus(ssrfProxyState);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2403,7 +2417,7 @@ export function CrawlMonitorContent({
                         style={{ width: "100%" }}
                       >
                         <Row gutter={[16, 12]}>
-                          <Col xs={24} md={12}>
+                          <Col xs={24} md={8}>
                             <Statistic
                               title={t("crawl.monitor.runtime.headless", {
                                 defaultValue: "Headless (headless=true)",
@@ -2412,7 +2426,7 @@ export function CrawlMonitorContent({
                               suffix={`${runtimeProbe.headless.durationMs}ms`}
                             />
                           </Col>
-                          <Col xs={24} md={12}>
+                          <Col xs={24} md={8}>
                             <Statistic
                               title={t("crawl.monitor.runtime.headed", {
                                 defaultValue: "Headed (headless=false)",
@@ -2422,6 +2436,27 @@ export function CrawlMonitorContent({
                                 typeof runtimeProbe.headed.durationMs ===
                                 "number"
                                   ? `${runtimeProbe.headed.durationMs}ms`
+                                  : undefined
+                              }
+                            />
+                          </Col>
+                          <Col xs={24} md={8}>
+                            <Statistic
+                              title={t("crawl.monitor.runtime.ssrfProxy", {
+                                defaultValue: "Worker SSRF proxy",
+                              })}
+                              value={
+                                ssrfProxyStatus === "healthy"
+                                  ? "OK"
+                                  : ssrfProxyStatus === "disabled"
+                                    ? "OFF"
+                                    : ssrfProxyStatus === "failing"
+                                      ? "FAILED"
+                                      : "-"
+                              }
+                              suffix={
+                                typeof ssrfProxyState.durationMs === "number"
+                                  ? `${ssrfProxyState.durationMs}ms`
                                   : undefined
                               }
                             />
@@ -2450,6 +2485,66 @@ export function CrawlMonitorContent({
                               </Typography.Text>
                             ) : null}
                           </Typography.Text>
+                        ) : null}
+
+                        {ssrfProxyState.url ? (
+                          <Typography.Text type="secondary">
+                            {t("crawl.monitor.runtime.proxyEnv", {
+                              defaultValue: "Proxy:",
+                            })}{" "}
+                            <Typography.Text code>
+                              CRAWL4AI_SSRF_PROXY_URL={ssrfProxyState.url}
+                            </Typography.Text>
+                          </Typography.Text>
+                        ) : null}
+
+                        {ssrfProxyStatus === "disabled" ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={t("crawl.monitor.runtime.ssrfProxyRiskTitle", {
+                              defaultValue: "Worker-side SSRF proxy is disabled",
+                            })}
+                            description={
+                              <Space direction="vertical" size={2}>
+                                <Typography.Text>
+                                  {t("crawl.monitor.runtime.ssrfProxyRiskBody", {
+                                    defaultValue:
+                                      "CRAWL4AI_SSRF_PROXY_URL is not configured. API-side URL validation still runs, but the worker no longer pins/blocks DNS resolution at fetch time, so DNS rebinding protection is incomplete.",
+                                  })}
+                                </Typography.Text>
+                                <Typography.Text code>
+                                  CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080
+                                </Typography.Text>
+                              </Space>
+                            }
+                          />
+                        ) : ssrfProxyStatus === "failing" ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={t("crawl.monitor.runtime.ssrfProxyFailedTitle", {
+                              defaultValue:
+                                "Worker-side SSRF proxy is configured but unreachable",
+                            })}
+                            description={
+                              <Space direction="vertical" size={2}>
+                                {ssrfProxyState.error ? (
+                                  <Typography.Text
+                                    style={{ whiteSpace: "pre-wrap" }}
+                                  >
+                                    {ssrfProxyState.error}
+                                  </Typography.Text>
+                                ) : null}
+                                <Typography.Text type="secondary">
+                                  {t("crawl.monitor.runtime.ssrfProxyFailedBody", {
+                                    defaultValue:
+                                      "Crawl4AI accepted the proxy configuration, but the browser could not use it. Verify the local proxy process is started inside the crawl4ai container and recreate the service if needed.",
+                                  })}
+                                </Typography.Text>
+                              </Space>
+                            }
+                          />
                         ) : null}
 
                         {!runtimeProbe.headed.ok ? (

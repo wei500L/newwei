@@ -690,29 +690,54 @@ describe("ItemsService filters", () => {
   });
 
   it("builds facets from the latest processed snapshot per item", async () => {
-    mockProcessedItemAggregate.mockResolvedValueOnce([
-      {
-        itemMetaId: "meta-1",
-        result: {
-          location: "US",
-          topics: [{ name: "AI" }],
-          entities: [{ name: "OpenAI" }],
-          sentiment: "positive",
-          contentType: "analysis",
+    mockProcessedItemFind.mockReturnValueOnce({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: "507f1f77bcf86cd799439011",
+          itemMetaId: "meta-1",
+          createdAt: new Date("2024-01-03T00:00:00.000Z"),
+          result: {
+            location: "US",
+            topics: [{ name: "AI" }],
+            entities: [{ name: "OpenAI" }],
+            sentiment: "positive",
+            contentType: "analysis",
+          },
+          tags: ["AI"],
         },
-        tags: ["AI"],
-      },
-      {
-        itemMetaId: "meta-2",
-        result: {
-          region: "EU",
-          topics: ["Macro"],
-          sentiment_label: "neutral",
-          content_type: "news_fact",
+        {
+          _id: "507f1f77bcf86cd799439012",
+          itemMetaId: "meta-1",
+          createdAt: new Date("2024-01-02T00:00:00.000Z"),
+          result: {
+            location: "APAC",
+            topics: ["Old topic"],
+            sentiment: "negative",
+            contentType: "opinion",
+          },
+          tags: ["legacy"],
         },
-        tags: [],
-      },
-    ]);
+        {
+          _id: "507f1f77bcf86cd799439013",
+          itemMetaId: "meta-2",
+          createdAt: new Date("2024-01-01T00:00:00.000Z"),
+          result: {
+            region: "EU",
+            topics: ["Macro"],
+            sentiment_label: "neutral",
+            content_type: "news_fact",
+          },
+          tags: [],
+        },
+      ]),
+    });
+    mockProcessedItemFind.mockReturnValueOnce({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
 
     const service = new ItemsService(
       {} as any,

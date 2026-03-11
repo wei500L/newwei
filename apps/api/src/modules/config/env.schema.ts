@@ -150,6 +150,7 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .positive()
       .default(5_000),
+    CRAWL4AI_SSRF_PROXY_URL: z.string().url().optional(),
     CRAWL4AI_JSCODE_ENABLED: envBoolean.default(true),
     CRAWL4AI_JSCODE_AUDIT_ENABLED: envBoolean.default(true),
     CRAWL4AI_JSCODE_AUDIT_RETENTION_DAYS: z.coerce

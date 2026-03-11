@@ -18,6 +18,12 @@ interface ProbeResult {
   error?: string;
 }
 
+interface SsrfProxyRuntimeProbe {
+  enabled: boolean;
+  url?: string;
+  probe?: ProbeResult;
+}
+
 interface RuntimeProbeResponse {
   checkedAt: string;
   baseUrl: string;
@@ -32,6 +38,7 @@ interface RuntimeProbeResponse {
     displayNum?: string;
     screen?: string;
   };
+  ssrfProxy: SsrfProxyRuntimeProbe;
 }
 
 let cached: {
@@ -57,6 +64,9 @@ function normalizeErrorMessage(value: unknown): string | undefined {
 async function runProbe(
   baseUrl: string,
   headless: boolean,
+  options?: {
+    proxyServer?: string;
+  },
 ): Promise<ProbeResult> {
   const startedAt = Date.now();
   const controller = new AbortController();
@@ -75,7 +85,19 @@ async function runProbe(
 
     const payload = {
       urls: [PROBE_URL],
-      browser_config: { type: "BrowserConfig", params: { headless } },
+      browser_config: {
+        type: "BrowserConfig",
+        params: {
+          headless,
+          ...(options?.proxyServer
+            ? {
+                proxy_config: {
+                  server: options.proxyServer,
+                },
+              }
+            : {}),
+        },
+      },
       crawler_config: {
         type: "CrawlerRunConfig",
         params: {
@@ -148,6 +170,11 @@ async function runProbe(
   }
 }
 
+function resolveSsrfProxyUrl(): string | undefined {
+  const value = process.env.CRAWL4AI_SSRF_PROXY_URL?.trim();
+  return value ? value : undefined;
+}
+
 export async function GET() {
   const session = await auth();
   if (!session) {
@@ -172,9 +199,13 @@ export async function GET() {
     );
   }
 
-  const [headless, headed] = await Promise.all([
+  const ssrfProxyUrl = resolveSsrfProxyUrl();
+  const [headless, headed, ssrfProxyProbe] = await Promise.all([
     runProbe(baseUrl, true),
     runProbe(baseUrl, false),
+    ssrfProxyUrl
+      ? runProbe(baseUrl, true, { proxyServer: ssrfProxyUrl })
+      : Promise.resolve<ProbeResult | undefined>(undefined),
   ]);
   const displayIssue = headed.error
     ? isDisplayDependencyError(headed.error)
@@ -198,6 +229,11 @@ export async function GET() {
       enabled: process.env.CRAWL4AI_XVFB_ENABLED?.trim() || undefined,
       displayNum: process.env.CRAWL4AI_XVFB_DISPLAY_NUM?.trim() || undefined,
       screen: process.env.CRAWL4AI_XVFB_SCREEN?.trim() || undefined,
+    },
+    ssrfProxy: {
+      enabled: Boolean(ssrfProxyUrl),
+      url: ssrfProxyUrl,
+      probe: ssrfProxyProbe,
     },
   };
 

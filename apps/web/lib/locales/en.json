@@ -5883,9 +5883,19 @@
         "unavailable": "Runtime probe unavailable",
         "headless": "Headless (headless=true)",
         "headed": "Headed (headless=false)",
+        "ssrfProxy": "Worker SSRF proxy",
+        "ssrfProxyOk": "SSRF proxy OK",
+        "ssrfProxyFailed": "SSRF proxy failed",
+        "ssrfProxyDisabled": "SSRF proxy OFF",
+        "ssrfProxyRiskTitle": "Worker-side SSRF proxy is disabled",
+        "ssrfProxyRiskBody": "CRAWL4AI_SSRF_PROXY_URL is not configured. API-side URL validation still runs, but the worker no longer pins or blocks DNS resolution at fetch time, so DNS rebinding protection is incomplete.",
+        "ssrfProxyFailedTitle": "Worker-side SSRF proxy is configured but unreachable",
+        "ssrfProxyFailedBody": "Crawl4AI accepted the proxy configuration, but the browser could not use it. Verify the local proxy process is started inside the crawl4ai container and recreate the service if needed.",
+        "proxyEnv": "Proxy:",
         "env": "Env:",
         "hint": "If headed mode fails with DISPLAY/Xvfb errors, enable Xvfb in docker-compose or switch sources to Headless.",
-        "loading": "Loading..."
+        "loading": "Loading...",
+        "summary": "Runtime: headless={{headless}} · headed={{headed}} · SSRF proxy={{proxy}}"
       },
       "dashboardHint": {
         "title": "Built-in dashboard",

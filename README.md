@@ -181,6 +181,7 @@ pnpm db:seed
 访问入口：
 
 - Web 登录页：http://localhost:3000/login
+- Web Crawl4AI 监控页：http://localhost:3000/admin/ops/crawl-monitor
 - API 健康检查：http://localhost:4000/api/healthz
 - Swagger UI：http://localhost:4000/docs
 - GraphQL Playground（开发环境）：http://localhost:4000/graphql
@@ -209,6 +210,12 @@ pnpm db:seed
 pnpm dev
 ```
 
+补充说明：
+
+- Docker 方式下建议保持 `infra/docker/.env` 中的 `CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080`。这会让 Crawl4AI worker 在实际抓取时通过本地 SSRF 代理完成 DNS 解析和内网地址阻断，而不是只依赖 API 入口处的预检。
+- Web 管理页 `http://localhost:3000/admin/ops/crawl-monitor` 与抓取任务页内置的 Crawl4AI 状态卡会显示 `SSRF proxy OK / FAILED / OFF`。如果这里显示 `OFF`，说明部署没有启用 worker 侧 DNS rebinding 防护。
+- 生产环境建议在首次部署或引入新索引后显式执行一次 `pnpm mongo:indexes`，避免在关闭 `autoIndex` 的环境里漏掉 `ProcessedItem` 新索引。
+
 ### 种子数据（首次必填）
 
 `pnpm db:seed` 会读取根目录 `.env` 中的 `SEED_*` 创建组织与初始管理员：
@@ -225,6 +232,7 @@ pnpm dev
 | `pnpm lint` / `pnpm typecheck` / `pnpm test`               | 汇总执行 lint、类型检查与测试                                     |
 | `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移                               |
 | `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号              |
+| `pnpm mongo:indexes`                                       | 显式补齐 Mongo 运行时索引（当前包含 `ProcessedItem` facets 索引） |
 | `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose）                                      |
 | `pnpm codegen`                                             | 运行 GraphQL Code Generator（使用 `apps/web/codegen.yml`）        |
 
@@ -290,7 +298,7 @@ pnpm --filter infra-scripts run env:check
 - 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
-- 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_*`
+- 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
 - 实时信号：`REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
@@ -380,12 +388,19 @@ pnpm docker:down
 - `4001`：LiteLLM Proxy（映射到容器 `4000`）
 - `9000`/`9001`：MinIO
 
+说明：
+
+- `CRAWL4AI_SSRF_PROXY_PORT` 默认是容器内 `18080`，只供 crawl4ai 容器内浏览器进程访问，不映射到宿主机端口。
+- 更完整的上线/验证手册见 [docs/crawl4ai-ssrf-proxy-deployment.md](./docs/crawl4ai-ssrf-proxy-deployment.md)
+
 ### 生产环境注意事项（建议）
 
 - 将 `.env` 与 `infra/docker/.env` 中的 Secret 改为强随机值（`JWT_SECRET`、`NEXTAUTH_SECRET`、`SYSTEM_SETTINGS_ENCRYPTION_KEY` 等）
 - 设置 `NODE_ENV=production` 并关闭 `GRAPHQL_PLAYGROUND` 与 `GRAPHQL_INTROSPECTION`
 - 为 MySQL/Mongo/Redis/Qdrant/MinIO 配置持久化卷与备份策略
 - 如需横向扩展 WebSocket，启用 `WS_REDIS_ADAPTER_ENABLED=true`
+- 不要在生产环境关闭 `CRAWL4AI_SSRF_PROXY_URL`，否则前端监控页会显示 `SSRF proxy OFF`，并且 Crawl4AI worker 将失去抓取侧 DNS rebinding 防护
+- 可将 `GET /api/healthz` 中的 `crawl4aiSsrfProxy` 组件接入现有监控系统；代理关闭或不可达时它会变为 `down`
 
 ### 常见问题（排障速记）
 
@@ -397,14 +412,26 @@ pnpm docker:down
 </details>
 
 <details>
-<summary>2. LiteLLM 健康检查与鉴权</summary>
+<summary>2. Crawl4AI 监控页显示 “SSRF proxy OFF / FAILED”</summary>
+
+- `OFF`：通常表示 Web/API runtime 没有读取到 `CRAWL4AI_SSRF_PROXY_URL`。Docker 部署请确认根目录 `.env` 与 `infra/docker/.env` 都包含 `CRAWL4AI_SSRF_PROXY_URL=http://127.0.0.1:18080`
+- `FAILED`：通常表示 crawl4ai 容器内的本地代理没启动，或浏览器进程无法通过该地址建立代理连接
+- 排查顺序：
+  - 确认 `infra/docker/docker-compose.yml` 使用的是当前仓库版本，并已挂载 `infra/docker/crawl4ai/ssrf_proxy.py`
+  - `pnpm docker:logs` 查看 crawl4ai 日志，确认出现 `crawl4ai-ssrf-proxy` 监听日志
+  - 重建 crawl4ai：`pnpm docker:up:extras -d --force-recreate crawl4ai`
+- 风险说明：如果这里长期显示 `OFF`，API 入口仍会做 URL 校验，但 worker 真实抓取时不再具备同等的 DNS rebinding 防护
+</details>
+
+<details>
+<summary>3. LiteLLM 健康检查与鉴权</summary>
 
 - 健康检查：`GET http://localhost:4001/health/liveliness`、`GET http://localhost:4001/health/readiness`
 - 如配置 `LITELLM_MASTER_KEY`，访问受保护接口需带 `Authorization: Bearer <key>`
 </details>
 
 <details>
-<summary>3. Vector Service 401（Missing internal token）</summary>
+<summary>4. Vector Service 401（Missing internal token）</summary>
 
 - Vector Service 受 `x-internal-token` 保护，确保 API 与向量服务使用同一 `VECTOR_INTERNAL_TOKEN`
 </details>

@@ -16,6 +16,7 @@
     "codegen": "graphql-codegen --config apps/web/codegen.yml",
     "db:migrate": "pnpm --filter db run migrate",
     "db:seed": "pnpm --filter db run seed",
+    "mongo:indexes": "pnpm --filter @modular/api run mongo:indexes",
     "docker:u": "pnpm docker:up",
     "docker:up": "node infra/scripts/src/docker-up.js",
     "docker:up:extras": "node infra/scripts/src/docker-up.js --profile extras",

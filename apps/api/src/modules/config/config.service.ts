@@ -683,6 +683,9 @@ export class EnvService extends ConfigService<ApiEnv> {
         60_000,
       retryBackoffMs:
         this.get<number>("CRAWL4AI_RETRY_BACKOFF_MS", { infer: true }) ?? 5_000,
+      ssrfProxyUrl: this.get<string | undefined>("CRAWL4AI_SSRF_PROXY_URL", {
+        infer: true,
+      }),
       jsCodeEnabled:
         this.get<boolean>("CRAWL4AI_JSCODE_ENABLED", { infer: true }) ?? true,
       jsCodeAuditEnabled:

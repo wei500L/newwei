@@ -39,6 +39,16 @@ export interface SsrfValidationResult {
   reason?: string;
 }
 
+export interface SsrfResolvedAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+export interface SsrfResolutionResult extends SsrfValidationResult {
+  hostname?: string;
+  addresses?: SsrfResolvedAddress[];
+}
+
 /**
  * Check if an IP address is in a private/internal range
  * Covers RFC 1918, loopback, link-local, and other reserved ranges
@@ -259,6 +269,14 @@ export function validateSsrfUrl(urlString: string): SsrfValidationResult {
  * This catches DNS rebinding attacks where a hostname resolves to a private IP
  */
 export async function validateSsrfUrlAsync(urlString: string): Promise<SsrfValidationResult> {
+  const result = await resolveValidatedSsrfUrlAsync(urlString);
+  return result.valid ? { valid: true } : result;
+}
+
+export async function resolveValidatedSsrfUrlAsync(
+  urlString: string,
+  options?: { allowUnresolved?: boolean },
+): Promise<SsrfResolutionResult> {
   // First, perform synchronous validation
   const syncResult = validateSsrfUrl(urlString);
   if (!syncResult.valid) {
@@ -268,16 +286,27 @@ export async function validateSsrfUrlAsync(urlString: string): Promise<SsrfValid
   try {
     const url = new URL(urlString);
     const hostname = url.hostname.toLowerCase();
+    const allowUnresolved = options?.allowUnresolved ?? true;
 
     // Skip DNS resolution for IP addresses (already validated)
     if (isIPAddress(hostname)) {
-      return { valid: true };
+      return {
+        valid: true,
+        hostname,
+        addresses: [
+          {
+            address: hostname.replace(/^\[|\]$/g, ""),
+            family: hostname.includes(":") ? 6 : 4,
+          },
+        ],
+      };
     }
 
     // Resolve hostname to IP and validate
     try {
       const result = await dnsLookup(hostname, { all: true });
       const addresses = Array.isArray(result) ? result : [result];
+      const resolved: SsrfResolvedAddress[] = [];
 
       for (const addr of addresses) {
         const ip = typeof addr === "string" ? addr : addr.address;
@@ -287,14 +316,28 @@ export async function validateSsrfUrlAsync(urlString: string): Promise<SsrfValid
             reason: `Hostname ${hostname} resolves to private IP: ${ip}`,
           };
         }
+        resolved.push({
+          address: ip,
+          family:
+            (typeof addr === "string" ? (ip.includes(":") ? 6 : 4) : addr.family) ===
+            6
+              ? 6
+              : 4,
+        });
       }
+
+      return { valid: true, hostname, addresses: resolved };
     } catch {
       // DNS resolution failed - could be a non-existent domain
-      // We allow this as the request will fail anyway
-      return { valid: true };
+      // Preserve the existing permissive validation behavior by default.
+      if (allowUnresolved) {
+        return { valid: true, hostname, addresses: [] };
+      }
+      return {
+        valid: false,
+        reason: `Hostname ${hostname} could not be resolved`,
+      };
     }
-
-    return { valid: true };
   } catch (error) {
     return {
       valid: false,
