@@ -196,8 +196,6 @@ pnpm db:seed
 
 ```bash
 cp .env.example .env
-cp .env.example apps/api/.env
-cp .env.example apps/web/.env
 cp infra/docker/.env.sample infra/docker/.env
 
 pnpm install
@@ -220,15 +218,15 @@ pnpm dev
 
 ## 常用命令
 
-| 命令 | 说明 |
-| --- | --- |
-| `pnpm dev` | Turbo 并行启动 `apps/api`、`apps/web`、`apps/vector` 的开发服务器 |
-| `pnpm build` | Turbo 构建所有包 |
-| `pnpm lint` / `pnpm typecheck` / `pnpm test` | 汇总执行 lint、类型检查与测试 |
-| `pnpm db:migrate` | 通过 `packages/db` 执行 Prisma 迁移 |
-| `pnpm db:seed` | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号 |
-| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose） |
-| `pnpm codegen` | 运行 GraphQL Code Generator（使用 `apps/web/codegen.yml`） |
+| 命令                                                       | 说明                                                              |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm dev`                                                 | Turbo 并行启动 `apps/api`、`apps/web`、`apps/vector` 的开发服务器 |
+| `pnpm build`                                               | Turbo 构建所有包                                                  |
+| `pnpm lint` / `pnpm typecheck` / `pnpm test`               | 汇总执行 lint、类型检查与测试                                     |
+| `pnpm db:migrate`                                          | 通过 `packages/db` 执行 Prisma 迁移                               |
+| `pnpm db:seed`                                             | 根据 `.env` 的 `SEED_*` 初始化组织、角色与管理员账号              |
+| `pnpm docker:up` / `pnpm docker:logs` / `pnpm docker:down` | 本地完整栈（Docker Compose）                                      |
+| `pnpm codegen`                                             | 运行 GraphQL Code Generator（使用 `apps/web/codegen.yml`）        |
 
 ## 项目结构
 
@@ -272,9 +270,14 @@ pnpm dev
 
 ### 环境变量文件分层
 
-- 根目录 `.env`：用于 `pnpm db:migrate` / `pnpm db:seed` 等宿主机脚本
-- `apps/api/.env`、`apps/web/.env`：用于宿主机 `pnpm dev`（Nest/Next 默认从各自工作目录读取）
+- 根目录 `.env`：主配置来源；用于 `pnpm db:migrate` / `pnpm db:seed` 等宿主机脚本，也会作为 API / Web / Vector 本地运行时的默认 fallback
+- `apps/api/.env`、`apps/web/.env`：可选覆盖层；仅在你需要给单个应用覆盖根目录 `.env` 的值时再创建
 - `infra/docker/.env`：用于 Docker Compose（服务间访问使用容器域名如 `mysql`、`redis`、`api`）
+
+数据源约定：
+
+- 宿主机运行时可直接设置 `DATABASE_URL`，否则 API / Prisma / db 脚本会回退到 `MYSQL_*`
+- Docker Compose 仍依赖 `infra/docker/.env` 中的 `MYSQL_*` 初始化 MySQL 容器，因此不要只保留 `DATABASE_URL`
 
 校验配置：
 
@@ -284,7 +287,7 @@ pnpm --filter infra-scripts run env:check
 
 ### 关键配置项速览
 
-- 数据库：`MYSQL_*`、`MONGO_URI`、`REDIS_*`
+- 数据库：`DATABASE_URL`（可选，宿主机优先）、`MYSQL_*`、`MONGO_URI`、`REDIS_*`
 - 登录与会话：`JWT_SECRET`、`NEXTAUTH_SECRET`、`NEXTAUTH_URL`
 - Web ↔ API：`NEXT_PUBLIC_API_BASE_URL`（浏览器访问 API）、`API_BASE_URL`（服务端访问 API，可选）
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_*`

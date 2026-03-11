@@ -1,5 +1,10 @@
-import { createLogger } from "@modular/utils";
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { createLogger, resolveMysqlConnectionString } from "@modular/utils";
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { EnvService } from "./config.service";
@@ -10,29 +15,35 @@ const REQUIRED_KNOWLEDGE_GRAPH_DELEGATES = [
   "knowledgeEdge",
   "knowledgeEdgeEvidence",
   "knowledgeGraphIngestionState",
-  "articleEntityLink"
+  "articleEntityLink",
 ] as const;
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = createLogger({ name: "prisma" });
 
   constructor(@Inject(EnvService) private readonly env: EnvService) {
-    const connectionString =
-      process.env.DATABASE_URL ??
-      `mysql://${env.get<string>("MYSQL_USER", { infer: true })}:${encodeURIComponent(
-        env.get<string>("MYSQL_PASSWORD", { infer: true }) ?? ""
-      )}@${env.get<string>("MYSQL_HOST", { infer: true })}:${env.get<number>("MYSQL_PORT", {
-        infer: true
-      })}/${env.get<string>("MYSQL_DB", { infer: true })}`;
+    const connectionString = resolveMysqlConnectionString({
+      DATABASE_URL: process.env.DATABASE_URL,
+      MYSQL_HOST: env.get<string | undefined>("MYSQL_HOST", { infer: true }),
+      MYSQL_PORT: env.get<number | undefined>("MYSQL_PORT", { infer: true }),
+      MYSQL_USER: env.get<string | undefined>("MYSQL_USER", { infer: true }),
+      MYSQL_PASSWORD: env.get<string | undefined>("MYSQL_PASSWORD", {
+        infer: true,
+      }),
+      MYSQL_DB: env.get<string | undefined>("MYSQL_DB", { infer: true }),
+    });
 
     process.env.DATABASE_URL = connectionString;
     super({
       datasources: {
         db: {
-          url: connectionString
-        }
-      }
+          url: connectionString,
+        },
+      },
     });
   }
 
@@ -41,14 +52,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     if (process.env.NODE_ENV !== "production") {
       try {
-        await this.$queryRawUnsafe("SELECT 1 FROM `_prisma_migrations` LIMIT 1");
+        await this.$queryRawUnsafe(
+          "SELECT 1 FROM `_prisma_migrations` LIMIT 1",
+        );
       } catch (error) {
         this.logger.error(
           { err: error },
-          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API"
+          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API",
         );
         const migrationError = new Error(
-          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API"
+          "Database schema not initialized; run `pnpm db:migrate` (and `pnpm db:seed`) before starting the API",
         );
         try {
           (migrationError as unknown as { cause?: unknown }).cause = error;
@@ -72,10 +85,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   private ensureKnowledgeGraphDelegates() {
     const delegates = this as unknown as Record<string, unknown>;
-    const missingDelegates = REQUIRED_KNOWLEDGE_GRAPH_DELEGATES.filter((delegate) => {
-      const candidate = delegates[delegate];
-      return !candidate || typeof candidate !== "object";
-    });
+    const missingDelegates = REQUIRED_KNOWLEDGE_GRAPH_DELEGATES.filter(
+      (delegate) => {
+        const candidate = delegates[delegate];
+        return !candidate || typeof candidate !== "object";
+      },
+    );
 
     if (missingDelegates.length === 0) {
       return;

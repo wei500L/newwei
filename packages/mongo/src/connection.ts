@@ -5,11 +5,11 @@ let connectionPromise: Promise<typeof mongoose> | null = null;
 
 export const connectMongo = async (uri?: string) => {
   if (!connectionPromise) {
-    const env = loadAndValidateEnv(baseEnvSchema);
+    const env = loadAndValidateEnv(baseEnvSchema.pick({ MONGO_URI: true }));
     const mongoUri = uri ?? env.MONGO_URI;
 
     connectionPromise = mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000
+      serverSelectionTimeoutMS: 5000,
     });
   }
 

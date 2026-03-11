@@ -1,11 +1,12 @@
-import { createLogger } from '@modular/utils';
-import { Global, Module } from '@nestjs/common';
-import { ConfigModule as NestConfigModule } from '@nestjs/config';
+import { createLogger } from "@modular/utils";
+import { Global, Module } from "@nestjs/common";
+import { ConfigModule as NestConfigModule } from "@nestjs/config";
+import path from "node:path";
 
-import { EnvService } from './config.service';
-import { vectorEnvSchema } from './env.schema';
+import { EnvService } from "./config.service";
+import { vectorEnvSchema } from "./env.schema";
 
-const logger = createLogger({ name: 'vector-config' });
+const logger = createLogger({ name: "vector-config" });
 
 @Global()
 @Module({
@@ -13,12 +14,19 @@ const logger = createLogger({ name: 'vector-config' });
     NestConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      ignoreEnvFile: process.env.CI === 'true',
+      ignoreEnvFile: process.env.CI === "true",
+      envFilePath: [
+        path.resolve(process.cwd(), ".env"),
+        path.resolve(process.cwd(), "../../.env"),
+      ],
       validate: (config) => {
         const result = vectorEnvSchema.safeParse(config);
         if (!result.success) {
-          logger.error({ errors: result.error.format() }, 'Environment validation failed');
-          throw new Error('Invalid environment configuration');
+          logger.error(
+            { errors: result.error.format() },
+            "Environment validation failed",
+          );
+          throw new Error("Invalid environment configuration");
         }
         return result.data;
       },
@@ -28,4 +36,3 @@ const logger = createLogger({ name: 'vector-config' });
   exports: [EnvService],
 })
 export class ConfigModule {}
-

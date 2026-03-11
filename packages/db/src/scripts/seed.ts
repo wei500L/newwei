@@ -1,46 +1,57 @@
-import { baseEnvSchema, loadAndValidateEnv } from '@modular/utils';
-import path from 'node:path';
-import process from 'node:process';
+import {
+  baseEnvSchema,
+  loadAndValidateEnv,
+  resolveMysqlConnectionString,
+} from "@modular/utils";
+import path from "node:path";
+import process from "node:process";
+import { z } from "zod";
 
-import { seed } from '../seeds';
+import { seed } from "../seeds";
 
-const env = loadAndValidateEnv(baseEnvSchema, {
-  dotenvPath: path.resolve(process.cwd(), '../../.env'),
-  overrideProcessEnv: true
-});
+const env = loadAndValidateEnv(
+  baseEnvSchema
+    .pick({
+      DATABASE_URL: true,
+      MYSQL_HOST: true,
+      MYSQL_PORT: true,
+      MYSQL_USER: true,
+      MYSQL_PASSWORD: true,
+      MYSQL_DB: true,
+    })
+    .extend({
+      SEED_ORG_SLUG: z.string().min(1),
+      SEED_ORG_NAME: z.string().min(1),
+      SEED_ORG_DESCRIPTION: z.string().optional(),
+      SEED_ADMIN_EMAIL: z.string().email(),
+      SEED_ADMIN_PASSWORD: z.string().min(1),
+      SEED_ADMIN_FIRST_NAME: z.string().min(1),
+      SEED_ADMIN_LAST_NAME: z.string().min(1),
+    }),
+  {
+    dotenvPath: path.resolve(process.cwd(), "../../.env"),
+    overrideProcessEnv: false,
+  },
+);
 
-const connectionString =
-  process.env.DATABASE_URL ??
-  `mysql://${env.MYSQL_USER}:${encodeURIComponent(env.MYSQL_PASSWORD)}@${env.MYSQL_HOST}:${env.MYSQL_PORT}/${env.MYSQL_DB}`;
+const connectionString = resolveMysqlConnectionString(env);
 
 process.env.DATABASE_URL = connectionString;
 
-function requireEnvValue(key: string): string {
-  const value = process.env[key];
-  if (typeof value !== 'string') {
-    throw new Error(`Missing required env var: ${key}`);
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`Missing required env var: ${key}`);
-  }
-  return trimmed;
-}
-
 seed({
-  orgSlug: requireEnvValue('SEED_ORG_SLUG'),
-  orgName: requireEnvValue('SEED_ORG_NAME'),
-  orgDescription: (process.env.SEED_ORG_DESCRIPTION ?? '').trim() || null,
-  adminEmail: requireEnvValue('SEED_ADMIN_EMAIL'),
-  adminPassword: requireEnvValue('SEED_ADMIN_PASSWORD'),
-  adminFirstName: requireEnvValue('SEED_ADMIN_FIRST_NAME'),
-  adminLastName: requireEnvValue('SEED_ADMIN_LAST_NAME')
+  orgSlug: env.SEED_ORG_SLUG,
+  orgName: env.SEED_ORG_NAME,
+  orgDescription: (env.SEED_ORG_DESCRIPTION ?? "").trim() || null,
+  adminEmail: env.SEED_ADMIN_EMAIL,
+  adminPassword: env.SEED_ADMIN_PASSWORD,
+  adminFirstName: env.SEED_ADMIN_FIRST_NAME,
+  adminLastName: env.SEED_ADMIN_LAST_NAME,
 })
   .then(() => {
-    console.log('Seed data created');
+    console.log("Seed data created");
     process.exit(0);
   })
   .catch((error) => {
-    console.error('Failed to seed database', error);
+    console.error("Failed to seed database", error);
     process.exit(1);
   });

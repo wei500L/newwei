@@ -3,6 +3,21 @@ import { z } from "zod";
 
 import { createLogger } from "./logger";
 
+const optionalNonEmptyString = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? undefined : normalized;
+}, z.string().min(1).optional());
+
+const optionalPositiveIntFromEnv = z.preprocess((value) => {
+  if (typeof value === "string" && value.trim() === "") {
+    return undefined;
+  }
+  return value;
+}, z.coerce.number().int().positive().optional());
+
 const envBoolean = z.preprocess((value) => {
   if (typeof value === "boolean") {
     return value;
@@ -21,15 +36,100 @@ const envBoolean = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const MYSQL_CONNECTION_ENV_KEYS = [
+  "MYSQL_HOST",
+  "MYSQL_PORT",
+  "MYSQL_USER",
+  "MYSQL_PASSWORD",
+  "MYSQL_DB",
+] as const;
+
+export type MysqlConnectionEnvKey = (typeof MYSQL_CONNECTION_ENV_KEYS)[number];
+
+export interface MysqlConnectionEnvLike {
+  DATABASE_URL?: string | null;
+  MYSQL_HOST?: string | null;
+  MYSQL_PORT?: number | string | null;
+  MYSQL_USER?: string | null;
+  MYSQL_PASSWORD?: string | null;
+  MYSQL_DB?: string | null;
+}
+
+function readOptionalEnvString(
+  value: string | null | undefined,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? undefined : normalized;
+}
+
+export function getMissingMysqlConnectionEnvVars(
+  env: MysqlConnectionEnvLike,
+): MysqlConnectionEnvKey[] {
+  if (readOptionalEnvString(env.DATABASE_URL)) {
+    return [];
+  }
+
+  return MYSQL_CONNECTION_ENV_KEYS.filter((key) => {
+    const value = env[key];
+    if (key === "MYSQL_PORT") {
+      if (typeof value === "number") {
+        return !Number.isFinite(value);
+      }
+      return !readOptionalEnvString(
+        typeof value === "string" ? value : undefined,
+      );
+    }
+
+    return !readOptionalEnvString(
+      typeof value === "string" ? value : undefined,
+    );
+  });
+}
+
+export function resolveMysqlConnectionString(
+  env: MysqlConnectionEnvLike,
+): string {
+  const databaseUrl = readOptionalEnvString(env.DATABASE_URL);
+  if (databaseUrl) {
+    return databaseUrl;
+  }
+
+  const missingVars = getMissingMysqlConnectionEnvVars(env);
+  if (missingVars.length > 0) {
+    throw new Error(
+      `Missing required MySQL env vars: ${missingVars.join(", ")}. Set DATABASE_URL or all MYSQL_* values.`,
+    );
+  }
+
+  const host = readOptionalEnvString(env.MYSQL_HOST);
+  const user = readOptionalEnvString(env.MYSQL_USER);
+  const password = readOptionalEnvString(env.MYSQL_PASSWORD);
+  const dbName = readOptionalEnvString(env.MYSQL_DB);
+  const port =
+    typeof env.MYSQL_PORT === "number"
+      ? env.MYSQL_PORT
+      : Number.parseInt(readOptionalEnvString(env.MYSQL_PORT) ?? "", 10);
+
+  if (!host || !user || !password || !dbName || !Number.isFinite(port)) {
+    throw new Error("Invalid MySQL environment configuration");
+  }
+
+  return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
+}
+
 export const baseEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
-  MYSQL_HOST: z.string().min(1),
-  MYSQL_PORT: z.coerce.number().int().positive(),
-  MYSQL_USER: z.string().min(1),
-  MYSQL_PASSWORD: z.string().min(1),
-  MYSQL_DB: z.string().min(1),
+  DATABASE_URL: optionalNonEmptyString,
+  MYSQL_HOST: optionalNonEmptyString,
+  MYSQL_PORT: optionalPositiveIntFromEnv,
+  MYSQL_USER: optionalNonEmptyString,
+  MYSQL_PASSWORD: optionalNonEmptyString,
+  MYSQL_DB: optionalNonEmptyString,
   MONGO_URI: z
     .string()
     .url()
@@ -47,7 +147,11 @@ export const baseEnvSchema = z.object({
   SMTP_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
   SMTP_RATE_DELTA_MS: z.coerce.number().int().positive().default(1_000),
   SMTP_RATE_LIMIT: z.coerce.number().int().positive().default(10),
-  SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  SMTP_CONNECTION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
   SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   SMTP_TLS_REJECT_UNAUTHORIZED: envBoolean.default(true),
@@ -100,12 +204,14 @@ export const baseEnvSchema = z.object({
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   S3_PUBLIC_BASE_URL: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().url().optional()
+    (value) =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    z.string().url().optional(),
   ),
   S3_FORCE_PATH_STYLE: envBoolean.optional(),
   S3_PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().optional(),
