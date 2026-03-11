@@ -8,7 +8,10 @@ import {
 import type { AxiosError } from "axios";
 import { lastValueFrom, TimeoutError, timeout } from "rxjs";
 
-import { validateSsrfUrl } from "../../common/validators/ssrf-url.validator";
+import {
+  validateSsrfUrl,
+  validateSsrfUrlAsync,
+} from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
 
 import {
@@ -130,6 +133,7 @@ export class Crawl4aiClient {
     const settings = await this.crawlSettings.getSettings();
     const requestTimeoutMs = this.resolveRequestTimeoutMs(request.requestTimeoutMs, settings);
     await this.ensureHealthy(settings);
+    await this.validateRequestUrls(request);
     const payload = this.toHttpPayload(request);
 
     try {
@@ -747,6 +751,32 @@ export class Crawl4aiClient {
       delayBeforeReturnHtmlMs,
       adjustViewportToContent: options.adjustViewportToContent ?? true,
     };
+  }
+
+  private async validateRequestUrls(request: Crawl4aiRequest): Promise<void> {
+    const urls = (
+      request.urls && request.urls.length > 0 ? request.urls : [request.url]
+    ).map((entry) => entry.trim());
+
+    for (const url of urls) {
+      const syncResult = validateSsrfUrl(url);
+      if (!syncResult.valid) {
+        this.logger.warn(`SSRF blocked: ${url} - ${syncResult.reason}`);
+        throw new Crawl4aiRequestException(
+          `URL blocked by SSRF protection: ${syncResult.reason}`,
+          400,
+        );
+      }
+
+      const asyncResult = await validateSsrfUrlAsync(url);
+      if (!asyncResult.valid) {
+        this.logger.warn(`SSRF blocked after DNS validation: ${url} - ${asyncResult.reason}`);
+        throw new Crawl4aiRequestException(
+          `URL blocked by SSRF protection: ${asyncResult.reason}`,
+          400,
+        );
+      }
+    }
   }
 
   private toHttpPayload(request: Crawl4aiRequest): Crawl4aiHttpPayload {

@@ -3,10 +3,13 @@
 import { getSession, useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 
-import { setApolloAccessToken } from "@/lib/apollo-client";
-import { invalidateApiSessionCache, syncApiSessionCache } from "@/lib/api-client";
+import {
+  invalidateBrowserAuthSessionCache,
+  setBrowserAuthSession,
+  type BrowserAuthSession,
+} from "@/lib/browser-auth-session";
 
-type SessionWithAccessToken = { accessToken?: string; accessTokenExpires?: number } & Record<string, unknown>;
+type SessionWithAccessToken = BrowserAuthSession;
 
 const SESSION_REFRESH_LEEWAY_MS = 25_000;
 
@@ -17,15 +20,13 @@ export function ApolloAuthSync() {
   const refreshTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setApolloAccessToken(status === "authenticated" ? accessToken ?? null : null);
-
     if (status === "authenticated") {
-      void syncApiSessionCache().catch(() => null);
+      setBrowserAuthSession((session as SessionWithAccessToken | null) ?? { accessToken });
       return;
     }
 
-    invalidateApiSessionCache();
-  }, [accessToken, status]);
+    invalidateBrowserAuthSessionCache();
+  }, [accessToken, session, status]);
 
   useEffect(() => {
     if (refreshTimeoutRef.current !== null) {

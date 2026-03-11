@@ -23,17 +23,12 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import { useDashboardHeroMetricsQuery, useQueueStatsQuery } from "@/graphql/generated";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
+import { useHeroMetrics } from "@/lib/hero-metrics";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { useScheduledAction, useTimedValueDeduper } from "@/lib/use-realtime-helpers";
-import {
-  pickCoarsestGranularity,
-  pickFinestGranularity,
-  timeGranularityToUiGranularity,
-  UiTimeGranularity,
-} from "@/lib/time-granularity";
+import { useQueueStatsQuery } from "@/graphql/generated";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
 
@@ -324,40 +319,17 @@ export function DashboardContent() {
   const { start, end, range } = useDashboardRangeStore();
   const [isRangeUpdating, setIsRangeUpdating] = useState(false);
   const lastRangeFingerprintRef = useRef<string | null>(null);
-
-  // Hero Metrics Query
-  const heroDateRange = useMemo(
-    () => ({
-      start: start.toISOString(),
-      end: end.toISOString(),
-      // "Auto" negotiation: backend picks the effective aggregation granularity.
-      granularity: null
-    }),
-    [start, end]
-  );
-
-  const { data: heroData, loading: heroLoading } = useDashboardHeroMetricsQuery({
-    variables: heroDateRange,
-    fetchPolicy: "cache-and-network"
-  });
-  const appliedHeroGranularityInfo = useMemo(() => {
-    const effective = [
-      ...(heroData?.conflict ?? []),
-      ...(heroData?.market ?? []),
-      ...(heroData?.resource ?? []),
-      ...(heroData?.supply ?? []),
-    ].map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
-    const coarsest = pickCoarsestGranularity(effective);
-    const finest = pickFinestGranularity(effective);
-    const range =
-      coarsest !== UiTimeGranularity.Unknown &&
-      finest !== UiTimeGranularity.Unknown &&
-      coarsest !== finest
-        ? { finest, coarsest }
-        : null;
-    return { coarsest, range };
-  }, [heroData]);
-  const isDashboardUpdating = dashboardFetchingCount > 0 || heroLoading;
+  const {
+    accessState: heroAccessState,
+    data: heroData,
+    error: heroError,
+    granularityInfo: appliedHeroGranularityInfo,
+    hasData: heroHasData,
+    loading: heroLoading,
+    refetch: refetchHero,
+    updating: heroUpdating,
+  } = useHeroMetrics({ start, end });
+  const isDashboardUpdating = dashboardFetchingCount > 0 || heroUpdating;
 
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
@@ -445,6 +417,10 @@ export function DashboardContent() {
   const queueStatsInitialLoading = loading && !queueStats;
   const queueStatsBlockingErrorState =
     error && !queueStats ? buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() }) : null;
+  const heroPermissionDescription = t("dashboard.hero.permissionRequired", {
+    defaultValue:
+      "Hero metrics require the economicdata.read permission. Switch to an organization with access or contact an administrator.",
+  });
 
   return (
     <div className="flex gap-6 h-full items-start">
@@ -497,14 +473,44 @@ export function DashboardContent() {
 
         {/* Hero / Market Pulse */}
         <div className="relative">
-          <MarketPulse 
-            loading={heroLoading}
-            conflictData={heroData?.conflict ?? []}
-            marketData={heroData?.market ?? []}
-            resourceData={heroData?.resource ?? []}
-            supplyData={heroData?.supply ?? []}
-            onMetricClick={setActiveDrillDownKey} 
-          />
+          {heroAccessState.kind === "forbidden" ? (
+            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+              <ChartEmptyState
+                className="h-auto"
+                variant="permission"
+                title={t("common.accessDenied", { defaultValue: "Access denied" })}
+                description={heroPermissionDescription}
+              />
+            </div>
+          ) : heroError && !heroHasData ? (
+            <div className="mb-6 glass-panel border border-[var(--border)] p-6 shadow-[0_8px_20px_rgba(15,23,42,0.08)]">
+              <RequestErrorBanner
+                presentation="center"
+                error={heroError}
+                onRetry={() => void refetchHero()}
+              />
+            </div>
+          ) : (
+            <>
+              {heroError && heroHasData ? (
+                <div className="mb-3">
+                  <RequestErrorBanner
+                    error={heroError}
+                    onRetry={() => void refetchHero()}
+                    showCachedDataHint
+                  />
+                </div>
+              ) : null}
+              <MarketPulse
+                loading={heroLoading}
+                conflictData={heroData?.conflict ?? []}
+                marketData={heroData?.market ?? []}
+                resourceData={heroData?.resource ?? []}
+                supplyData={heroData?.supply ?? []}
+                onMetricClick={setActiveDrillDownKey}
+              />
+            </>
+          )}
         </div>
 
         {activeDrillDownKey ? (

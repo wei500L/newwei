@@ -5,6 +5,7 @@ import { Queue, QueueEvents } from 'bullmq';
 import { AlertsModule } from '../../alerts/alerts.module';
 import { AuthModule } from '../../auth/auth.module';
 import { EnvService } from '../../config/config.service';
+import { toBullmqConnection } from '../../config/redis-connection';
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE,
   SITUATION_MONITOR_SIGNALS_QUEUE_EVENTS,
@@ -32,7 +33,7 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
         cleanup: SituationMonitorSignalsQueueCleanupService,
       ) => {
         const queue = new Queue(SITUATION_MONITOR_SIGNALS_QUEUE_NAME, {
-          connection: env.redisConfig,
+          connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             removeOnComplete: true,
             removeOnFail: false,
@@ -55,7 +56,7 @@ import { SituationMonitorSignalsService } from './situation-monitor-signals.serv
         cleanup: SituationMonitorSignalsQueueCleanupService,
       ) => {
         const events = new QueueEvents(SITUATION_MONITOR_SIGNALS_QUEUE_NAME, {
-          connection: env.redisConfig,
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(events);
         return events;

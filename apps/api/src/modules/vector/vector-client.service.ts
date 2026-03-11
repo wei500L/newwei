@@ -2,6 +2,7 @@ import { createLogger, getCurrentTraceId } from "@modular/utils";
 import {
   VectorBadResponseError,
   VectorClient,
+  VectorServiceUnavailableError,
   VectorUnauthorizedError,
   type VectorSearchMatch
 } from "@modular/vector-client";
@@ -93,6 +94,52 @@ export class VectorClientService {
     } catch (error) {
       this.markUnavailable(error, "upsert");
       return false;
+    }
+  }
+
+  async upsertOrThrow(options: {
+    orgId: string;
+    embeddingModel: string;
+    points: {
+      processedItemId: string;
+      itemMetaId: string;
+      createdAtMs: number;
+      vector: number[];
+    }[];
+    traceId?: string;
+  }): Promise<void> {
+    const cfg = await this.settings.getEffectiveConfig();
+    if (!cfg.enabled || options.points.length === 0) {
+      return;
+    }
+
+    const client = await this.resolveClient();
+    if (!client) {
+      throw new VectorServiceUnavailableError(
+        "Vector service enabled but configuration is incomplete",
+      );
+    }
+    if (this.isTemporarilyUnavailable()) {
+      throw new VectorServiceUnavailableError(
+        "Vector service is temporarily unavailable",
+      );
+    }
+
+    try {
+      await client.upsert(
+        {
+          orgId: options.orgId,
+          embeddingModel: options.embeddingModel,
+          points: options.points,
+        },
+        { traceId: options.traceId ?? getCurrentTraceId() },
+      );
+      this.markAvailable();
+    } catch (error) {
+      this.markUnavailable(error, "upsert");
+      throw error instanceof Error
+        ? error
+        : new VectorServiceUnavailableError("Vector upsert failed", error);
     }
   }
 

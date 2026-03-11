@@ -7,6 +7,7 @@ import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { BackendLoginResponse } from "@/lib/auth";
+import { setBrowserAuthSession, type BrowserAuthSession } from "@/lib/browser-auth-session";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { createTraceHeaders } from "@/lib/trace";
@@ -297,7 +298,7 @@ export function OrgAdminContent() {
         return;
       }
       const data = (await response.json()) as BackendLoginResponse;
-      await update({
+      const sessionPatch = {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         accessTokenExpires: Date.now() + data.expiresIn * 1000,
@@ -305,7 +306,11 @@ export function OrgAdminContent() {
         orgId: data.user.orgId,
         permissions: data.user.permissions,
         organizations: data.organizations ?? session?.organizations
-      });
+      };
+      const updatedSession = await update(sessionPatch);
+      setBrowserAuthSession(
+        (updatedSession ?? { ...(session ?? {}), ...sessionPatch }) as BrowserAuthSession
+      );
       messageApi.success(
         t("orgSwitcher.success", { org: org.name ?? org.slug ?? org.id })
       );

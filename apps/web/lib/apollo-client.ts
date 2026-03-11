@@ -14,16 +14,20 @@ import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { fromPromise } from "@apollo/client/link/utils";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { createClient } from "graphql-ws";
-import { getSession } from "next-auth/react";
 
 import { emitForbidden, emitUnauthorized } from "./auth-events";
+import {
+  getCachedBrowserAuthSession,
+  invalidateBrowserAuthSessionCache,
+  refreshBrowserAccessToken,
+  setBrowserAuthAccessToken,
+  type BrowserAuthSession,
+} from "./browser-auth-session";
 import { captureClientError } from "./client-telemetry";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
 
-interface SessionWithAccessToken extends Record<string, unknown> {
-  accessToken?: string;
-}
+interface SessionWithAccessToken extends BrowserAuthSession {}
 
 interface NetworkErrorWithResponse {
   statusCode?: number;
@@ -44,73 +48,25 @@ const httpLink = new HttpLink({
   credentials: "include"
 });
 
-const SESSION_CACHE_TTL_MS = 5_000;
-let cachedSession: SessionWithAccessToken | null | undefined;
-let cachedSessionAt = 0;
-let cachedSessionPromise: Promise<SessionWithAccessToken | null> | null = null;
-let accessTokenOverride: string | undefined;
-
-const invalidateSessionCache = () => {
-  cachedSession = undefined;
-  cachedSessionAt = 0;
-};
-
 export const setApolloAccessToken = (token: string | null | undefined) => {
-  accessTokenOverride = token ?? undefined;
-  invalidateSessionCache();
+  setBrowserAuthAccessToken(token);
 };
-
-let refreshTokenPromise: Promise<string | null> | null = null;
 
 const refreshAccessToken = async (): Promise<string | null> => {
   if (typeof window === "undefined") {
     return null;
   }
 
-  if (!refreshTokenPromise) {
-    refreshTokenPromise = getSession()
-      .then((session) => (session as SessionWithAccessToken | null)?.accessToken ?? null)
-      .catch(() => null)
-      .finally(() => {
-        refreshTokenPromise = null;
-      });
-  }
-
-  return refreshTokenPromise;
+  return refreshBrowserAccessToken();
 };
 
 const getCachedSession = async (): Promise<SessionWithAccessToken | null> => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const now = Date.now();
-  if (cachedSessionPromise) {
-    return cachedSessionPromise;
-  }
-
-  if (cachedSession !== undefined && now - cachedSessionAt < SESSION_CACHE_TTL_MS) {
-    return cachedSession;
-  }
-
-  cachedSessionPromise = getSession()
-    .then((session) => (session as SessionWithAccessToken | null) ?? null)
-    .catch(() => null)
-    .then((session) => {
-      cachedSession = session;
-      cachedSessionAt = Date.now();
-      return session;
-    })
-    .finally(() => {
-      cachedSessionPromise = null;
-    });
-
-  return cachedSessionPromise;
+  return (await getCachedBrowserAuthSession()) as SessionWithAccessToken | null;
 };
 
 const authLink = setContext(async (_, { headers }) => {
-  const session = accessTokenOverride ? null : await getCachedSession();
-  const token = accessTokenOverride ?? session?.accessToken;
+  const session = await getCachedSession();
+  const token = session?.accessToken;
   const traceHeaders = createTraceHeaders(headers);
   return {
     headers: {
@@ -140,14 +96,14 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, response, f
 
   if ((statusCode === 401 || unauthenticatedGraphqlError) && typeof window !== "undefined" && forward && !alreadyRetried) {
     operation.setContext({ _retry: true });
+    invalidateBrowserAuthSessionCache();
 
     return fromPromise(refreshAccessToken()).flatMap((token) => {
       if (token) {
-        setApolloAccessToken(token);
         return forward(operation);
       }
 
-      invalidateSessionCache();
+      invalidateBrowserAuthSessionCache();
       emitUnauthorized({ status: 401, reason: unauthenticatedGraphqlError?.message });
 
       const originalError =
@@ -160,7 +116,7 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, response, f
   if (graphQLErrors) {
     graphQLErrors.forEach((error) => {
       if (error.extensions?.code === "UNAUTHENTICATED" || error.extensions?.code === "UNAUTHORIZED") {
-        invalidateSessionCache();
+        invalidateBrowserAuthSessionCache();
         emitUnauthorized({ status: 401, reason: error.message });
       }
       if (error.extensions?.code === "FORBIDDEN") {
@@ -187,7 +143,7 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, response, f
   }
   if (networkError) {
     if (statusCode === 401) {
-      invalidateSessionCache();
+      invalidateBrowserAuthSessionCache();
       emitUnauthorized({ status: statusCode });
     }
     if (statusCode === 403) {
@@ -212,8 +168,8 @@ function createApolloClient() {
             url: toWsUrl(env.graphqlUrl),
             lazy: true,
             connectionParams: async () => {
-              const session = accessTokenOverride ? null : await getCachedSession();
-              const token = accessTokenOverride ?? session?.accessToken;
+              const session = await getCachedSession();
+              const token = session?.accessToken;
               const traceHeaders = createTraceHeaders();
               return {
                 ...traceHeaders,

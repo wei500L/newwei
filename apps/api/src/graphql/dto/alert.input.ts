@@ -7,8 +7,20 @@ import {
   AlertSeverity,
   AlertStatus
 } from "@prisma/client";
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from "class-validator";
 import GraphQLJSONScalar from "graphql-type-json";
+
+import { IsSafeUrl } from "../../common/validators/is-safe-url.decorator";
 
 @InputType()
 export class AlertChannelInput {
@@ -23,6 +35,8 @@ export class AlertChannelInput {
 
   @Field()
   @IsString()
+  @ValidateIf((input: AlertChannelInput) => input.type === AlertChannelType.webhook)
+  @IsSafeUrl()
   target!: string;
 
   @Field({ nullable: true })

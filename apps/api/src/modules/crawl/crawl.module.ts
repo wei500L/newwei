@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { StorageModule } from "../storage/storage.module";
 
@@ -101,9 +102,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_LEGACY,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NAME, {
-          connection: redis,
+          connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -122,9 +122,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_HOT_NAME, {
-          connection: redis,
+          connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -143,9 +142,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_NORMAL,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_NORMAL_NAME, {
-          connection: redis,
+          connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             attempts: env.crawl4aiConfig.maxRetries,
             removeOnComplete: true,
@@ -164,9 +162,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_EVENTS_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const events = new QueueEvents(CRAWL_QUEUE_HOT_NAME, {
-          connection: redis
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(events);
         return events;
@@ -176,9 +173,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_EVENTS_NORMAL,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const events = new QueueEvents(CRAWL_QUEUE_NORMAL_NAME, {
-          connection: redis
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(events);
         return events;
@@ -188,9 +184,8 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       provide: CRAWL_QUEUE_EVENTS_LEGACY,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
-        const redis = env.redisConfig;
         const events = new QueueEvents(CRAWL_QUEUE_NAME, {
-          connection: redis
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(events);
         return events;

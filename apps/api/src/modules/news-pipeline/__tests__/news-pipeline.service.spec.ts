@@ -1289,4 +1289,113 @@ describe("NewsPipelineService", () => {
     expect(updateArgs.$set.tags).toEqual([]);
     expect(updateArgs.$set.llm.promptTokens).toBeNull();
   });
+
+  it("marks outbox delivery failed when vector upsert is required but unavailable", async () => {
+    const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const validPayload = {
+      type: "processed_item",
+      document: {
+        _id: "64b5f0c4f6e4b0495c3f4a10",
+        rawItemId,
+        itemMetaId: "meta-1",
+        orgId: "org-1",
+        status: "completed",
+        tags: ["breaking"],
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "US",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1",
+        },
+        llm: {
+          model: "openai/gpt-4o-mini",
+          promptVersion: "v1",
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.01,
+          latencyMs: 80,
+        },
+        summaryEmbedding: [1, 0, 0],
+        summaryEmbeddingModel: "openai/text-embedding-3-small",
+        error: undefined,
+      },
+    };
+
+    const vectorClient = {
+      upsertOrThrow: jest.fn().mockRejectedValue(new Error("vector unavailable")),
+    };
+    const serviceWithVector = new NewsPipelineService(
+      liteLlm as any,
+      configService as any,
+      promptBuilder,
+      promptConfigService as any,
+      dedupeSettingsService as any,
+      prisma as any,
+      crawlExecution as any,
+      vectorClient as any,
+    );
+
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-vector",
+        payload: validPayload,
+        status: "processing",
+        attempts: 1,
+        availableAt: new Date(),
+        lockedAt: staleLockedAt,
+      },
+    ]);
+    mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-vector",
+      attempts: 2,
+    });
+
+    await serviceWithVector.retryPendingOutbox();
+
+    expect(vectorClient.upsertOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        embeddingModel: "openai/text-embedding-3-small",
+      }),
+    );
+    expect(mongoOutbox.delete).not.toHaveBeenCalledWith({
+      where: { id: "outbox-vector" },
+    });
+    expect(mongoOutbox.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "outbox-vector" },
+        data: expect.objectContaining({
+          status: "failed",
+          attempts: 2,
+          lockedAt: null,
+          availableAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(prisma.itemMeta.updateMany).not.toHaveBeenCalled();
+
+    const retryTimers = (serviceWithVector as any).outboxRetryTimers as Map<
+      string,
+      ReturnType<typeof setTimeout>
+    >;
+    for (const timer of retryTimers.values()) {
+      clearTimeout(timer);
+    }
+    retryTimers.clear();
+  });
 });

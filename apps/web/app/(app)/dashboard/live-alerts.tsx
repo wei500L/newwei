@@ -57,9 +57,13 @@ export function LiveAlertsToasts() {
     dedupeKey: (evt) => evt.id,
     maxSeenKeys: LIVE_ALERTS_MAX_SEEN,
     onFlush: (alerts) => {
+      const firstAlert = alerts[0];
+      if (!firstAlert) {
+        return;
+      }
       const content =
         alerts.length === 1
-          ? formatAlertMessage(alerts[0])
+          ? formatAlertMessage(firstAlert)
           : t("alerts.live.batchMessage", {
               defaultValue: "{{count}} alerts triggered · {{titles}}",
               count: alerts.length,

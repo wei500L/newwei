@@ -6,6 +6,7 @@ import { Queue, QueueEvents } from "bullmq";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
+import { toBullmqConnection } from "../config/redis-connection";
 import { EmailModule } from "../email/email.module";
 import { KnowledgeGraphModule } from "../knowledge-graph/knowledge-graph.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
@@ -100,7 +101,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
       inject: [EnvService, AlertsQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
         const queue = new Queue(ALERTS_QUEUE_NAME, {
-          connection: env.redisConfig
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(queue);
         return queue;
@@ -111,7 +112,7 @@ import { SystemMetricProvider } from "./providers/system-metric.provider";
       inject: [EnvService, AlertsQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AlertsQueueCleanupService) => {
         const events = new QueueEvents(ALERTS_QUEUE_NAME, {
-          connection: env.redisConfig
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(events);
         return events;

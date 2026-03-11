@@ -3009,7 +3009,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           created?.createdAt instanceof Date && Number.isFinite(created.createdAt.getTime())
             ? created.createdAt.getTime()
             : Date.now();
-        void vectorClient.upsertBestEffort({
+        await vectorClient.upsertOrThrow({
           orgId: payload.document.orgId,
           embeddingModel,
           points: [

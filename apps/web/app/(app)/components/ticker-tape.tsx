@@ -4,9 +4,9 @@ import { ArrowDownOutlined, ArrowUpOutlined, LoadingOutlined } from "@ant-design
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import { resolveEconomicUnit } from "@/lib/economic-units";
+import { useHeroMetrics } from "@/lib/hero-metrics";
 import {
   formatGranularityLabel,
   pickCoarsestGranularity,
@@ -26,23 +26,15 @@ type MetricSeries = readonly MetricPoint[];
 export function TickerTape() {
   const { t } = useTranslation();
   const { range, start, end } = useDashboardRangeStore();
-
-  const heroDateRange = useMemo(
-    () => ({
-      start: start.toISOString(),
-      end: end.toISOString(),
-      // "Auto" negotiation: backend picks the effective aggregation granularity.
-      granularity: null
-    }),
-    [end, start]
-  );
   const windowLabel = formatDashboardWindowLabel(start, end);
 
-  const { data, loading, error } = useDashboardHeroMetricsQuery({
-    variables: heroDateRange,
-    pollInterval: 60000,
-    fetchPolicy: "cache-and-network"
-  });
+  const {
+    accessState,
+    data,
+    error,
+    hasData,
+    loading,
+  } = useHeroMetrics({ start, end });
 
   const inferredGranularity = useMemo(() => {
     const effective = [
@@ -96,17 +88,28 @@ export function TickerTape() {
   }, [data, t]);
 
   if (items.length === 0) {
-    const message = loading
-      ? t("dashboard.ticker.loading", { defaultValue: "Loading metrics..." })
-      : error
-        ? t("dashboard.ticker.unavailable", { defaultValue: "Metrics unavailable" })
-        : t("dashboard.ticker.empty", { defaultValue: "No metrics yet" });
+    const message =
+      accessState.kind === "forbidden"
+        ? t("dashboard.ticker.permissionRequired", {
+            defaultValue: "Economic metrics require economicdata.read",
+          })
+        : loading
+          ? t("dashboard.ticker.loading", { defaultValue: "Loading metrics..." })
+          : error
+            ? t("dashboard.ticker.unavailable", { defaultValue: "Metrics unavailable" })
+            : t("dashboard.ticker.empty", { defaultValue: "No metrics yet" });
     const errorMessage = error ? (error instanceof Error ? error.message : String(error)) : null;
+    const titleParts = [`Range ${range}`, windowLabel];
+    if (accessState.kind === "forbidden") {
+      titleParts.unshift(t("common.accessDenied", { defaultValue: "Access denied" }));
+    } else if (hasData) {
+      titleParts.unshift(bucketTitle);
+    }
 
     return (
       <div
         className="w-full bg-white/85 border-b border-[var(--border)] h-8 flex items-center overflow-hidden relative select-none"
-        title={`${bucketTitle} · Range ${range} · ${windowLabel}`}
+        title={titleParts.join(" · ")}
       >
         <div className="absolute left-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-r from-white to-transparent" />
         <div className="absolute right-0 top-0 bottom-0 w-8 z-10 bg-gradient-to-l from-white to-transparent" />

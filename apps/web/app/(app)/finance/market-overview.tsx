@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Button, Card, Skeleton, Typography } from "antd";
-import { useMemo, useState } from "react";
+import { Card, Skeleton, Typography } from "antd";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FinancialCandlestick } from "@/app/(app)/dashboard/charts/financial-candlestick";
@@ -9,60 +9,24 @@ import { SectorHeatmap } from "@/app/(app)/dashboard/charts/sector-heatmap";
 import { MarketPulse } from "@/app/(app)/dashboard/components/market-pulse";
 import { MetricDrillDown } from "@/app/(app)/dashboard/metric-drilldown";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
-import { useDashboardHeroMetricsQuery } from "@/graphql/generated";
-import {
-  pickCoarsestGranularity,
-  pickFinestGranularity,
-  timeGranularityToUiGranularity,
-  UiTimeGranularity,
-} from "@/lib/time-granularity";
+import { useHeroMetrics } from "@/lib/hero-metrics";
 import { useDashboardRangeStore } from "@/store/time-range";
 
 export function MarketOverview() {
   const { t } = useTranslation();
   const { start, end } = useDashboardRangeStore();
   const [activeMetricKey, setActiveMetricKey] = useState<string | null>(null);
-
   const {
     data: heroData,
-    loading: heroLoading,
+    accessState: heroAccessState,
     error: heroError,
+    granularityInfo: appliedHeroGranularityInfo,
+    hasData: heroHasData,
+    loading: heroLoading,
     refetch: refetchHero
-  } = useDashboardHeroMetricsQuery({
-    variables: {
-      start: start.toISOString(),
-      end: end.toISOString(),
-      // "Auto" negotiation: backend picks the effective aggregation granularity.
-      granularity: null
-    },
-    fetchPolicy: "cache-and-network"
-  });
-  const appliedHeroGranularityInfo = useMemo(() => {
-    const effective = [
-      ...(heroData?.conflict ?? []),
-      ...(heroData?.market ?? []),
-      ...(heroData?.resource ?? []),
-      ...(heroData?.supply ?? []),
-    ].map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
-    const coarsest = pickCoarsestGranularity(effective);
-    const finest = pickFinestGranularity(effective);
-    const range =
-      coarsest !== UiTimeGranularity.Unknown &&
-      finest !== UiTimeGranularity.Unknown &&
-      coarsest !== finest
-        ? { finest, coarsest }
-        : null;
-    return { coarsest, range };
-  }, [heroData]);
-
-  const heroSeries = [
-    heroData?.conflict ?? [],
-    heroData?.market ?? [],
-    heroData?.resource ?? [],
-    heroData?.supply ?? []
-  ];
-  const heroHasData = heroSeries.some((series) => series.length > 0);
+  } = useHeroMetrics({ start, end });
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,21 +45,33 @@ export function MarketOverview() {
         />
       </div>
 
-      {heroError ? (
-        <Alert
-          type="error"
-          showIcon
-          message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-          description={heroError.message}
-          action={
-            <Button size="small" onClick={() => refetchHero()}>
-              {t("common.retry")}
-            </Button>
-          }
+      {heroAccessState.kind === "forbidden" ? (
+        <ChartEmptyState
+          className="h-auto"
+          variant="permission"
+          title={t("common.accessDenied", { defaultValue: "Access denied" })}
+          description={t("finance.market.permissionRequired", {
+            defaultValue:
+              "Market overview hero metrics require the economicdata.read permission.",
+          })}
+        />
+      ) : heroError && !heroHasData ? (
+        <RequestErrorBanner
+          presentation="center"
+          error={heroError}
+          onRetry={() => void refetchHero()}
         />
       ) : null}
 
-      {heroLoading && !heroHasData ? (
+      {heroError && heroHasData ? (
+        <RequestErrorBanner
+          error={heroError}
+          onRetry={() => void refetchHero()}
+          showCachedDataHint
+        />
+      ) : null}
+
+      {heroAccessState.kind === "forbidden" ? null : heroLoading && !heroHasData ? (
         <Skeleton active paragraph={{ rows: 3 }} />
       ) : heroHasData ? (
         <MarketPulse

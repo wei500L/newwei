@@ -13,6 +13,7 @@ import { Types } from "mongoose";
 import { ItemStatus } from "../../common/pipeline-status";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import type {
   PipelineJobContext,
@@ -188,13 +189,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         });
       },
       {
-        connection: {
-          host: config.connection.host,
-          port: config.connection.port,
-          username: config.connection.username,
-          password: config.connection.password,
-          db: config.connection.db,
-        },
+        connection: toBullmqConnection(config.connection),
         concurrency,
       },
     );

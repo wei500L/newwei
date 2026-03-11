@@ -7,7 +7,7 @@ import {
   normalizeCountryCode,
 } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import {
   AlertChannelType,
   AlertDeliveryStatus,
@@ -24,6 +24,7 @@ import { PubSubEngine } from "graphql-subscriptions";
 import { firstValueFrom } from "rxjs";
 
 import { toPrismaJsonValue, toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
+import { validateSsrfUrl, validateSsrfUrlAsync } from "../../common/validators/ssrf-url.validator";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { EmailService } from "../email/email.service";
@@ -170,8 +171,7 @@ export class AlertsService {
   }
 
   async createChannel(orgId: string, input: AlertChannelInput, createdById?: string) {
-    const target =
-      input.type === AlertChannelType.email ? this.email.normalizeEmailTarget(input.target) : input.target;
+    const target = await this.normalizeChannelTarget(input.type, input.target);
     return this.prisma.alertNotificationChannel.create({
       data: {
         orgId,
@@ -196,8 +196,7 @@ export class AlertsService {
       data.name = input.name;
     }
     if (input.target !== undefined) {
-      data.target =
-        existing.type === AlertChannelType.email ? this.email.normalizeEmailTarget(input.target) : input.target;
+      data.target = await this.normalizeChannelTarget(existing.type, input.target);
     }
     if (input.isActive !== undefined) {
       data.isActive = input.isActive;
@@ -1657,6 +1656,7 @@ export class AlertsService {
       thresholdUpper?: Prisma.Decimal | null;
     }
   ) {
+    await this.assertSafeWebhookTarget(target, { runtime: true });
     const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const payload = {
       alertId: event.id,
@@ -1677,6 +1677,43 @@ export class AlertsService {
       message: event.message
     };
     await firstValueFrom(this.http.post(target, payload, { timeout: this.env.alertingConfig.webhookTimeoutMs }));
+  }
+
+  private async normalizeChannelTarget(type: AlertChannelType, target: string): Promise<string> {
+    const normalizedTarget = target.trim();
+    if (type === AlertChannelType.email) {
+      return this.email.normalizeEmailTarget(normalizedTarget);
+    }
+    if (type === AlertChannelType.webhook) {
+      await this.assertSafeWebhookTarget(normalizedTarget);
+    }
+    return normalizedTarget;
+  }
+
+  private async assertSafeWebhookTarget(
+    target: string,
+    options?: { runtime?: boolean },
+  ): Promise<void> {
+    const syncResult = validateSsrfUrl(target);
+    if (!syncResult.valid) {
+      throw this.createWebhookTargetError(syncResult.reason, options);
+    }
+
+    const asyncResult = await validateSsrfUrlAsync(target);
+    if (!asyncResult.valid) {
+      throw this.createWebhookTargetError(asyncResult.reason, options);
+    }
+  }
+
+  private createWebhookTargetError(
+    reason?: string,
+    options?: { runtime?: boolean },
+  ): Error {
+    const message = `Unsafe webhook target${reason ? `: ${reason}` : ""}`;
+    if (options?.runtime) {
+      return new Error(message);
+    }
+    return new BadRequestException(message);
   }
 
   async scheduleScanJob() {

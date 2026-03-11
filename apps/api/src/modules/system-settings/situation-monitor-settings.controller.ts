@@ -9,6 +9,7 @@ import { Permissions } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import {
   SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
   TELEGRAM_POLL_JOB_NAME,
@@ -110,7 +111,7 @@ export class SituationMonitorSettingsController {
   ): Promise<void> {
     const queue = new Queue<TelegramSchedulerJobPayload>(
       SITUATION_MONITOR_SIGNALS_QUEUE_NAME,
-      { connection: this.env.redisConfig }
+      { connection: toBullmqConnection(this.env.redisConfig) }
     );
     try {
       await removeLegacyTelegramRepeatJobs(queue);

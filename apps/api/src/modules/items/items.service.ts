@@ -212,6 +212,21 @@ interface CachedEventGroup {
   items: (Omit<EventGroupItem, "createdAt"> & { createdAt: string })[];
 }
 
+interface LatestProcessedItemSnapshot {
+  itemMetaId: string;
+  tags?: unknown;
+  result?: unknown;
+  sourceId?: string | null;
+  duplicateOf?: string | null;
+  sortAt?: Date | null;
+}
+
+type SearchCandidateSource =
+  | "meta"
+  | "processed"
+  | "processedArticle"
+  | "vector";
+
 export interface RssSourceOption {
   id: string;
   name: string;
@@ -1453,6 +1468,129 @@ export class ItemsService {
     return score;
   }
 
+  private buildProcessedSortAtExpression() {
+    return {
+      $ifNull: [
+        "$sortAt",
+        {
+          $dateFromString: {
+            dateString: { $ifNull: ["$result.published_at", null] },
+            onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
+            onNull: { $ifNull: ["$ingestedAt", "$createdAt"] },
+          },
+        },
+      ],
+    };
+  }
+
+  private async listLatestProcessedSnapshots(
+    orgId: string,
+    itemMetaIds?: string[],
+  ): Promise<LatestProcessedItemSnapshot[]> {
+    const match: Record<string, unknown> = {
+      orgId,
+      status: PipelineStageStatus.Completed,
+    };
+
+    if (Array.isArray(itemMetaIds) && itemMetaIds.length > 0) {
+      match.itemMetaId = { $in: itemMetaIds };
+    }
+
+    return ProcessedItemModel.aggregate<LatestProcessedItemSnapshot>([
+      { $match: match },
+      {
+        $addFields: {
+          normalizedSortAt: this.buildProcessedSortAtExpression(),
+        },
+      },
+      { $sort: { itemMetaId: 1, createdAt: -1, _id: -1 } },
+      {
+        $group: {
+          _id: "$itemMetaId",
+          itemMetaId: { $first: "$itemMetaId" },
+          tags: { $first: "$tags" },
+          result: { $first: "$result" },
+          sourceId: { $first: "$sourceId" },
+          duplicateOf: { $first: "$duplicateOf" },
+          sortAt: { $first: "$normalizedSortAt" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          itemMetaId: 1,
+          tags: 1,
+          result: 1,
+          sourceId: 1,
+          duplicateOf: 1,
+          sortAt: 1,
+        },
+      },
+    ]);
+  }
+
+  private dedupeItemMetaIds(ids: string[]): string[] {
+    return Array.from(
+      new Set(
+        ids
+          .map((id) => (typeof id === "string" ? id.trim() : ""))
+          .filter((id): id is string => id.length > 0),
+      ),
+    );
+  }
+
+  private rankSearchCandidateIds(
+    sources: Partial<Record<SearchCandidateSource, string[]>>,
+  ): string[] {
+    const weights: Record<SearchCandidateSource, number> = {
+      meta: 1.3,
+      processed: 1.15,
+      processedArticle: 1.05,
+      vector: 1.45,
+    };
+    const scoreById = new Map<
+      string,
+      { score: number; bestRank: number; sourceCount: number }
+    >();
+
+    (Object.entries(sources) as [SearchCandidateSource, string[] | undefined][])
+      .forEach(([source, ids]) => {
+        const uniqueIds = this.dedupeItemMetaIds(ids ?? []);
+        uniqueIds.forEach((id, index) => {
+          const rankScore = weights[source] / (1 + index / 20);
+          const current = scoreById.get(id);
+          if (!current) {
+            scoreById.set(id, {
+              score: rankScore,
+              bestRank: index,
+              sourceCount: 1,
+            });
+            return;
+          }
+          current.score += rankScore;
+          current.sourceCount += 1;
+          current.bestRank = Math.min(current.bestRank, index);
+        });
+      });
+
+    return Array.from(scoreById.entries())
+      .map(([id, entry]) => ({
+        id,
+        score: entry.score + Math.max(0, entry.sourceCount - 1) * 0.2,
+        bestRank: entry.bestRank,
+      }))
+      .sort((left, right) => {
+        if (Math.abs(right.score - left.score) > 1e-9) {
+          return right.score - left.score;
+        }
+        if (left.bestRank !== right.bestRank) {
+          return left.bestRank - right.bestRank;
+        }
+        return left.id.localeCompare(right.id);
+      })
+      .map((entry) => entry.id);
+  }
+
   async getFacets(orgId: string, search?: string, filters?: ItemFilters) {
     const { search: normalizedSearch, filters: legacyFilters } = this.parseSearchPayload(search);
     const effectiveFilters = filters ?? legacyFilters;
@@ -1461,22 +1599,10 @@ export class ItemsService {
       return { regions: [], topics: [], sentiments: [], contentTypes: [] };
     }
 
-    const match: Record<string, unknown> = {
+    const records = await this.listLatestProcessedSnapshots(
       orgId,
-      status: PipelineStageStatus.Completed,
-      ...(scopedIds ? { itemMetaId: { $in: scopedIds } } : {})
-    };
-
-    const records = await ProcessedItemModel.find(
-      match,
-      {
-        tags: 1,
-        result: 1
-      }
-    )
-      .sort({ createdAt: -1 })
-      .limit(MAX_SEARCH_MATCHES)
-      .lean();
+      scopedIds ?? undefined,
+    );
 
     const regionCounts = new Map<string, number>();
     const topicCounts = new Map<string, number>();
@@ -1486,27 +1612,17 @@ export class ItemsService {
     const allowedContentTypes = new Set(["news_fact", "opinion", "analysis", "mixed"]);
 
     for (const record of records) {
-      const result = record.result as
-        | {
-            location?: string | null;
-            region?: string | null;
-            topics?: ({ name?: string | null } | string)[] | null;
-            entities?: ({ name?: string | null } | string)[] | null;
-            sentiment?: string | null;
-            sentiment_label?: string | null;
-            content_type?: string | null;
-            contentType?: string | null;
-          }
-        | undefined;
-
-      const regionValue = result?.location ?? result?.region ?? null;
+      const result = this.normalizeResultRecord(record.result);
+      const regionValue =
+        this.pickResultString(result, ["location", "region"]) ?? null;
       if (regionValue) {
         this.incrementFacetCount(regionCounts, regionValue);
       }
 
       const topicSet = new Set<string>();
-      if (Array.isArray(result?.topics)) {
-        result.topics.forEach((topic) => {
+      const topics = result.topics;
+      if (Array.isArray(topics)) {
+        topics.forEach((topic) => {
           if (typeof topic === "string") {
             const normalized = topic.trim();
             if (normalized) {
@@ -1514,8 +1630,13 @@ export class ItemsService {
             }
             return;
           }
-          if (topic && typeof topic.name === "string") {
-            const normalized = topic.name.trim();
+          if (
+            topic &&
+            typeof topic === "object" &&
+            !Array.isArray(topic) &&
+            typeof (topic as { name?: unknown }).name === "string"
+          ) {
+            const normalized = ((topic as { name: string }).name ?? "").trim();
             if (normalized) {
               topicSet.add(normalized);
             }
@@ -1529,24 +1650,34 @@ export class ItemsService {
           }
         });
       }
-      if (Array.isArray(result?.entities)) {
-        result.entities.forEach((entity) => {
+      const entities = result.entities;
+      if (Array.isArray(entities)) {
+        entities.forEach((entity) => {
           if (typeof entity === "string" && entity.trim()) {
             topicSet.add(entity.trim());
             return;
           }
-          if (entity && typeof entity !== "string" && typeof entity.name === "string" && entity.name.trim()) {
-            topicSet.add(entity.name.trim());
+          if (
+            entity &&
+            typeof entity === "object" &&
+            !Array.isArray(entity) &&
+            typeof (entity as { name?: unknown }).name === "string" &&
+            (entity as { name: string }).name.trim()
+          ) {
+            topicSet.add((entity as { name: string }).name.trim());
           }
         });
       }
       topicSet.forEach((topic) => this.incrementFacetCount(topicCounts, topic));
 
       const sentimentSet = new Set<string>();
-      if (typeof result?.sentiment === "string" && result.sentiment.trim()) {
+      if (typeof result.sentiment === "string" && result.sentiment.trim()) {
         sentimentSet.add(result.sentiment.trim().toLowerCase());
       }
-      if (typeof result?.sentiment_label === "string" && result.sentiment_label.trim()) {
+      if (
+        typeof result.sentiment_label === "string" &&
+        result.sentiment_label.trim()
+      ) {
         sentimentSet.add(result.sentiment_label.trim().toLowerCase());
       }
       if (Array.isArray(record.tags)) {
@@ -1567,9 +1698,9 @@ export class ItemsService {
       });
 
       const contentTypeRaw =
-        typeof result?.content_type === "string"
+        typeof result.content_type === "string"
           ? result.content_type
-          : typeof result?.contentType === "string"
+          : typeof result.contentType === "string"
             ? result.contentType
             : null;
       const contentType =
@@ -2884,27 +3015,53 @@ export class ItemsService {
       this.resolveVectorSearchIds(orgId, search),
     ]);
 
-    const combined = new Set<string>();
-    metaIds.forEach((id) => combined.add(id));
-    processedIds.forEach((id) => combined.add(id));
-    processedArticleIds.forEach((id) => combined.add(id));
-    vectorIds.forEach((id) => combined.add(id));
-    return Array.from(combined);
+    return this.rankSearchCandidateIds({
+      meta: metaIds,
+      processed: processedIds,
+      processedArticle: processedArticleIds,
+      vector: vectorIds,
+    });
   }
 
   private async resolveFilterIds(orgId: string, filters: ItemFilters) {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          orgId,
+          status: PipelineStageStatus.Completed,
+        },
+      },
+      {
+        $addFields: {
+          normalizedSortAt: this.buildProcessedSortAtExpression(),
+        },
+      },
+      { $sort: { itemMetaId: 1, createdAt: -1, _id: -1 } },
+      {
+        $group: {
+          _id: "$itemMetaId",
+          itemMetaId: { $first: "$itemMetaId" },
+          tags: { $first: "$tags" },
+          result: { $first: "$result" },
+          sourceId: { $first: "$sourceId" },
+          duplicateOf: { $first: "$duplicateOf" },
+          sortAt: { $first: "$normalizedSortAt" },
+        },
+      },
+    ];
+
     const matchFilters: Record<string, unknown>[] = [];
     if (filters.sourceIds?.length) {
       matchFilters.push({
-        sourceId: { $in: filters.sourceIds }
+        sourceId: { $in: filters.sourceIds },
       });
     }
     if (filters.regions?.length) {
       matchFilters.push({
         $or: [
           { "result.location": { $in: filters.regions } },
-          { "result.region": { $in: filters.regions } }
-        ]
+          { "result.region": { $in: filters.regions } },
+        ],
       });
     }
     if (filters.topics?.length) {
@@ -2912,63 +3069,39 @@ export class ItemsService {
         $or: [
           { "result.topics": { $in: filters.topics } },
           { tags: { $in: filters.topics } },
-          { "result.entities.name": { $in: filters.topics } }
-        ]
+          { "result.entities.name": { $in: filters.topics } },
+        ],
       });
     }
     if (filters.sentiments?.length) {
       const sentimentMatchers = filters.sentiments.map(
-        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i")
+        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i"),
       );
       matchFilters.push({
         $or: [
           { "result.sentiment": { $in: sentimentMatchers } },
           { "result.sentiment_label": { $in: sentimentMatchers } },
-          { tags: { $in: sentimentMatchers } }
-        ]
+          { tags: { $in: sentimentMatchers } },
+        ],
       });
     }
     if (filters.contentTypes?.length) {
       const contentTypeMatchers = filters.contentTypes.map(
-        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i")
+        (value) => new RegExp(`^${this.escapeRegex(value)}$`, "i"),
       );
       matchFilters.push({
         $or: [
           { "result.content_type": { $in: contentTypeMatchers } },
-          { "result.contentType": { $in: contentTypeMatchers } }
-        ]
+          { "result.contentType": { $in: contentTypeMatchers } },
+        ],
       });
     }
     if (filters.excludeDuplicates) {
       matchFilters.push({
-        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }]
+        $or: [{ duplicateOf: null }, { duplicateOf: { $exists: false } }],
       });
     }
-
-    const match: Record<string, unknown> = {
-      orgId,
-      status: PipelineStageStatus.Completed,
-      ...(matchFilters.length ? { $and: matchFilters } : {})
-    };
-
-    const pipeline: PipelineStage[] = [{ $match: match }];
     if (filters.dateRange?.start || filters.dateRange?.end) {
-      pipeline.push({
-        $addFields: {
-          sortAt: {
-            $ifNull: [
-              "$sortAt",
-              {
-                $dateFromString: {
-                  dateString: { $ifNull: ["$result.published_at", null] },
-                  onError: { $ifNull: ["$ingestedAt", "$createdAt"] },
-                  onNull: { $ifNull: ["$ingestedAt", "$createdAt"] }
-                }
-              }
-            ]
-          }
-        }
-      });
       const dateMatch: Record<string, Date> = {};
       if (filters.dateRange.start) {
         dateMatch.$gte = filters.dateRange.start;
@@ -2976,17 +3109,17 @@ export class ItemsService {
       if (filters.dateRange.end) {
         dateMatch.$lte = filters.dateRange.end;
       }
-      pipeline.push({ $match: { sortAt: dateMatch } });
+      matchFilters.push({ sortAt: dateMatch });
     }
-
-    pipeline.push(
-      { $sort: { createdAt: -1 } },
-      { $limit: MAX_SEARCH_MATCHES },
-      { $project: { itemMetaId: 1 } }
-    );
+    if (matchFilters.length > 0) {
+      pipeline.push({ $match: { $and: matchFilters } });
+    }
+    pipeline.push({ $project: { _id: 0, itemMetaId: 1 } });
 
     const records = await ProcessedItemModel.aggregate<{ itemMetaId: string }>(pipeline);
-    const primaryIds = records.map((record) => record.itemMetaId).filter(Boolean);
+    const primaryIds = this.dedupeItemMetaIds(
+      records.map((record) => record.itemMetaId),
+    );
     if (!filters.sourceIds?.length) {
       return primaryIds;
     }
@@ -2999,7 +3132,7 @@ export class ItemsService {
     if (fallbackIds.length === 0) {
       return primaryIds;
     }
-    return Array.from(new Set([...primaryIds, ...fallbackIds]));
+    return this.dedupeItemMetaIds([...primaryIds, ...fallbackIds]);
   }
 
   /**
@@ -3037,7 +3170,7 @@ export class ItemsService {
         article: articleWhere
       },
       select: { cleanedMarkdownRef: true },
-      take: MAX_SEARCH_MATCHES
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }]
     });
 
     const processedIds = processedRows
@@ -3056,12 +3189,14 @@ export class ItemsService {
       },
       { itemMetaId: 1 }
     )
-      .limit(MAX_SEARCH_MATCHES)
+      .sort({ createdAt: -1, _id: -1 })
       .lean();
 
-    return matched
-      .map((row) => (typeof row.itemMetaId === "string" ? row.itemMetaId.trim() : ""))
-      .filter((value): value is string => Boolean(value));
+    return this.dedupeItemMetaIds(
+      matched.map((row) =>
+        typeof row.itemMetaId === "string" ? row.itemMetaId.trim() : "",
+      ),
+    );
   }
 
   private shouldUseSemanticSuggestions(prefix: string) {
@@ -3330,16 +3465,18 @@ export class ItemsService {
     }
 
     if (strategy.type === "fulltext") {
-      const rows = await this.prisma.$queryRaw<{ id: string }[]>`
-        SELECT \`id\`
+      const rows = await this.prisma.$queryRaw<{ id: string; score: number }[]>`
+        SELECT
+          \`id\`,
+          MATCH(\`name\`, \`externalId\`) AGAINST (${strategy.query} IN BOOLEAN MODE) AS \`score\`
         FROM \`ItemMeta\`
         WHERE \`orgId\` = ${orgId}
           AND \`status\` <> ${ItemStatus.Duplicate}
           AND MATCH(\`name\`, \`externalId\`) AGAINST (${strategy.query} IN BOOLEAN MODE)
-        ORDER BY \`createdAt\` DESC, \`id\` DESC
+        ORDER BY \`score\` DESC, \`createdAt\` DESC, \`id\` DESC
         LIMIT ${MAX_SEARCH_MATCHES}
       `;
-      return rows.map((row) => row.id);
+      return this.dedupeItemMetaIds(rows.map((row) => row.id));
     }
 
     const baseWhere = this.buildBaseWhere(orgId);
@@ -3350,7 +3487,7 @@ export class ItemsService {
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: MAX_SEARCH_MATCHES
     });
-    return items.map((item) => item.id);
+    return this.dedupeItemMetaIds(items.map((item) => item.id));
   }
 
   private async resolveProcessedSearchIds(orgId: string, search: string) {
@@ -3384,7 +3521,9 @@ export class ItemsService {
       .limit(MAX_SEARCH_MATCHES)
       .lean();
 
-    return records.map((record) => record.itemMetaId).filter(Boolean);
+    return this.dedupeItemMetaIds(
+      records.map((record) => record.itemMetaId),
+    );
   }
 
   private async resolveProcessedArticleSearchIds(orgId: string, strategy: SearchStrategy) {
@@ -3394,14 +3533,18 @@ export class ItemsService {
 
     let refs: string[] = [];
     if (strategy.type === "fulltext") {
-      const rows = await this.prisma.$queryRaw<{ cleanedMarkdownRef: string | null }[]>`
-        SELECT pa.cleanedMarkdownRef
+      const rows = await this.prisma.$queryRaw<
+        { cleanedMarkdownRef: string | null; score: number }[]
+      >`
+        SELECT
+          pa.cleanedMarkdownRef,
+          MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE) AS \`score\`
         FROM \`ProcessedArticle\` pa
         INNER JOIN \`Article\` a ON a.id = pa.articleId
         WHERE a.orgId = ${orgId}
           AND pa.cleanedMarkdownRef IS NOT NULL
           AND MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE)
-        ORDER BY pa.updatedAt DESC, pa.id DESC
+        ORDER BY \`score\` DESC, pa.updatedAt DESC, pa.id DESC
         LIMIT ${MAX_SEARCH_MATCHES}
       `;
       refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
@@ -3433,10 +3576,13 @@ export class ItemsService {
       { _id: { $in: objectIds } },
       { itemMetaId: 1 }
     )
+      .sort({ createdAt: -1, _id: -1 })
       .limit(MAX_SEARCH_MATCHES)
       .lean();
 
-    return records.map((record) => record.itemMetaId).filter(Boolean);
+    return this.dedupeItemMetaIds(
+      records.map((record) => record.itemMetaId),
+    );
   }
 
   private resolveRankingMode(mode: ItemsRankingMode, search?: string) {

@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 
@@ -26,7 +27,9 @@ import { AnalysisService } from "./analysis.service";
       provide: ANALYSIS_QUEUE,
       inject: [EnvService, AnalysisQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
-        const queue = new Queue(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig });
+        const queue = new Queue(ANALYSIS_QUEUE_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+        });
         cleanup.track(queue);
         return queue;
       }
@@ -35,7 +38,9 @@ import { AnalysisService } from "./analysis.service";
       provide: ANALYSIS_QUEUE_EVENTS,
       inject: [EnvService, AnalysisQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AnalysisQueueCleanupService) => {
-        const events = new QueueEvents(ANALYSIS_QUEUE_NAME, { connection: env.redisConfig });
+        const events = new QueueEvents(ANALYSIS_QUEUE_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+        });
         cleanup.track(events);
         return events;
       }

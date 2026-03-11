@@ -1,6 +1,13 @@
 import axios, { AxiosHeaders, type AxiosError, type AxiosRequestConfig } from "axios";
 
 import { emitForbidden, emitUnauthorized } from "./auth-events";
+import {
+  getCachedBrowserAuthSession,
+  invalidateBrowserAuthSessionCache,
+  refreshBrowserAccessToken,
+  syncBrowserAuthSession,
+  type BrowserAuthSession,
+} from "./browser-auth-session";
 import { env } from "./env";
 import { createTraceHeaders } from "./trace";
 
@@ -8,114 +15,23 @@ export interface ApiClientOptions {
   accessToken?: string;
 }
 
-export interface ApiAuthSession extends Record<string, unknown> {
-  accessToken?: string;
-  permissions?: string[];
-  user?: {
-    permissions?: string[];
-  };
-}
+export interface ApiAuthSession extends BrowserAuthSession {}
 
 type RetriableRequestConfig = AxiosRequestConfig & {
   _retry?: boolean;
 };
 
-let refreshSessionPromise: Promise<string | null> | null = null;
-const SESSION_CACHE_TTL_MS = 5_000;
-
-let cachedSession: ApiAuthSession | null | undefined;
-let cachedSessionAt = 0;
-let cachedSessionPromise: Promise<ApiAuthSession | null> | null = null;
-let sessionCacheVersion = 0;
-
-function startSessionFetch(): Promise<ApiAuthSession | null> {
-  const requestVersion = sessionCacheVersion;
-  const sessionPromise = fetchSession()
-    .then((session) => {
-      if (requestVersion === sessionCacheVersion) {
-        cachedSession = session;
-        cachedSessionAt = Date.now();
-      }
-      return session;
-    })
-    .finally(() => {
-      if (requestVersion === sessionCacheVersion && cachedSessionPromise === sessionPromise) {
-        cachedSessionPromise = null;
-      }
-    });
-
-  cachedSessionPromise = sessionPromise;
-  return sessionPromise;
-}
-
 export const invalidateApiSessionCache = () => {
-  sessionCacheVersion += 1;
-  cachedSession = undefined;
-  cachedSessionAt = 0;
-  cachedSessionPromise = null;
-  refreshSessionPromise = null;
+  invalidateBrowserAuthSessionCache();
 };
 
-async function fetchSession(): Promise<ApiAuthSession | null> {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return import("next-auth/react")
-    .then(({ getSession }) => getSession())
-    .then((session) => (session as ApiAuthSession | null) ?? null)
-    .catch(() => null);
-}
-
 export async function getCachedApiSession(): Promise<ApiAuthSession | null> {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const now = Date.now();
-  if (cachedSessionPromise) {
-    return cachedSessionPromise;
-  }
-
-  if (cachedSession !== undefined && now - cachedSessionAt < SESSION_CACHE_TTL_MS) {
-    return cachedSession;
-  }
-
-  return startSessionFetch();
+  return (await getCachedBrowserAuthSession()) as ApiAuthSession | null;
 }
 
 export async function syncApiSessionCache(): Promise<ApiAuthSession | null> {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  invalidateApiSessionCache();
-  return startSessionFetch();
+  return (await syncBrowserAuthSession()) as ApiAuthSession | null;
 }
-
-const refreshAccessToken = async () => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  if (!refreshSessionPromise) {
-    const requestVersion = sessionCacheVersion;
-    refreshSessionPromise = fetchSession()
-      .then((session) => {
-        if (requestVersion === sessionCacheVersion) {
-          cachedSession = session;
-          cachedSessionAt = Date.now();
-        }
-        return session?.accessToken ?? null;
-      })
-      .catch(() => null)
-      .finally(() => {
-        refreshSessionPromise = null;
-      });
-  }
-
-  return refreshSessionPromise;
-};
 
 export const createApiClient = (options: ApiClientOptions = {}) => {
   const instance = axios.create({
@@ -134,7 +50,7 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
     if (status === 401 && typeof window !== "undefined" && originalRequest) {
       invalidateApiSessionCache();
       if (!originalRequest._retry) {
-        const refreshedToken = await refreshAccessToken();
+        const refreshedToken = await refreshBrowserAccessToken();
 
         if (refreshedToken) {
           originalRequest._retry = true;
@@ -186,7 +102,7 @@ export const createApiClient = (options: ApiClientOptions = {}) => {
 
     const token = hasAuthorizationHeader
       ? null
-      : options.accessToken ?? (await getCachedApiSession())?.accessToken ?? null;
+      : options.accessToken ?? (await getCachedBrowserAuthSession())?.accessToken ?? null;
 
     const headersWithAuth = token
       ? {

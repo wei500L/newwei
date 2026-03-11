@@ -536,3 +536,79 @@ describe("AlertsService.upsertRule system manual metric", () => {
     );
   });
 });
+
+describe("AlertsService channel target validation", () => {
+  const buildService = () => {
+    const prisma = {
+      alertNotificationChannel: {
+        create: jest.fn().mockResolvedValue({
+          id: "channel-1",
+          type: "webhook",
+          target: "https://example.com/webhook",
+        }),
+      },
+    } as any;
+
+    const http = {
+      post: jest.fn(),
+    } as any;
+
+    const service = new AlertsService(
+      prisma,
+      {
+        normalizeEmailTarget: jest.fn((value: string) => value.trim().toLowerCase()),
+      } as any,
+      http,
+      {} as any,
+      {} as any,
+      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {} as any,
+      {} as any,
+      [],
+    );
+
+    return { prisma, http, service };
+  };
+
+  it("rejects unsafe webhook channel targets on create", async () => {
+    const { prisma, service } = buildService();
+
+    await expect(
+      service.createChannel("org-1", {
+        type: "webhook" as any,
+        name: "Unsafe",
+        target: "http://127.0.0.1/internal",
+      }),
+    ).rejects.toThrow("Unsafe webhook target");
+
+    expect(prisma.alertNotificationChannel.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks unsafe webhook targets during delivery", async () => {
+    const { http, service } = buildService();
+
+    await expect(
+      (service as any).sendWebhook(
+        "http://127.0.0.1/internal",
+        {
+          id: "event-1",
+          triggeredAt: new Date("2024-01-01T00:00:00.000Z"),
+          metricValue: { toString: () => "1" } as any,
+          severity: "high",
+          ruleId: "rule-1",
+          message: null,
+        },
+        {
+          name: "Unsafe rule",
+          metricSlug: "crawl_task",
+          operator: "gte",
+          thresholdValue: null,
+          thresholdLower: null,
+          thresholdUpper: null,
+        },
+      ),
+    ).rejects.toThrow("Unsafe webhook target");
+
+    expect(http.post).not.toHaveBeenCalled();
+  });
+});

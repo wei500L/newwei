@@ -5,6 +5,7 @@ import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
 import { DatabaseModule } from "../config/database.module";
+import { toBullmqConnection } from "../config/redis-connection";
 
 import { AdminAkshareController } from "./admin-akshare.controller";
 import { AkshareGatewayClient } from "./akshare-gateway.client";
@@ -38,9 +39,8 @@ import { AkshareService } from "./akshare.service";
       provide: AKSHARE_QUEUE,
       inject: [EnvService, AkshareQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
-        const redis = env.redisConfig;
         const queue = new Queue<unknown>(AKSHARE_QUEUE_NAME, {
-          connection: redis
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(queue);
         return queue;
@@ -50,9 +50,8 @@ import { AkshareService } from "./akshare.service";
       provide: AKSHARE_QUEUE_EVENTS,
       inject: [EnvService, AkshareQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AkshareQueueCleanupService) => {
-        const redis = env.redisConfig;
         const events = new QueueEvents(AKSHARE_QUEUE_NAME, {
-          connection: redis
+          connection: toBullmqConnection(env.redisConfig)
         });
         cleanup.track(events);
         return events;

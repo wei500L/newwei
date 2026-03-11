@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { BackendLoginResponse, OrganizationOption } from "@/lib/auth";
+import { setBrowserAuthSession, type BrowserAuthSession } from "@/lib/browser-auth-session";
 import { captureClientError } from "@/lib/client-telemetry";
 import { createTraceHeaders } from "@/lib/trace";
 
@@ -97,7 +98,7 @@ export function OrganizationSwitcher({
       const switchedLabel =
         switchedOrg?.name ?? switchedOrg?.slug ?? data.user.orgId;
 
-      await update({
+      const sessionPatch = {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         accessTokenExpires: Date.now() + data.expiresIn * 1000,
@@ -105,7 +106,11 @@ export function OrganizationSwitcher({
         orgId: data.user.orgId,
         permissions: data.user.permissions,
         organizations: data.organizations ?? availableOrganizations
-      });
+      };
+      const updatedSession = await update(sessionPatch);
+      setBrowserAuthSession(
+        (updatedSession ?? { ...(session ?? {}), ...sessionPatch }) as BrowserAuthSession
+      );
       messageApi.success(t("orgSwitcher.success", { org: switchedLabel }));
     } catch (err) {
       captureClientError("Organization switch failed", err);

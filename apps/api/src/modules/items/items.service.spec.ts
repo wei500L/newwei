@@ -559,6 +559,7 @@ describe("ItemsService.createFromCrawlResult", () => {
 describe("ItemsService filters", () => {
   it("applies sourceIds in processed filter aggregation", async () => {
     mockProcessedItemFind.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([])
     });
@@ -592,9 +593,8 @@ describe("ItemsService filters", () => {
       expect.arrayContaining([
         expect.objectContaining({
           $match: expect.objectContaining({
-            orgId: "org-1",
             $and: expect.arrayContaining([{ sourceId: { $in: ["source-1", "source-2"] } }])
-          })
+          }),
         })
       ])
     );
@@ -602,6 +602,7 @@ describe("ItemsService filters", () => {
 
   it("applies contentTypes in processed filter aggregation", async () => {
     mockProcessedItemFind.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([])
     });
@@ -635,7 +636,6 @@ describe("ItemsService filters", () => {
       expect.arrayContaining([
         expect.objectContaining({
           $match: expect.objectContaining({
-            orgId: "org-1",
             $and: expect.arrayContaining([
               {
                 $or: [
@@ -644,7 +644,7 @@ describe("ItemsService filters", () => {
                 ]
               }
             ])
-          })
+          }),
         })
       ])
     );
@@ -653,7 +653,7 @@ describe("ItemsService filters", () => {
   it("falls back to ProcessedArticle links when ProcessedItem.sourceId is missing", async () => {
     mockProcessedItemAggregate.mockResolvedValue([]);
     mockProcessedItemFind.mockReturnValue({
-      limit: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([{ itemMetaId: "meta-fallback-1" }])
     });
 
@@ -687,6 +687,139 @@ describe("ItemsService filters", () => {
     expect(ids).toEqual(["meta-fallback-1"]);
     expect(prisma.processedArticle.findMany).toHaveBeenCalledTimes(1);
     expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
+  });
+
+  it("builds facets from the latest processed snapshot per item", async () => {
+    mockProcessedItemAggregate.mockResolvedValueOnce([
+      {
+        itemMetaId: "meta-1",
+        result: {
+          location: "US",
+          topics: [{ name: "AI" }],
+          entities: [{ name: "OpenAI" }],
+          sentiment: "positive",
+          contentType: "analysis",
+        },
+        tags: ["AI"],
+      },
+      {
+        itemMetaId: "meta-2",
+        result: {
+          region: "EU",
+          topics: ["Macro"],
+          sentiment_label: "neutral",
+          content_type: "news_fact",
+        },
+        tags: [],
+      },
+    ]);
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+    (service as any).resolveScopedIds = jest.fn().mockResolvedValue(null);
+
+    const facets = await service.getFacets("org-1");
+
+    expect(facets.regions).toEqual([
+      { value: "EU", count: 1 },
+      { value: "US", count: 1 },
+    ]);
+    expect(facets.topics).toEqual([
+      { value: "AI", count: 1 },
+      { value: "Macro", count: 1 },
+      { value: "OpenAI", count: 1 },
+    ]);
+    expect(facets.sentiments).toEqual([
+      { value: "neutral", count: 1 },
+      { value: "positive", count: 1 },
+    ]);
+    expect(facets.contentTypes).toEqual([
+      { value: "analysis", count: 1 },
+      { value: "news_fact", count: 1 },
+    ]);
+  });
+
+  it("ranks merged search ids before recall truncation", async () => {
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {
+        liteLlmConfig: {},
+        itemsSearchRankingConfig: {
+          rerankEnabled: false,
+          recallMaxCandidates: 2,
+          rerankMaxCandidates: 2,
+          rerankTimeoutMs: 300,
+          recencyHalfLifeHours: 48,
+        },
+      } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).resolveMetaSearchIds = jest
+      .fn()
+      .mockResolvedValue(["meta-a", "meta-b", "meta-c"]);
+    (service as any).resolveProcessedSearchIds = jest
+      .fn()
+      .mockResolvedValue(["meta-b"]);
+    (service as any).resolveProcessedArticleSearchIds = jest
+      .fn()
+      .mockResolvedValue(["meta-c"]);
+    (service as any).resolveVectorSearchIds = jest
+      .fn()
+      .mockResolvedValue(["meta-c", "meta-b"]);
+    (service as any).fetchItemMetaRowsByIds = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          "meta-b",
+          {
+            id: "meta-b",
+            name: "B",
+            status: "active",
+            createdAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+            sortAt: new Date("2024-01-01T00:00:00.000Z"),
+            orgId: "org-1",
+          },
+        ],
+        [
+          "meta-c",
+          {
+            id: "meta-c",
+            name: "C",
+            status: "active",
+            createdAt: new Date("2024-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+            sortAt: new Date("2024-01-01T00:00:00.000Z"),
+            orgId: "org-1",
+          },
+        ],
+      ]),
+    );
+    mockProcessedItemFind.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
+
+    const ranked = await (service as any).rankScopedIdsByRelevance(
+      "org-1",
+      "fed policy",
+      await (service as any).resolveSearchIds("org-1", "fed policy"),
+    );
+
+    expect(ranked.map((entry: { id: string }) => entry.id)).toEqual([
+      "meta-b",
+      "meta-c",
+    ]);
   });
 });
 

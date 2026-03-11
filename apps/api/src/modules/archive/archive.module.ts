@@ -3,6 +3,7 @@ import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
 import { CacheModule } from "../cache/cache.module";
+import { toBullmqConnection } from "../config/redis-connection";
 
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
@@ -37,7 +38,7 @@ import { ArchiveService } from "./archive.service";
         cleanup: ArchivePreparationQueueCleanupService,
       ) => {
         const queue = new Queue(ARCHIVE_PREPARATION_QUEUE_NAME, {
-          connection: env.redisConfig,
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(queue);
         return queue;
@@ -51,7 +52,7 @@ import { ArchiveService } from "./archive.service";
         cleanup: ArchivePreparationQueueCleanupService,
       ) => {
         const events = new QueueEvents(ARCHIVE_PREPARATION_QUEUE_NAME, {
-          connection: env.redisConfig,
+          connection: toBullmqConnection(env.redisConfig),
         });
         cleanup.track(events);
         return events;

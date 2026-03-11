@@ -7,6 +7,7 @@ import { AnalysisModule } from "../analysis/analysis.module";
 import { AssistantModule } from "../assistant/assistant.module";
 import { AuthModule } from "../auth/auth.module";
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -70,7 +71,7 @@ import { TaskLogsController } from "./task-logs.controller";
         cleanup: ClassificationQualityQueueCleanupService,
       ) => {
         const queue = new Queue(CLASSIFICATION_QUALITY_QUEUE_NAME, {
-          connection: env.redisConfig,
+          connection: toBullmqConnection(env.redisConfig),
           defaultJobOptions: {
             removeOnComplete: true,
             removeOnFail: false,

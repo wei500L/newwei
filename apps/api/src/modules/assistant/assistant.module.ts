@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { ItemsModule } from "../items/items.module";
 import { ModelServiceModule } from "../model-service/model-service.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
@@ -28,7 +29,9 @@ import type { AssistantJobPayload } from "./assistant.types";
       provide: ASSISTANT_QUEUE,
       inject: [EnvService, AssistantQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
-        const queue = new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig });
+        const queue = new Queue<AssistantJobPayload>(ASSISTANT_QUEUE_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+        });
         cleanup.track(queue);
         return queue;
       }
@@ -37,7 +40,9 @@ import type { AssistantJobPayload } from "./assistant.types";
       provide: ASSISTANT_QUEUE_EVENTS,
       inject: [EnvService, AssistantQueueCleanupService],
       useFactory: (env: EnvService, cleanup: AssistantQueueCleanupService) => {
-        const events = new QueueEvents(ASSISTANT_QUEUE_NAME, { connection: env.redisConfig });
+        const events = new QueueEvents(ASSISTANT_QUEUE_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+        });
         cleanup.track(events);
         return events;
       }

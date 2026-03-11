@@ -5,6 +5,7 @@ import { Queue, QueueEvents } from "bullmq";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
 import { EnvService } from "../config/config.service";
+import { toBullmqConnection } from "../config/redis-connection";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
@@ -45,12 +46,7 @@ import { QueueService } from "./queue.service";
       useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
         const queue = new Queue(ITEM_PIPELINE_QUEUE_NAME, {
-          connection: {
-            host: config.connection.host,
-            port: config.connection.port,
-            username: config.connection.username,
-            db: config.connection.db,
-          },
+          connection: toBullmqConnection(config.connection),
           defaultJobOptions: {
             removeOnComplete: {
               age: 3600,
@@ -74,12 +70,7 @@ import { QueueService } from "./queue.service";
       useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
         const queue = new Queue(ITEM_PIPELINE_DLQ_QUEUE_NAME, {
-          connection: {
-            host: config.connection.host,
-            port: config.connection.port,
-            username: config.connection.username,
-            db: config.connection.db,
-          },
+          connection: toBullmqConnection(config.connection),
           defaultJobOptions: {
             removeOnComplete: {
               age: 3600 * 24 * 7,
@@ -99,12 +90,7 @@ import { QueueService } from "./queue.service";
       useFactory: (env: EnvService, cleanup: QueueCleanupService) => {
         const config = env.bullmqConfig;
         const events = new QueueEvents(ITEM_PIPELINE_QUEUE_NAME, {
-          connection: {
-            host: config.connection.host,
-            port: config.connection.port,
-            username: config.connection.username,
-            db: config.connection.db
-          }
+          connection: toBullmqConnection(config.connection)
         });
         cleanup.track(events);
         return events;

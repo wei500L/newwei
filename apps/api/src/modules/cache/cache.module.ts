@@ -3,6 +3,7 @@ import { createLogger } from '@modular/utils';
 import Redis from 'ioredis';
 
 import { EnvService } from '../config/config.service';
+import { toIoredisConnection } from '../config/redis-connection';
 
 import { ActionRateLimitService } from './action-rate-limit.service';
 import { CacheService } from './cache.service';
@@ -31,14 +32,7 @@ class RedisClientCleanup implements OnModuleDestroy {
       provide: REDIS_CLIENT,
       inject: [EnvService],
       useFactory: (env: EnvService) => {
-        const redisConfig = env.redisConfig;
-        const redis = new Redis({
-          host: redisConfig.host,
-          port: redisConfig.port,
-          username: redisConfig.username,
-          password: redisConfig.password,
-          db: redisConfig.db
-        });
+        const redis = new Redis(toIoredisConnection(env.redisConfig));
 
         redis.on('error', (error) => {
           logger.warn({ error }, 'Redis cache client error');
