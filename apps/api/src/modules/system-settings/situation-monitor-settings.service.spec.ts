@@ -132,7 +132,7 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.liveHlsProxyCnbcSource).toBe("none");
   });
 
-  it("uses telegram env fallback when no stored telegram secret exists", async () => {
+  it("uses telegram env fallback for api id/hash but not session", async () => {
     envExternalKeys.SITUATION_MONITOR_TELEGRAM_ENABLED = "true";
     envExternalKeys.SITUATION_MONITOR_TELEGRAM_API_ID = "100001";
     envExternalKeys.SITUATION_MONITOR_TELEGRAM_API_HASH = "env-hash";
@@ -146,15 +146,15 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.telegramApiIdSource).toBe("env");
     expect(response.hasTelegramApiHash).toBe(true);
     expect(response.telegramApiHashSource).toBe("env");
-    expect(response.hasTelegramSession).toBe(true);
-    expect(response.telegramSessionSource).toBe("env");
+    expect(response.hasTelegramSession).toBe(false);
+    expect(response.telegramSessionSource).toBe("none");
     expect(response.telegramChannelSet).toBe("tech");
     expect(response.telegramPollIntervalMs).toBe(90_000);
 
     const runtime = await service.getTelegramRuntimeConfig();
     expect(runtime.apiId).toBe("100001");
     expect(runtime.apiHash).toBe("env-hash");
-    expect(runtime.session).toBe("env-session");
+    expect(runtime.session).toBeUndefined();
     expect(runtime.channelSet).toBe("tech");
     expect(runtime.pollIntervalMs).toBe(90_000);
   });
@@ -166,7 +166,8 @@ describe("SituationMonitorSettingsService", () => {
       translationApiBaseUrl: "https://api.deeplx.org",
       translationApiKey: "test-key",
       translationFallbackApiEnabled: true,
-      translationFallbackApiBaseUrl: "https://translates.shisihua.dpdns.org/fallback/v1",
+      translationFallbackApiBaseUrl:
+        "https://translates.shisihua.dpdns.org/fallback/v1",
       finnhubApiKey: "finnhub-key",
       fredApiKey: "fred-key",
       translationApiTimeoutMs: 8_000,
@@ -183,10 +184,12 @@ describe("SituationMonitorSettingsService", () => {
       telegramStartupDelayMs: 45_000,
       telegramRateLimitMs: 1200,
       telegramPollIntervalMs: 75_000,
-      liveHlsProxyCnnUpstreamUrl: "https://media.example.net/live/cnn/master.m3u8",
+      liveHlsProxyCnnUpstreamUrl:
+        "https://media.example.net/live/cnn/master.m3u8",
       liveHlsProxyCnnReferer: "https://example.com",
       liveHlsProxyCnnAllowedHosts: "media.example.net,edge.example.net",
-      liveHlsProxyCnbcUpstreamUrl: "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
+      liveHlsProxyCnbcUpstreamUrl:
+        "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
       liveHlsProxyCnbcReferer: "https://livenewschat.eu/",
       liveHlsProxyCnbcAllowedHosts: "cdn-ca2-na.lncnetworks.host",
     });
@@ -196,7 +199,9 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.translationApiTimeoutMs).toBe(8_000);
     expect(response.translationApiMaxRetries).toBe(1);
     expect(response.translationFallbackApiEnabled).toBe(true);
-    expect(response.translationFallbackApiBaseUrl).toBe("https://translates.shisihua.dpdns.org/fallback/v1");
+    expect(response.translationFallbackApiBaseUrl).toBe(
+      "https://translates.shisihua.dpdns.org/fallback/v1",
+    );
     expect(response.hasTranslationApiKey).toBe(true);
     expect(response.translationApiKeySource).toBe("stored");
     expect(response.hasFinnhubApiKey).toBe(true);
@@ -216,29 +221,53 @@ describe("SituationMonitorSettingsService", () => {
     expect(response.liveHlsProxyCnnSource).toBe("stored");
     expect(response.liveHlsProxyCnbcConfigured).toBe(true);
     expect(response.liveHlsProxyCnbcSource).toBe("stored");
-    expect(response.liveHlsProxyCnnAllowedHosts).toEqual(["media.example.net", "edge.example.net"]);
-    expect(response.liveHlsProxyCnbcAllowedHosts).toEqual(["cdn-ca2-na.lncnetworks.host"]);
+    expect(response.liveHlsProxyCnnAllowedHosts).toEqual([
+      "media.example.net",
+      "edge.example.net",
+    ]);
+    expect(response.liveHlsProxyCnbcAllowedHosts).toEqual([
+      "cdn-ca2-na.lncnetworks.host",
+    ]);
     expect(persistedValue?.translationMaxConcurrency).toBe(3);
-    expect(persistedValue?.translationApiBaseUrl).toBe("https://api.deeplx.org");
+    expect(persistedValue?.translationApiBaseUrl).toBe(
+      "https://api.deeplx.org",
+    );
     expect(persistedValue?.translationApiKey).toBe("test-key");
     expect(persistedValue?.translationFallbackApiEnabled).toBe(true);
-    expect(persistedValue?.translationFallbackApiBaseUrl).toBe("https://translates.shisihua.dpdns.org/fallback/v1");
+    expect(persistedValue?.translationFallbackApiBaseUrl).toBe(
+      "https://translates.shisihua.dpdns.org/fallback/v1",
+    );
     expect(persistedValue?.finnhubApiKey).toBe("finnhub-key");
     expect(persistedValue?.fredApiKey).toBe("fred-key");
     expect(persistedValue?.telegramEnabled).toBe(true);
     expect(persistedValue?.telegramApiId).toBe("2222");
     expect(persistedValue?.telegramChannelSet).toBe("finance");
     expect(persistedValue?.telegramPollIntervalMs).toBe(75_000);
-    expect(persistedValue?.liveHlsProxyCnnUpstreamUrl).toBe("https://media.example.net/live/cnn/master.m3u8");
-    expect(persistedValue?.liveHlsProxyCnnAllowedHosts).toEqual(["media.example.net", "edge.example.net"]);
+    expect(persistedValue?.liveHlsProxyCnnUpstreamUrl).toBe(
+      "https://media.example.net/live/cnn/master.m3u8",
+    );
+    expect(persistedValue?.liveHlsProxyCnnAllowedHosts).toEqual([
+      "media.example.net",
+      "edge.example.net",
+    ]);
     expect(persistedValue?.liveHlsProxyCnbcUpstreamUrl).toBe(
       "https://cdn-ca2-na.lncnetworks.host/hls/cnbc_live/index.m3u8",
     );
-    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("test-key");
-    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("finnhub-key");
-    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("fred-key");
-    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("telegram-hash");
-    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith("telegram-session");
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith(
+      "test-key",
+    );
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith(
+      "finnhub-key",
+    );
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith(
+      "fred-key",
+    );
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith(
+      "telegram-hash",
+    );
+    expect(securitySettingsMock.encodeSecretForStorage).toHaveBeenCalledWith(
+      "telegram-session",
+    );
   });
 
   it("ignores env api keys when no stored key exists", async () => {
@@ -351,8 +380,10 @@ describe("SituationMonitorSettingsService", () => {
       service.updateSettings("org-1", "actor-1", {
         translationMaxConcurrency: 3,
         translationFallbackApiBaseUrl: "not-a-url",
-      })
-    ).rejects.toThrow("translationFallbackApiBaseUrl must be a valid http(s) URL");
+      }),
+    ).rejects.toThrow(
+      "translationFallbackApiBaseUrl must be a valid http(s) URL",
+    );
   });
 
   it("returns live hls runtime config without env fallback", async () => {
@@ -362,13 +393,16 @@ describe("SituationMonitorSettingsService", () => {
 
     await service.updateSettings("org-1", "actor-1", {
       translationMaxConcurrency: 2,
-      liveHlsProxyCnnUpstreamUrl: "https://media.example.net/live/cnn/master.m3u8",
+      liveHlsProxyCnnUpstreamUrl:
+        "https://media.example.net/live/cnn/master.m3u8",
       liveHlsProxyCnnAllowedHosts: "edge.example.net",
     });
 
     const after = await service.getLiveHlsProxyRuntimeConfig("cnn");
     expect(after.configured).toBe(true);
-    expect(after.upstreamUrl).toBe("https://media.example.net/live/cnn/master.m3u8");
+    expect(after.upstreamUrl).toBe(
+      "https://media.example.net/live/cnn/master.m3u8",
+    );
     expect(after.allowedHosts).toContain("media.example.net");
     expect(after.allowedHosts).toContain("edge.example.net");
   });
@@ -377,7 +411,8 @@ describe("SituationMonitorSettingsService", () => {
     await expect(
       service.updateSettings("org-1", "actor-1", {
         translationMaxConcurrency: 2,
-        liveHlsProxyCnnUpstreamUrl: "http://media.example.net/live/cnn/master.m3u8",
+        liveHlsProxyCnnUpstreamUrl:
+          "http://media.example.net/live/cnn/master.m3u8",
       }),
     ).rejects.toThrow("liveHlsProxyCnnUpstreamUrl must be a valid https URL");
   });
@@ -392,7 +427,10 @@ describe("SituationMonitorSettingsService", () => {
       telegramChannelSet: "finance",
     });
 
-    const response = await service.clearTelegramConfiguration("org-1", "actor-1");
+    const response = await service.clearTelegramConfiguration(
+      "org-1",
+      "actor-1",
+    );
 
     expect(response.telegramEnabled).toBe(false);
     expect(response.hasTelegramApiId).toBe(false);

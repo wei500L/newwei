@@ -1,32 +1,32 @@
-import { createLogger } from '@modular/utils';
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { createLogger } from "@modular/utils";
+import { Injectable, OnModuleInit } from "@nestjs/common";
 import {
   AlertMetricProvider,
   AlertOperator,
   AlertSeverity,
   AlertStatus,
   Prisma,
-} from '@prisma/client';
-import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { promisify } from 'node:util';
+} from "@prisma/client";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
-import { AlertsService } from '../../alerts/alerts.service';
-import { CacheService } from '../../cache/cache.service';
-import { EnvService } from '../../config/config.service';
-import { PrismaService } from '../../config/prisma.service';
+import { AlertsService } from "../../alerts/alerts.service";
+import { CacheService } from "../../cache/cache.service";
+import { EnvService } from "../../config/config.service";
+import { PrismaService } from "../../config/prisma.service";
 import {
   SituationMonitorSettingsService,
   type SituationMonitorTelegramRuntimeConfig,
-} from '../../system-settings/situation-monitor-settings.service';
+} from "../../system-settings/situation-monitor-settings.service";
 import {
   SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES,
   SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG,
   SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
-} from '../signal-metrics.constants';
+} from "../signal-metrics.constants";
 
 import {
   OREF_POLL_JOB_NAME,
@@ -34,8 +34,8 @@ import {
   SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY,
   SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
   TELEGRAM_POLL_JOB_NAME,
-} from './situation-monitor-signals.constants';
-import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
+} from "./situation-monitor-signals.constants";
+import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 import type {
   SituationOrefAlertsResponse,
   SituationOrefHistoryResponse,
@@ -44,10 +44,10 @@ import type {
   OrefHistoryEntry,
   TelegramChannelConfig,
   TelegramSignalItem,
-} from './situation-monitor-signals.types';
-import telegramChannelsConfig from './telegram-channels.json';
+} from "./situation-monitor-signals.types";
+import telegramChannelsConfig from "./telegram-channels.json";
 
-const logger = createLogger({ name: 'situation-monitor-signals' });
+const logger = createLogger({ name: "situation-monitor-signals" });
 const execFileAsync = promisify(execFile);
 
 const TELEGRAM_CACHE_TTL_SECONDS = 24 * 60 * 60;
@@ -83,7 +83,7 @@ interface OrefState {
   historyCount24h: number;
   totalHistoryCount: number;
   history: OrefHistoryEntry[];
-  bootstrapSource: 'cache' | 'upstream' | null;
+  bootstrapSource: "cache" | "upstream" | null;
   persistVersion: number;
   lastPersistedVersion: number;
   persistInFlight: boolean;
@@ -111,7 +111,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private orefState: OrefState = {
     lastAlerts: [],
-    lastAlertsJson: '[]',
+    lastAlertsJson: "[]",
     lastPollAt: 0,
     lastError: null,
     historyCount24h: 0,
@@ -166,30 +166,39 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     const topic = options?.topic?.trim().toLowerCase();
     const channel = options?.channel?.trim().toLowerCase();
     const limitRaw = Number(options?.limit);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 50;
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(1, Math.min(200, Math.floor(limitRaw)))
+      : 50;
 
-    const configured = Boolean(runtime.apiId && runtime.apiHash && runtime.session);
+    const configured = Boolean(
+      runtime.apiId && runtime.apiHash && runtime.session,
+    );
     const enabled = runtime.enabled;
 
     const filtered = this.telegramState.items
       .filter((item) => {
-        if (topic && (item.topic || '').toLowerCase() !== topic) return false;
-        if (channel && (item.channel || '').toLowerCase() !== channel) return false;
+        if (topic && (item.topic || "").toLowerCase() !== topic) return false;
+        if (channel && (item.channel || "").toLowerCase() !== channel)
+          return false;
         return true;
       })
       .slice(0, limit);
 
     return {
-      source: 'telegram',
-      scope: 'global',
+      source: "telegram",
+      scope: "global",
       earlySignal: true,
       configured,
       enabled,
       channelSet: this.telegramState.channelSet ?? runtime.channelSet,
       count: filtered.length,
-      updatedAt: this.telegramState.lastPollAt ? new Date(this.telegramState.lastPollAt).toISOString() : null,
+      updatedAt: this.telegramState.lastPollAt
+        ? new Date(this.telegramState.lastPollAt).toISOString()
+        : null,
       items: filtered,
-      ...(this.telegramState.lastError ? { error: this.telegramState.lastError } : {}),
+      ...(this.telegramState.lastError
+        ? { error: this.telegramState.lastError }
+        : {}),
     };
   }
 
@@ -198,7 +207,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const configured = this.isOrefConfigured();
     return {
-      scope: 'global',
+      scope: "global",
       configured,
       alerts: this.orefState.lastAlerts,
       historyCount24h: this.orefState.historyCount24h,
@@ -215,7 +224,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     const configured = this.isOrefConfigured();
     return {
-      scope: 'global',
+      scope: "global",
       configured,
       history: this.orefState.history,
       historyCount24h: this.orefState.historyCount24h,
@@ -235,7 +244,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       if (stuckForMs <= cycleTimeoutMs + 30_000) {
         return;
       }
-      logger.warn({ stuckForMs }, 'Force-clearing stuck Telegram poll in-flight flag');
+      logger.warn(
+        { stuckForMs },
+        "Force-clearing stuck Telegram poll in-flight flag",
+      );
       this.telegramPollInFlight = false;
     }
 
@@ -244,7 +256,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     try {
       await this.pollTelegramOnce();
     } catch (error) {
-      logger.warn({ error }, 'Telegram poll failed');
+      logger.warn({ error }, "Telegram poll failed");
     } finally {
       this.telegramPollInFlight = false;
     }
@@ -255,12 +267,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     await this.syncTelegramStateWithRuntime(runtime.channelSet);
 
     if (!runtime.enabled) {
-      this.telegramState.lastError = 'Telegram polling is disabled';
+      this.telegramState.lastError = "Telegram polling is disabled";
       return;
     }
 
     if (!runtime.apiId || !runtime.apiHash || !runtime.session) {
-      this.telegramState.lastError = 'Telegram credentials are not configured';
+      this.telegramState.lastError = "Telegram credentials are not configured";
       return;
     }
 
@@ -283,11 +295,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     const channels =
-      this.telegramState.channels.length > 0 && this.telegramState.channelSet === runtime.channelSet
+      this.telegramState.channels.length > 0 &&
+      this.telegramState.channelSet === runtime.channelSet
         ? this.telegramState.channels
         : this.loadTelegramChannels(runtime.channelSet);
     if (channels.length === 0) {
-      this.telegramState.lastError = 'No Telegram channels configured';
+      this.telegramState.lastError = "No Telegram channels configured";
       return;
     }
 
@@ -318,21 +331,28 @@ export class SituationMonitorSignalsService implements OnModuleInit {
             channelsTotal: channels.length,
             cycleTimeoutMs,
           },
-          'Telegram poll cycle timeout reached',
+          "Telegram poll cycle timeout reached",
         );
         break;
       }
 
-      const handle = channel.handle.replace(/^@/, '').trim();
+      const handle = channel.handle.replace(/^@/, "").trim();
       if (!handle) {
         continue;
       }
 
       const minId = this.telegramState.cursorByHandle[handle] ?? 0;
-      const limit = Math.max(1, Math.min(50, Math.floor(channel.maxMessages ?? 25)));
+      const limit = Math.max(
+        1,
+        Math.min(50, Math.floor(channel.maxMessages ?? 25)),
+      );
 
       try {
-        const entity = await this.withTimeout(client.getEntity(handle), perChannelTimeoutMs, `getEntity(${handle})`);
+        const entity = await this.withTimeout(
+          client.getEntity(handle),
+          perChannelTimeoutMs,
+          `getEntity(${handle})`,
+        );
         const messages = await this.withTimeout(
           client.getMessages(entity, { limit, minId }),
           perChannelTimeoutMs,
@@ -345,7 +365,8 @@ export class SituationMonitorSignalsService implements OnModuleInit {
             continue;
           }
 
-          const text = typeof message.message === 'string' ? message.message.trim() : '';
+          const text =
+            typeof message.message === "string" ? message.message.trim() : "";
           if (!text) {
             mediaSkipped += 1;
             continue;
@@ -375,17 +396,20 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         if (/AUTH_KEY_DUPLICATED/i.test(message)) {
           this.telegramState.permanentlyDisabled = true;
           this.telegramState.lastError =
-            'Telegram session invalidated (AUTH_KEY_DUPLICATED). Generate a new session.';
+            "Telegram session invalidated (AUTH_KEY_DUPLICATED). Generate a new session.";
           await this.disconnectTelegramClient();
           break;
         }
 
         if (/FLOOD_WAIT/i.test(message)) {
-          logger.warn({ message }, 'Telegram FLOOD_WAIT detected, stopping cycle early');
+          logger.warn(
+            { message },
+            "Telegram FLOOD_WAIT detected, stopping cycle early",
+          );
           break;
         }
 
-        logger.warn({ error, handle }, 'Telegram channel poll failed');
+        logger.warn({ error, handle }, "Telegram channel poll failed");
       }
     }
 
@@ -410,7 +434,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     await this.persistTelegramState();
 
     if (newItems.length > 0) {
-      await this.dispatcher.publish('situation:telegram.update', {
+      await this.dispatcher.publish("situation:telegram.update", {
         count: this.telegramState.items.length,
         updatedAt: new Date(this.telegramState.lastPollAt).toISOString(),
         items: newItems.slice(0, 30),
@@ -426,18 +450,18 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         channelsFailed,
         mediaSkipped,
       },
-      'Telegram poll finished',
+      "Telegram poll finished",
     );
   }
 
   private async pollOrefOnce() {
     if (!this.isOrefEnabled()) {
-      this.orefState.lastError = 'OREF polling is disabled';
+      this.orefState.lastError = "OREF polling is disabled";
       return;
     }
 
     if (!this.isOrefConfigured()) {
-      this.orefState.lastError = 'OREF proxy credentials are not configured';
+      this.orefState.lastError = "OREF proxy credentials are not configured";
       return;
     }
 
@@ -453,12 +477,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       const cleaned = this.stripBom(raw).trim();
 
       let alerts: OrefAlert[] = [];
-      if (cleaned && cleaned !== '[]' && cleaned !== 'null') {
+      if (cleaned && cleaned !== "[]" && cleaned !== "null") {
         try {
           const parsed = JSON.parse(cleaned) as unknown;
           if (Array.isArray(parsed)) {
             alerts = parsed as OrefAlert[];
-          } else if (parsed && typeof parsed === 'object') {
+          } else if (parsed && typeof parsed === "object") {
             alerts = [parsed as OrefAlert];
           }
         } catch {
@@ -492,7 +516,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       await this.persistOrefMetrics();
 
       if (changed) {
-        await this.dispatcher.publish('situation:oref.update', {
+        await this.dispatcher.publish("situation:oref.update", {
           alerts,
           historyCount24h: this.orefState.historyCount24h,
           totalHistoryCount: this.orefState.totalHistoryCount,
@@ -502,8 +526,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
       await this.triggerOrefAlertChecks();
     } catch (error) {
-      this.orefState.lastError = this.redactOrefError(this.toErrorMessage(error));
-      logger.warn({ error }, 'OREF poll failed');
+      this.orefState.lastError = this.redactOrefError(
+        this.toErrorMessage(error),
+      );
+      logger.warn({ error }, "OREF poll failed");
     }
   }
 
@@ -514,7 +540,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     const apiHash = runtime.apiHash;
     const session = runtime.session;
     if (!Number.isFinite(apiId) || !apiHash || !session) {
-      this.telegramState.lastError = 'Telegram credentials are incomplete';
+      this.telegramState.lastError = "Telegram credentials are incomplete";
       return false;
     }
 
@@ -539,7 +565,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     try {
-      const telegramModule = (await import('telegram')) as unknown as {
+      const telegramModule = (await import("telegram")) as unknown as {
         TelegramClient: new (
           session: unknown,
           apiId: number,
@@ -555,7 +581,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           ) => Promise<Record<string, unknown>[]>;
         };
       };
-      const sessionsModule = (await import('telegram/sessions')) as unknown as {
+      const sessionsModule = (await import("telegram/sessions")) as unknown as {
         StringSession: new (session: string) => unknown;
       };
 
@@ -575,17 +601,19 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       const message = this.toErrorMessage(error);
       if (/ERR_MODULE_NOT_FOUND|Cannot find package/i.test(message)) {
         this.telegramState.permanentlyDisabled = true;
-        this.telegramState.lastError = 'telegram package is not installed';
+        this.telegramState.lastError = "telegram package is not installed";
         return false;
       }
       this.telegramState.lastError = `telegram init failed: ${message}`;
-      logger.warn({ error }, 'Telegram init failed');
+      logger.warn({ error }, "Telegram init failed");
       return false;
     }
   }
 
   private async disconnectTelegramClient() {
-    const current = this.telegramState.client as { disconnect?: () => Promise<void> } | null;
+    const current = this.telegramState.client as {
+      disconnect?: () => Promise<void>;
+    } | null;
     if (!current) {
       return;
     }
@@ -600,32 +628,40 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private loadTelegramChannels(setName: string): TelegramChannelConfig[] {
     const channelsRecord =
-      telegramChannelsConfig && typeof telegramChannelsConfig === 'object'
-        ? (telegramChannelsConfig as { channels?: Record<string, unknown> }).channels
+      telegramChannelsConfig && typeof telegramChannelsConfig === "object"
+        ? (telegramChannelsConfig as { channels?: Record<string, unknown> })
+            .channels
         : undefined;
     const bucket = channelsRecord ? channelsRecord[setName] : undefined;
     const channels = Array.isArray(bucket) ? bucket : [];
 
     this.telegramState.channels = channels
       .map((entry) => {
-        if (!entry || typeof entry !== 'object') {
+        if (!entry || typeof entry !== "object") {
           return null;
         }
 
         const record = entry as Record<string, unknown>;
-        const handle = typeof record.handle === 'string' ? record.handle.replace(/^@/, '').trim() : '';
+        const handle =
+          typeof record.handle === "string"
+            ? record.handle.replace(/^@/, "").trim()
+            : "";
         if (!handle) {
           return null;
         }
 
         const channel: TelegramChannelConfig = {
           handle,
-          label: typeof record.label === 'string' ? record.label : undefined,
-          topic: typeof record.topic === 'string' ? record.topic : undefined,
-          tier: Number.isFinite(Number(record.tier)) ? Number(record.tier) : undefined,
+          label: typeof record.label === "string" ? record.label : undefined,
+          topic: typeof record.topic === "string" ? record.topic : undefined,
+          tier: Number.isFinite(Number(record.tier))
+            ? Number(record.tier)
+            : undefined,
           enabled: record.enabled !== false,
-          region: typeof record.region === 'string' ? record.region : undefined,
-          maxMessages: Number.isFinite(Number(record.maxMessages)) ? Number(record.maxMessages) : undefined,
+          region: typeof record.region === "string" ? record.region : undefined,
+          maxMessages: Number.isFinite(Number(record.maxMessages))
+            ? Number(record.maxMessages)
+            : undefined,
         };
 
         return channel.enabled !== false ? channel : null;
@@ -642,7 +678,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     handle: string,
     maxTextChars: number,
   ): TelegramSignalItem {
-    const textRaw = typeof message.message === 'string' ? message.message : '';
+    const textRaw = typeof message.message === "string" ? message.message : "";
     const text = textRaw.slice(0, maxTextChars);
     const messageId = Number(message.id);
     const messageDate = Number(message.date);
@@ -653,31 +689,36 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
     return {
       id: `${handle}:${messageId}`,
-      source: 'telegram',
+      source: "telegram",
       channel: handle,
       channelTitle: channel.label || handle,
       url: `https://t.me/${handle}/${messageId}`,
       ts: timestamp,
       text,
-      topic: channel.topic || 'other',
+      topic: channel.topic || "other",
       tags: channel.region ? [channel.region] : [],
       earlySignal: true,
     };
   }
 
   private async bootstrapOrefHistoryWithRetry(): Promise<boolean> {
-    const cached = await this.cache.get<SituationOrefHistoryResponse>(SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY);
+    const cached = await this.cache.get<SituationOrefHistoryResponse>(
+      SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY,
+    );
     if (cached && Array.isArray(cached.history)) {
       this.orefState.history = cached.history;
       this.orefState.historyCount24h = cached.historyCount24h ?? 0;
       this.orefState.totalHistoryCount = cached.totalHistoryCount ?? 0;
-      if (typeof cached.timestamp === 'string' && cached.timestamp.trim().length > 0) {
+      if (
+        typeof cached.timestamp === "string" &&
+        cached.timestamp.trim().length > 0
+      ) {
         const ts = Date.parse(cached.timestamp);
         if (Number.isFinite(ts)) {
           this.orefState.lastPollAt = ts;
         }
       }
-      this.orefState.bootstrapSource = 'cache';
+      this.orefState.bootstrapSource = "cache";
       return true;
     }
 
@@ -685,15 +726,19 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
         await this.bootstrapOrefHistoryFromUpstream();
-        this.orefState.bootstrapSource = 'upstream';
+        this.orefState.bootstrapSource = "upstream";
         await this.persistOrefHistory();
         return true;
       } catch (error) {
         if (attempt >= maxAttempts) {
-          logger.warn({ error }, 'OREF history bootstrap exhausted all retries');
+          logger.warn(
+            { error },
+            "OREF history bootstrap exhausted all retries",
+          );
           return false;
         }
-        const delayMs = 3_000 * 2 ** (attempt - 1) + Math.floor(Math.random() * 800);
+        const delayMs =
+          3_000 * 2 ** (attempt - 1) + Math.floor(Math.random() * 800);
         await this.delay(delayMs);
       }
     }
@@ -703,15 +748,17 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private async bootstrapOrefHistoryFromUpstream() {
     const tmpPath = join(tmpdir(), `oref-history-${Date.now()}.json`);
-    let raw = '';
+    let raw = "";
     try {
-      raw = await this.orefCurlFetch(this.getOrefHistoryUrl(), { toFile: tmpPath });
+      raw = await this.orefCurlFetch(this.getOrefHistoryUrl(), {
+        toFile: tmpPath,
+      });
     } finally {
       await rm(tmpPath, { force: true }).catch(() => undefined);
     }
 
     const cleaned = this.stripBom(raw).trim();
-    if (!cleaned || cleaned === '[]' || cleaned === 'null') {
+    if (!cleaned || cleaned === "[]" || cleaned === "null") {
       return;
     }
 
@@ -722,11 +769,12 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     let typeIndex = 0;
 
     for (const record of records) {
-      if (!record || typeof record !== 'object') {
+      if (!record || typeof record !== "object") {
         continue;
       }
 
-      const alertDate = typeof record.alertDate === 'string' ? record.alertDate : '';
+      const alertDate =
+        typeof record.alertDate === "string" ? record.alertDate : "";
       if (!alertDate) {
         continue;
       }
@@ -741,11 +789,11 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       }
 
       wave.push({
-        id: `${String(record.category ?? 'cat')}-${typeIndex}-${alertDate.replace(/[^0-9]/g, '')}`,
-        cat: String(record.category ?? ''),
-        title: String(record.title ?? record.category ?? ''),
-        data: [String(record.data ?? '')].filter((entry) => entry.length > 0),
-        desc: '',
+        id: `${String(record.category ?? "cat")}-${typeIndex}-${alertDate.replace(/[^0-9]/g, "")}`,
+        cat: String(record.category ?? ""),
+        title: String(record.title ?? record.category ?? ""),
+        data: [String(record.data ?? "")].filter((entry) => entry.length > 0),
+        desc: "",
         alertDate,
       });
       typeIndex += 1;
@@ -793,7 +841,10 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private countAlertAreas(alerts: OrefAlert[]): number {
     return alerts.reduce((sum, alert) => {
-      const size = Array.isArray(alert.data) && alert.data.length > 0 ? alert.data.length : 1;
+      const size =
+        Array.isArray(alert.data) && alert.data.length > 0
+          ? alert.data.length
+          : 1;
       return sum + size;
     }, 0);
   }
@@ -807,13 +858,19 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       lastError: this.telegramState.lastError,
     };
     await this.cache
-      .set(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY, payload, TELEGRAM_CACHE_TTL_SECONDS)
-      .catch((error) => logger.debug({ error }, 'Failed to persist Telegram state'));
+      .set(
+        SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
+        payload,
+        TELEGRAM_CACHE_TTL_SECONDS,
+      )
+      .catch((error) =>
+        logger.debug({ error }, "Failed to persist Telegram state"),
+      );
   }
 
   private async persistOrefAlerts() {
     const payload: SituationOrefAlertsResponse = {
-      scope: 'global',
+      scope: "global",
       configured: this.isOrefConfigured(),
       alerts: this.orefState.lastAlerts,
       historyCount24h: this.orefState.historyCount24h,
@@ -825,8 +882,14 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     };
 
     await this.cache
-      .set(SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY, payload, OREF_ALERTS_CACHE_TTL_SECONDS)
-      .catch((error) => logger.debug({ error }, 'Failed to persist OREF alerts'));
+      .set(
+        SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY,
+        payload,
+        OREF_ALERTS_CACHE_TTL_SECONDS,
+      )
+      .catch((error) =>
+        logger.debug({ error }, "Failed to persist OREF alerts"),
+      );
   }
 
   private async persistOrefHistory() {
@@ -848,7 +911,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           : this.orefState.history;
 
       const payload: SituationOrefHistoryResponse = {
-        scope: 'global',
+        scope: "global",
         configured: this.isOrefConfigured(),
         history,
         historyCount24h: this.orefState.historyCount24h,
@@ -865,7 +928,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       );
       this.orefState.lastPersistedVersion = versionAtStart;
     } catch (error) {
-      logger.warn({ error }, 'Failed to persist OREF history');
+      logger.warn({ error }, "Failed to persist OREF history");
     } finally {
       this.orefState.persistInFlight = false;
     }
@@ -881,12 +944,21 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     };
 
     await this.cache
-      .set(SITUATION_MONITOR_OREF_METRICS_CACHE_KEY, payload, OREF_HISTORY_CACHE_TTL_SECONDS)
-      .catch((error) => logger.debug({ error }, 'Failed to persist OREF metric snapshot'));
+      .set(
+        SITUATION_MONITOR_OREF_METRICS_CACHE_KEY,
+        payload,
+        OREF_HISTORY_CACHE_TTL_SECONDS,
+      )
+      .catch((error) =>
+        logger.debug({ error }, "Failed to persist OREF metric snapshot"),
+      );
   }
 
   private async restoreCachedState() {
-    await Promise.allSettled([this.restoreCachedTelegramState(), this.restoreCachedOrefState()]);
+    await Promise.allSettled([
+      this.restoreCachedTelegramState(),
+      this.restoreCachedOrefState(),
+    ]);
   }
 
   private async restoreCachedTelegramState() {
@@ -895,27 +967,35 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
 
     try {
-      const cached = await this.cache.get<CachedTelegramState>(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY);
+      const cached = await this.cache.get<CachedTelegramState>(
+        SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY,
+      );
 
       if (!cached || !Array.isArray(cached.items)) {
         return;
       }
 
       this.telegramState.channelSet =
-        typeof cached.channelSet === 'string' && cached.channelSet.trim().length > 0
+        typeof cached.channelSet === "string" &&
+        cached.channelSet.trim().length > 0
           ? cached.channelSet.trim()
           : null;
       this.telegramState.cursorByHandle =
-        cached.cursorByHandle && typeof cached.cursorByHandle === 'object' && !Array.isArray(cached.cursorByHandle)
+        cached.cursorByHandle &&
+        typeof cached.cursorByHandle === "object" &&
+        !Array.isArray(cached.cursorByHandle)
           ? Object.fromEntries(
-              Object.entries(cached.cursorByHandle)
-                .flatMap(([handle, cursor]) => {
+              Object.entries(cached.cursorByHandle).flatMap(
+                ([handle, cursor]) => {
                   const normalizedHandle = handle.trim();
                   const normalizedCursor = Number(cursor);
-                  return normalizedHandle.length > 0 && Number.isFinite(normalizedCursor) && normalizedCursor > 0
+                  return normalizedHandle.length > 0 &&
+                    Number.isFinite(normalizedCursor) &&
+                    normalizedCursor > 0
                     ? [[normalizedHandle, normalizedCursor] as const]
                     : [];
-                }),
+                },
+              ),
             )
           : {};
       this.telegramState.items = cached.items;
@@ -923,13 +1003,15 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         ? Number(cached.lastPollAt)
         : 0;
       this.telegramState.lastError =
-        typeof cached.lastError === 'string' ? cached.lastError : null;
+        typeof cached.lastError === "string" ? cached.lastError : null;
     } catch {
       // best-effort
     }
   }
 
-  private async syncTelegramStateWithRuntime(runtimeChannelSet: string): Promise<void> {
+  private async syncTelegramStateWithRuntime(
+    runtimeChannelSet: string,
+  ): Promise<void> {
     if (this.telegramState.channelSet === runtimeChannelSet) {
       return;
     }
@@ -950,7 +1032,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         runtimeChannelSet,
         itemCount: this.telegramState.items.length,
       },
-      'Telegram channel set changed; clearing cached feed state',
+      "Telegram channel set changed; clearing cached feed state",
     );
 
     this.telegramState.channels = [];
@@ -975,31 +1057,46 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     this.telegramState.lastError = null;
     this.telegramState.permanentlyDisabled = false;
 
-    await this.cache.del(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY).catch(() => undefined);
+    await this.cache
+      .del(SITUATION_MONITOR_TELEGRAM_STATE_CACHE_KEY)
+      .catch(() => undefined);
   }
 
   private async restoreCachedOrefState() {
-    if (this.orefState.history.length > 0 || this.orefState.lastAlerts.length > 0) {
+    if (
+      this.orefState.history.length > 0 ||
+      this.orefState.lastAlerts.length > 0
+    ) {
       return;
     }
 
     try {
       const [alerts, history] = await Promise.all([
-        this.cache.get<SituationOrefAlertsResponse>(SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY),
-        this.cache.get<SituationOrefHistoryResponse>(SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY),
+        this.cache.get<SituationOrefAlertsResponse>(
+          SITUATION_MONITOR_OREF_ALERTS_CACHE_KEY,
+        ),
+        this.cache.get<SituationOrefHistoryResponse>(
+          SITUATION_MONITOR_OREF_HISTORY_CACHE_KEY,
+        ),
       ]);
 
       if (alerts) {
-        this.orefState.lastAlerts = Array.isArray(alerts.alerts) ? alerts.alerts : [];
-        this.orefState.lastAlertsJson = JSON.stringify(this.orefState.lastAlerts);
+        this.orefState.lastAlerts = Array.isArray(alerts.alerts)
+          ? alerts.alerts
+          : [];
+        this.orefState.lastAlertsJson = JSON.stringify(
+          this.orefState.lastAlerts,
+        );
         this.orefState.lastPollAt = Date.parse(alerts.timestamp) || 0;
-        this.orefState.lastError = typeof alerts.error === 'string' ? alerts.error : null;
+        this.orefState.lastError =
+          typeof alerts.error === "string" ? alerts.error : null;
       }
 
       if (history && Array.isArray(history.history)) {
         this.orefState.history = history.history;
         this.orefState.historyCount24h = Number(history.historyCount24h) || 0;
-        this.orefState.totalHistoryCount = Number(history.totalHistoryCount) || 0;
+        this.orefState.totalHistoryCount =
+          Number(history.totalHistoryCount) || 0;
       }
     } catch {
       // best-effort
@@ -1020,7 +1117,9 @@ export class SituationMonitorSignalsService implements OnModuleInit {
         status: AlertStatus.active,
         metricProvider: AlertMetricProvider.system_metric,
         metricSlug: {
-          in: SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.map((rule) => rule.slug),
+          in: SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.map(
+            (rule) => rule.slug,
+          ),
         },
       },
       select: { id: true, orgId: true },
@@ -1080,7 +1179,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
             cooldownSeconds: 300,
             checkIntervalSec: 300,
             metadata: {
-              source: 'situation-monitor-signals',
+              source: "situation-monitor-signals",
               systemDefault: true,
             },
             dataItemId: null,
@@ -1090,57 +1189,62 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     }
   }
 
-  private async orefCurlFetch(url: string, options?: { toFile?: string }): Promise<string> {
+  private async orefCurlFetch(
+    url: string,
+    options?: { toFile?: string },
+  ): Promise<string> {
     const proxyAuth = this.getOrefProxyAuth();
     if (!proxyAuth) {
-      throw new Error('OREF proxy credentials are missing');
+      throw new Error("OREF proxy credentials are missing");
     }
 
     const timeoutSec = this.getOrefCurlTimeoutSeconds();
     const args = [
-      '-sS',
-      '-x',
+      "-sS",
+      "-x",
       `http://${proxyAuth}`,
-      '--max-time',
+      "--max-time",
       String(timeoutSec),
-      '-H',
-      'Accept: application/json',
-      '-H',
-      'Referer: https://www.oref.org.il/',
-      '-H',
-      'X-Requested-With: XMLHttpRequest',
+      "-H",
+      "Accept: application/json",
+      "-H",
+      "Referer: https://www.oref.org.il/",
+      "-H",
+      "X-Requested-With: XMLHttpRequest",
     ];
 
     if (options?.toFile) {
-      args.push('-o', options.toFile, url);
-      await execFileAsync('curl', args, {
+      args.push("-o", options.toFile, url);
+      await execFileAsync("curl", args, {
         timeout: (timeoutSec + 5) * 1000,
         maxBuffer: 2 * 1024 * 1024,
       });
-      return await readFile(options.toFile, 'utf8');
+      return await readFile(options.toFile, "utf8");
     }
 
     args.push(url);
-    const result = await execFileAsync('curl', args, {
+    const result = await execFileAsync("curl", args, {
       timeout: (timeoutSec + 5) * 1000,
       maxBuffer: 2 * 1024 * 1024,
-      encoding: 'utf8',
+      encoding: "utf8",
     });
-    return typeof result.stdout === 'string' ? result.stdout : String(result.stdout ?? '');
+    return typeof result.stdout === "string"
+      ? result.stdout
+      : String(result.stdout ?? "");
   }
 
   private orefDateToUtc(dateStr: string): string {
-    if (!dateStr || !dateStr.includes(' ')) {
+    if (!dateStr || !dateStr.includes(" ")) {
       return new Date().toISOString();
     }
 
-    const [datePart, timePart] = dateStr.split(' ');
+    const [datePart, timePart] = dateStr.split(" ");
     if (!datePart || !timePart) {
       return new Date().toISOString();
     }
 
-    const dateSegments = datePart.split('-');
-    const timeSegments = timePart.split(':');
+    const dateSegments = datePart.split("-");
+    const timeSegments = timePart.split(":");
     if (dateSegments.length !== 3 || timeSegments.length !== 3) {
       return new Date().toISOString();
     }
@@ -1162,20 +1266,22 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       return new Date().toISOString();
     }
 
-    const format = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Jerusalem',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+    const format = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       hour12: false,
     });
 
     const partsAt = (ms: number): string => {
       const parts = Object.fromEntries(
-        format.formatToParts(new Date(ms)).map((entry) => [entry.type, entry.value]),
+        format
+          .formatToParts(new Date(ms))
+          .map((entry) => [entry.type, entry.value]),
       );
       return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
     };
@@ -1196,14 +1302,21 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }
 
   private redactOrefError(message: string): string {
-    return message.replace(/\/\/[^@]+@/g, '//<redacted>@');
+    return message.replace(/\/\/[^@]+@/g, "//<redacted>@");
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     try {
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`TIMEOUT ${timeoutMs}ms: ${label}`)), timeoutMs);
+        timeout = setTimeout(
+          () => reject(new Error(`TIMEOUT ${timeoutMs}ms: ${label}`)),
+          timeoutMs,
+        );
       });
       return await Promise.race([promise, timeoutPromise]);
     } finally {
@@ -1228,33 +1341,67 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     try {
       return await this.settings.getTelegramRuntimeConfig();
     } catch (error) {
-      logger.warn({ error }, 'Failed to read telegram runtime config from system settings; using env fallback');
+      logger.warn(
+        { error },
+        "Failed to read telegram runtime config from system settings; using env fallback",
+      );
       return {
         enabled:
-          this.readBooleanEnv('SITUATION_MONITOR_TELEGRAM_ENABLED', 'TELEGRAM_ENABLED') ?? false,
-        apiId: this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_ID', 'TELEGRAM_API_ID') || undefined,
+          this.readBooleanEnv(
+            "SITUATION_MONITOR_TELEGRAM_ENABLED",
+            "TELEGRAM_ENABLED",
+          ) ?? false,
+        apiId:
+          this.readStringEnv(
+            "SITUATION_MONITOR_TELEGRAM_API_ID",
+            "TELEGRAM_API_ID",
+          ) || undefined,
         apiHash:
-          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_API_HASH', 'TELEGRAM_API_HASH') || undefined,
-        session:
-          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_SESSION', 'TELEGRAM_SESSION') || undefined,
+          this.readStringEnv(
+            "SITUATION_MONITOR_TELEGRAM_API_HASH",
+            "TELEGRAM_API_HASH",
+          ) || undefined,
+        session: undefined,
         channelSet:
-          this.readStringEnv('SITUATION_MONITOR_TELEGRAM_CHANNEL_SET', 'TELEGRAM_CHANNEL_SET') ||
-          'full',
-        maxFeedItems: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS', 200, 50),
-        maxTextChars: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS', 800, 200),
+          this.readStringEnv(
+            "SITUATION_MONITOR_TELEGRAM_CHANNEL_SET",
+            "TELEGRAM_CHANNEL_SET",
+          ) || "full",
+        maxFeedItems: this.readNumberEnv(
+          "SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS",
+          200,
+          50,
+        ),
+        maxTextChars: this.readNumberEnv(
+          "SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS",
+          800,
+          200,
+        ),
         channelTimeoutMs: this.readNumberEnv(
-          'SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS',
+          "SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS",
           15_000,
           3_000,
         ),
         pollCycleTimeoutMs: this.readNumberEnv(
-          'SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS',
+          "SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS",
           180_000,
           30_000,
         ),
-        startupDelayMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS', 60_000, 0),
-        rateLimitMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS', 800, 100),
-        pollIntervalMs: this.readNumberEnv('SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS', 60_000, 15_000),
+        startupDelayMs: this.readNumberEnv(
+          "SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS",
+          60_000,
+          0,
+        ),
+        rateLimitMs: this.readNumberEnv(
+          "SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS",
+          800,
+          100,
+        ),
+        pollIntervalMs: this.readNumberEnv(
+          "SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS",
+          60_000,
+          15_000,
+        ),
       };
     }
   }
@@ -1264,13 +1411,13 @@ export class SituationMonitorSignalsService implements OnModuleInit {
     apiHash: string,
     session: string,
   ): string {
-    return createHash('sha256')
+    return createHash("sha256")
       .update(`${apiId}|${apiHash}|${session}`)
-      .digest('hex');
+      .digest("hex");
   }
 
   private isOrefEnabled(): boolean {
-    const value = this.readBooleanEnv('SITUATION_MONITOR_OREF_ENABLED');
+    const value = this.readBooleanEnv("SITUATION_MONITOR_OREF_ENABLED");
     return value ?? false;
   }
 
@@ -1279,55 +1426,70 @@ export class SituationMonitorSignalsService implements OnModuleInit {
   }
 
   private getOrefProxyAuth(): string {
-    return this.readStringEnv('SITUATION_MONITOR_OREF_PROXY_AUTH', 'OREF_PROXY_AUTH');
+    return this.readStringEnv(
+      "SITUATION_MONITOR_OREF_PROXY_AUTH",
+      "OREF_PROXY_AUTH",
+    );
   }
 
   private getOrefAlertsUrl(): string {
     return (
-      this.readStringEnv('SITUATION_MONITOR_OREF_ALERTS_URL') ||
-      'https://www.oref.org.il/WarningMessages/alert/alerts.json'
+      this.readStringEnv("SITUATION_MONITOR_OREF_ALERTS_URL") ||
+      "https://www.oref.org.il/WarningMessages/alert/alerts.json"
     );
   }
 
   private getOrefHistoryUrl(): string {
     return (
-      this.readStringEnv('SITUATION_MONITOR_OREF_HISTORY_URL') ||
-      'https://www.oref.org.il/WarningMessages/alert/History/AlertsHistory.json'
+      this.readStringEnv("SITUATION_MONITOR_OREF_HISTORY_URL") ||
+      "https://www.oref.org.il/WarningMessages/alert/History/AlertsHistory.json"
     );
   }
 
   private getOrefHistoryRetentionDays(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_OREF_HISTORY_RETENTION_DAYS', 7, 1);
+    return this.readNumberEnv(
+      "SITUATION_MONITOR_OREF_HISTORY_RETENTION_DAYS",
+      7,
+      1,
+    );
   }
 
   private getOrefHistoryMaxWaves(): number {
     return this.readNumberEnv(
-      'SITUATION_MONITOR_OREF_HISTORY_MAX_WAVES',
+      "SITUATION_MONITOR_OREF_HISTORY_MAX_WAVES",
       OREF_PERSIST_MAX_WAVES_DEFAULT,
       10,
     );
   }
 
   private getOrefCurlTimeoutSeconds(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_OREF_CURL_TIMEOUT_SEC', 15, 5);
+    return this.readNumberEnv("SITUATION_MONITOR_OREF_CURL_TIMEOUT_SEC", 15, 5);
   }
 
   private getOrefBootstrapRetries(): number {
-    return this.readNumberEnv('SITUATION_MONITOR_OREF_BOOTSTRAP_MAX_RETRIES', 3, 1);
+    return this.readNumberEnv(
+      "SITUATION_MONITOR_OREF_BOOTSTRAP_MAX_RETRIES",
+      3,
+      1,
+    );
   }
 
   private readStringEnv(...keys: string[]): string {
     for (const key of keys) {
-      const value = this.env.get<string | undefined>(key, { infer: true }) ?? process.env[key];
-      if (typeof value === 'string' && value.trim().length > 0) {
+      const value =
+        this.env.get<string | undefined>(key, { infer: true }) ??
+        process.env[key];
+      if (typeof value === "string" && value.trim().length > 0) {
         return value.trim();
       }
     }
-    return '';
+    return "";
   }
 
   private readNumberEnv(key: string, fallback: number, min: number): number {
-    const raw = this.env.get<number | string | undefined>(key, { infer: true }) ?? process.env[key];
+    const raw =
+      this.env.get<number | string | undefined>(key, { infer: true }) ??
+      process.env[key];
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) {
       return fallback;
@@ -1337,20 +1499,23 @@ export class SituationMonitorSignalsService implements OnModuleInit {
 
   private readBooleanEnv(...keys: string[]): boolean | undefined {
     for (const key of keys) {
-      const raw = this.env.get<boolean | string | number | undefined>(key, { infer: true }) ?? process.env[key];
-      if (typeof raw === 'boolean') {
+      const raw =
+        this.env.get<boolean | string | number | undefined>(key, {
+          infer: true,
+        }) ?? process.env[key];
+      if (typeof raw === "boolean") {
         return raw;
       }
-      if (typeof raw === 'number') {
+      if (typeof raw === "number") {
         if (raw === 1) return true;
         if (raw === 0) return false;
       }
-      if (typeof raw === 'string') {
+      if (typeof raw === "string") {
         const normalized = raw.trim().toLowerCase();
-        if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+        if (["1", "true", "yes", "on"].includes(normalized)) {
           return true;
         }
-        if (['0', 'false', 'no', 'off'].includes(normalized)) {
+        if (["0", "false", "no", "off"].includes(normalized)) {
           return false;
         }
       }

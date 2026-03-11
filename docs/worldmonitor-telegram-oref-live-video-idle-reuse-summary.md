@@ -39,7 +39,7 @@
 
 - 文件：`worldmonitor/scripts/ais-relay.cjs`
 - 关键点：
-- `TELEGRAM_ENABLED` 依赖 `TELEGRAM_API_ID + TELEGRAM_API_HASH + TELEGRAM_SESSION`。
+- `TELEGRAM_ENABLED` 依赖 `TELEGRAM_API_ID + TELEGRAM_API_HASH`，其中 `TELEGRAM_SESSION` 应通过管理台授权流程保存到数据库。
 - 轮询间隔默认 60s（`TELEGRAM_POLL_INTERVAL_MS`）。
 - 单频道超时 15s，整轮超时 180s，卡死保护 3.5 分钟强制清 in-flight。
 - 每频道按 `maxMessages` 拉取（1~50），并用 `minId` 做增量。
@@ -327,14 +327,14 @@
 
 ### 10.2 WorldMonitor 组件 -> 本项目推荐落点（按当前结构）
 
-| WorldMonitor 组件 | 本项目推荐落点 | 复用策略 | 避免事项 |
-|---|---|---|---|
+| WorldMonitor 组件  | 本项目推荐落点                                                   | 复用策略                                                      | 避免事项                                                    |
+| ------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------- |
 | Telegram 实时 feed | `apps/api` 新增轻量接口（建议挂在 `situation-monitor` 语义域下） | 用 `QueueModule` 跑 60s 轮询 worker，结果写缓存并提供只读 API | 不要把 60s 刷新塞进现有 `situation-monitor/insights` 大接口 |
-| OREF 告警/历史 | 同上 + `AlertsModule` | 5 分钟抓取 + 历史持久化，关键告警映射到 Alerts | 不要从浏览器直连 OREF upstream |
-| Breaking/通知分发 | `AlertsService` + `NotificationsService` | 复用已有 `alerts.read/manage` 与通知中心 | 不要单独再造一套告警中心 |
-| 实时推送 | 复用 `newsnow/notifications/queue` 的 Gateway 模式 | 参考 `registerListener -> unsubscribe` 生命周期管理 | 不要无清理地反复注册回调 |
-| Webcam/直播 panel | `situation-monitor` 新 panel + layout/store | 复用现有 panel 布局、preset、UI 同步机制 | 不要单独做平行页面导致状态割裂 |
-| Idle 自动暂停 | 前端公共 hook（页面可见性 + IntersectionObserver + 活动检测） | 面板级销毁/重建 iframe/video，5 分钟 idle | 不要只做 CSS 隐藏（资源仍在跑） |
+| OREF 告警/历史     | 同上 + `AlertsModule`                                            | 5 分钟抓取 + 历史持久化，关键告警映射到 Alerts                | 不要从浏览器直连 OREF upstream                              |
+| Breaking/通知分发  | `AlertsService` + `NotificationsService`                         | 复用已有 `alerts.read/manage` 与通知中心                      | 不要单独再造一套告警中心                                    |
+| 实时推送           | 复用 `newsnow/notifications/queue` 的 Gateway 模式               | 参考 `registerListener -> unsubscribe` 生命周期管理           | 不要无清理地反复注册回调                                    |
+| Webcam/直播 panel  | `situation-monitor` 新 panel + layout/store                      | 复用现有 panel 布局、preset、UI 同步机制                      | 不要单独做平行页面导致状态割裂                              |
+| Idle 自动暂停      | 前端公共 hook（页面可见性 + IntersectionObserver + 活动检测）    | 面板级销毁/重建 iframe/video，5 分钟 idle                     | 不要只做 CSS 隐藏（资源仍在跑）                             |
 
 ### 10.3 三阶段落地（结合你当前仓库）
 

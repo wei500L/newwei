@@ -9,7 +9,7 @@ import { PrismaService } from "../config/prisma.service";
 import {
   decryptStringValueV1,
   isEncryptedStringValueV1,
-  resolveSettingsKey
+  resolveSettingsKey,
 } from "../storage/storage-settings.crypto";
 
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
@@ -17,7 +17,8 @@ import { SystemSecuritySettingsService } from "./system-security-settings.servic
 export type SituationMonitorSettingsSource = "env" | "db";
 export type SituationMonitorTranslationProvider = "deeplx";
 type SituationMonitorApiKeySource = "stored" | "env" | "none";
-export type SituationMonitorTranslationApiKeySource = SituationMonitorApiKeySource;
+export type SituationMonitorTranslationApiKeySource =
+  SituationMonitorApiKeySource;
 export type SituationMonitorExternalApiKeySource = SituationMonitorApiKeySource;
 export type SituationMonitorTelegramSecretSource = SituationMonitorApiKeySource;
 export type SituationMonitorLiveHlsProxyChannel = "cnn" | "cnbc";
@@ -185,7 +186,8 @@ const DEFAULT_TRANSLATION_API_TIMEOUT_MS = 15_000;
 const DEFAULT_TRANSLATION_API_MAX_RETRIES = 2;
 const DEFAULT_TRANSLATION_API_BASE_URL = "https://api.deeplx.org";
 const DEFAULT_TRANSLATION_FALLBACK_API_ENABLED = false;
-const DEFAULT_TRANSLATION_PROVIDER: SituationMonitorTranslationProvider = "deeplx";
+const DEFAULT_TRANSLATION_PROVIDER: SituationMonitorTranslationProvider =
+  "deeplx";
 const DEFAULT_TELEGRAM_CHANNEL_SET = "full";
 const DEFAULT_TELEGRAM_MAX_FEED_ITEMS = 200;
 const DEFAULT_TELEGRAM_MAX_TEXT_CHARS = 800;
@@ -194,38 +196,55 @@ const DEFAULT_TELEGRAM_POLL_CYCLE_TIMEOUT_MS = 180_000;
 const DEFAULT_TELEGRAM_STARTUP_DELAY_MS = 60_000;
 const DEFAULT_TELEGRAM_RATE_LIMIT_MS = 800;
 const DEFAULT_TELEGRAM_POLL_INTERVAL_MS = 60_000;
-const LIVE_HLS_PROXY_CHANNELS: readonly SituationMonitorLiveHlsProxyChannel[] = [
-  "cnn",
-  "cnbc",
-];
+const LIVE_HLS_PROXY_CHANNELS: readonly SituationMonitorLiveHlsProxyChannel[] =
+  ["cnn", "cnbc"];
 
 export function isSituationMonitorLiveHlsProxyChannel(
   value: string,
 ): value is SituationMonitorLiveHlsProxyChannel {
-  return LIVE_HLS_PROXY_CHANNELS.includes(value as SituationMonitorLiveHlsProxyChannel);
+  return LIVE_HLS_PROXY_CHANNELS.includes(
+    value as SituationMonitorLiveHlsProxyChannel,
+  );
 }
 
 @Injectable()
 export class SituationMonitorSettingsService {
-  private readonly logger = createLogger({ name: "situation-monitor-settings" });
+  private readonly logger = createLogger({
+    name: "situation-monitor-settings",
+  });
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
-    private readonly securitySettings: SystemSecuritySettingsService
+    private readonly securitySettings: SystemSecuritySettingsService,
   ) {}
 
   async getPublicSettings(): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
 
-    const storedTranslationApiKey = this.resolveStoredApiKey(stored?.translationApiKey, "translation api key");
-    const storedFinnhubApiKey = this.resolveStoredApiKey(stored?.finnhubApiKey, "finnhub api key");
-    const storedFredApiKey = this.resolveStoredApiKey(stored?.fredApiKey, "fred api key");
+    const storedTranslationApiKey = this.resolveStoredApiKey(
+      stored?.translationApiKey,
+      "translation api key",
+    );
+    const storedFinnhubApiKey = this.resolveStoredApiKey(
+      stored?.finnhubApiKey,
+      "finnhub api key",
+    );
+    const storedFredApiKey = this.resolveStoredApiKey(
+      stored?.fredApiKey,
+      "fred api key",
+    );
     const storedTelegramApiId = this.normalizeString(stored?.telegramApiId);
-    const storedTelegramApiHash = this.resolveStoredApiKey(stored?.telegramApiHash, "telegram api hash");
-    const storedTelegramSession = this.resolveStoredApiKey(stored?.telegramSession, "telegram session");
+    const storedTelegramApiHash = this.resolveStoredApiKey(
+      stored?.telegramApiHash,
+      "telegram api hash",
+    );
+    const storedTelegramSession = this.resolveStoredApiKey(
+      stored?.telegramSession,
+      "telegram session",
+    );
 
     return {
       source: stored ? "db" : "env",
@@ -238,19 +257,37 @@ export class SituationMonitorSettingsService {
       translationApiTimeoutMs: effective.translationApiTimeoutMs,
       translationApiMaxRetries: effective.translationApiMaxRetries,
       hasTranslationApiKey: Boolean(effective.translationApiKey),
-      translationApiKeySource: this.resolveApiKeySource(storedTranslationApiKey, effective.translationApiKey),
+      translationApiKeySource: this.resolveApiKeySource(
+        storedTranslationApiKey,
+        effective.translationApiKey,
+      ),
       hasFinnhubApiKey: Boolean(effective.finnhubApiKey),
-      finnhubApiKeySource: this.resolveApiKeySource(storedFinnhubApiKey, effective.finnhubApiKey),
+      finnhubApiKeySource: this.resolveApiKeySource(
+        storedFinnhubApiKey,
+        effective.finnhubApiKey,
+      ),
       hasFredApiKey: Boolean(effective.fredApiKey),
-      fredApiKeySource: this.resolveApiKeySource(storedFredApiKey, effective.fredApiKey),
+      fredApiKeySource: this.resolveApiKeySource(
+        storedFredApiKey,
+        effective.fredApiKey,
+      ),
       telegramEnabled: effective.telegramEnabled,
       hasTelegramApiId: Boolean(effective.telegramApiId),
-      telegramApiIdSource: this.resolveApiKeySource(storedTelegramApiId, effective.telegramApiId),
+      telegramApiIdSource: this.resolveApiKeySource(
+        storedTelegramApiId,
+        effective.telegramApiId,
+      ),
       telegramApiId: effective.telegramApiId,
       hasTelegramApiHash: Boolean(effective.telegramApiHash),
-      telegramApiHashSource: this.resolveApiKeySource(storedTelegramApiHash, effective.telegramApiHash),
+      telegramApiHashSource: this.resolveApiKeySource(
+        storedTelegramApiHash,
+        effective.telegramApiHash,
+      ),
       hasTelegramSession: Boolean(effective.telegramSession),
-      telegramSessionSource: this.resolveApiKeySource(storedTelegramSession, effective.telegramSession),
+      telegramSessionSource: this.resolveApiKeySource(
+        storedTelegramSession,
+        effective.telegramSession,
+      ),
       telegramChannelSet: effective.telegramChannelSet,
       telegramMaxFeedItems: effective.telegramMaxFeedItems,
       telegramMaxTextChars: effective.telegramMaxTextChars,
@@ -260,12 +297,18 @@ export class SituationMonitorSettingsService {
       telegramRateLimitMs: effective.telegramRateLimitMs,
       telegramPollIntervalMs: effective.telegramPollIntervalMs,
       liveHlsProxyCnnConfigured: Boolean(effective.liveHlsProxyCnnUpstreamUrl),
-      liveHlsProxyCnnSource: effective.liveHlsProxyCnnUpstreamUrl ? "stored" : "none",
+      liveHlsProxyCnnSource: effective.liveHlsProxyCnnUpstreamUrl
+        ? "stored"
+        : "none",
       liveHlsProxyCnnUpstreamUrl: effective.liveHlsProxyCnnUpstreamUrl ?? "",
       liveHlsProxyCnnReferer: effective.liveHlsProxyCnnReferer ?? "",
       liveHlsProxyCnnAllowedHosts: [...effective.liveHlsProxyCnnAllowedHosts],
-      liveHlsProxyCnbcConfigured: Boolean(effective.liveHlsProxyCnbcUpstreamUrl),
-      liveHlsProxyCnbcSource: effective.liveHlsProxyCnbcUpstreamUrl ? "stored" : "none",
+      liveHlsProxyCnbcConfigured: Boolean(
+        effective.liveHlsProxyCnbcUpstreamUrl,
+      ),
+      liveHlsProxyCnbcSource: effective.liveHlsProxyCnbcUpstreamUrl
+        ? "stored"
+        : "none",
       liveHlsProxyCnbcUpstreamUrl: effective.liveHlsProxyCnbcUpstreamUrl ?? "",
       liveHlsProxyCnbcReferer: effective.liveHlsProxyCnbcReferer ?? "",
       liveHlsProxyCnbcAllowedHosts: [...effective.liveHlsProxyCnbcAllowedHosts],
@@ -287,9 +330,11 @@ export class SituationMonitorSettingsService {
       baseUrl: effective.translationApiBaseUrl,
       apiKey: effective.translationApiKey,
       fallbackEnabled: effective.translationFallbackApiEnabled,
-      fallbackBaseUrl: this.normalizeUrl(effective.translationFallbackApiBaseUrl),
+      fallbackBaseUrl: this.normalizeUrl(
+        effective.translationFallbackApiBaseUrl,
+      ),
       timeoutMs: effective.translationApiTimeoutMs,
-      maxRetries: effective.translationApiMaxRetries
+      maxRetries: effective.translationApiMaxRetries,
     };
   }
 
@@ -298,7 +343,7 @@ export class SituationMonitorSettingsService {
     const effective = this.resolveEffectiveConfig(stored);
     return {
       finnhubApiKey: effective.finnhubApiKey,
-      fredApiKey: effective.fredApiKey
+      fredApiKey: effective.fredApiKey,
     };
   }
 
@@ -317,7 +362,7 @@ export class SituationMonitorSettingsService {
       pollCycleTimeoutMs: effective.telegramPollCycleTimeoutMs,
       startupDelayMs: effective.telegramStartupDelayMs,
       rateLimitMs: effective.telegramRateLimitMs,
-      pollIntervalMs: effective.telegramPollIntervalMs
+      pollIntervalMs: effective.telegramPollIntervalMs,
     };
   }
 
@@ -398,7 +443,7 @@ export class SituationMonitorSettingsService {
       liveHlsProxyCnbcUpstreamUrl?: string | null;
       liveHlsProxyCnbcReferer?: string | null;
       liveHlsProxyCnbcAllowedHosts?: string | null;
-    }
+    },
   ): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const current = this.resolveEffectiveConfig(stored);
@@ -407,84 +452,112 @@ export class SituationMonitorSettingsService {
       input.translationMaxConcurrency,
       current.translationMaxConcurrency,
       1,
-      MAX_TRANSLATION_MAX_CONCURRENCY
+      MAX_TRANSLATION_MAX_CONCURRENCY,
     );
-    const nextTranslationApiEnabled = this.asBoolean(input.translationApiEnabled, current.translationApiEnabled);
+    const nextTranslationApiEnabled = this.asBoolean(
+      input.translationApiEnabled,
+      current.translationApiEnabled,
+    );
     const nextTranslationApiTimeoutMs = this.asBoundedInt(
       input.translationApiTimeoutMs,
       current.translationApiTimeoutMs,
       1_000,
-      120_000
+      120_000,
     );
     const nextTranslationApiMaxRetries = this.asBoundedInt(
       input.translationApiMaxRetries,
       current.translationApiMaxRetries,
       0,
-      5
+      5,
     );
-    const nextTranslationApiBaseUrl = this.resolveNextApiBaseUrl(stored, input.translationApiBaseUrl);
+    const nextTranslationApiBaseUrl = this.resolveNextApiBaseUrl(
+      stored,
+      input.translationApiBaseUrl,
+    );
     const nextTranslationFallbackApiEnabled = this.asBoolean(
       input.translationFallbackApiEnabled,
-      current.translationFallbackApiEnabled
+      current.translationFallbackApiEnabled,
     );
-    const nextTranslationFallbackApiBaseUrl = this.resolveNextFallbackApiBaseUrl(
-      stored,
-      input.translationFallbackApiBaseUrl
+    const nextTranslationFallbackApiBaseUrl =
+      this.resolveNextFallbackApiBaseUrl(
+        stored,
+        input.translationFallbackApiBaseUrl,
+      );
+    const nextTranslationApiKey = await this.resolveNextApiKey(
+      stored?.translationApiKey,
+      input.translationApiKey,
     );
-    const nextTranslationApiKey = await this.resolveNextApiKey(stored?.translationApiKey, input.translationApiKey);
-    const nextFinnhubApiKey = await this.resolveNextApiKey(stored?.finnhubApiKey, input.finnhubApiKey);
-    const nextFredApiKey = await this.resolveNextApiKey(stored?.fredApiKey, input.fredApiKey);
+    const nextFinnhubApiKey = await this.resolveNextApiKey(
+      stored?.finnhubApiKey,
+      input.finnhubApiKey,
+    );
+    const nextFredApiKey = await this.resolveNextApiKey(
+      stored?.fredApiKey,
+      input.fredApiKey,
+    );
 
-    const nextTelegramEnabled = this.asBoolean(input.telegramEnabled, current.telegramEnabled);
-    const nextTelegramApiId = this.resolveNextString(stored?.telegramApiId, input.telegramApiId);
-    const nextTelegramApiHash = await this.resolveNextApiKey(stored?.telegramApiHash, input.telegramApiHash);
-    const nextTelegramSession = await this.resolveNextApiKey(stored?.telegramSession, input.telegramSession);
+    const nextTelegramEnabled = this.asBoolean(
+      input.telegramEnabled,
+      current.telegramEnabled,
+    );
+    const nextTelegramApiId = this.resolveNextString(
+      stored?.telegramApiId,
+      input.telegramApiId,
+    );
+    const nextTelegramApiHash = await this.resolveNextApiKey(
+      stored?.telegramApiHash,
+      input.telegramApiHash,
+    );
+    const nextTelegramSession = await this.resolveNextApiKey(
+      stored?.telegramSession,
+      input.telegramSession,
+    );
     const nextTelegramChannelSet = this.asString(
       input.telegramChannelSet,
       current.telegramChannelSet,
-      DEFAULT_TELEGRAM_CHANNEL_SET
+      DEFAULT_TELEGRAM_CHANNEL_SET,
     );
     const nextTelegramMaxFeedItems = this.asBoundedInt(
       input.telegramMaxFeedItems,
       current.telegramMaxFeedItems,
       50,
-      500
+      500,
     );
     const nextTelegramMaxTextChars = this.asBoundedInt(
       input.telegramMaxTextChars,
       current.telegramMaxTextChars,
       200,
-      10_000
+      10_000,
     );
     const nextTelegramChannelTimeoutMs = this.asBoundedInt(
       input.telegramChannelTimeoutMs,
       current.telegramChannelTimeoutMs,
       3_000,
-      120_000
+      120_000,
     );
     const nextTelegramPollCycleTimeoutMs = this.asBoundedInt(
       input.telegramPollCycleTimeoutMs,
       current.telegramPollCycleTimeoutMs,
       30_000,
-      600_000
+      600_000,
     );
     const nextTelegramStartupDelayMs = this.asBoundedInt(
       input.telegramStartupDelayMs,
       current.telegramStartupDelayMs,
       0,
-      600_000
+      600_000,
     );
     const nextTelegramRateLimitMs = this.asBoundedInt(
       input.telegramRateLimitMs,
       current.telegramRateLimitMs,
       100,
-      60_000
+      60_000,
     );
     const nextTelegramPollIntervalMs = this.asBoundedInt(
       input.telegramPollIntervalMs,
       current.telegramPollIntervalMs,
       15_000,
-      3_600_000
+      3_600_000,
     );
     const nextLiveHlsProxyCnnUpstreamUrl = this.resolveNextHttpsUrl(
       stored?.liveHlsProxyCnnUpstreamUrl,
@@ -553,12 +626,12 @@ export class SituationMonitorSettingsService {
       create: {
         key: SETTINGS_KEY,
         description: SETTINGS_DESCRIPTION,
-        value: this.toPrismaJson(nextStored)
+        value: this.toPrismaJson(nextStored),
       },
       update: {
         description: SETTINGS_DESCRIPTION,
-        value: this.toPrismaJson(nextStored)
-      }
+        value: this.toPrismaJson(nextStored),
+      },
     });
 
     await writeAuditLogBestEffort(
@@ -594,9 +667,13 @@ export class SituationMonitorSettingsService {
             telegramApiHashUpdated: input.telegramApiHash !== undefined,
             telegramSessionUpdated: input.telegramSession !== undefined,
             liveHlsProxyCnnConfigured: Boolean(nextLiveHlsProxyCnnUpstreamUrl),
-            liveHlsProxyCnnAllowedHostsCount: nextLiveHlsProxyCnnAllowedHosts.length,
-            liveHlsProxyCnbcConfigured: Boolean(nextLiveHlsProxyCnbcUpstreamUrl),
-            liveHlsProxyCnbcAllowedHostsCount: nextLiveHlsProxyCnbcAllowedHosts.length,
+            liveHlsProxyCnnAllowedHostsCount:
+              nextLiveHlsProxyCnnAllowedHosts.length,
+            liveHlsProxyCnbcConfigured: Boolean(
+              nextLiveHlsProxyCnbcUpstreamUrl,
+            ),
+            liveHlsProxyCnbcAllowedHostsCount:
+              nextLiveHlsProxyCnbcAllowedHosts.length,
             liveHlsProxyCnnUpdated:
               input.liveHlsProxyCnnUpstreamUrl !== undefined ||
               input.liveHlsProxyCnnReferer !== undefined ||
@@ -605,18 +682,28 @@ export class SituationMonitorSettingsService {
               input.liveHlsProxyCnbcUpstreamUrl !== undefined ||
               input.liveHlsProxyCnbcReferer !== undefined ||
               input.liveHlsProxyCnbcAllowedHosts !== undefined,
-          } satisfies Prisma.InputJsonObject)
-        }
+          } satisfies Prisma.InputJsonObject),
+        },
       },
-      { orgId, actorId, resource: "system_settings", action: "situation_monitor_update" }
+      {
+        orgId,
+        actorId,
+        resource: "system_settings",
+        action: "situation_monitor_update",
+      },
     );
 
     await this.invalidateCache();
     return this.getPublicSettings();
   }
 
-  async resetToEnv(orgId: string, actorId: string): Promise<SituationMonitorSettingsPublic> {
-    await this.prisma.systemSetting.deleteMany({ where: { key: SETTINGS_KEY } });
+  async resetToEnv(
+    orgId: string,
+    actorId: string,
+  ): Promise<SituationMonitorSettingsPublic> {
+    await this.prisma.systemSetting.deleteMany({
+      where: { key: SETTINGS_KEY },
+    });
 
     await writeAuditLogBestEffort(
       this.prisma,
@@ -626,17 +713,27 @@ export class SituationMonitorSettingsService {
           actorId,
           resource: "system_settings",
           action: "situation_monitor_reset",
-          metadata: this.toPrismaJson({ ok: true } satisfies Prisma.InputJsonObject)
-        }
+          metadata: this.toPrismaJson({
+            ok: true,
+          } satisfies Prisma.InputJsonObject),
+        },
       },
-      { orgId, actorId, resource: "system_settings", action: "situation_monitor_reset" }
+      {
+        orgId,
+        actorId,
+        resource: "system_settings",
+        action: "situation_monitor_reset",
+      },
     );
 
     await this.invalidateCache();
     return this.getPublicSettings();
   }
 
-  async clearTelegramConfiguration(orgId: string, actorId: string): Promise<SituationMonitorSettingsPublic> {
+  async clearTelegramConfiguration(
+    orgId: string,
+    actorId: string,
+  ): Promise<SituationMonitorSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const nextStored: StoredSituationMonitorSettings = {
       ...(stored ?? {}),
@@ -676,39 +773,67 @@ export class SituationMonitorSettingsService {
           } satisfies Prisma.InputJsonObject),
         },
       },
-      { orgId, actorId, resource: "system_settings", action: "situation_monitor_telegram_clear" },
+      {
+        orgId,
+        actorId,
+        resource: "system_settings",
+        action: "situation_monitor_telegram_clear",
+      },
     );
 
     await this.invalidateCache();
     return this.getPublicSettings();
   }
 
-  private resolveEffectiveConfig(stored: StoredSituationMonitorSettings | null): EffectiveSituationMonitorSettings {
+  private resolveEffectiveConfig(
+    stored: StoredSituationMonitorSettings | null,
+  ): EffectiveSituationMonitorSettings {
     const envTranslation = this.env.situationMonitorTranslationConfig;
     const envTelegram = this.resolveTelegramEnvDefaults();
 
-    const storedTranslationApiKey = this.resolveStoredApiKey(stored?.translationApiKey, "translation api key");
-    const storedFinnhubApiKey = this.resolveStoredApiKey(stored?.finnhubApiKey, "finnhub api key");
-    const storedFredApiKey = this.resolveStoredApiKey(stored?.fredApiKey, "fred api key");
+    const storedTranslationApiKey = this.resolveStoredApiKey(
+      stored?.translationApiKey,
+      "translation api key",
+    );
+    const storedFinnhubApiKey = this.resolveStoredApiKey(
+      stored?.finnhubApiKey,
+      "finnhub api key",
+    );
+    const storedFredApiKey = this.resolveStoredApiKey(
+      stored?.fredApiKey,
+      "fred api key",
+    );
     const storedTelegramApiId = this.normalizeString(stored?.telegramApiId);
-    const storedTelegramApiHash = this.resolveStoredApiKey(stored?.telegramApiHash, "telegram api hash");
-    const storedTelegramSession = this.resolveStoredApiKey(stored?.telegramSession, "telegram session");
+    const storedTelegramApiHash = this.resolveStoredApiKey(
+      stored?.telegramApiHash,
+      "telegram api hash",
+    );
+    const storedTelegramSession = this.resolveStoredApiKey(
+      stored?.telegramSession,
+      "telegram session",
+    );
 
     return {
       translationMaxConcurrency: this.asBoundedInt(
         stored?.translationMaxConcurrency,
         DEFAULT_TRANSLATION_MAX_CONCURRENCY,
         1,
-        MAX_TRANSLATION_MAX_CONCURRENCY
+        MAX_TRANSLATION_MAX_CONCURRENCY,
       ),
-      translationApiEnabled: this.asBoolean(stored?.translationApiEnabled, envTranslation.enabled),
+      translationApiEnabled: this.asBoolean(
+        stored?.translationApiEnabled,
+        envTranslation.enabled,
+      ),
       translationApiBaseUrl:
         this.normalizeUrl(stored?.translationApiBaseUrl) ??
         this.normalizeUrl(envTranslation.baseUrl) ??
         DEFAULT_TRANSLATION_API_BASE_URL,
       translationFallbackApiEnabled: this.asBoolean(
         stored?.translationFallbackApiEnabled,
-        this.asBoolean(envTranslation.fallbackEnabled, DEFAULT_TRANSLATION_FALLBACK_API_ENABLED)
+        this.asBoolean(
+          envTranslation.fallbackEnabled,
+          DEFAULT_TRANSLATION_FALLBACK_API_ENABLED,
+        ),
       ),
       translationFallbackApiBaseUrl:
         this.normalizeUrl(stored?.translationFallbackApiBaseUrl) ??
@@ -716,133 +841,190 @@ export class SituationMonitorSettingsService {
         "",
       translationApiTimeoutMs: this.asBoundedInt(
         stored?.translationApiTimeoutMs,
-        this.asBoundedInt(envTranslation.timeoutMs, DEFAULT_TRANSLATION_API_TIMEOUT_MS, 1_000, 120_000),
+        this.asBoundedInt(
+          envTranslation.timeoutMs,
+          DEFAULT_TRANSLATION_API_TIMEOUT_MS,
+          1_000,
+          120_000,
+        ),
         1_000,
-        120_000
+        120_000,
       ),
       translationApiMaxRetries: this.asBoundedInt(
         stored?.translationApiMaxRetries,
-        this.asBoundedInt(envTranslation.maxRetries, DEFAULT_TRANSLATION_API_MAX_RETRIES, 0, 5),
+        this.asBoundedInt(
+          envTranslation.maxRetries,
+          DEFAULT_TRANSLATION_API_MAX_RETRIES,
+          0,
+          5,
+        ),
         0,
-        5
+        5,
       ),
       translationApiKey: storedTranslationApiKey,
       finnhubApiKey: storedFinnhubApiKey,
       fredApiKey: storedFredApiKey,
-      telegramEnabled: this.asBoolean(stored?.telegramEnabled, envTelegram.enabled),
+      telegramEnabled: this.asBoolean(
+        stored?.telegramEnabled,
+        envTelegram.enabled,
+      ),
       telegramApiId: storedTelegramApiId ?? envTelegram.apiId,
       telegramApiHash: storedTelegramApiHash ?? envTelegram.apiHash,
-      telegramSession: storedTelegramSession ?? envTelegram.session,
+      telegramSession: storedTelegramSession,
       telegramChannelSet:
-        this.normalizeString(stored?.telegramChannelSet) ?? envTelegram.channelSet,
+        this.normalizeString(stored?.telegramChannelSet) ??
+        envTelegram.channelSet,
       telegramMaxFeedItems: this.asBoundedInt(
         stored?.telegramMaxFeedItems,
         envTelegram.maxFeedItems,
         50,
-        500
+        500,
       ),
       telegramMaxTextChars: this.asBoundedInt(
         stored?.telegramMaxTextChars,
         envTelegram.maxTextChars,
         200,
-        10_000
+        10_000,
       ),
       telegramChannelTimeoutMs: this.asBoundedInt(
         stored?.telegramChannelTimeoutMs,
         envTelegram.channelTimeoutMs,
         3_000,
-        120_000
+        120_000,
       ),
       telegramPollCycleTimeoutMs: this.asBoundedInt(
         stored?.telegramPollCycleTimeoutMs,
         envTelegram.pollCycleTimeoutMs,
         30_000,
-        600_000
+        600_000,
       ),
       telegramStartupDelayMs: this.asBoundedInt(
         stored?.telegramStartupDelayMs,
         envTelegram.startupDelayMs,
         0,
-        600_000
+        600_000,
       ),
       telegramRateLimitMs: this.asBoundedInt(
         stored?.telegramRateLimitMs,
         envTelegram.rateLimitMs,
         100,
-        60_000
+        60_000,
       ),
       telegramPollIntervalMs: this.asBoundedInt(
         stored?.telegramPollIntervalMs,
         envTelegram.pollIntervalMs,
         15_000,
-        3_600_000
+        3_600_000,
       ),
-      liveHlsProxyCnnUpstreamUrl: this.normalizeHttpsUrl(stored?.liveHlsProxyCnnUpstreamUrl),
-      liveHlsProxyCnnReferer: this.normalizeHttpUrl(stored?.liveHlsProxyCnnReferer),
-      liveHlsProxyCnnAllowedHosts: this.normalizeHostList(stored?.liveHlsProxyCnnAllowedHosts),
-      liveHlsProxyCnbcUpstreamUrl: this.normalizeHttpsUrl(stored?.liveHlsProxyCnbcUpstreamUrl),
-      liveHlsProxyCnbcReferer: this.normalizeHttpUrl(stored?.liveHlsProxyCnbcReferer),
-      liveHlsProxyCnbcAllowedHosts: this.normalizeHostList(stored?.liveHlsProxyCnbcAllowedHosts),
+      liveHlsProxyCnnUpstreamUrl: this.normalizeHttpsUrl(
+        stored?.liveHlsProxyCnnUpstreamUrl,
+      ),
+      liveHlsProxyCnnReferer: this.normalizeHttpUrl(
+        stored?.liveHlsProxyCnnReferer,
+      ),
+      liveHlsProxyCnnAllowedHosts: this.normalizeHostList(
+        stored?.liveHlsProxyCnnAllowedHosts,
+      ),
+      liveHlsProxyCnbcUpstreamUrl: this.normalizeHttpsUrl(
+        stored?.liveHlsProxyCnbcUpstreamUrl,
+      ),
+      liveHlsProxyCnbcReferer: this.normalizeHttpUrl(
+        stored?.liveHlsProxyCnbcReferer,
+      ),
+      liveHlsProxyCnbcAllowedHosts: this.normalizeHostList(
+        stored?.liveHlsProxyCnbcAllowedHosts,
+      ),
     };
   }
 
   private resolveTelegramEnvDefaults() {
     return {
-      enabled: this.readBooleanEnv("SITUATION_MONITOR_TELEGRAM_ENABLED", "TELEGRAM_ENABLED") ?? false,
-      apiId: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_API_ID", "TELEGRAM_API_ID"),
-      apiHash: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_API_HASH", "TELEGRAM_API_HASH"),
-      session: this.readStringEnv("SITUATION_MONITOR_TELEGRAM_SESSION", "TELEGRAM_SESSION"),
+      enabled:
+        this.readBooleanEnv(
+          "SITUATION_MONITOR_TELEGRAM_ENABLED",
+          "TELEGRAM_ENABLED",
+        ) ?? false,
+      apiId: this.readStringEnv(
+        "SITUATION_MONITOR_TELEGRAM_API_ID",
+        "TELEGRAM_API_ID",
+      ),
+      apiHash: this.readStringEnv(
+        "SITUATION_MONITOR_TELEGRAM_API_HASH",
+        "TELEGRAM_API_HASH",
+      ),
       channelSet:
-        this.readStringEnv("SITUATION_MONITOR_TELEGRAM_CHANNEL_SET", "TELEGRAM_CHANNEL_SET") ??
-        DEFAULT_TELEGRAM_CHANNEL_SET,
+        this.readStringEnv(
+          "SITUATION_MONITOR_TELEGRAM_CHANNEL_SET",
+          "TELEGRAM_CHANNEL_SET",
+        ) ?? DEFAULT_TELEGRAM_CHANNEL_SET,
       maxFeedItems: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS", "TELEGRAM_MAX_FEED_ITEMS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_MAX_FEED_ITEMS",
+          "TELEGRAM_MAX_FEED_ITEMS",
+        ],
         DEFAULT_TELEGRAM_MAX_FEED_ITEMS,
         50,
-        500
+        500,
       ),
       maxTextChars: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS", "TELEGRAM_MAX_TEXT_CHARS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_MAX_TEXT_CHARS",
+          "TELEGRAM_MAX_TEXT_CHARS",
+        ],
         DEFAULT_TELEGRAM_MAX_TEXT_CHARS,
         200,
-        10_000
+        10_000,
       ),
       channelTimeoutMs: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS", "TELEGRAM_CHANNEL_TIMEOUT_MS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_CHANNEL_TIMEOUT_MS",
+          "TELEGRAM_CHANNEL_TIMEOUT_MS",
+        ],
         DEFAULT_TELEGRAM_CHANNEL_TIMEOUT_MS,
         3_000,
-        120_000
+        120_000,
       ),
       pollCycleTimeoutMs: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS", "TELEGRAM_POLL_CYCLE_TIMEOUT_MS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_POLL_CYCLE_TIMEOUT_MS",
+          "TELEGRAM_POLL_CYCLE_TIMEOUT_MS",
+        ],
         DEFAULT_TELEGRAM_POLL_CYCLE_TIMEOUT_MS,
         30_000,
-        600_000
+        600_000,
       ),
       startupDelayMs: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS", "TELEGRAM_STARTUP_DELAY_MS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_STARTUP_DELAY_MS",
+          "TELEGRAM_STARTUP_DELAY_MS",
+        ],
         DEFAULT_TELEGRAM_STARTUP_DELAY_MS,
         0,
-        600_000
+        600_000,
       ),
       rateLimitMs: this.readNumberEnv(
         ["SITUATION_MONITOR_TELEGRAM_RATE_LIMIT_MS", "TELEGRAM_RATE_LIMIT_MS"],
         DEFAULT_TELEGRAM_RATE_LIMIT_MS,
         100,
-        60_000
+        60_000,
       ),
       pollIntervalMs: this.readNumberEnv(
-        ["SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS", "TELEGRAM_POLL_INTERVAL_MS"],
+        [
+          "SITUATION_MONITOR_TELEGRAM_POLL_INTERVAL_MS",
+          "TELEGRAM_POLL_INTERVAL_MS",
+        ],
         DEFAULT_TELEGRAM_POLL_INTERVAL_MS,
         15_000,
-        3_600_000
-      )
+        3_600_000,
+      ),
     };
   }
 
   private readStringEnv(...keys: string[]): string | undefined {
     for (const key of keys) {
-      const value = this.env.get<string | undefined>(key, { infer: true }) ?? process.env[key];
+      const value =
+        this.env.get<string | undefined>(key, { infer: true }) ??
+        process.env[key];
       const normalized = this.normalizeString(value);
       if (normalized) {
         return normalized;
@@ -853,7 +1035,9 @@ export class SituationMonitorSettingsService {
 
   private readBooleanEnv(...keys: string[]): boolean | undefined {
     for (const key of keys) {
-      const raw = this.env.get<boolean | string | undefined>(key, { infer: true }) ?? process.env[key];
+      const raw =
+        this.env.get<boolean | string | undefined>(key, { infer: true }) ??
+        process.env[key];
       if (typeof raw === "boolean") {
         return raw;
       }
@@ -870,9 +1054,16 @@ export class SituationMonitorSettingsService {
     return undefined;
   }
 
-  private readNumberEnv(keys: string[], fallback: number, min: number, max: number): number {
+  private readNumberEnv(
+    keys: string[],
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
     for (const key of keys) {
-      const raw = this.env.get<number | string | undefined>(key, { infer: true }) ?? process.env[key];
+      const raw =
+        this.env.get<number | string | undefined>(key, { infer: true }) ??
+        process.env[key];
       const parsed = Number(raw);
       if (!Number.isFinite(parsed)) {
         continue;
@@ -883,7 +1074,11 @@ export class SituationMonitorSettingsService {
     return Math.max(min, Math.min(max, Math.trunc(fallback)));
   }
 
-  private asString(value: unknown, fallback: string, defaultValue: string): string {
+  private asString(
+    value: unknown,
+    fallback: string,
+    defaultValue: string,
+  ): string {
     if (typeof value === "string") {
       const normalized = value.trim();
       return normalized.length > 0 ? normalized : defaultValue;
@@ -891,7 +1086,10 @@ export class SituationMonitorSettingsService {
     return fallback;
   }
 
-  private resolveNextString(current: unknown, next: string | null | undefined): string | null {
+  private resolveNextString(
+    current: unknown,
+    next: string | null | undefined,
+  ): string | null {
     if (next === undefined) {
       const currentValue = this.normalizeString(current);
       return currentValue ?? null;
@@ -902,7 +1100,7 @@ export class SituationMonitorSettingsService {
 
   private resolveNextApiBaseUrl(
     stored: StoredSituationMonitorSettings | null,
-    next: string | null | undefined
+    next: string | null | undefined,
   ): string | null {
     if (next === undefined) {
       const current = this.normalizeUrl(stored?.translationApiBaseUrl);
@@ -918,7 +1116,7 @@ export class SituationMonitorSettingsService {
 
   private resolveNextFallbackApiBaseUrl(
     stored: StoredSituationMonitorSettings | null,
-    next: string | null | undefined
+    next: string | null | undefined,
   ): string | null {
     if (next === undefined) {
       const current = this.normalizeUrl(stored?.translationFallbackApiBaseUrl);
@@ -979,7 +1177,7 @@ export class SituationMonitorSettingsService {
 
   private async resolveNextApiKey(
     current: unknown,
-    next: string | null | undefined
+    next: string | null | undefined,
   ): Promise<unknown> {
     if (next === undefined) {
       return current ?? null;
@@ -993,7 +1191,10 @@ export class SituationMonitorSettingsService {
     return this.securitySettings.encodeSecretForStorage(normalized);
   }
 
-  private resolveStoredApiKey(raw: unknown, keyName: string): string | undefined {
+  private resolveStoredApiKey(
+    raw: unknown,
+    keyName: string,
+  ): string | undefined {
     if (!raw) {
       return undefined;
     }
@@ -1005,7 +1206,9 @@ export class SituationMonitorSettingsService {
     }
     const key = resolveSettingsKey(this.env);
     if (!key) {
-      this.logger.warn(`Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for situation monitor ${keyName}`);
+      this.logger.warn(
+        `Missing SYSTEM_SETTINGS_ENCRYPTION_KEY for situation monitor ${keyName}`,
+      );
       return undefined;
     }
 
@@ -1013,14 +1216,17 @@ export class SituationMonitorSettingsService {
       const decrypted = decryptStringValueV1(raw, key);
       return this.normalizeString(decrypted);
     } catch (error) {
-      this.logger.warn({ err: error }, `Failed to decrypt situation monitor ${keyName}`);
+      this.logger.warn(
+        { err: error },
+        `Failed to decrypt situation monitor ${keyName}`,
+      );
       return undefined;
     }
   }
 
   private resolveApiKeySource(
     storedValue: string | undefined,
-    effectiveValue: string | undefined
+    effectiveValue: string | undefined,
   ): SituationMonitorApiKeySource {
     if (storedValue) {
       return "stored";
@@ -1047,7 +1253,9 @@ export class SituationMonitorSettingsService {
         allowedProtocols.length === 1 && allowedProtocols[0] === "https:"
           ? "https URL"
           : "http(s) URL";
-      throw new BadRequestException(`${fieldName} must be a valid ${protocolHint}`);
+      throw new BadRequestException(
+        `${fieldName} must be a valid ${protocolHint}`,
+      );
     }
   }
 
@@ -1055,9 +1263,16 @@ export class SituationMonitorSettingsService {
     return typeof value === "boolean" ? value : fallback;
   }
 
-  private asBoundedInt(value: unknown, fallback: number, min: number, max: number): number {
+  private asBoundedInt(
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
     const parsedValue = typeof value === "number" ? value : Number(value);
-    const parsed = Number.isFinite(parsedValue) ? Math.trunc(parsedValue) : fallback;
+    const parsed = Number.isFinite(parsedValue)
+      ? Math.trunc(parsedValue)
+      : fallback;
     return Math.max(min, Math.min(max, parsed));
   }
 
@@ -1152,27 +1367,39 @@ export class SituationMonitorSettingsService {
     try {
       cached = await this.cache.get<CachedSituationMonitorSettings>(CACHE_KEY);
     } catch (error) {
-      this.logger.warn({ err: error }, "Failed to read situation monitor settings cache");
+      this.logger.warn(
+        { err: error },
+        "Failed to read situation monitor settings cache",
+      );
     }
 
     if (cached) {
-      return cached.exists ? cached.value ?? null : null;
+      return cached.exists ? (cached.value ?? null) : null;
     }
 
     const record = await this.prisma.systemSetting.findUnique({
-      where: { key: SETTINGS_KEY }
+      where: { key: SETTINGS_KEY },
     });
     const raw = record?.value as unknown;
-    const settings = raw && typeof raw === "object" ? (raw as StoredSituationMonitorSettings) : null;
+    const settings =
+      raw && typeof raw === "object"
+        ? (raw as StoredSituationMonitorSettings)
+        : null;
 
     try {
       await this.cache.set(
         CACHE_KEY,
-        { exists: Boolean(record), value: settings ?? undefined } satisfies CachedSituationMonitorSettings,
-        CACHE_TTL_SECONDS
+        {
+          exists: Boolean(record),
+          value: settings ?? undefined,
+        } satisfies CachedSituationMonitorSettings,
+        CACHE_TTL_SECONDS,
       );
     } catch (error) {
-      this.logger.warn({ err: error }, "Failed to write situation monitor settings cache");
+      this.logger.warn(
+        { err: error },
+        "Failed to write situation monitor settings cache",
+      );
     }
 
     return settings;
@@ -1182,7 +1409,10 @@ export class SituationMonitorSettingsService {
     try {
       await this.cache.del(CACHE_KEY);
     } catch (error) {
-      this.logger.warn({ err: error }, "Failed to invalidate situation monitor settings cache");
+      this.logger.warn(
+        { err: error },
+        "Failed to invalidate situation monitor settings cache",
+      );
     }
   }
 
