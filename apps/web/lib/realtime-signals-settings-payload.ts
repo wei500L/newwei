@@ -1,7 +1,7 @@
 export const REALTIME_SIGNALS_SECRET_FIELD_NAMES = [
   "relaySharedSecret",
   "aisApiKey",
-  "acledAccessToken",
+  "acledOauthPassword",
   "cloudflareApiToken",
   "wingbitsApiKey",
 ] as const;

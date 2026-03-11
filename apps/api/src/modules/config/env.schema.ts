@@ -412,7 +412,17 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().min(1).optional(),
     ),
-    REALTIME_SIGNALS_ACLED_ACCESS_TOKEN: z.preprocess(
+    REALTIME_SIGNALS_ACLED_USERNAME: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
+    REALTIME_SIGNALS_ACLED_PASSWORD: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
+    REALTIME_SIGNALS_ACLED_CLIENT_ID: z.preprocess(
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().min(1).optional(),

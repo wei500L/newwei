@@ -34,6 +34,11 @@ import {
 
 type RealtimeSignalsSettingsSource = "env" | "db";
 type RealtimeSignalsSecretSource = "stored" | "env" | "none";
+type RealtimeSignalsAcledAccessTokenStatus =
+  | "ready"
+  | "expiring"
+  | "missing"
+  | "refresh_failed";
 
 interface RealtimeSignalsSettingsResponse {
   source: RealtimeSignalsSettingsSource;
@@ -69,6 +74,17 @@ interface RealtimeSignalsSettingsResponse {
   aisApiKeySource: RealtimeSignalsSecretSource;
   hasAcledAccessToken: boolean;
   acledAccessTokenSource: RealtimeSignalsSecretSource;
+  acledAccessTokenStatus: RealtimeSignalsAcledAccessTokenStatus;
+  acledAccessTokenExpiresAt?: string;
+  acledAccessTokenRefreshedAt?: string;
+  acledAccessTokenLastAttemptAt?: string;
+  acledAccessTokenLastError?: string;
+  acledOauthUsername?: string;
+  acledOauthUsernameSource: RealtimeSignalsSecretSource;
+  hasAcledOauthPassword: boolean;
+  acledOauthPasswordSource: RealtimeSignalsSecretSource;
+  acledOauthClientId: string;
+  acledOauthClientIdSource: RealtimeSignalsSecretSource;
   hasCloudflareApiToken: boolean;
   cloudflareApiTokenSource: RealtimeSignalsSecretSource;
   hasWingbitsApiKey: boolean;
@@ -104,7 +120,9 @@ interface RealtimeSignalsSettingsFormValues {
   polymarketProxyUrl?: string;
   relaySharedSecret?: string;
   aisApiKey?: string;
-  acledAccessToken?: string;
+  acledOauthUsername?: string;
+  acledOauthPassword?: string;
+  acledOauthClientId?: string;
   cloudflareApiToken?: string;
   wingbitsApiKey?: string;
 }
@@ -143,6 +161,17 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   aisApiKeySource: "none",
   hasAcledAccessToken: false,
   acledAccessTokenSource: "none",
+  acledAccessTokenStatus: "missing",
+  acledAccessTokenExpiresAt: undefined,
+  acledAccessTokenRefreshedAt: undefined,
+  acledAccessTokenLastAttemptAt: undefined,
+  acledAccessTokenLastError: undefined,
+  acledOauthUsername: "",
+  acledOauthUsernameSource: "none",
+  hasAcledOauthPassword: false,
+  acledOauthPasswordSource: "none",
+  acledOauthClientId: "acled",
+  acledOauthClientIdSource: "none",
   hasCloudflareApiToken: false,
   cloudflareApiTokenSource: "none",
   hasWingbitsApiKey: false,
@@ -232,7 +261,9 @@ function toFormValues(
     polymarketProxyUrl: settings.polymarketProxyUrl ?? "",
     relaySharedSecret: "",
     aisApiKey: "",
-    acledAccessToken: "",
+    acledOauthUsername: settings.acledOauthUsername ?? "",
+    acledOauthPassword: "",
+    acledOauthClientId: settings.acledOauthClientId || "acled",
     cloudflareApiToken: "",
     wingbitsApiKey: "",
   };
@@ -318,6 +349,12 @@ export function RealtimeSignalsSettingsPanel() {
         relayBaseUrl: values.relayBaseUrl?.trim()
           ? values.relayBaseUrl.trim()
           : null,
+        acledOauthUsername: values.acledOauthUsername?.trim()
+          ? values.acledOauthUsername.trim()
+          : null,
+        acledOauthClientId: values.acledOauthClientId?.trim()
+          ? values.acledOauthClientId.trim()
+          : null,
         polymarketProxyUrl: values.polymarketProxyUrl?.trim()
           ? values.polymarketProxyUrl.trim()
           : null,
@@ -373,19 +410,27 @@ export function RealtimeSignalsSettingsPanel() {
         setResetting(true);
         setErrorMessage(null);
         try {
-          const response = await apiClient.delete<RealtimeSignalsSettingsResponse>(
-            "system-settings/realtime-signals",
-          );
+          const response =
+            await apiClient.delete<RealtimeSignalsSettingsResponse>(
+              "system-settings/realtime-signals",
+            );
           const data: RealtimeSignalsSettingsResponse = {
             ...EMPTY_SETTINGS,
             ...(response.data ?? {}),
           };
           setSettings(data);
           form.setFieldsValue(toFormValues(data));
-          messageApi.success(t("systemSettings.realtimeSignals.messages.reset"));
+          messageApi.success(
+            t("systemSettings.realtimeSignals.messages.reset"),
+          );
         } catch (error) {
-          captureClientError("Failed to reset realtime signals settings", error);
-          messageApi.error(t("systemSettings.realtimeSignals.errors.resetFailed"));
+          captureClientError(
+            "Failed to reset realtime signals settings",
+            error,
+          );
+          messageApi.error(
+            t("systemSettings.realtimeSignals.errors.resetFailed"),
+          );
         } finally {
           setResetting(false);
         }
@@ -406,6 +451,30 @@ export function RealtimeSignalsSettingsPanel() {
     t(`systemSettings.realtimeSignals.status.secretSources.${value}`, {
       defaultValue: value,
     });
+  const acledTokenStatusLabel = t(
+    `systemSettings.realtimeSignals.status.acledTokenStatuses.${settings.acledAccessTokenStatus}`,
+    {
+      defaultValue: settings.acledAccessTokenStatus,
+    },
+  );
+  const acledTokenStatusColor =
+    settings.acledAccessTokenStatus === "ready"
+      ? "green"
+      : settings.acledAccessTokenStatus === "expiring"
+        ? "gold"
+        : settings.acledAccessTokenStatus === "refresh_failed"
+          ? "red"
+          : "default";
+  const formatTimestamp = (value?: string) => {
+    if (!value) {
+      return t("systemSettings.realtimeSignals.status.notConfigured");
+    }
+    const parsed = Date.parse(value);
+    if (!Number.isFinite(parsed)) {
+      return value;
+    }
+    return new Date(parsed).toLocaleString();
+  };
 
   const secretStatusRows = [
     {
@@ -421,10 +490,10 @@ export function RealtimeSignalsSettingsPanel() {
       source: settings.aisApiKeySource,
     },
     {
-      key: "acledAccessToken",
-      label: t("systemSettings.realtimeSignals.status.acledAccessToken"),
-      has: settings.hasAcledAccessToken,
-      source: settings.acledAccessTokenSource,
+      key: "acledOauthPassword",
+      label: t("systemSettings.realtimeSignals.status.acledOauthPassword"),
+      has: settings.hasAcledOauthPassword,
+      source: settings.acledOauthPasswordSource,
     },
     {
       key: "cloudflareApiToken",
@@ -457,22 +526,24 @@ export function RealtimeSignalsSettingsPanel() {
     };
   });
 
-  const enabledSourceCount = sourceStatusRows.filter((row) => row.enabled).length;
+  const enabledSourceCount = sourceStatusRows.filter(
+    (row) => row.enabled,
+  ).length;
   const disabledSourceCount = sourceStatusRows.length - enabledSourceCount;
   const fastestEnabledInterval = sourceStatusRows
     .filter((row) => row.enabled && typeof row.intervalSec === "number")
-    .reduce<number | null>(
-      (acc, row) =>
-        acc === null || (row.intervalSec as number) < acc
-          ? (row.intervalSec as number)
-          : acc,
-      null,
-    );
-  const configuredSecretCount = secretStatusRows.filter((row) => row.has).length;
+    .reduce<
+      number | null
+    >((acc, row) => (acc === null || (row.intervalSec as number) < acc ? (row.intervalSec as number) : acc), null);
+  const configuredSecretCount = secretStatusRows.filter(
+    (row) => row.has,
+  ).length;
 
   if (loading && !loadedOnce) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+      >
         <Spin />
       </div>
     );
@@ -506,9 +577,12 @@ export function RealtimeSignalsSettingsPanel() {
         <Col xs={24} sm={12} lg={6}>
           <Card size="small">
             <Statistic
-              title={t("systemSettings.realtimeSignals.overview.enabledSources", {
-                defaultValue: "Enabled sources",
-              })}
+              title={t(
+                "systemSettings.realtimeSignals.overview.enabledSources",
+                {
+                  defaultValue: "Enabled sources",
+                },
+              )}
               value={enabledSourceCount}
               suffix={`/ ${sourceStatusRows.length}`}
             />
@@ -517,9 +591,12 @@ export function RealtimeSignalsSettingsPanel() {
         <Col xs={24} sm={12} lg={6}>
           <Card size="small">
             <Statistic
-              title={t("systemSettings.realtimeSignals.overview.disabledSources", {
-                defaultValue: "Disabled sources",
-              })}
+              title={t(
+                "systemSettings.realtimeSignals.overview.disabledSources",
+                {
+                  defaultValue: "Disabled sources",
+                },
+              )}
               value={disabledSourceCount}
             />
           </Card>
@@ -527,9 +604,12 @@ export function RealtimeSignalsSettingsPanel() {
         <Col xs={24} sm={12} lg={6}>
           <Card size="small">
             <Statistic
-              title={t("systemSettings.realtimeSignals.overview.fastestInterval", {
-                defaultValue: "Fastest interval",
-              })}
+              title={t(
+                "systemSettings.realtimeSignals.overview.fastestInterval",
+                {
+                  defaultValue: "Fastest interval",
+                },
+              )}
               value={fastestEnabledInterval ?? "—"}
               suffix={fastestEnabledInterval ? "sec" : undefined}
             />
@@ -538,9 +618,12 @@ export function RealtimeSignalsSettingsPanel() {
         <Col xs={24} sm={12} lg={6}>
           <Card size="small">
             <Statistic
-              title={t("systemSettings.realtimeSignals.overview.configuredSecrets", {
-                defaultValue: "Configured secrets",
-              })}
+              title={t(
+                "systemSettings.realtimeSignals.overview.configuredSecrets",
+                {
+                  defaultValue: "Configured secrets",
+                },
+              )}
               value={configuredSecretCount}
               suffix={`/ ${secretStatusRows.length}`}
             />
@@ -583,6 +666,70 @@ export function RealtimeSignalsSettingsPanel() {
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
         </Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.acledOauthUsername")}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {settings.acledOauthUsername ||
+              t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
+          <Tag color={settings.acledOauthUsername ? "blue" : "default"}>
+            {secretSourceLabel(settings.acledOauthUsernameSource)}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.acledOauthClientId")}
+          </Typography.Text>
+          <Tag color="geekblue">{settings.acledOauthClientId || "acled"}</Tag>
+          <Tag
+            color={
+              settings.acledOauthClientIdSource === "none" ? "default" : "blue"
+            }
+          >
+            {secretSourceLabel(settings.acledOauthClientIdSource)}
+          </Tag>
+        </Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.acledAccessToken")}
+          </Typography.Text>
+          <Tag color={acledTokenStatusColor}>{acledTokenStatusLabel}</Tag>
+          <Tag color={settings.hasAcledAccessToken ? "blue" : "default"}>
+            {secretSourceLabel(settings.acledAccessTokenSource)}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t(
+              "systemSettings.realtimeSignals.status.acledAccessTokenExpiresAt",
+            )}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {formatTimestamp(settings.acledAccessTokenExpiresAt)}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t(
+              "systemSettings.realtimeSignals.status.acledAccessTokenRefreshedAt",
+            )}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {formatTimestamp(settings.acledAccessTokenRefreshedAt)}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t(
+              "systemSettings.realtimeSignals.status.acledAccessTokenLastAttemptAt",
+            )}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {formatTimestamp(settings.acledAccessTokenLastAttemptAt)}
+          </Tag>
+        </Space>
+        {settings.acledAccessTokenLastError ? (
+          <Typography.Text type="danger">
+            {t(
+              "systemSettings.realtimeSignals.status.acledAccessTokenLastError",
+            )}
+            {`: ${settings.acledAccessTokenLastError}`}
+          </Typography.Text>
+        ) : null}
         {secretStatusRows.map((row) => (
           <Space key={row.key} wrap>
             <Typography.Text type="secondary">{row.label}</Typography.Text>
@@ -610,7 +757,9 @@ export function RealtimeSignalsSettingsPanel() {
                 : t("systemSettings.realtimeSignals.status.disabled", {
                     defaultValue: "Disabled",
                   })}
-              {typeof row.intervalSec === "number" ? ` · ${row.intervalSec}s` : ""}
+              {typeof row.intervalSec === "number"
+                ? ` · ${row.intervalSec}s`
+                : ""}
             </Tag>
           ))}
         </Space>
@@ -650,7 +799,12 @@ export function RealtimeSignalsSettingsPanel() {
               },
             ]}
           >
-            <InputNumber min={1_000} max={120_000} step={500} style={{ width: "100%" }} />
+            <InputNumber
+              min={1_000}
+              max={120_000}
+              step={500}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
           <Form.Item
             label={t("systemSettings.realtimeSignals.fields.maxRetries")}
@@ -659,7 +813,9 @@ export function RealtimeSignalsSettingsPanel() {
             rules={[
               {
                 required: true,
-                message: t("systemSettings.realtimeSignals.validation.maxRetries"),
+                message: t(
+                  "systemSettings.realtimeSignals.validation.maxRetries",
+                ),
               },
               {
                 type: "number",
@@ -689,9 +845,12 @@ export function RealtimeSignalsSettingsPanel() {
               <Form.Item
                 name={sourceConfig.enabledField}
                 valuePropName="checked"
-                label={t("systemSettings.realtimeSignals.fields.sourceEnabled", {
-                  source: sourceName,
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.fields.sourceEnabled",
+                  {
+                    source: sourceName,
+                  },
+                )}
                 style={{ minWidth: 280, flex: 1 }}
               >
                 <Switch />
@@ -748,7 +907,9 @@ export function RealtimeSignalsSettingsPanel() {
         </Typography.Title>
         <Space wrap style={{ display: "flex", width: "100%" }}>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.keywordSpikeMinCount")}
+            label={t(
+              "systemSettings.realtimeSignals.fields.keywordSpikeMinCount",
+            )}
             name="keywordSpikeMinCount"
             style={{ minWidth: 280, flex: 1 }}
             rules={[
@@ -795,7 +956,12 @@ export function RealtimeSignalsSettingsPanel() {
               },
             ]}
           >
-            <InputNumber min={1} max={100} step={0.1} style={{ width: "100%" }} />
+            <InputNumber
+              min={1}
+              max={100}
+              step={0.1}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
           <Form.Item
             label={t(
@@ -821,7 +987,12 @@ export function RealtimeSignalsSettingsPanel() {
               },
             ]}
           >
-            <InputNumber min={1} max={100} step={0.1} style={{ width: "100%" }} />
+            <InputNumber
+              min={1}
+              max={100}
+              step={0.1}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
           <Form.Item
             label={t(
@@ -847,7 +1018,12 @@ export function RealtimeSignalsSettingsPanel() {
               },
             ]}
           >
-            <InputNumber min={0} max={1_000} step={1} style={{ width: "100%" }} />
+            <InputNumber
+              min={0}
+              max={1_000}
+              step={1}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
         </Space>
 
@@ -880,7 +1056,9 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.polymarketProxyUrl")}
+            label={t(
+              "systemSettings.realtimeSignals.fields.polymarketProxyUrl",
+            )}
             name="polymarketProxyUrl"
             style={{ minWidth: 280, flex: 1 }}
             extra={t("systemSettings.realtimeSignals.hints.polymarketProxyUrl")}
@@ -896,7 +1074,10 @@ export function RealtimeSignalsSettingsPanel() {
         <Typography.Title level={5}>
           {t("systemSettings.realtimeSignals.sections.credentials")}
         </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginBottom: "0.75rem" }}
+        >
           {t("systemSettings.realtimeSignals.hints.secretOptional")}
         </Typography.Paragraph>
         <Space direction="vertical" style={{ width: "100%" }} size={0}>
@@ -923,8 +1104,24 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.acledAccessToken")}
-            name="acledAccessToken"
+            label={t(
+              "systemSettings.realtimeSignals.fields.acledOauthUsername",
+            )}
+            name="acledOauthUsername"
+            extra={t("systemSettings.realtimeSignals.hints.acledOauthUsername")}
+          >
+            <Input
+              autoComplete="username"
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.acledOauthUsername",
+              )}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.acledOauthPassword",
+            )}
+            name="acledOauthPassword"
           >
             <Input.Password
               autoComplete="new-password"
@@ -934,7 +1131,23 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.cloudflareApiToken")}
+            label={t(
+              "systemSettings.realtimeSignals.fields.acledOauthClientId",
+            )}
+            name="acledOauthClientId"
+            extra={t("systemSettings.realtimeSignals.hints.acledOauthClientId")}
+          >
+            <Input
+              autoComplete="off"
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.acledOauthClientId",
+              )}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.cloudflareApiToken",
+            )}
             name="cloudflareApiToken"
           >
             <Input.Password
@@ -961,7 +1174,12 @@ export function RealtimeSignalsSettingsPanel() {
           <Button type="primary" htmlType="submit" loading={saving}>
             {t("common.saveChanges")}
           </Button>
-          <Button danger onClick={handleReset} loading={resetting} disabled={saving}>
+          <Button
+            danger
+            onClick={handleReset}
+            loading={resetting}
+            disabled={saving}
+          >
             {t("systemSettings.realtimeSignals.actions.reset")}
           </Button>
         </Space>

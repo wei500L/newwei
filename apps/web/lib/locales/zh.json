@@ -5366,8 +5366,21 @@
         "relaySharedSecret": "Relay 共享密钥",
         "aisApiKey": "AIS API Key",
         "acledAccessToken": "ACLED Access Token",
+        "acledAccessTokenExpiresAt": "ACLED Token 到期时间",
+        "acledAccessTokenRefreshedAt": "ACLED Token 最近刷新时间",
+        "acledAccessTokenLastAttemptAt": "ACLED Token 最近刷新尝试时间",
+        "acledAccessTokenLastError": "ACLED Token 最近错误",
+        "acledOauthUsername": "ACLED OAuth 用户名",
+        "acledOauthPassword": "ACLED OAuth 密码",
+        "acledOauthClientId": "ACLED OAuth Client ID",
         "cloudflareApiToken": "Cloudflare API Token",
         "wingbitsApiKey": "Wingbits API Key",
+        "acledTokenStatuses": {
+          "ready": "Token 可用",
+          "expiring": "Token 即将过期",
+          "missing": "Token 缺失",
+          "refresh_failed": "Token 刷新失败"
+        },
         "secretSources": {
           "stored": "系统设置（已保存）",
           "env": "环境变量",
@@ -5406,7 +5419,9 @@
         "polymarketProxyUrl": "Polymarket 代理地址",
         "relaySharedSecret": "Relay 共享密钥",
         "aisApiKey": "AIS API Key",
-        "acledAccessToken": "ACLED Access Token",
+        "acledOauthUsername": "ACLED OAuth 用户名",
+        "acledOauthPassword": "ACLED OAuth 密码",
+        "acledOauthClientId": "ACLED OAuth Client ID",
         "cloudflareApiToken": "Cloudflare API Token",
         "wingbitsApiKey": "Wingbits API Key"
       },
@@ -5414,12 +5429,16 @@
         "adsbBaseUrl": "用于军事航班采集的 ADS-B API 基础地址。",
         "relayBaseUrl": "可选。用于 AIS/Polymarket 请求转发的 Relay 地址。",
         "polymarketProxyUrl": "可选。用于 Polymarket 请求的代理端点。",
+        "acledOauthUsername": "用于自动刷新 ACLED OAuth Token 的账号邮箱。",
+        "acledOauthClientId": "默认值为 `acled`，只有 ACLED 发放了其他 client_id 时才需要修改。",
         "secretOptional": "密钥字段留空表示保持当前已保存值。"
       },
       "placeholders": {
         "adsbBaseUrl": "https://api.adsb.lol",
         "relayBaseUrl": "https://your-relay.example.com",
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
+        "acledOauthUsername": "weidu500l@gmail.com",
+        "acledOauthClientId": "acled",
         "secretValue": "留空表示保持当前值"
       },
       "actions": {

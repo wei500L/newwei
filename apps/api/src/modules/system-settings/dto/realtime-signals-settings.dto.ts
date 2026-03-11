@@ -147,7 +147,15 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsString()
-  acledAccessToken?: string | null;
+  acledOauthUsername?: string | null;
+
+  @IsOptional()
+  @IsString()
+  acledOauthPassword?: string | null;
+
+  @IsOptional()
+  @IsString()
+  acledOauthClientId?: string | null;
 
   @IsOptional()
   @IsString()

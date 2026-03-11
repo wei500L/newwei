@@ -5366,8 +5366,21 @@
         "relaySharedSecret": "Relay shared secret",
         "aisApiKey": "AIS API key",
         "acledAccessToken": "ACLED access token",
+        "acledAccessTokenExpiresAt": "ACLED token expires at",
+        "acledAccessTokenRefreshedAt": "ACLED token refreshed at",
+        "acledAccessTokenLastAttemptAt": "ACLED token last refresh attempt",
+        "acledAccessTokenLastError": "ACLED token last error",
+        "acledOauthUsername": "ACLED OAuth username",
+        "acledOauthPassword": "ACLED OAuth password",
+        "acledOauthClientId": "ACLED OAuth client ID",
         "cloudflareApiToken": "Cloudflare API token",
         "wingbitsApiKey": "Wingbits API key",
+        "acledTokenStatuses": {
+          "ready": "Token ready",
+          "expiring": "Token expiring soon",
+          "missing": "Token missing",
+          "refresh_failed": "Token refresh failed"
+        },
         "secretSources": {
           "stored": "System settings (stored)",
           "env": "Environment variable",
@@ -5406,7 +5419,9 @@
         "polymarketProxyUrl": "Polymarket proxy URL",
         "relaySharedSecret": "Relay shared secret",
         "aisApiKey": "AIS API key",
-        "acledAccessToken": "ACLED access token",
+        "acledOauthUsername": "ACLED OAuth username",
+        "acledOauthPassword": "ACLED OAuth password",
+        "acledOauthClientId": "ACLED OAuth client ID",
         "cloudflareApiToken": "Cloudflare API token",
         "wingbitsApiKey": "Wingbits API key"
       },
@@ -5414,12 +5429,16 @@
         "adsbBaseUrl": "ADS-B API base URL for military flight ingestion.",
         "relayBaseUrl": "Optional relay URL used for AIS/Polymarket proxying.",
         "polymarketProxyUrl": "Optional upstream proxy endpoint for Polymarket requests.",
+        "acledOauthUsername": "ACLED account email used for automatic OAuth token refresh.",
+        "acledOauthClientId": "Defaults to `acled`. Change only if ACLED issued a different client ID.",
         "secretOptional": "Leave secret fields empty to keep existing stored values."
       },
       "placeholders": {
         "adsbBaseUrl": "https://api.adsb.lol",
         "relayBaseUrl": "https://your-relay.example.com",
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
+        "acledOauthUsername": "weidu500l@gmail.com",
+        "acledOauthClientId": "acled",
         "secretValue": "Leave empty to keep current value"
       },
       "actions": {

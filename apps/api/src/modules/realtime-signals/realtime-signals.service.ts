@@ -91,7 +91,8 @@ const REALTIME_SIGNAL_INSIGHT_SOURCES = [
   "pizzint",
 ] as const;
 
-type RealtimeSignalInsightSource = (typeof REALTIME_SIGNAL_INSIGHT_SOURCES)[number];
+type RealtimeSignalInsightSource =
+  (typeof REALTIME_SIGNAL_INSIGHT_SOURCES)[number];
 
 interface UnrestEventCandidate {
   id: string;
@@ -149,10 +150,16 @@ export class RealtimeSignalsService {
     );
   }
 
-  async refreshOrg(orgId: string, runtimeConfig?: RealtimeSignalsRuntimeConfig) {
+  async refreshOrg(
+    orgId: string,
+    runtimeConfig?: RealtimeSignalsRuntimeConfig,
+  ) {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
-      await this.store.setInsightSnapshot(orgId, this.createEmptyInsightSnapshot());
+      await this.store.setInsightSnapshot(
+        orgId,
+        this.createEmptyInsightSnapshot(),
+      );
       return;
     }
 
@@ -212,7 +219,11 @@ export class RealtimeSignalsService {
     await this.store.setInsightSnapshot(orgId, nextInsight);
   }
 
-  async evaluateMetric(orgId: string, metricSlug: string, changeWindowMin?: number | null) {
+  async evaluateMetric(
+    orgId: string,
+    metricSlug: string,
+    changeWindowMin?: number | null,
+  ) {
     return this.store.evaluateMetric(orgId, metricSlug, changeWindowMin);
   }
 
@@ -307,13 +318,19 @@ export class RealtimeSignalsService {
     nextInsight.pizzint = currentInsight.pizzint;
   }
 
-  private isInsightSource(source: RealtimeSignalSource): source is RealtimeSignalInsightSource {
+  private isInsightSource(
+    source: RealtimeSignalSource,
+  ): source is RealtimeSignalInsightSource {
     return REALTIME_SIGNAL_INSIGHT_SOURCES.includes(
       source as RealtimeSignalInsightSource,
     );
   }
 
-  private isInsightFresh(lastRunMs: number, intervalSec: number, nowMs: number) {
+  private isInsightFresh(
+    lastRunMs: number,
+    intervalSec: number,
+    nowMs: number,
+  ) {
     const safeIntervalSec = Math.max(10, Math.trunc(intervalSec));
     const freshnessMs = Math.max(5 * 60 * 1_000, safeIntervalSec * 2 * 1_000);
     return nowMs - lastRunMs <= freshnessMs;
@@ -347,7 +364,8 @@ export class RealtimeSignalsService {
   }
 
   private async fetchAdsbSignal(runtime: RealtimeSignalsRuntimeConfig) {
-    const baseUrl = this.normalizeUrl(runtime.adsb.baseUrl) ?? "https://api.adsb.lol";
+    const baseUrl =
+      this.normalizeUrl(runtime.adsb.baseUrl) ?? "https://api.adsb.lol";
     const endpoint = `${baseUrl}/v2/mil`;
     const payload = await this.fetchJsonWithRetry(endpoint, runtime);
     const aircraft = this.readArray((payload as { ac?: unknown[] })?.ac);
@@ -355,7 +373,9 @@ export class RealtimeSignalsService {
       (payload as { total?: unknown })?.total,
     );
     const militaryCount =
-      totalFromPayload === null ? aircraft.length : Math.max(0, Math.trunc(totalFromPayload));
+      totalFromPayload === null
+        ? aircraft.length
+        : Math.max(0, Math.trunc(totalFromPayload));
 
     const countries = new Set<string>();
     for (const entry of aircraft) {
@@ -420,7 +440,9 @@ export class RealtimeSignalsService {
     const disruptions = this.readArray(
       (payload as { disruptions?: unknown[] })?.disruptions,
     );
-    const density = this.readArray((payload as { density?: unknown[] })?.density);
+    const density = this.readArray(
+      (payload as { density?: unknown[] })?.density,
+    );
 
     const countries = new Set<string>();
     for (const disruption of disruptions) {
@@ -428,7 +450,9 @@ export class RealtimeSignalsService {
         continue;
       }
       const record = disruption as Record<string, unknown>;
-      const code = this.extractCountryCode(record.countryCode ?? record.country);
+      const code = this.extractCountryCode(
+        record.countryCode ?? record.country,
+      );
       if (code) {
         countries.add(code);
       }
@@ -490,11 +514,6 @@ export class RealtimeSignalsService {
   }
 
   private async fetchAcledUnrestEvents(runtime: RealtimeSignalsRuntimeConfig) {
-    const token = runtime.credentials.acledAccessToken?.trim();
-    if (!token) {
-      return [] as UnrestEventCandidate[];
-    }
-
     const now = Date.now();
     const startDate = new Date(now - 30 * 24 * 60 * 60 * 1_000)
       .toISOString()
@@ -510,75 +529,44 @@ export class RealtimeSignalsService {
     });
     const url = `${ACLED_API_URL}?${params.toString()}`;
 
-    try {
+    const fetchRows = async (token: string) => {
       const payload = await this.fetchJsonWithRetry(url, runtime, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      return this.readAcledUnrestRows(payload);
+    };
 
-      const response = payload as {
-        data?: unknown[];
-        message?: unknown;
-        error?: unknown;
-      };
-      if (response.message || response.error) {
-        logger.warn(
-          { message: response.message, error: response.error },
-          "ACLED unrest request returned error payload",
-        );
-        return [] as UnrestEventCandidate[];
-      }
+    const token = runtime.credentials.acledAccessToken?.trim();
+    if (!token) {
+      return [] as UnrestEventCandidate[];
+    }
 
-      const events = this.readArray(response.data);
-      const rows: UnrestEventCandidate[] = [];
-
-      for (let idx = 0; idx < events.length; idx += 1) {
-        const entry = events[idx];
-        if (!entry || typeof entry !== "object") {
-          continue;
-        }
-        const record = entry as Record<string, unknown>;
-
-        const lat = this.toFiniteNumber(record.latitude);
-        const lon = this.toFiniteNumber(record.longitude);
-        if (
-          lat === null ||
-          lon === null ||
-          lat < -90 ||
-          lat > 90 ||
-          lon < -180 ||
-          lon > 180
-        ) {
-          continue;
-        }
-
-        const occurredAt = this.toIsoTimestamp(
-          record.event_date ?? record.occurredAt,
-        );
-        const eventId =
-          this.normalizeString(record.event_id_cnty) ??
-          `acled-${lat.toFixed(3)}-${lon.toFixed(3)}-${this.toDateBucket(occurredAt)}-${idx}`;
-        rows.push({
-          id: `acled-${eventId}`,
-          lat,
-          lon,
-          occurredAt,
-          source: "acled",
-          countryCode: this.extractCountryCode(
-            record.iso ??
-              record.country_code ??
-              record.country ??
-              record.admin1 ??
-              record.location,
-          ),
-          reports: Math.max(
-            1,
-            Math.trunc(this.toFiniteNumber(record.fatalities) ?? 1),
-          ),
-        });
-      }
-
-      return rows;
+    try {
+      return await fetchRows(token);
     } catch (error) {
+      const status = this.readHttpStatus(error);
+      if (status === 401 || status === 403) {
+        try {
+          const refreshedToken =
+            await this.settings.forceRefreshAcledAccessToken();
+          if (refreshedToken?.trim()) {
+            try {
+              return await fetchRows(refreshedToken.trim());
+            } catch (retryError) {
+              logger.warn(
+                { err: retryError },
+                "ACLED unrest request failed after token refresh",
+              );
+              return [] as UnrestEventCandidate[];
+            }
+          }
+        } catch (refreshError) {
+          logger.warn(
+            { err: refreshError },
+            "ACLED token refresh failed after unauthorized response",
+          );
+        }
+      }
       logger.warn({ err: error }, "ACLED unrest request failed");
       return [] as UnrestEventCandidate[];
     }
@@ -784,7 +772,9 @@ export class RealtimeSignalsService {
         }
         const locationRecord = entry as Record<string, unknown>;
         const code = this.extractCountryCode(
-          locationRecord.alpha2 ?? locationRecord.countryCode ?? locationRecord.name,
+          locationRecord.alpha2 ??
+            locationRecord.countryCode ??
+            locationRecord.name,
         );
         if (code) {
           countries.add(code);
@@ -845,13 +835,19 @@ export class RealtimeSignalsService {
       }),
     ]);
 
-    const recentCounts = new Map<string, { count: number; sources: Set<string> }>();
+    const recentCounts = new Map<
+      string,
+      { count: number; sources: Set<string> }
+    >();
     const baselineCounts = new Map<string, number>();
 
     for (const article of recentArticles) {
       const source = this.normalizeSource(article.source);
       for (const term of this.extractTermsFromArticle(article)) {
-        const entry = recentCounts.get(term) ?? { count: 0, sources: new Set() };
+        const entry = recentCounts.get(term) ?? {
+          count: 0,
+          sources: new Set(),
+        };
         entry.count += 1;
         entry.sources.add(source);
         recentCounts.set(term, entry);
@@ -875,7 +871,10 @@ export class RealtimeSignalsService {
     }[] = [];
 
     const minCount = Math.max(1, runtime.thresholds.keywordSpikeMinCount);
-    const requiredMultiplier = Math.max(1, runtime.thresholds.keywordSpikeMultiplier);
+    const requiredMultiplier = Math.max(
+      1,
+      runtime.thresholds.keywordSpikeMultiplier,
+    );
     const recentHours = 2;
     const baselineHours = 7 * 24;
 
@@ -1016,7 +1015,10 @@ export class RealtimeSignalsService {
       ] satisfies RealtimeSignalFetchResult[];
     }
 
-    const maxScore = tensions.reduce((acc, item) => Math.max(acc, item.score), 0);
+    const maxScore = tensions.reduce(
+      (acc, item) => Math.max(acc, item.score),
+      0,
+    );
     const countryCodes = Array.from(
       new Set(tensions.flatMap((item) => item.countries)),
     );
@@ -1212,7 +1214,9 @@ export class RealtimeSignalsService {
 
     const record = payload as Record<string, unknown>;
     const container =
-      record.data && typeof record.data === "object" && !Array.isArray(record.data)
+      record.data &&
+      typeof record.data === "object" &&
+      !Array.isArray(record.data)
         ? (record.data as Record<string, unknown>)
         : record;
 
@@ -1222,14 +1226,19 @@ export class RealtimeSignalsService {
         continue;
       }
       const points = series
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+        .filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry && typeof entry === "object"),
+        )
         .map((entry) => ({
           value: this.toFiniteNumber(entry.v ?? entry.value ?? entry.score),
           ts:
             this.normalizeString(entry.t ?? entry.timestamp ?? entry.date) ??
             new Date().toISOString(),
         }))
-        .filter((entry): entry is { value: number; ts: string } => entry.value !== null);
+        .filter(
+          (entry): entry is { value: number; ts: string } =>
+            entry.value !== null,
+        );
       if (points.length === 0) {
         continue;
       }
@@ -1240,7 +1249,11 @@ export class RealtimeSignalsService {
           ? ((latest.value - previous.value) / previous.value) * 100
           : 0;
       const trend: "rising" | "stable" | "falling" =
-        changePercent > 5 ? "rising" : changePercent < -5 ? "falling" : "stable";
+        changePercent > 5
+          ? "rising"
+          : changePercent < -5
+            ? "falling"
+            : "stable";
       rows.push({
         id: `gdelt:${pair}`,
         label: pair.replace(/_/g, " / ").toUpperCase(),
@@ -1280,7 +1293,9 @@ export class RealtimeSignalsService {
 
     if (source === "keyword_spike") {
       const spikes = this.readArray(primaryContext.spikes)
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+        .filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry && typeof entry === "object"),
+        )
         .map((entry, index) => ({
           id:
             this.normalizeString(entry.id) ??
@@ -1298,7 +1313,9 @@ export class RealtimeSignalsService {
 
     if (source === "polymarket_leads") {
       const leads = this.readArray(primaryContext.leads)
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+        .filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry && typeof entry === "object"),
+        )
         .map((entry, index) => ({
           id: this.normalizeString(entry.id) ?? `lead:${index}`,
           title: this.normalizeString(entry.title) ?? "unknown",
@@ -1312,33 +1329,43 @@ export class RealtimeSignalsService {
 
     if (source === "gdelt_tension") {
       const tensions = this.readArray(primaryContext.tensions)
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
-        .map((entry, index): {
-          id: string;
-          label: string;
-          score: number;
-          changePercent: number;
-          trend: "rising" | "stable" | "falling";
-          countries: string[];
-          updatedAt: string;
-        } => {
-          const trendRaw = this.normalizeString(entry.trend)?.toLowerCase();
-          const trend: "rising" | "stable" | "falling" =
-            trendRaw === "rising" || trendRaw === "falling" || trendRaw === "stable"
-              ? trendRaw
-              : "stable";
-          return {
-            id: this.normalizeString(entry.id) ?? `tension:${index}`,
-            label: this.normalizeString(entry.label) ?? "Unknown pair",
-            score: this.toFiniteNumber(entry.score) ?? 0,
-            changePercent: this.toFiniteNumber(entry.changePercent) ?? 0,
-            trend,
-            countries: this.readArray(entry.countries)
-              .map((country) => this.extractCountryCode(country))
-              .filter((country): country is string => Boolean(country)),
-            updatedAt: this.normalizeString(entry.updatedAt) ?? fallbackTimestamp,
-          };
-        });
+        .filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry && typeof entry === "object"),
+        )
+        .map(
+          (
+            entry,
+            index,
+          ): {
+            id: string;
+            label: string;
+            score: number;
+            changePercent: number;
+            trend: "rising" | "stable" | "falling";
+            countries: string[];
+            updatedAt: string;
+          } => {
+            const trendRaw = this.normalizeString(entry.trend)?.toLowerCase();
+            const trend: "rising" | "stable" | "falling" =
+              trendRaw === "rising" ||
+              trendRaw === "falling" ||
+              trendRaw === "stable"
+                ? trendRaw
+                : "stable";
+            return {
+              id: this.normalizeString(entry.id) ?? `tension:${index}`,
+              label: this.normalizeString(entry.label) ?? "Unknown pair",
+              score: this.toFiniteNumber(entry.score) ?? 0,
+              changePercent: this.toFiniteNumber(entry.changePercent) ?? 0,
+              trend,
+              countries: this.readArray(entry.countries)
+                .map((country) => this.extractCountryCode(country))
+                .filter((country): country is string => Boolean(country)),
+              updatedAt:
+                this.normalizeString(entry.updatedAt) ?? fallbackTimestamp,
+            };
+          },
+        );
       snapshot.tensions = tensions;
       return;
     }
@@ -1419,7 +1446,16 @@ export class RealtimeSignalsService {
           signal: controller.signal,
         });
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+          const body = await response.text().catch(() => "");
+          const error = new Error(
+            `HTTP ${response.status} ${response.statusText}`,
+          );
+          Object.assign(error, {
+            body,
+            status: response.status,
+            statusText: response.statusText,
+          });
+          throw error;
         }
         return (await response.json()) as T;
       } catch (error) {
@@ -1434,6 +1470,82 @@ export class RealtimeSignalsService {
     }
 
     throw lastError ?? new Error("Unknown fetch error");
+  }
+
+  private readAcledUnrestRows(payload: unknown): UnrestEventCandidate[] {
+    const response = payload as {
+      data?: unknown[];
+      message?: unknown;
+      error?: unknown;
+    };
+    if (response.message || response.error) {
+      logger.warn(
+        { message: response.message, error: response.error },
+        "ACLED unrest request returned error payload",
+      );
+      return [];
+    }
+
+    const events = this.readArray(response.data);
+    const rows: UnrestEventCandidate[] = [];
+
+    for (let idx = 0; idx < events.length; idx += 1) {
+      const entry = events[idx];
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const record = entry as Record<string, unknown>;
+
+      const lat = this.toFiniteNumber(record.latitude);
+      const lon = this.toFiniteNumber(record.longitude);
+      if (
+        lat === null ||
+        lon === null ||
+        lat < -90 ||
+        lat > 90 ||
+        lon < -180 ||
+        lon > 180
+      ) {
+        continue;
+      }
+
+      const occurredAt = this.toIsoTimestamp(
+        record.event_date ?? record.occurredAt,
+      );
+      const eventId =
+        this.normalizeString(record.event_id_cnty) ??
+        `acled-${lat.toFixed(3)}-${lon.toFixed(3)}-${this.toDateBucket(occurredAt)}-${idx}`;
+      rows.push({
+        id: `acled-${eventId}`,
+        lat,
+        lon,
+        occurredAt,
+        source: "acled",
+        countryCode: this.extractCountryCode(
+          record.iso ??
+            record.country_code ??
+            record.country ??
+            record.admin1 ??
+            record.location,
+        ),
+        reports: Math.max(
+          1,
+          Math.trunc(this.toFiniteNumber(record.fatalities) ?? 1),
+        ),
+      });
+    }
+
+    return rows;
+  }
+
+  private readHttpStatus(error: unknown) {
+    if (!error || typeof error !== "object") {
+      return null;
+    }
+    const status = (error as { status?: unknown }).status;
+    return typeof status === "number" && Number.isFinite(status)
+      ? status
+      : null;
   }
 
   private readArray(value: unknown): unknown[] {

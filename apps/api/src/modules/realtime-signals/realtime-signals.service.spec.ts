@@ -46,10 +46,12 @@ describe("RealtimeSignalsService unrest merge", () => {
       ...runtimeConfig,
       adsb: { baseUrl: "https://api.adsb.lol/" },
     } satisfies RealtimeSignalsRuntimeConfig;
-    const fetchJsonSpy = jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
-      total: 3,
-      ac: [{ r: "USAF1" }],
-    });
+    const fetchJsonSpy = jest
+      .spyOn(service as any, "fetchJsonWithRetry")
+      .mockResolvedValue({
+        total: 3,
+        ac: [{ r: "USAF1" }],
+      });
 
     const result = await (service as any).fetchAdsbSignal(runtime);
 
@@ -158,6 +160,36 @@ describe("RealtimeSignalsService unrest merge", () => {
       gdeltCount: 1,
       dedupeReducedBy: 1,
     });
+  });
+
+  it("refreshes ACLED token and retries once on 401", async () => {
+    const settings = {
+      forceRefreshAcledAccessToken: jest.fn().mockResolvedValue("fresh-token"),
+    };
+    const service = new RealtimeSignalsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      settings as any,
+    );
+    const fetchJsonSpy = jest
+      .spyOn(service as any, "fetchJsonWithRetry")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("HTTP 401 Unauthorized"), { status: 401 }),
+      )
+      .mockResolvedValueOnce({ data: [] });
+
+    const rows = await (service as any).fetchAcledUnrestEvents(runtimeConfig);
+
+    expect(settings.forceRefreshAcledAccessToken).toHaveBeenCalledTimes(1);
+    expect(fetchJsonSpy.mock.calls[0]?.[2]).toMatchObject({
+      headers: { Authorization: "Bearer token" },
+    });
+    expect(fetchJsonSpy.mock.calls[1]?.[2]).toMatchObject({
+      headers: { Authorization: "Bearer fresh-token" },
+    });
+    expect(rows).toEqual([]);
   });
 });
 
@@ -322,10 +354,45 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     const { service, store } = buildService();
 
     store.getInsightSnapshot.mockResolvedValue({
-      keywordSpikes: [{ id: "keyword:1", term: "old", count: 5, baseline: 2, multiplier: 2.5, sourceCount: 3, confidence: 0.6 }],
-      predictionLeads: [{ id: "lead:1", title: "old lead", shift: 8, newsActivity: 1, confidence: 0.6 }],
-      tensions: [{ id: "tension:1", label: "Old tension", score: 55, changePercent: 3, trend: "stable" as const, countries: ["US"], updatedAt: "2026-03-01T00:00:00.000Z" }],
-      pizzint: { defcon: 2, adjustedScore: 1.3, openLocations: 7, activeSpikes: 2, avgPop: 18, updatedAt: "2026-03-01T00:00:00.000Z" },
+      keywordSpikes: [
+        {
+          id: "keyword:1",
+          term: "old",
+          count: 5,
+          baseline: 2,
+          multiplier: 2.5,
+          sourceCount: 3,
+          confidence: 0.6,
+        },
+      ],
+      predictionLeads: [
+        {
+          id: "lead:1",
+          title: "old lead",
+          shift: 8,
+          newsActivity: 1,
+          confidence: 0.6,
+        },
+      ],
+      tensions: [
+        {
+          id: "tension:1",
+          label: "Old tension",
+          score: 55,
+          changePercent: 3,
+          trend: "stable" as const,
+          countries: ["US"],
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      ],
+      pizzint: {
+        defcon: 2,
+        adjustedScore: 1.3,
+        openLocations: 7,
+        activeSpikes: 2,
+        avgPop: 18,
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      },
     });
     store.getLastRun.mockResolvedValue(now - 20 * 60_000);
 
@@ -349,9 +416,11 @@ describe("RealtimeSignalsService scheduler lock", () => {
       },
     };
     const cache = {
-      withLock: jest.fn(async (_key: string, _ttlMs: number, runner: () => Promise<void>) => {
-        await runner();
-      }),
+      withLock: jest.fn(
+        async (_key: string, _ttlMs: number, runner: () => Promise<void>) => {
+          await runner();
+        },
+      ),
     };
     const settings = {
       getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig),

@@ -177,7 +177,9 @@ export interface RealtimeSignalsEnvConfig {
   };
   credentials: {
     aisApiKey?: string;
-    acledAccessToken?: string;
+    acledOauthUsername?: string;
+    acledOauthPassword?: string;
+    acledOauthClientId?: string;
     cloudflareApiToken?: string;
     wingbitsApiKey?: string;
   };
@@ -284,9 +286,12 @@ export class EnvService extends ConfigService<ApiEnv> {
           infer: true,
         }) ?? 120,
       windowSeconds:
-        this.get<number>("OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS", {
-          infer: true,
-        }) ?? 60,
+        this.get<number>(
+          "OBSERVABILITY_CLIENT_EXCEPTION_RATE_LIMIT_WINDOW_SECONDS",
+          {
+            infer: true,
+          },
+        ) ?? 60,
     };
   }
 
@@ -582,12 +587,9 @@ export class EnvService extends ConfigService<ApiEnv> {
               infer: true,
             }) ?? true,
           intervalSec:
-            this.get<number>(
-              "REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC",
-              {
-                infer: true,
-              },
-            ) ?? 600,
+            this.get<number>("REALTIME_SIGNALS_POLYMARKET_LEADS_INTERVAL_SEC", {
+              infer: true,
+            }) ?? 600,
         },
       },
       thresholds: {
@@ -612,9 +614,12 @@ export class EnvService extends ConfigService<ApiEnv> {
           ) ?? 3,
       },
       relay: {
-        baseUrl: this.get<string | undefined>("REALTIME_SIGNALS_RELAY_BASE_URL", {
-          infer: true,
-        }),
+        baseUrl: this.get<string | undefined>(
+          "REALTIME_SIGNALS_RELAY_BASE_URL",
+          {
+            infer: true,
+          },
+        ),
         sharedSecret: this.get<string | undefined>(
           "REALTIME_SIGNALS_RELAY_SHARED_SECRET",
           { infer: true },
@@ -627,11 +632,22 @@ export class EnvService extends ConfigService<ApiEnv> {
           }) ?? "https://api.adsb.lol",
       },
       credentials: {
-        aisApiKey: this.get<string | undefined>("REALTIME_SIGNALS_AIS_API_KEY", {
-          infer: true,
-        }),
-        acledAccessToken: this.get<string | undefined>(
-          "REALTIME_SIGNALS_ACLED_ACCESS_TOKEN",
+        aisApiKey: this.get<string | undefined>(
+          "REALTIME_SIGNALS_AIS_API_KEY",
+          {
+            infer: true,
+          },
+        ),
+        acledOauthUsername: this.get<string | undefined>(
+          "REALTIME_SIGNALS_ACLED_USERNAME",
+          { infer: true },
+        ),
+        acledOauthPassword: this.get<string | undefined>(
+          "REALTIME_SIGNALS_ACLED_PASSWORD",
+          { infer: true },
+        ),
+        acledOauthClientId: this.get<string | undefined>(
+          "REALTIME_SIGNALS_ACLED_CLIENT_ID",
           { infer: true },
         ),
         cloudflareApiToken: this.get<string | undefined>(

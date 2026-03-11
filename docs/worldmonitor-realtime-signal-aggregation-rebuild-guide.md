@@ -22,20 +22,20 @@ WorldMonitor 的实时聚合不是“单一后端流式管道”，而是**前�
 核心分层：
 
 1. **上游数据源层**  
-OpenSky、AIS Relay、ACLED、GDELT、Cloudflare、Polymarket、PizzINT。
+   OpenSky、AIS Relay、ACLED、GDELT、Cloudflare、Polymarket、PizzINT。
 
 2. **服务端适配层（BFF / RPC）**  
-`api/[domain]/v1/[rpc].ts` 统一路由到 `server/worldmonitor/**` handler，做缓存、鉴权、降级、错误映射。  
-另有 `/api/opensky`、`/api/ais-snapshot`、`/api/polymarket` 这类直接代理端点。
+   `api/[domain]/v1/[rpc].ts` 统一路由到 `server/worldmonitor/**` handler，做缓存、鉴权、降级、错误映射。  
+   另有 `/api/opensky`、`/api/ais-snapshot`、`/api/polymarket` 这类直接代理端点。
 
 3. **客户端 service 层**  
-`src/services/**` 做协议适配、回退策略、断路器缓存、数据形态转换。
+   `src/services/**` 做协议适配、回退策略、断路器缓存、数据形态转换。
 
 4. **前端编排层**  
-`DataLoaderManager` 负责拉取、注入地图/面板、写入 `signalAggregator`、触发 `runCorrelationAnalysis`。
+   `DataLoaderManager` 负责拉取、注入地图/面板、写入 `signalAggregator`、触发 `runCorrelationAnalysis`。
 
 5. **二次分析层**  
-`analysis-core.ts` 把“原始流”转换成“情报信号”（如 `prediction_leads_news`、`keyword_spike`）。
+   `analysis-core.ts` 把“原始流”转换成“情报信号”（如 `prediction_leads_news`、`keyword_spike`）。
 
 ## 3. 调度与刷新节奏（决定“实时感”）
 
@@ -64,22 +64,23 @@ OpenSky、AIS Relay、ACLED、GDELT、Cloudflare、Polymarket、PizzINT。
 ### 关键实现
 
 1. **区域拉取**  
-使用固定 bbox 区域（`MILITARY_QUERY_REGIONS`）批量请求 OpenSky，而不是全球全量拉。
+   使用固定 bbox 区域（`MILITARY_QUERY_REGIONS`）批量请求 OpenSky，而不是全球全量拉。
 
 2. **军机识别规则**  
-`isMilitaryFlight()` 同时用：
+   `isMilitaryFlight()` 同时用：
+
 - callsign 模式（军方前缀）
 - ICAO hex 军用区段
 - 国家 + 扩展 callsign 正则
 
 3. **结构化转换**  
-OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track 历史保留）。
+   OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track 历史保留）。
 
 4. **增强（可选）**  
-如果 Wingbits 可用，按 hex 批量补充 owner/operator/typecode，并提升置信度。
+   如果 Wingbits 可用，按 hex 批量补充 owner/operator/typecode，并提升置信度。
 
 5. **聚类**  
-基于热点区域（INDO-PACIFIC/CENTCOM/EUCOM/ARCTIC）做聚类输出。
+   基于热点区域（INDO-PACIFIC/CENTCOM/EUCOM/ARCTIC）做聚类输出。
 
 ### 缓存与降级
 
@@ -103,9 +104,10 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 
 ## 4.2 船舶（AIS）
 
-这条链路有两层：  
-1) 航运扰动（AIS disruptions + density）  
-2) 军事舰船识别（从 AIS 候选报告中再筛）
+这条链路有两层：
+
+1. 航运扰动（AIS disruptions + density）
+2. 军事舰船识别（从 AIS 候选报告中再筛）
 
 ### 4.2.1 航运扰动主链
 
@@ -162,21 +164,25 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 ### 关键实现
 
 1. **ACLED 拉取**
+
 - 事件类型固定 `Protests`
 - 默认窗口近 30 天
 - 缓存 15 分钟（共享缓存层，避免多 handler 重复打 ACLED）
 
 2. **GDELT 拉取**
+
 - `geo/geo?query=protest&format=geojson&timespan=7d&maxrecords=250`
 - 过滤低噪：`count < 5` 丢弃
 - 按 location name 去重
 
 3. **融合去重**
+
 - 键：`round(lat, 0.1) + round(lon, 0.1) + date`
 - ACLED 优先（高置信）
 - 双 GDELT 记录会合并 source，并在 source>=2 时提升置信度
 
 4. **排序**
+
 - 先 severity，再 recency
 
 ### 缓存与降级
@@ -201,18 +207,22 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 ### 关键实现
 
 1. 调 Cloudflare Radar 注释接口：
+
 - `https://api.cloudflare.com/client/v4/radar/annotations/outages?dateRange=7d&limit=50`
 - 依赖 `CLOUDFLARE_API_TOKEN`
 
 2. 地理映射：
+
 - 用 `locations[0]` 国家码映射到静态国家质心 `COUNTRY_COORDS`
 
 3. 严重度映射：
+
 - `NATIONWIDE -> total`
 - `REGIONAL -> major`
 - 其他 -> `partial`
 
 4. 富化：
+
 - categories 拼接 outageCause/outageType/ASN 名称
 
 ### 缓存与降级
@@ -234,11 +244,13 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 ### 核心算法
 
 1. **窗口**
+
 - 滚动窗口：2 小时
 - 基线窗口：7 天
 - 基线刷新：1 小时
 
 2. **触发条件**
+
 - `recentCount >= minSpikeCount`（默认 5）
 - 且 `recentCount > baseline * spikeMultiplier`（默认 3x）  
   无基线时走冷启动阈值（`recentCount >= minSpikeCount`）
@@ -246,12 +258,14 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 - 同 term 冷却 30 分钟
 
 3. **term 提取**
+
 - tokenize
 - regex 实体：CVE/APT/FIN、领导人名单
 - 可选 ML NER（PER/ORG/LOC/MISC，置信>=0.75）
 - 大规模 suppressed terms 过滤 + 用户自定义屏蔽词
 
 4. **信号输出**
+
 - 类型：`keyword_spike`
 - 可选自动摘要（每小时最多 5 次）
 - confidence 随 multiplier/cold-start 规则计算
@@ -277,18 +291,21 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 ### DEFCON 计算逻辑（服务端）
 
 1. 统计：
+
 - `openLocations`
 - `activeSpikes`
 - `avgPop`（仅 open locations 平均人流）
 
 2. 调整值：
+
 - `adjusted = min(100, avgPop + activeSpikes * 10)`
 
 3. 映射 DEFCON：
-- >=85 => 1
-- >=70 => 2
-- >=50 => 3
-- >=25 => 4
+
+- > =85 => 1
+- > =70 => 2
+- > =50 => 3
+- > =25 => 4
 - else => 5
 
 ### 缓存与降级
@@ -317,6 +334,7 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 1. 取最新值 `latest.v` 与上一个值 `prev.v`
 2. `change% = ((latest - prev) / prev) * 100`（prev=0 则 0）
 3. 趋势：
+
 - `change > 5` => rising
 - `change < -5` => falling
 - 否则 stable
@@ -399,21 +417,21 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 
 ## 阶段 A：先打通“可见结果”
 
-1. OpenSky（军机）  
-2. Unrest（ACLED+GDELT）  
-3. Cloudflare outages  
+1. OpenSky（军机）
+2. Unrest（ACLED+GDELT）
+3. Cloudflare outages
 4. Polymarket 基础拉取
 
 ## 阶段 B：补全“情报化能力”
 
-1. Keyword Spike（2h/7d 双窗口）  
-2. prediction_leads_news  
+1. Keyword Spike（2h/7d 双窗口）
+2. prediction_leads_news
 3. PizzINT + GDELT tension pairs
 
 ## 阶段 C：补齐“高复杂度流”
 
-1. AIS disruptions + density  
-2. 军事舰船 AIS 派生识别  
+1. AIS disruptions + density
+2. 军事舰船 AIS 派生识别
 3. USNI 合并（可选）
 
 ---
@@ -426,7 +444,9 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 - `RELAY_SHARED_SECRET` / `RELAY_AUTH_HEADER`
 - `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET`
 - `AISSTREAM_API_KEY`（若要复现 AIS）
-- `ACLED_ACCESS_TOKEN`
+- `REALTIME_SIGNALS_ACLED_USERNAME`
+- `REALTIME_SIGNALS_ACLED_PASSWORD`
+- `REALTIME_SIGNALS_ACLED_CLIENT_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `WINGBITS_API_KEY`（可选）
 
@@ -442,13 +462,13 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 
 建议做 8 条对齐验收：
 
-1. OpenSky 军机数量随 10~15 分钟刷新波动，且支持热点聚类  
-2. AIS 在 hidden tab 时停止请求，恢复后继续  
-3. Protests 同时出现 ACLED 与 GDELT 源，且有去重  
-4. Outages 可在 Cloudflare token 缺失时优雅降级为空  
-5. Keyword Spike 不是单源刷屏，至少 2 源才触发  
-6. PizzINT DEFCON 阈值与原规则一致  
-7. GDELT tension trend 在 +/-5% 阈值切换 rising/falling/stable  
+1. OpenSky 军机数量随 10~15 分钟刷新波动，且支持热点聚类
+2. AIS 在 hidden tab 时停止请求，恢复后继续
+3. Protests 同时出现 ACLED 与 GDELT 源，且有去重
+4. Outages 可在 Cloudflare token 缺失时优雅降级为空
+5. Keyword Spike 不是单源刷屏，至少 2 源才触发
+6. PizzINT DEFCON 阈值与原规则一致
+7. GDELT tension trend 在 +/-5% 阈值切换 rising/falling/stable
 8. prediction_leads_news 在“价格变动大+新闻低”时触发
 
 ---
@@ -548,16 +568,16 @@ OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track �
 
 ## 12. 八条信号到当前仓库的“最小接入点”映射
 
-| WorldMonitor 信号 | 当前仓库最小接入点（API） | 优先复用模块 | UI 承接位 | 实施优先级 |
-|---|---|---|---|---|
-| 军事飞行（OpenSky） | 新增 ingest provider（定时拉取 + normalize），写入告警上下文 `countryCode/lat/lng` | `alerts` + `dashboard war-map` | `/dashboard` + `/alerts` | P0 |
-| 船舶（AIS） | 新增 ingest provider（disruptions/density/军事舰船），同样先走告警事件流 | `alerts` + `dashboard war-map` | `/dashboard` + `/alerts` | P0 |
-| 抗议（ACLED+GDELT） | provider 拉取后分两路：告警流 + `NewsEventsService.assignNewsSignalToEvent`（事件归并） | `news-events` + `alerts` | `/events` + `/dashboard` | P0 |
-| 互联网中断（Cloudflare） | provider 拉取 outage 注释并映射 severity，直接落告警流 | `alerts` + `dashboard war-map` | `/dashboard` + `/alerts` | P0 |
-| 关键词激增 | 在 `situation-monitor/analysis` 增加 keyword spike 分析器（复用已有 topicCount/momentum） | `situation-monitor` | `/situation-monitor` | P1 |
-| PizzINT DEFCON | 作为外部指数接入（类似 external section），并映射为可订阅告警指标 | `situation-monitor` + `alerts` | `/situation-monitor` + `/alerts` | P1 |
-| GDELT 双边紧张指数 | 以 pair 维度写入信号，接入 `predictiveSignals` 或独立 tensions 面板 | `situation-monitor` + `alerts` | `/situation-monitor` + `/dashboard` | P1 |
-| Polymarket 领先指标 | 先拉市场数据，再在 `situation-monitor` 内做“价格变化 vs 新闻活跃度”比较 | `situation-monitor` + `news-events` | `/situation-monitor` | P1 |
+| WorldMonitor 信号        | 当前仓库最小接入点（API）                                                                 | 优先复用模块                        | UI 承接位                           | 实施优先级 |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------- | ---------- |
+| 军事飞行（OpenSky）      | 新增 ingest provider（定时拉取 + normalize），写入告警上下文 `countryCode/lat/lng`        | `alerts` + `dashboard war-map`      | `/dashboard` + `/alerts`            | P0         |
+| 船舶（AIS）              | 新增 ingest provider（disruptions/density/军事舰船），同样先走告警事件流                  | `alerts` + `dashboard war-map`      | `/dashboard` + `/alerts`            | P0         |
+| 抗议（ACLED+GDELT）      | provider 拉取后分两路：告警流 + `NewsEventsService.assignNewsSignalToEvent`（事件归并）   | `news-events` + `alerts`            | `/events` + `/dashboard`            | P0         |
+| 互联网中断（Cloudflare） | provider 拉取 outage 注释并映射 severity，直接落告警流                                    | `alerts` + `dashboard war-map`      | `/dashboard` + `/alerts`            | P0         |
+| 关键词激增               | 在 `situation-monitor/analysis` 增加 keyword spike 分析器（复用已有 topicCount/momentum） | `situation-monitor`                 | `/situation-monitor`                | P1         |
+| PizzINT DEFCON           | 作为外部指数接入（类似 external section），并映射为可订阅告警指标                         | `situation-monitor` + `alerts`      | `/situation-monitor` + `/alerts`    | P1         |
+| GDELT 双边紧张指数       | 以 pair 维度写入信号，接入 `predictiveSignals` 或独立 tensions 面板                       | `situation-monitor` + `alerts`      | `/situation-monitor` + `/dashboard` | P1         |
+| Polymarket 领先指标      | 先拉市场数据，再在 `situation-monitor` 内做“价格变化 vs 新闻活跃度”比较                   | `situation-monitor` + `news-events` | `/situation-monitor`                | P1         |
 
 关键原则：
 

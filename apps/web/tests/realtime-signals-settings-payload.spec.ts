@@ -9,11 +9,11 @@ describe("applyRealtimeSignalsSecretFields", () => {
       payload,
       {
         relaySharedSecret: "",
-        acledAccessToken: "   ",
+        acledOauthPassword: "   ",
       },
       {
         relaySharedSecret: false,
-        acledAccessToken: false,
+        acledOauthPassword: false,
       },
     );
     expect(payload).toEqual({});
@@ -25,16 +25,16 @@ describe("applyRealtimeSignalsSecretFields", () => {
       payload,
       {
         relaySharedSecret: "   ",
-        acledAccessToken: "",
+        acledOauthPassword: "",
       },
       {
         relaySharedSecret: true,
-        acledAccessToken: true,
+        acledOauthPassword: true,
       },
     );
     expect(payload).toEqual({
       relaySharedSecret: null,
-      acledAccessToken: null,
+      acledOauthPassword: null,
     });
   });
 
