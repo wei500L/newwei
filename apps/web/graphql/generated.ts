@@ -253,6 +253,7 @@ export type ArchiveDigestModel = {
   __typename?: 'ArchiveDigestModel';
   anchorDate: Scalars['DateTime']['output'];
   groups: Array<ArchiveVerticalGroupModel>;
+  preparation: ArchivePreparationStatusModel;
   region: ArchiveRegion;
   totalCount: Scalars['Int']['output'];
 };
@@ -283,6 +284,24 @@ export enum ArchiveMatchOrigin {
   Lexical = 'LEXICAL',
   Semantic = 'SEMANTIC'
 }
+
+export enum ArchivePreparationState {
+  Failed = 'FAILED',
+  Idle = 'IDLE',
+  Partial = 'PARTIAL',
+  Processing = 'PROCESSING',
+  Queued = 'QUEUED',
+  Ready = 'READY'
+}
+
+export type ArchivePreparationStatusModel = {
+  __typename?: 'ArchivePreparationStatusModel';
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  missingCount: Scalars['Int']['output'];
+  readyCount: Scalars['Int']['output'];
+  state: ArchivePreparationState;
+  updatedAt: Scalars['DateTime']['output'];
+};
 
 export type ArchiveQueryInput = {
   anchorDate: Scalars['DateTime']['input'];

@@ -233,6 +233,7 @@ type ArchiveDetailModel {
 type ArchiveDigestModel {
   anchorDate: DateTime!
   groups: [ArchiveVerticalGroupModel!]!
+  preparation: ArchivePreparationStatusModel!
   region: ArchiveRegion!
   totalCount: Int!
 }
@@ -261,6 +262,23 @@ enum ArchiveMatchOrigin {
   HYBRID
   LEXICAL
   SEMANTIC
+}
+
+enum ArchivePreparationState {
+  FAILED
+  IDLE
+  PARTIAL
+  PROCESSING
+  QUEUED
+  READY
+}
+
+type ArchivePreparationStatusModel {
+  errorMessage: String
+  missingCount: Int!
+  readyCount: Int!
+  state: ArchivePreparationState!
+  updatedAt: DateTime!
 }
 
 input ArchiveQueryInput {

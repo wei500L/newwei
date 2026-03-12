@@ -1172,6 +1172,17 @@
     color: #e2e8f0;
   }
 
+  .auth-card .ant-input-affix-wrapper > input.ant-input:-webkit-autofill,
+  .auth-card .ant-input-affix-wrapper > input.ant-input:-webkit-autofill:hover,
+  .auth-card .ant-input-affix-wrapper > input.ant-input:-webkit-autofill:focus,
+  .auth-card .ant-input-affix-wrapper > input.ant-input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--foreground) !important;
+    caret-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    transition: background-color 9999s ease-out 0s;
+  }
+
   .dark .auth-card .ant-input::placeholder,
   .dark .auth-card .ant-input-affix-wrapper input.ant-input::placeholder {
     color: rgba(148, 163, 184, 0.88);

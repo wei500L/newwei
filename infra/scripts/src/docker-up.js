@@ -77,6 +77,7 @@ const runCapture = (command, args, cwd) => {
     logError(`           ${result.error.message}`);
   }
   if (result.status !== 0) {
+    printCapturedOutput(result);
     logError(
       `Command exited with code ${result.status ?? 1}: ${formatCommand(command, args)} (${Date.now() - startedAt}ms)`,
     );
