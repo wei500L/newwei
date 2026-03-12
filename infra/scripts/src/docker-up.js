@@ -566,101 +566,12 @@ const resolveUpServices = (upArgs, services) => {
   return resolved;
 };
 
-const collectMigrationSqlFiles = (dirPath) => {
-  if (!existsSync(dirPath)) return [];
-
-  const entries = readdirSync(dirPath, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const fullPath = path.resolve(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...collectMigrationSqlFiles(fullPath));
-      continue;
-    }
-    if (entry.isFile() && entry.name === "migration.sql") {
-      files.push(fullPath);
-    }
-  }
-  return files;
-};
-
-const lineNumberFromOffset = (source, offset) => {
-  let line = 1;
-  for (let index = 0; index < offset; index += 1) {
-    if (source.charCodeAt(index) === 10) line += 1;
-  }
-  return line;
-};
-
-const findMigrationIdentifierViolations = (migrationsDir, maxLength) => {
-  const sqlFiles = collectMigrationSqlFiles(migrationsDir);
-  const patterns = [
-    /(?:UNIQUE\s+)?INDEX\s+`([^`]+)`/g,
-    /CONSTRAINT\s+`([^`]+)`/g,
-  ];
-  const violations = [];
-  const seen = new Set();
-
-  for (const filePath of sqlFiles) {
-    const sql = readFileSync(filePath, "utf8");
-    for (const pattern of patterns) {
-      let match = pattern.exec(sql);
-      while (match) {
-        const identifier = match[1];
-        if (identifier && identifier.length > maxLength) {
-          const line = lineNumberFromOffset(sql, match.index);
-          const key = `${filePath}:${line}:${identifier}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            violations.push({
-              filePath,
-              identifier,
-              length: identifier.length,
-              line,
-            });
-          }
-        }
-        match = pattern.exec(sql);
-      }
-    }
-  }
-
-  return violations;
-};
-
 const validateMigrationIdentifiersForDockerUp = (repoRoot) => {
-  const maxLength = 64;
-  const migrationsDir = path.resolve(repoRoot, "packages/db/prisma/migrations");
-  const violations = findMigrationIdentifierViolations(
-    migrationsDir,
-    maxLength,
+  run(
+    "pnpm",
+    ["--filter", "@modular/db", "run", "validate:migration-identifiers"],
+    repoRoot,
   );
-  if (violations.length === 0) return;
-
-  violations.sort(
-    (a, b) =>
-      b.length - a.length ||
-      a.filePath.localeCompare(b.filePath) ||
-      a.line - b.line ||
-      a.identifier.localeCompare(b.identifier),
-  );
-
-  const details = violations.map((violation) => {
-    const relativePath =
-      path.relative(repoRoot, violation.filePath) || violation.filePath;
-    return `${violation.length}\t${violation.identifier}\t${relativePath}:${violation.line}`;
-  });
-
-  process.stderr.write(
-    [
-      `[docker-up] Found migration identifier(s) longer than ${maxLength} characters (MySQL limit).`,
-      "[docker-up] Fix by setting `map:` on @@index/@@unique in packages/db/prisma/schema.prisma",
-      "[docker-up] or shortening the identifier in migration.sql.",
-      "",
-      ...details,
-    ].join("\n") + "\n",
-  );
-  process.exit(1);
 };
 
 const resolvePrismaCliPackageForDockerUp = (repoRoot) => {
@@ -821,7 +732,10 @@ const main = () => {
   const envFile = path.resolve(dockerDir, ".env");
   const composeFile = path.resolve(dockerDir, "docker-compose.yml");
 
-  const userArgs = process.argv.slice(2);
+  const userArgs = process.argv.slice(2).filter((arg, index) => {
+    if (arg !== "--") return true;
+    return index !== 0;
+  });
   let { globalArgs, upArgs } = splitComposeArgs(userArgs);
   const requestedServices = upArgs.filter((arg) => arg && !arg.startsWith("-"));
   log(
@@ -873,6 +787,14 @@ const main = () => {
 
   const upServices = resolveUpServices(upArgs, services);
 
+  const nodeWorkspaceServices = ["api", "vector", "web"];
+  const shouldValidatePnpmLockfile = nodeWorkspaceServices.some((serviceName) =>
+    upServices.has(serviceName),
+  );
+  if (shouldValidatePnpmLockfile) {
+    ensurePnpmLockfileForDockerUp(repoRoot);
+  }
+
   if (upServices.has("api")) {
     log("Validating Prisma migration identifiers...");
     validateMigrationIdentifiersForDockerUp(repoRoot);
@@ -885,14 +807,6 @@ const main = () => {
     }
     log("Validating Prisma schema syntax...");
     validatePrismaSchemaForDockerUp(composeBaseArgs, scriptsDir, envFile);
-  }
-
-  const nodeWorkspaceServices = ["api", "vector", "web"];
-  const shouldValidatePnpmLockfile = nodeWorkspaceServices.some((serviceName) =>
-    upServices.has(serviceName),
-  );
-  if (shouldValidatePnpmLockfile) {
-    ensurePnpmLockfileForDockerUp(repoRoot);
   }
 
   if (upServices.has("redis")) {

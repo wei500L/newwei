@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "rimraf dist && tsc -p tsconfig.build.json",
-    "lint": "eslint src --ext .ts",
+    "lint": "node ../../tools/check-no-source-artifacts.js src && eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {

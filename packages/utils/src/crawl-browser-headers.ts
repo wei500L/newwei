@@ -17,7 +17,8 @@ export interface CrawlBrowserHeaderAutoFillOptions {
 
 const CHROMIUM_UA_VERSION_REGEX =
   /(?:chrome|crios|chromium|edg|edga|edgios)\/(\d{2,3})/i;
-const CONTROL_CHAR_REGEX = /[\u0000-\u001f\u007f]/;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_REGEX = new RegExp('[\\x00-\\x1f\\x7f]');
 const HTTP_HEADER_NAME_REGEX = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

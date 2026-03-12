@@ -126,7 +126,7 @@ const normalizeSearch = (url: URL, allowlist: Set<string>) => {
     return;
   }
 
-  const accepted: Array<{ key: string; value: string }> = [];
+  const accepted: { key: string; value: string }[] = [];
   for (const [rawKey, value] of url.searchParams.entries()) {
     const key = normalizeParamKey(rawKey);
     if (!key || !allowlist.has(key)) {

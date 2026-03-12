@@ -6,7 +6,7 @@
     "module": "Node16",
     "moduleResolution": "node16",
     "paths": {
-      "@modular/utils": ["../utils/src"]
+      "@modular/utils": ["../utils/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
