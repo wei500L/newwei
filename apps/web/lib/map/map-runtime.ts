@@ -4,7 +4,8 @@ import maplibregl, {
   type StyleSpecification,
 } from "maplibre-gl";
 
-import { DEFAULT_WORLD_BBOX, MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "./map-style";
+import { DEFAULT_WORLD_BBOX, MAP_STYLE_URL } from "./map-style";
+import type { MapLoadErrorDetail } from "./map-load-error";
 import { hasRenderableContainerSize } from "./renderable-container";
 
 export interface DeckMapInitialViewState {
@@ -20,10 +21,9 @@ export interface CreateDeckMapRuntimeOptions {
   initialViewState: DeckMapInitialViewState;
   force2D?: boolean;
   style?: string | StyleSpecification;
-  fallbackStyle?: StyleSpecification;
   onMoveEnd?: (map: MapLibreMap) => void;
   onMapReady?: (map: MapLibreMap) => void;
-  onFallbackApplied?: (map: MapLibreMap) => void;
+  onMapError?: (map: MapLibreMap, detail: MapLoadErrorDetail) => void;
 }
 
 export interface DeckMapRuntime {
@@ -34,32 +34,119 @@ export interface DeckMapRuntime {
 
 type DeckLayerCandidate = {
   id?: unknown;
+  clone?: (() => unknown) | undefined;
 };
+
+interface DroppedDeckLayerSummary {
+  droppedCount: number;
+  missingCloneCount: number;
+  missingIdCount: number;
+  invalidShapeCount: number;
+  sampleIds: string[];
+}
+
+const deckLayerWarningSignatures = new Map<string, string>();
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function isDeckLayerCandidate(value: unknown): value is DeckLayerCandidate {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const layer = value as DeckLayerCandidate;
+  return (
+    typeof layer.id === 'string' &&
+    layer.id.trim().length > 0 &&
+    typeof layer.clone === 'function'
+  );
+}
+
 export function sanitizeDeckLayers<T>(layers: readonly T[] | null | undefined): T[] {
-  return (layers ?? []).filter((layer): layer is T => {
-    if (!layer || typeof layer !== 'object') {
-      return false;
+  return normalizeDeckLayers(layers).layers;
+}
+
+function cloneDeckLayer<T>(layer: T): T {
+  return (layer as DeckLayerCandidate).clone!.call(layer) as T;
+}
+
+function normalizeDeckLayers<T>(
+  layers: readonly T[] | null | undefined,
+): {
+  layers: T[];
+  droppedSummary: DroppedDeckLayerSummary | null;
+} {
+  const validLayers: T[] = [];
+  const droppedSummary: DroppedDeckLayerSummary = {
+    droppedCount: 0,
+    missingCloneCount: 0,
+    missingIdCount: 0,
+    invalidShapeCount: 0,
+    sampleIds: [],
+  };
+
+  for (const layer of layers ?? []) {
+    if (isDeckLayerCandidate(layer)) {
+      validLayers.push(layer);
+      continue;
     }
-    const id = (layer as DeckLayerCandidate).id;
-    return typeof id === 'string' && id.trim().length > 0;
-  });
+
+    droppedSummary.droppedCount += 1;
+    if (!layer || typeof layer !== 'object') {
+      droppedSummary.invalidShapeCount += 1;
+      continue;
+    }
+
+    const candidate = layer as DeckLayerCandidate;
+    if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0) {
+      droppedSummary.missingIdCount += 1;
+    } else {
+      if (droppedSummary.sampleIds.length < 5) {
+        droppedSummary.sampleIds.push(candidate.id);
+      }
+      if (typeof candidate.clone !== 'function') {
+        droppedSummary.missingCloneCount += 1;
+      } else {
+        droppedSummary.invalidShapeCount += 1;
+      }
+    }
+  }
+
+  return {
+    layers: validLayers,
+    droppedSummary: droppedSummary.droppedCount > 0 ? droppedSummary : null,
+  };
+}
+
+function warnDroppedDeckLayers(summary: DroppedDeckLayerSummary): void {
+  const signature = JSON.stringify(summary);
+  const warningKey = 'deck-layer-drop';
+  if (deckLayerWarningSignatures.get(warningKey) === signature) {
+    return;
+  }
+  deckLayerWarningSignatures.set(warningKey, signature);
+  console.warn('[DeckMapRuntime] Dropped invalid deck layers before overlay update.', summary);
 }
 
 export function setDeckOverlayProps(
   overlay: Pick<MapboxOverlay, 'setProps'>,
   props: Partial<MapboxOverlayProps>,
 ): void {
+  const normalizedLayers =
+    props.layers === undefined ? null : normalizeDeckLayers(props.layers as unknown[]);
+  if (normalizedLayers?.droppedSummary) {
+    warnDroppedDeckLayers(normalizedLayers.droppedSummary);
+  }
   const nextProps =
     props.layers === undefined
       ? props
       : {
           ...props,
-          layers: sanitizeDeckLayers(props.layers as unknown[]),
+          // deck.gl layers are one-shot instances. Re-clone them before every overlay update
+          // so a recreated overlay never reuses a finalized layer from a previous Deck instance.
+          layers: normalizedLayers!.layers.map((layer) => cloneDeckLayer(layer)),
         };
 
   overlay.setProps(nextProps as MapboxOverlayProps);
@@ -104,10 +191,9 @@ export function createDeckMapRuntime(
     initialViewState,
     force2D = false,
     style = MAP_STYLE_URL,
-    fallbackStyle = MAP_STYLE_FALLBACK,
     onMoveEnd,
     onMapReady,
-    onFallbackApplied,
+    onMapError,
   } = options;
 
   const map = new maplibregl.Map({
@@ -157,30 +243,29 @@ export function createDeckMapRuntime(
   resizeObserver?.observe(container);
 
   let mapLoaded = false;
-  let fallbackApplied = false;
+  let mapErrorReported = false;
 
-  const applyFallbackStyle = () => {
-    if (fallbackApplied) {
-      return;
+  const readMapError = (event: unknown) => {
+    if (!event || typeof event !== "object") {
+      return event;
     }
-    fallbackApplied = true;
-    try {
-      map.setStyle(fallbackStyle);
-      onFallbackApplied?.(map);
-    } catch {
-      // Keep the map in current state; caller owns visual error handling.
-    }
+    return (event as { error?: unknown }).error ?? event;
   };
 
   const handleMoveEnd = () => {
     onMoveEnd?.(map);
   };
 
-  const handleMapError = () => {
-    if (mapLoaded) {
+  const handleMapError = (event: unknown) => {
+    if (mapLoaded || mapErrorReported) {
       return;
     }
-    applyFallbackStyle();
+    mapErrorReported = true;
+    onMapError?.(map, {
+      trigger: "map_error",
+      error: readMapError(event),
+      rawEvent: event,
+    });
   };
 
   const handleLoad = () => {

@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Col,
+  Descriptions,
   Divider,
   Form,
   Input,
@@ -39,6 +40,21 @@ type RealtimeSignalsAcledAccessTokenStatus =
   | "expiring"
   | "missing"
   | "refresh_failed";
+type RealtimeSignalSourceKey =
+  | "adsb"
+  | "ais"
+  | "unrest"
+  | "outages"
+  | "keyword_spike"
+  | "pizzint"
+  | "gdelt_tension"
+  | "polymarket_leads";
+type RealtimeSignalRuntimeStatus =
+  | "ok"
+  | "error"
+  | "stale"
+  | "not_configured"
+  | "idle";
 
 interface RealtimeSignalsSettingsResponse {
   source: RealtimeSignalsSettingsSource;
@@ -127,6 +143,49 @@ interface RealtimeSignalsSettingsFormValues {
   wingbitsApiKey?: string;
 }
 
+interface RealtimeSignalRuntimeDiagnosticsSource {
+  source: RealtimeSignalSourceKey;
+  enabled: boolean;
+  intervalSec: number;
+  status: RealtimeSignalRuntimeStatus;
+  statusReason?: string;
+  lastRunAt?: string;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  lastErrorAt?: string;
+  lastError?: string;
+  latestValue: number | null;
+  previousValue: number | null;
+  changePercent: number | null;
+  context?: Record<string, unknown>;
+}
+
+interface RealtimeSignalsRuntimeDiagnosticsResponse {
+  checkedAt: string;
+  settingsSource: RealtimeSignalsSettingsSource;
+  runtimeEnabled: boolean;
+  insight: {
+    keywordSpikes: Array<Record<string, unknown>>;
+    predictionLeads: Array<Record<string, unknown>>;
+    tensions: Array<Record<string, unknown>>;
+    pizzint?: {
+      defcon: number;
+      updatedAt: string;
+    };
+  };
+  markerReadiness: {
+    windowHours: number;
+    recentProcessedArticles: number;
+    recentProcessedArticlesWithLocation: number;
+    recentMongoProcessedItems: number;
+    recentMongoProcessedItemsWithLocation: number;
+    latestProcessedArticleAt?: string;
+    latestProcessedItemAt?: string;
+    newsMarkersReady: boolean;
+  };
+  sources: RealtimeSignalRuntimeDiagnosticsSource[];
+}
+
 const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   source: "env",
   enabled: true,
@@ -180,48 +239,56 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
 
 const SOURCE_CONFIGS = [
   {
+    sourceKey: "adsb",
     nameKey: "systemSettings.realtimeSignals.sources.adsb",
     fallbackName: "ADS-B military flights",
     enabledField: "adsbEnabled",
     intervalField: "adsbIntervalSec",
   },
   {
+    sourceKey: "ais",
     nameKey: "systemSettings.realtimeSignals.sources.ais",
     fallbackName: "AIS",
     enabledField: "aisEnabled",
     intervalField: "aisIntervalSec",
   },
   {
+    sourceKey: "unrest",
     nameKey: "systemSettings.realtimeSignals.sources.unrest",
     fallbackName: "Unrest",
     enabledField: "unrestEnabled",
     intervalField: "unrestIntervalSec",
   },
   {
+    sourceKey: "outages",
     nameKey: "systemSettings.realtimeSignals.sources.outages",
     fallbackName: "Internet outages",
     enabledField: "outagesEnabled",
     intervalField: "outagesIntervalSec",
   },
   {
+    sourceKey: "keyword_spike",
     nameKey: "systemSettings.realtimeSignals.sources.keywordSpike",
     fallbackName: "Keyword spike",
     enabledField: "keywordSpikeEnabled",
     intervalField: "keywordSpikeIntervalSec",
   },
   {
+    sourceKey: "pizzint",
     nameKey: "systemSettings.realtimeSignals.sources.pizzint",
     fallbackName: "PizzINT",
     enabledField: "pizzintEnabled",
     intervalField: "pizzintIntervalSec",
   },
   {
+    sourceKey: "gdelt_tension",
     nameKey: "systemSettings.realtimeSignals.sources.gdeltTension",
     fallbackName: "GDELT tension",
     enabledField: "gdeltTensionEnabled",
     intervalField: "gdeltTensionIntervalSec",
   },
   {
+    sourceKey: "polymarket_leads",
     nameKey: "systemSettings.realtimeSignals.sources.polymarketLeads",
     fallbackName: "Polymarket leads",
     enabledField: "polymarketLeadsEnabled",
@@ -269,6 +336,45 @@ function toFormValues(
   };
 }
 
+function summarizeRuntimeContext(
+  source: RealtimeSignalSourceKey,
+  context?: Record<string, unknown>,
+) {
+  if (!context) {
+    return null;
+  }
+
+  const num = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const str = (value: unknown) =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+  switch (source) {
+    case "adsb":
+      return `military=${num(context.militaryCount) ?? 0}, aircraft=${num(context.totalAircraft) ?? 0}`;
+    case "ais":
+      return context.configured === false
+        ? "relay not configured"
+        : `disruptions=${num(context.disruptions) ?? 0}, density=${num(context.densityRegions) ?? 0}`;
+    case "unrest":
+      return `acled=${num(context.acledCount) ?? 0}, gdelt=${num(context.gdeltCount) ?? 0}, total=${num(context.unrestCount) ?? 0}`;
+    case "outages":
+      return context.configured === false
+        ? "cloudflare token not configured"
+        : `outages=${num(context.outages) ?? 0}`;
+    case "keyword_spike":
+      return `recent=${num(context.recentArticleCount) ?? 0}, baseline=${num(context.baselineArticleCount) ?? 0}, spikes=${Array.isArray(context.spikes) ? context.spikes.length : 0}`;
+    case "pizzint":
+      return `defcon=${num(context.defcon) ?? 0}, open=${num(context.openLocations) ?? 0}, spikes=${num(context.activeSpikes) ?? 0}`;
+    case "gdelt_tension":
+      return `pairs=${Array.isArray(context.tensions) ? context.tensions.length : 0}, window=${str(context.dateStart) ?? "-"}..${str(context.dateEnd) ?? "-"}`;
+    case "polymarket_leads":
+      return `leads=${Array.isArray(context.leads) ? context.leads.length : 0}`;
+    default:
+      return null;
+  }
+}
+
 export function RealtimeSignalsSettingsPanel() {
   const { t } = useTranslation();
   const { data: session } = useSession();
@@ -281,6 +387,10 @@ export function RealtimeSignalsSettingsPanel() {
   const [resetting, setResetting] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] =
+    useState<RealtimeSignalsRuntimeDiagnosticsResponse | null>(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -311,9 +421,31 @@ export function RealtimeSignalsSettingsPanel() {
     }
   }, [apiClient, form, t]);
 
+  const loadDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    setDiagnosticsError(null);
+    try {
+      const response =
+        await apiClient.get<RealtimeSignalsRuntimeDiagnosticsResponse>(
+          "system-settings/realtime-signals/runtime",
+        );
+      setDiagnostics(response.data ?? null);
+    } catch (error) {
+      captureClientError("Failed to load realtime signals diagnostics", error);
+      setDiagnosticsError(
+        t("systemSettings.realtimeSignals.runtime.errors.loadFailed", {
+          defaultValue: "Failed to load runtime diagnostics.",
+        }),
+      );
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, [apiClient, t]);
+
   useEffect(() => {
     void loadSettings();
-  }, [loadSettings]);
+    void loadDiagnostics();
+  }, [loadDiagnostics, loadSettings]);
 
   const handleSubmit = async (values: RealtimeSignalsSettingsFormValues) => {
     setSaving(true);
@@ -380,6 +512,7 @@ export function RealtimeSignalsSettingsPanel() {
       setSettings(data);
       form.setFieldsValue(toFormValues(data));
       messageApi.success(t("systemSettings.realtimeSignals.messages.saved"));
+      void loadDiagnostics();
     } catch (error) {
       captureClientError("Failed to save realtime signals settings", error);
       const statusCode =
@@ -423,6 +556,7 @@ export function RealtimeSignalsSettingsPanel() {
           messageApi.success(
             t("systemSettings.realtimeSignals.messages.reset"),
           );
+          void loadDiagnostics();
         } catch (error) {
           captureClientError(
             "Failed to reset realtime signals settings",
@@ -519,6 +653,7 @@ export function RealtimeSignalsSettingsPanel() {
         ? settings[sourceConfig.intervalField]
         : null;
     return {
+      sourceKey: sourceConfig.sourceKey,
       key: sourceConfig.enabledField,
       sourceName,
       enabled,
@@ -538,6 +673,38 @@ export function RealtimeSignalsSettingsPanel() {
   const configuredSecretCount = secretStatusRows.filter(
     (row) => row.has,
   ).length;
+  const runtimeStatusColor = (status: RealtimeSignalRuntimeStatus) =>
+    status === "ok"
+      ? "green"
+      : status === "error"
+        ? "red"
+        : status === "stale"
+          ? "orange"
+          : status === "not_configured"
+            ? "gold"
+            : "default";
+  const runtimeStatusLabel = (status: RealtimeSignalRuntimeStatus) =>
+    t(`systemSettings.realtimeSignals.runtime.status.${status}`, {
+      defaultValue:
+        status === "ok"
+          ? "OK"
+          : status === "error"
+            ? "Error"
+            : status === "stale"
+              ? "Stale"
+              : status === "not_configured"
+                ? "Not configured"
+                : "Idle",
+    });
+  const sourceNameByKey = Object.fromEntries(
+    sourceStatusRows.map((row) => [row.sourceKey, row.sourceName]),
+  ) as Record<RealtimeSignalSourceKey, string>;
+  const runtimeIssues =
+    diagnostics?.sources.filter(
+      (row) => row.status === "error" || row.status === "stale",
+    ) ?? [];
+  const runtimeWarnings =
+    diagnostics?.sources.filter((row) => row.status === "not_configured") ?? [];
 
   if (loading && !loadedOnce) {
     return (
@@ -764,6 +931,337 @@ export function RealtimeSignalsSettingsPanel() {
           ))}
         </Space>
       </Space>
+
+      <Card
+        size="small"
+        title={t("systemSettings.realtimeSignals.runtime.title", {
+          defaultValue: "Runtime diagnostics",
+        })}
+        extra={
+          <Space wrap>
+            {diagnostics?.checkedAt ? (
+              <Typography.Text type="secondary">
+                {t("systemSettings.realtimeSignals.runtime.checkedAt", {
+                  defaultValue: "Last checked: {{time}}",
+                  time: formatTimestamp(diagnostics.checkedAt),
+                })}
+              </Typography.Text>
+            ) : null}
+            <Button onClick={() => void loadDiagnostics()} loading={diagnosticsLoading}>
+              {t("common.refresh", { defaultValue: "Refresh" })}
+            </Button>
+          </Space>
+        }
+        style={{ marginBottom: "1rem" }}
+      >
+        {diagnosticsError ? (
+          <Alert
+            type="error"
+            showIcon
+            message={diagnosticsError}
+            style={{ marginBottom: "1rem" }}
+          />
+        ) : null}
+
+        {runtimeIssues.length > 0 ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: "1rem" }}
+            message={t("systemSettings.realtimeSignals.runtime.issues", {
+              defaultValue: "Detected {{count}} runtime issue(s).",
+              count: runtimeIssues.length,
+            })}
+            description={
+              <Space wrap size={[8, 8]}>
+                {runtimeIssues.map((row) => (
+                  <Tag key={`${row.source}-issue`} color={runtimeStatusColor(row.status)}>
+                    {sourceNameByKey[row.source]} · {runtimeStatusLabel(row.status)}
+                  </Tag>
+                ))}
+              </Space>
+            }
+          />
+        ) : null}
+
+        {!diagnosticsError && runtimeWarnings.length > 0 ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: "1rem" }}
+            message={t("systemSettings.realtimeSignals.runtime.warnings", {
+              defaultValue: "Some sources are enabled but not fully configured.",
+            })}
+            description={
+              <Space wrap size={[8, 8]}>
+                {runtimeWarnings.map((row) => (
+                  <Tag key={`${row.source}-warning`} color={runtimeStatusColor(row.status)}>
+                    {sourceNameByKey[row.source]} · {runtimeStatusLabel(row.status)}
+                  </Tag>
+                ))}
+              </Space>
+            }
+          />
+        ) : null}
+
+        {diagnostics ? (
+          <Space direction="vertical" size="large" style={{ display: "flex" }}>
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={12} lg={6}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.summary.healthy", {
+                      defaultValue: "Healthy sources",
+                    })}
+                    value={
+                      diagnostics.sources.filter((row) => row.status === "ok").length
+                    }
+                    suffix={`/ ${diagnostics.sources.length}`}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.summary.issues", {
+                      defaultValue: "Issue sources",
+                    })}
+                    value={runtimeIssues.length}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.summary.markerReadiness", {
+                      defaultValue: "News markers",
+                    })}
+                    value={
+                      diagnostics.markerReadiness.newsMarkersReady
+                        ? t("common.ok", { defaultValue: "OK" })
+                        : t("common.unavailable", { defaultValue: "Unavailable" })
+                    }
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.summary.pizzint", {
+                      defaultValue: "PizzINT DEFCON",
+                    })}
+                    value={diagnostics.insight.pizzint?.defcon ?? "—"}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {!diagnostics.markerReadiness.newsMarkersReady ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={t("systemSettings.realtimeSignals.runtime.markerWarning.title", {
+                  defaultValue: "War Map news markers are not ready.",
+                })}
+                description={t("systemSettings.realtimeSignals.runtime.markerWarning.body", {
+                  defaultValue:
+                    "Recent processed articles with location data are empty, so news markers will stay blank until the content pipeline produces geo-tagged results.",
+                })}
+              />
+            ) : null}
+
+            <Descriptions
+              size="small"
+              column={1}
+              bordered
+              title={t("systemSettings.realtimeSignals.runtime.markerReadiness", {
+                defaultValue: "Marker readiness",
+              })}
+            >
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerWindow", {
+                  defaultValue: "Lookback window",
+                })}
+              >
+                {diagnostics.markerReadiness.windowHours}h
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerRecentArticles", {
+                  defaultValue: "Recent processed articles",
+                })}
+              >
+                {diagnostics.markerReadiness.recentProcessedArticles}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerRecentArticlesWithLocation", {
+                  defaultValue: "Recent articles with location",
+                })}
+              >
+                {diagnostics.markerReadiness.recentProcessedArticlesWithLocation}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerRecentMongo", {
+                  defaultValue: "Recent Mongo processed items",
+                })}
+              >
+                {diagnostics.markerReadiness.recentMongoProcessedItems}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerRecentMongoWithLocation", {
+                  defaultValue: "Recent Mongo items with location",
+                })}
+              >
+                {diagnostics.markerReadiness.recentMongoProcessedItemsWithLocation}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerLatestArticle", {
+                  defaultValue: "Latest processed article",
+                })}
+              >
+                {formatTimestamp(diagnostics.markerReadiness.latestProcessedArticleAt)}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={t("systemSettings.realtimeSignals.runtime.markerLatestMongo", {
+                  defaultValue: "Latest processed item",
+                })}
+              >
+                {formatTimestamp(diagnostics.markerReadiness.latestProcessedItemAt)}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Row gutter={[12, 12]}>
+              <Col xs={24} sm={8}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.insight.keywordSpikes", {
+                      defaultValue: "Keyword spikes",
+                    })}
+                    value={diagnostics.insight.keywordSpikes.length}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.insight.predictionLeads", {
+                      defaultValue: "Prediction leads",
+                    })}
+                    value={diagnostics.insight.predictionLeads.length}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Card size="small">
+                  <Statistic
+                    title={t("systemSettings.realtimeSignals.runtime.insight.tensions", {
+                      defaultValue: "Tension pairs",
+                    })}
+                    value={diagnostics.insight.tensions.length}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            <Row gutter={[12, 12]}>
+              {diagnostics.sources.map((row) => {
+                const summary = summarizeRuntimeContext(row.source, row.context);
+                return (
+                  <Col key={row.source} xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title={sourceNameByKey[row.source] ?? row.source}
+                      extra={
+                        <Space wrap size={[8, 8]}>
+                          <Tag color={runtimeStatusColor(row.status)}>
+                            {runtimeStatusLabel(row.status)}
+                          </Tag>
+                          <Tag color={row.enabled ? "green" : "default"}>
+                            {row.intervalSec}s
+                          </Tag>
+                        </Space>
+                      }
+                    >
+                      <Space direction="vertical" size="small" style={{ display: "flex" }}>
+                        <Space wrap size={[8, 8]}>
+                          <Typography.Text strong>
+                            {t("systemSettings.realtimeSignals.runtime.latestValue", {
+                              defaultValue: "Latest",
+                            })}
+                            : {row.latestValue ?? "—"}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {t("systemSettings.realtimeSignals.runtime.previousValue", {
+                              defaultValue: "Previous",
+                            })}
+                            : {row.previousValue ?? "—"}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {t("systemSettings.realtimeSignals.runtime.changePercent", {
+                              defaultValue: "Change",
+                            })}
+                            :{" "}
+                            {typeof row.changePercent === "number"
+                              ? `${row.changePercent.toFixed(2)}%`
+                              : "—"}
+                          </Typography.Text>
+                        </Space>
+                        {summary ? (
+                          <Typography.Text type="secondary">{summary}</Typography.Text>
+                        ) : null}
+                        {row.statusReason ? (
+                          <Typography.Text type="secondary">
+                            {row.statusReason}
+                          </Typography.Text>
+                        ) : null}
+                        <Space wrap size={[8, 8]}>
+                          <Tag>
+                            {t("systemSettings.realtimeSignals.runtime.lastRunAt", {
+                              defaultValue: "Last run",
+                            })}
+                            : {formatTimestamp(row.lastRunAt)}
+                          </Tag>
+                          <Tag>
+                            {t("systemSettings.realtimeSignals.runtime.lastAttemptAt", {
+                              defaultValue: "Last attempt",
+                            })}
+                            : {formatTimestamp(row.lastAttemptAt)}
+                          </Tag>
+                          <Tag>
+                            {t("systemSettings.realtimeSignals.runtime.lastSuccessAt", {
+                              defaultValue: "Last success",
+                            })}
+                            : {formatTimestamp(row.lastSuccessAt)}
+                          </Tag>
+                        </Space>
+                        {row.lastError ? (
+                          <Alert
+                            type="error"
+                            showIcon
+                            message={t("systemSettings.realtimeSignals.runtime.lastError", {
+                              defaultValue: "Last error",
+                            })}
+                            description={`${row.lastError}${row.lastErrorAt ? ` (${formatTimestamp(row.lastErrorAt)})` : ""}`}
+                          />
+                        ) : null}
+                      </Space>
+                    </Card>
+                  </Col>
+                );
+              })}
+            </Row>
+          </Space>
+        ) : diagnosticsLoading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: "1rem 0" }}>
+            <Spin />
+          </div>
+        ) : (
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.runtime.empty", {
+              defaultValue: "Runtime diagnostics have not been loaded yet.",
+            })}
+          </Typography.Text>
+        )}
+      </Card>
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Typography.Title level={5} style={{ marginTop: 0 }}>

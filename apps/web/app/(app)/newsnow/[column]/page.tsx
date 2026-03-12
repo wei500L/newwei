@@ -182,24 +182,6 @@ export default function NewsnowColumnPage() {
 
   return (
     <div className={frameClass} style={frameStyle}>
-      {/* Performance-friendly Aura Background layers */}
-      <div
-        className="newsnow-aura-layer newsnow-aura-layer-primary absolute -top-20 left-[-16%] h-[520px] w-[760px] opacity-45 sm:h-[560px] sm:w-[860px] dark:opacity-35 xl:h-[620px] xl:w-[980px]"
-        style={{
-          background:
-            "radial-gradient(circle at 52% 52%, var(--aura-color-1) 0%, transparent 68%)",
-          mixBlendMode: isDark ? "screen" : "multiply",
-        }}
-      />
-      <div
-        className="newsnow-aura-layer newsnow-aura-layer-secondary absolute -top-28 right-[-20%] h-[500px] w-[700px] opacity-30 sm:h-[540px] sm:w-[820px] dark:opacity-24 xl:h-[600px] xl:w-[940px]"
-        style={{
-          background:
-            "radial-gradient(circle at 38% 28%, var(--aura-color-2) 0%, transparent 66%)",
-          mixBlendMode: isDark ? "screen" : "multiply",
-        }}
-      />
-
       <div className="relative z-10">
         <NewsnowHeader />
         {visibleRealtimeUnread > 0 ? (

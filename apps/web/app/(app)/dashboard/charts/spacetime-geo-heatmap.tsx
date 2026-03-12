@@ -15,9 +15,11 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { classifyMapLoadError, type MapLoadErrorPresentation } from "@/lib/map/map-load-error";
 import { createDeckMapRuntime, setDeckOverlayProps, type DeckMapRuntime } from "@/lib/map/map-runtime";
-import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
+import { MAP_STYLE_URL } from "@/lib/map/map-style";
 import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import { safeHttpUrl } from "@/lib/url";
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -281,6 +283,8 @@ export function SpacetimeGeoHeatmap({
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [mapLoadError, setMapLoadError] = useState<MapLoadErrorPresentation | null>(null);
+  const [mapMountNonce, setMapMountNonce] = useState(0);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [articlePageState, setArticlePageState] = useState<{
@@ -482,12 +486,19 @@ export function SpacetimeGeoHeatmap({
     runtime.destroy();
     setMapReady(false);
   }, []);
+  const retryMapLoad = useCallback(() => {
+    destroyMapRuntime();
+    setMapLoadError(null);
+    setMapReady(false);
+    setMapMountNonce((value) => value + 1);
+  }, [destroyMapRuntime]);
 
   useEffect(() => {
     if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || runtimeRef.current) {
       return;
     }
 
+    setMapLoadError(null);
     const runtime = createDeckMapRuntime({
       container: mapContainerRef.current,
       initialViewState: {
@@ -498,19 +509,23 @@ export function SpacetimeGeoHeatmap({
         pitch: 0,
       },
       style: MAP_STYLE_URL,
-      fallbackStyle: MAP_STYLE_FALLBACK,
       onMapReady: () => {
+        setMapLoadError(null);
         setMapReady(true);
       },
-      onFallbackApplied: () => {
-        toast.warning("Primary basemap is unavailable. Switched to fallback style.");
+      onMapError: (_map, detail) => {
+        captureClientError("Spacetime geo heatmap basemap load failed", detail.error ?? detail);
+        const presentation = classifyMapLoadError(detail);
+        setMapReady(false);
+        setMapLoadError(presentation);
+        toast.error(`${presentation.title}. ${presentation.rawMessage ?? presentation.description}`);
       },
     });
 
     runtimeRef.current = runtime;
     mapRef.current = runtime.map;
     overlayRef.current = runtime.overlay;
-  }, [hasRenderableMapContainer, inView]);
+  }, [hasRenderableMapContainer, inView, mapMountNonce]);
 
   useEffect(() => {
     if (inView) {
@@ -967,7 +982,19 @@ export function SpacetimeGeoHeatmap({
             </div>
           ) : null}
 
-          {!mapReady ? (
+          {mapLoadError ? (
+            <div className="absolute inset-0">
+              <ChartEmptyState
+                variant="error"
+                title={mapLoadError.title}
+                description={mapLoadError.description}
+                actionLabel={t("common.retry", { defaultValue: "Retry" })}
+                onAction={retryMapLoad}
+              />
+            </div>
+          ) : null}
+
+          {!mapLoadError && !mapReady ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <Skeleton active paragraph={{ rows: 4 }} />
             </div>

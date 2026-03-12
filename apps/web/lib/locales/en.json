@@ -787,6 +787,7 @@
       "volume": "Volume",
       "notAvailableShort": "N/A",
       "degraded": "Trend view",
+      "emptyHintRefresh": "No data for the selected range. Try expanding the range or refresh the data.",
       "degradedTooltip": "Only {{count}} data points available. Switched to trend view for readability; candlestick will return when data is sufficient.",
       "insufficientDataTrendHint": "Insufficient data points, switched to trend view."
     },
@@ -7316,6 +7317,27 @@
         "surging": "SURGING",
         "rising": "RISING",
         "stable": "STABLE"
+      }
+    },
+    "realtimeSnapshot": {
+      "title": "Realtime Snapshot",
+      "pizzint": "PizzINT",
+      "pizzintEmpty": "No PizzINT snapshot in current window.",
+      "tensionsTitle": "Top bilateral tensions",
+      "tensionsEmpty": "No bilateral tension snapshots.",
+      "tensionPair": "Pair",
+      "score": "Score",
+      "changePct": "Change",
+      "trend": "Trend",
+      "updatedAt": "Updated",
+      "adjustedScore": "Adjusted",
+      "openLocations": "Open locations",
+      "activeSpikes": "Active spikes",
+      "avgPop": "Avg pop",
+      "trendStatus": {
+        "rising": "RISING",
+        "stable": "STABLE",
+        "falling": "FALLING"
       }
     },
     "narrative": {

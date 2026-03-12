@@ -1,5 +1,6 @@
 import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import {
+  createLogger,
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
@@ -29,6 +30,7 @@ import {
   type WarMapLayersResponse,
 } from "./war-map-layers";
 
+const logger = createLogger({ name: "dashboard-charts" });
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RANGE_DAYS = 30;
 const DEFAULT_SECTOR_CATEGORY = "economic-short";
@@ -2050,8 +2052,11 @@ export class DashboardChartsService {
           orgId,
           2_500,
         );
-      } catch {
-        // Mongo fallback is best-effort for War Map event aggregation.
+      } catch (error) {
+        logger.warn(
+          { orgId, range, err: error },
+          "War map event aggregation mongo fallback failed",
+        );
       }
     }
 
@@ -2321,8 +2326,11 @@ export class DashboardChartsService {
           crawlAt: record.ingestedAt,
           titleGuess: null,
         }));
-      } catch {
-        // Mongo fallback is best-effort for War Map marker rendering.
+      } catch (error) {
+        logger.warn(
+          { orgId, range, err: error },
+          "War map marker mongo fallback failed",
+        );
       }
     }
 

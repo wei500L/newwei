@@ -59,8 +59,8 @@ export function FinancialCandlestick() {
   const theme = useChartTheme();
   const { exporting: exportingCsv, label: csvLabel, exportCsv } = useCsvExport();
   const emptyTitle = t("dashboard.dataEmpty", { defaultValue: "No data" });
-  const emptyHint = t("dashboard.dataEmptyHint", {
-    defaultValue: "No data for the selected range. Try expanding the range."
+  const emptyHint = t("dashboard.candlestick.emptyHintRefresh", {
+    defaultValue: "No data for the selected range. Try expanding the range or refresh the data."
   });
   const rangeLabel = t("dashboard.charts.rangeLabel", { defaultValue: "Range" });
   const windowLabelText = t("dashboard.charts.windowLabel", { defaultValue: "Window" });
@@ -437,7 +437,12 @@ export function FinancialCandlestick() {
   if (!data || normalizedPoints.length === 0) {
     return (
       <div className="h-[350px] transition-all duration-300">
-        <ChartEmptyState title={emptyTitle} description={emptyHint} />
+        <ChartEmptyState
+          title={emptyTitle}
+          description={emptyHint}
+          actionLabel={t("common.refresh", { defaultValue: "Refresh" })}
+          onAction={() => void refetch()}
+        />
       </div>
     );
   }

@@ -15,6 +15,10 @@ import { Toaster } from "sonner";
 
 import { useTheme } from "@/hooks/use-theme";
 import { getApolloClient } from "@/lib/apollo-client";
+import {
+  extractApiError,
+  isRuntimeSecretRequiredApiError,
+} from "@/lib/api-error";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import {
@@ -55,6 +59,23 @@ export function AppProviders({ children }: PropsWithChildren) {
         onError: (error, query) => {
           const classification = classifyRequestError(error);
           if (classification.kind === "cancelled") {
+            return;
+          }
+          if (isRuntimeSecretRequiredApiError(error)) {
+            const apiError = extractApiError(error);
+            captureClientError("News source runtime secret required", error, {
+              tags: {
+                area: "react-query",
+                queryHash: query.queryHash,
+                errorCode: apiError.code ?? "unknown",
+                ...(apiError.sourceId ? { sourceId: apiError.sourceId } : {}),
+              },
+              extras: {
+                queryKey: query.queryKey,
+                detail: apiError.detail,
+                requiredKeys: apiError.requiredKeys,
+              },
+            });
             return;
           }
           captureClientError("React Query request failed", error, {

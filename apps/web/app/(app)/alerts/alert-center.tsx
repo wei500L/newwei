@@ -2664,26 +2664,6 @@ export function AlertCenterContent() {
         </Button>
       </Space>
 
-      <Card className="content-card">
-        <Alert
-          type={canManageAlerts ? 'info' : 'warning'}
-          message={t('alerts.center.configNotice.title', {
-            defaultValue: 'Alert rules are managed in Admin'
-          })}
-          description={
-            canManageAlerts ? (
-              <Link href="/admin/alerts">
-                {t('alerts.center.configNotice.link', { defaultValue: 'Open alert configuration' })}
-              </Link>
-            ) : (
-              t('alerts.center.configNotice.description', {
-                defaultValue: 'Alert rule configuration is limited to administrators.'
-              })
-            )
-          }
-        />
-      </Card>
-
       {isLikelySampled ? (
         <Alert
           type="warning"

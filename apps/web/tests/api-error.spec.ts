@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractApiError,
+  isRuntimeSecretRequiredApiError,
   NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
 } from '../lib/api-error';
 
@@ -35,5 +36,27 @@ describe('api-error extraction', () => {
       sourceId: 'producthunt',
       requiredKeys: ['token', 'api_token'],
     });
+  });
+
+  it('detects runtime-secret-required axios errors', () => {
+    const error = new axios.AxiosError(
+      'Request failed with status code 424',
+      'ERR_BAD_RESPONSE',
+      undefined,
+      undefined,
+      {
+        status: 424,
+        statusText: 'Failed Dependency',
+        headers: {},
+        config: {} as never,
+        data: {
+          code: NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
+          message: 'Runtime secret required for news source: producthunt',
+        },
+      } as never,
+    );
+
+    expect(isRuntimeSecretRequiredApiError(error)).toBe(true);
+    expect(isRuntimeSecretRequiredApiError(new Error('boom'))).toBe(false);
   });
 });

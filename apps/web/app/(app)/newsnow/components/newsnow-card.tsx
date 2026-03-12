@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   extractApiError,
+  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
 } from "@/lib/api-error";
 import {
   getPrimaryRuntimeSecretKey,
@@ -362,6 +363,8 @@ export function NewsnowCard({
     () => shouldShowRuntimeSecretCta(source, sourceError?.code),
     [source, sourceError?.code],
   );
+  const isRuntimeSecretRequiredError =
+    sourceError?.code === NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE;
   const sourceErrorMessage = useMemo(() => {
     if (!sourceError) {
       return null;
@@ -370,6 +373,26 @@ export function NewsnowCard({
       ? `${sourceError.message} (${sourceError.detail})`
       : sourceError.message;
   }, [sourceError]);
+  const sourceErrorTitle = useMemo(
+    () =>
+      isRuntimeSecretRequiredError
+        ? t('pages.newsnow.runtimeSecrets.requiredTitle', {
+            defaultValue: 'Missing runtime secret',
+          })
+        : t('pages.newsnow.source.fetchFailed', {
+            defaultValue: 'Failed to fetch source',
+          }),
+    [isRuntimeSecretRequiredError, t],
+  );
+  const runtimeSecretRequiredKeysLabel = useMemo(() => {
+    if (!isRuntimeSecretRequiredError || !sourceError?.requiredKeys?.length) {
+      return null;
+    }
+    return t('pages.newsnow.runtimeSecrets.requiredKeys', {
+      defaultValue: 'Required keys: {{keys}}',
+      keys: sourceError.requiredKeys.join(', '),
+    });
+  }, [isRuntimeSecretRequiredError, sourceError?.requiredKeys, t]);
   const runtimeSecretsLinkLabel = useMemo(() => {
     if (runtimeSecretPrimaryKey) {
       return t('pages.newsnow.runtimeSecrets.openSettingsWithKey', {
@@ -944,10 +967,15 @@ export function NewsnowCard({
     if (isError) {
       return (
         <div className="flex h-full flex-col items-center justify-center space-y-2 p-4 text-center">
-          <p className="text-sm font-medium text-[var(--foreground)]">获取失败</p>
+          <p className="text-sm font-medium text-[var(--foreground)]">{sourceErrorTitle}</p>
           {sourceErrorMessage ? (
             <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
               {sourceErrorMessage}
+            </p>
+          ) : null}
+          {runtimeSecretRequiredKeysLabel ? (
+            <p className="max-w-[28rem] break-all text-[11px] text-[var(--secondary-foreground)]">
+              {runtimeSecretRequiredKeysLabel}
             </p>
           ) : null}
           {needsRuntimeSecret ? (
@@ -1028,8 +1056,10 @@ export function NewsnowCard({
     runtimeSecretsEmptyLabel,
     runtimeSecretsLinkLabel,
     runtimeSecretsSettingsHref,
+    runtimeSecretRequiredKeysLabel,
     source.type,
     sourceErrorMessage,
+    sourceErrorTitle,
     trackOriginalOpen,
   ]);
 

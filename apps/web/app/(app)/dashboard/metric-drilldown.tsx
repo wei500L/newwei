@@ -15,14 +15,17 @@ import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useMetricDrillDownDetailsQuery } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
+import { classifyMapLoadError, type MapLoadErrorPresentation } from "@/lib/map/map-load-error";
 import { createDeckMapRuntime, setDeckOverlayProps } from "@/lib/map/map-runtime";
-import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from "@/lib/map/map-style";
+import { MAP_STYLE_URL } from "@/lib/map/map-style";
 import { useRenderableContainer } from "@/lib/map/use-renderable-container";
 import {
   formatGranularityLabelLocalized,
@@ -122,7 +125,7 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
 
   const [mapReady, setMapReady] = useState(false);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, visible);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapError, setMapError] = useState<MapLoadErrorPresentation | null>(null);
   const [geoJsonData, setGeoJsonData] = useState<GeoJsonFeatureCollection | null>(null);
   const [geoMapCenter, setGeoMapCenter] = useState<[number, number] | null>(null);
   const [geoMapZoom, setGeoMapZoom] = useState<number | null>(null);
@@ -187,7 +190,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
             : typeof err === "string"
               ? err
               : mapLoadFailedLabel;
-        setMapError(message);
+        setMapError({
+          kind: "unknown",
+          title: mapLoadFailedLabel,
+          description: message,
+          rawMessage: message,
+        });
       });
 
     return () => {
@@ -210,10 +218,16 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
         pitch: 0,
       },
       style: MAP_STYLE_URL,
-      fallbackStyle: MAP_STYLE_FALLBACK,
       onMapReady: (map) => {
+        setMapError(null);
         setMapReady(true);
         map.resize();
+      },
+      onMapError: (_map, detail) => {
+        captureClientError("Metric drilldown basemap load failed", detail.error ?? detail);
+        const presentation = classifyMapLoadError(detail);
+        setMapReady(false);
+        setMapError(presentation);
       },
     });
 
@@ -587,8 +601,12 @@ export function MetricDrillDown({ visible, metricKey, onClose }: MetricDrillDown
                 className="h-full border border-gray-100"
               >
                 {mapError ? (
-                  <div className="h-[400px] flex items-center justify-center bg-gray-50 text-gray-400 text-sm px-6 text-center">
-                    {mapError}
+                  <div className="h-[400px]">
+                    <ChartEmptyState
+                      variant="error"
+                      title={mapError.title}
+                      description={mapError.description}
+                    />
                   </div>
                 ) : (
                   <div className="relative h-[400px] overflow-hidden rounded-md bg-gray-50">

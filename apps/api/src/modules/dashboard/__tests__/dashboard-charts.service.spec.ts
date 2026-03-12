@@ -3,6 +3,31 @@ import { ProcessedArticleStatus } from "@prisma/client";
 
 import { DashboardChartsService } from "../dashboard-charts.service";
 
+const processedItemFindExecMock = jest.fn().mockResolvedValue([]);
+
+jest.mock("@modular/mongo", () => ({
+  ProcessedItemModel: {
+    find: jest.fn(() => ({
+      sort: jest.fn(() => ({
+        limit: jest.fn(() => ({
+          lean: jest.fn(() => ({
+            exec: processedItemFindExecMock,
+          })),
+        })),
+      })),
+    })),
+    findOne: jest.fn(() => ({
+      sort: jest.fn(() => ({
+        lean: jest.fn(() => ({
+          exec: jest.fn().mockResolvedValue(null),
+        })),
+      })),
+    })),
+    countDocuments: jest.fn().mockResolvedValue(0),
+  },
+  RawItemModel: {},
+}));
+
 const createCache = () => ({
   get: jest.fn(),
   set: jest.fn(),

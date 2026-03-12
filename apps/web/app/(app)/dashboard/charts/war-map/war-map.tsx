@@ -17,7 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Button, Checkbox, Popover, Skeleton, Space, Tag } from 'antd';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -25,14 +25,22 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
+import { captureClientError } from '@/lib/client-telemetry';
+import { classifyMapLoadError, type MapLoadErrorPresentation } from '@/lib/map/map-load-error';
 import { createDeckMapRuntime, extractMapBbox, setDeckOverlayProps } from '@/lib/map/map-runtime';
-import { MAP_STYLE_FALLBACK, MAP_STYLE_URL } from '@/lib/map/map-style';
+import { MAP_STYLE_URL } from '@/lib/map/map-style';
 import { useRenderableContainer } from '@/lib/map/use-renderable-container';
 import { safeHttpUrl } from '@/lib/url';
 import { useSituationMonitorMonitorsStore } from '@/store/situation-monitor-monitors';
 import { useDashboardRangeStore } from '@/store/time-range';
 import { useWarMapSettingsStore } from '@/store/war-map-settings';
 
+import {
+  buildSanitizedPathGeometry,
+  buildSanitizedPolygonResult,
+  isValidDeckCoordinate,
+  type DeckCoordinate,
+} from './war-map-geometry';
 import { buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
@@ -154,6 +162,8 @@ const LAYER_LABEL_OVERRIDES: Partial<Record<WarMapLayerId, string>> = {
   iranAttacks: 'Iran Attacks',
 };
 
+const warMapSanitizationWarningSignatures = new Map<string, string>();
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -176,6 +186,69 @@ function toLayerLabel(layerId: WarMapLayerId): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function warnWarMapGeometrySanitization(
+  kind: 'path' | 'polygon',
+  layerId: WarMapLayerId,
+  payload: Record<string, unknown>,
+): void {
+  const warningKey = `${kind}:${layerId}`;
+  const signature = JSON.stringify(payload);
+  if (warMapSanitizationWarningSignatures.get(warningKey) === signature) {
+    return;
+  }
+  warMapSanitizationWarningSignatures.set(warningKey, signature);
+  console.warn(`[WarMap] ${kind} geometry sanitized for layer "${layerId}".`, payload);
+}
+
+function countInvalidPathCoordinates(path: unknown): number {
+  if (!Array.isArray(path)) {
+    return 0;
+  }
+
+  let invalidCount = 0;
+  for (const coordinate of path) {
+    if (!isValidDeckCoordinate(coordinate)) {
+      invalidCount += 1;
+    }
+  }
+  return invalidCount;
+}
+
+function summarizePolygonInput(polygon: unknown): {
+  invalidCoordinateCount: number;
+  malformedRingCount: number;
+  ringCount: number;
+} {
+  if (!Array.isArray(polygon)) {
+    return {
+      invalidCoordinateCount: 0,
+      malformedRingCount: 0,
+      ringCount: 0,
+    };
+  }
+
+  let invalidCoordinateCount = 0;
+  let malformedRingCount = 0;
+  for (const ring of polygon) {
+    if (!Array.isArray(ring)) {
+      malformedRingCount += 1;
+      continue;
+    }
+
+    for (const coordinate of ring) {
+      if (!isValidDeckCoordinate(coordinate)) {
+        invalidCoordinateCount += 1;
+      }
+    }
+  }
+
+  return {
+    invalidCoordinateCount,
+    malformedRingCount,
+    ringCount: polygon.length,
+  };
 }
 
 function parseHexColor(color: string): [number, number, number] | null {
@@ -249,6 +322,8 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
   const [inView, setInView] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [mapLoadError, setMapLoadError] = useState<MapLoadErrorPresentation | null>(null);
+  const [mapMountNonce, setMapMountNonce] = useState(0);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [queryViewport, setQueryViewport] = useState<{
     bbox?: [number, number, number, number];
@@ -301,6 +376,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
+  const retryMapLoad = useCallback(() => {
+    setMapLoadError(null);
+    setMapReady(false);
+    setMapMountNonce((value) => value + 1);
+  }, []);
 
   const effectiveRange = useMemo(() => {
     if (timeRangePreset === 'all') {
@@ -410,6 +490,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     const initialViewState = viewStateRef.current;
+    setMapLoadError(null);
     const syncFromMap = (map: MapLibreMap) => {
       const center = map.getCenter();
       syncFromMapRef.current = true;
@@ -434,14 +515,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       initialViewState,
       force2D: true,
       style: MAP_STYLE_URL,
-      fallbackStyle: MAP_STYLE_FALLBACK,
       onMoveEnd: syncFromMap,
       onMapReady: (map) => {
+        setMapLoadError(null);
         setMapReady(true);
         syncFromMap(map);
       },
-      onFallbackApplied: () => {
-        toast.warning('Primary basemap is unavailable. Switched to fallback style.');
+      onMapError: (_map, detail) => {
+        captureClientError('War map basemap load failed', detail.error ?? detail);
+        const presentation = classifyMapLoadError(detail);
+        setMapReady(false);
+        setMapLoadError(presentation);
+        toast.error(`${presentation.title}. ${presentation.rawMessage ?? presentation.description}`);
       },
     });
 
@@ -454,7 +539,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       runtime.destroy();
       setMapReady(false);
     };
-  }, [hasRenderableMapContainer, inView, setViewState]);
+  }, [hasRenderableMapContainer, inView, mapMountNonce, setViewState]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -587,17 +672,46 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       }
 
       if (dataset.geometryType === 'path') {
-        const paths = dataset.features.filter(
-          (feature): feature is WarMapLayerFeature & { path: [number, number][] } =>
-            Array.isArray(feature.path) && feature.path.length >= 2,
-        );
+        const paths: Array<WarMapLayerFeature & { path: DeckCoordinate[] }> = [];
+        const pathFallbackPoints: Array<WarMapLayerFeature & { lat: number; lng: number }> = [];
+        const pathSanitizationSummary = {
+          affectedFeatureCount: 0,
+          invalidCoordinateCount: 0,
+          splitFeatureCount: 0,
+          renderedPathSegmentCount: 0,
+          pointFallbackCount: 0,
+          sampleFeatureIds: [] as string[],
+        };
+        for (const feature of dataset.features) {
+          const sanitized = buildSanitizedPathGeometry(feature);
+          const invalidCoordinateCount = countInvalidPathCoordinates(feature.path);
+          const wasSplit = sanitized.pathFeatures.length > 1;
+          const hadPointFallback = sanitized.pointFeatures.length > 0;
+          if (invalidCoordinateCount > 0 || wasSplit || hadPointFallback) {
+            pathSanitizationSummary.affectedFeatureCount += 1;
+            pathSanitizationSummary.invalidCoordinateCount += invalidCoordinateCount;
+            pathSanitizationSummary.renderedPathSegmentCount += sanitized.pathFeatures.length;
+            pathSanitizationSummary.pointFallbackCount += sanitized.pointFeatures.length;
+            if (wasSplit) {
+              pathSanitizationSummary.splitFeatureCount += 1;
+            }
+            if (pathSanitizationSummary.sampleFeatureIds.length < 5) {
+              pathSanitizationSummary.sampleFeatureIds.push(feature.id);
+            }
+          }
+          paths.push(...sanitized.pathFeatures);
+          pathFallbackPoints.push(...sanitized.pointFeatures);
+        }
+        if (pathSanitizationSummary.affectedFeatureCount > 0) {
+          warnWarMapGeometrySanitization('path', layerId, pathSanitizationSummary);
+        }
         if (paths.length > 0) {
           staticLayers.push(
             new PathLayer({
               id: `wm-path-${layerId}`,
               data: paths,
               pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              getPath: (feature: WarMapLayerFeature & { path: [number, number][] }) => feature.path,
+              getPath: (feature: WarMapLayerFeature & { path: DeckCoordinate[] }) => feature.path,
               getColor: color,
               getWidth: 2,
               widthMinPixels: 1.4,
@@ -605,27 +719,122 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             }),
           );
         }
+        if (pathFallbackPoints.length > 0) {
+          staticLayers.push(
+            new ScatterplotLayer({
+              id: `wm-path-${layerId}-points`,
+              data: pathFallbackPoints,
+              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              getPosition: (feature: WarMapLayerFeature & { lat: number; lng: number }) => [
+                feature.lng,
+                feature.lat,
+              ],
+              getFillColor: color,
+              getRadius: () =>
+                Math.max(4, Math.min(14, Math.round((dataset.renderHints?.radiusScale ?? 1) * 5))),
+              radiusMinPixels: 3,
+              radiusMaxPixels: 18,
+              stroked: false,
+            }),
+          );
+        }
         continue;
       }
 
       if (dataset.geometryType === 'polygon') {
-        const polygons = dataset.features.filter(
-          (feature): feature is WarMapLayerFeature & { polygon: [number, number][][] } =>
-            Array.isArray(feature.polygon) && feature.polygon.length > 0,
-        );
+        const polygons: Array<WarMapLayerFeature & { polygon: DeckCoordinate[][] }> = [];
+        const polygonOutlineFeatures: Array<WarMapLayerFeature & { path: DeckCoordinate[] }> = [];
+        const polygonFallbackPoints: Array<WarMapLayerFeature & { lat: number; lng: number }> = [];
+        const polygonSanitizationSummary = {
+          affectedFeatureCount: 0,
+          invalidCoordinateCount: 0,
+          malformedRingCount: 0,
+          degradedFillCount: 0,
+          outlineFragmentCount: 0,
+          pointFallbackCount: 0,
+          sampleFeatureIds: [] as string[],
+        };
+        for (const feature of dataset.features) {
+          const sanitized = buildSanitizedPolygonResult(feature);
+          const inputSummary = summarizePolygonInput(feature.polygon);
+          const degradedFill =
+            Array.isArray(feature.polygon) &&
+            feature.polygon.length > 0 &&
+            sanitized.polygonFeature === null;
+          if (
+            inputSummary.invalidCoordinateCount > 0 ||
+            inputSummary.malformedRingCount > 0 ||
+            degradedFill ||
+            sanitized.outlineFeatures.length > 0 ||
+            sanitized.pointFeatures.length > 0
+          ) {
+            polygonSanitizationSummary.affectedFeatureCount += 1;
+            polygonSanitizationSummary.invalidCoordinateCount += inputSummary.invalidCoordinateCount;
+            polygonSanitizationSummary.malformedRingCount += inputSummary.malformedRingCount;
+            polygonSanitizationSummary.outlineFragmentCount += sanitized.outlineFeatures.length;
+            polygonSanitizationSummary.pointFallbackCount += sanitized.pointFeatures.length;
+            if (degradedFill) {
+              polygonSanitizationSummary.degradedFillCount += 1;
+            }
+            if (polygonSanitizationSummary.sampleFeatureIds.length < 5) {
+              polygonSanitizationSummary.sampleFeatureIds.push(feature.id);
+            }
+          }
+          if (sanitized.polygonFeature) {
+            polygons.push(sanitized.polygonFeature);
+          }
+          polygonOutlineFeatures.push(...sanitized.outlineFeatures);
+          polygonFallbackPoints.push(...sanitized.pointFeatures);
+        }
+        if (polygonSanitizationSummary.affectedFeatureCount > 0) {
+          warnWarMapGeometrySanitization('polygon', layerId, polygonSanitizationSummary);
+        }
         if (polygons.length > 0) {
           staticLayers.push(
             new PolygonLayer({
               id: `wm-polygon-${layerId}`,
               data: polygons,
               pickable: Boolean(dataset.renderHints?.pickable ?? true),
-              getPolygon: (feature: WarMapLayerFeature & { polygon: [number, number][][] }) =>
+              getPolygon: (feature: WarMapLayerFeature & { polygon: DeckCoordinate[][] }) =>
                 feature.polygon[0] ?? [],
               getFillColor: color,
               getLineColor: toRgba(dataset.renderHints?.color, 0.85, [59, 130, 246]),
               lineWidthMinPixels: 1,
               filled: true,
               stroked: true,
+            }),
+          );
+        }
+        if (polygonOutlineFeatures.length > 0) {
+          staticLayers.push(
+            new PathLayer({
+              id: `wm-polygon-${layerId}-fragments`,
+              data: polygonOutlineFeatures,
+              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              getPath: (feature: WarMapLayerFeature & { path: DeckCoordinate[] }) => feature.path,
+              getColor: toRgba(dataset.renderHints?.color, 0.92, [59, 130, 246]),
+              getWidth: 2,
+              widthMinPixels: 1.2,
+              widthMaxPixels: 4,
+            }),
+          );
+        }
+        if (polygonFallbackPoints.length > 0) {
+          staticLayers.push(
+            new ScatterplotLayer({
+              id: `wm-polygon-${layerId}-points`,
+              data: polygonFallbackPoints,
+              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              getPosition: (feature: WarMapLayerFeature & { lat: number; lng: number }) => [
+                feature.lng,
+                feature.lat,
+              ],
+              getFillColor: color,
+              getRadius: () =>
+                Math.max(4, Math.min(14, Math.round((dataset.renderHints?.radiusScale ?? 1) * 5))),
+              radiusMinPixels: 3,
+              radiusMaxPixels: 18,
+              stroked: false,
             }),
           );
         }
@@ -1165,7 +1374,19 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         </div>
       ) : null}
 
-      {!mapReady ? (
+      {mapLoadError ? (
+        <div className="absolute inset-0">
+          <ChartEmptyState
+            variant="error"
+            title={mapLoadError.title}
+            description={mapLoadError.description}
+            actionLabel={t('common.retry', { defaultValue: 'Retry' })}
+            onAction={retryMapLoad}
+          />
+        </div>
+      ) : null}
+
+      {!mapLoadError && !mapReady ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <Skeleton active paragraph={{ rows: 4 }} />
         </div>

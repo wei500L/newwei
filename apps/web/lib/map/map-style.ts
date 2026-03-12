@@ -5,23 +5,15 @@ export const MAP_STYLE_URL =
 
 export const MAP_STYLE_FALLBACK: StyleSpecification = {
   version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "\u00a9 OpenStreetMap contributors",
-    },
-  },
+  name: "offline-fallback",
+  sources: {},
   layers: [
     {
-      id: "osm-raster",
-      type: "raster",
-      source: "osm",
+      id: "offline-background",
+      type: "background",
+      paint: {
+        "background-color": "#f5f7fb",
+      },
     },
   ],
 };

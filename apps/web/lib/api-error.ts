@@ -101,3 +101,6 @@ export const extractApiError = (error: unknown): ApiErrorInfo => {
 
   return { message: "Request failed" };
 };
+
+export const isRuntimeSecretRequiredApiError = (error: unknown): boolean =>
+  extractApiError(error).code === NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE;

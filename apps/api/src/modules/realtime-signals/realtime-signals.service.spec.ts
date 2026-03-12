@@ -144,10 +144,10 @@ describe("RealtimeSignalsService unrest merge", () => {
     ];
     jest
       .spyOn(service as any, "fetchAcledUnrestEvents")
-      .mockResolvedValue(acled);
+      .mockResolvedValue({ events: acled, configured: true });
     jest
       .spyOn(service as any, "fetchGdeltUnrestEvents")
-      .mockResolvedValue(gdelt);
+      .mockResolvedValue({ events: gdelt, configured: true });
 
     const result = await (service as any).fetchUnrestSignal(runtimeConfig);
     const metric = result[0];
@@ -186,7 +186,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       },
     } satisfies RealtimeSignalsRuntimeConfig;
 
-    const rows = await (service as any).fetchAcledUnrestEvents(runtime);
+    const result = await (service as any).fetchAcledUnrestEvents(runtime);
 
     expect(settings.forceRefreshAcledAccessToken).toHaveBeenCalledTimes(1);
     expect(fetchJsonSpy.mock.calls[0]?.[2]).toMatchObject({
@@ -196,7 +196,77 @@ describe("RealtimeSignalsService unrest merge", () => {
       headers: { Authorization: "Bearer fresh-token" },
     });
     expect(runtime.credentials.acledAccessToken).toBe("fresh-token");
-    expect(rows).toEqual([]);
+    expect(result).toEqual({
+      configured: true,
+      events: [],
+    });
+  });
+
+  it("adds required compact date parameters for gdelt tension fetches", async () => {
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.parse("2026-03-12T12:00:00.000Z"));
+    const service = buildService();
+    const fetchJsonSpy = jest
+      .spyOn(service as any, "fetchJsonWithRetry")
+      .mockResolvedValue({
+        usa_russia: [{ t: 1773187200000, v: 0.42 }],
+      });
+
+    await (service as any).fetchGdeltTensionSignal(runtimeConfig);
+
+    expect(fetchJsonSpy).toHaveBeenCalledWith(
+      "https://www.pizzint.watch/api/gdelt/batch?pairs=usa_russia%2Crussia_ukraine%2Cusa_china%2Cchina_taiwan%2Cusa_iran%2Cusa_venezuela&method=gpr&dateStart=20260305&dateEnd=20260312",
+      runtimeConfig,
+    );
+
+    nowSpy.mockRestore();
+  });
+
+  it("parses gdelt unrest geojson fallback feed", async () => {
+    const service = buildService();
+    jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
+      features: [
+        {
+          geometry: { type: "Point", coordinates: [36.8, -1.2] },
+          properties: {
+            name: "Nairobi, Kenya",
+            urlpubtimedate: "2026-03-12T10:00:00Z",
+            urltone: -4.2,
+            mentionedthemes: ";PROTEST;PROTEST;",
+          },
+        },
+        {
+          geometry: { type: "Point", coordinates: [36.8, -1.2] },
+          properties: {
+            name: "Nairobi, Kenya",
+            urlpubtimedate: "2026-03-12T11:00:00Z",
+            urltone: -3.5,
+            mentionedthemes: ";PROTEST;",
+          },
+        },
+        {
+          geometry: { type: "Point", coordinates: [12.4, 41.9] },
+          properties: {
+            name: "Rome, Italy",
+            urlpubtimedate: "2026-03-12T11:00:00Z",
+            urltone: 2.1,
+            mentionedthemes: ";PROTEST;",
+          },
+        },
+      ],
+    });
+
+    const result = await (service as any).fetchGdeltUnrestEvents(runtimeConfig);
+
+    expect(result.configured).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      countryCode: "KEN",
+      reports: 2,
+      source: "gdelt",
+    });
   });
 });
 
@@ -213,8 +283,10 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     const store = {
       getInsightSnapshot: jest.fn(),
       getLastRun: jest.fn(),
+      getSourceState: jest.fn(),
       appendPoint: jest.fn(),
       setLastRun: jest.fn(),
+      setSourceState: jest.fn(),
       setInsightSnapshot: jest.fn(),
       evaluateMetric: jest.fn(),
     };

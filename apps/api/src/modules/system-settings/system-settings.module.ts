@@ -2,6 +2,7 @@ import { Global, Module } from "@nestjs/common";
 
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
+import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 import { SituationMonitorSignalsModule } from "../situation-monitor/signals/situation-monitor-signals.module";
 
 import { AssistantSafetyDiagnosticsService } from "./assistant-safety-diagnostics.service";
@@ -55,7 +56,12 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
 
 @Global()
 @Module({
-  imports: [AuthModule, GeoModule, SituationMonitorSignalsModule],
+  imports: [
+    AuthModule,
+    GeoModule,
+    RealtimeSignalsModule,
+    SituationMonitorSignalsModule,
+  ],
   controllers: [
     RateLimitSettingsController,
     RateLimitPolicyController,

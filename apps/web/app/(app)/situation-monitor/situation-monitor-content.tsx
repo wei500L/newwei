@@ -1,11 +1,41 @@
 "use client";
 
-import { DragOutlined, FileSearchOutlined, InfoCircleOutlined, SettingOutlined } from "@ant-design/icons";
-import { Alert, Button, Card, Col, Divider, Drawer, Grid, List, Popover, Progress, Row, Select, Space, Switch, Table, Tag, Typography } from "antd";
+import {
+  DragOutlined,
+  FileSearchOutlined,
+  InfoCircleOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Divider,
+  Drawer,
+  Grid,
+  List,
+  Popover,
+  Progress,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import type { Layout } from "react-grid-layout";
 import { useTranslation } from "react-i18next";
 
@@ -24,9 +54,12 @@ import {
   SITUATION_MONITOR_PANELS,
   SITUATION_MONITOR_PRESETS,
   type SituationMonitorPanelId,
-  useSituationMonitorLayoutStore
+  useSituationMonitorLayoutStore,
 } from "@/store/situation-monitor-layout";
-import { useSituationMonitorMonitorsStore, type SituationMonitorMonitorMatch } from "@/store/situation-monitor-monitors";
+import {
+  useSituationMonitorMonitorsStore,
+  type SituationMonitorMonitorMatch,
+} from "@/store/situation-monitor-monitors";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
 
@@ -46,7 +79,11 @@ import {
   GRID_LAYOUT_METRICS,
   type GridBreakpoint,
 } from "./utils/layout-grid";
-import { isRecentOrefTimestamp, parseOrefTimestamp, translateOrefTextForLocale } from "./utils/oref-display";
+import {
+  isRecentOrefTimestamp,
+  parseOrefTimestamp,
+  translateOrefTextForLocale,
+} from "./utils/oref-display";
 import { buildTelegramFeedQueryParams } from "./utils/telegram-feed";
 
 type GridLayoutComponent = ComponentType<Record<string, unknown>>;
@@ -66,11 +103,16 @@ const ResponsiveGridLayout = dynamic(
           ? (mod.default as { WidthProvider?: unknown }).WidthProvider
           : undefined);
 
-      if (typeof responsive !== "function" || typeof widthProvider !== "function") {
+      if (
+        typeof responsive !== "function" ||
+        typeof widthProvider !== "function"
+      ) {
         throw new Error("react-grid-layout exports are not available");
       }
 
-      return (widthProvider as (component: GridLayoutComponent) => GridLayoutComponent)(responsive as GridLayoutComponent);
+      return (
+        widthProvider as (component: GridLayoutComponent) => GridLayoutComponent
+      )(responsive as GridLayoutComponent);
     }),
   {
     ssr: false,
@@ -169,7 +211,13 @@ interface CorrelationResults {
   predictiveSignals: PredictiveSignal[];
 }
 
-type SituationMonitorCategory = "politics" | "tech" | "finance" | "gov" | "ai" | "intel";
+type SituationMonitorCategory =
+  | "politics"
+  | "tech"
+  | "finance"
+  | "gov"
+  | "ai"
+  | "intel";
 
 interface SituationMonitorHeadline {
   id: string;
@@ -204,7 +252,13 @@ interface SituationMonitorWorldLeader {
   party?: string;
   focus?: string[];
   matchCount: number;
-  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number }[];
+  headlines: {
+    title: string;
+    titleZh?: string;
+    link: string;
+    source: string;
+    timestamp: number;
+  }[];
 }
 
 interface SituationMonitorSituationPanel {
@@ -215,7 +269,13 @@ interface SituationMonitorSituationPanel {
   subtitleZh?: string;
   level: "monitoring" | "elevated" | "critical";
   status: "MONITORING" | "ELEVATED" | "CRITICAL";
-  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number }[];
+  headlines: {
+    title: string;
+    titleZh?: string;
+    link: string;
+    source: string;
+    timestamp: number;
+  }[];
 }
 
 interface SituationMonitorMarketItem {
@@ -306,7 +366,14 @@ interface CrossSourceRadarCluster {
   id: string;
   itemCount: number;
   sources: string[];
-  samples: { title: string; titleZh?: string; link: string; source: string; timestamp: number; itemMetaId?: string }[];
+  samples: {
+    title: string;
+    titleZh?: string;
+    link: string;
+    source: string;
+    timestamp: number;
+    itemMetaId?: string;
+  }[];
 }
 
 interface CrossSourceRadar {
@@ -374,11 +441,22 @@ interface NarrativeData {
   alternativeCount: number;
   mainstreamCount: number;
   sources: string[];
-  headlines: { title: string; titleZh?: string; link: string; source: string; timestamp: number; itemMetaId?: string }[];
+  headlines: {
+    title: string;
+    titleZh?: string;
+    link: string;
+    source: string;
+    timestamp: number;
+    itemMetaId?: string;
+  }[];
   keywords: string[];
   feedback?: { falsePositive: number; falseNegative: number };
   model?: NarrativePropagationModel;
-  learning?: { boostedTokens: string[]; blockedTokens: string[]; suppressedCount: number };
+  learning?: {
+    boostedTokens: string[];
+    blockedTokens: string[];
+    suppressedCount: number;
+  };
 }
 
 interface FringeToMainstream extends NarrativeData {
@@ -412,7 +490,10 @@ interface SituationMonitorCategoryDiagnostics {
 interface SituationMonitorInsightsDiagnostics {
   requestedScope: "tagged" | "all";
   effectiveScope: "tagged" | "all";
-  categories: Record<SituationMonitorCategory, SituationMonitorCategoryDiagnostics>;
+  categories: Record<
+    SituationMonitorCategory,
+    SituationMonitorCategoryDiagnostics
+  >;
 }
 
 interface SituationMonitorInsightsResponse {
@@ -432,11 +513,23 @@ interface SituationMonitorInsightsResponse {
   pizzint?: SituationMonitorPizzintSnapshot;
   tensions?: SituationMonitorTensionPair[];
   correlation?: CorrelationResults | null;
-  correlationSummary?: { totalSignals: number; status: string; statusZh?: string };
+  correlationSummary?: {
+    totalSignals: number;
+    status: string;
+    statusZh?: string;
+  };
   narrative?: NarrativeResults | null;
   narrativeSummary?: { total: number; status: string; statusZh?: string };
-  mainCharacter?: { characters: MainCharacterEntry[]; topCharacter: MainCharacterEntry | null };
-  mainCharacterSummary?: { name: string; count: number; status: string; statusZh?: string };
+  mainCharacter?: {
+    characters: MainCharacterEntry[];
+    topCharacter: MainCharacterEntry | null;
+  };
+  mainCharacterSummary?: {
+    name: string;
+    count: number;
+    status: string;
+    statusZh?: string;
+  };
 }
 
 function mergeTranslationStatus(
@@ -502,12 +595,24 @@ function formatUsd(value: number, locale: string) {
     return "—";
   }
   if (Math.abs(value) >= 1_000_000_000) {
-    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(value);
   }
   if (Math.abs(value) >= 1_000_000) {
-    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(value);
   }
-  return new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatPercent(value: number) {
@@ -564,7 +669,12 @@ function filterVisibleLayoutItems(
   return layout.filter((item) => visibility[item.i as SituationMonitorPanelId]);
 }
 
-function spansOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
+function spansOverlap(
+  startA: number,
+  endA: number,
+  startB: number,
+  endB: number,
+): boolean {
   return startA < endB && startB < endA;
 }
 
@@ -584,7 +694,14 @@ function stretchCorrelationToMonitorArea(layout: Layout[]): Layout[] {
   const monitorsY = typeof monitors.y === "number" ? monitors.y : 0;
   const monitorsW = typeof monitors.w === "number" ? monitors.w : 0;
 
-  if (!spansOverlap(correlationX, correlationX + correlationW, monitorsX, monitorsX + monitorsW)) {
+  if (
+    !spansOverlap(
+      correlationX,
+      correlationX + correlationW,
+      monitorsX,
+      monitorsX + monitorsW,
+    )
+  ) {
     return layout;
   }
   if (monitorsY <= correlationY) {
@@ -613,12 +730,14 @@ function stretchCorrelationToMonitorArea(layout: Layout[]): Layout[] {
     return layout;
   }
 
-  return layout.map((item) => (item.i === "correlation" ? { ...item, h: desiredHeight } : item));
+  return layout.map((item) =>
+    item.i === "correlation" ? { ...item, h: desiredHeight } : item,
+  );
 }
 
 function isVisibilityMatchingPreset(
   visibility: Record<SituationMonitorPanelId, boolean>,
-  panels: SituationMonitorPanelId[]
+  panels: SituationMonitorPanelId[],
 ): boolean {
   const enabled = new Set<SituationMonitorPanelId>(panels);
   for (const [key, value] of Object.entries(visibility)) {
@@ -635,44 +754,86 @@ export function SituationMonitorContent() {
   const locale = resolveLocale(i18n.language);
   const { data: session, status } = useSession();
   const screens = Grid.useBreakpoint();
-  const uiSync = useUserUiSyncStatusStore((state) => state.sections["situation-monitor"]);
-  const requestUiSyncReload = useUserUiSyncStatusStore((state) => state.requestReload);
+  const uiSync = useUserUiSyncStatusStore(
+    (state) => state.sections["situation-monitor"],
+  );
+  const requestUiSyncReload = useUserUiSyncStatusStore(
+    (state) => state.requestReload,
+  );
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadItems = permissions.includes("items.read") || permissions.includes("items.write");
-  const hasSignalSession = status === "authenticated" && Boolean(session?.accessToken);
+  const canReadItems =
+    permissions.includes("items.read") || permissions.includes("items.write");
+  const hasSignalSession =
+    status === "authenticated" && Boolean(session?.accessToken);
 
-  const windowHours = useSituationMonitorSettingsStore((state) => state.windowHours);
-  const setWindowHours = useSituationMonitorSettingsStore((state) => state.setWindowHours);
+  const windowHours = useSituationMonitorSettingsStore(
+    (state) => state.windowHours,
+  );
+  const setWindowHours = useSituationMonitorSettingsStore(
+    (state) => state.setWindowHours,
+  );
   const scope = useSituationMonitorSettingsStore((state) => state.scope);
   const setScope = useSituationMonitorSettingsStore((state) => state.setScope);
-  const autoRefresh = useSituationMonitorSettingsStore((state) => state.autoRefresh);
-  const setAutoRefresh = useSituationMonitorSettingsStore((state) => state.setAutoRefresh);
-  const translateToZh = useSituationMonitorSettingsStore((state) => state.translateToZh);
-  const setTranslateToZh = useSituationMonitorSettingsStore((state) => state.setTranslateToZh);
-  const [refreshStage, setRefreshStage] = useState<"idle" | "core" | "external">("idle");
+  const autoRefresh = useSituationMonitorSettingsStore(
+    (state) => state.autoRefresh,
+  );
+  const setAutoRefresh = useSituationMonitorSettingsStore(
+    (state) => state.setAutoRefresh,
+  );
+  const translateToZh = useSituationMonitorSettingsStore(
+    (state) => state.translateToZh,
+  );
+  const setTranslateToZh = useSituationMonitorSettingsStore(
+    (state) => state.setTranslateToZh,
+  );
+  const [refreshStage, setRefreshStage] = useState<
+    "idle" | "core" | "external"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
-  const [feedbackNotice, setFeedbackNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [data, setData] = useState<SituationMonitorInsightsResponse | null>(null);
-  const [telegramFeed, setTelegramFeed] = useState<SituationTelegramFeedResponse | null>(null);
-  const [orefAlerts, setOrefAlerts] = useState<SituationOrefAlertsResponse | null>(null);
-  const [orefHistory, setOrefHistory] = useState<SituationOrefHistoryResponse | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [data, setData] = useState<SituationMonitorInsightsResponse | null>(
+    null,
+  );
+  const [telegramFeed, setTelegramFeed] =
+    useState<SituationTelegramFeedResponse | null>(null);
+  const [orefAlerts, setOrefAlerts] =
+    useState<SituationOrefAlertsResponse | null>(null);
+  const [orefHistory, setOrefHistory] =
+    useState<SituationOrefHistoryResponse | null>(null);
   const [telegramTopicFilter, setTelegramTopicFilter] = useState<string>("all");
-  const [telegramChannelFilter, setTelegramChannelFilter] = useState<string>("all");
-  const [signalsLoading, setSignalsLoading] = useState<{ telegram: boolean; oref: boolean }>({
+  const [telegramChannelFilter, setTelegramChannelFilter] =
+    useState<string>("all");
+  const [signalsLoading, setSignalsLoading] = useState<{
+    telegram: boolean;
+    oref: boolean;
+  }>({
     telegram: false,
     oref: false,
   });
-  const [signalErrors, setSignalErrors] = useState<{ telegram: string | null; oref: string | null }>({
+  const [signalErrors, setSignalErrors] = useState<{
+    telegram: string | null;
+    oref: string | null;
+  }>({
     telegram: null,
     oref: null,
   });
   const [feedbackDrawerOpen, setFeedbackDrawerOpen] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [signalCatalog, setSignalCatalog] = useState<null | {
-    narratives: { id: string; name: string; category: string; severity: string }[];
+    narratives: {
+      id: string;
+      name: string;
+      category: string;
+      severity: string;
+    }[];
     correlations: { id: string; name: string; category: string }[];
   }>(null);
-  const [missedSignalType, setMissedSignalType] = useState<"narrative" | "correlation">("narrative");
+  const [missedSignalType, setMissedSignalType] = useState<
+    "narrative" | "correlation"
+  >("narrative");
   const [missedSignalId, setMissedSignalId] = useState<string>("");
   const [missedHeadlineId, setMissedHeadlineId] = useState<string>("");
   const [pageVisible, setPageVisible] = useState(
@@ -681,23 +842,28 @@ export function SituationMonitorContent() {
   const refreshIdRef = useRef(0);
   const telegramFeedLoadingRef = useRef(false);
   const pendingTelegramFeedLoadRef = useRef<{ silent: boolean } | null>(null);
-  const loadTelegramFeedRef = useRef<(options?: { silent?: boolean }) => Promise<void>>(
-    async () => undefined,
-  );
+  const loadTelegramFeedRef = useRef<
+    (options?: { silent?: boolean }) => Promise<void>
+  >(async () => undefined);
   const telegramFeedRequestKeyRef = useRef(
-    JSON.stringify({ topic: telegramTopicFilter, channel: telegramChannelFilter }),
+    JSON.stringify({
+      topic: telegramTopicFilter,
+      channel: telegramChannelFilter,
+    }),
   );
   const telegramRealtimeRefreshTimerRef = useRef<number | null>(null);
   const orefSignalsLoadingRef = useRef(false);
   const pendingOrefSignalsLoadRef = useRef<{ silent: boolean } | null>(null);
-  const loadOrefSignalsRef = useRef<(options?: { silent?: boolean }) => Promise<void>>(
-    async () => undefined,
-  );
+  const loadOrefSignalsRef = useRef<
+    (options?: { silent?: boolean }) => Promise<void>
+  >(async () => undefined);
   const orefRealtimeRefreshTimerRef = useRef<number | null>(null);
   const loading = refreshStage !== "idle";
 
   const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
-  const monitorMatches = useSituationMonitorMonitorsStore((state) => state.matches);
+  const monitorMatches = useSituationMonitorMonitorsStore(
+    (state) => state.matches,
+  );
   const scanMonitors = useSituationMonitorMonitorsStore((state) => state.scan);
   const telegramPanelVisible = useSituationMonitorLayoutStore(
     (state) => state.visibility["telegram-feed"],
@@ -706,12 +872,16 @@ export function SituationMonitorContent() {
     (state) => state.visibility["oref-alerts"],
   );
 
-  const telegramSignalActive = Boolean(hasSignalSession && canReadItems && pageVisible && telegramPanelVisible);
-  const orefSignalActive = Boolean(hasSignalSession && canReadItems && pageVisible && orefPanelVisible);
+  const telegramSignalActive = Boolean(
+    hasSignalSession && canReadItems && pageVisible && telegramPanelVisible,
+  );
+  const orefSignalActive = Boolean(
+    hasSignalSession && canReadItems && pageVisible && orefPanelVisible,
+  );
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
+    [session?.accessToken],
   );
 
   useEffect(() => {
@@ -722,7 +892,12 @@ export function SituationMonitorContent() {
   }, [telegramChannelFilter, telegramTopicFilter]);
 
   const loadSignalCatalog = useCallback(async () => {
-    if (!session?.accessToken || !canReadItems || signalCatalog || catalogLoading) {
+    if (
+      !session?.accessToken ||
+      !canReadItems ||
+      signalCatalog ||
+      catalogLoading
+    ) {
       return;
     }
     setCatalogLoading(true);
@@ -734,7 +909,13 @@ export function SituationMonitorContent() {
     } finally {
       setCatalogLoading(false);
     }
-  }, [apiClient, canReadItems, catalogLoading, session?.accessToken, signalCatalog]);
+  }, [
+    apiClient,
+    canReadItems,
+    catalogLoading,
+    session?.accessToken,
+    signalCatalog,
+  ]);
 
   const loadTelegramFeed = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -780,14 +961,18 @@ export function SituationMonitorContent() {
         setTelegramFeed(response.data ?? null);
         setSignalErrors((prev) => ({ ...prev, telegram: null }));
       } catch (err) {
-        captureClientError("Failed to load situation monitor telegram feed", err);
+        captureClientError(
+          "Failed to load situation monitor telegram feed",
+          err,
+        );
         const statusCode = getHttpStatus(err);
         if (statusCode === 401 || statusCode === 403) {
           setTelegramFeed(null);
         }
         setSignalErrors((prev) => ({
           ...prev,
-          telegram: extractApiError(err).message || "Failed to load Telegram signals.",
+          telegram:
+            extractApiError(err).message || "Failed to load Telegram signals.",
         }));
       } finally {
         telegramFeedLoadingRef.current = false;
@@ -801,7 +986,13 @@ export function SituationMonitorContent() {
         }
       }
     },
-    [apiClient, canReadItems, session?.accessToken, telegramChannelFilter, telegramTopicFilter],
+    [
+      apiClient,
+      canReadItems,
+      session?.accessToken,
+      telegramChannelFilter,
+      telegramTopicFilter,
+    ],
   );
 
   const loadOrefSignals = useCallback(
@@ -827,15 +1018,22 @@ export function SituationMonitorContent() {
 
       try {
         const [alertsResponse, historyResponse] = await Promise.all([
-          apiClient.get<SituationOrefAlertsResponse>("situation-monitor/oref-alerts"),
-          apiClient.get<SituationOrefHistoryResponse>("situation-monitor/oref-history"),
+          apiClient.get<SituationOrefAlertsResponse>(
+            "situation-monitor/oref-alerts",
+          ),
+          apiClient.get<SituationOrefHistoryResponse>(
+            "situation-monitor/oref-history",
+          ),
         ]);
 
         setOrefAlerts(alertsResponse.data ?? null);
         setOrefHistory(historyResponse.data ?? null);
         setSignalErrors((prev) => ({ ...prev, oref: null }));
       } catch (err) {
-        captureClientError("Failed to load situation monitor OREF signals", err);
+        captureClientError(
+          "Failed to load situation monitor OREF signals",
+          err,
+        );
         const statusCode = getHttpStatus(err);
         if (statusCode === 401 || statusCode === 403) {
           setOrefAlerts(null);
@@ -868,106 +1066,141 @@ export function SituationMonitorContent() {
     loadOrefSignalsRef.current = loadOrefSignals;
   }, [loadOrefSignals]);
 
-  const load = useCallback(async (options?: { includeExternal?: boolean }) => {
-    if (!session?.accessToken) {
-      return;
-    }
-    const includeExternal = options?.includeExternal ?? true;
-    const refreshId = (refreshIdRef.current += 1);
-    setRefreshStage("core");
-    setError(null);
-    try {
-      const coreResponse = await apiClient.get<SituationMonitorInsightsResponse>("situation-monitor/insights", {
-        params: { windowHours, maxItems: 400, sections: "core", scope, translate: translateToZh ? "zh-CN" : undefined },
-      });
-
-      if (refreshIdRef.current !== refreshId) {
+  const load = useCallback(
+    async (options?: { includeExternal?: boolean }) => {
+      if (!session?.accessToken) {
         return;
       }
+      const includeExternal = options?.includeExternal ?? true;
+      const refreshId = (refreshIdRef.current += 1);
+      setRefreshStage("core");
+      setError(null);
+      try {
+        const coreResponse =
+          await apiClient.get<SituationMonitorInsightsResponse>(
+            "situation-monitor/insights",
+            {
+              params: {
+                windowHours,
+                maxItems: 400,
+                sections: "core",
+                scope,
+                translate: translateToZh ? "zh-CN" : undefined,
+              },
+            },
+          );
 
-      const coreData = coreResponse.data ?? null;
-      if (coreData) {
-        setData((prev) => {
-          if (!prev) {
-            return coreData;
-          }
-          return {
-            ...prev,
-            ...coreData,
-            translation: coreData.translation,
-          };
-        });
+        if (refreshIdRef.current !== refreshId) {
+          return;
+        }
+
+        const coreData = coreResponse.data ?? null;
+        if (coreData) {
+          setData((prev) => {
+            if (!prev) {
+              return coreData;
+            }
+            return {
+              ...prev,
+              ...coreData,
+              translation: coreData.translation,
+            };
+          });
+        }
+
+        if (!includeExternal) {
+          return;
+        }
+
+        setRefreshStage("external");
+
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (refreshIdRef.current !== refreshId) {
+          return;
+        }
+
+        const externalResponse =
+          await apiClient.get<SituationMonitorInsightsResponse>(
+            "situation-monitor/insights",
+            {
+              params: {
+                windowHours,
+                maxItems: 400,
+                sections: "external",
+                scope,
+                translate: translateToZh ? "zh-CN" : undefined,
+              },
+            },
+          );
+
+        if (refreshIdRef.current !== refreshId) {
+          return;
+        }
+
+        const externalData = externalResponse.data ?? null;
+        if (externalData) {
+          setData((prev) => {
+            if (!prev) {
+              return externalData;
+            }
+
+            const merged: SituationMonitorInsightsResponse = { ...prev };
+            if (externalData.crypto !== undefined) {
+              merged.crypto = externalData.crypto;
+            }
+            if (externalData.markets !== undefined) {
+              merged.markets = externalData.markets;
+            }
+            if (externalData.fed !== undefined) {
+              merged.fed = externalData.fed;
+            }
+
+            // External refresh always has `analyzedItems: 0`; keep core counters and window/maxItems.
+            merged.windowHours = prev.windowHours;
+            merged.maxItems = prev.maxItems;
+            merged.analyzedItems = prev.analyzedItems;
+
+            // Still surface the latest refresh timestamp so the header reflects the most recent load.
+            if (externalData.generatedAt) {
+              merged.generatedAt = externalData.generatedAt;
+            }
+
+            merged.translation = mergeTranslationStatus(
+              prev.translation,
+              externalData.translation,
+            );
+            return merged;
+          });
+        }
+      } catch (err) {
+        captureClientError("Failed to load situation monitor insights", err);
+        if (refreshIdRef.current === refreshId) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load situation monitor insights.",
+          );
+        }
+      } finally {
+        if (refreshIdRef.current === refreshId) {
+          setRefreshStage("idle");
+        }
       }
-
-      if (!includeExternal) {
-        return;
-      }
-
-      setRefreshStage("external");
-
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (refreshIdRef.current !== refreshId) {
-        return;
-      }
-
-      const externalResponse = await apiClient.get<SituationMonitorInsightsResponse>("situation-monitor/insights", {
-        params: { windowHours, maxItems: 400, sections: "external", scope, translate: translateToZh ? "zh-CN" : undefined },
-      });
-
-      if (refreshIdRef.current !== refreshId) {
-        return;
-      }
-
-      const externalData = externalResponse.data ?? null;
-      if (externalData) {
-        setData((prev) => {
-          if (!prev) {
-            return externalData;
-          }
-
-          const merged: SituationMonitorInsightsResponse = { ...prev };
-          if (externalData.crypto !== undefined) {
-            merged.crypto = externalData.crypto;
-          }
-          if (externalData.markets !== undefined) {
-            merged.markets = externalData.markets;
-          }
-          if (externalData.fed !== undefined) {
-            merged.fed = externalData.fed;
-          }
-
-          // External refresh always has `analyzedItems: 0`; keep core counters and window/maxItems.
-          merged.windowHours = prev.windowHours;
-          merged.maxItems = prev.maxItems;
-          merged.analyzedItems = prev.analyzedItems;
-
-          // Still surface the latest refresh timestamp so the header reflects the most recent load.
-          if (externalData.generatedAt) {
-            merged.generatedAt = externalData.generatedAt;
-          }
-
-          merged.translation = mergeTranslationStatus(prev.translation, externalData.translation);
-          return merged;
-        });
-      }
-    } catch (err) {
-      captureClientError("Failed to load situation monitor insights", err);
-      if (refreshIdRef.current === refreshId) {
-        setError(err instanceof Error ? err.message : "Failed to load situation monitor insights.");
-      }
-    } finally {
-      if (refreshIdRef.current === refreshId) {
-        setRefreshStage("idle");
-      }
-    }
-  }, [apiClient, scope, session?.accessToken, translateToZh, windowHours]);
+    },
+    [apiClient, scope, session?.accessToken, translateToZh, windowHours],
+  );
 
   const submitSignalFeedback = useCallback(
     async (payload: {
       signalType: "narrative" | "correlation";
       signalId: string;
       label: "false_positive" | "false_negative";
-      item?: { itemMetaId?: string; title?: string; source?: string; link?: string } | null;
+      item?: {
+        itemMetaId?: string;
+        title?: string;
+        source?: string;
+        link?: string;
+      } | null;
     }) => {
       if (!session?.accessToken) {
         return;
@@ -987,8 +1220,12 @@ export function SituationMonitorContent() {
           type: "success",
           message:
             payload.label === "false_positive"
-              ? t("common.feedbackSaved", { defaultValue: "Marked as false positive." })
-              : t("common.feedbackSaved", { defaultValue: "Marked as missed detection." }),
+              ? t("common.feedbackSaved", {
+                  defaultValue: "Marked as false positive.",
+                })
+              : t("common.feedbackSaved", {
+                  defaultValue: "Marked as missed detection.",
+                }),
         });
         void load({ includeExternal: false });
         setTimeout(() => setFeedbackNotice(null), 3500);
@@ -996,7 +1233,9 @@ export function SituationMonitorContent() {
         captureClientError("Failed to submit situation monitor feedback", err);
         setFeedbackNotice({
           type: "error",
-          message: t("common.feedbackFailed", { defaultValue: "Failed to submit feedback." }),
+          message: t("common.feedbackFailed", {
+            defaultValue: "Failed to submit feedback.",
+          }),
         });
         setTimeout(() => setFeedbackNotice(null), 4000);
       }
@@ -1110,76 +1349,77 @@ export function SituationMonitorContent() {
     onOrefUpdate: handleRealtimeOrefUpdate,
   });
 
-  const monitorScanItems: SituationMonitorMonitorMatch["item"][] = useMemo(() => {
-    const items: SituationMonitorMonitorMatch["item"][] = [];
-    const seen = new Set<string>();
+  const monitorScanItems: SituationMonitorMonitorMatch["item"][] =
+    useMemo(() => {
+      const items: SituationMonitorMonitorMatch["item"][] = [];
+      const seen = new Set<string>();
 
-    const add = (entry: SituationMonitorMonitorMatch["item"]) => {
-      const key = `${entry.link}::${entry.title}`;
-      if (seen.has(key)) {
-        return;
+      const add = (entry: SituationMonitorMonitorMatch["item"]) => {
+        const key = `${entry.link}::${entry.title}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        items.push(entry);
+      };
+
+      const headlines = data?.headlines;
+      if (headlines) {
+        for (const [category, entries] of Object.entries(headlines) as [
+          SituationMonitorCategory,
+          SituationMonitorHeadline[],
+        ][]) {
+          for (const entry of entries) {
+            add({
+              title: entry.title,
+              titleZh: entry.titleZh,
+              itemMetaId: entry.itemMetaId,
+              link: entry.link,
+              source: entry.source,
+              timestamp: entry.timestamp,
+              category,
+              summary: entry.summary,
+              summaryZh: entry.summaryZh,
+              keyPoints: entry.keyPoints,
+              keyPointsZh: entry.keyPointsZh,
+              topics: entry.topics,
+            });
+          }
+        }
       }
-      seen.add(key);
-      items.push(entry);
-    };
 
-    const headlines = data?.headlines;
-    if (headlines) {
-      for (const [category, entries] of Object.entries(headlines) as [
-        SituationMonitorCategory,
-        SituationMonitorHeadline[]
-      ][]) {
-	        for (const entry of entries) {
-	          add({
-	            title: entry.title,
-	            titleZh: entry.titleZh,
-	            itemMetaId: entry.itemMetaId,
-	            link: entry.link,
-	            source: entry.source,
-	            timestamp: entry.timestamp,
-	            category,
-	            summary: entry.summary,
-	            summaryZh: entry.summaryZh,
-	            keyPoints: entry.keyPoints,
-	            keyPointsZh: entry.keyPointsZh,
-	            topics: entry.topics,
-	          });
-	        }
-	      }
-	    }
+      for (const alert of data?.alerts ?? []) {
+        add({
+          title: alert.title,
+          titleZh: alert.titleZh,
+          itemMetaId: alert.itemMetaId,
+          link: alert.link,
+          source: alert.source,
+          timestamp: alert.timestamp,
+          category: `alert:${alert.category}`,
+          summary: alert.summary,
+          summaryZh: alert.summaryZh,
+          keyPoints: alert.keyPoints,
+          keyPointsZh: alert.keyPointsZh,
+          topics: alert.topics,
+        });
+      }
 
-	    for (const alert of data?.alerts ?? []) {
-	      add({
-	        title: alert.title,
-	        titleZh: alert.titleZh,
-	        itemMetaId: alert.itemMetaId,
-	        link: alert.link,
-	        source: alert.source,
-	        timestamp: alert.timestamp,
-	        category: `alert:${alert.category}`,
-	        summary: alert.summary,
-	        summaryZh: alert.summaryZh,
-	        keyPoints: alert.keyPoints,
-	        keyPointsZh: alert.keyPointsZh,
-	        topics: alert.topics,
-	      });
-	    }
+      for (const panel of data?.situations ?? []) {
+        for (const entry of panel.headlines ?? []) {
+          add({
+            title: entry.title,
+            titleZh: entry.titleZh,
+            link: entry.link,
+            source: entry.source,
+            timestamp: entry.timestamp,
+            category: `situation:${panel.id}`,
+          });
+        }
+      }
 
-	    for (const panel of data?.situations ?? []) {
-	      for (const entry of panel.headlines ?? []) {
-	        add({
-	          title: entry.title,
-	          titleZh: entry.titleZh,
-	          link: entry.link,
-	          source: entry.source,
-	          timestamp: entry.timestamp,
-	          category: `situation:${panel.id}`,
-	        });
-	      }
-	    }
-
-    return items;
-  }, [data?.alerts, data?.headlines, data?.situations]);
+      return items;
+    }, [data?.alerts, data?.headlines, data?.situations]);
 
   const feedbackCandidateHeadlines = useMemo(() => {
     const headlinesByCategory = data?.headlines;
@@ -1187,7 +1427,9 @@ export function SituationMonitorContent() {
       return [] as SituationMonitorHeadline[];
     }
 
-    const entries = Object.values(headlinesByCategory).flatMap((list) => (Array.isArray(list) ? list : []));
+    const entries = Object.values(headlinesByCategory).flatMap((list) =>
+      Array.isArray(list) ? list : [],
+    );
     const results: SituationMonitorHeadline[] = [];
     const seen = new Set<string>();
     for (const entry of entries) {
@@ -1205,7 +1447,9 @@ export function SituationMonitorContent() {
   }, [data?.headlines]);
 
   const feedbackHeadlineById = useMemo(() => {
-    return new Map<string, SituationMonitorHeadline>(feedbackCandidateHeadlines.map((headline) => [headline.id, headline]));
+    return new Map<string, SituationMonitorHeadline>(
+      feedbackCandidateHeadlines.map((headline) => [headline.id, headline]),
+    );
   }, [feedbackCandidateHeadlines]);
 
   useEffect(() => {
@@ -1250,11 +1494,16 @@ export function SituationMonitorContent() {
       key: "name",
       render: (_value: string, record) => (
         <Space size={8}>
-          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
+          <span>
+            {translateToZh ? (record.nameZh ?? record.name) : record.name}
+          </span>
           <Tag color={toTagColor(record.level)}>
-            {t(`situationMonitor.correlation.level.${record.level.toLowerCase()}`, {
-              defaultValue: record.level.toUpperCase(),
-            })}
+            {t(
+              `situationMonitor.correlation.level.${record.level.toLowerCase()}`,
+              {
+                defaultValue: record.level.toUpperCase(),
+              },
+            )}
           </Tag>
         </Space>
       ),
@@ -1266,35 +1515,46 @@ export function SituationMonitorContent() {
       width: 90,
     },
     {
-      title: t("situationMonitor.correlation.sources", { defaultValue: "Sources" }),
+      title: t("situationMonitor.correlation.sources", {
+        defaultValue: "Sources",
+      }),
       dataIndex: "sources",
       key: "sources",
-      render: (value: string[]) => (Array.isArray(value) ? value.slice(0, 4).join(", ") : ""),
-    },
-	    {
-	      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
-	      dataIndex: "headlines",
-	      key: "headlines",
-	      render: (value: HeadlineRef[]) => {
-	        const first = Array.isArray(value) ? value[0] : undefined;
-	        const href = first?.link ? safeHttpUrl(first.link) : null;
-	        if (!first) return null;
-	        const title = translateToZh ? first.titleZh ?? first.title : first.title;
-	        return href ? (
-	          <Typography.Link href={href} target="_blank" rel="noreferrer">
-	            {title}
-	          </Typography.Link>
-	        ) : (
-	          <Typography.Text>{title}</Typography.Text>
-	        );
-		            },
+      render: (value: string[]) =>
+        Array.isArray(value) ? value.slice(0, 4).join(", ") : "",
     },
     {
-      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      title: t("situationMonitor.correlation.sample", {
+        defaultValue: "Sample",
+      }),
+      dataIndex: "headlines",
+      key: "headlines",
+      render: (value: HeadlineRef[]) => {
+        const first = Array.isArray(value) ? value[0] : undefined;
+        const href = first?.link ? safeHttpUrl(first.link) : null;
+        if (!first) return null;
+        const title = translateToZh
+          ? (first.titleZh ?? first.title)
+          : first.title;
+        return href ? (
+          <Typography.Link href={href} target="_blank" rel="noreferrer">
+            {title}
+          </Typography.Link>
+        ) : (
+          <Typography.Text>{title}</Typography.Text>
+        );
+      },
+    },
+    {
+      title: t("situationMonitor.correlation.feedback", {
+        defaultValue: "Feedback",
+      }),
       key: "feedback",
       width: 120,
       render: (_, record) => {
-        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const first = Array.isArray(record.headlines)
+          ? record.headlines[0]
+          : undefined;
         const fpCount = record.feedback?.falsePositive ?? 0;
         const fnCount = record.feedback?.falseNegative ?? 0;
         const suppressedCount = record.learning?.suppressedCount ?? 0;
@@ -1313,7 +1573,9 @@ export function SituationMonitorContent() {
                 {boosted.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                      {t("situationMonitor.narrative.boosted", {
+                        defaultValue: "Boosted",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {boosted.slice(0, 10).map((token) => (
@@ -1325,7 +1587,9 @@ export function SituationMonitorContent() {
                 {blocked.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                      {t("situationMonitor.narrative.blocked", {
+                        defaultValue: "Blocked",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {blocked.slice(0, 10).map((token) => (
@@ -1346,12 +1610,19 @@ export function SituationMonitorContent() {
                   signalId: record.id,
                   label: "false_positive",
                   item: first
-                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    ? {
+                        itemMetaId: first.itemMetaId,
+                        title: first.title,
+                        source: first.source,
+                        link: first.link,
+                      }
                     : null,
                 })
               }
             >
-              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {t("situationMonitor.narrative.falsePositive", {
+                defaultValue: "False +",
+              })}
               {fpCount > 0 ? ` (${fpCount})` : ""}
             </Button>
           </Popover>
@@ -1365,10 +1636,13 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
       dataIndex: "name",
       key: "name",
-      render: (_value: string, record) => (translateToZh ? record.nameZh ?? record.name : record.name),
+      render: (_value: string, record) =>
+        translateToZh ? (record.nameZh ?? record.name) : record.name,
     },
     {
-      title: t("situationMonitor.correlation.current", { defaultValue: "Current" }),
+      title: t("situationMonitor.correlation.current", {
+        defaultValue: "Current",
+      }),
       dataIndex: "current",
       key: "current",
       width: 90,
@@ -1379,17 +1653,26 @@ export function SituationMonitorContent() {
       key: "delta",
       width: 80,
       render: (value: number) => (
-        <Typography.Text type={value >= 0 ? "success" : "danger"}>{value}</Typography.Text>
+        <Typography.Text type={value >= 0 ? "success" : "danger"}>
+          {value}
+        </Typography.Text>
       ),
     },
     {
-      title: t("situationMonitor.correlation.momentum", { defaultValue: "Momentum" }),
+      title: t("situationMonitor.correlation.momentum", {
+        defaultValue: "Momentum",
+      }),
       dataIndex: "momentum",
       key: "momentum",
       width: 110,
       render: (value: MomentumSignal["momentum"]) => {
         const normalized = value.toLowerCase();
-        const color = normalized === "surging" ? "red" : normalized === "rising" ? "orange" : "default";
+        const color =
+          normalized === "surging"
+            ? "red"
+            : normalized === "rising"
+              ? "orange"
+              : "default";
         return (
           <Tag color={color}>
             {t(`situationMonitor.correlation.momentumStatus.${normalized}`, {
@@ -1400,11 +1683,15 @@ export function SituationMonitorContent() {
       },
     },
     {
-      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      title: t("situationMonitor.correlation.feedback", {
+        defaultValue: "Feedback",
+      }),
       key: "feedback",
       width: 120,
       render: (_, record) => {
-        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const first = Array.isArray(record.headlines)
+          ? record.headlines[0]
+          : undefined;
         const fpCount = record.feedback?.falsePositive ?? 0;
         const fnCount = record.feedback?.falseNegative ?? 0;
         const suppressedCount = record.learning?.suppressedCount ?? 0;
@@ -1423,11 +1710,15 @@ export function SituationMonitorContent() {
                 {boosted.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                      {t("situationMonitor.narrative.boosted", {
+                        defaultValue: "Boosted",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {boosted.slice(0, 10).map((token) => (
-                        <Tag key={`c-boost-m-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-boost-m-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1435,11 +1726,15 @@ export function SituationMonitorContent() {
                 {blocked.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                      {t("situationMonitor.narrative.blocked", {
+                        defaultValue: "Blocked",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {blocked.slice(0, 10).map((token) => (
-                        <Tag key={`c-block-m-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-block-m-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1456,12 +1751,19 @@ export function SituationMonitorContent() {
                   signalId: record.id,
                   label: "false_positive",
                   item: first
-                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    ? {
+                        itemMetaId: first.itemMetaId,
+                        title: first.title,
+                        source: first.source,
+                        link: first.link,
+                      }
                     : null,
                 })
               }
             >
-              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {t("situationMonitor.narrative.falsePositive", {
+                defaultValue: "False +",
+              })}
               {fpCount > 0 ? ` (${fpCount})` : ""}
             </Button>
           </Popover>
@@ -1475,23 +1777,45 @@ export function SituationMonitorContent() {
       title: t("situationMonitor.correlation.topic", { defaultValue: "Topic" }),
       dataIndex: "name",
       key: "name",
-      render: (_value: string, record) => (translateToZh ? record.nameZh ?? record.name : record.name),
+      render: (_value: string, record) =>
+        translateToZh ? (record.nameZh ?? record.name) : record.name,
     },
-    { title: t("situationMonitor.correlation.score", { defaultValue: "Score" }), dataIndex: "score", key: "score", width: 90 },
-    { title: t("situationMonitor.correlation.confidence", { defaultValue: "Confidence" }), dataIndex: "confidence", key: "confidence", width: 120, render: (value: number) => `${value}%` },
     {
-      title: t("situationMonitor.correlation.prediction", { defaultValue: "Prediction" }),
+      title: t("situationMonitor.correlation.score", { defaultValue: "Score" }),
+      dataIndex: "score",
+      key: "score",
+      width: 90,
+    },
+    {
+      title: t("situationMonitor.correlation.confidence", {
+        defaultValue: "Confidence",
+      }),
+      dataIndex: "confidence",
+      key: "confidence",
+      width: 120,
+      render: (value: number) => `${value}%`,
+    },
+    {
+      title: t("situationMonitor.correlation.prediction", {
+        defaultValue: "Prediction",
+      }),
       dataIndex: "prediction",
       key: "prediction",
       render: (_value: string, record) =>
-        translateToZh ? record.predictionZh ?? record.prediction : record.prediction,
+        translateToZh
+          ? (record.predictionZh ?? record.prediction)
+          : record.prediction,
     },
     {
-      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      title: t("situationMonitor.correlation.feedback", {
+        defaultValue: "Feedback",
+      }),
       key: "feedback",
       width: 120,
       render: (_, record) => {
-        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const first = Array.isArray(record.headlines)
+          ? record.headlines[0]
+          : undefined;
         const fpCount = record.feedback?.falsePositive ?? 0;
         const fnCount = record.feedback?.falseNegative ?? 0;
         const suppressedCount = record.learning?.suppressedCount ?? 0;
@@ -1510,11 +1834,15 @@ export function SituationMonitorContent() {
                 {boosted.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                      {t("situationMonitor.narrative.boosted", {
+                        defaultValue: "Boosted",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {boosted.slice(0, 10).map((token) => (
-                        <Tag key={`c-boost-p-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-boost-p-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1522,11 +1850,15 @@ export function SituationMonitorContent() {
                 {blocked.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                      {t("situationMonitor.narrative.blocked", {
+                        defaultValue: "Blocked",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {blocked.slice(0, 10).map((token) => (
-                        <Tag key={`c-block-p-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-block-p-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1543,12 +1875,19 @@ export function SituationMonitorContent() {
                   signalId: record.id,
                   label: "false_positive",
                   item: first
-                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    ? {
+                        itemMetaId: first.itemMetaId,
+                        title: first.title,
+                        source: first.source,
+                        link: first.link,
+                      }
                     : null,
                 })
               }
             >
-              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {t("situationMonitor.narrative.falsePositive", {
+                defaultValue: "False +",
+              })}
               {fpCount > 0 ? ` (${fpCount})` : ""}
             </Button>
           </Popover>
@@ -1557,37 +1896,58 @@ export function SituationMonitorContent() {
     },
   ];
 
+  const realtimeSnapshotTensionLimit = screens.lg ? 4 : screens.md ? 3 : 2;
+  const showRealtimeSnapshotChangeColumn = Boolean(screens.md);
+
   const tensionColumns: ColumnsType<SituationMonitorTensionPair> = [
     {
-      title: t("situationMonitor.correlation.tensionPair", {
+      title: t("situationMonitor.realtimeSnapshot.tensionPair", {
         defaultValue: "Pair",
       }),
       dataIndex: "label",
       key: "label",
+      ellipsis: true,
+      render: (value: string) => (
+        <Typography.Text ellipsis={{ tooltip: value }}>
+          {value || "—"}
+        </Typography.Text>
+      ),
     },
     {
-      title: t("situationMonitor.correlation.score", { defaultValue: "Score" }),
+      title: t("situationMonitor.realtimeSnapshot.score", {
+        defaultValue: "Score",
+      }),
       dataIndex: "score",
       key: "score",
       width: 90,
       render: (value: number) =>
         Number.isFinite(value) ? value.toFixed(1) : "—",
     },
+    ...(showRealtimeSnapshotChangeColumn
+      ? [
+          {
+            title: t("situationMonitor.realtimeSnapshot.changePct", {
+              defaultValue: "Change",
+            }),
+            dataIndex: "changePercent",
+            key: "changePercent",
+            width: 100,
+            render: (value: number) => (
+              <Typography.Text
+                type={
+                  value > 0 ? "danger" : value < 0 ? "success" : "secondary"
+                }
+              >
+                {formatPercent(value)}
+              </Typography.Text>
+            ),
+          },
+        ]
+      : []),
     {
-      title: t("situationMonitor.correlation.changePct", {
-        defaultValue: "Change",
+      title: t("situationMonitor.realtimeSnapshot.trend", {
+        defaultValue: "Trend",
       }),
-      dataIndex: "changePercent",
-      key: "changePercent",
-      width: 100,
-      render: (value: number) => (
-        <Typography.Text type={value > 0 ? "danger" : value < 0 ? "success" : "secondary"}>
-          {formatPercent(value)}
-        </Typography.Text>
-      ),
-    },
-    {
-      title: t("situationMonitor.correlation.trend", { defaultValue: "Trend" }),
       dataIndex: "trend",
       key: "trend",
       width: 100,
@@ -1601,40 +1961,11 @@ export function SituationMonitorContent() {
               : "default";
         return (
           <Tag color={color}>
-            {t(`situationMonitor.correlation.momentumStatus.${normalized}`, {
+            {t(`situationMonitor.realtimeSnapshot.trendStatus.${normalized}`, {
               defaultValue: normalized.toUpperCase(),
             })}
           </Tag>
         );
-      },
-    },
-    {
-      title: t("situationMonitor.correlation.sources", {
-        defaultValue: "Sources",
-      }),
-      dataIndex: "countries",
-      key: "countries",
-      render: (value: string[]) =>
-        Array.isArray(value) ? value.join(", ") : "",
-    },
-    {
-      title: t("situationMonitor.correlation.updatedAt", {
-        defaultValue: "Updated",
-      }),
-      dataIndex: "updatedAt",
-      key: "updatedAt",
-      width: 150,
-      render: (value: string) => {
-        const timestamp = dayjs(value);
-        if (!timestamp.isValid()) {
-          return "—";
-        }
-        return formatDateTime(timestamp.toDate(), locale, {
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
       },
     },
   ];
@@ -1646,51 +1977,69 @@ export function SituationMonitorContent() {
       key: "name",
       render: (_value: string, record) => (
         <Space size={8}>
-          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
+          <span>
+            {translateToZh ? (record.nameZh ?? record.name) : record.name}
+          </span>
           <Tag color={toTagColor(record.level)}>
-            {t(`situationMonitor.correlation.level.${record.level.toLowerCase()}`, {
-              defaultValue: record.level.toUpperCase(),
-            })}
+            {t(
+              `situationMonitor.correlation.level.${record.level.toLowerCase()}`,
+              {
+                defaultValue: record.level.toUpperCase(),
+              },
+            )}
           </Tag>
         </Space>
       ),
     },
     {
-      title: t("situationMonitor.correlation.sources", { defaultValue: "Sources" }),
+      title: t("situationMonitor.correlation.sources", {
+        defaultValue: "Sources",
+      }),
       dataIndex: "sourceCount",
       key: "sourceCount",
       width: 90,
     },
     {
-      title: t("situationMonitor.correlation.sourcesList", { defaultValue: "Source list" }),
+      title: t("situationMonitor.correlation.sourcesList", {
+        defaultValue: "Source list",
+      }),
       dataIndex: "sources",
       key: "sources",
-      render: (value: string[]) => (Array.isArray(value) ? value.slice(0, 4).join(", ") : ""),
+      render: (value: string[]) =>
+        Array.isArray(value) ? value.slice(0, 4).join(", ") : "",
     },
-	    {
-	      title: t("situationMonitor.correlation.sample", { defaultValue: "Sample" }),
-	      dataIndex: "headlines",
-	      key: "headlines",
-	      render: (value: HeadlineRef[]) => {
-	        const first = Array.isArray(value) ? value[0] : undefined;
-	        const href = first?.link ? safeHttpUrl(first.link) : null;
-	        if (!first) return null;
-	        const title = translateToZh ? first.titleZh ?? first.title : first.title;
-	        return href ? (
-	          <Typography.Link href={href} target="_blank" rel="noreferrer">
-	            {title}
-	          </Typography.Link>
-	        ) : (
-	          <Typography.Text>{title}</Typography.Text>
-	        );
-	      },
-	    },
     {
-      title: t("situationMonitor.correlation.feedback", { defaultValue: "Feedback" }),
+      title: t("situationMonitor.correlation.sample", {
+        defaultValue: "Sample",
+      }),
+      dataIndex: "headlines",
+      key: "headlines",
+      render: (value: HeadlineRef[]) => {
+        const first = Array.isArray(value) ? value[0] : undefined;
+        const href = first?.link ? safeHttpUrl(first.link) : null;
+        if (!first) return null;
+        const title = translateToZh
+          ? (first.titleZh ?? first.title)
+          : first.title;
+        return href ? (
+          <Typography.Link href={href} target="_blank" rel="noreferrer">
+            {title}
+          </Typography.Link>
+        ) : (
+          <Typography.Text>{title}</Typography.Text>
+        );
+      },
+    },
+    {
+      title: t("situationMonitor.correlation.feedback", {
+        defaultValue: "Feedback",
+      }),
       key: "feedback",
       width: 120,
       render: (_, record) => {
-        const first = Array.isArray(record.headlines) ? record.headlines[0] : undefined;
+        const first = Array.isArray(record.headlines)
+          ? record.headlines[0]
+          : undefined;
         const fpCount = record.feedback?.falsePositive ?? 0;
         const fnCount = record.feedback?.falseNegative ?? 0;
         const suppressedCount = record.learning?.suppressedCount ?? 0;
@@ -1709,11 +2058,15 @@ export function SituationMonitorContent() {
                 {boosted.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                      {t("situationMonitor.narrative.boosted", {
+                        defaultValue: "Boosted",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {boosted.slice(0, 10).map((token) => (
-                        <Tag key={`c-boost-x-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-boost-x-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1721,11 +2074,15 @@ export function SituationMonitorContent() {
                 {blocked.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                      {t("situationMonitor.narrative.blocked", {
+                        defaultValue: "Blocked",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {blocked.slice(0, 10).map((token) => (
-                        <Tag key={`c-block-x-${record.id}-${token}`}>{token}</Tag>
+                        <Tag key={`c-block-x-${record.id}-${token}`}>
+                          {token}
+                        </Tag>
                       ))}
                     </Space>
                   </Space>
@@ -1742,21 +2099,32 @@ export function SituationMonitorContent() {
                   signalId: record.id,
                   label: "false_positive",
                   item: first
-                    ? { itemMetaId: first.itemMetaId, title: first.title, source: first.source, link: first.link }
+                    ? {
+                        itemMetaId: first.itemMetaId,
+                        title: first.title,
+                        source: first.source,
+                        link: first.link,
+                      }
                     : null,
                 })
               }
             >
-              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {t("situationMonitor.narrative.falsePositive", {
+                defaultValue: "False +",
+              })}
               {fpCount > 0 ? ` (${fpCount})` : ""}
             </Button>
           </Popover>
         );
       },
     },
-	  ];
+  ];
 
-  type CorrelationRow = EmergingPattern | MomentumSignal | CrossSourceCorrelation | PredictiveSignal;
+  type CorrelationRow =
+    | EmergingPattern
+    | MomentumSignal
+    | CrossSourceCorrelation
+    | PredictiveSignal;
 
   const correlationExpandable = useMemo(() => {
     return {
@@ -1779,7 +2147,8 @@ export function SituationMonitorContent() {
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Typography.Text type="secondary">
               {t("situationMonitor.correlation.learningHint", {
-                defaultValue: "Feedback-driven learning: boosted/blocked tokens and per-item suppression.",
+                defaultValue:
+                  "Feedback-driven learning: boosted/blocked tokens and per-item suppression.",
               })}
             </Typography.Text>
             <Space size={8} wrap>
@@ -1790,7 +2159,9 @@ export function SituationMonitorContent() {
             {boosted.length ? (
               <Space direction="vertical" size={2}>
                 <Typography.Text type="secondary">
-                  {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                  {t("situationMonitor.narrative.boosted", {
+                    defaultValue: "Boosted",
+                  })}
                 </Typography.Text>
                 <Space size={6} wrap>
                   {boosted.slice(0, 16).map((token) => (
@@ -1802,7 +2173,9 @@ export function SituationMonitorContent() {
             {blocked.length ? (
               <Space direction="vertical" size={2}>
                 <Typography.Text type="secondary">
-                  {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                  {t("situationMonitor.narrative.blocked", {
+                    defaultValue: "Blocked",
+                  })}
                 </Typography.Text>
                 <Space size={6} wrap>
                   {blocked.slice(0, 16).map((token) => (
@@ -1819,12 +2192,16 @@ export function SituationMonitorContent() {
 
   const narrativeColumns: ColumnsType<NarrativeData> = [
     {
-      title: t("situationMonitor.narrative.name", { defaultValue: "Narrative" }),
+      title: t("situationMonitor.narrative.name", {
+        defaultValue: "Narrative",
+      }),
       dataIndex: "name",
       key: "name",
       render: (_value: string, record) => (
         <Space size={8}>
-          <span>{translateToZh ? record.nameZh ?? record.name : record.name}</span>
+          <span>
+            {translateToZh ? (record.nameZh ?? record.name) : record.name}
+          </span>
           <Tag color={record.severity === "disinfo" ? "red" : "default"}>
             {t(`situationMonitor.narrative.${record.severity.toLowerCase()}`, {
               defaultValue: record.severity.toUpperCase(),
@@ -1833,15 +2210,34 @@ export function SituationMonitorContent() {
         </Space>
       ),
     },
-    { title: t("situationMonitor.narrative.count", { defaultValue: "Count" }), dataIndex: "count", key: "count", width: 90 },
-    { title: t("situationMonitor.narrative.fringe", { defaultValue: "Fringe" }), dataIndex: "fringeCount", key: "fringeCount", width: 90 },
     {
-      title: t("situationMonitor.narrative.alternative", { defaultValue: "Alt" }),
+      title: t("situationMonitor.narrative.count", { defaultValue: "Count" }),
+      dataIndex: "count",
+      key: "count",
+      width: 90,
+    },
+    {
+      title: t("situationMonitor.narrative.fringe", { defaultValue: "Fringe" }),
+      dataIndex: "fringeCount",
+      key: "fringeCount",
+      width: 90,
+    },
+    {
+      title: t("situationMonitor.narrative.alternative", {
+        defaultValue: "Alt",
+      }),
       dataIndex: "alternativeCount",
       key: "alternativeCount",
       width: 80,
     },
-    { title: t("situationMonitor.narrative.mainstream", { defaultValue: "Mainstream" }), dataIndex: "mainstreamCount", key: "mainstreamCount", width: 110 },
+    {
+      title: t("situationMonitor.narrative.mainstream", {
+        defaultValue: "Mainstream",
+      }),
+      dataIndex: "mainstreamCount",
+      key: "mainstreamCount",
+      width: 110,
+    },
     {
       title: t("situationMonitor.narrative.radar", { defaultValue: "Radar" }),
       key: "radar",
@@ -1856,13 +2252,22 @@ export function SituationMonitorContent() {
             content={
               <Space direction="vertical" size={4}>
                 <Typography.Text>
-                  {t("situationMonitor.narrative.consistency", { defaultValue: "Consistency" })}: {consistency}%
+                  {t("situationMonitor.narrative.consistency", {
+                    defaultValue: "Consistency",
+                  })}
+                  : {consistency}%
                 </Typography.Text>
                 <Typography.Text>
-                  {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}: {divergence}%
+                  {t("situationMonitor.narrative.divergence", {
+                    defaultValue: "Divergence",
+                  })}
+                  : {divergence}%
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  {t("situationMonitor.narrative.clusters", { defaultValue: "Clusters" })}: {radar.clusterCount ?? 0}
+                  {t("situationMonitor.narrative.clusters", {
+                    defaultValue: "Clusters",
+                  })}
+                  : {radar.clusterCount ?? 0}
                 </Typography.Text>
               </Space>
             }
@@ -1873,13 +2278,17 @@ export function SituationMonitorContent() {
       },
     },
     {
-      title: t("situationMonitor.narrative.credibility", { defaultValue: "Credibility" }),
+      title: t("situationMonitor.narrative.credibility", {
+        defaultValue: "Credibility",
+      }),
       key: "credibility",
       width: 130,
       render: (_, record) => {
         const credibility = record.model?.credibility;
         if (!credibility) return "—";
-        const reasons = Array.isArray(credibility.reasons) ? credibility.reasons : [];
+        const reasons = Array.isArray(credibility.reasons)
+          ? credibility.reasons
+          : [];
         const components = credibility.components;
         return (
           <Popover
@@ -1889,7 +2298,9 @@ export function SituationMonitorContent() {
                 {reasons.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text strong>
-                      {t("situationMonitor.narrative.credibilityReasons", { defaultValue: "Reasons" })}
+                      {t("situationMonitor.narrative.credibilityReasons", {
+                        defaultValue: "Reasons",
+                      })}
                     </Typography.Text>
                     {reasons.slice(0, 4).map((reason) => (
                       <Typography.Text key={reason} type="secondary">
@@ -1900,36 +2311,77 @@ export function SituationMonitorContent() {
                 ) : null}
                 <Space direction="vertical" size={2}>
                   <Typography.Text strong>
-                    {t("situationMonitor.narrative.credibilityBreakdown", { defaultValue: "Breakdown" })}
+                    {t("situationMonitor.narrative.credibilityBreakdown", {
+                      defaultValue: "Breakdown",
+                    })}
                   </Typography.Text>
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.sourceReliability", { defaultValue: "Source reliability" })}
+                    {t("situationMonitor.narrative.sourceReliability", {
+                      defaultValue: "Source reliability",
+                    })}
                   </Typography.Text>
-                  <Progress percent={Math.round((components.sourceReliability ?? 0) * 100)} size="small" showInfo={false} />
+                  <Progress
+                    percent={Math.round(
+                      (components.sourceReliability ?? 0) * 100,
+                    )}
+                    size="small"
+                    showInfo={false}
+                  />
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.corroboration", { defaultValue: "Corroboration" })}
+                    {t("situationMonitor.narrative.corroboration", {
+                      defaultValue: "Corroboration",
+                    })}
                   </Typography.Text>
-                  <Progress percent={Math.round((components.corroboration ?? 0) * 100)} size="small" showInfo={false} />
+                  <Progress
+                    percent={Math.round((components.corroboration ?? 0) * 100)}
+                    size="small"
+                    showInfo={false}
+                  />
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.citationSupport", { defaultValue: "Citation support" })}
+                    {t("situationMonitor.narrative.citationSupport", {
+                      defaultValue: "Citation support",
+                    })}
                   </Typography.Text>
-                  <Progress percent={Math.round((components.citationSupport ?? 0) * 100)} size="small" showInfo={false} />
+                  <Progress
+                    percent={Math.round(
+                      (components.citationSupport ?? 0) * 100,
+                    )}
+                    size="small"
+                    showInfo={false}
+                  />
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}
+                    {t("situationMonitor.narrative.divergence", {
+                      defaultValue: "Divergence",
+                    })}
                   </Typography.Text>
-                  <Progress percent={Math.round((components.divergence ?? 0) * 100)} size="small" showInfo={false} />
+                  <Progress
+                    percent={Math.round((components.divergence ?? 0) * 100)}
+                    size="small"
+                    showInfo={false}
+                  />
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.feedbackPenalty", { defaultValue: "Feedback penalty" })}
+                    {t("situationMonitor.narrative.feedbackPenalty", {
+                      defaultValue: "Feedback penalty",
+                    })}
                   </Typography.Text>
-                  <Progress percent={Math.round((components.feedbackPenalty ?? 0) * 100)} size="small" showInfo={false} />
+                  <Progress
+                    percent={Math.round(
+                      (components.feedbackPenalty ?? 0) * 100,
+                    )}
+                    size="small"
+                    showInfo={false}
+                  />
                 </Space>
               </Space>
             }
           >
             <Tag color={toCredibilityColor(credibility.level)}>
-              {t(`situationMonitor.narrative.credibilityLevel.${credibility.level.toLowerCase()}`, {
-                defaultValue: credibility.level.toUpperCase(),
-              })}{" "}
+              {t(
+                `situationMonitor.narrative.credibilityLevel.${credibility.level.toLowerCase()}`,
+                {
+                  defaultValue: credibility.level.toUpperCase(),
+                },
+              )}{" "}
               {credibility.score}
             </Tag>
           </Popover>
@@ -1937,7 +2389,9 @@ export function SituationMonitorContent() {
       },
     },
     {
-      title: t("situationMonitor.narrative.feedback", { defaultValue: "Feedback" }),
+      title: t("situationMonitor.narrative.feedback", {
+        defaultValue: "Feedback",
+      }),
       key: "feedback",
       width: 120,
       render: (_, record) => {
@@ -1960,7 +2414,9 @@ export function SituationMonitorContent() {
                 {boosted.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}
+                      {t("situationMonitor.narrative.boosted", {
+                        defaultValue: "Boosted",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {boosted.slice(0, 10).map((token) => (
@@ -1972,7 +2428,9 @@ export function SituationMonitorContent() {
                 {blocked.length ? (
                   <Space direction="vertical" size={2}>
                     <Typography.Text type="secondary">
-                      {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}
+                      {t("situationMonitor.narrative.blocked", {
+                        defaultValue: "Blocked",
+                      })}
                     </Typography.Text>
                     <Space size={6} wrap>
                       {blocked.slice(0, 10).map((token) => (
@@ -1993,12 +2451,19 @@ export function SituationMonitorContent() {
                   signalId: record.id,
                   label: "false_positive",
                   item: headline
-                    ? { itemMetaId: headline.itemMetaId, title: headline.title, source: headline.source, link: headline.link }
+                    ? {
+                        itemMetaId: headline.itemMetaId,
+                        title: headline.title,
+                        source: headline.source,
+                        link: headline.link,
+                      }
                     : null,
                 })
               }
             >
-              {t("situationMonitor.narrative.falsePositive", { defaultValue: "False +" })}
+              {t("situationMonitor.narrative.falsePositive", {
+                defaultValue: "False +",
+              })}
               {fpCount > 0 ? ` (${fpCount})` : ""}
             </Button>
           </Popover>
@@ -2023,27 +2488,38 @@ export function SituationMonitorContent() {
           .filter((step) => step.tier !== "unknown")
           .map((step) => step.tier)
           .join(" → ");
-        const lagLabel = path.lagToMainstreamMs ? formatDurationMs(path.lagToMainstreamMs) : "—";
+        const lagLabel = path.lagToMainstreamMs
+          ? formatDurationMs(path.lagToMainstreamMs)
+          : "—";
 
         return (
           <Row gutter={[12, 12]}>
             <Col xs={24} lg={8}>
               <Typography.Text strong>
-                {t("situationMonitor.narrative.path", { defaultValue: "Fringe → Mainstream Path" })}
+                {t("situationMonitor.narrative.path", {
+                  defaultValue: "Fringe → Mainstream Path",
+                })}
               </Typography.Text>
               <div className="mt-1">
                 <Typography.Text>{stepsLabel || "—"}</Typography.Text>
               </div>
               <div className="mt-1">
                 <Typography.Text type="secondary">
-                  {t("situationMonitor.narrative.lag", { defaultValue: "Lag to mainstream" })}: {lagLabel}
+                  {t("situationMonitor.narrative.lag", {
+                    defaultValue: "Lag to mainstream",
+                  })}
+                  : {lagLabel}
                 </Typography.Text>
               </div>
               <div className="mt-2">
                 <Space direction="vertical" size={2}>
                   {path.steps.map((step) => {
-                    const firstSeen = step.firstSeenAt ? new Date(step.firstSeenAt) : null;
-                    const lastSeen = step.lastSeenAt ? new Date(step.lastSeenAt) : null;
+                    const firstSeen = step.firstSeenAt
+                      ? new Date(step.firstSeenAt)
+                      : null;
+                    const lastSeen = step.lastSeenAt
+                      ? new Date(step.lastSeenAt)
+                      : null;
                     return (
                       <Typography.Text key={step.tier} type="secondary">
                         {step.tier.toUpperCase()}: {step.count}{" "}
@@ -2072,23 +2548,35 @@ export function SituationMonitorContent() {
             </Col>
             <Col xs={24} lg={8}>
               <Typography.Text strong>
-                {t("situationMonitor.narrative.radarDetail", { defaultValue: "Cross-source Radar" })}
+                {t("situationMonitor.narrative.radarDetail", {
+                  defaultValue: "Cross-source Radar",
+                })}
               </Typography.Text>
               <div className="mt-2">
                 <Space size={10} wrap>
                   <Tag color="geekblue">
-                    {t("situationMonitor.narrative.consistency", { defaultValue: "Consistency" })}:{" "}
-                    {Math.round((radar.consistency ?? 0) * 100)}%
+                    {t("situationMonitor.narrative.consistency", {
+                      defaultValue: "Consistency",
+                    })}
+                    : {Math.round((radar.consistency ?? 0) * 100)}%
                   </Tag>
                   <Tag color="gold">
-                    {t("situationMonitor.narrative.divergence", { defaultValue: "Divergence" })}:{" "}
-                    {Math.round((radar.divergence ?? 0) * 100)}%
+                    {t("situationMonitor.narrative.divergence", {
+                      defaultValue: "Divergence",
+                    })}
+                    : {Math.round((radar.divergence ?? 0) * 100)}%
                   </Tag>
                   <Tag>
-                    {t("situationMonitor.narrative.clusters", { defaultValue: "Clusters" })}: {radar.clusterCount ?? 0}
+                    {t("situationMonitor.narrative.clusters", {
+                      defaultValue: "Clusters",
+                    })}
+                    : {radar.clusterCount ?? 0}
                   </Tag>
                   <Tag color={toCredibilityColor(credibility.level)}>
-                    {t("situationMonitor.narrative.credibility", { defaultValue: "Credibility" })}: {credibility.score}
+                    {t("situationMonitor.narrative.credibility", {
+                      defaultValue: "Credibility",
+                    })}
+                    : {credibility.score}
                   </Tag>
                 </Space>
               </div>
@@ -2106,7 +2594,10 @@ export function SituationMonitorContent() {
               {radar.outlierSources?.length ? (
                 <div className="mt-2">
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.outliers", { defaultValue: "Outliers" })}:
+                    {t("situationMonitor.narrative.outliers", {
+                      defaultValue: "Outliers",
+                    })}
+                    :
                   </Typography.Text>
                   <div className="mt-1">
                     <Space size={6} wrap>
@@ -2119,12 +2610,18 @@ export function SituationMonitorContent() {
               ) : null}
               {radar.clusters?.length ? (
                 <div className="mt-2">
-                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                  <Space
+                    direction="vertical"
+                    size={4}
+                    style={{ width: "100%" }}
+                  >
                     {radar.clusters.slice(0, 4).map((cluster) => (
                       <div key={cluster.id}>
                         <Typography.Text type="secondary">
                           {cluster.id}: {cluster.itemCount}{" "}
-                          {cluster.sources?.length ? `· ${cluster.sources.slice(0, 4).join(", ")}` : ""}
+                          {cluster.sources?.length
+                            ? `· ${cluster.sources.slice(0, 4).join(", ")}`
+                            : ""}
                         </Typography.Text>
                       </div>
                     ))}
@@ -2134,7 +2631,9 @@ export function SituationMonitorContent() {
             </Col>
             <Col xs={24} lg={8}>
               <Typography.Text strong>
-                {t("situationMonitor.narrative.citations", { defaultValue: "Citation Chain" })}
+                {t("situationMonitor.narrative.citations", {
+                  defaultValue: "Citation Chain",
+                })}
               </Typography.Text>
               <div className="mt-2">
                 {citation.topCited?.length ? (
@@ -2152,12 +2651,17 @@ export function SituationMonitorContent() {
               {citation.links?.length ? (
                 <div className="mt-2">
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.narrative.citationLinks", { defaultValue: "Top links" })}
+                    {t("situationMonitor.narrative.citationLinks", {
+                      defaultValue: "Top links",
+                    })}
                   </Typography.Text>
                   <div className="mt-1">
                     <Space direction="vertical" size={2}>
                       {citation.links.slice(0, 6).map((link) => (
-                        <Typography.Text key={`${link.from}=>${link.to}`} type="secondary">
+                        <Typography.Text
+                          key={`${link.from}=>${link.to}`}
+                          type="secondary"
+                        >
                           {link.from} → {link.to} ({link.weight})
                         </Typography.Text>
                       ))}
@@ -2172,33 +2676,49 @@ export function SituationMonitorContent() {
               (record.feedback?.falseNegative ?? 0) > 0 ? (
                 <div className="mt-3">
                   <Typography.Text strong>
-                    {t("situationMonitor.narrative.learning", { defaultValue: "Learning" })}
+                    {t("situationMonitor.narrative.learning", {
+                      defaultValue: "Learning",
+                    })}
                   </Typography.Text>
                   <div className="mt-2">
                     <Space size={8} wrap>
-                      <Tag color="red">FP {record.feedback?.falsePositive ?? 0}</Tag>
-                      <Tag color="gold">FN {record.feedback?.falseNegative ?? 0}</Tag>
+                      <Tag color="red">
+                        FP {record.feedback?.falsePositive ?? 0}
+                      </Tag>
+                      <Tag color="gold">
+                        FN {record.feedback?.falseNegative ?? 0}
+                      </Tag>
                       <Tag>SUP {record.learning?.suppressedCount ?? 0}</Tag>
                     </Space>
                     {record.learning?.boostedTokens?.length ? (
                       <Space size={6} wrap>
                         <Typography.Text type="secondary">
-                          {t("situationMonitor.narrative.boosted", { defaultValue: "Boosted" })}:
+                          {t("situationMonitor.narrative.boosted", {
+                            defaultValue: "Boosted",
+                          })}
+                          :
                         </Typography.Text>
-                        {record.learning.boostedTokens.slice(0, 8).map((token) => (
-                          <Tag key={`boost-${token}`}>{token}</Tag>
-                        ))}
+                        {record.learning.boostedTokens
+                          .slice(0, 8)
+                          .map((token) => (
+                            <Tag key={`boost-${token}`}>{token}</Tag>
+                          ))}
                       </Space>
                     ) : null}
                     {record.learning?.blockedTokens?.length ? (
                       <div className="mt-1">
                         <Space size={6} wrap>
                           <Typography.Text type="secondary">
-                            {t("situationMonitor.narrative.blocked", { defaultValue: "Blocked" })}:
+                            {t("situationMonitor.narrative.blocked", {
+                              defaultValue: "Blocked",
+                            })}
+                            :
                           </Typography.Text>
-                          {record.learning.blockedTokens.slice(0, 8).map((token) => (
-                            <Tag key={`block-${token}`}>{token}</Tag>
-                          ))}
+                          {record.learning.blockedTokens
+                            .slice(0, 8)
+                            .map((token) => (
+                              <Tag key={`block-${token}`}>{token}</Tag>
+                            ))}
                         </Space>
                       </div>
                     ) : null}
@@ -2214,15 +2734,30 @@ export function SituationMonitorContent() {
 
   const mainCharacterColumns: ColumnsType<MainCharacterEntry> = [
     { title: "#", dataIndex: "rank", key: "rank", width: 60 },
-    { title: t("situationMonitor.mainCharacter.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
-    { title: t("situationMonitor.mainCharacter.count", { defaultValue: "Mentions" }), dataIndex: "count", key: "count", width: 110 },
+    {
+      title: t("situationMonitor.mainCharacter.name", { defaultValue: "Name" }),
+      dataIndex: "name",
+      key: "name",
+    },
+    {
+      title: t("situationMonitor.mainCharacter.count", {
+        defaultValue: "Mentions",
+      }),
+      dataIndex: "count",
+      key: "count",
+      width: 110,
+    },
   ];
 
   const categoryLabels: Record<SituationMonitorCategory, string> = useMemo(
     () => ({
-      politics: t("situationMonitor.categories.politics", { defaultValue: "Politics" }),
+      politics: t("situationMonitor.categories.politics", {
+        defaultValue: "Politics",
+      }),
       tech: t("situationMonitor.categories.tech", { defaultValue: "Tech" }),
-      finance: t("situationMonitor.categories.finance", { defaultValue: "Finance" }),
+      finance: t("situationMonitor.categories.finance", {
+        defaultValue: "Finance",
+      }),
       gov: t("situationMonitor.categories.gov", { defaultValue: "Government" }),
       ai: t("situationMonitor.categories.ai", { defaultValue: "AI" }),
       intel: t("situationMonitor.categories.intel", { defaultValue: "Intel" }),
@@ -2251,7 +2786,9 @@ export function SituationMonitorContent() {
 
     return [
       {
-        label: t("situationMonitor.telegram.filters.allTopics", { defaultValue: "All topics" }),
+        label: t("situationMonitor.telegram.filters.allTopics", {
+          defaultValue: "All topics",
+        }),
         value: "all",
       },
       ...Array.from(dynamicTopics)
@@ -2263,7 +2800,8 @@ export function SituationMonitorContent() {
   const telegramChannelOptions = useMemo(() => {
     const channels = new Set<string>();
     for (const item of telegramFeed?.items ?? []) {
-      const channel = typeof item.channel === "string" ? item.channel.trim() : "";
+      const channel =
+        typeof item.channel === "string" ? item.channel.trim() : "";
       if (channel) {
         channels.add(channel);
       }
@@ -2274,7 +2812,9 @@ export function SituationMonitorContent() {
 
     return [
       {
-        label: t("situationMonitor.telegram.filters.allChannels", { defaultValue: "All channels" }),
+        label: t("situationMonitor.telegram.filters.allChannels", {
+          defaultValue: "All channels",
+        }),
         value: "all",
       },
       ...Array.from(channels)
@@ -2296,29 +2836,42 @@ export function SituationMonitorContent() {
     defaultValue: "Processed internal headlines from this project.",
   });
   const gdeltFeedTooltip = t("situationMonitor.feeds.gdeltTooltip", {
-    defaultValue: "Fallback headlines from GDELT when internal coverage is thin.",
+    defaultValue:
+      "Fallback headlines from GDELT when internal coverage is thin.",
   });
   const marketsSnapshot = data?.markets;
   const cryptoSnapshot = data?.crypto;
   const fedSnapshot = data?.fed;
 
   const layout = useSituationMonitorLayoutStore((state) => state.layout);
-  const responsiveLayouts = useSituationMonitorLayoutStore((state) => state.layouts);
-  const visibility = useSituationMonitorLayoutStore((state) => state.visibility);
+  const responsiveLayouts = useSituationMonitorLayoutStore(
+    (state) => state.layouts,
+  );
+  const visibility = useSituationMonitorLayoutStore(
+    (state) => state.visibility,
+  );
   const setLayout = useSituationMonitorLayoutStore((state) => state.setLayout);
-  const setPanelVisible = useSituationMonitorLayoutStore((state) => state.setPanelVisible);
-  const applyPreset = useSituationMonitorLayoutStore((state) => state.applyPreset);
+  const setPanelVisible = useSituationMonitorLayoutStore(
+    (state) => state.setPanelVisible,
+  );
+  const applyPreset = useSituationMonitorLayoutStore(
+    (state) => state.applyPreset,
+  );
   const resetPanels = useSituationMonitorLayoutStore((state) => state.reset);
   const ensurePanels = useSituationMonitorLayoutStore((state) => state.ensure);
 
   const [panelsOpen, setPanelsOpen] = useState(false);
-  const resetLayoutOnPreset = useSituationMonitorSettingsStore((state) => state.resetLayoutOnPreset);
-  const setResetLayoutOnPreset = useSituationMonitorSettingsStore((state) => state.setResetLayoutOnPreset);
+  const resetLayoutOnPreset = useSituationMonitorSettingsStore(
+    (state) => state.resetLayoutOnPreset,
+  );
+  const setResetLayoutOnPreset = useSituationMonitorSettingsStore(
+    (state) => state.setResetLayoutOnPreset,
+  );
 
   const activePreset = useMemo(() => {
     return (
       SITUATION_MONITOR_PRESETS.find((preset) =>
-        isVisibilityMatchingPreset(visibility, preset.panels)
+        isVisibilityMatchingPreset(visibility, preset.panels),
       ) ?? null
     );
   }, [visibility]);
@@ -2335,16 +2888,31 @@ export function SituationMonitorContent() {
   const resolvedLayouts = useMemo(
     () => ({
       lg: layout.map((item) => ({ ...item })),
-      md: mergePanelLayouts(buildPackedResponsiveLayout(layout, "md"), responsiveLayouts.md ?? []),
-      sm: mergePanelLayouts(buildPackedResponsiveLayout(layout, "sm"), responsiveLayouts.sm ?? []),
-      xs: mergePanelLayouts(buildPackedResponsiveLayout(layout, "xs"), responsiveLayouts.xs ?? []),
-      xxs: mergePanelLayouts(buildPackedResponsiveLayout(layout, "xxs"), responsiveLayouts.xxs ?? []),
+      md: mergePanelLayouts(
+        buildPackedResponsiveLayout(layout, "md"),
+        responsiveLayouts.md ?? [],
+      ),
+      sm: mergePanelLayouts(
+        buildPackedResponsiveLayout(layout, "sm"),
+        responsiveLayouts.sm ?? [],
+      ),
+      xs: mergePanelLayouts(
+        buildPackedResponsiveLayout(layout, "xs"),
+        responsiveLayouts.xs ?? [],
+      ),
+      xxs: mergePanelLayouts(
+        buildPackedResponsiveLayout(layout, "xxs"),
+        responsiveLayouts.xxs ?? [],
+      ),
     }),
     [layout, responsiveLayouts],
   );
 
   const visibleLayout = useMemo(
-    () => stretchCorrelationToMonitorArea(filterVisibleLayoutItems(resolvedLayouts.lg, visibility)),
+    () =>
+      stretchCorrelationToMonitorArea(
+        filterVisibleLayoutItems(resolvedLayouts.lg, visibility),
+      ),
     [resolvedLayouts.lg, visibility],
   );
 
@@ -2364,13 +2932,18 @@ export function SituationMonitorContent() {
     return "xxs";
   }, [screens.lg, screens.md, screens.sm, screens.xs]);
 
-  const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>(inferredGridBreakpoint);
+  const [gridBreakpoint, setGridBreakpoint] = useState<GridBreakpoint>(
+    inferredGridBreakpoint,
+  );
 
   useEffect(() => {
     setGridBreakpoint(inferredGridBreakpoint);
   }, [inferredGridBreakpoint]);
 
-  const isCompactGrid = gridBreakpoint === "sm" || gridBreakpoint === "xs" || gridBreakpoint === "xxs";
+  const isCompactGrid =
+    gridBreakpoint === "sm" ||
+    gridBreakpoint === "xs" ||
+    gridBreakpoint === "xxs";
   const [compactLayoutEdit, setCompactLayoutEdit] = useState(false);
 
   useEffect(() => {
@@ -2411,12 +2984,20 @@ export function SituationMonitorContent() {
         filterVisibleLayoutItems(resolvedLayouts.xxs, visibility),
       ),
     }),
-    [resolvedLayouts.md, resolvedLayouts.sm, resolvedLayouts.xs, resolvedLayouts.xxs, visibility, visibleLayout],
+    [
+      resolvedLayouts.md,
+      resolvedLayouts.sm,
+      resolvedLayouts.xs,
+      resolvedLayouts.xxs,
+      visibility,
+      visibleLayout,
+    ],
   );
 
   const handleLayoutChange = useCallback(
     (nextLayout: Layout[]) => {
-      const currentLayout = resolvedLayouts[gridBreakpoint] ?? resolvedLayouts.lg;
+      const currentLayout =
+        resolvedLayouts[gridBreakpoint] ?? resolvedLayouts.lg;
       setLayout(mergePanelLayouts(currentLayout, nextLayout), gridBreakpoint);
     },
     [gridBreakpoint, resolvedLayouts, setLayout],
@@ -2425,13 +3006,16 @@ export function SituationMonitorContent() {
   const layoutHint = isCompactGrid
     ? canEditLayout
       ? t("situationMonitor.panels.hint", {
-          defaultValue: "Drag cards by their headers and use the corner handle to resize them.",
+          defaultValue:
+            "Drag cards by their headers and use the corner handle to resize them.",
         })
       : t("situationMonitor.panels.hintCompact", {
-          defaultValue: "Enable Edit layout on smaller screens before dragging or resizing cards.",
+          defaultValue:
+            "Enable Edit layout on smaller screens before dragging or resizing cards.",
         })
     : t("situationMonitor.panels.hint", {
-        defaultValue: "Drag cards by their headers and use the corner handle to resize them.",
+        defaultValue:
+          "Drag cards by their headers and use the corner handle to resize them.",
       });
 
   const gridClassName = [
@@ -2446,7 +3030,9 @@ export function SituationMonitorContent() {
   const initialLoading = loading && !data;
 
   const renderHeadlineSummary = (entry: SituationMonitorHeadline) => {
-    const rawSummary = translateToZh ? entry.summaryZh ?? entry.summary : entry.summary;
+    const rawSummary = translateToZh
+      ? (entry.summaryZh ?? entry.summary)
+      : entry.summary;
     const summary = typeof rawSummary === "string" ? rawSummary.trim() : "";
     if (!summary) return null;
     return (
@@ -2463,7 +3049,9 @@ export function SituationMonitorContent() {
   const renderHeadlineTopics = (entry: SituationMonitorHeadline, limit = 3) => {
     const topics = Array.isArray(entry.topics)
       ? entry.topics
-          .filter((topic) => typeof topic === "string" && topic.trim().length > 0)
+          .filter(
+            (topic) => typeof topic === "string" && topic.trim().length > 0,
+          )
           .slice(0, limit)
       : [];
     if (topics.length === 0) return null;
@@ -2473,7 +3061,11 @@ export function SituationMonitorContent() {
         color="default"
         className="cursor-pointer"
         onClick={() =>
-          window.open(`/search?q=${encodeURIComponent(topic)}`, "_blank", "noopener,noreferrer")
+          window.open(
+            `/search?q=${encodeURIComponent(topic)}`,
+            "_blank",
+            "noopener,noreferrer",
+          )
         }
       >
         {topic}
@@ -2482,18 +3074,27 @@ export function SituationMonitorContent() {
   };
 
   const renderHeadlineDetails = (entry: SituationMonitorHeadline) => {
-    const summarySource = translateToZh ? entry.summaryZh ?? entry.summary : entry.summary;
-    const summary = typeof summarySource === "string" ? summarySource.trim() : "";
+    const summarySource = translateToZh
+      ? (entry.summaryZh ?? entry.summary)
+      : entry.summary;
+    const summary =
+      typeof summarySource === "string" ? summarySource.trim() : "";
 
-    const keyPointsSource = translateToZh ? entry.keyPointsZh ?? entry.keyPoints : entry.keyPoints;
+    const keyPointsSource = translateToZh
+      ? (entry.keyPointsZh ?? entry.keyPoints)
+      : entry.keyPoints;
     const keyPoints = Array.isArray(keyPointsSource)
       ? keyPointsSource
-          .filter((point) => typeof point === "string" && point.trim().length > 0)
+          .filter(
+            (point) => typeof point === "string" && point.trim().length > 0,
+          )
           .slice(0, 5)
       : [];
     const topics = Array.isArray(entry.topics)
       ? entry.topics
-          .filter((topic) => typeof topic === "string" && topic.trim().length > 0)
+          .filter(
+            (topic) => typeof topic === "string" && topic.trim().length > 0,
+          )
           .slice(0, 12)
       : [];
 
@@ -2501,7 +3102,9 @@ export function SituationMonitorContent() {
       return null;
     }
 
-    const title = t("situationMonitor.headlines.summary", { defaultValue: "Summary" });
+    const title = t("situationMonitor.headlines.summary", {
+      defaultValue: "Summary",
+    });
 
     return (
       <Popover
@@ -2511,7 +3114,9 @@ export function SituationMonitorContent() {
         content={
           <Space direction="vertical" size={8} style={{ maxWidth: 420 }}>
             {summary ? (
-              <Typography.Paragraph style={{ marginBottom: 0 }}>{summary}</Typography.Paragraph>
+              <Typography.Paragraph style={{ marginBottom: 0 }}>
+                {summary}
+              </Typography.Paragraph>
             ) : null}
             {keyPoints.length > 0 ? (
               <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -2530,7 +3135,11 @@ export function SituationMonitorContent() {
                     color="default"
                     className="cursor-pointer"
                     onClick={() =>
-                      window.open(`/search?q=${encodeURIComponent(topic)}`, "_blank", "noopener,noreferrer")
+                      window.open(
+                        `/search?q=${encodeURIComponent(topic)}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      )
                     }
                   >
                     {topic}
@@ -2555,7 +3164,9 @@ export function SituationMonitorContent() {
     if (!entry.itemMetaId) {
       return null;
     }
-    const title = t("situationMonitor.headlines.openItem", { defaultValue: "Open item" });
+    const title = t("situationMonitor.headlines.openItem", {
+      defaultValue: "Open item",
+    });
     return (
       <Button
         size="small"
@@ -2563,14 +3174,20 @@ export function SituationMonitorContent() {
         icon={<FileSearchOutlined />}
         aria-label={title}
         onClick={() =>
-          window.open(`/items/${encodeURIComponent(entry.itemMetaId!)}`, "_blank", "noopener,noreferrer")
+          window.open(
+            `/items/${encodeURIComponent(entry.itemMetaId!)}`,
+            "_blank",
+            "noopener,noreferrer",
+          )
         }
       />
     );
   };
 
   const renderHeadlineMonitorMatches = (entry: SituationMonitorHeadline) => {
-    const matchKey = entry.itemMetaId ? `id:${entry.itemMetaId}` : `link:${entry.link}::${entry.title}`;
+    const matchKey = entry.itemMetaId
+      ? `id:${entry.itemMetaId}`
+      : `link:${entry.link}::${entry.title}`;
     const matches = monitorMatchesByKey.get(matchKey);
     if (!matches || matches.length === 0) {
       return null;
@@ -2592,14 +3209,20 @@ export function SituationMonitorContent() {
           <Space direction="vertical" size={6} style={{ maxWidth: 520 }}>
             {matches.map((match) => (
               <Space key={`${matchKey}:${match.monitorId}`} size={6} wrap>
-                <Tag color={monitorColorById.get(match.monitorId)}>{match.monitorName}</Tag>
+                <Tag color={monitorColorById.get(match.monitorId)}>
+                  {match.monitorName}
+                </Tag>
                 {match.matchedKeywords.map((keyword) => (
                   <Tag
                     key={keyword}
                     color="default"
                     className="cursor-pointer"
                     onClick={() =>
-                      window.open(`/search?q=${encodeURIComponent(keyword)}`, "_blank", "noopener,noreferrer")
+                      window.open(
+                        `/search?q=${encodeURIComponent(keyword)}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      )
                     }
                   >
                     {keyword}
@@ -2612,7 +3235,10 @@ export function SituationMonitorContent() {
       >
         <Space size={4} wrap>
           {preview.map((match) => (
-            <Tag key={`${entry.id}:${match.monitorId}`} color={monitorColorById.get(match.monitorId)}>
+            <Tag
+              key={`${entry.id}:${match.monitorId}`}
+              color={monitorColorById.get(match.monitorId)}
+            >
               {match.monitorName}
             </Tag>
           ))}
@@ -2634,14 +3260,20 @@ export function SituationMonitorContent() {
             {diagnostics ? (
               <Popover content={internalFeedTooltip}>
                 <Tag color="blue" className="cursor-help">
-                  {t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })} {diagnostics.internalCount}
+                  {t("situationMonitor.notice.internalLabel", {
+                    defaultValue: "INT",
+                  })}{" "}
+                  {diagnostics.internalCount}
                 </Tag>
               </Popover>
             ) : null}
             {diagnostics?.gdeltFallbackCount ? (
               <Popover content={gdeltFeedTooltip}>
                 <Tag color="purple" className="cursor-help">
-                  {t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })} {diagnostics.gdeltFallbackCount}
+                  {t("situationMonitor.notice.gdeltLabel", {
+                    defaultValue: "GDELT",
+                  })}{" "}
+                  {diagnostics.gdeltFallbackCount}
                 </Tag>
               </Popover>
             ) : null}
@@ -2654,12 +3286,15 @@ export function SituationMonitorContent() {
         {entries.length === 0 ? (
           <Space direction="vertical" size={4}>
             <Typography.Text type="secondary">
-              {t("situationMonitor.feeds.empty", { defaultValue: "No headlines yet." })}
+              {t("situationMonitor.feeds.empty", {
+                defaultValue: "No headlines yet.",
+              })}
             </Typography.Text>
             {data?.diagnostics?.effectiveScope === "tagged" ? (
               <Typography.Text type="secondary">
                 {t("situationMonitor.feeds.taggedHint", {
-                  defaultValue: "Tagged scope is active. Switch to All items if you want broader coverage.",
+                  defaultValue:
+                    "Tagged scope is active. Switch to All items if you want broader coverage.",
                 })}
               </Typography.Text>
             ) : null}
@@ -2670,37 +3305,59 @@ export function SituationMonitorContent() {
             dataSource={entries.slice(0, feedItemsPerCategory)}
             renderItem={(entry) => {
               const href = entry.link ? safeHttpUrl(entry.link) : null;
-              const date = Number.isFinite(entry.timestamp) ? new Date(entry.timestamp) : null;
+              const date = Number.isFinite(entry.timestamp)
+                ? new Date(entry.timestamp)
+                : null;
               return (
                 <List.Item key={entry.id}>
-                  <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                  <Space
+                    direction="vertical"
+                    size={2}
+                    style={{ width: "100%" }}
+                  >
                     <Space size={8} wrap>
                       {entry.isAlert ? (
-                        <Tag color="red">{t("situationMonitor.feeds.alert", { defaultValue: "ALERT" })}</Tag>
+                        <Tag color="red">
+                          {t("situationMonitor.feeds.alert", {
+                            defaultValue: "ALERT",
+                          })}
+                        </Tag>
                       ) : null}
                       {entry.origin === "gdelt" ? (
                         <Popover content={gdeltFeedTooltip}>
                           <Tag color="purple" className="cursor-help">
-                            {t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}
+                            {t("situationMonitor.notice.gdeltLabel", {
+                              defaultValue: "GDELT",
+                            })}
                           </Tag>
                         </Popover>
                       ) : null}
                       {renderHeadlineMonitorMatches(entry)}
-	                      {href ? (
-	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                        </Typography.Link>
-	                      ) : (
-	                        <Typography.Text>
-	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                        </Typography.Text>
-	                      )}
+                      {href ? (
+                        <Typography.Link
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {translateToZh
+                            ? (entry.titleZh ?? entry.title)
+                            : entry.title}
+                        </Typography.Link>
+                      ) : (
+                        <Typography.Text>
+                          {translateToZh
+                            ? (entry.titleZh ?? entry.title)
+                            : entry.title}
+                        </Typography.Text>
+                      )}
                       {renderHeadlineItemLink(entry)}
                       {renderHeadlineDetails(entry)}
                     </Space>
                     {renderHeadlineSummary(entry)}
                     <Space size={8} wrap>
-                      <Typography.Text type="secondary">{entry.source}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {entry.source}
+                      </Typography.Text>
                       {date ? (
                         <Typography.Text type="secondary">
                           {formatDateTime(date, locale, {
@@ -2712,7 +3369,9 @@ export function SituationMonitorContent() {
                         </Typography.Text>
                       ) : null}
                       {entry.alertKeyword ? (
-                        <Typography.Text type="secondary">{entry.alertKeyword}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {entry.alertKeyword}
+                        </Typography.Text>
                       ) : null}
                       {renderHeadlineTopics(entry)}
                     </Space>
@@ -2730,7 +3389,9 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.alerts.title", { defaultValue: "Alerts" })}</span>
+          <span>
+            {t("situationMonitor.alerts.title", { defaultValue: "Alerts" })}
+          </span>
           <Tag color="geekblue">{data?.alerts?.length ?? 0}</Tag>
         </Space>
       }
@@ -2743,29 +3404,45 @@ export function SituationMonitorContent() {
           dataSource={data.alerts.slice(0, alertsPerPanel)}
           renderItem={(entry) => {
             const href = entry.link ? safeHttpUrl(entry.link) : null;
-            const date = Number.isFinite(entry.timestamp) ? new Date(entry.timestamp) : null;
+            const date = Number.isFinite(entry.timestamp)
+              ? new Date(entry.timestamp)
+              : null;
             return (
               <List.Item key={entry.id}>
-                  <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                    <Space size={8} wrap>
-                      <Tag color={entry.severity === "critical" ? "red" : "orange"}>{entry.severity.toUpperCase()}</Tag>
-                      <Tag color="blue">{categoryLabels[entry.category]}</Tag>
-                      {renderHeadlineMonitorMatches(entry)}
-	                      {href ? (
-	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                        </Typography.Link>
-	                      ) : (
-	                      <Typography.Text>
-	                        {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                      </Typography.Text>
-	                    )}
+                <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                  <Space size={8} wrap>
+                    <Tag
+                      color={entry.severity === "critical" ? "red" : "orange"}
+                    >
+                      {entry.severity.toUpperCase()}
+                    </Tag>
+                    <Tag color="blue">{categoryLabels[entry.category]}</Tag>
+                    {renderHeadlineMonitorMatches(entry)}
+                    {href ? (
+                      <Typography.Link
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {translateToZh
+                          ? (entry.titleZh ?? entry.title)
+                          : entry.title}
+                      </Typography.Link>
+                    ) : (
+                      <Typography.Text>
+                        {translateToZh
+                          ? (entry.titleZh ?? entry.title)
+                          : entry.title}
+                      </Typography.Text>
+                    )}
                     {renderHeadlineItemLink(entry)}
                     {renderHeadlineDetails(entry)}
                   </Space>
                   {renderHeadlineSummary(entry)}
                   <Space size={8} wrap>
-                    <Typography.Text type="secondary">{entry.source}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {entry.source}
+                    </Typography.Text>
                     {date ? (
                       <Typography.Text type="secondary">
                         {formatDateTime(date, locale, {
@@ -2777,7 +3454,9 @@ export function SituationMonitorContent() {
                       </Typography.Text>
                     ) : null}
                     {entry.alertKeyword ? (
-                      <Typography.Text type="secondary">{entry.alertKeyword}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {entry.alertKeyword}
+                      </Typography.Text>
                     ) : null}
                     {renderHeadlineTopics(entry)}
                   </Space>
@@ -2788,7 +3467,9 @@ export function SituationMonitorContent() {
         />
       ) : (
         <Typography.Text type="secondary">
-          {t("situationMonitor.alerts.empty", { defaultValue: "No alerts in the current window." })}
+          {t("situationMonitor.alerts.empty", {
+            defaultValue: "No alerts in the current window.",
+          })}
         </Typography.Text>
       )}
     </Card>
@@ -2798,21 +3479,33 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.markets.title", { defaultValue: "Markets" })}</span>
+          <span>
+            {t("situationMonitor.markets.title", { defaultValue: "Markets" })}
+          </span>
           {marketsSnapshot && !marketsSnapshot.hasFinnhubApiKey ? (
-            <Tag color="default">{t("situationMonitor.markets.missingKey", { defaultValue: "API key needed" })}</Tag>
+            <Tag color="default">
+              {t("situationMonitor.markets.missingKey", {
+                defaultValue: "API key needed",
+              })}
+            </Tag>
           ) : null}
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
-      loading={initialLoading || (refreshStage === "external" && marketsSnapshot === undefined)}
+      loading={
+        initialLoading ||
+        (refreshStage === "external" && marketsSnapshot === undefined)
+      }
     >
-      {marketsSnapshot?.error ? <Alert type="warning" showIcon message={marketsSnapshot.error} /> : null}
+      {marketsSnapshot?.error ? (
+        <Alert type="warning" showIcon message={marketsSnapshot.error} />
+      ) : null}
       {marketsSnapshot ? (
         !marketsSnapshot.hasFinnhubApiKey ? (
           <Typography.Text type="secondary">
             {t("situationMonitor.markets.hint", {
-              defaultValue: "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
+              defaultValue:
+                "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
             })}
           </Typography.Text>
         ) : (
@@ -2822,21 +3515,35 @@ export function SituationMonitorContent() {
               size="small"
               pagination={false}
               columns={[
-                { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
                 {
-                  title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
+                  title: t("common.name", { defaultValue: "Name" }),
+                  dataIndex: "name",
+                  key: "name",
+                },
+                {
+                  title: t("situationMonitor.markets.price", {
+                    defaultValue: "Price",
+                  }),
                   dataIndex: "price",
                   key: "price",
                   width: 120,
                   render: (value: number) => formatUsd(value, locale),
                 },
                 {
-                  title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
+                  title: t("situationMonitor.markets.changePct", {
+                    defaultValue: "Change",
+                  }),
                   dataIndex: "changePercent",
                   key: "changePercent",
                   width: 110,
                   render: (value: number) => (
-                    <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
+                    <Typography.Text
+                      type={
+                        Number.isFinite(value) && value < 0
+                          ? "danger"
+                          : "success"
+                      }
+                    >
                       {formatPercent(value)}
                     </Typography.Text>
                   ),
@@ -2850,21 +3557,35 @@ export function SituationMonitorContent() {
               size="small"
               pagination={false}
               columns={[
-                { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
                 {
-                  title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
+                  title: t("common.name", { defaultValue: "Name" }),
+                  dataIndex: "name",
+                  key: "name",
+                },
+                {
+                  title: t("situationMonitor.markets.price", {
+                    defaultValue: "Price",
+                  }),
                   dataIndex: "price",
                   key: "price",
                   width: 120,
                   render: (value: number) => formatUsd(value, locale),
                 },
                 {
-                  title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
+                  title: t("situationMonitor.markets.changePct", {
+                    defaultValue: "Change",
+                  }),
                   dataIndex: "changePercent",
                   key: "changePercent",
                   width: 110,
                   render: (value: number) => (
-                    <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
+                    <Typography.Text
+                      type={
+                        Number.isFinite(value) && value < 0
+                          ? "danger"
+                          : "success"
+                      }
+                    >
                       {formatPercent(value)}
                     </Typography.Text>
                   ),
@@ -2878,7 +3599,9 @@ export function SituationMonitorContent() {
         <Typography.Text type="secondary">
           {refreshStage === "external"
             ? t("common.loading", { defaultValue: "Loading" })
-            : t("situationMonitor.markets.empty", { defaultValue: "No markets data yet." })}
+            : t("situationMonitor.markets.empty", {
+                defaultValue: "No markets data yet.",
+              })}
         </Typography.Text>
       )}
     </Card>
@@ -2888,18 +3611,25 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.crypto.title", { defaultValue: "Crypto" })}</span>
+          <span>
+            {t("situationMonitor.crypto.title", { defaultValue: "Crypto" })}
+          </span>
           <Tag color="geekblue">{cryptoSnapshot?.length ?? 0}</Tag>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
-      loading={initialLoading || (refreshStage === "external" && cryptoSnapshot === undefined)}
+      loading={
+        initialLoading ||
+        (refreshStage === "external" && cryptoSnapshot === undefined)
+      }
     >
       {!cryptoSnapshot ? (
         <Typography.Text type="secondary">
           {refreshStage === "external"
             ? t("common.loading", { defaultValue: "Loading" })
-            : t("situationMonitor.crypto.empty", { defaultValue: "No crypto data." })}
+            : t("situationMonitor.crypto.empty", {
+                defaultValue: "No crypto data.",
+              })}
         </Typography.Text>
       ) : cryptoSnapshot.length ? (
         <Table
@@ -2907,21 +3637,33 @@ export function SituationMonitorContent() {
           size="small"
           pagination={false}
           columns={[
-            { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
             {
-              title: t("situationMonitor.crypto.price", { defaultValue: "Price" }),
+              title: t("common.name", { defaultValue: "Name" }),
+              dataIndex: "name",
+              key: "name",
+            },
+            {
+              title: t("situationMonitor.crypto.price", {
+                defaultValue: "Price",
+              }),
               dataIndex: "currentPriceUsd",
               key: "currentPriceUsd",
               width: 130,
               render: (value: number) => formatUsd(value, locale),
             },
             {
-              title: t("situationMonitor.crypto.change24h", { defaultValue: "24h" }),
+              title: t("situationMonitor.crypto.change24h", {
+                defaultValue: "24h",
+              }),
               dataIndex: "change24hPercent",
               key: "change24hPercent",
               width: 110,
               render: (value: number) => (
-                <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
+                <Typography.Text
+                  type={
+                    Number.isFinite(value) && value < 0 ? "danger" : "success"
+                  }
+                >
                   {formatPercent(value)}
                 </Typography.Text>
               ),
@@ -2931,7 +3673,9 @@ export function SituationMonitorContent() {
         />
       ) : (
         <Typography.Text type="secondary">
-          {t("situationMonitor.crypto.empty", { defaultValue: "No crypto data." })}
+          {t("situationMonitor.crypto.empty", {
+            defaultValue: "No crypto data.",
+          })}
         </Typography.Text>
       )}
     </Card>
@@ -2941,26 +3685,40 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.fed.title", { defaultValue: "Federal Reserve" })}</span>
-          {fedSnapshot && !fedSnapshot.hasFredApiKey ? <Tag color="default">FRED API</Tag> : null}
+          <span>
+            {t("situationMonitor.fed.title", {
+              defaultValue: "Federal Reserve",
+            })}
+          </span>
+          {fedSnapshot && !fedSnapshot.hasFredApiKey ? (
+            <Tag color="default">FRED API</Tag>
+          ) : null}
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
-      loading={initialLoading || (refreshStage === "external" && fedSnapshot === undefined)}
+      loading={
+        initialLoading ||
+        (refreshStage === "external" && fedSnapshot === undefined)
+      }
     >
       {!fedSnapshot ? (
         <Typography.Text type="secondary">
           {refreshStage === "external"
             ? t("common.loading", { defaultValue: "Loading" })
-            : t("situationMonitor.fed.empty", { defaultValue: "No Federal Reserve data yet." })}
+            : t("situationMonitor.fed.empty", {
+                defaultValue: "No Federal Reserve data yet.",
+              })}
         </Typography.Text>
       ) : (
         <>
-          {fedSnapshot.error ? <Alert type="warning" showIcon message={fedSnapshot.error} /> : null}
+          {fedSnapshot.error ? (
+            <Alert type="warning" showIcon message={fedSnapshot.error} />
+          ) : null}
           {!fedSnapshot.hasFredApiKey ? (
             <Typography.Text type="secondary">
               {t("situationMonitor.fed.hint", {
-                defaultValue: "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
+                defaultValue:
+                  "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
               })}
             </Typography.Text>
           ) : fedSnapshot.indicators?.length ? (
@@ -2969,13 +3727,22 @@ export function SituationMonitorContent() {
               size="small"
               pagination={false}
               columns={[
-                { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
                 {
-                  title: t("situationMonitor.fed.value", { defaultValue: "Value" }),
+                  title: t("common.name", { defaultValue: "Name" }),
+                  dataIndex: "name",
+                  key: "name",
+                },
+                {
+                  title: t("situationMonitor.fed.value", {
+                    defaultValue: "Value",
+                  }),
                   dataIndex: "value",
                   key: "value",
                   width: 110,
-                  render: (value: number | null, record: SituationMonitorFedIndicator) =>
+                  render: (
+                    value: number | null,
+                    record: SituationMonitorFedIndicator,
+                  ) =>
                     value === null ? "—" : `${value.toFixed(2)}${record.unit}`,
                 },
                 {
@@ -3003,21 +3770,45 @@ export function SituationMonitorContent() {
               <Divider style={{ margin: "12px 0" }} />
               <Space direction="vertical" size={6} style={{ width: "100%" }}>
                 <Space size={10} wrap>
-                  <Tag color={fedSnapshot.moneyPrinter.changeTrillions > 0 ? "green" : "red"}>
-                    {fedSnapshot.moneyPrinter.changeTrillions > 0 ? "PRINTER ON" : "PRINTER OFF"}
+                  <Tag
+                    color={
+                      fedSnapshot.moneyPrinter.changeTrillions > 0
+                        ? "green"
+                        : "red"
+                    }
+                  >
+                    {fedSnapshot.moneyPrinter.changeTrillions > 0
+                      ? "PRINTER ON"
+                      : "PRINTER OFF"}
                   </Tag>
                   <Typography.Text type="secondary">
-                    {t("situationMonitor.fed.balanceSheet", { defaultValue: "Balance sheet" })}:{" "}
-                    {fedSnapshot.moneyPrinter.valueTrillions.toFixed(2)}T
+                    {t("situationMonitor.fed.balanceSheet", {
+                      defaultValue: "Balance sheet",
+                    })}
+                    : {fedSnapshot.moneyPrinter.valueTrillions.toFixed(2)}T
                   </Typography.Text>
-                  <Typography.Text type={fedSnapshot.moneyPrinter.changePercent < 0 ? "danger" : "success"}>
+                  <Typography.Text
+                    type={
+                      fedSnapshot.moneyPrinter.changePercent < 0
+                        ? "danger"
+                        : "success"
+                    }
+                  >
                     {fedSnapshot.moneyPrinter.changeTrillions > 0 ? "+" : ""}
-                    {(fedSnapshot.moneyPrinter.changeTrillions * 1000).toFixed(0)}B (
-                    {fedSnapshot.moneyPrinter.changePercent > 0 ? "+" : ""}
+                    {(fedSnapshot.moneyPrinter.changeTrillions * 1000).toFixed(
+                      0,
+                    )}
+                    B ({fedSnapshot.moneyPrinter.changePercent > 0 ? "+" : ""}
                     {fedSnapshot.moneyPrinter.changePercent.toFixed(2)}%)
                   </Typography.Text>
                 </Space>
-                <Progress percent={Math.min(100, Math.max(0, fedSnapshot.moneyPrinter.percentOfMax))} showInfo={false} />
+                <Progress
+                  percent={Math.min(
+                    100,
+                    Math.max(0, fedSnapshot.moneyPrinter.percentOfMax),
+                  )}
+                  showInfo={false}
+                />
               </Space>
             </>
           ) : null}
@@ -3027,51 +3818,74 @@ export function SituationMonitorContent() {
               <Divider style={{ margin: "12px 0" }} />
               <List
                 size="small"
-	                dataSource={fedSnapshot.news.slice(0, fedNewsPerPanel)}
-	                renderItem={(item) => {
-	                  const href = item.link ? safeHttpUrl(item.link) : null;
-	                  const date = Number.isFinite(item.timestamp) ? new Date(item.timestamp) : null;
-	                  const title = translateToZh ? item.titleZh ?? item.title : item.title;
-	                  const description = translateToZh ? item.descriptionZh ?? item.description : item.description;
-	                  const descriptionText = typeof description === "string" ? description.trim() : "";
-	                  return (
-	                    <List.Item key={item.id}>
-	                      <Space direction="vertical" size={2} style={{ width: "100%" }}>
-	                        <Space size={8} wrap>
-	                          <Tag color={item.type === "powell" ? "orange" : "blue"}>
-	                            {translateToZh ? item.typeLabelZh ?? item.typeLabel : item.typeLabel}
-	                          </Tag>
-	                          {item.hasVideo ? <Tag color="purple">VIDEO</Tag> : null}
-	                          {href ? (
-	                            <Typography.Link href={href} target="_blank" rel="noreferrer">
-	                              {title}
-	                            </Typography.Link>
-	                          ) : (
-	                            <Typography.Text>{title}</Typography.Text>
-	                          )}
-	                        </Space>
-	                        {descriptionText ? (
-	                          <Typography.Paragraph
-	                            type="secondary"
-	                            ellipsis={{ rows: 2 }}
-	                            style={{ marginBottom: 0 }}
-	                          >
-	                            {descriptionText}
-	                          </Typography.Paragraph>
-	                        ) : null}
-	                        <Space size={8} wrap>
-	                          <ArticlePublishedTime
-	                            publishedAt={date?.toISOString() ?? null}
-	                            locale={locale}
-	                            formatOptions={{
-	                              dateStyle: "medium",
-	                              timeStyle: "short",
-	                              timeZoneName: "short"
-	                            }}
-	                            primaryStrong
-	                            secondaryStyle={{ fontSize: 12 }}
-	                          />
-                          {item.isPowellRelated && item.type !== "powell" ? <Tag color="orange">POWELL</Tag> : null}
+                dataSource={fedSnapshot.news.slice(0, fedNewsPerPanel)}
+                renderItem={(item) => {
+                  const href = item.link ? safeHttpUrl(item.link) : null;
+                  const date = Number.isFinite(item.timestamp)
+                    ? new Date(item.timestamp)
+                    : null;
+                  const title = translateToZh
+                    ? (item.titleZh ?? item.title)
+                    : item.title;
+                  const description = translateToZh
+                    ? (item.descriptionZh ?? item.description)
+                    : item.description;
+                  const descriptionText =
+                    typeof description === "string" ? description.trim() : "";
+                  return (
+                    <List.Item key={item.id}>
+                      <Space
+                        direction="vertical"
+                        size={2}
+                        style={{ width: "100%" }}
+                      >
+                        <Space size={8} wrap>
+                          <Tag
+                            color={item.type === "powell" ? "orange" : "blue"}
+                          >
+                            {translateToZh
+                              ? (item.typeLabelZh ?? item.typeLabel)
+                              : item.typeLabel}
+                          </Tag>
+                          {item.hasVideo ? (
+                            <Tag color="purple">VIDEO</Tag>
+                          ) : null}
+                          {href ? (
+                            <Typography.Link
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {title}
+                            </Typography.Link>
+                          ) : (
+                            <Typography.Text>{title}</Typography.Text>
+                          )}
+                        </Space>
+                        {descriptionText ? (
+                          <Typography.Paragraph
+                            type="secondary"
+                            ellipsis={{ rows: 2 }}
+                            style={{ marginBottom: 0 }}
+                          >
+                            {descriptionText}
+                          </Typography.Paragraph>
+                        ) : null}
+                        <Space size={8} wrap>
+                          <ArticlePublishedTime
+                            publishedAt={date?.toISOString() ?? null}
+                            locale={locale}
+                            formatOptions={{
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                              timeZoneName: "short",
+                            }}
+                            primaryStrong
+                            secondaryStyle={{ fontSize: 12 }}
+                          />
+                          {item.isPowellRelated && item.type !== "powell" ? (
+                            <Tag color="orange">POWELL</Tag>
+                          ) : null}
                         </Space>
                       </Space>
                     </List.Item>
@@ -3089,7 +3903,11 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.leaders.title", { defaultValue: "World Leaders" })}</span>
+          <span>
+            {t("situationMonitor.leaders.title", {
+              defaultValue: "World Leaders",
+            })}
+          </span>
           <Tag color="geekblue">{data?.leaders?.length ?? 0}</Tag>
         </Space>
       }
@@ -3102,32 +3920,43 @@ export function SituationMonitorContent() {
         pagination={{ pageSize: screens.lg ? 8 : 6, hideOnSinglePage: true }}
         columns={[
           {
-            title: t("situationMonitor.leaders.leader", { defaultValue: "Leader" }),
+            title: t("situationMonitor.leaders.leader", {
+              defaultValue: "Leader",
+            }),
             dataIndex: "name",
             key: "name",
             render: (_: string, record: SituationMonitorWorldLeader) => (
               <Space size={8}>
                 {record.flag ? <span>{record.flag}</span> : null}
                 <span>{record.name}</span>
-                <Typography.Text type="secondary">{record.country}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {record.country}
+                </Typography.Text>
               </Space>
             ),
           },
           {
-            title: t("situationMonitor.leaders.mentions", { defaultValue: "Mentions" }),
+            title: t("situationMonitor.leaders.mentions", {
+              defaultValue: "Mentions",
+            }),
             dataIndex: "matchCount",
             key: "matchCount",
             width: 110,
           },
           {
-            title: t("situationMonitor.leaders.sample", { defaultValue: "Sample" }),
+            title: t("situationMonitor.leaders.sample", {
+              defaultValue: "Sample",
+            }),
             dataIndex: "headlines",
             key: "headlines",
             render: (value: SituationMonitorWorldLeader["headlines"]) => {
               const first = Array.isArray(value) ? value[0] : undefined;
               const href = first?.link ? safeHttpUrl(first.link) : null;
-              if (!first) return <Typography.Text type="secondary">—</Typography.Text>;
-              const title = translateToZh ? first.titleZh ?? first.title : first.title;
+              if (!first)
+                return <Typography.Text type="secondary">—</Typography.Text>;
+              const title = translateToZh
+                ? (first.titleZh ?? first.title)
+                : first.title;
               return href ? (
                 <Typography.Link href={href} target="_blank" rel="noreferrer">
                   {title}
@@ -3138,47 +3967,67 @@ export function SituationMonitorContent() {
             },
           },
         ]}
-        dataSource={(data?.leaders ?? []).filter((leader) => leader.matchCount > 0)}
+        dataSource={(data?.leaders ?? []).filter(
+          (leader) => leader.matchCount > 0,
+        )}
       />
     </Card>
   );
 
-  const renderSituationPanel = (id: SituationMonitorSituationPanel["id"], fallbackTitle: string) => {
-    const panel = (data?.situations ?? []).find((entry) => entry.id === id) ?? null;
+  const renderSituationPanel = (
+    id: SituationMonitorSituationPanel["id"],
+    fallbackTitle: string,
+  ) => {
+    const panel =
+      (data?.situations ?? []).find((entry) => entry.id === id) ?? null;
     const statusTag = panel ? (
-      <Tag color={panel.level === "critical" ? "red" : panel.level === "elevated" ? "orange" : "default"}>
+      <Tag
+        color={
+          panel.level === "critical"
+            ? "red"
+            : panel.level === "elevated"
+              ? "orange"
+              : "default"
+        }
+      >
         {panel.status}
       </Tag>
     ) : refreshStage === "core" ? (
-      <Tag color="default">{t("common.loading", { defaultValue: "Loading" })}</Tag>
+      <Tag color="default">
+        {t("common.loading", { defaultValue: "Loading" })}
+      </Tag>
     ) : null;
 
     return (
       <Card
-	        title={
-	          <Space size={10}>
-	            <span>
-	              {panel
-	                ? translateToZh
-	                  ? panel.titleZh ?? panel.title
-	                  : panel.title
-	                : fallbackTitle}
-	            </span>
-	            {statusTag}
-	          </Space>
-	        }
+        title={
+          <Space size={10}>
+            <span>
+              {panel
+                ? translateToZh
+                  ? (panel.titleZh ?? panel.title)
+                  : panel.title
+                : fallbackTitle}
+            </span>
+            {statusTag}
+          </Space>
+        }
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
         loading={initialLoading}
       >
-	        {panel?.subtitle ? (
-	          <Typography.Text type="secondary">
-	            {translateToZh ? panel.subtitleZh ?? panel.subtitle : panel.subtitle}
-	          </Typography.Text>
-	        ) : (
+        {panel?.subtitle ? (
+          <Typography.Text type="secondary">
+            {translateToZh
+              ? (panel.subtitleZh ?? panel.subtitle)
+              : panel.subtitle}
+          </Typography.Text>
+        ) : (
           <Typography.Text type="secondary">
             {refreshStage === "core"
               ? t("common.loading", { defaultValue: "Loading" })
-              : t("situationMonitor.situations.empty", { defaultValue: "No recent headlines." })}
+              : t("situationMonitor.situations.empty", {
+                  defaultValue: "No recent headlines.",
+                })}
           </Typography.Text>
         )}
         <div className="mt-3">
@@ -3189,21 +4038,37 @@ export function SituationMonitorContent() {
               renderItem={(entry, index) => {
                 const key = `${panel.id}-${index}`;
                 const href = entry.link ? safeHttpUrl(entry.link) : null;
-                const date = Number.isFinite(entry.timestamp) ? new Date(entry.timestamp) : null;
+                const date = Number.isFinite(entry.timestamp)
+                  ? new Date(entry.timestamp)
+                  : null;
                 return (
                   <List.Item key={key}>
-	                    <Space direction="vertical" size={2} style={{ width: "100%" }}>
-	                      {href ? (
-	                        <Typography.Link href={href} target="_blank" rel="noreferrer">
-	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                        </Typography.Link>
-	                      ) : (
-	                        <Typography.Text>
-	                          {translateToZh ? entry.titleZh ?? entry.title : entry.title}
-	                        </Typography.Text>
-	                      )}
+                    <Space
+                      direction="vertical"
+                      size={2}
+                      style={{ width: "100%" }}
+                    >
+                      {href ? (
+                        <Typography.Link
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {translateToZh
+                            ? (entry.titleZh ?? entry.title)
+                            : entry.title}
+                        </Typography.Link>
+                      ) : (
+                        <Typography.Text>
+                          {translateToZh
+                            ? (entry.titleZh ?? entry.title)
+                            : entry.title}
+                        </Typography.Text>
+                      )}
                       <Space size={8} wrap>
-                        <Typography.Text type="secondary">{entry.source}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {entry.source}
+                        </Typography.Text>
                         {date ? (
                           <Typography.Text type="secondary">
                             {formatDateTime(date, locale, {
@@ -3222,7 +4087,9 @@ export function SituationMonitorContent() {
             />
           ) : (
             <Typography.Text type="secondary">
-              {t("situationMonitor.situations.empty", { defaultValue: "No recent headlines." })}
+              {t("situationMonitor.situations.empty", {
+                defaultValue: "No recent headlines.",
+              })}
             </Typography.Text>
           )}
         </div>
@@ -3234,22 +4101,35 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.telegram.title", { defaultValue: "Telegram Early Signals" })}</span>
+          <span>
+            {t("situationMonitor.telegram.title", {
+              defaultValue: "Telegram Early Signals",
+            })}
+          </span>
           <Popover content={globalTelegramTooltip}>
             <Tag color="default" className="cursor-help">
-              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })} <InfoCircleOutlined />
+              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}{" "}
+              <InfoCircleOutlined />
             </Tag>
           </Popover>
-          <Tag color="geekblue">{telegramFeed?.count ?? telegramFeed?.items?.length ?? 0}</Tag>
-          {telegramFeed?.channelSet ? <Tag color="cyan">{telegramFeed.channelSet}</Tag> : null}
+          <Tag color="geekblue">
+            {telegramFeed?.count ?? telegramFeed?.items?.length ?? 0}
+          </Tag>
+          {telegramFeed?.channelSet ? (
+            <Tag color="cyan">{telegramFeed.channelSet}</Tag>
+          ) : null}
           {telegramFeed && !telegramFeed.configured ? (
             <Tag color="default">
-              {t("situationMonitor.telegram.configMissing", { defaultValue: "Not configured" })}
+              {t("situationMonitor.telegram.configMissing", {
+                defaultValue: "Not configured",
+              })}
             </Tag>
           ) : null}
           {telegramFeed && !telegramFeed.enabled ? (
             <Tag color="orange">
-              {t("situationMonitor.telegram.disabled", { defaultValue: "Disabled" })}
+              {t("situationMonitor.telegram.disabled", {
+                defaultValue: "Disabled",
+              })}
             </Tag>
           ) : null}
         </Space>
@@ -3257,11 +4137,22 @@ export function SituationMonitorContent() {
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={signalsLoading.telegram && !telegramFeed}
     >
-      {telegramFeed?.error ? <Alert type="warning" showIcon message={telegramFeed.error} /> : null}
-      {signalErrors.telegram ? <Alert type="warning" showIcon message={signalErrors.telegram} style={{ marginBottom: 12 }} /> : null}
+      {telegramFeed?.error ? (
+        <Alert type="warning" showIcon message={telegramFeed.error} />
+      ) : null}
+      {signalErrors.telegram ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={signalErrors.telegram}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
       <Space wrap size={8} style={{ marginBottom: 10 }}>
         <Typography.Text type="secondary">
-          {t("situationMonitor.telegram.filters.label", { defaultValue: "Filters" })}
+          {t("situationMonitor.telegram.filters.label", {
+            defaultValue: "Filters",
+          })}
         </Typography.Text>
         <Select
           size="small"
@@ -3289,7 +4180,8 @@ export function SituationMonitorContent() {
       ) : !canReadItems ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.permissionRequired", {
-            defaultValue: "You need items.read permission to view global Telegram signals.",
+            defaultValue:
+              "You need items.read permission to view global Telegram signals.",
           })}
         </Typography.Text>
       ) : !telegramFeed ? (
@@ -3299,12 +4191,15 @@ export function SituationMonitorContent() {
       ) : !telegramFeed.configured ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.configHint", {
-            defaultValue: "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
+            defaultValue:
+              "Configure Telegram authorization in Admin Settings > System Settings > Situation Monitor.",
           })}
         </Typography.Text>
       ) : telegramFeed.items.length === 0 ? (
         <Typography.Text type="secondary">
-          {t("situationMonitor.telegram.empty", { defaultValue: "No Telegram signals yet." })}
+          {t("situationMonitor.telegram.empty", {
+            defaultValue: "No Telegram signals yet.",
+          })}
         </Typography.Text>
       ) : (
         <List
@@ -3319,10 +4214,16 @@ export function SituationMonitorContent() {
                 <Space direction="vertical" size={2} style={{ width: "100%" }}>
                   <Space size={8} wrap>
                     <Tag color="blue">{item.channelTitle || item.channel}</Tag>
-                    {item.topic ? <Tag color="default">{item.topic}</Tag> : null}
+                    {item.topic ? (
+                      <Tag color="default">{item.topic}</Tag>
+                    ) : null}
                   </Space>
                   {href ? (
-                    <Typography.Link href={href} target="_blank" rel="noreferrer">
+                    <Typography.Link
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       {text}
                     </Typography.Link>
                   ) : (
@@ -3360,17 +4261,23 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={10}>
-          <span>{t("situationMonitor.oref.title", { defaultValue: "OREF Alerts" })}</span>
+          <span>
+            {t("situationMonitor.oref.title", { defaultValue: "OREF Alerts" })}
+          </span>
           <Popover content={globalOrefTooltip}>
             <Tag color="default" className="cursor-help">
-              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })} <InfoCircleOutlined />
+              {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}{" "}
+              <InfoCircleOutlined />
             </Tag>
           </Popover>
           <Tag color="geekblue">{orefAlerts?.alerts?.length ?? 0}</Tag>
           <Tag color="purple">
             {t("situationMonitor.oref.history24h", {
               defaultValue: "24h {{count}}",
-              count: orefAlerts?.historyCount24h ?? orefHistory?.historyCount24h ?? 0,
+              count:
+                orefAlerts?.historyCount24h ??
+                orefHistory?.historyCount24h ??
+                0,
             })}
           </Tag>
         </Space>
@@ -3378,8 +4285,17 @@ export function SituationMonitorContent() {
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       loading={signalsLoading.oref && !orefAlerts}
     >
-      {orefAlerts?.error ? <Alert type="warning" showIcon message={orefAlerts.error} /> : null}
-      {signalErrors.oref ? <Alert type="warning" showIcon message={signalErrors.oref} style={{ marginBottom: 12 }} /> : null}
+      {orefAlerts?.error ? (
+        <Alert type="warning" showIcon message={orefAlerts.error} />
+      ) : null}
+      {signalErrors.oref ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={signalErrors.oref}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
       {!session?.accessToken ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.oref.signInRequired", {
@@ -3389,7 +4305,8 @@ export function SituationMonitorContent() {
       ) : !canReadItems ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.oref.permissionRequired", {
-            defaultValue: "You need items.read permission to view global OREF signals.",
+            defaultValue:
+              "You need items.read permission to view global OREF signals.",
           })}
         </Typography.Text>
       ) : !orefAlerts ? (
@@ -3399,14 +4316,17 @@ export function SituationMonitorContent() {
       ) : !orefAlerts.configured ? (
         <Typography.Text type="secondary">
           {t("situationMonitor.oref.configHint", {
-            defaultValue: "Configure OREF proxy auth and enable OREF polling in environment variables.",
+            defaultValue:
+              "Configure OREF proxy auth and enable OREF polling in environment variables.",
           })}
         </Typography.Text>
       ) : (
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {orefAlerts.alerts.length === 0 ? (
             <Typography.Text type="secondary">
-              {t("situationMonitor.oref.empty", { defaultValue: "No active OREF alerts." })}
+              {t("situationMonitor.oref.empty", {
+                defaultValue: "No active OREF alerts.",
+              })}
             </Typography.Text>
           ) : (
             <List
@@ -3427,17 +4347,27 @@ export function SituationMonitorContent() {
 
                 return (
                   <List.Item key={alert.id}>
-                    <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                    <Space
+                      direction="vertical"
+                      size={2}
+                      style={{ width: "100%" }}
+                    >
                       <Space size={8} wrap>
                         <Tag color="red">
-                          {translateOrefTextForLocale(alert.cat || "alert", { translateToZh })}
+                          {translateOrefTextForLocale(alert.cat || "alert", {
+                            translateToZh,
+                          })}
                         </Tag>
                         <Typography.Text>
-                          {translateOrefTextForLocale(alert.title, { translateToZh })}
+                          {translateOrefTextForLocale(alert.title, {
+                            translateToZh,
+                          })}
                         </Typography.Text>
                         {recent ? (
                           <Tag color="volcano">
-                            {t("situationMonitor.oref.recent", { defaultValue: "Recent" })}
+                            {t("situationMonitor.oref.recent", {
+                              defaultValue: "Recent",
+                            })}
                           </Tag>
                         ) : null}
                       </Space>
@@ -3446,13 +4376,17 @@ export function SituationMonitorContent() {
                           {alert.data
                             .slice(0, 4)
                             .map((area) =>
-                              translateOrefTextForLocale(area, { translateToZh }),
+                              translateOrefTextForLocale(area, {
+                                translateToZh,
+                              }),
                             )
                             .join(" · ")}
                         </Typography.Text>
                       ) : null}
                       {alertDateText ? (
-                        <Typography.Text type="secondary">{alertDateText}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {alertDateText}
+                        </Typography.Text>
                       ) : null}
                     </Space>
                   </List.Item>
@@ -3465,15 +4399,22 @@ export function SituationMonitorContent() {
             <>
               <Divider style={{ margin: "8px 0" }} />
               <Typography.Text type="secondary">
-                {t("situationMonitor.oref.recentWaves", { defaultValue: "Recent waves" })}
+                {t("situationMonitor.oref.recentWaves", {
+                  defaultValue: "Recent waves",
+                })}
               </Typography.Text>
               <List
                 size="small"
-                dataSource={[...orefHistory.history].reverse().slice(0, orefHistoryPerPanel)}
+                dataSource={[...orefHistory.history]
+                  .reverse()
+                  .slice(0, orefHistoryPerPanel)}
                 renderItem={(entry) => {
                   const date = parseOrefTimestamp(entry.timestamp);
                   const waveCount = (entry.alerts ?? []).reduce((sum, item) => {
-                    const count = Array.isArray(item.data) && item.data.length > 0 ? item.data.length : 1;
+                    const count =
+                      Array.isArray(item.data) && item.data.length > 0
+                        ? item.data.length
+                        : 1;
                     return sum + count;
                   }, 0);
                   const recent = isRecentOrefTimestamp(entry.timestamp);
@@ -3483,7 +4424,9 @@ export function SituationMonitorContent() {
                         <Tag color="default">{waveCount}</Tag>
                         {recent ? (
                           <Tag color="volcano">
-                            {t("situationMonitor.oref.recent", { defaultValue: "Recent" })}
+                            {t("situationMonitor.oref.recent", {
+                              defaultValue: "Recent",
+                            })}
                           </Tag>
                         ) : null}
                         {date && !Number.isNaN(date.getTime()) ? (
@@ -3496,7 +4439,9 @@ export function SituationMonitorContent() {
                             })}
                           </Typography.Text>
                         ) : (
-                          <Typography.Text type="secondary">{entry.timestamp}</Typography.Text>
+                          <Typography.Text type="secondary">
+                            {entry.timestamp}
+                          </Typography.Text>
                         )}
                       </Space>
                     </List.Item>
@@ -3516,7 +4461,146 @@ export function SituationMonitorContent() {
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       styles={{ body: { padding: 0, overflow: "hidden" } }}
     >
-      <WarMap className="h-full" translateTarget={translateToZh ? "zh-CN" : undefined} />
+      <WarMap
+        className="h-full"
+        translateTarget={translateToZh ? "zh-CN" : undefined}
+      />
+    </Card>
+  );
+
+  const renderRealtimeSnapshotPanel = () => (
+    <Card
+      title={t("situationMonitor.realtimeSnapshot.title", {
+        defaultValue: "Realtime Snapshot",
+      })}
+      className="sm-panel-card sm-realtime-snapshot-card glass-panel border border-[var(--border)] h-full"
+      styles={{ body: { padding: 16 } }}
+      loading={initialLoading}
+    >
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        {data?.pizzint ? (
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            <Space size={[8, 8]} wrap>
+              <Tag
+                color={
+                  data.pizzint.defcon <= 2
+                    ? "red"
+                    : data.pizzint.defcon <= 3
+                      ? "orange"
+                      : "default"
+                }
+              >
+                {t("situationMonitor.realtimeSnapshot.pizzint", {
+                  defaultValue: "PizzINT",
+                })}{" "}
+                DEFCON {data.pizzint.defcon}
+              </Tag>
+              <Typography.Text type="secondary">
+                {t("situationMonitor.realtimeSnapshot.updatedAt", {
+                  defaultValue: "Updated",
+                })}
+                :{" "}
+                {dayjs(data.pizzint.updatedAt).isValid()
+                  ? formatDateTime(
+                      dayjs(data.pizzint.updatedAt).toDate(),
+                      locale,
+                      {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      },
+                    )
+                  : "—"}
+              </Typography.Text>
+            </Space>
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+                <Typography.Text
+                  type="secondary"
+                  className="block text-[11px] uppercase tracking-[0.08em]"
+                >
+                  {t("situationMonitor.realtimeSnapshot.adjustedScore", {
+                    defaultValue: "Adjusted",
+                  })}
+                </Typography.Text>
+                <Typography.Text strong>
+                  {data.pizzint.adjustedScore}
+                </Typography.Text>
+              </div>
+              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+                <Typography.Text
+                  type="secondary"
+                  className="block text-[11px] uppercase tracking-[0.08em]"
+                >
+                  {t("situationMonitor.realtimeSnapshot.openLocations", {
+                    defaultValue: "Open locations",
+                  })}
+                </Typography.Text>
+                <Typography.Text strong>
+                  {data.pizzint.openLocations}
+                </Typography.Text>
+              </div>
+              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+                <Typography.Text
+                  type="secondary"
+                  className="block text-[11px] uppercase tracking-[0.08em]"
+                >
+                  {t("situationMonitor.realtimeSnapshot.activeSpikes", {
+                    defaultValue: "Active spikes",
+                  })}
+                </Typography.Text>
+                <Typography.Text strong>
+                  {data.pizzint.activeSpikes}
+                </Typography.Text>
+              </div>
+              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+                <Typography.Text
+                  type="secondary"
+                  className="block text-[11px] uppercase tracking-[0.08em]"
+                >
+                  {t("situationMonitor.realtimeSnapshot.avgPop", {
+                    defaultValue: "Avg pop",
+                  })}
+                </Typography.Text>
+                <Typography.Text strong>{data.pizzint.avgPop}</Typography.Text>
+              </div>
+            </div>
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">
+            {t("situationMonitor.realtimeSnapshot.pizzintEmpty", {
+              defaultValue: "No PizzINT snapshot in current window.",
+            })}
+          </Typography.Text>
+        )}
+
+        <div>
+          <Typography.Text type="secondary">
+            {t("situationMonitor.realtimeSnapshot.tensionsTitle", {
+              defaultValue: "Top bilateral tensions",
+            })}
+          </Typography.Text>
+          <Table
+            rowKey="id"
+            size="small"
+            columns={tensionColumns}
+            dataSource={(data?.tensions ?? []).slice(
+              0,
+              realtimeSnapshotTensionLimit,
+            )}
+            pagination={false}
+            style={{ marginTop: 8 }}
+            tableLayout="fixed"
+            scroll={screens.md ? undefined : { x: 420 }}
+            locale={{
+              emptyText: t("situationMonitor.realtimeSnapshot.tensionsEmpty", {
+                defaultValue: "No bilateral tension snapshots.",
+              }),
+            }}
+          />
+        </div>
+      </Space>
     </Card>
   );
 
@@ -3524,11 +4608,17 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={12}>
-          <span>{t("situationMonitor.correlation.title", { defaultValue: "Correlation Engine" })}</span>
+          <span>
+            {t("situationMonitor.correlation.title", {
+              defaultValue: "Correlation Engine",
+            })}
+          </span>
           <Tag color="geekblue">
             {(translateToZh
-              ? data?.correlationSummary?.statusZh ?? data?.correlationSummary?.status
-              : data?.correlationSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
+              ? (data?.correlationSummary?.statusZh ??
+                data?.correlationSummary?.status)
+              : data?.correlationSummary?.status) ??
+              t("common.loading", { defaultValue: "Loading" })}
           </Tag>
           <Button
             size="small"
@@ -3538,7 +4628,9 @@ export function SituationMonitorContent() {
               void loadSignalCatalog();
             }}
           >
-            {t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+            {t("situationMonitor.narrative.reportMissed", {
+              defaultValue: "Report missed",
+            })}
           </Button>
         </Space>
       }
@@ -3555,89 +4647,23 @@ export function SituationMonitorContent() {
           </Typography.Text>
         </Col>
         <Col span={24}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.realtimeOverlayTitle", {
-              defaultValue: "Realtime overlays",
-            })}
-          </Typography.Title>
-          <Space direction="vertical" size={8} style={{ width: "100%" }}>
-            {data?.pizzint ? (
-              <Space size={8} wrap>
-                <Tag color={data.pizzint.defcon <= 2 ? "red" : data.pizzint.defcon <= 3 ? "orange" : "default"}>
-                  {t("situationMonitor.correlation.pizzint", {
-                    defaultValue: "PizzINT",
-                  })}{" "}
-                  DEFCON {data.pizzint.defcon}
-                </Tag>
-                <Tag>
-                  {t("situationMonitor.correlation.adjustedScore", {
-                    defaultValue: "Adjusted",
-                  })}: {data.pizzint.adjustedScore}
-                </Tag>
-                <Tag>
-                  {t("situationMonitor.correlation.openLocations", {
-                    defaultValue: "Open locations",
-                  })}: {data.pizzint.openLocations}
-                </Tag>
-                <Tag>
-                  {t("situationMonitor.correlation.activeSpikes", {
-                    defaultValue: "Active spikes",
-                  })}: {data.pizzint.activeSpikes}
-                </Tag>
-                <Tag>
-                  {t("situationMonitor.correlation.avgPop", {
-                    defaultValue: "Avg pop",
-                  })}: {data.pizzint.avgPop}
-                </Tag>
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.correlation.updatedAt", {
-                    defaultValue: "Updated",
-                  })}
-                  :{" "}
-                  {dayjs(data.pizzint.updatedAt).isValid()
-                    ? formatDateTime(dayjs(data.pizzint.updatedAt).toDate(), locale, {
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—"}
-                </Typography.Text>
-              </Space>
-            ) : (
-              <Typography.Text type="secondary">
-                {t("situationMonitor.correlation.pizzintEmpty", {
-                  defaultValue: "No PizzINT snapshot in current window.",
-                })}
-              </Typography.Text>
-            )}
-            <Table
-              rowKey="id"
-              size="small"
-              columns={tensionColumns}
-              dataSource={data?.tensions ?? []}
-              pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
-              locale={{
-                emptyText: t("situationMonitor.correlation.tensionsEmpty", {
-                  defaultValue: "No bilateral tension snapshots.",
-                }),
-              }}
-            />
-          </Space>
-        </Col>
-        <Col span={24}>
           <Table
             rowKey="id"
             size="small"
             columns={emergingColumns}
             expandable={correlationExpandable}
             dataSource={data?.correlation?.emergingPatterns ?? []}
-            pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
+            pagination={{
+              pageSize: screens.lg ? 6 : 4,
+              hideOnSinglePage: true,
+            }}
           />
         </Col>
         <Col span={24}>
           <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.crossSourceTitle", { defaultValue: "Cross-source" })}
+            {t("situationMonitor.correlation.crossSourceTitle", {
+              defaultValue: "Cross-source",
+            })}
           </Typography.Title>
           <Table
             rowKey="id"
@@ -3645,12 +4671,17 @@ export function SituationMonitorContent() {
             columns={crossSourceColumns}
             expandable={correlationExpandable}
             dataSource={data?.correlation?.crossSourceCorrelations ?? []}
-            pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
+            pagination={{
+              pageSize: screens.lg ? 6 : 4,
+              hideOnSinglePage: true,
+            }}
           />
         </Col>
         <Col span={24}>
           <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.momentumTitle", { defaultValue: "Momentum" })}
+            {t("situationMonitor.correlation.momentumTitle", {
+              defaultValue: "Momentum",
+            })}
           </Typography.Title>
           <Table
             rowKey="id"
@@ -3658,12 +4689,17 @@ export function SituationMonitorContent() {
             columns={momentumColumns}
             expandable={correlationExpandable}
             dataSource={data?.correlation?.momentumSignals ?? []}
-            pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
+            pagination={{
+              pageSize: screens.lg ? 6 : 4,
+              hideOnSinglePage: true,
+            }}
           />
         </Col>
         <Col span={24}>
           <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.predictiveTitle", { defaultValue: "Predictive" })}
+            {t("situationMonitor.correlation.predictiveTitle", {
+              defaultValue: "Predictive",
+            })}
           </Typography.Title>
           <Table
             rowKey="id"
@@ -3671,7 +4707,10 @@ export function SituationMonitorContent() {
             columns={predictiveColumns}
             expandable={correlationExpandable}
             dataSource={data?.correlation?.predictiveSignals ?? []}
-            pagination={{ pageSize: screens.lg ? 6 : 4, hideOnSinglePage: true }}
+            pagination={{
+              pageSize: screens.lg ? 6 : 4,
+              hideOnSinglePage: true,
+            }}
           />
         </Col>
       </Row>
@@ -3682,11 +4721,17 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={12}>
-          <span>{t("situationMonitor.narrative.title", { defaultValue: "Narrative Tracker" })}</span>
+          <span>
+            {t("situationMonitor.narrative.title", {
+              defaultValue: "Narrative Tracker",
+            })}
+          </span>
           <Tag color="geekblue">
             {(translateToZh
-              ? data?.narrativeSummary?.statusZh ?? data?.narrativeSummary?.status
-              : data?.narrativeSummary?.status) ?? t("common.loading", { defaultValue: "Loading" })}
+              ? (data?.narrativeSummary?.statusZh ??
+                data?.narrativeSummary?.status)
+              : data?.narrativeSummary?.status) ??
+              t("common.loading", { defaultValue: "Loading" })}
           </Tag>
           <Button
             size="small"
@@ -3696,7 +4741,9 @@ export function SituationMonitorContent() {
               void loadSignalCatalog();
             }}
           >
-            {t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+            {t("situationMonitor.narrative.reportMissed", {
+              defaultValue: "Report missed",
+            })}
           </Button>
         </Space>
       }
@@ -3711,7 +4758,9 @@ export function SituationMonitorContent() {
       </Typography.Text>
       <div className="mt-3">
         <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.crossing", { defaultValue: "Crossing" })}
+          {t("situationMonitor.narrative.crossing", {
+            defaultValue: "Crossing",
+          })}
         </Typography.Title>
         <Table
           rowKey="id"
@@ -3724,7 +4773,9 @@ export function SituationMonitorContent() {
       </div>
       <div className="mt-5">
         <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.emerging", { defaultValue: "Emerging" })}
+          {t("situationMonitor.narrative.emerging", {
+            defaultValue: "Emerging",
+          })}
         </Typography.Title>
         <Table
           rowKey="id"
@@ -3768,11 +4819,17 @@ export function SituationMonitorContent() {
     <Card
       title={
         <Space size={12}>
-          <span>{t("situationMonitor.mainCharacter.title", { defaultValue: "Main Character" })}</span>
+          <span>
+            {t("situationMonitor.mainCharacter.title", {
+              defaultValue: "Main Character",
+            })}
+          </span>
           <Tag color="geekblue">
             {(translateToZh
-              ? data?.mainCharacterSummary?.statusZh ?? data?.mainCharacterSummary?.status
-              : data?.mainCharacterSummary?.status) ?? t("common.empty", { defaultValue: "No data" })}
+              ? (data?.mainCharacterSummary?.statusZh ??
+                data?.mainCharacterSummary?.status)
+              : data?.mainCharacterSummary?.status) ??
+              t("common.empty", { defaultValue: "No data" })}
           </Tag>
         </Space>
       }
@@ -3797,6 +4854,8 @@ export function SituationMonitorContent() {
     switch (panelId) {
       case "map":
         return renderMapPanel();
+      case "realtime-snapshot":
+        return renderRealtimeSnapshotPanel();
       case "feeds-politics":
         return renderFeedPanel("politics");
       case "feeds-tech":
@@ -3826,17 +4885,23 @@ export function SituationMonitorContent() {
       case "situation-venezuela":
         return renderSituationPanel(
           "venezuela",
-          t("situationMonitor.situations.venezuela", { defaultValue: "Venezuela Watch" }),
+          t("situationMonitor.situations.venezuela", {
+            defaultValue: "Venezuela Watch",
+          }),
         );
       case "situation-greenland":
         return renderSituationPanel(
           "greenland",
-          t("situationMonitor.situations.greenland", { defaultValue: "Greenland Watch" }),
+          t("situationMonitor.situations.greenland", {
+            defaultValue: "Greenland Watch",
+          }),
         );
       case "situation-iran":
         return renderSituationPanel(
           "iran",
-          t("situationMonitor.situations.iran", { defaultValue: "Iran Crisis" }),
+          t("situationMonitor.situations.iran", {
+            defaultValue: "Iran Crisis",
+          }),
         );
       case "correlation":
         return renderCorrelationPanel();
@@ -3859,11 +4924,14 @@ export function SituationMonitorContent() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.situationMonitor.title", { defaultValue: "Situation Monitor" })}
+          {t("pages.situationMonitor.title", {
+            defaultValue: "Situation Monitor",
+          })}
         </Typography.Title>
         <Typography.Text type="secondary">
           {t("pages.situationMonitor.subtitle", {
-            defaultValue: "Correlation, narratives, and key figures across your recent items."
+            defaultValue:
+              "Correlation, narratives, and key figures across your recent items.",
           })}
         </Typography.Text>
 
@@ -3872,9 +4940,24 @@ export function SituationMonitorContent() {
             value={windowHours}
             onChange={(value) => setWindowHours(value)}
             options={[
-              { label: t("situationMonitor.window.6h", { defaultValue: "Last 6h" }), value: 6 },
-              { label: t("situationMonitor.window.24h", { defaultValue: "Last 24h" }), value: 24 },
-              { label: t("situationMonitor.window.72h", { defaultValue: "Last 72h" }), value: 72 },
+              {
+                label: t("situationMonitor.window.6h", {
+                  defaultValue: "Last 6h",
+                }),
+                value: 6,
+              },
+              {
+                label: t("situationMonitor.window.24h", {
+                  defaultValue: "Last 24h",
+                }),
+                value: 24,
+              },
+              {
+                label: t("situationMonitor.window.72h", {
+                  defaultValue: "Last 72h",
+                }),
+                value: 72,
+              },
             ]}
             style={{ width: 160 }}
           />
@@ -3882,8 +4965,18 @@ export function SituationMonitorContent() {
             value={scope}
             onChange={(value) => setScope(value)}
             options={[
-              { label: t("situationMonitor.scope.tagged", { defaultValue: "Tagged sources" }), value: "tagged" },
-              { label: t("situationMonitor.scope.all", { defaultValue: "All items" }), value: "all" },
+              {
+                label: t("situationMonitor.scope.tagged", {
+                  defaultValue: "Tagged sources",
+                }),
+                value: "tagged",
+              },
+              {
+                label: t("situationMonitor.scope.all", {
+                  defaultValue: "All items",
+                }),
+                value: "all",
+              },
             ]}
             style={{ width: 160 }}
           />
@@ -3893,7 +4986,10 @@ export function SituationMonitorContent() {
           <Button onClick={() => void load()} loading={loading}>
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
-          <Button icon={<SettingOutlined />} onClick={() => setPanelsOpen(true)}>
+          <Button
+            icon={<SettingOutlined />}
+            onClick={() => setPanelsOpen(true)}
+          >
             {t("situationMonitor.panels.title", { defaultValue: "Panels" })}
           </Button>
           {isCompactGrid ? (
@@ -3904,7 +5000,9 @@ export function SituationMonitorContent() {
             >
               {canEditLayout
                 ? t("situationMonitor.layout.done", { defaultValue: "Done" })
-                : t("situationMonitor.layout.edit", { defaultValue: "Edit layout" })}
+                : t("situationMonitor.layout.edit", {
+                    defaultValue: "Edit layout",
+                  })}
             </Button>
           ) : null}
           {session?.accessToken ? (
@@ -3912,17 +5010,27 @@ export function SituationMonitorContent() {
               {uiSync.state === "error" ? (
                 uiSync.lastErrorMessage ? (
                   <Popover content={uiSync.lastErrorMessage}>
-                    <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
+                    <Tag color="red">
+                      {t("common.syncError", { defaultValue: "ERROR" })}
+                    </Tag>
                   </Popover>
                 ) : (
-                  <Tag color="red">{t("common.syncError", { defaultValue: "ERROR" })}</Tag>
+                  <Tag color="red">
+                    {t("common.syncError", { defaultValue: "ERROR" })}
+                  </Tag>
                 )
               ) : uiSync.state === "syncing" ? (
-                <Tag color="processing">{t("common.syncing", { defaultValue: "SYNCING" })}</Tag>
+                <Tag color="processing">
+                  {t("common.syncing", { defaultValue: "SYNCING" })}
+                </Tag>
               ) : uiSync.state === "loading" ? (
-                <Tag color="processing">{t("common.loading", { defaultValue: "LOADING" })}</Tag>
+                <Tag color="processing">
+                  {t("common.loading", { defaultValue: "LOADING" })}
+                </Tag>
               ) : (
-                <Tag color="green">{t("common.synced", { defaultValue: "SYNCED" })}</Tag>
+                <Tag color="green">
+                  {t("common.synced", { defaultValue: "SYNCED" })}
+                </Tag>
               )}
               {uiSync.state === "error" ? (
                 <Button size="small" onClick={() => requestUiSyncReload()}>
@@ -3935,37 +5043,61 @@ export function SituationMonitorContent() {
             <Space size={6} align="center">
               <Tag color={realtimeState.connected ? "green" : "default"}>
                 {realtimeState.connected
-                  ? t("situationMonitor.realtime.connected", { defaultValue: "RT ON" })
-                  : t("situationMonitor.realtime.disconnected", { defaultValue: "RT OFF" })}
+                  ? t("situationMonitor.realtime.connected", {
+                      defaultValue: "RT ON",
+                    })
+                  : t("situationMonitor.realtime.disconnected", {
+                      defaultValue: "RT OFF",
+                    })}
               </Tag>
               {!realtimeState.connected && realtimeState.error ? (
                 <Popover content={realtimeState.error}>
                   <Tag color="orange">
-                    {t("situationMonitor.realtime.error", { defaultValue: "RT ERROR" })}
+                    {t("situationMonitor.realtime.error", {
+                      defaultValue: "RT ERROR",
+                    })}
                   </Tag>
                 </Popover>
               ) : null}
             </Space>
           ) : null}
           <Space size={8} align="center">
-            <Switch checked={autoRefresh} onChange={(checked) => setAutoRefresh(checked)} />
+            <Switch
+              checked={autoRefresh}
+              onChange={(checked) => setAutoRefresh(checked)}
+            />
             <Typography.Text type="secondary">
-              {t("situationMonitor.autoRefresh", { defaultValue: "Auto refresh" })}
+              {t("situationMonitor.autoRefresh", {
+                defaultValue: "Auto refresh",
+              })}
             </Typography.Text>
           </Space>
           <Space size={8} align="center">
-            <Switch checked={translateToZh} onChange={(checked) => setTranslateToZh(checked)} />
+            <Switch
+              checked={translateToZh}
+              onChange={(checked) => setTranslateToZh(checked)}
+            />
             <Typography.Text type="secondary">
-              {t("situationMonitor.translateToZh", { defaultValue: "Translate to Simplified Chinese" })}
+              {t("situationMonitor.translateToZh", {
+                defaultValue: "Translate to Simplified Chinese",
+              })}
             </Typography.Text>
           </Space>
           {translateToZh && data?.translation && !data.translation.applied ? (
             data.translation.error ? (
               <Popover content={data.translation.error}>
-                <Tag color="red">{t("situationMonitor.translateError", { defaultValue: "TRANSLATION ERROR" })}</Tag>
+                <Tag color="red">
+                  {t("situationMonitor.translateError", {
+                    defaultValue: "TRANSLATION ERROR",
+                  })}
+                </Tag>
               </Popover>
             ) : (
-              <Tag color="red">{t("situationMonitor.translateError", { defaultValue: "TRANSLATION ERROR" })}</Tag>
+              <Tag color="red">
+                {t("situationMonitor.translateError", {
+                  defaultValue: "TRANSLATION ERROR",
+                })}
+              </Tag>
             )
           ) : null}
           {updatedAt ? (
@@ -3977,7 +5109,7 @@ export function SituationMonitorContent() {
                   month: "2-digit",
                   day: "2-digit",
                   hour: "2-digit",
-                  minute: "2-digit"
+                  minute: "2-digit",
                 }),
               })}
             </Typography.Text>
@@ -3985,8 +5117,12 @@ export function SituationMonitorContent() {
           {refreshStage !== "idle" ? (
             <Tag color="processing">
               {refreshStage === "core"
-                ? t("situationMonitor.refresh.core", { defaultValue: "Refreshing core" })
-                : t("situationMonitor.refresh.external", { defaultValue: "Loading external" })}
+                ? t("situationMonitor.refresh.core", {
+                    defaultValue: "Refreshing core",
+                  })
+                : t("situationMonitor.refresh.external", {
+                    defaultValue: "Loading external",
+                  })}
             </Tag>
           ) : null}
           {typeof data?.analyzedItems === "number" ? (
@@ -4009,7 +5145,9 @@ export function SituationMonitorContent() {
         description={
           <Space direction="vertical" size={6}>
             <Space wrap size={8}>
-              <Tag color="default">{t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}</Tag>
+              <Tag color="default">
+                {t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}
+              </Tag>
               <Typography.Text type="secondary">
                 {t("situationMonitor.notice.globalSignals", {
                   defaultValue:
@@ -4018,16 +5156,26 @@ export function SituationMonitorContent() {
               </Typography.Text>
             </Space>
             <Space wrap size={8}>
-              <Tag color="blue">{t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })}</Tag>
+              <Tag color="blue">
+                {t("situationMonitor.notice.internalLabel", {
+                  defaultValue: "INT",
+                })}
+              </Tag>
               <Typography.Text type="secondary">
                 {t("situationMonitor.notice.internalDescription", {
-                  defaultValue: "Processed internal headlines from this project.",
+                  defaultValue:
+                    "Processed internal headlines from this project.",
                 })}
               </Typography.Text>
-              <Tag color="purple">{t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}</Tag>
+              <Tag color="purple">
+                {t("situationMonitor.notice.gdeltLabel", {
+                  defaultValue: "GDELT",
+                })}
+              </Tag>
               <Typography.Text type="secondary">
                 {t("situationMonitor.notice.gdeltDescription", {
-                  defaultValue: "Fallback headlines from GDELT when internal coverage is thin.",
+                  defaultValue:
+                    "Fallback headlines from GDELT when internal coverage is thin.",
                 })}
               </Typography.Text>
             </Space>
@@ -4046,7 +5194,10 @@ export function SituationMonitorContent() {
             onClose={() => setFeedbackNotice(null)}
             action={
               feedbackNotice.type === "success" ? (
-                <Button size="small" onClick={() => void load({ includeExternal: false })}>
+                <Button
+                  size="small"
+                  onClick={() => void load({ includeExternal: false })}
+                >
                   {t("common.refresh", { defaultValue: "Refresh" })}
                 </Button>
               ) : null
@@ -4079,9 +5230,21 @@ export function SituationMonitorContent() {
                     })}
                   </Typography.Text>
                   <Space wrap size={8}>
-                    <Tag color="default">{t("situationMonitor.shared.label", { defaultValue: "GLOBAL" })}</Tag>
-                    <Tag color="blue">{t("situationMonitor.notice.internalLabel", { defaultValue: "INT" })}</Tag>
-                    <Tag color="purple">{t("situationMonitor.notice.gdeltLabel", { defaultValue: "GDELT" })}</Tag>
+                    <Tag color="default">
+                      {t("situationMonitor.shared.label", {
+                        defaultValue: "GLOBAL",
+                      })}
+                    </Tag>
+                    <Tag color="blue">
+                      {t("situationMonitor.notice.internalLabel", {
+                        defaultValue: "INT",
+                      })}
+                    </Tag>
+                    <Tag color="purple">
+                      {t("situationMonitor.notice.gdeltLabel", {
+                        defaultValue: "GDELT",
+                      })}
+                    </Tag>
                   </Space>
                 </Space>
               }
@@ -4096,23 +5259,40 @@ export function SituationMonitorContent() {
             >
               {canEditLayout
                 ? t("situationMonitor.layout.done", { defaultValue: "Done" })
-                : t("situationMonitor.layout.edit", { defaultValue: "Edit layout" })}
+                : t("situationMonitor.layout.edit", {
+                    defaultValue: "Edit layout",
+                  })}
             </Button>
           ) : null}
           <Divider style={{ margin: "12px 0" }} />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Space size={8} wrap>
-              <Typography.Text>{t("situationMonitor.presets.title", { defaultValue: "Presets" })}</Typography.Text>
+              <Typography.Text>
+                {t("situationMonitor.presets.title", {
+                  defaultValue: "Presets",
+                })}
+              </Typography.Text>
               {activePreset ? (
                 <Tag color="geekblue">
-                  {activePreset.nameKey ? t(activePreset.nameKey, { defaultValue: activePreset.name }) : activePreset.name}
+                  {activePreset.nameKey
+                    ? t(activePreset.nameKey, {
+                        defaultValue: activePreset.name,
+                      })
+                    : activePreset.name}
                 </Tag>
               ) : (
-                <Tag color="default">{t("situationMonitor.presets.custom", { defaultValue: "Custom" })}</Tag>
+                <Tag color="default">
+                  {t("situationMonitor.presets.custom", {
+                    defaultValue: "Custom",
+                  })}
+                </Tag>
               )}
             </Space>
             <Space size={8} wrap>
-              <Switch checked={resetLayoutOnPreset} onChange={(checked) => setResetLayoutOnPreset(checked)} />
+              <Switch
+                checked={resetLayoutOnPreset}
+                onChange={(checked) => setResetLayoutOnPreset(checked)}
+              />
               <Typography.Text type="secondary">
                 {t("situationMonitor.presets.resetLayout", {
                   defaultValue: "Reset layout when applying",
@@ -4128,7 +5308,11 @@ export function SituationMonitorContent() {
                     <Button
                       key={preset.id}
                       size="small"
-                      onClick={() => applyPreset(preset.id, { resetLayout: resetLayoutOnPreset })}
+                      onClick={() =>
+                        applyPreset(preset.id, {
+                          resetLayout: resetLayoutOnPreset,
+                        })
+                      }
                     >
                       {t("common.apply", { defaultValue: "Apply" })}
                     </Button>,
@@ -4136,11 +5320,15 @@ export function SituationMonitorContent() {
                 >
                   <Space direction="vertical" size={0}>
                     <Typography.Text>
-                      {preset.nameKey ? t(preset.nameKey, { defaultValue: preset.name }) : preset.name}
+                      {preset.nameKey
+                        ? t(preset.nameKey, { defaultValue: preset.name })
+                        : preset.name}
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       {preset.descriptionKey
-                        ? t(preset.descriptionKey, { defaultValue: preset.description })
+                        ? t(preset.descriptionKey, {
+                            defaultValue: preset.description,
+                          })
                         : preset.description}
                     </Typography.Text>
                   </Space>
@@ -4150,7 +5338,9 @@ export function SituationMonitorContent() {
           </Space>
           <Space wrap>
             <Button onClick={() => resetPanels()}>
-              {t("situationMonitor.panels.reset", { defaultValue: "Reset panels" })}
+              {t("situationMonitor.panels.reset", {
+                defaultValue: "Reset panels",
+              })}
             </Button>
           </Space>
           <List
@@ -4168,11 +5358,15 @@ export function SituationMonitorContent() {
               >
                 <Space size={8}>
                   <Typography.Text>
-                    {panel.titleKey ? t(panel.titleKey, { defaultValue: panel.title }) : panel.title}
+                    {panel.titleKey
+                      ? t(panel.titleKey, { defaultValue: panel.title })
+                      : panel.title}
                   </Typography.Text>
                   {panel.locked ? (
                     <Tag color="default">
-                      {t("situationMonitor.panels.fixed", { defaultValue: "Fixed" })}
+                      {t("situationMonitor.panels.fixed", {
+                        defaultValue: "Fixed",
+                      })}
                     </Tag>
                   ) : null}
                 </Space>
@@ -4183,7 +5377,9 @@ export function SituationMonitorContent() {
       </Drawer>
 
       <Drawer
-        title={t("situationMonitor.narrative.reportMissed", { defaultValue: "Report missed" })}
+        title={t("situationMonitor.narrative.reportMissed", {
+          defaultValue: "Report missed",
+        })}
         open={feedbackDrawerOpen}
         onClose={() => setFeedbackDrawerOpen(false)}
         width={screens.md ? 420 : "100%"}
@@ -4191,19 +5387,27 @@ export function SituationMonitorContent() {
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Typography.Text type="secondary">
             {t("situationMonitor.narrative.reportMissedHint", {
-              defaultValue: "Pick a headline that should have triggered a narrative/correlation signal, then choose the expected signal.",
+              defaultValue:
+                "Pick a headline that should have triggered a narrative/correlation signal, then choose the expected signal.",
             })}
           </Typography.Text>
           <Divider style={{ margin: "12px 0" }} />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
-            <Typography.Text>{t("situationMonitor.narrative.missedHeadline", { defaultValue: "Headline" })}</Typography.Text>
+            <Typography.Text>
+              {t("situationMonitor.narrative.missedHeadline", {
+                defaultValue: "Headline",
+              })}
+            </Typography.Text>
             <Select
               showSearch
               value={missedHeadlineId || undefined}
-              placeholder={t("situationMonitor.narrative.missedHeadlinePlaceholder", { defaultValue: "Select a headline" })}
+              placeholder={t(
+                "situationMonitor.narrative.missedHeadlinePlaceholder",
+                { defaultValue: "Select a headline" },
+              )}
               options={feedbackCandidateHeadlines.map((headline) => ({
                 value: headline.id,
-                label: `${headline.source} · ${translateToZh ? headline.titleZh ?? headline.title : headline.title}`,
+                label: `${headline.source} · ${translateToZh ? (headline.titleZh ?? headline.title) : headline.title}`,
               }))}
               filterOption={(input, option) =>
                 String(option?.label ?? "")
@@ -4219,19 +5423,33 @@ export function SituationMonitorContent() {
                 const headline = feedbackHeadlineById.get(missedHeadlineId);
                 if (!headline) return null;
                 const href = headline.link ? safeHttpUrl(headline.link) : null;
-                const title = translateToZh ? headline.titleZh ?? headline.title : headline.title;
-                const date = Number.isFinite(headline.timestamp) ? new Date(headline.timestamp) : null;
+                const title = translateToZh
+                  ? (headline.titleZh ?? headline.title)
+                  : headline.title;
+                const date = Number.isFinite(headline.timestamp)
+                  ? new Date(headline.timestamp)
+                  : null;
                 return (
-                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                  <Space
+                    direction="vertical"
+                    size={6}
+                    style={{ width: "100%" }}
+                  >
                     {href ? (
-                      <Typography.Link href={href} target="_blank" rel="noreferrer">
+                      <Typography.Link
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         {title}
                       </Typography.Link>
                     ) : (
                       <Typography.Text>{title}</Typography.Text>
                     )}
                     <Space size={8} wrap>
-                      <Typography.Text type="secondary">{headline.source}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {headline.source}
+                      </Typography.Text>
                       {date ? (
                         <Typography.Text type="secondary">
                           {formatDateTime(date, locale, {
@@ -4242,7 +5460,9 @@ export function SituationMonitorContent() {
                           })}
                         </Typography.Text>
                       ) : null}
-                      <Tag color="blue">{categoryLabels[headline.category]}</Tag>
+                      <Tag color="blue">
+                        {categoryLabels[headline.category]}
+                      </Tag>
                     </Space>
                     {renderHeadlineSummary(headline)}
                   </Space>
@@ -4251,12 +5471,26 @@ export function SituationMonitorContent() {
             </Card>
           ) : null}
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
-            <Typography.Text>{t("situationMonitor.narrative.missedSignalType", { defaultValue: "Signal type" })}</Typography.Text>
+            <Typography.Text>
+              {t("situationMonitor.narrative.missedSignalType", {
+                defaultValue: "Signal type",
+              })}
+            </Typography.Text>
             <Select
               value={missedSignalType}
               options={[
-                { value: "narrative", label: t("situationMonitor.narrative.title", { defaultValue: "Narrative" }) },
-                { value: "correlation", label: t("situationMonitor.correlation.title", { defaultValue: "Correlation" }) },
+                {
+                  value: "narrative",
+                  label: t("situationMonitor.narrative.title", {
+                    defaultValue: "Narrative",
+                  }),
+                },
+                {
+                  value: "correlation",
+                  label: t("situationMonitor.correlation.title", {
+                    defaultValue: "Correlation",
+                  }),
+                },
               ]}
               onChange={(value) => {
                 setMissedSignalType(value as "narrative" | "correlation");
@@ -4265,19 +5499,27 @@ export function SituationMonitorContent() {
             />
           </Space>
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
-            <Typography.Text>{t("situationMonitor.narrative.missedSignal", { defaultValue: "Expected signal" })}</Typography.Text>
+            <Typography.Text>
+              {t("situationMonitor.narrative.missedSignal", {
+                defaultValue: "Expected signal",
+              })}
+            </Typography.Text>
             <Select
               showSearch
               loading={catalogLoading}
               value={missedSignalId || undefined}
-              placeholder={t("situationMonitor.narrative.missedSignalPlaceholder", { defaultValue: "Select a signal" })}
+              placeholder={t(
+                "situationMonitor.narrative.missedSignalPlaceholder",
+                { defaultValue: "Select a signal" },
+              )}
               options={
-                (missedSignalType === "narrative" ? signalCatalog?.narratives : signalCatalog?.correlations)?.map(
-                  (entry) => ({
-                    value: entry.id,
-                    label: `${entry.name} · ${entry.category}`,
-                  }),
-                ) ?? []
+                (missedSignalType === "narrative"
+                  ? signalCatalog?.narratives
+                  : signalCatalog?.correlations
+                )?.map((entry) => ({
+                  value: entry.id,
+                  label: `${entry.name} · ${entry.category}`,
+                })) ?? []
               }
               filterOption={(input, option) =>
                 String(option?.label ?? "")
@@ -4292,7 +5534,9 @@ export function SituationMonitorContent() {
               type="primary"
               disabled={!missedHeadlineId || !missedSignalId}
               onClick={() => {
-                const headline = missedHeadlineId ? feedbackHeadlineById.get(missedHeadlineId) : undefined;
+                const headline = missedHeadlineId
+                  ? feedbackHeadlineById.get(missedHeadlineId)
+                  : undefined;
                 if (!headline) {
                   return;
                 }
@@ -4329,7 +5573,9 @@ export function SituationMonitorContent() {
         <Alert
           type="info"
           showIcon
-          message={t("situationMonitor.panels.none", { defaultValue: "No panels enabled. Open Panels to re-enable." })}
+          message={t("situationMonitor.panels.none", {
+            defaultValue: "No panels enabled. Open Panels to re-enable.",
+          })}
         />
       ) : (
         <ResponsiveGridLayout
@@ -4343,7 +5589,9 @@ export function SituationMonitorContent() {
           margin={gridMargin}
           draggableHandle=".ant-card-head"
           draggableCancel=".ant-btn,.ant-select,.ant-select-selector,.ant-switch,a,button,input,textarea,[role='button']"
-          onBreakpointChange={(nextBreakpoint: string) => handleGridBreakpointChange(nextBreakpoint)}
+          onBreakpointChange={(nextBreakpoint: string) =>
+            handleGridBreakpointChange(nextBreakpoint)
+          }
           onDragStop={(nextLayout: Layout[]) => {
             handleLayoutChange(nextLayout);
           }}

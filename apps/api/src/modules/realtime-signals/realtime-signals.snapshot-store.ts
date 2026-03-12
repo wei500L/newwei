@@ -10,6 +10,7 @@ import type {
   RealtimeSignalMetricPoint,
   RealtimeSignalMetricSeries,
   RealtimeSignalSnapshotEvaluation,
+  RealtimeSignalSourceState,
   RealtimeSignalsInsightSnapshot,
   RealtimeSignalSource,
 } from "./realtime-signals.types";
@@ -168,6 +169,20 @@ export class RealtimeSignalsSnapshotStore {
     await this.cache.set(this.insightKey(orgId), snapshot, 60 * 60 * 12);
   }
 
+  async getSourceState(orgId: string, source: RealtimeSignalSource) {
+    return this.cache.get<RealtimeSignalSourceState>(
+      this.sourceStateKey(orgId, source),
+    );
+  }
+
+  async setSourceState(orgId: string, state: RealtimeSignalSourceState) {
+    await this.cache.set(
+      this.sourceStateKey(orgId, state.source),
+      state,
+      60 * 60 * 24 * 7,
+    );
+  }
+
   private seriesKey(orgId: string, metricSlug: string) {
     return `realtime-signals:series:${orgId}:${metricSlug}`;
   }
@@ -178,5 +193,9 @@ export class RealtimeSignalsSnapshotStore {
 
   private insightKey(orgId: string) {
     return `realtime-signals:insights:${orgId}`;
+  }
+
+  private sourceStateKey(orgId: string, source: RealtimeSignalSource) {
+    return `realtime-signals:source-state:${orgId}:${source}`;
   }
 }

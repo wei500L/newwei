@@ -787,6 +787,7 @@
       "volume": "成交量",
       "notAvailableShort": "暂无",
       "degraded": "趋势视图",
+      "emptyHintRefresh": "所选时间范围内暂无数据，请尝试扩大时间范围或刷新数据。",
       "degradedTooltip": "当前仅 {{count}} 个数据点，已切换为趋势视图以优化可读性；数据充足后将恢复 K 线图。",
       "insufficientDataTrendHint": "数据点不足，已切换为趋势视图。"
     },
@@ -7316,6 +7317,27 @@
         "surging": "激增",
         "rising": "上升",
         "stable": "稳定"
+      }
+    },
+    "realtimeSnapshot": {
+      "title": "实时快照",
+      "pizzint": "PizzINT",
+      "pizzintEmpty": "当前窗口暂无 PizzINT 快照。",
+      "tensionsTitle": "双边紧张度",
+      "tensionsEmpty": "当前暂无双边紧张度快照。",
+      "tensionPair": "国家对",
+      "score": "得分",
+      "changePct": "变化",
+      "trend": "趋势",
+      "updatedAt": "更新时间",
+      "adjustedScore": "调整分数",
+      "openLocations": "开放点位",
+      "activeSpikes": "活跃峰值",
+      "avgPop": "平均人流",
+      "trendStatus": {
+        "rising": "上升",
+        "stable": "稳定",
+        "falling": "下降"
       }
     },
     "narrative": {

@@ -1,3 +1,4 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import {
   createLogger,
   extractCountryCodeFromText,
@@ -20,13 +21,19 @@ import {
 import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
 import type {
   RealtimeSignalFetchResult,
+  RealtimeSignalRuntimeDiagnostics,
+  RealtimeSignalRuntimeSourceDiagnostics,
   RealtimeSignalSource,
+  RealtimeSignalSourceState,
+  RealtimeSignalsMarkerReadiness,
   RealtimeSignalsInsightSnapshot,
   RealtimeSignalsRuntimeConfig,
 } from "./realtime-signals.types";
 
 const logger = createLogger({ name: "realtime-signals" });
 const ACLED_API_URL = "https://acleddata.com/api/acled/read";
+const GDELT_UNREST_GEOJSON_URL =
+  "https://api.gdeltproject.org/api/v1/gkg_geojson";
 const GDELT_TENSION_PAIRS = [
   "usa_russia",
   "russia_ukraine",
@@ -90,6 +97,17 @@ const REALTIME_SIGNAL_INSIGHT_SOURCES = [
   "gdelt_tension",
   "pizzint",
 ] as const;
+const REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS = 24 * 7;
+const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
+  adsb: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+  ais: REALTIME_SIGNAL_METRIC_SLUGS.ais,
+  unrest: REALTIME_SIGNAL_METRIC_SLUGS.unrest,
+  outages: REALTIME_SIGNAL_METRIC_SLUGS.outages,
+  keyword_spike: REALTIME_SIGNAL_METRIC_SLUGS.keywordSpike,
+  pizzint: REALTIME_SIGNAL_METRIC_SLUGS.pizzint,
+  gdelt_tension: REALTIME_SIGNAL_METRIC_SLUGS.gdeltTension,
+  polymarket_leads: REALTIME_SIGNAL_METRIC_SLUGS.polymarketLeads,
+};
 
 type RealtimeSignalInsightSource =
   (typeof REALTIME_SIGNAL_INSIGHT_SOURCES)[number];
@@ -108,6 +126,12 @@ interface JsonFetchOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: unknown;
+}
+
+interface UnrestFeedFetchResult {
+  events: UnrestEventCandidate[];
+  configured: boolean;
+  error?: string;
 }
 
 @Injectable()
@@ -174,6 +198,7 @@ export class RealtimeSignalsService {
       if (!sourceConfig?.enabled) {
         continue;
       }
+      const previousSourceState = await this.store.getSourceState(orgId, source);
 
       const refreshState = await this.resolveRefreshState(
         orgId,
@@ -203,8 +228,30 @@ export class RealtimeSignalsService {
           });
         }
         await this.store.setLastRun(orgId, source, Date.now());
+        const primaryResult = results[0];
+        await this.store.setSourceState(orgId, {
+          source,
+          status: "success",
+          lastAttemptAt: nowIso,
+          lastSuccessAt: nowIso,
+          metricSlug: primaryResult?.metricSlug,
+          latestValue: primaryResult?.value,
+          context: this.toDiagnosticContext(primaryResult?.context),
+        });
         this.updateInsightSnapshot(nextInsight, source, results, nowIso);
       } catch (error) {
+        const nowIso = new Date().toISOString();
+        await this.store.setSourceState(orgId, {
+          source,
+          status: "error",
+          lastAttemptAt: nowIso,
+          lastSuccessAt: previousSourceState?.lastSuccessAt,
+          lastErrorAt: nowIso,
+          lastError: this.toDiagnosticErrorMessage(error),
+          metricSlug: previousSourceState?.metricSlug,
+          latestValue: previousSourceState?.latestValue,
+          context: previousSourceState?.context,
+        });
         logger.warn(
           {
             orgId,
@@ -217,6 +264,77 @@ export class RealtimeSignalsService {
     }
 
     await this.store.setInsightSnapshot(orgId, nextInsight);
+  }
+
+  async getRuntimeDiagnostics(
+    orgId: string,
+  ): Promise<RealtimeSignalsRuntimeDiagnostics> {
+    const [runtime, publicSettings, insight, markerReadiness] = await Promise.all(
+      [
+        this.getRuntimeConfig({ refreshAcledToken: false }),
+        this.settings.getPublicSettings(),
+        this.store.getInsightSnapshot(orgId),
+        this.getMarkerReadiness(orgId),
+      ],
+    );
+    const nowMs = Date.now();
+
+    const sources = await Promise.all(
+      REALTIME_SIGNAL_SOURCES.map(async (source) => {
+        const sourceConfig = runtime.sources[source];
+        const metricSlug = SOURCE_TO_METRIC_SLUG[source];
+        const [lastRunMs, sourceState, evaluation] = await Promise.all([
+          this.store.getLastRun(orgId, source),
+          this.store.getSourceState(orgId, source),
+          this.store.evaluateMetric(
+            orgId,
+            metricSlug,
+            Math.max(60, Math.round(sourceConfig.intervalSec / 60)),
+          ),
+        ]);
+
+        const context =
+          this.toDiagnosticContext(evaluation.context) ??
+          this.toDiagnosticContext(sourceState?.context);
+        const runtimeStatus = this.resolveRuntimeSourceStatus({
+          source,
+          sourceConfig,
+          sourceState,
+          lastRunMs,
+          context,
+          nowMs,
+        });
+
+        return {
+          source,
+          enabled: sourceConfig.enabled,
+          intervalSec: sourceConfig.intervalSec,
+          status: runtimeStatus.status,
+          statusReason: runtimeStatus.reason,
+          lastRunAt:
+            lastRunMs && Number.isFinite(lastRunMs)
+              ? new Date(lastRunMs).toISOString()
+              : undefined,
+          lastAttemptAt: sourceState?.lastAttemptAt,
+          lastSuccessAt: sourceState?.lastSuccessAt,
+          lastErrorAt: sourceState?.lastErrorAt,
+          lastError: sourceState?.lastError,
+          latestValue: evaluation.latest,
+          previousValue: evaluation.previous,
+          changePercent: evaluation.changePercent,
+          context,
+        } satisfies RealtimeSignalRuntimeSourceDiagnostics;
+      }),
+    );
+
+    return {
+      checkedAt: new Date().toISOString(),
+      settingsSource: publicSettings.source,
+      runtimeEnabled: runtime.enabled,
+      sources,
+      insight: insight ?? this.createEmptyInsightSnapshot(),
+      markerReadiness,
+    };
   }
 
   async evaluateMetric(
@@ -473,10 +591,12 @@ export class RealtimeSignalsService {
   }
 
   private async fetchUnrestSignal(runtime: RealtimeSignalsRuntimeConfig) {
-    const [acledEvents, gdeltEvents] = await Promise.all([
+    const [acledFeed, gdeltFeed] = await Promise.all([
       this.fetchAcledUnrestEvents(runtime),
       this.fetchGdeltUnrestEvents(runtime),
     ]);
+    const acledEvents = acledFeed.events;
+    const gdeltEvents = gdeltFeed.events;
     const merged = this.mergeUnrestEvents(acledEvents, gdeltEvents);
     const countries = new Set<string>();
     for (const entry of merged) {
@@ -504,10 +624,12 @@ export class RealtimeSignalsService {
           gdeltCount: gdeltEvents.length,
           dedupeReducedBy:
             acledEvents.length + gdeltEvents.length - merged.length,
-          acledConfigured: Boolean(
-            runtime.credentials.acledAccessToken?.trim(),
-          ),
+          acledConfigured: acledFeed.configured,
           countryCodes: Array.from(countries),
+          feedErrors: {
+            acled: acledFeed.error ?? null,
+            gdelt: gdeltFeed.error ?? null,
+          },
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
@@ -538,11 +660,18 @@ export class RealtimeSignalsService {
 
     const token = runtime.credentials.acledAccessToken?.trim();
     if (!token) {
-      return [] as UnrestEventCandidate[];
+      return {
+        events: [] as UnrestEventCandidate[],
+        configured: false,
+        error: "ACLED access token is not configured.",
+      } satisfies UnrestFeedFetchResult;
     }
 
     try {
-      return await fetchRows(token);
+      return {
+        events: await fetchRows(token),
+        configured: true,
+      } satisfies UnrestFeedFetchResult;
     } catch (error) {
       const status = this.readHttpStatus(error);
       if (status === 401 || status === 403) {
@@ -552,13 +681,20 @@ export class RealtimeSignalsService {
           if (refreshedToken?.trim()) {
             runtime.credentials.acledAccessToken = refreshedToken.trim();
             try {
-              return await fetchRows(refreshedToken.trim());
+              return {
+                events: await fetchRows(refreshedToken.trim()),
+                configured: true,
+              } satisfies UnrestFeedFetchResult;
             } catch (retryError) {
               logger.warn(
                 { err: retryError },
                 "ACLED unrest request failed after token refresh",
               );
-              return [] as UnrestEventCandidate[];
+              return {
+                events: [] as UnrestEventCandidate[],
+                configured: true,
+                error: this.toDiagnosticErrorMessage(retryError),
+              } satisfies UnrestFeedFetchResult;
             }
           }
         } catch (refreshError) {
@@ -569,16 +705,23 @@ export class RealtimeSignalsService {
         }
       }
       logger.warn({ err: error }, "ACLED unrest request failed");
-      return [] as UnrestEventCandidate[];
+      return {
+        events: [] as UnrestEventCandidate[],
+        configured: true,
+        error: this.toDiagnosticErrorMessage(error),
+      } satisfies UnrestFeedFetchResult;
     }
   }
 
   private async fetchGdeltUnrestEvents(runtime: RealtimeSignalsRuntimeConfig) {
-    const url = new URL("https://api.gdeltproject.org/api/v2/geo/geo");
-    url.searchParams.set("query", "protest");
-    url.searchParams.set("format", "geojson");
-    url.searchParams.set("maxrecords", "250");
-    url.searchParams.set("timespan", "7d");
+    const url = new URL(GDELT_UNREST_GEOJSON_URL);
+    url.searchParams.set("QUERY", "PROTEST");
+    url.searchParams.set("TIMESPAN", String(7 * 24 * 60));
+    url.searchParams.set("MAXROWS", "250");
+    url.searchParams.set(
+      "OUTPUTFIELDS",
+      "name,url,urlpubtimedate,urltone,mentionedthemes,geores",
+    );
 
     try {
       const payload = await this.fetchJsonWithRetry(url.toString(), runtime);
@@ -586,8 +729,7 @@ export class RealtimeSignalsService {
         (payload as { features?: unknown[] })?.features,
       );
 
-      const seenLocations = new Set<string>();
-      const rows: UnrestEventCandidate[] = [];
+      const grouped = new Map<string, UnrestEventCandidate>();
 
       for (let idx = 0; idx < features.length; idx += 1) {
         const feature = features[idx];
@@ -614,17 +756,19 @@ export class RealtimeSignalsService {
         if (!name) {
           continue;
         }
-
-        const locationKey = name.toLowerCase();
-        if (seenLocations.has(locationKey)) {
+        const mentionedThemes = this.normalizeString(
+          properties.mentionedthemes ?? properties.themes,
+        );
+        if (
+          mentionedThemes &&
+          !mentionedThemes.toLowerCase().includes("protest")
+        ) {
           continue;
         }
-
-        const reports = Math.max(
-          1,
-          Math.trunc(this.toFiniteNumber(properties.count) ?? 1),
+        const tone = this.toFiniteNumber(
+          properties.urltone ?? properties.tone ?? properties.toneavg,
         );
-        if (reports < 5) {
+        if (tone !== null && tone > 0.25) {
           continue;
         }
 
@@ -645,30 +789,65 @@ export class RealtimeSignalsService {
           continue;
         }
 
-        seenLocations.add(locationKey);
         const occurredAt = this.toIsoTimestamp(
-          properties.date ??
+          properties.urlpubtimedate ??
+            properties.date ??
             properties.event_date ??
             properties.timestamp ??
             properties.datetime ??
             Date.now(),
         );
         const countryRaw = name.split(",").pop()?.trim() ?? name;
-        rows.push({
-          id: `gdelt-${lat.toFixed(2)}-${lon.toFixed(2)}-${this.toDateBucket(occurredAt)}-${idx}`,
-          lat,
-          lon,
-          occurredAt,
-          source: "gdelt",
-          countryCode: this.extractCountryCode(countryRaw),
-          reports,
-        });
+        const aggregateKey = `${name.toLowerCase()}:${this.toDateBucket(occurredAt)}`;
+        const existing = grouped.get(aggregateKey);
+        if (!existing) {
+          grouped.set(aggregateKey, {
+            id: `gdelt-${lat.toFixed(2)}-${lon.toFixed(2)}-${this.toDateBucket(occurredAt)}-${idx}`,
+            lat,
+            lon,
+            occurredAt,
+            source: "gdelt",
+            countryCode: this.extractCountryCode(countryRaw),
+            reports: 1,
+          });
+          continue;
+        }
+
+        existing.reports += 1;
+        const existingTs = Date.parse(existing.occurredAt);
+        const candidateTs = Date.parse(occurredAt);
+        if (
+          Number.isFinite(candidateTs) &&
+          (!Number.isFinite(existingTs) || candidateTs > existingTs)
+        ) {
+          existing.occurredAt = occurredAt;
+          existing.id = `gdelt-${lat.toFixed(2)}-${lon.toFixed(2)}-${this.toDateBucket(occurredAt)}-${idx}`;
+        }
+        if (!existing.countryCode) {
+          existing.countryCode = this.extractCountryCode(countryRaw);
+        }
       }
 
-      return rows;
+      const rows = Array.from(grouped.values())
+        .filter((entry) => entry.reports >= 2)
+        .sort((a, b) => {
+          if (b.reports !== a.reports) {
+            return b.reports - a.reports;
+          }
+          return Date.parse(b.occurredAt) - Date.parse(a.occurredAt);
+        });
+
+      return {
+        events: rows,
+        configured: true,
+      } satisfies UnrestFeedFetchResult;
     } catch (error) {
       logger.warn({ err: error }, "GDELT unrest request failed");
-      return [] as UnrestEventCandidate[];
+      return {
+        events: [] as UnrestEventCandidate[],
+        configured: true,
+        error: this.toDiagnosticErrorMessage(error),
+      } satisfies UnrestFeedFetchResult;
     }
   }
 
@@ -911,6 +1090,8 @@ export class RealtimeSignalsService {
         value: topSpikes.length,
         context: {
           source: "internal",
+          recentArticleCount: recentArticles.length,
+          baselineArticleCount: baselineArticles.length,
           spikes: topSpikes,
         },
       },
@@ -997,8 +1178,14 @@ export class RealtimeSignalsService {
 
   private async fetchGdeltTensionSignal(runtime: RealtimeSignalsRuntimeConfig) {
     const url = new URL("https://www.pizzint.watch/api/gdelt/batch");
+    const endDate = this.toCompactDayString(Date.now());
+    const startDate = this.toCompactDayString(
+      Date.now() - 7 * 24 * 60 * 60 * 1_000,
+    );
     url.searchParams.set("pairs", GDELT_TENSION_PAIRS.join(","));
     url.searchParams.set("method", "gpr");
+    url.searchParams.set("dateStart", startDate);
+    url.searchParams.set("dateEnd", endDate);
 
     const payload = await this.fetchJsonWithRetry(url.toString(), runtime);
     const tensions = this.parseTensionPayload(payload);
@@ -1011,6 +1198,8 @@ export class RealtimeSignalsService {
             source: "pizzint-gdelt",
             tensions: [],
             countryCodes: [],
+            dateStart: startDate,
+            dateEnd: endDate,
           },
         },
       ] satisfies RealtimeSignalFetchResult[];
@@ -1032,6 +1221,8 @@ export class RealtimeSignalsService {
           source: "pizzint-gdelt",
           tensions,
           countryCodes,
+          dateStart: startDate,
+          dateEnd: endDate,
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
@@ -1401,6 +1592,274 @@ export class RealtimeSignalsService {
     }
   }
 
+  private async getMarkerReadiness(
+    orgId: string,
+  ): Promise<RealtimeSignalsMarkerReadiness> {
+    const since = new Date(
+      Date.now() - REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS * 60 * 60 * 1_000,
+    );
+
+    const [
+      recentProcessedArticles,
+      recentProcessedArticlesWithLocation,
+      latestProcessedArticle,
+      mongoReadiness,
+    ] = await Promise.all([
+      this.prisma.processedArticle.count({
+        where: {
+          status: ProcessedArticleStatus.completed,
+          article: { orgId },
+          processedAt: { gte: since },
+        },
+      }),
+      this.prisma.processedArticle.count({
+        where: {
+          status: ProcessedArticleStatus.completed,
+          location: { not: null },
+          article: { orgId },
+          processedAt: { gte: since },
+        },
+      }),
+      this.prisma.processedArticle.findFirst({
+        where: {
+          status: ProcessedArticleStatus.completed,
+          article: { orgId },
+        },
+        orderBy: { processedAt: "desc" },
+        select: { processedAt: true },
+      }),
+      this.getMongoMarkerReadiness(orgId, since),
+    ]);
+
+    return {
+      windowHours: REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS,
+      recentProcessedArticles,
+      recentProcessedArticlesWithLocation,
+      recentMongoProcessedItems: mongoReadiness.recentProcessedItems,
+      recentMongoProcessedItemsWithLocation:
+        mongoReadiness.recentProcessedItemsWithLocation,
+      latestProcessedArticleAt: latestProcessedArticle?.processedAt?.toISOString(),
+      latestProcessedItemAt: mongoReadiness.latestProcessedItemAt,
+      newsMarkersReady:
+        recentProcessedArticlesWithLocation > 0 ||
+        mongoReadiness.recentProcessedItemsWithLocation > 0,
+    };
+  }
+
+  private async getMongoMarkerReadiness(
+    orgId: string,
+    since: Date,
+  ): Promise<{
+    recentProcessedItems: number;
+    recentProcessedItemsWithLocation: number;
+    latestProcessedItemAt?: string;
+  }> {
+    try {
+      const timeFilter = {
+        $or: [
+          { sortAt: { $gte: since } },
+          { ingestedAt: { $gte: since } },
+          { createdAt: { $gte: since } },
+        ],
+      };
+      const [recentProcessedItems, recentProcessedItemsWithLocation, latestDoc] =
+        await Promise.all([
+          ProcessedItemModel.countDocuments({
+            orgId,
+            status: "completed",
+            duplicateOf: null,
+            ...timeFilter,
+          }),
+          ProcessedItemModel.countDocuments({
+            orgId,
+            status: "completed",
+            duplicateOf: null,
+            "result.location": { $exists: true, $nin: [null, ""] },
+            ...timeFilter,
+          }),
+          ProcessedItemModel.findOne(
+            {
+              orgId,
+              status: "completed",
+              duplicateOf: null,
+            },
+            {
+              sortAt: 1,
+              ingestedAt: 1,
+              createdAt: 1,
+            },
+          )
+            .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
+            .lean()
+            .exec(),
+        ]);
+
+      const latestProcessedItemValue =
+        latestDoc?.sortAt ?? latestDoc?.ingestedAt ?? latestDoc?.createdAt;
+      return {
+        recentProcessedItems,
+        recentProcessedItemsWithLocation,
+        latestProcessedItemAt: latestProcessedItemValue
+          ? this.toIsoTimestamp(latestProcessedItemValue)
+          : undefined,
+      };
+    } catch (error) {
+      logger.warn(
+        { orgId, err: error },
+        "Failed to load mongo marker readiness diagnostics",
+      );
+      return {
+        recentProcessedItems: 0,
+        recentProcessedItemsWithLocation: 0,
+      };
+    }
+  }
+
+  private resolveRuntimeSourceStatus(options: {
+    source: RealtimeSignalSource;
+    sourceConfig: { enabled: boolean; intervalSec: number };
+    sourceState: RealtimeSignalSourceState | undefined;
+    lastRunMs: number | null;
+    context: Record<string, unknown> | undefined;
+    nowMs: number;
+  }) {
+    if (!options.sourceConfig.enabled) {
+      return {
+        status: "idle" as const,
+        reason: "Source is disabled.",
+      };
+    }
+
+    const missingConfigReason = this.getMissingConfigReason(
+      options.source,
+      options.context,
+    );
+    if (missingConfigReason) {
+      return {
+        status: "not_configured" as const,
+        reason: missingConfigReason,
+      };
+    }
+
+    const lastSuccessMs = options.sourceState?.lastSuccessAt
+      ? Date.parse(options.sourceState.lastSuccessAt)
+      : options.lastRunMs;
+    const lastErrorMs = options.sourceState?.lastErrorAt
+      ? Date.parse(options.sourceState.lastErrorAt)
+      : Number.NaN;
+    if (
+      options.sourceState?.status === "error" &&
+      options.sourceState.lastError &&
+      (!Number.isFinite(lastSuccessMs) ||
+        (Number.isFinite(lastErrorMs) && lastErrorMs >= lastSuccessMs))
+    ) {
+      return {
+        status: "error" as const,
+        reason: options.sourceState.lastError,
+      };
+    }
+
+    if (!Number.isFinite(lastSuccessMs)) {
+      return {
+        status: "idle" as const,
+        reason: "No successful run yet.",
+      };
+    }
+
+    const staleAfterMs = Math.max(
+      options.sourceConfig.intervalSec * 2 * 1_000,
+      5 * 60_000,
+    );
+    if (options.nowMs - lastSuccessMs > staleAfterMs) {
+      return {
+        status: "stale" as const,
+        reason: "Last successful run is stale.",
+      };
+    }
+
+    const contextReason = this.getRuntimeContextReason(
+      options.source,
+      options.context,
+    );
+    return {
+      status: "ok" as const,
+      reason: contextReason,
+    };
+  }
+
+  private getMissingConfigReason(
+    source: RealtimeSignalSource,
+    context: Record<string, unknown> | undefined,
+  ) {
+    if (!context) {
+      return undefined;
+    }
+    if (source === "ais" && context.configured === false) {
+      return "Relay base URL is not configured.";
+    }
+    if (source === "outages" && context.configured === false) {
+      return "Cloudflare API token is not configured.";
+    }
+    return undefined;
+  }
+
+  private getRuntimeContextReason(
+    source: RealtimeSignalSource,
+    context: Record<string, unknown> | undefined,
+  ) {
+    if (!context) {
+      return undefined;
+    }
+    if (source === "unrest") {
+      const feedErrors =
+        context.feedErrors &&
+        typeof context.feedErrors === "object" &&
+        !Array.isArray(context.feedErrors)
+          ? (context.feedErrors as Record<string, unknown>)
+          : null;
+      const messages = [
+        this.normalizeString(feedErrors?.acled),
+        this.normalizeString(feedErrors?.gdelt),
+      ].filter((value): value is string => Boolean(value));
+      if (messages.length > 0) {
+        return messages.join(" | ");
+      }
+      return undefined;
+    }
+    return undefined;
+  }
+
+  private toDiagnosticContext(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private toDiagnosticErrorMessage(error: unknown) {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (error && typeof error === "object") {
+      const status = this.readHttpStatus(error);
+      const statusText = this.normalizeString(
+        (error as { statusText?: unknown }).statusText,
+      );
+      const body = this.normalizeString((error as { body?: unknown }).body);
+      const detail = [status, statusText].filter(Boolean).join(" ");
+      if (detail && body) {
+        return `${detail}: ${body}`.slice(0, 400);
+      }
+      if (detail) {
+        return detail.slice(0, 240);
+      }
+      if (body) {
+        return body.slice(0, 400);
+      }
+    }
+    return "Unknown realtime signal fetch error";
+  }
+
   private fromEnvConfig(): RealtimeSignalsRuntimeConfig {
     const cfg = this.env.realtimeSignalsConfig;
     return {
@@ -1620,6 +2079,14 @@ export class RealtimeSignalsService {
     }
 
     return new Date().toISOString();
+  }
+
+  private toCompactDayString(value: Date | number) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(date.getTime())) {
+      return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    }
+    return date.toISOString().slice(0, 10).replace(/-/g, "");
   }
 
   private toDateBucket(value: string) {
