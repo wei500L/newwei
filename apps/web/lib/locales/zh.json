@@ -870,6 +870,16 @@
         "eurCny": "EUR/CNY"
       }
     },
+    "economicSeries": {
+      "shanghaiCompositeIndex": "上证指数日线",
+      "csi300Index": "沪深300指数日线",
+      "szComponentIndex": "深证成指日线",
+      "csi1000Index": "中证1000指数日线",
+      "sp500Index": "标普500指数",
+      "usdCnySpot": "美元兑人民币即期汇率",
+      "eurCnySpot": "欧元兑人民币即期汇率",
+      "bitcoinSpotPrice": "比特币实时价格"
+    },
     "economicAlert": {
       "alerts": {
         "cpiHigh": "CPI 偏高",
@@ -949,7 +959,12 @@
     },
     "economicShort": {
       "heatmap": {
-        "tooltip": "提示",
+        "tooltip": "{{pair}} · {{period}} 变动 {{value}}",
+        "buckets": {
+          "1d": "1日",
+          "3d": "3日",
+          "7d": "7日"
+        },
         "empty": "暂无热力图"
       },
       "crypto": {
@@ -5510,7 +5525,42 @@
       "python": "Python 版本 {{version}}",
       "refreshStatus": "刷新状态",
       "upgrade": "升级",
-      "request": "请求 {{requestId}} · 从 {{before}} 到 {{after}}"
+      "request": "请求 {{requestId}} · 从 {{before}} 到 {{after}}",
+      "manualRefresh": {
+        "title": "手动刷新经济数据",
+        "description": "为单个经济看板预设加入后台 AKShare 抓取任务。只会触发该预设下已启用的数据项。",
+        "permissionRequired": "需要 economicdata.manage 权限才能触发后台经济数据刷新任务。",
+        "fields": {
+          "preset": "刷新范围",
+          "presetPlaceholder": "选择一个看板预设"
+        },
+        "actions": {
+          "trigger": "触发刷新"
+        },
+        "messages": {
+          "started": "已为 {{preset}} 加入后台刷新任务。"
+        },
+        "errors": {
+          "triggerFailed": "触发经济数据刷新失败。",
+          "permissionRequired": "你没有触发经济数据刷新的权限。",
+          "presetRequired": "请先选择一个看板预设。",
+          "statusLoadFailed": "加载预设刷新状态失败。"
+        },
+        "modal": {
+          "title": "确认触发 AKShare 刷新？",
+          "content": "这会为 {{preset}} 预设加入后台 AKShare 抓取任务。请求会立即返回，数据会在 worker 完成后稍后更新。",
+          "confirm": "触发"
+        },
+        "summary": {
+          "title": "预设最近状态",
+          "totalItems": "配置项数量",
+          "enabledItems": "已启用项",
+          "lastRunAt": "最近运行",
+          "lastStatus": "最近状态",
+          "lastError": "最近错误",
+          "polling": "正在轮询预设状态，等待新的运行活动..."
+        }
+      }
     },
     "title": "系统设置",
     "adminOnly": "管理员仅",

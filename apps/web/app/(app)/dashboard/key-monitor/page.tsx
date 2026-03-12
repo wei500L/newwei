@@ -11,6 +11,7 @@ import { resolveLocale } from "@/lib/i18n";
 
 import { CandlestickCard } from "../components/candlestick-card";
 import { EconomicChartCard } from "../components/economic-chart-card";
+import { resolveEconomicSeriesLabel } from "../utils/economic-series-labels";
 
 import { FX_FIELD_NAMES } from "./constants";
 
@@ -39,6 +40,8 @@ export default function KeyMonitorPage() {
   const goldSeries = seriesMap["gold_futures_main"];
   const oilSeries = seriesMap["crude_oil_futures_main"];
   const copperSeries = seriesMap["copper_futures_main"];
+  const resolveSeriesLabel = (slug: string) =>
+    resolveEconomicSeriesLabel({ slug, locale, t, seriesMap });
   const chartMeta = (
     <ChartDataMeta
       state={chartState}
@@ -95,10 +98,14 @@ export default function KeyMonitorPage() {
                 series={[
                   {
                     slug: "shanghai_composite_index",
-                    label: t("dashboard.keyMonitor.series.shanghaiComposite"),
+                    label: resolveSeriesLabel("shanghai_composite_index"),
                     field: "close",
                   },
-                  { slug: "sp500_index", label: t("dashboard.keyMonitor.series.sp500"), field: "close" },
+                  {
+                    slug: "sp500_index",
+                    label: resolveSeriesLabel("sp500_index"),
+                    field: "close",
+                  },
                 ]}
               />
             </Col>
@@ -128,8 +135,14 @@ export default function KeyMonitorPage() {
                 insights={insightsMap}
                 meta={chartMeta}
                 series={[
-                  { slug: "usd_cny_spot", label: t("dashboard.keyMonitor.series.usdCny") },
-                  { slug: "eur_cny_spot", label: t("dashboard.keyMonitor.series.eurCny") },
+                  {
+                    slug: "usd_cny_spot",
+                    label: resolveSeriesLabel("usd_cny_spot"),
+                  },
+                  {
+                    slug: "eur_cny_spot",
+                    label: resolveSeriesLabel("eur_cny_spot"),
+                  },
                 ]}
               />
             </Col>

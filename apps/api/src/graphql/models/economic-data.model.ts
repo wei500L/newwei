@@ -13,6 +13,16 @@ export enum TimeGranularity {
   realtime = "realtime"
 }
 
+export enum EconomicDashboardRefreshPreset {
+  keyMonitor = "keyMonitor",
+  militaryAlert = "militaryAlert",
+  economicAlert = "economicAlert",
+  economicShort = "economicShort",
+  economicMedium = "economicMedium",
+  economicLong = "economicLong",
+  livelihoodPrices = "livelihoodPrices"
+}
+
 registerEnumType(EconomicDataFrequency, {
   name: "EconomicDataFrequency"
 });
@@ -26,6 +36,9 @@ registerEnumType(EconomicDataValueType, {
 });
 
 registerEnumType(TimeGranularity, { name: "TimeGranularity" });
+registerEnumType(EconomicDashboardRefreshPreset, {
+  name: "EconomicDashboardRefreshPreset"
+});
 
 @ObjectType()
 export class EconomicDataItemModel {
@@ -118,4 +131,28 @@ export class EconomicDataFetchConfigModel {
 
   @Field(() => EconomicDataItemModel)
   item!: EconomicDataItemModel;
+}
+
+@ObjectType()
+export class EconomicDataRefreshPresetStatusModel {
+  @Field(() => EconomicDashboardRefreshPreset)
+  preset!: EconomicDashboardRefreshPreset;
+
+  @Field()
+  categoryKey!: string;
+
+  @Field(() => Int)
+  totalItems!: number;
+
+  @Field(() => Int)
+  enabledItems!: number;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  lastRunAt?: Date | null;
+
+  @Field(() => EconomicDataRunStatus, { nullable: true })
+  lastStatus?: EconomicDataRunStatus | null;
+
+  @Field(() => String, { nullable: true })
+  lastError?: string | null;
 }

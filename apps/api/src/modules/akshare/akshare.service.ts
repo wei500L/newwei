@@ -1,5 +1,13 @@
 import { AkshareResponseModel } from "@modular/mongo";
-import { CommonTimeZone, ensureTraceId, getCurrentTraceId, parseDateTime, toISODateString } from "@modular/utils";
+import {
+  CommonTimeZone,
+  ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
+  ensureTraceId,
+  getCurrentTraceId,
+  parseDateTime,
+  toISODateString,
+  type EconomicDashboardRefreshPreset
+} from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
 import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
@@ -10,6 +18,7 @@ import { lastValueFrom } from "rxjs";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
@@ -44,6 +53,22 @@ interface UpsertDataPointRow {
   sourceField: string;
   metaJson: string | null;
   estimatedBytes: number;
+}
+
+interface EconomicRefreshTriggerContext {
+  actorId?: string | null;
+  orgId?: string | null;
+  ipAddress?: string | null;
+}
+
+export interface EconomicRefreshPresetStatusSummary {
+  preset: EconomicDashboardRefreshPreset;
+  categoryKey: string;
+  totalItems: number;
+  enabledItems: number;
+  lastRunAt: Date | null;
+  lastStatus: EconomicDataRunStatus | null;
+  lastError: string | null;
 }
 
 @Injectable()
@@ -658,6 +683,142 @@ export class AkshareService implements OnModuleInit {
       );
     }
     return true;
+  }
+
+  async triggerDataFetchForPreset(
+    preset: EconomicDashboardRefreshPreset,
+    triggerContext?: EconomicRefreshTriggerContext
+  ) {
+    const presetConfig = ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset];
+    if (!presetConfig) {
+      throw new BadRequestException(`Unsupported economic refresh preset: ${preset}`);
+    }
+
+    const configs = await this.prisma.economicDataFetchConfig.findMany({
+      where: {
+        isEnabled: true,
+        item: {
+          isActive: true,
+          categories: {
+            some: {
+              category: {
+                key: presetConfig.categoryKey
+              }
+            }
+          }
+        }
+      },
+      select: {
+        item: {
+          select: {
+            slug: true
+          }
+        }
+      }
+    });
+
+    const slugs = Array.from(
+      new Set(
+        configs
+          .map((config) => config.item.slug.trim())
+          .filter((slug) => slug.length > 0)
+      )
+    );
+
+    if (slugs.length === 0) {
+      throw new BadRequestException(
+        `No enabled economic data items are configured for refresh preset '${preset}'.`
+      );
+    }
+
+    await this.triggerDataFetch(slugs, triggerContext?.actorId ?? undefined);
+
+    if (triggerContext?.orgId) {
+      await writeAuditLogBestEffort(
+        this.prisma,
+        {
+          data: {
+            orgId: triggerContext.orgId,
+            actorId: triggerContext.actorId ?? null,
+            resource: "economic_data",
+            action: "manual_refresh_trigger",
+            ipAddress: triggerContext.ipAddress ?? null,
+            metadata: toPrismaJsonValue({
+              preset,
+              categoryKey: presetConfig.categoryKey,
+              slugCount: slugs.length,
+              slugs
+            })
+          }
+        },
+        {
+          orgId: triggerContext.orgId,
+          actorId: triggerContext.actorId ?? null,
+          preset,
+          categoryKey: presetConfig.categoryKey
+        }
+      );
+    }
+
+    return true;
+  }
+
+  async getRefreshPresetStatus(
+    preset: EconomicDashboardRefreshPreset
+  ): Promise<EconomicRefreshPresetStatusSummary> {
+    const presetConfig = ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset];
+    if (!presetConfig) {
+      throw new BadRequestException(`Unsupported economic refresh preset: ${preset}`);
+    }
+
+    const configs = await this.prisma.economicDataFetchConfig.findMany({
+      where: {
+        item: {
+          categories: {
+            some: {
+              category: {
+                key: presetConfig.categoryKey
+              }
+            }
+          }
+        }
+      },
+      select: {
+        isEnabled: true,
+        lastRunAt: true,
+        lastStatus: true,
+        lastError: true,
+        item: {
+          select: {
+            isActive: true
+          }
+        }
+      }
+    });
+
+    const enabledConfigs = configs.filter((config) => config.isEnabled && config.item.isActive);
+    const latestConfig = enabledConfigs.reduce<(typeof enabledConfigs)[number] | null>(
+      (currentLatest, candidate) => {
+        if (!candidate.lastRunAt) {
+          return currentLatest;
+        }
+        if (!currentLatest?.lastRunAt) {
+          return candidate;
+        }
+        return candidate.lastRunAt > currentLatest.lastRunAt ? candidate : currentLatest;
+      },
+      null
+    );
+
+    return {
+      preset,
+      categoryKey: presetConfig.categoryKey,
+      totalItems: configs.length,
+      enabledItems: enabledConfigs.length,
+      lastRunAt: latestConfig?.lastRunAt ?? null,
+      lastStatus: latestConfig?.lastStatus ?? null,
+      lastError: latestConfig?.lastError ?? null
+    };
   }
 
   async fetchAndPersist(slug: string) {
@@ -1319,8 +1480,9 @@ export class AkshareService implements OnModuleInit {
       return points;
     }
 
-    const hasMore = points.length > limit;
-    const resultPoints = hasMore ? points.slice(0, limit) : points;
+    const pageLimit = limit ?? DEFAULT_PAGE_LIMIT;
+    const hasMore = points.length > pageLimit;
+    const resultPoints = hasMore ? points.slice(0, pageLimit) : points;
     const lastPoint = resultPoints.at(-1);
     const paginationMeta: PaginationMeta = {
       hasMore,

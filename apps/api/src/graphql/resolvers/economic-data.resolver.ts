@@ -1,16 +1,30 @@
-import { computeEconomicSeriesInsights } from "@modular/utils";
-import { UseGuards } from "@nestjs/common";
-import { Args, Mutation, Query, Resolver } from "@nestjs/graphql";
+import {
+  computeEconomicSeriesInsights,
+  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetValue
+} from "@modular/utils";
+import { ForbiddenException, UseGuards } from "@nestjs/common";
+import { Args, Context, Mutation, Query, Resolver } from "@nestjs/graphql";
 import { EconomicDataFrequency, EconomicDataValueType } from "@prisma/client";
 
+import { resolveRequestIp } from "../../common/request-ip";
 import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
 import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
 import { AkshareService } from "../../modules/akshare/akshare.service";
+import type { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { ActionRateLimitService } from "../../modules/cache/action-rate-limit.service";
 import { PaginatedResult } from "../../modules/akshare/akshare.types";
 import { HasPermission } from "../decorators/has-permission.decorator";
 import { DateRangeInput, PaginationInput, TriggerDataFetchInput } from "../dto/economic-data.input";
+import type { GqlRequest } from "../graphql.types";
 import { EconomicDataWithInsightsModel } from "../models/economic-data-with-insights.model";
-import { EconomicDataFetchConfigModel, EconomicDataPointModel, PaginatedEconomicDataPointsModel, TimeGranularity } from "../models/economic-data.model";
+import {
+  EconomicDashboardRefreshPreset,
+  EconomicDataFetchConfigModel,
+  EconomicDataPointModel,
+  EconomicDataRefreshPresetStatusModel,
+  PaginatedEconomicDataPointsModel,
+  TimeGranularity
+} from "../models/economic-data.model";
 import {
   EconomicInsightClassification,
   EconomicInsightDirection,
@@ -22,7 +36,18 @@ import { parseMetadata } from "../schemas/economic-data.schema";
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
 export class EconomicDataResolver {
-  constructor(private readonly akshareService: AkshareService) {}
+  constructor(
+    private readonly akshareService: AkshareService,
+    private readonly actionRateLimit: ActionRateLimitService
+  ) {}
+
+  private requireUser(req: GqlRequest): AuthenticatedUser {
+    const user = req?.user as AuthenticatedUser | undefined;
+    if (!user) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    return user;
+  }
 
   private resolveDefaultGranularityForRange(start: Date, end: Date): TimeGranularity {
     const diffMs = Math.max(0, end.getTime() - start.getTime());
@@ -349,6 +374,21 @@ export class EconomicDataResolver {
   }
 
   @HasPermission("economicdata.manage")
+  @Query(() => EconomicDataRefreshPresetStatusModel)
+  async economicDataRefreshPresetStatus(
+    @Args("preset", { type: () => EconomicDashboardRefreshPreset })
+    preset: EconomicDashboardRefreshPreset
+  ): Promise<EconomicDataRefreshPresetStatusModel> {
+    const summary = await this.akshareService.getRefreshPresetStatus(
+      preset as unknown as EconomicDashboardRefreshPresetValue
+    );
+    return {
+      ...summary,
+      preset
+    };
+  }
+
+  @HasPermission("economicdata.manage")
   @Mutation(() => EconomicDataFetchConfigModel)
   async updateEconomicDataFetchConfig(
     @Args("slug") slug: string,
@@ -380,6 +420,29 @@ export class EconomicDataResolver {
   @Mutation(() => Boolean)
   async triggerDataFetch(@Args("input") input: TriggerDataFetchInput): Promise<boolean> {
     await this.akshareService.triggerDataFetch(input.slugs);
+    return true;
+  }
+
+  @HasPermission("economicdata.manage")
+  @Mutation(() => Boolean)
+  async triggerEconomicDataRefreshPreset(
+    @Context("req") req: GqlRequest,
+    @Args("preset", { type: () => EconomicDashboardRefreshPreset })
+    preset: EconomicDashboardRefreshPreset
+  ): Promise<boolean> {
+    const requester = this.requireUser(req);
+    await this.actionRateLimit.enforceEconomicDataRefreshPreset(
+      requester.orgId,
+      preset as unknown as EconomicDashboardRefreshPresetValue
+    );
+    await this.akshareService.triggerDataFetchForPreset(
+      preset as unknown as EconomicDashboardRefreshPresetValue,
+      {
+        actorId: requester.id,
+        orgId: requester.orgId,
+        ipAddress: resolveRequestIp(req) ?? null
+      }
+    );
     return true;
   }
 }

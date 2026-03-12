@@ -1,3 +1,4 @@
+import type { EconomicDashboardRefreshPreset } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
@@ -51,6 +52,15 @@ export class ActionRateLimitService {
       limit: 1,
       windowSeconds: 3600,
       message: "Akshare upgrade can only be triggered once per hour. Please wait before trying again."
+    });
+  }
+
+  async enforceEconomicDataRefreshPreset(orgId: string, preset: EconomicDashboardRefreshPreset) {
+    await this.consumeOrThrow({
+      key: `economic-data:refresh:${orgId}:${preset}`,
+      limit: 1,
+      windowSeconds: 60,
+      message: "This economic data preset was refreshed recently. Please wait before triggering it again."
     });
   }
 

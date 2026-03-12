@@ -963,6 +963,16 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+enum EconomicDashboardRefreshPreset {
+  economicAlert
+  economicLong
+  economicMedium
+  economicShort
+  keyMonitor
+  livelihoodPrices
+  militaryAlert
+}
+
 type EconomicDataFetchConfigModel {
   frequency: EconomicDataFrequency!
   id: String!
@@ -1002,6 +1012,16 @@ type EconomicDataPointModel {
   timestamp: DateTime!
   unit: String
   value: Float!
+}
+
+type EconomicDataRefreshPresetStatusModel {
+  categoryKey: String!
+  enabledItems: Int!
+  lastError: String
+  lastRunAt: DateTime
+  lastStatus: EconomicDataRunStatus
+  preset: EconomicDashboardRefreshPreset!
+  totalItems: Int!
 }
 
 enum EconomicDataRunStatus {
@@ -1432,6 +1452,7 @@ type Mutation {
   translateRssItems(input: TranslateRssItemsInput!): TranslateRssItemsPayloadModel!
   triggerAlertRule(ruleId: String!): Boolean!
   triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
+  triggerEconomicDataRefreshPreset(preset: EconomicDashboardRefreshPreset!): Boolean!
   updateAlertChannel(input: UpdateAlertChannelInput!): AlertChannelModel!
   updateAlertEventStatus(input: UpdateAlertEventStatusInput!): AlertEventModel!
   updateAuditLogRetention(input: UpdateAuditLogRetentionInput!): AuditLogRetentionModel!
@@ -2055,6 +2076,7 @@ type Query {
   crawlTasks(after: String, first: Int! = 20, search: String, status: CrawlTaskStatus): CrawlTaskConnection!
   dashboards: [DashboardModel!]!
   economicDataFetchConfigs: [EconomicDataFetchConfigModel!]!
+  economicDataRefreshPresetStatus(preset: EconomicDashboardRefreshPreset!): EconomicDataRefreshPresetStatusModel!
   entityImpactGraphSettings: EntityImpactGraphSettingsModel!
   entitySentimentSeries(days: Int, entityName: String!, entityType: String): [EntitySentimentSnapshotModel!]!
   eventGroups(itemsPerGroup: Int, limit: Int, minGroupSize: Int, windowDays: Int): [EventGroupModel!]!

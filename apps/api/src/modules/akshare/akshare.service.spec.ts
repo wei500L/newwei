@@ -1,6 +1,14 @@
-import { EconomicDataFrequency, EconomicDataValueType, Prisma } from "@prisma/client";
+import { ECONOMIC_DASHBOARD_REFRESH_PRESET } from "@modular/utils";
+import { BadRequestException } from "@nestjs/common";
+import { EconomicDataFrequency, EconomicDataRunStatus, EconomicDataValueType, Prisma } from "@prisma/client";
 
 import { AkshareService } from "./akshare.service";
+
+const writeAuditLogBestEffortMock = jest.fn().mockResolvedValue(undefined);
+
+jest.mock("../audit/audit-log.writer", () => ({
+  writeAuditLogBestEffort: (...args: unknown[]) => writeAuditLogBestEffortMock(...args)
+}));
 
 describe("AkshareService.getDataByCategory", () => {
   it("buckets per-series (itemId + sourceField) so category queries do not mix indicators", async () => {
@@ -188,5 +196,199 @@ describe("AkshareService.getDataByCategory", () => {
     const callArg = (prisma.economicDataPoint.findMany as jest.Mock).mock.calls[0]?.[0] as any;
     expect(callArg?.where?.recordedAt?.gte?.toISOString()).toBe("2024-01-01T10:00:00.000Z");
     expect(callArg?.where?.recordedAt?.lte?.toISOString()).toBe("2024-01-01T12:59:59.999Z");
+  });
+});
+
+describe("AkshareService.triggerDataFetchForPreset", () => {
+  beforeEach(() => {
+    writeAuditLogBestEffortMock.mockClear();
+  });
+
+  it("queues enabled active item slugs for the selected preset category", async () => {
+    const prisma = {
+      economicDataFetchConfig: {
+        findMany: jest.fn().mockResolvedValue([
+          { item: { slug: "china_cpi" } },
+          { item: { slug: "china_cpi" } },
+          { item: { slug: "china_ppi" } }
+        ])
+      }
+    };
+    const queue = {
+      add: jest.fn().mockResolvedValue(undefined)
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      queue as any,
+      {} as any
+    );
+
+    await service.triggerDataFetchForPreset(ECONOMIC_DASHBOARD_REFRESH_PRESET.economicAlert);
+
+    expect(prisma.economicDataFetchConfig.findMany).toHaveBeenCalledWith({
+      where: {
+        isEnabled: true,
+        item: {
+          isActive: true,
+          categories: {
+            some: {
+              category: {
+                key: "economic-alert"
+              }
+            }
+          }
+        }
+      },
+      select: {
+        item: {
+          select: {
+            slug: true
+          }
+        }
+      }
+    });
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(queue.add).toHaveBeenNthCalledWith(
+      1,
+      "manual-fetch",
+      expect.objectContaining({ dataItemId: "china_cpi" }),
+      { removeOnComplete: true }
+    );
+    expect(queue.add).toHaveBeenNthCalledWith(
+      2,
+      "manual-fetch",
+      expect.objectContaining({ dataItemId: "china_ppi" }),
+      { removeOnComplete: true }
+    );
+    expect(writeAuditLogBestEffortMock).not.toHaveBeenCalled();
+  });
+
+  it("writes an audit log when actor context is provided", async () => {
+    const prisma = {
+      economicDataFetchConfig: {
+        findMany: jest.fn().mockResolvedValue([{ item: { slug: "china_cpi" } }])
+      }
+    };
+    const queue = {
+      add: jest.fn().mockResolvedValue(undefined)
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      queue as any,
+      {} as any
+    );
+
+    await service.triggerDataFetchForPreset(
+      ECONOMIC_DASHBOARD_REFRESH_PRESET.economicAlert,
+      {
+        actorId: "user-1",
+        orgId: "org-1",
+        ipAddress: "10.0.0.1"
+      }
+    );
+
+    expect(writeAuditLogBestEffortMock).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orgId: "org-1",
+          actorId: "user-1",
+          resource: "economic_data",
+          action: "manual_refresh_trigger",
+          ipAddress: "10.0.0.1",
+          metadata: expect.objectContaining({
+            preset: ECONOMIC_DASHBOARD_REFRESH_PRESET.economicAlert,
+            categoryKey: "economic-alert",
+            slugCount: 1,
+            slugs: ["china_cpi"]
+          })
+        })
+      }),
+      expect.objectContaining({
+        orgId: "org-1",
+        actorId: "user-1",
+        preset: ECONOMIC_DASHBOARD_REFRESH_PRESET.economicAlert
+      })
+    );
+  });
+
+  it("rejects presets without enabled configured slugs", async () => {
+    const prisma = {
+      economicDataFetchConfig: {
+        findMany: jest.fn().mockResolvedValue([])
+      }
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { add: jest.fn() } as any,
+      {} as any
+    );
+
+    await expect(
+      service.triggerDataFetchForPreset(ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices)
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("returns the latest enabled preset status summary", async () => {
+    const service = new AkshareService(
+      {
+        economicDataFetchConfig: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              isEnabled: true,
+              lastRunAt: new Date("2026-03-12T10:00:00Z"),
+              lastStatus: EconomicDataRunStatus.success,
+              lastError: null,
+              item: { isActive: true }
+            },
+            {
+              isEnabled: true,
+              lastRunAt: new Date("2026-03-12T11:00:00Z"),
+              lastStatus: EconomicDataRunStatus.failed,
+              lastError: "timeout",
+              item: { isActive: true }
+            },
+            {
+              isEnabled: false,
+              lastRunAt: new Date("2026-03-12T12:00:00Z"),
+              lastStatus: EconomicDataRunStatus.success,
+              lastError: null,
+              item: { isActive: true }
+            }
+          ])
+        }
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
+
+    const summary = await service.getRefreshPresetStatus(
+      ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+    );
+
+    expect(summary).toEqual({
+      preset: ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices,
+      categoryKey: "livelihood-prices",
+      totalItems: 3,
+      enabledItems: 2,
+      lastRunAt: new Date("2026-03-12T11:00:00Z"),
+      lastStatus: EconomicDataRunStatus.failed,
+      lastError: "timeout"
+    });
   });
 });

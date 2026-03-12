@@ -1004,6 +1004,16 @@ export type DateRangeInput = {
   start: Scalars['DateTime']['input'];
 };
 
+export enum EconomicDashboardRefreshPreset {
+  EconomicAlert = 'economicAlert',
+  EconomicLong = 'economicLong',
+  EconomicMedium = 'economicMedium',
+  EconomicShort = 'economicShort',
+  KeyMonitor = 'keyMonitor',
+  LivelihoodPrices = 'livelihoodPrices',
+  MilitaryAlert = 'militaryAlert'
+}
+
 export type EconomicDataFetchConfigModel = {
   __typename?: 'EconomicDataFetchConfigModel';
   frequency: EconomicDataFrequency;
@@ -1043,6 +1053,17 @@ export type EconomicDataPointModel = {
   timestamp: Scalars['DateTime']['output'];
   unit?: Maybe<Scalars['String']['output']>;
   value: Scalars['Float']['output'];
+};
+
+export type EconomicDataRefreshPresetStatusModel = {
+  __typename?: 'EconomicDataRefreshPresetStatusModel';
+  categoryKey: Scalars['String']['output'];
+  enabledItems: Scalars['Int']['output'];
+  lastError?: Maybe<Scalars['String']['output']>;
+  lastRunAt?: Maybe<Scalars['DateTime']['output']>;
+  lastStatus?: Maybe<EconomicDataRunStatus>;
+  preset: EconomicDashboardRefreshPreset;
+  totalItems: Scalars['Int']['output'];
 };
 
 export enum EconomicDataRunStatus {
@@ -1474,6 +1495,7 @@ export type Mutation = {
   translateRssItems: TranslateRssItemsPayloadModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
+  triggerEconomicDataRefreshPreset: Scalars['Boolean']['output'];
   updateAlertChannel: AlertChannelModel;
   updateAlertEventStatus: AlertEventModel;
   updateAuditLogRetention: AuditLogRetentionModel;
@@ -1630,6 +1652,11 @@ export type MutationTriggerAlertRuleArgs = {
 
 export type MutationTriggerDataFetchArgs = {
   input: TriggerDataFetchInput;
+};
+
+
+export type MutationTriggerEconomicDataRefreshPresetArgs = {
+  preset: EconomicDashboardRefreshPreset;
 };
 
 
@@ -2375,6 +2402,7 @@ export type Query = {
   crawlTasks: CrawlTaskConnection;
   dashboards: Array<DashboardModel>;
   economicDataFetchConfigs: Array<EconomicDataFetchConfigModel>;
+  economicDataRefreshPresetStatus: EconomicDataRefreshPresetStatusModel;
   entityImpactGraphSettings: EntityImpactGraphSettingsModel;
   entitySentimentSeries: Array<EntitySentimentSnapshotModel>;
   eventGroups: Array<EventGroupModel>;
@@ -2500,6 +2528,11 @@ export type QueryCrawlTasksArgs = {
   first?: Scalars['Int']['input'];
   search?: InputMaybe<Scalars['String']['input']>;
   status?: InputMaybe<CrawlTaskStatus>;
+};
+
+
+export type QueryEconomicDataRefreshPresetStatusArgs = {
+  preset: EconomicDashboardRefreshPreset;
 };
 
 
@@ -3435,6 +3468,13 @@ export type EconomicFetchConfigsQueryVariables = Exact<{ [key: string]: never; }
 
 export type EconomicFetchConfigsQuery = { __typename?: 'Query', economicDataFetchConfigs: Array<{ __typename?: 'EconomicDataFetchConfigModel', id: string, frequency: EconomicDataFrequency, repeatCron?: string | null, isEnabled: boolean, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null, item: { __typename?: 'EconomicDataItemModel', slug: string, displayName: string, groupLabel?: string | null, defaultUnit?: string | null, metadata?: any | null } }> };
 
+export type EconomicDataRefreshPresetStatusQueryVariables = Exact<{
+  preset: EconomicDashboardRefreshPreset;
+}>;
+
+
+export type EconomicDataRefreshPresetStatusQuery = { __typename?: 'Query', economicDataRefreshPresetStatus: { __typename?: 'EconomicDataRefreshPresetStatusModel', preset: EconomicDashboardRefreshPreset, categoryKey: string, totalItems: number, enabledItems: number, lastRunAt?: any | null, lastStatus?: EconomicDataRunStatus | null, lastError?: string | null } };
+
 export type UpdateEconomicFetchConfigMutationVariables = Exact<{
   slug: Scalars['String']['input'];
   frequency?: InputMaybe<EconomicDataFrequency>;
@@ -3451,6 +3491,13 @@ export type TriggerEconomicDataFetchMutationVariables = Exact<{
 
 
 export type TriggerEconomicDataFetchMutation = { __typename?: 'Mutation', triggerDataFetch: boolean };
+
+export type TriggerEconomicDataRefreshPresetMutationVariables = Exact<{
+  preset: EconomicDashboardRefreshPreset;
+}>;
+
+
+export type TriggerEconomicDataRefreshPresetMutation = { __typename?: 'Mutation', triggerEconomicDataRefreshPreset: boolean };
 
 export type GetEntityImpactGraphQueryVariables = Exact<{
   input?: InputMaybe<EntityImpactGraphInput>;
@@ -5263,6 +5310,52 @@ export type EconomicFetchConfigsQueryHookResult = ReturnType<typeof useEconomicF
 export type EconomicFetchConfigsLazyQueryHookResult = ReturnType<typeof useEconomicFetchConfigsLazyQuery>;
 export type EconomicFetchConfigsSuspenseQueryHookResult = ReturnType<typeof useEconomicFetchConfigsSuspenseQuery>;
 export type EconomicFetchConfigsQueryResult = Apollo.QueryResult<EconomicFetchConfigsQuery, EconomicFetchConfigsQueryVariables>;
+export const EconomicDataRefreshPresetStatusDocument = gql`
+    query EconomicDataRefreshPresetStatus($preset: EconomicDashboardRefreshPreset!) {
+  economicDataRefreshPresetStatus(preset: $preset) {
+    preset
+    categoryKey
+    totalItems
+    enabledItems
+    lastRunAt
+    lastStatus
+    lastError
+  }
+}
+    `;
+
+/**
+ * __useEconomicDataRefreshPresetStatusQuery__
+ *
+ * To run a query within a React component, call `useEconomicDataRefreshPresetStatusQuery` and pass it any options that fit your needs.
+ * When your component renders, `useEconomicDataRefreshPresetStatusQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useEconomicDataRefreshPresetStatusQuery({
+ *   variables: {
+ *      preset: // value for 'preset'
+ *   },
+ * });
+ */
+export function useEconomicDataRefreshPresetStatusQuery(baseOptions: Apollo.QueryHookOptions<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables> & ({ variables: EconomicDataRefreshPresetStatusQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>(EconomicDataRefreshPresetStatusDocument, options);
+      }
+export function useEconomicDataRefreshPresetStatusLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>(EconomicDataRefreshPresetStatusDocument, options);
+        }
+export function useEconomicDataRefreshPresetStatusSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>(EconomicDataRefreshPresetStatusDocument, options);
+        }
+export type EconomicDataRefreshPresetStatusQueryHookResult = ReturnType<typeof useEconomicDataRefreshPresetStatusQuery>;
+export type EconomicDataRefreshPresetStatusLazyQueryHookResult = ReturnType<typeof useEconomicDataRefreshPresetStatusLazyQuery>;
+export type EconomicDataRefreshPresetStatusSuspenseQueryHookResult = ReturnType<typeof useEconomicDataRefreshPresetStatusSuspenseQuery>;
+export type EconomicDataRefreshPresetStatusQueryResult = Apollo.QueryResult<EconomicDataRefreshPresetStatusQuery, EconomicDataRefreshPresetStatusQueryVariables>;
 export const UpdateEconomicFetchConfigDocument = gql`
     mutation UpdateEconomicFetchConfig($slug: String!, $frequency: EconomicDataFrequency, $repeatCron: String, $isEnabled: Boolean) {
   updateEconomicDataFetchConfig(
@@ -5348,6 +5441,37 @@ export function useTriggerEconomicDataFetchMutation(baseOptions?: Apollo.Mutatio
 export type TriggerEconomicDataFetchMutationHookResult = ReturnType<typeof useTriggerEconomicDataFetchMutation>;
 export type TriggerEconomicDataFetchMutationResult = Apollo.MutationResult<TriggerEconomicDataFetchMutation>;
 export type TriggerEconomicDataFetchMutationOptions = Apollo.BaseMutationOptions<TriggerEconomicDataFetchMutation, TriggerEconomicDataFetchMutationVariables>;
+export const TriggerEconomicDataRefreshPresetDocument = gql`
+    mutation TriggerEconomicDataRefreshPreset($preset: EconomicDashboardRefreshPreset!) {
+  triggerEconomicDataRefreshPreset(preset: $preset)
+}
+    `;
+export type TriggerEconomicDataRefreshPresetMutationFn = Apollo.MutationFunction<TriggerEconomicDataRefreshPresetMutation, TriggerEconomicDataRefreshPresetMutationVariables>;
+
+/**
+ * __useTriggerEconomicDataRefreshPresetMutation__
+ *
+ * To run a mutation, you first call `useTriggerEconomicDataRefreshPresetMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useTriggerEconomicDataRefreshPresetMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [triggerEconomicDataRefreshPresetMutation, { data, loading, error }] = useTriggerEconomicDataRefreshPresetMutation({
+ *   variables: {
+ *      preset: // value for 'preset'
+ *   },
+ * });
+ */
+export function useTriggerEconomicDataRefreshPresetMutation(baseOptions?: Apollo.MutationHookOptions<TriggerEconomicDataRefreshPresetMutation, TriggerEconomicDataRefreshPresetMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<TriggerEconomicDataRefreshPresetMutation, TriggerEconomicDataRefreshPresetMutationVariables>(TriggerEconomicDataRefreshPresetDocument, options);
+      }
+export type TriggerEconomicDataRefreshPresetMutationHookResult = ReturnType<typeof useTriggerEconomicDataRefreshPresetMutation>;
+export type TriggerEconomicDataRefreshPresetMutationResult = Apollo.MutationResult<TriggerEconomicDataRefreshPresetMutation>;
+export type TriggerEconomicDataRefreshPresetMutationOptions = Apollo.BaseMutationOptions<TriggerEconomicDataRefreshPresetMutation, TriggerEconomicDataRefreshPresetMutationVariables>;
 export const GetEntityImpactGraphDocument = gql`
     query GetEntityImpactGraph($input: EntityImpactGraphInput) {
   getEntityImpactGraph(input: $input) {

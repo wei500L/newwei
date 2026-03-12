@@ -72,6 +72,18 @@ query EconomicFetchConfigs {
   }
 }
 
+query EconomicDataRefreshPresetStatus($preset: EconomicDashboardRefreshPreset!) {
+  economicDataRefreshPresetStatus(preset: $preset) {
+    preset
+    categoryKey
+    totalItems
+    enabledItems
+    lastRunAt
+    lastStatus
+    lastError
+  }
+}
+
 mutation UpdateEconomicFetchConfig($slug: String!, $frequency: EconomicDataFrequency, $repeatCron: String, $isEnabled: Boolean) {
   updateEconomicDataFetchConfig(slug: $slug, frequency: $frequency, repeatCron: $repeatCron, isEnabled: $isEnabled) {
     id
@@ -93,4 +105,8 @@ mutation UpdateEconomicFetchConfig($slug: String!, $frequency: EconomicDataFrequ
 
 mutation TriggerEconomicDataFetch($slugs: [String!]!) {
   triggerDataFetch(input: { slugs: $slugs })
+}
+
+mutation TriggerEconomicDataRefreshPreset($preset: EconomicDashboardRefreshPreset!) {
+  triggerEconomicDataRefreshPreset(preset: $preset)
 }

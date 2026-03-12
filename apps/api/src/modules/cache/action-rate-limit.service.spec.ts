@@ -1,3 +1,4 @@
+import { ECONOMIC_DASHBOARD_REFRESH_PRESET } from "@modular/utils";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 
 import { ActionRateLimitService } from "./action-rate-limit.service";
@@ -123,6 +124,34 @@ describe("ActionRateLimitService", () => {
         1,
         3600
       );
+    });
+  });
+
+  describe("enforceEconomicDataRefreshPreset", () => {
+    it("limits refresh attempts per org and preset", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValue(true);
+
+      await service.enforceEconomicDataRefreshPreset(
+        "org-1",
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+      );
+
+      expect(rateLimiterMock.consume).toHaveBeenCalledWith(
+        "economic-data:refresh:org-1:livelihoodPrices",
+        1,
+        60
+      );
+    });
+
+    it("throws when the same preset is triggered too frequently", async () => {
+      rateLimiterMock.consume = jest.fn().mockResolvedValue(false);
+
+      await expect(
+        service.enforceEconomicDataRefreshPreset(
+          "org-1",
+          ECONOMIC_DASHBOARD_REFRESH_PRESET.keyMonitor
+        )
+      ).rejects.toThrow(TooManyRequestsException);
     });
   });
 });

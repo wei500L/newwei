@@ -1,6 +1,8 @@
+import { ECONOMIC_DASHBOARD_REFRESH_PRESET } from "@modular/utils";
 import { EconomicDataFrequency } from "@prisma/client";
 
 import type { AkshareService } from "../../modules/akshare/akshare.service";
+import { ActionRateLimitService } from "../../modules/cache/action-rate-limit.service";
 import { TimeGranularity } from "../models/economic-data.model";
 
 import { EconomicDataResolver } from "./economic-data.resolver";
@@ -10,15 +12,21 @@ describe("EconomicDataResolver", () => {
     getDataByCategory: jest.fn(),
     getCategoryBaseGranularity: jest.fn(),
     listFetchConfigs: jest.fn(),
+    getRefreshPresetStatus: jest.fn(),
     updateFetchConfig: jest.fn(),
-    triggerDataFetch: jest.fn()
+    triggerDataFetch: jest.fn(),
+    triggerDataFetchForPreset: jest.fn()
   } as unknown as AkshareService;
+  const mockActionRateLimit = {
+    enforceEconomicDataRefreshPreset: jest.fn()
+  } as unknown as ActionRateLimitService;
 
-  const resolver = new EconomicDataResolver(mockAkshareService);
+  const resolver = new EconomicDataResolver(mockAkshareService, mockActionRateLimit);
 
   beforeEach(() => {
     jest.clearAllMocks();
     (mockAkshareService.getCategoryBaseGranularity as jest.Mock).mockResolvedValue(null);
+    (mockActionRateLimit.enforceEconomicDataRefreshPreset as jest.Mock).mockResolvedValue(undefined);
   });
 
   describe("getEconomicData", () => {
@@ -622,6 +630,70 @@ describe("EconomicDataResolver", () => {
         "slug-3",
         "slug-4"
       ]);
+      expect(result).toBe(true);
+    });
+  });
+
+  describe("triggerEconomicDataRefreshPreset", () => {
+    const request = {
+      user: {
+        id: "user-1",
+        orgId: "org-1"
+      },
+      ip: "10.0.0.1"
+    } as any;
+
+    it("returns preset status summary from the service", async () => {
+      (mockAkshareService.getRefreshPresetStatus as jest.Mock).mockResolvedValue({
+        preset: ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices,
+        categoryKey: "livelihood-prices",
+        totalItems: 5,
+        enabledItems: 4,
+        lastRunAt: new Date("2026-03-12T12:00:00Z"),
+        lastStatus: "success",
+        lastError: null
+      });
+
+      const result = await resolver.economicDataRefreshPresetStatus(
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+      );
+
+      expect(mockAkshareService.getRefreshPresetStatus).toHaveBeenCalledWith(
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+      );
+      expect(result.enabledItems).toBe(4);
+    });
+
+    it("calls triggerDataFetchForPreset with the selected preset", async () => {
+      (mockAkshareService.triggerDataFetchForPreset as jest.Mock).mockResolvedValue(undefined);
+
+      await resolver.triggerEconomicDataRefreshPreset(
+        request,
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+      );
+
+      expect(mockActionRateLimit.enforceEconomicDataRefreshPreset).toHaveBeenCalledWith(
+        "org-1",
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices
+      );
+      expect(mockAkshareService.triggerDataFetchForPreset).toHaveBeenCalledWith(
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.livelihoodPrices,
+        {
+          actorId: "user-1",
+          orgId: "org-1",
+          ipAddress: "10.0.0.1"
+        }
+      );
+    });
+
+    it("returns true when the preset refresh is accepted", async () => {
+      (mockAkshareService.triggerDataFetchForPreset as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await resolver.triggerEconomicDataRefreshPreset(
+        request,
+        ECONOMIC_DASHBOARD_REFRESH_PRESET.keyMonitor
+      );
+
       expect(result).toBe(true);
     });
   });

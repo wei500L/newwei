@@ -9,6 +9,7 @@ import {
   InputNumber,
   Modal,
   Spin,
+  Select,
   Switch,
   Tabs,
   Tag,
@@ -18,7 +19,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AssistantSafetySettingsPanel } from "@/components/settings/assistant-safety-settings-panel";
@@ -53,11 +54,13 @@ import { SystemSecuritySettingsPanel } from "@/components/settings/system-securi
 import { UnitInputNumber } from "@/components/settings/unit-input-number";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
+  useEconomicDataRefreshPresetStatusQuery,
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
   useCrawlClientSettingsQuery,
   useNewsPromptConfigQuery,
   useRateLimitSettingsQuery,
+  useTriggerEconomicDataRefreshPresetMutation,
   useUpdateAuditLogRetentionMutation,
   useUpdateAuthCacheSettingsMutation,
   useUpdateCrawlClientSettingsMutation,
@@ -65,6 +68,7 @@ import {
   useUpdateRateLimitSettingsMutation,
 } from "@/graphql/generated";
 import type {
+  TriggerEconomicDataRefreshPresetMutationVariables,
   UpdateAuditLogRetentionMutationVariables,
   UpdateAuthCacheSettingsMutationVariables,
   UpdateCrawlClientSettingsMutationVariables,
@@ -73,6 +77,12 @@ import type {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import {
+  ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
+  ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER,
+  type EconomicDashboardRefreshPreset as EconomicDashboardRefreshPresetKey,
+} from "@modular/utils";
 
 interface RateLimitFieldGroupProps {
   title: string;
@@ -1357,17 +1367,27 @@ interface AkshareGatewayUpgradeStatusResponse {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function AkshareGatewaySettingsPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canManageEconomicData = permissions.includes("economicdata.manage");
+  const locale = resolveLocale(i18n.language);
   const [messageApi, contextHolder] = message.useMessage();
   const [loading, setLoading] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [refreshSubmitting, setRefreshSubmitting] = useState(false);
+  const [statusPolling, setStatusPolling] = useState(false);
+  const [selectedPreset, setSelectedPreset] =
+    useState<EconomicDashboardRefreshPresetKey>();
   const [version, setVersion] = useState<AkshareGatewayVersionResponse | null>(
     null,
   );
   const [status, setStatus] =
     useState<AkshareGatewayUpgradeStatusResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [triggerEconomicDataRefreshPreset] =
+    useTriggerEconomicDataRefreshPresetMutation();
+  const presetStatusBaselineRef = useRef<string | null>(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -1415,6 +1435,37 @@ function AkshareGatewaySettingsPanel() {
     void fetchVersion();
     void fetchStatus();
   }, [fetchStatus, fetchVersion]);
+
+  const presetQueryVariables = selectedPreset
+    ? {
+        preset:
+          selectedPreset as TriggerEconomicDataRefreshPresetMutationVariables["preset"],
+      }
+    : undefined;
+  const {
+    data: presetStatusData,
+    loading: presetStatusLoading,
+    error: presetStatusError,
+    refetch: refetchPresetStatus,
+  } = useEconomicDataRefreshPresetStatusQuery({
+    variables: presetQueryVariables as NonNullable<typeof presetQueryVariables>,
+    skip: !canManageEconomicData || !presetQueryVariables,
+    fetchPolicy: "network-only",
+    notifyOnNetworkStatusChange: true,
+    pollInterval: statusPolling ? 2000 : 0,
+  });
+
+  useEffect(() => {
+    if (!statusPolling) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setStatusPolling(false);
+    }, 30_000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [statusPolling]);
 
   const handleUpgrade = useCallback(() => {
     if (status?.upgradeEnabled === false) {
@@ -1510,6 +1561,13 @@ function AkshareGatewaySettingsPanel() {
   const currentVersion = version?.akshareVersion ?? "-";
   const pythonVersion = version?.pythonVersion ?? "-";
   const stage = status?.stage ?? "unknown";
+  const presetStatus = presetStatusData?.economicDataRefreshPresetStatus ?? null;
+  const selectedPresetConfig = selectedPreset
+    ? ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[selectedPreset]
+    : null;
+  const selectedPresetLabel = selectedPresetConfig
+    ? t(selectedPresetConfig.labelKey)
+    : "";
   const upgradeDisabledReason =
     status?.upgradeEnabled === false
       ? (status.disabledReason ??
@@ -1520,9 +1578,106 @@ function AkshareGatewaySettingsPanel() {
       ? "red"
       : stage === "restarting" || stage === "running" || stage === "queued"
         ? "orange"
-        : stage === "idle"
-          ? "green"
-          : "default";
+          : stage === "idle"
+            ? "green"
+            : "default";
+
+  useEffect(() => {
+    if (!statusPolling || !presetStatus) {
+      return;
+    }
+    const latestRunAt = presetStatus.lastRunAt ?? null;
+    if (latestRunAt && latestRunAt !== presetStatusBaselineRef.current) {
+      setStatusPolling(false);
+    }
+  }, [presetStatus, statusPolling]);
+
+  const handleTriggerManualRefresh = useCallback(() => {
+    if (!canManageEconomicData) {
+      messageApi.error(
+        t("systemSettings.akshare.manualRefresh.errors.permissionRequired"),
+      );
+      return;
+    }
+    if (!selectedPreset) {
+      messageApi.warning(
+        t("systemSettings.akshare.manualRefresh.errors.presetRequired"),
+      );
+      return;
+    }
+
+    Modal.confirm({
+      title: t("systemSettings.akshare.manualRefresh.modal.title"),
+      content: t("systemSettings.akshare.manualRefresh.modal.content", {
+        preset: selectedPresetLabel,
+      }),
+      okText: t("systemSettings.akshare.manualRefresh.modal.confirm"),
+      onOk: async () => {
+        setRefreshSubmitting(true);
+        try {
+          presetStatusBaselineRef.current = presetStatus?.lastRunAt ?? null;
+          await triggerEconomicDataRefreshPreset({
+            variables: {
+              preset:
+                selectedPreset as TriggerEconomicDataRefreshPresetMutationVariables["preset"],
+            },
+          });
+          await refetchPresetStatus();
+          setStatusPolling(true);
+          messageApi.success(
+            t("systemSettings.akshare.manualRefresh.messages.started", {
+              preset: selectedPresetLabel,
+            }),
+          );
+        } catch (error) {
+          captureClientError("Failed to trigger economic refresh preset", error);
+          messageApi.error(
+            error instanceof Error && error.message
+              ? error.message
+              : t("systemSettings.akshare.manualRefresh.errors.triggerFailed"),
+          );
+        } finally {
+          setRefreshSubmitting(false);
+        }
+      },
+    });
+  }, [
+    canManageEconomicData,
+    messageApi,
+    selectedPreset,
+    selectedPresetLabel,
+    presetStatus?.lastRunAt,
+    refetchPresetStatus,
+    t,
+    triggerEconomicDataRefreshPreset,
+  ]);
+
+  const handlePresetChange = useCallback((value: EconomicDashboardRefreshPresetKey) => {
+    setSelectedPreset(value);
+    setStatusPolling(false);
+    presetStatusBaselineRef.current = null;
+  }, []);
+
+  const formattedPresetLastRunAt = presetStatus?.lastRunAt
+    ? formatDateTime(presetStatus.lastRunAt, locale, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : t("common.never");
+  const presetStatusLabel = presetStatus?.lastStatus
+    ? t(`common.${presetStatus.lastStatus}`, {
+        defaultValue: presetStatus.lastStatus,
+      })
+    : t("common.notAvailable");
+  const presetStatusColor =
+    presetStatus?.lastStatus === "success"
+      ? "green"
+      : presetStatus?.lastStatus === "failed"
+        ? "red"
+        : "default";
 
   return (
     <>
@@ -1612,6 +1767,131 @@ function AkshareGatewaySettingsPanel() {
           >
             {status.error}
           </Typography.Paragraph>
+        ) : null}
+      </Card>
+
+      <Card
+        size="small"
+        title={t("systemSettings.akshare.manualRefresh.title")}
+      >
+        <Typography.Paragraph type="secondary">
+          {t("systemSettings.akshare.manualRefresh.description")}
+        </Typography.Paragraph>
+        {!canManageEconomicData ? (
+          <Alert
+            style={{ marginBottom: "1rem" }}
+            type="warning"
+            showIcon
+            message={t("systemSettings.akshare.manualRefresh.permissionRequired")}
+          />
+        ) : null}
+        <div
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 280, flex: "1 1 320px" }}>
+            <Typography.Text style={{ display: "block", marginBottom: 8 }}>
+              {t("systemSettings.akshare.manualRefresh.fields.preset")}
+            </Typography.Text>
+            <Select
+              value={selectedPreset}
+              placeholder={t(
+                "systemSettings.akshare.manualRefresh.fields.presetPlaceholder",
+              )}
+              onChange={(value) => handlePresetChange(value as EconomicDashboardRefreshPresetKey)}
+              disabled={!canManageEconomicData || refreshSubmitting}
+              options={ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER.map((preset) => ({
+                value: preset,
+                label: t(ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset].labelKey),
+              }))}
+            />
+          </div>
+          <Button
+            type="primary"
+            onClick={handleTriggerManualRefresh}
+            loading={refreshSubmitting}
+            disabled={
+              !canManageEconomicData || refreshSubmitting || !selectedPreset
+            }
+          >
+            {t("systemSettings.akshare.manualRefresh.actions.trigger")}
+          </Button>
+        </div>
+        {selectedPreset ? (
+          <div style={{ marginTop: "1rem" }}>
+            <Typography.Text strong>
+              {t("systemSettings.akshare.manualRefresh.summary.title")}
+            </Typography.Text>
+            {presetStatusError ? (
+              <Alert
+                style={{ marginTop: "0.75rem" }}
+                type="error"
+                showIcon
+                message={
+                  presetStatusError.message ||
+                  t("systemSettings.akshare.manualRefresh.errors.statusLoadFailed")
+                }
+              />
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "0.75rem",
+                  marginTop: "0.75rem",
+                }}
+              >
+                <Card size="small">
+                  <Typography.Text type="secondary">
+                    {t("systemSettings.akshare.manualRefresh.summary.totalItems")}
+                  </Typography.Text>
+                  <div>{presetStatus?.totalItems ?? "-"}</div>
+                </Card>
+                <Card size="small">
+                  <Typography.Text type="secondary">
+                    {t("systemSettings.akshare.manualRefresh.summary.enabledItems")}
+                  </Typography.Text>
+                  <div>{presetStatus?.enabledItems ?? "-"}</div>
+                </Card>
+                <Card size="small">
+                  <Typography.Text type="secondary">
+                    {t("systemSettings.akshare.manualRefresh.summary.lastRunAt")}
+                  </Typography.Text>
+                  <div>
+                    {presetStatusLoading
+                      ? t("common.loading", { defaultValue: "Loading..." })
+                      : formattedPresetLastRunAt}
+                  </div>
+                </Card>
+                <Card size="small">
+                  <Typography.Text type="secondary">
+                    {t("systemSettings.akshare.manualRefresh.summary.lastStatus")}
+                  </Typography.Text>
+                  <div>
+                    <Tag color={presetStatusColor}>{presetStatusLabel}</Tag>
+                  </div>
+                </Card>
+              </div>
+            )}
+            {presetStatus?.lastError ? (
+              <Alert
+                style={{ marginTop: "0.75rem" }}
+                type="warning"
+                showIcon
+                message={t("systemSettings.akshare.manualRefresh.summary.lastError")}
+                description={presetStatus.lastError}
+              />
+            ) : null}
+            {statusPolling ? (
+              <Typography.Paragraph type="secondary" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+                {t("systemSettings.akshare.manualRefresh.summary.polling")}
+              </Typography.Paragraph>
+            ) : null}
+          </div>
         ) : null}
       </Card>
     </>

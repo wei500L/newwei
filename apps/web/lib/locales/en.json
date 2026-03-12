@@ -870,6 +870,16 @@
         "eurCny": "EUR CNY"
       }
     },
+    "economicSeries": {
+      "shanghaiCompositeIndex": "Shanghai Composite Index (Daily)",
+      "csi300Index": "CSI 300 Index (Daily)",
+      "szComponentIndex": "Shenzhen Component Index (Daily)",
+      "csi1000Index": "CSI 1000 Index (Daily)",
+      "sp500Index": "S&P 500 Index",
+      "usdCnySpot": "USD/CNY Spot Exchange Rate",
+      "eurCnySpot": "EUR/CNY Spot Exchange Rate",
+      "bitcoinSpotPrice": "Bitcoin Spot Price"
+    },
     "economicAlert": {
       "alerts": {
         "cpiHigh": "CPI high",
@@ -949,7 +959,12 @@
     },
     "economicShort": {
       "heatmap": {
-        "tooltip": "Tooltip",
+        "tooltip": "{{pair}} · {{period}} change {{value}}",
+        "buckets": {
+          "1d": "1D",
+          "3d": "3D",
+          "7d": "7D"
+        },
         "empty": "No Heatmap"
       },
       "crypto": {
@@ -5510,7 +5525,42 @@
       "python": "Python version {{version}}",
       "refreshStatus": "Refresh status",
       "upgrade": "Upgrade",
-      "request": "Request {{requestId}} · from {{before}} to {{after}}"
+      "request": "Request {{requestId}} · from {{before}} to {{after}}",
+      "manualRefresh": {
+        "title": "Manual economic data refresh",
+        "description": "Queue background AKShare fetch jobs for one economic dashboard preset. Only enabled data items in that preset will be triggered.",
+        "permissionRequired": "Requires the economicdata.manage permission to trigger background economic refresh tasks.",
+        "fields": {
+          "preset": "Refresh range",
+          "presetPlaceholder": "Select a dashboard preset"
+        },
+        "actions": {
+          "trigger": "Trigger refresh"
+        },
+        "messages": {
+          "started": "Queued background refresh for {{preset}}."
+        },
+        "errors": {
+          "triggerFailed": "Failed to trigger economic data refresh.",
+          "permissionRequired": "You do not have permission to trigger economic data refresh.",
+          "presetRequired": "Select a dashboard preset first.",
+          "statusLoadFailed": "Failed to load preset refresh status."
+        },
+        "modal": {
+          "title": "Trigger AKShare refresh?",
+          "content": "This will queue background AKShare fetch jobs for the {{preset}} preset. The request returns immediately; data updates may appear shortly after the worker completes.",
+          "confirm": "Trigger"
+        },
+        "summary": {
+          "title": "Latest preset status",
+          "totalItems": "Configured items",
+          "enabledItems": "Enabled items",
+          "lastRunAt": "Latest run",
+          "lastStatus": "Latest status",
+          "lastError": "Latest error",
+          "polling": "Monitoring preset status for new activity..."
+        }
+      }
     },
     "title": "System settings",
     "adminOnly": "Admin only",

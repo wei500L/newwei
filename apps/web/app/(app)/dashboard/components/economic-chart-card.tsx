@@ -226,6 +226,7 @@ function buildOption(
 
   const uniqueUnits = Array.from(new Set(Array.from(unitBySeriesName.values()))).filter(Boolean);
   const yAxisUnitSuffix = uniqueUnits.length === 1 ? ` ${uniqueUnits[0]}` : "";
+  const gridTop = dataset.length > 1 ? 68 : 52;
 
   type TooltipSeriesValue = unknown[] | number | string | null | undefined;
 
@@ -268,14 +269,21 @@ function buildOption(
       }
     },
     legend: {
+      type: "scroll",
       top: 0,
+      left: 0,
+      right: 0,
+      pageButtonPosition: "end",
+      pageIconSize: 10,
+      pageButtonGap: 8,
+      itemGap: 16,
       data: dataset.map((d) => d.name as string),
     },
     grid: {
       left: "1%",
       right: "1%",
       bottom: 20,
-      top: 40,
+      top: gridTop,
       containLabel: true,
     },
     xAxis: {

@@ -6,7 +6,7 @@ import {
   Empty,
   Row,
   Skeleton,
-  Tabs,
+  Select,
   Typography,
 } from "antd";
 import type { CallbackDataParams } from "echarts/types/dist/shared";
@@ -26,23 +26,39 @@ import {
   filterValuesByDays,
   getSeriesField,
 } from "../utils/series";
+import {
+  formatAxisLabelMultiline,
+  resolveEconomicSeriesLabel,
+} from "../utils/economic-series-labels";
 
 const indexTabs = [
-  { key: "shanghai_composite_index", labelKey: "dashboard.economicShort.indexes.shanghai" },
-  { key: "csi300_index", labelKey: "dashboard.economicShort.indexes.csi300" },
-  { key: "sz_component_index", labelKey: "dashboard.economicShort.indexes.szComponent" },
-  { key: "csi1000_index", labelKey: "dashboard.economicShort.indexes.csi1000" },
+  { key: "shanghai_composite_index" },
+  { key: "csi300_index" },
+  { key: "sz_component_index" },
+  { key: "csi1000_index" },
 ];
 
 const fxPairs = [
-  { slug: "usd_cny_spot", labelKey: "dashboard.economicShort.fx.usdCny" },
-  { slug: "eur_cny_spot", labelKey: "dashboard.economicShort.fx.eurCny" },
+  { slug: "usd_cny_spot" },
+  { slug: "eur_cny_spot" },
 ];
 
 const heatmapBuckets = [
-  { labelKey: "dashboard.economicShort.heatmap.buckets.1d", period: 1 },
-  { labelKey: "dashboard.economicShort.heatmap.buckets.3d", period: 3 },
-  { labelKey: "dashboard.economicShort.heatmap.buckets.7d", period: 7 },
+  {
+    labelKey: "dashboard.economicShort.heatmap.buckets.1d",
+    period: 1,
+    fallback: { "en-US": "1D", "zh-CN": "1日" },
+  },
+  {
+    labelKey: "dashboard.economicShort.heatmap.buckets.3d",
+    period: 3,
+    fallback: { "en-US": "3D", "zh-CN": "3日" },
+  },
+  {
+    labelKey: "dashboard.economicShort.heatmap.buckets.7d",
+    period: 7,
+    fallback: { "en-US": "7D", "zh-CN": "7日" },
+  },
 ];
 
 export default function EconomicShortPage() {
@@ -89,17 +105,37 @@ export default function EconomicShortPage() {
       ];
     }),
   );
+  const resolveSeriesLabel = (slug: string) =>
+    resolveEconomicSeriesLabel({ slug, locale, t, seriesMap });
+  const activeIndexLabel = resolveSeriesLabel(activeIndex);
+  const indexOptions = indexTabs.map((tab) => ({
+    value: tab.key,
+    label: resolveSeriesLabel(tab.key),
+  }));
 
   const localizedPairs = fxPairs.map((pair) => ({
     ...pair,
-    label: t(pair.labelKey),
+    label: resolveSeriesLabel(pair.slug),
   }));
   const localizedBuckets = heatmapBuckets.map((bucket) => ({
     ...bucket,
-    label: t(bucket.labelKey),
+    label: t(bucket.labelKey, { defaultValue: bucket.fallback[locale] }),
   }));
+  const heatmapTooltipDefault =
+    locale === "zh-CN"
+      ? "{{pair}} · {{period}} 变动 {{value}}"
+      : "{{pair}} · {{period}} change {{value}}";
+  const heatmapXAxisLabelWidth = locale === "zh-CN" ? 84 : 124;
+  const heatmapXAxisCharsPerLine = locale === "zh-CN" ? 7 : 12;
 
   const heatmapOption = {
+    grid: {
+      left: 24,
+      right: 16,
+      top: 24,
+      bottom: 64,
+      containLabel: true,
+    },
     tooltip: {
       position: "top",
       formatter: (params: CallbackDataParams) => {
@@ -115,6 +151,7 @@ export default function EconomicShortPage() {
             ? score
             : t("common.notAvailable", { defaultValue: "N/A" });
         return t("dashboard.economicShort.heatmap.tooltip", {
+          defaultValue: heatmapTooltipDefault,
           period: bucket.label,
           pair: pair.label,
           value: formattedScore,
@@ -124,6 +161,14 @@ export default function EconomicShortPage() {
     xAxis: {
       type: "category",
       data: localizedPairs.map((pair) => pair.label),
+      axisLabel: {
+        interval: 0,
+        width: heatmapXAxisLabelWidth,
+        overflow: "truncate",
+        lineHeight: 16,
+        formatter: (value: string) =>
+          formatAxisLabelMultiline(String(value), heatmapXAxisCharsPerLine, 2),
+      },
     },
     yAxis: {
       type: "category",
@@ -165,7 +210,7 @@ export default function EconomicShortPage() {
     series: [
       {
         type: "line",
-        name: t("dashboard.economicShort.crypto.btc"),
+        name: resolveSeriesLabel("bitcoin_spot_price"),
         smooth: true,
         data: btcValues.map((entry) => [entry.timestamp, entry.value]),
       },
@@ -203,19 +248,20 @@ export default function EconomicShortPage() {
                 title={t("dashboard.economicShort.cards.indexCandlestick")}
                 extra={chartMeta}
               >
-                <Tabs
-                  activeKey={activeIndex}
-                  onChange={setActiveIndex}
-                  items={indexTabs.map((tab) => ({
-                    key: tab.key,
-                    label: t(tab.labelKey),
-                    children: (
-                      <CandlestickCard
-                        title={t(tab.labelKey)}
-                        group={seriesMap[tab.key]}
-                      />
-                    ),
-                  }))}
+                <div style={{ marginBottom: 12 }}>
+                  <Select
+                    value={activeIndex}
+                    onChange={setActiveIndex}
+                    options={indexOptions}
+                    popupMatchSelectWidth={false}
+                    style={{ width: "100%", maxWidth: 360 }}
+                    optionFilterProp="label"
+                    showSearch
+                  />
+                </div>
+                <CandlestickCard
+                  title={activeIndexLabel}
+                  group={seriesMap[activeIndex]}
                 />
               </Card>
             </Col>
