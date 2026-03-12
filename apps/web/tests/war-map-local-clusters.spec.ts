@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildWarMapClusterCellKey,
+  buildWarMapClusterMemberKey,
   clusterWarMapPoints,
   computeWeightedClusterGeometry,
   resolveWarMapClusterCellSizeDegrees,
@@ -67,6 +68,31 @@ describe('war-map local clusters', () => {
 
     expect(buildWarMapClusterCellKey(1.99, 1.99, bbox, cellSize)).toBe('0:0');
     expect(buildWarMapClusterCellKey(2, 2, bbox, cellSize)).toBe('1:1');
+  });
+
+  it('derives stable member keys independently of the viewport cell key', () => {
+    const points: TestPoint[] = [
+      { id: 'alpha', lat: 10.1, lng: 10.1 },
+      { id: 'beta', lat: 10.9, lng: 10.9 },
+    ];
+
+    const wideViewport = clusterWarMapPoints(points, {
+      bbox: [-180, -85, 180, 85],
+      zoom: 2,
+    });
+    const focusedViewport = clusterWarMapPoints(points, {
+      bbox: [0, 0, 40, 40],
+      zoom: 2,
+    });
+
+    expect(wideViewport.clusters[0]?.cellKey).not.toBe(focusedViewport.clusters[0]?.cellKey);
+    expect(wideViewport.clusters[0]?.memberKey).toBe(focusedViewport.clusters[0]?.memberKey);
+    expect(wideViewport.clusters[0]?.memberKey).toBe(
+      buildWarMapClusterMemberKey([
+        { id: 'beta', lat: 10.9, lng: 10.9 },
+        { id: 'alpha', lat: 10.1, lng: 10.1 },
+      ]),
+    );
   });
 });
 

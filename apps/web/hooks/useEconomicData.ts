@@ -3,6 +3,10 @@ import { useMemo } from "react";
 
 import { useDashboardRangeStore } from "@/store/time-range";
 import type { ChartDataState } from "@/lib/chart-data-state";
+import {
+  isEconomicQueryRefreshing,
+  resolveEconomicQueryData,
+} from "@/lib/economic-query-state";
 import { deriveUnitFromValueType, normalizeUnit } from "@/lib/economic-units";
 import {
   pickCoarsestGranularity,
@@ -203,16 +207,19 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     pollInterval,
     notifyOnNetworkStatusChange: true
   });
-  const resolvedData = data ?? previousData ?? null;
+  const resolvedData = resolveEconomicQueryData({
+    data,
+    previousData,
+    networkStatus
+  });
   const points = resolvedData?.getEconomicDataWithInsights?.points ?? [];
   const insights = resolvedData?.getEconomicDataWithInsights?.insights ?? [];
   const hasData = points.length > 0;
   const loading =
-    !resolvedData &&
-    (queryLoading ||
-      networkStatus === NetworkStatus.loading ||
-      networkStatus === NetworkStatus.setVariables);
-  const refreshing = networkStatus === NetworkStatus.refetch;
+    networkStatus === NetworkStatus.setVariables ||
+    (!resolvedData &&
+      (queryLoading || networkStatus === NetworkStatus.loading));
+  const refreshing = isEconomicQueryRefreshing(networkStatus);
 
   const grouped: EconomicSeriesMap = useMemo(() => {
     const map: EconomicSeriesMap = {};

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildWarMapClusterCellKey,
+  buildWarMapClusterMemberKey,
   clusterWarMapPoints,
   computeWeightedClusterGeometry,
   DEFAULT_WAR_MAP_BBOX,
@@ -59,6 +60,10 @@ describe('war-map clustering', () => {
     expect(result.clusters).toHaveLength(1);
     expect(result.clusters[0]).toMatchObject({
       cellKey: '15:8',
+      memberKey: buildWarMapClusterMemberKey([
+        { id: 'a', lat: 11, lng: 11 },
+        { id: 'b', lat: 11.2, lng: 11.4 },
+      ]),
       count: 2,
       members: [
         { id: 'a', lat: 11, lng: 11 },

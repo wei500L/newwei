@@ -150,9 +150,11 @@ export interface RealtimeSignalsMarkerReadiness {
   newsMarkersReady: boolean;
 }
 
+export type RealtimeSignalsRuntimeSettingsSource = "env" | "db" | "unknown";
+
 export interface RealtimeSignalsRuntimeDiagnostics {
   checkedAt: string;
-  settingsSource: "env" | "db";
+  settingsSource: RealtimeSignalsRuntimeSettingsSource;
   runtimeEnabled: boolean;
   sources: RealtimeSignalRuntimeSourceDiagnostics[];
   insight: RealtimeSignalsInsightSnapshot;

@@ -1,3 +1,4 @@
+import { ProcessedItemModel } from "@modular/mongo";
 import { REALTIME_SIGNALS_INGEST_LOCK_TTL_MS } from "./realtime-signals.constants";
 import { RealtimeSignalsService } from "./realtime-signals.service";
 import type { RealtimeSignalsRuntimeConfig } from "./realtime-signals.types";
@@ -536,5 +537,131 @@ describe("RealtimeSignalsService scheduler lock", () => {
       REALTIME_SIGNALS_INGEST_LOCK_TTL_MS,
       expect.any(Function),
     );
+  });
+});
+
+describe("RealtimeSignalsService runtime diagnostics", () => {
+  const buildService = () => {
+    const prisma = {
+      $queryRaw: jest.fn(),
+      processedArticle: {
+        count: jest.fn(),
+        findFirst: jest.fn(),
+      },
+    };
+    const store = {
+      getInsightSnapshot: jest.fn().mockResolvedValue(null),
+      getLastRun: jest.fn().mockResolvedValue(null),
+      getSourceState: jest.fn().mockResolvedValue(null),
+      evaluateMetric: jest.fn().mockResolvedValue({
+        latest: null,
+        previous: null,
+        changePercent: null,
+      }),
+    };
+    const settings = {
+      getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig),
+      getSettingsSource: jest.fn().mockResolvedValue("db"),
+    };
+    const service = new RealtimeSignalsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      store as any,
+      settings as any,
+    );
+    return { service, prisma, store, settings };
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("returns unknown settings source when diagnostics source lookup fails", async () => {
+    const { service, prisma, settings } = buildService();
+    settings.getSettingsSource.mockRejectedValue(new Error("db down"));
+    prisma.processedArticle.count.mockRejectedValue(new Error("db down"));
+    prisma.processedArticle.findFirst.mockRejectedValue(new Error("db down"));
+    prisma.$queryRaw.mockRejectedValue(new Error("db down"));
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 3,
+      recentProcessedItemsWithLocation: 2,
+      latestProcessedItemAt: "2026-03-12T00:00:00.000Z",
+    });
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(result.settingsSource).toBe("unknown");
+    expect(result.runtimeEnabled).toBe(true);
+    expect(result.sources).toHaveLength(8);
+    expect(result.markerReadiness).toEqual({
+      windowHours: 24 * 7,
+      recentProcessedArticles: 0,
+      recentProcessedArticlesWithLocation: 0,
+      recentMongoProcessedItems: 3,
+      recentMongoProcessedItemsWithLocation: 2,
+      latestProcessedArticleAt: undefined,
+      latestProcessedItemAt: "2026-03-12T00:00:00.000Z",
+      newsMarkersReady: true,
+    });
+    expect(result.sources.every((source) => source.status === "idle")).toBe(
+      true,
+    );
+  });
+
+  it("excludes blank prisma locations from marker readiness counts", async () => {
+    const { service, prisma } = buildService();
+    const processedAt = new Date("2026-03-12T10:00:00.000Z");
+    prisma.processedArticle.count.mockResolvedValue(4);
+    prisma.processedArticle.findFirst.mockResolvedValue({ processedAt });
+    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+
+    const result = await (service as any).getMarkerReadiness("org-1");
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      windowHours: 24 * 7,
+      recentProcessedArticles: 4,
+      recentProcessedArticlesWithLocation: 0,
+      recentMongoProcessedItems: 0,
+      recentMongoProcessedItemsWithLocation: 0,
+      latestProcessedArticleAt: processedAt.toISOString(),
+      latestProcessedItemAt: undefined,
+      newsMarkersReady: false,
+    });
+  });
+
+  it("filters whitespace-only mongo locations from marker readiness counts", async () => {
+    const { service } = buildService();
+    const countDocumentsSpy = jest
+      .spyOn(ProcessedItemModel, "countDocuments")
+      .mockReturnValueOnce(6 as any)
+      .mockReturnValueOnce(0 as any);
+    const exec = jest.fn().mockResolvedValue({
+      sortAt: new Date("2026-03-12T09:00:00.000Z"),
+    });
+    const lean = jest.fn().mockReturnValue({ exec });
+    const sort = jest.fn().mockReturnValue({ lean });
+    jest.spyOn(ProcessedItemModel, "findOne").mockReturnValue({ sort } as any);
+
+    const result = await (service as any).getMongoMarkerReadiness(
+      "org-1",
+      new Date("2026-03-05T00:00:00.000Z"),
+    );
+
+    expect(countDocumentsSpy).toHaveBeenCalledTimes(2);
+    expect(countDocumentsSpy.mock.calls[1]?.[0]?.["result.location"]).toEqual({
+      $type: "string",
+      $regex: /\S/,
+    });
+    expect(result).toEqual({
+      recentProcessedItems: 6,
+      recentProcessedItemsWithLocation: 0,
+      latestProcessedItemAt: "2026-03-12T09:00:00.000Z",
+    });
   });
 });

@@ -371,8 +371,8 @@ function clusterRadius(count: number): number {
   return Math.max(12, Math.min(42, Math.sqrt(Math.max(1, count)) * 7));
 }
 
-function toClusterSelectionKey(kind: 'event' | 'news', cellKey: string): string {
-  return `${kind}:${cellKey}`;
+function toClusterSelectionKey(kind: 'event' | 'news', memberKey: string): string {
+  return `${kind}:${memberKey}`;
 }
 
 export function WarMap({ className, translateTarget }: WarMapProps = {}) {
@@ -798,7 +798,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     const eventCluster = clusteredEvents.clusters.find(
-      (cluster) => toClusterSelectionKey('event', cluster.cellKey) === selectedClusterKey,
+      (cluster) => toClusterSelectionKey('event', cluster.memberKey) === selectedClusterKey,
     );
     if (eventCluster) {
       return {
@@ -813,7 +813,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     const newsCluster = clusteredNews.clusters.find(
-      (cluster) => toClusterSelectionKey('news', cluster.cellKey) === selectedClusterKey,
+      (cluster) => toClusterSelectionKey('news', cluster.memberKey) === selectedClusterKey,
     );
     if (newsCluster) {
       return {
@@ -1126,7 +1126,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
     const eventClusters: DeckPoint[] = [];
     for (const cluster of clusteredEvents.clusters) {
-      const selectionKey = toClusterSelectionKey('event', cluster.cellKey);
+      const selectionKey = toClusterSelectionKey('event', cluster.memberKey);
       eventClusters.push({
         id: selectionKey,
         lat: cluster.lat,
@@ -1170,7 +1170,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
     const newsClusters: DeckPoint[] = [];
     for (const cluster of clusteredNews.clusters) {
-      const selectionKey = toClusterSelectionKey('news', cluster.cellKey);
+      const selectionKey = toClusterSelectionKey('news', cluster.memberKey);
       newsClusters.push({
         id: selectionKey,
         lat: cluster.lat,

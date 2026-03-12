@@ -16,6 +16,7 @@ export interface WarMapClusterGeometry {
 export interface WarMapCluster<T extends WarMapClusterablePoint> {
   id: string;
   cellKey: string;
+  memberKey: string;
   count: number;
   lat: number;
   lng: number;
@@ -137,6 +138,14 @@ export function buildWarMapClusterCellKey(
   const x = Math.floor((lng - minLng) / cellSizeDeg);
   const y = Math.floor((lat - minLat) / cellSizeDeg);
   return `${x}:${y}`;
+}
+
+export function buildWarMapClusterMemberKey<T extends WarMapClusterablePoint>(
+  members: readonly T[],
+): string {
+  return JSON.stringify(
+    members.map((member) => member.id).sort((left, right) => left.localeCompare(right)),
+  );
 }
 
 export function isWithinWarMapBbox(
@@ -281,6 +290,7 @@ export function clusterWarMapPoints<T extends WarMapClusterablePoint>(
     clusters.push({
       id: `cluster-${cellKey}`,
       cellKey,
+      memberKey: buildWarMapClusterMemberKey(sortedMembers),
       count: sortedMembers.length,
       lat: geometry.lat,
       lng: geometry.lng,

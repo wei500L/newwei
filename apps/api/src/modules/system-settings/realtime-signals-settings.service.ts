@@ -306,6 +306,11 @@ export class RealtimeSignalsSettingsService {
     };
   }
 
+  async getSettingsSource(): Promise<RealtimeSignalsSettingsSource> {
+    const stored = await this.loadStoredSettings();
+    return stored ? "db" : "env";
+  }
+
   async getRuntimeConfig(options?: {
     refreshAcledToken?: boolean;
   }): Promise<RealtimeSignalsRuntimeConfig> {

@@ -5501,6 +5501,18 @@
         "resetContent": "Remove stored overrides and revert to env values?",
         "confirm": "Confirm",
         "cancel": "Cancel"
+      },
+      "runtime": {
+        "settingsSource": "Settings source",
+        "settingsSources": {
+          "db": "Saved override",
+          "env": "Using env defaults",
+          "unknown": "Source unavailable"
+        },
+        "settingsSourceUnknown": {
+          "title": "Settings source could not be resolved.",
+          "body": "Runtime diagnostics are still shown, but the system could not confirm whether the effective realtime settings came from DB overrides or env defaults for this request."
+        }
       }
     },
     "akshare": {

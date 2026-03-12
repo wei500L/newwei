@@ -21,13 +21,14 @@ import {
 import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
 import type {
   RealtimeSignalFetchResult,
-  RealtimeSignalRuntimeDiagnostics,
+  RealtimeSignalsRuntimeDiagnostics,
   RealtimeSignalRuntimeSourceDiagnostics,
   RealtimeSignalSource,
   RealtimeSignalSourceState,
   RealtimeSignalsMarkerReadiness,
   RealtimeSignalsInsightSnapshot,
   RealtimeSignalsRuntimeConfig,
+  RealtimeSignalsRuntimeSettingsSource,
 } from "./realtime-signals.types";
 
 const logger = createLogger({ name: "realtime-signals" });
@@ -269,10 +270,10 @@ export class RealtimeSignalsService {
   async getRuntimeDiagnostics(
     orgId: string,
   ): Promise<RealtimeSignalsRuntimeDiagnostics> {
-    const [runtime, publicSettings, insight, markerReadiness] = await Promise.all(
+    const [runtime, settingsSource, insight, markerReadiness] = await Promise.all(
       [
         this.getRuntimeConfig({ refreshAcledToken: false }),
-        this.settings.getPublicSettings(),
+        this.getRuntimeSettingsSource(orgId),
         this.store.getInsightSnapshot(orgId),
         this.getMarkerReadiness(orgId),
       ],
@@ -312,7 +313,7 @@ export class RealtimeSignalsService {
           status: runtimeStatus.status,
           statusReason: runtimeStatus.reason,
           lastRunAt:
-            lastRunMs && Number.isFinite(lastRunMs)
+            typeof lastRunMs === "number" && Number.isFinite(lastRunMs)
               ? new Date(lastRunMs).toISOString()
               : undefined,
           lastAttemptAt: sourceState?.lastAttemptAt,
@@ -329,7 +330,7 @@ export class RealtimeSignalsService {
 
     return {
       checkedAt: new Date().toISOString(),
-      settingsSource: publicSettings.source,
+      settingsSource,
       runtimeEnabled: runtime.enabled,
       sources,
       insight: insight ?? this.createEmptyInsightSnapshot(),
@@ -1592,6 +1593,25 @@ export class RealtimeSignalsService {
     }
   }
 
+  private async getRuntimeSettingsSource(
+    orgId: string,
+  ): Promise<RealtimeSignalsRuntimeSettingsSource> {
+    try {
+      return await this.settings.getSettingsSource();
+    } catch (error) {
+      logger.warn(
+        {
+          orgId,
+          diagnosticsSection: "settings_source",
+          fallbackSource: "unknown",
+          err: error,
+        },
+        "Failed to resolve realtime signal settings source for runtime diagnostics; using unknown fallback source",
+      );
+      return "unknown";
+    }
+  }
+
   private async getMarkerReadiness(
     orgId: string,
   ): Promise<RealtimeSignalsMarkerReadiness> {
@@ -1599,37 +1619,50 @@ export class RealtimeSignalsService {
       Date.now() - REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS * 60 * 60 * 1_000,
     );
 
-    const [
-      recentProcessedArticles,
-      recentProcessedArticlesWithLocation,
-      latestProcessedArticle,
-      mongoReadiness,
-    ] = await Promise.all([
-      this.prisma.processedArticle.count({
-        where: {
-          status: ProcessedArticleStatus.completed,
-          article: { orgId },
-          processedAt: { gte: since },
+    const mongoReadinessPromise = this.getMongoMarkerReadiness(orgId, since);
+    let recentProcessedArticles = 0;
+    let recentProcessedArticlesWithLocation = 0;
+    let latestProcessedArticleAt: string | undefined;
+
+    try {
+      const [
+        articleCount,
+        articleWithLocationCount,
+        latestProcessedArticle,
+      ] = await Promise.all([
+        this.prisma.processedArticle.count({
+          where: {
+            status: ProcessedArticleStatus.completed,
+            article: { orgId },
+            processedAt: { gte: since },
+          },
+        }),
+        this.countRecentProcessedArticlesWithLocation(orgId, since),
+        this.prisma.processedArticle.findFirst({
+          where: {
+            status: ProcessedArticleStatus.completed,
+            article: { orgId },
+          },
+          orderBy: { processedAt: "desc" },
+          select: { processedAt: true },
+        }),
+      ]);
+      recentProcessedArticles = articleCount;
+      recentProcessedArticlesWithLocation = articleWithLocationCount;
+      latestProcessedArticleAt = latestProcessedArticle?.processedAt?.toISOString();
+    } catch (error) {
+      logger.warn(
+        {
+          orgId,
+          diagnosticsSection: "marker_readiness_prisma",
+          windowHours: REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS,
+          err: error,
         },
-      }),
-      this.prisma.processedArticle.count({
-        where: {
-          status: ProcessedArticleStatus.completed,
-          location: { not: null },
-          article: { orgId },
-          processedAt: { gte: since },
-        },
-      }),
-      this.prisma.processedArticle.findFirst({
-        where: {
-          status: ProcessedArticleStatus.completed,
-          article: { orgId },
-        },
-        orderBy: { processedAt: "desc" },
-        select: { processedAt: true },
-      }),
-      this.getMongoMarkerReadiness(orgId, since),
-    ]);
+        "Failed to load prisma marker readiness diagnostics",
+      );
+    }
+
+    const mongoReadiness = await mongoReadinessPromise;
 
     return {
       windowHours: REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS,
@@ -1638,12 +1671,33 @@ export class RealtimeSignalsService {
       recentMongoProcessedItems: mongoReadiness.recentProcessedItems,
       recentMongoProcessedItemsWithLocation:
         mongoReadiness.recentProcessedItemsWithLocation,
-      latestProcessedArticleAt: latestProcessedArticle?.processedAt?.toISOString(),
+      latestProcessedArticleAt,
       latestProcessedItemAt: mongoReadiness.latestProcessedItemAt,
       newsMarkersReady:
         recentProcessedArticlesWithLocation > 0 ||
         mongoReadiness.recentProcessedItemsWithLocation > 0,
     };
+  }
+
+  private async countRecentProcessedArticlesWithLocation(
+    orgId: string,
+    since: Date,
+  ): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ count: bigint | number }>>`
+      SELECT COUNT(*) AS count
+      FROM \`ProcessedArticle\` pa
+      INNER JOIN \`Article\` a ON a.id = pa.articleId
+      WHERE a.orgId = ${orgId}
+        AND pa.status = ${ProcessedArticleStatus.completed}
+        AND pa.processedAt >= ${since}
+        AND pa.location IS NOT NULL
+        AND CHAR_LENGTH(TRIM(pa.location)) > 0
+    `;
+    const count = rows[0]?.count;
+    if (typeof count === "bigint") {
+      return Number(count);
+    }
+    return this.toFiniteNumber(count) ?? 0;
   }
 
   private async getMongoMarkerReadiness(
@@ -1674,7 +1728,7 @@ export class RealtimeSignalsService {
             orgId,
             status: "completed",
             duplicateOf: null,
-            "result.location": { $exists: true, $nin: [null, ""] },
+            "result.location": { $type: "string", $regex: /\S/ },
             ...timeFilter,
           }),
           ProcessedItemModel.findOne(
@@ -1705,7 +1759,12 @@ export class RealtimeSignalsService {
       };
     } catch (error) {
       logger.warn(
-        { orgId, err: error },
+        {
+          orgId,
+          diagnosticsSection: "marker_readiness_mongo",
+          since: since.toISOString(),
+          err: error,
+        },
         "Failed to load mongo marker readiness diagnostics",
       );
       return {
@@ -1718,7 +1777,7 @@ export class RealtimeSignalsService {
   private resolveRuntimeSourceStatus(options: {
     source: RealtimeSignalSource;
     sourceConfig: { enabled: boolean; intervalSec: number };
-    sourceState: RealtimeSignalSourceState | undefined;
+    sourceState: RealtimeSignalSourceState | null | undefined;
     lastRunMs: number | null;
     context: Record<string, unknown> | undefined;
     nowMs: number;
@@ -1741,17 +1800,17 @@ export class RealtimeSignalsService {
       };
     }
 
-    const lastSuccessMs = options.sourceState?.lastSuccessAt
-      ? Date.parse(options.sourceState.lastSuccessAt)
-      : options.lastRunMs;
-    const lastErrorMs = options.sourceState?.lastErrorAt
-      ? Date.parse(options.sourceState.lastErrorAt)
-      : Number.NaN;
+    const lastSuccessMs =
+      this.parseTimestampMs(options.sourceState?.lastSuccessAt) ??
+      (typeof options.lastRunMs === "number" && Number.isFinite(options.lastRunMs)
+        ? options.lastRunMs
+        : null);
+    const lastErrorMs = this.parseTimestampMs(options.sourceState?.lastErrorAt);
     if (
       options.sourceState?.status === "error" &&
       options.sourceState.lastError &&
-      (!Number.isFinite(lastSuccessMs) ||
-        (Number.isFinite(lastErrorMs) && lastErrorMs >= lastSuccessMs))
+      (lastSuccessMs === null ||
+        (lastErrorMs !== null && lastErrorMs >= lastSuccessMs))
     ) {
       return {
         status: "error" as const,
@@ -1759,7 +1818,7 @@ export class RealtimeSignalsService {
       };
     }
 
-    if (!Number.isFinite(lastSuccessMs)) {
+    if (lastSuccessMs === null) {
       return {
         status: "idle" as const,
         reason: "No successful run yet.",
@@ -1785,6 +1844,15 @@ export class RealtimeSignalsService {
       status: "ok" as const,
       reason: contextReason,
     };
+  }
+
+  private parseTimestampMs(value: string | undefined) {
+    const normalized = this.normalizeString(value);
+    if (!normalized) {
+      return null;
+    }
+    const parsed = Date.parse(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private getMissingConfigReason(

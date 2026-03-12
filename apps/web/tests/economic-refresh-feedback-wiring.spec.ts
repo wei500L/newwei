@@ -11,12 +11,15 @@ const read = (relativePath: string) =>
 describe('economic refresh feedback wiring', () => {
   it('derives manual refresh state from the shared economic data hook', () => {
     const source = read('hooks/useEconomicData.ts');
+    const queryStateSource = read('lib/economic-query-state.ts');
 
     expect(source).toContain('notifyOnNetworkStatusChange: true');
-    expect(source).toContain('const resolvedData = data ?? previousData ?? null;');
-    expect(source).toContain('const refreshing = networkStatus === NetworkStatus.refetch;');
-    expect(source).toContain('!resolvedData');
+    expect(source).toContain('resolveEconomicQueryData({');
+    expect(source).toContain('networkStatus === NetworkStatus.setVariables ||');
+    expect(source).toContain('const refreshing = isEconomicQueryRefreshing(networkStatus);');
     expect(source).toContain('refreshing,');
+    expect(queryStateSource).toContain('networkStatus === NetworkStatus.setVariables');
+    expect(queryStateSource).toContain('networkStatus === NetworkStatus.refetch || networkStatus === NetworkStatus.setVariables');
   });
 
   it('threads refresh loading through shared chart state components', () => {

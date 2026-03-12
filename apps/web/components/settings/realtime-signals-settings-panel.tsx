@@ -34,6 +34,9 @@ import {
 } from "@/lib/realtime-signals-settings-payload";
 
 type RealtimeSignalsSettingsSource = "env" | "db";
+type RealtimeSignalsRuntimeSettingsSource =
+  | RealtimeSignalsSettingsSource
+  | "unknown";
 type RealtimeSignalsSecretSource = "stored" | "env" | "none";
 type RealtimeSignalsAcledAccessTokenStatus =
   | "ready"
@@ -162,7 +165,7 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
 
 interface RealtimeSignalsRuntimeDiagnosticsResponse {
   checkedAt: string;
-  settingsSource: RealtimeSignalsSettingsSource;
+  settingsSource: RealtimeSignalsRuntimeSettingsSource;
   runtimeEnabled: boolean;
   insight: {
     keywordSpikes: Array<Record<string, unknown>>;
@@ -577,6 +580,24 @@ export function RealtimeSignalsSettingsPanel() {
     settings.source === "db"
       ? t("systemSettings.realtimeSignals.status.saved")
       : t("systemSettings.realtimeSignals.status.env");
+  const runtimeSettingsSource = diagnostics?.settingsSource ?? "unknown";
+  const runtimeSettingsSourceColor =
+    runtimeSettingsSource === "db"
+      ? "green"
+      : runtimeSettingsSource === "unknown"
+        ? "gold"
+        : "default";
+  const runtimeSettingsSourceLabel = t(
+    `systemSettings.realtimeSignals.runtime.settingsSources.${runtimeSettingsSource}`,
+    {
+      defaultValue:
+        runtimeSettingsSource === "db"
+          ? "Saved override"
+          : runtimeSettingsSource === "env"
+            ? "Using env defaults"
+            : "Source unavailable",
+    },
+  );
   const enabledTagColor = settings.enabled ? "green" : "default";
   const enabledTagLabel = settings.enabled
     ? t("systemSettings.realtimeSignals.status.enabled")
@@ -939,6 +960,14 @@ export function RealtimeSignalsSettingsPanel() {
         })}
         extra={
           <Space wrap>
+            {diagnostics ? (
+              <Tag color={runtimeSettingsSourceColor}>
+                {t("systemSettings.realtimeSignals.runtime.settingsSource", {
+                  defaultValue: "Settings source",
+                })}
+                : {runtimeSettingsSourceLabel}
+              </Tag>
+            ) : null}
             {diagnostics?.checkedAt ? (
               <Typography.Text type="secondary">
                 {t("systemSettings.realtimeSignals.runtime.checkedAt", {
@@ -960,6 +989,27 @@ export function RealtimeSignalsSettingsPanel() {
             showIcon
             message={diagnosticsError}
             style={{ marginBottom: "1rem" }}
+          />
+        ) : null}
+
+        {diagnostics?.settingsSource === "unknown" ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: "1rem" }}
+            message={t(
+              "systemSettings.realtimeSignals.runtime.settingsSourceUnknown.title",
+              {
+                defaultValue: "Settings source could not be resolved.",
+              },
+            )}
+            description={t(
+              "systemSettings.realtimeSignals.runtime.settingsSourceUnknown.body",
+              {
+                defaultValue:
+                  "Runtime diagnostics are still shown, but the system could not confirm whether the effective realtime settings came from DB overrides or env defaults for this request.",
+              },
+            )}
           />
         ) : null}
 
