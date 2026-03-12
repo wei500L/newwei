@@ -118,6 +118,49 @@ describe("AkshareService.getDataByCategory", () => {
     expect((result as unknown[]).length).toBe(7);
   });
 
+  it("returns the full raw point window when pagination is omitted", async () => {
+    const points = Array.from({ length: 150 }, (_, index) => ({
+      id: `p-${index}`,
+      itemId: "item1",
+      recordedAt: new Date(Date.UTC(2024, 0, 1, 0, index)),
+      value: new Prisma.Decimal(index),
+      unit: null,
+      sourceField: "value",
+      dataType: EconomicDataValueType.index,
+      item: { defaultFrequency: EconomicDataFrequency.hourly }
+    }));
+
+    const prisma = {
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue(points)
+      },
+      economicDataItem: {
+        findMany: jest.fn().mockResolvedValue([{ defaultFrequency: EconomicDataFrequency.hourly }])
+      }
+    };
+
+    const service = new AkshareService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any
+    );
+
+    const result = await service.getDataByCategory(
+      "category",
+      new Date("2024-01-01T00:00:00Z"),
+      new Date("2024-01-31T00:00:00Z")
+    );
+
+    expect(prisma.economicDataPoint.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: undefined })
+    );
+    expect(Array.isArray(result)).toBe(true);
+    expect((result as unknown[]).length).toBe(150);
+  });
+
   it("aligns the query window to the requested bucket boundaries when bucketing is enabled", async () => {
     const prisma = {
       economicDataPoint: {

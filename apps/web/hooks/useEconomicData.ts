@@ -1,3 +1,4 @@
+import { NetworkStatus } from "@apollo/client";
 import { useMemo } from "react";
 
 import { useDashboardRangeStore } from "@/store/time-range";
@@ -13,6 +14,7 @@ import {
   type EconomicSeriesInsightModel,
   type EconomicDataPointModel,
   EconomicDataValueType,
+  TimeGranularity,
   useEconomicDataWithInsightsQuery
 } from "@/graphql/generated";
 
@@ -88,9 +90,109 @@ function normalizePointTimestamp(point: Pick<EconomicDataPointModel, "timestamp"
   return String(raw);
 }
 
+interface EconomicFreshnessPoint {
+  timestamp: string | Date;
+  sourceField?: string | null;
+  effectiveGranularity: TimeGranularity;
+  item: { slug: string };
+}
+
+function fallbackIntervalMsForGranularity(granularity: TimeGranularity): number | null {
+  switch (granularity) {
+    case TimeGranularity.Minute:
+      return 60_000;
+    case TimeGranularity.Hour:
+      return 60 * 60 * 1000;
+    case TimeGranularity.Day:
+      return 24 * 60 * 60 * 1000;
+    case TimeGranularity.Week:
+      return 7 * 24 * 60 * 60 * 1000;
+    case TimeGranularity.Month:
+      return 30 * 24 * 60 * 60 * 1000;
+    case TimeGranularity.Quarter:
+      return 90 * 24 * 60 * 60 * 1000;
+    case TimeGranularity.Year:
+      return 365 * 24 * 60 * 60 * 1000;
+    case TimeGranularity.Realtime:
+      return 60_000;
+    default:
+      return null;
+  }
+}
+
+export function deriveEconomicFreshness(points: readonly EconomicFreshnessPoint[]): {
+  latestTimestamp: Date | null;
+  expectedIntervalMs: number | null;
+} {
+  const seriesTimestamps = new Map<
+    string,
+    { latest: number; timestamps: number[]; granularity: TimeGranularity }
+  >();
+
+  for (const point of points) {
+    const timestamp = new Date(point.timestamp).getTime();
+    if (!Number.isFinite(timestamp)) {
+      continue;
+    }
+    const seriesKey = `${point.item.slug}::${point.sourceField ?? ""}`;
+    const existing = seriesTimestamps.get(seriesKey);
+    if (existing) {
+      existing.timestamps.push(timestamp);
+      if (timestamp > existing.latest) {
+        existing.latest = timestamp;
+      }
+      continue;
+    }
+    seriesTimestamps.set(seriesKey, {
+      latest: timestamp,
+      timestamps: [timestamp],
+      granularity: point.effectiveGranularity
+    });
+  }
+
+  const freshestSeries = Array.from(seriesTimestamps.values()).reduce<
+    { latest: number; timestamps: number[]; granularity: TimeGranularity } | null
+  >((currentFreshest, candidate) => {
+    if (!currentFreshest || candidate.latest > currentFreshest.latest) {
+      return candidate;
+    }
+    return currentFreshest;
+  }, null);
+
+  if (!freshestSeries) {
+    return { latestTimestamp: null, expectedIntervalMs: null };
+  }
+
+  const timestamps = Array.from(new Set(freshestSeries.timestamps)).sort((a, b) => a - b);
+  const intervals: number[] = [];
+  for (let index = 1; index < timestamps.length; index += 1) {
+    const current = timestamps[index];
+    const previous = timestamps[index - 1];
+    if (current === undefined || previous === undefined) {
+      continue;
+    }
+    intervals.push(current - previous);
+  }
+  intervals.sort((a, b) => a - b);
+
+  return {
+    latestTimestamp: new Date(freshestSeries.latest),
+    expectedIntervalMs:
+      intervals[Math.floor(intervals.length / 2)] ??
+      fallbackIntervalMsForGranularity(freshestSeries.granularity)
+  };
+}
+
 export function useEconomicData({ category, pollInterval }: EconomicSeriesOptions) {
   const { start, end } = useDashboardRangeStore();
-  const { data, loading, error, refetch } = useEconomicDataWithInsightsQuery({
+  const {
+    data,
+    previousData,
+    loading: queryLoading,
+    error,
+    refetch,
+    networkStatus,
+  } = useEconomicDataWithInsightsQuery({
     variables: {
       category,
       timeRange: {
@@ -98,10 +200,19 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
         end: end.toISOString()
       }
     },
-    pollInterval
+    pollInterval,
+    notifyOnNetworkStatusChange: true
   });
-  const points = data?.getEconomicDataWithInsights?.points ?? [];
-  const insights = data?.getEconomicDataWithInsights?.insights ?? [];
+  const resolvedData = data ?? previousData ?? null;
+  const points = resolvedData?.getEconomicDataWithInsights?.points ?? [];
+  const insights = resolvedData?.getEconomicDataWithInsights?.insights ?? [];
+  const hasData = points.length > 0;
+  const loading =
+    !resolvedData &&
+    (queryLoading ||
+      networkStatus === NetworkStatus.loading ||
+      networkStatus === NetworkStatus.setVariables);
+  const refreshing = networkStatus === NetworkStatus.refetch;
 
   const grouped: EconomicSeriesMap = useMemo(() => {
     const map: EconomicSeriesMap = {};
@@ -155,16 +266,8 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return map;
   }, [insights]);
 
-  const latestTimestamp = useMemo(() => {
-    let latest = 0;
-    for (const point of points) {
-      const ts = new Date(point.timestamp).getTime();
-      if (!Number.isNaN(ts) && ts > latest) {
-        latest = ts;
-      }
-    }
-    return latest > 0 ? new Date(latest) : null;
-  }, [points]);
+  const freshness = useMemo(() => deriveEconomicFreshness(points), [points]);
+  const latestTimestamp = freshness.latestTimestamp;
 
   const appliedGranularityInfo = useMemo(() => {
     const granularities = points.map((point) => timeGranularityToUiGranularity(point.effectiveGranularity));
@@ -179,31 +282,10 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     return { coarsest, range };
   }, [points]);
 
-  const medianIntervalMs = useMemo(() => {
-    const timestamps = Array.from(
-      new Set(points.map((point) => new Date(point.timestamp).getTime()))
-    ).filter((value) => Number.isFinite(value));
-    if (timestamps.length < 2) {
-      return null;
-    }
-    timestamps.sort((a, b) => a - b);
-    const intervals: number[] = [];
-    for (let i = 1; i < timestamps.length; i += 1) {
-      const current = timestamps[i];
-      const previous = timestamps[i - 1];
-      if (current === undefined || previous === undefined) {
-        continue;
-      }
-      if (!Number.isFinite(current) || !Number.isFinite(previous)) {
-        continue;
-      }
-      intervals.push(current - previous);
-    }
-    intervals.sort((a, b) => a - b);
-    return intervals[Math.floor(intervals.length / 2)] ?? null;
-  }, [points]);
-
-  const expectedIntervalMs = useMemo(() => medianIntervalMs ?? 24 * 60 * 60 * 1000, [medianIntervalMs]);
+  const expectedIntervalMs = useMemo(
+    () => freshness.expectedIntervalMs ?? 24 * 60 * 60 * 1000,
+    [freshness.expectedIntervalMs]
+  );
 
   const delayMs = useMemo(() => {
     if (!latestTimestamp) {
@@ -250,12 +332,12 @@ export function useEconomicData({ category, pollInterval }: EconomicSeriesOption
     loading,
     error,
     refetch,
+    refreshing,
     seriesMap: grouped,
-    hasData: points.length > 0,
+    hasData,
     latestTimestamp,
-    appliedGranularity:
-      points.length > 0 ? appliedGranularityInfo.coarsest : UiTimeGranularity.Unknown,
-    appliedGranularityRange: points.length > 0 ? appliedGranularityInfo.range : null,
+    appliedGranularity: hasData ? appliedGranularityInfo.coarsest : UiTimeGranularity.Unknown,
+    appliedGranularityRange: hasData ? appliedGranularityInfo.range : null,
     isDelayed,
     delayMs,
     expectedIntervalMs,

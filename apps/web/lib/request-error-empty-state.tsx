@@ -12,6 +12,7 @@ export interface RequestErrorEmptyState {
   title: string;
   description: ReactNode;
   actionLabel?: string;
+  actionLoading?: boolean;
   onAction?: () => void;
   detailText?: string;
 }
@@ -20,6 +21,8 @@ interface BuildRequestErrorEmptyStateOptions {
   t: TFunction;
   error: unknown;
   onRetry?: () => void;
+  actionLoading?: boolean;
+  actionLabelOverride?: string;
   includeDetailText?: boolean;
 }
 
@@ -52,6 +55,8 @@ export const buildRequestErrorEmptyState = ({
   t,
   error,
   onRetry,
+  actionLoading,
+  actionLabelOverride,
   includeDetailText = true
 }: BuildRequestErrorEmptyStateOptions): RequestErrorEmptyState => {
   const classification = classifyRequestError(error);
@@ -172,7 +177,9 @@ export const buildRequestErrorEmptyState = ({
     Boolean(onRetry) && !["permission", "auth", "cancelled"].includes(classification.kind);
 
   const actionLabel =
-    base.actionLabel ?? (shouldShowRetry ? t("common.retry", { defaultValue: "Retry" }) : undefined);
+    actionLabelOverride ??
+    base.actionLabel ??
+    (shouldShowRetry ? t("common.retry", { defaultValue: "Retry" }) : undefined);
   const onAction = base.onAction ?? (shouldShowRetry ? onRetry : undefined);
 
   const descriptionNode: ReactNode =
@@ -190,6 +197,7 @@ export const buildRequestErrorEmptyState = ({
     title: base.title,
     description: descriptionNode,
     ...(actionLabel ? { actionLabel } : {}),
+    ...(typeof actionLoading === "boolean" ? { actionLoading } : {}),
     ...(onAction ? { onAction } : {}),
     ...(detailText ? { detailText } : {})
   };

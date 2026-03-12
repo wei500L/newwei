@@ -1,6 +1,6 @@
 'use client';
 
-import { SettingOutlined } from '@ant-design/icons';
+import { CloseOutlined, ExpandOutlined, SettingOutlined } from '@ant-design/icons';
 import { PathLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { MapboxOverlay } from '@deck.gl/mapbox';
 import {
@@ -14,7 +14,7 @@ import {
   WAR_MAP_TIME_RANGE_PRESETS,
 } from '@modular/utils';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Checkbox, Popover, Skeleton, Space, Tag } from 'antd';
+import { Button, Checkbox, Drawer, Grid, List, Popover, Skeleton, Space, Tag, Typography } from 'antd';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 
 import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
+import { usePendingAction } from '@/hooks/use-pending-action';
 import { createApiClient } from '@/lib/api-client';
 import { formatDateTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
 import { captureClientError } from '@/lib/client-telemetry';
@@ -36,12 +37,19 @@ import { useDashboardRangeStore } from '@/store/time-range';
 import { useWarMapSettingsStore } from '@/store/war-map-settings';
 
 import {
+  clusterWarMapPoints,
+  computeAverageClusterGeometry,
+  computeWeightedClusterGeometry,
+  sortWarMapEventClusterMembers,
+  sortWarMapNewsClusterMembers,
+} from './war-map-clustering';
+import {
   buildSanitizedPathGeometry,
   buildSanitizedPolygonResult,
   isValidDeckCoordinate,
   type DeckCoordinate,
 } from './war-map-geometry';
-import { buildWarMapQueryBbox } from './query-viewport';
+import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
 
 const ALL_TIME_START = new Date('1970-01-01T00:00:00.000Z');
@@ -56,6 +64,7 @@ interface WarMapEvent {
   lat: number;
   lng: number;
   severity: WarEventSeverity;
+  latestAt?: string;
   derivedScore?: number;
   value?: number;
   alertScore?: number;
@@ -111,12 +120,50 @@ interface DeckPoint {
   radius: number;
   isCluster?: boolean;
   clusterCount?: number;
+  selectionKey?: string;
   url?: string | null;
   publishedAt?: string;
+  ingestedAt?: string;
+  latestAt?: string;
+  locationLabel?: string;
+  severity?: WarEventSeverity;
+  alertCount?: number;
+  newsCount?: number;
+  geoSource?: WarMapNewsGeoSource;
   query?: string;
   kind: 'event' | 'news' | 'news-cluster' | 'event-cluster' | 'layer' | 'monitor';
   description?: string;
 }
+
+interface RenderableWarMapEvent extends WarMapEvent {
+  label: string;
+}
+
+interface RenderableWarMapNewsMarker extends WarMapNewsMarker {
+  label: string;
+  locationLabel: string;
+  latestAt?: string;
+}
+
+type SelectedCluster =
+  | {
+      key: string;
+      kind: 'event';
+      lat: number;
+      lng: number;
+      count: number;
+      zoomTarget: number;
+      members: RenderableWarMapEvent[];
+    }
+  | {
+      key: string;
+      kind: 'news';
+      lat: number;
+      lng: number;
+      count: number;
+      zoomTarget: number;
+      members: RenderableWarMapNewsMarker[];
+    };
 
 export interface WarMapProps {
   className?: string;
@@ -308,9 +355,31 @@ function severityColor(severity: WarEventSeverity): [number, number, number, num
   }
 }
 
+function severityTagColor(severity: WarEventSeverity): string {
+  switch (severity) {
+    case 'high':
+      return 'red';
+    case 'medium':
+      return 'gold';
+    case 'low':
+    default:
+      return 'blue';
+  }
+}
+
+function clusterRadius(count: number): number {
+  return Math.max(12, Math.min(42, Math.sqrt(Math.max(1, count)) * 7));
+}
+
+function toClusterSelectionKey(kind: 'event' | 'news', cellKey: string): string {
+  return `${kind}:${cellKey}`;
+}
+
 export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
+  const screens = Grid.useBreakpoint();
+  const useDesktopInspector = Boolean(screens.lg);
   const { data: session } = useSession();
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -324,6 +393,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const [mapReady, setMapReady] = useState(false);
   const [mapLoadError, setMapLoadError] = useState<MapLoadErrorPresentation | null>(null);
   const [mapMountNonce, setMapMountNonce] = useState(0);
+  const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [queryViewport, setQueryViewport] = useState<{
     bbox?: [number, number, number, number];
@@ -398,6 +468,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const queryBbox = useMemo(() => {
     return buildWarMapQueryBbox(queryViewport.bbox, queryZoom);
   }, [queryViewport.bbox, queryZoom]);
+  const localClusterBbox = useMemo(
+    () => (queryZoom >= BBOX_QUERY_MIN_ZOOM ? queryViewport.bbox : undefined),
+    [queryViewport.bbox, queryZoom],
+  );
 
   const eventsQuery = useQuery({
     queryKey: [
@@ -418,7 +492,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           translate: translateTarget,
           bbox: queryBbox,
           zoom: queryZoom.toFixed(2),
-          cluster: '1',
+          cluster: '0',
         },
       });
       return response.data;
@@ -449,7 +523,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             translate: translateTarget,
             bbox: queryBbox,
             zoom: queryZoom.toFixed(2),
-            cluster: '1',
+            cluster: '0',
           },
         },
       );
@@ -644,10 +718,146 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     [monitors],
   );
 
+  const openNewsLink = useCallback(
+    (url?: string | null) => {
+      const safeUrl = typeof url === 'string' ? safeHttpUrl(url) : null;
+      if (!safeUrl) {
+        toast.warning(
+          t('dashboard.charts.warMap.missingNewsUrl', {
+            defaultValue: 'No link available for this news marker.',
+          }),
+        );
+        return;
+      }
+      window.open(safeUrl, '_blank', 'noopener,noreferrer');
+    },
+    [t],
+  );
+
+  const rawEvents = useMemo<RenderableWarMapEvent[]>(
+    () =>
+      (eventsQuery.data?.events ?? [])
+        .filter((event) => isValidLatLng(event.lat, event.lng))
+        .map((event) => ({
+          ...event,
+          label:
+            translateTarget === 'zh-CN' && typeof event.nameZh === 'string'
+              ? event.nameZh
+              : event.name,
+        })),
+    [eventsQuery.data?.events, translateTarget],
+  );
+
+  const rawNewsMarkers = useMemo<RenderableWarMapNewsMarker[]>(
+    () =>
+      (newsQuery.data?.markers ?? [])
+        .filter((marker) => isValidLatLng(marker.lat, marker.lng))
+        .map((marker) => ({
+          ...marker,
+          label:
+            translateTarget === 'zh-CN' && typeof marker.titleZh === 'string'
+              ? marker.titleZh
+              : marker.title,
+          locationLabel:
+            translateTarget === 'zh-CN'
+              ? marker.displayNameZh ?? marker.locationZh ?? marker.displayName ?? marker.location
+              : marker.displayName ?? marker.location,
+          latestAt: marker.publishedAt ?? marker.ingestedAt,
+        })),
+    [newsQuery.data?.markers, translateTarget],
+  );
+
+  const clusteredEvents = useMemo(
+    () =>
+      clusterWarMapPoints(rawEvents, {
+        bbox: localClusterBbox,
+        zoom: queryZoom,
+        sortMembers: sortWarMapEventClusterMembers,
+        getClusterGeometry: (members) =>
+          computeWeightedClusterGeometry(members, (event) =>
+            Math.max(1, event.derivedScore ?? event.value ?? 1),
+          ),
+      }),
+    [localClusterBbox, queryZoom, rawEvents],
+  );
+
+  const clusteredNews = useMemo(
+    () =>
+      clusterWarMapPoints(rawNewsMarkers, {
+        bbox: localClusterBbox,
+        zoom: queryZoom,
+        sortMembers: sortWarMapNewsClusterMembers,
+        getClusterGeometry: (members) => computeAverageClusterGeometry(members),
+      }),
+    [localClusterBbox, queryZoom, rawNewsMarkers],
+  );
+
+  const selectedCluster = useMemo<SelectedCluster | null>(() => {
+    if (!selectedClusterKey) {
+      return null;
+    }
+
+    const eventCluster = clusteredEvents.clusters.find(
+      (cluster) => toClusterSelectionKey('event', cluster.cellKey) === selectedClusterKey,
+    );
+    if (eventCluster) {
+      return {
+        key: selectedClusterKey,
+        kind: 'event',
+        lat: eventCluster.lat,
+        lng: eventCluster.lng,
+        count: eventCluster.count,
+        zoomTarget: 8,
+        members: eventCluster.members,
+      };
+    }
+
+    const newsCluster = clusteredNews.clusters.find(
+      (cluster) => toClusterSelectionKey('news', cluster.cellKey) === selectedClusterKey,
+    );
+    if (newsCluster) {
+      return {
+        key: selectedClusterKey,
+        kind: 'news',
+        lat: newsCluster.lat,
+        lng: newsCluster.lng,
+        count: newsCluster.count,
+        zoomTarget: 9,
+        members: newsCluster.members,
+      };
+    }
+
+    return null;
+  }, [clusteredEvents.clusters, clusteredNews.clusters, selectedClusterKey]);
+
+  useEffect(() => {
+    if (selectedClusterKey && !selectedCluster) {
+      setSelectedClusterKey(null);
+    }
+  }, [selectedCluster, selectedClusterKey]);
+
+  const closeSelectedCluster = useCallback(() => {
+    setSelectedClusterKey(null);
+  }, []);
+
+  const zoomToSelectedCluster = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !selectedCluster) {
+      return;
+    }
+
+    map.easeTo({
+      center: [selectedCluster.lng, selectedCluster.lat],
+      zoom: Math.min(selectedCluster.zoomTarget, map.getZoom() + 2),
+      duration: 350,
+      essential: true,
+    });
+  }, [selectedCluster]);
+
   const deckData = useMemo(() => {
     const layersData = layersQuery.data?.layers ?? {};
-    const events = eventsQuery.data?.events ?? [];
-    const newsMarkers = newsQuery.data?.markers ?? [];
+    const events = clusteredEvents.singles;
+    const newsMarkers = clusteredNews.singles;
 
     const staticLayers: any[] = [];
 
@@ -895,71 +1105,90 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     const eventPoints: DeckPoint[] = [];
-    const eventClusters: DeckPoint[] = [];
     for (const event of events) {
-      if (!isValidLatLng(event.lat, event.lng)) {
-        continue;
-      }
-      const label =
-        translateTarget === 'zh-CN' && typeof event.nameZh === 'string'
-          ? event.nameZh
-          : event.name;
       const score =
         typeof event.derivedScore === 'number' ? event.derivedScore : event.value ?? 0;
       const point: DeckPoint = {
         id: event.id,
         lat: event.lat,
         lng: event.lng,
-        label,
-        kind: event.isCluster ? 'event-cluster' : 'event',
-        color: event.isCluster ? [217, 119, 6, 208] : severityColor(event.severity),
-        radius: event.isCluster
-          ? Math.max(12, Math.min(42, Math.sqrt(event.clusterCount ?? 1) * 7))
-          : Math.max(5, Math.min(24, Math.sqrt(Math.max(1, score)) * 2.5)),
-        isCluster: event.isCluster,
-        clusterCount: event.clusterCount,
+        label: event.label,
+        kind: 'event',
+        color: severityColor(event.severity),
+        radius: Math.max(5, Math.min(24, Math.sqrt(Math.max(1, score)) * 2.5)),
+        severity: event.severity,
+        alertCount: event.alertCount,
+        newsCount: event.newsCount,
+        latestAt: event.latestAt,
       };
-      if (event.isCluster) {
-        eventClusters.push(point);
-      } else {
-        eventPoints.push(point);
-      }
+      eventPoints.push(point);
+    }
+
+    const eventClusters: DeckPoint[] = [];
+    for (const cluster of clusteredEvents.clusters) {
+      const selectionKey = toClusterSelectionKey('event', cluster.cellKey);
+      eventClusters.push({
+        id: selectionKey,
+        lat: cluster.lat,
+        lng: cluster.lng,
+        label: t('dashboard.charts.warMap.panel.signalsTitle', {
+          defaultValue: 'Nearby signals',
+        }),
+        kind: 'event-cluster',
+        color: [180, 83, 9, 188],
+        radius: clusterRadius(cluster.count),
+        isCluster: true,
+        clusterCount: cluster.count,
+        selectionKey,
+        description: t('dashboard.charts.warMap.tooltip.clusterSignals', {
+          defaultValue: '{{count}} nearby signals. Click to inspect.',
+          count: cluster.count,
+        }),
+      });
     }
 
     const newsPoints: DeckPoint[] = [];
-    const newsClusters: DeckPoint[] = [];
     for (const marker of newsMarkers) {
-      if (!isValidLatLng(marker.lat, marker.lng)) {
-        continue;
-      }
-      const label =
-        translateTarget === 'zh-CN' && typeof marker.titleZh === 'string'
-          ? marker.titleZh
-          : marker.title;
       const baseColor = marker.geoSource === 'fallback-country' ? [8, 145, 178] : [5, 150, 105];
       const [baseR = 8, baseG = 145, baseB = 178] = baseColor;
       const point: DeckPoint = {
         id: marker.id,
         lat: marker.lat,
         lng: marker.lng,
-        label,
-        kind: marker.isCluster ? 'news-cluster' : 'news',
-        color: marker.isCluster
-          ? [21, 128, 61, 204]
-          : [baseR, baseG, baseB, marker.geoSource === 'fallback-country' ? 110 : 200],
-        radius: marker.isCluster
-          ? Math.max(12, Math.min(42, Math.sqrt(marker.clusterCount ?? 1) * 7))
-          : 5,
-        isCluster: marker.isCluster,
-        clusterCount: marker.clusterCount,
+        label: marker.label,
+        kind: 'news',
+        color: [baseR, baseG, baseB, marker.geoSource === 'fallback-country' ? 110 : 200],
+        radius: 5,
         url: marker.url ?? null,
         publishedAt: marker.publishedAt,
+        ingestedAt: marker.ingestedAt,
+        locationLabel: marker.locationLabel,
+        geoSource: marker.geoSource,
       };
-      if (marker.isCluster) {
-        newsClusters.push(point);
-      } else {
-        newsPoints.push(point);
-      }
+      newsPoints.push(point);
+    }
+
+    const newsClusters: DeckPoint[] = [];
+    for (const cluster of clusteredNews.clusters) {
+      const selectionKey = toClusterSelectionKey('news', cluster.cellKey);
+      newsClusters.push({
+        id: selectionKey,
+        lat: cluster.lat,
+        lng: cluster.lng,
+        label: t('dashboard.charts.warMap.panel.newsTitle', {
+          defaultValue: 'Nearby news',
+        }),
+        kind: 'news-cluster',
+        color: [21, 128, 61, 176],
+        radius: clusterRadius(cluster.count),
+        isCluster: true,
+        clusterCount: cluster.count,
+        selectionKey,
+        description: t('dashboard.charts.warMap.tooltip.clusterNews', {
+          defaultValue: '{{count}} nearby news items. Click to inspect.',
+          count: cluster.count,
+        }),
+      });
     }
 
     const deckLayers: any[] = [...staticLayers];
@@ -1012,14 +1241,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           radiusMaxPixels: 50,
           onClick: (info: { object?: DeckPoint }) => {
             const object = info.object;
-            if (!object || !mapRef.current) {
+            if (!object?.selectionKey) {
               return;
             }
-            mapRef.current.easeTo({
-              center: [object.lng, object.lat],
-              zoom: Math.min(8, mapRef.current.getZoom() + 2),
-              duration: 350,
-            });
+            setSelectedClusterKey(object.selectionKey);
           },
         }),
       );
@@ -1053,14 +1278,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           radiusMaxPixels: 50,
           onClick: (info: { object?: DeckPoint }) => {
             const object = info.object;
-            if (!object || !mapRef.current) {
+            if (!object?.selectionKey) {
               return;
             }
-            mapRef.current.easeTo({
-              center: [object.lng, object.lat],
-              zoom: Math.min(9, mapRef.current.getZoom() + 2),
-              duration: 350,
-            });
+            setSelectedClusterKey(object.selectionKey);
           },
         }),
       );
@@ -1082,16 +1303,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             if (!object || object.isCluster) {
               return;
             }
-            const safeUrl = typeof object.url === 'string' ? safeHttpUrl(object.url) : null;
-            if (!safeUrl) {
-              toast.warning(
-                t('dashboard.charts.warMap.missingNewsUrl', {
-                  defaultValue: 'No link available for this news marker.',
-                }),
-              );
-              return;
-            }
-            window.open(safeUrl, '_blank', 'noopener,noreferrer');
+            openNewsLink(object.url);
           },
         }),
       );
@@ -1099,18 +1311,23 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
     return {
       deckLayers,
-      eventsCount: eventPoints.length,
+      eventsCount: rawEvents.length,
       eventClustersCount: eventClusters.length,
-      newsCount: newsPoints.length,
+      newsCount: rawNewsMarkers.length,
       newsClustersCount: newsClusters.length,
       staticVisibleCount: staticLayers.length,
     };
   }, [
-    eventsQuery.data?.events,
+    clusteredEvents.clusters,
+    clusteredEvents.singles,
     layerVisibility,
     layersQuery.data?.layers,
     monitorPoints,
-    newsQuery.data?.markers,
+    clusteredNews.clusters,
+    clusteredNews.singles,
+    openNewsLink,
+    rawEvents.length,
+    rawNewsMarkers.length,
     queryZoom,
     t,
     translateTarget,
@@ -1122,18 +1339,43 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         if (!object) {
           return null;
         }
-        if (object.kind === 'event-cluster' || object.kind === 'news-cluster') {
+        if (object.kind === 'event-cluster') {
           const count = object.clusterCount ?? 0;
           return {
-            text: t('dashboard.charts.warMap.tooltip.cluster', {
-              defaultValue: `Cluster (${count})`,
+            text: t('dashboard.charts.warMap.tooltip.clusterSignals', {
+              defaultValue: '{{count}} nearby signals. Click to inspect.',
+              count,
+            }),
+          };
+        }
+        if (object.kind === 'news-cluster') {
+          const count = object.clusterCount ?? 0;
+          return {
+            text: t('dashboard.charts.warMap.tooltip.clusterNews', {
+              defaultValue: '{{count}} nearby news items. Click to inspect.',
               count,
             }),
           };
         }
 
-        const published = object.publishedAt
-          ? formatDateTime(object.publishedAt, locale, {
+        const latestTimestamp = object.publishedAt ?? object.ingestedAt ?? object.latestAt;
+        const latestLabel =
+          object.kind === 'event'
+            ? t('dashboard.charts.warMap.panel.latest', {
+                defaultValue: 'Latest',
+              })
+            : object.publishedAt
+              ? t('dashboard.charts.warMap.tooltip.published', {
+                  defaultValue: 'Published',
+                })
+              : object.ingestedAt
+                ? t('dashboard.charts.warMap.tooltip.ingested', {
+                    defaultValue: 'Ingested',
+                  })
+                : null;
+
+        const formattedTimestamp = latestTimestamp
+          ? formatDateTime(latestTimestamp, locale, {
               dateStyle: 'medium',
               timeStyle: 'short',
             })
@@ -1143,12 +1385,36 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         if (object.description) {
           lines.push(object.description);
         }
-        if (published) {
+        if (object.kind === 'event' && object.severity) {
           lines.push(
-            `${t('dashboard.charts.warMap.tooltip.published', {
-              defaultValue: 'Published',
-            })}: ${published}`,
+            `${t('dashboard.charts.warMap.tooltip.severity', {
+              defaultValue: 'Severity',
+            })}: ${t(`dashboard.charts.warMap.stats.${object.severity}`, {
+              defaultValue: object.severity,
+            })}`,
           );
+        }
+        if (object.kind === 'event') {
+          lines.push(
+            `${t('dashboard.charts.warMap.tooltip.alerts', {
+              defaultValue: 'Alerts',
+            })}: ${object.alertCount ?? 0}`,
+          );
+          lines.push(
+            `${t('dashboard.charts.warMap.stats.news', {
+              defaultValue: 'News',
+            })}: ${object.newsCount ?? 0}`,
+          );
+        }
+        if (object.kind === 'news' && object.locationLabel) {
+          lines.push(
+            `${t('dashboard.charts.warMap.tooltip.location', {
+              defaultValue: 'Location',
+            })}: ${object.locationLabel}`,
+          );
+        }
+        if (formattedTimestamp && latestLabel) {
+          lines.push(`${latestLabel}: ${formattedTimestamp}`);
         }
         if (object.kind === 'news') {
           lines.push(
@@ -1174,6 +1440,15 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
   const anyLoading = eventsQuery.isLoading || newsQuery.isLoading || layersQuery.isLoading;
   const errors = [eventsQuery.error, newsQuery.error, layersQuery.error].filter(Boolean);
+  const { pending: refreshingMapData, run: refreshMapData } = usePendingAction(
+    async () => {
+      await Promise.all([
+        eventsQuery.refetch(),
+        newsQuery.refetch(),
+        layersQuery.refetch(),
+      ]);
+    },
+  );
   const hasData =
     deckData.eventsCount +
       deckData.newsCount +
@@ -1226,6 +1501,207 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     </div>
   );
 
+  const clusterPanelContent = selectedCluster ? (
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-2xl backdrop-blur">
+      <div className="border-b border-slate-200 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <Space size={[6, 6]} wrap>
+              <Tag color={selectedCluster.kind === 'event' ? 'gold' : 'green'}>
+                {selectedCluster.kind === 'event'
+                  ? t('dashboard.charts.warMap.panel.signalsTitle', {
+                      defaultValue: 'Nearby signals',
+                    })
+                  : t('dashboard.charts.warMap.panel.newsTitle', {
+                      defaultValue: 'Nearby news',
+                    })}
+              </Tag>
+              <Tag color="default">
+                {t('dashboard.charts.warMap.panel.count', {
+                  defaultValue: '{{count}} items',
+                  count: selectedCluster.count,
+                })}
+              </Tag>
+            </Space>
+            <Typography.Title level={5} className="!mb-1 !mt-3">
+              {selectedCluster.kind === 'event'
+                ? t('dashboard.charts.warMap.panel.signalsTitle', {
+                    defaultValue: 'Nearby signals',
+                  })
+                : t('dashboard.charts.warMap.panel.newsTitle', {
+                    defaultValue: 'Nearby news',
+                  })}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {selectedCluster.kind === 'event'
+                ? t('dashboard.charts.warMap.panel.signalsSummary', {
+                    defaultValue: '{{count}} nearby signals at this zoom level.',
+                    count: selectedCluster.count,
+                  })
+                : t('dashboard.charts.warMap.panel.newsSummary', {
+                    defaultValue: '{{count}} nearby news items at this zoom level.',
+                    count: selectedCluster.count,
+                  })}
+            </Typography.Text>
+          </div>
+          <Space size={8}>
+            <Button
+              size="small"
+              icon={<ExpandOutlined />}
+              onClick={zoomToSelectedCluster}
+            >
+              {t('dashboard.charts.warMap.panel.zoomIn', {
+                defaultValue: 'Zoom in',
+              })}
+            </Button>
+            {useDesktopInspector ? (
+              <Button
+                size="small"
+                type="text"
+                icon={<CloseOutlined />}
+                onClick={closeSelectedCluster}
+                aria-label={t('common.close', {
+                  defaultValue: 'Close',
+                })}
+              />
+            ) : null}
+          </Space>
+        </div>
+      </div>
+
+      {selectedCluster.kind === 'event' ? (
+        <List
+          className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+          dataSource={selectedCluster.members}
+          renderItem={(item) => (
+            <List.Item key={item.id}>
+              <List.Item.Meta
+                title={
+                  <div className="flex items-start justify-between gap-3">
+                    <Typography.Text strong>{item.label}</Typography.Text>
+                    <Tag color={severityTagColor(item.severity)}>
+                      {t(`dashboard.charts.warMap.stats.${item.severity}`, {
+                        defaultValue:
+                          item.severity.charAt(0).toUpperCase() + item.severity.slice(1),
+                      })}
+                    </Tag>
+                  </div>
+                }
+                description={
+                  <div className="flex flex-col gap-2">
+                    <Space size={[6, 6]} wrap>
+                      <Tag>
+                        {t('dashboard.charts.warMap.tooltip.alerts', {
+                          defaultValue: 'Alerts',
+                        })}
+                        : {item.alertCount ?? 0}
+                      </Tag>
+                      <Tag>
+                        {t('dashboard.charts.warMap.stats.news', {
+                          defaultValue: 'News',
+                        })}
+                        : {item.newsCount ?? 0}
+                      </Tag>
+                    </Space>
+                    {item.latestAt ? (
+                      <Typography.Text type="secondary" className="text-xs">
+                        {t('dashboard.charts.warMap.panel.latest', {
+                          defaultValue: 'Latest',
+                        })}
+                        :{' '}
+                        {formatDateTime(item.latestAt, locale, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </Typography.Text>
+                    ) : null}
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      ) : (
+        <List
+          className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+          dataSource={selectedCluster.members}
+          renderItem={(item) => {
+            const timestampLabel = item.publishedAt
+              ? t('dashboard.charts.warMap.tooltip.published', {
+                  defaultValue: 'Published',
+                })
+              : item.ingestedAt
+                ? t('dashboard.charts.warMap.tooltip.ingested', {
+                    defaultValue: 'Ingested',
+                  })
+                : null;
+            const timestamp = item.publishedAt ?? item.ingestedAt;
+
+            return (
+              <List.Item
+                key={item.id}
+                actions={[
+                  <Button
+                    key="open"
+                    size="small"
+                    type="link"
+                    disabled={!item.url}
+                    onClick={() => openNewsLink(item.url)}
+                  >
+                    {t('dashboard.charts.warMap.panel.openOriginal', {
+                      defaultValue: 'Open',
+                    })}
+                  </Button>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Typography.Text
+                      strong
+                      className="block"
+                      ellipsis={{ tooltip: item.label }}
+                    >
+                      {item.label}
+                    </Typography.Text>
+                  }
+                  description={
+                    <div className="flex flex-col gap-2">
+                      <Space size={[6, 6]} wrap>
+                        <Tag>{item.locationLabel}</Tag>
+                        <Tag>
+                          {t(
+                            item.geoSource === 'fallback-country'
+                              ? 'dashboard.charts.warMap.stats.fallbackCountry'
+                              : 'dashboard.charts.warMap.stats.geocoded',
+                            {
+                              defaultValue:
+                                item.geoSource === 'fallback-country'
+                                  ? 'Fallback country'
+                                  : 'Geocoded',
+                            },
+                          )}
+                        </Tag>
+                      </Space>
+                      {timestamp && timestampLabel ? (
+                        <Typography.Text type="secondary" className="text-xs">
+                          {timestampLabel}:{' '}
+                          {formatDateTime(timestamp, locale, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </Typography.Text>
+                      ) : null}
+                    </div>
+                  }
+                />
+              </List.Item>
+            );
+          }}
+        />
+      )}
+    </div>
+  ) : null;
+
   const containerClassName = ['relative', className ?? 'h-[430px]'].filter(Boolean).join(' ');
 
   if (!inView) {
@@ -1245,10 +1721,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           <RequestErrorBanner
             error={errors[0]}
             showCachedDataHint
+            actionLoading={refreshingMapData}
             onRetry={() => {
-              void eventsQuery.refetch();
-              void newsQuery.refetch();
-              void layersQuery.refetch();
+              void refreshMapData();
             }}
           />
         </div>
@@ -1260,22 +1735,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             {t('dashboard.charts.warMap.stats.window', { defaultValue: 'Window' })}: {windowLabel}
           </Tag>
           <Tag color="geekblue" className="text-xs">
-            {t('dashboard.charts.warMap.stats.signals', { defaultValue: 'Signals' })}: {deckData.eventsCount}
-          </Tag>
-          <Tag color="gold" className="text-xs">
-            {t('dashboard.charts.warMap.stats.signalClusters', {
-              defaultValue: 'Signal clusters',
-            })}
-            : {deckData.eventClustersCount}
+            {t('dashboard.charts.warMap.stats.signals', { defaultValue: 'Signals' })}: {rawEvents.length}
           </Tag>
           <Tag color="green" className="text-xs">
-            {t('dashboard.charts.warMap.stats.news', { defaultValue: 'News' })}: {deckData.newsCount}
-          </Tag>
-          <Tag color="lime" className="text-xs">
-            {t('dashboard.charts.warMap.stats.newsClusters', {
-              defaultValue: 'News clusters',
-            })}
-            : {deckData.newsClustersCount}
+            {t('dashboard.charts.warMap.stats.news', { defaultValue: 'News' })}: {rawNewsMarkers.length}
           </Tag>
           {eventsUpdatedAt ? (
             <Tag color="default" className="text-xs">
@@ -1337,6 +1800,25 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
       <div ref={mapContainerRef} className="h-full w-full overflow-hidden rounded-lg" />
 
+      {useDesktopInspector && clusterPanelContent ? (
+        <div className="absolute bottom-4 right-4 top-16 z-20 hidden w-[360px] lg:block">
+          {clusterPanelContent}
+        </div>
+      ) : null}
+
+      {!useDesktopInspector ? (
+        <Drawer
+          open={Boolean(clusterPanelContent)}
+          onClose={closeSelectedCluster}
+          placement="right"
+          width="100%"
+          destroyOnClose={false}
+          title={null}
+        >
+          {clusterPanelContent}
+        </Drawer>
+      ) : null}
+
       {anyLoading && !hasData ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <Skeleton active paragraph={{ rows: 6 }} />
@@ -1354,11 +1836,12 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
                 defaultValue: 'Service is unavailable. Please try again.',
               })
             }
-            actionLabel={t('common.retry', { defaultValue: 'Retry' })}
+            actionLabel={t('dashboard.actions.retryFetch', {
+              defaultValue: 'Retry fetch',
+            })}
+            actionLoading={refreshingMapData}
             onAction={() => {
-              void eventsQuery.refetch();
-              void newsQuery.refetch();
-              void layersQuery.refetch();
+              void refreshMapData();
             }}
           />
         </div>

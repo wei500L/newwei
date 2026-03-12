@@ -44,6 +44,7 @@ export default function LivelihoodPricesPage() {
     error,
     seriesMap,
     refetch,
+    refreshing,
     hasData,
     latestTimestamp,
     appliedGranularity,
@@ -61,6 +62,7 @@ export default function LivelihoodPricesPage() {
       state={chartState}
       latestTimestamp={latestTimestamp}
       locale={locale}
+      refreshing={refreshing}
       onRefresh={() => refetch()}
     />
   );
@@ -207,6 +209,7 @@ export default function LivelihoodPricesPage() {
         delayMs={delayMs}
         expectedIntervalMs={expectedIntervalMs}
         locale={locale}
+        refreshing={refreshing}
         onRetry={() => refetch()}
       />
       {isInitialLoading ? (

@@ -13,6 +13,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -552,6 +553,11 @@ export function SpacetimePropagation({
     if (!iso) return null;
     return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
   }, [articlesQuery.data?.updatedAt, locale]);
+  const { pending: refreshingPropagation, run: refreshPropagation } =
+    usePendingAction(() => propagationQuery.refetch());
+  const { pending: refreshingArticles, run: refreshArticles } = usePendingAction(
+    () => articlesQuery.refetch(),
+  );
 
   const renderSentimentTag = (sentiment: SentimentLabel | undefined) => {
     if (!sentiment) return null;
@@ -586,7 +592,10 @@ export function SpacetimePropagation({
       <div className="h-[360px]">
         <RequestErrorBanner
           error={propagationQuery.error}
-          onRetry={() => void propagationQuery.refetch()}
+          onRetry={() => {
+            void refreshPropagation();
+          }}
+          actionLoading={refreshingPropagation}
           presentation="center"
         />
       </div>
@@ -674,7 +683,10 @@ export function SpacetimePropagation({
         <div className="mb-2">
           <RequestErrorBanner
             error={propagationQuery.error}
-            onRetry={() => void propagationQuery.refetch()}
+            onRetry={() => {
+              void refreshPropagation();
+            }}
+            actionLoading={refreshingPropagation}
             showCachedDataHint
           />
         </div>
@@ -710,7 +722,10 @@ export function SpacetimePropagation({
               return (
                 <RequestErrorBanner
                   error={articlesQuery.error}
-                  onRetry={() => void articlesQuery.refetch()}
+                  onRetry={() => {
+                    void refreshArticles();
+                  }}
+                  actionLoading={refreshingArticles}
                   presentation="center"
                 />
               );
@@ -733,7 +748,10 @@ export function SpacetimePropagation({
                   <div className="mb-3">
                     <RequestErrorBanner
                       error={articlesQuery.error}
-                      onRetry={() => void articlesQuery.refetch()}
+                      onRetry={() => {
+                        void refreshArticles();
+                      }}
+                      actionLoading={refreshingArticles}
                       showCachedDataHint
                     />
                   </div>

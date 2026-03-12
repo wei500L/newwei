@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import type { AlertEventsStreamSubscription } from "@/graphql/generated";
 import { AlertEventsStreamDocument, useAlertEventsQuery } from "@/graphql/generated";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 
 const severityColor: Record<string, string> = {
@@ -39,6 +40,9 @@ export function AlertPanel() {
     variables: { limit: 10 },
     skip: !authenticated || !canReadAlerts
   });
+  const { pending: refreshingEvents, run: refreshEvents } = usePendingAction(
+    () => refetchEvents(),
+  );
 
   useEffect(() => {
     if (!authenticated || !canReadAlerts) {
@@ -103,8 +107,13 @@ export function AlertPanel() {
             className="mb-3"
             title={t("alerts.events.loadFailedTitle", { defaultValue: "Failed to load alert events" })}
             description={error instanceof Error ? error.message : String(error)}
-            actionLabel={t("common.retry", { defaultValue: "Retry" })}
-            onAction={() => refetchEvents()}
+            actionLabel={t("dashboard.actions.retryFetch", {
+              defaultValue: "Retry fetch"
+            })}
+            actionLoading={refreshingEvents}
+            onAction={() => {
+              void refreshEvents();
+            }}
           />
         ) : null}
 

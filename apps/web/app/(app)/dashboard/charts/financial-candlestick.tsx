@@ -13,6 +13,7 @@ import { DashboardChart } from "@/components/echart";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useCsvExport } from "@/hooks/use-csv-export";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import {
   buildExportBaseName,
@@ -117,6 +118,9 @@ export function FinancialCandlestick() {
     enabled: Boolean(session?.accessToken),
     placeholderData: (previous) => previous
   });
+  const { pending: refreshingCandles, run: refreshCandles } = usePendingAction(
+    () => refetch(),
+  );
 
   const updatedAtLabel = useMemo(() => {
     const iso = data?.updatedAt;
@@ -426,7 +430,17 @@ export function FinancialCandlestick() {
   }
 
   if (isError && !data) {
-    const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
+    const emptyState = buildRequestErrorEmptyState({
+      t,
+      error,
+      onRetry: () => {
+        void refreshCandles();
+      },
+      actionLoading: refreshingCandles,
+      actionLabelOverride: t("dashboard.actions.retryFetch", {
+        defaultValue: "Retry fetch"
+      }),
+    });
     return (
       <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState {...emptyState} />
@@ -440,8 +454,13 @@ export function FinancialCandlestick() {
         <ChartEmptyState
           title={emptyTitle}
           description={emptyHint}
-          actionLabel={t("common.refresh", { defaultValue: "Refresh" })}
-          onAction={() => void refetch()}
+          actionLabel={t("dashboard.actions.fetchLatest", {
+            defaultValue: "Pull latest data"
+          })}
+          actionLoading={refreshingCandles}
+          onAction={() => {
+            void refreshCandles();
+          }}
         />
       </div>
     );
@@ -453,7 +472,10 @@ export function FinancialCandlestick() {
         <div className="absolute left-2 right-2 top-2 z-20">
           <RequestErrorBanner
             error={error}
-            onRetry={() => void refetch()}
+            onRetry={() => {
+              void refreshCandles();
+            }}
+            actionLoading={refreshingCandles}
             showCachedDataHint
           />
         </div>

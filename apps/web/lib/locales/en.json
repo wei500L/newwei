@@ -625,6 +625,11 @@
       "explained": "Latest data at {{time}} (≈{{lag}} behind). Expected interval ≈{{interval}}.",
       "missing": "Latest data time unavailable."
     },
+    "actions": {
+      "fetchLatest": "Pull latest data",
+      "retryFetch": "Retry fetch",
+      "fetchLatestTooltip": "Pull the current view from the server again. This does not trigger a server-side refresh job."
+    },
     "timeRange": {
       "aggregation": "Aggregation",
       "aggregationHint": "Aggregation is reported by the backend and may differ from the suggested granularity.",
@@ -685,7 +690,7 @@
     },
     "errors": {
       "metricsUnavailable": "Metrics unavailable",
-      "metricsUnavailableHint": "No system metrics were returned. Try refreshing, or contact an administrator if this persists."
+      "metricsUnavailableHint": "No system metrics were returned. Try pulling the data from the server again, or contact an administrator if this persists."
     },
     "stats": {
       "totalItems": "Total items",
@@ -787,7 +792,7 @@
       "volume": "Volume",
       "notAvailableShort": "N/A",
       "degraded": "Trend view",
-      "emptyHintRefresh": "No data for the selected range. Try expanding the range or refresh the data.",
+      "emptyHintRefresh": "No data for the selected range. Try expanding the range or pull the data from the server again.",
       "degradedTooltip": "Only {{count}} data points available. Switched to trend view for readability; candlestick will return when data is sufficient.",
       "insufficientDataTrendHint": "Insufficient data points, switched to trend view."
     },
@@ -1258,23 +1263,35 @@
           "geocoded": "Geocoded",
           "fallbackCountry": "Fallback country"
         },
-        "tooltip": {
-          "location": "Location",
-          "published": "Published",
-          "ingested": "Ingested",
-          "geo": "Geo",
-          "clickOpenOriginal": "Click to open original link",
-          "clickOpenSearch": "Click to open search results",
-          "severity": "Severity",
-          "alerts": "Alerts",
-          "alertScore": "Score",
-          "derivedScore": "Derived score",
-          "cluster": "Cluster ({{count}})",
-          "datasetUpdated": "Dataset updated",
-          "notAvailable": "N/A",
-          "unknown": "Unknown"
-        },
-        "translation": {
+  "tooltip": {
+    "location": "Location",
+    "published": "Published",
+    "ingested": "Ingested",
+    "geo": "Geo",
+    "clickOpenOriginal": "Click to open original link",
+    "clickOpenSearch": "Click to open search results",
+    "severity": "Severity",
+    "alerts": "Alerts",
+    "alertScore": "Score",
+    "derivedScore": "Derived score",
+    "cluster": "Cluster ({{count}})",
+    "clusterSignals": "{{count}} nearby signals. Click to inspect.",
+    "clusterNews": "{{count}} nearby news items. Click to inspect.",
+    "datasetUpdated": "Dataset updated",
+    "notAvailable": "N/A",
+    "unknown": "Unknown"
+  },
+  "panel": {
+    "signalsTitle": "Nearby signals",
+    "newsTitle": "Nearby news",
+    "signalsSummary": "{{count}} nearby signals at this zoom level.",
+    "newsSummary": "{{count}} nearby news items at this zoom level.",
+    "count": "{{count}} items",
+    "zoomIn": "Zoom in",
+    "latest": "Latest",
+    "openOriginal": "Open"
+  },
+  "translation": {
           "label": "CN coverage",
           "hint": "Localized-text coverage for translated map fields.",
           "localizedTotal": "Localized",

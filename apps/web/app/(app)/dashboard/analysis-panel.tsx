@@ -31,6 +31,7 @@ import {
   type AnalysisResultsQuery,
   type AnalysisEventsSubscription,
 } from "@/graphql/generated";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { dashboardNow } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -84,6 +85,9 @@ export function AnalysisPanel() {
     useRequestCorrelationMutation();
   const [requestAnomaly, { loading: savingAnomaly }] =
     useRequestAnomalyMutation();
+  const { pending: refreshingResults, run: refreshResults } = usePendingAction(
+    () => refetch(),
+  );
   useAnalysisEventsSubscription({
     skip: !authenticated || !canReadAnalysis,
     onData: ({ data }) => {
@@ -261,8 +265,13 @@ export function AnalysisPanel() {
             className="mb-3"
             title={t("analysis.results.loadFailedTitle", { defaultValue: "Failed to load analysis results" })}
             description={error instanceof Error ? error.message : String(error)}
-            actionLabel={t("common.retry", { defaultValue: "Retry" })}
-            onAction={() => refetch()}
+            actionLabel={t("dashboard.actions.retryFetch", {
+              defaultValue: "Retry fetch"
+            })}
+            actionLoading={refreshingResults}
+            onAction={() => {
+              void refreshResults();
+            }}
           />
         ) : null}
 

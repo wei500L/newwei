@@ -24,6 +24,7 @@ import { RequestErrorBanner } from "@/components/request-error-banner";
 import { DashboardChart } from "@/components/echart";
 import { useEntityImpactGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import {
   buildEntityGraphConnectionMap,
   ENTITY_GRAPH_DEFAULT_CATEGORIES,
@@ -134,6 +135,9 @@ export function EntityImpactGraph() {
     fetchPolicy: "cache-and-network",
     skip: !authenticated || !canReadDashboards,
   });
+  const { pending: refreshingSettings, run: refreshSettings } = usePendingAction(
+    () => refetchSettings(),
+  );
 
   const settings = settingsData?.entityImpactGraphSettings;
   const enabled = settings?.enabled ?? true;
@@ -191,6 +195,9 @@ export function EntityImpactGraph() {
         enabled === false ||
         !settingsApplied,
     });
+  const { pending: refreshingGraph, run: refreshGraph } = usePendingAction(
+    () => refetch(),
+  );
 
   const emptyMessage = t("dashboard.dataEmpty", { defaultValue: "No data" });
 
@@ -822,8 +829,13 @@ export function EntityImpactGraph() {
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={settingsError.message}
-          actionLabel={t("common.retry", { defaultValue: "Retry" })}
-          onAction={() => void refetchSettings()}
+          actionLabel={t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          })}
+          actionLoading={refreshingSettings}
+          onAction={() => {
+            void refreshSettings();
+          }}
         />
       </div>
     );
@@ -868,8 +880,13 @@ export function EntityImpactGraph() {
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error instanceof Error ? error.message : emptyMessage}
-          actionLabel={t("common.retry")}
-          onAction={() => refetch()}
+          actionLabel={t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          })}
+          actionLoading={refreshingGraph}
+          onAction={() => {
+            void refreshGraph();
+          }}
         />
       </div>
     );
@@ -897,7 +914,10 @@ export function EntityImpactGraph() {
           <div className="mb-2">
             <RequestErrorBanner
               error={error}
-              onRetry={() => void refetch()}
+              onRetry={() => {
+                void refreshGraph();
+              }}
+              actionLoading={refreshingGraph}
               showCachedDataHint
             />
           </div>
@@ -905,7 +925,10 @@ export function EntityImpactGraph() {
           <div className="mb-2">
             <RequestErrorBanner
               error={settingsError}
-              onRetry={() => void refetchSettings()}
+              onRetry={() => {
+                void refreshSettings();
+              }}
+              actionLoading={refreshingSettings}
               showCachedDataHint
             />
           </div>

@@ -14,6 +14,7 @@ import { ArticlePublishedTime } from "@/components/article-published-time";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -837,6 +838,15 @@ export function SpacetimeGeoHeatmap({
     if (!iso) return null;
     return formatDateTime(iso, locale, { dateStyle: "medium", timeStyle: "short" });
   }, [articlesQuery.data?.updatedAt, locale]);
+  const { pending: refreshingGeo, run: refreshGeo } = usePendingAction(
+    () => geoQuery.refetch(),
+  );
+  const { pending: refreshingHeatmap, run: refreshHeatmap } = usePendingAction(
+    () => heatmapQuery.refetch(),
+  );
+  const { pending: refreshingArticles, run: refreshArticles } = usePendingAction(
+    () => articlesQuery.refetch(),
+  );
 
   const geoErrorMessage = getApiErrorMessage(geoQuery.error);
   const hasHeatmapData = Boolean(heatmapQuery.data);
@@ -862,8 +872,13 @@ export function SpacetimeGeoHeatmap({
           description={
             geoErrorMessage ?? t("dashboard.dataAbnormal", { defaultValue: "Data error" })
           }
-          actionLabel={t("common.retry", { defaultValue: "Retry" })}
-          onAction={() => void geoQuery.refetch()}
+          actionLabel={t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          })}
+          actionLoading={refreshingGeo}
+          onAction={() => {
+            void refreshGeo();
+          }}
         />
       </div>
     );
@@ -926,7 +941,10 @@ export function SpacetimeGeoHeatmap({
         {showGeoErrorBanner && geoQuery.error ? (
           <RequestErrorBanner
             error={geoQuery.error}
-            onRetry={() => void geoQuery.refetch()}
+            onRetry={() => {
+              void refreshGeo();
+            }}
+            actionLoading={refreshingGeo}
             showCachedDataHint
           />
         ) : null}
@@ -934,7 +952,10 @@ export function SpacetimeGeoHeatmap({
         {showHeatmapErrorBanner && heatmapQuery.error ? (
           <RequestErrorBanner
             error={heatmapQuery.error}
-            onRetry={() => void heatmapQuery.refetch()}
+            onRetry={() => {
+              void refreshHeatmap();
+            }}
+            actionLoading={refreshingHeatmap}
             showCachedDataHint={hasHeatmapData}
           />
         ) : null}
@@ -959,8 +980,13 @@ export function SpacetimeGeoHeatmap({
                     defaultValue: "Service is unavailable. Please try again.",
                   })
                 }
-                actionLabel={t("common.retry", { defaultValue: "Retry" })}
-                onAction={() => void heatmapQuery.refetch()}
+                actionLabel={t("dashboard.actions.retryFetch", {
+                  defaultValue: "Retry fetch"
+                })}
+                actionLoading={refreshingHeatmap}
+                onAction={() => {
+                  void refreshHeatmap();
+                }}
               />
             </div>
           ) : null}
@@ -1042,7 +1068,10 @@ export function SpacetimeGeoHeatmap({
               return (
                 <RequestErrorBanner
                   error={articlesQuery.error}
-                  onRetry={() => void articlesQuery.refetch()}
+                  onRetry={() => {
+                    void refreshArticles();
+                  }}
+                  actionLoading={refreshingArticles}
                   presentation="center"
                 />
               );
@@ -1065,7 +1094,10 @@ export function SpacetimeGeoHeatmap({
                   <div className="mb-3">
                     <RequestErrorBanner
                       error={articlesQuery.error}
-                      onRetry={() => void articlesQuery.refetch()}
+                      onRetry={() => {
+                        void refreshArticles();
+                      }}
+                      actionLoading={refreshingArticles}
                       showCachedDataHint
                     />
                   </div>

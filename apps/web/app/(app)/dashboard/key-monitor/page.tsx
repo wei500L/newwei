@@ -22,6 +22,7 @@ export default function KeyMonitorPage() {
     seriesMap,
     error,
     refetch,
+    refreshing,
     hasData,
     latestTimestamp,
     appliedGranularity,
@@ -43,6 +44,7 @@ export default function KeyMonitorPage() {
       state={chartState}
       latestTimestamp={latestTimestamp}
       locale={locale}
+      refreshing={refreshing}
       onRefresh={() => refetch()}
     />
   );
@@ -64,6 +66,7 @@ export default function KeyMonitorPage() {
         delayMs={delayMs}
         expectedIntervalMs={expectedIntervalMs}
         locale={locale}
+        refreshing={refreshing}
         onRetry={() => refetch()}
       />
       {isInitialLoading ? (

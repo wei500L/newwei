@@ -13,6 +13,7 @@ import { DashboardChart } from "@/components/echart";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useCsvExport } from "@/hooks/use-csv-export";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import {
   buildExportBaseName,
@@ -172,6 +173,9 @@ export function SectorHeatmap() {
     staleTime: 60_000,
     enabled: Boolean(session?.accessToken)
   });
+  const { pending: refreshingHeatmap, run: refreshHeatmap } = usePendingAction(
+    () => refetch(),
+  );
 
   const updatedAtLabel = useMemo(() => {
     const iso = data?.updatedAt;
@@ -425,14 +429,29 @@ export function SectorHeatmap() {
                 ) : null}
               </div>
             }
-            actionLabel={t("common.retry", { defaultValue: "Retry" })}
-            onAction={() => void refetch()}
+            actionLabel={t("dashboard.actions.retryFetch", {
+              defaultValue: "Retry fetch"
+            })}
+            actionLoading={refreshingHeatmap}
+            onAction={() => {
+              void refreshHeatmap();
+            }}
           />
         </div>
       );
     }
 
-    const emptyState = buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() });
+    const emptyState = buildRequestErrorEmptyState({
+      t,
+      error,
+      onRetry: () => {
+        void refreshHeatmap();
+      },
+      actionLoading: refreshingHeatmap,
+      actionLabelOverride: t("dashboard.actions.retryFetch", {
+        defaultValue: "Retry fetch"
+      }),
+    });
     return (
       <div className="h-[300px] transition-all duration-300">
         <ChartEmptyState {...emptyState} />
@@ -454,7 +473,10 @@ export function SectorHeatmap() {
         <div className="px-2">
           <RequestErrorBanner
             error={error}
-            onRetry={() => void refetch()}
+            onRetry={() => {
+              void refreshHeatmap();
+            }}
+            actionLoading={refreshingHeatmap}
             showCachedDataHint
           />
         </div>

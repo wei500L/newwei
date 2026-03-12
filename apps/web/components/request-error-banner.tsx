@@ -9,6 +9,8 @@ import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 export interface RequestErrorBannerProps {
   error: unknown;
   onRetry?: () => void;
+  actionLoading?: boolean;
+  actionLabelOverride?: string;
   className?: string;
   showCachedDataHint?: boolean;
   includeDetailText?: boolean;
@@ -18,13 +20,30 @@ export interface RequestErrorBannerProps {
 export function RequestErrorBanner({
   error,
   onRetry,
+  actionLoading,
+  actionLabelOverride,
   className,
   showCachedDataHint = false,
   includeDetailText = false,
   presentation = "banner"
 }: RequestErrorBannerProps) {
   const { t } = useTranslation();
-  const state = buildRequestErrorEmptyState({ t, error, onRetry, includeDetailText });
+  const retryLabel = t("common.retry", { defaultValue: "Retry" });
+  const state = buildRequestErrorEmptyState({
+    t,
+    error,
+    onRetry,
+    actionLoading,
+    actionLabelOverride,
+    includeDetailText
+  });
+  const resolvedActionLabel =
+    actionLabelOverride ??
+    (state.actionLabel === retryLabel
+      ? t("dashboard.actions.retryFetch", {
+          defaultValue: "Retry fetch"
+        })
+      : state.actionLabel);
 
   const cachedHint = showCachedDataHint
     ? t("common.showingCachedData", { defaultValue: "Showing cached data." })
@@ -50,9 +69,9 @@ export function RequestErrorBanner({
       variant={state.variant}
       title={state.title}
       description={description}
-      actionLabel={state.actionLabel}
+      actionLabel={resolvedActionLabel}
+      actionLoading={state.actionLoading}
       onAction={state.onAction}
     />
   );
 }
-

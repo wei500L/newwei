@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDashboardWindowLabel } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { resolveEconomicUnit } from "@/lib/economic-units";
@@ -103,6 +104,9 @@ export function WidgetRenderer({
           },
     fetchPolicy: "cache-first",
   });
+  const { pending: refreshingData, run: refreshData } = usePendingAction(
+    () => refetch(),
+  );
 
   const resolvedData: ResolvedDataPoint[] | undefined =
     data ??
@@ -299,8 +303,17 @@ export function WidgetRenderer({
         message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
         description={error.message}
         action={
-          <Button size="small" onClick={() => refetch()}>
-            {t("common.retry")}
+          <Button
+            size="small"
+            loading={refreshingData}
+            disabled={refreshingData}
+            onClick={() => {
+              void refreshData();
+            }}
+          >
+            {t("dashboard.actions.retryFetch", {
+              defaultValue: "Retry fetch"
+            })}
           </Button>
         }
       />

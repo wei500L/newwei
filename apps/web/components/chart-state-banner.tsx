@@ -15,6 +15,7 @@ export interface ChartStateBannerProps {
   delayMs?: number | null;
   expectedIntervalMs?: number | null;
   locale: SupportedLocale;
+  refreshing?: boolean;
   onRetry?: (() => void) | undefined;
 }
 
@@ -58,6 +59,7 @@ export function ChartStateBanner({
   delayMs,
   expectedIntervalMs,
   locale,
+  refreshing = false,
   onRetry
 }: ChartStateBannerProps) {
   const { t } = useTranslation();
@@ -82,7 +84,14 @@ export function ChartStateBanner({
             : error?.message ??
               t("common.error.unexpected", { defaultValue: "Unexpected error" })
         }
-        actionLabel={onRetry ? t("common.retry") : undefined}
+        actionLabel={
+          onRetry
+            ? t("dashboard.actions.retryFetch", {
+                defaultValue: "Retry fetch"
+              })
+            : undefined
+        }
+        actionLoading={refreshing}
         onAction={onRetry}
       />
     );
@@ -150,7 +159,14 @@ export function ChartStateBanner({
         variant="delayed"
         title={t("dashboard.dataDelayed.title", { defaultValue: "Data delayed" })}
         description={description}
-        actionLabel={onRetry ? t("common.refresh") : undefined}
+        actionLabel={
+          onRetry
+            ? t("dashboard.actions.fetchLatest", {
+                defaultValue: "Pull latest data"
+              })
+            : undefined
+        }
+        actionLoading={refreshing}
         onAction={onRetry}
       />
     );
@@ -169,4 +185,3 @@ export function ChartStateBanner({
 
   return null;
 }
-

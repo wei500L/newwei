@@ -1214,7 +1214,9 @@ export class AkshareService implements OnModuleInit {
     }
 
     const range = granularity ? this.alignRangeToGranularityUtc(start, end, granularity) : { start, end };
-    const limit = Math.min(pagination?.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
+    const limit = pagination
+      ? Math.min(pagination.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT)
+      : null;
 
     // Build where clause with optional cursor
     const whereClause: Prisma.EconomicDataPointWhereInput = {
@@ -1262,7 +1264,7 @@ export class AkshareService implements OnModuleInit {
         { recordedAt: "asc" },
         { id: "asc" }
       ],
-      take: granularity ? undefined : limit + 1 // Fetch one extra to determine hasMore
+      take: granularity || limit === null ? undefined : limit + 1 // Fetch one extra to determine hasMore
     });
 
     if (granularity) {
@@ -1313,12 +1315,13 @@ export class AkshareService implements OnModuleInit {
       return bucketedResults;
     }
 
-    // Determine if there are more results
+    if (!pagination) {
+      return points;
+    }
+
     const hasMore = points.length > limit;
     const resultPoints = hasMore ? points.slice(0, limit) : points;
     const lastPoint = resultPoints.at(-1);
-
-    // Build pagination meta
     const paginationMeta: PaginationMeta = {
       hasMore,
       nextCursor: hasMore && lastPoint
@@ -1326,11 +1329,7 @@ export class AkshareService implements OnModuleInit {
         : undefined
     };
 
-    // Return paginated result if pagination was requested, otherwise return legacy format
-    if (pagination) {
-      return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
-    }
-    return resultPoints;
+    return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
   }
 
   async listFetchConfigs() {

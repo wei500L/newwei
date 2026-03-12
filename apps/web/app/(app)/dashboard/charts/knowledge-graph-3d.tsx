@@ -11,6 +11,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { usePendingAction } from "@/hooks/use-pending-action";
 
 const { Text } = Typography;
 
@@ -80,6 +81,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     fetchPolicy: "cache-and-network",
     skip: !authenticated || !canReadDashboards
   });
+  const { pending: refreshingSettings, run: refreshSettings } = usePendingAction(
+    () => refetchSettings(),
+  );
 
   const settings = settingsData?.knowledgeGraphSettings;
   const isDisabledByAdmin = settings?.enabled === false;
@@ -136,6 +140,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     fetchPolicy: "cache-first",
     skip: !authenticated || !canReadDashboards || isDisabledByAdmin || !seedName
   });
+  const { pending: refreshingGraph, run: refreshGraph } = usePendingAction(
+    () => refetch(),
+  );
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
   const degreeMap = useMemo(() => (graph ? buildDegreeMap(graph.edges) : new Map<string, number>()), [graph]);
@@ -494,8 +501,13 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={settingsError.message}
-          actionLabel={t("common.retry", { defaultValue: "Retry" })}
-          onAction={() => void refetchSettings()}
+          actionLabel={t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          })}
+          actionLoading={refreshingSettings}
+          onAction={() => {
+            void refreshSettings();
+          }}
         />
       </div>
     );
@@ -586,14 +598,18 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
           action={
-            <a
-              onClick={(evt) => {
-                evt.preventDefault();
-                void refetch();
+            <Button
+              size="small"
+              loading={refreshingGraph}
+              disabled={refreshingGraph}
+              onClick={() => {
+                void refreshGraph();
               }}
             >
-              {t("common.retry")}
-            </a>
+              {t("dashboard.actions.retryFetch", {
+                defaultValue: "Retry fetch"
+              })}
+            </Button>
           }
           style={{ marginBottom: "0.75rem" }}
         />

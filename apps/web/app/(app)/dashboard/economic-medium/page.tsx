@@ -32,6 +32,7 @@ export default function EconomicMediumPage() {
     error,
     seriesMap,
     refetch,
+    refreshing,
     hasData,
     latestTimestamp,
     appliedGranularity,
@@ -49,6 +50,7 @@ export default function EconomicMediumPage() {
       state={chartState}
       latestTimestamp={latestTimestamp}
       locale={locale}
+      refreshing={refreshing}
       onRefresh={() => refetch()}
     />
   );
@@ -265,6 +267,7 @@ export default function EconomicMediumPage() {
         delayMs={delayMs}
         expectedIntervalMs={expectedIntervalMs}
         locale={locale}
+        refreshing={refreshing}
         onRetry={() => refetch()}
       />
       {isInitialLoading ? (

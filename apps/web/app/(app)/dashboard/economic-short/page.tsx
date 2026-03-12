@@ -53,6 +53,7 @@ export default function EconomicShortPage() {
     seriesMap,
     error,
     refetch,
+    refreshing,
     hasData,
     latestTimestamp,
     appliedGranularity,
@@ -71,6 +72,7 @@ export default function EconomicShortPage() {
       state={chartState}
       latestTimestamp={latestTimestamp}
       locale={locale}
+      refreshing={refreshing}
       onRefresh={() => refetch()}
     />
   );
@@ -187,6 +189,7 @@ export default function EconomicShortPage() {
         delayMs={delayMs}
         expectedIntervalMs={expectedIntervalMs}
         locale={locale}
+        refreshing={refreshing}
         onRetry={() => refetch()}
       />
       {isInitialLoading ? (

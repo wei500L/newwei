@@ -12,6 +12,7 @@ import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
 import { useGetKnowledgeGraphSubgraphQuery, useKnowledgeGraphSettingsQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
+import { usePendingAction } from "@/hooks/use-pending-action";
 
 const { Text } = Typography;
 
@@ -87,6 +88,9 @@ export function KnowledgeGraph() {
     fetchPolicy: "cache-and-network",
     skip: !authenticated || !canReadDashboards
   });
+  const { pending: refreshingSettings, run: refreshSettings } = usePendingAction(
+    () => refetchSettings(),
+  );
 
   const settings = settingsData?.knowledgeGraphSettings;
   const isDisabledByAdmin = settings?.enabled === false;
@@ -138,6 +142,9 @@ export function KnowledgeGraph() {
     fetchPolicy: "cache-first",
     skip: !authenticated || !canReadDashboards || isDisabledByAdmin || !seedName
   });
+  const { pending: refreshingGraph, run: refreshGraph } = usePendingAction(
+    () => refetch(),
+  );
 
   const graph = data?.getKnowledgeGraphSubgraph ?? null;
 
@@ -366,8 +373,13 @@ export function KnowledgeGraph() {
           variant="error"
           title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={settingsError.message}
-          actionLabel={t("common.retry", { defaultValue: "Retry" })}
-          onAction={() => void refetchSettings()}
+          actionLabel={t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          })}
+          actionLoading={refreshingSettings}
+          onAction={() => {
+            void refreshSettings();
+          }}
         />
       </div>
     );
@@ -499,14 +511,18 @@ export function KnowledgeGraph() {
           message={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
           description={error.message}
           action={
-            <a
-              onClick={(evt) => {
-                evt.preventDefault();
-                void refetch();
+            <Button
+              size="small"
+              loading={refreshingGraph}
+              disabled={refreshingGraph}
+              onClick={() => {
+                void refreshGraph();
               }}
             >
-              {t("common.retry")}
-            </a>
+              {t("dashboard.actions.retryFetch", {
+                defaultValue: "Retry fetch"
+              })}
+            </Button>
           }
           style={{ marginBottom: "0.75rem" }}
         />

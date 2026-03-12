@@ -625,6 +625,11 @@
       "explained": "最新数据时间：{{time}}（约落后 {{lag}}），预计更新间隔约 {{interval}}。",
       "missing": "无法获取最新数据时间。"
     },
+    "actions": {
+      "fetchLatest": "拉取最新数据",
+      "retryFetch": "重试拉取",
+      "fetchLatestTooltip": "从服务器重新拉取当前视图数据，不会触发后台刷新任务。"
+    },
     "timeRange": {
       "aggregation": "聚合粒度",
       "aggregationHint": "聚合粒度由后端返回，可能与建议粒度不同。",
@@ -685,7 +690,7 @@
     },
     "errors": {
       "metricsUnavailable": "指标不可用",
-      "metricsUnavailableHint": "未返回系统指标数据。请尝试刷新，如持续出现请联系管理员。"
+      "metricsUnavailableHint": "未返回系统指标数据。请尝试重新从服务器拉取数据，如持续出现请联系管理员。"
     },
     "stats": {
       "totalItems": "总计条目",
@@ -787,7 +792,7 @@
       "volume": "成交量",
       "notAvailableShort": "暂无",
       "degraded": "趋势视图",
-      "emptyHintRefresh": "所选时间范围内暂无数据，请尝试扩大时间范围或刷新数据。",
+      "emptyHintRefresh": "所选时间范围内暂无数据，请尝试扩大时间范围或重新从服务器拉取数据。",
       "degradedTooltip": "当前仅 {{count}} 个数据点，已切换为趋势视图以优化可读性；数据充足后将恢复 K 线图。",
       "insufficientDataTrendHint": "数据点不足，已切换为趋势视图。"
     },
@@ -1258,23 +1263,35 @@
           "geocoded": "已地理编码",
           "fallbackCountry": "国家回退"
         },
-        "tooltip": {
-          "location": "位置",
-          "published": "发布时间",
-          "ingested": "入库时间",
-          "geo": "地理来源",
-          "clickOpenOriginal": "点击打开原文链接",
-          "clickOpenSearch": "点击打开搜索结果",
-          "severity": "严重程度",
-          "alerts": "预警",
-          "alertScore": "评分",
-          "derivedScore": "综合分数",
-          "cluster": "聚类（{{count}}）",
-          "datasetUpdated": "数据更新时间",
-          "notAvailable": "暂无",
-          "unknown": "未知"
-        },
-        "translation": {
+  "tooltip": {
+    "location": "位置",
+    "published": "发布时间",
+    "ingested": "入库时间",
+    "geo": "地理来源",
+    "clickOpenOriginal": "点击打开原文链接",
+    "clickOpenSearch": "点击打开搜索结果",
+    "severity": "严重程度",
+    "alerts": "预警",
+    "alertScore": "评分",
+    "derivedScore": "综合分数",
+    "cluster": "聚类（{{count}}）",
+    "clusterSignals": "{{count}} 个附近信号，点击查看详情。",
+    "clusterNews": "{{count}} 条附近新闻，点击查看详情。",
+    "datasetUpdated": "数据更新时间",
+    "notAvailable": "暂无",
+    "unknown": "未知"
+  },
+  "panel": {
+    "signalsTitle": "附近信号",
+    "newsTitle": "附近新闻",
+    "signalsSummary": "当前缩放级别下有 {{count}} 个附近信号。",
+    "newsSummary": "当前缩放级别下有 {{count}} 条附近新闻。",
+    "count": "{{count}} 项",
+    "zoomIn": "放大查看",
+    "latest": "最新",
+    "openOriginal": "打开"
+  },
+  "translation": {
           "label": "中文覆盖",
           "hint": "当前地图翻译字段的中文覆盖率。",
           "localizedTotal": "已本地化",

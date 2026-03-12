@@ -14,6 +14,7 @@ import {
   useAnalysisResultsQuery,
   type AnalysisEventsSubscription,
 } from "@/graphql/generated";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import dayjs from "@/lib/dayjs";
 
 const LIVE_UPDATES_LIMIT = 50;
@@ -47,6 +48,9 @@ export function AnalysisStream() {
     variables: { limit: 20 },
     skip: !authenticated || !canReadAnalysis,
   });
+  const { pending: refreshingResults, run: refreshResults } = usePendingAction(
+    () => refetch(),
+  );
 
   const [liveUpdates, setLiveUpdates] = useState<
     Record<
@@ -243,8 +247,17 @@ export function AnalysisStream() {
                 <div className="mt-1 opacity-80">{subscriptionError}</div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button size="small" onClick={() => void refetch()}>
-                  {t("common.refresh", { defaultValue: "Refresh" })}
+                <Button
+                  size="small"
+                  loading={refreshingResults}
+                  disabled={refreshingResults}
+                  onClick={() => {
+                    void refreshResults();
+                  }}
+                >
+                  {t("dashboard.actions.fetchLatest", {
+                    defaultValue: "Pull latest data"
+                  })}
                 </Button>
                 <Button size="small" type="primary" onClick={retrySubscription}>
                   {t("common.retry", { defaultValue: "Retry" })}

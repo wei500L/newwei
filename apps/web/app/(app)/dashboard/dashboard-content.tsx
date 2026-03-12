@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { useHeroMetrics } from "@/lib/hero-metrics";
@@ -329,6 +330,11 @@ export function DashboardContent() {
     refetch: refetchHero,
     updating: heroUpdating,
   } = useHeroMetrics({ start, end });
+  const { pending: refreshingHero, run: refreshHero } = usePendingAction(
+    () => refetchHero(),
+  );
+  const { pending: refreshingQueueStats, run: refreshQueueStats } =
+    usePendingAction(() => refetch());
   const isDashboardUpdating = dashboardFetchingCount > 0 || heroUpdating;
 
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
@@ -416,7 +422,19 @@ export function DashboardContent() {
   const queueStats = data?.queueStats ?? null;
   const queueStatsInitialLoading = loading && !queueStats;
   const queueStatsBlockingErrorState =
-    error && !queueStats ? buildRequestErrorEmptyState({ t, error, onRetry: () => refetch() }) : null;
+    error && !queueStats
+      ? buildRequestErrorEmptyState({
+          t,
+          error,
+          onRetry: () => {
+            void refreshQueueStats();
+          },
+          actionLoading: refreshingQueueStats,
+          actionLabelOverride: t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch"
+          }),
+        })
+      : null;
   const heroPermissionDescription = t("dashboard.hero.permissionRequired", {
     defaultValue:
       "Hero metrics require the economicdata.read permission. Switch to an organization with access or contact an administrator.",
@@ -487,7 +505,10 @@ export function DashboardContent() {
               <RequestErrorBanner
                 presentation="center"
                 error={heroError}
-                onRetry={() => void refetchHero()}
+                onRetry={() => {
+                  void refreshHero();
+                }}
+                actionLoading={refreshingHero}
               />
             </div>
           ) : (
@@ -496,7 +517,10 @@ export function DashboardContent() {
                 <div className="mb-3">
                   <RequestErrorBanner
                     error={heroError}
-                    onRetry={() => void refetchHero()}
+                    onRetry={() => {
+                      void refreshHero();
+                    }}
+                    actionLoading={refreshingHero}
                     showCachedDataHint
                   />
                 </div>
@@ -656,6 +680,7 @@ export function DashboardContent() {
                           title={queueStatsBlockingErrorState.title}
                           description={queueStatsBlockingErrorState.description}
                           actionLabel={queueStatsBlockingErrorState.actionLabel}
+                          actionLoading={queueStatsBlockingErrorState.actionLoading}
                           onAction={queueStatsBlockingErrorState.onAction}
                         />
                       </div>
@@ -666,10 +691,15 @@ export function DashboardContent() {
                           title={t("dashboard.ticker.empty", { defaultValue: "No metrics yet" })}
                           description={t("dashboard.errors.metricsUnavailableHint", {
                             defaultValue:
-                              "No system metrics were returned. Try refreshing, or contact an administrator if this persists."
+                              "No system metrics were returned. Try pulling the data from the server again, or contact an administrator if this persists."
                           })}
-                          actionLabel={t("common.refresh")}
-                          onAction={() => refetch()}
+                          actionLabel={t("dashboard.actions.fetchLatest", {
+                            defaultValue: "Pull latest data"
+                          })}
+                          actionLoading={refreshingQueueStats}
+                          onAction={() => {
+                            void refreshQueueStats();
+                          }}
                         />
                       </div>
                     ) : (
@@ -678,7 +708,10 @@ export function DashboardContent() {
                           <div className="mb-3">
                             <RequestErrorBanner
                               error={error}
-                              onRetry={() => void refetch()}
+                              onRetry={() => {
+                                void refreshQueueStats();
+                              }}
+                              actionLoading={refreshingQueueStats}
                               showCachedDataHint
                             />
                           </div>

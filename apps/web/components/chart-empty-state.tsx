@@ -20,6 +20,7 @@ interface ChartEmptyStateProps {
   variant?: ChartEmptyStateVariant;
   presentation?: ChartEmptyStatePresentation;
   actionLabel?: string;
+  actionLoading?: boolean;
   onAction?: () => void;
   action?: ReactNode;
   className?: string;
@@ -31,6 +32,7 @@ export function ChartEmptyState({
   variant = "empty",
   presentation = "center",
   actionLabel,
+  actionLoading = false,
   onAction,
   action,
   className,
@@ -69,7 +71,7 @@ export function ChartEmptyState({
   const actionNode =
     action ??
     (onAction && actionLabel ? (
-      <Button size="small" type="primary" onClick={onAction}>
+      <Button size="small" type="primary" loading={actionLoading} onClick={onAction}>
         {actionLabel}
       </Button>
     ) : null);

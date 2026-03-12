@@ -27,6 +27,7 @@ import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import {
   formatGranularityLabel,
   inferGranularityFromTimestampsMs,
@@ -804,6 +805,9 @@ export function SpacetimeViz() {
     skip: !selectedEventId,
     fetchPolicy: "network-only",
   });
+  const { pending: refreshingEvent, run: refreshEvent } = usePendingAction(
+    () => refetchEvent(),
+  );
 
   const event = eventData?.newsEvent ?? null;
 
@@ -1606,8 +1610,16 @@ export function SpacetimeViz() {
                       defaultValue: "Data error",
                     })}
                   </Typography.Text>
-                  <Button onClick={() => void refetchEvent()}>
-                    {t("common.retry", { defaultValue: "Retry" })}
+                  <Button
+                    loading={refreshingEvent}
+                    disabled={refreshingEvent}
+                    onClick={() => {
+                      void refreshEvent();
+                    }}
+                  >
+                    {t("dashboard.actions.retryFetch", {
+                      defaultValue: "Retry fetch"
+                    })}
                   </Button>
                 </div>
               ) : !event ? (

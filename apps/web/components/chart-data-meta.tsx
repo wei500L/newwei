@@ -11,10 +11,17 @@ export interface ChartDataMetaProps {
   state: ChartDataState;
   latestTimestamp?: Date | null;
   locale: SupportedLocale;
+  refreshing?: boolean;
   onRefresh?: (() => void) | undefined;
 }
 
-export function ChartDataMeta({ state, latestTimestamp, locale, onRefresh }: ChartDataMetaProps) {
+export function ChartDataMeta({
+  state,
+  latestTimestamp,
+  locale,
+  refreshing = false,
+  onRefresh,
+}: ChartDataMetaProps) {
   const { t } = useTranslation();
 
   const latestLabel = t("dashboard.dataLatest.label", {
@@ -61,12 +68,21 @@ export function ChartDataMeta({ state, latestTimestamp, locale, onRefresh }: Cha
         </Typography.Text>
       </Tooltip>
       {onRefresh ? (
-        <Tooltip title={t("common.refresh", { defaultValue: "Refresh" })}>
+        <Tooltip
+          title={t("dashboard.actions.fetchLatestTooltip", {
+            defaultValue:
+              "Pull the current view from the server again. This does not trigger a server-side refresh job."
+          })}
+        >
           <Button
             size="small"
             type="text"
-            aria-label={t("common.refresh", { defaultValue: "Refresh" })}
+            aria-label={t("dashboard.actions.fetchLatest", {
+              defaultValue: "Pull latest data"
+            })}
             icon={<ReloadOutlined />}
+            loading={refreshing}
+            disabled={refreshing}
             onClick={onRefresh}
           />
         </Tooltip>
@@ -74,4 +90,3 @@ export function ChartDataMeta({ state, latestTimestamp, locale, onRefresh }: Cha
     </Space>
   );
 }
-

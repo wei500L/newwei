@@ -75,7 +75,13 @@ export function DashboardChartCard({
               defaultValue: "Service is unavailable. Please try again."
             })
           }
-          actionLabel={onRetry ? t("common.retry") : undefined}
+          actionLabel={
+            onRetry
+              ? t("dashboard.actions.retryFetch", {
+                  defaultValue: "Retry fetch"
+                })
+              : undefined
+          }
           onAction={onRetry}
         />
       ) : isRenderable && option ? (
@@ -102,4 +108,3 @@ export function DashboardChartCard({
     </Card>
   );
 }
-
