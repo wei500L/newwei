@@ -123,4 +123,44 @@ describe('newsnow hottest analysis utils', () => {
       }),
     ).toBeLessThanOrEqual(1);
   });
+
+  it('favors cross-source heat and authority in the revised heat score', () => {
+    const strongCrossSource = computeHeatScore({
+      rank: 3,
+      rankCap: 10,
+      heatValue: 180_000,
+      maxHeatValue: 200_000,
+      sourceCount: 4,
+      authority: 0.9,
+    });
+    const singleSource = computeHeatScore({
+      rank: 1,
+      rankCap: 10,
+      heatValue: 20_000,
+      maxHeatValue: 200_000,
+      sourceCount: 1,
+      authority: 0.3,
+    });
+
+    expect(strongCrossSource).toBeGreaterThan(singleSource);
+  });
+
+  it('keeps candidate ranking sensitive to support and freshness under the new weights', () => {
+    const strongCandidate = computeCandidateScore({
+      heatScore: 0.78,
+      freshnessScore: 0.82,
+      sourceCount: 4,
+      authority: 0.7,
+      confidence: 0.6,
+    });
+    const weakCandidate = computeCandidateScore({
+      heatScore: 0.82,
+      freshnessScore: 0.25,
+      sourceCount: 1,
+      authority: 0.4,
+      confidence: 0.6,
+    });
+
+    expect(strongCandidate).toBeGreaterThan(weakCandidate);
+  });
 });

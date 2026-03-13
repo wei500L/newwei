@@ -9,6 +9,21 @@ import type {
 const CJK_SEGMENT_RE = /[\u3400-\u9fff]{2,}/g;
 const LATIN_WORD_RE = /[a-z0-9]{2,}/g;
 
+export const NEWSNOW_HEAT_SCORE_WEIGHTS = {
+  rank: 0.3,
+  heatValue: 0.28,
+  crossSource: 0.27,
+  authority: 0.15,
+} as const;
+
+export const NEWSNOW_CANDIDATE_SCORE_WEIGHTS = {
+  heatScore: 0.34,
+  freshnessScore: 0.24,
+  supportScore: 0.24,
+  authority: 0.1,
+  confidence: 0.08,
+} as const;
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -270,10 +285,10 @@ export function computeHeatScore(input: {
       : 0;
   const crossSourceBase = clamp01((input.sourceCount - 1) / 4);
   return clamp01(
-    rankBase * 0.42 +
-      heatBase * 0.3 +
-      crossSourceBase * 0.18 +
-      clamp01(input.authority) * 0.1,
+    rankBase * NEWSNOW_HEAT_SCORE_WEIGHTS.rank +
+      heatBase * NEWSNOW_HEAT_SCORE_WEIGHTS.heatValue +
+      crossSourceBase * NEWSNOW_HEAT_SCORE_WEIGHTS.crossSource +
+      clamp01(input.authority) * NEWSNOW_HEAT_SCORE_WEIGHTS.authority,
   );
 }
 
@@ -290,11 +305,11 @@ export function computeCandidateScore(input: {
       ? clamp01(input.confidence)
       : 0.5;
   return clamp01(
-    input.heatScore * 0.38 +
-      input.freshnessScore * 0.27 +
-      supportScore * 0.2 +
-      clamp01(input.authority) * 0.07 +
-      confidence * 0.08,
+    input.heatScore * NEWSNOW_CANDIDATE_SCORE_WEIGHTS.heatScore +
+      input.freshnessScore * NEWSNOW_CANDIDATE_SCORE_WEIGHTS.freshnessScore +
+      supportScore * NEWSNOW_CANDIDATE_SCORE_WEIGHTS.supportScore +
+      clamp01(input.authority) * NEWSNOW_CANDIDATE_SCORE_WEIGHTS.authority +
+      confidence * NEWSNOW_CANDIDATE_SCORE_WEIGHTS.confidence,
   );
 }
 

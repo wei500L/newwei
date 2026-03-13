@@ -13,6 +13,9 @@ describe("NewsAggregatorController", () => {
   const hottestAnalysisService = {
     getHottestAnalysis: jest.fn(),
   }
+  const domesticOpinionIndexService = {
+    getDomesticOpinionIndex: jest.fn(),
+  }
 
   let controller: NewsAggregatorController
 
@@ -21,6 +24,7 @@ describe("NewsAggregatorController", () => {
     controller = new NewsAggregatorController(
       newsAggregatorService as any,
       hottestAnalysisService as any,
+      domesticOpinionIndexService as any,
     )
   })
 
@@ -146,6 +150,35 @@ describe("NewsAggregatorController", () => {
       forceRefresh: true,
       allowAutoBridge: true,
     })
+  })
+
+  it("delegates domestic opinion index query with optional hours", async () => {
+    domesticOpinionIndexService.getDomesticOpinionIndex.mockResolvedValue({
+      generatedAt: new Date().toISOString(),
+      latest: null,
+      trend: [],
+      topKeywords: [],
+      topCandidates: [],
+    })
+
+    await controller.getDomesticOpinionIndex(
+      { id: "user-1", orgId: "org-1", permissions: ["items.read"] } as any,
+      "48",
+    )
+
+    expect(domesticOpinionIndexService.getDomesticOpinionIndex).toHaveBeenCalledWith("org-1", {
+      hours: 48,
+    })
+  })
+
+  it("rejects invalid domestic opinion hours query", () => {
+    expect(() =>
+      controller.getDomesticOpinionIndex(
+        { id: "user-1", orgId: "org-1", permissions: ["items.read"] } as any,
+        "0",
+      ),
+    ).toThrow(BadRequestException)
+    expect(domesticOpinionIndexService.getDomesticOpinionIndex).not.toHaveBeenCalled()
   })
 
   it("delegates personalized order request for authenticated users", async () => {

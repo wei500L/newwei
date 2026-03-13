@@ -113,6 +113,70 @@ export interface NewsnowHottestAnalysisResponse {
   errors: Array<{ sourceId: string; message: string }>;
 }
 
+export interface NewsnowDomesticOpinionIndexPoint {
+  bucketStart: string;
+  indexValue: number;
+  attentionScore: number;
+  breadthScore: number;
+  freshnessScore: number;
+  sentimentPressure: number;
+  candidateCount: number;
+}
+
+export interface NewsnowDomesticOpinionBreakdownSourcePoint {
+  bucketStart: string;
+  indexValue: number;
+  attentionScore: number;
+  breadthScore: number;
+  freshnessScore: number;
+  sentimentPressure: number;
+  candidateCount: number;
+}
+
+export interface NewsnowDomesticOpinionPipelineBreakdownSourcePoint {
+  bucketStart: string;
+  indexValue: number;
+  attentionScore: number;
+  breadthScore: number;
+  freshnessScore: number;
+  sentimentPressure: number;
+  articleCount: number;
+  sourceCount: number;
+}
+
+export interface NewsnowDomesticOpinionBreakdownPoint {
+  bucketStart: string;
+  newsnow: NewsnowDomesticOpinionBreakdownSourcePoint | null;
+  pipeline: NewsnowDomesticOpinionPipelineBreakdownSourcePoint | null;
+}
+
+export interface NewsnowDomesticOpinionKeywordSummary {
+  keyword: string;
+  weight: number;
+}
+
+export interface NewsnowDomesticOpinionTopCandidate {
+  label: string;
+  candidateScore: number;
+  sourceCount: number;
+}
+
+export interface NewsnowDomesticOpinionIndexResponse {
+  generatedAt: string;
+  latest: NewsnowDomesticOpinionIndexPoint | null;
+  trend: NewsnowDomesticOpinionIndexPoint[];
+  topKeywords: NewsnowDomesticOpinionKeywordSummary[];
+  topCandidates: NewsnowDomesticOpinionTopCandidate[];
+  breakdown: {
+    latest: NewsnowDomesticOpinionBreakdownPoint | null;
+    trend: NewsnowDomesticOpinionBreakdownPoint[];
+    topKeywords: {
+      newsnow: NewsnowDomesticOpinionKeywordSummary[];
+      pipeline: NewsnowDomesticOpinionKeywordSummary[];
+    };
+  };
+}
+
 interface ResolveNewsUrlOptions {
   signal?: AbortSignal;
   forceRefresh?: boolean;
@@ -193,6 +257,13 @@ async function fetchHottestAnalysis(
 ): Promise<NewsnowHottestAnalysisResponse> {
   const { data } = await apiClient.get('/news-aggregator/hottest-analysis');
   return data as NewsnowHottestAnalysisResponse;
+}
+
+async function fetchDomesticOpinionIndex(
+  apiClient: ReturnType<typeof createApiClient>,
+): Promise<NewsnowDomesticOpinionIndexResponse> {
+  const { data } = await apiClient.get('/news-aggregator/domestic-opinion-index');
+  return data as NewsnowDomesticOpinionIndexResponse;
 }
 
 export function useNewsMetadata() {
@@ -304,6 +375,31 @@ export function useHottestAnalysis(enabled: boolean) {
       session?.user?.id ?? 'anonymous-user',
     ],
     queryFn: () => fetchHottestAnalysis(apiClient),
+    enabled: queryEnabled,
+    staleTime: 1000 * 60,
+    refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useDomesticOpinionIndex(enabled: boolean) {
+  const { data: session, status } = useSession();
+  const accessToken = session?.accessToken as string | undefined;
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadItems =
+    permissions.includes('items.read') || permissions.includes('items.write');
+  const apiClient = useMemo(
+    () => createApiClient({ accessToken }),
+    [accessToken],
+  );
+  const queryEnabled = enabled && status === 'authenticated' && !!accessToken && canReadItems;
+
+  return useQuery<NewsnowDomesticOpinionIndexResponse>({
+    queryKey: [
+      'newsnow-domestic-opinion-index',
+      session?.orgId ?? 'anonymous-org',
+    ],
+    queryFn: () => fetchDomesticOpinionIndex(apiClient),
     enabled: queryEnabled,
     staleTime: 1000 * 60,
     refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,

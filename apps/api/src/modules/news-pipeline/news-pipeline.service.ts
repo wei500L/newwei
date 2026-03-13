@@ -85,6 +85,7 @@ interface ProcessedItemOutboxPayload {
     rawItemId: string;
     itemMetaId: string;
     orgId: string;
+    sourceId?: string | null;
     status: "completed";
     tags: string[];
     result: CleanedNews;
@@ -134,6 +135,7 @@ const ProcessedItemOutboxPayloadSchema: z.ZodType<
     rawItemId: z.string(),
     itemMetaId: z.string(),
     orgId: z.string(),
+    sourceId: NullableStringSchema.optional(),
     status: z.literal("completed"),
     tags: z.array(z.string()).default([]),
     result: CleanedNewsSchema,
@@ -761,6 +763,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       processedItemId,
       raw: options.raw,
       orgId: options.job.orgId,
+      sourceId: options.job.sourceId ?? this.extractSourceId(options.payload),
       payload: options.payload,
       cleaned,
       llm: options.llm,
@@ -2886,7 +2889,20 @@ export class NewsPipelineService implements OnModuleDestroy {
   private extractSourceId(payload: NormalizedNewsPayload) {
     const raw = payload?.metadata ? (payload.metadata as Record<string, unknown>) : undefined;
     const sourceId = raw && typeof raw.sourceId === "string" ? raw.sourceId.trim() : "";
-    return sourceId.length > 0 ? sourceId : undefined;
+    if (sourceId.length > 0) {
+      return sourceId;
+    }
+
+    const newsnowSourceId =
+      raw &&
+      raw.newsnow &&
+      typeof raw.newsnow === "object" &&
+      !Array.isArray(raw.newsnow) &&
+      typeof (raw.newsnow as { sourceId?: unknown }).sourceId === "string"
+        ? (raw.newsnow as { sourceId: string }).sourceId.trim()
+        : "";
+
+    return newsnowSourceId.length > 0 ? newsnowSourceId : undefined;
   }
 
   private async resolveSourceIdForOrg(tx: Prisma.TransactionClient, orgId: string, sourceId: string) {
@@ -2908,6 +2924,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     processedItemId: string;
     raw: RawPipelineItem;
     orgId: string;
+    sourceId?: string;
     payload: NormalizedNewsPayload;
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
@@ -2923,6 +2940,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         rawItemId: options.raw.id,
         itemMetaId: options.raw.itemMetaId,
         orgId: options.orgId,
+        sourceId: options.sourceId ?? null,
         status: "completed",
         tags: this.buildTags(options.payload, options.cleaned),
         result: options.cleaned,
@@ -3148,6 +3166,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         rawItemId,
         itemMetaId: document.itemMetaId,
         orgId: document.orgId,
+        sourceId: document.sourceId ?? null,
         ...(options?.ingestedAt ? { ingestedAt: options.ingestedAt } : {}),
         ...(options?.sortAt ? { sortAt: options.sortAt } : {}),
         status: document.status,

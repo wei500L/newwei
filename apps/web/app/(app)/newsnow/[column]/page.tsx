@@ -12,6 +12,7 @@ import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidat
 import { NewsnowHeader } from "../components/newsnow-header";
 import {
   useBatchPrefetch,
+  useDomesticOpinionIndex,
   useHottestAnalysis,
   useNewsMetadata,
 } from "../hooks/use-news-sources";
@@ -80,6 +81,9 @@ export default function NewsnowColumnPage() {
     [focusSources, metadata?.columns, resolvedColumnKey],
   );
   const hottestAnalysis = useHottestAnalysis(
+    resolvedColumnKey === "hottest" && sourceIds.length > 0,
+  );
+  const domesticOpinionIndex = useDomesticOpinionIndex(
     resolvedColumnKey === "hottest" && sourceIds.length > 0,
   );
 
@@ -249,6 +253,9 @@ export default function NewsnowColumnPage() {
               candidates={hottestAnalysis.data?.candidates}
               isLoading={hottestAnalysis.isLoading}
               isError={hottestAnalysis.isError}
+              domesticOpinion={domesticOpinionIndex.data}
+              isDomesticOpinionLoading={domesticOpinionIndex.isLoading}
+              isDomesticOpinionError={domesticOpinionIndex.isError}
             />
           ) : null}
           <NewsnowColumn

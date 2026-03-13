@@ -50,6 +50,8 @@ model Org {
   articleEntityLinks ArticleEntityLink[]
   entitySentimentSnapshots EntitySentimentSnapshot[]
   topicSentimentSnapshots TopicSentimentSnapshot[]
+  newsnowCandidateSnapshots NewsnowCandidateSnapshot[]
+  newsnowDomesticOpinionIndexSnapshots NewsnowDomesticOpinionIndexSnapshot[]
   newsIndicatorAssociations NewsIndicatorAssociation[]
   newsIndicatorAssociationBacktestRuns NewsIndicatorAssociationBacktestRun[]
   rssTranslationMetricsDaily RssTranslationMetricsDaily[]
@@ -1134,6 +1136,56 @@ model TopicSentimentSnapshot {
   @@unique([orgId, topic, bucketStart])
   @@index([orgId, bucketStart])
   @@index([orgId, topic, bucketStart])
+}
+
+model NewsnowCandidateSnapshot {
+  id                 String   @id @default(cuid())
+  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId              String
+  bucketStart        DateTime
+  candidateHash      String
+  label              String
+  summary            String?  @db.Text
+  themes             Json?
+  keywords           Json?
+  entities           Json?
+  sourceIds          Json?
+  sourceCount        Int
+  itemCount          Int
+  heatScore          Float
+  freshnessScore     Float
+  candidateScore     Float
+  authorityScore     Float
+  domesticSourceCount Int     @default(0)
+  domesticItemCount  Int      @default(0)
+  domesticRatio      Float    @default(0)
+  isDomestic         Boolean  @default(false)
+  sentimentPressure  Float    @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([orgId, bucketStart, candidateHash], map: "NewsnowCandidateSnapshot_org_bucket_hash_uq")
+  @@index([orgId, bucketStart], map: "NewsnowCandidateSnapshot_org_bucket_idx")
+  @@index([orgId, bucketStart, isDomestic], map: "NewsnowCandidateSnapshot_org_bucket_domestic_idx")
+}
+
+model NewsnowDomesticOpinionIndexSnapshot {
+  id                String   @id @default(cuid())
+  org               Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId             String
+  bucketStart       DateTime
+  indexValue        Float
+  attentionScore    Float
+  breadthScore      Float
+  freshnessScore    Float
+  sentimentPressure Float
+  candidateCount    Int      @default(0)
+  keywordSummary    Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([orgId, bucketStart], map: "NewsnowDomesticOpinionIndexSnapshot_org_bucket_uq")
+  @@index([orgId, bucketStart], map: "NewsnowDomesticOpinionIndexSnapshot_org_bucket_idx")
 }
 
 enum NewsIndicatorScopeType {

@@ -16,6 +16,10 @@ import type { JsonSchemaResponseFormat } from '../news-pipeline/news-prompt.buil
 
 import { NewsAggregatorService } from './news-aggregator.service';
 import type { NewsItem, Source, SourceResponse } from './news-aggregator.types';
+import {
+  NewsnowDomesticOpinionIndexService,
+  type NewsnowCandidatePersistenceInput,
+} from './newsnow-domestic-opinion-index.service';
 import type {
   NewsnowAnalyzedItem,
   NewsnowClusterInsight,
@@ -133,6 +137,7 @@ export class NewsnowHottestAnalysisService {
     private readonly aggregator: NewsAggregatorService,
     private readonly liteLlm: LiteLlmService,
     private readonly itemsService: ItemsService,
+    private readonly domesticOpinionIndexService: NewsnowDomesticOpinionIndexService,
   ) {}
 
   async getHottestAnalysis(input: {
@@ -236,6 +241,7 @@ export class NewsnowHottestAnalysisService {
     forceRefresh?: boolean;
     allowAutoBridge?: boolean;
   }): Promise<NewsnowHottestAnalysisResponse> {
+    const generatedAt = new Date();
     const metadata = this.aggregator.getMetadata();
     const hottestSourceIds = (metadata.columns?.hottest?.sources ?? []).slice(0, 64);
     const fetches = await this.fetchHottestSources(hottestSourceIds, Boolean(input.forceRefresh), metadata.sources ?? {});
@@ -399,6 +405,20 @@ export class NewsnowHottestAnalysisService {
       await this.bridgeEligibleItems(input, normalizedSignals, analysisBySignalKey);
     }
     await this.persistSignalState(input.orgId, normalizedSignals);
+    await this.persistDomesticOpinionSnapshotsBestEffort({
+      orgId: input.orgId,
+      generatedAt,
+      totalDomesticSourceCount: hottestSourceIds.filter(
+        (sourceId) => metadata.sources?.[sourceId]?.column === 'china',
+      ).length,
+      candidates: clusterAggregates.map((aggregate) =>
+        this.toCandidatePersistenceInput(
+          aggregate,
+          analysisBySignalKey,
+          metadata.sources ?? {},
+        ),
+      ),
+    });
 
     const bySource: Record<string, Record<string, NewsnowAnalyzedItem>> = {};
     normalizedSignals.forEach((signal) => {
@@ -425,7 +445,7 @@ export class NewsnowHottestAnalysisService {
       .map((aggregate) => this.toCandidate(aggregate, analysisBySignalKey));
 
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: generatedAt.toISOString(),
       cached: false,
       sourcesAnalyzed: fetches.filter((entry) => Boolean(entry.response)).length,
       itemsAnalyzed: normalizedSignals.length,
@@ -783,6 +803,22 @@ export class NewsnowHottestAnalysisService {
     );
   }
 
+  private async persistDomesticOpinionSnapshotsBestEffort(input: {
+    orgId: string;
+    generatedAt: Date;
+    totalDomesticSourceCount: number;
+    candidates: NewsnowCandidatePersistenceInput[];
+  }) {
+    try {
+      await this.domesticOpinionIndexService.persistSnapshots(input);
+    } catch (error) {
+      logger.warn(
+        { error, orgId: input.orgId },
+        'Failed to persist NewsNow domestic opinion snapshots',
+      );
+    }
+  }
+
   private toCandidate(
     aggregate: CandidateClusterAggregate,
     analysisBySignalKey: Map<string, NewsnowAnalyzedItem>,
@@ -821,6 +857,55 @@ export class NewsnowHottestAnalysisService {
         ...(analysis.matchedItemId ? { matchedItemId: analysis.matchedItemId } : {}),
         ...(analysis.matchedEventId ? { matchedEventId: analysis.matchedEventId } : {}),
       })),
+    };
+  }
+
+  private toCandidatePersistenceInput(
+    aggregate: CandidateClusterAggregate,
+    analysisBySignalKey: Map<string, NewsnowAnalyzedItem>,
+    sourcesById: Record<string, Source>,
+  ): NewsnowCandidatePersistenceInput {
+    const insight = aggregate.insight;
+    const domesticItems = aggregate.items.filter(
+      (item) => sourcesById[item.sourceId]?.column === 'china',
+    );
+    const domesticSourceIds = Array.from(
+      new Set(domesticItems.map((item) => item.sourceId)),
+    );
+    const matchedItemIds = Array.from(
+      new Set(
+        aggregate.items
+          .map((item) => analysisBySignalKey.get(item.signalKey)?.matchedItemId ?? '')
+          .filter((itemId): itemId is string => itemId.trim().length > 0),
+      ),
+    );
+
+    return {
+      candidateHash: aggregate.cluster.clusterId,
+      label: insight?.label ?? aggregate.cluster.representativeTitle,
+      summary: insight?.summary ?? null,
+      representativeTitle: aggregate.cluster.representativeTitle,
+      themes: Array.from(
+        new Set([
+          ...(insight?.theme ? [insight.theme] : []),
+          ...(insight?.topics ?? []),
+        ]),
+      ).slice(0, 8),
+      topics: insight?.topics ?? [],
+      entities: Array.from(
+        new Set((insight?.entities ?? []).map((entity) => entity.name.trim()).filter(Boolean)),
+      ).slice(0, 10),
+      sourceIds: aggregate.cluster.sourceIds,
+      domesticSourceIds,
+      sourceCount: aggregate.cluster.sourceIds.length,
+      itemCount: aggregate.items.length,
+      heatScore: aggregate.heatScore,
+      freshnessScore: aggregate.freshnessScore,
+      candidateScore: aggregate.candidateScore,
+      authorityScore: aggregate.authority,
+      domesticSourceCount: domesticSourceIds.length,
+      domesticItemCount: domesticItems.length,
+      matchedItemIds,
     };
   }
 

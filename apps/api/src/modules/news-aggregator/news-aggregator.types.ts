@@ -90,6 +90,72 @@ export interface SourceResponse {
   items: NewsItem[]
 }
 
+export interface NewsnowCandidateKeywordSummary {
+  keyword: string
+  weight: number
+}
+
+export interface NewsnowDomesticOpinionIndexPoint {
+  bucketStart: string
+  indexValue: number
+  attentionScore: number
+  breadthScore: number
+  freshnessScore: number
+  sentimentPressure: number
+  candidateCount: number
+}
+
+export interface NewsnowDomesticOpinionIndexBreakdownSourcePoint {
+  bucketStart: string
+  indexValue: number
+  attentionScore: number
+  breadthScore: number
+  freshnessScore: number
+  sentimentPressure: number
+  candidateCount: number
+}
+
+export interface NewsnowDomesticOpinionIndexPipelineBreakdownSourcePoint {
+  bucketStart: string
+  indexValue: number
+  attentionScore: number
+  breadthScore: number
+  freshnessScore: number
+  sentimentPressure: number
+  articleCount: number
+  sourceCount: number
+}
+
+export interface NewsnowDomesticOpinionIndexBreakdownPoint {
+  bucketStart: string
+  newsnow: NewsnowDomesticOpinionIndexBreakdownSourcePoint | null
+  pipeline: NewsnowDomesticOpinionIndexPipelineBreakdownSourcePoint | null
+}
+
+export interface NewsnowDomesticOpinionIndexBreakdownTopKeywords {
+  newsnow: NewsnowCandidateKeywordSummary[]
+  pipeline: NewsnowCandidateKeywordSummary[]
+}
+
+export interface NewsnowDomesticOpinionIndexTopCandidate {
+  label: string
+  candidateScore: number
+  sourceCount: number
+}
+
+export interface NewsnowDomesticOpinionIndexResponse {
+  generatedAt: string
+  latest: NewsnowDomesticOpinionIndexPoint | null
+  trend: NewsnowDomesticOpinionIndexPoint[]
+  topKeywords: NewsnowCandidateKeywordSummary[]
+  topCandidates: NewsnowDomesticOpinionIndexTopCandidate[]
+  breakdown: {
+    latest: NewsnowDomesticOpinionIndexBreakdownPoint | null
+    trend: NewsnowDomesticOpinionIndexBreakdownPoint[]
+    topKeywords: NewsnowDomesticOpinionIndexBreakdownTopKeywords
+  }
+}
+
 export interface NewsResolveResponse {
   matched: boolean
   itemId?: string

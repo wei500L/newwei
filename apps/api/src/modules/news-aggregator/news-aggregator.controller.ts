@@ -6,6 +6,7 @@ import { Public } from "../../common/decorators/public.decorator"
 import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { NewsAggregatorService } from "./news-aggregator.service"
+import { NewsnowDomesticOpinionIndexService } from "./newsnow-domestic-opinion-index.service";
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
 
 interface BatchFetchDto {
@@ -27,6 +28,7 @@ export class NewsAggregatorController {
   constructor(
     private readonly newsAggregatorService: NewsAggregatorService,
     private readonly hottestAnalysisService: NewsnowHottestAnalysisService,
+    private readonly domesticOpinionIndexService: NewsnowDomesticOpinionIndexService,
   ) {}
 
   @Public()
@@ -94,6 +96,17 @@ export class NewsAggregatorController {
       userId: user.id,
       forceRefresh: this.parseBooleanFlag(latest),
       allowAutoBridge: user.permissions.includes("items.write"),
+    })
+  }
+
+  @Permissions("items.read")
+  @Get("domestic-opinion-index")
+  getDomesticOpinionIndex(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("hours") hours?: string,
+  ) {
+    return this.domesticOpinionIndexService.getDomesticOpinionIndex(user.orgId, {
+      hours: this.parseOptionalPositiveInt(hours, "hours", 1, 168),
     })
   }
 
@@ -166,6 +179,25 @@ export class NewsAggregatorController {
     }
 
     throw new BadRequestException("latest must be one of true/false, 1/0, yes/no, y/n, on/off")
+  }
+
+  private parseOptionalPositiveInt(
+    value: unknown,
+    fieldName: string,
+    min: number,
+    max: number,
+  ): number | undefined {
+    if (value === undefined || value === null || value === "") {
+      return undefined
+    }
+    if (typeof value !== "string") {
+      throw new BadRequestException(`${fieldName} must be an integer string`)
+    }
+    const parsed = Number.parseInt(value.trim(), 10)
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+      throw new BadRequestException(`${fieldName} must be an integer between ${min} and ${max}`)
+    }
+    return parsed
   }
 
   private validateHttpUrl(value: unknown): string {

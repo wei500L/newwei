@@ -50,6 +50,10 @@ describe('NewsnowHottestAnalysisService', () => {
     create: jest.fn(),
   });
 
+  const domesticOpinionIndexFactory = () => ({
+    persistSnapshots: jest.fn(),
+  });
+
   beforeEach(() => {
     jest.resetAllMocks();
   });
@@ -84,6 +88,7 @@ describe('NewsnowHottestAnalysisService', () => {
     liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
 
     const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
     itemsService.create.mockResolvedValue({ id: 'item-1' });
 
     const service = new NewsnowHottestAnalysisService(
@@ -91,6 +96,7 @@ describe('NewsnowHottestAnalysisService', () => {
       aggregator as never,
       liteLlm as never,
       itemsService as never,
+      domesticOpinionIndex as never,
     );
 
     const result = await service.getHottestAnalysis({
@@ -152,18 +158,21 @@ describe('NewsnowHottestAnalysisService', () => {
     liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
 
     const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
 
     const serviceA = new NewsnowHottestAnalysisService(
       cache as never,
       aggregator as never,
       liteLlm as never,
       itemsService as never,
+      domesticOpinionIndex as never,
     );
     const serviceB = new NewsnowHottestAnalysisService(
       cache as never,
       aggregator as never,
       liteLlm as never,
       itemsService as never,
+      domesticOpinionIndex as never,
     );
 
     const first = serviceA.getHottestAnalysis({
@@ -259,6 +268,7 @@ describe('NewsnowHottestAnalysisService', () => {
     liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
 
     const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
     itemsService.create.mockResolvedValue({ id: 'new-item-1' });
 
     const service = new NewsnowHottestAnalysisService(
@@ -266,6 +276,7 @@ describe('NewsnowHottestAnalysisService', () => {
       aggregator as never,
       liteLlm as never,
       itemsService as never,
+      domesticOpinionIndex as never,
     );
 
     const result = await service.getHottestAnalysis({
