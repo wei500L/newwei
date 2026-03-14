@@ -66,6 +66,7 @@ import {
   resolveSeedCacheTtlPolicy,
   resolveSeedSchedulerRuntimeSettings,
   readSeedFormValuesFromConfig,
+  shouldShowCrawlSettingsForSeedMode,
 } from "@/lib/news-source-seed";
 import { resolveRssAdaptiveListUiModel } from "@/lib/news-source-rss-adaptive-ui";
 
@@ -408,6 +409,10 @@ interface NewsSourceFormValues {
   seedPattern?: string;
   seedFeedUrl?: string;
   seedRssAdaptiveEnabled?: boolean;
+  seedRssAdvancedEnabled?: boolean;
+  seedRssRequestTimeoutMs?: number;
+  seedRssBodySourceStrategy?: "content_first" | "content_only" | "summary_only";
+  seedRssNoBodyPolicy?: "skip" | "title_description_stub";
   seedQuery?: string;
   seedMaxUrls?: number;
   seedMaxNewUrlsPerRun?: number;
@@ -446,6 +451,10 @@ const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   seedPattern: "",
   seedFeedUrl: "",
   seedRssAdaptiveEnabled: DEFAULT_SEED_FORM_VALUES.seedRssAdaptiveEnabled,
+  seedRssAdvancedEnabled: DEFAULT_SEED_FORM_VALUES.seedRssAdvancedEnabled,
+  seedRssRequestTimeoutMs: DEFAULT_SEED_FORM_VALUES.seedRssRequestTimeoutMs,
+  seedRssBodySourceStrategy: DEFAULT_SEED_FORM_VALUES.seedRssBodySourceStrategy,
+  seedRssNoBodyPolicy: DEFAULT_SEED_FORM_VALUES.seedRssNoBodyPolicy,
   seedQuery: "",
   crawlProxyMode: "auto",
   crawlProxyUrl: "",
@@ -696,6 +705,26 @@ const getSeedMode = (
   return "sitemap";
 };
 
+const resolveScheduleDeliveryMode = (
+  targets: Array<Pick<NewsSourceRecord, "config">>,
+): "crawl4ai" | "rss" | "mixed" => {
+  let hasRss = false;
+  let hasCrawl4ai = false;
+
+  for (const target of targets) {
+    if (getSeedMode(target.config) === "rss") {
+      hasRss = true;
+    } else {
+      hasCrawl4ai = true;
+    }
+    if (hasRss && hasCrawl4ai) {
+      return "mixed";
+    }
+  }
+
+  return hasRss ? "rss" : "crawl4ai";
+};
+
 interface CrawlStrategyTagDescriptor {
   key: string;
   color: string;
@@ -706,6 +735,9 @@ const getCrawlStrategyTags = (
   config: unknown,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): CrawlStrategyTagDescriptor[] => {
+  if (getSeedMode(config) === "rss") {
+    return [];
+  }
   if (!isPlainObject(config) || !isPlainObject(config.crawlOptions)) {
     return [];
   }
@@ -1015,10 +1047,21 @@ export function NewsSourcesContent() {
     () => sources.filter((source) => selectedSourceIdSet.has(source.id)),
     [selectedSourceIdSet, sources],
   );
+  const watchedSeedEnabled = Form.useWatch("seedEnabled", form);
+  const watchedSeedMode = Form.useWatch("seedMode", form);
   const resolvedSeedRuntimeSettings = useMemo(
     () =>
       resolveSeedSchedulerRuntimeSettings(seedSchedulerSettings ?? undefined),
     [seedSchedulerSettings],
+  );
+  const showCrawlSettings = useMemo(
+    () =>
+      shouldShowCrawlSettingsForSeedMode(watchedSeedEnabled, watchedSeedMode),
+    [watchedSeedEnabled, watchedSeedMode],
+  );
+  const scheduleDeliveryMode = useMemo(
+    () => resolveScheduleDeliveryMode(scheduleTargets),
+    [scheduleTargets],
   );
 
   const uniqueGroups = useMemo(
@@ -1036,8 +1079,13 @@ export function NewsSourcesContent() {
     const preflightFailureRateHigh =
       typeof crawlQualityStats?.alertThresholds?.preflightFailureRateHigh ===
         "number" &&
-      Number.isFinite(crawlQualityStats.alertThresholds.preflightFailureRateHigh)
-        ? Math.max(0, crawlQualityStats.alertThresholds.preflightFailureRateHigh)
+      Number.isFinite(
+        crawlQualityStats.alertThresholds.preflightFailureRateHigh,
+      )
+        ? Math.max(
+            0,
+            crawlQualityStats.alertThresholds.preflightFailureRateHigh,
+          )
         : DEFAULT_CRAWL_QUALITY_PREFLIGHT_FAILURE_RATE_THRESHOLD;
     const http304HitRateLow =
       typeof crawlQualityStats?.alertThresholds?.http304HitRateLow ===
@@ -1048,8 +1096,13 @@ export function NewsSourcesContent() {
     const orgHashDedupeHitRateHigh =
       typeof crawlQualityStats?.alertThresholds?.orgHashDedupeHitRateHigh ===
         "number" &&
-      Number.isFinite(crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh)
-        ? Math.max(0, crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh)
+      Number.isFinite(
+        crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh,
+      )
+        ? Math.max(
+            0,
+            crawlQualityStats.alertThresholds.orgHashDedupeHitRateHigh,
+          )
         : DEFAULT_CRAWL_QUALITY_HIGH_ORG_HASH_DEDUPE_RATE_THRESHOLD;
 
     return {
@@ -1077,7 +1130,8 @@ export function NewsSourcesContent() {
       orgHashDedupeHitRate,
       preflightFailureBreached:
         preflightFailureRate >= crawlQualityThresholds.preflightFailureRateHigh,
-      http304Breached: http304HitRate <= crawlQualityThresholds.http304HitRateLow,
+      http304Breached:
+        http304HitRate <= crawlQualityThresholds.http304HitRateLow,
       orgHashDedupeBreached:
         orgHashDedupeHitRate >= crawlQualityThresholds.orgHashDedupeHitRateHigh,
     };
@@ -1261,7 +1315,9 @@ export function NewsSourcesContent() {
 
   const loadGroups = useCallback(async () => {
     try {
-      const response = await apiClient.get<string[]>("admin/news-sources/groups");
+      const response = await apiClient.get<string[]>(
+        "admin/news-sources/groups",
+      );
       setGroups(response.data ?? []);
     } catch (error) {
       captureClientError("Failed to load news source groups", error);
@@ -1281,7 +1337,10 @@ export function NewsSourcesContent() {
       });
       setSeedSchedulerSettingsLoadFailed(false);
     } catch (error) {
-      captureClientError("Failed to load news source scheduler settings", error);
+      captureClientError(
+        "Failed to load news source scheduler settings",
+        error,
+      );
       setSeedSchedulerSettings(null);
       setSeedSchedulerSettingsLoadFailed(true);
     }
@@ -1417,7 +1476,14 @@ export function NewsSourcesContent() {
         void loadSeedSchedulerSettings();
       }
     }
-  }, [canManage, canView, loadTemplates, loadGroups, loadSeedSchedulerSettings, refreshAll]);
+  }, [
+    canManage,
+    canView,
+    loadTemplates,
+    loadGroups,
+    loadSeedSchedulerSettings,
+    refreshAll,
+  ]);
 
   useEffect(() => {
     if (modalOpen && canManage) {
@@ -2167,6 +2233,24 @@ export function NewsSourcesContent() {
     const keywords = parseStringList(values.keywords);
     const tags = parseStringList(values.tags);
     const summaryHints = parseStringList(values.summaryHints);
+    const activeSeedMode =
+      values.seedEnabled === true ? normalizeSeedMode(values.seedMode) : null;
+    const isRssSeedMode = activeSeedMode === "rss";
+    const existingConfig =
+      editingSource?.config &&
+      typeof editingSource.config === "object" &&
+      !Array.isArray(editingSource.config)
+        ? (editingSource.config as Record<string, unknown>)
+        : null;
+    const existingCrawlOptions =
+      existingConfig?.crawlOptions &&
+      typeof existingConfig.crawlOptions === "object" &&
+      !Array.isArray(existingConfig.crawlOptions)
+        ? ({
+            ...(existingConfig.crawlOptions as Record<string, unknown>),
+          } as Record<string, unknown>)
+        : null;
+    const existingForceRefresh = existingConfig?.forceRefresh === true;
 
     if (keywords.length) {
       config.keywords = keywords;
@@ -2526,11 +2610,26 @@ export function NewsSourcesContent() {
         );
       }
     }
-    if (resolvedCrawlOptions && Object.keys(resolvedCrawlOptions).length > 0) {
-      config.crawlOptions = resolvedCrawlOptions;
-    }
-    if (values.forceRefresh) {
-      config.forceRefresh = true;
+    if (isRssSeedMode) {
+      if (
+        existingCrawlOptions &&
+        Object.keys(existingCrawlOptions).length > 0
+      ) {
+        config.crawlOptions = existingCrawlOptions;
+      }
+      if (existingForceRefresh) {
+        config.forceRefresh = true;
+      }
+    } else {
+      if (
+        resolvedCrawlOptions &&
+        Object.keys(resolvedCrawlOptions).length > 0
+      ) {
+        config.crawlOptions = resolvedCrawlOptions;
+      }
+      if (values.forceRefresh) {
+        config.forceRefresh = true;
+      }
     }
 
     const scheduleMode = values.scheduleMode === "cron" ? "cron" : "interval";
@@ -2738,9 +2837,7 @@ export function NewsSourcesContent() {
     setOpmlImportReport(null);
   };
 
-  const handleOpmlFileChange = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleOpmlFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
@@ -3769,7 +3866,9 @@ export function NewsSourcesContent() {
             : rssAdaptive?.tier === "warm"
               ? t("newsSources.rssAdaptive.tier.warm", { defaultValue: "Warm" })
               : rssAdaptive?.tier === "cold"
-                ? t("newsSources.rssAdaptive.tier.cold", { defaultValue: "Cold" })
+                ? t("newsSources.rssAdaptive.tier.cold", {
+                    defaultValue: "Cold",
+                  })
                 : t("newsSources.rssAdaptive.tier.normal", {
                     defaultValue: "Normal",
                   });
@@ -3794,10 +3893,14 @@ export function NewsSourcesContent() {
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {rssAdaptive.hasHistory
-                          ? t("newsSources.rssAdaptive.tooltip.consecutiveNoHit", {
-                              defaultValue: "Consecutive no-hit runs: {{value}}",
-                              value: rssAdaptive.consecutiveNoHit,
-                            })
+                          ? t(
+                              "newsSources.rssAdaptive.tooltip.consecutiveNoHit",
+                              {
+                                defaultValue:
+                                  "Consecutive no-hit runs: {{value}}",
+                                value: rssAdaptive.consecutiveNoHit,
+                              },
+                            )
                           : t("newsSources.rssAdaptive.tooltip.noHistory", {
                               defaultValue: "No adaptive history yet.",
                             })}
@@ -3806,10 +3909,14 @@ export function NewsSourcesContent() {
                         <Typography.Text type="secondary">
                           {t("newsSources.rssAdaptive.tooltip.updatedAt", {
                             defaultValue: "Updated at: {{value}}",
-                            value: formatDateTime(rssAdaptive.updatedAt, locale, {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            }),
+                            value: formatDateTime(
+                              rssAdaptive.updatedAt,
+                              locale,
+                              {
+                                dateStyle: "medium",
+                                timeStyle: "short",
+                              },
+                            ),
                           })}
                         </Typography.Text>
                       ) : null}
@@ -3870,7 +3977,10 @@ export function NewsSourcesContent() {
                 })}
               </Button>
             </Space>
-            <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
+            <Typography.Text
+              type="secondary"
+              ellipsis={{ tooltip: record.url }}
+            >
               {record.url}
             </Typography.Text>
           </Space>
@@ -4234,6 +4344,12 @@ export function NewsSourcesContent() {
             ? (job.metadata.ingestPath as string | undefined)
             : undefined;
         const isRssPrefetched = ingestPath === "rss_prefetched";
+        const prefetchedMarkdownSource =
+          job?.metadata &&
+          isPlainObject(job.metadata) &&
+          typeof job.metadata.prefetchedMarkdownSource === "string"
+            ? job.metadata.prefetchedMarkdownSource.trim().toLowerCase()
+            : "";
 
         const jobTag = job ? (
           <Tooltip
@@ -4263,6 +4379,26 @@ export function NewsSourcesContent() {
             })}
           </Tag>
         ) : null;
+        const prefetchedMarkdownSourceTag =
+          prefetchedMarkdownSource === "content" ? (
+            <Tag color="green">
+              {t("newsSources.latest.rssPrefetchedContent", {
+                defaultValue: "RSS content",
+              })}
+            </Tag>
+          ) : prefetchedMarkdownSource === "description" ? (
+            <Tag color="gold">
+              {t("newsSources.latest.rssPrefetchedSummary", {
+                defaultValue: "RSS summary",
+              })}
+            </Tag>
+          ) : prefetchedMarkdownSource === "stub" ? (
+            <Tag color="orange">
+              {t("newsSources.latest.rssPrefetchedStub", {
+                defaultValue: "RSS stub",
+              })}
+            </Tag>
+          ) : null;
 
         const taskTag = task ? (
           <Tooltip
@@ -4283,13 +4419,14 @@ export function NewsSourcesContent() {
             </Tag>
           </Tooltip>
         ) : null;
-        const noTaskHint = !task && isRssPrefetched ? (
-          <Typography.Text type="secondary">
-            {t("newsSources.latest.noCrawlTask", {
-              defaultValue: "Pipeline direct ingest (no crawl task).",
-            })}
-          </Typography.Text>
-        ) : null;
+        const noTaskHint =
+          !task && isRssPrefetched ? (
+            <Typography.Text type="secondary">
+              {t("newsSources.latest.noCrawlTask", {
+                defaultValue: "Pipeline direct ingest (no crawl task).",
+              })}
+            </Typography.Text>
+          ) : null;
 
         const openTaskButton = task ? (
           <Button
@@ -4319,6 +4456,7 @@ export function NewsSourcesContent() {
             <Space size={6} wrap>
               {jobTag}
               {ingestPathTag}
+              {prefetchedMarkdownSourceTag}
               {taskTag}
               {openTaskButton}
             </Space>
@@ -4341,8 +4479,7 @@ export function NewsSourcesContent() {
       dataIndex: "group",
       key: "group",
       width: 140,
-      render: (group: string | null) =>
-        group ? <Tag>{group}</Tag> : null,
+      render: (group: string | null) => (group ? <Tag>{group}</Tag> : null),
     },
     {
       title: t("common.actions"),
@@ -4940,7 +5077,8 @@ export function NewsSourcesContent() {
                         defaultValue: "Publish-confidence rejects",
                       })}
                       value={
-                        crawlQualityStats.candidateRejects?.publishConfidence ?? 0
+                        crawlQualityStats.candidateRejects?.publishConfidence ??
+                        0
                       }
                     />
                   </Col>
@@ -4977,8 +5115,9 @@ export function NewsSourcesContent() {
                         defaultValue: "Head signal success",
                       })}
                       value={Number(
-                        ((crawlQualityStats.headSignalSuccessRate ?? 0) * 100)
-                          .toFixed(1),
+                        (
+                          (crawlQualityStats.headSignalSuccessRate ?? 0) * 100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
@@ -4991,7 +5130,10 @@ export function NewsSourcesContent() {
                         defaultValue: "Head signal soft-failure",
                       })}
                       value={Number(
-                        ((crawlQualityStats.headSignalSoftFailureRate ?? 0) * 100).toFixed(1),
+                        (
+                          (crawlQualityStats.headSignalSoftFailureRate ?? 0) *
+                          100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
@@ -5002,18 +5144,26 @@ export function NewsSourcesContent() {
                         defaultValue: "Head signal truncated",
                       })}
                       value={Number(
-                        ((crawlQualityStats.headSignalTruncatedRate ?? 0) * 100).toFixed(1),
+                        (
+                          (crawlQualityStats.headSignalTruncatedRate ?? 0) * 100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
                   </Col>
                   <Col xs={12} sm={8} md={6}>
                     <Statistic
-                      title={t("newsSources.quality.headSignalNoPublishSignal", {
-                        defaultValue: "Head signal no-publish",
-                      })}
+                      title={t(
+                        "newsSources.quality.headSignalNoPublishSignal",
+                        {
+                          defaultValue: "Head signal no-publish",
+                        },
+                      )}
                       value={Number(
-                        ((crawlQualityStats.headSignalNoPublishSignalRate ?? 0) * 100).toFixed(1),
+                        (
+                          (crawlQualityStats.headSignalNoPublishSignalRate ??
+                            0) * 100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
@@ -5037,22 +5187,29 @@ export function NewsSourcesContent() {
                             }
                           >
                             {crawlQualityThresholdStatus?.http304Breached
-                              ? t("newsSources.quality.thresholdStatusBreached", {
-                                  defaultValue: "breach",
-                                })
+                              ? t(
+                                  "newsSources.quality.thresholdStatusBreached",
+                                  {
+                                    defaultValue: "breach",
+                                  },
+                                )
                               : t("newsSources.quality.thresholdStatusNormal", {
                                   defaultValue: "normal",
                                 })}
                           </Tag>
                           <Tag>
                             {`<= ${Number(
-                              (crawlQualityThresholds.http304HitRateLow * 100).toFixed(1),
+                              (
+                                crawlQualityThresholds.http304HitRateLow * 100
+                              ).toFixed(1),
                             )}%`}
                           </Tag>
                         </Space>
                       }
                       value={Number(
-                        ((crawlQualityStats.http304HitRate ?? 0) * 100).toFixed(1),
+                        ((crawlQualityStats.http304HitRate ?? 0) * 100).toFixed(
+                          1,
+                        ),
                       )}
                       suffix="%"
                     />
@@ -5074,24 +5231,30 @@ export function NewsSourcesContent() {
                             }
                           >
                             {crawlQualityThresholdStatus?.preflightFailureBreached
-                              ? t("newsSources.quality.thresholdStatusBreached", {
-                                  defaultValue: "breach",
-                                })
+                              ? t(
+                                  "newsSources.quality.thresholdStatusBreached",
+                                  {
+                                    defaultValue: "breach",
+                                  },
+                                )
                               : t("newsSources.quality.thresholdStatusNormal", {
                                   defaultValue: "normal",
                                 })}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
-                              (crawlQualityThresholds.preflightFailureRateHigh * 100).toFixed(
-                                1,
-                              ),
+                              (
+                                crawlQualityThresholds.preflightFailureRateHigh *
+                                100
+                              ).toFixed(1),
                             )}%`}
                           </Tag>
                         </Space>
                       }
                       value={Number(
-                        ((crawlQualityStats.preflightFailureRate ?? 0) * 100).toFixed(1),
+                        (
+                          (crawlQualityStats.preflightFailureRate ?? 0) * 100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
@@ -5113,24 +5276,30 @@ export function NewsSourcesContent() {
                             }
                           >
                             {crawlQualityThresholdStatus?.orgHashDedupeBreached
-                              ? t("newsSources.quality.thresholdStatusBreached", {
-                                  defaultValue: "breach",
-                                })
+                              ? t(
+                                  "newsSources.quality.thresholdStatusBreached",
+                                  {
+                                    defaultValue: "breach",
+                                  },
+                                )
                               : t("newsSources.quality.thresholdStatusNormal", {
                                   defaultValue: "normal",
                                 })}
                           </Tag>
                           <Tag>
                             {`>= ${Number(
-                              (crawlQualityThresholds.orgHashDedupeHitRateHigh * 100).toFixed(
-                                1,
-                              ),
+                              (
+                                crawlQualityThresholds.orgHashDedupeHitRateHigh *
+                                100
+                              ).toFixed(1),
                             )}%`}
                           </Tag>
                         </Space>
                       }
                       value={Number(
-                        ((crawlQualityStats.orgHashDedupeHitRate ?? 0) * 100).toFixed(1),
+                        (
+                          (crawlQualityStats.orgHashDedupeHitRate ?? 0) * 100
+                        ).toFixed(1),
                       )}
                       suffix="%"
                     />
@@ -5152,49 +5321,77 @@ export function NewsSourcesContent() {
                     })}
                     description={crawlQualityRateAlerts
                       .map((entry) =>
-                        t(`newsSources.quality.crawlQualityAlert.${entry.key}`, {
-                          defaultValue:
-                            "{{metric}} {{overall}}% (threshold {{operator}} {{threshold}}%; {{extremeLabel}} source: {{source}} {{sourceRate}}%)",
-                          metric:
-                            entry.key === "softFailure"
-                              ? t("newsSources.quality.headSignalSoftFailure", {
-                                  defaultValue: "soft-failure",
-                                })
-                              : entry.key === "truncated"
-                                ? t("newsSources.quality.headSignalTruncated", {
-                                    defaultValue: "truncated",
+                        t(
+                          `newsSources.quality.crawlQualityAlert.${entry.key}`,
+                          {
+                            defaultValue:
+                              "{{metric}} {{overall}}% (threshold {{operator}} {{threshold}}%; {{extremeLabel}} source: {{source}} {{sourceRate}}%)",
+                            metric:
+                              entry.key === "softFailure"
+                                ? t(
+                                    "newsSources.quality.headSignalSoftFailure",
+                                    {
+                                      defaultValue: "soft-failure",
+                                    },
+                                  )
+                                : entry.key === "truncated"
+                                  ? t(
+                                      "newsSources.quality.headSignalTruncated",
+                                      {
+                                        defaultValue: "truncated",
+                                      },
+                                    )
+                                  : entry.key === "noPublishSignal"
+                                    ? t(
+                                        "newsSources.quality.headSignalNoPublishSignal",
+                                        {
+                                          defaultValue: "no-publish-signal",
+                                        },
+                                      )
+                                    : entry.key === "preflightFailure"
+                                      ? t(
+                                          "newsSources.quality.preflightFailureRate",
+                                          {
+                                            defaultValue: "preflight-failure",
+                                          },
+                                        )
+                                      : entry.key === "orgHashDedupeHigh"
+                                        ? t(
+                                            "newsSources.quality.orgHashDedupeHitRate",
+                                            {
+                                              defaultValue:
+                                                "org-hash-dedupe-hit",
+                                            },
+                                          )
+                                        : t(
+                                            "newsSources.quality.http304HitRate",
+                                            {
+                                              defaultValue: "http-304-hit",
+                                            },
+                                          ),
+                            overall: Number(
+                              (entry.overallRate * 100).toFixed(1),
+                            ),
+                            operator: entry.direction === "high" ? ">=" : "<=",
+                            threshold: Number(
+                              (entry.threshold * 100).toFixed(1),
+                            ),
+                            extremeLabel:
+                              entry.direction === "high"
+                                ? t("newsSources.quality.highestSource", {
+                                    defaultValue: "highest",
                                   })
-                                : entry.key === "noPublishSignal"
-                                  ? t("newsSources.quality.headSignalNoPublishSignal", {
-                                      defaultValue: "no-publish-signal",
-                                    })
-                                  : entry.key === "preflightFailure"
-                                    ? t("newsSources.quality.preflightFailureRate", {
-                                        defaultValue: "preflight-failure",
-                                      })
-                                    : entry.key === "orgHashDedupeHigh"
-                                      ? t("newsSources.quality.orgHashDedupeHitRate", {
-                                          defaultValue: "org-hash-dedupe-hit",
-                                        })
-                                      : t("newsSources.quality.http304HitRate", {
-                                          defaultValue: "http-304-hit",
-                                        }),
-                          overall: Number((entry.overallRate * 100).toFixed(1)),
-                          operator: entry.direction === "high" ? ">=" : "<=",
-                          threshold: Number((entry.threshold * 100).toFixed(1)),
-                          extremeLabel:
-                            entry.direction === "high"
-                              ? t("newsSources.quality.highestSource", {
-                                  defaultValue: "highest",
-                                })
-                              : t("newsSources.quality.lowestSource", {
-                                  defaultValue: "lowest",
-                                }),
-                          source: entry.extremeSource?.sourceId ?? "unknown",
-                          sourceRate: Number(
-                            ((entry.extremeSource?.rate ?? 0) * 100).toFixed(1),
-                          ),
-                        }),
+                                : t("newsSources.quality.lowestSource", {
+                                    defaultValue: "lowest",
+                                  }),
+                            source: entry.extremeSource?.sourceId ?? "unknown",
+                            sourceRate: Number(
+                              ((entry.extremeSource?.rate ?? 0) * 100).toFixed(
+                                1,
+                              ),
+                            ),
+                          },
+                        ),
                       )
                       .join(" | ")}
                   />
@@ -5355,21 +5552,21 @@ export function NewsSourcesContent() {
         initialValues={NEWS_SOURCE_CREATE_INITIAL_VALUES}
         onFinish={handleSubmit}
         onValuesChange={(changedValues, allValues) => {
-          if (!Object.prototype.hasOwnProperty.call(changedValues, "seedMode")) {
+          if (
+            !Object.prototype.hasOwnProperty.call(changedValues, "seedMode")
+          ) {
             return;
           }
           const previousMode = normalizeSeedMode(seedModeRef.current);
           const nextMode = normalizeSeedMode(changedValues.seedMode);
           seedModeRef.current = nextMode;
 
-          const schedulerRuntimeSettings =
-            resolvedSeedRuntimeSettings;
+          const schedulerRuntimeSettings = resolvedSeedRuntimeSettings;
           const currentTtl = allValues.seedCacheTtlSeconds;
-          const previousDefaultTtl =
-            getDefaultSeedCacheTtlSecondsByMode(
-              previousMode,
-              schedulerRuntimeSettings,
-            );
+          const previousDefaultTtl = getDefaultSeedCacheTtlSecondsByMode(
+            previousMode,
+            schedulerRuntimeSettings,
+          );
           if (
             typeof currentTtl === "number" &&
             Number.isFinite(currentTtl) &&
@@ -5437,19 +5634,21 @@ export function NewsSourcesContent() {
               })}
             />
           </Form.Item>
-          <Form.Item
-            name="crawlTemplateId"
-            label={t("newsSources.fields.template", {
-              defaultValue: "Crawl template",
-            })}
-          >
-            <Select
-              showSearch
-              allowClear
-              options={templateOptions}
-              placeholder={t("common.none", { defaultValue: "None" })}
-            />
-          </Form.Item>
+          {showCrawlSettings ? (
+            <Form.Item
+              name="crawlTemplateId"
+              label={t("newsSources.fields.template", {
+                defaultValue: "Crawl template",
+              })}
+            >
+              <Select
+                showSearch
+                allowClear
+                options={templateOptions}
+                placeholder={t("common.none", { defaultValue: "None" })}
+              />
+            </Form.Item>
+          ) : null}
           <Form.Item
             name="group"
             label={t("newsSources.fields.group", { defaultValue: "Group" })}
@@ -5465,7 +5664,7 @@ export function NewsSourcesContent() {
               })}
               notFoundContent={null}
               filterOption={(input, option) =>
-                (option?.label as string ?? "")
+                ((option?.label as string) ?? "")
                   .toLowerCase()
                   .includes(input.toLowerCase())
               }
@@ -5726,1001 +5925,1038 @@ export function NewsSourcesContent() {
           >
             <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
           </Form.Item>
-          <Form.Item
-            name="crawlProxyMode"
-            label={t("newsSources.fields.crawlProxyMode", {
-              defaultValue: "Proxy",
-            })}
-            tooltip={t("newsSources.fields.crawlProxyModeHint", {
-              defaultValue:
-                "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
-            })}
-          >
-            <Select
-              options={[
-                {
-                  label: t("newsSources.crawlTriState.auto", {
-                    defaultValue: "Auto (inherit)",
-                  }),
-                  value: "auto",
-                },
-                {
-                  label: t("newsSources.crawlTriState.enable", {
-                    defaultValue: "Enabled",
-                  }),
-                  value: "enable",
-                },
-                {
-                  label: t("newsSources.crawlTriState.disable", {
-                    defaultValue: "Disabled",
-                  }),
-                  value: "disable",
-                },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, nextValues) =>
-              prevValues.crawlProxyMode !== nextValues.crawlProxyMode
-            }
-          >
-            {({ getFieldValue }) => {
-              const modeRaw = getFieldValue("crawlProxyMode");
-              const mode =
-                modeRaw === "enable"
-                  ? "enable"
-                  : modeRaw === "disable"
-                    ? "disable"
-                    : "auto";
-              if (mode !== "enable") {
-                return null;
-              }
-
-              return (
-                <Form.Item
-                  name="crawlProxyUrl"
-                  label={t("newsSources.fields.crawlProxyUrl", {
-                    defaultValue: "Proxy URL",
-                  })}
-                  tooltip={t("newsSources.fields.crawlProxyUrlHint", {
-                    defaultValue:
-                      "If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
-                  })}
-                  rules={[
+          {showCrawlSettings ? (
+            <>
+              <Form.Item
+                name="crawlProxyMode"
+                label={t("newsSources.fields.crawlProxyMode", {
+                  defaultValue: "Proxy",
+                })}
+                tooltip={t("newsSources.fields.crawlProxyModeHint", {
+                  defaultValue:
+                    "Auto keeps proxyUrl/proxyConfig from crawlOptions JSON. Enabled overrides crawlOptions with the Proxy URL below. Disabled removes any proxy settings.",
+                })}
+              >
+                <Select
+                  options={[
                     {
-                      required: true,
-                      message: t("newsSources.errors.proxyUrlRequired", {
+                      label: t("newsSources.crawlTriState.auto", {
+                        defaultValue: "Auto (inherit)",
+                      }),
+                      value: "auto",
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.enable", {
+                        defaultValue: "Enabled",
+                      }),
+                      value: "enable",
+                    },
+                    {
+                      label: t("newsSources.crawlTriState.disable", {
+                        defaultValue: "Disabled",
+                      }),
+                      value: "disable",
+                    },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prevValues, nextValues) =>
+                  prevValues.crawlProxyMode !== nextValues.crawlProxyMode
+                }
+              >
+                {({ getFieldValue }) => {
+                  const modeRaw = getFieldValue("crawlProxyMode");
+                  const mode =
+                    modeRaw === "enable"
+                      ? "enable"
+                      : modeRaw === "disable"
+                        ? "disable"
+                        : "auto";
+                  if (mode !== "enable") {
+                    return null;
+                  }
+
+                  return (
+                    <Form.Item
+                      name="crawlProxyUrl"
+                      label={t("newsSources.fields.crawlProxyUrl", {
+                        defaultValue: "Proxy URL",
+                      })}
+                      tooltip={t("newsSources.fields.crawlProxyUrlHint", {
                         defaultValue:
-                          "Proxy URL is required when proxy is enabled.",
+                          "If crawl4ai runs in Docker and your proxy is on this machine, use host.docker.internal instead of localhost/127.0.0.1.",
+                      })}
+                      rules={[
+                        {
+                          required: true,
+                          message: t("newsSources.errors.proxyUrlRequired", {
+                            defaultValue:
+                              "Proxy URL is required when proxy is enabled.",
+                          }),
+                        },
+                      ]}
+                    >
+                      <Space.Compact style={{ width: "100%" }}>
+                        <Input placeholder="http://host.docker.internal:7890" />
+                        <Button
+                          onClick={() => {
+                            const current = String(
+                              form.getFieldValue("crawlProxyUrl") ?? "",
+                            );
+                            const next =
+                              translateLocalProxyToDockerHost(current);
+                            if (next !== current) {
+                              form.setFieldsValue({ crawlProxyUrl: next });
+                            }
+                          }}
+                        >
+                          {t("newsSources.actions.useDockerHostProxy", {
+                            defaultValue: "Use Docker host",
+                          })}
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            form.setFieldsValue({
+                              crawlProxyMode: "disable",
+                              crawlProxyUrl: "",
+                            })
+                          }
+                        >
+                          {t("common.clear", { defaultValue: "Clear" })}
+                        </Button>
+                      </Space.Compact>
+                    </Form.Item>
+                  );
+                }}
+              </Form.Item>
+
+              <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                {t("newsSources.sections.crawlStrategy", {
+                  defaultValue: "Crawl strategy",
+                })}
+              </Typography.Title>
+              <Typography.Text type="secondary">
+                {t("newsSources.sections.crawlStrategyHint", {
+                  defaultValue:
+                    "Tune full-page scanning, list/detail expansion, and quality defaults without using LLM extraction during crawl.",
+                })}
+              </Typography.Text>
+              <Alert
+                style={{ marginBottom: 12, marginTop: 8 }}
+                showIcon
+                type="info"
+                message={t("newsSources.hints.noLlmTitle", {
+                  defaultValue: "No LLM in crawl stage",
+                })}
+                description={t("newsSources.hints.noLlmDescription", {
+                  defaultValue:
+                    "Crawl4AI stage should only fetch and clean content. Run summarization and analysis in downstream pipeline tasks.",
+                })}
+              />
+              <Form.Item
+                name="crawlScanMode"
+                label={t("newsSources.fields.crawlScanMode", {
+                  defaultValue: "Scan mode",
+                })}
+                tooltip={t("newsSources.fields.crawlScanModeHint", {
+                  defaultValue:
+                    "Full page simulates scrolling for dynamic pages. Virtual scroll lets you control container and scroll cadence for infinite feeds.",
+                })}
+              >
+                <Select
+                  options={[
+                    {
+                      value: "default",
+                      label: t("newsSources.scanMode.default", {
+                        defaultValue: "Default",
+                      }),
+                    },
+                    {
+                      value: "full_page",
+                      label: t("newsSources.scanMode.fullPage", {
+                        defaultValue: "Full-page scanning",
+                      }),
+                    },
+                    {
+                      value: "virtual_scroll",
+                      label: t("newsSources.scanMode.virtualScroll", {
+                        defaultValue: "Virtual scroll",
                       }),
                     },
                   ]}
-                >
-                  <Space.Compact style={{ width: "100%" }}>
-                    <Input placeholder="http://host.docker.internal:7890" />
-                    <Button
-                      onClick={() => {
-                        const current = String(
-                          form.getFieldValue("crawlProxyUrl") ?? "",
-                        );
-                        const next = translateLocalProxyToDockerHost(current);
-                        if (next !== current) {
-                          form.setFieldsValue({ crawlProxyUrl: next });
+                />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prevValues, nextValues) =>
+                  prevValues.crawlScanMode !== nextValues.crawlScanMode
+                }
+              >
+                {({ getFieldValue }) => {
+                  const scanMode =
+                    getFieldValue("crawlScanMode") === "full_page"
+                      ? "full_page"
+                      : getFieldValue("crawlScanMode") === "virtual_scroll"
+                        ? "virtual_scroll"
+                        : "default";
+
+                  return (
+                    <>
+                      <Alert
+                        style={{ marginBottom: 12 }}
+                        showIcon
+                        type={
+                          scanMode === "full_page"
+                            ? "success"
+                            : scanMode === "virtual_scroll"
+                              ? "warning"
+                              : "info"
                         }
-                      }}
-                    >
-                      {t("newsSources.actions.useDockerHostProxy", {
-                        defaultValue: "Use Docker host",
-                      })}
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        form.setFieldsValue({
-                          crawlProxyMode: "disable",
-                          crawlProxyUrl: "",
-                        })
-                      }
-                    >
-                      {t("common.clear", { defaultValue: "Clear" })}
-                    </Button>
-                  </Space.Compact>
-                </Form.Item>
-              );
-            }}
-          </Form.Item>
-
-          <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("newsSources.sections.crawlStrategy", {
-              defaultValue: "Crawl strategy",
-            })}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("newsSources.sections.crawlStrategyHint", {
-              defaultValue:
-                "Tune full-page scanning, list/detail expansion, and quality defaults without using LLM extraction during crawl.",
-            })}
-          </Typography.Text>
-          <Alert
-            style={{ marginBottom: 12, marginTop: 8 }}
-            showIcon
-            type="info"
-            message={t("newsSources.hints.noLlmTitle", {
-              defaultValue: "No LLM in crawl stage",
-            })}
-            description={t("newsSources.hints.noLlmDescription", {
-              defaultValue:
-                "Crawl4AI stage should only fetch and clean content. Run summarization and analysis in downstream pipeline tasks.",
-            })}
-          />
-          <Form.Item
-            name="crawlScanMode"
-            label={t("newsSources.fields.crawlScanMode", {
-              defaultValue: "Scan mode",
-            })}
-            tooltip={t("newsSources.fields.crawlScanModeHint", {
-              defaultValue:
-                "Full page simulates scrolling for dynamic pages. Virtual scroll lets you control container and scroll cadence for infinite feeds.",
-            })}
-          >
-            <Select
-              options={[
-                {
-                  value: "default",
-                  label: t("newsSources.scanMode.default", {
-                    defaultValue: "Default",
-                  }),
-                },
-                {
-                  value: "full_page",
-                  label: t("newsSources.scanMode.fullPage", {
-                    defaultValue: "Full-page scanning",
-                  }),
-                },
-                {
-                  value: "virtual_scroll",
-                  label: t("newsSources.scanMode.virtualScroll", {
-                    defaultValue: "Virtual scroll",
-                  }),
-                },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, nextValues) =>
-              prevValues.crawlScanMode !== nextValues.crawlScanMode
-            }
-          >
-            {({ getFieldValue }) => {
-              const scanMode =
-                getFieldValue("crawlScanMode") === "full_page"
-                  ? "full_page"
-                  : getFieldValue("crawlScanMode") === "virtual_scroll"
-                    ? "virtual_scroll"
-                    : "default";
-
-              return (
-                <>
-                  <Alert
-                    style={{ marginBottom: 12 }}
-                    showIcon
-                    type={
-                      scanMode === "full_page"
-                        ? "success"
-                        : scanMode === "virtual_scroll"
-                          ? "warning"
-                          : "info"
-                    }
-                    message={
-                      scanMode === "full_page"
-                        ? t("crawl.settings.scanModes.fullPageTitle")
-                        : scanMode === "virtual_scroll"
-                          ? t("crawl.settings.scanModes.virtualScrollTitle")
-                          : t("crawl.settings.scanModes.defaultTitle")
-                    }
-                    description={
-                      scanMode === "full_page"
-                        ? t("crawl.settings.scanModes.fullPageDescription")
-                        : scanMode === "virtual_scroll"
-                          ? t(
-                              "crawl.settings.scanModes.virtualScrollDescription",
-                            )
-                          : t("crawl.settings.scanModes.defaultDescription")
-                    }
-                  />
-                  {scanMode === "full_page" ? (
-                    <Form.Item
-                      name="crawlScrollDelayMs"
-                      label={t("newsSources.fields.crawlScrollDelayMs", {
-                        defaultValue: "Scroll delay (ms)",
-                      })}
-                    >
-                      <InputNumber
-                        min={0}
-                        max={5000}
-                        step={100}
-                        style={{ width: "100%" }}
+                        message={
+                          scanMode === "full_page"
+                            ? t("crawl.settings.scanModes.fullPageTitle")
+                            : scanMode === "virtual_scroll"
+                              ? t("crawl.settings.scanModes.virtualScrollTitle")
+                              : t("crawl.settings.scanModes.defaultTitle")
+                        }
+                        description={
+                          scanMode === "full_page"
+                            ? t("crawl.settings.scanModes.fullPageDescription")
+                            : scanMode === "virtual_scroll"
+                              ? t(
+                                  "crawl.settings.scanModes.virtualScrollDescription",
+                                )
+                              : t("crawl.settings.scanModes.defaultDescription")
+                        }
                       />
-                    </Form.Item>
-                  ) : null}
-                  {scanMode === "virtual_scroll" ? (
+                      {scanMode === "full_page" ? (
+                        <Form.Item
+                          name="crawlScrollDelayMs"
+                          label={t("newsSources.fields.crawlScrollDelayMs", {
+                            defaultValue: "Scroll delay (ms)",
+                          })}
+                        >
+                          <InputNumber
+                            min={0}
+                            max={5000}
+                            step={100}
+                            style={{ width: "100%" }}
+                          />
+                        </Form.Item>
+                      ) : null}
+                      {scanMode === "virtual_scroll" ? (
+                        <>
+                          <Form.Item
+                            name="crawlVirtualScrollContainerSelector"
+                            label={t(
+                              "newsSources.fields.crawlVirtualScrollContainerSelector",
+                              {
+                                defaultValue: "Scroll container selector",
+                              },
+                            )}
+                          >
+                            <Input placeholder="body" />
+                          </Form.Item>
+                          <Form.Item
+                            name="crawlVirtualScrollScrollCount"
+                            label={t(
+                              "newsSources.fields.crawlVirtualScrollScrollCount",
+                              {
+                                defaultValue: "Scroll count",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={1}
+                              max={1000}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            name="crawlVirtualScrollScrollBy"
+                            label={t(
+                              "newsSources.fields.crawlVirtualScrollScrollBy",
+                              {
+                                defaultValue: "Scroll step",
+                              },
+                            )}
+                          >
+                            <Select
+                              options={[
+                                {
+                                  value: "page_height",
+                                  label: t(
+                                    "crawl.virtualScroll.scrollByOptions.pageHeight",
+                                  ),
+                                },
+                                {
+                                  value: "container_height",
+                                  label: t(
+                                    "crawl.virtualScroll.scrollByOptions.containerHeight",
+                                  ),
+                                },
+                                {
+                                  value: "pixels",
+                                  label: t(
+                                    "crawl.virtualScroll.scrollByOptions.pixels",
+                                  ),
+                                },
+                              ]}
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            noStyle
+                            shouldUpdate={(prevValues, nextValues) =>
+                              prevValues.crawlVirtualScrollScrollBy !==
+                              nextValues.crawlVirtualScrollScrollBy
+                            }
+                          >
+                            {({ getFieldValue: getScrollBy }) =>
+                              getScrollBy("crawlVirtualScrollScrollBy") ===
+                              "pixels" ? (
+                                <Form.Item
+                                  name="crawlVirtualScrollScrollByPixels"
+                                  label={t(
+                                    "newsSources.fields.crawlVirtualScrollScrollByPixels",
+                                    {
+                                      defaultValue: "Scroll pixels",
+                                    },
+                                  )}
+                                >
+                                  <InputNumber
+                                    min={1}
+                                    max={20000}
+                                    step={50}
+                                    style={{ width: "100%" }}
+                                  />
+                                </Form.Item>
+                              ) : null
+                            }
+                          </Form.Item>
+                          <Form.Item
+                            name="crawlVirtualScrollWaitAfterScrollMs"
+                            label={t(
+                              "newsSources.fields.crawlVirtualScrollWaitAfterScrollMs",
+                              {
+                                defaultValue: "Wait after scroll (ms)",
+                              },
+                            )}
+                          >
+                            <InputNumber
+                              min={0}
+                              max={60000}
+                              step={100}
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </>
+                      ) : null}
+                    </>
+                  );
+                }}
+              </Form.Item>
+
+              <Form.Item
+                name="crawlQualityProfile"
+                label={t("newsSources.fields.crawlQualityProfile", {
+                  defaultValue: "Quality profile",
+                })}
+                tooltip={t("crawl.settings.qualityProfileHint")}
+              >
+                <Select
+                  allowClear
+                  options={[
+                    {
+                      value: "quality_first",
+                      label: t(
+                        "crawl.settings.qualityProfileOptions.qualityFirst",
+                      ),
+                    },
+                    {
+                      value: "balanced",
+                      label: t("crawl.settings.qualityProfileOptions.balanced"),
+                    },
+                    {
+                      value: "speed_first",
+                      label: t(
+                        "crawl.settings.qualityProfileOptions.speedFirst",
+                      ),
+                    },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                name="crawlPageTypeHint"
+                label={t("newsSources.fields.crawlPageTypeHint", {
+                  defaultValue: "Page type hint",
+                })}
+                tooltip={t("crawl.settings.pageTypeHintHint")}
+              >
+                <Select
+                  allowClear
+                  options={[
+                    {
+                      value: "auto",
+                      label: t("crawl.settings.pageTypeHintOptions.auto"),
+                    },
+                    {
+                      value: "list",
+                      label: t("crawl.settings.pageTypeHintOptions.list"),
+                    },
+                    {
+                      value: "detail",
+                      label: t("crawl.settings.pageTypeHintOptions.detail"),
+                    },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item
+                name="crawlAutoExpandDetails"
+                label={t("newsSources.fields.crawlAutoExpandDetails", {
+                  defaultValue: "Auto expand details",
+                })}
+                tooltip={t("crawl.settings.autoExpandDetailsHint")}
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prevValues, nextValues) =>
+                  prevValues.crawlAutoExpandDetails !==
+                  nextValues.crawlAutoExpandDetails
+                }
+              >
+                {({ getFieldValue }) => {
+                  if (getFieldValue("crawlAutoExpandDetails") !== true) {
+                    return null;
+                  }
+                  return (
                     <>
                       <Form.Item
-                        name="crawlVirtualScrollContainerSelector"
-                        label={t(
-                          "newsSources.fields.crawlVirtualScrollContainerSelector",
-                          {
-                            defaultValue: "Scroll container selector",
-                          },
-                        )}
-                      >
-                        <Input placeholder="body" />
-                      </Form.Item>
-                      <Form.Item
-                        name="crawlVirtualScrollScrollCount"
-                        label={t(
-                          "newsSources.fields.crawlVirtualScrollScrollCount",
-                          {
-                            defaultValue: "Scroll count",
-                          },
-                        )}
+                        name="crawlDetailMaxUrls"
+                        label={t("newsSources.fields.crawlDetailMaxUrls", {
+                          defaultValue: "Max detail URLs",
+                        })}
+                        extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
                       >
                         <InputNumber
                           min={1}
-                          max={1000}
+                          max={30}
                           style={{ width: "100%" }}
                         />
                       </Form.Item>
                       <Form.Item
-                        name="crawlVirtualScrollScrollBy"
+                        name="crawlDetailMinRelevanceScore"
                         label={t(
-                          "newsSources.fields.crawlVirtualScrollScrollBy",
+                          "newsSources.fields.crawlDetailMinRelevanceScore",
                           {
-                            defaultValue: "Scroll step",
+                            defaultValue: "Min relevance score",
                           },
                         )}
+                        extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
                       >
-                        <Select
-                          options={[
-                            {
-                              value: "page_height",
-                              label: t(
-                                "crawl.virtualScroll.scrollByOptions.pageHeight",
-                              ),
-                            },
-                            {
-                              value: "container_height",
-                              label: t(
-                                "crawl.virtualScroll.scrollByOptions.containerHeight",
-                              ),
-                            },
-                            {
-                              value: "pixels",
-                              label: t(
-                                "crawl.virtualScroll.scrollByOptions.pixels",
-                              ),
-                            },
-                          ]}
+                        <InputNumber
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          style={{ width: "100%" }}
                         />
                       </Form.Item>
                       <Form.Item
-                        noStyle
-                        shouldUpdate={(prevValues, nextValues) =>
-                          prevValues.crawlVirtualScrollScrollBy !==
-                          nextValues.crawlVirtualScrollScrollBy
-                        }
+                        name="crawlDetailRequireSameDomain"
+                        label={t(
+                          "newsSources.fields.crawlDetailRequireSameDomain",
+                          {
+                            defaultValue: "Require same domain",
+                          },
+                        )}
+                        extra={t("crawl.detailExpansion.requireSameDomainHint")}
+                        valuePropName="checked"
                       >
-                        {({ getFieldValue: getScrollBy }) =>
-                          getScrollBy("crawlVirtualScrollScrollBy") ===
-                          "pixels" ? (
-                            <Form.Item
-                              name="crawlVirtualScrollScrollByPixels"
-                              label={t(
-                                "newsSources.fields.crawlVirtualScrollScrollByPixels",
-                                {
-                                  defaultValue: "Scroll pixels",
-                                },
-                              )}
-                            >
-                              <InputNumber
-                                min={1}
-                                max={20000}
-                                step={50}
-                                style={{ width: "100%" }}
-                              />
-                            </Form.Item>
-                          ) : null
-                        }
+                        <Switch />
                       </Form.Item>
                       <Form.Item
-                        name="crawlVirtualScrollWaitAfterScrollMs"
+                        name="crawlDetailAllowExternalLinks"
                         label={t(
-                          "newsSources.fields.crawlVirtualScrollWaitAfterScrollMs",
+                          "newsSources.fields.crawlDetailAllowExternalLinks",
                           {
-                            defaultValue: "Wait after scroll (ms)",
+                            defaultValue: "Allow external links",
+                          },
+                        )}
+                        extra={t(
+                          "crawl.detailExpansion.allowExternalLinksHint",
+                        )}
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlDetailMinPublishTimeConfidence"
+                        label={t(
+                          "newsSources.fields.crawlDetailMinPublishTimeConfidence",
+                          {
+                            defaultValue: "Min publish time confidence",
+                          },
+                        )}
+                        extra={t(
+                          "crawl.detailExpansion.minPublishTimeConfidenceHint",
+                          {
+                            defaultValue:
+                              "Prioritize URLs with stronger publish-time signals (0~1).",
                           },
                         )}
                       >
                         <InputNumber
                           min={0}
-                          max={60000}
-                          step={100}
+                          max={1}
+                          step={0.01}
                           style={{ width: "100%" }}
                         />
                       </Form.Item>
+                      <Form.Item
+                        name="crawlDetailPreferFitMarkdownForQuality"
+                        label={t(
+                          "newsSources.fields.crawlDetailPreferFitMarkdownForQuality",
+                          {
+                            defaultValue: "Prefer fit markdown for quality",
+                          },
+                        )}
+                        extra={t(
+                          "crawl.detailExpansion.preferFitMarkdownForQualityHint",
+                          {
+                            defaultValue:
+                              "Use fit_markdown first for low-signal/list-like quality assessment.",
+                          },
+                        )}
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlDetailExcludeUrlPatterns"
+                        label={t(
+                          "newsSources.fields.crawlDetailExcludeUrlPatterns",
+                          {
+                            defaultValue: "Exclude URL patterns",
+                          },
+                        )}
+                        extra={t(
+                          "crawl.detailExpansion.excludeUrlPatternsHint",
+                          {
+                            defaultValue:
+                              "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
+                          },
+                        )}
+                      >
+                        <Select mode="tags" tokenSeparators={[","]} />
+                      </Form.Item>
+                      <Form.Item
+                        name="crawlDetailIncludeUrlPatterns"
+                        label={t(
+                          "newsSources.fields.crawlDetailIncludeUrlPatterns",
+                          {
+                            defaultValue: "Include URL patterns",
+                          },
+                        )}
+                        extra={t(
+                          "crawl.detailExpansion.includeUrlPatternsHint",
+                          {
+                            defaultValue:
+                              "Optional allowlist. If set, only matching URLs are followed.",
+                          },
+                        )}
+                      >
+                        <Select mode="tags" tokenSeparators={[","]} />
+                      </Form.Item>
                     </>
-                  ) : null}
-                </>
-              );
-            }}
-          </Form.Item>
-
-          <Form.Item
-            name="crawlQualityProfile"
-            label={t("newsSources.fields.crawlQualityProfile", {
-              defaultValue: "Quality profile",
-            })}
-            tooltip={t("crawl.settings.qualityProfileHint")}
-          >
-            <Select
-              allowClear
-              options={[
-                {
-                  value: "quality_first",
-                  label: t("crawl.settings.qualityProfileOptions.qualityFirst"),
-                },
-                {
-                  value: "balanced",
-                  label: t("crawl.settings.qualityProfileOptions.balanced"),
-                },
-                {
-                  value: "speed_first",
-                  label: t("crawl.settings.qualityProfileOptions.speedFirst"),
-                },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="crawlPageTypeHint"
-            label={t("newsSources.fields.crawlPageTypeHint", {
-              defaultValue: "Page type hint",
-            })}
-            tooltip={t("crawl.settings.pageTypeHintHint")}
-          >
-            <Select
-              allowClear
-              options={[
-                {
-                  value: "auto",
-                  label: t("crawl.settings.pageTypeHintOptions.auto"),
-                },
-                {
-                  value: "list",
-                  label: t("crawl.settings.pageTypeHintOptions.list"),
-                },
-                {
-                  value: "detail",
-                  label: t("crawl.settings.pageTypeHintOptions.detail"),
-                },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="crawlAutoExpandDetails"
-            label={t("newsSources.fields.crawlAutoExpandDetails", {
-              defaultValue: "Auto expand details",
-            })}
-            tooltip={t("crawl.settings.autoExpandDetailsHint")}
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prevValues, nextValues) =>
-              prevValues.crawlAutoExpandDetails !==
-              nextValues.crawlAutoExpandDetails
-            }
-          >
-            {({ getFieldValue }) => {
-              if (getFieldValue("crawlAutoExpandDetails") !== true) {
-                return null;
-              }
-              return (
-                <>
-                  <Form.Item
-                    name="crawlDetailMaxUrls"
-                    label={t("newsSources.fields.crawlDetailMaxUrls", {
-                      defaultValue: "Max detail URLs",
-                    })}
-                    extra={t("crawl.detailExpansion.maxDetailUrlsHint")}
-                  >
-                    <InputNumber min={1} max={30} style={{ width: "100%" }} />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailMinRelevanceScore"
-                    label={t(
-                      "newsSources.fields.crawlDetailMinRelevanceScore",
-                      {
-                        defaultValue: "Min relevance score",
-                      },
-                    )}
-                    extra={t("crawl.detailExpansion.minRelevanceScoreHint")}
-                  >
-                    <InputNumber
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      style={{ width: "100%" }}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailRequireSameDomain"
-                    label={t(
-                      "newsSources.fields.crawlDetailRequireSameDomain",
-                      {
-                        defaultValue: "Require same domain",
-                      },
-                    )}
-                    extra={t("crawl.detailExpansion.requireSameDomainHint")}
-                    valuePropName="checked"
-                  >
-                    <Switch />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailAllowExternalLinks"
-                    label={t(
-                      "newsSources.fields.crawlDetailAllowExternalLinks",
-                      {
-                        defaultValue: "Allow external links",
-                      },
-                    )}
-                    extra={t("crawl.detailExpansion.allowExternalLinksHint")}
-                    valuePropName="checked"
-                  >
-                    <Switch />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailMinPublishTimeConfidence"
-                    label={t(
-                      "newsSources.fields.crawlDetailMinPublishTimeConfidence",
-                      {
-                        defaultValue: "Min publish time confidence",
-                      },
-                    )}
-                    extra={t(
-                      "crawl.detailExpansion.minPublishTimeConfidenceHint",
-                      {
-                        defaultValue:
-                          "Prioritize URLs with stronger publish-time signals (0~1).",
-                      },
-                    )}
-                  >
-                    <InputNumber
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      style={{ width: "100%" }}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailPreferFitMarkdownForQuality"
-                    label={t(
-                      "newsSources.fields.crawlDetailPreferFitMarkdownForQuality",
-                      {
-                        defaultValue: "Prefer fit markdown for quality",
-                      },
-                    )}
-                    extra={t(
-                      "crawl.detailExpansion.preferFitMarkdownForQualityHint",
-                      {
-                        defaultValue:
-                          "Use fit_markdown first for low-signal/list-like quality assessment.",
-                      },
-                    )}
-                    valuePropName="checked"
-                  >
-                    <Switch />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailExcludeUrlPatterns"
-                    label={t("newsSources.fields.crawlDetailExcludeUrlPatterns", {
-                      defaultValue: "Exclude URL patterns",
-                    })}
-                    extra={t("crawl.detailExpansion.excludeUrlPatternsHint", {
-                      defaultValue:
-                        "Optional patterns to block detail expansion (supports wildcard * and regex /.../).",
-                    })}
-                  >
-                    <Select mode="tags" tokenSeparators={[","]} />
-                  </Form.Item>
-                  <Form.Item
-                    name="crawlDetailIncludeUrlPatterns"
-                    label={t("newsSources.fields.crawlDetailIncludeUrlPatterns", {
-                      defaultValue: "Include URL patterns",
-                    })}
-                    extra={t("crawl.detailExpansion.includeUrlPatternsHint", {
-                      defaultValue:
-                        "Optional allowlist. If set, only matching URLs are followed.",
-                    })}
-                  >
-                    <Select mode="tags" tokenSeparators={[","]} />
-                  </Form.Item>
-                </>
-              );
-            }}
-          </Form.Item>
-
-          <Typography.Title level={5} style={{ marginBottom: 0 }}>
-            {t("newsSources.sections.crawlMarkdown", {
-              defaultValue: "RAG markdown",
-            })}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("newsSources.sections.crawlMarkdownHint", {
-              defaultValue:
-                "Crawl4AI turns crawled pages into clean markdown. Keep content source and escaping aligned with your retrieval pipeline.",
-            })}
-          </Typography.Text>
-          <Alert
-            style={{ marginBottom: 12, marginTop: 8 }}
-            showIcon
-            type="success"
-            message={t("newsSources.hints.ragReadyTitle", {
-              defaultValue: "RAG-ready markdown",
-            })}
-            description={t("newsSources.hints.ragReadyDescription", {
-              defaultValue:
-                "Prefer cleaned_html output for stable embeddings and downstream search indexing.",
-            })}
-          />
-          <Form.Item
-            name="crawlMarkdownContentSource"
-            label={t("newsSources.fields.crawlMarkdownContentSource", {
-              defaultValue: "Markdown content source",
-            })}
-          >
-            <Select
-              options={[
-                {
-                  value: "cleaned_html",
-                  label: t("crawl.markdown.sourceOptions.cleaned"),
-                },
-                {
-                  value: "raw_html",
-                  label: t("crawl.markdown.sourceOptions.raw"),
-                },
-                {
-                  value: "fit_html",
-                  label: t("crawl.markdown.sourceOptions.fit"),
-                },
-              ]}
-            />
-          </Form.Item>
-          <Row gutter={[12, 0]}>
-            <Col span={12}>
-              <Form.Item
-                name="crawlMarkdownEscapeHtmlMode"
-                label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode", {
-                  defaultValue: "Escape HTML",
-                })}
-              >
-                <Select
-                  options={[
-                    {
-                      value: "auto",
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                    },
-                    {
-                      value: "enable",
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                    },
-                    {
-                      value: "disable",
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                    },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="crawlMarkdownCitationsMode"
-                label={t("newsSources.fields.crawlMarkdownCitationsMode", {
-                  defaultValue: "Citations",
-                })}
-              >
-                <Select
-                  options={[
-                    {
-                      value: "auto",
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                    },
-                    {
-                      value: "enable",
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                    },
-                    {
-                      value: "disable",
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                    },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item noStyle shouldUpdate>
-            {({ getFieldsValue }) => {
-              const values = getFieldsValue(true) as NewsSourceFormValues;
-              const previewValues: NewsSourceFormValues = {
-                ...values,
-                metadataJson: undefined,
-                keywords: undefined,
-                tags: undefined,
-                summaryHints: undefined,
-              };
-
-              let crawlOptionsPreview = "{}";
-              let previewError: string | null = null;
-
-              try {
-                const previewConfig = buildConfig(previewValues);
-                const previewOptions =
-                  previewConfig && isPlainObject(previewConfig.crawlOptions)
-                    ? (previewConfig.crawlOptions as Record<string, unknown>)
-                    : null;
-                crawlOptionsPreview = previewOptions
-                  ? JSON.stringify(previewOptions, null, 2)
-                  : "{}";
-              } catch (error) {
-                previewError =
-                  error instanceof Error
-                    ? error.message
-                    : t("newsSources.hints.crawlOptionsPreviewError", {
-                        defaultValue: "Unable to build crawl options preview.",
-                      });
-              }
-
-              return (
-                <Card
-                  size="small"
-                  title={t("newsSources.sections.crawlOptionsPreview", {
-                    defaultValue: "Resolved crawlOptions preview",
-                  })}
-                  style={{ marginBottom: 12 }}
-                >
-                  <Typography.Paragraph
-                    type="secondary"
-                    style={{ marginTop: 0 }}
-                  >
-                    {t("newsSources.sections.crawlOptionsPreviewHint", {
-                      defaultValue:
-                        "Shows the final crawlOptions payload after merging structured controls with advanced JSON.",
-                    })}
-                  </Typography.Paragraph>
-                  {previewError ? (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      message={previewError}
-                      style={{ marginBottom: 8 }}
-                    />
-                  ) : null}
-                  <Input.TextArea
-                    value={crawlOptionsPreview}
-                    autoSize={{ minRows: 4, maxRows: 10 }}
-                    readOnly
-                  />
-                </Card>
-              );
-            }}
-          </Form.Item>
-
-          <Space style={{ marginBottom: 8 }}>
-            <Button
-              size="small"
-              onClick={() => {
-                try {
-                  const currentRaw = form.getFieldValue("crawlOptionsJson") as
-                    | string
-                    | undefined;
-                  const current =
-                    parseJsonField(currentRaw, "crawlOptions") ?? {};
-                  const next = applyAutoBrowserHeadersToCrawlOptions(current);
-                  form.setFieldsValue({
-                    crawlOptionsJson: JSON.stringify(next, null, 2),
-                  });
-                } catch (error) {
-                  messageApi.error(
-                    error instanceof Error
-                      ? error.message
-                      : t("common.operationFailed", {
-                          defaultValue: "Operation failed.",
-                        }),
                   );
-                }
-              }}
-            >
-              {t("crawl.browser.headers.autoFillSecCh", {
-                defaultValue: "Auto-fill Sec-CH headers",
-              })}
-            </Button>
-            <Typography.Text type="secondary">
-              {t("crawl.browser.headers.autoFillSecChHint", {
-                defaultValue:
-                  "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
-              })}
-            </Typography.Text>
-          </Space>
+                }}
+              </Form.Item>
 
-          <Form.Item
-            name="crawlOptionsJson"
-            label={t("newsSources.fields.crawlOptions", {
-              defaultValue: "Crawl options (JSON)",
-            })}
-            tooltip={t("newsSources.fields.crawlOptionsHint", {
-              defaultValue:
-                "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline.",
-            })}
-            validateTrigger="onBlur"
-            rules={[
-              {
-                validator: async (_rule, value) => {
-                  const trimmed = typeof value === "string" ? value.trim() : "";
-                  if (!trimmed) {
-                    return;
-                  }
-                  let parsed: unknown;
+              <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                {t("newsSources.sections.crawlMarkdown", {
+                  defaultValue: "RAG markdown",
+                })}
+              </Typography.Title>
+              <Typography.Text type="secondary">
+                {t("newsSources.sections.crawlMarkdownHint", {
+                  defaultValue:
+                    "Crawl4AI turns crawled pages into clean markdown. Keep content source and escaping aligned with your retrieval pipeline.",
+                })}
+              </Typography.Text>
+              <Alert
+                style={{ marginBottom: 12, marginTop: 8 }}
+                showIcon
+                type="success"
+                message={t("newsSources.hints.ragReadyTitle", {
+                  defaultValue: "RAG-ready markdown",
+                })}
+                description={t("newsSources.hints.ragReadyDescription", {
+                  defaultValue:
+                    "Prefer cleaned_html output for stable embeddings and downstream search indexing.",
+                })}
+              />
+              <Form.Item
+                name="crawlMarkdownContentSource"
+                label={t("newsSources.fields.crawlMarkdownContentSource", {
+                  defaultValue: "Markdown content source",
+                })}
+              >
+                <Select
+                  options={[
+                    {
+                      value: "cleaned_html",
+                      label: t("crawl.markdown.sourceOptions.cleaned"),
+                    },
+                    {
+                      value: "raw_html",
+                      label: t("crawl.markdown.sourceOptions.raw"),
+                    },
+                    {
+                      value: "fit_html",
+                      label: t("crawl.markdown.sourceOptions.fit"),
+                    },
+                  ]}
+                />
+              </Form.Item>
+              <Row gutter={[12, 0]}>
+                <Col span={12}>
+                  <Form.Item
+                    name="crawlMarkdownEscapeHtmlMode"
+                    label={t("newsSources.fields.crawlMarkdownEscapeHtmlMode", {
+                      defaultValue: "Escape HTML",
+                    })}
+                  >
+                    <Select
+                      options={[
+                        {
+                          value: "auto",
+                          label: t("newsSources.crawlTriState.auto", {
+                            defaultValue: "Auto (inherit)",
+                          }),
+                        },
+                        {
+                          value: "enable",
+                          label: t("newsSources.crawlTriState.enable", {
+                            defaultValue: "Enabled",
+                          }),
+                        },
+                        {
+                          value: "disable",
+                          label: t("newsSources.crawlTriState.disable", {
+                            defaultValue: "Disabled",
+                          }),
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="crawlMarkdownCitationsMode"
+                    label={t("newsSources.fields.crawlMarkdownCitationsMode", {
+                      defaultValue: "Citations",
+                    })}
+                  >
+                    <Select
+                      options={[
+                        {
+                          value: "auto",
+                          label: t("newsSources.crawlTriState.auto", {
+                            defaultValue: "Auto (inherit)",
+                          }),
+                        },
+                        {
+                          value: "enable",
+                          label: t("newsSources.crawlTriState.enable", {
+                            defaultValue: "Enabled",
+                          }),
+                        },
+                        {
+                          value: "disable",
+                          label: t("newsSources.crawlTriState.disable", {
+                            defaultValue: "Disabled",
+                          }),
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item noStyle shouldUpdate>
+                {({ getFieldsValue }) => {
+                  const values = getFieldsValue(true) as NewsSourceFormValues;
+                  const previewValues: NewsSourceFormValues = {
+                    ...values,
+                    metadataJson: undefined,
+                    keywords: undefined,
+                    tags: undefined,
+                    summaryHints: undefined,
+                  };
+
+                  let crawlOptionsPreview = "{}";
+                  let previewError: string | null = null;
+
                   try {
-                    parsed = JSON.parse(trimmed);
+                    const previewConfig = buildConfig(previewValues);
+                    const previewOptions =
+                      previewConfig && isPlainObject(previewConfig.crawlOptions)
+                        ? (previewConfig.crawlOptions as Record<
+                            string,
+                            unknown
+                          >)
+                        : null;
+                    crawlOptionsPreview = previewOptions
+                      ? JSON.stringify(previewOptions, null, 2)
+                      : "{}";
                   } catch (error) {
-                    throw new Error(
+                    previewError =
                       error instanceof Error
                         ? error.message
-                        : "crawlOptions must be a valid JSON object",
-                    );
+                        : t("newsSources.hints.crawlOptionsPreviewError", {
+                            defaultValue:
+                              "Unable to build crawl options preview.",
+                          });
                   }
-                  if (
-                    !parsed ||
-                    typeof parsed !== "object" ||
-                    Array.isArray(parsed)
-                  ) {
-                    throw new Error("crawlOptions must be a JSON object");
-                  }
-                  const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
-                  if (blockedKeys.length === 0) {
-                    return;
-                  }
-                  const list = blockedKeys.slice(0, 5).join(", ");
-                  const suffix =
-                    blockedKeys.length > 5
-                      ? ` (+${blockedKeys.length - 5} more)`
-                      : "";
-                  throw new Error(
-                    t("newsSources.errors.crawlOptionsLlmBlocked", {
-                      defaultValue:
-                        "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
-                      keys: list,
-                      suffix,
-                    }),
+
+                  return (
+                    <Card
+                      size="small"
+                      title={t("newsSources.sections.crawlOptionsPreview", {
+                        defaultValue: "Resolved crawlOptions preview",
+                      })}
+                      style={{ marginBottom: 12 }}
+                    >
+                      <Typography.Paragraph
+                        type="secondary"
+                        style={{ marginTop: 0 }}
+                      >
+                        {t("newsSources.sections.crawlOptionsPreviewHint", {
+                          defaultValue:
+                            "Shows the final crawlOptions payload after merging structured controls with advanced JSON.",
+                        })}
+                      </Typography.Paragraph>
+                      {previewError ? (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          message={previewError}
+                          style={{ marginBottom: 8 }}
+                        />
+                      ) : null}
+                      <Input.TextArea
+                        value={crawlOptionsPreview}
+                        autoSize={{ minRows: 4, maxRows: 10 }}
+                        readOnly
+                      />
+                    </Card>
                   );
-                },
-              },
-            ]}
-          >
-            <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
-          </Form.Item>
-          <Form.Item
-            name="crawlHeadlessMode"
-            label={t("newsSources.fields.crawlHeadlessMode", {
-              defaultValue: "Browser mode",
-            })}
-            tooltip={t("newsSources.fields.crawlHeadlessModeHint", {
-              defaultValue:
-                "Auto removes crawlOptions.headless so Crawl4AI can decide. Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch to Headless or enable Xvfb in docker-compose.",
-            })}
-          >
-            <Select
-              options={[
-                {
-                  label: t("newsSources.crawlHeadlessMode.auto", {
-                    defaultValue: "Auto (recommended)",
-                  }),
-                  value: "auto",
-                },
-                {
-                  label: t("newsSources.crawlHeadlessMode.headless", {
-                    defaultValue: "Headless",
-                  }),
-                  value: "headless",
-                },
-                {
-                  label: t("newsSources.crawlHeadlessMode.headed", {
-                    defaultValue: "Headed (Xvfb)",
-                  }),
-                  value: "headed",
-                },
-              ]}
-            />
-          </Form.Item>
-          <Row gutter={[12, 0]}>
-            <Col span={8}>
+                }}
+              </Form.Item>
+
+              <Space style={{ marginBottom: 8 }}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    try {
+                      const currentRaw = form.getFieldValue(
+                        "crawlOptionsJson",
+                      ) as string | undefined;
+                      const current =
+                        parseJsonField(currentRaw, "crawlOptions") ?? {};
+                      const next =
+                        applyAutoBrowserHeadersToCrawlOptions(current);
+                      form.setFieldsValue({
+                        crawlOptionsJson: JSON.stringify(next, null, 2),
+                      });
+                    } catch (error) {
+                      messageApi.error(
+                        error instanceof Error
+                          ? error.message
+                          : t("common.operationFailed", {
+                              defaultValue: "Operation failed.",
+                            }),
+                      );
+                    }
+                  }}
+                >
+                  {t("crawl.browser.headers.autoFillSecCh", {
+                    defaultValue: "Auto-fill Sec-CH headers",
+                  })}
+                </Button>
+                <Typography.Text type="secondary">
+                  {t("crawl.browser.headers.autoFillSecChHint", {
+                    defaultValue:
+                      "Adds sec-fetch defaults and, when User-Agent is deterministic Chromium, matching sec-ch headers if missing.",
+                  })}
+                </Typography.Text>
+              </Space>
+
               <Form.Item
-                name="crawlUndetectedMode"
-                label={t("newsSources.fields.crawlUndetectedMode", {
-                  defaultValue: "Undetected browser",
+                name="crawlOptionsJson"
+                label={t("newsSources.fields.crawlOptions", {
+                  defaultValue: "Crawl options (JSON)",
                 })}
-                tooltip={t("newsSources.fields.crawlUndetectedModeHint", {
+                tooltip={t("newsSources.fields.crawlOptionsHint", {
                   defaultValue:
-                    "Auto removes crawlOptions.enableUndetectedBrowser so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
+                    "Advanced Crawl4AI options. Do not set crawl4ai LLM extraction here (extraction_strategy/llm_config); crawl should only store cleaned markdown, and your configured model runs later in the pipeline.",
+                })}
+                validateTrigger="onBlur"
+                rules={[
+                  {
+                    validator: async (_rule, value) => {
+                      const trimmed =
+                        typeof value === "string" ? value.trim() : "";
+                      if (!trimmed) {
+                        return;
+                      }
+                      let parsed: unknown;
+                      try {
+                        parsed = JSON.parse(trimmed);
+                      } catch (error) {
+                        throw new Error(
+                          error instanceof Error
+                            ? error.message
+                            : "crawlOptions must be a valid JSON object",
+                        );
+                      }
+                      if (
+                        !parsed ||
+                        typeof parsed !== "object" ||
+                        Array.isArray(parsed)
+                      ) {
+                        throw new Error("crawlOptions must be a JSON object");
+                      }
+                      const blockedKeys = findDisallowedCrawl4aiLlmKeys(parsed);
+                      if (blockedKeys.length === 0) {
+                        return;
+                      }
+                      const list = blockedKeys.slice(0, 5).join(", ");
+                      const suffix =
+                        blockedKeys.length > 5
+                          ? ` (+${blockedKeys.length - 5} more)`
+                          : "";
+                      throw new Error(
+                        t("newsSources.errors.crawlOptionsLlmBlocked", {
+                          defaultValue:
+                            "crawlOptions contains crawl4ai LLM extraction settings ({{keys}}{{suffix}}). The crawl stage must only fetch and store cleaned markdown; run your configured model in the pipeline stage instead.",
+                          keys: list,
+                          suffix,
+                        }),
+                      );
+                    },
+                  },
+                ]}
+              >
+                <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
+              </Form.Item>
+              <Form.Item
+                name="crawlHeadlessMode"
+                label={t("newsSources.fields.crawlHeadlessMode", {
+                  defaultValue: "Browser mode",
+                })}
+                tooltip={t("newsSources.fields.crawlHeadlessModeHint", {
+                  defaultValue:
+                    "Auto removes crawlOptions.headless so Crawl4AI can decide. Headed mode (headless=false) may require Xvfb/DISPLAY in the crawl4ai container; if you see 'cannot open display' errors, switch to Headless or enable Xvfb in docker-compose.",
                 })}
               >
                 <Select
                   options={[
                     {
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
+                      label: t("newsSources.crawlHeadlessMode.auto", {
+                        defaultValue: "Auto (recommended)",
                       }),
                       value: "auto",
                     },
                     {
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
+                      label: t("newsSources.crawlHeadlessMode.headless", {
+                        defaultValue: "Headless",
                       }),
-                      value: "enable",
+                      value: "headless",
                     },
                     {
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
+                      label: t("newsSources.crawlHeadlessMode.headed", {
+                        defaultValue: "Headed (Xvfb)",
                       }),
-                      value: "disable",
+                      value: "headed",
                     },
                   ]}
                 />
               </Form.Item>
-            </Col>
-            <Col span={8}>
+              <Row gutter={[12, 0]}>
+                <Col span={8}>
+                  <Form.Item
+                    name="crawlUndetectedMode"
+                    label={t("newsSources.fields.crawlUndetectedMode", {
+                      defaultValue: "Undetected browser",
+                    })}
+                    tooltip={t("newsSources.fields.crawlUndetectedModeHint", {
+                      defaultValue:
+                        "Auto removes crawlOptions.enableUndetectedBrowser so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
+                    })}
+                  >
+                    <Select
+                      options={[
+                        {
+                          label: t("newsSources.crawlTriState.auto", {
+                            defaultValue: "Auto (inherit)",
+                          }),
+                          value: "auto",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.enable", {
+                            defaultValue: "Enabled",
+                          }),
+                          value: "enable",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.disable", {
+                            defaultValue: "Disabled",
+                          }),
+                          value: "disable",
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name="crawlStealthMode"
+                    label={t("newsSources.fields.crawlStealthMode", {
+                      defaultValue: "Stealth mode",
+                    })}
+                    tooltip={t("newsSources.fields.crawlStealthModeHint", {
+                      defaultValue:
+                        "Auto removes crawlOptions.enableStealthMode so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
+                    })}
+                  >
+                    <Select
+                      options={[
+                        {
+                          label: t("newsSources.crawlTriState.auto", {
+                            defaultValue: "Auto (inherit)",
+                          }),
+                          value: "auto",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.enable", {
+                            defaultValue: "Enabled",
+                          }),
+                          value: "enable",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.disable", {
+                            defaultValue: "Disabled",
+                          }),
+                          value: "disable",
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    name="crawlAntiBotMode"
+                    label={t("newsSources.fields.crawlAntiBotMode", {
+                      defaultValue: "Anti-bot retry",
+                    })}
+                    tooltip={t("newsSources.fields.crawlAntiBotModeHint", {
+                      defaultValue:
+                        "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur.",
+                    })}
+                  >
+                    <Select
+                      options={[
+                        {
+                          label: t("newsSources.crawlTriState.auto", {
+                            defaultValue: "Auto (inherit)",
+                          }),
+                          value: "auto",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.enable", {
+                            defaultValue: "Enabled",
+                          }),
+                          value: "enable",
+                        },
+                        {
+                          label: t("newsSources.crawlTriState.disable", {
+                            defaultValue: "Disabled",
+                          }),
+                          value: "disable",
+                        },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Typography.Paragraph style={{ marginBottom: 12 }}>
+                <Space wrap>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      form.setFieldsValue(
+                        buildNewsSourceCloudflarePresetValues(),
+                      )
+                    }
+                  >
+                    {t("newsSources.presets.cloudflare", {
+                      defaultValue: "Cloudflare preset",
+                    })}
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      form.setFieldsValue(
+                        buildNewsSourceReutersCfPresetValues(),
+                      )
+                    }
+                  >
+                    {t("newsSources.presets.reutersCf", {
+                      defaultValue: "Reuters + CF preset",
+                    })}
+                  </Button>
+                  <Typography.Text type="secondary">
+                    {t("newsSources.presets.cloudflareHint", {
+                      defaultValue:
+                        "Enables undetected + stealth and switches the browser to headed (Xvfb).",
+                    })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("newsSources.presets.reutersCfHint", {
+                      defaultValue:
+                        "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown).",
+                    })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("newsSources.presets.cloudflareDefaultHint", {
+                      defaultValue:
+                        "This is now the default for new sources; use Auto/Disable only for low-friction sites.",
+                    })}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("newsSources.presets.cloudflareRuntimeHint", {
+                      defaultValue:
+                        "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff.",
+                    })}
+                  </Typography.Text>
+                </Space>
+              </Typography.Paragraph>
               <Form.Item
-                name="crawlStealthMode"
-                label={t("newsSources.fields.crawlStealthMode", {
-                  defaultValue: "Stealth mode",
+                name="forceRefresh"
+                label={t("newsSources.fields.forceRefresh", {
+                  defaultValue: "Force refresh",
                 })}
-                tooltip={t("newsSources.fields.crawlStealthModeHint", {
-                  defaultValue:
-                    "Auto removes crawlOptions.enableStealthMode so templates/defaults can apply. Enable/Disable explicitly overrides templates.",
-                })}
+                valuePropName="checked"
               >
-                <Select
-                  options={[
-                    {
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                      value: "auto",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                      value: "enable",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                      value: "disable",
-                    },
-                  ]}
-                />
+                <Switch />
               </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item
-                name="crawlAntiBotMode"
-                label={t("newsSources.fields.crawlAntiBotMode", {
-                  defaultValue: "Anti-bot retry",
-                })}
-                tooltip={t("newsSources.fields.crawlAntiBotModeHint", {
-                  defaultValue:
-                    "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur.",
-                })}
-              >
-                <Select
-                  options={[
-                    {
-                      label: t("newsSources.crawlTriState.auto", {
-                        defaultValue: "Auto (inherit)",
-                      }),
-                      value: "auto",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.enable", {
-                        defaultValue: "Enabled",
-                      }),
-                      value: "enable",
-                    },
-                    {
-                      label: t("newsSources.crawlTriState.disable", {
-                        defaultValue: "Disabled",
-                      }),
-                      value: "disable",
-                    },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Typography.Paragraph style={{ marginBottom: 12 }}>
-            <Space wrap>
-              <Button
-                size="small"
-                onClick={() =>
-                  form.setFieldsValue(buildNewsSourceCloudflarePresetValues())
-                }
-              >
-                {t("newsSources.presets.cloudflare", {
-                  defaultValue: "Cloudflare preset",
-                })}
-              </Button>
-              <Button
-                size="small"
-                onClick={() =>
-                  form.setFieldsValue(buildNewsSourceReutersCfPresetValues())
-                }
-              >
-                {t("newsSources.presets.reutersCf", {
-                  defaultValue: "Reuters + CF preset",
-                })}
-              </Button>
-              <Typography.Text type="secondary">
-                {t("newsSources.presets.cloudflareHint", {
-                  defaultValue:
-                    "Enables undetected + stealth and switches the browser to headed (Xvfb).",
-                })}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {t("newsSources.presets.reutersCfHint", {
-                  defaultValue:
-                    "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown).",
-                })}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {t("newsSources.presets.cloudflareDefaultHint", {
-                  defaultValue:
-                    "This is now the default for new sources; use Auto/Disable only for low-friction sites.",
-                })}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {t("newsSources.presets.cloudflareRuntimeHint", {
-                  defaultValue:
-                    "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff.",
-                })}
-              </Typography.Text>
-            </Space>
-          </Typography.Paragraph>
-          <Form.Item
-            name="forceRefresh"
-            label={t("newsSources.fields.forceRefresh", {
-              defaultValue: "Force refresh",
-            })}
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
+            </>
+          ) : null}
 
           <Typography.Title level={5} style={{ marginBottom: 0 }}>
             {t("newsSources.sections.seed", { defaultValue: "Seed discovery" })}
@@ -6812,6 +7048,21 @@ export function NewsSourcesContent() {
 
                   {seedMode === "rss" ? (
                     <>
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message={t("newsSources.seed.rssDirectTitle", {
+                          defaultValue: "RSS direct pipeline",
+                        })}
+                        description={t(
+                          "newsSources.seed.rssDirectDescription",
+                          {
+                            defaultValue:
+                              "RSS mode prefetches article content from the feed and queues pipeline jobs directly. Crawl4AI templates, browser options, and proxy settings are ignored while this mode is active.",
+                          },
+                        )}
+                      />
                       <Form.Item
                         name="seedFeedUrl"
                         label={t("newsSources.fields.seedFeedUrl", {
@@ -6829,13 +7080,189 @@ export function NewsSourcesContent() {
                         label={t("newsSources.fields.seedRssAdaptiveEnabled", {
                           defaultValue: "Enable RSS adaptive polling",
                         })}
-                        tooltip={t("newsSources.fields.seedRssAdaptiveEnabledHint", {
-                          defaultValue:
-                            "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
-                        })}
+                        tooltip={t(
+                          "newsSources.fields.seedRssAdaptiveEnabledHint",
+                          {
+                            defaultValue:
+                              "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
+                          },
+                        )}
                         valuePropName="checked"
                       >
                         <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        name="seedRssAdvancedEnabled"
+                        label={t("newsSources.fields.seedRssAdvancedEnabled", {
+                          defaultValue: "Enable RSS advanced fetch settings",
+                        })}
+                        tooltip={t(
+                          "newsSources.fields.seedRssAdvancedEnabledHint",
+                          {
+                            defaultValue:
+                              "Override RSS request timeout, body source selection, and no-body fallback for this source.",
+                          },
+                        )}
+                        valuePropName="checked"
+                      >
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item
+                        noStyle
+                        shouldUpdate={(prevValues, nextValues) =>
+                          prevValues.seedRssAdvancedEnabled !==
+                          nextValues.seedRssAdvancedEnabled
+                        }
+                      >
+                        {({ getFieldValue }) =>
+                          getFieldValue("seedRssAdvancedEnabled") === true ? (
+                            <>
+                              <Form.Item
+                                name="seedRssRequestTimeoutMs"
+                                label={t(
+                                  "newsSources.fields.seedRssRequestTimeoutMs",
+                                  {
+                                    defaultValue: "RSS request timeout (ms)",
+                                  },
+                                )}
+                                tooltip={t(
+                                  "newsSources.fields.seedRssRequestTimeoutMsHint",
+                                  {
+                                    defaultValue:
+                                      "Timeout used when fetching the feed during RSS discovery.",
+                                  },
+                                )}
+                              >
+                                <InputNumber
+                                  min={1000}
+                                  max={120000}
+                                  step={1000}
+                                  style={{ width: "100%" }}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                name="seedRssBodySourceStrategy"
+                                label={t(
+                                  "newsSources.fields.seedRssBodySourceStrategy",
+                                  {
+                                    defaultValue: "Body source strategy",
+                                  },
+                                )}
+                                tooltip={t(
+                                  "newsSources.fields.seedRssBodySourceStrategyHint",
+                                  {
+                                    defaultValue:
+                                      "Choose whether prefetched markdown should prefer feed body fields or summary fields.",
+                                  },
+                                )}
+                              >
+                                <Select
+                                  options={[
+                                    {
+                                      value: "content_first",
+                                      label: t(
+                                        "newsSources.seedRss.bodySource.contentFirst",
+                                        {
+                                          defaultValue: "Content first",
+                                        },
+                                      ),
+                                    },
+                                    {
+                                      value: "content_only",
+                                      label: t(
+                                        "newsSources.seedRss.bodySource.contentOnly",
+                                        {
+                                          defaultValue: "Content only",
+                                        },
+                                      ),
+                                    },
+                                    {
+                                      value: "summary_only",
+                                      label: t(
+                                        "newsSources.seedRss.bodySource.summaryOnly",
+                                        {
+                                          defaultValue: "Summary only",
+                                        },
+                                      ),
+                                    },
+                                  ]}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                name="seedRssNoBodyPolicy"
+                                label={t(
+                                  "newsSources.fields.seedRssNoBodyPolicy",
+                                  {
+                                    defaultValue: "No-body policy",
+                                  },
+                                )}
+                                tooltip={t(
+                                  "newsSources.fields.seedRssNoBodyPolicyHint",
+                                  {
+                                    defaultValue:
+                                      "When a feed item has no usable body markdown, either skip it or build a minimal stub from title and summary.",
+                                  },
+                                )}
+                              >
+                                <Select
+                                  options={[
+                                    {
+                                      value: "skip",
+                                      label: t(
+                                        "newsSources.seedRss.noBody.skip",
+                                        {
+                                          defaultValue: "Skip item",
+                                        },
+                                      ),
+                                    },
+                                    {
+                                      value: "title_description_stub",
+                                      label: t(
+                                        "newsSources.seedRss.noBody.stub",
+                                        {
+                                          defaultValue:
+                                            "Build title + summary stub",
+                                        },
+                                      ),
+                                    },
+                                  ]}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                noStyle
+                                shouldUpdate={(prevValues, nextValues) =>
+                                  prevValues.seedRssNoBodyPolicy !==
+                                  nextValues.seedRssNoBodyPolicy
+                                }
+                              >
+                                {({ getFieldValue }) =>
+                                  getFieldValue("seedRssNoBodyPolicy") ===
+                                  "title_description_stub" ? (
+                                    <Alert
+                                      type="warning"
+                                      showIcon
+                                      style={{ marginBottom: 12 }}
+                                      message={t(
+                                        "newsSources.seed.rssStubWarningTitle",
+                                        {
+                                          defaultValue:
+                                            "Stub fallback also enters the pipeline",
+                                        },
+                                      )}
+                                      description={t(
+                                        "newsSources.seed.rssStubWarningDescription",
+                                        {
+                                          defaultValue:
+                                            "If a feed item has no full body, the scheduler will build a minimal markdown stub from title and summary and send it downstream. Use this only when summary-level content is acceptable.",
+                                        },
+                                      )}
+                                    />
+                                  ) : null
+                                }
+                              </Form.Item>
+                            </>
+                          ) : null
+                        }
                       </Form.Item>
                     </>
                   ) : (
@@ -6937,21 +7364,29 @@ export function NewsSourcesContent() {
                     label={t("newsSources.fields.seedQueryParamAllowlist", {
                       defaultValue: "URL query param allowlist",
                     })}
-                    tooltip={t("newsSources.fields.seedQueryParamAllowlistHint", {
-                      defaultValue:
-                        "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
-                    })}
+                    tooltip={t(
+                      "newsSources.fields.seedQueryParamAllowlistHint",
+                      {
+                        defaultValue:
+                          "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
+                      },
+                    )}
                   >
                     <Select
                       mode="tags"
                       tokenSeparators={[",", " ", "\n", "\t"]}
-                      options={resolvedSeedRuntimeSettings.seedUrlQueryParamAllowlist.map((entry) => ({
-                        label: entry,
-                        value: entry,
-                      }))}
-                      placeholder={t("newsSources.fields.seedQueryParamAllowlistPlaceholder", {
-                        defaultValue: "id, page, lang",
-                      })}
+                      options={resolvedSeedRuntimeSettings.seedUrlQueryParamAllowlist.map(
+                        (entry) => ({
+                          label: entry,
+                          value: entry,
+                        }),
+                      )}
+                      placeholder={t(
+                        "newsSources.fields.seedQueryParamAllowlistPlaceholder",
+                        {
+                          defaultValue: "id, page, lang",
+                        },
+                      )}
                     />
                   </Form.Item>
                   <Space wrap size={[8, 8]} style={{ marginBottom: 8 }}>
@@ -6982,9 +7417,12 @@ export function NewsSourcesContent() {
                       type="warning"
                       showIcon
                       style={{ marginBottom: 12 }}
-                      message={t("newsSources.seedCachePolicy.loadFailedTitle", {
-                        defaultValue: "Unable to load scheduler cache policy",
-                      })}
+                      message={t(
+                        "newsSources.seedCachePolicy.loadFailedTitle",
+                        {
+                          defaultValue: "Unable to load scheduler cache policy",
+                        },
+                      )}
                       description={t(
                         "newsSources.seedCachePolicy.loadFailedDescription",
                         {
@@ -6998,9 +7436,12 @@ export function NewsSourcesContent() {
                       type="warning"
                       showIcon
                       style={{ marginBottom: 12 }}
-                      message={t("newsSources.seedCachePolicy.globalForcedTitle", {
-                        defaultValue: "Global cache TTL override is enabled",
-                      })}
+                      message={t(
+                        "newsSources.seedCachePolicy.globalForcedTitle",
+                        {
+                          defaultValue: "Global cache TTL override is enabled",
+                        },
+                      )}
                       description={t(
                         "newsSources.seedCachePolicy.globalForcedDescription",
                         {
@@ -7016,9 +7457,12 @@ export function NewsSourcesContent() {
                       type="info"
                       showIcon
                       style={{ marginBottom: 12 }}
-                      message={t("newsSources.seedCachePolicy.sourceAwareTitle", {
-                        defaultValue: "Source cache TTL is active",
-                      })}
+                      message={t(
+                        "newsSources.seedCachePolicy.sourceAwareTitle",
+                        {
+                          defaultValue: "Source cache TTL is active",
+                        },
+                      )}
                       description={t(
                         "newsSources.seedCachePolicy.sourceAwareDescription",
                         {
@@ -7369,7 +7813,8 @@ export function NewsSourcesContent() {
               loading={opmlImporting}
               disabled={
                 !opmlPreview ||
-                opmlPreview.entries.filter((entry) => entry.enabled).length === 0
+                opmlPreview.entries.filter((entry) => entry.enabled).length ===
+                  0
               }
             >
               {t("newsSources.opml.actions.import", {
@@ -7434,7 +7879,9 @@ export function NewsSourcesContent() {
                     value={opmlPresetId}
                     onChange={(value) => {
                       setOpmlPresetId(value);
-                      const preset = opmlPresets.find((item) => item.id === value);
+                      const preset = opmlPresets.find(
+                        (item) => item.id === value,
+                      );
                       if (preset?.defaultLanguage) {
                         setOpmlDefaultLanguage(preset.defaultLanguage);
                       }
@@ -7533,11 +7980,7 @@ export function NewsSourcesContent() {
 
           {opmlImportReport ? (
             <Alert
-              type={
-                opmlImportReport.summary.failed > 0
-                  ? "warning"
-                  : "success"
-              }
+              type={opmlImportReport.summary.failed > 0 ? "warning" : "success"}
               showIcon
               message={t("newsSources.opml.report.title", {
                 defaultValue: "Import completed",
@@ -7554,7 +7997,9 @@ export function NewsSourcesContent() {
 
           {opmlPreview ? (
             <Table
-              rowKey={(record, index) => `${record.url}-${record.feedUrl}-${index}`}
+              rowKey={(record, index) =>
+                `${record.url}-${record.feedUrl}-${index}`
+              }
               size="small"
               pagination={{ pageSize: screens.md ? 12 : 6 }}
               dataSource={opmlPreview.entries}
@@ -7722,13 +8167,36 @@ export function NewsSourcesContent() {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message={t("newsSources.schedule.hintTitle", {
-              defaultValue: "Queued via crawl4ai",
-            })}
-            description={t("newsSources.schedule.description", {
-              defaultValue:
-                "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
-            })}
+            message={t(
+              scheduleDeliveryMode === "rss"
+                ? "newsSources.schedule.hintTitleRss"
+                : scheduleDeliveryMode === "mixed"
+                  ? "newsSources.schedule.hintTitleMixed"
+                  : "newsSources.schedule.hintTitleCrawl4ai",
+              {
+                defaultValue:
+                  scheduleDeliveryMode === "rss"
+                    ? "Queued directly to pipeline"
+                    : scheduleDeliveryMode === "mixed"
+                      ? "Mixed scheduling modes"
+                      : "Queued via crawl4ai",
+              },
+            )}
+            description={t(
+              scheduleDeliveryMode === "rss"
+                ? "newsSources.schedule.descriptionRss"
+                : scheduleDeliveryMode === "mixed"
+                  ? "newsSources.schedule.descriptionMixed"
+                  : "newsSources.schedule.descriptionCrawl4ai",
+              {
+                defaultValue:
+                  scheduleDeliveryMode === "rss"
+                    ? "Sets the next run time. The scheduler checks every 30 seconds, prefetches RSS feed entries, and queues pipeline jobs directly without creating Crawl4AI tasks."
+                    : scheduleDeliveryMode === "mixed"
+                      ? "Sets the next run time. RSS sources queue pipeline jobs directly, while other sources create CrawlTask jobs and run through Crawl4AI."
+                      : "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+              },
+            )}
           />
           {scheduleTargets.some((target) => !target.isActive) ? (
             <Alert

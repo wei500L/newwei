@@ -1278,35 +1278,35 @@
           "geocoded": "Geocoded",
           "fallbackCountry": "Fallback country"
         },
-  "tooltip": {
-    "location": "Location",
-    "published": "Published",
-    "ingested": "Ingested",
-    "geo": "Geo",
-    "clickOpenOriginal": "Click to open original link",
-    "clickOpenSearch": "Click to open search results",
-    "severity": "Severity",
-    "alerts": "Alerts",
-    "alertScore": "Score",
-    "derivedScore": "Derived score",
-    "cluster": "Cluster ({{count}})",
-    "clusterSignals": "{{count}} nearby signals. Click to inspect.",
-    "clusterNews": "{{count}} nearby news items. Click to inspect.",
-    "datasetUpdated": "Dataset updated",
-    "notAvailable": "N/A",
-    "unknown": "Unknown"
-  },
-  "panel": {
-    "signalsTitle": "Nearby signals",
-    "newsTitle": "Nearby news",
-    "signalsSummary": "{{count}} nearby signals at this zoom level.",
-    "newsSummary": "{{count}} nearby news items at this zoom level.",
-    "count": "{{count}} items",
-    "zoomIn": "Zoom in",
-    "latest": "Latest",
-    "openOriginal": "Open"
-  },
-  "translation": {
+        "tooltip": {
+          "location": "Location",
+          "published": "Published",
+          "ingested": "Ingested",
+          "geo": "Geo",
+          "clickOpenOriginal": "Click to open original link",
+          "clickOpenSearch": "Click to open search results",
+          "severity": "Severity",
+          "alerts": "Alerts",
+          "alertScore": "Score",
+          "derivedScore": "Derived score",
+          "cluster": "Cluster ({{count}})",
+          "clusterSignals": "{{count}} nearby signals. Click to inspect.",
+          "clusterNews": "{{count}} nearby news items. Click to inspect.",
+          "datasetUpdated": "Dataset updated",
+          "notAvailable": "N/A",
+          "unknown": "Unknown"
+        },
+        "panel": {
+          "signalsTitle": "Nearby signals",
+          "newsTitle": "Nearby news",
+          "signalsSummary": "{{count}} nearby signals at this zoom level.",
+          "newsSummary": "{{count}} nearby news items at this zoom level.",
+          "count": "{{count}} items",
+          "zoomIn": "Zoom in",
+          "latest": "Latest",
+          "openOriginal": "Open"
+        },
+        "translation": {
           "label": "CN coverage",
           "hint": "Localized-text coverage for translated map fields.",
           "localizedTotal": "Localized",
@@ -2391,6 +2391,14 @@
       "seedFeedUrlHint": "If empty, the source URL will be used as the feed URL.",
       "seedRssAdaptiveEnabled": "Enable RSS adaptive polling",
       "seedRssAdaptiveEnabledHint": "When enabled, scheduler adjusts RSS polling interval and discovery cache TTL by source hit activity.",
+      "seedRssAdvancedEnabled": "Enable RSS advanced fetch settings",
+      "seedRssAdvancedEnabledHint": "Override RSS request timeout, body source selection, and no-body fallback for this source.",
+      "seedRssRequestTimeoutMs": "RSS request timeout (ms)",
+      "seedRssRequestTimeoutMsHint": "Timeout used when fetching the feed during RSS discovery.",
+      "seedRssBodySourceStrategy": "Body source strategy",
+      "seedRssBodySourceStrategyHint": "Choose whether prefetched markdown should prefer feed body fields or summary fields.",
+      "seedRssNoBodyPolicy": "No-body policy",
+      "seedRssNoBodyPolicyHint": "When a feed item has no usable body markdown, either skip it or build a minimal stub from title and summary.",
       "seedDomain": "Seed domain (optional)",
       "seedDomainHint": "Defaults to the source URL origin if empty.",
       "seedPattern": "URL pattern (optional)",
@@ -2490,7 +2498,11 @@
       "description": "This removes the source and stops scheduled crawls."
     },
     "seed": {
-      "mode": "Sitemap seed"
+      "mode": "Sitemap seed",
+      "rssDirectTitle": "RSS direct pipeline",
+      "rssDirectDescription": "RSS mode prefetches article content from the feed and queues pipeline jobs directly. Crawl4AI templates, browser options, and proxy settings are ignored while this mode is active.",
+      "rssStubWarningTitle": "Stub fallback also enters the pipeline",
+      "rssStubWarningDescription": "If a feed item has no full body, the scheduler will build a minimal markdown stub from title and summary and send it downstream. Use this only when summary-level content is acceptable."
     },
     "health": {
       "circuitOpenUntil": "Circuit open until {{time}}",
@@ -2551,7 +2563,19 @@
     "seedMode": {
       "sitemap": "Sitemap",
       "rss": "RSS / Atom",
-      "list": "List page"
+      "list": "List page",
+      "deep": "Deep discovery"
+    },
+    "seedRss": {
+      "bodySource": {
+        "contentFirst": "Content first",
+        "contentOnly": "Content only",
+        "summaryOnly": "Summary only"
+      },
+      "noBody": {
+        "skip": "Skip item",
+        "stub": "Build title + summary stub"
+      }
     },
     "ops": {
       "cancelQueued": {
@@ -2586,9 +2610,15 @@
       },
       "current": "Current: {{time}}",
       "none": "No schedule set.",
-      "title": "Schedule crawl",
+      "title": "Schedule run",
       "hintTitle": "Queued via crawl4ai",
       "description": "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+      "hintTitleCrawl4ai": "Queued via crawl4ai",
+      "hintTitleRss": "Queued directly to pipeline",
+      "hintTitleMixed": "Mixed scheduling modes",
+      "descriptionCrawl4ai": "Sets the next run time. The scheduler checks every 30 seconds and enqueues a CrawlTask; crawl4ai limits concurrency to avoid blocking.",
+      "descriptionRss": "Sets the next run time. The scheduler checks every 30 seconds, prefetches RSS feed entries, and queues pipeline jobs directly without creating Crawl4AI tasks.",
+      "descriptionMixed": "Sets the next run time. RSS sources queue pipeline jobs directly, while other sources create CrawlTask jobs and run through Crawl4AI.",
       "enablesSource": "This will enable {{count}} source(s).",
       "presets": {
         "in5m": "+5m",
@@ -2641,6 +2671,9 @@
       "taskError": "Task failed: {{error}}",
       "taskId": "Task: {{id}}",
       "rssPrefetched": "RSS prefetched",
+      "rssPrefetchedContent": "RSS content",
+      "rssPrefetchedSummary": "RSS summary",
+      "rssPrefetchedStub": "RSS stub",
       "noCrawlTask": "Pipeline direct ingest (no crawl task)."
     },
     "queue": {

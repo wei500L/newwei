@@ -49,10 +49,7 @@ interface DiscoveryHttpState {
   updatedAt: number;
 }
 
-export type CrawlDiscoveryTimestampSource =
-  | "published"
-  | "crawled"
-  | "none";
+export type CrawlDiscoveryTimestampSource = "published" | "crawled" | "none";
 
 export interface CrawlDiscoveryPrefetchedArticle {
   title?: string;
@@ -69,6 +66,19 @@ export interface CrawlDiscoveryCandidate {
   publishedAtTs?: number;
   crawledAtTs?: number;
   prefetchedArticle?: CrawlDiscoveryPrefetchedArticle;
+}
+
+export type CrawlDiscoveryRssBodySourceStrategy =
+  | "content_first"
+  | "content_only"
+  | "summary_only";
+
+export type CrawlDiscoveryRssNoBodyPolicy = "skip" | "title_description_stub";
+
+export interface CrawlDiscoveryRssFetchOptions {
+  requestTimeoutMs?: number;
+  bodySourceStrategy?: CrawlDiscoveryRssBodySourceStrategy;
+  noBodyPolicy?: CrawlDiscoveryRssNoBodyPolicy;
 }
 
 interface RssDiscoveryEntry {
@@ -252,6 +262,7 @@ export class CrawlMetadataService {
     feedUrl?: string;
     maxUrls?: number;
     requestTimeoutMs?: number;
+    rssFetch?: CrawlDiscoveryRssFetchOptions;
   }): Promise<CrawlDiscoveryCandidate[]> {
     const crawledAtTs = Date.now();
     const feedUrl = this.normalizeUrl(input.feedUrl);
@@ -260,11 +271,15 @@ export class CrawlMetadataService {
     }
 
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
+    const rssFetchOptions = this.normalizeRssFetchOptions(input.rssFetch);
     const requestTimeoutMs =
-      typeof input.requestTimeoutMs === "number" &&
-      Number.isFinite(input.requestTimeoutMs)
-        ? Math.max(1000, Math.round(input.requestTimeoutMs))
-        : 15_000;
+      typeof input.rssFetch?.requestTimeoutMs === "number" &&
+      Number.isFinite(input.rssFetch.requestTimeoutMs)
+        ? rssFetchOptions.requestTimeoutMs
+        : typeof input.requestTimeoutMs === "number" &&
+            Number.isFinite(input.requestTimeoutMs)
+          ? Math.max(1000, Math.round(input.requestTimeoutMs))
+          : rssFetchOptions.requestTimeoutMs;
 
     const xml = await this.fetchMaybe(feedUrl, requestTimeoutMs);
     if (!xml) {
@@ -276,20 +291,20 @@ export class CrawlMetadataService {
       .map((entry) => {
         const publishedAtTs =
           entry.publishedAtTs ?? this.parsePublishedAtFromUrl(entry.url);
-        const contentMarkdown = this.toPrefetchedMarkdown(entry.content);
-        const descriptionMarkdown = this.toPrefetchedMarkdown(entry.description);
-        const markdown = contentMarkdown ?? descriptionMarkdown;
-        const markdownSource =
-          contentMarkdown && contentMarkdown.length > 0
-            ? "content"
-            : "description";
+        const prefetchedContent = this.resolveRssPrefetchedContent(
+          entry,
+          rssFetchOptions,
+        );
         return {
           url: entry.url,
           publishedAtTs,
           crawledAtTs,
-          prefetchedArticle: markdown
+          prefetchedArticle: prefetchedContent.markdown
             ? {
-                title: this.truncateText(entry.title, RSS_PREFETCH_MAX_TITLE_CHARS),
+                title: this.truncateText(
+                  entry.title,
+                  RSS_PREFETCH_MAX_TITLE_CHARS,
+                ),
                 description: this.truncateText(
                   entry.description,
                   RSS_PREFETCH_MAX_DESCRIPTION_CHARS,
@@ -298,11 +313,11 @@ export class CrawlMetadataService {
                   entry.author,
                   RSS_PREFETCH_MAX_AUTHOR_CHARS,
                 ),
-                markdown,
+                markdown: prefetchedContent.markdown,
                 publishedAt: this.toIsoTimestamp(publishedAtTs),
                 metadata: {
                   source: "rss",
-                  markdownSource,
+                  markdownSource: prefetchedContent.markdownSource,
                 },
               }
             : undefined,
@@ -804,8 +819,16 @@ export class CrawlMetadataService {
       maxDepth: this.clampNumber(value.maxDepth, 1, 4, 2),
       timeBudgetSeconds: this.clampNumber(value.timeBudgetSeconds, 10, 180, 60),
       pageConcurrency: this.clampNumber(value.pageConcurrency, 1, 6, 2),
-      scoreThreshold: Math.max(0, Math.min(1, Number(scoreThresholdRaw.toFixed(3)))),
-      candidatePoolSize: this.clampNumber(value.candidatePoolSize, 20, 400, 120),
+      scoreThreshold: Math.max(
+        0,
+        Math.min(1, Number(scoreThresholdRaw.toFixed(3))),
+      ),
+      candidatePoolSize: this.clampNumber(
+        value.candidatePoolSize,
+        20,
+        400,
+        120,
+      ),
       headFetchTopK: this.clampNumber(value.headFetchTopK, 10, 120, 40),
       preferPathDate:
         typeof value.preferPathDate === "boolean" ? value.preferPathDate : true,
@@ -846,8 +869,11 @@ export class CrawlMetadataService {
       this.normalizeUrlForComparison(input.seedUrl) ?? input.seedUrl;
     const startedAtMs = Date.now();
     const timeBudgetMs = input.deep.timeBudgetSeconds * 1000;
-    const pendingPages: Array<{ url: string; depth: number; priority: number }> =
-      [{ url: input.seedUrl, depth: 0, priority: 1 }];
+    const pendingPages: Array<{
+      url: string;
+      depth: number;
+      priority: number;
+    }> = [{ url: input.seedUrl, depth: 0, priority: 1 }];
     const pendingPageSet = new Set<string>([normalizedSeedUrl]);
     const visitedPages = new Set<string>();
     const candidates = new Map<string, DeepDiscoveryCandidate>();
@@ -881,7 +907,8 @@ export class CrawlMetadataService {
         );
         const batch = pendingPages.splice(0, batchSize);
         for (const item of batch) {
-          const normalized = this.normalizeUrlForComparison(item.url) ?? item.url;
+          const normalized =
+            this.normalizeUrlForComparison(item.url) ?? item.url;
           pendingPageSet.delete(normalized);
         }
 
@@ -925,8 +952,11 @@ export class CrawlMetadataService {
               };
             }
 
-            const nextPages: Array<{ url: string; depth: number; priority: number }> =
-              [];
+            const nextPages: Array<{
+              url: string;
+              depth: number;
+              priority: number;
+            }> = [];
             const discoveredCandidates: DeepDiscoveryCandidate[] = [];
             const seenNextPages = new Set<string>();
             const seenCandidates = new Set<string>();
@@ -1045,7 +1075,10 @@ export class CrawlMetadataService {
           }
 
           for (const nextPage of result.nextPages) {
-            if (visitedPages.size + pendingPages.length >= input.deep.maxPages) {
+            if (
+              visitedPages.size + pendingPages.length >=
+              input.deep.maxPages
+            ) {
               break;
             }
             const normalizedNext =
@@ -1147,7 +1180,8 @@ export class CrawlMetadataService {
     message: string,
     detail?: string,
   ): never {
-    const suffix = detail && detail.trim().length > 0 ? ` ${detail.trim()}` : "";
+    const suffix =
+      detail && detail.trim().length > 0 ? ` ${detail.trim()}` : "";
     throw new BadRequestException(`[${code}] ${message}${suffix}`);
   }
 
@@ -1196,7 +1230,8 @@ export class CrawlMetadataService {
 
   private extractDeepLinkScore(entry: Record<string, unknown>) {
     const raw =
-      (typeof entry.total_score === "number" && Number.isFinite(entry.total_score)
+      (typeof entry.total_score === "number" &&
+      Number.isFinite(entry.total_score)
         ? entry.total_score
         : undefined) ??
       (typeof entry.totalScore === "number" && Number.isFinite(entry.totalScore)
@@ -1349,7 +1384,11 @@ export class CrawlMetadataService {
       return false;
     }
     const normalizedText = (anchorText ?? "").trim().toLowerCase();
-    if (/^(latest|news|more|world|politics|business|economy)\b/.test(normalizedText)) {
+    if (
+      /^(latest|news|more|world|politics|business|economy)\b/.test(
+        normalizedText,
+      )
+    ) {
       return true;
     }
 
@@ -1422,7 +1461,13 @@ export class CrawlMetadataService {
       return false;
     }
 
-    const leadSegments = new Set(["article", "articles", "news", "story", "stories"]);
+    const leadSegments = new Set([
+      "article",
+      "articles",
+      "news",
+      "story",
+      "stories",
+    ]);
     if (segments.some((segment) => leadSegments.has(segment))) {
       return true;
     }
@@ -1473,7 +1518,11 @@ export class CrawlMetadataService {
     const path = parsed.pathname;
 
     const toUtcTimestamp = (year: number, month: number, day: number) => {
-      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      if (
+        !Number.isFinite(year) ||
+        !Number.isFinite(month) ||
+        !Number.isFinite(day)
+      ) {
         return undefined;
       }
       if (month < 1 || month > 12) {
@@ -2072,7 +2121,9 @@ export class CrawlMetadataService {
     return candidates.map((candidate) => candidate.url);
   }
 
-  private async discoverFromSitemapsCandidates(config: NormalizedMetadataConfig) {
+  private async discoverFromSitemapsCandidates(
+    config: NormalizedMetadataConfig,
+  ) {
     if (!config.domain) {
       return [];
     }
@@ -2144,7 +2195,10 @@ export class CrawlMetadataService {
         publishedAtTs,
         crawledAtTs,
       };
-      collected.set(normalizedLoc, this.mergeDiscoveryCandidates(existing, candidate));
+      collected.set(
+        normalizedLoc,
+        this.mergeDiscoveryCandidates(existing, candidate),
+      );
     }
 
     for (const child of parsed.childSitemaps) {
@@ -2166,7 +2220,10 @@ export class CrawlMetadataService {
         continue;
       }
       visitedSitemapUrls.add(normalizedLoc);
-      const xmlChild = await this.fetchMaybe(normalizedLoc, config.requestTimeoutMs);
+      const xmlChild = await this.fetchMaybe(
+        normalizedLoc,
+        config.requestTimeoutMs,
+      );
       if (xmlChild) {
         await this.extractFromSitemapPayload(
           normalizedLoc,
@@ -2253,7 +2310,9 @@ export class CrawlMetadataService {
     return normalized;
   }
 
-  private normalizeParsedSitemapPayload(value: unknown): ParsedSitemapPayload | null {
+  private normalizeParsedSitemapPayload(
+    value: unknown,
+  ): ParsedSitemapPayload | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
@@ -2331,9 +2390,17 @@ export class CrawlMetadataService {
     urlEntry: Record<string, unknown>,
   ): number | undefined {
     const newsNode = urlEntry["news:news"];
-    const candidates = Array.isArray(newsNode) ? newsNode : newsNode ? [newsNode] : [];
+    const candidates = Array.isArray(newsNode)
+      ? newsNode
+      : newsNode
+        ? [newsNode]
+        : [];
     for (const candidate of candidates) {
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      if (
+        !candidate ||
+        typeof candidate !== "object" ||
+        Array.isArray(candidate)
+      ) {
         continue;
       }
       const publicationDate = this.findNewsPublicationDateValue(candidate);
@@ -2386,13 +2453,19 @@ export class CrawlMetadataService {
     ) {
       return entry.newsPublishedAtTs;
     }
-    if (typeof entry.lastmodTs === "number" && Number.isFinite(entry.lastmodTs)) {
+    if (
+      typeof entry.lastmodTs === "number" &&
+      Number.isFinite(entry.lastmodTs)
+    ) {
       return entry.lastmodTs;
     }
     return undefined;
   }
 
-  private extractFromRssPayload(xml: string, feedUrl: string): RssDiscoveryEntry[] {
+  private extractFromRssPayload(
+    xml: string,
+    feedUrl: string,
+  ): RssDiscoveryEntry[] {
     let parsed: Record<string, unknown> | null = null;
     try {
       parsed = this.parser.parse(xml) as Record<string, unknown>;
@@ -2421,7 +2494,8 @@ export class CrawlMetadataService {
 
     for (const item of rssItems) {
       const record = item as Record<string, unknown>;
-      const linkRaw = this.extractRssText(record.link) ?? this.extractRssText(record.guid);
+      const linkRaw =
+        this.extractRssText(record.link) ?? this.extractRssText(record.guid);
       this.pushRssDiscoveryEntry({
         feedUrl,
         seen,
@@ -2597,6 +2671,91 @@ export class CrawlMetadataService {
       return undefined;
     }
     return new Date(value).toISOString();
+  }
+
+  private normalizeRssFetchOptions(
+    options?: CrawlDiscoveryRssFetchOptions | null,
+  ) {
+    const requestTimeoutMs =
+      typeof options?.requestTimeoutMs === "number" &&
+      Number.isFinite(options.requestTimeoutMs)
+        ? Math.max(1000, Math.round(options.requestTimeoutMs))
+        : 15_000;
+    const bodySourceStrategy =
+      options?.bodySourceStrategy === "content_only" ||
+      options?.bodySourceStrategy === "summary_only"
+        ? options.bodySourceStrategy
+        : "content_first";
+    const noBodyPolicy =
+      options?.noBodyPolicy === "title_description_stub"
+        ? options.noBodyPolicy
+        : "skip";
+
+    return {
+      requestTimeoutMs,
+      bodySourceStrategy,
+      noBodyPolicy,
+    } satisfies Required<CrawlDiscoveryRssFetchOptions>;
+  }
+
+  private resolveRssPrefetchedContent(
+    entry: RssDiscoveryEntry,
+    options: Required<CrawlDiscoveryRssFetchOptions>,
+  ): {
+    markdown?: string;
+    markdownSource?: "content" | "description" | "stub";
+  } {
+    const contentMarkdown = this.toPrefetchedMarkdown(entry.content);
+    const descriptionMarkdown = this.toPrefetchedMarkdown(entry.description);
+
+    if (options.bodySourceStrategy === "content_only") {
+      if (contentMarkdown) {
+        return { markdown: contentMarkdown, markdownSource: "content" };
+      }
+    } else if (options.bodySourceStrategy === "summary_only") {
+      if (descriptionMarkdown) {
+        return { markdown: descriptionMarkdown, markdownSource: "description" };
+      }
+    } else {
+      if (contentMarkdown) {
+        return { markdown: contentMarkdown, markdownSource: "content" };
+      }
+      if (descriptionMarkdown) {
+        return { markdown: descriptionMarkdown, markdownSource: "description" };
+      }
+    }
+
+    if (options.noBodyPolicy === "title_description_stub") {
+      const stubMarkdown = this.buildRssStubMarkdown({
+        title: entry.title,
+        description: entry.description,
+      });
+      if (stubMarkdown) {
+        return { markdown: stubMarkdown, markdownSource: "stub" };
+      }
+    }
+
+    return {};
+  }
+
+  private buildRssStubMarkdown(input: {
+    title?: string;
+    description?: string;
+  }) {
+    const title = this.truncateText(input.title, RSS_PREFETCH_MAX_TITLE_CHARS);
+    const description = this.toPrefetchedMarkdown(input.description);
+    if (!title && !description) {
+      return undefined;
+    }
+
+    const sections: string[] = [];
+    if (title) {
+      sections.push(`# ${title}`);
+    }
+    if (description) {
+      sections.push(description);
+    }
+    return sections.join("\n\n").trim() || undefined;
   }
 
   private toPrefetchedMarkdown(value?: string) {
@@ -2919,7 +3078,9 @@ export class CrawlMetadataService {
           lastModified: response.lastModified,
           body: response.body,
           parsedSitemapPayload:
-            state?.body === response.body ? state.parsedSitemapPayload : undefined,
+            state?.body === response.body
+              ? state.parsedSitemapPayload
+              : undefined,
           updatedAt: Date.now(),
         });
       }
@@ -2952,7 +3113,10 @@ export class CrawlMetadataService {
     }
   }
 
-  private async writeDiscoveryHttpState(url: string, state: DiscoveryHttpState) {
+  private async writeDiscoveryHttpState(
+    url: string,
+    state: DiscoveryHttpState,
+  ) {
     if (!this.cache) {
       return;
     }

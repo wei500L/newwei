@@ -1,6 +1,13 @@
 import { RawItemModel } from "@modular/mongo";
-import { createLogger, DEFAULT_URL_QUERY_PARAM_ALLOWLIST } from "@modular/utils";
-import { Injectable, NotFoundException, type OnModuleInit } from "@nestjs/common";
+import {
+  createLogger,
+  DEFAULT_URL_QUERY_PARAM_ALLOWLIST,
+} from "@modular/utils";
+import {
+  Injectable,
+  NotFoundException,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { NotificationType, PipelineJobStatus, Prisma } from "@prisma/client";
 import { parseExpression } from "cron-parser";
@@ -15,6 +22,9 @@ import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
   type CrawlDiscoveryPrefetchedArticle,
+  type CrawlDiscoveryRssBodySourceStrategy,
+  type CrawlDiscoveryRssFetchOptions,
+  type CrawlDiscoveryRssNoBodyPolicy,
   type CrawlDiscoveryTimestampSource,
 } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
@@ -91,6 +101,7 @@ interface SeedConfig {
   domain?: string;
   pattern?: string;
   feedUrl?: string;
+  rssFetch?: ResolvedRssFetchConfig;
   maxUrls: number;
   maxNewUrlsPerRun: number;
   listMaxPages: number;
@@ -103,6 +114,13 @@ interface SeedConfig {
   cacheTtlSeconds: number;
   cacheTtlPolicy: "global_forced" | "source_override" | "mode_default";
   deep?: DeepSeedConfig;
+}
+
+interface ResolvedRssFetchConfig extends CrawlDiscoveryRssFetchOptions {
+  enabled: boolean;
+  requestTimeoutMs: number;
+  bodySourceStrategy: CrawlDiscoveryRssBodySourceStrategy;
+  noBodyPolicy: CrawlDiscoveryRssNoBodyPolicy;
 }
 
 interface CanonicalSeedJob {
@@ -408,27 +426,26 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             : [];
           const [recentArticleFingerprints, activeFingerprints] =
             await Promise.all([
-            seedConfig
-              ? this.findRecentArticleFingerprints(
-                  source.orgId,
-                  canonicalJobs,
-                  seedConfig.dedupeWindowHours,
-                )
-              : Promise.resolve(new Set<string>()),
-            seedConfig
-              ? this.findActivePipelineFingerprints(
-                  source.id,
-                  canonicalJobs,
-                  activeCutoff,
-                )
-              : Promise.resolve(new Set<string>()),
+              seedConfig
+                ? this.findRecentArticleFingerprints(
+                    source.orgId,
+                    canonicalJobs,
+                    seedConfig.dedupeWindowHours,
+                  )
+                : Promise.resolve(new Set<string>()),
+              seedConfig
+                ? this.findActivePipelineFingerprints(
+                    source.id,
+                    canonicalJobs,
+                    activeCutoff,
+                  )
+                : Promise.resolve(new Set<string>()),
             ]);
 
           const newJobs = seedConfig
             ? canonicalJobs
                 .filter(
-                  (job) =>
-                    !recentArticleFingerprints.has(job.urlFingerprint),
+                  (job) => !recentArticleFingerprints.has(job.urlFingerprint),
                 )
                 .filter((job) => !activeFingerprints.has(job.urlFingerprint))
                 .slice(0, maxNewUrlsThisRun)
@@ -484,10 +501,13 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               "publishedAtTs" in job ? job.publishedAtTs : undefined;
             const crawledAtTs =
               "crawledAtTs" in job ? job.crawledAtTs : undefined;
-            const effectiveTs = "effectiveTs" in job ? job.effectiveTs : undefined;
+            const effectiveTs =
+              "effectiveTs" in job ? job.effectiveTs : undefined;
             const timestampSource =
               "timestampSource" in job
-                ? (job.timestampSource as CrawlDiscoveryTimestampSource | undefined)
+                ? (job.timestampSource as
+                    | CrawlDiscoveryTimestampSource
+                    | undefined)
                 : undefined;
             const publishedAt = this.toIsoTimestamp(publishedAtTs);
             const crawledAt = this.toIsoTimestamp(crawledAtTs);
@@ -497,16 +517,16 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               job.url,
               seedConfig
                 ? {
-                  mode: seedConfig.mode,
-                  parentUrl: seedParentUrl ?? source.url,
-                  relevanceScore: job.relevanceScore,
-                  publishedAt,
-                  crawledAt,
-                  effectiveAt,
-                  timestampSource,
-                  dedupeWindowHours: seedConfig.dedupeWindowHours,
-                  queryParamAllowlist: seedConfig.queryParamAllowlist,
-                }
+                    mode: seedConfig.mode,
+                    parentUrl: seedParentUrl ?? source.url,
+                    relevanceScore: job.relevanceScore,
+                    publishedAt,
+                    crawledAt,
+                    effectiveAt,
+                    timestampSource,
+                    dedupeWindowHours: seedConfig.dedupeWindowHours,
+                    queryParamAllowlist: seedConfig.queryParamAllowlist,
+                  }
                 : undefined,
             );
 
@@ -572,8 +592,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               sourcePriority: source.priority,
               ...(seedConfig
                 ? {
-                    orgContentDedupeWindowHours:
-                      seedConfig.dedupeWindowHours,
+                    orgContentDedupeWindowHours: seedConfig.dedupeWindowHours,
                     urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
                   }
                 : {}),
@@ -743,7 +762,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             }
           }
           const totalSkippedCount = skippedCount + rssSkippedNoBodyCount;
-          const scheduledCount = Math.max(0, newJobs.length - rssSkippedNoBodyCount);
+          const scheduledCount = Math.max(
+            0,
+            newJobs.length - rssSkippedNoBodyCount,
+          );
           if (rssSkippedNoBodyCount > 0) {
             await this.recordRssNoBodySkipMetric({
               orgId: source.orgId,
@@ -1073,7 +1095,12 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       });
     } catch (error) {
       logger.warn(
-        { error, orgId: options.orgId, sourceId: options.sourceId, skippedCount },
+        {
+          error,
+          orgId: options.orgId,
+          sourceId: options.sourceId,
+          skippedCount,
+        },
         "Failed to record RSS no-body skip metric",
       );
     }
@@ -1352,14 +1379,18 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         typeof currentDetailExpansion.allowExternalLinks === "boolean"
           ? currentDetailExpansion.allowExternalLinks
           : true,
-      includeUrlPatterns: Array.isArray(currentDetailExpansion.includeUrlPatterns)
+      includeUrlPatterns: Array.isArray(
+        currentDetailExpansion.includeUrlPatterns,
+      )
         ? currentDetailExpansion.includeUrlPatterns
             .filter((value): value is string => typeof value === "string")
             .map((value) => value.trim())
             .filter((value) => value.length > 0)
             .slice(0, 25)
         : undefined,
-      excludeUrlPatterns: Array.isArray(currentDetailExpansion.excludeUrlPatterns)
+      excludeUrlPatterns: Array.isArray(
+        currentDetailExpansion.excludeUrlPatterns,
+      )
         ? currentDetailExpansion.excludeUrlPatterns
             .filter((value): value is string => typeof value === "string")
             .map((value) => value.trim())
@@ -1386,7 +1417,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               0,
               Math.min(
                 1,
-                Number(currentDetailExpansion.minPublishTimeConfidence.toFixed(3)),
+                Number(
+                  currentDetailExpansion.minPublishTimeConfidence.toFixed(3),
+                ),
               ),
             )
           : 0.55,
@@ -1911,6 +1944,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       queryParamAllowlist?: string[];
     },
   ) {
+    const isRssSeed = seed?.mode === "rss";
     const config =
       source.config &&
       typeof source.config === "object" &&
@@ -1933,7 +1967,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       metadata: {
         sourceId: source.id,
         sourceType: source.siteType,
-        crawlTemplateId: source.crawlTemplateId ?? undefined,
+        crawlTemplateId: isRssSeed
+          ? undefined
+          : (source.crawlTemplateId ?? undefined),
         ...(seed
           ? {
               newsSourceSeed: {
@@ -1951,16 +1987,18 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           : {}),
         ...metadata,
       },
-      crawlOptions: this.withAutoCrawlQualityDefaults(
-        this.mergeOptions(
-          source.crawlTemplate?.isActive
-            ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
-            : undefined,
-          this.normalizeOptions(config.crawlOptions),
-        ),
-        seed?.mode && seed.mode !== "single" ? seed.mode : undefined,
-      ),
-      forceRefresh: Boolean(config.forceRefresh),
+      crawlOptions: isRssSeed
+        ? undefined
+        : this.withAutoCrawlQualityDefaults(
+            this.mergeOptions(
+              source.crawlTemplate?.isActive
+                ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
+                : undefined,
+              this.normalizeOptions(config.crawlOptions),
+            ),
+            seed?.mode && seed.mode !== "single" ? seed.mode : undefined,
+          ),
+      forceRefresh: isRssSeed ? false : Boolean(config.forceRefresh),
     };
   }
 
@@ -2047,6 +2085,22 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       basePayload: options.payload,
       prefetchedArticle,
     });
+    const prefetchedMetadata =
+      prefetchedArticle.metadata &&
+      typeof prefetchedArticle.metadata === "object" &&
+      !Array.isArray(prefetchedArticle.metadata)
+        ? (prefetchedArticle.metadata as Record<string, unknown>)
+        : {};
+    const prefetchedMarkdownSourceRaw =
+      typeof prefetchedMetadata.markdownSource === "string"
+        ? prefetchedMetadata.markdownSource.trim().toLowerCase()
+        : "";
+    const prefetchedMarkdownSource =
+      prefetchedMarkdownSourceRaw === "content" ||
+      prefetchedMarkdownSourceRaw === "description" ||
+      prefetchedMarkdownSourceRaw === "stub"
+        ? prefetchedMarkdownSourceRaw
+        : undefined;
     const itemNameBase =
       typeof options.payload.sourceName === "string" &&
       options.payload.sourceName.trim().length > 0
@@ -2076,6 +2130,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             timestampSource: options.job.timestampSource,
             urlFingerprint: options.job.urlFingerprint,
             ingestPath: "rss_prefetched",
+            ...(prefetchedMarkdownSource ? { prefetchedMarkdownSource } : {}),
           },
         },
       });
@@ -2153,7 +2208,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           },
         }),
         this.prisma.itemMeta.updateMany({
-          where: { id: created.itemMetaId, status: { not: ItemStatus.Duplicate } },
+          where: {
+            id: created.itemMetaId,
+            status: { not: ItemStatus.Duplicate },
+          },
           data: { status: ItemStatus.Failed },
         }),
       ]);
@@ -2242,6 +2300,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       sourceQueryParamAllowlist.length > 0
         ? sourceQueryParamAllowlist
         : runtimeSettings.seedUrlQueryParamAllowlist;
+    const rssFetch =
+      mode === "rss"
+        ? this.normalizeSeedRssFetchConfig(seed.rssFetch)
+        : undefined;
 
     return {
       enabled: true,
@@ -2268,6 +2330,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         mode === "rss"
           ? this.normalizeSeedFeedUrl(seed.feedUrl, source.url)
           : undefined,
+      rssFetch,
       maxUrls: this.clampInt(seed.maxUrls, 1, 2_000, 200),
       maxNewUrlsPerRun: this.clampInt(seed.maxNewUrlsPerRun, 1, 500, 80),
       listMaxPages: this.clampInt(seed.listMaxPages, 1, 20, 6),
@@ -2440,7 +2503,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         Math.floor(seedFreshnessWindowDays),
       ),
     );
-    const freshnessCutoffTs = Date.now() - freshnessWindowDays * 24 * 60 * 60 * 1000;
+    const freshnessCutoffTs =
+      Date.now() - freshnessWindowDays * 24 * 60 * 60 * 1000;
 
     const discovered = await this.cache.wrap<unknown[]>(
       cacheKey,
@@ -2494,7 +2558,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           : true,
       )
       .filter((entry) =>
-        typeof entry.effectiveTs === "number" && Number.isFinite(entry.effectiveTs)
+        typeof entry.effectiveTs === "number" &&
+        Number.isFinite(entry.effectiveTs)
           ? entry.effectiveTs >= freshnessCutoffTs
           : true,
       );
@@ -2599,7 +2664,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       }) => Promise<CrawlDiscoveryCandidate[]>;
     };
 
-    const toCandidatesFromUrls = (urls: string[]): CrawlDiscoveryCandidate[] => {
+    const toCandidatesFromUrls = (
+      urls: string[],
+    ): CrawlDiscoveryCandidate[] => {
       const crawledAtTs = Date.now();
       return urls.map((url) => ({
         url,
@@ -2613,6 +2680,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         return metadataService.discoverRssCandidates({
           feedUrl: seed.feedUrl ?? source.url,
           maxUrls: seed.maxUrls,
+          rssFetch: seed.rssFetch,
         });
       }
       const urls = await this.metadataService.discoverRssUrls({
@@ -2846,6 +2914,58 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     };
   }
 
+  private normalizeSeedRssFetchConfig(value: unknown): ResolvedRssFetchConfig {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+    const hasCustomFields =
+      Boolean(record) &&
+      (Object.prototype.hasOwnProperty.call(record, "requestTimeoutMs") ||
+        Object.prototype.hasOwnProperty.call(record, "bodySourceStrategy") ||
+        Object.prototype.hasOwnProperty.call(record, "noBodyPolicy"));
+    const enabled =
+      record?.enabled === true ||
+      (record?.enabled !== false && hasCustomFields);
+    if (!enabled) {
+      return {
+        enabled: false,
+        requestTimeoutMs: 15_000,
+        bodySourceStrategy: "content_first",
+        noBodyPolicy: "skip",
+      };
+    }
+    const bodySourceStrategyRaw =
+      typeof record?.bodySourceStrategy === "string"
+        ? record.bodySourceStrategy.trim().toLowerCase()
+        : "";
+    const bodySourceStrategy: CrawlDiscoveryRssBodySourceStrategy =
+      bodySourceStrategyRaw === "content_only" ||
+      bodySourceStrategyRaw === "summary_only"
+        ? (bodySourceStrategyRaw as CrawlDiscoveryRssBodySourceStrategy)
+        : "content_first";
+    const noBodyPolicyRaw =
+      typeof record?.noBodyPolicy === "string"
+        ? record.noBodyPolicy.trim().toLowerCase()
+        : "";
+    const noBodyPolicy: CrawlDiscoveryRssNoBodyPolicy =
+      noBodyPolicyRaw === "title_description_stub"
+        ? "title_description_stub"
+        : "skip";
+
+    return {
+      enabled,
+      requestTimeoutMs: this.clampInt(
+        record?.requestTimeoutMs,
+        1_000,
+        120_000,
+        15_000,
+      ),
+      bodySourceStrategy,
+      noBodyPolicy,
+    };
+  }
+
   private resolveEffectiveSeedTimestamp(input: {
     publishedAtTs?: number;
     crawledAtTs?: number;
@@ -2966,7 +3086,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     return this.normalizeRssAdaptiveState(state);
   }
 
-  private async writeRssAdaptiveState(sourceId: string, state: RssAdaptiveState) {
+  private async writeRssAdaptiveState(
+    sourceId: string,
+    state: RssAdaptiveState,
+  ) {
     await this.cache.set(
       this.rssAdaptiveStateCacheKey(sourceId),
       state,
@@ -2978,7 +3101,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     source: NewsSourceWithTemplate,
     seedConfig: SeedConfig | null,
   ) {
-    if (!seedConfig || seedConfig.mode !== "rss" || !seedConfig.rssAdaptiveEnabled) {
+    if (
+      !seedConfig ||
+      seedConfig.mode !== "rss" ||
+      !seedConfig.rssAdaptiveEnabled
+    ) {
       return false;
     }
     return this.normalizeCronSchedule(source) === null;
@@ -2998,10 +3125,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     }
     const total = normalizedState.outcomes.length;
     if (total < 3) {
-      return this.resolveRssAdaptiveTierWithPriority(
-        "normal",
-        sourcePriority,
-      );
+      return this.resolveRssAdaptiveTierWithPriority("normal", sourcePriority);
     }
     const hits = normalizedState.outcomes.filter(Boolean).length;
     const hitRate = hits / total;
@@ -3180,7 +3304,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       }
       matchedCount += 1;
       const wasUpdated =
-        await this.updateLegacyRssSeedCacheTtlOverrideWithRetry(row.id, row.config);
+        await this.updateLegacyRssSeedCacheTtlOverrideWithRetry(
+          row.id,
+          row.config,
+        );
       if (wasUpdated) {
         updatedCount += 1;
       }
@@ -3236,12 +3363,18 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   }
 
   private removeLegacyRssSeedCacheTtlOverride(configRaw: unknown) {
-    if (!configRaw || typeof configRaw !== "object" || Array.isArray(configRaw)) {
+    if (
+      !configRaw ||
+      typeof configRaw !== "object" ||
+      Array.isArray(configRaw)
+    ) {
       return null;
     }
     const config = configRaw as Record<string, unknown>;
     const seedRaw =
-      config.seed && typeof config.seed === "object" && !Array.isArray(config.seed)
+      config.seed &&
+      typeof config.seed === "object" &&
+      !Array.isArray(config.seed)
         ? (config.seed as Record<string, unknown>)
         : null;
     if (!seedRaw) {
@@ -3261,7 +3394,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         : typeof rawTtl === "string" && rawTtl.trim().length > 0
           ? Number(rawTtl)
           : NaN;
-    if (!Number.isFinite(ttl) || Math.round(ttl) !== LEGACY_RSS_SEED_CACHE_TTL_SECONDS) {
+    if (
+      !Number.isFinite(ttl) ||
+      Math.round(ttl) !== LEGACY_RSS_SEED_CACHE_TTL_SECONDS
+    ) {
       return null;
     }
 
@@ -3393,7 +3529,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     const path = parsed.pathname;
 
     const toUtcTimestamp = (year: number, month: number, day: number) => {
-      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      if (
+        !Number.isFinite(year) ||
+        !Number.isFinite(month) ||
+        !Number.isFinite(day)
+      ) {
         return undefined;
       }
       if (month < 1 || month > 12) {
@@ -3484,7 +3624,8 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         continue;
       }
       const existingEffectiveTs =
-        typeof existing.effectiveTs === "number" && Number.isFinite(existing.effectiveTs)
+        typeof existing.effectiveTs === "number" &&
+        Number.isFinite(existing.effectiveTs)
           ? existing.effectiveTs
           : -1;
       const nextEffectiveTs = this.resolveTimestamp(job.effectiveTs) ?? -1;
@@ -3533,7 +3674,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     const fingerprints = Array.from(
       new Set(candidates.map((candidate) => candidate.urlFingerprint)),
     );
-    const urls = Array.from(new Set(candidates.map((candidate) => candidate.url)));
+    const urls = Array.from(
+      new Set(candidates.map((candidate) => candidate.url)),
+    );
     const fingerprintByUrl = new Map(
       candidates.map((candidate) => [candidate.url, candidate.urlFingerprint]),
     );
@@ -3542,10 +3685,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       where: {
         orgId,
         crawlAt: { gte: since },
-        OR: [
-          { urlFingerprint: { in: fingerprints } },
-          { url: { in: urls } },
-        ],
+        OR: [{ urlFingerprint: { in: fingerprints } }, { url: { in: urls } }],
       },
       select: { urlFingerprint: true, url: true },
     });
@@ -3579,7 +3719,9 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     const fingerprints = Array.from(
       new Set(candidates.map((candidate) => candidate.urlFingerprint)),
     );
-    const urls = Array.from(new Set(candidates.map((candidate) => candidate.url)));
+    const urls = Array.from(
+      new Set(candidates.map((candidate) => candidate.url)),
+    );
     const fingerprintByUrl = new Map(
       candidates.map((candidate) => [candidate.url, candidate.urlFingerprint]),
     );
@@ -3588,10 +3730,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         sourceId,
         status: { in: ACTIVE_PIPELINE_JOB_STATUSES },
         createdAt: { gte: activeCutoff },
-        OR: [
-          { urlFingerprint: { in: fingerprints } },
-          { url: { in: urls } },
-        ],
+        OR: [{ urlFingerprint: { in: fingerprints } }, { url: { in: urls } }],
       },
       select: { urlFingerprint: true, url: true },
     });
@@ -3866,7 +4005,10 @@ export class NewsSourceSchedulerService implements OnModuleInit {
 
       const maxNewUrlsThisRun = seedConfig ? Math.max(0, remainingCapacity) : 1;
       try {
-        const rssAdaptiveEnabled = this.shouldUseRssAdaptive(source, seedConfig);
+        const rssAdaptiveEnabled = this.shouldUseRssAdaptive(
+          source,
+          seedConfig,
+        );
         const rssAdaptiveState = rssAdaptiveEnabled
           ? await this.readRssAdaptiveState(source.id)
           : null;
@@ -3926,27 +4068,26 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           : [];
         const [recentArticleFingerprints, activeFingerprints] =
           await Promise.all([
-          seedConfig
-            ? this.findRecentArticleFingerprints(
-                source.orgId,
-                canonicalJobs,
-                seedConfig.dedupeWindowHours,
-              )
-            : Promise.resolve(new Set<string>()),
-          seedConfig
-            ? this.findActivePipelineFingerprints(
-                source.id,
-                canonicalJobs,
-                activeCutoff,
-              )
-            : Promise.resolve(new Set<string>()),
+            seedConfig
+              ? this.findRecentArticleFingerprints(
+                  source.orgId,
+                  canonicalJobs,
+                  seedConfig.dedupeWindowHours,
+                )
+              : Promise.resolve(new Set<string>()),
+            seedConfig
+              ? this.findActivePipelineFingerprints(
+                  source.id,
+                  canonicalJobs,
+                  activeCutoff,
+                )
+              : Promise.resolve(new Set<string>()),
           ]);
 
         const newJobs = seedConfig
           ? canonicalJobs
               .filter(
-                (job) =>
-                  !recentArticleFingerprints.has(job.urlFingerprint),
+                (job) => !recentArticleFingerprints.has(job.urlFingerprint),
               )
               .filter((job) => !activeFingerprints.has(job.urlFingerprint))
               .slice(0, maxNewUrlsThisRun)
@@ -4062,10 +4203,13 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             "publishedAtTs" in job ? job.publishedAtTs : undefined;
           const crawledAtTs =
             "crawledAtTs" in job ? job.crawledAtTs : undefined;
-          const effectiveTs = "effectiveTs" in job ? job.effectiveTs : undefined;
+          const effectiveTs =
+            "effectiveTs" in job ? job.effectiveTs : undefined;
           const timestampSource =
             "timestampSource" in job
-              ? (job.timestampSource as CrawlDiscoveryTimestampSource | undefined)
+              ? (job.timestampSource as
+                  | CrawlDiscoveryTimestampSource
+                  | undefined)
               : undefined;
           const publishedAt = this.toIsoTimestamp(publishedAtTs);
           const crawledAt = this.toIsoTimestamp(crawledAtTs);
@@ -4149,8 +4293,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             sourcePriority: source.priority,
             ...(seedConfig
               ? {
-                  orgContentDedupeWindowHours:
-                    seedConfig.dedupeWindowHours,
+                  orgContentDedupeWindowHours: seedConfig.dedupeWindowHours,
                   urlQueryParamAllowlist: seedConfig.queryParamAllowlist,
                 }
               : {}),
@@ -4192,9 +4335,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                     effectiveAt,
                     timestampSource,
                     urlFingerprint:
-                      "urlFingerprint" in job
-                        ? job.urlFingerprint
-                        : undefined,
+                      "urlFingerprint" in job ? job.urlFingerprint : undefined,
                   },
                 },
               });

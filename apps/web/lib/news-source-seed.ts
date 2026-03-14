@@ -1,4 +1,11 @@
-export type SeedMode = 'sitemap' | 'rss' | 'list' | 'deep';
+export type SeedMode = "sitemap" | "rss" | "list" | "deep";
+
+export type SeedRssBodySourceStrategy =
+  | "content_first"
+  | "content_only"
+  | "summary_only";
+
+export type SeedRssNoBodyPolicy = "skip" | "title_description_stub";
 
 export interface SeedSchedulerRuntimeSettings {
   seedCacheTtlForceGlobal: boolean;
@@ -24,6 +31,10 @@ export interface NewsSourceSeedFormValues {
   seedPattern?: string;
   seedFeedUrl?: string;
   seedRssAdaptiveEnabled?: boolean;
+  seedRssAdvancedEnabled?: boolean;
+  seedRssRequestTimeoutMs?: number;
+  seedRssBodySourceStrategy?: SeedRssBodySourceStrategy;
+  seedRssNoBodyPolicy?: SeedRssNoBodyPolicy;
   seedQuery?: string;
   seedMaxUrls?: number;
   seedMaxNewUrlsPerRun?: number;
@@ -48,43 +59,68 @@ export interface NewsSourceSeedFormValues {
 }
 
 export const normalizeSeedMode = (value: unknown): SeedMode =>
-  value === 'rss'
-    ? 'rss'
-    : value === 'list'
-      ? 'list'
-      : value === 'deep'
-        ? 'deep'
-        : 'sitemap';
+  value === "rss"
+    ? "rss"
+    : value === "list"
+      ? "list"
+      : value === "deep"
+        ? "deep"
+        : "sitemap";
 
-export const DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS: SeedSchedulerRuntimeSettings = {
-  seedCacheTtlForceGlobal: false,
-  seedCacheTtlSecondsSitemapRss: 60,
-  seedCacheTtlSecondsListDeep: 180,
-  seedUrlQueryParamAllowlist: [
-    "id",
-    "story",
-    "article",
-    "post",
-    "item",
-    "p",
-    "page",
-    "v",
-    "ver",
-    "lang",
-    "locale",
-    "hl"
-  ],
-  rssAdaptiveHotHitRatePercent: 60,
-  rssAdaptiveWarmHitRatePercent: 25,
-  rssAdaptiveColdConsecutiveNoHitRuns: 4,
-  rssAdaptiveHotIntervalSeconds: 30,
-  rssAdaptiveWarmIntervalDivisor: 2,
-  rssAdaptiveWarmMinIntervalSeconds: 30,
-  rssAdaptiveColdIntervalMultiplier: 2,
-  rssAdaptiveColdMaxIntervalSeconds: 3600,
-  rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
-  rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60
-};
+export const normalizeSeedRssBodySourceStrategy = (
+  value: unknown,
+): SeedRssBodySourceStrategy =>
+  value === "content_only"
+    ? "content_only"
+    : value === "summary_only"
+      ? "summary_only"
+      : "content_first";
+
+export const normalizeSeedRssNoBodyPolicy = (
+  value: unknown,
+): SeedRssNoBodyPolicy =>
+  value === "title_description_stub" ? "title_description_stub" : "skip";
+
+export const isRssSeedModeActive = (
+  seedEnabled: unknown,
+  modeValue: unknown,
+): boolean => seedEnabled === true && normalizeSeedMode(modeValue) === "rss";
+
+export const shouldShowCrawlSettingsForSeedMode = (
+  seedEnabled: unknown,
+  modeValue: unknown,
+): boolean => !isRssSeedModeActive(seedEnabled, modeValue);
+
+export const DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS: SeedSchedulerRuntimeSettings =
+  {
+    seedCacheTtlForceGlobal: false,
+    seedCacheTtlSecondsSitemapRss: 60,
+    seedCacheTtlSecondsListDeep: 180,
+    seedUrlQueryParamAllowlist: [
+      "id",
+      "story",
+      "article",
+      "post",
+      "item",
+      "p",
+      "page",
+      "v",
+      "ver",
+      "lang",
+      "locale",
+      "hl",
+    ],
+    rssAdaptiveHotHitRatePercent: 60,
+    rssAdaptiveWarmHitRatePercent: 25,
+    rssAdaptiveColdConsecutiveNoHitRuns: 4,
+    rssAdaptiveHotIntervalSeconds: 30,
+    rssAdaptiveWarmIntervalDivisor: 2,
+    rssAdaptiveWarmMinIntervalSeconds: 30,
+    rssAdaptiveColdIntervalMultiplier: 2,
+    rssAdaptiveColdMaxIntervalSeconds: 3600,
+    rssAdaptiveHotDiscoveryCacheTtlCapSeconds: 30,
+    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds: 60,
+  };
 
 const QUERY_PARAM_KEY_PATTERN = /^[a-z0-9_.-]{1,64}$/i;
 
@@ -111,8 +147,12 @@ export const normalizeSeedQueryParamAllowlist = (value: unknown): string[] => {
   return normalized;
 };
 
-const toIntegerInRange = (value: unknown, min: number, max: number): number | null => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+const toIntegerInRange = (
+  value: unknown,
+  min: number,
+  max: number,
+): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
   const rounded = Math.round(value);
@@ -123,16 +163,21 @@ const toIntegerInRange = (value: unknown, min: number, max: number): number | nu
 };
 
 export const resolveSeedSchedulerRuntimeSettings = (
-  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
 ): SeedSchedulerRuntimeSettings => {
   const sitemapRss =
-    toIntegerInRange(runtimeSettings?.seedCacheTtlSecondsSitemapRss, 10, 3600) ??
-    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss;
+    toIntegerInRange(
+      runtimeSettings?.seedCacheTtlSecondsSitemapRss,
+      10,
+      3600,
+    ) ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsSitemapRss;
   const listDeep =
     toIntegerInRange(runtimeSettings?.seedCacheTtlSecondsListDeep, 10, 3600) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedCacheTtlSecondsListDeep;
   const allowlist = Array.isArray(runtimeSettings?.seedUrlQueryParamAllowlist)
-    ? normalizeSeedQueryParamAllowlist(runtimeSettings?.seedUrlQueryParamAllowlist)
+    ? normalizeSeedQueryParamAllowlist(
+        runtimeSettings?.seedUrlQueryParamAllowlist,
+      )
     : [...DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.seedUrlQueryParamAllowlist];
   const rssAdaptiveHotHitRatePercent =
     toIntegerInRange(runtimeSettings?.rssAdaptiveHotHitRatePercent, 0, 100) ??
@@ -145,32 +190,59 @@ export const resolveSeedSchedulerRuntimeSettings = (
     rssAdaptiveHotHitRatePercent,
   );
   const rssAdaptiveColdConsecutiveNoHitRuns =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveColdConsecutiveNoHitRuns, 1, 24) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveColdConsecutiveNoHitRuns,
+      1,
+      24,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdConsecutiveNoHitRuns;
   const rssAdaptiveHotIntervalSeconds =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveHotIntervalSeconds, 10, 21600) ??
-    DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotIntervalSeconds;
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveHotIntervalSeconds,
+      10,
+      21600,
+    ) ?? DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotIntervalSeconds;
   const rssAdaptiveWarmIntervalDivisor =
     toIntegerInRange(runtimeSettings?.rssAdaptiveWarmIntervalDivisor, 1, 8) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmIntervalDivisor;
   const rssAdaptiveWarmMinIntervalSeconds =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmMinIntervalSeconds, 10, 21600) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveWarmMinIntervalSeconds,
+      10,
+      21600,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmMinIntervalSeconds;
   const rssAdaptiveColdIntervalMultiplier =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveColdIntervalMultiplier, 1, 8) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveColdIntervalMultiplier,
+      1,
+      8,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdIntervalMultiplier;
   const rssAdaptiveColdMaxIntervalSecondsRaw =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveColdMaxIntervalSeconds, 10, 21600) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveColdMaxIntervalSeconds,
+      10,
+      21600,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveColdMaxIntervalSeconds;
   const rssAdaptiveColdMaxIntervalSeconds = Math.max(
     rssAdaptiveWarmMinIntervalSeconds,
     rssAdaptiveColdMaxIntervalSecondsRaw,
   );
   const rssAdaptiveHotDiscoveryCacheTtlCapSecondsRaw =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveHotDiscoveryCacheTtlCapSeconds, 10, 3600) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
+      10,
+      3600,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveHotDiscoveryCacheTtlCapSeconds;
   const rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRaw =
-    toIntegerInRange(runtimeSettings?.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds, 10, 3600) ??
+    toIntegerInRange(
+      runtimeSettings?.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
+      10,
+      3600,
+    ) ??
     DEFAULT_SEED_SCHEDULER_RUNTIME_SETTINGS.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds;
   const rssAdaptiveHotDiscoveryCacheTtlCapSeconds = Math.min(
     rssAdaptiveHotDiscoveryCacheTtlCapSecondsRaw,
@@ -194,16 +266,16 @@ export const resolveSeedSchedulerRuntimeSettings = (
     rssAdaptiveColdIntervalMultiplier,
     rssAdaptiveColdMaxIntervalSeconds,
     rssAdaptiveHotDiscoveryCacheTtlCapSeconds,
-    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds
+    rssAdaptiveWarmDiscoveryCacheTtlCapSeconds,
   };
 };
 
 export const getDefaultSeedCacheTtlSecondsByMode = (
   mode: SeedMode,
-  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
 ): number => {
   const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
-  return mode === 'list' || mode === 'deep'
+  return mode === "list" || mode === "deep"
     ? resolved.seedCacheTtlSecondsListDeep
     : resolved.seedCacheTtlSecondsSitemapRss;
 };
@@ -216,7 +288,7 @@ export interface ResolvedSeedCacheTtlPolicy {
   sourceSeedCacheTtlSeconds: number | null;
 }
 
-export type SeedRssAdaptiveTier = 'hot' | 'warm' | 'normal' | 'cold';
+export type SeedRssAdaptiveTier = "hot" | "warm" | "normal" | "cold";
 
 export interface SeedRssAdaptiveState {
   outcomes: boolean[];
@@ -232,31 +304,32 @@ const RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD = 50;
 export const normalizeSeedRssAdaptiveState = (
   value: unknown,
 ): SeedRssAdaptiveState => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {
       outcomes: [],
       consecutiveNoHit: 0,
-      updatedAt: new Date(0).toISOString()
+      updatedAt: new Date(0).toISOString(),
     };
   }
   const record = value as Record<string, unknown>;
   const outcomes = Array.isArray(record.outcomes)
     ? record.outcomes
-        .filter((entry): entry is boolean => typeof entry === 'boolean')
+        .filter((entry): entry is boolean => typeof entry === "boolean")
         .slice(-RSS_ADAPTIVE_MAX_HISTORY_SIZE)
     : [];
   const consecutiveNoHit =
-    typeof record.consecutiveNoHit === 'number' && Number.isFinite(record.consecutiveNoHit)
+    typeof record.consecutiveNoHit === "number" &&
+    Number.isFinite(record.consecutiveNoHit)
       ? Math.max(0, Math.floor(record.consecutiveNoHit))
       : 0;
   const updatedAt =
-    typeof record.updatedAt === 'string' && record.updatedAt.length > 0
+    typeof record.updatedAt === "string" && record.updatedAt.length > 0
       ? record.updatedAt
       : new Date(0).toISOString();
   return {
     outcomes,
     consecutiveNoHit,
-    updatedAt
+    updatedAt,
   };
 };
 
@@ -278,33 +351,34 @@ export const resolveSeedRssAdaptiveTier = (
 ): SeedRssAdaptiveTier => {
   const state = normalizeSeedRssAdaptiveState(stateValue);
   const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
-  if (
-    state.consecutiveNoHit >= resolved.rssAdaptiveColdConsecutiveNoHitRuns
-  ) {
-    return 'cold';
+  if (state.consecutiveNoHit >= resolved.rssAdaptiveColdConsecutiveNoHitRuns) {
+    return "cold";
   }
   if (state.outcomes.length < 3) {
-    return resolveSeedRssAdaptiveTierWithPriority('normal', sourcePriority);
+    return resolveSeedRssAdaptiveTierWithPriority("normal", sourcePriority);
   }
   const hitRate = resolveSeedRssAdaptiveHitRate(state);
   if (hitRate === null) {
-    return resolveSeedRssAdaptiveTierWithPriority('normal', sourcePriority);
+    return resolveSeedRssAdaptiveTierWithPriority("normal", sourcePriority);
   }
-  let tier: SeedRssAdaptiveTier = 'normal';
+  let tier: SeedRssAdaptiveTier = "normal";
   if (hitRate >= resolved.rssAdaptiveHotHitRatePercent / 100) {
-    tier = 'hot';
+    tier = "hot";
   } else if (hitRate >= resolved.rssAdaptiveWarmHitRatePercent / 100) {
-    tier = 'warm';
+    tier = "warm";
   }
   return resolveSeedRssAdaptiveTierWithPriority(tier, sourcePriority);
 };
 
 const normalizeSourcePriority = (value: unknown): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return 0;
   }
   const normalized = Math.round(value);
-  return Math.max(SOURCE_PRIORITY_MIN, Math.min(SOURCE_PRIORITY_MAX, normalized));
+  return Math.max(
+    SOURCE_PRIORITY_MIN,
+    Math.min(SOURCE_PRIORITY_MAX, normalized),
+  );
 };
 
 const resolveSeedRssAdaptiveTierWithPriority = (
@@ -313,23 +387,23 @@ const resolveSeedRssAdaptiveTierWithPriority = (
 ): SeedRssAdaptiveTier => {
   const normalizedPriority = normalizeSourcePriority(sourcePriority);
   if (normalizedPriority >= RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD) {
-    if (tier === 'normal') {
-      return 'warm';
+    if (tier === "normal") {
+      return "warm";
     }
-    if (tier === 'warm') {
-      return 'hot';
+    if (tier === "warm") {
+      return "hot";
     }
     return tier;
   }
   if (normalizedPriority <= -RSS_ADAPTIVE_PRIORITY_TIER_THRESHOLD) {
-    if (tier === 'hot') {
-      return 'warm';
+    if (tier === "hot") {
+      return "warm";
     }
-    if (tier === 'warm') {
-      return 'normal';
+    if (tier === "warm") {
+      return "normal";
     }
-    if (tier === 'normal') {
-      return 'cold';
+    if (tier === "normal") {
+      return "cold";
     }
   }
   return tier;
@@ -342,19 +416,19 @@ export const resolveSeedRssAdaptiveIntervalSeconds = (
 ): number => {
   const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
   const base =
-    typeof frequencySeconds === 'number' && Number.isFinite(frequencySeconds)
+    typeof frequencySeconds === "number" && Number.isFinite(frequencySeconds)
       ? Math.max(1, Math.floor(frequencySeconds))
       : 1;
-  if (tier === 'hot') {
+  if (tier === "hot") {
     return resolved.rssAdaptiveHotIntervalSeconds;
   }
-  if (tier === 'warm') {
+  if (tier === "warm") {
     return Math.max(
       resolved.rssAdaptiveWarmMinIntervalSeconds,
       Math.floor(base / resolved.rssAdaptiveWarmIntervalDivisor),
     );
   }
-  if (tier === 'cold') {
+  if (tier === "cold") {
     return Math.min(
       base * resolved.rssAdaptiveColdIntervalMultiplier,
       Math.max(base, resolved.rssAdaptiveColdMaxIntervalSeconds),
@@ -370,16 +444,16 @@ export const resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds = (
 ): number => {
   const resolved = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
   const base =
-    typeof cacheTtlSeconds === 'number' && Number.isFinite(cacheTtlSeconds)
+    typeof cacheTtlSeconds === "number" && Number.isFinite(cacheTtlSeconds)
       ? Math.max(10, Math.min(3600, Math.floor(cacheTtlSeconds)))
       : 60;
-  if (tier === 'hot') {
+  if (tier === "hot") {
     return Math.max(
       10,
       Math.min(base, resolved.rssAdaptiveHotDiscoveryCacheTtlCapSeconds),
     );
   }
-  if (tier === 'warm') {
+  if (tier === "warm") {
     return Math.max(
       10,
       Math.min(base, resolved.rssAdaptiveWarmDiscoveryCacheTtlCapSeconds),
@@ -391,15 +465,20 @@ export const resolveSeedRssAdaptiveDiscoveryCacheTtlSeconds = (
 export const resolveSeedCacheTtlPolicy = (
   modeValue: unknown,
   sourceSeedCacheTtlSeconds: unknown,
-  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
 ): ResolvedSeedCacheTtlPolicy => {
   const mode = normalizeSeedMode(modeValue);
-  const resolvedRuntimeSettings = resolveSeedSchedulerRuntimeSettings(runtimeSettings);
+  const resolvedRuntimeSettings =
+    resolveSeedSchedulerRuntimeSettings(runtimeSettings);
   const modeDefaultCacheTtlSeconds = getDefaultSeedCacheTtlSecondsByMode(
     mode,
-    resolvedRuntimeSettings
+    resolvedRuntimeSettings,
   );
-  const sourceSeedCacheTtl = toIntegerInRange(sourceSeedCacheTtlSeconds, 10, 3600);
+  const sourceSeedCacheTtl = toIntegerInRange(
+    sourceSeedCacheTtlSeconds,
+    10,
+    3600,
+  );
   const isGlobalForced = resolvedRuntimeSettings.seedCacheTtlForceGlobal;
   const effectiveCacheTtlSeconds =
     isGlobalForced || sourceSeedCacheTtl === null
@@ -411,44 +490,52 @@ export const resolveSeedCacheTtlPolicy = (
     isGlobalForced,
     modeDefaultCacheTtlSeconds,
     effectiveCacheTtlSeconds,
-    sourceSeedCacheTtlSeconds: sourceSeedCacheTtl
+    sourceSeedCacheTtlSeconds: sourceSeedCacheTtl,
   };
 };
 
 export const DEFAULT_SEED_FORM_VALUES: Required<
   Pick<
     NewsSourceSeedFormValues,
-    | 'seedMode'
-    | 'seedMaxUrls'
-    | 'seedMaxNewUrlsPerRun'
-    | 'seedRssAdaptiveEnabled'
-    | 'seedScoreThreshold'
-    | 'seedDedupeWindowHours'
-    | 'seedCacheTtlSeconds'
-    | 'seedConcurrency'
-    | 'seedListMaxPages'
-    | 'seedListPageConcurrency'
-    | 'seedFollowPagination'
-    | 'seedDeepMaxPages'
-    | 'seedDeepMaxDepth'
-    | 'seedDeepTimeBudgetSeconds'
-    | 'seedDeepPageConcurrency'
-    | 'seedDeepScoreThreshold'
-    | 'seedDeepCandidatePoolSize'
-    | 'seedDeepHeadFetchTopK'
-    | 'seedDeepPreferPathDate'
-    | 'seedDeepEnableSecondaryHubs'
-    | 'seedDeepIgnoreRobotsTxt'
-    | 'seedQueryParamAllowlist'
+    | "seedMode"
+    | "seedMaxUrls"
+    | "seedMaxNewUrlsPerRun"
+    | "seedRssAdaptiveEnabled"
+    | "seedRssAdvancedEnabled"
+    | "seedRssRequestTimeoutMs"
+    | "seedRssBodySourceStrategy"
+    | "seedRssNoBodyPolicy"
+    | "seedScoreThreshold"
+    | "seedDedupeWindowHours"
+    | "seedCacheTtlSeconds"
+    | "seedConcurrency"
+    | "seedListMaxPages"
+    | "seedListPageConcurrency"
+    | "seedFollowPagination"
+    | "seedDeepMaxPages"
+    | "seedDeepMaxDepth"
+    | "seedDeepTimeBudgetSeconds"
+    | "seedDeepPageConcurrency"
+    | "seedDeepScoreThreshold"
+    | "seedDeepCandidatePoolSize"
+    | "seedDeepHeadFetchTopK"
+    | "seedDeepPreferPathDate"
+    | "seedDeepEnableSecondaryHubs"
+    | "seedDeepIgnoreRobotsTxt"
+    | "seedQueryParamAllowlist"
   >
 > = {
-  seedMode: 'sitemap',
+  seedMode: "sitemap",
   seedMaxUrls: 200,
   seedMaxNewUrlsPerRun: 80,
   seedRssAdaptiveEnabled: false,
+  seedRssAdvancedEnabled: false,
+  seedRssRequestTimeoutMs: 15000,
+  seedRssBodySourceStrategy: "content_first",
+  seedRssNoBodyPolicy: "skip",
   seedScoreThreshold: 0,
   seedDedupeWindowHours: 24,
-  seedCacheTtlSeconds: getDefaultSeedCacheTtlSecondsByMode('sitemap'),
+  seedCacheTtlSeconds: getDefaultSeedCacheTtlSecondsByMode("sitemap"),
   seedConcurrency: 5,
   seedListMaxPages: 6,
   seedListPageConcurrency: 2,
@@ -463,68 +550,116 @@ export const DEFAULT_SEED_FORM_VALUES: Required<
   seedDeepPreferPathDate: true,
   seedDeepEnableSecondaryHubs: true,
   seedDeepIgnoreRobotsTxt: true,
-  seedQueryParamAllowlist: []
+  seedQueryParamAllowlist: [],
 };
 
 const toFiniteNumber = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null;
+  typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const readSeedFormValuesFromConfig = (
   config: unknown,
-  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>
+  runtimeSettings?: Partial<SeedSchedulerRuntimeSettings>,
 ): Partial<NewsSourceSeedFormValues> => {
   const seedConfig =
-    config && typeof config === 'object' && !Array.isArray(config) &&
+    config &&
+    typeof config === "object" &&
+    !Array.isArray(config) &&
     (config as Record<string, unknown>).seed &&
-    typeof (config as Record<string, unknown>).seed === 'object' &&
+    typeof (config as Record<string, unknown>).seed === "object" &&
     !Array.isArray((config as Record<string, unknown>).seed)
       ? ((config as Record<string, unknown>).seed as Record<string, unknown>)
       : null;
 
   const mode = normalizeSeedMode(seedConfig?.mode);
   const deepConfig =
-    seedConfig?.deep && typeof seedConfig.deep === 'object' && !Array.isArray(seedConfig.deep)
+    seedConfig?.deep &&
+    typeof seedConfig.deep === "object" &&
+    !Array.isArray(seedConfig.deep)
       ? (seedConfig.deep as Record<string, unknown>)
       : null;
   const rssAdaptiveConfig =
     seedConfig?.rssAdaptive &&
-    typeof seedConfig.rssAdaptive === 'object' &&
+    typeof seedConfig.rssAdaptive === "object" &&
     !Array.isArray(seedConfig.rssAdaptive)
       ? (seedConfig.rssAdaptive as Record<string, unknown>)
       : null;
+  const rssFetchConfig =
+    seedConfig?.rssFetch &&
+    typeof seedConfig.rssFetch === "object" &&
+    !Array.isArray(seedConfig.rssFetch)
+      ? (seedConfig.rssFetch as Record<string, unknown>)
+      : null;
+  const hasRssFetchOverrides =
+    Boolean(rssFetchConfig) &&
+    (Object.prototype.hasOwnProperty.call(rssFetchConfig, "requestTimeoutMs") ||
+      Object.prototype.hasOwnProperty.call(
+        rssFetchConfig,
+        "bodySourceStrategy",
+      ) ||
+      Object.prototype.hasOwnProperty.call(rssFetchConfig, "noBodyPolicy"));
+  const hasRssAdvancedSettings =
+    rssFetchConfig?.enabled === true ||
+    (rssFetchConfig !== null &&
+      rssFetchConfig.enabled !== false &&
+      hasRssFetchOverrides);
 
   return {
     seedEnabled: seedConfig?.enabled === true,
     seedMode: mode,
-    seedDomain: typeof seedConfig?.domain === 'string' ? seedConfig.domain : '',
-    seedPattern: typeof seedConfig?.pattern === 'string' ? seedConfig.pattern : '',
-    seedFeedUrl: typeof seedConfig?.feedUrl === 'string' ? seedConfig.feedUrl : '',
+    seedDomain: typeof seedConfig?.domain === "string" ? seedConfig.domain : "",
+    seedPattern:
+      typeof seedConfig?.pattern === "string" ? seedConfig.pattern : "",
+    seedFeedUrl:
+      typeof seedConfig?.feedUrl === "string" ? seedConfig.feedUrl : "",
     seedRssAdaptiveEnabled:
-      typeof rssAdaptiveConfig?.enabled === 'boolean'
+      typeof rssAdaptiveConfig?.enabled === "boolean"
         ? rssAdaptiveConfig.enabled
         : DEFAULT_SEED_FORM_VALUES.seedRssAdaptiveEnabled,
-    seedQuery: typeof seedConfig?.query === 'string' ? seedConfig.query : '',
-    seedMaxUrls: toFiniteNumber(seedConfig?.maxUrls) ?? DEFAULT_SEED_FORM_VALUES.seedMaxUrls,
+    seedRssAdvancedEnabled: hasRssAdvancedSettings,
+    seedRssRequestTimeoutMs:
+      toFiniteNumber(rssFetchConfig?.requestTimeoutMs) ??
+      DEFAULT_SEED_FORM_VALUES.seedRssRequestTimeoutMs,
+    seedRssBodySourceStrategy: normalizeSeedRssBodySourceStrategy(
+      rssFetchConfig?.bodySourceStrategy,
+    ),
+    seedRssNoBodyPolicy: normalizeSeedRssNoBodyPolicy(
+      rssFetchConfig?.noBodyPolicy,
+    ),
+    seedQuery: typeof seedConfig?.query === "string" ? seedConfig.query : "",
+    seedMaxUrls:
+      toFiniteNumber(seedConfig?.maxUrls) ??
+      DEFAULT_SEED_FORM_VALUES.seedMaxUrls,
     seedMaxNewUrlsPerRun:
-      toFiniteNumber(seedConfig?.maxNewUrlsPerRun) ?? DEFAULT_SEED_FORM_VALUES.seedMaxNewUrlsPerRun,
-    seedScoreThreshold: toFiniteNumber(seedConfig?.scoreThreshold) ?? DEFAULT_SEED_FORM_VALUES.seedScoreThreshold,
+      toFiniteNumber(seedConfig?.maxNewUrlsPerRun) ??
+      DEFAULT_SEED_FORM_VALUES.seedMaxNewUrlsPerRun,
+    seedScoreThreshold:
+      toFiniteNumber(seedConfig?.scoreThreshold) ??
+      DEFAULT_SEED_FORM_VALUES.seedScoreThreshold,
     seedDedupeWindowHours:
-      toFiniteNumber(seedConfig?.dedupeWindowHours) ?? DEFAULT_SEED_FORM_VALUES.seedDedupeWindowHours,
+      toFiniteNumber(seedConfig?.dedupeWindowHours) ??
+      DEFAULT_SEED_FORM_VALUES.seedDedupeWindowHours,
     seedCacheTtlSeconds:
       toFiniteNumber(seedConfig?.cacheTtlSeconds) ??
       getDefaultSeedCacheTtlSecondsByMode(mode, runtimeSettings),
-    seedConcurrency: toFiniteNumber(seedConfig?.concurrency) ?? DEFAULT_SEED_FORM_VALUES.seedConcurrency,
-    seedListMaxPages: toFiniteNumber(seedConfig?.listMaxPages) ?? DEFAULT_SEED_FORM_VALUES.seedListMaxPages,
+    seedConcurrency:
+      toFiniteNumber(seedConfig?.concurrency) ??
+      DEFAULT_SEED_FORM_VALUES.seedConcurrency,
+    seedListMaxPages:
+      toFiniteNumber(seedConfig?.listMaxPages) ??
+      DEFAULT_SEED_FORM_VALUES.seedListMaxPages,
     seedListPageConcurrency:
-      toFiniteNumber(seedConfig?.listPageConcurrency) ?? DEFAULT_SEED_FORM_VALUES.seedListPageConcurrency,
+      toFiniteNumber(seedConfig?.listPageConcurrency) ??
+      DEFAULT_SEED_FORM_VALUES.seedListPageConcurrency,
     seedFollowPagination:
-      typeof seedConfig?.followPagination === 'boolean'
+      typeof seedConfig?.followPagination === "boolean"
         ? seedConfig.followPagination
         : DEFAULT_SEED_FORM_VALUES.seedFollowPagination,
     seedDeepMaxPages:
-      toFiniteNumber(deepConfig?.maxPages) ?? DEFAULT_SEED_FORM_VALUES.seedDeepMaxPages,
+      toFiniteNumber(deepConfig?.maxPages) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepMaxPages,
     seedDeepMaxDepth:
-      toFiniteNumber(deepConfig?.maxDepth) ?? DEFAULT_SEED_FORM_VALUES.seedDeepMaxDepth,
+      toFiniteNumber(deepConfig?.maxDepth) ??
+      DEFAULT_SEED_FORM_VALUES.seedDeepMaxDepth,
     seedDeepTimeBudgetSeconds:
       toFiniteNumber(deepConfig?.timeBudgetSeconds) ??
       DEFAULT_SEED_FORM_VALUES.seedDeepTimeBudgetSeconds,
@@ -541,25 +676,27 @@ export const readSeedFormValuesFromConfig = (
       toFiniteNumber(deepConfig?.headFetchTopK) ??
       DEFAULT_SEED_FORM_VALUES.seedDeepHeadFetchTopK,
     seedDeepPreferPathDate:
-      typeof deepConfig?.preferPathDate === 'boolean'
+      typeof deepConfig?.preferPathDate === "boolean"
         ? deepConfig.preferPathDate
         : DEFAULT_SEED_FORM_VALUES.seedDeepPreferPathDate,
     seedDeepEnableSecondaryHubs:
-      typeof deepConfig?.enableSecondaryHubs === 'boolean'
+      typeof deepConfig?.enableSecondaryHubs === "boolean"
         ? deepConfig.enableSecondaryHubs
         : DEFAULT_SEED_FORM_VALUES.seedDeepEnableSecondaryHubs,
-    seedQueryParamAllowlist:
-      normalizeSeedQueryParamAllowlist(seedConfig?.queryParamAllowlist),
+    seedQueryParamAllowlist: normalizeSeedQueryParamAllowlist(
+      seedConfig?.queryParamAllowlist,
+    ),
     // Deep mode is hard-locked to ignore robots.txt, regardless of stored config.
-    seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt
+    seedDeepIgnoreRobotsTxt: DEFAULT_SEED_FORM_VALUES.seedDeepIgnoreRobotsTxt,
   };
 };
 
 export const buildSeedConfigFromFormValues = (
   values: NewsSourceSeedFormValues,
-  existingConfig: Record<string, unknown> | null
+  existingConfig: Record<string, unknown> | null,
 ): Record<string, unknown> | null => {
-  const shouldIncludeSeed = values.seedEnabled === true || Boolean(existingConfig?.seed);
+  const shouldIncludeSeed =
+    values.seedEnabled === true || Boolean(existingConfig?.seed);
   if (!shouldIncludeSeed) {
     return existingConfig;
   }
@@ -567,17 +704,34 @@ export const buildSeedConfigFromFormValues = (
   const seedMode = normalizeSeedMode(values.seedMode);
   const seed: Record<string, unknown> = {
     enabled: values.seedEnabled === true,
-    mode: seedMode
+    mode: seedMode,
   };
 
-  if (seedMode === 'rss') {
+  if (seedMode === "rss") {
     const feedUrl = values.seedFeedUrl?.trim();
     if (feedUrl) {
       seed.feedUrl = feedUrl;
     }
     seed.rssAdaptive = {
-      enabled: values.seedRssAdaptiveEnabled === true
+      enabled: values.seedRssAdaptiveEnabled === true,
     };
+    if (values.seedRssAdvancedEnabled === true) {
+      seed.rssFetch = {
+        enabled: true,
+        requestTimeoutMs:
+          typeof values.seedRssRequestTimeoutMs === "number" &&
+          Number.isFinite(values.seedRssRequestTimeoutMs)
+            ? Math.max(
+                1000,
+                Math.min(120000, Math.round(values.seedRssRequestTimeoutMs)),
+              )
+            : DEFAULT_SEED_FORM_VALUES.seedRssRequestTimeoutMs,
+        bodySourceStrategy: normalizeSeedRssBodySourceStrategy(
+          values.seedRssBodySourceStrategy,
+        ),
+        noBodyPolicy: normalizeSeedRssNoBodyPolicy(values.seedRssNoBodyPolicy),
+      };
+    }
   } else {
     const domain = values.seedDomain?.trim();
     if (domain) {
@@ -589,63 +743,75 @@ export const buildSeedConfigFromFormValues = (
       seed.pattern = pattern;
     }
 
-    if (seedMode === 'list') {
-      if (typeof values.seedListMaxPages === 'number' && Number.isFinite(values.seedListMaxPages)) {
+    if (seedMode === "list") {
+      if (
+        typeof values.seedListMaxPages === "number" &&
+        Number.isFinite(values.seedListMaxPages)
+      ) {
         seed.listMaxPages = values.seedListMaxPages;
       }
-      if (typeof values.seedListPageConcurrency === 'number' && Number.isFinite(values.seedListPageConcurrency)) {
+      if (
+        typeof values.seedListPageConcurrency === "number" &&
+        Number.isFinite(values.seedListPageConcurrency)
+      ) {
         seed.listPageConcurrency = values.seedListPageConcurrency;
       }
-      if (typeof values.seedFollowPagination === 'boolean') {
+      if (typeof values.seedFollowPagination === "boolean") {
         seed.followPagination = values.seedFollowPagination;
       }
     }
   }
 
-  if (seedMode === 'deep') {
+  if (seedMode === "deep") {
     const deep: Record<string, unknown> = {
-      ignoreRobotsTxt: true
+      ignoreRobotsTxt: true,
     };
-    if (typeof values.seedDeepMaxPages === 'number' && Number.isFinite(values.seedDeepMaxPages)) {
+    if (
+      typeof values.seedDeepMaxPages === "number" &&
+      Number.isFinite(values.seedDeepMaxPages)
+    ) {
       deep.maxPages = values.seedDeepMaxPages;
     }
-    if (typeof values.seedDeepMaxDepth === 'number' && Number.isFinite(values.seedDeepMaxDepth)) {
+    if (
+      typeof values.seedDeepMaxDepth === "number" &&
+      Number.isFinite(values.seedDeepMaxDepth)
+    ) {
       deep.maxDepth = values.seedDeepMaxDepth;
     }
     if (
-      typeof values.seedDeepTimeBudgetSeconds === 'number' &&
+      typeof values.seedDeepTimeBudgetSeconds === "number" &&
       Number.isFinite(values.seedDeepTimeBudgetSeconds)
     ) {
       deep.timeBudgetSeconds = values.seedDeepTimeBudgetSeconds;
     }
     if (
-      typeof values.seedDeepPageConcurrency === 'number' &&
+      typeof values.seedDeepPageConcurrency === "number" &&
       Number.isFinite(values.seedDeepPageConcurrency)
     ) {
       deep.pageConcurrency = values.seedDeepPageConcurrency;
     }
     if (
-      typeof values.seedDeepScoreThreshold === 'number' &&
+      typeof values.seedDeepScoreThreshold === "number" &&
       Number.isFinite(values.seedDeepScoreThreshold)
     ) {
       deep.scoreThreshold = values.seedDeepScoreThreshold;
     }
     if (
-      typeof values.seedDeepCandidatePoolSize === 'number' &&
+      typeof values.seedDeepCandidatePoolSize === "number" &&
       Number.isFinite(values.seedDeepCandidatePoolSize)
     ) {
       deep.candidatePoolSize = values.seedDeepCandidatePoolSize;
     }
     if (
-      typeof values.seedDeepHeadFetchTopK === 'number' &&
+      typeof values.seedDeepHeadFetchTopK === "number" &&
       Number.isFinite(values.seedDeepHeadFetchTopK)
     ) {
       deep.headFetchTopK = values.seedDeepHeadFetchTopK;
     }
-    if (typeof values.seedDeepPreferPathDate === 'boolean') {
+    if (typeof values.seedDeepPreferPathDate === "boolean") {
       deep.preferPathDate = values.seedDeepPreferPathDate;
     }
-    if (typeof values.seedDeepEnableSecondaryHubs === 'boolean') {
+    if (typeof values.seedDeepEnableSecondaryHubs === "boolean") {
       deep.enableSecondaryHubs = values.seedDeepEnableSecondaryHubs;
     }
     seed.deep = deep;
@@ -656,22 +822,40 @@ export const buildSeedConfigFromFormValues = (
     seed.query = query;
   }
 
-  if (typeof values.seedMaxUrls === 'number' && Number.isFinite(values.seedMaxUrls)) {
+  if (
+    typeof values.seedMaxUrls === "number" &&
+    Number.isFinite(values.seedMaxUrls)
+  ) {
     seed.maxUrls = values.seedMaxUrls;
   }
-  if (typeof values.seedMaxNewUrlsPerRun === 'number' && Number.isFinite(values.seedMaxNewUrlsPerRun)) {
+  if (
+    typeof values.seedMaxNewUrlsPerRun === "number" &&
+    Number.isFinite(values.seedMaxNewUrlsPerRun)
+  ) {
     seed.maxNewUrlsPerRun = values.seedMaxNewUrlsPerRun;
   }
-  if (typeof values.seedScoreThreshold === 'number' && Number.isFinite(values.seedScoreThreshold)) {
+  if (
+    typeof values.seedScoreThreshold === "number" &&
+    Number.isFinite(values.seedScoreThreshold)
+  ) {
     seed.scoreThreshold = values.seedScoreThreshold;
   }
-  if (typeof values.seedDedupeWindowHours === 'number' && Number.isFinite(values.seedDedupeWindowHours)) {
+  if (
+    typeof values.seedDedupeWindowHours === "number" &&
+    Number.isFinite(values.seedDedupeWindowHours)
+  ) {
     seed.dedupeWindowHours = values.seedDedupeWindowHours;
   }
-  if (typeof values.seedCacheTtlSeconds === 'number' && Number.isFinite(values.seedCacheTtlSeconds)) {
+  if (
+    typeof values.seedCacheTtlSeconds === "number" &&
+    Number.isFinite(values.seedCacheTtlSeconds)
+  ) {
     seed.cacheTtlSeconds = values.seedCacheTtlSeconds;
   }
-  if (typeof values.seedConcurrency === 'number' && Number.isFinite(values.seedConcurrency)) {
+  if (
+    typeof values.seedConcurrency === "number" &&
+    Number.isFinite(values.seedConcurrency)
+  ) {
     seed.concurrency = values.seedConcurrency;
   }
   const queryParamAllowlist = normalizeSeedQueryParamAllowlist(
@@ -683,6 +867,6 @@ export const buildSeedConfigFromFormValues = (
 
   return {
     ...(existingConfig ?? {}),
-    seed
+    seed,
   };
 };

@@ -2,7 +2,12 @@ jest.mock("@modular/utils", () => {
   const actual = jest.requireActual("@modular/utils");
   return {
     ...actual,
-    createLogger: () => ({ warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() })
+    createLogger: () => ({
+      warn: jest.fn(),
+      info: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    }),
   };
 });
 
@@ -13,7 +18,9 @@ import { CrawlMetadataService } from "../crawl-metadata.service";
 
 describe("CrawlMetadataService pattern matching", () => {
   const normalizePattern = (service: CrawlMetadataService, pattern?: string) =>
-    (service as any).normalizePattern(pattern) as undefined | ((url: string) => boolean);
+    (service as any).normalizePattern(pattern) as
+      | undefined
+      | ((url: string) => boolean);
 
   it("returns undefined for empty patterns", () => {
     const service = new CrawlMetadataService();
@@ -24,7 +31,10 @@ describe("CrawlMetadataService pattern matching", () => {
 
   it("matches full url with '*' and '?' wildcards (case-insensitive)", () => {
     const service = new CrawlMetadataService();
-    const matcher = normalizePattern(service, "HTTPS://Example.com/path/*/it?m");
+    const matcher = normalizePattern(
+      service,
+      "HTTPS://Example.com/path/*/it?m",
+    );
 
     expect(matcher).toBeDefined();
     expect(matcher?.("https://example.com/path/one/item")).toBe(true);
@@ -99,7 +109,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
           status: 200,
           headers: makeHeaders({ "content-type": "application/xml" }),
           arrayBuffer: async () => buffer,
-          text: async () => buffer.toString("utf8")
+          text: async () => buffer.toString("utf8"),
         } as any;
       }
 
@@ -109,7 +119,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
           status: 200,
           headers: makeHeaders({ "content-type": "application/x-gzip" }),
           arrayBuffer: async () => gzipped,
-          text: async () => gzipped.toString("utf8")
+          text: async () => gzipped.toString("utf8"),
         } as any;
       }
 
@@ -118,7 +128,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
         status: 404,
         headers: makeHeaders({}),
         arrayBuffer: async () => Buffer.from("", "utf8"),
-        text: async () => ""
+        text: async () => "",
       } as any;
     }) as any;
 
@@ -127,17 +137,17 @@ describe("CrawlMetadataService sitemap discovery", () => {
       domain: "https://example.com",
       pattern: "https://example.com/a/*",
       maxUrls: 10,
-      requestTimeoutMs: 5000
+      requestTimeoutMs: 5000,
     });
 
     expect(urls).toEqual(["https://example.com/a/1"]);
     expect(global.fetch).toHaveBeenCalledWith(
       "https://example.com/sitemap.xml",
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(global.fetch).toHaveBeenCalledWith(
       "https://example.com/sitemap-posts.xml.gz",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -292,11 +302,11 @@ describe("CrawlMetadataService sitemap discovery", () => {
 
     global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
-      if (headers["if-none-match"] === "\"seed-v1\"") {
+      if (headers["if-none-match"] === '"seed-v1"') {
         return {
           ok: false,
           status: 304,
-          headers: makeHeaders({ etag: "\"seed-v1\"" }),
+          headers: makeHeaders({ etag: '"seed-v1"' }),
           arrayBuffer: async () => Buffer.from("", "utf8"),
         } as any;
       }
@@ -305,7 +315,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
         status: 200,
         headers: makeHeaders({
           "content-type": "application/xml",
-          etag: "\"seed-v1\"",
+          etag: '"seed-v1"',
         }),
         arrayBuffer: async () => Buffer.from(sitemapUrlset, "utf8"),
       } as any;
@@ -328,7 +338,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
     const secondRequestHeaders = (global.fetch as jest.Mock).mock.calls[1]?.[1]
       ?.headers as Record<string, string>;
-    expect(secondRequestHeaders["if-none-match"]).toBe("\"seed-v1\"");
+    expect(secondRequestHeaders["if-none-match"]).toBe('"seed-v1"');
   });
 
   it("extracts sitemap lastmod/news dates and applies freshness filtering", async () => {
@@ -377,7 +387,9 @@ describe("CrawlMetadataService sitemap discovery", () => {
         url: "https://example.com/news/new-story",
       }),
     ]);
-    expect(candidates[0]?.publishedAtTs).toBe(Date.parse("2026-02-14T10:30:00Z"));
+    expect(candidates[0]?.publishedAtTs).toBe(
+      Date.parse("2026-02-14T10:30:00Z"),
+    );
   });
 
   it("assigns crawledAt timestamp when sitemap url has no publish signal", async () => {
@@ -482,7 +494,9 @@ describe("CrawlMetadataService sitemap discovery", () => {
         url: "https://example.com/news/fresh-child",
       }),
     ]);
-    const fetchedUrls = (global.fetch as jest.Mock).mock.calls.map((call) => call[0]);
+    const fetchedUrls = (global.fetch as jest.Mock).mock.calls.map(
+      (call) => call[0],
+    );
     expect(fetchedUrls).toContain("https://example.com/sitemap-fresh.xml");
     expect(fetchedUrls).not.toContain("https://example.com/sitemap-old.xml");
   });
@@ -492,7 +506,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
       get: jest
         .fn()
         .mockResolvedValueOnce({
-          etag: "\"seed-v1\"",
+          etag: '"seed-v1"',
           lastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
           updatedAt: Date.now(),
         })
@@ -510,7 +524,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
         ok: false,
         status: 304,
         headers: makeHeaders({
-          etag: "\"seed-v1\"",
+          etag: '"seed-v1"',
           "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT",
         }),
         arrayBuffer: async () => Buffer.from("", "utf8"),
@@ -520,7 +534,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
         status: 200,
         headers: makeHeaders({
           "content-type": "application/xml",
-          etag: "\"seed-v2\"",
+          etag: '"seed-v2"',
         }),
         arrayBuffer: async () => Buffer.from(urlsetXml, "utf8"),
       }) as any;
@@ -550,12 +564,12 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
               { href: "https://www.politico.eu/article/two/" },
               { href: "/newsletter/" },
               { href: "javascript:void(0)" },
-              { href: "#anchor" }
+              { href: "#anchor" },
             ],
-            external: [{ href: "https://twitter.com/politico" }]
-          }
-        }
-      ]
+            external: [{ href: "https://twitter.com/politico" }],
+          },
+        },
+      ],
     }));
 
     const service = new CrawlMetadataService({ crawl } as any);
@@ -568,17 +582,17 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
         url: "https://www.politico.eu/latest/",
         domain: "https://www.politico.eu",
         pattern: "https://www.politico.eu/article/*",
-        maxUrls: 10
+        maxUrls: 10,
       });
 
       expect(urls).toEqual([
         "https://www.politico.eu/article/one/",
-        "https://www.politico.eu/article/two/"
+        "https://www.politico.eu/article/two/",
       ]);
       expect(crawl).toHaveBeenCalledWith(
         expect.objectContaining({
-          url: "https://www.politico.eu/latest/"
-        })
+          url: "https://www.politico.eu/latest/",
+        }),
       );
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
@@ -593,10 +607,10 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
           success: true,
           url: "https://www.politico.eu/latest/",
           links: {
-            internal: [{ href: "/article/one/" }]
-          }
-        }
-      ]
+            internal: [{ href: "/article/one/" }],
+          },
+        },
+      ],
     }));
 
     const service = new CrawlMetadataService({ crawl } as any);
@@ -613,14 +627,16 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
         multiUrlConfigs: [
           {
             name: "override",
-            urls: ["https://www.politico.eu/other/"]
-          }
-        ]
-      }
+            urls: ["https://www.politico.eu/other/"],
+          },
+        ],
+      },
     });
 
     expect(urls).toEqual(["https://www.politico.eu/article/one/"]);
-    const payload = crawl.mock.calls[0]?.[0] as { options?: Record<string, unknown> };
+    const payload = crawl.mock.calls[0]?.[0] as {
+      options?: Record<string, unknown>;
+    };
     expect(payload.options).toEqual(
       expect.objectContaining({
         extractLinks: true,
@@ -628,7 +644,7 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
         waitUntil: "networkidle",
         waitForTimeoutMs: 5000,
         pageTimeoutMs: 180000,
-      })
+      }),
     );
     expect(payload.options?.additionalUrls).toBeUndefined();
     expect(payload.options?.multiUrlConfigs).toBeUndefined();
@@ -641,17 +657,17 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
           success: true,
           url: "https://www.politico.eu/other/",
           links: {
-            internal: [{ href: "/article/wrong/" }]
-          }
+            internal: [{ href: "/article/wrong/" }],
+          },
         },
         {
           success: true,
           url: "https://www.politico.eu/latest/",
           links: {
-            internal: [{ href: "/article/right/" }]
-          }
-        }
-      ]
+            internal: [{ href: "/article/right/" }],
+          },
+        },
+      ],
     }));
 
     const service = new CrawlMetadataService({ crawl } as any);
@@ -659,7 +675,7 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       url: "https://www.politico.eu/latest/",
       domain: "https://www.politico.eu",
       pattern: "https://www.politico.eu/article/*",
-      maxUrls: 10
+      maxUrls: 10,
     });
 
     expect(urls).toEqual(["https://www.politico.eu/article/right/"]);
@@ -676,11 +692,11 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
             links: {
               internal: [
                 { href: "/article/one/" },
-                { href: "/latest/?page=2", text: "Next" }
-              ]
-            }
-          }
-        ]
+                { href: "/latest/?page=2", text: "Next" },
+              ],
+            },
+          },
+        ],
       })
       .mockResolvedValueOnce({
         results: [
@@ -688,10 +704,10 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
             success: true,
             url: "https://www.politico.eu/latest/?page=2",
             links: {
-              internal: [{ href: "/article/two/" }]
-            }
-          }
-        ]
+              internal: [{ href: "/article/two/" }],
+            },
+          },
+        ],
       });
 
     const service = new CrawlMetadataService({ crawl } as any);
@@ -702,17 +718,19 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       maxUrls: 10,
       listMaxPages: 3,
       listPageConcurrency: 1,
-      followPagination: true
+      followPagination: true,
     });
 
     expect(urls).toEqual([
       "https://www.politico.eu/article/one/",
-      "https://www.politico.eu/article/two/"
+      "https://www.politico.eu/article/two/",
     ]);
     expect(crawl).toHaveBeenCalledTimes(2);
     expect(crawl).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ url: "https://www.politico.eu/latest/?page=2" })
+      expect.objectContaining({
+        url: "https://www.politico.eu/latest/?page=2",
+      }),
     );
   });
 
@@ -725,11 +743,11 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
           links: {
             internal: [
               { href: "/article/one/" },
-              { href: "/latest/?page=2", text: "Next" }
-            ]
-          }
-        }
-      ]
+              { href: "/latest/?page=2", text: "Next" },
+            ],
+          },
+        },
+      ],
     }));
 
     const service = new CrawlMetadataService({ crawl } as any);
@@ -740,7 +758,7 @@ describe("CrawlMetadataService list discovery (crawl4ai)", () => {
       maxUrls: 10,
       listMaxPages: 3,
       listPageConcurrency: 1,
-      followPagination: false
+      followPagination: false,
     });
 
     expect(urls).toEqual(["https://www.politico.eu/article/one/"]);
@@ -819,7 +837,12 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
               success: true,
               url,
               links: {
-                internal: [{ href: "/2026/02/11/economy/story-three/", total_score: 0.45 }],
+                internal: [
+                  {
+                    href: "/2026/02/11/economy/story-three/",
+                    total_score: 0.45,
+                  },
+                ],
               },
             },
           ],
@@ -832,7 +855,9 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
               success: true,
               url,
               links: {
-                internal: [{ href: "/2026/02/12/world/story-two/", total_score: 0.5 }],
+                internal: [
+                  { href: "/2026/02/12/world/story-two/", total_score: 0.5 },
+                ],
               },
             },
           ],
@@ -927,7 +952,9 @@ describe("CrawlMetadataService deep discovery (crawl4ai)", () => {
       },
     });
 
-    expect(urls).toEqual(["https://www.politico.eu/article/2026-02-13-valid-story/"]);
+    expect(urls).toEqual([
+      "https://www.politico.eu/article/2026-02-13-valid-story/",
+    ]);
   });
 
   it("keeps deep candidates when publish timestamps cannot be determined", async () => {
@@ -1076,6 +1103,82 @@ describe("CrawlMetadataService RSS prefetched candidates", () => {
     expect(candidates[2]).toMatchObject({
       url: "https://example.com/c",
       prefetchedArticle: undefined,
+    });
+  });
+
+  it("supports RSS body-source overrides and stub fallback", async () => {
+    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+        <channel>
+          <item>
+            <title>Story A</title>
+            <link>https://example.com/a</link>
+            <description><![CDATA[Description A]]></description>
+            <content:encoded><![CDATA[<p>Body A</p>]]></content:encoded>
+          </item>
+          <item>
+            <title>Story B</title>
+            <link>https://example.com/b</link>
+            <description><![CDATA[Description B only]]></description>
+          </item>
+          <item>
+            <title>Story C</title>
+            <link>https://example.com/c</link>
+            <description><![CDATA[   ]]></description>
+          </item>
+        </channel>
+      </rss>`;
+
+    global.fetch = jest.fn(async () => {
+      const buffer = Buffer.from(rssXml, "utf8");
+      return {
+        ok: true,
+        status: 200,
+        headers: makeHeaders({ "content-type": "application/rss+xml" }),
+        arrayBuffer: async () => buffer,
+        text: async () => buffer.toString("utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const candidates = await service.discoverRssCandidates({
+      feedUrl: "https://example.com/feed.xml",
+      maxUrls: 10,
+      rssFetch: {
+        bodySourceStrategy: "summary_only",
+        noBodyPolicy: "title_description_stub",
+      },
+    });
+
+    expect(candidates[0]).toMatchObject({
+      url: "https://example.com/a",
+      prefetchedArticle: {
+        markdown: "Description A",
+        metadata: {
+          source: "rss",
+          markdownSource: "description",
+        },
+      },
+    });
+    expect(candidates[1]).toMatchObject({
+      url: "https://example.com/b",
+      prefetchedArticle: {
+        markdown: "Description B only",
+        metadata: {
+          source: "rss",
+          markdownSource: "description",
+        },
+      },
+    });
+    expect(candidates[2]).toMatchObject({
+      url: "https://example.com/c",
+      prefetchedArticle: {
+        markdown: "# Story C",
+        metadata: {
+          source: "rss",
+          markdownSource: "stub",
+        },
+      },
     });
   });
 });

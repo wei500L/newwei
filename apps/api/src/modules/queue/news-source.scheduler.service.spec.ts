@@ -289,11 +289,15 @@ describe("NewsSourceSchedulerService", () => {
         url: "https://example.com",
         siteType: "general",
         language: "en",
-        crawlTemplateId: null,
+        crawlTemplateId: "template-1",
         frequencySeconds: 3600,
         priority: 0,
         nextRunAt: now,
         config: {
+          crawlOptions: {
+            userAgent: "UA",
+            proxyUrl: "http://proxy.internal:8080",
+          },
           seed: {
             enabled: true,
             mode: "rss",
@@ -302,9 +306,21 @@ describe("NewsSourceSchedulerService", () => {
             maxNewUrlsPerRun: 10,
             scoreThreshold: 0,
             dedupeWindowHours: 24,
+            rssFetch: {
+              enabled: true,
+              requestTimeoutMs: 20000,
+              bodySourceStrategy: "summary_only",
+              noBodyPolicy: "title_description_stub",
+            },
           },
         },
-        crawlTemplate: null,
+        crawlTemplate: {
+          id: "template-1",
+          isActive: true,
+          crawlOptions: {
+            headless: true,
+          },
+        },
       },
     ]);
 
@@ -316,7 +332,9 @@ describe("NewsSourceSchedulerService", () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
     (prisma.newsSource.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
-    (queueService.enqueueItem as jest.Mock).mockResolvedValue({ id: "queued-1" });
+    (queueService.enqueueItem as jest.Mock).mockResolvedValue({
+      id: "queued-1",
+    });
     (RawItemModel.create as jest.Mock).mockResolvedValue({ id: "raw-1" });
 
     (prisma.$transaction as jest.Mock).mockImplementation(
@@ -338,6 +356,18 @@ describe("NewsSourceSchedulerService", () => {
 
     await (service as any).scheduleDueSources(now, 10);
 
+    expect(metadataService.discoverRssCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feedUrl: "https://example.com/feed.xml",
+        maxUrls: 10,
+        rssFetch: expect.objectContaining({
+          enabled: true,
+          requestTimeoutMs: 20000,
+          bodySourceStrategy: "summary_only",
+          noBodyPolicy: "title_description_stub",
+        }),
+      }),
+    );
     expect(queueService.enqueueItem).toHaveBeenCalledWith(
       "org-1",
       "meta-1",
@@ -346,6 +376,20 @@ describe("NewsSourceSchedulerService", () => {
       { pipelineJobId: "pipeline-1", sourceId: "source-rss-1" },
     );
     expect(crawlQueue.enqueueTask).not.toHaveBeenCalled();
+    expect(RawItemModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          metadata: expect.not.objectContaining({
+            crawlTemplateId: expect.anything(),
+          }),
+          prefetchedArticle: expect.any(Object),
+        }),
+        source: "news-source-rss",
+      }),
+    );
+    const rawPayload = (RawItemModel.create as jest.Mock).mock.calls[0]?.[0]
+      ?.payload as Record<string, unknown>;
+    expect(rawPayload.crawlOptions).toBeUndefined();
   });
 
   it("skips RSS candidates without prefetched markdown body", async () => {
@@ -558,7 +602,9 @@ describe("NewsSourceSchedulerService", () => {
       );
 
       (prisma.newsSource.update as jest.Mock).mockResolvedValue(undefined);
-      (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.crawlTask.updateMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
       (crawlQueue.enqueueTask as jest.Mock).mockResolvedValue(undefined);
 
       await (service as any).scheduleDueSources(now, 10);
@@ -581,18 +627,15 @@ describe("NewsSourceSchedulerService", () => {
         metadataService,
         crawlQueue,
         schedulerSettings,
-      } =
-        createService();
+      } = createService();
       const now = new Date("2026-02-15T00:00:00.000Z");
-      schedulerSettings.getSettings = jest
-        .fn()
-        .mockResolvedValue({
-          source: "db",
-          seedFreshnessWindowDays: 30,
-          seedCacheTtlSecondsSitemapRss: 60,
-          seedCacheTtlSecondsListDeep: 180,
-          seedCacheTtlForceGlobal: false,
-        });
+      schedulerSettings.getSettings = jest.fn().mockResolvedValue({
+        source: "db",
+        seedFreshnessWindowDays: 30,
+        seedCacheTtlSecondsSitemapRss: 60,
+        seedCacheTtlSecondsListDeep: 180,
+        seedCacheTtlForceGlobal: false,
+      });
 
       (metadataService.discoverSitemapUrls as jest.Mock).mockResolvedValue([
         "https://example.com/news/2025/12/01/stale-under-30-day-window",
@@ -681,16 +724,18 @@ describe("NewsSourceSchedulerService", () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-02-15T00:00:00.000Z"));
     try {
       const { service, metadataService } = createService();
-      (metadataService as any).discoverSitemapCandidates = jest.fn().mockResolvedValue([
-        {
-          url: "https://example.com/news/no-publish-date",
-          crawledAtTs: Date.parse("2026-02-14T08:00:00.000Z"),
-        },
-        {
-          url: "https://example.com/news/stale-published-date",
-          publishedAtTs: Date.parse("2025-01-01T00:00:00.000Z"),
-        },
-      ]);
+      (metadataService as any).discoverSitemapCandidates = jest
+        .fn()
+        .mockResolvedValue([
+          {
+            url: "https://example.com/news/no-publish-date",
+            crawledAtTs: Date.parse("2026-02-14T08:00:00.000Z"),
+          },
+          {
+            url: "https://example.com/news/stale-published-date",
+            publishedAtTs: Date.parse("2025-01-01T00:00:00.000Z"),
+          },
+        ]);
 
       const source = {
         id: "source-1",
@@ -1011,8 +1056,13 @@ describe("NewsSourceSchedulerService", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: false,
     });
-    await (service as any).resolveSeedCandidates(source as any, seedFromSource, 365);
-    const keyFromSource = (cache.wrap as jest.Mock).mock.calls[0]?.[0] as string;
+    await (service as any).resolveSeedCandidates(
+      source as any,
+      seedFromSource,
+      365,
+    );
+    const keyFromSource = (cache.wrap as jest.Mock).mock
+      .calls[0]?.[0] as string;
 
     const seedFromGlobal = (service as any).normalizeSeedConfig(source, {
       seedFreshnessWindowDays: 365,
@@ -1020,8 +1070,13 @@ describe("NewsSourceSchedulerService", () => {
       seedCacheTtlSecondsListDeep: 180,
       seedCacheTtlForceGlobal: true,
     });
-    await (service as any).resolveSeedCandidates(source as any, seedFromGlobal, 365);
-    const keyFromGlobal = (cache.wrap as jest.Mock).mock.calls[1]?.[0] as string;
+    await (service as any).resolveSeedCandidates(
+      source as any,
+      seedFromGlobal,
+      365,
+    );
+    const keyFromGlobal = (cache.wrap as jest.Mock).mock
+      .calls[1]?.[0] as string;
 
     expect(keyFromSource).toMatch(/^news-source:sitemap:source-1:/);
     expect(keyFromGlobal).toMatch(/^news-source:sitemap:source-1:/);
@@ -1377,7 +1432,9 @@ describe("NewsSourceSchedulerService", () => {
     (cache.withLock as jest.Mock).mockImplementation(
       async (_key: string, _ttlMs: number, fn: () => Promise<unknown>) => fn(),
     );
-    (cache.get as jest.Mock).mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    (cache.get as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
     (prisma.newsSource.findMany as jest.Mock).mockResolvedValue([
       {
         id: "rss-legacy",
@@ -1647,8 +1704,12 @@ describe("NewsSourceSchedulerService", () => {
         rawItemId: "raw-1",
       },
     });
-    (prisma.pipelineJob.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
-    (queueService.enqueueItem as jest.Mock).mockResolvedValue({ id: "queued-1" });
+    (prisma.pipelineJob.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+    (queueService.enqueueItem as jest.Mock).mockResolvedValue({
+      id: "queued-1",
+    });
 
     const result = await service.retryLatestFailedTask(
       "org-1",
@@ -1673,6 +1734,9 @@ describe("NewsSourceSchedulerService", () => {
       {
         pipelineJobId: "pipeline-1",
         sourceId: "source-1",
+      },
+      {
+        retryIfFailed: true,
       },
     );
     expect(result).toEqual({
@@ -1754,7 +1818,9 @@ describe("NewsSourceSchedulerService", () => {
     ]);
     (prisma.newsSource.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
 
-    const result = await (service as any).migrateLegacyRssSeedCacheTtlToModeDefault();
+    const result = await (
+      service as any
+    ).migrateLegacyRssSeedCacheTtlToModeDefault();
 
     expect(result).toEqual({
       scannedCount: 3,
@@ -1762,7 +1828,8 @@ describe("NewsSourceSchedulerService", () => {
       updatedCount: 1,
     });
     expect(prisma.newsSource.updateMany).toHaveBeenCalledTimes(1);
-    const updateArgs = (prisma.newsSource.updateMany as jest.Mock).mock.calls[0]?.[0];
+    const updateArgs = (prisma.newsSource.updateMany as jest.Mock).mock
+      .calls[0]?.[0];
     expect(updateArgs.where).toEqual(
       expect.objectContaining({ id: "rss-legacy" }),
     );
@@ -1774,7 +1841,9 @@ describe("NewsSourceSchedulerService", () => {
         }),
       }),
     );
-    expect((updateArgs.data.config as any).seed.cacheTtlSeconds).toBeUndefined();
+    expect(
+      (updateArgs.data.config as any).seed.cacheTtlSeconds,
+    ).toBeUndefined();
   });
 
   it("retries legacy rss cache ttl migration with latest config on concurrent edits", async () => {
@@ -1817,7 +1886,9 @@ describe("NewsSourceSchedulerService", () => {
       config: latestConfig,
     });
 
-    const result = await (service as any).migrateLegacyRssSeedCacheTtlToModeDefault();
+    const result = await (
+      service as any
+    ).migrateLegacyRssSeedCacheTtlToModeDefault();
 
     expect(result).toEqual({
       scannedCount: 1,
@@ -1830,7 +1901,8 @@ describe("NewsSourceSchedulerService", () => {
       select: { config: true },
     });
 
-    const secondAttempt = (prisma.newsSource.updateMany as jest.Mock).mock.calls[1]?.[0];
+    const secondAttempt = (prisma.newsSource.updateMany as jest.Mock).mock
+      .calls[1]?.[0];
     expect(secondAttempt.where).toEqual({
       id: "rss-legacy",
       config: { equals: latestConfig },
@@ -1847,6 +1919,8 @@ describe("NewsSourceSchedulerService", () => {
         }),
       }),
     );
-    expect((secondAttempt.data.config as any).seed.cacheTtlSeconds).toBeUndefined();
+    expect(
+      (secondAttempt.data.config as any).seed.cacheTtlSeconds,
+    ).toBeUndefined();
   });
 });

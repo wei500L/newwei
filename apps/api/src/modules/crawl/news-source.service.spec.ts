@@ -93,7 +93,8 @@ describe("NewsSourceService.createSource", () => {
       },
     });
 
-    const createArgs = (prisma.newsSource.create as jest.Mock).mock.calls[0]?.[0];
+    const createArgs = (prisma.newsSource.create as jest.Mock).mock
+      .calls[0]?.[0];
     const savedConfig = createArgs?.data?.config as Record<string, unknown>;
     expect((savedConfig.seed as Record<string, unknown>).mode).toBe("rss");
     expect(
@@ -128,7 +129,8 @@ describe("NewsSourceService.createSource", () => {
       },
     });
 
-    const createArgs = (prisma.newsSource.create as jest.Mock).mock.calls[0]?.[0];
+    const createArgs = (prisma.newsSource.create as jest.Mock).mock
+      .calls[0]?.[0];
     const savedConfig = createArgs?.data?.config as Record<string, unknown>;
     expect((savedConfig.seed as Record<string, unknown>).mode).toBe("list");
     expect((savedConfig.seed as Record<string, unknown>).cacheTtlSeconds).toBe(
@@ -141,13 +143,11 @@ describe("NewsSourceService.updateSource", () => {
   it("throws ConflictException when name already exists", async () => {
     const prisma = {
       newsSource: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({
-            id: "source-1",
-            orgId: "org-1",
-            isActive: true,
-          }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: "source-1",
+          orgId: "org-1",
+          isActive: true,
+        }),
         update: jest.fn().mockRejectedValue(
           new Prisma.PrismaClientKnownRequestError("Unique constraint", {
             code: "P2002",
@@ -195,7 +195,8 @@ describe("NewsSourceService.updateSource", () => {
       },
     });
 
-    const updateArgs = (prisma.newsSource.update as jest.Mock).mock.calls[0]?.[0];
+    const updateArgs = (prisma.newsSource.update as jest.Mock).mock
+      .calls[0]?.[0];
     const savedConfig = updateArgs?.data?.config as Record<string, unknown>;
     expect((savedConfig.seed as Record<string, unknown>).mode).toBe("rss");
     expect(
@@ -454,6 +455,113 @@ describe("NewsSourceService.preview", () => {
       ]),
     );
   });
+
+  it("passes rssFetch settings through preview for RSS sources", async () => {
+    const prisma = {
+      newsSource: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "source-rss-1",
+          orgId: "org-1",
+          name: "RSS Source",
+          url: "https://example.com",
+          siteType: "general",
+          crawlTemplateId: "template-1",
+          config: {
+            crawlOptions: {
+              userAgent: "UA",
+            },
+            seed: {
+              enabled: true,
+              mode: "rss",
+              feedUrl: "https://example.com/feed.xml",
+              maxUrls: 10,
+              maxNewUrlsPerRun: 5,
+              dedupeWindowHours: 24,
+              rssFetch: {
+                enabled: true,
+                requestTimeoutMs: 20000,
+                bodySourceStrategy: "summary_only",
+                noBodyPolicy: "title_description_stub",
+              },
+            },
+          },
+        }),
+      },
+      crawlTemplate: {
+        findUnique: jest.fn().mockResolvedValue({
+          isActive: true,
+          crawlOptions: {
+            headless: true,
+          },
+        }),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      article: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as any;
+
+    const metadataService = {
+      discoverRssCandidates: jest.fn().mockResolvedValue([
+        {
+          url: "https://example.com/rss/story-1",
+          publishedAtTs: Date.parse("2026-02-14T10:00:00.000Z"),
+          prefetchedArticle: {
+            title: "Story 1",
+            markdown: "Summary only",
+          },
+        },
+      ]),
+      extract: jest.fn().mockResolvedValue([
+        {
+          url: "https://example.com/rss/story-1",
+          status: "success",
+          title: "Story 1",
+        },
+      ]),
+    } as any;
+
+    const env = {
+      newsSourceSchedulerConfig: {
+        inFlightLookbackMs: 6 * 60 * 60 * 1000,
+      },
+    } as any;
+
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+    } as any;
+
+    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const result = await service.preview("org-1", "source-rss-1");
+
+    expect(metadataService.discoverRssCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feedUrl: "https://example.com/feed.xml",
+        maxUrls: 10,
+        rssFetch: expect.objectContaining({
+          enabled: true,
+          requestTimeoutMs: 20000,
+          bodySourceStrategy: "summary_only",
+          noBodyPolicy: "title_description_stub",
+        }),
+      }),
+    );
+    expect(result.mode).toBe("rss");
+    expect(result.seed).toEqual(
+      expect.objectContaining({
+        mode: "rss",
+        feedUrl: "https://example.com/feed.xml",
+        rssFetch: expect.objectContaining({
+          enabled: true,
+          requestTimeoutMs: 20000,
+          bodySourceStrategy: "summary_only",
+          noBodyPolicy: "title_description_stub",
+        }),
+      }),
+    );
+  });
 });
 
 describe("NewsSourceService.updateFrequencyForAll", () => {
@@ -468,7 +576,9 @@ describe("NewsSourceService.updateFrequencyForAll", () => {
       },
       $transaction: jest
         .fn()
-        .mockImplementation(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+        .mockImplementation(async (operations: Promise<unknown>[]) =>
+          Promise.all(operations),
+        ),
     } as any;
     const metadataService = {} as any;
     const env = {} as any;

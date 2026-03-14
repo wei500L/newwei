@@ -1278,35 +1278,35 @@
           "geocoded": "已地理编码",
           "fallbackCountry": "国家回退"
         },
-  "tooltip": {
-    "location": "位置",
-    "published": "发布时间",
-    "ingested": "入库时间",
-    "geo": "地理来源",
-    "clickOpenOriginal": "点击打开原文链接",
-    "clickOpenSearch": "点击打开搜索结果",
-    "severity": "严重程度",
-    "alerts": "预警",
-    "alertScore": "评分",
-    "derivedScore": "综合分数",
-    "cluster": "聚类（{{count}}）",
-    "clusterSignals": "{{count}} 个附近信号，点击查看详情。",
-    "clusterNews": "{{count}} 条附近新闻，点击查看详情。",
-    "datasetUpdated": "数据更新时间",
-    "notAvailable": "暂无",
-    "unknown": "未知"
-  },
-  "panel": {
-    "signalsTitle": "附近信号",
-    "newsTitle": "附近新闻",
-    "signalsSummary": "当前缩放级别下有 {{count}} 个附近信号。",
-    "newsSummary": "当前缩放级别下有 {{count}} 条附近新闻。",
-    "count": "{{count}} 项",
-    "zoomIn": "放大查看",
-    "latest": "最新",
-    "openOriginal": "打开"
-  },
-  "translation": {
+        "tooltip": {
+          "location": "位置",
+          "published": "发布时间",
+          "ingested": "入库时间",
+          "geo": "地理来源",
+          "clickOpenOriginal": "点击打开原文链接",
+          "clickOpenSearch": "点击打开搜索结果",
+          "severity": "严重程度",
+          "alerts": "预警",
+          "alertScore": "评分",
+          "derivedScore": "综合分数",
+          "cluster": "聚类（{{count}}）",
+          "clusterSignals": "{{count}} 个附近信号，点击查看详情。",
+          "clusterNews": "{{count}} 条附近新闻，点击查看详情。",
+          "datasetUpdated": "数据更新时间",
+          "notAvailable": "暂无",
+          "unknown": "未知"
+        },
+        "panel": {
+          "signalsTitle": "附近信号",
+          "newsTitle": "附近新闻",
+          "signalsSummary": "当前缩放级别下有 {{count}} 个附近信号。",
+          "newsSummary": "当前缩放级别下有 {{count}} 条附近新闻。",
+          "count": "{{count}} 项",
+          "zoomIn": "放大查看",
+          "latest": "最新",
+          "openOriginal": "打开"
+        },
+        "translation": {
           "label": "中文覆盖",
           "hint": "当前地图翻译字段的中文覆盖率。",
           "localizedTotal": "已本地化",
@@ -2391,6 +2391,14 @@
       "seedFeedUrlHint": "为空时，将使用新闻源 URL 作为订阅源 URL。",
       "seedRssAdaptiveEnabled": "启用 RSS 自适应轮询",
       "seedRssAdaptiveEnabledHint": "启用后，调度器会按该新闻源的命中活跃度动态调整 RSS 轮询间隔与发现缓存 TTL。",
+      "seedRssAdvancedEnabled": "启用 RSS 高级抓取配置",
+      "seedRssAdvancedEnabledHint": "为该新闻源单独覆盖 RSS 请求超时、正文来源选择和无正文处理策略。",
+      "seedRssRequestTimeoutMs": "RSS 请求超时（毫秒）",
+      "seedRssRequestTimeoutMsHint": "RSS 发现阶段拉取订阅源时使用的请求超时。",
+      "seedRssBodySourceStrategy": "正文来源策略",
+      "seedRssBodySourceStrategyHint": "控制预取 markdown 优先使用 feed 正文字段还是摘要字段。",
+      "seedRssNoBodyPolicy": "无正文处理策略",
+      "seedRssNoBodyPolicyHint": "当订阅项没有可用正文 markdown 时，选择跳过或用标题+摘要生成最小占位正文。",
       "seedDomain": "种子域名（可选）",
       "seedDomainHint": "为空时默认使用新闻源 URL 的 origin。",
       "seedPattern": "URL 模式（可选）",
@@ -2490,7 +2498,11 @@
       "description": "将移除数据源并停止调度。"
     },
     "seed": {
-      "mode": "站点地图种子"
+      "mode": "站点地图种子",
+      "rssDirectTitle": "RSS 直达流水线",
+      "rssDirectDescription": "RSS 模式会先从 feed 预取文章内容，再直接创建流水线任务。启用该模式后，Crawl4AI 模板、浏览器选项和代理设置都会被忽略。",
+      "rssStubWarningTitle": "占位正文也会进入流水线",
+      "rssStubWarningDescription": "如果订阅项没有完整正文，调度器会用标题和摘要拼出最小 markdown 并继续下游处理。只有在你能接受摘要级内容时才建议启用。"
     },
     "health": {
       "circuitOpenUntil": "熔断开启至 {{time}}",
@@ -2551,7 +2563,19 @@
     "seedMode": {
       "sitemap": "站点地图",
       "rss": "RSS / Atom",
-      "list": "列表页"
+      "list": "列表页",
+      "deep": "深度发现"
+    },
+    "seedRss": {
+      "bodySource": {
+        "contentFirst": "优先正文",
+        "contentOnly": "仅正文",
+        "summaryOnly": "仅摘要"
+      },
+      "noBody": {
+        "skip": "跳过订阅项",
+        "stub": "生成标题 + 摘要占位正文"
+      }
     },
     "ops": {
       "cancelQueued": {
@@ -2586,9 +2610,15 @@
       },
       "current": "当前：{{time}}",
       "none": "尚未设置调度。",
-      "title": "调度抓取",
+      "title": "调度运行",
       "hintTitle": "通过 crawl4ai 入队",
       "description": "设置下次运行时间。调度器每 30 秒检查并入队 CrawlTask；crawl4ai 会限制并发以避免阻塞。",
+      "hintTitleCrawl4ai": "通过 crawl4ai 入队",
+      "hintTitleRss": "直接入队到流水线",
+      "hintTitleMixed": "混合调度模式",
+      "descriptionCrawl4ai": "设置下次运行时间。调度器每 30 秒检查并入队 CrawlTask；crawl4ai 会限制并发以避免阻塞。",
+      "descriptionRss": "设置下次运行时间。调度器每 30 秒检查一次，预取 RSS 订阅项内容，并直接创建流水线任务，不会生成 Crawl4AI 抓取任务。",
+      "descriptionMixed": "设置下次运行时间。RSS 新闻源会直接创建流水线任务，其他新闻源仍会创建 CrawlTask 并经过 Crawl4AI。",
       "enablesSource": "这将启用 {{count}} 个数据源。",
       "presets": {
         "in5m": "+5m",
@@ -2641,6 +2671,9 @@
       "taskError": "任务失败：{{error}}",
       "taskId": "任务：{{id}}",
       "rssPrefetched": "RSS 预取",
+      "rssPrefetchedContent": "RSS 正文",
+      "rssPrefetchedSummary": "RSS 摘要",
+      "rssPrefetchedStub": "RSS 占位正文",
       "noCrawlTask": "流水线直入（无抓取任务）。"
     },
     "queue": {

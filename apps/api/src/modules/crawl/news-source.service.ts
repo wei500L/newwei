@@ -15,6 +15,9 @@ import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
+  type CrawlDiscoveryRssBodySourceStrategy,
+  type CrawlDiscoveryRssFetchOptions,
+  type CrawlDiscoveryRssNoBodyPolicy,
   type CrawlDiscoveryTimestampSource,
 } from "./crawl-metadata.service";
 import {
@@ -52,6 +55,7 @@ export interface NewsSourceSeedConfig {
   domain?: string;
   pattern?: string;
   feedUrl?: string;
+  rssFetch?: NewsSourceRssFetchConfig;
   maxUrls: number;
   maxNewUrlsPerRun: number;
   listMaxPages: number;
@@ -63,6 +67,14 @@ export interface NewsSourceSeedConfig {
   dedupeWindowHours: number;
   queryParamAllowlist: string[];
   deep?: NewsSourceDeepSeedConfig;
+}
+
+export interface NewsSourceRssFetchConfig
+  extends CrawlDiscoveryRssFetchOptions {
+  enabled: boolean;
+  requestTimeoutMs: number;
+  bodySourceStrategy: CrawlDiscoveryRssBodySourceStrategy;
+  noBodyPolicy: CrawlDiscoveryRssNoBodyPolicy;
 }
 
 export interface NewsSourceDeepSeedConfig {
@@ -288,12 +300,15 @@ export class NewsSourceService {
     const rssAdaptiveStateKeys = sources.map(
       (source) => `news-source:rss-adaptive:${source.id}`,
     );
-    const rssAdaptiveStateValues = await this.cache.getMany<unknown>(
-      rssAdaptiveStateKeys,
-    );
+    const rssAdaptiveStateValues =
+      await this.cache.getMany<unknown>(rssAdaptiveStateKeys);
     const rssAdaptiveStateBySourceId = new Map<
       string,
-      { outcomes: boolean[]; consecutiveNoHit: number; updatedAt: string } | null
+      {
+        outcomes: boolean[];
+        consecutiveNoHit: number;
+        updatedAt: string;
+      } | null
     >();
     for (const [index, value] of rssAdaptiveStateValues.entries()) {
       const id = sources[index]?.id;
@@ -441,7 +456,7 @@ export class NewsSourceService {
           priority: input.priority,
           isActive,
           config: config ? toPrismaJsonValue(config) : Prisma.DbNull,
-          group: input.group !== undefined ? (input.group?.trim() || null) : null,
+          group: input.group !== undefined ? input.group?.trim() || null : null,
           nextRunAt,
         },
       });
@@ -509,7 +524,7 @@ export class NewsSourceService {
       }
     }
     if (input.group !== undefined) {
-      data.group = input.group !== null ? (input.group.trim() || null) : null;
+      data.group = input.group !== null ? input.group.trim() || null : null;
     }
 
     const isActivating = input.isActive === true && !existing.isActive;
@@ -563,7 +578,10 @@ export class NewsSourceService {
   }
 
   async updateFrequencyForAll(orgId: string, frequencySeconds: number) {
-    const normalizedFrequency = Math.max(60, Math.min(2_592_000, Math.floor(frequencySeconds)));
+    const normalizedFrequency = Math.max(
+      60,
+      Math.min(2_592_000, Math.floor(frequencySeconds)),
+    );
     const now = new Date();
     const nextRunAt = new Date(now.getTime() + normalizedFrequency * 1000);
 
@@ -693,6 +711,7 @@ export class NewsSourceService {
       discovery = await this.metadataService.discoverRssCandidates({
         feedUrl: seedConfig.feedUrl ?? source.url,
         maxUrls: seedConfig.maxUrls,
+        rssFetch: seedConfig.rssFetch,
       });
     } else if (seedConfig.mode === "list") {
       discovery = await this.metadataService.discoverListCandidates({
@@ -771,10 +790,14 @@ export class NewsSourceService {
           maxRelevanceScore === Number.NEGATIVE_INFINITY
             ? undefined
             : maxRelevanceScore,
-        publishedAtTs:
-          this.resolveTimestampMax(existing.publishedAtTs, candidate.publishedAtTs),
-        crawledAtTs:
-          this.resolveTimestampMax(existing.crawledAtTs, candidate.crawledAtTs),
+        publishedAtTs: this.resolveTimestampMax(
+          existing.publishedAtTs,
+          candidate.publishedAtTs,
+        ),
+        crawledAtTs: this.resolveTimestampMax(
+          existing.crawledAtTs,
+          candidate.crawledAtTs,
+        ),
       });
     }
 
@@ -789,8 +812,10 @@ export class NewsSourceService {
         const lastCrawlAt = crawlLookup.get(result.url)?.toISOString() ?? null;
         const inFlightStatus = activeLookup.get(result.url) ?? null;
         const discoverySignal = discoveryByUrl.get(result.url);
-        const publishedAt = this.toIsoTimestamp(discoverySignal?.publishedAtTs) ?? null;
-        const crawledAt = this.toIsoTimestamp(discoverySignal?.crawledAtTs) ?? null;
+        const publishedAt =
+          this.toIsoTimestamp(discoverySignal?.publishedAtTs) ?? null;
+        const crawledAt =
+          this.toIsoTimestamp(discoverySignal?.crawledAtTs) ?? null;
         const effectiveAt = publishedAt ?? crawledAt ?? null;
         const timestampSource = this.resolvePreviewTimestampSource({
           publishedAt,
@@ -847,7 +872,9 @@ export class NewsSourceService {
     const left =
       typeof first === "number" && Number.isFinite(first) ? first : undefined;
     const right =
-      typeof second === "number" && Number.isFinite(second) ? second : undefined;
+      typeof second === "number" && Number.isFinite(second)
+        ? second
+        : undefined;
     if (left === undefined) {
       return right;
     }
@@ -889,9 +916,9 @@ export class NewsSourceService {
 
   async updateGroupForMany(orgId: string, dto: BatchUpdateNewsSourceGroupDto) {
     if (dto.group === undefined) {
-      throw new BadRequestException('group is required; pass null to clear');
+      throw new BadRequestException("group is required; pass null to clear");
     }
-    const group = dto.group !== null ? (dto.group.trim() || null) : null;
+    const group = dto.group !== null ? dto.group.trim() || null : null;
     const result = await this.prisma.newsSource.updateMany({
       where: { orgId, id: { in: dto.ids } },
       data: { group },
@@ -899,12 +926,20 @@ export class NewsSourceService {
     return { updatedCount: result.count, requestedCount: dto.ids.length };
   }
 
-  async updateActiveForMany(orgId: string, dto: BatchUpdateNewsSourceActiveDto) {
+  async updateActiveForMany(
+    orgId: string,
+    dto: BatchUpdateNewsSourceActiveDto,
+  ) {
     const now = new Date();
     const result = await this.prisma.newsSource.updateMany({
       where: { orgId, id: { in: dto.ids } },
       data: dto.isActive
-        ? { isActive: true, nextRunAt: now, circuitOpenUntil: null, consecutiveFailures: 0 }
+        ? {
+            isActive: true,
+            nextRunAt: now,
+            circuitOpenUntil: null,
+            consecutiveFailures: 0,
+          }
         : { isActive: false, nextRunAt: null },
     });
     return { updatedCount: result.count, requestedCount: dto.ids.length };
@@ -1168,6 +1203,10 @@ export class NewsSourceService {
       mode === "rss"
         ? this.normalizeSeedFeedUrl(rawSeed?.feedUrl, sourceUrl)
         : undefined;
+    const rssFetch =
+      mode === "rss"
+        ? this.normalizeSeedRssFetchConfig(rawSeed?.rssFetch)
+        : undefined;
     const deepConfig =
       mode === "deep" &&
       rawSeed?.deep &&
@@ -1196,6 +1235,7 @@ export class NewsSourceService {
           ? pattern
           : undefined,
       feedUrl,
+      rssFetch,
       maxUrls: this.clampInt(rawSeed?.maxUrls, 1, 2_000, 200),
       maxNewUrlsPerRun: this.clampInt(rawSeed?.maxNewUrlsPerRun, 1, 500, 80),
       listMaxPages: this.clampInt(rawSeed?.listMaxPages, 1, 20, 6),
@@ -1296,6 +1336,60 @@ export class NewsSourceService {
         return undefined;
       }
     }
+  }
+
+  private normalizeSeedRssFetchConfig(
+    value: unknown,
+  ): NewsSourceRssFetchConfig {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+    const hasCustomFields =
+      Boolean(record) &&
+      (Object.prototype.hasOwnProperty.call(record, "requestTimeoutMs") ||
+        Object.prototype.hasOwnProperty.call(record, "bodySourceStrategy") ||
+        Object.prototype.hasOwnProperty.call(record, "noBodyPolicy"));
+    const enabled =
+      record?.enabled === true ||
+      (record?.enabled !== false && hasCustomFields);
+    if (!enabled) {
+      return {
+        enabled: false,
+        requestTimeoutMs: 15_000,
+        bodySourceStrategy: "content_first",
+        noBodyPolicy: "skip",
+      };
+    }
+    const bodySourceStrategyRaw =
+      typeof record?.bodySourceStrategy === "string"
+        ? record.bodySourceStrategy.trim().toLowerCase()
+        : "";
+    const bodySourceStrategy: CrawlDiscoveryRssBodySourceStrategy =
+      bodySourceStrategyRaw === "content_only" ||
+      bodySourceStrategyRaw === "summary_only"
+        ? (bodySourceStrategyRaw as CrawlDiscoveryRssBodySourceStrategy)
+        : "content_first";
+    const noBodyPolicyRaw =
+      typeof record?.noBodyPolicy === "string"
+        ? record.noBodyPolicy.trim().toLowerCase()
+        : "";
+    const noBodyPolicy: CrawlDiscoveryRssNoBodyPolicy =
+      noBodyPolicyRaw === "title_description_stub"
+        ? "title_description_stub"
+        : "skip";
+
+    return {
+      enabled,
+      requestTimeoutMs: this.clampInt(
+        record?.requestTimeoutMs,
+        1_000,
+        120_000,
+        15_000,
+      ),
+      bodySourceStrategy,
+      noBodyPolicy,
+    };
   }
 
   private normalizeStringList(value: unknown) {
