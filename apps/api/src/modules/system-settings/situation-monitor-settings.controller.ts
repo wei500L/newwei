@@ -7,6 +7,7 @@ import type { Request } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { resolveRequestIp } from "../../common/request-ip";
+import { AkshareService } from "../akshare/akshare.service";
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
@@ -43,6 +44,7 @@ export class SituationMonitorSettingsController {
     private readonly telegramAuth: SituationMonitorTelegramAuthService,
     private readonly env: EnvService,
     private readonly signals: SituationMonitorSignalsService,
+    private readonly akshareService: AkshareService,
   ) {}
 
   @Get()
@@ -57,6 +59,7 @@ export class SituationMonitorSettingsController {
   ) {
     const updated = await this.settings.updateSettings(user.orgId, user.id, body);
     await this.syncTelegramScheduleBestEffort(updated.telegramEnabled, updated.telegramPollIntervalMs);
+    await this.syncEconomicDataScheduleBestEffort();
     return updated;
   }
 
@@ -64,6 +67,7 @@ export class SituationMonitorSettingsController {
   async reset(@CurrentUser() user: AuthenticatedUser) {
     const reset = await this.settings.resetToEnv(user.orgId, user.id);
     await this.syncTelegramScheduleBestEffort(reset.telegramEnabled, reset.telegramPollIntervalMs);
+    await this.syncEconomicDataScheduleBestEffort();
     if (!reset.hasTelegramSession) {
       await this.signals.clearTelegramState({ clearItems: true });
     }
@@ -133,6 +137,17 @@ export class SituationMonitorSettingsController {
       );
     } finally {
       await queue.close();
+    }
+  }
+
+  private async syncEconomicDataScheduleBestEffort(): Promise<void> {
+    try {
+      await this.akshareService.ensureRepeatableJobs();
+    } catch (error) {
+      this.logger.warn(
+        { error },
+        "Failed to hot-sync economic data repeatable jobs after settings update"
+      );
     }
   }
 }

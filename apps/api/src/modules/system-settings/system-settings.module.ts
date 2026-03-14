@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 
+import { AkshareModule } from "../akshare/akshare.module";
 import { AuthModule } from "../auth/auth.module";
 import { GeoModule } from "../geo/geo.module";
 import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
@@ -16,6 +17,7 @@ import { AuditLogSettingsService } from "./audit-log-settings.service";
 import { AuthCacheSettingsController } from "./auth-cache-settings.controller";
 import { EmailSettingsController } from "./email-settings.controller";
 import { EntityImpactGraphSettingsService } from "./entity-impact-graph-settings.service";
+import { FinancialDataProviderSettingsService } from "./financial-data-provider-settings.service";
 import { GeoNominatimSettingsController } from "./geo-nominatim-settings.controller";
 import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
@@ -57,6 +59,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
 @Global()
 @Module({
   imports: [
+    AkshareModule,
     AuthModule,
     GeoModule,
     RealtimeSignalsModule,
@@ -93,6 +96,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     ArchivePreparationSettingsService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
+    FinancialDataProviderSettingsService,
     LlmGatewaySettingsService,
     LlmGatewayTestService,
     LiteLlmProxyLoadBalancingSettingsService,
@@ -120,6 +124,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     ArchivePreparationSettingsService,
     AuditLogSettingsService,
     GeoNominatimSettingsService,
+    FinancialDataProviderSettingsService,
     LlmGatewaySettingsService,
     LiteLlmProxyLoadBalancingSettingsService,
     AssistantSafetySettingsService,

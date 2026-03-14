@@ -792,6 +792,19 @@ export function SituationMonitorSettingsPanel() {
           {t("systemSettings.situationMonitor.sections.externalApis")}
         </Typography.Title>
 
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: "1rem" }}
+          message={t("systemSettings.situationMonitor.sharedProviders.title", {
+            defaultValue: "Shared financial data providers",
+          })}
+          description={t("systemSettings.situationMonitor.sharedProviders.description", {
+            defaultValue:
+              "Finnhub and FRED keys are now used by the shared economic data mainline. Situation Monitor, GraphQL economic data, dashboards, and alerts all reuse the same provider credentials and stored time series.",
+          })}
+        />
+
         <Form.Item
           label={t("systemSettings.situationMonitor.fields.finnhubApiKey")}
           name="finnhubApiKey"

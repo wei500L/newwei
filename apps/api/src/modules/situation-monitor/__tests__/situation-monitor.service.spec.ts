@@ -40,7 +40,7 @@ describe("SituationMonitorService", () => {
     const cache = {} as any;
     const external = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, feedback, {} as any);
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
 
     const since = new Date("2026-01-01T00:00:00.000Z");
     const result = await (service as any).buildHeadlinesByCategory({
@@ -96,7 +96,7 @@ describe("SituationMonitorService", () => {
     const cache = {} as any;
     const external = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, feedback, {} as any);
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -150,7 +150,7 @@ describe("SituationMonitorService", () => {
     } as any;
     const cache = {} as any;
     const feedback = { getLearningState: jest.fn().mockResolvedValue(new Map()) } as any;
-    const service = new SituationMonitorService(cache, external, feedback, {} as any);
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, {} as any, {} as any);
 
     const result = await (service as any).buildHeadlinesByCategory({
       orgId: "org-1",
@@ -184,7 +184,7 @@ describe("SituationMonitorService", () => {
         tensions: [],
       }),
     } as any;
-    const service = new SituationMonitorService(cache, external, feedback, realtimeSignals, {} as any);
+    const service = new SituationMonitorService(cache, external, {} as any, feedback, realtimeSignals, {} as any);
 
     const makeHeadline = (index: number, origin: "items" | "gdelt") => ({
       id: `tech-${index}`,
@@ -225,4 +225,5 @@ describe("SituationMonitorService", () => {
       totalCount: 12,
     });
   });
+
 });

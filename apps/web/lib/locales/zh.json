@@ -5222,10 +5222,14 @@
       },
       "sections": {
         "translationApi": "翻译 API",
-        "externalApis": "外部数据 API",
+        "externalApis": "共享金融数据 Provider",
         "liveHlsProxy": "直播 HLS 代理",
         "telegram": "Telegram 采集",
         "telegramAuth": "Telegram Session 授权"
+      },
+      "sharedProviders": {
+        "title": "共享金融数据 Provider",
+        "description": "Finnhub 与 FRED 的密钥现在供共享经济数据主线使用；Situation Monitor、GraphQL 经济数据、Dashboard 和告警都会复用同一套 provider 凭据与已落库时序数据。"
       },
       "fields": {
         "translationMaxConcurrency": "翻译最大并发数",
@@ -5266,8 +5270,8 @@
         "translationApiKey": "留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
         "translationFallbackApiEnabled": "启用后，当 DeepLX 失败时会自动调用备用翻译端点重试。",
         "translationFallbackApiBaseUrl": "备用翻译端点 URL。请求体为 POST JSON：source_lang、target_lang、text_list。",
-        "finnhubApiKey": "用于指数/行业/大宗商品行情。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
-        "fredApiKey": "用于美联储指标与资产负债表。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
+        "finnhubApiKey": "供共享金融数据主线使用，用于美股市场代理快照与行业 ETF。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
+        "fredApiKey": "供共享金融数据主线使用，用于美联储指标与资产负债表序列。留空表示不修改当前 Key。支持在系统安全设置开启密钥加密后加密存储。",
         "translationApiTimeoutMs": "单次翻译请求超时时间。",
         "translationApiMaxRetries": "翻译请求失败后的最大重试次数。",
         "liveHlsProxyGeneral": "这些值只存 MySQL，不再使用环境变量兜底。",
@@ -5572,6 +5576,20 @@
           "lastError": "最近错误",
           "polling": "正在轮询预设状态，等待新的运行活动..."
         }
+      },
+      "providers": {
+        "title": "金融数据 Provider",
+        "description": "展示已纳入经济数据主线的非 AKShare provider 项，包括 API Key 就绪情况与最近抓取状态。",
+        "provider": "Provider",
+        "scope": "主线角色",
+        "secret": "密钥",
+        "notRequired": "不需要",
+        "configured": "已配置",
+        "missing": "缺失",
+        "schedule": "调度",
+        "latestStatus": "最近状态",
+        "updated": "Provider 项已更新。",
+        "updateFailed": "更新 Provider 项失败。"
       }
     },
     "title": "系统设置",
@@ -7577,7 +7595,7 @@
     "markets": {
       "title": "市场",
       "missingKey": "需要 API Key",
-      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 Finnhub API Key。",
+      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 Finnhub 共享金融数据 Provider。",
       "price": "价格",
       "changePct": "涨跌幅",
       "empty": "暂无市场数据。"
@@ -7591,7 +7609,7 @@
     "fed": {
       "title": "美联储",
       "empty": "暂无美联储数据。",
-      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 FRED API Key。",
+      "hint": "请在 管理员设置 > 系统设置 > 态势监控 中配置 FRED 共享金融数据 Provider。",
       "value": "数值",
       "delta": "Δ",
       "balanceSheet": "资产负债表"

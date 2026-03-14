@@ -1,33 +1,36 @@
-import { AkshareResponseModel } from "@modular/mongo";
+import { AkshareResponseModel, EconomicProviderResponseModel } from "@modular/mongo";
 import {
-  CommonTimeZone,
   ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
   ensureTraceId,
   getCurrentTraceId,
-  parseDateTime,
-  toISODateString,
   type EconomicDashboardRefreshPreset
 } from "@modular/utils";
-import { HttpService } from "@nestjs/axios";
-import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit, Optional } from "@nestjs/common";
 import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
 import { Queue, type RepeatableJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
-import { lastValueFrom } from "rxjs";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
-import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
-import { AkshareParserService } from "./akshare-parser.service";
 import { AKSHARE_QUEUE } from "./akshare.constants";
-import { AKSHARE_DATA_DEFINITIONS } from "./akshare.definitions";
+import { FINANCIAL_DATA_DEFINITIONS } from "./financial-data.definitions";
 import {
-  AkshareDataItemConfig,
-  AkshareDataItemDefinition,
+  AkshareFinancialDataProviderConfig,
+  FinancialDataDefinitionMetadata,
+  FinancialDataItemConfig,
+  FinancialDataItemDefinition,
+  FinancialDataMainlineRole,
+  FinancialDataProviderConfig,
+  FinancialDataProviderKind,
+  FinancialDataRequiredSecret,
+  FinancialDataSnapshotMetadata,
+  FinancialDataVisualizationMetadata,
+} from "./financial-data.types";
+import {
   AkshareDataItemMetadata,
   AkshareJobPayload,
   AkshareParserConfig,
@@ -39,11 +42,10 @@ import {
   PaginationMeta
 } from "./akshare.types";
 import type { ParsedDataPoint } from "./parsers";
-
-interface FetchResult {
-  definition: AkshareDataItemConfig;
-  payload: unknown;
-}
+import {
+  FinancialDataProviderConfigurationError,
+  FinancialDataProviderRegistry,
+} from "./providers/financial-data-provider";
 
 interface UpsertDataPointRow {
   recordedAt: Date;
@@ -97,35 +99,49 @@ export class AkshareService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly http: HttpService,
-    private readonly env: EnvService,
-    private readonly parserService: AkshareParserService,
     @Inject(AKSHARE_QUEUE) private readonly queue: Queue<AkshareJobPayload>,
-    @Inject(REDIS_CLIENT) private readonly redis: Redis
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Optional() private readonly providerRegistry?: FinancialDataProviderRegistry
   ) {}
 
   async onModuleInit() {
-    if (!this.env.akshareConfig.enabled) {
-      this.logger.log("Akshare disabled via AKSHARE_ENABLED=false; skipping catalog sync and repeatable jobs");
-      await this.disableAkshareJobs();
-      return;
-    }
-
     await this.ensureCatalog();
     await this.ensureRepeatableJobs();
   }
 
   get definitions() {
-    return AKSHARE_DATA_DEFINITIONS;
+    return FINANCIAL_DATA_DEFINITIONS;
   }
 
-  private buildSeedMetadata(definition: AkshareDataItemDefinition): AkshareDataItemMetadata {
+  private buildSeedMetadata(definition: FinancialDataItemDefinition): AkshareDataItemMetadata {
+    if (definition.providerConfig.kind !== "akshare") {
+      return {
+        method: "GET",
+        defaultParams: null,
+        parser: undefined,
+        tags: definition.tags ?? [],
+        filter: null
+      };
+    }
+
     return {
-      method: definition.method ?? "GET",
-      defaultParams: definition.defaultParams ?? null,
-      parser: definition.parser,
+      method: definition.providerConfig.method ?? "GET",
+      defaultParams: definition.providerConfig.defaultParams ?? null,
+      parser: definition.providerConfig.parser,
       tags: definition.tags ?? [],
-      filter: definition.filter ?? null
+      filter: definition.providerConfig.filter ?? null
+    };
+  }
+
+  private buildDefinitionCustomMetadata(definition: FinancialDataItemDefinition): FinancialDataDefinitionMetadata {
+    return {
+      providerKind: definition.providerConfig.kind,
+      providerConfig: definition.providerConfig,
+      requiresSecret: definition.requiresSecret,
+      defaultEnabled: definition.defaultEnabled ?? true,
+      mainlineRole: definition.mainlineRole ?? "canonical",
+      snapshot: definition.snapshot,
+      dataViz: definition.dataViz
     };
   }
 
@@ -203,6 +219,37 @@ export class AkshareService implements OnModuleInit {
     return custom;
   }
 
+  private normalizeCustomMetadata(metadata: FinancialDataDefinitionMetadata): Record<string, unknown> {
+    return {
+      providerKind: metadata.providerKind,
+      providerConfig: metadata.providerConfig,
+      requiresSecret: metadata.requiresSecret ?? null,
+      defaultEnabled: metadata.defaultEnabled ?? true,
+      mainlineRole: metadata.mainlineRole ?? "canonical",
+      snapshot: metadata.snapshot ?? null,
+      dataViz: metadata.dataViz ?? null
+    };
+  }
+
+  private sortJsonValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.sortJsonValue(entry));
+    }
+    if (value && typeof value === "object") {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = this.sortJsonValue((value as Record<string, unknown>)[key]);
+          return acc;
+        }, {});
+    }
+    return value;
+  }
+
+  private metadataPayloadEquals(a: unknown, b: unknown): boolean {
+    return JSON.stringify(this.sortJsonValue(a)) === JSON.stringify(this.sortJsonValue(b));
+  }
+
   private hasValidParser(parser: AkshareParserConfig | undefined): boolean {
     return Boolean(
       parser &&
@@ -246,7 +293,136 @@ export class AkshareService implements OnModuleInit {
     return JSON.stringify(this.normalizeMetadata(a)) === JSON.stringify(this.normalizeMetadata(b));
   }
 
-  private async loadDefinitionFromDatabase(slug: string): Promise<AkshareDataItemConfig> {
+  private parseProviderKind(value: unknown): FinancialDataProviderKind {
+    return value === "finnhub" || value === "fred" || value === "akshare" ? value : "akshare";
+  }
+
+  private parseRequiredSecret(value: unknown): FinancialDataRequiredSecret | undefined {
+    return value === "finnhubApiKey" || value === "fredApiKey" ? value : undefined;
+  }
+
+  private parseMainlineRole(value: unknown): FinancialDataMainlineRole {
+    return value === "fallback" || value === "derived" || value === "internal" || value === "canonical"
+      ? value
+      : "canonical";
+  }
+
+  private parseSnapshotMetadata(value: unknown): FinancialDataSnapshotMetadata | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const snapshot = value as Record<string, unknown>;
+    if (
+      snapshot.group !== "markets" &&
+      snapshot.group !== "fed"
+    ) {
+      return undefined;
+    }
+    if (typeof snapshot.bucket !== "string" || !snapshot.bucket.trim()) {
+      return undefined;
+    }
+    return snapshot as unknown as FinancialDataSnapshotMetadata;
+  }
+
+  private parseDataVizMetadata(value: unknown): FinancialDataVisualizationMetadata | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const dataViz = value as Record<string, unknown>;
+    return {
+      preferredSourceFields: Array.isArray(dataViz.preferredSourceFields)
+        ? dataViz.preferredSourceFields.map((entry) => String(entry))
+        : undefined,
+      percentSourceFields: Array.isArray(dataViz.percentSourceFields)
+        ? dataViz.percentSourceFields.map((entry) => String(entry))
+        : undefined
+    };
+  }
+
+  private buildLegacyAkshareProviderConfigFromItem(
+    item: {
+      slug: string;
+      sourceFunction: string;
+      sourceEndpoint: string;
+      sourceDocUrl: string | null;
+    },
+    metadata: AkshareDataItemMetadata
+  ): AkshareFinancialDataProviderConfig {
+    if (!metadata.parser) {
+      throw new InternalServerErrorException(`Akshare parser not configured for ${item.slug}`);
+    }
+
+    return {
+      kind: "akshare",
+      functionName: item.sourceFunction,
+      endpoint: item.sourceEndpoint,
+      docUrl: item.sourceDocUrl ?? "",
+      method: metadata.method ?? "GET",
+      defaultParams: metadata.defaultParams ?? undefined,
+      filter: metadata.filter ?? undefined,
+      parser: metadata.parser
+    };
+  }
+
+  private parseProviderConfig(
+    item: {
+      slug: string;
+      sourceFunction: string;
+      sourceEndpoint: string;
+      sourceDocUrl: string | null;
+    },
+    metadata: AkshareDataItemMetadata,
+    customMetadata: Record<string, unknown>,
+    providerKind: FinancialDataProviderKind
+  ): FinancialDataProviderConfig {
+      const raw = customMetadata.providerConfig;
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const providerConfig = raw as Record<string, unknown>;
+        if (providerConfig.kind === providerKind) {
+        return providerConfig as unknown as FinancialDataProviderConfig;
+        }
+      }
+
+    if (providerKind === "akshare") {
+      return this.buildLegacyAkshareProviderConfigFromItem(item, metadata);
+    }
+
+    throw new InternalServerErrorException(`Provider config missing for ${item.slug}`);
+  }
+
+  private parseDefinitionMetadataFromRecord(
+    item: {
+      slug: string;
+      sourceFunction: string;
+      sourceEndpoint: string;
+      sourceDocUrl: string | null;
+      metadata: Prisma.JsonValue | null;
+    }
+  ) {
+    const metadata = this.parseMetadata(item.metadata);
+    const customMetadata = this.extractCustomMetadata(item.metadata);
+    const providerKind = this.parseProviderKind(customMetadata.providerKind);
+    const providerConfig = this.parseProviderConfig(item, metadata, customMetadata, providerKind);
+    const requiresSecret = this.parseRequiredSecret(customMetadata.requiresSecret);
+    const defaultEnabled = typeof customMetadata.defaultEnabled === "boolean" ? customMetadata.defaultEnabled : true;
+    const mainlineRole = this.parseMainlineRole(customMetadata.mainlineRole);
+    const snapshot = this.parseSnapshotMetadata(customMetadata.snapshot);
+    const dataViz = this.parseDataVizMetadata(customMetadata.dataViz);
+    const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+
+    return {
+      providerKind,
+      providerConfig,
+      requiresSecret,
+      defaultEnabled,
+      mainlineRole,
+      snapshot,
+      dataViz,
+      tags
+    };
+  }
+
+  private async loadDefinitionFromDatabase(slug: string): Promise<FinancialDataItemConfig> {
     const item = await this.prisma.economicDataItem.findUnique({
       where: { slug },
       include: {
@@ -259,10 +435,7 @@ export class AkshareService implements OnModuleInit {
       throw new InternalServerErrorException(`Data item ${slug} not found`);
     }
 
-    const metadata = this.parseMetadata(item.metadata);
-    if (!metadata.parser) {
-      throw new InternalServerErrorException(`Akshare parser not configured for ${slug}`);
-    }
+    const definitionMetadata = this.parseDefinitionMetadataFromRecord(item);
 
     return {
       itemId: item.id,
@@ -273,14 +446,17 @@ export class AkshareService implements OnModuleInit {
       sourceFunction: item.sourceFunction,
       endpoint: item.sourceEndpoint,
       docUrl: item.sourceDocUrl,
-      method: metadata.method ?? "GET",
-      defaultParams: metadata.defaultParams ?? null,
-      filter: metadata.filter ?? null,
       valueType: item.valueType,
       defaultUnit: item.defaultUnit,
       defaultFrequency: item.defaultFrequency,
-      parser: metadata.parser,
-      tags: metadata.tags ?? []
+      providerKind: definitionMetadata.providerKind,
+      providerConfig: definitionMetadata.providerConfig,
+      requiresSecret: definitionMetadata.requiresSecret,
+      defaultEnabled: definitionMetadata.defaultEnabled,
+      mainlineRole: definitionMetadata.mainlineRole,
+      snapshot: definitionMetadata.snapshot,
+      dataViz: definitionMetadata.dataViz,
+      tags: definitionMetadata.tags
     };
   }
 
@@ -339,8 +515,9 @@ export class AkshareService implements OnModuleInit {
 
     // Phase 5: Collect items for batch operations
     const newItemsData: {
-      definition: AkshareDataItemDefinition;
+      definition: FinancialDataItemDefinition;
       seedMetadata: AkshareDataItemMetadata;
+      seedCustomMetadata: FinancialDataDefinitionMetadata;
       categories: { id: string; key: string }[];
     }[] = [];
     const itemUpdates: {
@@ -354,11 +531,13 @@ export class AkshareService implements OnModuleInit {
     const newFetchConfigs: {
       itemId: string;
       frequency: EconomicDataFrequency;
+      isEnabled: boolean;
     }[] = [];
 
     // Phase 6: Process definitions and collect batch operations
     for (const definition of this.definitions) {
       const seedMetadata = this.buildSeedMetadata(definition);
+      const seedCustomMetadata = this.buildDefinitionCustomMetadata(definition);
       const existingItem = existingItemMap.get(definition.slug);
 
       const categories = definition.categories
@@ -374,13 +553,14 @@ export class AkshareService implements OnModuleInit {
 
       if (!existingItem) {
         // Collect for batch create (T2)
-        newItemsData.push({ definition, seedMetadata, categories });
+        newItemsData.push({ definition, seedMetadata, seedCustomMetadata, categories });
         continue;
       }
 
       // Collect updates (T3)
       const isMockSeed = existingItem.sourceFunction === "mock" && existingItem.sourceEndpoint === "mock";
       const existingMetadata = this.sanitizeExistingMetadata(this.parseMetadata(existingItem.metadata));
+      const existingCustomMetadata = this.extractCustomMetadata(existingItem.metadata);
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
       const mergedMetadataWithOverrides =
         this.forceParserSyncSlugs.has(definition.slug) || isMockSeed
@@ -422,12 +602,13 @@ export class AkshareService implements OnModuleInit {
       if (!existingItem.description && definition.description) {
         updates.description = definition.description;
       }
-      if (!this.metadataEquals(existingMetadata, mergedMetadataWithOverrides2)) {
-        const customMetadata = this.extractCustomMetadata(existingItem.metadata);
-        updates.metadata = toPrismaJsonValue({
-          ...customMetadata,
-          ...this.normalizeMetadata(mergedMetadataWithOverrides2)
-        });
+      const nextMetadataPayload = {
+        ...existingCustomMetadata,
+        ...this.normalizeCustomMetadata(seedCustomMetadata),
+        ...this.normalizeMetadata(mergedMetadataWithOverrides2)
+      };
+      if (!this.metadataPayloadEquals(existingItem.metadata, nextMetadataPayload)) {
+        updates.metadata = toPrismaJsonValue(nextMetadataPayload);
       }
 
       if (Object.keys(updates).length > 0) {
@@ -449,7 +630,8 @@ export class AkshareService implements OnModuleInit {
       if (!existingItem.fetchConfig) {
         newFetchConfigs.push({
           itemId: existingItem.id,
-          frequency: existingItem.defaultFrequency ?? definition.defaultFrequency
+          frequency: existingItem.defaultFrequency ?? definition.defaultFrequency,
+          isEnabled: definition.defaultEnabled ?? true
         });
       }
     }
@@ -459,7 +641,7 @@ export class AkshareService implements OnModuleInit {
       // createMany doesn't support nested creates, so we need to create items first
       // then create relations separately
       await this.prisma.economicDataItem.createMany({
-        data: newItemsData.map(({ definition, seedMetadata }) => ({
+        data: newItemsData.map(({ definition, seedMetadata, seedCustomMetadata }) => ({
           slug: definition.slug,
           displayName: definition.displayName,
           groupLabel: definition.categories[0],
@@ -470,7 +652,10 @@ export class AkshareService implements OnModuleInit {
           valueType: definition.valueType,
           defaultUnit: definition.defaultUnit,
           defaultFrequency: definition.defaultFrequency,
-          metadata: toPrismaJsonValue(this.normalizeMetadata(seedMetadata))
+          metadata: toPrismaJsonValue({
+            ...this.normalizeCustomMetadata(seedCustomMetadata),
+            ...this.normalizeMetadata(seedMetadata)
+          })
         })),
         skipDuplicates: true
       });
@@ -496,7 +681,8 @@ export class AkshareService implements OnModuleInit {
 
         newFetchConfigs.push({
           itemId: createdItem.id,
-          frequency: definition.defaultFrequency
+          frequency: definition.defaultFrequency,
+          isEnabled: definition.defaultEnabled ?? true
         });
       }
       this.logger.log(`ensureCatalog: Created ${newItemsData.length} new items in ${Date.now() - startTime}ms`);
@@ -527,11 +713,11 @@ export class AkshareService implements OnModuleInit {
     // Phase 10: Batch create fetch configs (T5)
     if (newFetchConfigs.length > 0) {
       await this.prisma.economicDataFetchConfig.createMany({
-        data: newFetchConfigs.map(({ itemId, frequency }) => ({
+        data: newFetchConfigs.map(({ itemId, frequency, isEnabled }) => ({
           itemId,
           frequency,
           repeatCron: null,
-          isEnabled: true
+          isEnabled
         })),
         skipDuplicates: true
       });
@@ -597,24 +783,77 @@ export class AkshareService implements OnModuleInit {
     await this.queue.drain(true);
   }
 
+  private resolveProviderUnavailableError(definition: {
+    requiresSecret?: FinancialDataRequiredSecret;
+  }): string {
+    return definition.requiresSecret
+      ? `missing_api_key:${definition.requiresSecret}`
+      : "provider_disabled";
+  }
+
+  private async markFetchConfigUnavailable(itemId: string, errorCode: string): Promise<void> {
+    await this.prisma.economicDataFetchConfig.update({
+      where: { itemId },
+      data: {
+        lastRunAt: new Date(),
+        lastStatus: EconomicDataRunStatus.failed,
+        lastError: errorCode,
+        updatedAt: new Date()
+      }
+    });
+  }
+
   private async syncRepeatableJobs() {
     const configs = await this.prisma.economicDataFetchConfig.findMany({
       include: { item: true }
     });
     const existingJobs = await this.queue.getRepeatableJobs();
+    const providerAvailabilityCache = new Map<FinancialDataProviderKind, boolean>();
+
+    const resolveAvailability = async (item: typeof configs[number]["item"]) => {
+      const definitionMetadata = this.parseDefinitionMetadataFromRecord(item);
+      if (!this.providerRegistry) {
+        return { available: true, definitionMetadata };
+      }
+
+      const cached = providerAvailabilityCache.get(definitionMetadata.providerKind);
+      if (cached !== undefined) {
+        return { available: cached, definitionMetadata };
+      }
+
+      const available = await this.providerRegistry.get(definitionMetadata.providerKind).isConfigured();
+      providerAvailabilityCache.set(definitionMetadata.providerKind, available);
+      return { available, definitionMetadata };
+    };
+
     const configByJobName = new Map(
       configs.map((config) => [this.buildJobName(config.itemId), config])
     );
     for (const job of existingJobs) {
       const config = configByJobName.get(job.name ?? "");
-      if (!config || !config.isEnabled) {
+      const availability = config ? await resolveAvailability(config.item) : null;
+      if (!config || !config.isEnabled || !availability?.available) {
         await this.queue.removeRepeatableByKey(job.key);
+        if (config && availability && !availability.available) {
+          await this.markFetchConfigUnavailable(
+            config.itemId,
+            this.resolveProviderUnavailableError(availability.definitionMetadata)
+          );
+        }
       }
     }
 
     const existingByName = new Map(existingJobs.map((job) => [job.name ?? "", job]));
     for (const config of configs) {
       if (!config.isEnabled) {
+        continue;
+      }
+      const availability = await resolveAvailability(config.item);
+      if (!availability.available) {
+        await this.markFetchConfigUnavailable(
+          config.itemId,
+          this.resolveProviderUnavailableError(availability.definitionMetadata)
+        );
         continue;
       }
       const jobName = this.buildJobName(config.itemId);
@@ -823,22 +1062,18 @@ export class AkshareService implements OnModuleInit {
 
   async fetchAndPersist(slug: string) {
     let itemId: string | undefined;
+    let definition: FinancialDataItemConfig | undefined;
     try {
-      const definition = await this.loadDefinitionFromDatabase(slug);
+      definition = await this.loadDefinitionFromDatabase(slug);
       itemId = definition.itemId;
-      const response = await this.executeRequest(definition);
-      await AkshareResponseModel.create({
-        dataItemId: definition.slug,
-        endpoint: definition.endpoint,
-        method: definition.method ?? "GET",
-        requestParams: definition.defaultParams ?? {},
-        payload: response.payload,
-        fetchedAt: new Date()
-      });
+      if (!this.providerRegistry) {
+        throw new InternalServerErrorException("Financial data provider registry not initialized");
+      }
 
-      const filteredPayload = this.applyPayloadFilter(response.payload, definition.filter);
-      const parsedPoints = this.parserService.parsePayload(definition.parser, filteredPayload, { slug: definition.slug });
-      const storedCount = await this.bulkUpsertDataPoints(definition.itemId, parsedPoints);
+      const provider = this.providerRegistry.get(definition.providerKind);
+      const response = await provider.fetch(definition);
+      await this.archiveProviderResponse(definition, response);
+      const storedCount = await this.bulkUpsertDataPoints(definition.itemId, response.points);
 
       await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
 
@@ -846,7 +1081,15 @@ export class AkshareService implements OnModuleInit {
       return storedCount;
     } catch (error) {
       try {
+        if (definition) {
+          await this.archiveProviderFailure(definition, error);
+        }
         if (itemId) {
+          if (error instanceof FinancialDataProviderConfigurationError) {
+            await this.markFetchConfigUnavailable(itemId, error.message || error.code);
+            this.logger.warn(`Skipped ${slug}: ${error.message || error.code}`);
+            return 0;
+          }
           await this.updateFetchStatusByItemId(itemId, EconomicDataRunStatus.failed, error);
         } else {
           await this.recordFetchFailure(slug, error);
@@ -857,91 +1100,113 @@ export class AkshareService implements OnModuleInit {
           "Failed to record Akshare fetch failure status"
         );
       }
+      if (error instanceof FinancialDataProviderConfigurationError) {
+        return 0;
+      }
       throw error;
     }
   }
 
-  private toRecordArray(payload: unknown): Record<string, unknown>[] {
-    if (Array.isArray(payload)) {
-      return payload.filter(
-        (item): item is Record<string, unknown> =>
-          Boolean(item) && typeof item === "object" && !Array.isArray(item)
-      );
+  private buildFailureRequestParams(definition: FinancialDataItemConfig): Record<string, unknown> {
+    const providerConfig = definition.providerConfig;
+    switch (providerConfig.kind) {
+      case "akshare":
+        return providerConfig.defaultParams ?? {};
+      case "finnhub":
+        return { symbol: providerConfig.symbol };
+      case "fred":
+        return {
+          series_id: providerConfig.seriesId,
+          metric: providerConfig.metric,
+          limit: providerConfig.lookback ?? undefined
+        };
+      default:
+        return {};
     }
-    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-      return [payload as Record<string, unknown>];
-    }
-    return [];
   }
 
-  private normalizeNumeric(value: unknown): number | null {
-    if (value === null || value === undefined) {
-      return null;
+  private buildFailurePayload(error: unknown): Record<string, unknown> {
+    if (error instanceof FinancialDataProviderConfigurationError) {
+      return {
+        name: error.name,
+        code: error.code,
+        message: error.message
+      };
     }
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : null;
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message
+      };
     }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (!trimmed || trimmed === "--" || trimmed === "-" || trimmed.toLowerCase() === "nan" || trimmed.toLowerCase() === "null") {
-        return null;
-      }
-      const sanitized = trimmed.replace(/,/g, "");
-      const parsed = Number(sanitized);
-      return Number.isNaN(parsed) ? null : parsed;
-    }
-    return null;
+    return {
+      message: this.formatError(error)
+    };
   }
 
-  private selectBestRecord(records: Record<string, unknown>[], filter: AksharePayloadFilterConfig) {
-    const preferField = filter.preferNonZeroField;
-    const rankBy = filter.rankBy;
-    const rankOrder = filter.rankOrder ?? "desc";
-
-    let best = records[0];
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    for (const row of records) {
-      const preferredValue = preferField ? this.normalizeNumeric(row[preferField]) : null;
-      const hasPreferred = preferField ? Boolean(preferredValue && preferredValue > 0) : true;
-
-      const rankValue = rankBy ? this.normalizeNumeric(row[rankBy]) ?? 0 : 0;
-      const normalizedRank = rankOrder === "asc" ? -rankValue : rankValue;
-
-      const score = (hasPreferred ? 1 : 0) * 1_000_000_000_000 + normalizedRank;
-      if (score > bestScore) {
-        best = row;
-        bestScore = score;
-      }
-    }
-
-    return best;
+  private async archiveProviderFailure(
+    definition: FinancialDataItemConfig,
+    error: unknown
+  ): Promise<void> {
+    await EconomicProviderResponseModel.create({
+      dataItemId: definition.slug,
+      providerKind: definition.providerKind,
+      providerIdentity: this.resolveProviderIdentity(definition.providerConfig),
+      endpoint: definition.endpoint,
+      method: "GET",
+      requestParams: this.buildFailureRequestParams(definition),
+      payload: this.buildFailurePayload(error),
+      status: error instanceof FinancialDataProviderConfigurationError ? "skipped" : "failed",
+      fetchedAt: new Date()
+    });
   }
 
-  private applyPayloadFilter(payload: unknown, filter: AksharePayloadFilterConfig | null | undefined): unknown {
-    if (!filter) {
-      return payload;
+  private resolveProviderIdentity(config: FinancialDataProviderConfig): string {
+    switch (config.kind) {
+      case "akshare":
+        return config.functionName;
+      case "finnhub":
+        return config.symbol;
+      case "fred":
+        return config.seriesId;
+      default:
+        return "unknown";
     }
+  }
 
-    const records = this.toRecordArray(payload);
-    if (records.length === 0) {
-      throw new InternalServerErrorException(`Payload filter expects record array (field=${filter.field})`);
+  private async archiveProviderResponse(
+    definition: FinancialDataItemConfig,
+    response: {
+      payload: unknown;
+      requestParams?: Record<string, unknown>;
+      method?: string;
     }
+  ): Promise<void> {
+    const method = response.method ?? "GET";
+    const requestParams = response.requestParams ?? {};
 
-    const expected = filter.equals;
-    const matches = records.filter((row) => String(row[filter.field] ?? "").trim() === expected);
-    if (matches.length === 0) {
-      throw new InternalServerErrorException(`Expected record not found: ${filter.field}=${expected}`);
-    }
+    await EconomicProviderResponseModel.create({
+      dataItemId: definition.slug,
+      providerKind: definition.providerKind,
+      providerIdentity: this.resolveProviderIdentity(definition.providerConfig),
+      endpoint: definition.endpoint,
+      method,
+      requestParams,
+      payload: response.payload,
+      status: "success",
+      fetchedAt: new Date()
+    });
 
-    const mode = filter.mode ?? "first";
-    if (mode === "all") {
-      return matches;
+    if (definition.providerKind === "akshare") {
+      await AkshareResponseModel.create({
+        dataItemId: definition.slug,
+        endpoint: definition.endpoint,
+        method,
+        requestParams,
+        payload: response.payload,
+        fetchedAt: new Date()
+      });
     }
-    if (mode === "best") {
-      return this.selectBestRecord(matches, filter);
-    }
-    return matches[0];
   }
 
   private async bulkUpsertDataPoints(itemId: string, points: ParsedDataPoint[]) {
@@ -1121,73 +1386,6 @@ export class AkshareService implements OnModuleInit {
         \`dataType\` = VALUES(\`dataType\`),
         \`sourceMeta\` = VALUES(\`sourceMeta\`)
     `;
-  }
-
-  private async executeRequest(definition: AkshareDataItemConfig): Promise<FetchResult> {
-    const config = this.env.akshareConfig;
-    const url = definition.endpoint.startsWith("http")
-      ? definition.endpoint
-      : `${config.baseUrl.replace(/\/$/, "")}${definition.endpoint.startsWith("/") ? "" : "/"}${definition.endpoint}`;
-    const method = definition.method ?? "GET";
-    const params = definition.defaultParams ? this.resolveParams(definition.defaultParams) : {};
-    const request = async () => {
-      const observable = this.http.request({
-        method,
-        url,
-        params: method === "GET" ? params : undefined,
-        data: method === "POST" ? params : undefined,
-        timeout: config.timeoutMs
-      });
-      const response = await lastValueFrom(observable);
-      return response.data;
-    };
-
-    const payload = await this.retry(request, config.maxRetries);
-    return { definition, payload };
-  }
-
-  private resolveParams(params: Record<string, string | number>) {
-    const resolved: Record<string, string | number> = {};
-    for (const [key, value] of Object.entries(params)) {
-      resolved[key] = typeof value === "string" ? this.resolveParamTemplate(value) : value;
-    }
-    return resolved;
-  }
-
-  private resolveParamTemplate(value: string) {
-    return value.replace(/\$\{TODAY_YYYYMMDD([+-]\d+)?\}/g, (_match, deltaRaw) => {
-      const deltaDays = typeof deltaRaw === "string" ? Number(deltaRaw) : 0;
-      if (!Number.isFinite(deltaDays)) {
-        return this.getShanghaiDateYYYYMMDD(0);
-      }
-      return this.getShanghaiDateYYYYMMDD(deltaDays);
-    });
-  }
-
-  private getShanghaiDateYYYYMMDD(deltaDays: number) {
-    const now = new Date();
-    const todayShanghai = toISODateString(now, CommonTimeZone.AsiaShanghai);
-    const midnightShanghai =
-      parseDateTime(`${todayShanghai} 00:00:00`, { timeZone: CommonTimeZone.AsiaShanghai }) ?? now;
-    const shifted = new Date(midnightShanghai.getTime() + deltaDays * 24 * 60 * 60 * 1000);
-    return toISODateString(shifted, CommonTimeZone.AsiaShanghai).replace(/-/g, "");
-  }
-
-  private async retry<T>(fn: () => Promise<T>, attempts: number) {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-        if (attempt === attempts) {
-          break;
-        }
-        const delayMs = Math.min(2000 * attempt, 10_000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-    throw lastError;
   }
 
   private granularityRank(granularity: string): number {

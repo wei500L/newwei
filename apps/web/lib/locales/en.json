@@ -5222,10 +5222,14 @@
       },
       "sections": {
         "translationApi": "Translation API",
-        "externalApis": "External data APIs",
+        "externalApis": "Shared financial data providers",
         "liveHlsProxy": "Live HLS proxy",
         "telegram": "Telegram ingestion",
         "telegramAuth": "Telegram session auth"
+      },
+      "sharedProviders": {
+        "title": "Shared financial data providers",
+        "description": "Finnhub and FRED keys feed the shared economic data mainline. Situation Monitor, GraphQL economic data, dashboards, and alerts reuse the same provider credentials and stored time series."
       },
       "fields": {
         "translationMaxConcurrency": "Translation max concurrency",
@@ -5266,8 +5270,8 @@
         "translationApiKey": "Leave empty to keep current key. Stored encrypted when secret encryption is enabled in system security settings.",
         "translationFallbackApiEnabled": "When enabled, the system automatically retries translation with the fallback endpoint after DeepLX fails.",
         "translationFallbackApiBaseUrl": "Fallback endpoint URL. The request body is POST JSON: source_lang, target_lang, text_list.",
-        "finnhubApiKey": "Used for indices/sectors/commodities. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
-        "fredApiKey": "Used for Fed indicators and balance sheet data. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
+        "finnhubApiKey": "Used by the shared financial data mainline for US market proxy snapshots and sector ETFs. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
+        "fredApiKey": "Used by the shared financial data mainline for Fed indicators and balance sheet series. Leave empty to keep current key. Stored encrypted when secret encryption is enabled.",
         "translationApiTimeoutMs": "Timeout for each translation request.",
         "translationApiMaxRetries": "Maximum retry count after translation request failures.",
         "liveHlsProxyGeneral": "These values are stored in MySQL only. No environment fallback is used for live HLS proxy channels.",
@@ -5572,6 +5576,20 @@
           "lastError": "Latest error",
           "polling": "Monitoring preset status for new activity..."
         }
+      },
+      "providers": {
+        "title": "Financial data providers",
+        "description": "Shows non-AKShare provider items now managed by the economic data mainline, including API key readiness and latest fetch status.",
+        "provider": "Provider",
+        "scope": "Mainline role",
+        "secret": "Secret",
+        "notRequired": "Not required",
+        "configured": "configured",
+        "missing": "missing",
+        "schedule": "Schedule",
+        "latestStatus": "Latest status",
+        "updated": "Provider item updated.",
+        "updateFailed": "Failed to update provider item."
       }
     },
     "title": "System settings",
@@ -7577,7 +7595,7 @@
     "markets": {
       "title": "Markets",
       "missingKey": "API key needed",
-      "hint": "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
+      "hint": "Configure the Finnhub shared financial data provider in Admin Settings > System Settings > Situation Monitor.",
       "price": "Price",
       "changePct": "Change",
       "empty": "No markets data yet."
@@ -7591,7 +7609,7 @@
     "fed": {
       "title": "Federal Reserve",
       "empty": "No Federal Reserve data yet.",
-      "hint": "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
+      "hint": "Configure the FRED shared financial data provider in Admin Settings > System Settings > Situation Monitor.",
       "value": "Value",
       "delta": "Δ",
       "balanceSheet": "Balance sheet"

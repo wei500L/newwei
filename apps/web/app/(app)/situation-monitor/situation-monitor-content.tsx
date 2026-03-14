@@ -2842,6 +2842,18 @@ export function SituationMonitorContent() {
   const marketsSnapshot = data?.markets;
   const cryptoSnapshot = data?.crypto;
   const fedSnapshot = data?.fed;
+  const hasMarketSnapshotData = Boolean(
+    marketsSnapshot &&
+      ((marketsSnapshot.indices?.length ?? 0) +
+        (marketsSnapshot.sectors?.length ?? 0) +
+        (marketsSnapshot.commodities?.length ?? 0) >
+        0),
+  );
+  const hasFedIndicatorSnapshotData =
+    (fedSnapshot?.indicators?.length ?? 0) > 0;
+  const hasFedSnapshotData = Boolean(
+    hasFedIndicatorSnapshotData || fedSnapshot?.moneyPrinter,
+  );
 
   const layout = useSituationMonitorLayoutStore((state) => state.layout);
   const responsiveLayouts = useSituationMonitorLayoutStore(
@@ -3501,15 +3513,17 @@ export function SituationMonitorContent() {
         <Alert type="warning" showIcon message={marketsSnapshot.error} />
       ) : null}
       {marketsSnapshot ? (
-        !marketsSnapshot.hasFinnhubApiKey ? (
-          <Typography.Text type="secondary">
-            {t("situationMonitor.markets.hint", {
-              defaultValue:
-                "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
-            })}
-          </Typography.Text>
-        ) : (
-          <>
+        <>
+          {!marketsSnapshot.hasFinnhubApiKey ? (
+            <Typography.Text type="secondary">
+              {t("situationMonitor.markets.hint", {
+                defaultValue:
+                  "Configure the Finnhub key in System Settings > Situation Monitor > Shared financial data providers, then enable the related economic data items.",
+              })}
+            </Typography.Text>
+          ) : null}
+          {hasMarketSnapshotData ? (
+            <>
             <Table
               rowKey="symbol"
               size="small"
@@ -3593,8 +3607,15 @@ export function SituationMonitorContent() {
               ]}
               dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
             />
-          </>
-        )
+            </>
+          ) : !marketsSnapshot.hasFinnhubApiKey ? null : (
+            <Typography.Text type="secondary">
+              {t("situationMonitor.markets.empty", {
+                defaultValue: "No markets data yet.",
+              })}
+            </Typography.Text>
+          )}
+        </>
       ) : (
         <Typography.Text type="secondary">
           {refreshStage === "external"
@@ -3718,10 +3739,11 @@ export function SituationMonitorContent() {
             <Typography.Text type="secondary">
               {t("situationMonitor.fed.hint", {
                 defaultValue:
-                  "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
+                  "Configure the FRED key in System Settings > Situation Monitor > Shared financial data providers, then enable the related economic data items.",
               })}
             </Typography.Text>
-          ) : fedSnapshot.indicators?.length ? (
+          ) : null}
+          {hasFedIndicatorSnapshotData ? (
             <Table
               rowKey="seriesId"
               size="small"
@@ -3763,7 +3785,13 @@ export function SituationMonitorContent() {
               ]}
               dataSource={fedSnapshot.indicators}
             />
-          ) : null}
+          ) : !fedSnapshot.hasFredApiKey ? null : (
+            <Typography.Text type="secondary">
+              {t("situationMonitor.fed.empty", {
+                defaultValue: "No Federal Reserve data yet.",
+              })}
+            </Typography.Text>
+          )}
 
           {fedSnapshot.moneyPrinter ? (
             <>
@@ -5751,71 +5779,79 @@ export function SituationMonitorContent() {
           >
             {marketsSnapshot?.error ? <Alert type="warning" showIcon message={marketsSnapshot.error} /> : null}
             {marketsSnapshot ? (
-              !marketsSnapshot.hasFinnhubApiKey ? (
-                <Typography.Text type="secondary">
-                  {t("situationMonitor.markets.hint", {
-                    defaultValue: "Configure Finnhub API key in Admin Settings > System Settings > Situation Monitor.",
-                  })}
-                </Typography.Text>
-              ) : (
               <>
-                <Table
-                  rowKey="symbol"
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
-                    {
-                      title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
-                      dataIndex: "price",
-                      key: "price",
-                      width: 120,
-                      render: (value: number) => formatUsd(value, locale),
-                    },
-                    {
-                      title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
-                      dataIndex: "changePercent",
-                      key: "changePercent",
-                      width: 110,
-                      render: (value: number) => (
-                        <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
-                          {formatPercent(value)}
-                        </Typography.Text>
-                      ),
-                    },
-                  ]}
-                  dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
-                />
-                <Divider style={{ margin: "12px 0" }} />
-                <Table
-                  rowKey="symbol"
-                  size="small"
-                  pagination={false}
-                  columns={[
-                    { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
-                    {
-                      title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
-                      dataIndex: "price",
-                      key: "price",
-                      width: 120,
-                      render: (value: number) => formatUsd(value, locale),
-                    },
-                    {
-                      title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
-                      dataIndex: "changePercent",
-                      key: "changePercent",
-                      width: 110,
-                      render: (value: number) => (
-                        <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
-                          {formatPercent(value)}
-                        </Typography.Text>
-                      ),
-                    },
-                  ]}
-                  dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
-                />
+                {!marketsSnapshot.hasFinnhubApiKey ? (
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.markets.hint", {
+                      defaultValue:
+                        "Configure the Finnhub key in System Settings > Situation Monitor > Shared financial data providers, then enable the related economic data items.",
+                    })}
+                  </Typography.Text>
+                ) : null}
+                {hasMarketSnapshotData ? (
+                  <>
+                    <Table
+                      rowKey="symbol"
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
+                        {
+                          title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
+                          dataIndex: "price",
+                          key: "price",
+                          width: 120,
+                          render: (value: number) => formatUsd(value, locale),
+                        },
+                        {
+                          title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
+                          dataIndex: "changePercent",
+                          key: "changePercent",
+                          width: 110,
+                          render: (value: number) => (
+                            <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
+                              {formatPercent(value)}
+                            </Typography.Text>
+                          ),
+                        },
+                      ]}
+                      dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
+                    />
+                    <Divider style={{ margin: "12px 0" }} />
+                    <Table
+                      rowKey="symbol"
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        { title: t("common.name", { defaultValue: "Name" }), dataIndex: "name", key: "name" },
+                        {
+                          title: t("situationMonitor.markets.price", { defaultValue: "Price" }),
+                          dataIndex: "price",
+                          key: "price",
+                          width: 120,
+                          render: (value: number) => formatUsd(value, locale),
+                        },
+                        {
+                          title: t("situationMonitor.markets.changePct", { defaultValue: "Change" }),
+                          dataIndex: "changePercent",
+                          key: "changePercent",
+                          width: 110,
+                          render: (value: number) => (
+                            <Typography.Text type={Number.isFinite(value) && value < 0 ? "danger" : "success"}>
+                              {formatPercent(value)}
+                            </Typography.Text>
+                          ),
+                        },
+                      ]}
+                      dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
+                    />
+                  </>
+                ) : !marketsSnapshot.hasFinnhubApiKey ? null : (
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.markets.empty", { defaultValue: "No markets data yet." })}
+                  </Typography.Text>
+                )}
               </>
-              )
             ) : (
               <Typography.Text type="secondary">
                 {refreshStage === "external"
@@ -5898,10 +5934,12 @@ export function SituationMonitorContent() {
                 {!fedSnapshot.hasFredApiKey ? (
                   <Typography.Text type="secondary">
                     {t("situationMonitor.fed.hint", {
-                      defaultValue: "Configure FRED API key in Admin Settings > System Settings > Situation Monitor.",
+                      defaultValue:
+                        "Configure the FRED key in System Settings > Situation Monitor > Shared financial data providers, then enable the related economic data items.",
                     })}
                   </Typography.Text>
-                ) : fedSnapshot.indicators?.length ? (
+                ) : null}
+                {hasFedIndicatorSnapshotData ? (
                   <Table
                     rowKey="seriesId"
                     size="small"
@@ -5934,7 +5972,11 @@ export function SituationMonitorContent() {
                     ]}
                     dataSource={fedSnapshot.indicators}
                   />
-                ) : null}
+                ) : !fedSnapshot.hasFredApiKey ? null : (
+                  <Typography.Text type="secondary">
+                    {t("situationMonitor.fed.empty", { defaultValue: "No Federal Reserve data yet." })}
+                  </Typography.Text>
+                )}
 
                 {fedSnapshot.moneyPrinter ? (
                   <>

@@ -21,6 +21,7 @@ import {
 } from "./classification/category-classifier";
 import { SITUATION_PANELS } from "./config/situations";
 import { WORLD_LEADERS } from "./config/world-leaders";
+import { FinancialMainlineSnapshotService } from "./external/financial-mainline-snapshot.service";
 import { SituationMonitorExternalService } from "./external/situation-monitor-external.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import {
@@ -94,6 +95,7 @@ export class SituationMonitorService {
   constructor(
     private readonly cache: CacheService,
     private readonly external: SituationMonitorExternalService,
+    private readonly financialMainlineSnapshots: FinancialMainlineSnapshotService,
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly realtimeSignals: RealtimeSignalsService,
     @Inject(MONGO_CONNECTION) private readonly _mongo: MongoConnection,
@@ -272,10 +274,11 @@ export class SituationMonitorService {
       });
 
       const external = await this.cache.wrap(cacheKey, INSIGHTS_CACHE_TTL_SECONDS_EXTERNAL, async () => {
-        const [cryptoResult, marketsResult, fedResult] = await Promise.allSettled([
+        const [cryptoResult, marketsResult, fedResult, fedNewsResult] = await Promise.allSettled([
           this.external.getCryptoSnapshot(),
-          this.external.getMarketsSnapshot(),
-          this.external.getFedSnapshot(),
+          this.financialMainlineSnapshots.getMarketsSnapshot(),
+          this.financialMainlineSnapshots.getFedSnapshot(),
+          this.external.getFedNews(),
         ]);
 
         const payload: Partial<SituationMonitorInsightsResponse> = {};
@@ -286,8 +289,24 @@ export class SituationMonitorService {
         if (marketsResult.status === "fulfilled") {
           payload.markets = marketsResult.value;
         }
-        if (fedResult.status === "fulfilled") {
-          payload.fed = fedResult.value;
+        if (fedResult.status === "fulfilled" || fedNewsResult.status === "fulfilled") {
+          const fedSnapshot =
+            fedResult.status === "fulfilled"
+              ? fedResult.value
+              : {
+                  hasFredApiKey: false,
+                  indicators: [],
+                  moneyPrinter: null,
+                  news: [],
+                };
+          payload.fed = {
+            ...fedSnapshot,
+            news: fedNewsResult.status === "fulfilled" ? fedNewsResult.value : [],
+            error:
+              fedSnapshot.error ??
+              (fedResult.status === "rejected" ? this.safeErrorMessage(fedResult.reason) : undefined) ??
+              (fedNewsResult.status === "rejected" ? this.safeErrorMessage(fedNewsResult.reason) : undefined),
+          };
         }
 
         return payload;
@@ -358,6 +377,16 @@ export class SituationMonitorService {
       .map((entry) => entry.trim().toLowerCase())
       .filter((entry) => entry === "core" || entry === "external");
     return new Set(normalized.length > 0 ? normalized : []);
+  }
+
+  private safeErrorMessage(error: unknown): string | undefined {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message.trim();
+    }
+    if (typeof error === "string" && error.trim()) {
+      return error.trim();
+    }
+    return undefined;
   }
 
   private buildRealtimePredictiveSignals(snapshot: {

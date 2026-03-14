@@ -11,6 +11,7 @@ import {
   Spin,
   Select,
   Switch,
+  Table,
   Tabs,
   Tag,
   Typography,
@@ -54,7 +55,9 @@ import { SystemSecuritySettingsPanel } from "@/components/settings/system-securi
 import { UnitInputNumber } from "@/components/settings/unit-input-number";
 import { VectorServiceSettingsPanel } from "@/components/settings/vector-service-settings-panel";
 import {
+  EconomicDataFrequency,
   useEconomicDataRefreshPresetStatusQuery,
+  useEconomicFetchConfigsQuery,
   useAuditLogRetentionQuery,
   useAuthCacheSettingsQuery,
   useCrawlClientSettingsQuery,
@@ -64,6 +67,7 @@ import {
   useUpdateAuditLogRetentionMutation,
   useUpdateAuthCacheSettingsMutation,
   useUpdateCrawlClientSettingsMutation,
+  useUpdateEconomicFetchConfigMutation,
   useUpdateNewsPromptConfigMutation,
   useUpdateRateLimitSettingsMutation,
 } from "@/graphql/generated";
@@ -1364,7 +1368,61 @@ interface AkshareGatewayUpgradeStatusResponse {
   disabledReason?: string;
 }
 
+interface EconomicProviderMetadata {
+  providerKind?: "akshare" | "finnhub" | "fred";
+  requiresSecret?: "finnhubApiKey" | "fredApiKey" | null;
+  mainlineRole?: string | null;
+  snapshot?: {
+    group?: string;
+    bucket?: string;
+    symbol?: string;
+    name?: string;
+  } | null;
+}
+
+interface EconomicProviderSecretStatusResponse {
+  hasFinnhubApiKey: boolean;
+  hasFredApiKey: boolean;
+}
+
+function parseEconomicProviderMetadata(
+  metadata: unknown,
+): EconomicProviderMetadata {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {};
+  }
+  const record = metadata as Record<string, unknown>;
+  const snapshot =
+    record.snapshot && typeof record.snapshot === "object" && !Array.isArray(record.snapshot)
+      ? (record.snapshot as EconomicProviderMetadata["snapshot"])
+      : null;
+  return {
+    providerKind:
+      record.providerKind === "finnhub" ||
+      record.providerKind === "fred" ||
+      record.providerKind === "akshare"
+        ? record.providerKind
+        : undefined,
+    requiresSecret:
+      record.requiresSecret === "finnhubApiKey" ||
+      record.requiresSecret === "fredApiKey"
+        ? record.requiresSecret
+        : null,
+    mainlineRole:
+      typeof record.mainlineRole === "string" ? record.mainlineRole : null,
+    snapshot,
+  };
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const ECONOMIC_FREQUENCY_OPTIONS = [
+  EconomicDataFrequency.Realtime,
+  EconomicDataFrequency.Hourly,
+  EconomicDataFrequency.Daily,
+  EconomicDataFrequency.Weekly,
+  EconomicDataFrequency.Monthly,
+];
 
 function AkshareGatewaySettingsPanel() {
   const { t, i18n } = useTranslation();
@@ -1385,8 +1443,14 @@ function AkshareGatewaySettingsPanel() {
   const [status, setStatus] =
     useState<AkshareGatewayUpgradeStatusResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [providerSecretStatus, setProviderSecretStatus] =
+    useState<EconomicProviderSecretStatusResponse | null>(null);
+  const [updatingProviderSlug, setUpdatingProviderSlug] = useState<string | null>(
+    null,
+  );
   const [triggerEconomicDataRefreshPreset] =
     useTriggerEconomicDataRefreshPresetMutation();
+  const [updateEconomicFetchConfig] = useUpdateEconomicFetchConfigMutation();
   const presetStatusBaselineRef = useRef<string | null>(null);
 
   const apiClient = useMemo(
@@ -1431,10 +1495,47 @@ function AkshareGatewaySettingsPanel() {
     }
   }, [apiClient, t]);
 
+  const fetchProviderSecretStatus = useCallback(async () => {
+    if (!canManageEconomicData) {
+      setProviderSecretStatus(null);
+      return;
+    }
+    try {
+      const response =
+        await apiClient.get<EconomicProviderSecretStatusResponse>(
+          "system-settings/situation-monitor",
+          {
+            timeout: 10_000,
+          },
+        );
+      setProviderSecretStatus({
+        hasFinnhubApiKey: Boolean(response.data?.hasFinnhubApiKey),
+        hasFredApiKey: Boolean(response.data?.hasFredApiKey),
+      });
+    } catch (error) {
+      captureClientError(
+        "Failed to load financial provider secret status",
+        error,
+      );
+      setProviderSecretStatus(null);
+    }
+  }, [apiClient, canManageEconomicData]);
+
   useEffect(() => {
     void fetchVersion();
     void fetchStatus();
-  }, [fetchStatus, fetchVersion]);
+    void fetchProviderSecretStatus();
+  }, [fetchProviderSecretStatus, fetchStatus, fetchVersion]);
+
+  const {
+    data: fetchConfigsData,
+    loading: fetchConfigsLoading,
+    refetch: refetchFetchConfigs,
+  } = useEconomicFetchConfigsQuery({
+    skip: !canManageEconomicData,
+    fetchPolicy: "cache-and-network",
+    notifyOnNetworkStatusChange: true,
+  });
 
   const presetQueryVariables = selectedPreset
     ? {
@@ -1679,6 +1780,96 @@ function AkshareGatewaySettingsPanel() {
         ? "red"
         : "default";
 
+  const providerRows = useMemo(() => {
+    const configs = fetchConfigsData?.economicDataFetchConfigs ?? [];
+    return configs
+      .map((config) => {
+        const metadata = parseEconomicProviderMetadata(config.item.metadata);
+        if (!metadata.providerKind || metadata.providerKind === "akshare") {
+          return null;
+        }
+
+        const secretConfigured =
+          metadata.requiresSecret === "finnhubApiKey"
+            ? providerSecretStatus?.hasFinnhubApiKey ?? false
+            : metadata.requiresSecret === "fredApiKey"
+              ? providerSecretStatus?.hasFredApiKey ?? false
+              : true;
+
+        return {
+          key: config.id,
+          slug: config.item.slug,
+          displayName: config.item.displayName,
+          providerKind: metadata.providerKind,
+          requiresSecret: metadata.requiresSecret,
+          secretConfigured,
+          mainlineRole: metadata.mainlineRole ?? "canonical",
+          snapshotBucket: metadata.snapshot?.bucket ?? "mainline",
+          snapshotSymbol:
+            metadata.snapshot?.symbol ?? metadata.snapshot?.name ?? config.item.slug,
+          isEnabled: config.isEnabled,
+          frequency: config.frequency,
+          lastStatus: config.lastStatus ?? null,
+          lastError: config.lastError ?? null,
+        };
+      })
+      .filter(
+        (
+          row,
+        ): row is NonNullable<typeof row> => row !== null,
+      )
+      .sort((left, right) => {
+        const providerOrder = left.providerKind.localeCompare(right.providerKind);
+        if (providerOrder !== 0) {
+          return providerOrder;
+        }
+        const bucketOrder = left.snapshotBucket.localeCompare(right.snapshotBucket);
+        if (bucketOrder !== 0) {
+          return bucketOrder;
+        }
+        return left.displayName.localeCompare(right.displayName);
+      });
+  }, [fetchConfigsData?.economicDataFetchConfigs, providerSecretStatus]);
+
+  const handleUpdateProviderConfig = useCallback(
+    async (
+      slug: string,
+      patch: {
+        isEnabled?: boolean;
+        frequency?: EconomicDataFrequency;
+      },
+    ) => {
+      setUpdatingProviderSlug(slug);
+      try {
+        await updateEconomicFetchConfig({
+          variables: {
+            slug,
+            isEnabled: patch.isEnabled,
+            frequency: patch.frequency,
+          },
+        });
+        await refetchFetchConfigs();
+        messageApi.success(
+          t("systemSettings.akshare.providers.updated", {
+            defaultValue: "Provider item updated.",
+          }),
+        );
+      } catch (error) {
+        captureClientError("Failed to update economic provider config", error);
+        messageApi.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t("systemSettings.akshare.providers.updateFailed", {
+                defaultValue: "Failed to update provider item.",
+              }),
+        );
+      } finally {
+        setUpdatingProviderSlug(null);
+      }
+    },
+    [messageApi, refetchFetchConfigs, t, updateEconomicFetchConfig],
+  );
+
   return (
     <>
       {contextHolder}
@@ -1894,6 +2085,179 @@ function AkshareGatewaySettingsPanel() {
           </div>
         ) : null}
       </Card>
+
+      {canManageEconomicData ? (
+        <Card
+          size="small"
+          title={t("systemSettings.akshare.providers.title", {
+            defaultValue: "Financial data providers",
+          })}
+          style={{ marginTop: "1rem" }}
+          extra={
+            <Button
+              onClick={() => {
+                void refetchFetchConfigs();
+                void fetchProviderSecretStatus();
+              }}
+              loading={fetchConfigsLoading}
+            >
+              {t("common.refresh")}
+            </Button>
+          }
+        >
+          <Typography.Paragraph type="secondary">
+            {t("systemSettings.akshare.providers.description", {
+              defaultValue:
+                "Shows non-Akshare provider items now managed by the economic data mainline, including API key readiness and latest fetch status.",
+            })}
+          </Typography.Paragraph>
+          <Table
+            size="small"
+            rowKey="key"
+            loading={fetchConfigsLoading}
+            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            dataSource={providerRows}
+            columns={[
+              {
+                title: t("common.name", { defaultValue: "Name" }),
+                dataIndex: "displayName",
+                key: "displayName",
+                render: (value: string, row) => (
+                  <div>
+                    <div>{value}</div>
+                    <Typography.Text type="secondary">
+                      {row.slug}
+                    </Typography.Text>
+                  </div>
+                ),
+              },
+              {
+                title: t("systemSettings.akshare.providers.provider", {
+                  defaultValue: "Provider",
+                }),
+                dataIndex: "providerKind",
+                key: "providerKind",
+                width: 120,
+                render: (value: string) => <Tag color="blue">{value.toUpperCase()}</Tag>,
+              },
+              {
+                title: t("systemSettings.akshare.providers.scope", {
+                  defaultValue: "Mainline role",
+                }),
+                key: "scope",
+                width: 180,
+                render: (_: unknown, row) => (
+                  <>
+                    <Tag>{row.mainlineRole}</Tag>
+                    <Tag color="default">{row.snapshotBucket}</Tag>
+                  </>
+                ),
+              },
+              {
+                title: t("systemSettings.akshare.providers.secret", {
+                  defaultValue: "Secret",
+                }),
+                key: "secret",
+                width: 180,
+                render: (_: unknown, row) => {
+                  if (!row.requiresSecret) {
+                    return (
+                      <Tag color="default">
+                        {t("systemSettings.akshare.providers.notRequired", {
+                          defaultValue: "Not required",
+                        })}
+                      </Tag>
+                    );
+                  }
+                  return (
+                    <Tag color={row.secretConfigured ? "green" : "orange"}>
+                      {row.requiresSecret}
+                      {" · "}
+                      {row.secretConfigured
+                        ? t("systemSettings.akshare.providers.configured", {
+                            defaultValue: "configured",
+                          })
+                        : t("systemSettings.akshare.providers.missing", {
+                            defaultValue: "missing",
+                          })}
+                    </Tag>
+                  );
+                },
+              },
+              {
+                title: t("systemSettings.akshare.providers.schedule", {
+                  defaultValue: "Schedule",
+                }),
+                key: "schedule",
+                width: 220,
+                render: (_: unknown, row) => (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <Switch
+                      size="small"
+                      checked={row.isEnabled}
+                      loading={updatingProviderSlug === row.slug}
+                      onChange={(checked) => {
+                        void handleUpdateProviderConfig(row.slug, {
+                          isEnabled: checked,
+                        });
+                      }}
+                    />
+                    <Select
+                      size="small"
+                      style={{ minWidth: 110 }}
+                      value={row.frequency}
+                      disabled={updatingProviderSlug === row.slug}
+                      onChange={(value) => {
+                        void handleUpdateProviderConfig(row.slug, {
+                          frequency: value as EconomicDataFrequency,
+                        });
+                      }}
+                      options={ECONOMIC_FREQUENCY_OPTIONS.map((value) => ({
+                        value,
+                        label: value,
+                      }))}
+                    />
+                  </div>
+                ),
+              },
+              {
+                title: t("systemSettings.akshare.providers.latestStatus", {
+                  defaultValue: "Latest status",
+                }),
+                key: "latestStatus",
+                width: 240,
+                render: (_: unknown, row) => (
+                  <div>
+                    <Tag
+                      color={
+                        row.lastStatus === "success"
+                          ? "green"
+                          : row.lastStatus === "failed"
+                            ? "red"
+                            : "default"
+                      }
+                    >
+                      {row.lastStatus ?? t("common.notAvailable")}
+                    </Tag>
+                    {row.lastError ? (
+                      <Typography.Text type="secondary">
+                        {row.lastError}
+                      </Typography.Text>
+                    ) : null}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      ) : null}
     </>
   );
 }

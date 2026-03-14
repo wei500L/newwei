@@ -20,6 +20,12 @@ export class EconomicDataMetricProvider implements MetricProvider {
   ): Promise<MetricEvaluation> {
     const metricSlug =
       typeof rule.metricSlug === "string" ? rule.metricSlug.trim() : "";
+    const metadata =
+      rule.metadata && typeof rule.metadata === "object" && !Array.isArray(rule.metadata)
+        ? (rule.metadata as Record<string, unknown>)
+        : null;
+    const desiredSourceField =
+      typeof metadata?.sourceField === "string" ? metadata.sourceField.trim() : "";
     if (!metricSlug) {
       return {
         latest: null,
@@ -30,7 +36,8 @@ export class EconomicDataMetricProvider implements MetricProvider {
     }
     const take = rule.operator === AlertOperator.change_up_pct || rule.operator === AlertOperator.change_down_pct ? 2 : 1;
     const where: Prisma.EconomicDataPointWhereInput = {
-      item: { slug: metricSlug }
+      item: { slug: metricSlug },
+      ...(desiredSourceField ? { sourceField: desiredSourceField } : {})
     };
     if (rule.changeWindowMin) {
       const windowStart = new Date(Date.now() - rule.changeWindowMin * 60 * 1000);

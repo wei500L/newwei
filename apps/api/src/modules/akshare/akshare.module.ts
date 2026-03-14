@@ -14,6 +14,11 @@ import { AkshareQueueCleanupService } from "./akshare-queue-cleanup.service";
 import { AKSHARE_QUEUE, AKSHARE_QUEUE_EVENTS, AKSHARE_QUEUE_NAME } from "./akshare.constants";
 import { AkshareQueueProcessor } from "./akshare.processor";
 import { AkshareService } from "./akshare.service";
+import { AkshareFinancialDataProvider } from "./providers/akshare.provider";
+import { FinancialDataProviderRegistryInitializer } from "./providers/financial-data-provider-registry.initializer";
+import { FinancialDataProviderRegistry } from "./providers/financial-data-provider";
+import { FinnhubFinancialDataProvider } from "./providers/finnhub.provider";
+import { FredFinancialDataProvider } from "./providers/fred.provider";
 
 @Module({
   imports: [
@@ -33,6 +38,11 @@ import { AkshareService } from "./akshare.service";
     AkshareParserService,
     AkshareGatewayClient,
     AkshareService,
+    FinancialDataProviderRegistry,
+    FinancialDataProviderRegistryInitializer,
+    AkshareFinancialDataProvider,
+    FinnhubFinancialDataProvider,
+    FredFinancialDataProvider,
     AkshareQueueProcessor,
     AkshareQueueCleanupService,
     {
