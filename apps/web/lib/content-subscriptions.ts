@@ -10,6 +10,10 @@ export interface ContentSubscriptionItem {
   taxonomyLabels: string[];
   source: 'manual' | 'recommendation' | 'related' | 'legacy';
   metadata?: unknown;
+  ownerMonitorIds?: string[];
+  ownerMonitorNames?: string[];
+  manualMonitorOwned?: boolean;
+  systemSyncOwned?: boolean;
   createdAt: string;
   updatedAt: string;
 }

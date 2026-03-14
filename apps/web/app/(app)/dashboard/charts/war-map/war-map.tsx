@@ -32,9 +32,11 @@ import { createDeckMapRuntime, extractMapBbox, setDeckOverlayProps } from '@/lib
 import { MAP_STYLE_URL } from '@/lib/map/map-style';
 import { useRenderableContainer } from '@/lib/map/use-renderable-container';
 import { safeHttpUrl } from '@/lib/url';
-import { useSituationMonitorMonitorsStore } from '@/store/situation-monitor-monitors';
 import { useDashboardRangeStore } from '@/store/time-range';
 import { useWarMapSettingsStore } from '@/store/war-map-settings';
+
+import type { StoredSituationMonitor } from '@/app/(app)/situation-monitor/types/situation-monitor-monitors';
+import { SITUATION_MONITOR_MONITORS_UPDATED_EVENT } from '@/app/(app)/situation-monitor/utils/monitor-events';
 
 import {
   clusterWarMapPoints,
@@ -394,6 +396,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const [mapLoadError, setMapLoadError] = useState<MapLoadErrorPresentation | null>(null);
   const [mapMountNonce, setMapMountNonce] = useState(0);
   const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
+  const [monitors, setMonitors] = useState<StoredSituationMonitor[]>([]);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [queryViewport, setQueryViewport] = useState<{
     bbox?: [number, number, number, number];
@@ -401,7 +404,6 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   }>({ zoom: 2 });
 
   const { end } = useDashboardRangeStore();
-  const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
 
   const layerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
   const viewState = useWarMapSettingsStore((state) => state.viewState);
@@ -446,6 +448,47 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
+
+  const loadMonitors = useCallback(async () => {
+    if (!session?.accessToken) {
+      setMonitors([]);
+      return;
+    }
+
+    try {
+      const response = await apiClient.get<StoredSituationMonitor[]>(
+        'situation-monitor/monitors',
+      );
+      setMonitors(response.data ?? []);
+    } catch (error) {
+      captureClientError('Failed to load situation monitor map markers', error);
+    }
+  }, [apiClient, session?.accessToken]);
+
+  useEffect(() => {
+    void loadMonitors();
+  }, [loadMonitors]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleMonitorsUpdated = () => {
+      void loadMonitors();
+    };
+
+    window.addEventListener(
+      SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+      handleMonitorsUpdated,
+    );
+    return () => {
+      window.removeEventListener(
+        SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+        handleMonitorsUpdated,
+      );
+    };
+  }, [loadMonitors]);
   const retryMapLoad = useCallback(() => {
     setMapLoadError(null);
     setMapReady(false);
@@ -704,7 +747,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         .filter((monitor) => isValidLatLng(monitor.location!.lat, monitor.location!.lng))
         .map((monitor) => ({
           query:
-            monitor.keywords.find((keyword) => keyword.trim().length > 0)?.trim() ??
+            monitor.rawKeywords.find((keyword: string) => keyword.trim().length > 0)?.trim() ??
             monitor.name,
           id: monitor.id,
           lat: monitor.location!.lat,

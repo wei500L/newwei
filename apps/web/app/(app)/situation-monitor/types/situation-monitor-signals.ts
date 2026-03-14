@@ -1,3 +1,5 @@
+import type { SituationMonitorMatchResult } from './situation-monitor-monitors';
+
 export interface TelegramSignalItem {
   id: string;
   source: "telegram";
@@ -21,6 +23,7 @@ export interface SituationTelegramFeedResponse {
   count: number;
   updatedAt: string | null;
   items: TelegramSignalItem[];
+  monitorMatches?: SituationMonitorMatchResult[];
   error?: string;
 }
 
@@ -45,6 +48,7 @@ export interface SituationOrefAlertsResponse {
   historyCount24h: number;
   totalHistoryCount: number;
   timestamp: string;
+  monitorMatches?: SituationMonitorMatchResult[];
   error?: string;
 }
 
@@ -55,6 +59,7 @@ export interface SituationOrefHistoryResponse {
   historyCount24h: number;
   totalHistoryCount: number;
   timestamp: string;
+  monitorMatches?: SituationMonitorMatchResult[];
   error?: string;
 }
 

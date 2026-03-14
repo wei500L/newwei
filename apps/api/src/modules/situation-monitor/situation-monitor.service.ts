@@ -35,6 +35,7 @@ import type {
   SituationMonitorCryptoItem,
   SituationMonitorFedSnapshot,
   SituationMonitorHeadline,
+  SituationMonitorMatchResult,
   SituationMonitorMarketsSnapshot,
   SituationMonitorPizzintSnapshot,
   SituationMonitorSituationPanel,
@@ -88,6 +89,7 @@ export interface SituationMonitorInsightsResponse {
   narrativeSummary?: ReturnType<typeof getNarrativeSummary>;
   mainCharacter?: ReturnType<typeof calculateMainCharacter>;
   mainCharacterSummary?: ReturnType<typeof getMainCharacterSummary>;
+  monitorMatches?: SituationMonitorMatchResult[];
 }
 
 @Injectable()
@@ -517,6 +519,8 @@ export class SituationMonitorService {
         "result.summary": 1,
         "result.key_points": 1,
         "result.topics": 1,
+        "result.entities": 1,
+        "result.location": 1,
         "result.category": 1,
       })
       .lean()
@@ -572,6 +576,11 @@ export class SituationMonitorService {
       const summary = this.normalizeSummary(rawSummary);
       const keyPoints = this.normalizeKeyPoints(result?.key_points);
       const topics = this.normalizeTopics(result?.topics);
+      const entities = this.normalizeEntities(result?.entities);
+      const location =
+        typeof result?.location === 'string' && result.location.trim()
+          ? result.location.trim()
+          : undefined;
 
       const rawSourceName =
         raw?.payload && typeof raw.payload === "object" && !Array.isArray(raw.payload)
@@ -637,6 +646,8 @@ export class SituationMonitorService {
         summary: summary ?? undefined,
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topics: topics.length > 0 ? topics : undefined,
+        entities: entities.length > 0 ? entities : undefined,
+        location,
         classificationSource: options.debug ? classification.source ?? undefined : undefined,
         classificationConfidence:
           options.debug && typeof classification.confidence === "number"
@@ -947,6 +958,30 @@ export class SituationMonitorService {
         out.push(normalized);
       }
       if (out.length >= 6) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  private normalizeEntities(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const out: string[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        continue;
+      }
+      const name =
+        typeof (entry as { name?: unknown }).name === 'string'
+          ? (entry as { name: string }).name.trim()
+          : '';
+      if (!name || out.includes(name)) {
+        continue;
+      }
+      out.push(name);
+      if (out.length >= 8) {
         break;
       }
     }

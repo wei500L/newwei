@@ -15,6 +15,7 @@ import {
   NewsClassificationSettingsService,
   type NewsClassificationTaxonomyNode,
 } from '../news-pipeline/news-classification-settings.service';
+import { SituationMonitorMonitorsService } from '../situation-monitor/situation-monitor-monitors.service';
 import { UserNewsBehaviorService } from '../user-news-behavior/user-news-behavior.service';
 import { USER_DIGEST_PREFERENCE_KEY } from '../user-digest/user-digest.constants';
 
@@ -76,6 +77,10 @@ export interface ContentSubscriptionItem {
   taxonomyLabels: string[];
   source: ContentSubscriptionSource;
   metadata?: unknown;
+  ownerMonitorIds?: string[];
+  ownerMonitorNames?: string[];
+  manualMonitorOwned?: boolean;
+  systemSyncOwned?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -132,6 +137,7 @@ export class UserContentSubscriptionsService {
     private readonly settings: NewsClassificationSettingsService,
     private readonly liteLlm: LiteLlmService,
     private readonly behavior: UserNewsBehaviorService,
+    private readonly monitors: SituationMonitorMonitorsService,
   ) {}
 
   async listUserSubscriptions(
@@ -140,6 +146,7 @@ export class UserContentSubscriptionsService {
   ): Promise<ContentSubscriptionListResponse> {
     await this.ensureLegacyMigration(orgId, userId);
     const taxonomy = await this.getTaxonomyDescriptor(orgId);
+    const ownership = await this.monitors.buildSubscriptionOwnershipMap(orgId, userId);
     const rows = await this.prisma.userContentSubscription.findMany({
       where: { orgId, userId },
       orderBy: [
@@ -156,7 +163,19 @@ export class UserContentSubscriptionsService {
 
     const items = rows.map((row) => {
       counts[row.kind] += 1;
-      return this.mapSubscriptionRow(row, taxonomy.byPath);
+      const item = this.mapSubscriptionRow(row, taxonomy.byPath);
+      const ownershipEntry = ownership.get(
+        this.subscriptionKey(row.kind, row.normalizedValue),
+      );
+      return ownershipEntry
+        ? {
+            ...item,
+            ownerMonitorIds: ownershipEntry.ownerMonitorIds,
+            ownerMonitorNames: ownershipEntry.ownerMonitorNames,
+            manualMonitorOwned: ownershipEntry.manualMonitorOwned,
+            systemSyncOwned: ownershipEntry.systemSyncOwned,
+          }
+        : item;
     });
 
     return {
@@ -253,7 +272,9 @@ export class UserContentSubscriptionsService {
       results.push(this.toBatchResult('subscribed', created.kind, created.normalizedValue, created.displayValue, created.taxonomyPath, taxonomy.byPath));
     }
 
-    return this.buildBatchResponse(results, counts, taxonomy.byPath);
+    await this.monitors.reconcileContentSubscriptionSync(orgId, userId);
+    const refreshedCounts = await this.readSubscriptionCounts(orgId, userId);
+    return this.buildBatchResponse(results, refreshedCounts, taxonomy.byPath);
   }
 
   async batchDeleteSubscriptions(
@@ -316,16 +337,9 @@ export class UserContentSubscriptionsService {
       );
     });
 
-    const counts: Record<ContentSubscriptionKind, number> = {
-      [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.topic },
-      }),
-      [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
-        where: { orgId, userId, kind: ContentSubscriptionKind.entity },
-      }),
-    };
-
-    return this.buildBatchResponse(results, counts, taxonomy.byPath);
+    await this.monitors.reconcileContentSubscriptionSync(orgId, userId);
+    const refreshedCounts = await this.readSubscriptionCounts(orgId, userId);
+    return this.buildBatchResponse(results, refreshedCounts, taxonomy.byPath);
   }
 
   async listCatalog(
@@ -1346,6 +1360,17 @@ export class UserContentSubscriptionsService {
       metadata: row.metadata,
       ...(typeof score === 'number' && Number.isFinite(score) ? { score } : {}),
     };
+  }
+
+  private async readSubscriptionCounts(orgId: string, userId: string) {
+    return {
+      [ContentSubscriptionKind.topic]: await this.prisma.userContentSubscription.count({
+        where: { orgId, userId, kind: ContentSubscriptionKind.topic },
+      }),
+      [ContentSubscriptionKind.entity]: await this.prisma.userContentSubscription.count({
+        where: { orgId, userId, kind: ContentSubscriptionKind.entity },
+      }),
+    } satisfies Record<ContentSubscriptionKind, number>;
   }
 
   private buildBatchResponse(

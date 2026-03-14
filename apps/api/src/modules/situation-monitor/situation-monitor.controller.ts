@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -10,7 +10,14 @@ import {
 } from "../system-settings/situation-monitor-settings.service";
 
 import { CORRELATION_TOPICS, NARRATIVE_PATTERNS } from "./analysis/patterns";
+import {
+  CreateSituationMonitorDto,
+  SituationMonitorMonitorIdParamDto,
+  SituationMonitorPreviewDto,
+  UpdateSituationMonitorDto,
+} from "./dto/situation-monitor-monitor.dto";
 import { SituationMonitorInsightsQueryDto, SituationMonitorSignalFeedbackDto } from "./dto/situation-monitor.dto";
+import { SituationMonitorMonitorsService } from "./situation-monitor-monitors.service";
 import { SituationMonitorSignalsService } from "./signals/situation-monitor-signals.service";
 import { SituationMonitorFeedbackService } from "./situation-monitor-feedback.service";
 import { SituationMonitorTranslationService } from "./situation-monitor-translation.service";
@@ -126,6 +133,7 @@ function formatIdTitle(id: string): string {
 export class SituationMonitorController {
   constructor(
     private readonly monitor: SituationMonitorService,
+    private readonly monitors: SituationMonitorMonitorsService,
     private readonly feedback: SituationMonitorFeedbackService,
     private readonly translator: SituationMonitorTranslationService,
     private readonly signals: SituationMonitorSignalsService,
@@ -153,7 +161,51 @@ export class SituationMonitorController {
       response.translation = { target: translateTarget, ...result };
     }
 
-    return response;
+    return await this.monitors.augmentInsights(user.orgId, user.id, response);
+  }
+
+  @Get('monitors')
+  @Permissions('items.read')
+  async listMonitors(@CurrentUser() user: AuthenticatedUser) {
+    return await this.monitors.listMonitors(user.orgId, user.id);
+  }
+
+  @Post('monitors/preview')
+  @Permissions('items.read')
+  async previewMonitor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: SituationMonitorPreviewDto,
+  ) {
+    return await this.monitors.previewMonitor(user.orgId, body);
+  }
+
+  @Post('monitors')
+  @Permissions('items.read')
+  async createMonitor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: CreateSituationMonitorDto,
+  ) {
+    return await this.monitors.createMonitor(user.orgId, user.id, body);
+  }
+
+  @Patch('monitors/:id')
+  @Permissions('items.read')
+  async updateMonitor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: SituationMonitorMonitorIdParamDto,
+    @Body() body: UpdateSituationMonitorDto,
+  ) {
+    return await this.monitors.updateMonitor(user.orgId, user.id, params.id, body);
+  }
+
+  @Delete('monitors/:id')
+  @Permissions('items.read')
+  async deleteMonitor(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: SituationMonitorMonitorIdParamDto,
+  ) {
+    await this.monitors.deleteMonitor(user.orgId, user.id, params.id);
+    return { ok: true };
   }
 
   @Get("catalog")
@@ -198,26 +250,26 @@ export class SituationMonitorController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: Record<string, unknown>,
   ) {
-    void user;
-    return await this.signals.getTelegramFeed({
+    const response = await this.signals.getTelegramFeed({
       limit: parsePositiveInt(query.limit, { min: 1, max: 200 }),
       topic: typeof query.topic === "string" ? query.topic : undefined,
       channel: typeof query.channel === "string" ? query.channel : undefined,
     });
+    return await this.monitors.augmentTelegramFeed(user.orgId, user.id, response);
   }
 
   @Get("oref-alerts")
   @Permissions("items.read")
   async orefAlerts(@CurrentUser() user: AuthenticatedUser) {
-    void user;
-    return await this.signals.getOrefAlerts();
+    const response = await this.signals.getOrefAlerts();
+    return await this.monitors.augmentOrefAlerts(user.orgId, user.id, response);
   }
 
   @Get("oref-history")
   @Permissions("items.read")
   async orefHistory(@CurrentUser() user: AuthenticatedUser) {
-    void user;
-    return await this.signals.getOrefHistory();
+    const response = await this.signals.getOrefHistory();
+    return await this.monitors.augmentOrefHistory(user.orgId, user.id, response);
   }
 
   @Get("live-hls-proxy-config")

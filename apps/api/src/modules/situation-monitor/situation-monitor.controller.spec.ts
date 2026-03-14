@@ -6,6 +6,17 @@ describe("SituationMonitorController", () => {
   const monitorMock = {
     getInsights: jest.fn(),
   };
+  const monitorsMock = {
+    augmentInsights: jest.fn(),
+    augmentTelegramFeed: jest.fn(),
+    augmentOrefAlerts: jest.fn(),
+    augmentOrefHistory: jest.fn(),
+    listMonitors: jest.fn(),
+    previewMonitor: jest.fn(),
+    createMonitor: jest.fn(),
+    updateMonitor: jest.fn(),
+    deleteMonitor: jest.fn(),
+  };
   const feedbackMock = {
     recordFeedback: jest.fn(),
   };
@@ -45,6 +56,7 @@ describe("SituationMonitorController", () => {
 
     controller = new SituationMonitorController(
       monitorMock as any,
+      monitorsMock as any,
       feedbackMock as any,
       translationMock as any,
       signalsMock as any,

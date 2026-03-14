@@ -18,6 +18,8 @@ export interface SituationMonitorHeadline {
   keyPoints?: string[];
   keyPointsZh?: string[];
   topics?: string[];
+  entities?: string[];
+  location?: string;
   classificationSource?: SituationMonitorCategoryClassificationSource;
   classificationConfidence?: number;
   classificationReason?: string;
@@ -140,4 +142,54 @@ export interface SituationMonitorTensionPair {
   trend: "rising" | "stable" | "falling";
   countries: string[];
   updatedAt: string;
+}
+
+export type SituationMonitorMatchReasonCode =
+  | 'keyword'
+  | 'topic'
+  | 'entity'
+  | 'semantic'
+  | 'rerank'
+  | 'geo';
+
+export interface SituationMonitorMatchReason {
+  code: SituationMonitorMatchReasonCode;
+  label: string;
+  matchedValues?: string[];
+  score?: number;
+}
+
+export type SituationMonitorMatchGeoStatus =
+  | 'not_configured'
+  | 'matched'
+  | 'country_match'
+  | 'conflict'
+  | 'unresolved';
+
+export interface SituationMonitorMatchResult {
+  itemKey: string;
+  itemType:
+    | 'headline'
+    | 'alert'
+    | 'situation'
+    | 'telegram'
+    | 'oref_alert'
+    | 'oref_history';
+  monitorId: string;
+  monitorKind: 'manual' | 'system_sync';
+  monitorName: string;
+  monitorColor?: string;
+  score: number;
+  geoStatus: SituationMonitorMatchGeoStatus;
+  matchedTerms: string[];
+  reasons: SituationMonitorMatchReason[];
+  itemMetaId?: string;
+  title: string;
+  titleZh?: string;
+  summary?: string;
+  summaryZh?: string;
+  link: string;
+  source: string;
+  timestamp: number;
+  category?: string;
 }

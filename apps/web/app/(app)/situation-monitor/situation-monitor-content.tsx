@@ -56,10 +56,6 @@ import {
   type SituationMonitorPanelId,
   useSituationMonitorLayoutStore,
 } from "@/store/situation-monitor-layout";
-import {
-  useSituationMonitorMonitorsStore,
-  type SituationMonitorMonitorMatch,
-} from "@/store/situation-monitor-monitors";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
 
@@ -67,11 +63,21 @@ import { SituationMonitorLiveNewsPanel } from "./components/situation-monitor-li
 import { SituationMonitorLiveWebcamsPanel } from "./components/situation-monitor-live-webcams-panel";
 import { useSituationMonitorStream } from "./hooks/use-situation-monitor-stream";
 import { SituationMonitorMonitorsPanel } from "./situation-monitor-monitors-panel";
+import type { SituationMonitorMatchResult } from "./types/situation-monitor-monitors";
 import type {
   SituationOrefAlertsResponse,
   SituationOrefHistoryResponse,
   SituationTelegramFeedResponse,
 } from "./types/situation-monitor-signals";
+import {
+  buildMonitorMatchKey,
+  collectMonitorMatchesForKeys,
+  getDefaultMonitorReasonLabel,
+} from "./utils/monitor-matches";
+import {
+  getSituationMonitorMonitorsUpdatedSource,
+  SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+} from "./utils/monitor-events";
 import {
   buildPackedResponsiveLayout,
   GRID_BREAKPOINTS,
@@ -236,6 +242,8 @@ interface SituationMonitorHeadline {
   keyPoints?: string[];
   keyPointsZh?: string[];
   topics?: string[];
+  entities?: string[];
+  location?: string;
 }
 
 interface SituationMonitorAlertHeadline extends SituationMonitorHeadline {
@@ -530,6 +538,7 @@ interface SituationMonitorInsightsResponse {
     status: string;
     statusZh?: string;
   };
+  monitorMatches?: SituationMonitorMatchResult[];
 }
 
 function mergeTranslationStatus(
@@ -860,11 +869,6 @@ export function SituationMonitorContent() {
   const orefRealtimeRefreshTimerRef = useRef<number | null>(null);
   const loading = refreshStage !== "idle";
 
-  const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
-  const monitorMatches = useSituationMonitorMonitorsStore(
-    (state) => state.matches,
-  );
-  const scanMonitors = useSituationMonitorMonitorsStore((state) => state.scan);
   const telegramPanelVisible = useSituationMonitorLayoutStore(
     (state) => state.visibility["telegram-feed"],
   );
@@ -1159,6 +1163,7 @@ export function SituationMonitorContent() {
             merged.windowHours = prev.windowHours;
             merged.maxItems = prev.maxItems;
             merged.analyzedItems = prev.analyzedItems;
+            merged.monitorMatches = prev.monitorMatches;
 
             // Still surface the latest refresh timestamp so the header reflects the most recent load.
             if (externalData.generatedAt) {
@@ -1349,78 +1354,6 @@ export function SituationMonitorContent() {
     onOrefUpdate: handleRealtimeOrefUpdate,
   });
 
-  const monitorScanItems: SituationMonitorMonitorMatch["item"][] =
-    useMemo(() => {
-      const items: SituationMonitorMonitorMatch["item"][] = [];
-      const seen = new Set<string>();
-
-      const add = (entry: SituationMonitorMonitorMatch["item"]) => {
-        const key = `${entry.link}::${entry.title}`;
-        if (seen.has(key)) {
-          return;
-        }
-        seen.add(key);
-        items.push(entry);
-      };
-
-      const headlines = data?.headlines;
-      if (headlines) {
-        for (const [category, entries] of Object.entries(headlines) as [
-          SituationMonitorCategory,
-          SituationMonitorHeadline[],
-        ][]) {
-          for (const entry of entries) {
-            add({
-              title: entry.title,
-              titleZh: entry.titleZh,
-              itemMetaId: entry.itemMetaId,
-              link: entry.link,
-              source: entry.source,
-              timestamp: entry.timestamp,
-              category,
-              summary: entry.summary,
-              summaryZh: entry.summaryZh,
-              keyPoints: entry.keyPoints,
-              keyPointsZh: entry.keyPointsZh,
-              topics: entry.topics,
-            });
-          }
-        }
-      }
-
-      for (const alert of data?.alerts ?? []) {
-        add({
-          title: alert.title,
-          titleZh: alert.titleZh,
-          itemMetaId: alert.itemMetaId,
-          link: alert.link,
-          source: alert.source,
-          timestamp: alert.timestamp,
-          category: `alert:${alert.category}`,
-          summary: alert.summary,
-          summaryZh: alert.summaryZh,
-          keyPoints: alert.keyPoints,
-          keyPointsZh: alert.keyPointsZh,
-          topics: alert.topics,
-        });
-      }
-
-      for (const panel of data?.situations ?? []) {
-        for (const entry of panel.headlines ?? []) {
-          add({
-            title: entry.title,
-            titleZh: entry.titleZh,
-            link: entry.link,
-            source: entry.source,
-            timestamp: entry.timestamp,
-            category: `situation:${panel.id}`,
-          });
-        }
-      }
-
-      return items;
-    }, [data?.alerts, data?.headlines, data?.situations]);
-
   const feedbackCandidateHeadlines = useMemo(() => {
     const headlinesByCategory = data?.headlines;
     if (!headlinesByCategory) {
@@ -1452,40 +1385,50 @@ export function SituationMonitorContent() {
     );
   }, [feedbackCandidateHeadlines]);
 
-  useEffect(() => {
-    scanMonitors(monitorScanItems);
-  }, [monitorScanItems, monitors, scanMonitors]);
+  const allMonitorMatches = useMemo(() => {
+    return [
+      ...(data?.monitorMatches ?? []),
+      ...(telegramFeed?.monitorMatches ?? []),
+      ...(orefAlerts?.monitorMatches ?? []),
+      ...(orefHistory?.monitorMatches ?? []),
+    ];
+  }, [
+    data?.monitorMatches,
+    orefAlerts?.monitorMatches,
+    orefHistory?.monitorMatches,
+    telegramFeed?.monitorMatches,
+  ]);
 
   const monitorColorById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const monitor of monitors) {
-      if (monitor.color) {
-        map.set(monitor.id, monitor.color);
+    for (const match of allMonitorMatches) {
+      if (match.monitorColor) {
+        map.set(match.monitorId, match.monitorColor);
       }
     }
     return map;
-  }, [monitors]);
+  }, [allMonitorMatches]);
 
   const monitorMatchesByKey = useMemo(() => {
-    const map = new Map<string, SituationMonitorMonitorMatch[]>();
-    for (const match of monitorMatches) {
-      const key = match.item.itemMetaId
-        ? `id:${match.item.itemMetaId}`
-        : `link:${match.item.link}::${match.item.title}`;
-      const existing = map.get(key);
+    const map = new Map<string, SituationMonitorMatchResult[]>();
+    for (const match of allMonitorMatches) {
+      const existing = map.get(match.itemKey);
       if (existing) {
         existing.push(match);
       } else {
-        map.set(key, [match]);
+        map.set(match.itemKey, [match]);
       }
     }
 
     for (const list of map.values()) {
-      list.sort((a, b) => a.monitorName.localeCompare(b.monitorName));
+      list.sort(
+        (a, b) =>
+          b.score - a.score || a.monitorName.localeCompare(b.monitorName),
+      );
     }
 
     return map;
-  }, [monitorMatches]);
+  }, [allMonitorMatches]);
 
   const emergingColumns: ColumnsType<EmergingPattern> = [
     {
@@ -2844,10 +2787,10 @@ export function SituationMonitorContent() {
   const fedSnapshot = data?.fed;
   const hasMarketSnapshotData = Boolean(
     marketsSnapshot &&
-      ((marketsSnapshot.indices?.length ?? 0) +
+      (marketsSnapshot.indices?.length ?? 0) +
         (marketsSnapshot.sectors?.length ?? 0) +
         (marketsSnapshot.commodities?.length ?? 0) >
-        0),
+        0,
   );
   const hasFedIndicatorSnapshotData =
     (fedSnapshot?.indicators?.length ?? 0) > 0;
@@ -3196,11 +3139,12 @@ export function SituationMonitorContent() {
     );
   };
 
-  const renderHeadlineMonitorMatches = (entry: SituationMonitorHeadline) => {
-    const matchKey = entry.itemMetaId
-      ? `id:${entry.itemMetaId}`
-      : `link:${entry.link}::${entry.title}`;
-    const matches = monitorMatchesByKey.get(matchKey);
+  const collectMonitorMatches = (keys: string[]) => {
+    return collectMonitorMatchesForKeys(monitorMatchesByKey, keys);
+  };
+
+  const renderMonitorMatches = (keys: string[], scopeKey: string) => {
+    const matches = collectMonitorMatches(keys);
     if (!matches || matches.length === 0) {
       return null;
     }
@@ -3220,24 +3164,40 @@ export function SituationMonitorContent() {
         content={
           <Space direction="vertical" size={6} style={{ maxWidth: 520 }}>
             {matches.map((match) => (
-              <Space key={`${matchKey}:${match.monitorId}`} size={6} wrap>
+              <Space
+                key={`${scopeKey}:${match.itemKey}:${match.monitorId}`}
+                size={6}
+                wrap
+              >
                 <Tag color={monitorColorById.get(match.monitorId)}>
                   {match.monitorName}
                 </Tag>
-                {match.matchedKeywords.map((keyword) => (
+                {match.matchedTerms.map((term) => (
                   <Tag
-                    key={keyword}
+                    key={`${match.itemKey}:${match.monitorId}:${term}`}
                     color="default"
                     className="cursor-pointer"
                     onClick={() =>
                       window.open(
-                        `/search?q=${encodeURIComponent(keyword)}`,
+                        `/search?q=${encodeURIComponent(term)}`,
                         "_blank",
                         "noopener,noreferrer",
                       )
                     }
                   >
-                    {keyword}
+                    {term}
+                  </Tag>
+                ))}
+                {match.reasons.map((reason) => (
+                  <Tag
+                    key={`${match.itemKey}:${match.monitorId}:${reason.code}`}
+                    color="default"
+                  >
+                    {t(`situationMonitor.monitors.reason.${reason.code}`, {
+                      defaultValue:
+                        reason.label ||
+                        getDefaultMonitorReasonLabel(reason.code),
+                    })}
                   </Tag>
                 ))}
               </Space>
@@ -3248,7 +3208,7 @@ export function SituationMonitorContent() {
         <Space size={4} wrap>
           {preview.map((match) => (
             <Tag
-              key={`${entry.id}:${match.monitorId}`}
+              key={`${scopeKey}:${match.itemKey}:${match.monitorId}`}
               color={monitorColorById.get(match.monitorId)}
             >
               {match.monitorName}
@@ -3259,6 +3219,12 @@ export function SituationMonitorContent() {
       </Popover>
     );
   };
+
+  const renderHeadlineMonitorMatches = (entry: SituationMonitorHeadline) =>
+    renderMonitorMatches(
+      [buildMonitorMatchKey(entry.itemMetaId, entry.link, entry.title)],
+      `headline:${entry.id}`,
+    );
 
   const renderFeedPanel = (category: SituationMonitorCategory) => {
     const entries = data?.headlines?.[category] ?? [];
@@ -3524,89 +3490,89 @@ export function SituationMonitorContent() {
           ) : null}
           {hasMarketSnapshotData ? (
             <>
-            <Table
-              rowKey="symbol"
-              size="small"
-              pagination={false}
-              columns={[
-                {
-                  title: t("common.name", { defaultValue: "Name" }),
-                  dataIndex: "name",
-                  key: "name",
-                },
-                {
-                  title: t("situationMonitor.markets.price", {
-                    defaultValue: "Price",
-                  }),
-                  dataIndex: "price",
-                  key: "price",
-                  width: 120,
-                  render: (value: number) => formatUsd(value, locale),
-                },
-                {
-                  title: t("situationMonitor.markets.changePct", {
-                    defaultValue: "Change",
-                  }),
-                  dataIndex: "changePercent",
-                  key: "changePercent",
-                  width: 110,
-                  render: (value: number) => (
-                    <Typography.Text
-                      type={
-                        Number.isFinite(value) && value < 0
-                          ? "danger"
-                          : "success"
-                      }
-                    >
-                      {formatPercent(value)}
-                    </Typography.Text>
-                  ),
-                },
-              ]}
-              dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
-            />
-            <Divider style={{ margin: "12px 0" }} />
-            <Table
-              rowKey="symbol"
-              size="small"
-              pagination={false}
-              columns={[
-                {
-                  title: t("common.name", { defaultValue: "Name" }),
-                  dataIndex: "name",
-                  key: "name",
-                },
-                {
-                  title: t("situationMonitor.markets.price", {
-                    defaultValue: "Price",
-                  }),
-                  dataIndex: "price",
-                  key: "price",
-                  width: 120,
-                  render: (value: number) => formatUsd(value, locale),
-                },
-                {
-                  title: t("situationMonitor.markets.changePct", {
-                    defaultValue: "Change",
-                  }),
-                  dataIndex: "changePercent",
-                  key: "changePercent",
-                  width: 110,
-                  render: (value: number) => (
-                    <Typography.Text
-                      type={
-                        Number.isFinite(value) && value < 0
-                          ? "danger"
-                          : "success"
-                      }
-                    >
-                      {formatPercent(value)}
-                    </Typography.Text>
-                  ),
-                },
-              ]}
-              dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
-            />
+              <Table
+                rowKey="symbol"
+                size="small"
+                pagination={false}
+                columns={[
+                  {
+                    title: t("common.name", { defaultValue: "Name" }),
+                    dataIndex: "name",
+                    key: "name",
+                  },
+                  {
+                    title: t("situationMonitor.markets.price", {
+                      defaultValue: "Price",
+                    }),
+                    dataIndex: "price",
+                    key: "price",
+                    width: 120,
+                    render: (value: number) => formatUsd(value, locale),
+                  },
+                  {
+                    title: t("situationMonitor.markets.changePct", {
+                      defaultValue: "Change",
+                    }),
+                    dataIndex: "changePercent",
+                    key: "changePercent",
+                    width: 110,
+                    render: (value: number) => (
+                      <Typography.Text
+                        type={
+                          Number.isFinite(value) && value < 0
+                            ? "danger"
+                            : "success"
+                        }
+                      >
+                        {formatPercent(value)}
+                      </Typography.Text>
+                    ),
+                  },
+                ]}
+                dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
+              />
+              <Divider style={{ margin: "12px 0" }} />
+              <Table
+                rowKey="symbol"
+                size="small"
+                pagination={false}
+                columns={[
+                  {
+                    title: t("common.name", { defaultValue: "Name" }),
+                    dataIndex: "name",
+                    key: "name",
+                  },
+                  {
+                    title: t("situationMonitor.markets.price", {
+                      defaultValue: "Price",
+                    }),
+                    dataIndex: "price",
+                    key: "price",
+                    width: 120,
+                    render: (value: number) => formatUsd(value, locale),
+                  },
+                  {
+                    title: t("situationMonitor.markets.changePct", {
+                      defaultValue: "Change",
+                    }),
+                    dataIndex: "changePercent",
+                    key: "changePercent",
+                    width: 110,
+                    render: (value: number) => (
+                      <Typography.Text
+                        type={
+                          Number.isFinite(value) && value < 0
+                            ? "danger"
+                            : "success"
+                        }
+                      >
+                        {formatPercent(value)}
+                      </Typography.Text>
+                    ),
+                  },
+                ]}
+                dataSource={(marketsSnapshot.commodities ?? []).slice(0, 3)}
+              />
             </>
           ) : !marketsSnapshot.hasFinnhubApiKey ? null : (
             <Typography.Text type="secondary">
@@ -4245,6 +4211,10 @@ export function SituationMonitorContent() {
                     {item.topic ? (
                       <Tag color="default">{item.topic}</Tag>
                     ) : null}
+                    {renderMonitorMatches(
+                      [`telegram:${item.id}`],
+                      `telegram:${item.id}`,
+                    )}
                   </Space>
                   {href ? (
                     <Typography.Link
@@ -4411,6 +4381,10 @@ export function SituationMonitorContent() {
                             .join(" · ")}
                         </Typography.Text>
                       ) : null}
+                      {renderMonitorMatches(
+                        [`oref:${alert.id}`],
+                        `oref-alert:${alert.id}`,
+                      )}
                       {alertDateText ? (
                         <Typography.Text type="secondary">
                           {alertDateText}
@@ -4448,28 +4422,41 @@ export function SituationMonitorContent() {
                   const recent = isRecentOrefTimestamp(entry.timestamp);
                   return (
                     <List.Item key={entry.timestamp}>
-                      <Space size={8} wrap>
-                        <Tag color="default">{waveCount}</Tag>
-                        {recent ? (
-                          <Tag color="volcano">
-                            {t("situationMonitor.oref.recent", {
-                              defaultValue: "Recent",
-                            })}
-                          </Tag>
-                        ) : null}
-                        {date && !Number.isNaN(date.getTime()) ? (
-                          <Typography.Text type="secondary">
-                            {formatDateTime(date, locale, {
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </Typography.Text>
-                        ) : (
-                          <Typography.Text type="secondary">
-                            {entry.timestamp}
-                          </Typography.Text>
+                      <Space
+                        direction="vertical"
+                        size={6}
+                        style={{ width: "100%" }}
+                      >
+                        <Space size={8} wrap>
+                          <Tag color="default">{waveCount}</Tag>
+                          {recent ? (
+                            <Tag color="volcano">
+                              {t("situationMonitor.oref.recent", {
+                                defaultValue: "Recent",
+                              })}
+                            </Tag>
+                          ) : null}
+                          {date && !Number.isNaN(date.getTime()) ? (
+                            <Typography.Text type="secondary">
+                              {formatDateTime(date, locale, {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </Typography.Text>
+                          ) : (
+                            <Typography.Text type="secondary">
+                              {entry.timestamp}
+                            </Typography.Text>
+                          )}
+                        </Space>
+                        {renderMonitorMatches(
+                          (entry.alerts ?? []).map(
+                            (alert) =>
+                              `oref-history:${entry.timestamp}:${alert.id}`,
+                          ),
+                          `oref-history:${entry.timestamp}`,
                         )}
                       </Space>
                     </List.Item>
@@ -4874,9 +4861,46 @@ export function SituationMonitorContent() {
     </Card>
   );
 
+  const handleMonitorsChanged = useCallback(async () => {
+    await load();
+    await Promise.all([
+      loadTelegramFeedRef.current({ silent: true }),
+      loadOrefSignalsRef.current({ silent: true }),
+    ]);
+  }, [load]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleMonitorUpdate = (event: Event) => {
+      if (
+        getSituationMonitorMonitorsUpdatedSource(event) === "monitors-panel"
+      ) {
+        return;
+      }
+      void handleMonitorsChanged();
+    };
+    window.addEventListener(
+      SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+      handleMonitorUpdate,
+    );
+    return () => {
+      window.removeEventListener(
+        SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
+        handleMonitorUpdate,
+      );
+    };
+  }, [handleMonitorsChanged]);
+
   const renderLiveNewsPanel = () => <SituationMonitorLiveNewsPanel />;
   const renderLiveWebcamsPanel = () => <SituationMonitorLiveWebcamsPanel />;
-  const renderMonitorsPanel = () => <SituationMonitorMonitorsPanel />;
+  const renderMonitorsPanel = () => (
+    <SituationMonitorMonitorsPanel
+      matches={allMonitorMatches}
+      onChanged={handleMonitorsChanged}
+    />
+  );
 
   const renderPanel = (panelId: SituationMonitorPanelId) => {
     switch (panelId) {

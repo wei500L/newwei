@@ -62,6 +62,7 @@ import {
 } from "@/lib/rss-translation";
 import { safeHttpUrl } from "@/lib/url";
 import { trackUserNewsBehavior } from "@/lib/user-news-behavior";
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 
 interface ItemDetailProps {
   itemId: string;
@@ -533,10 +534,11 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     let cancelled = false;
     const loadMetadata = async () => {
       try {
-        const response = await apiClient.post<ContentSubscriptionCatalogResponse>(
-          "user-content-subscriptions/catalog/lookup",
-          { entries: metadataLookupEntries },
-        );
+        const response =
+          await apiClient.post<ContentSubscriptionCatalogResponse>(
+            "user-content-subscriptions/catalog/lookup",
+            { entries: metadataLookupEntries },
+          );
         if (cancelled) {
           return;
         }
@@ -576,9 +578,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
     let cancelled = false;
     const loadRelatedTopics = async () => {
       try {
-        const response = await apiClient.get<ContentSubscriptionCatalogResponse>(
-          `user-content-subscriptions/related-topics?topic=${encodeURIComponent(primaryTopic)}&limit=6`,
-        );
+        const response =
+          await apiClient.get<ContentSubscriptionCatalogResponse>(
+            `user-content-subscriptions/related-topics?topic=${encodeURIComponent(primaryTopic)}&limit=6`,
+          );
         if (cancelled) {
           return;
         }
@@ -688,7 +691,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
       setDigestPreference(updatedPreference);
       setContentMetadataByKey((current) => ({
         ...current,
-        [buildDigestSubscriptionKey(kind, result.normalizedValue || savedValue)]: {
+        [buildDigestSubscriptionKey(
+          kind,
+          result.normalizedValue || savedValue,
+        )]: {
           kind,
           normalizedValue: result.normalizedValue,
           displayValue: savedValue,
@@ -699,6 +705,7 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
           taxonomyLabels: result.taxonomyLabels,
         },
       }));
+      emitSituationMonitorMonitorsUpdated("item-detail");
       message.success(
         t("items.detail.subscribeSaved", {
           defaultValue:
@@ -1717,7 +1724,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                           topic.displayValue,
                         );
                         return (
-                          <Space key={`related-${topic.normalizedValue}`} size={4}>
+                          <Space
+                            key={`related-${topic.normalizedValue}`}
+                            size={4}
+                          >
                             <Tag
                               color="geekblue"
                               className="cursor-pointer"
@@ -1725,7 +1735,10 @@ export function ItemDetail({ itemId }: ItemDetailProps) {
                               tabIndex={0}
                               onClick={() => handleSearch(topic.displayValue)}
                               onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
+                                if (
+                                  event.key === "Enter" ||
+                                  event.key === " "
+                                ) {
                                   event.preventDefault();
                                   handleSearch(topic.displayValue);
                                 }

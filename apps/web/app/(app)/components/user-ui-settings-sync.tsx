@@ -11,7 +11,6 @@ import {
   type SituationMonitorLayoutPayload,
 } from "@/lib/situation-monitor-layout-serialization";
 import { useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
-import { useSituationMonitorMonitorsStore } from "@/store/situation-monitor-monitors";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
 import {
@@ -20,10 +19,15 @@ import {
   normalizeWarMapSettingsSafe,
   useWarMapSettingsStore,
 } from "@/store/war-map-settings";
+import type { StoredSituationMonitor } from "@/app/(app)/situation-monitor/types/situation-monitor-monitors";
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 
-const LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS = "situation-monitor:monitors:v1";
-const LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT = "situation-monitor:layout:v1";
-const LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS = "situation-monitor:settings:v1";
+const LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT =
+  "situation-monitor:layout:v1";
+const LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS =
+  "situation-monitor:monitors:v1";
+const LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS =
+  "situation-monitor:settings:v1";
 const LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS = "war-map:settings:v1";
 
 const UI_CACHE_PREFIX = "ui-cache:user-ui-settings";
@@ -31,11 +35,9 @@ const UI_CACHE_PREFIX = "ui-cache:user-ui-settings";
 interface RemoteSituationMonitorUiSettings {
   version: number;
   updatedAt?: {
-    monitors?: string;
     layout?: string;
     settings?: string;
   };
-  monitors: unknown[] | null;
   layout: Record<string, unknown> | null;
   settings: Record<string, unknown> | null;
 }
@@ -48,16 +50,16 @@ interface RemoteWarMapUiSettings {
   settings: Record<string, unknown> | null;
 }
 
-type SaveKind = "monitors" | "layout" | "settings" | "warMapSettings";
+type SaveKind = "layout" | "settings" | "warMapSettings";
 
 const debounceMsByKind: Record<SaveKind, number> = {
-  monitors: 900,
   layout: 1500,
   settings: 600,
   warMapSettings: 700,
 };
 
-const defaultSituationMonitorLayout = buildDefaultSituationMonitorLayoutPayload();
+const defaultSituationMonitorLayout =
+  buildDefaultSituationMonitorLayoutPayload();
 
 const defaultSituationMonitorSettings = {
   windowHours: 24,
@@ -67,8 +69,12 @@ const defaultSituationMonitorSettings = {
   translateToZh: false,
 };
 
-const defaultLayoutFingerprint = fingerprintSituationMonitorLayout(defaultSituationMonitorLayout);
-const defaultSettingsFingerprint = fingerprintSettings(defaultSituationMonitorSettings);
+const defaultLayoutFingerprint = fingerprintSituationMonitorLayout(
+  defaultSituationMonitorLayout,
+);
+const defaultSettingsFingerprint = fingerprintSettings(
+  defaultSituationMonitorSettings,
+);
 const defaultWarMapFingerprint = fingerprintWarMapSettings({
   layerVisibility: WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   viewState: WAR_MAP_PRESET_VIEW_STATE.global,
@@ -85,7 +91,6 @@ interface UiCacheEnvelope<T> {
 }
 
 interface SituationMonitorCachePayload {
-  monitors?: unknown[];
   layout?: SituationMonitorLayoutPayload;
   settings?: Record<string, unknown>;
 }
@@ -94,25 +99,16 @@ interface WarMapCachePayload {
   settings?: Record<string, unknown>;
 }
 
-function fingerprintMonitors(monitors: unknown): string {
-  if (!Array.isArray(monitors)) {
-    return "[]";
-  }
-  const normalized = monitors
-    .filter((monitor) => monitor && typeof monitor === "object" && !Array.isArray(monitor))
-    .map((monitor) => monitor as Record<string, unknown>)
-    .map((monitor) => ({
-      id: typeof monitor.id === "string" ? monitor.id : "",
-      name: typeof monitor.name === "string" ? monitor.name : "",
-      keywords: Array.isArray(monitor.keywords) ? monitor.keywords : [],
-      enabled: typeof monitor.enabled === "boolean" ? monitor.enabled : true,
-      color: typeof monitor.color === "string" ? monitor.color : null,
-      location: monitor.location ?? null,
-      createdAt: typeof monitor.createdAt === "number" ? monitor.createdAt : 0,
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  return JSON.stringify(normalized);
+interface LegacySituationMonitorPayload {
+  name: string;
+  rawKeywords: string[];
+  enabled: boolean;
+  color?: string;
+  location?: {
+    name: string;
+    lat: number;
+    lng: number;
+  };
 }
 
 function fingerprintSettings(payload: unknown): string {
@@ -132,6 +128,105 @@ function fingerprintSettings(payload: unknown): string {
 function fingerprintWarMapSettings(payload: unknown): string {
   const normalized = normalizeWarMapSettingsSafe(payload);
   return JSON.stringify(normalized);
+}
+
+function normalizeTextValue(value: unknown, maxLength: number): string {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function normalizeHexColor(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+  return /^#[0-9a-f]{3}$/i.test(normalized) ||
+    /^#[0-9a-f]{6}$/i.test(normalized)
+    ? normalized.toLowerCase()
+    : undefined;
+}
+
+function normalizeLegacyMonitorKeywords(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value
+        .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 30),
+    ),
+  );
+}
+
+function normalizeLegacyMonitorLocation(
+  value: unknown,
+): LegacySituationMonitorPayload["location"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const name = normalizeTextValue(value.name, 64);
+  const lat =
+    typeof value.lat === "number" && Number.isFinite(value.lat)
+      ? value.lat
+      : Number.NaN;
+  const lng =
+    typeof value.lng === "number" && Number.isFinite(value.lng)
+      ? value.lng
+      : Number.NaN;
+  if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return undefined;
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return undefined;
+  }
+  return { name, lat, lng };
+}
+
+function normalizeLegacySituationMonitors(
+  state: Record<string, unknown> | null,
+): LegacySituationMonitorPayload[] {
+  const monitors = Array.isArray(state?.monitors) ? state.monitors : [];
+  const normalized: LegacySituationMonitorPayload[] = [];
+  for (const monitor of monitors) {
+    if (!isRecord(monitor)) {
+      continue;
+    }
+    const name = normalizeTextValue(monitor.name, 64);
+    const rawKeywords = normalizeLegacyMonitorKeywords(monitor.keywords);
+    if (!name || rawKeywords.length === 0) {
+      continue;
+    }
+    normalized.push({
+      name,
+      rawKeywords,
+      enabled: typeof monitor.enabled === "boolean" ? monitor.enabled : true,
+      color: normalizeHexColor(monitor.color),
+      location: normalizeLegacyMonitorLocation(monitor.location),
+    });
+    if (normalized.length >= 20) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function buildSituationMonitorSignature(input: {
+  name: string;
+  rawKeywords: string[];
+}): string {
+  return JSON.stringify({
+    name: normalizeTextValue(input.name, 64).toLowerCase(),
+    rawKeywords: input.rawKeywords
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean)
+      .sort(),
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -179,7 +274,9 @@ function removeStorageKey(key: string) {
   }
 }
 
-function readLegacyZustandPersistState(key: string): Record<string, unknown> | null {
+function readLegacyZustandPersistState(
+  key: string,
+): Record<string, unknown> | null {
   const parsed = readJsonFromStorage(key);
   if (!isRecord(parsed)) {
     return null;
@@ -196,7 +293,8 @@ function readCacheEnvelope<T>(key: string): UiCacheEnvelope<T> | null {
   if (parsed.version !== 1) {
     return null;
   }
-  const updatedAt = typeof parsed.updatedAt === "number" ? parsed.updatedAt : Number.NaN;
+  const updatedAt =
+    typeof parsed.updatedAt === "number" ? parsed.updatedAt : Number.NaN;
   if (!Number.isFinite(updatedAt)) {
     return null;
   }
@@ -208,7 +306,6 @@ function readCacheEnvelope<T>(key: string): UiCacheEnvelope<T> | null {
 
 function writeSituationMonitorCache(orgId: string, userId: string) {
   const key = buildCacheKey("situation-monitor", orgId, userId);
-  const monitors = useSituationMonitorMonitorsStore.getState().monitors;
   const layout = {
     layouts: useSituationMonitorLayoutStore.getState().layouts,
     visibility: useSituationMonitorLayoutStore.getState().visibility,
@@ -217,14 +314,14 @@ function writeSituationMonitorCache(orgId: string, userId: string) {
     windowHours: useSituationMonitorSettingsStore.getState().windowHours,
     scope: useSituationMonitorSettingsStore.getState().scope,
     autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
-    resetLayoutOnPreset: useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
+    resetLayoutOnPreset:
+      useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
     translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
   };
   writeJsonToStorage(key, {
     version: 1,
     updatedAt: Date.now(),
     payload: {
-      monitors,
       layout,
       settings,
     },
@@ -264,7 +361,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export function UserUiSettingsSync() {
   const { data: session } = useSession();
-  const [ready, setReady] = useState({ situationMonitor: false, warMap: false });
+  const [ready, setReady] = useState({
+    situationMonitor: false,
+    warMap: false,
+  });
   const readyRef = useRef(ready);
 
   const accessToken = session?.accessToken;
@@ -272,9 +372,10 @@ export function UserUiSettingsSync() {
   const userId = session?.user?.id;
   const reloadToken = useUserUiSyncStatusStore((state) => state.reloadToken);
 
-  const monitors = useSituationMonitorMonitorsStore((state) => state.monitors);
   const layouts = useSituationMonitorLayoutStore((state) => state.layouts);
-  const visibility = useSituationMonitorLayoutStore((state) => state.visibility);
+  const visibility = useSituationMonitorLayoutStore(
+    (state) => state.visibility,
+  );
   const settings = useSituationMonitorSettingsStore((state) => ({
     windowHours: state.windowHours,
     scope: state.scope,
@@ -292,31 +393,34 @@ export function UserUiSettingsSync() {
   const hydratingRef = useRef(false);
   const lastContextRef = useRef<{ orgId: string; userId: string } | null>(null);
   const lastReloadTokenRef = useRef(0);
+  const legacyMonitorImportContextRef = useRef<string | null>(null);
   const pendingRef = useRef<Record<SaveKind, boolean>>({
-    monitors: false,
     layout: false,
     settings: false,
     warMapSettings: false,
   });
   const lastSentRef = useRef<Record<SaveKind, string>>({
-    monitors: "",
     layout: "",
     settings: "",
     warMapSettings: "",
   });
-  const timersRef = useRef<Partial<Record<SaveKind, ReturnType<typeof setTimeout>>>>({});
+  const timersRef = useRef<
+    Partial<Record<SaveKind, ReturnType<typeof setTimeout>>>
+  >({});
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken }),
     [accessToken],
   );
 
-  const monitorsFingerprint = useMemo(() => fingerprintMonitors(monitors), [monitors]);
   const layoutFingerprint = useMemo(
     () => fingerprintSituationMonitorLayout({ layouts, visibility }),
     [layouts, visibility],
   );
-  const settingsFingerprint = useMemo(() => fingerprintSettings(settings), [settings]);
+  const settingsFingerprint = useMemo(
+    () => fingerprintSettings(settings),
+    [settings],
+  );
   const warMapSettingsFingerprint = useMemo(
     () => fingerprintWarMapSettings(warMapSettings),
     [warMapSettings],
@@ -340,9 +444,9 @@ export function UserUiSettingsSync() {
       setReady({ situationMonitor: false, warMap: false });
       lastContextRef.current = null;
       lastReloadTokenRef.current = 0;
+      legacyMonitorImportContextRef.current = null;
       hydratingRef.current = true;
       try {
-        useSituationMonitorMonitorsStore.getState().reset();
         useSituationMonitorLayoutStore.getState().reset();
         useSituationMonitorSettingsStore.getState().reset();
         useWarMapSettingsStore.getState().resetAll();
@@ -352,7 +456,9 @@ export function UserUiSettingsSync() {
       return;
     }
 
-    const sameContext = lastContextRef.current?.orgId === orgId && lastContextRef.current?.userId === userId;
+    const sameContext =
+      lastContextRef.current?.orgId === orgId &&
+      lastContextRef.current?.userId === userId;
     if (
       sameContext &&
       readyRef.current.situationMonitor &&
@@ -374,13 +480,11 @@ export function UserUiSettingsSync() {
     }
     timersRef.current = {};
     pendingRef.current = {
-      monitors: false,
       layout: false,
       settings: false,
       warMapSettings: false,
     };
     lastSentRef.current = {
-      monitors: "",
       layout: "",
       settings: "",
       warMapSettings: "",
@@ -389,51 +493,67 @@ export function UserUiSettingsSync() {
     let cancelled = false;
     setReady({ situationMonitor: false, warMap: false });
 
-    const situationMonitorCacheKey = buildCacheKey("situation-monitor", orgId, userId);
+    const situationMonitorCacheKey = buildCacheKey(
+      "situation-monitor",
+      orgId,
+      userId,
+    );
     const warMapCacheKey = buildCacheKey("war-map", orgId, userId);
 
     hydratingRef.current = true;
     try {
-      useSituationMonitorMonitorsStore.getState().reset();
       useSituationMonitorLayoutStore.getState().reset();
       useSituationMonitorSettingsStore.getState().reset();
       useWarMapSettingsStore.getState().resetAll();
 
-      const smCache = readCacheEnvelope<SituationMonitorCachePayload>(situationMonitorCacheKey);
+      const smCache = readCacheEnvelope<SituationMonitorCachePayload>(
+        situationMonitorCacheKey,
+      );
       if (smCache) {
         const payload = smCache.payload;
-        if (payload.monitors) {
-          useSituationMonitorMonitorsStore.getState().hydrateFromRemote(payload.monitors);
-        }
         if (payload.layout) {
-          useSituationMonitorLayoutStore.getState().hydrateFromRemote(payload.layout);
+          useSituationMonitorLayoutStore
+            .getState()
+            .hydrateFromRemote(payload.layout);
         }
         if (payload.settings) {
-          useSituationMonitorSettingsStore.getState().hydrateFromRemote(payload.settings);
+          useSituationMonitorSettingsStore
+            .getState()
+            .hydrateFromRemote(payload.settings);
         }
       } else {
-        const legacyMonitorsState = readLegacyZustandPersistState(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
-        const legacyLayoutState = readLegacyZustandPersistState(LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT);
-        const legacySettingsState = readLegacyZustandPersistState(LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS);
+        const legacyLayoutState = readLegacyZustandPersistState(
+          LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT,
+        );
+        const legacySettingsState = readLegacyZustandPersistState(
+          LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS,
+        );
 
-        if (legacyMonitorsState?.monitors) {
-          useSituationMonitorMonitorsStore.getState().hydrateFromRemote(legacyMonitorsState.monitors);
-        }
         if (legacyLayoutState) {
-          useSituationMonitorLayoutStore.getState().hydrateFromRemote(legacyLayoutState);
+          useSituationMonitorLayoutStore
+            .getState()
+            .hydrateFromRemote(legacyLayoutState);
         }
         if (legacySettingsState) {
-          useSituationMonitorSettingsStore.getState().hydrateFromRemote(legacySettingsState);
+          useSituationMonitorSettingsStore
+            .getState()
+            .hydrateFromRemote(legacySettingsState);
         }
       }
 
       const warMapCache = readCacheEnvelope<WarMapCachePayload>(warMapCacheKey);
       if (warMapCache?.payload?.settings) {
-        useWarMapSettingsStore.getState().hydrateFromRemote(warMapCache.payload.settings);
+        useWarMapSettingsStore
+          .getState()
+          .hydrateFromRemote(warMapCache.payload.settings);
       } else {
-        const legacyWarMapState = readLegacyZustandPersistState(LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS);
+        const legacyWarMapState = readLegacyZustandPersistState(
+          LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS,
+        );
         if (legacyWarMapState) {
-          useWarMapSettingsStore.getState().hydrateFromRemote(legacyWarMapState);
+          useWarMapSettingsStore
+            .getState()
+            .hydrateFromRemote(legacyWarMapState);
         }
       }
     } finally {
@@ -443,7 +563,9 @@ export function UserUiSettingsSync() {
     void (async () => {
       try {
         const [smResult, warMapResult] = await Promise.allSettled([
-          apiClient.get<RemoteSituationMonitorUiSettings>("user-settings/ui/situation-monitor"),
+          apiClient.get<RemoteSituationMonitorUiSettings>(
+            "user-settings/ui/situation-monitor",
+          ),
           apiClient.get<RemoteWarMapUiSettings>("user-settings/ui/war-map"),
         ]);
         if (cancelled) return;
@@ -451,50 +573,58 @@ export function UserUiSettingsSync() {
         try {
           if (smResult.status === "fulfilled") {
             const data = smResult.value.data;
-            const remoteHasMonitors = Boolean(data) && data.monitors !== null;
             const remoteHasLayout = Boolean(data) && data.layout !== null;
             const remoteHasSettings = Boolean(data) && data.settings !== null;
 
-            if (remoteHasMonitors && data?.monitors) {
-              useSituationMonitorMonitorsStore.getState().hydrateFromRemote(data.monitors);
-            }
             const remoteLayoutFingerprint =
-              remoteHasLayout && data?.layout ? fingerprintSituationMonitorLayout(data.layout) : "";
+              remoteHasLayout && data?.layout
+                ? fingerprintSituationMonitorLayout(data.layout)
+                : "";
             const layoutRepaired =
               remoteHasLayout && data?.layout
-                ? useSituationMonitorLayoutStore.getState().hydrateFromRemote(data.layout)
+                ? useSituationMonitorLayoutStore
+                    .getState()
+                    .hydrateFromRemote(data.layout)
                 : false;
             if (remoteHasSettings && data?.settings) {
-              useSituationMonitorSettingsStore.getState().hydrateFromRemote(data.settings);
+              useSituationMonitorSettingsStore
+                .getState()
+                .hydrateFromRemote(data.settings);
             }
 
-            const currentMonitors = useSituationMonitorMonitorsStore.getState().monitors;
             const currentLayout = {
               layouts: useSituationMonitorLayoutStore.getState().layouts,
               visibility: useSituationMonitorLayoutStore.getState().visibility,
             };
             const currentSettings = {
-              windowHours: useSituationMonitorSettingsStore.getState().windowHours,
+              windowHours:
+                useSituationMonitorSettingsStore.getState().windowHours,
               scope: useSituationMonitorSettingsStore.getState().scope,
-              autoRefresh: useSituationMonitorSettingsStore.getState().autoRefresh,
-              resetLayoutOnPreset: useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
-              translateToZh: useSituationMonitorSettingsStore.getState().translateToZh,
+              autoRefresh:
+                useSituationMonitorSettingsStore.getState().autoRefresh,
+              resetLayoutOnPreset:
+                useSituationMonitorSettingsStore.getState().resetLayoutOnPreset,
+              translateToZh:
+                useSituationMonitorSettingsStore.getState().translateToZh,
             };
 
-            const currentMonitorsFingerprint = fingerprintMonitors(currentMonitors);
-            const currentLayoutFingerprint = fingerprintSituationMonitorLayout(currentLayout);
-            const currentSettingsFingerprint = fingerprintSettings(currentSettings);
+            const currentLayoutFingerprint =
+              fingerprintSituationMonitorLayout(currentLayout);
+            const currentSettingsFingerprint =
+              fingerprintSettings(currentSettings);
 
-            const shouldMigrateMonitors = !remoteHasMonitors && currentMonitors.length > 0;
-            const shouldMigrateLayout = !remoteHasLayout && currentLayoutFingerprint !== defaultLayoutFingerprint;
-            const shouldMigrateSettings = !remoteHasSettings && currentSettingsFingerprint !== defaultSettingsFingerprint;
+            const shouldMigrateLayout =
+              !remoteHasLayout &&
+              currentLayoutFingerprint !== defaultLayoutFingerprint;
+            const shouldMigrateSettings =
+              !remoteHasSettings &&
+              currentSettingsFingerprint !== defaultSettingsFingerprint;
 
-            if (shouldMigrateMonitors || shouldMigrateLayout || shouldMigrateSettings) {
-              useUserUiSyncStatusStore.getState().beginSave("situation-monitor");
+            if (shouldMigrateLayout || shouldMigrateSettings) {
+              useUserUiSyncStatusStore
+                .getState()
+                .beginSave("situation-monitor");
               const payload: Record<string, unknown> = {};
-              if (shouldMigrateMonitors) {
-                payload.monitors = currentMonitors;
-              }
               if (shouldMigrateLayout) {
                 payload.layout = currentLayout;
               }
@@ -503,34 +633,42 @@ export function UserUiSettingsSync() {
               }
 
               try {
-                await apiClient.put("user-settings/ui/situation-monitor", payload);
-                useUserUiSyncStatusStore.getState().endSaveSuccess("situation-monitor");
+                await apiClient.put(
+                  "user-settings/ui/situation-monitor",
+                  payload,
+                );
+                useUserUiSyncStatusStore
+                  .getState()
+                  .endSaveSuccess("situation-monitor");
 
-                lastSentRef.current.monitors = currentMonitorsFingerprint;
                 lastSentRef.current.layout = currentLayoutFingerprint;
                 lastSentRef.current.settings = currentSettingsFingerprint;
 
-                removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
                 removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT);
                 removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS);
               } catch (error) {
-                captureClientError("Failed to migrate legacy UI settings", error);
+                captureClientError(
+                  "Failed to migrate legacy UI settings",
+                  error,
+                );
                 useUserUiSyncStatusStore
                   .getState()
-                  .endSaveError("situation-monitor", getErrorMessage(error, "Failed to migrate settings."));
+                  .endSaveError(
+                    "situation-monitor",
+                    getErrorMessage(error, "Failed to migrate settings."),
+                  );
 
-                lastSentRef.current.monitors = currentMonitorsFingerprint;
                 lastSentRef.current.layout = currentLayoutFingerprint;
                 lastSentRef.current.settings = currentSettingsFingerprint;
               }
             } else {
-              lastSentRef.current.monitors = currentMonitorsFingerprint;
-              lastSentRef.current.layout = layoutRepaired ? remoteLayoutFingerprint : currentLayoutFingerprint;
+              lastSentRef.current.layout = layoutRepaired
+                ? remoteLayoutFingerprint
+                : currentLayoutFingerprint;
               lastSentRef.current.settings = currentSettingsFingerprint;
 
               useUserUiSyncStatusStore.getState().markIdle("situation-monitor");
 
-              removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
               removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT);
               removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS);
             }
@@ -539,7 +677,6 @@ export function UserUiSettingsSync() {
               version: 1,
               updatedAt: Date.now(),
               payload: {
-                monitors: currentMonitors,
                 layout: currentLayout,
                 settings: currentSettings,
               },
@@ -547,7 +684,10 @@ export function UserUiSettingsSync() {
 
             setReady((prev) => ({ ...prev, situationMonitor: true }));
           } else {
-            captureClientError("Failed to load situation monitor UI settings", smResult.reason);
+            captureClientError(
+              "Failed to load situation monitor UI settings",
+              smResult.reason,
+            );
             useUserUiSyncStatusStore
               .getState()
               .markError(
@@ -561,7 +701,9 @@ export function UserUiSettingsSync() {
             const remoteHasSettings = Boolean(data) && data.settings !== null;
 
             if (remoteHasSettings && data.settings) {
-              useWarMapSettingsStore.getState().hydrateFromRemote(data.settings);
+              useWarMapSettingsStore
+                .getState()
+                .hydrateFromRemote(data.settings);
             }
 
             const currentState = useWarMapSettingsStore.getState();
@@ -571,21 +713,32 @@ export function UserUiSettingsSync() {
               activePreset: currentState.activePreset,
               timeRangePreset: currentState.timeRangePreset,
             };
-            const currentFingerprint = fingerprintWarMapSettings(currentSettings);
+            const currentFingerprint =
+              fingerprintWarMapSettings(currentSettings);
 
-            const shouldMigrateSettings = !remoteHasSettings && currentFingerprint !== defaultWarMapFingerprint;
+            const shouldMigrateSettings =
+              !remoteHasSettings &&
+              currentFingerprint !== defaultWarMapFingerprint;
             if (shouldMigrateSettings) {
               useUserUiSyncStatusStore.getState().beginSave("war-map");
               try {
-                await apiClient.put("user-settings/ui/war-map", { settings: currentSettings });
+                await apiClient.put("user-settings/ui/war-map", {
+                  settings: currentSettings,
+                });
                 useUserUiSyncStatusStore.getState().endSaveSuccess("war-map");
                 lastSentRef.current.warMapSettings = currentFingerprint;
                 removeStorageKey(LEGACY_STORAGE_KEY_WAR_MAP_SETTINGS);
               } catch (error) {
-                captureClientError("Failed to migrate legacy WarMap settings", error);
+                captureClientError(
+                  "Failed to migrate legacy WarMap settings",
+                  error,
+                );
                 useUserUiSyncStatusStore
                   .getState()
-                  .endSaveError("war-map", getErrorMessage(error, "Failed to migrate settings."));
+                  .endSaveError(
+                    "war-map",
+                    getErrorMessage(error, "Failed to migrate settings."),
+                  );
 
                 lastSentRef.current.warMapSettings = currentFingerprint;
               }
@@ -606,10 +759,19 @@ export function UserUiSettingsSync() {
 
             setReady((prev) => ({ ...prev, warMap: true }));
           } else {
-            captureClientError("Failed to load WarMap UI settings", warMapResult.reason);
+            captureClientError(
+              "Failed to load WarMap UI settings",
+              warMapResult.reason,
+            );
             useUserUiSyncStatusStore
               .getState()
-              .markError("war-map", getErrorMessage(warMapResult.reason, "Failed to load settings."));
+              .markError(
+                "war-map",
+                getErrorMessage(
+                  warMapResult.reason,
+                  "Failed to load settings.",
+                ),
+              );
           }
         } finally {
           hydratingRef.current = false;
@@ -625,40 +787,90 @@ export function UserUiSettingsSync() {
   }, [apiClient, accessToken, orgId, reloadToken, userId]);
 
   useEffect(() => {
-    if (!ready.situationMonitor || hydratingRef.current || !accessToken || !orgId || !userId) {
-      return;
-    }
-    if (monitorsFingerprint === lastSentRef.current.monitors) {
+    if (!accessToken || !orgId || !userId) {
+      legacyMonitorImportContextRef.current = null;
       return;
     }
 
-    if (!pendingRef.current.monitors) {
-      pendingRef.current.monitors = true;
-      useUserUiSyncStatusStore.getState().beginSave("situation-monitor");
+    const contextKey = `${orgId}:${userId}`;
+    if (legacyMonitorImportContextRef.current === contextKey) {
+      return;
     }
-    scheduleSave("monitors", () => {
-      void apiClient
-        .put("user-settings/ui/situation-monitor", { monitors })
-        .then(() => {
-          lastSentRef.current.monitors = fingerprintMonitors(monitors);
-          pendingRef.current.monitors = false;
-          useUserUiSyncStatusStore.getState().endSaveSuccess("situation-monitor");
 
-          writeSituationMonitorCache(orgId, userId);
-          removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
-        })
-        .catch((error) => {
-          captureClientError("Failed to save monitor settings", error);
-          pendingRef.current.monitors = false;
-          useUserUiSyncStatusStore
-            .getState()
-            .endSaveError("situation-monitor", getErrorMessage(error, "Failed to save settings."));
-        });
-    });
-  }, [accessToken, apiClient, monitors, monitorsFingerprint, orgId, ready.situationMonitor, userId]);
+    const legacyState = readLegacyZustandPersistState(
+      LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS,
+    );
+    const legacyMonitors = normalizeLegacySituationMonitors(legacyState);
+    if (legacyMonitors.length === 0) {
+      removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
+      legacyMonitorImportContextRef.current = contextKey;
+      return;
+    }
+
+    legacyMonitorImportContextRef.current = contextKey;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await apiClient.get<StoredSituationMonitor[]>(
+          "situation-monitor/monitors",
+        );
+        if (cancelled) {
+          return;
+        }
+        const existing = new Set(
+          (response.data ?? [])
+            .filter((monitor) => monitor.kind === "manual")
+            .map((monitor) => buildSituationMonitorSignature(monitor)),
+        );
+
+        let createdCount = 0;
+        for (const legacyMonitor of legacyMonitors) {
+          if (cancelled) {
+            return;
+          }
+          const signature = buildSituationMonitorSignature(legacyMonitor);
+          if (existing.has(signature)) {
+            continue;
+          }
+          await apiClient.post("situation-monitor/monitors", legacyMonitor);
+          existing.add(signature);
+          createdCount += 1;
+        }
+
+        if (cancelled) {
+          return;
+        }
+        removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
+        if (createdCount > 0) {
+          emitSituationMonitorMonitorsUpdated("legacy-import");
+        }
+      } catch (error) {
+        const status = (error as { response?: { status?: number } }).response
+          ?.status;
+        if (status !== 401 && status !== 403) {
+          captureClientError(
+            "Failed to import legacy situation monitors",
+            error,
+          );
+        }
+        legacyMonitorImportContextRef.current = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, apiClient, orgId, userId]);
 
   useEffect(() => {
-    if (!ready.situationMonitor || hydratingRef.current || !accessToken || !orgId || !userId) {
+    if (
+      !ready.situationMonitor ||
+      hydratingRef.current ||
+      !accessToken ||
+      !orgId ||
+      !userId
+    ) {
       return;
     }
     if (layoutFingerprint === lastSentRef.current.layout) {
@@ -671,11 +883,18 @@ export function UserUiSettingsSync() {
     }
     scheduleSave("layout", () => {
       void apiClient
-        .put("user-settings/ui/situation-monitor", { layout: { layouts, visibility } })
+        .put("user-settings/ui/situation-monitor", {
+          layout: { layouts, visibility },
+        })
         .then(() => {
-          lastSentRef.current.layout = fingerprintSituationMonitorLayout({ layouts, visibility });
+          lastSentRef.current.layout = fingerprintSituationMonitorLayout({
+            layouts,
+            visibility,
+          });
           pendingRef.current.layout = false;
-          useUserUiSyncStatusStore.getState().endSaveSuccess("situation-monitor");
+          useUserUiSyncStatusStore
+            .getState()
+            .endSaveSuccess("situation-monitor");
 
           writeSituationMonitorCache(orgId, userId);
           removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT);
@@ -685,13 +904,31 @@ export function UserUiSettingsSync() {
           pendingRef.current.layout = false;
           useUserUiSyncStatusStore
             .getState()
-            .endSaveError("situation-monitor", getErrorMessage(error, "Failed to save settings."));
+            .endSaveError(
+              "situation-monitor",
+              getErrorMessage(error, "Failed to save settings."),
+            );
         });
     });
-  }, [accessToken, apiClient, layoutFingerprint, layouts, orgId, ready.situationMonitor, userId, visibility]);
+  }, [
+    accessToken,
+    apiClient,
+    layoutFingerprint,
+    layouts,
+    orgId,
+    ready.situationMonitor,
+    userId,
+    visibility,
+  ]);
 
   useEffect(() => {
-    if (!ready.situationMonitor || hydratingRef.current || !accessToken || !orgId || !userId) {
+    if (
+      !ready.situationMonitor ||
+      hydratingRef.current ||
+      !accessToken ||
+      !orgId ||
+      !userId
+    ) {
       return;
     }
     if (settingsFingerprint === lastSentRef.current.settings) {
@@ -708,7 +945,9 @@ export function UserUiSettingsSync() {
         .then(() => {
           lastSentRef.current.settings = fingerprintSettings(settings);
           pendingRef.current.settings = false;
-          useUserUiSyncStatusStore.getState().endSaveSuccess("situation-monitor");
+          useUserUiSyncStatusStore
+            .getState()
+            .endSaveSuccess("situation-monitor");
 
           writeSituationMonitorCache(orgId, userId);
           removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_SETTINGS);
@@ -718,13 +957,30 @@ export function UserUiSettingsSync() {
           pendingRef.current.settings = false;
           useUserUiSyncStatusStore
             .getState()
-            .endSaveError("situation-monitor", getErrorMessage(error, "Failed to save settings."));
+            .endSaveError(
+              "situation-monitor",
+              getErrorMessage(error, "Failed to save settings."),
+            );
         });
     });
-  }, [accessToken, apiClient, orgId, ready.situationMonitor, settings, settingsFingerprint, userId]);
+  }, [
+    accessToken,
+    apiClient,
+    orgId,
+    ready.situationMonitor,
+    settings,
+    settingsFingerprint,
+    userId,
+  ]);
 
   useEffect(() => {
-    if (!ready.warMap || hydratingRef.current || !accessToken || !orgId || !userId) {
+    if (
+      !ready.warMap ||
+      hydratingRef.current ||
+      !accessToken ||
+      !orgId ||
+      !userId
+    ) {
       return;
     }
     if (warMapSettingsFingerprint === lastSentRef.current.warMapSettings) {
@@ -739,7 +995,8 @@ export function UserUiSettingsSync() {
       void apiClient
         .put("user-settings/ui/war-map", { settings: warMapSettings })
         .then(() => {
-          lastSentRef.current.warMapSettings = fingerprintWarMapSettings(warMapSettings);
+          lastSentRef.current.warMapSettings =
+            fingerprintWarMapSettings(warMapSettings);
           pendingRef.current.warMapSettings = false;
           useUserUiSyncStatusStore.getState().endSaveSuccess("war-map");
 
@@ -749,10 +1006,23 @@ export function UserUiSettingsSync() {
         .catch((error) => {
           captureClientError("Failed to save WarMap settings", error);
           pendingRef.current.warMapSettings = false;
-          useUserUiSyncStatusStore.getState().endSaveError("war-map", getErrorMessage(error, "Failed to save settings."));
+          useUserUiSyncStatusStore
+            .getState()
+            .endSaveError(
+              "war-map",
+              getErrorMessage(error, "Failed to save settings."),
+            );
         });
     });
-  }, [accessToken, apiClient, orgId, ready.warMap, userId, warMapSettings, warMapSettingsFingerprint]);
+  }, [
+    accessToken,
+    apiClient,
+    orgId,
+    ready.warMap,
+    userId,
+    warMapSettings,
+    warMapSettingsFingerprint,
+  ]);
 
   useEffect(() => {
     return () => {

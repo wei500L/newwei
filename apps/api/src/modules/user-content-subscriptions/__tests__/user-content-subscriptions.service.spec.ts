@@ -4,8 +4,15 @@ import { ContentSubscriptionKind } from '@prisma/client';
 import { UserContentSubscriptionsService } from '../user-content-subscriptions.service';
 
 describe('UserContentSubscriptionsService', () => {
+  const monitors = {
+    buildSubscriptionOwnershipMap: jest.fn().mockResolvedValue(new Map()),
+    reconcileContentSubscriptionSync: jest.fn().mockResolvedValue(undefined),
+  };
+
   afterEach(() => {
     jest.restoreAllMocks();
+    monitors.buildSubscriptionOwnershipMap.mockClear();
+    monitors.reconcileContentSubscriptionSync.mockClear();
   });
 
   it('falls back to top catalog items when behavior profile is empty', async () => {
@@ -88,6 +95,7 @@ describe('UserContentSubscriptionsService', () => {
       settings as any,
       liteLlm as any,
       behavior as any,
+      monitors as any,
     );
 
     const result = await service.listRecommendations('org-1', 'user-1', 5);
@@ -109,6 +117,7 @@ describe('UserContentSubscriptionsService', () => {
       {} as any,
       {} as any,
       {} as any,
+      monitors as any,
     );
     jest.spyOn(service as any, 'ensureCatalogFresh').mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
@@ -138,6 +147,7 @@ describe('UserContentSubscriptionsService', () => {
       {} as any,
       {} as any,
       {} as any,
+      monitors as any,
     );
     jest.spyOn(service as any, 'ensureCatalogFresh').mockResolvedValue(undefined);
     jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
@@ -180,6 +190,7 @@ describe('UserContentSubscriptionsService', () => {
       {} as any,
       {} as any,
       {} as any,
+      monitors as any,
     );
 
     const candidates = await (service as any).loadEntityCandidates('org-1');
@@ -223,6 +234,7 @@ describe('UserContentSubscriptionsService', () => {
       {} as any,
       {} as any,
       {} as any,
+      monitors as any,
     );
 
     const candidates = await (service as any).loadEntityCandidates('org-1');
