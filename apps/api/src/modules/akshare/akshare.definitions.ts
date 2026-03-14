@@ -441,10 +441,10 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultFrequency: DAILY,
     parser: {
       type: "timeseries",
-      timestampField: "交易日期",
+      timestampField: "date",
       valueFields: [
         {
-          field: "收盘价",
+          field: "close",
           label: "收盘价",
           unit: "CNY/克",
           dataType: EconomicDataValueType.price
@@ -469,10 +469,10 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultFrequency: DAILY,
     parser: {
       type: "timeseries",
-      timestampField: "交易日期",
+      timestampField: "date",
       valueFields: [
         {
-          field: "收盘价",
+          field: "close",
           label: "收盘价",
           unit: "CNY/克",
           dataType: EconomicDataValueType.price
@@ -489,6 +489,15 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     endpoint: "/bond_china_yield",
     docUrl: "https://akshare.akfamily.xyz/data/bond/bond.html",
     method: "GET",
+    defaultParams: {
+      start_date: "${TODAY_YYYYMMDD-3650}",
+      end_date: "${TODAY_YYYYMMDD}"
+    },
+    filter: {
+      field: "曲线名称",
+      equals: "中债国债收益率曲线",
+      mode: "all"
+    },
     valueType: EconomicDataValueType.yield,
     defaultUnit: "%",
     defaultFrequency: DAILY,
@@ -645,27 +654,6 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
           dataType: EconomicDataValueType.price
         }
       ]
-    }
-  },
-  {
-    id: "sp500-index",
-    slug: "sp500_index",
-    displayName: "标普500指数",
-    categories: ["key-monitor", "economic-short", "economic-long"],
-    sourceFunction: "ak.hf_sp_500",
-    endpoint: "/hf_sp_500",
-    docUrl: "https://akshare.akfamily.xyz/data/hf/hf.html",
-    method: "GET",
-    defaultParams: {
-      year: CURRENT_YEAR
-    },
-    valueType: EconomicDataValueType.index,
-    defaultUnit: "pts",
-    defaultFrequency: DAILY,
-    parser: {
-      type: "timeseries",
-      timestampField: "date",
-      valueFields: createEnglishOhlcFields("pts")
     }
   },
   {
@@ -953,12 +941,24 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultUnit: "%",
     defaultFrequency: MONTHLY,
     parser: {
-      type: "timeseries",
-      timestampField: "date",
+      type: "macro",
+      periodField: "日期",
       valueFields: [
         {
-          field: "current_value",
+          field: "今值",
           label: "失业率",
+          unit: "%",
+          dataType: EconomicDataValueType.percent
+        },
+        {
+          field: "预测值",
+          label: "预测值",
+          unit: "%",
+          dataType: EconomicDataValueType.percent
+        },
+        {
+          field: "前值",
+          label: "前值",
           unit: "%",
           dataType: EconomicDataValueType.percent
         }
@@ -1465,23 +1465,23 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultUnit: "%",
     defaultFrequency: MONTHLY,
     parser: {
-      type: "timeseries",
-      timestampField: "date",
+      type: "macro",
+      periodField: "日期",
       valueFields: [
         {
-          field: "current_value",
+          field: "今值",
           label: "当前值",
           unit: "%",
           dataType: EconomicDataValueType.percent
         },
         {
-          field: "predicted_value",
+          field: "预测值",
           label: "预测值",
           unit: "%",
           dataType: EconomicDataValueType.percent
         },
         {
-          field: "previous_value",
+          field: "前值",
           label: "前值",
           unit: "%",
           dataType: EconomicDataValueType.percent
@@ -1502,23 +1502,23 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultUnit: "万人",
     defaultFrequency: MONTHLY,
     parser: {
-      type: "timeseries",
-      timestampField: "date",
+      type: "macro",
+      periodField: "日期",
       valueFields: [
         {
-          field: "current_value",
+          field: "今值",
           label: "新增非农",
           unit: "万人",
           dataType: EconomicDataValueType.quantity
         },
         {
-          field: "predicted_value",
+          field: "预测值",
           label: "预测值",
           unit: "万人",
           dataType: EconomicDataValueType.quantity
         },
         {
-          field: "previous_value",
+          field: "前值",
           label: "前值",
           unit: "万人",
           dataType: EconomicDataValueType.quantity
@@ -1629,6 +1629,7 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     parser: {
       type: "macro",
       periodField: "统计年度",
+      categoryField: "指标",
       valueFields: [
         { field: "数量", label: "外汇收入", unit: "百万美元", dataType: EconomicDataValueType.index },
         { field: "比重", label: "收入占比", unit: "%", dataType: EconomicDataValueType.percent }
@@ -2452,9 +2453,9 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     }
   },
   {
-    id: "sp500-index",
-    slug: "sp500_index",
-    displayName: "标普500指数",
+    id: "sp500-index-em-hist",
+    slug: "sp500_index_em_hist",
+    displayName: "标普500指数(东方财富历史)",
     categories: ["global-index", "macro"],
     sourceFunction: "ak.index_global_hist_em",
     endpoint: "/index_global_hist_em",
@@ -2469,9 +2470,9 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
       timestampField: "日期",
       valueFields: [
         { field: "今开", label: "开盘", unit: "", dataType: EconomicDataValueType.index },
-        { field: "最新价", label: "收盘", unit: "", dataType: EconomicDataValueType.index },
         { field: "最高", label: "高", unit: "", dataType: EconomicDataValueType.index },
-        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index }
+        { field: "最低", label: "低", unit: "", dataType: EconomicDataValueType.index },
+        { field: "最新价", label: "收盘", unit: "", dataType: EconomicDataValueType.index }
       ]
     }
   },
@@ -2559,10 +2560,11 @@ export const AKSHARE_DATA_DEFINITIONS: AkshareDataItemDefinition[] = [
     defaultFrequency: REALTIME,
     parser: {
       type: "latest",
-      categoryField: "instrument",
+      timestampField: "更新时间",
+      categoryField: "交易品种",
       valueFields: [
-        { field: "price", label: "最新价", unit: "USD", dataType: EconomicDataValueType.price },
-        { field: "vol24h", label: "24h成交量", unit: "USD", dataType: EconomicDataValueType.volume }
+        { field: "最近报价", label: "最新价", unit: "USD", dataType: EconomicDataValueType.price },
+        { field: "24小时成交量", label: "24h成交量", unit: "USD", dataType: EconomicDataValueType.volume }
       ]
     }
   },

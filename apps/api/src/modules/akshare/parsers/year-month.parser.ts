@@ -1,7 +1,7 @@
 import type { AkshareYearMonthParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint } from "./parser.interface";
+import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 
 /**
  * Parser for data with separate year and month fields
@@ -10,25 +10,32 @@ import type { ParsedDataPoint } from "./parser.interface";
 export class YearMonthParser extends BaseParser<AkshareYearMonthParserConfig> {
   readonly type = "yearMonth";
 
-  parse(config: AkshareYearMonthParserConfig, payload: unknown): ParsedDataPoint[] {
-    const records = this.ensureArray(payload);
+  parse(config: AkshareYearMonthParserConfig, payload: unknown, context?: ParserContext): ParsedDataPoint[] {
+    const records = this.ensureRecordArray(payload);
+    this.assertFieldsExistInPayload(
+      records,
+      [config.yearField, config.monthField, config.dayField, config.categoryField, ...config.valueFields.map((field) => field.field)],
+      context
+    );
     const points: ParsedDataPoint[] = [];
 
     for (const rawRecord of records) {
       const record = rawRecord as Record<string, unknown>;
       const recordedAt = this.parseYearMonthDate({
-        year: record[config.yearField],
-        month: record[config.monthField],
-        day: config.dayField ? record[config.dayField] : undefined
+        year: this.getRequiredField(record, config.yearField, context),
+        month: this.getRequiredField(record, config.monthField, context),
+        day: config.dayField ? this.getRequiredField(record, config.dayField, context) : undefined
       });
 
-      // Skip records with invalid dates to prevent data corruption
       if (recordedAt === null) {
-        continue;
+        const suffix = context?.slug ? ` for ${context.slug}` : "";
+        throw new Error(
+          `Invalid year/month date fields "${config.yearField}/${config.monthField}"${suffix}`
+        );
       }
 
       for (const field of config.valueFields) {
-        const category = config.categoryField ? record[config.categoryField] : undefined;
+        const category = config.categoryField ? this.getRequiredField(record, config.categoryField, context) : undefined;
         const sourceField = this.buildSourceField(field.field, category);
         const value = this.normalizeNumber(record[field.field]);
 

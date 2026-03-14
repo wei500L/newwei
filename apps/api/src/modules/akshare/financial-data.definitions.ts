@@ -138,6 +138,84 @@ function createFredDefinition(input: {
   };
 }
 
+function createYfinanceHistoryDefinition(input: {
+  id: string;
+  slug: string;
+  displayName: string;
+  description: string;
+  symbol: string;
+  categories: string[];
+  defaultFrequency: EconomicDataFrequency;
+  defaultUnit?: string;
+  valueType?: EconomicDataValueType;
+  mainlineRole?: "canonical" | "internal";
+  snapshot?: FinancialDataSnapshotMetadata;
+  tags?: string[];
+}): FinancialDataItemDefinition {
+  return {
+    id: input.id,
+    slug: input.slug,
+    displayName: input.displayName,
+    description: input.description,
+    categories: input.categories,
+    sourceFunction: "yfinance.history",
+    endpoint: "/v8/finance/chart",
+    docUrl: "https://ranaroussi.github.io/yfinance/reference/api/yfinance.Ticker.history.html",
+    valueType: input.valueType ?? EconomicDataValueType.price,
+    defaultUnit: input.defaultUnit,
+    defaultFrequency: input.defaultFrequency,
+    providerConfig: {
+      kind: "yfinance",
+      symbol: input.symbol,
+      endpoint: "/v8/finance/chart",
+      docUrl: "https://ranaroussi.github.io/yfinance/reference/api/yfinance.Ticker.history.html",
+      interval: "1d",
+      period1: 0,
+      period2: "now",
+      includePrePost: false,
+      events: "div,splits",
+      sourceFields: {
+        open: "open",
+        high: "high",
+        low: "low",
+        close: "close",
+      },
+    },
+    provider: "yfinance",
+    defaultEnabled: true,
+    mainlineRole: input.mainlineRole ?? "canonical",
+    snapshot: input.snapshot,
+    tags: input.tags ?? [],
+  };
+}
+
+const AKSHARE_FINANCIAL_DEFINITIONS: FinancialDataItemDefinition[] = AKSHARE_DATA_DEFINITIONS
+  .filter((definition) => definition.slug !== "sp500_index")
+  .map(toAkshareDefinition);
+
+const YFINANCE_DEFINITIONS: FinancialDataItemDefinition[] = [
+  createYfinanceHistoryDefinition({
+    id: "sp500-index",
+    slug: "sp500_index",
+    displayName: "标普500指数",
+    description:
+      "Daily S&P 500 index history sourced from Yahoo Finance chart data for ^GSPC, aligned to yfinance history semantics.",
+    symbol: "^GSPC",
+    categories: ["key-monitor", "economic-short", "economic-long"],
+    defaultUnit: "pts",
+    valueType: EconomicDataValueType.index,
+    defaultFrequency: DAILY,
+    snapshot: {
+      group: "markets",
+      bucket: "indices",
+      symbol: "^GSPC",
+      name: "S&P 500",
+      order: 10,
+    },
+    tags: ["us-equity", "index", "ohlc", "yfinance"],
+  }),
+];
+
 const FINNHUB_DEFINITIONS: FinancialDataItemDefinition[] = [
   createFinnhubDefinition({
     id: "spy-sp500-proxy-internal",
@@ -547,7 +625,8 @@ const FRED_DEFINITIONS: FinancialDataItemDefinition[] = [
 ];
 
 export const ECONOMIC_DATA_SOURCE_DEFINITIONS: FinancialDataItemDefinition[] = [
-  ...AKSHARE_DATA_DEFINITIONS.map(toAkshareDefinition),
+  ...AKSHARE_FINANCIAL_DEFINITIONS,
+  ...YFINANCE_DEFINITIONS,
   ...FRED_DEFINITIONS,
   ...FINNHUB_DEFINITIONS,
 ];

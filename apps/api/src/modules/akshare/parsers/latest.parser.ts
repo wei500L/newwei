@@ -1,7 +1,7 @@
 import type { AkshareLatestParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint } from "./parser.interface";
+import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 
 /**
  * Parser for latest/snapshot data
@@ -10,8 +10,13 @@ import type { ParsedDataPoint } from "./parser.interface";
 export class LatestParser extends BaseParser<AkshareLatestParserConfig> {
   readonly type = "latest";
 
-  parse(config: AkshareLatestParserConfig, payload: unknown): ParsedDataPoint[] {
-    const records = Array.isArray(payload) ? payload : [payload];
+  parse(config: AkshareLatestParserConfig, payload: unknown, context?: ParserContext): ParsedDataPoint[] {
+    const records = this.ensureRecordArray(payload);
+    this.assertFieldsExistInPayload(
+      records,
+      [config.timestampField, config.categoryField, ...config.valueFields.map((field) => field.field)],
+      context
+    );
     const now = new Date();
     const points: ParsedDataPoint[] = [];
 
@@ -20,15 +25,20 @@ export class LatestParser extends BaseParser<AkshareLatestParserConfig> {
 
       for (const field of config.valueFields) {
         const timestamp =
-          config.timestampField && record[config.timestampField]
-            ? this.parseDate(record[config.timestampField])
+          config.timestampField
+            ? this.parseRequiredDate(this.getRequiredField(record, config.timestampField, context), config.timestampField, context)
             : now;
-        const category = config.categoryField ? record[config.categoryField] : undefined;
+        const category = config.categoryField ? this.getRequiredField(record, config.categoryField, context) : undefined;
         const sourceField = this.buildSourceField(field.field, category);
+        const value = this.normalizeNumber(record[field.field]);
+
+        if (value === null) {
+          continue;
+        }
 
         points.push({
           recordedAt: timestamp,
-          value: this.normalizeNumber(record[field.field]),
+          value,
           unit: field.unit,
           dataType: field.dataType ?? "price",
           sourceField,

@@ -71,10 +71,10 @@ const PREFERRED_SOURCE_FIELDS = [
 ] as const;
 
 const OHLC_FIELD_ALIASES = {
-  open: ["open", "开盘价"],
-  high: ["high", "最高价"],
-  low: ["low", "最低价"],
-  close: ["close", "收盘价"],
+  open: ["open", "开盘价", "今开"],
+  high: ["high", "最高价", "最高"],
+  low: ["low", "最低价", "最低"],
+  close: ["close", "收盘价", "最新价"],
 } as const;
 
 type OhlcField = keyof typeof OHLC_FIELD_ALIASES;

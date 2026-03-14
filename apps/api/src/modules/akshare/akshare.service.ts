@@ -1,12 +1,27 @@
-import { AkshareResponseModel, EconomicProviderResponseModel } from "@modular/mongo";
+import {
+  AkshareResponseModel,
+  EconomicProviderResponseModel,
+} from "@modular/mongo";
 import {
   ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG,
   ensureTraceId,
   getCurrentTraceId,
-  type EconomicDashboardRefreshPreset
+  type EconomicDashboardRefreshPreset,
 } from "@modular/utils";
-import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, OnModuleInit, Optional } from "@nestjs/common";
-import { EconomicDataFrequency, EconomicDataRunStatus, Prisma } from "@prisma/client";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from "@nestjs/common";
+import {
+  EconomicDataFrequency,
+  EconomicDataRunStatus,
+  Prisma,
+} from "@prisma/client";
 import { Queue, type RepeatableJob, type RepeatOptions } from "bullmq";
 import type Redis from "ioredis";
 import { randomUUID } from "node:crypto";
@@ -39,7 +54,7 @@ import {
   MAX_PAGE_LIMIT,
   PaginatedResult,
   PaginationInput,
-  PaginationMeta
+  PaginationMeta,
 } from "./akshare.types";
 import type { ParsedDataPoint } from "./parsers";
 import {
@@ -82,26 +97,40 @@ export class AkshareService implements OnModuleInit {
     "global_epu_index",
     "china_fx_gold_reserves",
     "macro_fx_sentiment",
-    "bitcoin_spot_price"
+    "bitcoin_spot_price",
+    "sp500_index",
+    "platinum_spot_sge",
+    "palladium_spot_sge",
+    "us_unemployment_rate",
+    "us_core_pce",
+    "us_non_farm_payrolls",
+    "china_international_tourism_fx",
+    "crypto_js_spot",
   ]);
   private readonly forceDefaultParamsSyncSlugs = new Set<string>([
     "macro_fx_sentiment",
     "market_sentiment_usdx",
     "bitcoin_spot_price",
     "usd_cny_spot",
-    "eur_cny_spot"
+    "eur_cny_spot",
+    "sp500_index",
+    "china_treasury_yield_curve",
   ]);
+  private readonly forceSourceSyncSlugs = new Set<string>(["sp500_index"]);
   private readonly forceFilterSyncSlugs = new Set<string>([
     "bitcoin_spot_price",
     "usd_cny_spot",
-    "eur_cny_spot"
+    "eur_cny_spot",
+    "china_treasury_yield_curve",
+    "sp500_index",
   ]);
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(AKSHARE_QUEUE) private readonly queue: Queue<AkshareJobPayload>,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
-    @Optional() private readonly providerRegistry?: FinancialDataProviderRegistry
+    @Optional()
+    private readonly providerRegistry?: FinancialDataProviderRegistry,
   ) {}
 
   async onModuleInit() {
@@ -113,14 +142,16 @@ export class AkshareService implements OnModuleInit {
     return FINANCIAL_DATA_DEFINITIONS;
   }
 
-  private buildSeedMetadata(definition: FinancialDataItemDefinition): AkshareDataItemMetadata {
+  private buildSeedMetadata(
+    definition: FinancialDataItemDefinition,
+  ): AkshareDataItemMetadata {
     if (definition.providerConfig.kind !== "akshare") {
       return {
         method: "GET",
         defaultParams: null,
         parser: undefined,
         tags: definition.tags ?? [],
-        filter: null
+        filter: null,
       };
     }
 
@@ -129,11 +160,13 @@ export class AkshareService implements OnModuleInit {
       defaultParams: definition.providerConfig.defaultParams ?? null,
       parser: definition.providerConfig.parser,
       tags: definition.tags ?? [],
-      filter: definition.providerConfig.filter ?? null
+      filter: definition.providerConfig.filter ?? null,
     };
   }
 
-  private buildDefinitionCustomMetadata(definition: FinancialDataItemDefinition): FinancialDataDefinitionMetadata {
+  private buildDefinitionCustomMetadata(
+    definition: FinancialDataItemDefinition,
+  ): FinancialDataDefinitionMetadata {
     return {
       providerKind: definition.providerConfig.kind,
       providerConfig: definition.providerConfig,
@@ -141,11 +174,13 @@ export class AkshareService implements OnModuleInit {
       defaultEnabled: definition.defaultEnabled ?? true,
       mainlineRole: definition.mainlineRole ?? "canonical",
       snapshot: definition.snapshot,
-      dataViz: definition.dataViz
+      dataViz: definition.dataViz,
     };
   }
 
-  private parseFilter(filter: unknown): AksharePayloadFilterConfig | null | undefined {
+  private parseFilter(
+    filter: unknown,
+  ): AksharePayloadFilterConfig | null | undefined {
     if (filter === null) {
       return null;
     }
@@ -164,10 +199,17 @@ export class AkshareService implements OnModuleInit {
     }
 
     const mode = raw.mode;
-    const parsedMode = mode === "all" || mode === "best" || mode === "first" ? mode : undefined;
-    const preferNonZeroField = typeof raw.preferNonZeroField === "string" ? raw.preferNonZeroField : undefined;
+    const parsedMode =
+      mode === "all" || mode === "best" || mode === "first" ? mode : undefined;
+    const preferNonZeroField =
+      typeof raw.preferNonZeroField === "string"
+        ? raw.preferNonZeroField
+        : undefined;
     const rankBy = typeof raw.rankBy === "string" ? raw.rankBy : undefined;
-    const rankOrder = raw.rankOrder === "asc" || raw.rankOrder === "desc" ? raw.rankOrder : undefined;
+    const rankOrder =
+      raw.rankOrder === "asc" || raw.rankOrder === "desc"
+        ? raw.rankOrder
+        : undefined;
 
     return {
       field,
@@ -175,36 +217,49 @@ export class AkshareService implements OnModuleInit {
       mode: parsedMode,
       preferNonZeroField,
       rankBy,
-      rankOrder
+      rankOrder,
     };
   }
 
-  private parseMetadata(metadata: Prisma.JsonValue | null): AkshareDataItemMetadata {
+  private parseMetadata(
+    metadata: Prisma.JsonValue | null,
+  ): AkshareDataItemMetadata {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
       return {};
     }
     const parsed = metadata as Record<string, unknown>;
-    const method = parsed.method === "POST" ? "POST" : parsed.method === "GET" ? "GET" : undefined;
+    const method =
+      parsed.method === "POST"
+        ? "POST"
+        : parsed.method === "GET"
+          ? "GET"
+          : undefined;
     const defaultParams =
-      parsed.defaultParams && typeof parsed.defaultParams === "object" && !Array.isArray(parsed.defaultParams)
+      parsed.defaultParams &&
+      typeof parsed.defaultParams === "object" &&
+      !Array.isArray(parsed.defaultParams)
         ? (parsed.defaultParams as Record<string, string | number>)
         : parsed.defaultParams === null
           ? null
           : undefined;
     const parser = parsed.parser as AkshareParserConfig | undefined;
     const filter = this.parseFilter(parsed.filter);
-    const tags = Array.isArray(parsed.tags) ? parsed.tags.map((tag) => String(tag)) : undefined;
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags.map((tag) => String(tag))
+      : undefined;
 
     return {
       method,
       defaultParams,
       parser,
       tags,
-      filter
+      filter,
     };
   }
 
-  private extractCustomMetadata(metadata: Prisma.JsonValue | null): Record<string, unknown> {
+  private extractCustomMetadata(
+    metadata: Prisma.JsonValue | null,
+  ): Record<string, unknown> {
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
       return {};
     }
@@ -219,7 +274,9 @@ export class AkshareService implements OnModuleInit {
     return custom;
   }
 
-  private normalizeCustomMetadata(metadata: FinancialDataDefinitionMetadata): Record<string, unknown> {
+  private normalizeCustomMetadata(
+    metadata: FinancialDataDefinitionMetadata,
+  ): Record<string, unknown> {
     return {
       providerKind: metadata.providerKind,
       providerConfig: metadata.providerConfig,
@@ -227,7 +284,7 @@ export class AkshareService implements OnModuleInit {
       defaultEnabled: metadata.defaultEnabled ?? true,
       mainlineRole: metadata.mainlineRole ?? "canonical",
       snapshot: metadata.snapshot ?? null,
-      dataViz: metadata.dataViz ?? null
+      dataViz: metadata.dataViz ?? null,
     };
   }
 
@@ -239,7 +296,9 @@ export class AkshareService implements OnModuleInit {
       return Object.keys(value as Record<string, unknown>)
         .sort()
         .reduce<Record<string, unknown>>((acc, key) => {
-          acc[key] = this.sortJsonValue((value as Record<string, unknown>)[key]);
+          acc[key] = this.sortJsonValue(
+            (value as Record<string, unknown>)[key],
+          );
           return acc;
         }, {});
     }
@@ -247,18 +306,23 @@ export class AkshareService implements OnModuleInit {
   }
 
   private metadataPayloadEquals(a: unknown, b: unknown): boolean {
-    return JSON.stringify(this.sortJsonValue(a)) === JSON.stringify(this.sortJsonValue(b));
+    return (
+      JSON.stringify(this.sortJsonValue(a)) ===
+      JSON.stringify(this.sortJsonValue(b))
+    );
   }
 
   private hasValidParser(parser: AkshareParserConfig | undefined): boolean {
     return Boolean(
       parser &&
-      typeof (parser as { type?: unknown }).type === "string" &&
-      (parser as { type?: string }).type
+        typeof (parser as { type?: unknown }).type === "string" &&
+        (parser as { type?: string }).type,
     );
   }
 
-  private sanitizeExistingMetadata(metadata: AkshareDataItemMetadata): AkshareDataItemMetadata {
+  private sanitizeExistingMetadata(
+    metadata: AkshareDataItemMetadata,
+  ): AkshareDataItemMetadata {
     if (!this.hasValidParser(metadata.parser)) {
       // Treat partial/invalid parser configs (e.g. missing `type`) as absent so we can fall back to the seed parser.
       return { ...metadata, parser: undefined };
@@ -266,16 +330,21 @@ export class AkshareService implements OnModuleInit {
     return metadata;
   }
 
-  private mergeMetadata(existing: AkshareDataItemMetadata, seed: AkshareDataItemMetadata): AkshareDataItemMetadata {
+  private mergeMetadata(
+    existing: AkshareDataItemMetadata,
+    seed: AkshareDataItemMetadata,
+  ): AkshareDataItemMetadata {
     return {
       method: existing.method ?? seed.method ?? "GET",
       defaultParams:
         existing.defaultParams === null
           ? null
-          : existing.defaultParams ?? (seed.defaultParams === null ? null : seed.defaultParams),
+          : (existing.defaultParams ??
+            (seed.defaultParams === null ? null : seed.defaultParams)),
       parser: existing.parser ?? seed.parser,
       tags: existing.tags ?? seed.tags,
-      filter: existing.filter === null ? null : existing.filter ?? seed.filter
+      filter:
+        existing.filter === null ? null : (existing.filter ?? seed.filter),
     };
   }
 
@@ -285,37 +354,54 @@ export class AkshareService implements OnModuleInit {
       defaultParams: metadata.defaultParams ?? null,
       parser: metadata.parser ?? null,
       tags: metadata.tags ?? [],
-      filter: metadata.filter ?? null
+      filter: metadata.filter ?? null,
     };
   }
 
-  private metadataEquals(a: AkshareDataItemMetadata, b: AkshareDataItemMetadata) {
-    return JSON.stringify(this.normalizeMetadata(a)) === JSON.stringify(this.normalizeMetadata(b));
+  private metadataEquals(
+    a: AkshareDataItemMetadata,
+    b: AkshareDataItemMetadata,
+  ) {
+    return (
+      JSON.stringify(this.normalizeMetadata(a)) ===
+      JSON.stringify(this.normalizeMetadata(b))
+    );
   }
 
   private parseProviderKind(value: unknown): FinancialDataProviderKind {
-    return value === "finnhub" || value === "fred" || value === "akshare" ? value : "akshare";
+    return value === "finnhub" ||
+      value === "fred" ||
+      value === "akshare" ||
+      value === "yfinance"
+      ? value
+      : "akshare";
   }
 
-  private parseRequiredSecret(value: unknown): FinancialDataRequiredSecret | undefined {
-    return value === "finnhubApiKey" || value === "fredApiKey" ? value : undefined;
+  private parseRequiredSecret(
+    value: unknown,
+  ): FinancialDataRequiredSecret | undefined {
+    return value === "finnhubApiKey" || value === "fredApiKey"
+      ? value
+      : undefined;
   }
 
   private parseMainlineRole(value: unknown): FinancialDataMainlineRole {
-    return value === "fallback" || value === "derived" || value === "internal" || value === "canonical"
+    return value === "fallback" ||
+      value === "derived" ||
+      value === "internal" ||
+      value === "canonical"
       ? value
       : "canonical";
   }
 
-  private parseSnapshotMetadata(value: unknown): FinancialDataSnapshotMetadata | undefined {
+  private parseSnapshotMetadata(
+    value: unknown,
+  ): FinancialDataSnapshotMetadata | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return undefined;
     }
     const snapshot = value as Record<string, unknown>;
-    if (
-      snapshot.group !== "markets" &&
-      snapshot.group !== "fed"
-    ) {
+    if (snapshot.group !== "markets" && snapshot.group !== "fed") {
       return undefined;
     }
     if (typeof snapshot.bucket !== "string" || !snapshot.bucket.trim()) {
@@ -324,7 +410,9 @@ export class AkshareService implements OnModuleInit {
     return snapshot as unknown as FinancialDataSnapshotMetadata;
   }
 
-  private parseDataVizMetadata(value: unknown): FinancialDataVisualizationMetadata | undefined {
+  private parseDataVizMetadata(
+    value: unknown,
+  ): FinancialDataVisualizationMetadata | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return undefined;
     }
@@ -335,7 +423,7 @@ export class AkshareService implements OnModuleInit {
         : undefined,
       percentSourceFields: Array.isArray(dataViz.percentSourceFields)
         ? dataViz.percentSourceFields.map((entry) => String(entry))
-        : undefined
+        : undefined,
     };
   }
 
@@ -346,10 +434,12 @@ export class AkshareService implements OnModuleInit {
       sourceEndpoint: string;
       sourceDocUrl: string | null;
     },
-    metadata: AkshareDataItemMetadata
+    metadata: AkshareDataItemMetadata,
   ): AkshareFinancialDataProviderConfig {
     if (!metadata.parser) {
-      throw new InternalServerErrorException(`Akshare parser not configured for ${item.slug}`);
+      throw new InternalServerErrorException(
+        `Akshare parser not configured for ${item.slug}`,
+      );
     }
 
     return {
@@ -360,7 +450,7 @@ export class AkshareService implements OnModuleInit {
       method: metadata.method ?? "GET",
       defaultParams: metadata.defaultParams ?? undefined,
       filter: metadata.filter ?? undefined,
-      parser: metadata.parser
+      parser: metadata.parser,
     };
   }
 
@@ -373,38 +463,48 @@ export class AkshareService implements OnModuleInit {
     },
     metadata: AkshareDataItemMetadata,
     customMetadata: Record<string, unknown>,
-    providerKind: FinancialDataProviderKind
+    providerKind: FinancialDataProviderKind,
   ): FinancialDataProviderConfig {
-      const raw = customMetadata.providerConfig;
-      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-        const providerConfig = raw as Record<string, unknown>;
-        if (providerConfig.kind === providerKind) {
+    const raw = customMetadata.providerConfig;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const providerConfig = raw as Record<string, unknown>;
+      if (providerConfig.kind === providerKind) {
         return providerConfig as unknown as FinancialDataProviderConfig;
-        }
       }
+    }
 
     if (providerKind === "akshare") {
       return this.buildLegacyAkshareProviderConfigFromItem(item, metadata);
     }
 
-    throw new InternalServerErrorException(`Provider config missing for ${item.slug}`);
+    throw new InternalServerErrorException(
+      `Provider config missing for ${item.slug}`,
+    );
   }
 
-  private parseDefinitionMetadataFromRecord(
-    item: {
-      slug: string;
-      sourceFunction: string;
-      sourceEndpoint: string;
-      sourceDocUrl: string | null;
-      metadata: Prisma.JsonValue | null;
-    }
-  ) {
+  private parseDefinitionMetadataFromRecord(item: {
+    slug: string;
+    sourceFunction: string;
+    sourceEndpoint: string;
+    sourceDocUrl: string | null;
+    metadata: Prisma.JsonValue | null;
+  }) {
     const metadata = this.parseMetadata(item.metadata);
     const customMetadata = this.extractCustomMetadata(item.metadata);
     const providerKind = this.parseProviderKind(customMetadata.providerKind);
-    const providerConfig = this.parseProviderConfig(item, metadata, customMetadata, providerKind);
-    const requiresSecret = this.parseRequiredSecret(customMetadata.requiresSecret);
-    const defaultEnabled = typeof customMetadata.defaultEnabled === "boolean" ? customMetadata.defaultEnabled : true;
+    const providerConfig = this.parseProviderConfig(
+      item,
+      metadata,
+      customMetadata,
+      providerKind,
+    );
+    const requiresSecret = this.parseRequiredSecret(
+      customMetadata.requiresSecret,
+    );
+    const defaultEnabled =
+      typeof customMetadata.defaultEnabled === "boolean"
+        ? customMetadata.defaultEnabled
+        : true;
     const mainlineRole = this.parseMainlineRole(customMetadata.mainlineRole);
     const snapshot = this.parseSnapshotMetadata(customMetadata.snapshot);
     const dataViz = this.parseDataVizMetadata(customMetadata.dataViz);
@@ -418,18 +518,20 @@ export class AkshareService implements OnModuleInit {
       mainlineRole,
       snapshot,
       dataViz,
-      tags
+      tags,
     };
   }
 
-  private async loadDefinitionFromDatabase(slug: string): Promise<FinancialDataItemConfig> {
+  private async loadDefinitionFromDatabase(
+    slug: string,
+  ): Promise<FinancialDataItemConfig> {
     const item = await this.prisma.economicDataItem.findUnique({
       where: { slug },
       include: {
         categories: {
-          include: { category: true }
-        }
-      }
+          include: { category: true },
+        },
+      },
     });
     if (!item) {
       throw new InternalServerErrorException(`Data item ${slug} not found`);
@@ -456,7 +558,7 @@ export class AkshareService implements OnModuleInit {
       mainlineRole: definitionMetadata.mainlineRole,
       snapshot: definitionMetadata.snapshot,
       dataViz: definitionMetadata.dataViz,
-      tags: definitionMetadata.tags
+      tags: definitionMetadata.tags,
     };
   }
 
@@ -472,12 +574,16 @@ export class AkshareService implements OnModuleInit {
 
     // Phase 2: Batch load existing categories
     const existingCategories = await this.prisma.economicCategory.findMany({
-      where: { key: { in: Array.from(categoryKeys) } }
+      where: { key: { in: Array.from(categoryKeys) } },
     });
-    const existingCategoryMap = new Map(existingCategories.map((cat) => [cat.key, cat]));
+    const existingCategoryMap = new Map(
+      existingCategories.map((cat) => [cat.key, cat]),
+    );
 
     // Phase 3: Batch create missing categories
-    const missingCategoryKeys = Array.from(categoryKeys).filter((key) => !existingCategoryMap.has(key));
+    const missingCategoryKeys = Array.from(categoryKeys).filter(
+      (key) => !existingCategoryMap.has(key),
+    );
     if (missingCategoryKeys.length > 0) {
       await this.prisma.economicCategory.createMany({
         data: missingCategoryKeys.map((key) => ({
@@ -485,19 +591,21 @@ export class AkshareService implements OnModuleInit {
           label: key
             .split("-")
             .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-            .join(" ")
+            .join(" "),
         })),
-        skipDuplicates: true
+        skipDuplicates: true,
       });
       // Reload categories to get IDs for newly created ones
       const allCategories = await this.prisma.economicCategory.findMany({
-        where: { key: { in: Array.from(categoryKeys) } }
+        where: { key: { in: Array.from(categoryKeys) } },
       });
       for (const cat of allCategories) {
         existingCategoryMap.set(cat.key, cat);
       }
     }
-    this.logger.log(`ensureCatalog: Categories synced in ${Date.now() - startTime}ms`);
+    this.logger.log(
+      `ensureCatalog: Categories synced in ${Date.now() - startTime}ms`,
+    );
 
     // Phase 4: Batch load all existing data items (T1 - replaces N+1 findUnique calls)
     const slugs = this.definitions.map((d) => d.slug);
@@ -505,13 +613,17 @@ export class AkshareService implements OnModuleInit {
       where: { slug: { in: slugs } },
       include: {
         categories: {
-          include: { category: true }
+          include: { category: true },
         },
-        fetchConfig: true
-      }
+        fetchConfig: true,
+      },
     });
-    const existingItemMap = new Map(existingItems.map((item) => [item.slug, item]));
-    this.logger.log(`ensureCatalog: Loaded ${existingItems.length} existing items in ${Date.now() - startTime}ms`);
+    const existingItemMap = new Map(
+      existingItems.map((item) => [item.slug, item]),
+    );
+    this.logger.log(
+      `ensureCatalog: Loaded ${existingItems.length} existing items in ${Date.now() - startTime}ms`,
+    );
 
     // Phase 5: Collect items for batch operations
     const newItemsData: {
@@ -544,23 +656,38 @@ export class AkshareService implements OnModuleInit {
         .map((categoryKey) => {
           const category = existingCategoryMap.get(categoryKey);
           if (!category) {
-            this.logger.warn(`Missing category ${categoryKey} for ${definition.slug}`);
+            this.logger.warn(
+              `Missing category ${categoryKey} for ${definition.slug}`,
+            );
             return null;
           }
           return category;
         })
-        .filter((category): category is NonNullable<typeof category> => Boolean(category));
+        .filter((category): category is NonNullable<typeof category> =>
+          Boolean(category),
+        );
 
       if (!existingItem) {
         // Collect for batch create (T2)
-        newItemsData.push({ definition, seedMetadata, seedCustomMetadata, categories });
+        newItemsData.push({
+          definition,
+          seedMetadata,
+          seedCustomMetadata,
+          categories,
+        });
         continue;
       }
 
       // Collect updates (T3)
-      const isMockSeed = existingItem.sourceFunction === "mock" && existingItem.sourceEndpoint === "mock";
-      const existingMetadata = this.sanitizeExistingMetadata(this.parseMetadata(existingItem.metadata));
-      const existingCustomMetadata = this.extractCustomMetadata(existingItem.metadata);
+      const isMockSeed =
+        existingItem.sourceFunction === "mock" &&
+        existingItem.sourceEndpoint === "mock";
+      const existingMetadata = this.sanitizeExistingMetadata(
+        this.parseMetadata(existingItem.metadata),
+      );
+      const existingCustomMetadata = this.extractCustomMetadata(
+        existingItem.metadata,
+      );
       const mergedMetadata = this.mergeMetadata(existingMetadata, seedMetadata);
       const mergedMetadataWithOverrides =
         this.forceParserSyncSlugs.has(definition.slug) || isMockSeed
@@ -568,23 +695,43 @@ export class AkshareService implements OnModuleInit {
           : mergedMetadata;
       const mergedMetadataWithOverridesFilter =
         this.forceFilterSyncSlugs.has(definition.slug) || isMockSeed
-          ? { ...mergedMetadataWithOverrides, filter: seedMetadata.filter ?? null }
+          ? {
+              ...mergedMetadataWithOverrides,
+              filter: seedMetadata.filter ?? null,
+            }
           : mergedMetadataWithOverrides;
       const mergedMetadataWithOverrides2 =
         this.forceDefaultParamsSyncSlugs.has(definition.slug) || isMockSeed
-          ? { ...mergedMetadataWithOverridesFilter, defaultParams: seedMetadata.defaultParams ?? null }
+          ? {
+              ...mergedMetadataWithOverridesFilter,
+              defaultParams: seedMetadata.defaultParams ?? null,
+            }
           : mergedMetadataWithOverridesFilter;
 
       const updates: Prisma.EconomicDataItemUpdateInput = {};
-      const matchesSeedFunction = existingItem.sourceFunction === definition.sourceFunction;
-      const shouldSyncSource = matchesSeedFunction || isMockSeed;
+      const matchesSeedFunction =
+        existingItem.sourceFunction === definition.sourceFunction;
+      const existingProviderKind = this.parseProviderKind(
+        existingCustomMetadata.providerKind,
+      );
+      const shouldSyncSource =
+        matchesSeedFunction ||
+        isMockSeed ||
+        this.forceSourceSyncSlugs.has(definition.slug) ||
+        existingProviderKind !== definition.providerConfig.kind;
       if (!existingItem.groupLabel && definition.categories[0]) {
         updates.groupLabel = definition.categories[0];
       }
-      if (shouldSyncSource && existingItem.sourceFunction !== definition.sourceFunction) {
+      if (
+        shouldSyncSource &&
+        existingItem.sourceFunction !== definition.sourceFunction
+      ) {
         updates.sourceFunction = definition.sourceFunction;
       }
-      if (shouldSyncSource && existingItem.sourceEndpoint !== definition.endpoint) {
+      if (
+        shouldSyncSource &&
+        existingItem.sourceEndpoint !== definition.endpoint
+      ) {
         updates.sourceEndpoint = definition.endpoint;
       }
       if (shouldSyncSource && existingItem.sourceDocUrl !== definition.docUrl) {
@@ -593,10 +740,16 @@ export class AkshareService implements OnModuleInit {
       if (shouldSyncSource && existingItem.valueType !== definition.valueType) {
         updates.valueType = definition.valueType;
       }
-      if (shouldSyncSource && existingItem.defaultUnit !== definition.defaultUnit) {
+      if (
+        shouldSyncSource &&
+        existingItem.defaultUnit !== definition.defaultUnit
+      ) {
         updates.defaultUnit = definition.defaultUnit;
       }
-      if (shouldSyncSource && existingItem.defaultFrequency !== definition.defaultFrequency) {
+      if (
+        shouldSyncSource &&
+        existingItem.defaultFrequency !== definition.defaultFrequency
+      ) {
         updates.defaultFrequency = definition.defaultFrequency;
       }
       if (!existingItem.description && definition.description) {
@@ -605,9 +758,11 @@ export class AkshareService implements OnModuleInit {
       const nextMetadataPayload = {
         ...existingCustomMetadata,
         ...this.normalizeCustomMetadata(seedCustomMetadata),
-        ...this.normalizeMetadata(mergedMetadataWithOverrides2)
+        ...this.normalizeMetadata(mergedMetadataWithOverrides2),
       };
-      if (!this.metadataPayloadEquals(existingItem.metadata, nextMetadataPayload)) {
+      if (
+        !this.metadataPayloadEquals(existingItem.metadata, nextMetadataPayload)
+      ) {
         updates.metadata = toPrismaJsonValue(nextMetadataPayload);
       }
 
@@ -616,12 +771,14 @@ export class AkshareService implements OnModuleInit {
       }
 
       // Collect missing category relations (T4)
-      const existingCategoryKeys = new Set(existingItem.categories.map((entry) => entry.category.key));
+      const existingCategoryKeys = new Set(
+        existingItem.categories.map((entry) => entry.category.key),
+      );
       for (const category of categories) {
         if (!existingCategoryKeys.has(category.key)) {
           newCategoryRelations.push({
             itemId: existingItem.id,
-            categoryId: category.id
+            categoryId: category.id,
           });
         }
       }
@@ -630,8 +787,9 @@ export class AkshareService implements OnModuleInit {
       if (!existingItem.fetchConfig) {
         newFetchConfigs.push({
           itemId: existingItem.id,
-          frequency: existingItem.defaultFrequency ?? definition.defaultFrequency,
-          isEnabled: definition.defaultEnabled ?? true
+          frequency:
+            existingItem.defaultFrequency ?? definition.defaultFrequency,
+          isEnabled: definition.defaultEnabled ?? true,
         });
       }
     }
@@ -641,31 +799,35 @@ export class AkshareService implements OnModuleInit {
       // createMany doesn't support nested creates, so we need to create items first
       // then create relations separately
       await this.prisma.economicDataItem.createMany({
-        data: newItemsData.map(({ definition, seedMetadata, seedCustomMetadata }) => ({
-          slug: definition.slug,
-          displayName: definition.displayName,
-          groupLabel: definition.categories[0],
-          description: definition.description,
-          sourceFunction: definition.sourceFunction,
-          sourceEndpoint: definition.endpoint,
-          sourceDocUrl: definition.docUrl,
-          valueType: definition.valueType,
-          defaultUnit: definition.defaultUnit,
-          defaultFrequency: definition.defaultFrequency,
-          metadata: toPrismaJsonValue({
-            ...this.normalizeCustomMetadata(seedCustomMetadata),
-            ...this.normalizeMetadata(seedMetadata)
-          })
-        })),
-        skipDuplicates: true
+        data: newItemsData.map(
+          ({ definition, seedMetadata, seedCustomMetadata }) => ({
+            slug: definition.slug,
+            displayName: definition.displayName,
+            groupLabel: definition.categories[0],
+            description: definition.description,
+            sourceFunction: definition.sourceFunction,
+            sourceEndpoint: definition.endpoint,
+            sourceDocUrl: definition.docUrl,
+            valueType: definition.valueType,
+            defaultUnit: definition.defaultUnit,
+            defaultFrequency: definition.defaultFrequency,
+            metadata: toPrismaJsonValue({
+              ...this.normalizeCustomMetadata(seedCustomMetadata),
+              ...this.normalizeMetadata(seedMetadata),
+            }),
+          }),
+        ),
+        skipDuplicates: true,
       });
 
       // Fetch newly created items to get their IDs
       const newSlugs = newItemsData.map((d) => d.definition.slug);
       const createdItems = await this.prisma.economicDataItem.findMany({
-        where: { slug: { in: newSlugs } }
+        where: { slug: { in: newSlugs } },
       });
-      const createdItemMap = new Map(createdItems.map((item) => [item.slug, item]));
+      const createdItemMap = new Map(
+        createdItems.map((item) => [item.slug, item]),
+      );
 
       // Collect category relations and fetch configs for new items
       for (const { definition, categories } of newItemsData) {
@@ -675,17 +837,19 @@ export class AkshareService implements OnModuleInit {
         for (const category of categories) {
           newCategoryRelations.push({
             itemId: createdItem.id,
-            categoryId: category.id
+            categoryId: category.id,
           });
         }
 
         newFetchConfigs.push({
           itemId: createdItem.id,
           frequency: definition.defaultFrequency,
-          isEnabled: definition.defaultEnabled ?? true
+          isEnabled: definition.defaultEnabled ?? true,
         });
       }
-      this.logger.log(`ensureCatalog: Created ${newItemsData.length} new items in ${Date.now() - startTime}ms`);
+      this.logger.log(
+        `ensureCatalog: Created ${newItemsData.length} new items in ${Date.now() - startTime}ms`,
+      );
     }
 
     // Phase 8: Execute batch updates (T3)
@@ -694,20 +858,24 @@ export class AkshareService implements OnModuleInit {
         itemUpdates.map(({ id, data }) =>
           this.prisma.economicDataItem.update({
             where: { id },
-            data
-          })
-        )
+            data,
+          }),
+        ),
       );
-      this.logger.log(`ensureCatalog: Updated ${itemUpdates.length} items in ${Date.now() - startTime}ms`);
+      this.logger.log(
+        `ensureCatalog: Updated ${itemUpdates.length} items in ${Date.now() - startTime}ms`,
+      );
     }
 
     // Phase 9: Batch create category relations (T4)
     if (newCategoryRelations.length > 0) {
       await this.prisma.economicDataItemCategory.createMany({
         data: newCategoryRelations,
-        skipDuplicates: true
+        skipDuplicates: true,
       });
-      this.logger.log(`ensureCatalog: Created ${newCategoryRelations.length} category relations in ${Date.now() - startTime}ms`);
+      this.logger.log(
+        `ensureCatalog: Created ${newCategoryRelations.length} category relations in ${Date.now() - startTime}ms`,
+      );
     }
 
     // Phase 10: Batch create fetch configs (T5)
@@ -717,21 +885,23 @@ export class AkshareService implements OnModuleInit {
           itemId,
           frequency,
           repeatCron: null,
-          isEnabled
+          isEnabled,
         })),
-        skipDuplicates: true
+        skipDuplicates: true,
       });
-      this.logger.log(`ensureCatalog: Created ${newFetchConfigs.length} fetch configs in ${Date.now() - startTime}ms`);
+      this.logger.log(
+        `ensureCatalog: Created ${newFetchConfigs.length} fetch configs in ${Date.now() - startTime}ms`,
+      );
     }
 
     // Phase 11: Performance summary (T6)
     const totalTime = Date.now() - startTime;
     this.logger.log(
       `ensureCatalog: Completed in ${totalTime}ms - ` +
-      `${this.definitions.length} definitions, ` +
-      `${existingItems.length} existing, ` +
-      `${newItemsData.length} created, ` +
-      `${itemUpdates.length} updated`
+        `${this.definitions.length} definitions, ` +
+        `${existingItems.length} existing, ` +
+        `${newItemsData.length} created, ` +
+        `${itemUpdates.length} updated`,
     );
   }
 
@@ -751,7 +921,9 @@ export class AkshareService implements OnModuleInit {
         break;
       }
       if (Date.now() - start >= maxWaitMs) {
-        this.logger.log("Skipping ensureRepeatableJobs: lock already held by another instance");
+        this.logger.log(
+          "Skipping ensureRepeatableJobs: lock already held by another instance",
+        );
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
@@ -769,7 +941,10 @@ export class AkshareService implements OnModuleInit {
       try {
         await this.redis.eval(releaseScript, 1, lockKey, lockId);
       } catch (error) {
-        this.logger.warn({ error }, "Failed to release Akshare repeatable jobs lock");
+        this.logger.warn(
+          { error },
+          "Failed to release Akshare repeatable jobs lock",
+        );
       }
     }
   }
@@ -791,59 +966,77 @@ export class AkshareService implements OnModuleInit {
       : "provider_disabled";
   }
 
-  private async markFetchConfigUnavailable(itemId: string, errorCode: string): Promise<void> {
+  private async markFetchConfigUnavailable(
+    itemId: string,
+    errorCode: string,
+  ): Promise<void> {
     await this.prisma.economicDataFetchConfig.update({
       where: { itemId },
       data: {
         lastRunAt: new Date(),
         lastStatus: EconomicDataRunStatus.failed,
         lastError: errorCode,
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     });
   }
 
   private async syncRepeatableJobs() {
     const configs = await this.prisma.economicDataFetchConfig.findMany({
-      include: { item: true }
+      include: { item: true },
     });
     const existingJobs = await this.queue.getRepeatableJobs();
-    const providerAvailabilityCache = new Map<FinancialDataProviderKind, boolean>();
+    const providerAvailabilityCache = new Map<
+      FinancialDataProviderKind,
+      boolean
+    >();
 
-    const resolveAvailability = async (item: typeof configs[number]["item"]) => {
+    const resolveAvailability = async (
+      item: (typeof configs)[number]["item"],
+    ) => {
       const definitionMetadata = this.parseDefinitionMetadataFromRecord(item);
       if (!this.providerRegistry) {
         return { available: true, definitionMetadata };
       }
 
-      const cached = providerAvailabilityCache.get(definitionMetadata.providerKind);
+      const cached = providerAvailabilityCache.get(
+        definitionMetadata.providerKind,
+      );
       if (cached !== undefined) {
         return { available: cached, definitionMetadata };
       }
 
-      const available = await this.providerRegistry.get(definitionMetadata.providerKind).isConfigured();
+      const available = await this.providerRegistry
+        .get(definitionMetadata.providerKind)
+        .isConfigured();
       providerAvailabilityCache.set(definitionMetadata.providerKind, available);
       return { available, definitionMetadata };
     };
 
     const configByJobName = new Map(
-      configs.map((config) => [this.buildJobName(config.itemId), config])
+      configs.map((config) => [this.buildJobName(config.itemId), config]),
     );
     for (const job of existingJobs) {
       const config = configByJobName.get(job.name ?? "");
-      const availability = config ? await resolveAvailability(config.item) : null;
+      const availability = config
+        ? await resolveAvailability(config.item)
+        : null;
       if (!config || !config.isEnabled || !availability?.available) {
         await this.queue.removeRepeatableByKey(job.key);
         if (config && availability && !availability.available) {
           await this.markFetchConfigUnavailable(
             config.itemId,
-            this.resolveProviderUnavailableError(availability.definitionMetadata)
+            this.resolveProviderUnavailableError(
+              availability.definitionMetadata,
+            ),
           );
         }
       }
     }
 
-    const existingByName = new Map(existingJobs.map((job) => [job.name ?? "", job]));
+    const existingByName = new Map(
+      existingJobs.map((job) => [job.name ?? "", job]),
+    );
     for (const config of configs) {
       if (!config.isEnabled) {
         continue;
@@ -852,12 +1045,15 @@ export class AkshareService implements OnModuleInit {
       if (!availability.available) {
         await this.markFetchConfigUnavailable(
           config.itemId,
-          this.resolveProviderUnavailableError(availability.definitionMetadata)
+          this.resolveProviderUnavailableError(availability.definitionMetadata),
         );
         continue;
       }
       const jobName = this.buildJobName(config.itemId);
-      const repeat = this.buildRepeatOptions(config.frequency, config.repeatCron);
+      const repeat = this.buildRepeatOptions(
+        config.frequency,
+        config.repeatCron,
+      );
       const existing = existingByName.get(jobName);
       if (existing && this.repeatMatches(existing, repeat)) {
         continue;
@@ -871,13 +1067,16 @@ export class AkshareService implements OnModuleInit {
         {
           removeOnComplete: true,
           removeOnFail: false,
-          repeat
-        }
+          repeat,
+        },
       );
     }
   }
 
-  private buildRepeatOptions(frequency: EconomicDataFrequency, cron?: string | null): RepeatOptions {
+  private buildRepeatOptions(
+    frequency: EconomicDataFrequency,
+    cron?: string | null,
+  ): RepeatOptions {
     if (cron) {
       return { pattern: cron };
     }
@@ -903,7 +1102,8 @@ export class AkshareService implements OnModuleInit {
 
   private repeatMatches(job: RepeatableJob, repeat: RepeatOptions) {
     if (repeat.every) {
-      const jobEvery = typeof job.every === "string" ? Number(job.every) : undefined;
+      const jobEvery =
+        typeof job.every === "string" ? Number(job.every) : undefined;
       return Number.isFinite(jobEvery) && jobEvery === repeat.every;
     }
     if (repeat.pattern) {
@@ -918,7 +1118,7 @@ export class AkshareService implements OnModuleInit {
       await this.queue.add(
         "manual-fetch",
         { dataItemId: slug, triggeredById, traceId },
-        { removeOnComplete: true }
+        { removeOnComplete: true },
       );
     }
     return true;
@@ -926,11 +1126,13 @@ export class AkshareService implements OnModuleInit {
 
   async triggerDataFetchForPreset(
     preset: EconomicDashboardRefreshPreset,
-    triggerContext?: EconomicRefreshTriggerContext
+    triggerContext?: EconomicRefreshTriggerContext,
   ) {
     const presetConfig = ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset];
     if (!presetConfig) {
-      throw new BadRequestException(`Unsupported economic refresh preset: ${preset}`);
+      throw new BadRequestException(
+        `Unsupported economic refresh preset: ${preset}`,
+      );
     }
 
     const configs = await this.prisma.economicDataFetchConfig.findMany({
@@ -941,32 +1143,32 @@ export class AkshareService implements OnModuleInit {
           categories: {
             some: {
               category: {
-                key: presetConfig.categoryKey
-              }
-            }
-          }
-        }
+                key: presetConfig.categoryKey,
+              },
+            },
+          },
+        },
       },
       select: {
         item: {
           select: {
-            slug: true
-          }
-        }
-      }
+            slug: true,
+          },
+        },
+      },
     });
 
     const slugs = Array.from(
       new Set(
         configs
           .map((config) => config.item.slug.trim())
-          .filter((slug) => slug.length > 0)
-      )
+          .filter((slug) => slug.length > 0),
+      ),
     );
 
     if (slugs.length === 0) {
       throw new BadRequestException(
-        `No enabled economic data items are configured for refresh preset '${preset}'.`
+        `No enabled economic data items are configured for refresh preset '${preset}'.`,
       );
     }
 
@@ -986,16 +1188,16 @@ export class AkshareService implements OnModuleInit {
               preset,
               categoryKey: presetConfig.categoryKey,
               slugCount: slugs.length,
-              slugs
-            })
-          }
+              slugs,
+            }),
+          },
         },
         {
           orgId: triggerContext.orgId,
           actorId: triggerContext.actorId ?? null,
           preset,
-          categoryKey: presetConfig.categoryKey
-        }
+          categoryKey: presetConfig.categoryKey,
+        },
       );
     }
 
@@ -1003,11 +1205,13 @@ export class AkshareService implements OnModuleInit {
   }
 
   async getRefreshPresetStatus(
-    preset: EconomicDashboardRefreshPreset
+    preset: EconomicDashboardRefreshPreset,
   ): Promise<EconomicRefreshPresetStatusSummary> {
     const presetConfig = ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset];
     if (!presetConfig) {
-      throw new BadRequestException(`Unsupported economic refresh preset: ${preset}`);
+      throw new BadRequestException(
+        `Unsupported economic refresh preset: ${preset}`,
+      );
     }
 
     const configs = await this.prisma.economicDataFetchConfig.findMany({
@@ -1016,11 +1220,11 @@ export class AkshareService implements OnModuleInit {
           categories: {
             some: {
               category: {
-                key: presetConfig.categoryKey
-              }
-            }
-          }
-        }
+                key: presetConfig.categoryKey,
+              },
+            },
+          },
+        },
       },
       select: {
         isEnabled: true,
@@ -1029,25 +1233,28 @@ export class AkshareService implements OnModuleInit {
         lastError: true,
         item: {
           select: {
-            isActive: true
-          }
-        }
-      }
+            isActive: true,
+          },
+        },
+      },
     });
 
-    const enabledConfigs = configs.filter((config) => config.isEnabled && config.item.isActive);
-    const latestConfig = enabledConfigs.reduce<(typeof enabledConfigs)[number] | null>(
-      (currentLatest, candidate) => {
-        if (!candidate.lastRunAt) {
-          return currentLatest;
-        }
-        if (!currentLatest?.lastRunAt) {
-          return candidate;
-        }
-        return candidate.lastRunAt > currentLatest.lastRunAt ? candidate : currentLatest;
-      },
-      null
+    const enabledConfigs = configs.filter(
+      (config) => config.isEnabled && config.item.isActive,
     );
+    const latestConfig = enabledConfigs.reduce<
+      (typeof enabledConfigs)[number] | null
+    >((currentLatest, candidate) => {
+      if (!candidate.lastRunAt) {
+        return currentLatest;
+      }
+      if (!currentLatest?.lastRunAt) {
+        return candidate;
+      }
+      return candidate.lastRunAt > currentLatest.lastRunAt
+        ? candidate
+        : currentLatest;
+    }, null);
 
     return {
       preset,
@@ -1056,7 +1263,7 @@ export class AkshareService implements OnModuleInit {
       enabledItems: enabledConfigs.length,
       lastRunAt: latestConfig?.lastRunAt ?? null,
       lastStatus: latestConfig?.lastStatus ?? null,
-      lastError: latestConfig?.lastError ?? null
+      lastError: latestConfig?.lastError ?? null,
     };
   }
 
@@ -1067,15 +1274,23 @@ export class AkshareService implements OnModuleInit {
       definition = await this.loadDefinitionFromDatabase(slug);
       itemId = definition.itemId;
       if (!this.providerRegistry) {
-        throw new InternalServerErrorException("Financial data provider registry not initialized");
+        throw new InternalServerErrorException(
+          "Financial data provider registry not initialized",
+        );
       }
 
       const provider = this.providerRegistry.get(definition.providerKind);
       const response = await provider.fetch(definition);
       await this.archiveProviderResponse(definition, response);
-      const storedCount = await this.bulkUpsertDataPoints(definition.itemId, response.points);
+      const storedCount = await this.bulkUpsertDataPoints(
+        definition.itemId,
+        response.points,
+      );
 
-      await this.updateFetchStatusByItemId(definition.itemId, EconomicDataRunStatus.success);
+      await this.updateFetchStatusByItemId(
+        definition.itemId,
+        EconomicDataRunStatus.success,
+      );
 
       this.logger.log(`Stored ${storedCount} points for ${definition.slug}`);
       return storedCount;
@@ -1086,18 +1301,25 @@ export class AkshareService implements OnModuleInit {
         }
         if (itemId) {
           if (error instanceof FinancialDataProviderConfigurationError) {
-            await this.markFetchConfigUnavailable(itemId, error.message || error.code);
+            await this.markFetchConfigUnavailable(
+              itemId,
+              error.message || error.code,
+            );
             this.logger.warn(`Skipped ${slug}: ${error.message || error.code}`);
             return 0;
           }
-          await this.updateFetchStatusByItemId(itemId, EconomicDataRunStatus.failed, error);
+          await this.updateFetchStatusByItemId(
+            itemId,
+            EconomicDataRunStatus.failed,
+            error,
+          );
         } else {
           await this.recordFetchFailure(slug, error);
         }
       } catch (persistError) {
         this.logger.error(
           { slug, error: persistError },
-          "Failed to record Akshare fetch failure status"
+          "Failed to record Akshare fetch failure status",
         );
       }
       if (error instanceof FinancialDataProviderConfigurationError) {
@@ -1107,7 +1329,9 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private buildFailureRequestParams(definition: FinancialDataItemConfig): Record<string, unknown> {
+  private buildFailureRequestParams(
+    definition: FinancialDataItemConfig,
+  ): Record<string, unknown> {
     const providerConfig = definition.providerConfig;
     switch (providerConfig.kind) {
       case "akshare":
@@ -1118,7 +1342,16 @@ export class AkshareService implements OnModuleInit {
         return {
           series_id: providerConfig.seriesId,
           metric: providerConfig.metric,
-          limit: providerConfig.lookback ?? undefined
+          limit: providerConfig.lookback ?? undefined,
+        };
+      case "yfinance":
+        return {
+          symbol: providerConfig.symbol,
+          interval: providerConfig.interval,
+          period1: providerConfig.period1,
+          period2: providerConfig.period2 ?? "now",
+          includePrePost: providerConfig.includePrePost ?? false,
+          events: providerConfig.events ?? "div,splits",
         };
       default:
         return {};
@@ -1130,23 +1363,23 @@ export class AkshareService implements OnModuleInit {
       return {
         name: error.name,
         code: error.code,
-        message: error.message
+        message: error.message,
       };
     }
     if (error instanceof Error) {
       return {
         name: error.name,
-        message: error.message
+        message: error.message,
       };
     }
     return {
-      message: this.formatError(error)
+      message: this.formatError(error),
     };
   }
 
   private async archiveProviderFailure(
     definition: FinancialDataItemConfig,
-    error: unknown
+    error: unknown,
   ): Promise<void> {
     await EconomicProviderResponseModel.create({
       dataItemId: definition.slug,
@@ -1156,8 +1389,11 @@ export class AkshareService implements OnModuleInit {
       method: "GET",
       requestParams: this.buildFailureRequestParams(definition),
       payload: this.buildFailurePayload(error),
-      status: error instanceof FinancialDataProviderConfigurationError ? "skipped" : "failed",
-      fetchedAt: new Date()
+      status:
+        error instanceof FinancialDataProviderConfigurationError
+          ? "skipped"
+          : "failed",
+      fetchedAt: new Date(),
     });
   }
 
@@ -1169,6 +1405,8 @@ export class AkshareService implements OnModuleInit {
         return config.symbol;
       case "fred":
         return config.seriesId;
+      case "yfinance":
+        return config.symbol;
       default:
         return "unknown";
     }
@@ -1180,7 +1418,7 @@ export class AkshareService implements OnModuleInit {
       payload: unknown;
       requestParams?: Record<string, unknown>;
       method?: string;
-    }
+    },
   ): Promise<void> {
     const method = response.method ?? "GET";
     const requestParams = response.requestParams ?? {};
@@ -1194,7 +1432,7 @@ export class AkshareService implements OnModuleInit {
       requestParams,
       payload: response.payload,
       status: "success",
-      fetchedAt: new Date()
+      fetchedAt: new Date(),
     });
 
     if (definition.providerKind === "akshare") {
@@ -1204,12 +1442,15 @@ export class AkshareService implements OnModuleInit {
         method,
         requestParams,
         payload: response.payload,
-        fetchedAt: new Date()
+        fetchedAt: new Date(),
       });
     }
   }
 
-  private async bulkUpsertDataPoints(itemId: string, points: ParsedDataPoint[]) {
+  private async bulkUpsertDataPoints(
+    itemId: string,
+    points: ParsedDataPoint[],
+  ) {
     const deduped = new Map<string, ParsedDataPoint>();
     for (const point of points) {
       if (point.value === null || point.value === undefined) {
@@ -1218,11 +1459,14 @@ export class AkshareService implements OnModuleInit {
       if (typeof point.value === "number" && !Number.isFinite(point.value)) {
         continue;
       }
-      const recordedAt = point.recordedAt instanceof Date ? point.recordedAt : new Date(point.recordedAt);
+      const recordedAt =
+        point.recordedAt instanceof Date
+          ? point.recordedAt
+          : new Date(point.recordedAt);
       const key = `${recordedAt.getTime()}|${point.sourceField}`;
       deduped.set(key, {
         ...point,
-        recordedAt
+        recordedAt,
       });
     }
 
@@ -1246,7 +1490,9 @@ export class AkshareService implements OnModuleInit {
     let chunkBytes = 0;
     for (const row of rows) {
       const wouldExceedRows = chunk.length >= this.dataPointBatchSize;
-      const wouldExceedBytes = chunk.length > 0 && chunkBytes + row.estimatedBytes > this.dataPointBatchMaxBytes;
+      const wouldExceedBytes =
+        chunk.length > 0 &&
+        chunkBytes + row.estimatedBytes > this.dataPointBatchMaxBytes;
       if (wouldExceedRows || wouldExceedBytes) {
         await this.executeUpsertDataPointChunk(itemId, chunk);
         chunk = [];
@@ -1262,7 +1508,10 @@ export class AkshareService implements OnModuleInit {
     return deduped.size;
   }
 
-  private toUpsertDataPointRow(itemId: string, point: ParsedDataPoint): UpsertDataPointRow | null {
+  private toUpsertDataPointRow(
+    itemId: string,
+    point: ParsedDataPoint,
+  ): UpsertDataPointRow | null {
     if (point.value === null || point.value === undefined) {
       return null;
     }
@@ -1278,7 +1527,7 @@ export class AkshareService implements OnModuleInit {
         this.logger.warn(
           `Failed to serialize Akshare data point metadata (itemId=${itemId}, sourceField=${point.sourceField}): ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
         metaJson = null;
       }
@@ -1293,7 +1542,7 @@ export class AkshareService implements OnModuleInit {
       value,
       unit,
       sourceField: point.sourceField,
-      metaJson
+      metaJson,
     });
 
     return {
@@ -1303,7 +1552,7 @@ export class AkshareService implements OnModuleInit {
       unit,
       sourceField: point.sourceField,
       metaJson,
-      estimatedBytes
+      estimatedBytes,
     };
   }
 
@@ -1316,7 +1565,10 @@ export class AkshareService implements OnModuleInit {
     sourceField: string;
     metaJson: string | null;
   }) {
-    const recordedAt = input.recordedAt instanceof Date ? input.recordedAt.toISOString() : String(input.recordedAt);
+    const recordedAt =
+      input.recordedAt instanceof Date
+        ? input.recordedAt.toISOString()
+        : String(input.recordedAt);
     const value = input.value.toString();
     const fixedOverhead = 96;
     return (
@@ -1342,10 +1594,15 @@ export class AkshareService implements OnModuleInit {
       errno?: unknown;
       code?: unknown;
     };
-    const topMessage = typeof anyError.message === "string" ? anyError.message : "";
-    const metaMessage = typeof anyError.meta?.message === "string" ? anyError.meta.message : "";
+    const topMessage =
+      typeof anyError.message === "string" ? anyError.message : "";
+    const metaMessage =
+      typeof anyError.meta?.message === "string" ? anyError.meta.message : "";
     const message = `${topMessage} ${metaMessage}`.toLowerCase();
-    if (message.includes("max_allowed_packet") || message.includes("packet") && message.includes("too")) {
+    if (
+      message.includes("max_allowed_packet") ||
+      (message.includes("packet") && message.includes("too"))
+    ) {
       return true;
     }
 
@@ -1354,13 +1611,18 @@ export class AkshareService implements OnModuleInit {
     return String(metaCode) === "1153" || String(errno) === "1153";
   }
 
-  private async executeUpsertDataPointChunk(itemId: string, rows: UpsertDataPointRow[]): Promise<void> {
+  private async executeUpsertDataPointChunk(
+    itemId: string,
+    rows: UpsertDataPointRow[],
+  ): Promise<void> {
     if (rows.length === 0) {
       return;
     }
 
     try {
-      await this.prisma.$executeRaw(this.buildUpsertDataPointsQuery(itemId, rows));
+      await this.prisma.$executeRaw(
+        this.buildUpsertDataPointsQuery(itemId, rows),
+      );
     } catch (error) {
       if (this.isPacketTooLargeError(error) && rows.length > 1) {
         const mid = Math.ceil(rows.length / 2);
@@ -1372,7 +1634,10 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private buildUpsertDataPointsQuery(itemId: string, rows: UpsertDataPointRow[]) {
+  private buildUpsertDataPointsQuery(
+    itemId: string,
+    rows: UpsertDataPointRow[],
+  ) {
     const values = rows.map((row) => {
       return Prisma.sql`(${randomUUID()}, ${itemId}, ${row.recordedAt}, ${row.dataType}, ${row.value}, ${row.unit}, ${row.sourceField}, ${row.metaJson})`;
     });
@@ -1411,7 +1676,9 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private defaultFrequencyToGranularity(frequency: EconomicDataFrequency | null | undefined): string {
+  private defaultFrequencyToGranularity(
+    frequency: EconomicDataFrequency | null | undefined,
+  ): string {
     switch (frequency) {
       case EconomicDataFrequency.realtime:
         return "realtime";
@@ -1431,28 +1698,35 @@ export class AkshareService implements OnModuleInit {
     return this.granularityRank(a) >= this.granularityRank(b) ? a : b;
   }
 
-  async getCategoryBaseGranularity(categoryKey: string): Promise<string | null> {
+  async getCategoryBaseGranularity(
+    categoryKey: string,
+  ): Promise<string | null> {
     const items = await this.prisma.economicDataItem.findMany({
       where: {
         categories: {
           some: {
             category: {
-              key: categoryKey
-            }
-          }
-        }
+              key: categoryKey,
+            },
+          },
+        },
       },
       select: {
-        defaultFrequency: true
-      }
+        defaultFrequency: true,
+      },
     });
 
     if (!items.length) {
       return null;
     }
 
-    const granularities = items.map((item) => this.defaultFrequencyToGranularity(item.defaultFrequency));
-    return granularities.reduce((coarsest, next) => this.coarsestGranularity(coarsest, next), granularities[0]!);
+    const granularities = items.map((item) =>
+      this.defaultFrequencyToGranularity(item.defaultFrequency),
+    );
+    return granularities.reduce(
+      (coarsest, next) => this.coarsestGranularity(coarsest, next),
+      granularities[0]!,
+    );
   }
 
   private bucketTimestamp(date: Date, granularity: string) {
@@ -1499,7 +1773,9 @@ export class AkshareService implements OnModuleInit {
     return Buffer.from(payload, "utf8").toString("base64url");
   }
 
-  private decodeCursor(cursor: string): { recordedAt: Date; id: string } | null {
+  private decodeCursor(
+    cursor: string,
+  ): { recordedAt: Date; id: string } | null {
     try {
       const payload = Buffer.from(cursor, "base64url").toString("utf8");
       const separatorIndex = payload.indexOf("|");
@@ -1543,14 +1819,23 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private alignRangeToGranularityUtc(start: Date, end: Date, granularity: string) {
+  private alignRangeToGranularityUtc(
+    start: Date,
+    end: Date,
+    granularity: string,
+  ) {
     if (granularity === "realtime") {
       return { start, end };
     }
 
     const normalizedStart = new Date(this.bucketTimestamp(start, granularity));
-    const normalizedEndBucketStart = new Date(this.bucketTimestamp(end, granularity));
-    const nextBucketStart = this.addGranularityInterval(normalizedEndBucketStart, granularity);
+    const normalizedEndBucketStart = new Date(
+      this.bucketTimestamp(end, granularity),
+    );
+    const nextBucketStart = this.addGranularityInterval(
+      normalizedEndBucketStart,
+      granularity,
+    );
     const normalizedEnd = new Date(nextBucketStart.getTime() - 1);
     return { start: normalizedStart, end: normalizedEnd };
   }
@@ -1561,18 +1846,25 @@ export class AkshareService implements OnModuleInit {
     end: Date,
     granularity?: string,
     pagination?: PaginationInput,
-    options?: { skipGranularityValidation?: boolean }
+    options?: { skipGranularityValidation?: boolean },
   ) {
     if (granularity && !options?.skipGranularityValidation) {
-      const baseGranularity = await this.getCategoryBaseGranularity(categoryKey);
-      if (baseGranularity && this.granularityRank(granularity) < this.granularityRank(baseGranularity)) {
+      const baseGranularity =
+        await this.getCategoryBaseGranularity(categoryKey);
+      if (
+        baseGranularity &&
+        this.granularityRank(granularity) <
+          this.granularityRank(baseGranularity)
+      ) {
         throw new BadRequestException(
-          `Requested granularity '${granularity}' is finer than this category's base frequency ('${baseGranularity}').`
+          `Requested granularity '${granularity}' is finer than this category's base frequency ('${baseGranularity}').`,
         );
       }
     }
 
-    const range = granularity ? this.alignRangeToGranularityUtc(start, end, granularity) : { start, end };
+    const range = granularity
+      ? this.alignRangeToGranularityUtc(start, end, granularity)
+      : { start, end };
     const limit = pagination
       ? Math.min(pagination.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT)
       : null;
@@ -1581,17 +1873,17 @@ export class AkshareService implements OnModuleInit {
     const whereClause: Prisma.EconomicDataPointWhereInput = {
       recordedAt: {
         gte: range.start,
-        lte: range.end
+        lte: range.end,
       },
       item: {
         categories: {
           some: {
             category: {
-              key: categoryKey
-            }
-          }
-        }
-      }
+              key: categoryKey,
+            },
+          },
+        },
+      },
     };
 
     // Apply cursor-based pagination if cursor provided
@@ -1606,10 +1898,10 @@ export class AkshareService implements OnModuleInit {
               { recordedAt: { gt: decoded.recordedAt } },
               {
                 recordedAt: { equals: decoded.recordedAt },
-                id: { gt: decoded.id }
-              }
-            ]
-          }
+                id: { gt: decoded.id },
+              },
+            ],
+          },
         ];
       }
     }
@@ -1617,13 +1909,10 @@ export class AkshareService implements OnModuleInit {
     const points = await this.prisma.economicDataPoint.findMany({
       where: whereClause,
       include: {
-        item: true
+        item: true,
       },
-      orderBy: [
-        { recordedAt: "asc" },
-        { id: "asc" }
-      ],
-      take: granularity || limit === null ? undefined : limit + 1 // Fetch one extra to determine hasMore
+      orderBy: [{ recordedAt: "asc" }, { id: "asc" }],
+      take: granularity || limit === null ? undefined : limit + 1, // Fetch one extra to determine hasMore
     });
 
     if (granularity) {
@@ -1632,7 +1921,12 @@ export class AkshareService implements OnModuleInit {
       // that share the same category.
       const bucketed = new Map<
         string,
-        { timestamp: Date; valueSum: number; count: number; sample: typeof points[number] }
+        {
+          timestamp: Date;
+          valueSum: number;
+          count: number;
+          sample: (typeof points)[number];
+        }
       >();
       for (const point of points) {
         const bucketKey = this.bucketTimestamp(point.recordedAt, granularity);
@@ -1646,7 +1940,7 @@ export class AkshareService implements OnModuleInit {
             timestamp: new Date(bucketKey),
             valueSum: Number(point.value),
             count: 1,
-            sample: point
+            sample: point,
           });
         }
       }
@@ -1656,7 +1950,7 @@ export class AkshareService implements OnModuleInit {
           return {
             ...aggregated,
             recordedAt: entry.timestamp,
-            value: new Prisma.Decimal(entry.valueSum / entry.count)
+            value: new Prisma.Decimal(entry.valueSum / entry.count),
           };
         })
         .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
@@ -1666,9 +1960,9 @@ export class AkshareService implements OnModuleInit {
           data: bucketedResults,
           pagination: {
             hasMore: false,
-            totalCount: bucketedResults.length
-          }
-        } as PaginatedResult<typeof bucketedResults[number]>;
+            totalCount: bucketedResults.length,
+          },
+        } as PaginatedResult<(typeof bucketedResults)[number]>;
       }
 
       return bucketedResults;
@@ -1684,12 +1978,16 @@ export class AkshareService implements OnModuleInit {
     const lastPoint = resultPoints.at(-1);
     const paginationMeta: PaginationMeta = {
       hasMore,
-      nextCursor: hasMore && lastPoint
-        ? this.encodeCursor(lastPoint.recordedAt, lastPoint.id)
-        : undefined
+      nextCursor:
+        hasMore && lastPoint
+          ? this.encodeCursor(lastPoint.recordedAt, lastPoint.id)
+          : undefined,
     };
 
-    return { data: resultPoints, pagination: paginationMeta } as PaginatedResult<typeof resultPoints[number]>;
+    return {
+      data: resultPoints,
+      pagination: paginationMeta,
+    } as PaginatedResult<(typeof resultPoints)[number]>;
   }
 
   async listFetchConfigs() {
@@ -1698,20 +1996,26 @@ export class AkshareService implements OnModuleInit {
         item: {
           include: {
             categories: {
-              include: { category: true }
-            }
-          }
-        }
+              include: { category: true },
+            },
+          },
+        },
       },
-      orderBy: { updatedAt: "desc" }
+      orderBy: { updatedAt: "desc" },
     });
   }
 
   async updateFetchConfig(
     itemSlug: string,
-    input: { frequency?: EconomicDataFrequency; repeatCron?: string | null; isEnabled?: boolean }
+    input: {
+      frequency?: EconomicDataFrequency;
+      repeatCron?: string | null;
+      isEnabled?: boolean;
+    },
   ) {
-    const item = await this.prisma.economicDataItem.findUnique({ where: { slug: itemSlug } });
+    const item = await this.prisma.economicDataItem.findUnique({
+      where: { slug: itemSlug },
+    });
     if (!item) {
       throw new InternalServerErrorException(`Data item ${itemSlug} not found`);
     }
@@ -1719,10 +2023,11 @@ export class AkshareService implements OnModuleInit {
       where: { itemId: item.id },
       data: {
         frequency: input.frequency ?? undefined,
-        repeatCron: input.repeatCron === undefined ? undefined : input.repeatCron,
-        isEnabled: input.isEnabled ?? undefined
+        repeatCron:
+          input.repeatCron === undefined ? undefined : input.repeatCron,
+        isEnabled: input.isEnabled ?? undefined,
       },
-      include: { item: true }
+      include: { item: true },
     });
     await this.ensureRepeatableJobs();
     return updated;
@@ -1750,30 +2055,42 @@ export class AkshareService implements OnModuleInit {
     }
   }
 
-  private async updateFetchStatusByItemId(itemId: string, status: EconomicDataRunStatus, error?: unknown) {
+  private async updateFetchStatusByItemId(
+    itemId: string,
+    status: EconomicDataRunStatus,
+    error?: unknown,
+  ) {
     await this.prisma.economicDataFetchConfig.update({
       where: { itemId },
       data: {
         lastRunAt: new Date(),
         lastStatus: status,
         lastError: error ? this.formatError(error) : null,
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     });
   }
 
   async recordFetchFailure(slug: string, error: unknown) {
     try {
-      const item = await this.prisma.economicDataItem.findUnique({ where: { slug } });
+      const item = await this.prisma.economicDataItem.findUnique({
+        where: { slug },
+      });
       if (!item) {
-        this.logger.error(`Failed to update fetch status for ${slug}: item not found`);
+        this.logger.error(
+          `Failed to update fetch status for ${slug}: item not found`,
+        );
         return;
       }
-      await this.updateFetchStatusByItemId(item.id, EconomicDataRunStatus.failed, error);
+      await this.updateFetchStatusByItemId(
+        item.id,
+        EconomicDataRunStatus.failed,
+        error,
+      );
     } catch (updateError) {
       this.logger.error(
         { slug, error: updateError },
-        "Failed to persist Akshare fetch failure status"
+        "Failed to persist Akshare fetch failure status",
       );
     }
   }

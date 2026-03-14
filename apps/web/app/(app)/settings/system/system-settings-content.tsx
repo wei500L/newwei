@@ -1369,7 +1369,7 @@ interface AkshareGatewayUpgradeStatusResponse {
 }
 
 interface EconomicProviderMetadata {
-  providerKind?: "akshare" | "finnhub" | "fred";
+  providerKind?: "akshare" | "finnhub" | "fred" | "yfinance";
   requiresSecret?: "finnhubApiKey" | "fredApiKey" | null;
   mainlineRole?: string | null;
   snapshot?: {
@@ -1400,6 +1400,7 @@ function parseEconomicProviderMetadata(
     providerKind:
       record.providerKind === "finnhub" ||
       record.providerKind === "fred" ||
+      record.providerKind === "yfinance" ||
       record.providerKind === "akshare"
         ? record.providerKind
         : undefined,

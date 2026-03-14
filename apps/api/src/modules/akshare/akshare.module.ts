@@ -19,6 +19,7 @@ import { FinancialDataProviderRegistryInitializer } from "./providers/financial-
 import { FinancialDataProviderRegistry } from "./providers/financial-data-provider";
 import { FinnhubFinancialDataProvider } from "./providers/finnhub.provider";
 import { FredFinancialDataProvider } from "./providers/fred.provider";
+import { YfinanceFinancialDataProvider } from "./providers/yfinance.provider";
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { FredFinancialDataProvider } from "./providers/fred.provider";
     AkshareFinancialDataProvider,
     FinnhubFinancialDataProvider,
     FredFinancialDataProvider,
+    YfinanceFinancialDataProvider,
     AkshareQueueProcessor,
     AkshareQueueCleanupService,
     {

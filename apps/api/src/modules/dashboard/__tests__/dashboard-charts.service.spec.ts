@@ -967,6 +967,126 @@ describe("DashboardChartsService", () => {
     ]);
   });
 
+  it("maps candlestick OHLC fields via default 东方财富 aliases", async () => {
+    const prisma = {
+      economicDataItem: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "item-ohlc-em",
+          displayName: "SP500 EM",
+          defaultFrequency: "daily",
+          defaultUnit: "pts",
+          metadata: null,
+        }),
+      },
+      economicDataPoint: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 10,
+            unit: "pts",
+            sourceField: "今开",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 15,
+            unit: "pts",
+            sourceField: "最高",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 8,
+            unit: "pts",
+            sourceField: "最低",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 12,
+            unit: "pts",
+            sourceField: "最新价",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 12,
+            unit: "pts",
+            sourceField: "今开",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 20,
+            unit: "pts",
+            sourceField: "最高",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 11,
+            unit: "pts",
+            sourceField: "最低",
+          },
+          {
+            itemId: "item-ohlc-em",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 18,
+            unit: "pts",
+            sourceField: "最新价",
+          },
+        ]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn(),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T23:59:59.999Z"),
+    };
+
+    const response = await service.getFinancialCandlestick(range);
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        symbol: "SP500 EM",
+        interval: "daily",
+        unit: "pts",
+        sourceFields: {
+          open: "今开",
+          high: "最高",
+          low: "最低",
+          close: "最新价",
+        },
+      }),
+    );
+    expect(response.points).toEqual([
+      {
+        timestamp: "2026-01-01T00:00:00.000Z",
+        open: 10,
+        close: 12,
+        high: 15,
+        low: 8,
+      },
+      {
+        timestamp: "2026-01-02T00:00:00.000Z",
+        open: 12,
+        close: 18,
+        high: 20,
+        low: 11,
+      },
+    ]);
+  });
+
   it("throws candlestick error code when OHLC values are incomplete", async () => {
     const prisma = {
       economicDataItem: {

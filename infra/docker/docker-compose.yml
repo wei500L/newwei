@@ -109,7 +109,7 @@ services:
       dockerfile: infra/akshare/Dockerfile
       args:
         PYTHON_IMAGE: ${AKSHARE_PYTHON_IMAGE:-python:3.11-slim}
-        AKSHARE_VERSION: ${AKSHARE_VERSION:-1.17.94}
+        AKSHARE_VERSION: ${AKSHARE_VERSION:-1.18.39}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     restart: unless-stopped

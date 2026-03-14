@@ -1,7 +1,7 @@
 import type { AkshareMacroParserConfig } from "../akshare.types";
 
 import { BaseParser } from "./base.parser";
-import type { ParsedDataPoint } from "./parser.interface";
+import type { ParsedDataPoint, ParserContext } from "./parser.interface";
 
 /**
  * Parser for macroeconomic data with period field
@@ -10,16 +10,25 @@ import type { ParsedDataPoint } from "./parser.interface";
 export class MacroParser extends BaseParser<AkshareMacroParserConfig> {
   readonly type = "macro";
 
-  parse(config: AkshareMacroParserConfig, payload: unknown): ParsedDataPoint[] {
-    const records = this.ensureArray(payload);
+  parse(config: AkshareMacroParserConfig, payload: unknown, context?: ParserContext): ParsedDataPoint[] {
+    const records = this.ensureRecordArray(payload);
+    this.assertFieldsExistInPayload(
+      records,
+      [config.periodField, config.categoryField, ...config.valueFields.map((field) => field.field)],
+      context
+    );
     const points: ParsedDataPoint[] = [];
 
     for (const rawRecord of records) {
       const record = rawRecord as Record<string, unknown>;
-      const recordedAt = this.parseDate(record[config.periodField]);
+      const recordedAt = this.parseRequiredDate(
+        this.getRequiredField(record, config.periodField, context),
+        config.periodField,
+        context
+      );
 
       for (const field of config.valueFields) {
-        const category = config.categoryField ? record[config.categoryField] : undefined;
+        const category = config.categoryField ? this.getRequiredField(record, config.categoryField, context) : undefined;
         const sourceField = this.buildSourceField(field.field, category);
         const value = this.normalizeNumber(record[field.field]);
 

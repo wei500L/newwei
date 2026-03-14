@@ -6,7 +6,7 @@ import type {
   AkshareRequestMethod,
 } from "./akshare.types";
 
-export type FinancialDataProviderKind = "akshare" | "finnhub" | "fred";
+export type FinancialDataProviderKind = "akshare" | "finnhub" | "fred" | "yfinance";
 export type FinancialDataProviderSecret = "finnhubApiKey" | "fredApiKey";
 export type FinancialDataRequiredSecret = FinancialDataProviderSecret;
 export type FinancialDataMainlineRole =
@@ -62,10 +62,24 @@ export interface FredFinancialDataProviderConfig {
   transform?: FredFinancialValueTransform;
 }
 
+export interface YfinanceFinancialDataProviderConfig {
+  kind: "yfinance";
+  symbol: string;
+  endpoint: "/v8/finance/chart";
+  docUrl: string;
+  interval: "1d";
+  period1: number;
+  period2?: number | "now";
+  includePrePost?: boolean;
+  events?: string;
+  sourceFields?: Partial<Record<"open" | "high" | "low" | "close" | "volume", string>>;
+}
+
 export type FinancialDataProviderConfig =
   | AkshareFinancialDataProviderConfig
   | FinnhubFinancialDataProviderConfig
-  | FredFinancialDataProviderConfig;
+  | FredFinancialDataProviderConfig
+  | YfinanceFinancialDataProviderConfig;
 
 export interface FinancialDataDefinitionMetadata {
   providerKind: FinancialDataProviderKind;

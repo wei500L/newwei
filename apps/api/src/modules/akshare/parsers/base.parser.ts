@@ -49,6 +49,24 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
    * @returns Parsed Date object
    */
   protected parseDate(value: unknown): Date {
+    return this.tryParseDate(value) ?? new Date();
+  }
+
+  /**
+   * Parse a required date field and fail fast when the value is missing or invalid.
+   * This prevents field drifts from silently falling back to the current time.
+   */
+  protected parseRequiredDate(value: unknown, fieldName: string, context?: ParserContext): Date {
+    const parsed = this.tryParseDate(value);
+    if (parsed) {
+      return parsed;
+    }
+
+    const suffix = context?.slug ? ` for ${context.slug}` : "";
+    throw new Error(`Invalid or missing date field "${fieldName}"${suffix}`);
+  }
+
+  private tryParseDate(value: unknown): Date | null {
     if (typeof value === "string") {
       const trimmed = value.trim();
       const compactHhmmssMatch = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/);
@@ -90,7 +108,7 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
         return parsed;
       }
     }
-    return new Date();
+    return null;
   }
 
   /**
@@ -180,5 +198,56 @@ export abstract class BaseParser<TConfig extends AkshareParserConfig = AksharePa
    */
   protected ensureArray(payload: unknown): unknown[] {
     return Array.isArray(payload) ? payload : [];
+  }
+
+  /**
+   * Ensure payload is an array of records.
+   */
+  protected ensureRecordArray(payload: unknown): Record<string, unknown>[] {
+    if (Array.isArray(payload)) {
+      return payload.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)
+      );
+    }
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return [payload as Record<string, unknown>];
+    }
+    return [];
+  }
+
+  /**
+   * Fail fast when a configured field disappears from the payload schema.
+   */
+  protected assertFieldsExistInPayload(
+    records: Record<string, unknown>[],
+    fields: Array<string | undefined>,
+    context?: ParserContext
+  ): void {
+    if (records.length === 0) {
+      return;
+    }
+
+    const missingFields = fields
+      .filter((field): field is string => Boolean(field))
+      .filter((field) => !records.some((record) => Object.prototype.hasOwnProperty.call(record, field)));
+
+    if (missingFields.length === 0) {
+      return;
+    }
+
+    const suffix = context?.slug ? ` for ${context.slug}` : "";
+    throw new Error(`Missing configured field(s) in payload${suffix}: ${missingFields.join(", ")}`);
+  }
+
+  /**
+   * Read a required record field.
+   */
+  protected getRequiredField(record: Record<string, unknown>, field: string, context?: ParserContext): unknown {
+    if (Object.prototype.hasOwnProperty.call(record, field)) {
+      return record[field];
+    }
+
+    const suffix = context?.slug ? ` for ${context.slug}` : "";
+    throw new Error(`Missing required field "${field}" in payload record${suffix}`);
   }
 }
