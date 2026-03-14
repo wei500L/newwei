@@ -1,4 +1,5 @@
 import { Global, Module } from "@nestjs/common";
+import { LlmRequestLogModel } from "@modular/mongo";
 
 import { AkshareModule } from "../akshare/akshare.module";
 import { AuthModule } from "../auth/auth.module";
@@ -23,6 +24,9 @@ import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
+import { LlmRuntimeSettingsController } from "./llm-runtime-settings.controller";
+import { LlmRuntimeSettingsService } from "./llm-runtime-settings.service";
+import { LlmRuntimeService } from "./llm-runtime.service";
 import { LlmRequestLogSettingsController } from "./llm-request-log-settings.controller";
 import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
@@ -55,6 +59,7 @@ import { SystemSecuritySettingsController } from "./system-security-settings.con
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 import { VectorServiceSettingsController } from "./vector-service-settings.controller";
 import { VectorServiceSettingsService } from "./vector-service-settings.service";
+import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service";
 
 @Global()
 @Module({
@@ -75,6 +80,7 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsController,
     GeoNominatimTestController,
     LlmGatewaySettingsController,
+    LlmRuntimeSettingsController,
     AssistantSafetySettingsController,
     OpenAiKeysSettingsController,
     OpenAiKeysInternalController,
@@ -97,7 +103,13 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     AuditLogSettingsService,
     GeoNominatimSettingsService,
     FinancialDataProviderSettingsService,
+    {
+      provide: LLM_REQUEST_LOG_MODEL,
+      useValue: LlmRequestLogModel,
+    },
     LlmGatewaySettingsService,
+    LlmRuntimeSettingsService,
+    LlmRuntimeService,
     LlmGatewayTestService,
     LiteLlmProxyLoadBalancingSettingsService,
     SystemSecuritySettingsService,
@@ -126,6 +138,8 @@ import { VectorServiceSettingsService } from "./vector-service-settings.service"
     GeoNominatimSettingsService,
     FinancialDataProviderSettingsService,
     LlmGatewaySettingsService,
+    LlmRuntimeSettingsService,
+    LlmRuntimeService,
     LiteLlmProxyLoadBalancingSettingsService,
     AssistantSafetySettingsService,
     OpenAiKeysSettingsService,

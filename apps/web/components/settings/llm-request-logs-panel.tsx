@@ -44,7 +44,12 @@ type LlmRequestType =
   | "stream"
   | "responses";
 type LlmRequestStatus = "success" | "error";
-type LlmFeatureFilter = "all" | "news_event_brief";
+type LlmRuntimeDecision =
+  | "allowed"
+  | "warn_concurrency"
+  | "warn_daily_budget"
+  | "warn_monthly_budget"
+  | "warn_multiple";
 
 interface LlmRequestLogRow {
   id: string;
@@ -56,6 +61,13 @@ interface LlmRequestLogRow {
   completionTokens: number | null;
   totalTokens: number | null;
   costUsd: number | null;
+  feature: string | null;
+  runtimeRequestId: string | null;
+  runtimeDecision: LlmRuntimeDecision | null;
+  currentConcurrency: number | null;
+  concurrencyLimit: number | null;
+  dailySpendUsdSnapshot: number | null;
+  monthlySpendUsdSnapshot: number | null;
   latencyMs: number;
   error: string | null;
   metadata: unknown;
@@ -282,9 +294,10 @@ function normalizeExceptionStatsByDay(
       if (!date) {
         return null;
       }
-      const count = typeof row.count === "number" && Number.isFinite(row.count)
-        ? Math.max(0, Math.trunc(row.count))
-        : 0;
+      const count =
+        typeof row.count === "number" && Number.isFinite(row.count)
+          ? Math.max(0, Math.trunc(row.count))
+          : 0;
       return {
         date,
         count,
@@ -353,7 +366,9 @@ function normalizeSettingsResponse(
       Number.isFinite(payload.retentionDays)
         ? Math.max(1, Math.trunc(payload.retentionDays))
         : DEFAULT_RETENTION_DAYS,
-    metadataAllowedTopLevelKeys: Array.isArray(payload.metadataAllowedTopLevelKeys)
+    metadataAllowedTopLevelKeys: Array.isArray(
+      payload.metadataAllowedTopLevelKeys,
+    )
       ? payload.metadataAllowedTopLevelKeys
       : DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS,
     metadataAllowedTopLevelPrefixes: Array.isArray(
@@ -406,6 +421,56 @@ function formatLatency(value: number | null): string {
   return `${Math.round(value)} ms`;
 }
 
+function renderRuntimeDecisionTag(
+  value: LlmRuntimeDecision | null,
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  const decision = value ?? "allowed";
+  if (decision === "warn_multiple") {
+    return (
+      <Tag color="red">
+        {t("systemSettings.llmRequestLogs.runtime.warnMultiple", {
+          defaultValue: "Multiple warnings",
+        })}
+      </Tag>
+    );
+  }
+  if (decision === "warn_concurrency") {
+    return (
+      <Tag color="red">
+        {t("systemSettings.llmRequestLogs.runtime.warnConcurrency", {
+          defaultValue: "Concurrency warning",
+        })}
+      </Tag>
+    );
+  }
+  if (decision === "warn_daily_budget") {
+    return (
+      <Tag color="orange">
+        {t("systemSettings.llmRequestLogs.runtime.warnDailyBudget", {
+          defaultValue: "Daily budget warning",
+        })}
+      </Tag>
+    );
+  }
+  if (decision === "warn_monthly_budget") {
+    return (
+      <Tag color="orange">
+        {t("systemSettings.llmRequestLogs.runtime.warnMonthlyBudget", {
+          defaultValue: "Monthly budget warning",
+        })}
+      </Tag>
+    );
+  }
+  return (
+    <Tag color="green">
+      {t("systemSettings.llmRequestLogs.runtime.allowed", {
+        defaultValue: "Allowed",
+      })}
+    </Tag>
+  );
+}
+
 function normalizeMetadataTokenList(
   tokens: string[] | undefined,
   maxItems: number,
@@ -424,7 +489,9 @@ function normalizeMetadataTokenList(
 function buildMetadataPolicyFromSettings(
   settings: LlmRequestLogSettingsResponse,
 ): LlmRequestLogMetadataPolicySummary {
-  const allowedTopLevelKeys = Array.isArray(settings.metadataAllowedTopLevelKeys)
+  const allowedTopLevelKeys = Array.isArray(
+    settings.metadataAllowedTopLevelKeys,
+  )
     ? settings.metadataAllowedTopLevelKeys
     : [];
   const allowedTopLevelPrefixes = Array.isArray(
@@ -452,35 +519,54 @@ export function LlmRequestLogsPanel() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsResetting, setSettingsResetting] = useState(false);
-  const [settingsMetadataResetting, setSettingsMetadataResetting] = useState(false);
+  const [settingsMetadataResetting, setSettingsMetadataResetting] =
+    useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [briefMetricsLoading, setBriefMetricsLoading] = useState(false);
-  const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
+  const [settingsErrorMessage, setSettingsErrorMessage] = useState<
+    string | null
+  >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [briefMetricsErrorMessage, setBriefMetricsErrorMessage] = useState<string | null>(null);
+  const [briefMetricsErrorMessage, setBriefMetricsErrorMessage] = useState<
+    string | null
+  >(null);
 
-  const [settings, setSettings] = useState<LlmRequestLogSettingsResponse>(EMPTY_SETTINGS);
+  const [settings, setSettings] =
+    useState<LlmRequestLogSettingsResponse>(EMPTY_SETTINGS);
   const [logs, setLogs] = useState<LlmRequestLogListResponse>(EMPTY_LOGS);
-  const [summary, setSummary] = useState<LlmUsageSummaryResponse>(EMPTY_SUMMARY);
+  const [summary, setSummary] =
+    useState<LlmUsageSummaryResponse>(EMPTY_SUMMARY);
   const [briefGraphqlErrorTotal, setBriefGraphqlErrorTotal] = useState(0);
   const [briefInvalidJsonTotal, setBriefInvalidJsonTotal] = useState(0);
-  const [briefErrorTrendRows, setBriefErrorTrendRows] = useState<BriefErrorTrendRow[]>([]);
+  const [briefErrorTrendRows, setBriefErrorTrendRows] = useState<
+    BriefErrorTrendRow[]
+  >([]);
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const [modelFilter, setModelFilter] = useState("");
-  const [featureFilter, setFeatureFilter] = useState<LlmFeatureFilter>("all");
-  const [requestTypeFilter, setRequestTypeFilter] = useState<"all" | LlmRequestType>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | LlmRequestStatus>("all");
+  const [featureFilter, setFeatureFilter] = useState("");
+  const [requestTypeFilter, setRequestTypeFilter] = useState<
+    "all" | LlmRequestType
+  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | LlmRequestStatus>(
+    "all",
+  );
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [appliedModelFilter, setAppliedModelFilter] = useState("");
-  const [appliedFeatureFilter, setAppliedFeatureFilter] = useState<LlmFeatureFilter>("all");
-  const [appliedRequestTypeFilter, setAppliedRequestTypeFilter] = useState<"all" | LlmRequestType>("all");
-  const [appliedStatusFilter, setAppliedStatusFilter] = useState<"all" | LlmRequestStatus>("all");
-  const [appliedDateRange, setAppliedDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [appliedFeatureFilter, setAppliedFeatureFilter] = useState("");
+  const [appliedRequestTypeFilter, setAppliedRequestTypeFilter] = useState<
+    "all" | LlmRequestType
+  >("all");
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<
+    "all" | LlmRequestStatus
+  >("all");
+  const [appliedDateRange, setAppliedDateRange] = useState<
+    [Dayjs, Dayjs] | null
+  >(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -503,8 +589,9 @@ export function LlmRequestLogsPanel() {
     if (normalizedModel.length > 0) {
       params.model = normalizedModel;
     }
-    if (appliedFeatureFilter !== "all") {
-      params.feature = appliedFeatureFilter;
+    const normalizedFeature = appliedFeatureFilter.trim().toLowerCase();
+    if (normalizedFeature.length > 0) {
+      params.feature = normalizedFeature;
     }
     if (appliedRequestTypeFilter !== "all") {
       params.requestType = appliedRequestTypeFilter;
@@ -530,8 +617,9 @@ export function LlmRequestLogsPanel() {
 
   const summaryFilterParams = useMemo(() => {
     const params: Record<string, string> = {};
-    if (appliedFeatureFilter !== "all") {
-      params.feature = appliedFeatureFilter;
+    const normalizedFeature = appliedFeatureFilter.trim().toLowerCase();
+    if (normalizedFeature.length > 0) {
+      params.feature = normalizedFeature;
     }
     if (typeof sharedDateParams.start === "string") {
       params.start = sharedDateParams.start;
@@ -564,10 +652,16 @@ export function LlmRequestLogsPanel() {
         briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
       });
     } catch (error) {
-      captureClientError("Failed to load LLM request log retention settings", error);
-      const messageText = t("systemSettings.llmRequestLogs.errors.settingsLoadFailed", {
-        defaultValue: "Failed to load log retention settings.",
-      });
+      captureClientError(
+        "Failed to load LLM request log retention settings",
+        error,
+      );
+      const messageText = t(
+        "systemSettings.llmRequestLogs.errors.settingsLoadFailed",
+        {
+          defaultValue: "Failed to load log retention settings.",
+        },
+      );
       setSettingsErrorMessage(messageText);
       messageApi.error(messageText);
     } finally {
@@ -585,9 +679,12 @@ export function LlmRequestLogsPanel() {
         ...appliedFilterParams,
       };
 
-      const response = await apiClient.get<LlmRequestLogListResponse>("llm-logs", {
-        params,
-      });
+      const response = await apiClient.get<LlmRequestLogListResponse>(
+        "llm-logs",
+        {
+          params,
+        },
+      );
       const data = response.data ?? EMPTY_LOGS;
       setLogs({
         page: data.page ?? EMPTY_LOGS.page,
@@ -619,29 +716,29 @@ export function LlmRequestLogsPanel() {
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const response = await apiClient.get<LlmUsageSummaryResponse>("llm-logs/summary", {
-        params: summaryFilterParams,
-      });
+      const response = await apiClient.get<LlmUsageSummaryResponse>(
+        "llm-logs/summary",
+        {
+          params: summaryFilterParams,
+        },
+      );
       setSummary(normalizeSummaryResponse(response.data));
     } catch (error) {
       captureClientError("Failed to load LLM request log summary", error);
-      const messageText = t("systemSettings.llmRequestLogs.errors.summaryFailed", {
-        defaultValue: "Failed to load usage summary.",
-      });
+      const messageText = t(
+        "systemSettings.llmRequestLogs.errors.summaryFailed",
+        {
+          defaultValue: "Failed to load usage summary.",
+        },
+      );
       messageApi.error(messageText);
     } finally {
       setSummaryLoading(false);
     }
-  }, [
-    apiClient,
-    messageApi,
-    refreshNonce,
-    summaryFilterParams,
-    t,
-  ]);
+  }, [apiClient, messageApi, refreshNonce, summaryFilterParams, t]);
 
   const loadBriefMetrics = useCallback(async () => {
-    if (appliedFeatureFilter !== "news_event_brief") {
+    if (appliedFeatureFilter.trim().toLowerCase() !== "news_event_brief") {
       setBriefMetricsErrorMessage(null);
       setBriefGraphqlErrorTotal(0);
       setBriefInvalidJsonTotal(0);
@@ -652,23 +749,24 @@ export function LlmRequestLogsPanel() {
     setBriefMetricsLoading(true);
     setBriefMetricsErrorMessage(null);
     try {
-      const [graphqlStatsResponse, invalidJsonStatsResponse] = await Promise.all([
-        apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
-          params: {
-            kind: "graphql",
-            operationName: "newsEventBrief",
-            ...sharedDateParams,
-          },
-        }),
-        apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
-          params: {
-            kind: "graphql",
-            operationName: "newsEventBrief",
-            messageContains: "invalid JSON for news event brief",
-            ...sharedDateParams,
-          },
-        }),
-      ]);
+      const [graphqlStatsResponse, invalidJsonStatsResponse] =
+        await Promise.all([
+          apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
+            params: {
+              kind: "graphql",
+              operationName: "newsEventBrief",
+              ...sharedDateParams,
+            },
+          }),
+          apiClient.get<ExceptionStatsResponse>("admin/errors/stats", {
+            params: {
+              kind: "graphql",
+              operationName: "newsEventBrief",
+              messageContains: "invalid JSON for news event brief",
+              ...sharedDateParams,
+            },
+          }),
+        ]);
 
       setBriefGraphqlErrorTotal(
         typeof graphqlStatsResponse.data?.total === "number"
@@ -680,13 +778,20 @@ export function LlmRequestLogsPanel() {
           ? invalidJsonStatsResponse.data.total
           : 0,
       );
-      const graphqlByDay = normalizeExceptionStatsByDay(graphqlStatsResponse.data?.byDay);
+      const graphqlByDay = normalizeExceptionStatsByDay(
+        graphqlStatsResponse.data?.byDay,
+      );
       const invalidJsonByDay = normalizeExceptionStatsByDay(
         invalidJsonStatsResponse.data?.byDay,
       );
-      setBriefErrorTrendRows(mergeBriefErrorTrendRows(graphqlByDay, invalidJsonByDay));
+      setBriefErrorTrendRows(
+        mergeBriefErrorTrendRows(graphqlByDay, invalidJsonByDay),
+      );
     } catch (error) {
-      captureClientError("Failed to load event detailed summary admin metrics", error);
+      captureClientError(
+        "Failed to load event detailed summary admin metrics",
+        error,
+      );
       setBriefMetricsErrorMessage(
         t("systemSettings.llmRequestLogs.errors.briefMetricsFailed", {
           defaultValue: "Failed to load event detailed summary metrics.",
@@ -728,12 +833,12 @@ export function LlmRequestLogsPanel() {
 
   const handleReset = () => {
     setModelFilter("");
-    setFeatureFilter("all");
+    setFeatureFilter("");
     setRequestTypeFilter("all");
     setStatusFilter("all");
     setDateRange(null);
     setAppliedModelFilter("");
-    setAppliedFeatureFilter("all");
+    setAppliedFeatureFilter("");
     setAppliedRequestTypeFilter("all");
     setAppliedStatusFilter("all");
     setAppliedDateRange(null);
@@ -787,7 +892,10 @@ export function LlmRequestLogsPanel() {
         }),
       );
     } catch (error) {
-      captureClientError("Failed to save LLM request log retention settings", error);
+      captureClientError(
+        "Failed to save LLM request log retention settings",
+        error,
+      );
       const statusCode =
         typeof error === "object" && error && "response" in error
           ? (error as { response?: { status?: number } }).response?.status
@@ -817,7 +925,8 @@ export function LlmRequestLogsPanel() {
         defaultValue: "Reset retention settings",
       }),
       content: t("systemSettings.llmRequestLogs.retention.modal.resetContent", {
-        defaultValue: "Reset LLM request log retention settings to system defaults?",
+        defaultValue:
+          "Reset LLM request log retention settings to system defaults?",
       }),
       okText: t("systemSettings.llmRequestLogs.retention.modal.confirm", {
         defaultValue: "Reset",
@@ -830,9 +939,10 @@ export function LlmRequestLogsPanel() {
         setSettingsResetting(true);
         setSettingsErrorMessage(null);
         try {
-          const response = await apiClient.delete<LlmRequestLogSettingsResponse>(
-            "system-settings/llm-request-logs",
-          );
+          const response =
+            await apiClient.delete<LlmRequestLogSettingsResponse>(
+              "system-settings/llm-request-logs",
+            );
           const data = normalizeSettingsResponse(response.data);
           setSettings(data);
           setLogs((previous) => ({
@@ -842,7 +952,8 @@ export function LlmRequestLogsPanel() {
           settingsForm.setFieldsValue({
             retentionDays: data.retentionDays,
             metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
-            metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+            metadataAllowedTopLevelPrefixes:
+              data.metadataAllowedTopLevelPrefixes,
             briefErrorRateThreshold: data.briefErrorRateThreshold,
             briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
             briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
@@ -853,7 +964,10 @@ export function LlmRequestLogsPanel() {
             }),
           );
         } catch (error) {
-          captureClientError("Failed to reset LLM request log retention settings", error);
+          captureClientError(
+            "Failed to reset LLM request log retention settings",
+            error,
+          );
           messageApi.error(
             t("systemSettings.llmRequestLogs.errors.settingsResetFailed", {
               defaultValue: "Failed to reset log retention settings.",
@@ -868,13 +982,19 @@ export function LlmRequestLogsPanel() {
 
   const handleResetMetadataPolicy = () => {
     Modal.confirm({
-      title: t("systemSettings.llmRequestLogs.retention.modal.resetMetadataTitle", {
-        defaultValue: "Reset metadata allowlist",
-      }),
-      content: t("systemSettings.llmRequestLogs.retention.modal.resetMetadataContent", {
-        defaultValue:
-          "Reset metadata key/prefix allowlist to recommended defaults without changing retention days?",
-      }),
+      title: t(
+        "systemSettings.llmRequestLogs.retention.modal.resetMetadataTitle",
+        {
+          defaultValue: "Reset metadata allowlist",
+        },
+      ),
+      content: t(
+        "systemSettings.llmRequestLogs.retention.modal.resetMetadataContent",
+        {
+          defaultValue:
+            "Reset metadata key/prefix allowlist to recommended defaults without changing retention days?",
+        },
+      ),
       okText: t("systemSettings.llmRequestLogs.retention.modal.confirm", {
         defaultValue: "Reset",
       }),
@@ -897,7 +1017,8 @@ export function LlmRequestLogsPanel() {
           settingsForm.setFieldsValue({
             retentionDays: data.retentionDays,
             metadataAllowedTopLevelKeys: data.metadataAllowedTopLevelKeys,
-            metadataAllowedTopLevelPrefixes: data.metadataAllowedTopLevelPrefixes,
+            metadataAllowedTopLevelPrefixes:
+              data.metadataAllowedTopLevelPrefixes,
             briefErrorRateThreshold: data.briefErrorRateThreshold,
             briefInvalidJsonRatioThreshold: data.briefInvalidJsonRatioThreshold,
             briefConsecutiveDaysThreshold: data.briefConsecutiveDaysThreshold,
@@ -908,11 +1029,17 @@ export function LlmRequestLogsPanel() {
             }),
           );
         } catch (error) {
-          captureClientError("Failed to reset LLM request log metadata policy", error);
+          captureClientError(
+            "Failed to reset LLM request log metadata policy",
+            error,
+          );
           messageApi.error(
-            t("systemSettings.llmRequestLogs.errors.metadataPolicyResetFailed", {
-              defaultValue: "Failed to reset metadata allowlist.",
-            }),
+            t(
+              "systemSettings.llmRequestLogs.errors.metadataPolicyResetFailed",
+              {
+                defaultValue: "Failed to reset metadata allowlist.",
+              },
+            ),
           );
         } finally {
           setSettingsMetadataResetting(false);
@@ -934,7 +1061,7 @@ export function LlmRequestLogsPanel() {
         const normalizedContentType = (
           Array.isArray(rawContentType)
             ? rawContentType.join(",")
-            : rawContentType ?? response.data?.type ?? ""
+            : (rawContentType ?? response.data?.type ?? "")
         ).toLowerCase();
         if (!normalizedContentType.includes("text/csv")) {
           throw new Error("Unexpected export response content type");
@@ -968,6 +1095,16 @@ export function LlmRequestLogsPanel() {
         dataIndex: "model",
         key: "model",
         width: 220,
+      },
+      {
+        title: t("systemSettings.llmRequestLogs.table.feature", {
+          defaultValue: "Feature",
+        }),
+        dataIndex: "feature",
+        key: "feature",
+        width: 180,
+        render: (value: string | null) =>
+          value ? <Tag color="blue">{value}</Tag> : "-",
       },
       {
         title: t("systemSettings.llmRequestLogs.table.requestType", {
@@ -1041,6 +1178,38 @@ export function LlmRequestLogsPanel() {
         key: "latencyMs",
         width: 120,
         render: (value: number | null) => formatLatency(value),
+      },
+      {
+        title: t("systemSettings.llmRequestLogs.table.runtime", {
+          defaultValue: "Runtime",
+        }),
+        key: "runtime",
+        width: 220,
+        render: (_, row) => (
+          <Space direction="vertical" size={0}>
+            {renderRuntimeDecisionTag(row.runtimeDecision, t)}
+            <Typography.Text type="secondary">
+              {t("systemSettings.llmRequestLogs.table.runtimeConcurrency", {
+                defaultValue: "Concurrency: {{current}} / {{limit}}",
+                current:
+                  typeof row.currentConcurrency === "number"
+                    ? row.currentConcurrency
+                    : "-",
+                limit:
+                  typeof row.concurrencyLimit === "number"
+                    ? row.concurrencyLimit
+                    : "-",
+              })}
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              {t("systemSettings.llmRequestLogs.table.runtimeSpend", {
+                defaultValue: "D/M spend: {{day}} / {{month}}",
+                day: formatCurrency(row.dailySpendUsdSnapshot),
+                month: formatCurrency(row.monthlySpendUsdSnapshot),
+              })}
+            </Typography.Text>
+          </Space>
+        ),
       },
       {
         title: t("systemSettings.llmRequestLogs.table.error", {
@@ -1196,7 +1365,8 @@ export function LlmRequestLogsPanel() {
         continue;
       }
       const requestCount =
-        typeof row.requestCount === "number" && Number.isFinite(row.requestCount)
+        typeof row.requestCount === "number" &&
+        Number.isFinite(row.requestCount)
           ? Math.max(0, Math.trunc(row.requestCount))
           : 0;
       byDate.set(date, {
@@ -1278,12 +1448,15 @@ export function LlmRequestLogsPanel() {
       summary.statusBreakdown.errorRate >= effectiveBriefErrorRateThreshold
     ) {
       warnings.push(
-        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.errorRateExceeded", {
-          defaultValue:
-            "LLM error rate {{value}}% exceeds threshold {{threshold}}%.",
-          value: (summary.statusBreakdown.errorRate * 100).toFixed(2),
-          threshold: (effectiveBriefErrorRateThreshold * 100).toFixed(2),
-        }),
+        t(
+          "systemSettings.llmRequestLogs.summary.thresholdAlerts.errorRateExceeded",
+          {
+            defaultValue:
+              "LLM error rate {{value}}% exceeds threshold {{threshold}}%.",
+            value: (summary.statusBreakdown.errorRate * 100).toFixed(2),
+            threshold: (effectiveBriefErrorRateThreshold * 100).toFixed(2),
+          },
+        ),
       );
     }
     if (
@@ -1291,12 +1464,17 @@ export function LlmRequestLogsPanel() {
       briefInvalidJsonRatio >= effectiveBriefInvalidJsonRatioThreshold
     ) {
       warnings.push(
-        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.invalidJsonRatioExceeded", {
-          defaultValue:
-            "Invalid JSON ratio {{value}}% exceeds threshold {{threshold}}%.",
-          value: (briefInvalidJsonRatio * 100).toFixed(2),
-          threshold: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(2),
-        }),
+        t(
+          "systemSettings.llmRequestLogs.summary.thresholdAlerts.invalidJsonRatioExceeded",
+          {
+            defaultValue:
+              "Invalid JSON ratio {{value}}% exceeds threshold {{threshold}}%.",
+            value: (briefInvalidJsonRatio * 100).toFixed(2),
+            threshold: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(
+              2,
+            ),
+          },
+        ),
       );
     }
     if (
@@ -1304,12 +1482,15 @@ export function LlmRequestLogsPanel() {
       effectiveBriefConsecutiveDaysThreshold
     ) {
       warnings.push(
-        t("systemSettings.llmRequestLogs.summary.thresholdAlerts.consecutiveDaysExceeded", {
-          defaultValue:
-            "Threshold has been exceeded for {{maxDays}} consecutive days (configured threshold: {{threshold}} days).",
-          maxDays: maxConsecutiveBriefThresholdBreachDays,
-          threshold: effectiveBriefConsecutiveDaysThreshold,
-        }),
+        t(
+          "systemSettings.llmRequestLogs.summary.thresholdAlerts.consecutiveDaysExceeded",
+          {
+            defaultValue:
+              "Threshold has been exceeded for {{maxDays}} consecutive days (configured threshold: {{threshold}} days).",
+            maxDays: maxConsecutiveBriefThresholdBreachDays,
+            threshold: effectiveBriefConsecutiveDaysThreshold,
+          },
+        ),
       );
     }
     return warnings;
@@ -1334,12 +1515,18 @@ export function LlmRequestLogsPanel() {
       tooltip: { trigger: "axis" },
       legend: {
         data: [
-          t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors", {
-            defaultValue: "GraphQL errors",
-          }),
-          t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors", {
-            defaultValue: "Invalid JSON errors",
-          }),
+          t(
+            "systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors",
+            {
+              defaultValue: "GraphQL errors",
+            },
+          ),
+          t(
+            "systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors",
+            {
+              defaultValue: "Invalid JSON errors",
+            },
+          ),
         ],
       },
       grid: { top: 42, left: 24, right: 24, bottom: 24, containLabel: true },
@@ -1363,18 +1550,24 @@ export function LlmRequestLogsPanel() {
         {
           type: "line",
           smooth: true,
-          name: t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors", {
-            defaultValue: "GraphQL errors",
-          }),
+          name: t(
+            "systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesGraphqlErrors",
+            {
+              defaultValue: "GraphQL errors",
+            },
+          ),
           data: briefErrorTrendRows.map((item) => item.graphqlErrorCount),
           itemStyle: { color: colors.destructive },
         },
         {
           type: "line",
           smooth: true,
-          name: t("systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors", {
-            defaultValue: "Invalid JSON errors",
-          }),
+          name: t(
+            "systemSettings.llmRequestLogs.summary.briefErrorTrend.seriesInvalidJsonErrors",
+            {
+              defaultValue: "Invalid JSON errors",
+            },
+          ),
           data: briefErrorTrendRows.map((item) => item.invalidJsonErrorCount),
           itemStyle: { color: colors.bearish },
         },
@@ -1394,7 +1587,9 @@ export function LlmRequestLogsPanel() {
 
   if ((settingsLoading || isLoading) && logs.items.length === 0) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "2rem" }}
+      >
         <Spin />
       </div>
     );
@@ -1409,7 +1604,8 @@ export function LlmRequestLogsPanel() {
       : t("systemSettings.llmRequestLogs.retention.status.default", {
           defaultValue: "Default",
         });
-  const effectiveMetadataPolicy = logs.metadataPolicy ?? EMPTY_LOGS.metadataPolicy;
+  const effectiveMetadataPolicy =
+    logs.metadataPolicy ?? EMPTY_LOGS.metadataPolicy;
   const metadataPolicySourceLabel =
     effectiveMetadataPolicy.source === "db"
       ? t("systemSettings.llmRequestLogs.retention.status.db", {
@@ -1418,7 +1614,10 @@ export function LlmRequestLogsPanel() {
       : t("systemSettings.llmRequestLogs.retention.status.default", {
           defaultValue: "Default",
         });
-  const metadataPreviewKeys = effectiveMetadataPolicy.allowedTopLevelKeys.slice(0, 12);
+  const metadataPreviewKeys = effectiveMetadataPolicy.allowedTopLevelKeys.slice(
+    0,
+    12,
+  );
   const metadataPreviewRemainingCount = Math.max(
     0,
     effectiveMetadataPolicy.keyCount - metadataPreviewKeys.length,
@@ -1451,7 +1650,10 @@ export function LlmRequestLogsPanel() {
         })}
         style={{ marginBottom: "1rem" }}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginBottom: "0.75rem" }}
+        >
           {t("systemSettings.llmRequestLogs.retention.description", {
             defaultValue:
               "Configure how many days LLM request logs are retained in MongoDB before automatic cleanup.",
@@ -1471,10 +1673,13 @@ export function LlmRequestLogsPanel() {
             })}
           </Tag>
           <Tag color="cyan">
-            {t("systemSettings.llmRequestLogs.retention.status.currentKeyCount", {
-              defaultValue: "Keys: {{count}}",
-              count: settings.metadataAllowedTopLevelKeys.length,
-            })}
+            {t(
+              "systemSettings.llmRequestLogs.retention.status.currentKeyCount",
+              {
+                defaultValue: "Keys: {{count}}",
+                count: settings.metadataAllowedTopLevelKeys.length,
+              },
+            )}
           </Tag>
           <Tag color="purple">
             {t(
@@ -1499,7 +1704,9 @@ export function LlmRequestLogsPanel() {
               "systemSettings.llmRequestLogs.retention.status.currentBriefInvalidJsonRatioThreshold",
               {
                 defaultValue: "Invalid JSON threshold: {{value}}%",
-                value: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(2),
+                value: (effectiveBriefInvalidJsonRatioThreshold * 100).toFixed(
+                  2,
+                ),
               },
             )}
           </Tag>
@@ -1519,9 +1726,12 @@ export function LlmRequestLogsPanel() {
           onFinish={handleSaveRetentionSettings}
         >
           <Form.Item
-            label={t("systemSettings.llmRequestLogs.retention.fields.retentionDays", {
-              defaultValue: "Retention days",
-            })}
+            label={t(
+              "systemSettings.llmRequestLogs.retention.fields.retentionDays",
+              {
+                defaultValue: "Retention days",
+              },
+            )}
             name="retentionDays"
             rules={[
               {
@@ -1545,13 +1755,21 @@ export function LlmRequestLogsPanel() {
                 ),
               },
             ]}
-            extra={t("systemSettings.llmRequestLogs.retention.hints.retentionDays", {
-              defaultValue:
-                "Applied to MongoDB TTL index immediately after save and on server startup.",
-            })}
+            extra={t(
+              "systemSettings.llmRequestLogs.retention.hints.retentionDays",
+              {
+                defaultValue:
+                  "Applied to MongoDB TTL index immediately after save and on server startup.",
+              },
+            )}
             style={{ maxWidth: 320 }}
           >
-            <InputNumber min={1} max={3_650} step={1} style={{ width: "100%" }} />
+            <InputNumber
+              min={1}
+              max={3_650}
+              step={1}
+              style={{ width: "100%" }}
+            />
           </Form.Item>
           <Form.Item
             label={t(
@@ -1772,7 +1990,12 @@ export function LlmRequestLogsPanel() {
                   },
                 )}
               >
-                <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  style={{ width: "100%" }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -1815,7 +2038,12 @@ export function LlmRequestLogsPanel() {
                   },
                 )}
               >
-                <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  style={{ width: "100%" }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -1857,7 +2085,13 @@ export function LlmRequestLogsPanel() {
                   },
                 )}
               >
-                <InputNumber min={1} max={30} step={1} precision={0} style={{ width: "100%" }} />
+                <InputNumber
+                  min={1}
+                  max={30}
+                  step={1}
+                  precision={0}
+                  style={{ width: "100%" }}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -1875,9 +2109,12 @@ export function LlmRequestLogsPanel() {
               loading={settingsMetadataResetting}
               disabled={settingsSaving || settingsResetting}
             >
-              {t("systemSettings.llmRequestLogs.retention.actions.resetMetadata", {
-                defaultValue: "Reset metadata allowlist",
-              })}
+              {t(
+                "systemSettings.llmRequestLogs.retention.actions.resetMetadata",
+                {
+                  defaultValue: "Reset metadata allowlist",
+                },
+              )}
             </Button>
             <Button
               danger
@@ -1900,7 +2137,10 @@ export function LlmRequestLogsPanel() {
         })}
         style={{ marginBottom: "1rem" }}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+        <Typography.Paragraph
+          type="secondary"
+          style={{ marginBottom: "0.75rem" }}
+        >
           {t("systemSettings.llmRequestLogs.metadataPolicy.description", {
             defaultValue:
               "This policy is returned by /api/llm-logs and determines which top-level metadata keys are persisted.",
@@ -1912,7 +2152,11 @@ export function LlmRequestLogsPanel() {
               defaultValue: "Source",
             })}
           </Typography.Text>
-          <Tag color={effectiveMetadataPolicy.source === "db" ? "green" : "default"}>
+          <Tag
+            color={
+              effectiveMetadataPolicy.source === "db" ? "green" : "default"
+            }
+          >
             {metadataPolicySourceLabel}
           </Tag>
           <Tag color="cyan">
@@ -1934,7 +2178,14 @@ export function LlmRequestLogsPanel() {
             defaultValue: "Allowed prefixes",
           })}
         </Typography.Text>
-        <Space wrap style={{ display: "flex", marginTop: "0.5rem", marginBottom: "0.75rem" }}>
+        <Space
+          wrap
+          style={{
+            display: "flex",
+            marginTop: "0.5rem",
+            marginBottom: "0.75rem",
+          }}
+        >
           {effectiveMetadataPolicy.allowedTopLevelPrefixes.length > 0 ? (
             effectiveMetadataPolicy.allowedTopLevelPrefixes.map((prefix) => (
               <Tag key={prefix}>{prefix}</Tag>
@@ -1991,24 +2242,14 @@ export function LlmRequestLogsPanel() {
           })}
           style={{ minWidth: 220 }}
         />
-        <Select<LlmFeatureFilter>
+        <Input
+          allowClear
           value={featureFilter}
-          onChange={setFeatureFilter}
+          onChange={(event) => setFeatureFilter(event.target.value)}
+          placeholder={t("systemSettings.llmRequestLogs.filters.feature", {
+            defaultValue: "Feature",
+          })}
           style={{ minWidth: 220 }}
-          options={[
-            {
-              value: "all",
-              label: t("systemSettings.llmRequestLogs.filters.featureAll", {
-                defaultValue: "All features",
-              }),
-            },
-            {
-              value: "news_event_brief",
-              label: t("systemSettings.llmRequestLogs.filters.featureNewsEventBrief", {
-                defaultValue: "Event detailed summary",
-              }),
-            },
-          ]}
         />
         <Select<"all" | LlmRequestType>
           value={requestTypeFilter}
@@ -2105,7 +2346,12 @@ export function LlmRequestLogsPanel() {
       </Space>
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert
+          type="error"
+          showIcon
+          message={errorMessage}
+          style={{ marginBottom: "1rem" }}
+        />
       ) : null}
 
       <Card
@@ -2156,7 +2402,9 @@ export function LlmRequestLogsPanel() {
               title={t("systemSettings.llmRequestLogs.summary.successRate", {
                 defaultValue: "Success rate",
               })}
-              value={Number((summary.statusBreakdown.successRate * 100).toFixed(2))}
+              value={Number(
+                (summary.statusBreakdown.successRate * 100).toFixed(2),
+              )}
               suffix="%"
             />
           </Col>
@@ -2165,7 +2413,9 @@ export function LlmRequestLogsPanel() {
               title={t("systemSettings.llmRequestLogs.summary.errorRate", {
                 defaultValue: "Error rate",
               })}
-              value={Number((summary.statusBreakdown.errorRate * 100).toFixed(2))}
+              value={Number(
+                (summary.statusBreakdown.errorRate * 100).toFixed(2),
+              )}
               suffix="%"
             />
           </Col>
@@ -2187,32 +2437,43 @@ export function LlmRequestLogsPanel() {
                   ? Math.round(summary.latency.p95Ms)
                   : "-"
               }
-              suffix={typeof summary.latency.p95Ms === "number" ? "ms" : undefined}
+              suffix={
+                typeof summary.latency.p95Ms === "number" ? "ms" : undefined
+              }
             />
           </Col>
           {showBriefMetrics ? (
             <>
               <Col xs={24} sm={12} md={6}>
                 <Statistic
-                  title={t("systemSettings.llmRequestLogs.summary.briefGraphqlErrors", {
-                    defaultValue: "Brief GraphQL errors",
-                  })}
+                  title={t(
+                    "systemSettings.llmRequestLogs.summary.briefGraphqlErrors",
+                    {
+                      defaultValue: "Brief GraphQL errors",
+                    },
+                  )}
                   value={briefGraphqlErrorTotal}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
                 <Statistic
-                  title={t("systemSettings.llmRequestLogs.summary.briefInvalidJsonErrors", {
-                    defaultValue: "Brief invalid JSON",
-                  })}
+                  title={t(
+                    "systemSettings.llmRequestLogs.summary.briefInvalidJsonErrors",
+                    {
+                      defaultValue: "Brief invalid JSON",
+                    },
+                  )}
                   value={briefInvalidJsonTotal}
                 />
               </Col>
               <Col xs={24} sm={12} md={6}>
                 <Statistic
-                  title={t("systemSettings.llmRequestLogs.summary.briefInvalidJsonRatio", {
-                    defaultValue: "Brief invalid JSON ratio",
-                  })}
+                  title={t(
+                    "systemSettings.llmRequestLogs.summary.briefInvalidJsonRatio",
+                    {
+                      defaultValue: "Brief invalid JSON ratio",
+                    },
+                  )}
                   value={Number((briefInvalidJsonRatio * 100).toFixed(2))}
                   suffix="%"
                 />
@@ -2232,9 +2493,12 @@ export function LlmRequestLogsPanel() {
           <Alert
             type="warning"
             showIcon
-            message={t("systemSettings.llmRequestLogs.summary.thresholdAlerts.title", {
-              defaultValue: "newsEventBrief threshold alerts",
-            })}
+            message={t(
+              "systemSettings.llmRequestLogs.summary.thresholdAlerts.title",
+              {
+                defaultValue: "newsEventBrief threshold alerts",
+              },
+            )}
             description={
               <Space direction="vertical" size={2}>
                 {briefThresholdWarnings.map((warning) => (
@@ -2249,9 +2513,12 @@ export function LlmRequestLogsPanel() {
           <Card
             size="small"
             style={{ marginTop: "0.75rem" }}
-            title={t("systemSettings.llmRequestLogs.summary.briefErrorTrend.title", {
-              defaultValue: "Brief GraphQL error trend (by day)",
-            })}
+            title={t(
+              "systemSettings.llmRequestLogs.summary.briefErrorTrend.title",
+              {
+                defaultValue: "Brief GraphQL error trend (by day)",
+              },
+            )}
           >
             {briefErrorTrendChartOption ? (
               <DashboardChart
@@ -2262,9 +2529,12 @@ export function LlmRequestLogsPanel() {
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("systemSettings.llmRequestLogs.summary.briefErrorTrend.empty", {
-                  defaultValue: "No brief GraphQL errors in selected range.",
-                })}
+                description={t(
+                  "systemSettings.llmRequestLogs.summary.briefErrorTrend.empty",
+                  {
+                    defaultValue: "No brief GraphQL errors in selected range.",
+                  },
+                )}
               />
             )}
           </Card>
@@ -2287,8 +2557,13 @@ export function LlmRequestLogsPanel() {
               dataSource={summary.topErrors}
               renderItem={(item) => (
                 <List.Item>
-                  <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                    <Typography.Text ellipsis={{ tooltip: item.message }} style={{ maxWidth: "75%" }}>
+                  <Space
+                    style={{ width: "100%", justifyContent: "space-between" }}
+                  >
+                    <Typography.Text
+                      ellipsis={{ tooltip: item.message }}
+                      style={{ maxWidth: "75%" }}
+                    >
                       {item.message}
                     </Typography.Text>
                     <Tag>{item.count}</Tag>
@@ -2339,9 +2614,12 @@ export function LlmRequestLogsPanel() {
               dataSource={summary.byModel}
               pagination={false}
               locale={{
-                emptyText: t("systemSettings.llmRequestLogs.summary.byModel.empty", {
-                  defaultValue: "No model summary.",
-                }),
+                emptyText: t(
+                  "systemSettings.llmRequestLogs.summary.byModel.empty",
+                  {
+                    defaultValue: "No model summary.",
+                  },
+                ),
               }}
             />
           </Card>
@@ -2360,9 +2638,12 @@ export function LlmRequestLogsPanel() {
               dataSource={summary.byDay}
               pagination={false}
               locale={{
-                emptyText: t("systemSettings.llmRequestLogs.summary.byDay.empty", {
-                  defaultValue: "No daily summary.",
-                }),
+                emptyText: t(
+                  "systemSettings.llmRequestLogs.summary.byDay.empty",
+                  {
+                    defaultValue: "No daily summary.",
+                  },
+                ),
               }}
             />
           </Card>

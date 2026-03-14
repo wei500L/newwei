@@ -24,11 +24,19 @@ import {
   type LlmGatewayApiSurface,
   type LlmGatewayResponseFormatMode,
 } from "../system-settings/llm-gateway-settings.service";
+import {
+  LlmRuntimeService,
+  type LlmRuntimeRequestContext,
+} from "../system-settings/llm-runtime.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
 import { iterateSseDataFromReadable } from "./sse";
-import { LlmRequestLogService, type LlmApiSurface, type LlmRequestType } from "./llm-request-log.service";
+import {
+  LlmRequestLogService,
+  type LlmApiSurface,
+  type LlmRequestType,
+} from "./llm-request-log.service";
 
 export type LiteLlmMessage =
   | {
@@ -221,6 +229,7 @@ export class LiteLlmService {
     private readonly configService: NewsPipelineConfigService,
     private readonly rateLimiter: RateLimiterService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
+    private readonly llmRuntime: LlmRuntimeService,
     private readonly llmRequestLogService: LlmRequestLogService,
   ) {}
 
@@ -273,6 +282,10 @@ export class LiteLlmService {
   ): Promise<LiteLlmCompletionResponse> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
+    const runtimeContext = await this.startRuntimeRequest(
+      "completion",
+      params.metadata,
+    );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
     );
@@ -283,41 +296,47 @@ export class LiteLlmService {
       ),
     );
     let lastError: unknown;
-    for (const model of uniqueModels) {
-      try {
-        if (apiSurface === "responses") {
-          return await this.executeResponsesCompletionWithRetry(
+    try {
+      for (const model of uniqueModels) {
+        try {
+          if (apiSurface === "responses") {
+            return await this.executeResponsesCompletionWithRetry(
+              client,
+              cfg,
+              apiKeyConfigured,
+              model,
+              params,
+              runtimeContext,
+            );
+          }
+
+          return await this.executeWithRetry(
             client,
             cfg,
             apiKeyConfigured,
             model,
             params,
+            runtimeContext,
+          );
+        } catch (error) {
+          if (error instanceof LiteLlmGuardrailViolationError) {
+            throw error;
+          }
+          if (error instanceof LlmCompatibilityError) {
+            throw error;
+          }
+          lastError = error;
+          this.logger.warn(
+            {
+              model,
+              message: error instanceof Error ? error.message : "unknown error",
+            },
+            "LiteLLM completion failed; evaluating fallback",
           );
         }
-
-        return await this.executeWithRetry(
-          client,
-          cfg,
-          apiKeyConfigured,
-          model,
-          params,
-        );
-      } catch (error) {
-        if (error instanceof LiteLlmGuardrailViolationError) {
-          throw error;
-        }
-        if (error instanceof LlmCompatibilityError) {
-          throw error;
-        }
-        lastError = error;
-        this.logger.warn(
-          {
-            model,
-            message: error instanceof Error ? error.message : "unknown error",
-          },
-          "LiteLLM completion failed; evaluating fallback",
-        );
       }
+    } finally {
+      await this.releaseRuntimeRequest(runtimeContext);
     }
     throw lastError instanceof Error
       ? lastError
@@ -329,22 +348,30 @@ export class LiteLlmService {
   ): Promise<LiteLlmEmbeddingResponse> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("embedding");
+    const runtimeContext = await this.startRuntimeRequest(
+      "embedding",
+      params.metadata,
+    );
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
+      await this.releaseRuntimeRequest(runtimeContext);
       throw new Error("LiteLLM embedding model is not configured");
     }
-    return this.executeEmbeddingWithRetry(
-      client,
-      cfg,
-      apiKeyConfigured,
-      model,
-      params,
-    );
+    try {
+      return await this.executeEmbeddingWithRetry(
+        client,
+        cfg,
+        apiKeyConfigured,
+        model,
+        params,
+        runtimeContext,
+      );
+    } finally {
+      await this.releaseRuntimeRequest(runtimeContext);
+    }
   }
 
-  async rerank(
-    params: LiteLlmRerankParams,
-  ): Promise<LiteLlmRerankResponse> {
+  async rerank(params: LiteLlmRerankParams): Promise<LiteLlmRerankResponse> {
     if (!Array.isArray(params.documents) || params.documents.length === 0) {
       throw new Error("LiteLLM rerank documents are required");
     }
@@ -355,6 +382,10 @@ export class LiteLlmService {
 
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("rerank");
+    const runtimeContext = await this.startRuntimeRequest(
+      "rerank",
+      params.metadata,
+    );
     const requestedModel =
       typeof params.model === "string" && params.model.trim().length > 0
         ? params.model.trim()
@@ -373,29 +404,35 @@ export class LiteLlmService {
       ),
     );
     if (uniqueModels.length === 0) {
+      await this.releaseRuntimeRequest(runtimeContext);
       throw new Error("LiteLLM rerank model is not configured");
     }
 
     let lastError: unknown;
-    for (const model of uniqueModels) {
-      try {
-        return await this.executeRerankWithRetry(
-          client,
-          cfg,
-          apiKeyConfigured,
-          model,
-          { ...params, query },
-        );
-      } catch (error) {
-        lastError = error;
-        this.logger.warn(
-          {
+    try {
+      for (const model of uniqueModels) {
+        try {
+          return await this.executeRerankWithRetry(
+            client,
+            cfg,
+            apiKeyConfigured,
             model,
-            message: error instanceof Error ? error.message : "unknown error",
-          },
-          "LiteLLM rerank failed; evaluating backup model",
-        );
+            { ...params, query },
+            runtimeContext,
+          );
+        } catch (error) {
+          lastError = error;
+          this.logger.warn(
+            {
+              model,
+              message: error instanceof Error ? error.message : "unknown error",
+            },
+            "LiteLLM rerank failed; evaluating backup model",
+          );
+        }
       }
+    } finally {
+      await this.releaseRuntimeRequest(runtimeContext);
     }
 
     const lastMessage =
@@ -410,6 +447,10 @@ export class LiteLlmService {
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
+    const runtimeContext = await this.startRuntimeRequest(
+      "stream",
+      params.metadata,
+    );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
     );
@@ -421,44 +462,56 @@ export class LiteLlmService {
     );
 
     let lastError: unknown;
-    for (const model of uniqueModels) {
-      let started = false;
-      try {
-        const streamIterator =
-          apiSurface === "responses"
-            ? this.executeResponsesStream(
-                client,
-                cfg,
-                apiKeyConfigured,
-                model,
-                params,
-              )
-            : this.executeStream(client, cfg, apiKeyConfigured, model, params);
+    try {
+      for (const model of uniqueModels) {
+        let started = false;
+        try {
+          const streamIterator =
+            apiSurface === "responses"
+              ? this.executeResponsesStream(
+                  client,
+                  cfg,
+                  apiKeyConfigured,
+                  model,
+                  params,
+                  runtimeContext,
+                )
+              : this.executeStream(
+                  client,
+                  cfg,
+                  apiKeyConfigured,
+                  model,
+                  params,
+                  runtimeContext,
+                );
 
-        for await (const chunk of streamIterator) {
-          started = true;
-          yield chunk;
+          for await (const chunk of streamIterator) {
+            started = true;
+            yield chunk;
+          }
+          return;
+        } catch (error) {
+          if (error instanceof LiteLlmGuardrailViolationError) {
+            throw error;
+          }
+          if (error instanceof LlmCompatibilityError) {
+            throw error;
+          }
+          if (started) {
+            throw error;
+          }
+          lastError = error;
+          this.logger.warn(
+            {
+              model,
+              message: error instanceof Error ? error.message : "unknown error",
+            },
+            "LiteLLM stream failed; evaluating fallback",
+          );
         }
-        return;
-      } catch (error) {
-        if (error instanceof LiteLlmGuardrailViolationError) {
-          throw error;
-        }
-        if (error instanceof LlmCompatibilityError) {
-          throw error;
-        }
-        if (started) {
-          throw error;
-        }
-        lastError = error;
-        this.logger.warn(
-          {
-            model,
-            message: error instanceof Error ? error.message : "unknown error",
-          },
-          "LiteLLM stream failed; evaluating fallback",
-        );
       }
+    } finally {
+      await this.releaseRuntimeRequest(runtimeContext);
     }
 
     throw lastError instanceof Error
@@ -471,6 +524,10 @@ export class LiteLlmService {
   ): Promise<LiteLlmResponsesResponse> {
     const { cfg, client, apiKeyConfigured } =
       await this.prepareRequest("completion");
+    const runtimeContext = await this.startRuntimeRequest(
+      "responses",
+      params.metadata,
+    );
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
       new Set(
@@ -481,98 +538,105 @@ export class LiteLlmService {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
 
     let lastError: unknown;
-    for (const model of uniqueModels) {
-      let attempt = 0;
-      let delayMs = 1_000;
-      while (attempt < maxAttempts) {
-        const attemptStartedAt = Date.now();
-        try {
-          const payload = {
-            model,
-            input: params.input,
-            temperature: params.temperature ?? cfg.temperature,
-            top_p: params.top_p ?? cfg.topP,
-            max_output_tokens: params.max_output_tokens ?? cfg.maxOutputTokens,
-            metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
-          };
-          const start = Date.now();
-          const response =
-            await this.postWithFallback<LiteLlmResponsesResponse>(
-              client,
-              "/v1/responses",
-              "/responses",
-              payload,
-              { timeout: params.timeoutMs ?? cfg.timeoutMs },
+    try {
+      for (const model of uniqueModels) {
+        let attempt = 0;
+        let delayMs = 1_000;
+        while (attempt < maxAttempts) {
+          const attemptStartedAt = Date.now();
+          try {
+            const payload = {
+              model,
+              input: params.input,
+              temperature: params.temperature ?? cfg.temperature,
+              top_p: params.top_p ?? cfg.topP,
+              max_output_tokens:
+                params.max_output_tokens ?? cfg.maxOutputTokens,
+              metadata: this.resolveMetadata(params.metadata, cfg.sendMetadata),
+            };
+            const start = Date.now();
+            const response =
+              await this.postWithFallback<LiteLlmResponsesResponse>(
+                client,
+                "/v1/responses",
+                "/responses",
+                payload,
+                { timeout: params.timeoutMs ?? cfg.timeoutMs },
+              );
+            const latencyMs = Date.now() - start;
+            const headerCost = this.extractHeaderCost(
+              response.headers?.["x-litellm-response-cost"] ??
+                response.headers?.["x-litellm-cost"] ??
+                response.headers?.["litellm-cost"],
             );
-          const latencyMs = Date.now() - start;
-          const headerCost = this.extractHeaderCost(
-            response.headers?.["x-litellm-response-cost"] ??
-              response.headers?.["x-litellm-cost"] ??
-              response.headers?.["litellm-cost"],
-          );
-          const keySpendUsd = this.extractHeaderCost(
-            response.headers?.["x-litellm-key-spend"],
-          );
-          const payloadCost = this.extractHeaderCost(
-            (response.data as Record<string, unknown>).response_cost,
-          );
-          const costUsd = headerCost ?? payloadCost;
-          const normalizedResponse = {
-            ...response.data,
-            ...(typeof costUsd === "number" ? { costUsd } : {}),
-            ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
-            latencyMs,
-          };
-          this.logRequest({
-            requestType: "responses",
-            model:
-              typeof normalizedResponse.model === "string" &&
-              normalizedResponse.model.trim().length > 0
-                ? normalizedResponse.model.trim()
-                : model,
-            status: "success",
-            orgId: params.orgId,
-            metadata: params.metadata,
-            latencyMs,
-            usage: this.normalizeResponsesUsage(normalizedResponse),
-            costUsd,
-            apiSurface: "responses",
-          });
-          return normalizedResponse;
-        } catch (error) {
-          let normalizedError: unknown = error;
-          if (!(error instanceof LlmCompatibilityError)) {
-            try {
-              this.decorateAxiosError(error, {
-                apiKeyConfigured,
-                apiSurface: "responses",
-              });
-            } catch (decoratedError) {
-              normalizedError = decoratedError;
+            const keySpendUsd = this.extractHeaderCost(
+              response.headers?.["x-litellm-key-spend"],
+            );
+            const payloadCost = this.extractHeaderCost(
+              (response.data as Record<string, unknown>).response_cost,
+            );
+            const costUsd = headerCost ?? payloadCost;
+            const normalizedResponse = {
+              ...response.data,
+              ...(typeof costUsd === "number" ? { costUsd } : {}),
+              ...(typeof keySpendUsd === "number" ? { keySpendUsd } : {}),
+              latencyMs,
+            };
+            this.logRequest({
+              requestType: "responses",
+              model:
+                typeof normalizedResponse.model === "string" &&
+                normalizedResponse.model.trim().length > 0
+                  ? normalizedResponse.model.trim()
+                  : model,
+              status: "success",
+              orgId: params.orgId,
+              metadata: params.metadata,
+              latencyMs,
+              usage: this.normalizeResponsesUsage(normalizedResponse),
+              costUsd,
+              apiSurface: "responses",
+              runtimeContext,
+            });
+            return normalizedResponse;
+          } catch (error) {
+            let normalizedError: unknown = error;
+            if (!(error instanceof LlmCompatibilityError)) {
+              try {
+                this.decorateAxiosError(error, {
+                  apiKeyConfigured,
+                  apiSurface: "responses",
+                });
+              } catch (decoratedError) {
+                normalizedError = decoratedError;
+              }
             }
+            this.logRequest({
+              requestType: "responses",
+              model,
+              status: "error",
+              orgId: params.orgId,
+              metadata: params.metadata,
+              latencyMs: Date.now() - attemptStartedAt,
+              error: normalizedError,
+              apiSurface: "responses",
+              runtimeContext,
+            });
+            if (normalizedError instanceof LlmCompatibilityError) {
+              throw normalizedError;
+            }
+            lastError = normalizedError;
+            attempt += 1;
+            if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
+              throw normalizedError;
+            }
+            await sleep(delayMs);
+            delayMs = Math.min(delayMs * 2, 10_000);
           }
-          this.logRequest({
-            requestType: "responses",
-            model,
-            status: "error",
-            orgId: params.orgId,
-            metadata: params.metadata,
-            latencyMs: Date.now() - attemptStartedAt,
-            error: normalizedError,
-            apiSurface: "responses",
-          });
-          if (normalizedError instanceof LlmCompatibilityError) {
-            throw normalizedError;
-          }
-          lastError = normalizedError;
-          attempt += 1;
-          if (attempt >= maxAttempts || !this.isRetryable(normalizedError)) {
-            throw normalizedError;
-          }
-          await sleep(delayMs);
-          delayMs = Math.min(delayMs * 2, 10_000);
         }
       }
+    } finally {
+      await this.releaseRuntimeRequest(runtimeContext);
     }
 
     throw lastError instanceof Error
@@ -594,6 +658,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ): Promise<LiteLlmCompletionResponse> {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -677,6 +742,7 @@ export class LiteLlmService {
           usage: this.normalizeCompletionUsage(normalizedResponse.usage),
           costUsd,
           apiSurface: "responses",
+          runtimeContext,
         });
         return normalizedResponse;
       } catch (error) {
@@ -698,6 +764,7 @@ export class LiteLlmService {
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
           apiSurface: "responses",
+          runtimeContext,
         });
         if (normalizedError instanceof LlmCompatibilityError) {
           throw normalizedError;
@@ -730,6 +797,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const requestStartedAt = Date.now();
     let streamUsage: LiteLlmTokenUsageSnapshot = {
@@ -790,6 +858,7 @@ export class LiteLlmService {
         latencyMs: Date.now() - requestStartedAt,
         error: normalizedError,
         apiSurface: "responses",
+        runtimeContext,
       });
       throw normalizedError;
     }
@@ -813,7 +882,9 @@ export class LiteLlmService {
           {
             model,
             contentType: contentTypeRaw,
-            bodyPreview: sanitizeUpstreamErrorText(bodyText, { maxLength: 500 }),
+            bodyPreview: sanitizeUpstreamErrorText(bodyText, {
+              maxLength: 500,
+            }),
           },
           "LiteLLM responses stream returned non-SSE response",
         );
@@ -834,6 +905,7 @@ export class LiteLlmService {
             usage: streamUsage,
             costUsd: streamCostUsd,
             apiSurface: "responses",
+            runtimeContext,
           });
           return;
         }
@@ -901,6 +973,7 @@ export class LiteLlmService {
         usage: streamUsage,
         costUsd: streamCostUsd,
         apiSurface: "responses",
+        runtimeContext,
       });
     } catch (error) {
       this.logRequest({
@@ -914,6 +987,7 @@ export class LiteLlmService {
         usage: streamUsage,
         costUsd: streamCostUsd,
         apiSurface: "responses",
+        runtimeContext,
       });
       throw error;
     }
@@ -933,6 +1007,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ) {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -1009,6 +1084,7 @@ export class LiteLlmService {
           usage: this.normalizeCompletionUsage(normalizedResponse.usage),
           costUsd,
           apiSurface: "chat_completions",
+          runtimeContext,
         });
         return normalizedResponse;
       } catch (error) {
@@ -1025,6 +1101,7 @@ export class LiteLlmService {
               latencyMs: Date.now() - attemptStartedAt,
               error: guardrailError,
               apiSurface: "chat_completions",
+              runtimeContext,
             });
             throw guardrailError;
           }
@@ -1047,6 +1124,7 @@ export class LiteLlmService {
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
           apiSurface: "chat_completions",
+          runtimeContext,
         });
         if (normalizedError instanceof LlmCompatibilityError) {
           throw normalizedError;
@@ -1079,6 +1157,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const requestStartedAt = Date.now();
     let streamUsage: LiteLlmTokenUsageSnapshot = {
@@ -1133,6 +1212,7 @@ export class LiteLlmService {
             latencyMs: Date.now() - requestStartedAt,
             error: guardrailError,
             apiSurface: "chat_completions",
+            runtimeContext,
           });
           throw guardrailError;
         }
@@ -1155,6 +1235,7 @@ export class LiteLlmService {
         latencyMs: Date.now() - requestStartedAt,
         error: normalizedError,
         apiSurface: "chat_completions",
+        runtimeContext,
       });
       throw normalizedError;
     }
@@ -1217,6 +1298,7 @@ export class LiteLlmService {
             usage: streamUsage,
             costUsd: streamCostUsd,
             apiSurface: "chat_completions",
+            runtimeContext,
           });
           return;
         }
@@ -1251,7 +1333,10 @@ export class LiteLlmService {
             : undefined;
         if (typeof delta === "string" && delta.length > 0) {
           yield { model, raw: parsed, delta, finishReason };
-        } else if (typeof finishReason === "string" && finishReason.length > 0) {
+        } else if (
+          typeof finishReason === "string" &&
+          finishReason.length > 0
+        ) {
           yield { model, raw: parsed, finishReason };
         }
       }
@@ -1266,6 +1351,7 @@ export class LiteLlmService {
         usage: streamUsage,
         costUsd: streamCostUsd,
         apiSurface: "chat_completions",
+        runtimeContext,
       });
     } catch (error) {
       this.logRequest({
@@ -1279,6 +1365,7 @@ export class LiteLlmService {
         usage: streamUsage,
         costUsd: streamCostUsd,
         apiSurface: "chat_completions",
+        runtimeContext,
       });
       throw error;
     }
@@ -1417,7 +1504,10 @@ export class LiteLlmService {
   }
 
   private resolveResponsesTextFormat(
-    responseFormat: JsonSchemaResponseFormat | Record<string, unknown> | undefined,
+    responseFormat:
+      | JsonSchemaResponseFormat
+      | Record<string, unknown>
+      | undefined,
     mode: LlmGatewayResponseFormatMode,
   ): Record<string, unknown> | undefined {
     if (mode === "none") {
@@ -1440,7 +1530,9 @@ export class LiteLlmService {
     return undefined;
   }
 
-  private extractResponsesOutputText(response: LiteLlmResponsesResponse): string | null {
+  private extractResponsesOutputText(
+    response: LiteLlmResponsesResponse,
+  ): string | null {
     if (typeof response.output_text === "string") {
       const trimmed = response.output_text.trim();
       return trimmed.length > 0 ? response.output_text : null;
@@ -1497,7 +1589,10 @@ export class LiteLlmService {
           return { error: message.trim() };
         }
       }
-      if (typeof record.message === "string" && record.message.trim().length > 0) {
+      if (
+        typeof record.message === "string" &&
+        record.message.trim().length > 0
+      ) {
         return { error: record.message.trim() };
       }
       return { error: "Responses stream failed" };
@@ -1540,6 +1635,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmEmbeddingParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ) {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -1601,6 +1697,7 @@ export class LiteLlmService {
           usage: this.normalizeEmbeddingUsage(normalizedResponse.usage),
           costUsd,
           apiSurface: "embeddings",
+          runtimeContext,
         });
         return normalizedResponse;
       } catch (error) {
@@ -1622,6 +1719,7 @@ export class LiteLlmService {
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
           apiSurface: "embeddings",
+          runtimeContext,
         });
         if (normalizedError instanceof LlmCompatibilityError) {
           throw normalizedError;
@@ -1647,6 +1745,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmRerankParams,
+    runtimeContext: LlmRuntimeRequestContext | null,
   ): Promise<LiteLlmRerankResponse> {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -1710,9 +1809,14 @@ export class LiteLlmService {
           orgId: params.orgId,
           metadata: params.metadata,
           latencyMs,
-          usage: { promptTokens: null, completionTokens: null, totalTokens: null },
+          usage: {
+            promptTokens: null,
+            completionTokens: null,
+            totalTokens: null,
+          },
           costUsd,
           apiSurface: "chat_completions",
+          runtimeContext,
         });
         return normalizedResponse;
       } catch (error) {
@@ -1734,6 +1838,7 @@ export class LiteLlmService {
           latencyMs: Date.now() - attemptStartedAt,
           error: normalizedError,
           apiSurface: "chat_completions",
+          runtimeContext,
         });
         if (normalizedError instanceof LlmCompatibilityError) {
           throw normalizedError;
@@ -1988,7 +2093,7 @@ export class LiteLlmService {
         ? await this.resolveEmbeddingConfig()
         : kind === "rerank"
           ? await this.resolveRerankConfig()
-        : await this.resolveCompletionConfig();
+          : await this.resolveCompletionConfig();
     const limitKey = `litellm:rpm:${kind}`;
     const allowed = await this.rateLimiter.consume(
       limitKey,
@@ -2075,7 +2180,47 @@ export class LiteLlmService {
     usage?: LiteLlmTokenUsageSnapshot;
     costUsd?: number | null;
     apiSurface?: LlmApiSurface;
+    runtimeContext?: LlmRuntimeRequestContext | null;
   }) {
+    void this.writeRequestLog(params);
+  }
+
+  private async writeRequestLog(params: {
+    requestType: LlmRequestType;
+    model: string;
+    status: "success" | "error";
+    orgId?: string;
+    metadata: Record<string, unknown> | undefined;
+    latencyMs: number;
+    error?: unknown;
+    usage?: LiteLlmTokenUsageSnapshot;
+    costUsd?: number | null;
+    apiSurface?: LlmApiSurface;
+    runtimeContext?: LlmRuntimeRequestContext | null;
+  }) {
+    let runtimeSnapshot: Awaited<
+      ReturnType<LlmRuntimeService["recordAttempt"]>
+    > | null = null;
+    if (params.runtimeContext) {
+      try {
+        runtimeSnapshot = await this.llmRuntime.recordAttempt(
+          params.runtimeContext,
+          params.costUsd ?? null,
+        );
+      } catch (error) {
+        this.logger.warn(
+          {
+            err: error,
+            requestType: params.requestType,
+            model: params.model,
+            metricName: "llm_runtime_log_total",
+            metricOutcome: "runtime_record_failed",
+          },
+          "Failed to record LiteLLM runtime attempt",
+        );
+      }
+    }
+
     this.llmRequestLogService.logRequest({
       orgId: this.resolveLogOrgId(params.orgId, params.metadata),
       requestType: params.requestType,
@@ -2085,11 +2230,80 @@ export class LiteLlmService {
       completionTokens: params.usage?.completionTokens ?? null,
       totalTokens: params.usage?.totalTokens ?? null,
       costUsd: this.toNullableNumber(params.costUsd),
+      feature:
+        runtimeSnapshot?.feature ??
+        params.runtimeContext?.feature ??
+        this.resolveFeatureToken(params.metadata) ??
+        null,
+      runtimeRequestId:
+        runtimeSnapshot?.runtimeRequestId ??
+        params.runtimeContext?.runtimeRequestId ??
+        null,
+      runtimeDecision: runtimeSnapshot?.runtimeDecision ?? null,
+      currentConcurrency:
+        runtimeSnapshot?.currentConcurrency ??
+        params.runtimeContext?.currentConcurrency ??
+        null,
+      concurrencyLimit:
+        runtimeSnapshot?.concurrencyLimit ??
+        params.runtimeContext?.concurrencyLimit ??
+        null,
+      dailySpendUsdSnapshot:
+        runtimeSnapshot?.dailySpendUsdSnapshot ??
+        params.runtimeContext?.dailySpendUsdSnapshot ??
+        null,
+      monthlySpendUsdSnapshot:
+        runtimeSnapshot?.monthlySpendUsdSnapshot ??
+        params.runtimeContext?.monthlySpendUsdSnapshot ??
+        null,
       latencyMs: this.normalizeLatency(params.latencyMs),
-      error: params.status === "error" ? this.normalizeLogError(params.error) : null,
+      error:
+        params.status === "error" ? this.normalizeLogError(params.error) : null,
       metadata: params.metadata ?? null,
       apiSurface: params.apiSurface ?? null,
     });
+  }
+
+  private async startRuntimeRequest(
+    requestType: LlmRequestType,
+    metadata?: Record<string, unknown>,
+  ): Promise<LlmRuntimeRequestContext | null> {
+    try {
+      return await this.llmRuntime.startRequest({ requestType, metadata });
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          requestType,
+          feature: this.resolveFeatureToken(metadata) ?? "unknown",
+          metricName: "llm_runtime_start_total",
+          metricOutcome: "failure",
+        },
+        "Failed to initialize LiteLLM runtime context",
+      );
+      return null;
+    }
+  }
+
+  private async releaseRuntimeRequest(
+    runtimeContext: LlmRuntimeRequestContext | null,
+  ): Promise<void> {
+    if (!runtimeContext) {
+      return;
+    }
+    try {
+      await this.llmRuntime.releaseRequest(runtimeContext.runtimeRequestId);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          runtimeRequestId: runtimeContext.runtimeRequestId,
+          metricName: "llm_runtime_release_total",
+          metricOutcome: "failure",
+        },
+        "Failed to release LiteLLM runtime context",
+      );
+    }
   }
 
   private resolveLogOrgId(
@@ -2141,6 +2355,27 @@ export class LiteLlmService {
       return message.slice(0, MAX_LOG_ERROR_LENGTH);
     }
     return null;
+  }
+
+  private resolveFeatureToken(
+    metadata: Record<string, unknown> | undefined,
+  ): string | null {
+    const candidate =
+      this.normalizeFeatureToken(metadata?.feature) ??
+      this.normalizeFeatureToken(metadata?.source) ??
+      this.normalizeFeatureToken(metadata?.module);
+    return candidate ?? null;
+  }
+
+  private normalizeFeatureToken(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (!normalized || normalized.length > 64) {
+      return null;
+    }
+    return /^[a-z0-9_:\-.]+$/.test(normalized) ? normalized : null;
   }
 
   private normalizeLatency(value: unknown): number {
@@ -2200,7 +2435,11 @@ export class LiteLlmService {
   ): LiteLlmTokenUsageSnapshot {
     const record = payload as Record<string, unknown>;
     const usage = this.extractUsageFromUnknown(record.usage);
-    if (usage.totalTokens !== null || usage.promptTokens !== null || usage.completionTokens !== null) {
+    if (
+      usage.totalTokens !== null ||
+      usage.promptTokens !== null ||
+      usage.completionTokens !== null
+    ) {
       return usage;
     }
     return this.extractUsageFromUnknown(record);
@@ -2246,7 +2485,11 @@ export class LiteLlmService {
   } {
     if (!raw || typeof raw !== "object") {
       return {
-        usage: { promptTokens: null, completionTokens: null, totalTokens: null },
+        usage: {
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+        },
         costUsd: null,
       };
     }
@@ -2300,7 +2543,11 @@ export class LiteLlmService {
   private resolveResponseFormatMode(
     value: unknown,
   ): LlmGatewayResponseFormatMode {
-    if (value === "none" || value === "json_object" || value === "json_schema") {
+    if (
+      value === "none" ||
+      value === "json_object" ||
+      value === "json_schema"
+    ) {
       return value;
     }
     return DEFAULT_RESPONSE_FORMAT_MODE;
@@ -2324,7 +2571,10 @@ export class LiteLlmService {
   }
 
   private resolveResponseFormat(
-    responseFormat: JsonSchemaResponseFormat | Record<string, unknown> | undefined,
+    responseFormat:
+      | JsonSchemaResponseFormat
+      | Record<string, unknown>
+      | undefined,
     mode: LlmGatewayResponseFormatMode,
   ): JsonSchemaResponseFormat | Record<string, unknown> | undefined {
     if (mode === "none") {

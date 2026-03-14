@@ -4511,6 +4511,7 @@
       },
       "filters": {
         "model": "模型",
+        "feature": "功能",
         "featureAll": "全部功能",
         "featureNewsEventBrief": "事件详细摘要",
         "requestTypeAll": "全部请求类型",
@@ -4523,6 +4524,7 @@
       "table": {
         "time": "时间",
         "model": "模型",
+        "feature": "功能",
         "requestType": "类型",
         "status": "状态",
         "tokens": "Token",
@@ -4530,8 +4532,18 @@
         "promptCompletionTokens": "输入/输出：{{prompt}} / {{completion}}",
         "cost": "成本",
         "latency": "延迟",
+        "runtime": "运行时",
+        "runtimeConcurrency": "并发：{{current}} / {{limit}}",
+        "runtimeSpend": "日/月成本：{{day}} / {{month}}",
         "error": "错误",
         "empty": "暂无日志。"
+      },
+      "runtime": {
+        "allowed": "允许",
+        "warnConcurrency": "并发告警",
+        "warnDailyBudget": "日预算告警",
+        "warnMonthlyBudget": "月预算告警",
+        "warnMultiple": "多重告警"
       },
       "summary": {
         "title": "用量汇总",
@@ -5642,9 +5654,24 @@
       "vectorService": "向量服务",
       "modelService": "模型服务",
       "akshare": "AKShare",
-      "archivePreparation": "归档预热"
+      "archivePreparation": "归档预热",
+      "llmRuntime": "LLM 运行时"
     },
     "description": "系统设置说明",
+    "llmRuntime": {
+      "description": "从统一运行时层观察全局 LiteLLM 的成本和并发。",
+      "source": {
+        "default": "默认",
+        "db": "自定义"
+      },
+      "decisions": {
+        "allowed": "允许",
+        "warnConcurrency": "并发告警",
+        "warnDailyBudget": "日预算告警",
+        "warnMonthlyBudget": "月预算告警",
+        "warnMultiple": "多阈值告警"
+      }
+    },
     "archivePreparation": {
       "description": "配置归档后台预热的分批大小和 embedding/rerank 并发。较低数值可以减少内存占用与限流压力。",
       "notice": {

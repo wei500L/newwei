@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 
 import { RateLimiterService } from "../cache/rate-limiter.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
+import { LlmRuntimeService } from "../system-settings/llm-runtime.service";
 
 import {
   LiteLlmGuardrailViolationError,
@@ -58,6 +59,11 @@ describe("LiteLlmService", () => {
   let rateLimiterService: jest.Mocked<RateLimiterService>;
   let llmGatewaySettings: jest.Mocked<LlmGatewaySettingsService>;
   let configService: jest.Mocked<NewsPipelineConfigService>;
+  let llmRuntimeService: {
+    startRequest: jest.Mock;
+    recordAttempt: jest.Mock;
+    releaseRequest: jest.Mock;
+  };
   let llmRequestLogService: {
     logRequest: jest.Mock;
     queryLogs: jest.Mock;
@@ -162,6 +168,35 @@ describe("LiteLlmService", () => {
       queryLogs: jest.fn(),
       getUsageSummary: jest.fn(),
     };
+    llmRuntimeService = {
+      startRequest: jest.fn().mockResolvedValue({
+        runtimeRequestId: "runtime-1",
+        feature: "news_event_brief",
+        requestType: "completion",
+        currentConcurrency: 3,
+        concurrencyLimit: 10,
+        dailySpendUsdSnapshot: 0.12,
+        monthlySpendUsdSnapshot: 1.23,
+        settings: {
+          mode: "observe_only",
+          dailyBudgetUsd: 10,
+          monthlyBudgetUsd: 100,
+          maxConcurrency: 10,
+          alertCooldownSeconds: 60,
+          requestLeaseTtlSeconds: 120,
+        },
+      }),
+      recordAttempt: jest.fn().mockResolvedValue({
+        runtimeRequestId: "runtime-1",
+        feature: "news_event_brief",
+        runtimeDecision: "allowed",
+        currentConcurrency: 3,
+        concurrencyLimit: 10,
+        dailySpendUsdSnapshot: 0.13,
+        monthlySpendUsdSnapshot: 1.24,
+      }),
+      releaseRequest: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -169,6 +204,7 @@ describe("LiteLlmService", () => {
         { provide: RateLimiterService, useValue: rateLimiterService },
         { provide: LlmGatewaySettingsService, useValue: llmGatewaySettings },
         { provide: NewsPipelineConfigService, useValue: configService },
+        { provide: LlmRuntimeService, useValue: llmRuntimeService },
         {
           provide: LlmRequestLogService,
           useValue: llmRequestLogService,
@@ -211,6 +247,41 @@ describe("LiteLlmService", () => {
           stream: false,
         }),
         expect.any(Object),
+      );
+    });
+
+    it("records runtime snapshots in request logs", async () => {
+      await service.acompletion({
+        ...completionParams,
+        metadata: {
+          feature: "news_event_brief",
+          source: "briefs",
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(llmRuntimeService.startRequest).toHaveBeenCalledWith({
+        requestType: "completion",
+        metadata: {
+          feature: "news_event_brief",
+          source: "briefs",
+        },
+      });
+      expect(llmRuntimeService.recordAttempt).toHaveBeenCalled();
+      expect(llmRuntimeService.releaseRequest).toHaveBeenCalledWith(
+        "runtime-1",
+      );
+      expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: "news_event_brief",
+          runtimeRequestId: "runtime-1",
+          runtimeDecision: "allowed",
+          currentConcurrency: 3,
+          concurrencyLimit: 10,
+          dailySpendUsdSnapshot: 0.13,
+          monthlySpendUsdSnapshot: 1.24,
+        }),
       );
     });
 
@@ -445,7 +516,6 @@ describe("LiteLlmService", () => {
       expect(result.costUsd).toBe(0.0002);
       expect(result.keySpendUsd).toBe(0.07);
     });
-
 
     it("should fail fast when gateway rejects metadata field", async () => {
       const error400 = new AxiosError(
@@ -786,7 +856,6 @@ describe("LiteLlmService", () => {
         expect.any(Object),
       );
     });
-
   });
 
   describe("retry logic", () => {
@@ -1392,7 +1461,6 @@ describe("LiteLlmService", () => {
         expect.any(Object),
       );
     });
-
 
     it("should isolate axios clients between completion and embedding configs", async () => {
       const completionPost = jest

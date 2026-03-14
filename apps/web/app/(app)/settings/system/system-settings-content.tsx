@@ -37,6 +37,7 @@ import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { LlmRequestLogsPanel } from "@/components/settings/llm-request-logs-panel";
+import { LlmRuntimeSettingsPanel } from "@/components/settings/llm-runtime-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
 import { NewsClassificationSettingsPanel } from "@/components/settings/news-classification-settings-panel";
@@ -1038,9 +1039,12 @@ function CrawlClientSettingsPanel() {
               rules={[
                 {
                   required: true,
-                  message: t("settings.crawlClient.validation.adaptiveWindowMinutes", {
-                    defaultValue: "Please enter adaptive window in minutes.",
-                  }),
+                  message: t(
+                    "settings.crawlClient.validation.adaptiveWindowMinutes",
+                    {
+                      defaultValue: "Please enter adaptive window in minutes.",
+                    },
+                  ),
                 },
                 {
                   type: "number",
@@ -1077,9 +1081,13 @@ function CrawlClientSettingsPanel() {
               rules={[
                 {
                   required: true,
-                  message: t("settings.crawlClient.validation.adaptiveCooldownMinutes", {
-                    defaultValue: "Please enter adaptive cooldown in minutes.",
-                  }),
+                  message: t(
+                    "settings.crawlClient.validation.adaptiveCooldownMinutes",
+                    {
+                      defaultValue:
+                        "Please enter adaptive cooldown in minutes.",
+                    },
+                  ),
                 },
                 {
                   type: "number",
@@ -1109,16 +1117,23 @@ function CrawlClientSettingsPanel() {
               />
             </Form.Item>
             <Form.Item
-              label={t("settings.crawlClient.fields.adaptiveLatencyThresholdRatio", {
-                defaultValue: "Adaptive latency threshold",
-              })}
+              label={t(
+                "settings.crawlClient.fields.adaptiveLatencyThresholdRatio",
+                {
+                  defaultValue: "Adaptive latency threshold",
+                },
+              )}
               name="adaptiveLatencyThresholdRatio"
               rules={[
                 {
                   required: true,
-                  message: t("settings.crawlClient.validation.adaptiveLatencyThresholdRatio", {
-                    defaultValue: "Please enter adaptive latency threshold ratio.",
-                  }),
+                  message: t(
+                    "settings.crawlClient.validation.adaptiveLatencyThresholdRatio",
+                    {
+                      defaultValue:
+                        "Please enter adaptive latency threshold ratio.",
+                    },
+                  ),
                 },
                 {
                   type: "number",
@@ -1140,16 +1155,23 @@ function CrawlClientSettingsPanel() {
               />
             </Form.Item>
             <Form.Item
-              label={t("settings.crawlClient.fields.adaptiveErrorRateThreshold", {
-                defaultValue: "Adaptive error-rate threshold",
-              })}
+              label={t(
+                "settings.crawlClient.fields.adaptiveErrorRateThreshold",
+                {
+                  defaultValue: "Adaptive error-rate threshold",
+                },
+              )}
               name="adaptiveErrorRateThreshold"
               rules={[
                 {
                   required: true,
-                  message: t("settings.crawlClient.validation.adaptiveErrorRateThreshold", {
-                    defaultValue: "Please enter adaptive error-rate threshold ratio.",
-                  }),
+                  message: t(
+                    "settings.crawlClient.validation.adaptiveErrorRateThreshold",
+                    {
+                      defaultValue:
+                        "Please enter adaptive error-rate threshold ratio.",
+                    },
+                  ),
                 },
                 {
                   type: "number",
@@ -1171,17 +1193,23 @@ function CrawlClientSettingsPanel() {
               />
             </Form.Item>
             <Form.Item
-              label={t("settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold", {
-                defaultValue: "Adaptive memory headroom threshold",
-              })}
+              label={t(
+                "settings.crawlClient.fields.adaptiveMemoryHeadroomThreshold",
+                {
+                  defaultValue: "Adaptive memory headroom threshold",
+                },
+              )}
               name="adaptiveMemoryHeadroomThreshold"
               rules={[
                 {
                   required: true,
-                  message: t("settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold", {
-                    defaultValue:
-                      "Please enter adaptive memory headroom threshold ratio.",
-                  }),
+                  message: t(
+                    "settings.crawlClient.validation.adaptiveMemoryHeadroomThreshold",
+                    {
+                      defaultValue:
+                        "Please enter adaptive memory headroom threshold ratio.",
+                    },
+                  ),
                 },
                 {
                   type: "number",
@@ -1393,7 +1421,9 @@ function parseEconomicProviderMetadata(
   }
   const record = metadata as Record<string, unknown>;
   const snapshot =
-    record.snapshot && typeof record.snapshot === "object" && !Array.isArray(record.snapshot)
+    record.snapshot &&
+    typeof record.snapshot === "object" &&
+    !Array.isArray(record.snapshot)
       ? (record.snapshot as EconomicProviderMetadata["snapshot"])
       : null;
   return {
@@ -1446,9 +1476,9 @@ function AkshareGatewaySettingsPanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [providerSecretStatus, setProviderSecretStatus] =
     useState<EconomicProviderSecretStatusResponse | null>(null);
-  const [updatingProviderSlug, setUpdatingProviderSlug] = useState<string | null>(
-    null,
-  );
+  const [updatingProviderSlug, setUpdatingProviderSlug] = useState<
+    string | null
+  >(null);
   const [triggerEconomicDataRefreshPreset] =
     useTriggerEconomicDataRefreshPresetMutation();
   const [updateEconomicFetchConfig] = useUpdateEconomicFetchConfigMutation();
@@ -1663,7 +1693,8 @@ function AkshareGatewaySettingsPanel() {
   const currentVersion = version?.akshareVersion ?? "-";
   const pythonVersion = version?.pythonVersion ?? "-";
   const stage = status?.stage ?? "unknown";
-  const presetStatus = presetStatusData?.economicDataRefreshPresetStatus ?? null;
+  const presetStatus =
+    presetStatusData?.economicDataRefreshPresetStatus ?? null;
   const selectedPresetConfig = selectedPreset
     ? ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[selectedPreset]
     : null;
@@ -1680,9 +1711,9 @@ function AkshareGatewaySettingsPanel() {
       ? "red"
       : stage === "restarting" || stage === "running" || stage === "queued"
         ? "orange"
-          : stage === "idle"
-            ? "green"
-            : "default";
+        : stage === "idle"
+          ? "green"
+          : "default";
 
   useEffect(() => {
     if (!statusPolling || !presetStatus) {
@@ -1732,7 +1763,10 @@ function AkshareGatewaySettingsPanel() {
             }),
           );
         } catch (error) {
-          captureClientError("Failed to trigger economic refresh preset", error);
+          captureClientError(
+            "Failed to trigger economic refresh preset",
+            error,
+          );
           messageApi.error(
             error instanceof Error && error.message
               ? error.message
@@ -1754,11 +1788,14 @@ function AkshareGatewaySettingsPanel() {
     triggerEconomicDataRefreshPreset,
   ]);
 
-  const handlePresetChange = useCallback((value: EconomicDashboardRefreshPresetKey) => {
-    setSelectedPreset(value);
-    setStatusPolling(false);
-    presetStatusBaselineRef.current = null;
-  }, []);
+  const handlePresetChange = useCallback(
+    (value: EconomicDashboardRefreshPresetKey) => {
+      setSelectedPreset(value);
+      setStatusPolling(false);
+      presetStatusBaselineRef.current = null;
+    },
+    [],
+  );
 
   const formattedPresetLastRunAt = presetStatus?.lastRunAt
     ? formatDateTime(presetStatus.lastRunAt, locale, {
@@ -1792,9 +1829,9 @@ function AkshareGatewaySettingsPanel() {
 
         const secretConfigured =
           metadata.requiresSecret === "finnhubApiKey"
-            ? providerSecretStatus?.hasFinnhubApiKey ?? false
+            ? (providerSecretStatus?.hasFinnhubApiKey ?? false)
             : metadata.requiresSecret === "fredApiKey"
-              ? providerSecretStatus?.hasFredApiKey ?? false
+              ? (providerSecretStatus?.hasFredApiKey ?? false)
               : true;
 
         return {
@@ -1807,24 +1844,26 @@ function AkshareGatewaySettingsPanel() {
           mainlineRole: metadata.mainlineRole ?? "canonical",
           snapshotBucket: metadata.snapshot?.bucket ?? "mainline",
           snapshotSymbol:
-            metadata.snapshot?.symbol ?? metadata.snapshot?.name ?? config.item.slug,
+            metadata.snapshot?.symbol ??
+            metadata.snapshot?.name ??
+            config.item.slug,
           isEnabled: config.isEnabled,
           frequency: config.frequency,
           lastStatus: config.lastStatus ?? null,
           lastError: config.lastError ?? null,
         };
       })
-      .filter(
-        (
-          row,
-        ): row is NonNullable<typeof row> => row !== null,
-      )
+      .filter((row): row is NonNullable<typeof row> => row !== null)
       .sort((left, right) => {
-        const providerOrder = left.providerKind.localeCompare(right.providerKind);
+        const providerOrder = left.providerKind.localeCompare(
+          right.providerKind,
+        );
         if (providerOrder !== 0) {
           return providerOrder;
         }
-        const bucketOrder = left.snapshotBucket.localeCompare(right.snapshotBucket);
+        const bucketOrder = left.snapshotBucket.localeCompare(
+          right.snapshotBucket,
+        );
         if (bucketOrder !== 0) {
           return bucketOrder;
         }
@@ -1974,7 +2013,9 @@ function AkshareGatewaySettingsPanel() {
             style={{ marginBottom: "1rem" }}
             type="warning"
             showIcon
-            message={t("systemSettings.akshare.manualRefresh.permissionRequired")}
+            message={t(
+              "systemSettings.akshare.manualRefresh.permissionRequired",
+            )}
           />
         ) : null}
         <div
@@ -1994,12 +2035,18 @@ function AkshareGatewaySettingsPanel() {
               placeholder={t(
                 "systemSettings.akshare.manualRefresh.fields.presetPlaceholder",
               )}
-              onChange={(value) => handlePresetChange(value as EconomicDashboardRefreshPresetKey)}
+              onChange={(value) =>
+                handlePresetChange(value as EconomicDashboardRefreshPresetKey)
+              }
               disabled={!canManageEconomicData || refreshSubmitting}
-              options={ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER.map((preset) => ({
-                value: preset,
-                label: t(ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset].labelKey),
-              }))}
+              options={ECONOMIC_DASHBOARD_REFRESH_PRESET_ORDER.map(
+                (preset) => ({
+                  value: preset,
+                  label: t(
+                    ECONOMIC_DASHBOARD_REFRESH_PRESET_CONFIG[preset].labelKey,
+                  ),
+                }),
+              )}
             />
           </div>
           <Button
@@ -2025,7 +2072,9 @@ function AkshareGatewaySettingsPanel() {
                 showIcon
                 message={
                   presetStatusError.message ||
-                  t("systemSettings.akshare.manualRefresh.errors.statusLoadFailed")
+                  t(
+                    "systemSettings.akshare.manualRefresh.errors.statusLoadFailed",
+                  )
                 }
               />
             ) : (
@@ -2039,19 +2088,25 @@ function AkshareGatewaySettingsPanel() {
               >
                 <Card size="small">
                   <Typography.Text type="secondary">
-                    {t("systemSettings.akshare.manualRefresh.summary.totalItems")}
+                    {t(
+                      "systemSettings.akshare.manualRefresh.summary.totalItems",
+                    )}
                   </Typography.Text>
                   <div>{presetStatus?.totalItems ?? "-"}</div>
                 </Card>
                 <Card size="small">
                   <Typography.Text type="secondary">
-                    {t("systemSettings.akshare.manualRefresh.summary.enabledItems")}
+                    {t(
+                      "systemSettings.akshare.manualRefresh.summary.enabledItems",
+                    )}
                   </Typography.Text>
                   <div>{presetStatus?.enabledItems ?? "-"}</div>
                 </Card>
                 <Card size="small">
                   <Typography.Text type="secondary">
-                    {t("systemSettings.akshare.manualRefresh.summary.lastRunAt")}
+                    {t(
+                      "systemSettings.akshare.manualRefresh.summary.lastRunAt",
+                    )}
                   </Typography.Text>
                   <div>
                     {presetStatusLoading
@@ -2061,7 +2116,9 @@ function AkshareGatewaySettingsPanel() {
                 </Card>
                 <Card size="small">
                   <Typography.Text type="secondary">
-                    {t("systemSettings.akshare.manualRefresh.summary.lastStatus")}
+                    {t(
+                      "systemSettings.akshare.manualRefresh.summary.lastStatus",
+                    )}
                   </Typography.Text>
                   <div>
                     <Tag color={presetStatusColor}>{presetStatusLabel}</Tag>
@@ -2074,12 +2131,17 @@ function AkshareGatewaySettingsPanel() {
                 style={{ marginTop: "0.75rem" }}
                 type="warning"
                 showIcon
-                message={t("systemSettings.akshare.manualRefresh.summary.lastError")}
+                message={t(
+                  "systemSettings.akshare.manualRefresh.summary.lastError",
+                )}
                 description={presetStatus.lastError}
               />
             ) : null}
             {statusPolling ? (
-              <Typography.Paragraph type="secondary" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginTop: "0.75rem", marginBottom: 0 }}
+              >
                 {t("systemSettings.akshare.manualRefresh.summary.polling")}
               </Typography.Paragraph>
             ) : null}
@@ -2139,7 +2201,9 @@ function AkshareGatewaySettingsPanel() {
                 dataIndex: "providerKind",
                 key: "providerKind",
                 width: 120,
-                render: (value: string) => <Tag color="blue">{value.toUpperCase()}</Tag>,
+                render: (value: string) => (
+                  <Tag color="blue">{value.toUpperCase()}</Tag>
+                ),
               },
               {
                 title: t("systemSettings.akshare.providers.scope", {
@@ -2295,6 +2359,13 @@ export function SystemSettingsContent() {
         key: "llmGateway",
         label: t("settings.tabs.llmGateway"),
         children: <LlmGatewaySettingsPanel />,
+      },
+      {
+        key: "llmRuntime",
+        label: t("systemSettings.tabs.llmRuntime", {
+          defaultValue: "LLM runtime",
+        }),
+        children: <LlmRuntimeSettingsPanel />,
       },
       {
         key: "llmRequestLogs",

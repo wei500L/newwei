@@ -12,7 +12,8 @@ jest.mock("@modular/utils", () => ({
   createLogger: () => mockLogger,
 }));
 jest.mock("../audit/audit-log.writer", () => ({
-  writeAuditLogBestEffort: (...args: unknown[]) => writeAuditLogBestEffortMock(...args),
+  writeAuditLogBestEffort: (...args: unknown[]) =>
+    writeAuditLogBestEffortMock(...args),
 }));
 
 import { LlmRequestLogService } from "./llm-request-log.service";
@@ -56,7 +57,11 @@ describe("LlmRequestLogService", () => {
       allowedTopLevelKeys: ["traceid", "requestid"],
       allowedTopLevelPrefixes: ["x_", "meta_", "ctx_"],
     });
-    service = new LlmRequestLogService(modelMock, prismaMock, settingsServiceMock);
+    service = new LlmRequestLogService(
+      modelMock,
+      prismaMock,
+      settingsServiceMock,
+    );
   });
 
   it("filters metadata with top-level allowlist and preserves safe fields", () => {
@@ -90,6 +95,39 @@ describe("LlmRequestLogService", () => {
       }),
     );
     expect(payload.metadata?.prompt).toBeUndefined();
+  });
+
+  it("persists normalized feature and runtime fields", () => {
+    service.logRequest({
+      orgId: "org-1",
+      requestType: "completion",
+      model: "gpt-4o-mini",
+      status: "success",
+      latencyMs: 120,
+      feature: "Situation_Monitor_Monitors",
+      runtimeRequestId: "runtime-123",
+      runtimeDecision: "warn_concurrency",
+      currentConcurrency: 7,
+      concurrencyLimit: 5,
+      dailySpendUsdSnapshot: 1.25,
+      monthlySpendUsdSnapshot: 12.5,
+      metadata: {
+        traceId: "trace-123",
+        source: "situation-monitor-monitors",
+      },
+    });
+
+    const payload = modelMock.create.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(payload.feature).toBe("situation_monitor_monitors");
+    expect(payload.runtimeRequestId).toBe("runtime-123");
+    expect(payload.runtimeDecision).toBe("warn_concurrency");
+    expect(payload.currentConcurrency).toBe(7);
+    expect(payload.concurrencyLimit).toBe(5);
+    expect(payload.dailySpendUsdSnapshot).toBe(1.25);
+    expect(payload.monthlySpendUsdSnapshot).toBe(12.5);
   });
 
   it("applies metadata allowlist from system settings dynamically", () => {
@@ -146,8 +184,14 @@ describe("LlmRequestLogService", () => {
   });
 
   it("does not throw when async write fails", async () => {
-    modelMock.create = jest.fn().mockRejectedValue(new Error("mongo write failed"));
-    service = new LlmRequestLogService(modelMock, prismaMock, settingsServiceMock);
+    modelMock.create = jest
+      .fn()
+      .mockRejectedValue(new Error("mongo write failed"));
+    service = new LlmRequestLogService(
+      modelMock,
+      prismaMock,
+      settingsServiceMock,
+    );
 
     expect(() =>
       service.logRequest({
@@ -185,8 +229,34 @@ describe("LlmRequestLogService", () => {
     });
   });
 
+  it("filters feature against top-level feature and legacy metadata.feature", async () => {
+    modelMock.countDocuments = jest.fn().mockResolvedValue(0);
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    modelMock.find = jest.fn().mockReturnValue({ sort });
+
+    await service.queryLogs(
+      { orgId: "org-1", feature: "news_event_brief" },
+      {},
+    );
+
+    expect(modelMock.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        $or: [
+          { feature: "news_event_brief" },
+          { "metadata.feature": "news_event_brief" },
+        ],
+      }),
+    );
+  });
+
   it("exports CSV rows for matched logs", async () => {
-    const probeLean = jest.fn().mockResolvedValue([{ _id: "row-1" }, { _id: "row-2" }]);
+    const probeLean = jest
+      .fn()
+      .mockResolvedValue([{ _id: "row-1" }, { _id: "row-2" }]);
     const probeLimit = jest.fn().mockReturnValue({ lean: probeLean });
     const probeSelect = jest.fn().mockReturnValue({ limit: probeLimit });
 
@@ -253,7 +323,7 @@ describe("LlmRequestLogService", () => {
     expect(csv).toBe(
       "timestamp,model,requestType,status,durationMs,inputTokens,outputTokens,totalTokens,error\n" +
         "2026-02-01T10:00:00.000Z,gpt-4o-mini,responses,success,123,11,22,33,\n" +
-        "2026-02-01T09:00:00.000Z,gpt-4o-mini,responses,error,0,,,,\"bad, \"\"quote\"\"\"\n",
+        '2026-02-01T09:00:00.000Z,gpt-4o-mini,responses,error,0,,,,"bad, ""quote"""\n',
     );
     expect(close).toHaveBeenCalledTimes(1);
     expect(writeAuditLogBestEffortMock).toHaveBeenCalledWith(
@@ -411,13 +481,19 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        "metadata.feature": "news_event_brief",
+        $or: [
+          { feature: "news_event_brief" },
+          { "metadata.feature": "news_event_brief" },
+        ],
       }),
     );
     expect(modelMock.find).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        "metadata.feature": "news_event_brief",
+        $or: [
+          { feature: "news_event_brief" },
+          { "metadata.feature": "news_event_brief" },
+        ],
       }),
     );
   });
@@ -441,7 +517,9 @@ describe("LlmRequestLogService", () => {
         { _id: "success", count: 8 },
         { _id: "error", count: 2 },
       ])
-      .mockResolvedValueOnce([{ _id: "LiteLLM returned invalid JSON for news event brief", count: 2 }]);
+      .mockResolvedValueOnce([
+        { _id: "LiteLLM returned invalid JSON for news event brief", count: 2 },
+      ]);
     modelMock.countDocuments = jest.fn().mockResolvedValue(10);
     const p95Lean = jest.fn().mockResolvedValue([{ latencyMs: 420 }]);
     const p95Select = jest.fn().mockReturnValue({ lean: p95Lean });
@@ -473,7 +551,10 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.aggregate.mock.calls[0]?.[0]?.[0]).toEqual({
       $match: expect.objectContaining({
         orgId: "org-1",
-        "metadata.feature": "news_event_brief",
+        $or: [
+          { feature: "news_event_brief" },
+          { "metadata.feature": "news_event_brief" },
+        ],
       }),
     });
   });

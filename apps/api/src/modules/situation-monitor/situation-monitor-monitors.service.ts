@@ -838,6 +838,7 @@ export class SituationMonitorMonitorsService {
         ),
         topN: candidates.length,
         metadata: {
+          feature: "situation_monitor_monitors",
           source: "situation-monitor-monitors",
           stage: "monitor-rerank",
         },
@@ -898,6 +899,7 @@ export class SituationMonitorMonitorsService {
             this.candidateEmbeddingText(candidate),
           ),
           metadata: {
+            feature: "situation_monitor_monitors",
             source: "situation-monitor-monitors",
             stage: "candidate-embedding",
           },
@@ -1514,6 +1516,7 @@ export class SituationMonitorMonitorsService {
         orgId,
         input: queryText,
         metadata: {
+          feature: "situation_monitor_monitors",
           source: "situation-monitor-monitors",
           stage: "monitor-query-embedding",
         },
@@ -1691,6 +1694,7 @@ export class SituationMonitorMonitorsService {
         orgId,
         input: queryText,
         metadata: {
+          feature: "situation_monitor_monitors",
           source: "situation-monitor-monitors",
           stage: "preview-query",
         },
@@ -1754,6 +1758,7 @@ export class SituationMonitorMonitorsService {
         ),
         topN: rows.length,
         metadata: {
+          feature: "situation_monitor_monitors",
           source: "situation-monitor-monitors",
           stage: "preview-rerank",
         },

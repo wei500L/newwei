@@ -4511,6 +4511,7 @@
       },
       "filters": {
         "model": "Model",
+        "feature": "Feature",
         "featureAll": "All features",
         "featureNewsEventBrief": "Event detailed summary",
         "requestTypeAll": "All request types",
@@ -4523,6 +4524,7 @@
       "table": {
         "time": "Time",
         "model": "Model",
+        "feature": "Feature",
         "requestType": "Type",
         "status": "Status",
         "tokens": "Tokens",
@@ -4530,8 +4532,18 @@
         "promptCompletionTokens": "P/C: {{prompt}} / {{completion}}",
         "cost": "Cost",
         "latency": "Latency",
+        "runtime": "Runtime",
+        "runtimeConcurrency": "Concurrency: {{current}} / {{limit}}",
+        "runtimeSpend": "D/M spend: {{day}} / {{month}}",
         "error": "Error",
         "empty": "No logs found."
+      },
+      "runtime": {
+        "allowed": "Allowed",
+        "warnConcurrency": "Concurrency warning",
+        "warnDailyBudget": "Daily budget warning",
+        "warnMonthlyBudget": "Monthly budget warning",
+        "warnMultiple": "Multiple warnings"
       },
       "summary": {
         "title": "Usage summary",
@@ -5642,9 +5654,24 @@
       "vectorService": "Vector service",
       "modelService": "Model service",
       "akshare": "AKShare",
-      "archivePreparation": "Archive preparation"
+      "archivePreparation": "Archive preparation",
+      "llmRuntime": "LLM runtime"
     },
     "description": "System settings description",
+    "llmRuntime": {
+      "description": "Observe global LiteLLM spend and concurrency from one runtime layer.",
+      "source": {
+        "default": "Default",
+        "db": "Custom"
+      },
+      "decisions": {
+        "allowed": "Allowed",
+        "warnConcurrency": "Concurrency warning",
+        "warnDailyBudget": "Daily budget warning",
+        "warnMonthlyBudget": "Monthly budget warning",
+        "warnMultiple": "Multiple thresholds exceeded"
+      }
+    },
     "archivePreparation": {
       "description": "Configure archive background preparation batch sizes and embedding/rerank concurrency. Lower values reduce memory and rate-limit pressure.",
       "notice": {

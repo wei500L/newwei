@@ -1,6 +1,11 @@
 import { type LlmRequestLog } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Optional,
+} from "@nestjs/common";
 import type { FilterQuery, Model } from "mongoose";
 import { Readable } from "stream";
 
@@ -26,6 +31,12 @@ export type LlmRequestType =
   | "responses";
 export type LlmRequestStatus = "success" | "error";
 export type LlmApiSurface = "chat_completions" | "responses" | "embeddings";
+export type LlmRuntimeDecision =
+  | "allowed"
+  | "warn_concurrency"
+  | "warn_daily_budget"
+  | "warn_monthly_budget"
+  | "warn_multiple";
 
 export interface LlmRequestLogEntry {
   orgId: string;
@@ -36,6 +47,13 @@ export interface LlmRequestLogEntry {
   completionTokens?: number | null;
   totalTokens?: number | null;
   costUsd?: number | null;
+  feature?: string | null;
+  runtimeRequestId?: string | null;
+  runtimeDecision?: LlmRuntimeDecision | null;
+  currentConcurrency?: number | null;
+  concurrencyLimit?: number | null;
+  dailySpendUsdSnapshot?: number | null;
+  monthlySpendUsdSnapshot?: number | null;
   latencyMs: number;
   error?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -67,6 +85,13 @@ export interface LlmRequestLogListItem {
   completionTokens: number | null;
   totalTokens: number | null;
   costUsd: number | null;
+  feature: string | null;
+  runtimeRequestId: string | null;
+  runtimeDecision: LlmRuntimeDecision | null;
+  currentConcurrency: number | null;
+  concurrencyLimit: number | null;
+  dailySpendUsdSnapshot: number | null;
+  monthlySpendUsdSnapshot: number | null;
   latencyMs: number;
   error: string | null;
   metadata: unknown;
@@ -158,7 +183,8 @@ const METADATA_NORMALIZATION_LOG_INTERVAL = 100;
 const METADATA_POLICY_CACHE_TTL_MS = 5_000;
 const EXPORT_MAX_ROWS = 50_000;
 const EXPORT_MAX_DATE_WINDOW_DAYS = 90;
-const EXPORT_MAX_DATE_WINDOW_MS = EXPORT_MAX_DATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const EXPORT_MAX_DATE_WINDOW_MS =
+  EXPORT_MAX_DATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 const SUMMARY_TOP_ERRORS_LIMIT = 5;
 const EXPORT_CSV_HEADERS = [
   "timestamp",
@@ -229,7 +255,10 @@ interface UsageAggErrorRow {
 }
 
 interface LlmRequestLogRaw
-  extends Omit<LlmRequestLogListItem, "id" | "metadata" | "createdAt" | "updatedAt"> {
+  extends Omit<
+    LlmRequestLogListItem,
+    "id" | "metadata" | "createdAt" | "updatedAt"
+  > {
   _id: { toString(): string };
   metadata?: unknown;
   createdAt?: Date;
@@ -277,7 +306,8 @@ export class LlmRequestLogService {
   private exportFailureTotal = 0;
   private metadataFilteredTotal = 0;
   private metadataTruncatedTotal = 0;
-  private cachedResolvedMetadataPolicy: CachedResolvedMetadataPolicy | null = null;
+  private cachedResolvedMetadataPolicy: CachedResolvedMetadataPolicy | null =
+    null;
 
   constructor(
     @Inject(LLM_REQUEST_LOG_MODEL)
@@ -317,8 +347,13 @@ export class LlmRequestLogService {
   ): Promise<LlmRequestLogQueryResult> {
     const where = this.buildWhere(filter);
     const metadataPolicy = this.resolveMetadataPolicySummary();
-    const page = Math.max(DEFAULT_PAGE, Math.trunc(pagination.page ?? DEFAULT_PAGE));
-    const requestedPageSize = Math.trunc(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
+    const page = Math.max(
+      DEFAULT_PAGE,
+      Math.trunc(pagination.page ?? DEFAULT_PAGE),
+    );
+    const requestedPageSize = Math.trunc(
+      pagination.pageSize ?? DEFAULT_PAGE_SIZE,
+    );
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requestedPageSize));
     const skip = (page - 1) * pageSize;
 
@@ -332,7 +367,9 @@ export class LlmRequestLogService {
         .lean(),
     ]);
 
-    const items = (rows as LlmRequestLogRaw[]).map((row) => this.toListItem(row));
+    const items = (rows as LlmRequestLogRaw[]).map((row) =>
+      this.toListItem(row),
+    );
 
     return {
       page,
@@ -439,10 +476,15 @@ export class LlmRequestLogService {
     }
   }
 
-  private normalizeFilterForExport(filter: LlmRequestLogFilter): LlmRequestLogFilter {
+  private normalizeFilterForExport(
+    filter: LlmRequestLogFilter,
+  ): LlmRequestLogFilter {
     return {
       orgId: this.normalizeOrgId(filter.orgId),
-      model: typeof filter.model === "string" ? filter.model.trim() || undefined : undefined,
+      model:
+        typeof filter.model === "string"
+          ? filter.model.trim() || undefined
+          : undefined,
       feature: this.normalizeFeatureToken(filter.feature),
       requestType: filter.requestType,
       status: filter.status,
@@ -452,11 +494,15 @@ export class LlmRequestLogService {
   }
 
   private validateExportDateWindow(filter: LlmRequestLogFilter): void {
-    const startMs = filter.start instanceof Date ? filter.start.getTime() : Number.NaN;
-    const endMs = filter.end instanceof Date ? filter.end.getTime() : Number.NaN;
+    const startMs =
+      filter.start instanceof Date ? filter.start.getTime() : Number.NaN;
+    const endMs =
+      filter.end instanceof Date ? filter.end.getTime() : Number.NaN;
     if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
       if (startMs > endMs) {
-        throw new BadRequestException("start must be earlier than or equal to end");
+        throw new BadRequestException(
+          "start must be earlier than or equal to end",
+        );
       }
       if (endMs - startMs > EXPORT_MAX_DATE_WINDOW_MS) {
         throw new BadRequestException(
@@ -466,7 +512,9 @@ export class LlmRequestLogService {
     }
   }
 
-  private async resolveExportRowCount(where: FilterQuery<LlmRequestLog>): Promise<number> {
+  private async resolveExportRowCount(
+    where: FilterQuery<LlmRequestLog>,
+  ): Promise<number> {
     const probeRows = await this.llmRequestLogModel
       .find(where)
       .select({ _id: 1 })
@@ -551,7 +599,14 @@ export class LlmRequestLogService {
       error: { $type: "string", $ne: "" },
     };
 
-    const [totalsAgg, byModelAgg, byDayAgg, statusAgg, topErrorAgg, p95Latency] = await Promise.all([
+    const [
+      totalsAgg,
+      byModelAgg,
+      byDayAgg,
+      statusAgg,
+      topErrorAgg,
+      p95Latency,
+    ] = await Promise.all([
       this.llmRequestLogModel.aggregate<UsageAggRow>([
         { $match: usageWhere },
         {
@@ -643,7 +698,10 @@ export class LlmRequestLogService {
       .filter((row) => row.message.length > 0 && row.count > 0);
 
     const byModel = byModelAgg.map((row) => ({
-      model: typeof row._id === "string" && row._id.trim().length > 0 ? row._id : "unknown",
+      model:
+        typeof row._id === "string" && row._id.trim().length > 0
+          ? row._id
+          : "unknown",
       ...this.mapUsageAggRow(row),
     }));
 
@@ -707,6 +765,24 @@ export class LlmRequestLogService {
       completionTokens: this.toNullableNumber(entry.completionTokens),
       totalTokens: this.toNullableNumber(entry.totalTokens),
       costUsd: this.toNullableNumber(entry.costUsd),
+      feature:
+        this.normalizeFeatureToken(entry.feature) ??
+        this.resolveFeatureFromMetadata(metadata.value) ??
+        null,
+      runtimeRequestId: this.normalizeRuntimeRequestId(entry.runtimeRequestId),
+      runtimeDecision: this.normalizeRuntimeDecision(entry.runtimeDecision),
+      currentConcurrency: this.toNullableNonNegativeInteger(
+        entry.currentConcurrency,
+      ),
+      concurrencyLimit: this.toNullableNonNegativeInteger(
+        entry.concurrencyLimit,
+      ),
+      dailySpendUsdSnapshot: this.toNullableNonNegativeNumber(
+        entry.dailySpendUsdSnapshot,
+      ),
+      monthlySpendUsdSnapshot: this.toNullableNonNegativeNumber(
+        entry.monthlySpendUsdSnapshot,
+      ),
       latencyMs: Math.max(0, Number(entry.latencyMs) || 0),
       error: this.normalizeError(entry.error),
       metadata: metadata.value,
@@ -1001,6 +1077,22 @@ export class LlmRequestLogService {
       completionTokens: this.toNullableNumber(row.completionTokens),
       totalTokens: this.toNullableNumber(row.totalTokens),
       costUsd: this.toNullableNumber(row.costUsd),
+      feature:
+        this.normalizeFeatureToken(row.feature) ??
+        this.resolveFeatureFromMetadata(row.metadata) ??
+        null,
+      runtimeRequestId: this.normalizeRuntimeRequestId(row.runtimeRequestId),
+      runtimeDecision: this.normalizeRuntimeDecision(row.runtimeDecision),
+      currentConcurrency: this.toNullableNonNegativeInteger(
+        row.currentConcurrency,
+      ),
+      concurrencyLimit: this.toNullableNonNegativeInteger(row.concurrencyLimit),
+      dailySpendUsdSnapshot: this.toNullableNonNegativeNumber(
+        row.dailySpendUsdSnapshot,
+      ),
+      monthlySpendUsdSnapshot: this.toNullableNonNegativeNumber(
+        row.monthlySpendUsdSnapshot,
+      ),
       latencyMs: Math.max(0, Number(row.latencyMs ?? 0)),
       error: typeof row.error === "string" ? row.error : null,
       metadata: row.metadata ?? null,
@@ -1027,15 +1119,20 @@ export class LlmRequestLogService {
 
   private toExportCsvLine(row: LlmRequestLogExportRaw): string {
     const createdAt =
-      row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(0).toISOString();
+      row.createdAt instanceof Date
+        ? row.createdAt.toISOString()
+        : new Date(0).toISOString();
     const durationMs = Math.max(0, Number(row.latencyMs ?? 0));
     const inputTokens = this.toCsvNullableNumber(row.promptTokens);
     const outputTokens = this.toCsvNullableNumber(row.completionTokens);
     const totalTokens = this.toCsvNullableNumber(row.totalTokens);
     const error = typeof row.error === "string" ? row.error : "";
     const model =
-      typeof row.model === "string" && row.model.trim().length > 0 ? row.model : "unknown";
-    const requestType = typeof row.requestType === "string" ? row.requestType : "";
+      typeof row.model === "string" && row.model.trim().length > 0
+        ? row.model
+        : "unknown";
+    const requestType =
+      typeof row.requestType === "string" ? row.requestType : "";
     const status = typeof row.status === "string" ? row.status : "";
 
     return [
@@ -1058,12 +1155,15 @@ export class LlmRequestLogService {
 
     if (typeof value === "string") {
       const trimmedStart = text.replace(/^\s+/, "");
-      if (/^[=+\-@]/.test(trimmedStart) && !/^-?\d+(\.\d+)?$/.test(trimmedStart)) {
+      if (
+        /^[=+\-@]/.test(trimmedStart) &&
+        !/^-?\d+(\.\d+)?$/.test(trimmedStart)
+      ) {
         return this.escapeCsvValue(`'${text}`);
       }
     }
 
-    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
   private toNullableNumber(value: unknown): number | null {
@@ -1086,7 +1186,11 @@ export class LlmRequestLogService {
   }
 
   private toApiSurface(value: unknown): LlmApiSurface | null {
-    if (value === "chat_completions" || value === "responses" || value === "embeddings") {
+    if (
+      value === "chat_completions" ||
+      value === "responses" ||
+      value === "embeddings"
+    ) {
       return value;
     }
     return null;
@@ -1112,7 +1216,10 @@ export class LlmRequestLogService {
 
     const feature = this.normalizeFeatureToken(filter.feature);
     if (feature) {
-      (where as Record<string, unknown>)["metadata.feature"] = feature;
+      where.$or = [
+        { feature },
+        { "metadata.feature": feature },
+      ] as FilterQuery<LlmRequestLog>[];
     }
 
     const range: Record<string, Date> = {};
@@ -1129,7 +1236,9 @@ export class LlmRequestLogService {
     return where;
   }
 
-  private async resolveP95Latency(where: FilterQuery<LlmRequestLog>): Promise<number | null> {
+  private async resolveP95Latency(
+    where: FilterQuery<LlmRequestLog>,
+  ): Promise<number | null> {
     const latencyWhere: FilterQuery<LlmRequestLog> = {
       ...where,
       latencyMs: { $type: "number" },
@@ -1183,6 +1292,22 @@ export class LlmRequestLogService {
     return numeric;
   }
 
+  private toNullableNonNegativeInteger(value: unknown): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, Math.trunc(numeric));
+  }
+
+  private toNullableNonNegativeNumber(value: unknown): number | null {
+    const numeric = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, numeric);
+  }
+
   private normalizeFeatureToken(value: unknown): string | undefined {
     if (typeof value !== "string") {
       return undefined;
@@ -1198,5 +1323,38 @@ export class LlmRequestLogService {
       return undefined;
     }
     return normalized;
+  }
+
+  private resolveFeatureFromMetadata(metadata: unknown): string | undefined {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return undefined;
+    }
+    const record = metadata as Record<string, unknown>;
+    return (
+      this.normalizeFeatureToken(record.feature) ??
+      this.normalizeFeatureToken(record.source) ??
+      this.normalizeFeatureToken(record.module)
+    );
+  }
+
+  private normalizeRuntimeRequestId(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizeRuntimeDecision(value: unknown): LlmRuntimeDecision | null {
+    if (
+      value === "allowed" ||
+      value === "warn_concurrency" ||
+      value === "warn_daily_budget" ||
+      value === "warn_monthly_budget" ||
+      value === "warn_multiple"
+    ) {
+      return value;
+    }
+    return null;
   }
 }
