@@ -17,7 +17,9 @@ import {
   resolveNavMode,
   type NavMode,
 } from "./nav-mode";
+import { SystemHealthProvider } from "./system-health-context";
 import { TopNav } from "./top-nav";
+import { NAV_FULL_MIN_WIDTH } from "./top-nav-density";
 import { UrlStateSync } from "./url-state-sync";
 import { UserUiSettingsSync } from "./user-ui-settings-sync";
 
@@ -95,6 +97,7 @@ function useMainSurfaceClass(): string {
 
 export function ShellLayout({ children }: PropsWithChildren) {
   const [, contextHolder] = message.useMessage();
+  const pathname = usePathname();
   const containerClass = useContainerClass();
   const contentPaddingClass = useContentPaddingClass();
   const mainScrollbarClass = useMainScrollbarClass();
@@ -158,6 +161,8 @@ export function ShellLayout({ children }: PropsWithChildren) {
       }),
     [availableRailHeight, railContentHeight, viewportWidth],
   );
+  const systemHealthEnabled =
+    pathname?.startsWith("/dashboard") || viewportWidth >= NAV_FULL_MIN_WIDTH;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -167,27 +172,29 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
       <UserUiSettingsSync />
 
-      <TopNav showDesktopMenuButton={navMode === "drawer"} />
+      <SystemHealthProvider enabled={systemHealthEnabled}>
+        <TopNav showDesktopMenuButton={navMode === "drawer"} />
 
-      <div
-        ref={shellContentRef}
-        className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
-      >
-        <div className="relative z-20 h-full shrink-0 min-h-0">
-          <ActionRail
-            mode={navMode}
-            onContentHeightChange={setRailContentHeight}
-          />
-        </div>
-
-        <main
-          className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass} ${mainSurfaceClass}`}
+        <div
+          ref={shellContentRef}
+          className="flex flex-1 overflow-hidden pt-[calc(var(--top-nav-height,4rem)+var(--ticker-height,0px))] relative isolate"
         >
-          <div className={`${containerClass} ${contentPaddingClass}`}>
-            {children}
+          <div className="relative z-20 h-full shrink-0 min-h-0">
+            <ActionRail
+              mode={navMode}
+              onContentHeightChange={setRailContentHeight}
+            />
           </div>
-        </main>
-      </div>
+
+          <main
+            className={`relative z-0 flex-1 overflow-auto ${mainScrollbarClass} ${mainSurfaceClass}`}
+          >
+            <div className={`${containerClass} ${contentPaddingClass}`}>
+              {children}
+            </div>
+          </main>
+        </div>
+      </SystemHealthProvider>
     </div>
   );
 }

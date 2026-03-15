@@ -683,6 +683,49 @@
         "stalled": "已停滞"
       }
     },
+    "systemStatus": {
+      "title": "系统状态",
+      "scoreValue": "{{score}}/100",
+      "scorePending": "--/100",
+      "cachedData": "缓存快照",
+      "primaryPressure": "当前主要压力来自{{metric}}，强度约 {{pressure}}%，贡献了 {{contribution}}% 的总体风险。",
+      "lowPressure": "各类队列压力整体可控。",
+      "summaryDescription": "基于 failed、active、delayed、waiting 四类压力的加权健康评分。",
+      "loadingDescription": "正在拉取最新队列快照。",
+      "unavailableDescription": "当前无法获取队列指标。",
+      "unknownDescription": "系统暂未返回队列快照。",
+      "restrictedDescription": "查看队列指标需要 queue.manage 权限。",
+      "restrictedBody": "在获得 queue.manage 权限之前，队列级计数会保持隐藏。",
+      "expandedHint": "可用下方快捷操作展开完整队列面板，或跳转到更深层的系统控制页面。",
+      "states": {
+        "healthy": "健康",
+        "warning": "告警",
+        "critical": "严重",
+        "loading": "加载中",
+        "unauthorized": "受限",
+        "unavailable": "不可用",
+        "unknown": "未知"
+      },
+      "actions": {
+        "showFullPanel": "显示完整队列面板",
+        "hideFullPanel": "隐藏完整队列面板",
+        "openSystemSettings": "打开系统设置",
+        "openCrawlTasks": "打开爬虫任务"
+      },
+      "tooltip": {
+        "loading": "正在加载队列健康快照...",
+        "unknown": "当前尚无可用的队列健康信息。",
+        "unauthorized": "系统状态受限，需要 queue.manage 权限。",
+        "unavailable": "队列健康信息暂不可用。{{error}}",
+        "summary": "评分 {{score}}/100 · 处理中 {{active}} · 失败 {{failed}} · 延迟 {{delayed}} · 等待中 {{waiting}}"
+      },
+      "aria": {
+        "score": "系统健康状态 {{state}}，评分 {{score}} / 100",
+        "summary": "仪表盘系统健康状态 {{state}}，评分 {{score}} / 100",
+        "topNav": "顶部导航系统健康状态 {{state}}，评分 {{score}} / 100",
+        "toggleDetails": "切换系统状态详情"
+      }
+    },
     "ticker": {
       "loading": "加载指标中...",
       "unavailable": "指标不可用",

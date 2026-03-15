@@ -1,108 +1,79 @@
 "use client";
 
 import { Tooltip } from "antd";
-import { useSession } from "next-auth/react";
-import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
-import { useQueueStatsQuery } from "@/graphql/generated";
+import { useSystemHealthContext } from "./system-health-context";
+import { SystemHealthMeter } from "./system-health-meter";
+
+const formatCount = (value: number | null | undefined): string =>
+  new Intl.NumberFormat().format(value ?? 0);
 
 export function SystemDefcon() {
-  const { data: session } = useSession();
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canManageQueue = permissions.includes("queue.manage");
-
-  const { data, loading, error, startPolling, stopPolling } = useQueueStatsQuery({
-    skip: !canManageQueue
-  });
-
-  useEffect(() => {
-    if (!canManageQueue) {
-      return;
-    }
-
-    const pollIntervalMs = 30_000;
-
-    const updatePolling = () => {
-      if (document.visibilityState === "visible") {
-        startPolling(pollIntervalMs);
-      } else {
-        stopPolling();
-      }
-    };
-
-    updatePolling();
-    document.addEventListener("visibilitychange", updatePolling);
-    return () => {
-      document.removeEventListener("visibilitychange", updatePolling);
-      stopPolling();
-    };
-  }, [canManageQueue, startPolling, stopPolling]);
-
-  const stats = canManageQueue ? data?.queueStats ?? null : null;
-  const activeJobs = stats?.counts?.active ?? null;
-  const failedJobs = stats?.counts?.failed ?? null;
-  
-  // Calculate health based on failed vs active ratio
-  const healthLevel = (() => {
-    if (!canManageQueue) {
-      return "unauthorized";
-    }
-    if (!stats) {
-      if (loading) return "loading";
-      if (error) return "unavailable";
-      return "unknown";
-    }
-    const resolvedActive = activeJobs ?? 0;
-    const resolvedFailed = failedJobs ?? 0;
-    if (resolvedFailed > 5) return "critical";
-    if (resolvedActive > 50) return "warning";
-    return "healthy";
-  })();
-
-  const getStatusColor = (level: string) => {
-    switch (level) {
-      case 'critical': return 'bg-red-500';
-      case 'warning': return 'bg-amber-500';
-      case 'healthy': return 'bg-emerald-500';
-      default: return 'bg-slate-400';
-    }
-  };
-
-  const activeDots =
-    healthLevel === "critical" ? 3 : healthLevel === "warning" ? 2 : healthLevel === "healthy" ? 1 : 0;
+  const { t } = useTranslation();
+  const { assessment, canManageQueue, error } = useSystemHealthContext();
 
   const tooltip = (() => {
     if (!canManageQueue) {
-      return "System status: UNAUTHORIZED · Requires queue.manage permission.";
+      return t("dashboard.systemStatus.tooltip.unauthorized", {
+        defaultValue:
+          "System status is restricted. queue.manage permission is required.",
+      });
     }
-    if (!stats) {
-      if (healthLevel === "loading") {
-        return "System status: LOADING · Waiting for queue stats...";
+
+    if (assessment.score === null) {
+      if (assessment.state === "loading") {
+        return t("dashboard.systemStatus.tooltip.loading", {
+          defaultValue: "Loading queue health snapshot...",
+        });
       }
-      if (healthLevel === "unavailable") {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return `System status: UNAVAILABLE · ${errorMessage}`;
+
+      if (assessment.state === "unavailable") {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return t("dashboard.systemStatus.tooltip.unavailable", {
+          defaultValue: "Queue health is unavailable. {{error}}",
+          error: errorMessage,
+        });
       }
-      return "System status: UNKNOWN · No queue stats available.";
+
+      return t("dashboard.systemStatus.tooltip.unknown", {
+        defaultValue: "Queue health is not available yet.",
+      });
     }
-    return `System status: ${healthLevel.toUpperCase()} · Active ${activeJobs ?? 0} · Failed ${failedJobs ?? 0}`;
+
+    return t("dashboard.systemStatus.tooltip.summary", {
+      defaultValue:
+        "Score {{score}}/100 · Active {{active}} · Failed {{failed}} · Delayed {{delayed}} · Waiting {{waiting}}",
+      score: assessment.score,
+      active: formatCount(assessment.counts?.active),
+      failed: formatCount(assessment.counts?.failed),
+      delayed: formatCount(assessment.counts?.delayed),
+      waiting: formatCount(assessment.counts?.waiting),
+    });
   })();
 
   return (
-    <div className="flex items-center gap-3 px-4 border-l border-[var(--border)] h-8">
+    <div className="flex h-8 items-center border-l border-[var(--border)] px-4">
       <Tooltip title={tooltip}>
-        <div className="flex items-center gap-2 cursor-help">
-          <span className="text-[11px] text-slate-500 tracking-wide">System Status</span>
-          <div className="flex gap-1">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={`w-1.5 h-1.5 rounded-full ${
-                  i <= activeDots ? getStatusColor(healthLevel) : "bg-slate-200"
-                }`}
-              />
-            ))}
-          </div>
+        <div className="flex cursor-help items-center gap-3 rounded-full border border-[var(--border)] bg-white/70 px-3 py-1.5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            {t("dashboard.systemStatus.title", {
+              defaultValue: "System status",
+            })}
+          </span>
+          <SystemHealthMeter
+            assessment={assessment}
+            compact
+            ariaLabel={t("dashboard.systemStatus.aria.topNav", {
+              defaultValue:
+                "Top navigation system health {{state}} {{score}} out of 100",
+              state: t(`dashboard.systemStatus.states.${assessment.state}`, {
+                defaultValue: assessment.state,
+              }),
+              score: assessment.score ?? 0,
+            })}
+          />
         </div>
       </Tooltip>
     </div>

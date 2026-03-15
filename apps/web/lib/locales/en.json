@@ -683,6 +683,49 @@
         "stalled": "Stalled"
       }
     },
+    "systemStatus": {
+      "title": "System status",
+      "scoreValue": "{{score}}/100",
+      "scorePending": "--/100",
+      "cachedData": "Cached snapshot",
+      "primaryPressure": "Primary pressure is {{metric}} at {{pressure}}% intensity, driving {{contribution}}% of the current risk.",
+      "lowPressure": "Pressure remains broadly contained across all tracked queues.",
+      "summaryDescription": "Weighted health based on failed, active, delayed, and waiting load.",
+      "loadingDescription": "Fetching the latest queue snapshot.",
+      "unavailableDescription": "Queue metrics are currently unavailable.",
+      "unknownDescription": "No queue snapshot has been reported yet.",
+      "restrictedDescription": "Queue metrics require the queue.manage permission.",
+      "restrictedBody": "Queue-level counters stay hidden until the account has queue.manage access.",
+      "expandedHint": "Use the quick actions below to expose the full queue panel or jump into deeper system controls.",
+      "states": {
+        "healthy": "Healthy",
+        "warning": "Warning",
+        "critical": "Critical",
+        "loading": "Loading",
+        "unauthorized": "Restricted",
+        "unavailable": "Unavailable",
+        "unknown": "Unknown"
+      },
+      "actions": {
+        "showFullPanel": "Show full queue panel",
+        "hideFullPanel": "Hide full queue panel",
+        "openSystemSettings": "Open system settings",
+        "openCrawlTasks": "Open crawl tasks"
+      },
+      "tooltip": {
+        "loading": "Loading queue health snapshot...",
+        "unknown": "Queue health is not available yet.",
+        "unauthorized": "System status is restricted. queue.manage permission is required.",
+        "unavailable": "Queue health is unavailable. {{error}}",
+        "summary": "Score {{score}}/100 · Active {{active}} · Failed {{failed}} · Delayed {{delayed}} · Waiting {{waiting}}"
+      },
+      "aria": {
+        "score": "System health {{state}} {{score}} out of 100",
+        "summary": "Dashboard system health {{state}} {{score}} out of 100",
+        "topNav": "Top navigation system health {{state}} {{score}} out of 100",
+        "toggleDetails": "Toggle system status details"
+      }
+    },
     "ticker": {
       "loading": "Loading metrics...",
       "unavailable": "Metrics unavailable",

@@ -1,4 +1,4 @@
-import { AxiosHeaders } from "axios";
+import { AxiosError, AxiosHeaders } from "axios";
 
 import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 
@@ -23,6 +23,23 @@ jest.mock("@modular/utils", () => ({
 }));
 
 describe("LiteLlmProxyGovernanceService", () => {
+  const okResponse = (data: unknown = {}) => ({
+    data,
+    status: 200,
+    statusText: "OK",
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+  });
+
+  const notFoundResponse = (data: unknown = {}) =>
+    new AxiosError("Not found", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 404,
+      data,
+      statusText: "Not Found",
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    });
+
   const prismaMock = {
     systemSetting: {
       findUnique: jest.fn(),
@@ -100,11 +117,32 @@ describe("LiteLlmProxyGovernanceService", () => {
     );
     gatewaySettingsMock.getProfileSummary = jest
       .fn()
-      .mockResolvedValue({
-        id: "profile-1",
-        name: "Primary LiteLLM",
-        apiBase: "http://localhost:4001/v1",
-        enabled: true,
+      .mockImplementation(async (profileId: string) => {
+        if (profileId === "profile-1") {
+          return {
+            id: "profile-1",
+            name: "Primary LiteLLM",
+            apiBase: "http://localhost:4001/v1",
+            enabled: true,
+          };
+        }
+        if (profileId === "profile-2") {
+          return {
+            id: "profile-2",
+            name: "Secondary LiteLLM",
+            apiBase: "http://localhost:4002/v1",
+            enabled: true,
+          };
+        }
+        if (profileId === "profile-3") {
+          return {
+            id: "profile-3",
+            name: "Shared LiteLLM",
+            apiBase: "http://localhost:4001/v1",
+            enabled: true,
+          };
+        }
+        return null;
       });
   });
 
@@ -182,5 +220,177 @@ describe("LiteLlmProxyGovernanceService", () => {
     );
 
     expect(resolved).toBe("master-key");
+  });
+
+  it("does not use the LiteLLM master key when the draft apiBase diverges", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+    };
+
+    const resolved = await service.resolveTestingApiKey(
+      "https://attacker.example/v1/chat/completions",
+      "profile-key",
+      "profile-1",
+    );
+
+    expect(resolved).toBe("profile-key");
+  });
+
+  it("does not disable managed resources when governance stays on the same LiteLLM instance", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedTeamId: "managed-team-1",
+      managedRuntimeKey: "runtime-key-1",
+      managedRuntimeKeyAlias: "runtime-key-alias-1",
+      dailyBudgetUsd: 12.5,
+      monthlyBudgetUsd: 300,
+      maxParallelRequests: 9,
+    };
+
+    const sameProxyPost = jest
+      .fn()
+      .mockResolvedValueOnce(okResponse())
+      .mockResolvedValueOnce(okResponse());
+
+    mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => ({
+      post: sameProxyPost,
+    }));
+
+    const result = await service.updateSettings("org-1", "actor-1", {
+      enabled: true,
+      targetProfileId: "profile-3",
+      dailyBudgetUsd: 15,
+      monthlyBudgetUsd: 350,
+      maxParallelRequests: 7,
+    });
+
+    expect(result.targetProfileId).toBe("profile-3");
+    expect(result.apiBase).toBe("http://localhost:4001/v1");
+    expect(result.managedTeamId).toBe("managed-team-1");
+    expect(result.managedRuntimeKeyAlias).toBe("runtime-key-alias-1");
+    expect(mockAxiosCreate).toHaveBeenCalledTimes(1);
+    expect(sameProxyPost).toHaveBeenCalledTimes(2);
+    expect(sameProxyPost).toHaveBeenNthCalledWith(
+      1,
+      "/team/update",
+      expect.objectContaining({
+        team_id: "managed-team-1",
+        max_budget: 350,
+      }),
+    );
+    expect(sameProxyPost).toHaveBeenNthCalledWith(
+      2,
+      "/key/update",
+      expect.objectContaining({
+        key: "runtime-key-1",
+        team_id: "managed-team-1",
+        blocked: false,
+        max_budget: 15,
+        max_parallel_requests: 7,
+      }),
+    );
+  });
+
+  it("disables the previous managed key and team when governance moves to another LiteLLM instance", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedTeamId: "managed-team-1",
+      managedRuntimeKey: "runtime-key-1",
+      managedRuntimeKeyAlias: "runtime-key-alias-1",
+      dailyBudgetUsd: 12.5,
+      monthlyBudgetUsd: 300,
+      maxParallelRequests: 9,
+    };
+
+    const newProxyPost = jest
+      .fn()
+      .mockResolvedValueOnce(okResponse({ team_id: "managed-team-1" }))
+      .mockRejectedValueOnce(
+        notFoundResponse({ detail: "managed runtime key not found" }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          key: "runtime-key-2",
+          key_alias: "runtime-key-alias-2",
+        }),
+      );
+    const oldProxyPost = jest
+      .fn()
+      .mockResolvedValueOnce(okResponse())
+      .mockResolvedValueOnce(okResponse());
+
+    mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => {
+      if (config.baseURL === "http://localhost:4002/v1") {
+        return { post: newProxyPost };
+      }
+      if (config.baseURL === "http://localhost:4001/v1") {
+        return { post: oldProxyPost };
+      }
+      return { post: jest.fn() };
+    });
+
+    const result = await service.updateSettings("org-1", "actor-1", {
+      enabled: true,
+      targetProfileId: "profile-2",
+      dailyBudgetUsd: 15,
+      monthlyBudgetUsd: 350,
+      maxParallelRequests: 7,
+    });
+
+    expect(result.targetProfileId).toBe("profile-2");
+    expect(result.apiBase).toBe("http://localhost:4002/v1");
+    expect(result.managedTeamId).toBe("managed-team-1");
+    expect(result.managedRuntimeKeyAlias).toBe("runtime-key-alias-2");
+    expect(mockAxiosCreate).toHaveBeenCalledTimes(2);
+    expect(newProxyPost).toHaveBeenCalledTimes(3);
+    expect(newProxyPost).toHaveBeenNthCalledWith(
+      1,
+      "/team/update",
+      expect.objectContaining({
+        team_id: "managed-team-1",
+        max_budget: 350,
+      }),
+    );
+    expect(newProxyPost).toHaveBeenNthCalledWith(
+      2,
+      "/key/update",
+      expect.objectContaining({
+        key: "runtime-key-1",
+        key_alias: "runtime-key-alias-1",
+        team_id: "managed-team-1",
+        blocked: false,
+      }),
+    );
+    expect(newProxyPost).toHaveBeenNthCalledWith(
+      3,
+      "/key/generate",
+      expect.objectContaining({
+        team_id: "managed-team-1",
+        max_budget: 15,
+        max_parallel_requests: 7,
+      }),
+    );
+    expect(oldProxyPost).toHaveBeenCalledTimes(2);
+    expect(oldProxyPost).toHaveBeenNthCalledWith(
+      1,
+      "/key/update",
+      expect.objectContaining({
+        key: "runtime-key-1",
+        blocked: true,
+        max_budget: 0,
+      }),
+    );
+    expect(oldProxyPost).toHaveBeenNthCalledWith(
+      2,
+      "/team/update",
+      expect.objectContaining({
+        team_id: "managed-team-1",
+        blocked: true,
+        max_budget: 0,
+      }),
+    );
   });
 });

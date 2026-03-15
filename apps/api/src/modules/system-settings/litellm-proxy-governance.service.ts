@@ -161,7 +161,15 @@ export class LiteLlmProxyGovernanceService {
     let action = "litellm_proxy_governance_update";
     if (next.enabled) {
       const targetProfile = await this.requireTargetProfile(next.targetProfileId);
+      const shouldDisablePreviousManagedResources =
+        await this.isSwitchingManagedProxyInstance(
+          current,
+          targetProfile.apiBase,
+        );
       const synced = await this.syncEnabledSettings(next, targetProfile.apiBase);
+      if (shouldDisablePreviousManagedResources) {
+        await this.disableManagedResourcesBestEffort(current);
+      }
       next.managedTeamId = synced.managedTeamId;
       next.managedRuntimeKey = synced.managedRuntimeKey;
       next.managedRuntimeKeyAlias = synced.managedRuntimeKeyAlias;
@@ -318,12 +326,24 @@ export class LiteLlmProxyGovernanceService {
     fallbackApiKey?: string,
     profileId?: string,
   ): Promise<string | undefined> {
-    if (
-      this.hasAdminKey() &&
-      profileId &&
-      (await this.isGovernedProfile(profileId, apiBase))
-    ) {
-      return this.normalizeSecret(this.env.liteLlmMasterKey);
+    if (this.hasAdminKey() && profileId) {
+      const stored = await this.loadStoredSettings();
+      const resolved = this.resolveEffectiveConfig(stored);
+      if (resolved.enabled) {
+        const targetProfile = await this.resolveTargetProfile(
+          resolved.targetProfileId,
+        );
+        if (
+          targetProfile &&
+          this.matchesGovernedProfileForTesting(
+            profileId,
+            apiBase,
+            targetProfile,
+          )
+        ) {
+          return this.normalizeSecret(this.env.liteLlmMasterKey);
+        }
+      }
     }
     return this.normalizeSecret(fallbackApiKey);
   }
@@ -481,7 +501,10 @@ export class LiteLlmProxyGovernanceService {
         };
       } catch (error) {
         if (!this.shouldRecreateManagedKey(error)) {
-          throw error;
+          throw this.toSyncError(
+            error,
+            "Failed to update LiteLLM managed runtime key",
+          );
         }
       }
     }
@@ -621,23 +644,19 @@ export class LiteLlmProxyGovernanceService {
       blocked: boolean;
     },
   ): Promise<void> {
-    try {
-      await client.post("/key/update", {
-        key: params.key,
-        key_alias: params.keyAlias,
-        team_id: params.teamId,
-        max_budget: params.dailyBudgetUsd,
-        budget_duration: "1d",
-        max_parallel_requests: params.maxParallelRequests,
-        blocked: params.blocked,
-        metadata: {
-          managed_by: "modular",
-          scope: "runtime_governance",
-        },
-      });
-    } catch (error) {
-      throw this.toSyncError(error, "Failed to update LiteLLM managed runtime key");
-    }
+    await client.post("/key/update", {
+      key: params.key,
+      key_alias: params.keyAlias,
+      team_id: params.teamId,
+      max_budget: params.dailyBudgetUsd,
+      budget_duration: "1d",
+      max_parallel_requests: params.maxParallelRequests,
+      blocked: params.blocked,
+      metadata: {
+        managed_by: "modular",
+        scope: "runtime_governance",
+      },
+    });
   }
 
   private async generateRuntimeKey(
@@ -897,6 +916,40 @@ export class LiteLlmProxyGovernanceService {
     return (
       profileId === targetProfile.id || normalizedCandidate === normalizedTarget
     );
+  }
+
+  private matchesGovernedProfileForTesting(
+    profileId: string,
+    apiBase: string,
+    targetProfile: LlmGatewayProfileSummary,
+  ): boolean {
+    const normalizedCandidate = normalizeOpenAiApiBase(apiBase);
+    const normalizedTarget = normalizeOpenAiApiBase(targetProfile.apiBase);
+    if (!normalizedCandidate || !normalizedTarget) {
+      return false;
+    }
+    return (
+      profileId === targetProfile.id && normalizedCandidate === normalizedTarget
+    );
+  }
+
+  private async isSwitchingManagedProxyInstance(
+    current: ResolvedLiteLlmProxyGovernanceSettings,
+    nextApiBase: string,
+  ): Promise<boolean> {
+    if (!current.enabled) {
+      return false;
+    }
+
+    const currentApiBase = await this.resolveGovernedApiBase(current);
+    const normalizedCurrent = currentApiBase
+      ? normalizeOpenAiApiBase(currentApiBase)
+      : "";
+    const normalizedNext = normalizeOpenAiApiBase(nextApiBase);
+    if (!normalizedCurrent || !normalizedNext) {
+      return false;
+    }
+    return normalizedCurrent !== normalizedNext;
   }
 
   private async isGovernedProfile(

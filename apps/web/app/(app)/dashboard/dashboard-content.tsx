@@ -28,13 +28,20 @@ import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { useHeroMetrics } from "@/lib/hero-metrics";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import { useScheduledAction, useTimedValueDeduper } from "@/lib/use-realtime-helpers";
-import { useQueueStatsQuery } from "@/graphql/generated";
+import {
+  useScheduledAction,
+  useTimedValueDeduper,
+} from "@/lib/use-realtime-helpers";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
+import { useSystemHealthContext } from "@/app/(app)/components/system-health-context";
 
 import { LiveAlertsToasts } from "./live-alerts";
-import { useDashboardStream, type DashboardStreamStatus } from "./use-dashboard-stream";
+import { SystemHealthSummaryCard } from "./components/system-health-summary-card";
+import {
+  useDashboardStream,
+  type DashboardStreamStatus,
+} from "./use-dashboard-stream";
 import { useDashboardUrlSync } from "./use-dashboard-url-sync";
 import { useQueueEvents } from "./use-queue-events";
 
@@ -81,65 +88,82 @@ const QUEUE_STATS_CHART_HEIGHT = 260;
 const DASHBOARD_STREAM_TOAST_ID = "dashboard-stream-connection";
 const DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS = 1_200;
 
-const AlertPanel = dynamic(() => import("./alert-panel").then((mod) => mod.AlertPanel), {
-  loading: () => <DashboardSkeleton className="min-h-[200px]" rows={4} />
-});
+const AlertPanel = dynamic(
+  () => import("./alert-panel").then((mod) => mod.AlertPanel),
+  {
+    loading: () => <DashboardSkeleton className="min-h-[200px]" rows={4} />,
+  },
+);
 
-const AnalysisPanel = dynamic(() => import("./analysis-panel").then((mod) => mod.AnalysisPanel), {
-  loading: () => <DashboardSkeleton className="min-h-[300px]" rows={4} />
-});
+const AnalysisPanel = dynamic(
+  () => import("./analysis-panel").then((mod) => mod.AnalysisPanel),
+  {
+    loading: () => <DashboardSkeleton className="min-h-[300px]" rows={4} />,
+  },
+);
 
 const AnalysisStream = dynamic(
-  () => import("./components/analysis-stream").then((mod) => mod.AnalysisStream),
+  () =>
+    import("./components/analysis-stream").then((mod) => mod.AnalysisStream),
   {
-    loading: () => <DashboardSkeleton className="h-full" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="h-full" rows={6} />,
+  },
 );
 
 const GlobalSentimentTrend = dynamic(
-  () => import("./components/global-sentiment-trend").then((mod) => mod.GlobalSentimentTrend),
+  () =>
+    import("./components/global-sentiment-trend").then(
+      (mod) => mod.GlobalSentimentTrend,
+    ),
   {
-    loading: () => <DashboardSkeleton className="min-h-[320px]" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="min-h-[320px]" rows={6} />,
+  },
 );
 
 const SectorHeatmap = dynamic(
   () => import("./charts/sector-heatmap").then((mod) => mod.SectorHeatmap),
   {
-    loading: () => <DashboardSkeleton className="h-[300px]" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="h-[300px]" rows={6} />,
+  },
 );
 
-const WarMap = dynamic(() => import("./charts/war-map").then((mod) => mod.WarMap), {
-  loading: () => <DashboardSkeleton className="h-full" rows={6} />
-});
+const WarMap = dynamic(
+  () => import("./charts/war-map").then((mod) => mod.WarMap),
+  {
+    loading: () => <DashboardSkeleton className="h-full" rows={6} />,
+  },
+);
 
 const FinancialCandlestick = dynamic(
-  () => import("./charts/financial-candlestick").then((mod) => mod.FinancialCandlestick),
+  () =>
+    import("./charts/financial-candlestick").then(
+      (mod) => mod.FinancialCandlestick,
+    ),
   {
-    loading: () => <DashboardSkeleton className="h-[350px]" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="h-[350px]" rows={6} />,
+  },
 );
 
 const EntityImpactGraph = dynamic(
-  () => import("./charts/entity-impact-graph").then((mod) => mod.EntityImpactGraph),
+  () =>
+    import("./charts/entity-impact-graph").then((mod) => mod.EntityImpactGraph),
   {
-    loading: () => <DashboardSkeleton className="h-[400px]" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="h-[400px]" rows={6} />,
+  },
 );
 
 const KnowledgeGraph = dynamic(
   () => import("./charts/knowledge-graph").then((mod) => mod.KnowledgeGraph),
   {
-    loading: () => <DashboardSkeleton className="h-[360px]" rows={6} />
-  }
+    loading: () => <DashboardSkeleton className="h-[360px]" rows={6} />,
+  },
 );
 
 const SpacetimeViz = dynamic(
   () => import("./spacetime-viz").then((mod) => mod.SpacetimeViz),
   {
-    loading: () => <SpacetimeVizSkeleton />
-  }
+    loading: () => <SpacetimeVizSkeleton />,
+  },
 );
 
 const MarketPulse = dynamic(
@@ -149,17 +173,17 @@ const MarketPulse = dynamic(
       <div className="mb-6">
         <DashboardSkeleton className="min-h-[180px]" rows={4} />
       </div>
-    )
-  }
+    ),
+  },
 );
 
-const MetricDrillDown = dynamic(
-  () => import("./metric-drilldown").then((mod) => mod.MetricDrillDown)
+const MetricDrillDown = dynamic(() =>
+  import("./metric-drilldown").then((mod) => mod.MetricDrillDown),
 );
 
 const QueueChart = dynamic(
   () => import("./queue-chart").then((mod) => mod.QueueChart),
-  { loading: () => <DashboardSkeleton className="h-[260px]" rows={4} /> }
+  { loading: () => <DashboardSkeleton className="h-[260px]" rows={4} /> },
 );
 
 interface DashboardStreamStatusLineProps {
@@ -179,7 +203,7 @@ function DashboardStreamStatusLine({
   range,
   queueStatus,
   selectedSector,
-  enabled
+  enabled,
 }: DashboardStreamStatusLineProps) {
   const { t } = useTranslation();
   const streamState = useDashboardStream({
@@ -188,7 +212,7 @@ function DashboardStreamStatusLine({
     end,
     queueStatus,
     selectedSector,
-    enabled
+    enabled,
   });
   const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
 
@@ -198,13 +222,13 @@ function DashboardStreamStatusLine({
       return {
         label: t("dashboard.stream.status.live", { defaultValue: "Live" }),
         dotClass: "bg-emerald-500",
-        pulse: true
+        pulse: true,
       };
     }
     return {
       label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
       dotClass: "bg-red-500",
-      pulse: false
+      pulse: false,
     };
   }, [streamState.status, t]);
 
@@ -217,18 +241,18 @@ function DashboardStreamStatusLine({
     if (streamState.status === "offline") {
       toast.error(
         t("dashboard.stream.offline", {
-          defaultValue: "Live updates unavailable"
+          defaultValue: "Live updates unavailable",
         }),
-        { id: DASHBOARD_STREAM_TOAST_ID }
+        { id: DASHBOARD_STREAM_TOAST_ID },
       );
       return;
     }
     if (prevStatus === "offline" && streamState.status === "live") {
       toast.success(
         t("dashboard.stream.liveRecovered", {
-          defaultValue: "Live updates restored"
+          defaultValue: "Live updates restored",
         }),
-        { id: DASHBOARD_STREAM_TOAST_ID, duration: 4_000 }
+        { id: DASHBOARD_STREAM_TOAST_ID, duration: 4_000 },
       );
     }
   }, [accessToken, streamState.status, t]);
@@ -264,13 +288,15 @@ function DashboardStreamStatusLine({
       <span>{streamStatusMeta.label}</span>
       <span className="text-slate-600">|</span>
       <span title={lastUpdateTitle}>
-        {t("dashboard.stream.lastUpdate", { defaultValue: "Last update" })}: {lastUpdateLabel}
+        {t("dashboard.stream.lastUpdate", { defaultValue: "Last update" })}:{" "}
+        {lastUpdateLabel}
       </span>
       {streamState.status === "live" && streamState.lastMessageAt ? (
         <>
           <span className="text-slate-600">|</span>
           <span title={lastMessageTitle}>
-            {t("dashboard.stream.heartbeat", { defaultValue: "Heartbeat" })}: {lastMessageLabel}
+            {t("dashboard.stream.heartbeat", { defaultValue: "Heartbeat" })}:{" "}
+            {lastMessageLabel}
           </span>
         </>
       ) : null}
@@ -290,7 +316,8 @@ function DashboardStreamStatusLine({
             className="inline-block max-w-[360px] truncate align-bottom text-red-400"
             title={streamState.error}
           >
-            {t("dashboard.stream.error", { defaultValue: "Error" })}: {errorPreview}
+            {t("dashboard.stream.error", { defaultValue: "Error" })}:{" "}
+            {errorPreview}
           </span>
         </>
       ) : null}
@@ -309,14 +336,21 @@ export function DashboardContent() {
   const { data: session } = useSession();
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canManageQueue = permissions.includes("queue.manage");
+  const canManageSettings = permissions.includes("settings.manage");
+  const canViewCrawlTasks =
+    permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const queryClient = useQueryClient();
   const dashboardFetchingCount = useIsFetching({ queryKey: ["dashboard"] });
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
   const { resetFilters, hasActiveFilters } = useDashboardUrlSync();
-  const { data, loading, error, refetch } = useQueueStatsQuery({
-    skip: !canManageQueue
-  });
+  const {
+    assessment: systemHealthAssessment,
+    error,
+    loading,
+    queueStats,
+    refetchQueueStats,
+  } = useSystemHealthContext();
   const { start, end, range } = useDashboardRangeStore();
   const [isRangeUpdating, setIsRangeUpdating] = useState(false);
   const lastRangeFingerprintRef = useRef<string | null>(null);
@@ -330,11 +364,11 @@ export function DashboardContent() {
     refetch: refetchHero,
     updating: heroUpdating,
   } = useHeroMetrics({ start, end });
-  const { pending: refreshingHero, run: refreshHero } = usePendingAction(
-    () => refetchHero(),
+  const { pending: refreshingHero, run: refreshHero } = usePendingAction(() =>
+    refetchHero(),
   );
   const { pending: refreshingQueueStats, run: refreshQueueStats } =
-    usePendingAction(() => refetch());
+    usePendingAction(() => refetchQueueStats());
   const isDashboardUpdating = dashboardFetchingCount > 0 || heroUpdating;
 
   const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
@@ -344,14 +378,16 @@ export function DashboardContent() {
   const lastHandledQueueEventKeyRef = useRef<string | null>(null);
   const shouldShowQueueConnectionError = useTimedValueDeduper(30_000);
   const { schedule: scheduleQueueRefetch } = useScheduledAction(() => {
-    void refetch();
+    void refetchQueueStats();
   }, DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS);
-  const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(null);
+  const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(
+    null,
+  );
   const [showSystemStats, setShowSystemStats] = useState(false);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
   const rangeFingerprint = useMemo(
     () => `${start.toISOString()}_${end.toISOString()}`,
-    [end, start]
+    [end, start],
   );
 
   useEffect(() => {
@@ -377,7 +413,9 @@ export function DashboardContent() {
     if (!connectionError) {
       return;
     }
-    const nextMessage = t("dashboard.queue.connectionFailed", { error: connectionError });
+    const nextMessage = t("dashboard.queue.connectionFailed", {
+      error: connectionError,
+    });
     if (!shouldShowQueueConnectionError(nextMessage)) {
       return;
     }
@@ -386,7 +424,10 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
-      analysisPanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      analysisPanelRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     }
   }, [searchParams]);
 
@@ -403,7 +444,9 @@ export function DashboardContent() {
     if (lastEvent.event === "FAILED") {
       message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
     } else if (lastEvent.event === "COMPLETED") {
-      message.success(t("dashboard.queue.jobCompleted", { jobId: lastEvent.jobId }));
+      message.success(
+        t("dashboard.queue.jobCompleted", { jobId: lastEvent.jobId }),
+      );
     } else if (lastEvent.event === "ACTIVE") {
       message.info(t("dashboard.queue.jobStarted", { jobId: lastEvent.jobId }));
     }
@@ -415,11 +458,10 @@ export function DashboardContent() {
       return;
     }
     if (canManageQueue) {
-      void refetch();
+      void refetchQueueStats();
     }
     void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-  }, [canManageQueue, queueStatus, queryClient, refetch]);
-  const queueStats = data?.queueStats ?? null;
+  }, [canManageQueue, queueStatus, queryClient, refetchQueueStats]);
   const queueStatsInitialLoading = loading && !queueStats;
   const queueStatsBlockingErrorState =
     error && !queueStats
@@ -431,7 +473,7 @@ export function DashboardContent() {
           },
           actionLoading: refreshingQueueStats,
           actionLabelOverride: t("dashboard.actions.retryFetch", {
-            defaultValue: "Retry fetch"
+            defaultValue: "Retry fetch",
           }),
         })
       : null;
@@ -443,10 +485,9 @@ export function DashboardContent() {
   return (
     <div className="flex gap-6 h-full items-start">
       <LiveAlertsToasts />
-      
+
       {/* Center Column: Market Feed & Visuals */}
       <div className="flex-1 flex flex-col gap-6 min-w-0">
-
         {/* Time Range */}
         <div className="glass-panel border border-[var(--border)] px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
@@ -460,33 +501,58 @@ export function DashboardContent() {
                 </Tag>
               ) : null}
               {hasActiveFilters ? (
-                <Button type="link" size="small" onClick={resetFilters} className="px-0">
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={resetFilters}
+                  className="px-0"
+                >
                   {t("common.reset", { defaultValue: "Reset" })}
                 </Button>
               ) : null}
             </Space>
-	          </div>
-	          <TimeRangeControls
-	            appliedGranularity={appliedHeroGranularityInfo.coarsest}
-	            appliedGranularityRange={appliedHeroGranularityInfo.range}
-	          />
-	        </div>
-	        
-	        {/* Status Bar */}
-        <div className="flex items-center justify-between">
-           <DashboardStreamStatusLine
-             accessToken={session?.accessToken}
-             start={start}
-             end={end}
-             range={range}
-             queueStatus={queueStatus}
-             selectedSector={selectedSector}
-             enabled={Boolean(session?.accessToken)}
-           />
-           <Space>
-             <span className="text-xs text-slate-500">System Status</span>
-             <Switch size="small" checked={showSystemStats} onChange={setShowSystemStats} />
-           </Space>
+          </div>
+          <TimeRangeControls
+            appliedGranularity={appliedHeroGranularityInfo.coarsest}
+            appliedGranularityRange={appliedHeroGranularityInfo.range}
+          />
+        </div>
+
+        {/* Status Bar */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <DashboardStreamStatusLine
+              accessToken={session?.accessToken}
+              start={start}
+              end={end}
+              range={range}
+              queueStatus={queueStatus}
+              selectedSector={selectedSector}
+              enabled={Boolean(session?.accessToken)}
+            />
+            <Space>
+              <span className="text-xs text-slate-500">
+                {t("dashboard.systemStatus.title", {
+                  defaultValue: "System status",
+                })}
+              </span>
+              <Switch
+                size="small"
+                checked={showSystemStats}
+                onChange={setShowSystemStats}
+              />
+            </Space>
+          </div>
+          <SystemHealthSummaryCard
+            assessment={systemHealthAssessment}
+            canManageQueue={canManageQueue}
+            canManageSettings={canManageSettings}
+            canViewCrawlTasks={canViewCrawlTasks}
+            queueLive={queueLive}
+            showSystemStats={showSystemStats}
+            setShowSystemStats={setShowSystemStats}
+            hasCachedError={Boolean(error && queueStats)}
+          />
         </div>
 
         {/* Hero / Market Pulse */}
@@ -496,7 +562,9 @@ export function DashboardContent() {
               <ChartEmptyState
                 className="h-auto"
                 variant="permission"
-                title={t("common.accessDenied", { defaultValue: "Access denied" })}
+                title={t("common.accessDenied", {
+                  defaultValue: "Access denied",
+                })}
                 description={heroPermissionDescription}
               />
             </div>
@@ -538,62 +606,82 @@ export function DashboardContent() {
         </div>
 
         {activeDrillDownKey ? (
-          <MetricDrillDown 
-            visible 
-            metricKey={activeDrillDownKey} 
-            onClose={() => setActiveDrillDownKey(null)} 
+          <MetricDrillDown
+            visible
+            metricKey={activeDrillDownKey}
+            onClose={() => setActiveDrillDownKey(null)}
           />
         ) : null}
 
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-           {/* Indicator Map - Dominant Central Feature */}
-           <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
-             <div className="absolute top-4 left-4 z-10">
-               <h3 className="text-lg text-slate-700">
-                 {t("dashboard.charts.warMap.title", { defaultValue: "Indicator Situation Map" })}
-               </h3>
-             </div>
-             <WarMap className="h-full" />
-           </div>
+          {/* Indicator Map - Dominant Central Feature */}
+          <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
+            <div className="absolute top-4 left-4 z-10">
+              <h3 className="text-lg text-slate-700">
+                {t("dashboard.charts.warMap.title", {
+                  defaultValue: "Indicator Situation Map",
+                })}
+              </h3>
+            </div>
+            <WarMap className="h-full" />
+          </div>
 
-           {/* Sector Heatmap - Side Panel */}
-           <Card title={t("dashboard.charts.sectorHeatmap", { defaultValue: "Sector Performance" })} className="glass-card h-[500px]" variant="borderless">
-             <SectorHeatmap />
-           </Card>
+          {/* Sector Heatmap - Side Panel */}
+          <Card
+            title={t("dashboard.charts.sectorHeatmap", {
+              defaultValue: "Sector Performance",
+            })}
+            className="glass-card h-[500px]"
+            variant="borderless"
+          >
+            <SectorHeatmap />
+          </Card>
         </div>
 
         {/* Financial Candlestick & Sentiment */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-           <div className="xl:col-span-2">
-             <GlobalSentimentTrend
-               loading={heroLoading}
-               data={heroData?.market ?? []}
-             />
-           </div>
-           <div className="xl:col-span-1">
-             <Card className="glass-card h-full" variant="borderless">
-               <FinancialCandlestick />
-             </Card>
-           </div>
+          <div className="xl:col-span-2">
+            <GlobalSentimentTrend
+              loading={heroLoading}
+              data={heroData?.market ?? []}
+            />
+          </div>
+          <div className="xl:col-span-1">
+            <Card className="glass-card h-full" variant="borderless">
+              <FinancialCandlestick />
+            </Card>
+          </div>
         </div>
 
         {/* Entity Impact Graph */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-           <div className="xl:col-span-3">
-             <Card title={t("dashboard.charts.entityImpactGraph", { defaultValue: "Entity Impact Graph" })} className="glass-card" variant="borderless">
-               <EntityImpactGraph />
-             </Card>
-           </div>
+          <div className="xl:col-span-3">
+            <Card
+              title={t("dashboard.charts.entityImpactGraph", {
+                defaultValue: "Entity Impact Graph",
+              })}
+              className="glass-card"
+              variant="borderless"
+            >
+              <EntityImpactGraph />
+            </Card>
+          </div>
         </div>
 
         {/* Knowledge Graph */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-           <div className="xl:col-span-3">
-             <Card title={t("dashboard.charts.knowledgeGraph", { defaultValue: "Knowledge Graph" })} className="glass-card" variant="borderless">
-               <KnowledgeGraph />
-             </Card>
-           </div>
+          <div className="xl:col-span-3">
+            <Card
+              title={t("dashboard.charts.knowledgeGraph", {
+                defaultValue: "Knowledge Graph",
+              })}
+              className="glass-card"
+              variant="borderless"
+            >
+              <KnowledgeGraph />
+            </Card>
+          </div>
         </div>
 
         {/* Spacetime Visualization */}
@@ -603,12 +691,17 @@ export function DashboardContent() {
         {showSystemStats && (
           <div className="animate-in fade-in slide-in-from-top-4 duration-300">
             {!canManageQueue ? (
-              <div className="mb-6" style={{ height: QUEUE_STATS_CARD_MIN_HEIGHT }}>
+              <div
+                className="mb-6"
+                style={{ height: QUEUE_STATS_CARD_MIN_HEIGHT }}
+              >
                 <ChartEmptyState
-                  title={t("common.accessDenied", { defaultValue: "Access denied" })}
+                  title={t("common.accessDenied", {
+                    defaultValue: "Access denied",
+                  })}
                   description={t("common.accessDeniedDescription", {
                     defaultValue:
-                      "You don't have permission to view this data. Contact an administrator if you need access."
+                      "You don't have permission to view this data. Contact an administrator if you need access.",
                   })}
                   variant="permission"
                 />
@@ -628,7 +721,7 @@ export function DashboardContent() {
                         value={queueStats ? queueStats.itemCount : "--"}
                         valueStyle={{
                           color: queueStats ? "#1f2933" : "#94a3b8",
-                          fontFamily: "var(--font-mono)"
+                          fontFamily: "var(--font-mono)",
                         }}
                       />
                     )}
@@ -648,7 +741,7 @@ export function DashboardContent() {
                         value={queueStats ? queueStats.processedCount : "--"}
                         valueStyle={{
                           color: queueStats ? "#1f2933" : "#94a3b8",
-                          fontFamily: "var(--font-mono)"
+                          fontFamily: "var(--font-mono)",
                         }}
                       />
                     )}
@@ -663,13 +756,18 @@ export function DashboardContent() {
                       <Space size="small" align="center">
                         <span>{t("dashboard.queue.snapshot")}</span>
                         <Tag color={queueLive ? "green" : "default"}>
-                          {queueLive ? t("dashboard.queue.live") : t("dashboard.queue.offline")}
+                          {queueLive
+                            ? t("dashboard.queue.live")
+                            : t("dashboard.queue.offline")}
                         </Tag>
                       </Space>
                     }
                   >
                     {queueStatsInitialLoading ? (
-                      <div className="flex items-center" style={{ height: QUEUE_STATS_CHART_HEIGHT }}>
+                      <div
+                        className="flex items-center"
+                        style={{ height: QUEUE_STATS_CHART_HEIGHT }}
+                      >
                         <Skeleton active paragraph={{ rows: 6 }} />
                       </div>
                     ) : queueStatsBlockingErrorState ? (
@@ -680,7 +778,9 @@ export function DashboardContent() {
                           title={queueStatsBlockingErrorState.title}
                           description={queueStatsBlockingErrorState.description}
                           actionLabel={queueStatsBlockingErrorState.actionLabel}
-                          actionLoading={queueStatsBlockingErrorState.actionLoading}
+                          actionLoading={
+                            queueStatsBlockingErrorState.actionLoading
+                          }
                           onAction={queueStatsBlockingErrorState.onAction}
                         />
                       </div>
@@ -688,13 +788,18 @@ export function DashboardContent() {
                       <div style={{ height: QUEUE_STATS_CHART_HEIGHT }}>
                         <ChartEmptyState
                           className="h-full"
-                          title={t("dashboard.ticker.empty", { defaultValue: "No metrics yet" })}
-                          description={t("dashboard.errors.metricsUnavailableHint", {
-                            defaultValue:
-                              "No system metrics were returned. Try pulling the data from the server again, or contact an administrator if this persists."
+                          title={t("dashboard.ticker.empty", {
+                            defaultValue: "No metrics yet",
                           })}
+                          description={t(
+                            "dashboard.errors.metricsUnavailableHint",
+                            {
+                              defaultValue:
+                                "No system metrics were returned. Try pulling the data from the server again, or contact an administrator if this persists.",
+                            },
+                          )}
                           actionLabel={t("dashboard.actions.fetchLatest", {
-                            defaultValue: "Pull latest data"
+                            defaultValue: "Pull latest data",
                           })}
                           actionLoading={refreshingQueueStats}
                           onAction={() => {
@@ -716,14 +821,17 @@ export function DashboardContent() {
                             />
                           </div>
                         ) : null}
-                        <div className="relative" style={{ height: QUEUE_STATS_CHART_HEIGHT }}>
+                        <div
+                          className="relative"
+                          style={{ height: QUEUE_STATS_CHART_HEIGHT }}
+                        >
                           <QueueChart
                             data={{
                               waiting: queueStats.counts.waiting,
                               active: queueStats.counts.active,
                               completed: queueStats.counts.completed,
                               failed: queueStats.counts.failed,
-                              delayed: queueStats.counts.delayed
+                              delayed: queueStats.counts.delayed,
                             }}
                             activeStatus={queueStatus}
                             onFilterChange={setQueueStatus}
@@ -742,32 +850,34 @@ export function DashboardContent() {
             )}
           </div>
         )}
-
       </div>
 
       {/* Right Column: Data Board & Intelligence */}
       <div className="w-[400px] flex-shrink-0 flex flex-col gap-6 hidden 2xl:flex sticky top-0 h-fit">
-         {/* Live News Feed */}
-         <div className="h-[600px]">
-            <AnalysisStream />
-         </div>
+        {/* Live News Feed */}
+        <div className="h-[600px]">
+          <AnalysisStream />
+        </div>
 
-         {/* AI Analysis */}
-         <div ref={analysisPanelRef}>
-           <Card
-             title={t("dashboard.panels.aiAnalysis")}
-             className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
-               isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
-             }`}
-           >
-             <AnalysisPanel />
-           </Card>
-         </div>
+        {/* AI Analysis */}
+        <div ref={analysisPanelRef}>
+          <Card
+            title={t("dashboard.panels.aiAnalysis")}
+            className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
+              isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
+            }`}
+          >
+            <AnalysisPanel />
+          </Card>
+        </div>
 
-         {/* Alerts */}
-         <Card title={t("dashboard.panels.smartAlerts")} className="content-card flex-1 border-none shadow-sm min-h-[200px]">
-            <AlertPanel />
-         </Card>
+        {/* Alerts */}
+        <Card
+          title={t("dashboard.panels.smartAlerts")}
+          className="content-card flex-1 border-none shadow-sm min-h-[200px]"
+        >
+          <AlertPanel />
+        </Card>
       </div>
     </div>
   );
