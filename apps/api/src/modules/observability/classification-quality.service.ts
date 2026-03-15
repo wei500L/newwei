@@ -1712,6 +1712,8 @@ export class ClassificationQualityService {
             window: input.window,
             latencyAlertCount: triggeredLatency.length,
             gateAlertCount: triggeredGate.length,
+            ...(latencySummary ? { latencySummary } : {}),
+            ...(gateSummary ? { gateSummary } : {}),
             latencyStages: triggeredLatency.map((entry) => entry.stage),
             gateMetrics: triggeredGate.map((entry) => entry.metric),
           },

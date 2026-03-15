@@ -58,6 +58,7 @@ type RealtimeSignalRuntimeStatus =
   | "stale"
   | "not_configured"
   | "idle";
+type RealtimeAdsbSnapshotFreshness = "fresh" | "stale" | "missing";
 
 interface RealtimeSignalsSettingsResponse {
   source: RealtimeSignalsSettingsSource;
@@ -161,6 +162,22 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  adsbSnapshot?: {
+    freshness: RealtimeAdsbSnapshotFreshness;
+    rawAircraftCount: number;
+    currentValidPositionCount: number;
+    snapshotValidPositionCount: number;
+    snapshotUpdatedAt?: string;
+    snapshotAgeSec?: number;
+    latestObservedAt?: string;
+    latestObservedAgeSec?: number;
+    staleThresholdSec: number;
+    retainedPreviousSnapshot: boolean;
+    droppedInvalidPositionCount: number;
+    droppedMissingIdentityCount: number;
+    droppedStalePositionCount: number;
+    deduplicatedCount: number;
+  };
 }
 
 interface RealtimeSignalsRuntimeDiagnosticsResponse {
@@ -342,10 +359,12 @@ function toFormValues(
 function summarizeRuntimeContext(
   source: RealtimeSignalSourceKey,
   context?: Record<string, unknown>,
+  adsbSnapshot?: RealtimeSignalRuntimeDiagnosticsSource["adsbSnapshot"],
 ) {
-  if (!context) {
+  if (!context && source !== "adsb") {
     return null;
   }
+  const resolvedContext = context ?? {};
 
   const num = (value: unknown) =>
     typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -354,27 +373,38 @@ function summarizeRuntimeContext(
 
   switch (source) {
     case "adsb":
-      return `military=${num(context.militaryCount) ?? 0}, aircraft=${num(context.totalAircraft) ?? 0}`;
+      return `military=${num(resolvedContext.militaryCount) ?? 0}, raw=${adsbSnapshot?.rawAircraftCount ?? num(resolvedContext.totalAircraft) ?? 0}, current=${adsbSnapshot?.currentValidPositionCount ?? num(resolvedContext.validPositionCount) ?? 0}, map=${adsbSnapshot?.snapshotValidPositionCount ?? num(resolvedContext.snapshotValidPositionCount) ?? num(resolvedContext.validPositionCount) ?? 0}`;
     case "ais":
-      return context.configured === false
+      return resolvedContext.configured === false
         ? "relay not configured"
-        : `disruptions=${num(context.disruptions) ?? 0}, density=${num(context.densityRegions) ?? 0}`;
+        : `disruptions=${num(resolvedContext.disruptions) ?? 0}, density=${num(resolvedContext.densityRegions) ?? 0}`;
     case "unrest":
-      return `acled=${num(context.acledCount) ?? 0}, gdelt=${num(context.gdeltCount) ?? 0}, total=${num(context.unrestCount) ?? 0}`;
+      return `acled=${num(resolvedContext.acledCount) ?? 0}, gdelt=${num(resolvedContext.gdeltCount) ?? 0}, total=${num(resolvedContext.unrestCount) ?? 0}`;
     case "outages":
-      return context.configured === false
+      return resolvedContext.configured === false
         ? "cloudflare token not configured"
-        : `outages=${num(context.outages) ?? 0}`;
+        : `outages=${num(resolvedContext.outages) ?? 0}`;
     case "keyword_spike":
-      return `recent=${num(context.recentArticleCount) ?? 0}, baseline=${num(context.baselineArticleCount) ?? 0}, spikes=${Array.isArray(context.spikes) ? context.spikes.length : 0}`;
+      return `recent=${num(resolvedContext.recentArticleCount) ?? 0}, baseline=${num(resolvedContext.baselineArticleCount) ?? 0}, spikes=${Array.isArray(resolvedContext.spikes) ? resolvedContext.spikes.length : 0}`;
     case "pizzint":
-      return `defcon=${num(context.defcon) ?? 0}, open=${num(context.openLocations) ?? 0}, spikes=${num(context.activeSpikes) ?? 0}`;
+      return `defcon=${num(resolvedContext.defcon) ?? 0}, open=${num(resolvedContext.openLocations) ?? 0}, spikes=${num(resolvedContext.activeSpikes) ?? 0}`;
     case "gdelt_tension":
-      return `pairs=${Array.isArray(context.tensions) ? context.tensions.length : 0}, window=${str(context.dateStart) ?? "-"}..${str(context.dateEnd) ?? "-"}`;
+      return `pairs=${Array.isArray(resolvedContext.tensions) ? resolvedContext.tensions.length : 0}, window=${str(resolvedContext.dateStart) ?? "-"}..${str(resolvedContext.dateEnd) ?? "-"}`;
     case "polymarket_leads":
-      return `leads=${Array.isArray(context.leads) ? context.leads.length : 0}`;
+      return `leads=${Array.isArray(resolvedContext.leads) ? resolvedContext.leads.length : 0}`;
     default:
       return null;
+  }
+}
+
+function runtimeFreshnessColor(freshness: RealtimeAdsbSnapshotFreshness) {
+  switch (freshness) {
+    case "fresh":
+      return "green";
+    case "stale":
+      return "orange";
+    default:
+      return "default";
   }
 }
 
@@ -1214,7 +1244,11 @@ export function RealtimeSignalsSettingsPanel() {
 
             <Row gutter={[12, 12]}>
               {diagnostics.sources.map((row) => {
-                const summary = summarizeRuntimeContext(row.source, row.context);
+                const summary = summarizeRuntimeContext(
+                  row.source,
+                  row.context,
+                  row.adsbSnapshot,
+                );
                 return (
                   <Col key={row.source} xs={24} lg={12}>
                     <Card
@@ -1257,6 +1291,75 @@ export function RealtimeSignalsSettingsPanel() {
                         </Space>
                         {summary ? (
                           <Typography.Text type="secondary">{summary}</Typography.Text>
+                        ) : null}
+                        {row.adsbSnapshot ? (
+                          <Space wrap size={[8, 8]}>
+                            <Tag color={runtimeFreshnessColor(row.adsbSnapshot.freshness)}>
+                              {t("systemSettings.realtimeSignals.runtime.adsbSnapshotFreshness", {
+                                defaultValue: "Snapshot",
+                              })}
+                              :{" "}
+                              {t(
+                                `systemSettings.realtimeSignals.runtime.adsbFreshness.${row.adsbSnapshot.freshness}`,
+                                {
+                                  defaultValue: row.adsbSnapshot.freshness,
+                                },
+                              )}
+                            </Tag>
+                            <Tag>
+                              {t("systemSettings.realtimeSignals.runtime.adsbMapPoints", {
+                                defaultValue: "Map points",
+                              })}
+                              : {row.adsbSnapshot.snapshotValidPositionCount}
+                            </Tag>
+                            <Tag>
+                              {t("systemSettings.realtimeSignals.runtime.adsbCurrentValidPoints", {
+                                defaultValue: "Current valid",
+                              })}
+                              : {row.adsbSnapshot.currentValidPositionCount}
+                            </Tag>
+                            <Tag>
+                              {t("systemSettings.realtimeSignals.runtime.adsbDroppedStale", {
+                                defaultValue: "Dropped stale",
+                              })}
+                              : {row.adsbSnapshot.droppedStalePositionCount}
+                            </Tag>
+                          </Space>
+                        ) : null}
+                        {row.adsbSnapshot?.latestObservedAt ? (
+                          <Typography.Text type="secondary">
+                            {t("systemSettings.realtimeSignals.runtime.adsbLatestObservedAt", {
+                              defaultValue: "Latest observed",
+                            })}
+                            : {formatTimestamp(row.adsbSnapshot.latestObservedAt)}
+                            {typeof row.adsbSnapshot.latestObservedAgeSec === "number"
+                              ? ` (${row.adsbSnapshot.latestObservedAgeSec}s)`
+                              : ""}
+                          </Typography.Text>
+                        ) : null}
+                        {row.adsbSnapshot?.snapshotUpdatedAt ? (
+                          <Typography.Text type="secondary">
+                            {t("systemSettings.realtimeSignals.runtime.adsbSnapshotUpdatedAt", {
+                              defaultValue: "Snapshot updated",
+                            })}
+                            : {formatTimestamp(row.adsbSnapshot.snapshotUpdatedAt)}
+                            {typeof row.adsbSnapshot.snapshotAgeSec === "number"
+                              ? ` (${row.adsbSnapshot.snapshotAgeSec}s)`
+                              : ""}
+                          </Typography.Text>
+                        ) : null}
+                        {row.adsbSnapshot?.retainedPreviousSnapshot ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message={t(
+                              "systemSettings.realtimeSignals.runtime.adsbRetainedPrevious",
+                              {
+                                defaultValue:
+                                  "Using the previous ADS-B snapshot because the latest fetch returned no usable positions.",
+                              },
+                            )}
+                          />
                         ) : null}
                         {row.statusReason ? (
                           <Typography.Text type="secondary">

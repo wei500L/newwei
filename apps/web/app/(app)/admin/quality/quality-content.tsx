@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
 import { createApiClient } from "@/lib/api-client";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { captureClientError } from "@/lib/client-telemetry";
 import { env } from "@/lib/env";
 
@@ -25,6 +26,8 @@ interface QualityLiveEvent {
 
 const LIVE_EVENT_SOURCES: LiveEventSource[] = ["pipeline", "crawl", "analysis", "assistant", "alerts"];
 const LIVE_EVENT_SOURCE_SET = new Set<LiveEventSource>(LIVE_EVENT_SOURCES);
+const TASK_LOG_SUMMARY_WINDOW_MINUTES = 60;
+const TASK_LOG_RECENT_FAILED_LIMIT = 10;
 
 const createEmptyLiveEventCounts = (): Record<LiveEventSource, number> => ({
   pipeline: 0,
@@ -316,19 +319,6 @@ export function QualityContent() {
   const [classificationLoading, setClassificationLoading] = useState(false);
   const overviewLoadingRef = useRef(false);
   const classificationLoadingRef = useRef(false);
-  const taskLogFiltersRef = useRef<{
-    queue: string;
-    stage: string;
-    status: TaskLogStatus | "all";
-    limit: number;
-    sinceMinutes: number;
-  }>({
-    queue: "",
-    stage: "",
-    status: "failed",
-    limit: 80,
-    sinceMinutes: 60
-  });
   const [pipeline, setPipeline] = useState<PipelineQualitySummary | null>(null);
   const [sources, setSources] = useState<NewsSourceQualitySummary | null>(null);
   const [classification, setClassification] = useState<ClassificationQualitySummary | null>(null);
@@ -352,11 +342,6 @@ export function QualityContent() {
   const [classificationReviewSubmitting, setClassificationReviewSubmitting] = useState(false);
   const [taskLogs, setTaskLogs] = useState<TaskLogRecord[]>([]);
   const [taskLogsSummary, setTaskLogsSummary] = useState<TaskLogsSummary | null>(null);
-  const [taskLogsQueue, setTaskLogsQueue] = useState("");
-  const [taskLogsStage, setTaskLogsStage] = useState("");
-  const [taskLogsStatus, setTaskLogsStatus] = useState<TaskLogStatus | "all">("failed");
-  const [taskLogsLimit, setTaskLogsLimit] = useState(80);
-  const [taskLogsSinceMinutes, setTaskLogsSinceMinutes] = useState(60);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(30);
   const [liveUpdatesEnabled, setLiveUpdatesEnabled] = useState(true);
@@ -388,15 +373,32 @@ export function QualityContent() {
     [session?.accessToken]
   );
 
-  useEffect(() => {
-    taskLogFiltersRef.current = {
-      queue: taskLogsQueue,
-      stage: taskLogsStage,
-      status: taskLogsStatus,
-      limit: taskLogsLimit,
-      sinceMinutes: taskLogsSinceMinutes
-    };
-  }, [taskLogsLimit, taskLogsQueue, taskLogsSinceMinutes, taskLogsStage, taskLogsStatus]);
+  const buildQualityTaskLogsHref = useCallback(
+    (overrides?: { queue?: string; stage?: string; status?: TaskLogStatus | "all" }) => {
+      const now = new Date();
+      return buildAdminLogsHref({
+        tab: "task",
+        query: {
+          taskQueue: overrides?.queue?.trim() || undefined,
+          taskStage: overrides?.stage?.trim() || undefined,
+          taskStatus:
+            overrides?.status && overrides.status !== "all" ? overrides.status : "failed",
+          taskStart: new Date(
+            now.getTime() - TASK_LOG_SUMMARY_WINDOW_MINUTES * 60 * 1000
+          ).toISOString(),
+          taskEnd: now.toISOString(),
+          taskPage: 1,
+          taskPageSize: 20
+        }
+      });
+    },
+    []
+  );
+
+  const openTaskLogsHref = useMemo(
+    () => buildQualityTaskLogsHref({ status: "failed" }),
+    [buildQualityTaskLogsHref]
+  );
 
   useEffect(() => {
     liveRefreshSourcesRef.current = liveRefreshSources;
@@ -408,14 +410,9 @@ export function QualityContent() {
 
   useEffect(() => {
     overviewRequestKeyRef.current = JSON.stringify({
-      windowMinutes,
-      queue: taskLogsQueue,
-      stage: taskLogsStage,
-      status: taskLogsStatus,
-      limit: taskLogsLimit,
-      sinceMinutes: taskLogsSinceMinutes
+      windowMinutes
     });
-  }, [taskLogsLimit, taskLogsQueue, taskLogsSinceMinutes, taskLogsStage, taskLogsStatus, windowMinutes]);
+  }, [windowMinutes]);
 
   useEffect(() => {
     classificationRequestKeyRef.current = JSON.stringify({
@@ -445,36 +442,17 @@ export function QualityContent() {
       setOverviewLoading(true);
     }
     try {
-      const currentFilters = taskLogFiltersRef.current;
       const requestKey = JSON.stringify({
-        windowMinutes,
-        queue: currentFilters.queue,
-        stage: currentFilters.stage,
-        status: currentFilters.status,
-        limit: currentFilters.limit,
-        sinceMinutes: currentFilters.sinceMinutes
+        windowMinutes
       });
       const taskLogParams: Record<string, unknown> = {
-        limit: currentFilters.limit,
-        sinceMinutes: currentFilters.sinceMinutes
+        limit: TASK_LOG_RECENT_FAILED_LIMIT,
+        sinceMinutes: TASK_LOG_SUMMARY_WINDOW_MINUTES,
+        status: "failed"
       };
       const taskLogSummaryParams: Record<string, unknown> = {
-        sinceMinutes: currentFilters.sinceMinutes
+        sinceMinutes: TASK_LOG_SUMMARY_WINDOW_MINUTES
       };
-      if (currentFilters.queue.trim()) {
-        const normalizedQueue = currentFilters.queue.trim();
-        taskLogParams.queue = normalizedQueue;
-        taskLogSummaryParams.queue = normalizedQueue;
-      }
-      if (currentFilters.stage.trim()) {
-        const normalizedStage = currentFilters.stage.trim();
-        taskLogParams.stage = normalizedStage;
-        taskLogSummaryParams.stage = normalizedStage;
-      }
-      if (currentFilters.status !== "all") {
-        taskLogParams.status = currentFilters.status;
-        taskLogSummaryParams.status = currentFilters.status;
-      }
 
       const [pipelineRes, sourcesRes, taskLogsRes, taskLogSummaryRes] = await Promise.all([
         apiClient.get<PipelineQualitySummary>("admin/quality/pipeline", { params: { windowMinutes } }),
@@ -606,25 +584,6 @@ export function QualityContent() {
     },
     [activeTab, loadClassification, loadOverview]
   );
-
-  const applyTaskLogFilters = useCallback((next: Partial<(typeof taskLogFiltersRef)["current"]>) => {
-    const merged = { ...taskLogFiltersRef.current, ...next };
-    taskLogFiltersRef.current = merged;
-    overviewRequestKeyRef.current = JSON.stringify({
-      windowMinutes,
-      queue: merged.queue,
-      stage: merged.stage,
-      status: merged.status,
-      limit: merged.limit,
-      sinceMinutes: merged.sinceMinutes
-    });
-    setTaskLogsQueue(merged.queue);
-    setTaskLogsStage(merged.stage);
-    setTaskLogsStatus(merged.status);
-    setTaskLogsLimit(merged.limit);
-    setTaskLogsSinceMinutes(merged.sinceMinutes);
-    void load({ tab: "overview" });
-  }, [load, windowMinutes]);
 
   useEffect(() => {
     setClassificationDrilldownSourceId(null);
@@ -1049,11 +1008,8 @@ export function QualityContent() {
       dataIndex: "queue",
       key: "queue",
       render: (value: string, record) => (
-        <Tag
-          style={{ cursor: "pointer" }}
-          onClick={() => applyTaskLogFilters({ queue: record.queue, stage: "", status: "failed" })}
-        >
-          {value}
+        <Tag>
+          <a href={buildQualityTaskLogsHref({ queue: record.queue, status: "failed" })}>{value}</a>
         </Tag>
       )
     },
@@ -1062,11 +1018,10 @@ export function QualityContent() {
       dataIndex: "stage",
       key: "stage",
       render: (value: string, record) => (
-        <Tag
-          style={{ cursor: "pointer" }}
-          onClick={() => applyTaskLogFilters({ queue: record.queue, stage: record.stage, status: "failed" })}
-        >
-          {value}
+        <Tag>
+          <a href={buildQualityTaskLogsHref({ queue: record.queue, stage: record.stage, status: "failed" })}>
+            {value}
+          </a>
         </Tag>
       )
     },
@@ -1771,68 +1726,28 @@ export function QualityContent() {
                 />
               </Card>
 
-              <Card className="content-card" title={t("quality.taskLogs.title", { defaultValue: "Task logs" })} loading={loading}>
-                <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                  <Space wrap>
-                    <Input
-                      value={taskLogsQueue}
-                      onChange={(event) => setTaskLogsQueue(event.target.value)}
-                      placeholder={t("quality.taskLogs.filters.queue", { defaultValue: "Queue (optional)" })}
-                      style={{ width: 220 }}
-                      allowClear
-                    />
-                    <Input
-                      value={taskLogsStage}
-                      onChange={(event) => setTaskLogsStage(event.target.value)}
-                      placeholder={t("quality.taskLogs.filters.stage", { defaultValue: "Stage (optional)" })}
-                      style={{ width: 220 }}
-                      allowClear
-                    />
-                    <Select
-                      value={taskLogsStatus}
-                      onChange={(value) => setTaskLogsStatus(value)}
-                      style={{ width: 160 }}
-                      options={[
-                        { value: "all", label: t("quality.taskLogs.filters.statusAll", { defaultValue: "All statuses" }) },
-                        { value: "failed", label: t("quality.taskLogs.status.failed", { defaultValue: "failed" }) },
-                        { value: "processing", label: t("quality.taskLogs.status.processing", { defaultValue: "processing" }) },
-                        { value: "pending", label: t("quality.taskLogs.status.pending", { defaultValue: "pending" }) },
-                        { value: "completed", label: t("quality.taskLogs.status.completed", { defaultValue: "completed" }) }
-                      ]}
-                    />
-                    <Space size={6} wrap>
-                      <Typography.Text type="secondary">
-                        {t("quality.taskLogs.filters.since", { defaultValue: "Since" })}
-                      </Typography.Text>
-                      <InputNumber
-                        min={1}
-                        max={1440}
-                        step={5}
-                        value={taskLogsSinceMinutes}
-                        onChange={(value) => setTaskLogsSinceMinutes(typeof value === "number" ? value : 60)}
-                        style={{ width: 120 }}
-                      />
-                      <Typography.Text type="secondary">
-                        {t("quality.taskLogs.filters.minutes", { defaultValue: "min" })}
-                      </Typography.Text>
-                    </Space>
-                    <Space size={6} wrap>
-                      <Typography.Text type="secondary">
-                        {t("quality.taskLogs.filters.limit", { defaultValue: "Limit" })}
-                      </Typography.Text>
-                      <InputNumber
-                        min={1}
-                        max={200}
-                        step={10}
-                        value={taskLogsLimit}
-                        onChange={(value) => setTaskLogsLimit(typeof value === "number" ? value : 80)}
-                        style={{ width: 120 }}
-                      />
-                    </Space>
+              <Card
+                className="content-card"
+                title={t("quality.taskLogs.title", { defaultValue: "Task logs" })}
+                loading={loading}
+                extra={
+                  <Space>
+                    <Button href={openTaskLogsHref}>
+                      {t("adminLogs.openTaskLogs", { defaultValue: "Open Logs" })}
+                    </Button>
                     <Button onClick={() => void load({ tab: "overview" })} loading={loading}>
                       {t("common.refresh", { defaultValue: "Refresh" })}
                     </Button>
                   </Space>
+                }
+              >
+                <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                  <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                    {t("adminLogs.task.summaryCardDescription", {
+                      defaultValue:
+                        "Showing task-log totals from the last 60 minutes and the most recent failed records. Open the logs workspace for full filtering, pagination, and raw details."
+                    })}
+                  </Typography.Paragraph>
 
                   {taskLogsSummary ? (
                     <Space direction="vertical" style={{ width: "100%" }} size="small">
@@ -1887,25 +1802,12 @@ export function QualityContent() {
                     rowKey={(row) => row._id ?? `${row.queue}:${row.jobId}:${row.stage}:${row.createdAt}`}
                     columns={taskLogColumns}
                     dataSource={taskLogs}
-                    pagination={{ pageSize: 10, showSizeChanger: false }}
+                    pagination={false}
                     size={screens.md ? "middle" : "small"}
-                    expandable={{
-                      rowExpandable: (record) => Boolean(record.data) || Boolean(record.error),
-                      expandedRowRender: (record) => (
-                        <pre
-                          style={{
-                            margin: 0,
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            background: "#fafafa",
-                            border: "1px solid #f0f0f0",
-                            padding: 12,
-                            borderRadius: 8
-                          }}
-                        >
-                          {JSON.stringify({ data: record.data, error: record.error }, null, 2)}
-                        </pre>
-                      )
+                    locale={{
+                      emptyText: t("adminLogs.task.summary.empty", {
+                        defaultValue: "No recent failed task logs in the current window."
+                      })
                     }}
                   />
                 </Space>

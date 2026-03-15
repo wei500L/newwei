@@ -129,6 +129,11 @@ describe('war-map settings store', () => {
     useWarMapSettingsStore.getState().resetAll();
   });
 
+  it('keeps ADS-B flights enabled by default', () => {
+    expect(WAR_MAP_DEFAULT_LAYER_VISIBILITY.flights).toBe(true);
+    expect(useWarMapSettingsStore.getState().layerVisibility.flights).toBe(true);
+  });
+
   it('forces 2D camera in setViewState', () => {
     useWarMapSettingsStore.getState().setViewState({
       lat: 10,

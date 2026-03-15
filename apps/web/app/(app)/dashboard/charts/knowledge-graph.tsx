@@ -480,7 +480,7 @@ export function KnowledgeGraph() {
           ) : null}
           {degradationStats.filteredNodes > 0 || degradationStats.filteredEdges > 0 ? (
             <Tooltip
-              title={t("dashboard.charts.knowledgeGraph.filteredTooltip", {
+              title={t("dashboard.charts.knowledgeGraphFilteredTooltip", {
                 filteredNodes: degradationStats.filteredNodes,
                 totalNodes: degradationStats.totalNodes,
                 filteredEdges: degradationStats.filteredEdges,
@@ -493,7 +493,7 @@ export function KnowledgeGraph() {
                 icon={<WarningOutlined />}
                 className="text-xs cursor-help"
               >
-                {t("dashboard.charts.knowledgeGraph.filtered", {
+                {t("dashboard.charts.knowledgeGraphFiltered", {
                   nodes: degradationStats.filteredNodes,
                   edges: degradationStats.filteredEdges,
                   defaultValue: `已过滤 ${degradationStats.filteredNodes} 节点 / ${degradationStats.filteredEdges} 链接`

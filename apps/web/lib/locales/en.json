@@ -67,7 +67,8 @@
   },
   "alerts": {
     "live": {
-      "message": "[{{severity}}] {{message}} ({{value}})"
+      "message": "[{{severity}}] {{message}} ({{value}})",
+      "batchMessage": "{{count}} alerts triggered · {{titles}}"
     },
     "events": {
       "triggered": "Alert triggered",
@@ -150,12 +151,22 @@
           "stale": "Stale snapshot",
           "maxStaleMinutes": "Max stale {{minutes}} min",
           "latestTimestamp": "Latest point {{time}}",
+          "snapshotFreshness": "Snapshot",
+          "snapshotFreshnessValues": {
+            "fresh": "Fresh",
+            "stale": "Stale",
+            "missing": "Missing"
+          },
+          "snapshotRetainedPrevious": "Retained previous snapshot",
           "emptyStructured": "No structured realtime evidence fields.",
           "countryCodes": "Country codes",
           "tensions": "Top tensions",
           "leads": "Prediction leads",
           "spikes": "Keyword spikes",
           "militaryCount": "Military flights",
+          "currentValidPositionCount": "Current valid positions",
+          "snapshotValidPositionCount": "Map snapshot positions",
+          "droppedStalePositionCount": "Dropped stale positions",
           "disruptions": "AIS disruptions",
           "outages": "Internet outages",
           "unrest": "Unrest events",
@@ -356,7 +367,8 @@
         "pipelineStatus": "Pipeline status",
         "crawlStatus": "Crawl status",
         "systemMetricSlug": "System metric slug",
-        "metricSlugRequired": "Metric slug is required."
+        "metricSlugRequired": "Metric slug is required.",
+        "systemCurrentValueRequired": "Manual system metric requires a current value override."
       },
       "saved": "Saved",
       "saveFailed": "Failed to save.",
@@ -379,7 +391,8 @@
         "muteUntil": "Mute until",
         "notifyAllMembers": "Notify all members",
         "metadataJson": "Metadata (JSON)",
-        "metadataJsonHint": "Optional JSON object merged into rule metadata."
+        "metadataJsonHint": "Optional JSON object merged into rule metadata.",
+        "description": "Description"
       },
       "pipeline": {
         "title": "Pipeline",
@@ -395,7 +408,9 @@
         "statuses": "Statuses",
         "defaultsToFailed": "Failed to defaults",
         "createdBy": "Created",
-        "createdByPlaceholder": "Enter Created by"
+        "createdByPlaceholder": "Enter Created by",
+        "metricPreset": "Crawl metric",
+        "metricPresetHint": "This quality metric uses pipeline logs; crawl status filters are not applied."
       },
       "system": {
         "title": "System",
@@ -412,6 +427,7 @@
         "presetDefaults": "Default trigger: {{operator}} {{threshold}}",
         "metrics": {
           "adsb": "ADS-B military flights",
+          "adsbSnapshotHealth": "ADS-B snapshot health",
           "ais": "AIS disruptions",
           "unrest": "Unrest events",
           "outages": "Internet outages",
@@ -555,7 +571,12 @@
     },
     "more": "More",
     "search": "Search",
-    "ok": "OK"
+    "ok": "OK",
+    "unknown": "Unknown",
+    "back": "Back",
+    "share": "Share",
+    "readMore": "Read full story",
+    "unavailable": "Unavailable"
   },
   "orgSwitcher": {
     "error": {
@@ -740,7 +761,8 @@
     "ticker": {
       "loading": "Loading metrics...",
       "unavailable": "Metrics unavailable",
-      "empty": "No metrics yet"
+      "empty": "No metrics yet",
+      "permissionRequired": "Economic metrics require economicdata.read"
     },
     "errors": {
       "metricsUnavailable": "Metrics unavailable",
@@ -759,7 +781,8 @@
       "insufficientData": "Not enough data points",
       "latestBucket": "Latest bucket: {{bucket}} ({{granularity}})",
       "trendVsPreviousGranularity": "vs prev. {{granularity}}",
-      "trendVsPreviousPoint": "vs prev. data point"
+      "trendVsPreviousPoint": "vs prev. data point",
+      "permissionRequired": "Hero metrics require the economicdata.read permission. Switch to an organization with access or contact an administrator."
     },
     "nextActions": {
       "title": "Next actions",
@@ -1217,7 +1240,7 @@
       "sectorHeatmapConfigErrorTitle": "Sector heatmap configuration error",
       "sectorHeatmapConfigErrorDescription": "Some economic indicators have no matching source field for the heatmap.",
       "entityImpactGraph": "Entity Impact Graph",
-      "knowledgeGraph": "Knowledge Graph",
+      "knowledgeGraphTitle": "Knowledge Graph",
       "knowledgeGraphSeedRequired": "Enter an entity name",
       "knowledgeGraphDisabledTitle": "Disabled",
       "knowledgeGraphDisabledDescription": "Disabled by admin",
@@ -1260,7 +1283,7 @@
           "cyberThreats": "Cyber threats",
           "datacenters": "Data centers",
           "protests": "Protests",
-          "flights": "Flights",
+          "flights": "Military Flights (ADS-B)",
           "military": "Military activity",
           "natural": "Natural disasters",
           "spaceports": "Spaceports",
@@ -1320,8 +1343,13 @@
           "newsUpdated": "News updated",
           "layers": "Layers",
           "layersHint": "Static layers (not time-filtered)",
+          "visibleLayers": "Visible layers",
+          "layersUpdated": "Layers updated",
+          "flights": "Flights",
+          "flightsRaw": "raw {{count}}",
           "monitors": "Monitors",
           "monitorsHint": "Custom monitors with saved locations",
+          "monitorsUpdated": "Monitors updated",
           "total": "Total",
           "renderable": "Renderable",
           "showing": "Showing",
@@ -1332,11 +1360,16 @@
           "geocoded": "Geocoded",
           "fallbackCountry": "Fallback country"
         },
+        "status": {
+          "ready": "Ready",
+          "error": "Error"
+        },
         "tooltip": {
           "location": "Location",
           "published": "Published",
           "ingested": "Ingested",
           "geo": "Geo",
+          "clickInspect": "Click to inspect details",
           "clickOpenOriginal": "Click to open original link",
           "clickOpenSearch": "Click to open search results",
           "severity": "Severity",
@@ -1348,17 +1381,33 @@
           "clusterNews": "{{count}} nearby news items. Click to inspect.",
           "datasetUpdated": "Dataset updated",
           "notAvailable": "N/A",
-          "unknown": "Unknown"
+          "unknown": "Unknown",
+          "clusterFlights": "{{count}} military flights. Click to zoom in.",
+          "clusterLayer": "{{count}} {{layer}} items. Click to zoom in.",
+          "observed": "Observed",
+          "registration": "Registration",
+          "aircraftType": "Type",
+          "country": "Country",
+          "heading": "Heading",
+          "altitude": "Altitude",
+          "speed": "Speed",
+          "updated": "Updated"
         },
         "panel": {
           "signalsTitle": "Nearby signals",
           "newsTitle": "Nearby news",
+          "signalDetailSummary": "Signal details for the selected location.",
+          "newsDetailSummary": "News details for the selected marker.",
           "signalsSummary": "{{count}} nearby signals at this zoom level.",
           "newsSummary": "{{count}} nearby news items at this zoom level.",
           "count": "{{count}} items",
           "zoomIn": "Zoom in",
           "latest": "Latest",
           "openOriginal": "Open"
+        },
+        "legend": {
+          "title": "Legend",
+          "radius": "Larger points indicate stronger aggregated signal density."
         },
         "translation": {
           "label": "CN coverage",
@@ -1430,7 +1479,9 @@
         "openSearch": "Open search",
         "detailsTitle": "Details",
         "noRelatedEntities": "No related entities found.",
-        "hint": "Tip: right-click a node for quick actions."
+        "hint": "Tip: right-click a node for quick actions.",
+        "filteredLinksTooltip": "{{filtered}} links were hidden during normalization (invalid refs, self-loops, duplicates, or anomalous values) to keep the chart stable.",
+        "filteredLinks": "Hidden {{count}} links"
       },
       "sectorSelected": "Selected: {{sector}}",
       "knowledgeGraphReflow": "Reflow",
@@ -1444,6 +1495,8 @@
       "knowledgeGraphOpenedSearch": "Search opened for \"{{query}}\" in a new tab",
       "knowledgeGraphOpenSearch": "Open search",
       "knowledgeGraphExploreHint": "Tip: use \"Explore this node\" to re-center the graph on it.",
+      "knowledgeGraphFilteredTooltip": "{{filteredNodes}} duplicate or invalid nodes and {{filteredEdges}} invalid edges were hidden to keep the graph stable. ({{totalNodes}} nodes / {{totalEdges}} edges before filtering)",
+      "knowledgeGraphFiltered": "Filtered {{nodes}} nodes / {{edges}} edges",
       "spacetimeGeoHeatmap": {
         "geoFailedTitle": "Map failed",
         "details": "Details",
@@ -1485,7 +1538,9 @@
         "noArticles": "No articles found for this source in the selected window.",
         "moreHint": "More articles available. Narrow the time range to inspect further.",
         "linkedSources": "Linked sources: {{count}}",
-        "title": "Propagation Flow"
+        "title": "Propagation Flow",
+        "filteredTooltip": "{{hidden}} propagation links were hidden (invalid refs {{filtered}} / self-loops {{selfLoops}}; overlap possible) to keep the propagation chart stable.",
+        "filtered": "Hidden {{hidden}} links (invalid {{filtered}} / self-loops {{selfLoops}})"
       },
       "spacetimeTimeline": {
         "title": "Timeline Player",
@@ -1569,7 +1624,8 @@
       "heartbeat": "Heartbeat",
       "retries": "Retries",
       "error": "Error",
-      "window": "Window"
+      "window": "Window",
+      "liveRecovered": "Live updates restored"
     },
     "filters": {
       "resetAll": "Reset All Filters"
@@ -1689,7 +1745,11 @@
       "situationMonitor": "Situation Monitor",
       "assistant": "Assistant"
     },
-    "adminGroup": "Admin"
+    "adminGroup": "Admin",
+    "commandRunSearch": "Search all items",
+    "searchAriaLabel": "Search news items",
+    "openMenu": "Open navigation menu",
+    "menu": "Menu"
   },
   "pages": {
     "today": {
@@ -1698,7 +1758,10 @@
       "noAlerts": "No breaking alerts",
       "marketsStable": "Markets are stable",
       "breakingAlert": "Breaking Alert",
-      "alertsDisclaimer": "For reference only • AI-generated alerts"
+      "alertsDisclaimer": "For reference only • AI-generated alerts",
+      "headline": "Headline",
+      "hotTopics": "Hot Topics",
+      "latestFeed": "Latest Feed"
     },
     "map": {
       "title": "Regional Signals Map",
@@ -1817,7 +1880,12 @@
         "openSettings": "Go to System Settings > News source secrets",
         "openSettingsWithKey": "Go to System Settings > News source secrets (Suggested: {{key}})",
         "maybeRequired": "This source may require a runtime secret first",
-        "maybeRequiredWithKey": "This source may require a runtime secret first (Suggested: {{key}})"
+        "maybeRequiredWithKey": "This source may require a runtime secret first (Suggested: {{key}})",
+        "requiredTitle": "Missing runtime secret",
+        "requiredKeys": "Required keys: {{keys}}"
+      },
+      "source": {
+        "fetchFailed": "Failed to fetch source"
       }
     },
     "topics": {
@@ -1962,7 +2030,13 @@
           "articles": "Articles"
         },
         "timelineEmpty": "No timeline entries yet. Enable timeline generation and wait for the scheduled job.",
-        "itemsEmpty": "No articles in this event yet."
+        "itemsEmpty": "No articles in this event yet.",
+        "topicDrift": "Topic drift detected",
+        "topicDriftDescription": "Category distribution changed significantly across timeline buckets.",
+        "timelinePhases": "Timeline phases",
+        "confidence": "Confidence",
+        "anchor": "Anchor",
+        "tentative": "Tentative"
       },
       "detail": {
         "loadFailed": "Failed to load event.",
@@ -1996,7 +2070,27 @@
         "articleDrawerTitle": "LLM content",
         "articleLoadFailed": "Failed to load article.",
         "articleNotFound": "Processed item not found.",
-        "articleEmpty": "No LLM content available."
+        "articleEmpty": "No LLM content available.",
+        "credibilityStrong": "Cross-source corroboration detected. Confidence is relatively strong.",
+        "credibilityWeak": "Single-source signal. Treat this as preliminary.",
+        "credibilityMedium": "Multiple sources exist, but corroboration is still limited.",
+        "credibilityCardTitle": "Credibility signal",
+        "uniqueSources": "Unique sources",
+        "authoritativeSources": "Authoritative",
+        "blogSources": "Blog",
+        "corroboratedYes": "Corroborated",
+        "corroboratedNo": "Needs corroboration",
+        "topicDrift": "Topic drift detected",
+        "topicDriftDescription": "Category distribution changed significantly across timeline buckets.",
+        "timelinePhases": "Timeline phases",
+        "confidence": "Confidence",
+        "anchor": "Anchor",
+        "tentative": "Tentative"
+      },
+      "quickNav": {
+        "hub": "News Hub",
+        "newsnow": "NewsNow",
+        "items": "In-depth articles"
       }
     },
     "eventsArchive": {
@@ -2095,7 +2189,18 @@
         "timeline": "Timeline",
         "timelineEmpty": "No related timeline entries.",
         "related": "Related articles",
-        "relatedEmpty": "No related articles."
+        "relatedEmpty": "No related articles.",
+        "classification": "Classification rationale",
+        "classificationPending": "Classification is pending. The rationale will appear after archival processing completes.",
+        "classificationStale": "Showing stale classification",
+        "classificationStaleHint": "The current classification result does not match the active model or taxonomy version. Showing the most recent archived judgment.",
+        "embeddingModel": "Embedding model",
+        "rerankModel": "Rerank model",
+        "fusedScore": "Fusion {{percent}}%",
+        "ruleScore": "Rule",
+        "embeddingScore": "Embedding",
+        "rerankScore": "Rerank",
+        "fused": "Fusion"
       },
       "preparation": {
         "failedTitle": "Archive background preparation failed",
@@ -2107,7 +2212,8 @@
         "searchCoverageTitle": "Search state is separate from archive warmup",
         "searchCoverageBody": "Search remains available, but the archive baseline is still warming up. Results only cover records whose archive classification is already prepared.",
         "calendarCoverageHint": "Calendar markers and the daily total currently cover only the subset with completed archive classification."
-      }
+      },
+      "untitled": "Untitled event"
     },
     "digest": {
       "title": "Personalized Digest",
@@ -2280,6 +2386,10 @@
         "title": "Alert Rules",
         "description": "Configure alert rules and channels"
       },
+      "logs": {
+        "title": "Logs",
+        "description": "Inspect task, error, and audit events in one workspace"
+      },
       "errors": {
         "title": "Error Events",
         "description": "Inspect recent system errors"
@@ -2294,7 +2404,7 @@
       },
       "settings": {
         "title": "Access Settings",
-        "description": "Manage roles, permissions, and memberships"
+        "description": "Manage users, roles, permissions, and login access history"
       },
       "system": {
         "title": "System Settings",
@@ -2308,6 +2418,14 @@
         "title": "Knowledge Graph Review",
         "description": "Review low-confidence knowledge graph relations and record human feedback"
       }
+    },
+    "metrics": {
+      "sections": "Sections",
+      "sectionsHint": "Functional domains",
+      "links": "Quick Links",
+      "linksHint": "Available shortcuts",
+      "permissions": "Permissions",
+      "permissionsHint": "Granted capabilities"
     }
   },
   "adminSettings": {
@@ -2327,7 +2445,7 @@
     "pages": {
       "access": {
         "title": "Access Settings",
-        "description": "Manage roles, permissions, and organization memberships."
+        "description": "Manage users, custom roles, permissions, and recent login access records."
       },
       "security": {
         "title": "Security & Governance",
@@ -2362,15 +2480,19 @@
         "description": "Manage external service connectivity and infrastructure adapters."
       }
     },
+    "accessWorkspace": {
+      "title": "Access management workspace",
+      "description": "Role assignment and membership operations are managed from the organization admin workspace. Use this page as a quick map of the access domain, then open the workspace to make changes."
+    },
     "panels": {
       "roles": {
-        "description": "Define reusable permission bundles for operators and admins."
+        "description": "Create custom permission bundles and keep system roles readable but protected."
       },
       "permissions": {
-        "description": "Inspect the permission catalog available to the workspace."
+        "description": "Inspect the permission catalog and see which roles currently use each permission."
       },
       "members": {
-        "description": "Assign roles to workspace members and review current access."
+        "description": "Review users, update role bundles, and inspect recent login history."
       },
       "security": {
         "description": "Control secret encryption and validate key health."
@@ -2509,6 +2631,56 @@
       "metadata": "Metadata"
     }
   },
+  "adminLogs": {
+    "title": "Logs",
+    "description": "Inspect task execution, application errors, and governance activity from one workspace.",
+    "openTaskLogs": "Open Logs",
+    "tabs": {
+      "task": "Task Logs",
+      "errors": "Errors",
+      "audit": "Audit"
+    },
+    "task": {
+      "summaryCardDescription": "Showing task-log totals from the last 60 minutes and the most recent failed records. Open the logs workspace for full filtering, pagination, and raw details.",
+      "summary": {
+        "empty": "No recent failed task logs in the current window."
+      },
+      "filters": {
+        "jobId": "Job ID (optional)"
+      },
+      "errors": {
+        "loadFailed": "Failed to load task logs."
+      },
+      "detail": {
+        "title": "Task log details",
+        "updatedAt": "Updated At",
+        "data": "Data",
+        "error": "Error"
+      }
+    },
+    "errors": {
+      "loadFailed": "Failed to load error events.",
+      "filters": {
+        "operationName": "Operation name",
+        "message": "Message contains"
+      },
+      "detail": {
+        "title": "Error event details",
+        "errorName": "Error Name",
+        "stack": "Stack"
+      }
+    },
+    "audit": {
+      "loadFailed": "Failed to load audit logs.",
+      "filters": {
+        "resource": "Resource",
+        "action": "Action"
+      },
+      "detail": {
+        "title": "Audit log details"
+      }
+    }
+  },
   "newsSources": {
     "title": "News Sources",
     "searchPlaceholder": "Search by name or URL",
@@ -2566,7 +2738,8 @@
       "scheduleBatch": "Schedule ({{count}})",
       "useDockerHostProxy": "Use Docker host",
       "setGroup": "Set group",
-      "clearGroup": "Clear group"
+      "clearGroup": "Clear group",
+      "importOpml": "Import OPML"
     },
     "fields": {
       "name": "Name",
@@ -2661,7 +2834,37 @@
       "cronWindowDays": "Allowed weekdays (optional)",
       "cronWindowStartHour": "Start hour (0-23)",
       "cronWindowEndHour": "End hour (1-24)",
-      "nextRunAt": "Next run at"
+      "nextRunAt": "Next run at",
+      "crawlAntiBotMode": "Anti-bot retry",
+      "crawlAntiBotModeHint": "Auto removes crawlOptions.antiBotMode so templates/defaults can apply. Enable/Disable explicitly controls anti-bot retry when failures occur.",
+      "seedPatternList": "Article URL pattern (optional)",
+      "seedQueryParamAllowlist": "URL query param allowlist",
+      "seedQueryParamAllowlistHint": "Only these query keys are kept when building URL fingerprints. Leave empty to use the global scheduler defaults.",
+      "seedQueryParamAllowlistPlaceholder": "id, page, lang",
+      "seedListMaxPages": "List pages per discovery",
+      "seedListMaxPagesHint": "For List mode, crawl up to N paginated listing pages before scheduling article detail URLs.",
+      "seedListPageConcurrency": "List page concurrency",
+      "seedListPageConcurrencyHint": "How many listing pages to crawl in parallel during list discovery.",
+      "seedFollowPagination": "Follow pagination",
+      "seedFollowPaginationHint": "Enable this to follow next/older/load-more list links and discover more article events.",
+      "seedDeepHint": "Deep mode crawls section/list pages in bounded depth/time, then strictly keeps publish-time-ranked article links (no link-score fallback).",
+      "seedDeepMaxPages": "Deep max pages",
+      "seedDeepMaxPagesHint": "Total number of pages that deep discovery may crawl.",
+      "seedDeepMaxDepth": "Deep max depth",
+      "seedDeepMaxDepthHint": "How many link hops from the seed URL are allowed.",
+      "seedDeepTimeBudgetSeconds": "Deep time budget (sec)",
+      "seedDeepPageConcurrency": "Deep page concurrency",
+      "seedDeepScoreThreshold": "Deep score threshold",
+      "seedDeepScoreThresholdHint": "Optional pre-filter for raw link candidates before publish-time enrichment (0..1); final ranking does not fall back to link score.",
+      "seedDeepCandidatePoolSize": "Candidate pool size",
+      "seedDeepHeadFetchTopK": "Head fetch top K",
+      "seedDeepHeadFetchTopKHint": "For top-K candidates without URL date, fetch head metadata to infer publish time.",
+      "seedDeepPreferPathDate": "Prefer URL path date",
+      "seedDeepPreferPathDateHint": "Use /YYYY/MM/DD/ style path date as a fast publish-time signal.",
+      "seedDeepEnableSecondaryHubs": "Follow secondary hubs",
+      "seedDeepEnableSecondaryHubsHint": "Allow exploration of section/topic pages during deep discovery.",
+      "seedDeepIgnoreRobotsTxt": "Ignore robots.txt",
+      "seedDeepIgnoreRobotsTxtHint": "This mode is hard-locked to ignore robots.txt."
     },
     "crawlHeadlessMode": {
       "auto": "Auto (recommended)",
@@ -2693,7 +2896,11 @@
     },
     "presets": {
       "cloudflare": "Cloudflare preset",
-      "cloudflareHint": "Enables undetected + stealth and switches the browser to headed (Xvfb)."
+      "cloudflareHint": "Enables undetected + stealth and switches the browser to headed (Xvfb).",
+      "reutersCf": "Reuters + CF preset",
+      "reutersCfHint": "Adds Reuters-oriented article defaults (detail page hint + quality-first + cleaned markdown).",
+      "cloudflareDefaultHint": "This is now the default for new sources; use Auto/Disable only for low-friction sites.",
+      "cloudflareRuntimeHint": "When challenge pages are detected, API now auto-primes a same-site warmup session and retries with incremental anti-bot backoff."
     },
     "messages": {
       "created": "News source created.",
@@ -2777,7 +2984,15 @@
       "skippedCount": "Skipped: {{count}}",
       "inFlightCount": "In-flight: {{count}}/{{limit}}",
       "loading": "Loading preview...",
-      "empty": "No preview data."
+      "empty": "No preview data.",
+      "modeDeep": "Deep discovery",
+      "deepFailure": {
+        "title": "Deep discovery failure stats",
+        "total24h": "Failures (24h)",
+        "streak": "Current streak",
+        "nextRetryAt": "Next retry",
+        "lastFailureAt": "Last failure: {{time}}"
+      }
     },
     "sections": {
       "seed": "Seed discovery",
@@ -2989,6 +3204,39 @@
       "messages": {
         "imported": "OPML import finished: {{created}} created, {{skipped}} skipped, {{failed}} failed."
       }
+    },
+    "tags": {
+      "antiBotEnabled": "Anti-bot retry enabled",
+      "antiBotDisabled": "Anti-bot retry disabled"
+    },
+    "quality": {
+      "title": "Crawl quality",
+      "manageThresholds": "Manage thresholds",
+      "loadFailed": "Failed to load quality stats",
+      "taskCount": "Tasks",
+      "lowSignal": "Low signal",
+      "emptyMarkdown": "Empty markdown",
+      "expansionTrigger": "Expansion trigger",
+      "expansionSuccess": "Expansion success",
+      "avgMarkdownChars": "Avg markdown chars",
+      "publishConfidenceRejects": "Publish-confidence rejects",
+      "patternRejects": "Pattern rejects",
+      "fitMarkdownPreference": "Fit markdown preference",
+      "headSignalSuccess": "Head signal success",
+      "headSignalSoftFailure": "Head signal soft-failure",
+      "headSignalTruncated": "Head signal truncated",
+      "headSignalNoPublishSignal": "Head signal no-publish",
+      "http304HitRate": "HTTP 304 hit",
+      "thresholdStatusBreached": "breach",
+      "thresholdStatusNormal": "normal",
+      "preflightFailureRate": "Preflight failure",
+      "orgHashDedupeHitRate": "Org hash dedupe hit",
+      "thresholdHint": "Threshold tags come from active alert rules and are evaluated over the selected window.",
+      "crawlQualityAlertTitle": "Crawl quality warning: one or more quality rates crossed configured thresholds",
+      "highestSource": "highest",
+      "lowestSource": "lowest",
+      "publishConfidenceBuckets": "Confidence buckets: <0.4={{lt04}}, 0.4~0.6={{from04To06}}, 0.6~0.8={{from06To08}}, >=0.8={{gte08}}",
+      "updatedAt": "Window {{from}} - {{to}}"
     }
   },
   "finance": {
@@ -3004,7 +3252,8 @@
       "overviewTitle": "Market Overview",
       "overviewSubtitle": "Track macro and market signals across the selected time range.",
       "sectorHeatmap": "Sector Heatmap",
-      "candlestick": "Candlestick"
+      "candlestick": "Candlestick",
+      "permissionRequired": "Market overview hero metrics require the economicdata.read permission."
     },
     "macro": {
       "overview": "Macro Overview",
@@ -3318,7 +3567,16 @@
         "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency",
         "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes",
         "maxAttempts": "Max attempts",
-        "retryBackoff": "Retry backoff"
+        "retryBackoff": "Retry backoff",
+        "requestTimeoutHot": "Hot request timeout",
+        "requestTimeoutNormal": "Normal request timeout",
+        "queueOverloadCooldown": "Queue overload cooldown",
+        "adaptiveConcurrency": "Adaptive concurrency",
+        "adaptiveWindowMinutes": "Adaptive window",
+        "adaptiveCooldownMinutes": "Adaptive cooldown",
+        "adaptiveLatencyThresholdRatio": "Adaptive latency threshold",
+        "adaptiveErrorRateThreshold": "Adaptive error-rate threshold",
+        "adaptiveMemoryHeadroomThreshold": "Adaptive memory headroom threshold"
       },
       "hints": {
         "adaptiveEnabled": "Adaptive mode is enabled. Window and threshold fields below are active.",
@@ -3333,7 +3591,15 @@
         "detailPublishSignalHeadFetchConcurrency": "Detail publish-signal head fetch concurrency is required",
         "detailPublishSignalHeadFetchMaxReadBytes": "Detail publish-signal head fetch max read bytes is required",
         "maxAttempts": "Max attempts is required",
-        "retryBackoff": "Retry backoff is required"
+        "retryBackoff": "Retry backoff is required",
+        "requestTimeoutHot": "Please enter hot request timeout.",
+        "requestTimeoutNormal": "Please enter normal request timeout.",
+        "queueOverloadCooldown": "Please enter queue overload cooldown.",
+        "adaptiveWindowMinutes": "Please enter adaptive window in minutes.",
+        "adaptiveCooldownMinutes": "Please enter adaptive cooldown in minutes.",
+        "adaptiveLatencyThresholdRatio": "Please enter adaptive latency threshold ratio.",
+        "adaptiveErrorRateThreshold": "Please enter adaptive error-rate threshold ratio.",
+        "adaptiveMemoryHeadroomThreshold": "Please enter adaptive memory headroom threshold ratio."
       },
       "save": "Save"
     },
@@ -3711,7 +3977,8 @@
         "rollbackSaved": "Rollback applied",
         "rollbackFailed": "Failed to rollback",
         "resetSaved": "Reset completed",
-        "resetFailed": "Failed to reset"
+        "resetFailed": "Failed to reset",
+        "saveBlockedBeforeLoad": "Current policy is not loaded yet. Please refresh and try again."
       }
     },
     "newsIndicator": {
@@ -3783,7 +4050,10 @@
         "llmJudgeInstructions": "LLM judge instructions (optional)",
         "llmJudgePromptVersion": "Prompt version",
         "llmJudgeSystemPromptTemplate": "System prompt template",
-        "llmJudgeUserPromptTemplate": "User prompt template"
+        "llmJudgeUserPromptTemplate": "User prompt template",
+        "sourceId": "Source ID (optional)",
+        "language": "Language (optional)",
+        "categoryPath": "Category path (optional)"
       },
       "hints": {
         "defaultThreshold": "Used when no category/topics match. Range 0–1 (higher = stricter).",
@@ -3798,7 +4068,10 @@
         "llmJudgeUserPromptTemplate": "Supports placeholders: {{threshold}}, {{title_a_section}}, {{summary_a}}, {{title_b_section}}, {{summary_b}}. Leave blank to reset to defaults."
       },
       "placeholders": {
-        "category": "e.g. finance / technology / geopolitics"
+        "category": "e.g. finance / technology / geopolitics",
+        "sourceId": "news-source-id",
+        "language": "en / zh",
+        "categoryPath": "finance/markets"
       },
       "actions": {
         "add": "Add override",
@@ -3820,11 +4093,17 @@
         "fields": {
           "category": "Category",
           "topics": "Topics",
-          "summaryLength": "Summary length"
+          "summaryLength": "Summary length",
+          "sourceId": "Source ID",
+          "language": "Language",
+          "categoryPath": "Category path"
         },
         "placeholders": {
           "category": "Optional",
-          "topics": "Optional (comma / Enter separated)"
+          "topics": "Optional (comma / Enter separated)",
+          "sourceId": "Optional",
+          "language": "Optional",
+          "categoryPath": "Optional"
         },
         "results": {
           "base": "Base",
@@ -3895,7 +4174,8 @@
           "modelInfo": "Model info",
           "loadBalancing": "Load balancing",
           "models": "Models",
-          "lbTest": "LB test"
+          "lbTest": "LB test",
+          "governance": "Budget / concurrency governance"
         },
         "liveliness": "Liveliness",
         "readiness": "Readiness",
@@ -4123,7 +4403,12 @@
         "editTitle": "Edit LLM gateway",
         "deleteTitle": "Delete LLM gateway",
         "deleteContent": "Delete {{name}}? This cannot be undone.",
-        "disableRerankHint": "This profile is currently active for Reranker. Disabling it will clear Reranker active selection and fall back to follow/default strategy."
+        "disableRerankHint": "This profile is currently active for Reranker. Disabling it will clear Reranker active selection and fall back to follow/default strategy.",
+        "disableTitle": "Disable this profile?",
+        "disableContent": "About to disable: {{name}}",
+        "disableActiveHint": "This profile is currently active for chat/completions. Disabling it will clear the active profile and fall back to the default configuration.",
+        "disableEmbeddingHint": "This profile is currently active for embeddings. Disabling it will clear the embeddings active profile and fall back to follow_completion or the default configuration.",
+        "deleteActiveHint": "This profile is currently active. Deleting it will clear the corresponding active configuration and fall back to the default policy."
       },
       "messages": {
         "created": "Created",
@@ -4273,6 +4558,150 @@
         "useDefault": "Use MySQL default profile",
         "missingRerankModelShort": "Missing rerank model",
         "noEligibleProfiles": "No eligible rerank profiles. Add a rerank model to a profile and enable it first."
+      },
+      "proxyGovernance": {
+        "bindings": {
+          "completion": "Completion",
+          "embedding": "Embedding",
+          "rerank": "Rerank"
+        },
+        "preflight": {
+          "admin": "LiteLLM admin key configured",
+          "adminReady": "API and LiteLLM can sync the managed team and runtime key.",
+          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling governance.",
+          "profile": "Target LiteLLM profile selected",
+          "profileReady": "{{name}} is selected as the governance target.",
+          "profileMissing": "Choose the enabled LiteLLM profile that should enforce runtime limits.",
+          "traffic": "Runtime traffic already routes to this profile",
+          "trafficReady": "Current bindings: {{value}}.",
+          "trafficMissing": "Completion, embedding, and rerank are not currently using this profile.",
+          "health": "Selected profile passes LiteLLM health checks",
+          "healthReady": "Liveliness and readiness probes are both healthy.",
+          "healthPending": "The console checks the selected profile automatically while this dialog stays open.",
+          "title": "Preflight checks",
+          "hint": "Before enabling managed governance, confirm the selected LiteLLM profile is healthy and actually serving runtime traffic.",
+          "targetProfile": "Target profile: {{value}}",
+          "apiBase": "API base: {{value}}",
+          "bindings": "Traffic bindings: {{value}}",
+          "actions": {
+            "bindCompletionDisabled": "Select a target profile before binding completion traffic.",
+            "bindCompletionDone": "Completion bound",
+            "bindCompletion": "Bind completion",
+            "bindEmbeddingDisabled": "This profile needs an embedding model before it can receive embedding traffic.",
+            "bindEmbeddingDone": "Embedding bound",
+            "bindEmbedding": "Bind embedding",
+            "bindRerankDisabled": "This profile needs a rerank model before it can receive rerank traffic.",
+            "bindRerankDone": "Rerank bound",
+            "bindRerank": "Bind rerank"
+          },
+          "liveliness": "Liveliness: {{value}}",
+          "readiness": "Readiness: {{value}}",
+          "checkedAt": "Checked: {{value}}"
+        },
+        "errors": {
+          "loadFailed": "Failed to load LiteLLM proxy governance settings",
+          "usageFailed": "Failed to load observed LiteLLM governance usage summary",
+          "saveFailed": "Failed to save LiteLLM proxy governance settings"
+        },
+        "messages": {
+          "saved": "LiteLLM proxy governance settings saved"
+        },
+        "reset": {
+          "modal": {
+            "title": "Reset LiteLLM proxy governance?",
+            "content": "This disables the managed runtime key and restores the default governance thresholds."
+          },
+          "targetProfile": "Target profile: {{value}}",
+          "team": "Managed team: {{value}}",
+          "key": "Runtime key: {{value}}",
+          "messages": {
+            "done": "LiteLLM proxy governance reset"
+          },
+          "errors": {
+            "failed": "Failed to reset LiteLLM proxy governance settings"
+          }
+        },
+        "rotate": {
+          "title": "Rotate LiteLLM managed runtime key?",
+          "confirm": "A new runtime key will be issued in LiteLLM and the old managed key will be blocked.",
+          "targetProfile": "Target profile: {{value}}",
+          "team": "Managed team: {{value}}",
+          "key": "Current key alias: {{value}}",
+          "messages": {
+            "done": "Managed LiteLLM runtime key rotated"
+          },
+          "errors": {
+            "failed": "Failed to rotate LiteLLM managed runtime key"
+          }
+        },
+        "actions": {
+          "rotate": "Rotate runtime key"
+        },
+        "table": {
+          "lockedHint": "This profile is the active LiteLLM governance target. Change governance target or disable governance before editing, deleting, or disabling it.",
+          "lockedTag": "Governed target",
+          "lockedStatus": "Locked by governance"
+        },
+        "summary": {
+          "title": "LiteLLM proxy governance",
+          "body": "Budgets and concurrency are enforced by LiteLLM Proxy. The application only keeps business-level request logs.",
+          "enabled": "Enforced",
+          "disabled": "Disabled",
+          "dayBudget": "24h: ${{value}}",
+          "monthBudget": "30d: ${{value}}",
+          "parallel": "Parallel: {{value}}",
+          "key": "Managed key: {{value}}",
+          "targetProfile": "Target profile: {{value}}",
+          "apiBase": "Proxy API base: {{value}}",
+          "binding": "Traffic: {{value}}",
+          "bindingMissing": "Selected target is not serving completion, embedding, or rerank traffic",
+          "observed24h": "Observed 24h: {{value}}",
+          "remaining24h": "24h remaining: {{value}}",
+          "observed30d": "Observed 30d: {{value}}",
+          "remaining30d": "30d remaining: {{value}}",
+          "observedDetails": "24h requests {{requests}}, tokens {{tokens}}, p95 latency {{latency}}.",
+          "observedLoading": "Loading observed request usage for the governed profile.",
+          "syncedAt": "Last synced: {{value}}",
+          "adminMissing": "LITELLM_MASTER_KEY is not configured, so governance cannot be synced to LiteLLM yet."
+        },
+        "modal": {
+          "title": "LiteLLM proxy budget / concurrency governance"
+        },
+        "hint": "LiteLLM Proxy is the single enforcement plane for runtime budgets and concurrency. The application keeps feature-level request logs only.",
+        "status": {
+          "title": "Managed LiteLLM runtime key",
+          "apiBase": "Proxy API base: {{value}}",
+          "targetProfile": "Target profile: {{value}}",
+          "team": "Team: {{value}}",
+          "key": "Key: {{value}}",
+          "syncedAt": "Last synced: {{value}}",
+          "adminMissing": "Set LITELLM_MASTER_KEY on both API and LiteLLM before enabling managed governance."
+        },
+        "observed": {
+          "title": "Observed runtime usage",
+          "hint": "This is derived from business request logs for the selected LiteLLM profile. LiteLLM still performs the actual enforcement.",
+          "daySpend": "24h spend: {{value}}",
+          "dayRemaining": "24h remaining: {{value}}",
+          "monthSpend": "30d spend: {{value}}",
+          "monthRemaining": "30d remaining: {{value}}",
+          "dayDetails": "24h requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, p95 latency {{latency}}.",
+          "monthDetails": "30d requests {{requests}}, tokens {{tokens}}, success rate {{successRate}}%, errors {{errors}}, avg latency {{latency}}.",
+          "leadingErrorTitle": "Most common recent error",
+          "loading": "Loading observed usage for the selected profile."
+        },
+        "fields": {
+          "enabled": "Enable LiteLLM-enforced runtime governance",
+          "targetProfileId": "Target LiteLLM profile",
+          "dailyBudgetUsd": "24h budget (USD)",
+          "monthlyBudgetUsd": "30d budget (USD)",
+          "maxParallelRequests": "Max parallel requests"
+        },
+        "validation": {
+          "targetProfileRequired": "Select the LiteLLM gateway profile that governance should manage"
+        },
+        "placeholders": {
+          "targetProfileId": "Choose an enabled LiteLLM profile"
+        }
       }
     },
     "assistantSafety": {
@@ -4613,30 +5042,174 @@
       "rssDiagnostics": "RSS diagnostics",
       "roles": "Roles",
       "permissions": "Permissions",
-      "members": "Members"
+      "members": "Users"
     },
-    "title": "Settings",
+    "title": "Access settings",
     "roles": {
+      "created": "Role created",
+      "createFailed": "Failed to create role",
       "updated": "Updated",
       "updateFailed": "Failed to update",
-      "empty": "No Roles",
+      "empty": "No roles",
       "system": "System",
-      "description": "Roles description",
-      "descriptionPlaceholder": "Enter Description",
+      "custom": "Custom",
+      "createTitle": "Create custom role",
+      "createDescription": "Create org-specific roles for operators, reviewers, or other scoped workflows.",
+      "createAction": "Create role",
+      "name": "Role name",
+      "nameRequired": "Role name is required",
+      "nameReserved": "Admin is reserved for the protected system role",
+      "namePlaceholder": "Enter role name",
+      "description": "Description",
+      "descriptionPlaceholder": "Summarize what this role is for",
       "permissions": "Permissions",
-      "permissionsRequired": "Permissions required",
-      "permissionsPlaceholder": "Enter Permissions",
-      "saveChanges": "Save changes"
+      "permissionsRequired": "Select at least one permission",
+      "permissionsPlaceholder": "Select permissions",
+      "saveChanges": "Save changes",
+      "permissionCount": "{{count}} permissions"
     },
     "members": {
-      "updated": "Updated",
-      "updateFailed": "Failed to update",
-      "empty": "No Members",
-      "roleAssignment": "Role assignment"
+      "updated": "Access updated",
+      "updateFailed": "Failed to update access",
+      "empty": "No users",
+      "roleAssignment": "Role assignment",
+      "enabled": "User enabled",
+      "disabled": "User disabled",
+      "statusUpdateFailed": "Failed to update account status",
+      "loadFailed": "Failed to load access settings",
+      "superAdminOnlyTitle": "Super admin only",
+      "superAdminOnlyDescription": "Only workspace admin users can manage other users and review login history.",
+      "count": "{{count}} users",
+      "searchPlaceholder": "Search by name or email",
+      "readOnlySelf": "Your account",
+      "readOnlyAdmin": "Admin account",
+      "neverLoggedIn": "Never logged in",
+      "confirmEnableTitle": "Enable this account?",
+      "confirmEnableDescription": "Enable {{name}} and restore login access for this organization.",
+      "confirmDisableTitle": "Disable this account?",
+      "confirmDisableDescription": "Disable {{name}} and block login access for this organization.",
+      "editAccessTitle": "Edit access: {{name}}",
+      "editAccessFallbackTitle": "Edit access",
+      "editAccessHintTitle": "Role assignment",
+      "editAccessHintDescription": "System admin is excluded here. The primary role must also be included in the assigned role set.",
+      "primaryRoleLabel": "Primary role",
+      "primaryRolePlaceholder": "Select the primary role",
+      "rolesLabel": "Assigned roles",
+      "rolesPlaceholder": "Select one or more roles",
+      "permissionPreviewTitle": "Permission preview",
+      "permissionPreviewEmpty": "No permissions available for the current role selection",
+      "loginRecordsTitle": "Login records: {{name}}",
+      "loginRecordsFallbackTitle": "Login records",
+      "loginRecordsLoadFailed": "Failed to load login records",
+      "loginRecordsEmpty": "No login records yet",
+      "loginRecordIp": "IP: {{value}}",
+      "loginRecordUserAgent": "User-Agent: {{value}}",
+      "columns": {
+        "user": "User",
+        "status": "Status",
+        "verification": "Email verified",
+        "primaryRole": "Primary role",
+        "roles": "Roles",
+        "lastLogin": "Last login"
+      },
+      "actions": {
+        "editAccess": "Edit access",
+        "viewLogins": "Login history",
+        "enable": "Enable",
+        "disable": "Disable"
+      },
+      "filters": {
+        "all": "All statuses"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "verification": {
+        "verified": "Verified",
+        "unverified": "Unverified"
+      },
+      "loginMethods": {
+        "password": "Password",
+        "emailCode": "Email code",
+        "other": "Other"
+      }
     },
     "permissions": {
+      "name": "Permission",
+      "usedBy": "Used by",
       "pending": "Pending",
       "empty": "No Permissions"
+    },
+    "access": {
+      "loadFailed": "Failed to load access settings",
+      "usersLoadFailed": "Failed to load users",
+      "loginRecordsLoadFailed": "Failed to load login records",
+      "superAdminOnlyTitle": "Super admin only",
+      "superAdminOnlyDescription": "Only the workspace admin role can manage other users and review login access history.",
+      "summary": "Showing {{visible}} of {{total}} users",
+      "adminProtected": "The system admin role is protected and cannot be assigned from this panel.",
+      "confirmEnable": "Enable this account?",
+      "confirmDisable": "Disable this account?",
+      "readonly": {
+        "tag": "Read only"
+      },
+      "messages": {
+        "userEnabled": "User enabled",
+        "userDisabled": "User disabled"
+      },
+      "filters": {
+        "searchPlaceholder": "Search by name or email",
+        "status": "Status",
+        "verification": "Email verification",
+        "role": "Role",
+        "allStatuses": "All statuses",
+        "allVerification": "All users",
+        "active": "Active",
+        "disabled": "Disabled",
+        "verified": "Verified",
+        "unverified": "Unverified"
+      },
+      "columns": {
+        "name": "Name",
+        "email": "Email",
+        "status": "Status",
+        "emailVerified": "Email verified",
+        "primaryRole": "Primary role",
+        "allRoles": "All roles",
+        "lastLogin": "Last login",
+        "usedBy": "Used by",
+        "time": "Time",
+        "ip": "IP",
+        "device": "Device",
+        "loginMethod": "Method"
+      },
+      "actions": {
+        "editRoles": "Edit roles",
+        "viewLoginRecords": "Login history",
+        "activate": "Enable account",
+        "deactivate": "Disable account"
+      },
+      "roleEditor": {
+        "title": "Edit user access",
+        "allRoles": "All roles",
+        "rolesRequired": "Select at least one role",
+        "rolesPlaceholder": "Select roles",
+        "primaryRole": "Primary role",
+        "primaryRoleRequired": "Select a primary role",
+        "primaryRolePlaceholder": "Select the primary role",
+        "permissionPreview": "Effective permissions",
+        "permissionPreviewEmpty": "No permissions selected",
+        "emptyRoles": "No roles selected"
+      },
+      "loginRecords": {
+        "title": "Login history",
+        "description": "Recent successful login records for this user.",
+        "empty": "No login records found.",
+        "password": "Password",
+        "emailCode": "Email code",
+        "other": "Other"
+      }
     },
     "footerNote": "Footer note"
   },
@@ -5279,7 +5852,8 @@
         "rssAdaptiveColdIntervalMultiplier": "Cold interval multiplier",
         "rssAdaptiveColdMaxIntervalSeconds": "Cold max interval (seconds)",
         "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Hot discovery TTL cap (seconds)",
-        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm discovery TTL cap (seconds)"
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Warm discovery TTL cap (seconds)",
+        "seedUrlQueryParamAllowlist": "Seed URL query param allowlist"
       },
       "sections": {
         "rssAdaptive": "RSS adaptive polling strategy"
@@ -5298,7 +5872,8 @@
         "rssAdaptiveColdIntervalMultiplier": "Cold interval multiplier against source frequency.",
         "rssAdaptiveColdMaxIntervalSeconds": "Upper bound for cold interval.",
         "rssAdaptiveHotDiscoveryCacheTtlCapSeconds": "Discovery cache TTL upper cap in hot tier.",
-        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Discovery cache TTL upper cap in warm tier."
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSeconds": "Discovery cache TTL upper cap in warm tier.",
+        "seedUrlQueryParamAllowlist": "Only these query keys are kept when canonicalizing discovered URLs (e.g. keep id/page, drop utm_*)."
       },
       "validation": {
         "seedFreshnessWindowDaysRequired": "Freshness window is required",
@@ -5329,7 +5904,9 @@
         "rssAdaptiveHotDiscoveryCacheTtlCapSecondsRange": "Hot discovery TTL cap must be between 10 and 3600 seconds",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRequired": "Warm discovery TTL cap is required",
         "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsRange": "Warm discovery TTL cap must be between 10 and 3600 seconds",
-        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering": "Warm discovery TTL cap must be greater than or equal to hot discovery TTL cap"
+        "rssAdaptiveWarmDiscoveryCacheTtlCapSecondsOrdering": "Warm discovery TTL cap must be greater than or equal to hot discovery TTL cap",
+        "seedUrlQueryParamAllowlistLimit": "At most 64 keys.",
+        "seedUrlQueryParamAllowlistInvalid": "Each key must match [a-z0-9_.-] and be up to 64 chars."
       },
       "messages": {
         "saved": "Saved"
@@ -5341,6 +5918,9 @@
         "codes": {
           "NEWS_SOURCE_SCHEDULER_SETTINGS_INVALID": "Stored scheduler settings are invalid"
         }
+      },
+      "placeholders": {
+        "seedUrlQueryParamAllowlist": "id, page, lang"
       }
     },
     "newsnowPersonalization": {
@@ -5881,7 +6461,57 @@
         "settingsSourceUnknown": {
           "title": "Settings source could not be resolved.",
           "body": "Runtime diagnostics are still shown, but the system could not confirm whether the effective realtime settings came from DB overrides or env defaults for this request."
-        }
+        },
+        "errors": {
+          "loadFailed": "Failed to load runtime diagnostics."
+        },
+        "title": "Runtime diagnostics",
+        "checkedAt": "Last checked: {{time}}",
+        "issues": "Detected {{count}} runtime issue(s).",
+        "warnings": "Some sources are enabled but not fully configured.",
+        "summary": {
+          "healthy": "Healthy sources",
+          "issues": "Issue sources",
+          "markerReadiness": "News markers",
+          "pizzint": "PizzINT DEFCON"
+        },
+        "markerWarning": {
+          "title": "War Map news markers are not ready.",
+          "body": "Recent processed articles with location data are empty, so news markers will stay blank until the content pipeline produces geo-tagged results."
+        },
+        "markerReadiness": "Marker readiness",
+        "markerWindow": "Lookback window",
+        "markerRecentArticles": "Recent processed articles",
+        "markerRecentArticlesWithLocation": "Recent articles with location",
+        "markerRecentMongo": "Recent Mongo processed items",
+        "markerRecentMongoWithLocation": "Recent Mongo items with location",
+        "markerLatestArticle": "Latest processed article",
+        "markerLatestMongo": "Latest processed item",
+        "insight": {
+          "keywordSpikes": "Keyword spikes",
+          "predictionLeads": "Prediction leads",
+          "tensions": "Tension pairs"
+        },
+        "latestValue": "Latest",
+        "previousValue": "Previous",
+        "changePercent": "Change",
+        "adsbSnapshotFreshness": "Snapshot",
+        "adsbFreshness": {
+          "fresh": "Fresh",
+          "stale": "Stale",
+          "missing": "Missing"
+        },
+        "adsbMapPoints": "Map points",
+        "adsbCurrentValidPoints": "Current valid",
+        "adsbDroppedStale": "Dropped stale",
+        "adsbLatestObservedAt": "Latest observed",
+        "adsbSnapshotUpdatedAt": "Snapshot updated",
+        "adsbRetainedPrevious": "Using the previous ADS-B snapshot because the latest fetch returned no usable positions.",
+        "lastRunAt": "Last run",
+        "lastAttemptAt": "Last attempt",
+        "lastSuccessAt": "Last success",
+        "lastError": "Last error",
+        "empty": "Runtime diagnostics have not been loaded yet."
       }
     },
     "akshare": {
@@ -6498,7 +7128,15 @@
       "batchFrequencyConfirmTitle": "Apply frequency to all News Sources?",
       "batchFrequencyConfirmDesc": "This updates frequencySeconds for all News Sources in your org.",
       "batchFrequencySaved": "Updated {{count}} News Sources, active sources rescheduled: {{rescheduled}}.",
-      "batchFrequencySaveFailed": "Failed to batch update News Source frequency."
+      "batchFrequencySaveFailed": "Failed to batch update News Source frequency.",
+      "queueSplit": "Hot/Normal pending",
+      "hotQueueRuntime": "Hot queue (A/F/E/P)",
+      "normalQueueRuntime": "Normal queue (A/F/E/P)",
+      "adaptiveStatus": "Adaptive",
+      "adaptiveWindowCooldown": "Adaptive window/cooldown (min)",
+      "adaptiveThresholds": "Adaptive thresholds (L/E/M)",
+      "adaptiveMetrics": "Adaptive metrics p95/error/headroom",
+      "adaptiveReason": "Adaptive reason"
     },
     "runtimeGuide": {
       "title": "Headed mode and Xvfb",
@@ -6669,7 +7307,8 @@
         "efficiency": "Efficiency",
         "lastSuccess": "Success",
         "lastError": "Last error",
-        "configuration": "Configuration"
+        "configuration": "Configuration",
+        "antiBotMode": "Anti-bot retry"
       },
       "expansion": {
         "softFailureMessage": "{{count}} publish-signal enrichment fetches soft-failed (non-blocking)",
@@ -6680,7 +7319,9 @@
           "emptyHtml": "Empty HTML: {{count}}",
           "networkOrTimeout": "Timeout/Network: {{count}}",
           "noPublishSignal": "No publish signal extracted: {{count}}"
-        }
+        },
+        "urlPathFallbackMessage": "{{count}}/{{total}} candidates fell back to url-path publish confidence",
+        "urlPathFallbackDescription": "URL-path fallback keeps crawl running (non-blocking), but can reduce publish-time confidence quality. Current fallback ratio: {{ratio}}%."
       },
       "latestError": "Latest error",
       "scanFullPageEnabled": "Scan full page enabled",
@@ -6716,7 +7357,12 @@
         }
       },
       "ingestQueued": "Queued for LLM processing and added to Items.",
-      "title": "Crawl Task"
+      "title": "Crawl Task",
+      "antiBotMode": {
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "auto": "Auto"
+      }
     },
     "multiUrl": {
       "title": "Multi URL",
@@ -7177,6 +7823,13 @@
           "path": "Enter Path"
         },
         "add": "Add"
+      },
+      "antiBotMode": "Anti-bot retry mode",
+      "antiBotModeHint": "Auto retries when challenge pages are detected. Enabled forces anti-bot retry when crawl failures exist; Disabled skips this pipeline.",
+      "antiBotModes": {
+        "auto": "Auto (recommended)",
+        "enabled": "Anti-bot enabled",
+        "disabled": "Anti-bot disabled"
       }
     },
     "session": {
@@ -7209,6 +7862,10 @@
     "title": "Crawl Tasks",
     "filter": {
       "sourceId": "Filtered by NewsSource {{id}}"
+    },
+    "taskList": {
+      "title": "Task List",
+      "total": "Total {{count}}"
     }
   },
   "errors": {
@@ -7322,7 +7979,12 @@
         "embeddingDims": "Embedding dims"
       },
       "keyPointsMore": "+{{count}} more",
-      "processedErrorTitle": "Processing failed"
+      "processedErrorTitle": "Processing failed",
+      "originalLanguage": "Original language: {{language}}",
+      "fullTextTitle": "Article text",
+      "languageNoticeTitle": "Language notice",
+      "languageNoticeDescription": "Detected language is {{language}}. This article may not have been translated to Chinese yet.",
+      "fullTextEmpty": "No translated article text available."
     },
     "columns": {
       "name": "Title",
@@ -7363,7 +8025,9 @@
       "selectedSummary": "Selected",
       "sectionSearchPlaceholder": "Search {{label}}",
       "selectedCountInline": "{{count}} selected",
-      "more": "+{{count}} more"
+      "more": "+{{count}} more",
+      "excludeDuplicates": "Hide duplicates",
+      "excludeDuplicatesHint": "Hide entries that are marked as duplicates."
     },
     "stats": {
       "query": "Query",
@@ -7398,16 +8062,22 @@
       },
       "duplicate": {
         "tooltip": "Duplicate similarity from dedup stage (0–1, shown as %)."
-      }
+      },
+      "title": "Technical Metrics",
+      "model": "Model",
+      "prompt": "Prompt"
     },
     "duplicate": {
       "duplicate": "Duplicate",
-      "similarity": "Similarity"
+      "similarity": "Similarity",
+      "of": "Duplicate of",
+      "viewPrimary": "View primary item"
     },
     "sentiment": {
       "positive": "Positive",
       "neutral": "Neutral",
-      "negative": "Negative"
+      "negative": "Negative",
+      "tooltip": "Sentiment inferred by AI model analysis"
     },
     "contentType": {
       "newsFact": "News fact",
@@ -7420,6 +8090,19 @@
       "feed": "Feed",
       "grid": "Grid",
       "list": "List"
+    },
+    "readMode": "Read mode",
+    "readingTime": "min read",
+    "partOfEvent": "Part of event",
+    "quickNav": {
+      "hub": "News Hub",
+      "newsnow": "NewsNow",
+      "events": "Event threads"
+    },
+    "sort": {
+      "latest": "Latest",
+      "published": "Published",
+      "personalized": "Personalized"
     }
   },
   "reader": {
@@ -7431,7 +8114,32 @@
       "targetUnsupported": "Target language is not supported by selected source.",
       "loading": "Translating article content...",
       "failed": "Translation failed."
-    }
+    },
+    "error": {
+      "title": "Failed to load article",
+      "notFound": "Article not found"
+    },
+    "back": "Back",
+    "font": "Font",
+    "size": "Size",
+    "languageNotice": "Original language: {{language}}",
+    "coverCaption": "Cover image from {{source}}",
+    "summary": "Summary",
+    "aiInsights": {
+      "title": "AI insights",
+      "sentiment": "Sentiment",
+      "quality": "Quality",
+      "event": "Related event",
+      "timeline": "Timeline",
+      "controversy": "Controversy signals",
+      "actors": "Key actors",
+      "relations": "Relationship graph"
+    },
+    "keyPoints": "Key Points",
+    "noContent": "No readable content available",
+    "viewOriginal": "View original article",
+    "viewDetails": "View Details",
+    "originalSource": "Original Source"
   },
   "crawlTemplates": {
     "errors": {
@@ -7475,7 +8183,11 @@
       "pageTypeHint": "Page type hint",
       "autoExpandDetails": "Auto expand details",
       "allowExternalLinks": "Allow external links",
-      "advancedJson": "Advanced crawl options (JSON)"
+      "advancedJson": "Advanced crawl options (JSON)",
+      "antiBotModeEnabled": "Anti-bot retry: Enabled",
+      "antiBotModeDisabled": "Anti-bot retry: Disabled",
+      "antiBotMode": "Anti-bot retry mode",
+      "antiBotModeHint": "Auto removes crawlOptions.antiBotMode. Enabled/Disabled explicitly control anti-bot retry when failures occur."
     },
     "sections": {
       "commonOptions": "Common Options"
@@ -7488,6 +8200,11 @@
       "auto": "Auto",
       "headless": "Headless",
       "headed": "Headed (Xvfb)"
+    },
+    "triState": {
+      "auto": "Auto (inherit)",
+      "enable": "Enabled",
+      "disable": "Disabled"
     }
   },
   "quality": {
@@ -7605,6 +8322,126 @@
         "message": "Message",
         "jobId": "Job"
       }
+    },
+    "classification": {
+      "errors": {
+        "loadFailed": "Failed to load classification quality.",
+        "sourceItems": "Failed to load source drilldown items."
+      },
+      "review": {
+        "success": "Review decision submitted.",
+        "error": "Failed to submit review decision.",
+        "batchSuccess": "Batch review submitted.",
+        "batchError": "Failed to submit batch review.",
+        "columns": {
+          "time": "Time",
+          "article": "Article",
+          "predicted": "Predicted",
+          "candidates": "Candidates",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "actions": {
+          "approve": "Approve",
+          "reject": "Reject",
+          "correct": "Correct"
+        },
+        "correct": {
+          "prompt": "Input corrected category path",
+          "batchPrompt": "Input corrected category path for selected items"
+        },
+        "title": "Review Queue",
+        "onlyPending": "Only pending",
+        "batch": {
+          "approve": "Batch approve",
+          "reject": "Batch reject",
+          "correct": "Batch correct"
+        }
+      },
+      "methods": {
+        "columns": {
+          "group": "Method group",
+          "count": "Count",
+          "share": "Share"
+        }
+      },
+      "histogram": {
+        "columns": {
+          "bucket": "Confidence bucket",
+          "count": "Count",
+          "distribution": "Distribution"
+        },
+        "title": "Confidence Histogram"
+      },
+      "trend": {
+        "columns": {
+          "time": "Bucket",
+          "total": "Total",
+          "avgConfidence": "Avg confidence",
+          "lowConfidence": "Low confidence"
+        },
+        "title": "Confidence Trend"
+      },
+      "sources": {
+        "columns": {
+          "source": "Source",
+          "lowCount": "Low confidence",
+          "total": "Total",
+          "lowRate": "Low rate",
+          "avg": "Avg confidence",
+          "actions": "Actions"
+        },
+        "actions": {
+          "drilldown": "Drilldown"
+        },
+        "title": "Low Confidence Sources TOP10"
+      },
+      "drilldown": {
+        "columns": {
+          "time": "Time",
+          "title": "Article",
+          "path": "Category path",
+          "confidence": "Confidence",
+          "method": "Method"
+        },
+        "title": "Source Drilldown",
+        "loadMore": "Load more",
+        "close": "Close"
+      },
+      "sourceCategory": {
+        "columns": {
+          "sourceType": "Source type",
+          "categoryPrefix": "Category prefix",
+          "count": "Count"
+        },
+        "title": "Source × Category Breakdown"
+      },
+      "title": "Classification Quality",
+      "window": {
+        "label": "Time window",
+        "1h": "Last 1h",
+        "24h": "Last 24h",
+        "7d": "Last 7d"
+      },
+      "filters": {
+        "active": "Active filters",
+        "source": "Source",
+        "category": "Category",
+        "clear": "Clear filters"
+      },
+      "stats": {
+        "total": "Total classified",
+        "pendingReviews": "Pending review",
+        "gateRejectRate": "Gate reject rate",
+        "gatePenalizedRate": "Gate penalized rate"
+      },
+      "latency": {
+        "title": "Classification Latency & Gate"
+      }
+    },
+    "tabs": {
+      "overview": "Overview",
+      "classification": "Classification"
     }
   },
   "assistant": {
@@ -7710,7 +8547,19 @@
         "switchedToSiteDb": "Web search is unavailable for the active assistant model profile. Switched to site database.",
         "hintSiteDb": "Use your site database for grounded answers on collected content.",
         "hintWebSearch": "Use web search for latest external facts and include source links."
-      }
+      },
+      "deleteRunningDenied": "Cannot delete a running conversation. Please wait until it finishes.",
+      "deleteSuccess": "Conversation deleted.",
+      "deleteNotFound": "Conversation no longer exists.",
+      "deleteFailed": "Failed to delete conversation: {{error}}",
+      "deleteConfirmTitle": "Delete this conversation?",
+      "deleteConfirmDescription": "This action cannot be undone.",
+      "deleteConversation": "Delete conversation",
+      "newConversation": "New",
+      "recentConversations": "Recent conversations",
+      "hideHistory": "Hide history",
+      "showHistory": "Show history",
+      "inputAriaLabel": "Assistant message input"
     },
     "messageRequired": "Please enter a question.",
     "requestFailed": "Request failed: {{error}}",
@@ -7751,7 +8600,10 @@
       "output": "Output",
       "empty": "Select a run from the list."
     },
-    "runPermissionRequired": "You do not have permission to run assistant tasks."
+    "runPermissionRequired": "You do not have permission to run assistant tasks.",
+    "hero": {
+      "kicker": "INTELLIGENCE CONSOLE"
+    }
   },
   "situationMonitor": {
     "correlation": {
@@ -8109,7 +8961,8 @@
       "hint": "Drag cards by their headers to rearrange the dashboard.",
       "reset": "Reset panels",
       "fixed": "Fixed",
-      "none": "No panels enabled. Open Panels to re-enable."
+      "none": "No panels enabled. Open Panels to re-enable.",
+      "hintCompact": "Enable Edit layout on smaller screens before dragging or resizing cards."
     },
     "autoRefresh": "Auto refresh",
     "translateToZh": "Translate to Simplified Chinese",
@@ -8164,6 +9017,10 @@
         "name": "Everything",
         "description": "All panels enabled."
       }
+    },
+    "layout": {
+      "done": "Done",
+      "edit": "Edit layout"
     }
   },
   "search": {

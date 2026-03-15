@@ -1,31 +1,17 @@
 'use client';
 
+import {
+  DASHBOARD_STREAM_EVENT_TYPES,
+  type WarMapEventsResponse,
+  type WarMapLayersResponse,
+  type WarMapNewsMarkersResponse,
+} from '@modular/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { emitUnauthorized } from '@/lib/auth-events';
 import { env } from '@/lib/env';
-
-enum WarEventSeverity {
-  Low = 'low',
-  Medium = 'medium',
-  High = 'high',
-}
-
-interface WarMapEvent {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  severity: WarEventSeverity;
-  value: number;
-  updatedAt?: string;
-}
-
-interface WarMapEventsResponse {
-  events: WarMapEvent[];
-  updatedAt?: string;
-}
+import { WAR_MAP_QUERY_KEYS } from './charts/war-map/war-map-data';
 
 interface FinancialCandlePoint {
   timestamp: string;
@@ -80,6 +66,8 @@ export interface DashboardStreamOptions {
   accessToken?: string;
   start: Date;
   end: Date;
+  queryStart?: Date;
+  queryEnd?: Date;
   queueStatus?: string | null;
   selectedSector?: string | null;
   enabled?: boolean;
@@ -91,9 +79,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const isWarMapEventsResponse = (value: unknown): value is WarMapEventsResponse => {
-  if (!isRecord(value)) return false;
-  const events = value.events;
-  return Array.isArray(events);
+  return isRecord(value) && Array.isArray(value.events);
+};
+
+const isWarMapNewsMarkersResponse = (
+  value: unknown,
+): value is WarMapNewsMarkersResponse => {
+  return isRecord(value) && Array.isArray(value.markers);
+};
+
+const isWarMapLayersResponse = (value: unknown): value is WarMapLayersResponse => {
+  return isRecord(value) && isRecord(value.layers);
 };
 
 const isFinancialCandlestickResponse = (
@@ -142,6 +138,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     accessToken,
     start,
     end,
+    queryStart = start,
+    queryEnd = end,
     enabled = true,
     queueStatus,
     selectedSector,
@@ -160,6 +158,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
   const hasLiveRef = useRef(false);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
+  const queryStartIso = queryStart.toISOString();
+  const queryEndIso = queryEnd.toISOString();
 
   useEffect(() => {
     if (!enabled || !accessToken) {
@@ -201,9 +201,22 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     retryRef.current = 0;
     statusRef.current = 'offline';
     hasLiveRef.current = false;
-    const warEventsPrefixKey = ['dashboard', 'war-map', 'events'] as const;
-    const candlestickKey = ['dashboard', 'financial-candlestick', startIso, endIso] as const;
-    const geoHeatmapKey = ['dashboard', 'spacetime', 'geo-heatmap', startIso, endIso] as const;
+    const warEventsPrefixKey = WAR_MAP_QUERY_KEYS.eventsPrefix;
+    const warNewsMarkersPrefixKey = WAR_MAP_QUERY_KEYS.newsMarkersPrefix;
+    const warLayersPrefixKey = WAR_MAP_QUERY_KEYS.layersPrefix;
+    const candlestickKey = [
+      'dashboard',
+      'financial-candlestick',
+      queryStartIso,
+      queryEndIso,
+    ] as const;
+    const geoHeatmapKey = [
+      'dashboard',
+      'spacetime',
+      'geo-heatmap',
+      queryStartIso,
+      queryEndIso,
+    ] as const;
     const geoHeatmapPrefixKey = ['dashboard', 'spacetime', 'geo-heatmap'] as const;
     let active = true;
     let connecting = false;
@@ -214,6 +227,12 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (!Array.isArray(queryKey)) return false;
       if (queryKey[0] !== 'dashboard') return false;
       if (queryKey[1] === 'war-map' && queryKey[2] === 'events') {
+        return true;
+      }
+      if (queryKey[1] === 'war-map' && queryKey[2] === 'news-markers') {
+        return true;
+      }
+      if (queryKey[1] === 'war-map' && queryKey[2] === 'layers') {
         return true;
       }
       if (queryKey[1] === 'financial-candlestick') return true;
@@ -230,6 +249,22 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     const invalidateWarMapEventQueries = () => {
       void queryClient.invalidateQueries({
         queryKey: warEventsPrefixKey,
+        exact: false,
+        refetchType: 'active',
+      });
+    };
+
+    const invalidateWarMapNewsMarkerQueries = () => {
+      void queryClient.invalidateQueries({
+        queryKey: warNewsMarkersPrefixKey,
+        exact: false,
+        refetchType: 'active',
+      });
+    };
+
+    const invalidateWarMapLayerQueries = () => {
+      void queryClient.invalidateQueries({
+        queryKey: warLayersPrefixKey,
         exact: false,
         refetchType: 'active',
       });
@@ -402,24 +437,49 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     const handleEvent = (eventType: string, rawData: string) => {
       recordMessage();
       const payload = parseStreamData(rawData);
-      if (eventType === 'war-map-events' && isWarMapEventsResponse(payload)) {
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapEvents &&
+        isWarMapEventsResponse(payload)
+      ) {
         // War-map queries include bbox/zoom/cluster dimensions; refetch active ones instead of writing mismatched payload.
         invalidateWarMapEventQueries();
         markHealthy();
         return;
       }
-      if (eventType === 'financial-candlestick' && isFinancialCandlestickResponse(payload)) {
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapNewsMarkers &&
+        isWarMapNewsMarkersResponse(payload)
+      ) {
+        invalidateWarMapNewsMarkerQueries();
+        markHealthy();
+        return;
+      }
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapLayers &&
+        isWarMapLayersResponse(payload)
+      ) {
+        invalidateWarMapLayerQueries();
+        markHealthy();
+        return;
+      }
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.financialCandlestick &&
+        isFinancialCandlestickResponse(payload)
+      ) {
         queryClient.setQueryData(candlestickKey, payload);
         markHealthy();
         return;
       }
-      if (eventType === 'spacetime-geo-heatmap' && isSpacetimeGeoHeatmapResponse(payload)) {
+      if (
+        eventType === DASHBOARD_STREAM_EVENT_TYPES.spacetimeGeoHeatmap &&
+        isSpacetimeGeoHeatmapResponse(payload)
+      ) {
         queryClient.setQueryData(geoHeatmapKey, payload);
         invalidateGeoHeatmapQueries(false);
         markHealthy();
         return;
       }
-      if (eventType === 'stream-error') {
+      if (eventType === DASHBOARD_STREAM_EVENT_TYPES.streamError) {
         const errorPayload = isRecord(payload) ? (payload as DashboardStreamErrorPayload) : null;
         const baseMessage =
           errorPayload?.message ?? 'Dashboard stream update failed';
@@ -429,7 +489,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         handleError(detail ? `${headline}: ${detail}` : headline);
         return;
       }
-      if (eventType === 'ping') {
+      if (eventType === DASHBOARD_STREAM_EVENT_TYPES.ping) {
         markHealthy();
         return;
       }
@@ -623,7 +683,9 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     accessToken,
     enabled,
     endIso,
+    queryEndIso,
     queryClient,
+    queryStartIso,
     queueStatus,
     selectedSector,
     startIso,

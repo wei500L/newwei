@@ -353,12 +353,17 @@ export const formatNotificationPresentation = (
             })
           : null,
       ].filter(Boolean) as string[];
-      const body = details.length
+      const triggerCondition = toStringValue(technicalDetail);
+      const structuredDetail = details.length
         ? t("notifications.presentation.alertTriggered.body", {
             defaultValue: "Triggered alert condition: {{details}}.",
             details: details.join(locale === "zh-CN" ? "，" : ", "),
           })
-        : (item.body ?? null);
+        : null;
+      const body =
+        triggerCondition && structuredDetail
+          ? joinSentences(triggerCondition, structuredDetail, locale)
+          : (triggerCondition ?? structuredDetail ?? item.body ?? null);
       const title = t("notifications.presentation.alertTriggered.title", {
         defaultValue: "Alert triggered: {{ruleName}}",
         ruleName,
@@ -504,7 +509,7 @@ export const formatNotificationPresentation = (
       const gateSummary = toStringValue(
         params.gateSummary ?? params.gateAlertSummary,
       );
-      const body =
+      const semanticBody =
         latencySummary || gateSummary
           ? [
               latencySummary
@@ -528,14 +533,19 @@ export const formatNotificationPresentation = (
             ]
               .filter(Boolean)
               .join(" | ")
-          : t(
-              "notifications.presentation.classificationQualityThresholdExceeded.body",
-              {
-                defaultValue:
-                  "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
-                window,
-              },
-            );
+          : null;
+      const body =
+        semanticBody ??
+        technicalDetail ??
+        item.body ??
+        t(
+          "notifications.presentation.classificationQualityThresholdExceeded.body",
+          {
+            defaultValue:
+              "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
+            window,
+          },
+        );
       return { title, body, toastText: title };
     }
     default:

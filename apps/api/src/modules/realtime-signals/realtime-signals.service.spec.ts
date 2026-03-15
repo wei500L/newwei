@@ -32,17 +32,29 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
 };
 
 describe("RealtimeSignalsService unrest merge", () => {
-  const buildService = () =>
-    new RealtimeSignalsService(
+  const buildService = () => {
+    const store = {
+      getLatestAdsbSnapshot: jest.fn().mockResolvedValue(null),
+      setLatestAdsbSnapshot: jest.fn(),
+      clearLatestAdsbSnapshot: jest.fn(),
+    };
+    const service = new RealtimeSignalsService(
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
+      store as any,
       {} as any,
     );
+    return { service, store };
+  };
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
   it("fetches ADS-B military feed from configured endpoint", async () => {
-    const service = buildService();
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-02T12:00:00.000Z"));
+    const { service, store } = buildService();
     const runtime = {
       ...runtimeConfig,
       adsb: { baseUrl: "https://api.adsb.lol/" },
@@ -50,30 +62,254 @@ describe("RealtimeSignalsService unrest merge", () => {
     const fetchJsonSpy = jest
       .spyOn(service as any, "fetchJsonWithRetry")
       .mockResolvedValue({
-        total: 3,
-        ac: [{ r: "USAF1" }],
+        total: 4,
+        ac: [
+          {
+            hex: "ae017a",
+            flight: "SPAR415 ",
+            r: "84-0142",
+            t: "LJ35",
+            lat: 39.115491,
+            lon: -99.142797,
+            track: 240.11,
+            alt_baro: 35000,
+            gs: 355.2,
+            seen_pos: 90,
+          },
+          {
+            hex: "ae017a",
+            flight: "SPAR416 ",
+            r: "84-0142",
+            t: "LJ35",
+            lat: 39.315491,
+            lon: -99.342797,
+            track: 261.89,
+            alt_baro: 35975,
+            gs: 375.8,
+            seen_pos: 10,
+            country: "US",
+          },
+          {
+            hex: "ae6306",
+            flight: "BLZR295",
+            lat: 28.002242,
+            lon: -98.471051,
+            seen_pos: 900,
+          },
+          {
+            hex: "ae6400",
+            flight: "84-0142",
+            lat: 35.002242,
+            lon: -97.471051,
+            seen_pos: 5,
+          },
+        ],
       });
 
-    const result = await (service as any).fetchAdsbSignal(runtime);
+    const result = await (service as any).fetchAdsbSignal("org-1", runtime);
 
     expect(fetchJsonSpy).toHaveBeenCalledWith(
       "https://api.adsb.lol/v2/mil",
       runtime,
     );
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({
       metricSlug: "realtime.adsb.military_flights",
-      value: 3,
+      value: 4,
       context: {
         source: "adsb",
-        totalAircraft: 1,
-        militaryCount: 3,
+        totalAircraft: 4,
+        militaryCount: 4,
+        validPositionCount: 2,
+        snapshotValidPositionCount: 2,
+        snapshotRetainedPrevious: false,
+        snapshotFreshness: "fresh",
+        staleThresholdSec: 600,
+        droppedStalePositionCount: 1,
+        deduplicatedCount: 1,
+        countryCodes: ["US"],
       },
     });
+    expect(result[1]).toMatchObject({
+      metricSlug: "realtime.adsb.snapshot_health",
+      value: 0,
+      context: {
+        source: "adsb",
+        healthState: "fresh",
+        stale: false,
+        snapshotRetainedPrevious: false,
+        currentValidPositionCount: 2,
+        snapshotValidPositionCount: 2,
+        rawAircraftCount: 4,
+        maxStaleMinutes: 10,
+        countryCodes: ["US"],
+      },
+    });
+    expect(store.setLatestAdsbSnapshot).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "adsb",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        totalAircraft: 4,
+        validPositionCount: 2,
+        latestObservedAt: "2026-03-02T11:59:55.000Z",
+        diagnostics: expect.objectContaining({
+          staleThresholdSec: 600,
+          droppedInvalidPositionCount: 0,
+          droppedMissingIdentityCount: 0,
+          droppedStalePositionCount: 1,
+          deduplicatedCount: 1,
+          retainedPreviousSnapshot: false,
+        }),
+        aircraft: expect.arrayContaining([
+          expect.objectContaining({
+            id: "ae017a",
+            icao24: "ae017a",
+            callsign: "SPAR416",
+            registration: "84-0142",
+            aircraftType: "LJ35",
+            lat: 39.315491,
+            lng: -99.342797,
+            heading: 261.89,
+            altitudeFt: 35975,
+            groundSpeedKt: 375.8,
+            countryCode: "US",
+            countryName: "United States",
+            source: "adsb",
+            observedAt: "2026-03-02T11:59:50.000Z",
+          }),
+          expect.objectContaining({
+            id: "ae6400",
+            icao24: "ae6400",
+            callsign: "84-0142",
+            observedAt: "2026-03-02T11:59:55.000Z",
+          }),
+        ]),
+      }),
+      1200,
+    );
+  });
+
+  it("retains the previous ADS-B snapshot until the freshness window expires", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-02T12:00:00.000Z"));
+    const { service, store } = buildService();
+    store.getLatestAdsbSnapshot.mockResolvedValue({
+      source: "adsb",
+      sourceEndpoint: "https://api.adsb.lol/v2/mil",
+      updatedAt: "2026-03-02T11:58:30.000Z",
+      totalAircraft: 2,
+      validPositionCount: 1,
+      latestObservedAt: "2026-03-02T11:58:20.000Z",
+      diagnostics: {
+        latestObservedAt: "2026-03-02T11:58:20.000Z",
+        oldestObservedAt: "2026-03-02T11:58:20.000Z",
+        staleThresholdSec: 600,
+        droppedInvalidPositionCount: 0,
+        droppedMissingIdentityCount: 0,
+        droppedStalePositionCount: 0,
+        deduplicatedCount: 0,
+        retainedPreviousSnapshot: false,
+      },
+      aircraft: [
+        {
+          id: "ae017a",
+          icao24: "ae017a",
+          callsign: "SPAR416",
+          lat: 39.315491,
+          lng: -99.342797,
+          observedAt: "2026-03-02T11:58:20.000Z",
+          source: "adsb" as const,
+        },
+      ],
+    });
+    jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
+      total: 1,
+      ac: [
+        {
+          hex: "ae6306",
+          flight: "BLZR295",
+          lat: 28.002242,
+          lon: -98.471051,
+          seen_pos: 901,
+        },
+      ],
+    });
+
+    const result = await (service as any).fetchAdsbSignal("org-1", runtimeConfig);
+
+    expect(result[0]).toMatchObject({
+      context: {
+        validPositionCount: 0,
+        snapshotValidPositionCount: 1,
+        snapshotRetainedPrevious: true,
+        snapshotFreshness: "fresh",
+        droppedStalePositionCount: 1,
+      },
+    });
+    expect(result[1]).toMatchObject({
+      metricSlug: "realtime.adsb.snapshot_health",
+      value: 1,
+      context: {
+        healthState: "fresh",
+        stale: false,
+        snapshotRetainedPrevious: true,
+        currentValidPositionCount: 0,
+        snapshotValidPositionCount: 1,
+      },
+    });
+    expect(store.setLatestAdsbSnapshot).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        updatedAt: "2026-03-02T11:58:30.000Z",
+        totalAircraft: 1,
+        validPositionCount: 1,
+        latestObservedAt: "2026-03-02T11:58:20.000Z",
+        diagnostics: expect.objectContaining({
+          retainedPreviousSnapshot: true,
+          droppedStalePositionCount: 1,
+        }),
+        aircraft: [
+          expect.objectContaining({
+            id: "ae017a",
+            icao24: "ae017a",
+          }),
+        ],
+      }),
+      1200,
+    );
+  });
+
+  it("does not infer ADS-B country codes from registrations or callsigns", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-02T12:00:00.000Z"));
+    const { service, store } = buildService();
+    jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
+      total: 1,
+      ac: [
+        {
+          hex: "ae6400",
+          flight: "USAF01",
+          r: "84-0142",
+          lat: 35.002242,
+          lon: -97.471051,
+          seen_pos: 5,
+        },
+      ],
+    });
+
+    const result = await (service as any).fetchAdsbSignal("org-1", runtimeConfig);
+
+    expect(result[0]?.context?.countryCodes).toEqual([]);
+    expect((result[0]?.context as Record<string, unknown>).latestObservedAt).toBe(
+      "2026-03-02T11:59:55.000Z",
+    );
+    const storedSnapshot = store.setLatestAdsbSnapshot.mock.calls[0]?.[1] as
+      | { aircraft?: Array<Record<string, unknown>> }
+      | undefined;
+    expect(storedSnapshot?.aircraft?.[0]?.countryCode).toBeUndefined();
   });
 
   it("deduplicates unrest events by rounded geo/date key and prefers ACLED", () => {
-    const service = buildService();
+    const { service } = buildService();
     const acled = [
       {
         id: "acled-1",
@@ -120,7 +356,7 @@ describe("RealtimeSignalsService unrest merge", () => {
   });
 
   it("reports acled+gdelt source when both feeds contributed", async () => {
-    const service = buildService();
+    const { service } = buildService();
     const acled = [
       {
         id: "acled-1",
@@ -207,7 +443,7 @@ describe("RealtimeSignalsService unrest merge", () => {
     const nowSpy = jest
       .spyOn(Date, "now")
       .mockReturnValue(Date.parse("2026-03-12T12:00:00.000Z"));
-    const service = buildService();
+    const { service } = buildService();
     const fetchJsonSpy = jest
       .spyOn(service as any, "fetchJsonWithRetry")
       .mockResolvedValue({
@@ -225,7 +461,7 @@ describe("RealtimeSignalsService unrest merge", () => {
   });
 
   it("parses gdelt unrest geojson fallback feed", async () => {
-    const service = buildService();
+    const { service } = buildService();
     jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
       features: [
         {
@@ -285,6 +521,8 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       getInsightSnapshot: jest.fn(),
       getLastRun: jest.fn(),
       getSourceState: jest.fn(),
+      clearLatestAdsbSnapshot: jest.fn(),
+      setLatestAdsbSnapshot: jest.fn(),
       appendPoint: jest.fn(),
       setLastRun: jest.fn(),
       setSourceState: jest.fn(),
@@ -553,6 +791,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       getInsightSnapshot: jest.fn().mockResolvedValue(null),
       getLastRun: jest.fn().mockResolvedValue(null),
       getSourceState: jest.fn().mockResolvedValue(null),
+      getLatestAdsbSnapshot: jest.fn().mockResolvedValue(null),
       evaluateMetric: jest.fn().mockResolvedValue({
         latest: null,
         previous: null,
@@ -607,6 +846,19 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     expect(result.sources.every((source) => source.status === "idle")).toBe(
       true,
     );
+    const adsbSource = result.sources.find((source) => source.source === "adsb");
+    expect(adsbSource?.adsbSnapshot).toEqual({
+      freshness: "missing",
+      rawAircraftCount: 0,
+      currentValidPositionCount: 0,
+      snapshotValidPositionCount: 0,
+      staleThresholdSec: 600,
+      retainedPreviousSnapshot: false,
+      droppedInvalidPositionCount: 0,
+      droppedMissingIdentityCount: 0,
+      droppedStalePositionCount: 0,
+      deduplicatedCount: 0,
+    });
   });
 
   it("excludes blank prisma locations from marker readiness counts", async () => {

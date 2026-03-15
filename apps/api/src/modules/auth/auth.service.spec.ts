@@ -391,6 +391,33 @@ describe("AuthService", () => {
     expect(user.roleIds).toEqual(["role-2"]);
   });
 
+  it("rejects password login when the target membership is disabled", async () => {
+    const password = await bcrypt.hash("password", 10);
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      passwordHash: password,
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          isActive: false,
+          org: { isActive: true },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }],
+          },
+        },
+      ],
+    });
+
+    await expect(
+      service.validateUser("test@example.com", "password", "org-1"),
+    ).rejects.toThrow("Organization access disabled");
+  });
+
   it("throws on excessive login attempts", async () => {
     rateLimiterMock.consume = jest.fn().mockResolvedValue(false);
     await expect(
@@ -404,6 +431,48 @@ describe("AuthService", () => {
       .mockResolvedValue({ limit: 2, windowSeconds: 120 });
     await (service as any).validateRateLimit("login:test");
     expect(rateLimiterMock.consume).toHaveBeenCalledWith("login:test", 2, 120);
+  });
+
+  it("writes userAgent into login audit metadata", async () => {
+    jest.spyOn(service, "validateUser").mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      orgId: "org-1",
+      primaryRoleId: "role-1",
+      roleIds: ["role-1"],
+      permissions: ["items.read"],
+      isActive: true,
+    });
+    jest
+      .spyOn(service as any, "signRefreshToken")
+      .mockResolvedValue({ token: "refresh-token" });
+    prismaMock.user.update = jest.fn().mockResolvedValue({
+      id: "user-1",
+      lastLoginAt: new Date(),
+    });
+
+    await service.login(
+      "test@example.com",
+      "password",
+      "org-1",
+      "127.0.0.1",
+      "Chrome/136.0",
+    );
+
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "login",
+          ipAddress: "127.0.0.1",
+          metadata: {
+            email: "test@example.com",
+            userAgent: "Chrome/136.0",
+          },
+        }),
+      }),
+    );
   });
 
   it("defaults refresh to the org encoded in the token when none is provided", async () => {
@@ -521,6 +590,39 @@ describe("AuthService", () => {
     const result = await service.refresh(`token-1.org-1.${secret}`, "org-2");
     expect(result.user.orgId).toBe("org-2");
     expect(result.user.permissions).toContain("items.write");
+  });
+
+  it("rejects refresh when the selected membership is disabled", async () => {
+    const secret = "a".repeat(64);
+    prismaMock.refreshToken.findUnique = jest.fn().mockResolvedValue({
+      id: "token-1",
+      userId: "user-1",
+      tokenHash: await bcrypt.hash(secret, 10),
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null,
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      isActive: true,
+    });
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        isActive: false,
+        org: { isActive: true },
+        roleId: "role-1",
+        role: {
+          permissions: [{ permission: { name: "items.read" } }],
+        },
+      },
+    ]);
+
+    await expect(service.refresh(`token-1.org-1.${secret}`)).rejects.toThrow(
+      "Organization access disabled",
+    );
   });
 
   it("rejects blacklisted refresh tokens without querying the database", async () => {
@@ -662,6 +764,23 @@ describe("AuthService", () => {
     );
   });
 
+  it("rejects disabled memberships when loading profiles", async () => {
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        isActive: false,
+        org: { isActive: true },
+        roleId: "role-1",
+        role: { permissions: [] },
+        roles: [],
+      },
+    ]);
+
+    await expect(service.getUserProfile("user-1", "org-1")).rejects.toThrow(
+      "Organization access disabled",
+    );
+  });
+
   it("returns generic success for sendLoginCode when account does not exist", async () => {
     prismaMock.user.findUnique = jest.fn().mockResolvedValue(null);
 
@@ -736,5 +855,89 @@ describe("AuthService", () => {
     expect(result.user.orgId).toBe("org-1");
     expect(result.accessToken).toBeTruthy();
     expect(result.refreshToken).toBeTruthy();
+  });
+
+  it("rejects loginWithCode when the membership is disabled", async () => {
+    cacheMock.get = jest.fn().mockResolvedValue({
+      codeHash: crypto.createHash("sha256").update("12345678").digest("hex"),
+      email: "test@example.com",
+      userId: "user-1",
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      avatarUrl: null,
+      pendingEmail: null,
+      emailVerified: new Date(),
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          isActive: false,
+          org: { isActive: true },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }],
+          },
+          roles: [],
+        },
+      ],
+    });
+
+    await expect(
+      service.loginWithCode("test@example.com", "12345678", "org-1"),
+    ).rejects.toThrow("Organization access disabled");
+  });
+
+  it("writes userAgent into loginWithCode audit metadata", async () => {
+    cacheMock.get = jest.fn().mockResolvedValue({
+      codeHash: crypto.createHash("sha256").update("12345678").digest("hex"),
+      email: "test@example.com",
+      userId: "user-1",
+    });
+    prismaMock.user.findUnique = jest.fn().mockResolvedValue({
+      id: "user-1",
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+      avatarUrl: null,
+      pendingEmail: null,
+      emailVerified: new Date(),
+      isActive: true,
+      memberships: [
+        {
+          orgId: "org-1",
+          org: { isActive: true },
+          roleId: "role-1",
+          role: {
+            permissions: [{ permission: { name: "items.read" } }],
+          },
+          roles: [],
+        },
+      ],
+    });
+
+    await service.loginWithCode(
+      "test@example.com",
+      "12345678",
+      "org-1",
+      "127.0.0.1",
+      "Mozilla/5.0",
+    );
+
+    expect(prismaMock.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "login_with_code",
+          ipAddress: "127.0.0.1",
+          metadata: {
+            email: "test@example.com",
+            userAgent: "Mozilla/5.0",
+          },
+        }),
+      }),
+    );
   });
 });

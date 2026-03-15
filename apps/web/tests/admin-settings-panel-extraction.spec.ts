@@ -50,6 +50,10 @@ describe("admin settings shared panel extraction", () => {
     expect(adminSectionSource).toContain(
       "@/components/settings/access-settings-content",
     );
+    expect(adminSectionSource).toContain(
+      "params: Promise<AdminSettingsSectionPageParams>",
+    );
+    expect(adminSectionSource).toContain("const { section } = await params");
     expect(adminSectionSource).not.toContain(
       "@/app/(app)/settings/settings-content",
     );

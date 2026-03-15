@@ -38,13 +38,16 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   emailVerified?: string | null;
+  lastLoginAt?: string | null;
   pendingEmail?: string | null;
   orgId: string;
+  primaryRoleId?: string | null;
   roleIds: string[];
   permissions: string[];
   firstName: string;
   lastName: string;
   avatarUrl?: string | null;
+  isActive?: boolean;
   planTier?: string | null;
   subscriptionStatus?: string | null;
   accessTokenId?: string;
@@ -68,7 +71,13 @@ interface MembershipRecord {
   roleId?: string | null;
   roles?: MembershipRoleLink[] | null;
   role?: MembershipRole | null;
-  org?: { planTier?: string | null; subscriptionStatus?: string | null } | null;
+  isActive?: boolean;
+  org?: {
+    isActive?: boolean;
+    slug?: string;
+    planTier?: string | null;
+    subscriptionStatus?: string | null;
+  } | null;
 }
 
 interface MembershipPickOptions {
@@ -206,9 +215,33 @@ export class AuthService {
     }
   }
 
+  private isMembershipAccessible(
+    membership: {
+      isActive?: boolean;
+      org?: { isActive?: boolean } | null;
+    },
+  ): boolean {
+    return (membership.org?.isActive ?? true) && (membership.isActive ?? true);
+  }
+
+  private assertMembershipAccessible(
+    membership: {
+      isActive?: boolean;
+      org?: { isActive?: boolean } | null;
+    },
+  ) {
+    if (!(membership.org?.isActive ?? true)) {
+      throw new UnauthorizedException("Organization disabled");
+    }
+    if (!(membership.isActive ?? true)) {
+      throw new UnauthorizedException("Organization access disabled");
+    }
+  }
+
   private pickMembership<
     T extends {
       orgId: string;
+      isActive?: boolean;
       org?: { isActive: boolean; slug?: string } | null;
     },
   >(
@@ -222,19 +255,25 @@ export class AuthService {
       );
     }
     if (!orgIdOrSlug) {
-      if (memberships.length === 1) {
-        return memberships[0]!;
-      }
-
       const activeMemberships = memberships.filter(
-        (membership) => membership.org?.isActive ?? true,
+        (membership) => this.isMembershipAccessible(membership),
       );
+
+      if (memberships.length === 1) {
+        if (activeMemberships.length === 1) {
+          return activeMemberships[0]!;
+        }
+        this.assertMembershipAccessible(memberships[0]!);
+      }
 
       if (activeMemberships.length === 1) {
         return activeMemberships[0]!;
       }
 
       if (activeMemberships.length === 0) {
+        if (memberships.some((membership) => !(membership.isActive ?? true))) {
+          throw new UnauthorizedException("Organization access disabled");
+        }
         throw new UnauthorizedException("Organization disabled");
       }
 
@@ -274,7 +313,7 @@ export class AuthService {
     membership: MembershipRecord,
   ): Pick<
     AuthenticatedUser,
-    "roleIds" | "permissions" | "planTier" | "subscriptionStatus"
+    "primaryRoleId" | "roleIds" | "permissions" | "planTier" | "subscriptionStatus"
   > {
     const roleIds = new Set<string>();
     const permissions = new Set<string>();
@@ -311,6 +350,7 @@ export class AuthService {
     }
 
     return {
+      primaryRoleId: membership.roleId ?? null,
       roleIds: Array.from(roleIds),
       permissions: Array.from(permissions),
       planTier: membership.org?.planTier ?? null,
@@ -369,22 +409,23 @@ export class AuthService {
     const primaryMembership = this.pickMembership(user.memberships, orgId, {
       requireExplicitOrg: false,
     });
-    if (!primaryMembership.org?.isActive) {
-      throw new UnauthorizedException("Organization disabled");
-    }
+    this.assertMembershipAccessible(primaryMembership);
 
-    const { roleIds, permissions, planTier, subscriptionStatus } =
+    const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
       this.buildMembershipClaims(primaryMembership);
 
     return {
       id: user.id,
       email: user.email,
       emailVerified: this.formatEmailVerified(user.emailVerified),
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
       pendingEmail: user.pendingEmail,
       firstName: user.firstName,
       lastName: user.lastName,
       avatarUrl: user.avatarUrl,
+      isActive: user.isActive && (primaryMembership.isActive ?? true),
       orgId: primaryMembership.orgId,
+      primaryRoleId,
       roleIds,
       permissions,
       planTier,
@@ -523,7 +564,7 @@ export class AuthService {
           actorId: user.id,
           resource: "auth",
           action: "login",
-          metadata: { email: normalizedEmail },
+          metadata: { email: normalizedEmail, userAgent: userAgent ?? null },
           ipAddress,
         },
       },
@@ -880,21 +921,22 @@ export class AuthService {
     const primaryMembership = this.pickMembership(user.memberships, orgId, {
       requireExplicitOrg: false,
     });
-    if (!primaryMembership.org?.isActive) {
-      throw new UnauthorizedException("Organization disabled");
-    }
+    this.assertMembershipAccessible(primaryMembership);
 
-    const { roleIds, permissions, planTier, subscriptionStatus } =
+    const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
       this.buildMembershipClaims(primaryMembership);
     const authUser: AuthenticatedUser = {
       id: user.id,
       email: user.email,
       emailVerified: this.formatEmailVerified(user.emailVerified),
+      lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
       pendingEmail: user.pendingEmail,
       firstName: user.firstName,
       lastName: user.lastName,
       avatarUrl: user.avatarUrl,
+      isActive: user.isActive && (primaryMembership.isActive ?? true),
       orgId: primaryMembership.orgId,
+      primaryRoleId,
       roleIds,
       permissions,
       planTier,
@@ -925,7 +967,7 @@ export class AuthService {
           actorId: authUser.id,
           resource: "auth",
           action: "login_with_code",
-          metadata: { email: normalizedEmail },
+          metadata: { email: normalizedEmail, userAgent: userAgent ?? null },
           ipAddress,
         },
       },
@@ -1030,22 +1072,23 @@ export class AuthService {
           memberships,
           effectiveOrgId,
         );
-        if (!primaryMembership.org?.isActive) {
-          throw new UnauthorizedException("Organization disabled");
-        }
+        this.assertMembershipAccessible(primaryMembership);
 
-        const { roleIds, permissions, planTier, subscriptionStatus } =
+        const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
           this.buildMembershipClaims(primaryMembership);
 
         const authUser: AuthenticatedUser = {
           id: user.id,
           email: user.email,
           emailVerified: this.formatEmailVerified(user.emailVerified),
+          lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
           pendingEmail: user.pendingEmail,
           firstName: user.firstName,
           lastName: user.lastName,
           avatarUrl: user.avatarUrl,
+          isActive: user.isActive && (primaryMembership.isActive ?? true),
           orgId: primaryMembership.orgId,
+          primaryRoleId,
           roleIds,
           permissions,
           planTier,
@@ -1231,9 +1274,7 @@ export class AuthService {
         });
 
         const membership = this.pickMembership(memberships, orgId);
-        if (!membership.org?.isActive) {
-          throw new UnauthorizedException("Organization disabled");
-        }
+        this.assertMembershipAccessible(membership);
 
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
@@ -1245,18 +1286,21 @@ export class AuthService {
           throw new UnauthorizedException("User disabled");
         }
 
-        const { roleIds, permissions, planTier, subscriptionStatus } =
+        const { primaryRoleId, roleIds, permissions, planTier, subscriptionStatus } =
           this.buildMembershipClaims(membership);
 
         return {
           id: user.id,
           email: user.email,
           emailVerified: this.formatEmailVerified(user.emailVerified),
+          lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
           pendingEmail: user.pendingEmail,
           firstName: user.firstName,
           lastName: user.lastName,
           avatarUrl: user.avatarUrl,
+          isActive: user.isActive && (membership.isActive ?? true),
           orgId: membership.orgId,
+          primaryRoleId,
           roleIds,
           permissions,
           planTier,

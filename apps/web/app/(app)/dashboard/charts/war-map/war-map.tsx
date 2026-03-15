@@ -4,16 +4,20 @@ import { CloseOutlined, ExpandOutlined, SettingOutlined } from '@ant-design/icon
 import { PathLayer, PolygonLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { MapboxOverlay } from '@deck.gl/mapbox';
 import {
+  type WarMapEvent,
+  type WarMapEventSeverity,
   type WarMapLayerDataset,
   type WarMapLayerFeature,
   type WarMapLayerId,
+  type WarMapNewsGeoSource,
+  type WarMapNewsMarker,
   type WarMapPreset,
   type WarMapTimeRangePreset,
+  type WarMapTranslateTarget,
   WAR_MAP_LAYER_IDS,
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
 } from '@modular/utils';
-import { useQuery } from '@tanstack/react-query';
 import { Button, Checkbox, Drawer, Grid, List, Popover, Skeleton, Space, Tag, Typography } from 'antd';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
@@ -32,11 +36,7 @@ import { createDeckMapRuntime, extractMapBbox, setDeckOverlayProps } from '@/lib
 import { MAP_STYLE_URL } from '@/lib/map/map-style';
 import { useRenderableContainer } from '@/lib/map/use-renderable-container';
 import { safeHttpUrl } from '@/lib/url';
-import { useDashboardRangeStore } from '@/store/time-range';
 import { useWarMapSettingsStore } from '@/store/war-map-settings';
-
-import type { StoredSituationMonitor } from '@/app/(app)/situation-monitor/types/situation-monitor-monitors';
-import { SITUATION_MONITOR_MONITORS_UPDATED_EVENT } from '@/app/(app)/situation-monitor/utils/monitor-events';
 
 import {
   clusterWarMapPoints,
@@ -51,67 +51,17 @@ import {
   isValidDeckCoordinate,
   type DeckCoordinate,
 } from './war-map-geometry';
+import { WAR_MAP_UNSUPPORTED_LAYER_IDS } from './war-map-data';
+import { getWarMapFlightLabel, readWarMapFlightProperties } from './war-map-flights';
 import { BBOX_QUERY_MIN_ZOOM, buildWarMapQueryBbox } from './query-viewport';
 import { readWarMapUrlState, writeWarMapUrlState } from './url-state';
+import { useWarMapData } from './use-war-map-data';
+import {
+  useDashboardStream,
+  type DashboardStreamState,
+} from '../../use-dashboard-stream';
 
 const ALL_TIME_START = new Date('1970-01-01T00:00:00.000Z');
-
-type WarEventSeverity = 'low' | 'medium' | 'high';
-type WarMapNewsGeoSource = 'geocoded' | 'fallback-country';
-
-interface WarMapEvent {
-  id: string;
-  name: string;
-  nameZh?: string;
-  lat: number;
-  lng: number;
-  severity: WarEventSeverity;
-  latestAt?: string;
-  derivedScore?: number;
-  value?: number;
-  alertScore?: number;
-  alertCount?: number;
-  newsCount?: number;
-  isCluster?: boolean;
-  clusterId?: number;
-  clusterCount?: number;
-}
-
-interface WarMapNewsMarker {
-  id: string;
-  title: string;
-  titleZh?: string;
-  url?: string | null;
-  location: string;
-  locationZh?: string;
-  lat: number;
-  lng: number;
-  publishedAt?: string;
-  ingestedAt?: string;
-  displayName?: string;
-  displayNameZh?: string;
-  geoSource: WarMapNewsGeoSource;
-  isCluster?: boolean;
-  clusterId?: number;
-  clusterCount?: number;
-}
-
-interface WarMapEventsResponse {
-  events: WarMapEvent[];
-  updatedAt?: string;
-  clustered?: boolean;
-}
-
-interface WarMapNewsMarkersResponse {
-  markers: WarMapNewsMarker[];
-  updatedAt?: string;
-  clustered?: boolean;
-}
-
-interface WarMapLayersResponse {
-  updatedAt: string;
-  layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>>;
-}
 
 interface DeckPoint {
   id: string;
@@ -128,12 +78,24 @@ interface DeckPoint {
   ingestedAt?: string;
   latestAt?: string;
   locationLabel?: string;
-  severity?: WarEventSeverity;
+  severity?: WarMapEventSeverity;
   alertCount?: number;
   newsCount?: number;
   geoSource?: WarMapNewsGeoSource;
   query?: string;
-  kind: 'event' | 'news' | 'news-cluster' | 'event-cluster' | 'layer' | 'monitor';
+  layerId?: WarMapLayerId;
+  sourceType?: 'adsb';
+  callsign?: string;
+  icao24?: string;
+  registration?: string;
+  aircraftType?: string;
+  countryCode?: string;
+  countryName?: string;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  sourceUpdatedAt?: string;
+  kind: 'event' | 'news' | 'news-cluster' | 'event-cluster' | 'layer' | 'layer-cluster' | 'monitor';
   description?: string;
 }
 
@@ -150,7 +112,7 @@ interface RenderableWarMapNewsMarker extends WarMapNewsMarker {
 type SelectedCluster =
   | {
       key: string;
-      kind: 'event';
+      kind: 'event-cluster';
       lat: number;
       lng: number;
       count: number;
@@ -159,7 +121,7 @@ type SelectedCluster =
     }
   | {
       key: string;
-      kind: 'news';
+      kind: 'news-cluster';
       lat: number;
       lng: number;
       count: number;
@@ -167,9 +129,30 @@ type SelectedCluster =
       members: RenderableWarMapNewsMarker[];
     };
 
+type SelectedInspector =
+  | SelectedCluster
+  | {
+      key: string;
+      kind: 'event';
+      lat: number;
+      lng: number;
+      zoomTarget: number;
+      item: RenderableWarMapEvent;
+    }
+  | {
+      key: string;
+      kind: 'news';
+      lat: number;
+      lng: number;
+      zoomTarget: number;
+      item: RenderableWarMapNewsMarker;
+    };
+
 export interface WarMapProps {
   className?: string;
-  translateTarget?: 'zh-CN';
+  translateTarget?: WarMapTranslateTarget;
+  streamState?: DashboardStreamState;
+  onEffectiveRangeChange?: (range: { start: Date; end: Date }) => void;
 }
 
 const PRESET_LABELS: Record<WarMapPreset, string> = {
@@ -212,6 +195,9 @@ const LAYER_LABEL_OVERRIDES: Partial<Record<WarMapLayerId, string>> = {
 };
 
 const warMapSanitizationWarningSignatures = new Map<string, string>();
+const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
+  (layerId) => !WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId),
+);
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -345,7 +331,15 @@ function getErrorMessage(error: unknown): string | undefined {
   return typeof error === 'string' ? error : undefined;
 }
 
-function severityColor(severity: WarEventSeverity): [number, number, number, number] {
+function readSummaryNumber(
+  summary: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = summary?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function severityColor(severity: WarMapEventSeverity): [number, number, number, number] {
   switch (severity) {
     case 'high':
       return [220, 38, 38, 220];
@@ -357,7 +351,7 @@ function severityColor(severity: WarEventSeverity): [number, number, number, num
   }
 }
 
-function severityTagColor(severity: WarEventSeverity): string {
+function severityTagColor(severity: WarMapEventSeverity): string {
   switch (severity) {
     case 'high':
       return 'red';
@@ -374,10 +368,19 @@ function clusterRadius(count: number): number {
 }
 
 function toClusterSelectionKey(kind: 'event' | 'news', memberKey: string): string {
-  return `${kind}:${memberKey}`;
+  return `${kind}-cluster:${memberKey}`;
 }
 
-export function WarMap({ className, translateTarget }: WarMapProps = {}) {
+function toSingleSelectionKey(kind: 'event' | 'news', id: string): string {
+  return `${kind}:${id}`;
+}
+
+export function WarMap({
+  className,
+  translateTarget,
+  streamState,
+  onEffectiveRangeChange,
+}: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const screens = Grid.useBreakpoint();
@@ -395,15 +398,13 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const [mapReady, setMapReady] = useState(false);
   const [mapLoadError, setMapLoadError] = useState<MapLoadErrorPresentation | null>(null);
   const [mapMountNonce, setMapMountNonce] = useState(0);
-  const [selectedClusterKey, setSelectedClusterKey] = useState<string | null>(null);
-  const [monitors, setMonitors] = useState<StoredSituationMonitor[]>([]);
+  const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now());
+  const [selectedInspectorKey, setSelectedInspectorKey] = useState<string | null>(null);
   const hasRenderableMapContainer = useRenderableContainer(mapContainerRef, inView);
   const [queryViewport, setQueryViewport] = useState<{
     bbox?: [number, number, number, number];
     zoom: number;
   }>({ zoom: 2 });
-
-  const { end } = useDashboardRangeStore();
 
   const layerVisibility = useWarMapSettingsStore((state) => state.layerVisibility);
   const viewState = useWarMapSettingsStore((state) => state.viewState);
@@ -414,7 +415,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const setViewState = useWarMapSettingsStore((state) => state.setViewState);
   const setActivePreset = useWarMapSettingsStore((state) => state.setActivePreset);
   const setTimeRangePreset = useWarMapSettingsStore((state) => state.setTimeRangePreset);
-  const resetAll = useWarMapSettingsStore((state) => state.resetAll);
+  const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const viewStateRef = useRef(viewState);
 
   useEffect(() => {
@@ -448,54 +449,35 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
-
-  const loadMonitors = useCallback(async () => {
-    if (!session?.accessToken) {
-      setMonitors([]);
-      return;
-    }
-
-    try {
-      const response = await apiClient.get<StoredSituationMonitor[]>(
-        'situation-monitor/monitors',
-      );
-      setMonitors(response.data ?? []);
-    } catch (error) {
-      captureClientError('Failed to load situation monitor map markers', error);
-    }
-  }, [apiClient, session?.accessToken]);
-
-  useEffect(() => {
-    void loadMonitors();
-  }, [loadMonitors]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleMonitorsUpdated = () => {
-      void loadMonitors();
-    };
-
-    window.addEventListener(
-      SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
-      handleMonitorsUpdated,
-    );
-    return () => {
-      window.removeEventListener(
-        SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
-        handleMonitorsUpdated,
-      );
-    };
-  }, [loadMonitors]);
   const retryMapLoad = useCallback(() => {
     setMapLoadError(null);
     setMapReady(false);
     setMapMountNonce((value) => value + 1);
   }, []);
 
+  const refreshRangeAnchor = useCallback(() => {
+    setRangeAnchorMs(Date.now());
+  }, []);
+
+  useEffect(() => {
+    if (!inView) {
+      return;
+    }
+    refreshRangeAnchor();
+  }, [inView, refreshRangeAnchor, timeRangePreset]);
+
+  useEffect(() => {
+    if (!inView || typeof window === 'undefined') {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      refreshRangeAnchor();
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [inView, refreshRangeAnchor]);
+
   const effectiveRange = useMemo(() => {
+    const end = new Date(rangeAnchorMs);
     if (timeRangePreset === 'all') {
       return { start: ALL_TIME_START, end };
     }
@@ -504,7 +486,21 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       end,
       start: new Date(end.getTime() - duration),
     };
-  }, [end, timeRangePreset]);
+  }, [rangeAnchorMs, timeRangePreset]);
+
+  useEffect(() => {
+    if (!onEffectiveRangeChange) {
+      return;
+    }
+    onEffectiveRangeChange({
+      start: effectiveRange.start,
+      end: effectiveRange.end,
+    });
+  }, [
+    effectiveRange.end,
+    effectiveRange.start,
+    onEffectiveRangeChange,
+  ]);
 
   const queryZoom = useMemo(() => Number(queryViewport.zoom.toFixed(2)), [queryViewport.zoom]);
 
@@ -515,91 +511,23 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     () => (queryZoom >= BBOX_QUERY_MIN_ZOOM ? queryViewport.bbox : undefined),
     [queryViewport.bbox, queryZoom],
   );
-
-  const eventsQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'war-map',
-      'events',
-      effectiveRange.start.toISOString(),
-      effectiveRange.end.toISOString(),
-      queryBbox ?? null,
-      queryZoom,
-      translateTarget ?? null,
-    ],
-    queryFn: async () => {
-      const response = await apiClient.get<WarMapEventsResponse>('dashboard/war-map/events', {
-        params: {
-          start: effectiveRange.start.toISOString(),
-          end: effectiveRange.end.toISOString(),
-          translate: translateTarget,
-          bbox: queryBbox,
-          zoom: queryZoom.toFixed(2),
-          cluster: '0',
-        },
-      });
-      return response.data;
-    },
-    staleTime: 15_000,
+  const { eventsQuery, newsQuery, layersQuery, monitorsQuery } = useWarMapData({
+    apiClient,
     enabled,
-    placeholderData: (previous) => previous,
+    start: effectiveRange.start.toISOString(),
+    end: effectiveRange.end.toISOString(),
+    translateTarget,
+    bbox: queryBbox,
+    zoom: queryZoom,
   });
-
-  const newsQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'war-map',
-      'news-markers',
-      effectiveRange.start.toISOString(),
-      effectiveRange.end.toISOString(),
-      queryBbox ?? null,
-      queryZoom,
-      translateTarget ?? null,
-    ],
-    queryFn: async () => {
-      const response = await apiClient.get<WarMapNewsMarkersResponse>(
-        'dashboard/war-map/news-markers',
-        {
-          params: {
-            start: effectiveRange.start.toISOString(),
-            end: effectiveRange.end.toISOString(),
-            translate: translateTarget,
-            bbox: queryBbox,
-            zoom: queryZoom.toFixed(2),
-            cluster: '0',
-          },
-        },
-      );
-      return response.data;
-    },
-    staleTime: 15_000,
-    enabled,
-    placeholderData: (previous) => previous,
+  const monitors = monitorsQuery.data ?? [];
+  const internalStreamState = useDashboardStream({
+    accessToken: session?.accessToken,
+    start: effectiveRange.start,
+    end: effectiveRange.end,
+    enabled: !streamState && Boolean(session?.accessToken) && inView,
   });
-
-  const layersQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'war-map',
-      'layers',
-      effectiveRange.start.toISOString(),
-      effectiveRange.end.toISOString(),
-      translateTarget ?? null,
-    ],
-    queryFn: async () => {
-      const response = await apiClient.get<WarMapLayersResponse>('dashboard/war-map/layers', {
-        params: {
-          start: effectiveRange.start.toISOString(),
-          end: effectiveRange.end.toISOString(),
-          translate: translateTarget,
-        },
-      });
-      return response.data;
-    },
-    staleTime: 30_000,
-    enabled,
-    placeholderData: (previous) => previous,
-  });
+  const resolvedStreamState = streamState ?? internalStreamState;
 
   useEffect(() => {
     if (!mapContainerRef.current || !inView || !hasRenderableMapContainer || mapRef.current) {
@@ -835,18 +763,18 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     [localClusterBbox, queryZoom, rawNewsMarkers],
   );
 
-  const selectedCluster = useMemo<SelectedCluster | null>(() => {
-    if (!selectedClusterKey) {
+  const selectedInspector = useMemo<SelectedInspector | null>(() => {
+    if (!selectedInspectorKey) {
       return null;
     }
 
     const eventCluster = clusteredEvents.clusters.find(
-      (cluster) => toClusterSelectionKey('event', cluster.memberKey) === selectedClusterKey,
+      (cluster) => toClusterSelectionKey('event', cluster.memberKey) === selectedInspectorKey,
     );
     if (eventCluster) {
       return {
-        key: selectedClusterKey,
-        kind: 'event',
+        key: selectedInspectorKey,
+        kind: 'event-cluster',
         lat: eventCluster.lat,
         lng: eventCluster.lng,
         count: eventCluster.count,
@@ -856,12 +784,12 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     }
 
     const newsCluster = clusteredNews.clusters.find(
-      (cluster) => toClusterSelectionKey('news', cluster.memberKey) === selectedClusterKey,
+      (cluster) => toClusterSelectionKey('news', cluster.memberKey) === selectedInspectorKey,
     );
     if (newsCluster) {
       return {
-        key: selectedClusterKey,
-        kind: 'news',
+        key: selectedInspectorKey,
+        kind: 'news-cluster',
         lat: newsCluster.lat,
         lng: newsCluster.lng,
         count: newsCluster.count,
@@ -870,32 +798,80 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       };
     }
 
+    const event = rawEvents.find(
+      (entry) => toSingleSelectionKey('event', entry.id) === selectedInspectorKey,
+    );
+    if (event) {
+      return {
+        key: selectedInspectorKey,
+        kind: 'event',
+        lat: event.lat,
+        lng: event.lng,
+        zoomTarget: 7,
+        item: event,
+      };
+    }
+
+    const newsItem = rawNewsMarkers.find(
+      (entry) => toSingleSelectionKey('news', entry.id) === selectedInspectorKey,
+    );
+    if (newsItem) {
+      return {
+        key: selectedInspectorKey,
+        kind: 'news',
+        lat: newsItem.lat,
+        lng: newsItem.lng,
+        zoomTarget: 8,
+        item: newsItem,
+      };
+    }
+
     return null;
-  }, [clusteredEvents.clusters, clusteredNews.clusters, selectedClusterKey]);
+  }, [
+    clusteredEvents.clusters,
+    clusteredNews.clusters,
+    rawEvents,
+    rawNewsMarkers,
+    selectedInspectorKey,
+  ]);
 
   useEffect(() => {
-    if (selectedClusterKey && !selectedCluster) {
-      setSelectedClusterKey(null);
+    if (selectedInspectorKey && !selectedInspector) {
+      setSelectedInspectorKey(null);
     }
-  }, [selectedCluster, selectedClusterKey]);
+  }, [selectedInspector, selectedInspectorKey]);
 
-  const closeSelectedCluster = useCallback(() => {
-    setSelectedClusterKey(null);
+  const closeSelectedInspector = useCallback(() => {
+    setSelectedInspectorKey(null);
   }, []);
 
-  const zoomToSelectedCluster = useCallback(() => {
+  const zoomToSelectedInspector = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !selectedCluster) {
+    if (!map || !selectedInspector) {
       return;
     }
 
     map.easeTo({
-      center: [selectedCluster.lng, selectedCluster.lat],
-      zoom: Math.min(selectedCluster.zoomTarget, map.getZoom() + 2),
+      center: [selectedInspector.lng, selectedInspector.lat],
+      zoom: Math.min(selectedInspector.zoomTarget, map.getZoom() + 2),
       duration: 350,
       essential: true,
     });
-  }, [selectedCluster]);
+  }, [selectedInspector]);
+
+  const zoomToLayerCluster = useCallback((point?: DeckPoint) => {
+    const map = mapRef.current;
+    if (!map || !point) {
+      return;
+    }
+
+    map.easeTo({
+      center: [point.lng, point.lat],
+      zoom: Math.min(Math.max(5, queryZoom + 2), 10),
+      duration: 350,
+      essential: true,
+    });
+  }, [queryZoom]);
 
   const deckData = useMemo(() => {
     const layersData = layersQuery.data?.layers ?? {};
@@ -905,7 +881,11 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     const staticLayers: any[] = [];
 
     for (const layerId of WAR_MAP_LAYER_IDS) {
-      if (layerId === 'monitors' || !layerVisibility[layerId]) {
+      if (
+        layerId === 'monitors' ||
+        WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId) ||
+        !layerVisibility[layerId]
+      ) {
         continue;
       }
 
@@ -1098,6 +1078,9 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         continue;
       }
 
+      const layerLabel = t(`dashboard.charts.warMap.layerNames.${layerId}`, {
+        defaultValue: toLayerLabel(layerId),
+      });
       const points: DeckPoint[] = dataset.features
         .filter(
           (feature): feature is WarMapLayerFeature & { lat: number; lng: number } =>
@@ -1106,35 +1089,110 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             isValidLatLng(feature.lat, feature.lng),
         )
         .map((feature) => {
-          const name =
-            typeof feature.properties?.nameZh === 'string' && translateTarget === 'zh-CN'
-              ? feature.properties.nameZh
-              : typeof feature.properties?.name === 'string'
-                ? feature.properties.name
-                : toLayerLabel(layerId);
+          const properties =
+            feature.properties && typeof feature.properties === 'object' && !Array.isArray(feature.properties)
+              ? (feature.properties as Record<string, unknown>)
+              : undefined;
+          const translatedName =
+            typeof properties?.nameZh === 'string' && translateTarget === 'zh-CN'
+              ? properties.nameZh
+              : typeof properties?.name === 'string'
+                ? properties.name
+                : layerLabel;
           const description =
-            typeof feature.properties?.descriptionZh === 'string' && translateTarget === 'zh-CN'
-              ? feature.properties.descriptionZh
-              : typeof feature.properties?.description === 'string'
-                ? feature.properties.description
+            typeof properties?.descriptionZh === 'string' && translateTarget === 'zh-CN'
+              ? properties.descriptionZh
+              : typeof properties?.description === 'string'
+                ? properties.description
                 : undefined;
+          const flight = readWarMapFlightProperties(properties);
           return {
             id: `${layerId}-${feature.id}`,
             lat: feature.lat,
             lng: feature.lng,
-            label: name,
+            label: flight ? getWarMapFlightLabel(flight, translatedName) : translatedName,
             description,
             color,
             radius: Math.max(4, Math.min(18, Math.round((dataset.renderHints?.radiusScale ?? 1) * 6))),
             kind: 'layer',
+            layerId,
+            ...(flight
+              ? {
+                  sourceType: flight.sourceType,
+                  callsign: flight.callsign,
+                  icao24: flight.icao24,
+                  registration: flight.registration,
+                  aircraftType: flight.aircraftType,
+                  countryCode: flight.countryCode,
+                  countryName: flight.countryName,
+                  heading: flight.heading,
+                  altitudeFt: flight.altitudeFt,
+                  groundSpeedKt: flight.groundSpeedKt,
+                  latestAt: flight.observedAt,
+                  sourceUpdatedAt: flight.sourceUpdatedAt,
+                }
+              : {}),
           };
         });
 
-      if (points.length > 0) {
+      const clusterablePartition = dataset.renderHints?.clusterable
+        ? clusterWarMapPoints(points, {
+            bbox: localClusterBbox,
+            zoom: queryZoom,
+            getClusterGeometry: (members) => computeAverageClusterGeometry(members),
+          })
+        : null;
+      const pointSingles = clusterablePartition ? clusterablePartition.singles : points;
+      const pointClusters: DeckPoint[] = clusterablePartition
+        ? clusterablePartition.clusters.map((cluster) => ({
+            id: `layer-cluster:${layerId}:${cluster.memberKey}`,
+            lat: cluster.lat,
+            lng: cluster.lng,
+            label: layerLabel,
+            description:
+              layerId === 'flights'
+                ? t('dashboard.charts.warMap.tooltip.clusterFlights', {
+                    defaultValue: '{{count}} military flights. Click to zoom in.',
+                    count: cluster.count,
+                  })
+                : t('dashboard.charts.warMap.tooltip.clusterLayer', {
+                    defaultValue: '{{count}} {{layer}} items. Click to zoom in.',
+                    count: cluster.count,
+                    layer: layerLabel,
+                  }),
+            color,
+            radius: clusterRadius(cluster.count),
+            kind: 'layer-cluster',
+            layerId,
+            isCluster: true,
+            clusterCount: cluster.count,
+          }))
+        : [];
+
+      if (pointClusters.length > 0) {
+        staticLayers.push(
+          new ScatterplotLayer({
+            id: `wm-point-${layerId}-clusters`,
+            data: pointClusters,
+            pickable: Boolean(dataset.renderHints?.pickable ?? true),
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getFillColor: (point: DeckPoint) => point.color,
+            getRadius: (point: DeckPoint) => point.radius,
+            radiusMinPixels: 10,
+            radiusMaxPixels: 42,
+            stroked: false,
+            onClick: (info: { object?: DeckPoint }) => {
+              zoomToLayerCluster(info.object);
+            },
+          }),
+        );
+      }
+
+      if (pointSingles.length > 0) {
         staticLayers.push(
           new ScatterplotLayer({
             id: `wm-point-${layerId}`,
-            data: points,
+            data: pointSingles,
             pickable: Boolean(dataset.renderHints?.pickable ?? true),
             getPosition: (point: DeckPoint) => [point.lng, point.lat],
             getFillColor: (point: DeckPoint) => point.color,
@@ -1157,6 +1215,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         lng: event.lng,
         label: event.label,
         kind: 'event',
+        selectionKey: toSingleSelectionKey('event', event.id),
         color: severityColor(event.severity),
         radius: Math.max(5, Math.min(24, Math.sqrt(Math.max(1, score)) * 2.5)),
         severity: event.severity,
@@ -1200,6 +1259,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         lng: marker.lng,
         label: marker.label,
         kind: 'news',
+        selectionKey: toSingleSelectionKey('news', marker.id),
         color: [baseR, baseG, baseB, marker.geoSource === 'fallback-country' ? 110 : 200],
         radius: 5,
         url: marker.url ?? null,
@@ -1287,7 +1347,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             if (!object?.selectionKey) {
               return;
             }
-            setSelectedClusterKey(object.selectionKey);
+            setSelectedInspectorKey(object.selectionKey);
           },
         }),
       );
@@ -1304,6 +1364,13 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           getRadius: (point: DeckPoint) => point.radius,
           radiusMinPixels: 4,
           radiusMaxPixels: 34,
+          onClick: (info: { object?: DeckPoint }) => {
+            const object = info.object;
+            if (!object?.selectionKey) {
+              return;
+            }
+            setSelectedInspectorKey(object.selectionKey);
+          },
         }),
       );
     }
@@ -1324,7 +1391,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             if (!object?.selectionKey) {
               return;
             }
-            setSelectedClusterKey(object.selectionKey);
+            setSelectedInspectorKey(object.selectionKey);
           },
         }),
       );
@@ -1346,7 +1413,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             if (!object || object.isCluster) {
               return;
             }
-            openNewsLink(object.url);
+            if (!object.selectionKey) {
+              return;
+            }
+            setSelectedInspectorKey(object.selectionKey);
           },
         }),
       );
@@ -1365,15 +1435,16 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     clusteredEvents.singles,
     layerVisibility,
     layersQuery.data?.layers,
+    localClusterBbox,
     monitorPoints,
     clusteredNews.clusters,
     clusteredNews.singles,
-    openNewsLink,
     rawEvents.length,
     rawNewsMarkers.length,
     queryZoom,
     t,
     translateTarget,
+    zoomToLayerCluster,
   ]);
 
   const tooltipGetter = useMemo(
@@ -1400,6 +1471,27 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             }),
           };
         }
+        if (object.kind === 'layer-cluster') {
+          const count = object.clusterCount ?? 0;
+          const layerLabel = object.layerId
+            ? t(`dashboard.charts.warMap.layerNames.${object.layerId}`, {
+                defaultValue: toLayerLabel(object.layerId),
+              })
+            : object.label;
+          return {
+            text:
+              object.layerId === 'flights'
+                ? t('dashboard.charts.warMap.tooltip.clusterFlights', {
+                    defaultValue: '{{count}} military flights. Click to zoom in.',
+                    count,
+                  })
+                : t('dashboard.charts.warMap.tooltip.clusterLayer', {
+                    defaultValue: '{{count}} {{layer}} items. Click to zoom in.',
+                    count,
+                    layer: layerLabel,
+                  }),
+          };
+        }
 
         const latestTimestamp = object.publishedAt ?? object.ingestedAt ?? object.latestAt;
         const latestLabel =
@@ -1407,6 +1499,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             ? t('dashboard.charts.warMap.panel.latest', {
                 defaultValue: 'Latest',
               })
+            : object.kind === 'layer' && object.layerId === 'flights'
+              ? t('dashboard.charts.warMap.tooltip.observed', {
+                  defaultValue: 'Observed',
+                })
             : object.publishedAt
               ? t('dashboard.charts.warMap.tooltip.published', {
                   defaultValue: 'Published',
@@ -1456,13 +1552,74 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             })}: ${object.locationLabel}`,
           );
         }
+        if (object.kind === 'layer' && object.layerId === 'flights') {
+          if (object.icao24) {
+            lines.push(`ICAO24: ${object.icao24.toUpperCase()}`);
+          }
+          if (object.registration) {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.registration', {
+                defaultValue: 'Registration',
+              })}: ${object.registration}`,
+            );
+          }
+          if (object.aircraftType) {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.aircraftType', {
+                defaultValue: 'Type',
+              })}: ${object.aircraftType}`,
+            );
+          }
+          if (object.countryCode || object.countryName) {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.country', {
+                defaultValue: 'Country',
+              })}: ${object.countryName ? `${object.countryName}${object.countryCode ? ` (${object.countryCode})` : ''}` : object.countryCode}`,
+            );
+          }
+          if (typeof object.heading === 'number') {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.heading', {
+                defaultValue: 'Heading',
+              })}: ${Math.round(object.heading)}°`,
+            );
+          }
+          if (typeof object.altitudeFt === 'number') {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.altitude', {
+                defaultValue: 'Altitude',
+              })}: ${Math.round(object.altitudeFt)} ft`,
+            );
+          }
+          if (typeof object.groundSpeedKt === 'number') {
+            lines.push(
+              `${t('dashboard.charts.warMap.tooltip.speed', {
+                defaultValue: 'Speed',
+              })}: ${Math.round(object.groundSpeedKt)} kt`,
+            );
+          }
+        }
         if (formattedTimestamp && latestLabel) {
           lines.push(`${latestLabel}: ${formattedTimestamp}`);
         }
+        if (
+          object.kind === 'layer' &&
+          object.layerId === 'flights' &&
+          object.sourceUpdatedAt
+        ) {
+          lines.push(
+            `${t('dashboard.charts.warMap.tooltip.updated', {
+              defaultValue: 'Updated',
+            })}: ${formatDateTime(object.sourceUpdatedAt, locale, {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}`,
+          );
+        }
         if (object.kind === 'news') {
           lines.push(
-            t('dashboard.charts.warMap.tooltip.clickOpenOriginal', {
-              defaultValue: 'Click to open original link',
+            t('dashboard.charts.warMap.tooltip.clickInspect', {
+              defaultValue: 'Click to inspect details',
             }),
           );
         }
@@ -1481,14 +1638,25 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     });
   }, [deckData.deckLayers, hasRenderableMapContainer, tooltipGetter]);
 
-  const anyLoading = eventsQuery.isLoading || newsQuery.isLoading || layersQuery.isLoading;
-  const errors = [eventsQuery.error, newsQuery.error, layersQuery.error].filter(Boolean);
+  const anyLoading =
+    eventsQuery.isLoading ||
+    newsQuery.isLoading ||
+    layersQuery.isLoading ||
+    monitorsQuery.isLoading;
+  const errors = [
+    eventsQuery.error,
+    newsQuery.error,
+    layersQuery.error,
+    monitorsQuery.error,
+  ].filter(Boolean);
   const { pending: refreshingMapData, run: refreshMapData } = usePendingAction(
     async () => {
+      refreshRangeAnchor();
       await Promise.all([
         eventsQuery.refetch(),
         newsQuery.refetch(),
         layersQuery.refetch(),
+        monitorsQuery.refetch(),
       ]);
     },
   );
@@ -1511,11 +1679,72 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
   const newsUpdatedAt = newsQuery.data?.updatedAt
     ? formatUpdatedAt(newsQuery.data.updatedAt, locale)
     : null;
+  const layersUpdatedAt = layersQuery.data?.updatedAt
+    ? formatUpdatedAt(layersQuery.data.updatedAt, locale)
+    : null;
+  const flightsSummary =
+    layersQuery.data?.layers.flights?.summary &&
+    typeof layersQuery.data.layers.flights.summary === 'object' &&
+    !Array.isArray(layersQuery.data.layers.flights.summary)
+      ? (layersQuery.data.layers.flights.summary as Record<string, unknown>)
+      : undefined;
+  const flightsReturnedCount = readSummaryNumber(flightsSummary, 'returnedCount');
+  const flightsSnapshotCount = readSummaryNumber(
+    flightsSummary,
+    'snapshotValidPositionCount',
+  );
+  const flightsRawCount = readSummaryNumber(flightsSummary, 'rawAircraftCount');
+  const flightsTruncated = flightsSummary?.truncated === true;
+  const flightsFreshness =
+    typeof flightsSummary?.freshness === 'string' ? flightsSummary.freshness : undefined;
+  const flightsRawLabel =
+    typeof flightsRawCount === 'number'
+      ? t('dashboard.charts.warMap.stats.flightsRaw', {
+          defaultValue: 'raw {{count}}',
+          count: flightsRawCount,
+        })
+      : null;
+  const monitorsUpdatedAt = monitorsQuery.dataUpdatedAt
+    ? formatUpdatedAt(monitorsQuery.dataUpdatedAt, locale)
+    : null;
+  const visibleLayerCount =
+    DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId]).length +
+    (layerVisibility.monitors ? 1 : 0);
+  const chainStatuses = [
+    {
+      key: 'signals',
+      label: t('dashboard.charts.warMap.stats.signals', { defaultValue: 'Signals' }),
+      loading: eventsQuery.isLoading,
+      error: Boolean(eventsQuery.error),
+      ready: Boolean(eventsQuery.data),
+    },
+    {
+      key: 'news',
+      label: t('dashboard.charts.warMap.stats.news', { defaultValue: 'News' }),
+      loading: newsQuery.isLoading,
+      error: Boolean(newsQuery.error),
+      ready: Boolean(newsQuery.data),
+    },
+    {
+      key: 'layers',
+      label: t('dashboard.charts.warMap.layers', { defaultValue: 'Layers' }),
+      loading: layersQuery.isLoading,
+      error: Boolean(layersQuery.error),
+      ready: Boolean(layersQuery.data),
+    },
+    {
+      key: 'monitors',
+      label: t('dashboard.charts.warMap.stats.monitors', { defaultValue: 'Monitors' }),
+      loading: monitorsQuery.isLoading,
+      error: Boolean(monitorsQuery.error),
+      ready: Boolean(monitorsQuery.data),
+    },
+  ] as const;
 
   const layerSelector = (
     <div style={{ minWidth: 260, maxHeight: 360, overflowY: 'auto' }}>
       <Space direction="vertical" size={4} style={{ width: '100%' }}>
-        {WAR_MAP_LAYER_IDS.map((layerId) => {
+        {DISPLAYABLE_WAR_MAP_LAYER_IDS.map((layerId) => {
           const disabled = layerId === 'monitors' ? monitorPoints.length === 0 : false;
           return (
             <Checkbox
@@ -1536,7 +1765,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           type="link"
           size="small"
           style={{ padding: 0, height: 'auto' }}
-          onClick={() => resetAll()}
+          onClick={() => resetLayers()}
         >
           {t('common.reset', { defaultValue: 'Reset' })}
         </Button>
@@ -1544,14 +1773,21 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
     </div>
   );
 
-  const clusterPanelContent = selectedCluster ? (
+  const inspectorPanelContent = selectedInspector ? (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-2xl backdrop-blur">
       <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Space size={[6, 6]} wrap>
-              <Tag color={selectedCluster.kind === 'event' ? 'gold' : 'green'}>
-                {selectedCluster.kind === 'event'
+              <Tag
+                color={
+                  selectedInspector.kind === 'event' || selectedInspector.kind === 'event-cluster'
+                    ? 'gold'
+                    : 'green'
+                }
+              >
+                {selectedInspector.kind === 'event' ||
+                selectedInspector.kind === 'event-cluster'
                   ? t('dashboard.charts.warMap.panel.signalsTitle', {
                       defaultValue: 'Nearby signals',
                     })
@@ -1559,15 +1795,19 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
                       defaultValue: 'Nearby news',
                     })}
               </Tag>
-              <Tag color="default">
-                {t('dashboard.charts.warMap.panel.count', {
-                  defaultValue: '{{count}} items',
-                  count: selectedCluster.count,
-                })}
-              </Tag>
+              {'count' in selectedInspector ? (
+                <Tag color="default">
+                  {t('dashboard.charts.warMap.panel.count', {
+                    defaultValue: '{{count}} items',
+                    count: selectedInspector.count,
+                  })}
+                </Tag>
+              ) : null}
             </Space>
             <Typography.Title level={5} className="!mb-1 !mt-3">
-              {selectedCluster.kind === 'event'
+              {'item' in selectedInspector
+                ? selectedInspector.item.label
+                : selectedInspector.kind === 'event-cluster'
                 ? t('dashboard.charts.warMap.panel.signalsTitle', {
                     defaultValue: 'Nearby signals',
                   })
@@ -1576,22 +1816,30 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
                   })}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {selectedCluster.kind === 'event'
-                ? t('dashboard.charts.warMap.panel.signalsSummary', {
-                    defaultValue: '{{count}} nearby signals at this zoom level.',
-                    count: selectedCluster.count,
-                  })
-                : t('dashboard.charts.warMap.panel.newsSummary', {
-                    defaultValue: '{{count}} nearby news items at this zoom level.',
-                    count: selectedCluster.count,
-                  })}
+              {'item' in selectedInspector
+                ? selectedInspector.kind === 'event'
+                  ? t('dashboard.charts.warMap.panel.signalDetailSummary', {
+                      defaultValue: 'Signal details for the selected location.',
+                    })
+                  : t('dashboard.charts.warMap.panel.newsDetailSummary', {
+                      defaultValue: 'News details for the selected marker.',
+                    })
+                : selectedInspector.kind === 'event-cluster'
+                  ? t('dashboard.charts.warMap.panel.signalsSummary', {
+                      defaultValue: '{{count}} nearby signals at this zoom level.',
+                      count: selectedInspector.count,
+                    })
+                  : t('dashboard.charts.warMap.panel.newsSummary', {
+                      defaultValue: '{{count}} nearby news items at this zoom level.',
+                      count: selectedInspector.count,
+                    })}
             </Typography.Text>
           </div>
           <Space size={8}>
             <Button
               size="small"
               icon={<ExpandOutlined />}
-              onClick={zoomToSelectedCluster}
+              onClick={zoomToSelectedInspector}
             >
               {t('dashboard.charts.warMap.panel.zoomIn', {
                 defaultValue: 'Zoom in',
@@ -1602,7 +1850,7 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
                 size="small"
                 type="text"
                 icon={<CloseOutlined />}
-                onClick={closeSelectedCluster}
+                onClick={closeSelectedInspector}
                 aria-label={t('common.close', {
                   defaultValue: 'Close',
                 })}
@@ -1612,10 +1860,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
         </div>
       </div>
 
-      {selectedCluster.kind === 'event' ? (
+      {selectedInspector.kind === 'event-cluster' ? (
         <List
           className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
-          dataSource={selectedCluster.members}
+          dataSource={selectedInspector.members}
           renderItem={(item) => (
             <List.Item key={item.id}>
               <List.Item.Meta
@@ -1664,10 +1912,10 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             </List.Item>
           )}
         />
-      ) : (
+      ) : selectedInspector.kind === 'news-cluster' ? (
         <List
           className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
-          dataSource={selectedCluster.members}
+          dataSource={selectedInspector.members}
           renderItem={(item) => {
             const timestampLabel = item.publishedAt
               ? t('dashboard.charts.warMap.tooltip.published', {
@@ -1741,6 +1989,91 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
             );
           }}
         />
+      ) : selectedInspector.kind === 'event' ? (
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+          <Space size={[6, 6]} wrap>
+            <Tag color={severityTagColor(selectedInspector.item.severity)}>
+              {t(`dashboard.charts.warMap.stats.${selectedInspector.item.severity}`, {
+                defaultValue:
+                  selectedInspector.item.severity.charAt(0).toUpperCase() +
+                  selectedInspector.item.severity.slice(1),
+              })}
+            </Tag>
+            <Tag>
+              {t('dashboard.charts.warMap.tooltip.alerts', {
+                defaultValue: 'Alerts',
+              })}
+              : {selectedInspector.item.alertCount ?? 0}
+            </Tag>
+            <Tag>
+              {t('dashboard.charts.warMap.stats.news', {
+                defaultValue: 'News',
+              })}
+              : {selectedInspector.item.newsCount ?? 0}
+            </Tag>
+          </Space>
+          {selectedInspector.item.latestAt ? (
+            <Typography.Text type="secondary">
+              {t('dashboard.charts.warMap.panel.latest', {
+                defaultValue: 'Latest',
+              })}
+              :{' '}
+              {formatDateTime(selectedInspector.item.latestAt, locale, {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </Typography.Text>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+          <Space size={[6, 6]} wrap>
+            <Tag>{selectedInspector.item.locationLabel}</Tag>
+            <Tag>
+              {t(
+                selectedInspector.item.geoSource === 'fallback-country'
+                  ? 'dashboard.charts.warMap.stats.fallbackCountry'
+                  : 'dashboard.charts.warMap.stats.geocoded',
+                {
+                  defaultValue:
+                    selectedInspector.item.geoSource === 'fallback-country'
+                      ? 'Fallback country'
+                      : 'Geocoded',
+                },
+              )}
+            </Tag>
+          </Space>
+          {selectedInspector.item.publishedAt || selectedInspector.item.ingestedAt ? (
+            <Typography.Text type="secondary">
+              {selectedInspector.item.publishedAt
+                ? t('dashboard.charts.warMap.tooltip.published', {
+                    defaultValue: 'Published',
+                  })
+                : t('dashboard.charts.warMap.tooltip.ingested', {
+                    defaultValue: 'Ingested',
+                  })}
+              :{' '}
+              {formatDateTime(
+                selectedInspector.item.publishedAt ?? selectedInspector.item.ingestedAt ?? '',
+                locale,
+                {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                },
+              )}
+            </Typography.Text>
+          ) : null}
+          <Button
+            type="primary"
+            size="small"
+            disabled={!selectedInspector.item.url}
+            onClick={() => openNewsLink(selectedInspector.item.url)}
+          >
+            {t('dashboard.charts.warMap.panel.openOriginal', {
+              defaultValue: 'Open original',
+            })}
+          </Button>
+        </div>
       )}
     </div>
   ) : null;
@@ -1774,6 +2107,14 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
       <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
         <Space size={6} wrap>
+          <Tag
+            color={resolvedStreamState.status === 'live' ? 'green' : 'red'}
+            className="text-xs"
+          >
+            {resolvedStreamState.status === 'live'
+              ? t('dashboard.stream.status.live', { defaultValue: 'Live' })
+              : t('dashboard.stream.status.offline', { defaultValue: 'Offline' })}
+          </Tag>
           <Tag color="default" className="text-xs">
             {t('dashboard.charts.warMap.stats.window', { defaultValue: 'Window' })}: {windowLabel}
           </Tag>
@@ -1783,6 +2124,36 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
           <Tag color="green" className="text-xs">
             {t('dashboard.charts.warMap.stats.news', { defaultValue: 'News' })}: {rawNewsMarkers.length}
           </Tag>
+          <Tag color="cyan" className="text-xs">
+            {t('dashboard.charts.warMap.stats.monitors', { defaultValue: 'Monitors' })}: {monitors.length}
+          </Tag>
+          <Tag color="purple" className="text-xs">
+            {t('dashboard.charts.warMap.stats.visibleLayers', {
+              defaultValue: 'Visible layers',
+            })}
+            : {visibleLayerCount}
+          </Tag>
+          {layerVisibility.flights && typeof flightsReturnedCount === 'number' ? (
+            <Tag
+              color={
+                flightsFreshness === 'stale'
+                  ? 'orange'
+                  : flightsFreshness === 'missing'
+                    ? 'default'
+                    : flightsTruncated
+                      ? 'gold'
+                      : 'cyan'
+              }
+              className="text-xs"
+            >
+              {t('dashboard.charts.warMap.stats.flights', {
+                defaultValue: 'Flights',
+              })}
+              : {flightsReturnedCount}
+              {typeof flightsSnapshotCount === 'number' ? `/${flightsSnapshotCount}` : ''}
+              {flightsRawLabel ? ` ${flightsRawLabel}` : ''}
+            </Tag>
+          ) : null}
           {eventsUpdatedAt ? (
             <Tag color="default" className="text-xs">
               {t('dashboard.charts.warMap.stats.signalsUpdated', {
@@ -1799,6 +2170,38 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
               : {newsUpdatedAt}
             </Tag>
           ) : null}
+          {layersUpdatedAt ? (
+            <Tag color="default" className="text-xs">
+              {t('dashboard.charts.warMap.stats.layersUpdated', {
+                defaultValue: 'Layers updated',
+              })}
+              : {layersUpdatedAt}
+            </Tag>
+          ) : null}
+          {monitorsUpdatedAt ? (
+            <Tag color="default" className="text-xs">
+              {t('dashboard.charts.warMap.stats.monitorsUpdated', {
+                defaultValue: 'Monitors updated',
+              })}
+              : {monitorsUpdatedAt}
+            </Tag>
+          ) : null}
+        </Space>
+        <Space size={6} wrap>
+          {chainStatuses.map((status) => (
+            <Tag
+              key={status.key}
+              color={status.error ? 'red' : status.loading ? 'processing' : status.ready ? 'green' : 'default'}
+              className="text-xs"
+            >
+              {status.label}:{' '}
+              {status.error
+                ? t('dashboard.charts.warMap.status.error', { defaultValue: 'Error' })
+                : status.loading
+                  ? t('common.loading', { defaultValue: 'Loading' })
+                  : t('dashboard.charts.warMap.status.ready', { defaultValue: 'Ready' })}
+            </Tag>
+          ))}
         </Space>
         <Space size={6} wrap>
           {WAR_MAP_PRESETS.map((preset) => (
@@ -1831,6 +2234,16 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
       </div>
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <Button
+          size="small"
+          type="default"
+          loading={refreshingMapData}
+          onClick={() => {
+            void refreshMapData();
+          }}
+        >
+          {t('dashboard.actions.fetchLatest', { defaultValue: 'Refresh' })}
+        </Button>
         <Popover
           content={layerSelector}
           title={t('dashboard.charts.warMap.layers', { defaultValue: 'Layers' })}
@@ -1843,22 +2256,53 @@ export function WarMap({ className, translateTarget }: WarMapProps = {}) {
 
       <div ref={mapContainerRef} className="h-full w-full overflow-hidden rounded-lg" />
 
-      {useDesktopInspector && clusterPanelContent ? (
+      <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-sm rounded-xl border border-slate-200/80 bg-white/90 px-3 py-3 shadow-lg backdrop-blur">
+        <Space direction="vertical" size={4}>
+          <Typography.Text strong className="text-xs uppercase tracking-[0.18em] text-slate-500">
+            {t('dashboard.charts.warMap.legend.title', { defaultValue: 'Legend' })}
+          </Typography.Text>
+          <Space size={[6, 6]} wrap>
+            <Tag color="red">{t('dashboard.charts.warMap.stats.high', { defaultValue: 'High' })}</Tag>
+            <Tag color="gold">{t('dashboard.charts.warMap.stats.medium', { defaultValue: 'Medium' })}</Tag>
+            <Tag color="blue">{t('dashboard.charts.warMap.stats.low', { defaultValue: 'Low' })}</Tag>
+          </Space>
+          <Space size={[6, 6]} wrap>
+            <Tag color="green">
+              {t('dashboard.charts.warMap.stats.geocoded', { defaultValue: 'Geocoded news' })}
+            </Tag>
+            <Tag color="cyan">
+              {t('dashboard.charts.warMap.stats.fallbackCountry', {
+                defaultValue: 'Fallback country',
+              })}
+            </Tag>
+            <Tag color="purple">
+              {t('dashboard.charts.warMap.stats.monitors', { defaultValue: 'Monitors' })}
+            </Tag>
+          </Space>
+          <Typography.Text type="secondary" className="text-xs">
+            {t('dashboard.charts.warMap.legend.radius', {
+              defaultValue: 'Larger points indicate stronger aggregated signal density.',
+            })}
+          </Typography.Text>
+        </Space>
+      </div>
+
+      {useDesktopInspector && inspectorPanelContent ? (
         <div className="absolute bottom-4 right-4 top-16 z-20 hidden w-[360px] lg:block">
-          {clusterPanelContent}
+          {inspectorPanelContent}
         </div>
       ) : null}
 
       {!useDesktopInspector ? (
         <Drawer
-          open={Boolean(clusterPanelContent)}
-          onClose={closeSelectedCluster}
+          open={Boolean(inspectorPanelContent)}
+          onClose={closeSelectedInspector}
           placement="right"
           width="100%"
           destroyOnClose={false}
           title={null}
         >
-          {clusterPanelContent}
+          {inspectorPanelContent}
         </Drawer>
       ) : null}
 

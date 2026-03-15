@@ -16,7 +16,7 @@ import {
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -40,6 +40,7 @@ import { LiveAlertsToasts } from "./live-alerts";
 import { SystemHealthSummaryCard } from "./components/system-health-summary-card";
 import {
   useDashboardStream,
+  type DashboardStreamState,
   type DashboardStreamStatus,
 } from "./use-dashboard-stream";
 import { useDashboardUrlSync } from "./use-dashboard-url-sync";
@@ -191,9 +192,7 @@ interface DashboardStreamStatusLineProps {
   start: Date;
   end: Date;
   range: string;
-  queueStatus?: string | null;
-  selectedSector?: string | null;
-  enabled: boolean;
+  streamState: DashboardStreamState;
 }
 
 function DashboardStreamStatusLine({
@@ -201,19 +200,9 @@ function DashboardStreamStatusLine({
   start,
   end,
   range,
-  queueStatus,
-  selectedSector,
-  enabled,
+  streamState,
 }: DashboardStreamStatusLineProps) {
   const { t } = useTranslation();
-  const streamState = useDashboardStream({
-    accessToken,
-    start,
-    end,
-    queueStatus,
-    selectedSector,
-    enabled,
-  });
   const lastStreamStatusRef = useRef<DashboardStreamStatus | null>(null);
 
   const streamStatusMeta = useMemo(() => {
@@ -384,11 +373,55 @@ export function DashboardContent() {
     null,
   );
   const [showSystemStats, setShowSystemStats] = useState(false);
+  const [warMapStreamRange, setWarMapStreamRange] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
   const rangeFingerprint = useMemo(
     () => `${start.toISOString()}_${end.toISOString()}`,
     [end, start],
   );
+  const sharedStreamWindow = useMemo(() => {
+    if (!warMapStreamRange) {
+      return { start, end };
+    }
+    return {
+      start:
+        warMapStreamRange.start.getTime() < start.getTime()
+          ? warMapStreamRange.start
+          : start,
+      end:
+        warMapStreamRange.end.getTime() > end.getTime()
+          ? warMapStreamRange.end
+          : end,
+    };
+  }, [end, start, warMapStreamRange]);
+  const dashboardStreamState = useDashboardStream({
+    accessToken: session?.accessToken,
+    start: sharedStreamWindow.start,
+    end: sharedStreamWindow.end,
+    queryStart: start,
+    queryEnd: end,
+    queueStatus,
+    selectedSector,
+    enabled: Boolean(session?.accessToken),
+  });
+  const handleWarMapRangeChange = useCallback((nextRange: {
+    start: Date;
+    end: Date;
+  }) => {
+    setWarMapStreamRange((previous) => {
+      if (
+        previous &&
+        previous.start.getTime() === nextRange.start.getTime() &&
+        previous.end.getTime() === nextRange.end.getTime()
+      ) {
+        return previous;
+      }
+      return nextRange;
+    });
+  }, []);
 
   useEffect(() => {
     if (lastRangeFingerprintRef.current === null) {
@@ -526,9 +559,7 @@ export function DashboardContent() {
               start={start}
               end={end}
               range={range}
-              queueStatus={queueStatus}
-              selectedSector={selectedSector}
-              enabled={Boolean(session?.accessToken)}
+              streamState={dashboardStreamState}
             />
             <Space>
               <span className="text-xs text-slate-500">
@@ -624,7 +655,11 @@ export function DashboardContent() {
                 })}
               </h3>
             </div>
-            <WarMap className="h-full" />
+            <WarMap
+              className="h-full"
+              streamState={dashboardStreamState}
+              onEffectiveRangeChange={handleWarMapRangeChange}
+            />
           </div>
 
           {/* Sector Heatmap - Side Panel */}
@@ -673,7 +708,7 @@ export function DashboardContent() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-3">
             <Card
-              title={t("dashboard.charts.knowledgeGraph", {
+              title={t("dashboard.charts.knowledgeGraphTitle", {
                 defaultValue: "Knowledge Graph",
               })}
               className="glass-card"

@@ -1,7 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { AlertMetricProvider, AlertRule } from "@prisma/client";
 
-import { normalizeRealtimeSignalMetricSlug } from "../../realtime-signals/realtime-signals.constants";
+import {
+  normalizeRealtimeSignalMetricSlug,
+  REALTIME_SIGNAL_METRIC_SLUGS,
+} from "../../realtime-signals/realtime-signals.constants";
 import { RealtimeSignalsService } from "../../realtime-signals/realtime-signals.service";
 
 import { MetricEvaluation, MetricProvider } from "./metric-provider";
@@ -36,11 +39,44 @@ export class RealtimeSignalMetricProvider implements MetricProvider {
       metricSlug,
       rule.changeWindowMin ?? 60,
     );
+    const context =
+      evaluation.context &&
+      typeof evaluation.context === "object" &&
+      !Array.isArray(evaluation.context)
+        ? { ...evaluation.context }
+        : undefined;
+    if (
+      metricSlug === REALTIME_SIGNAL_METRIC_SLUGS.adsb &&
+      context &&
+      (context.snapshotRetainedPrevious === true ||
+        context.snapshotFreshness === "stale")
+    ) {
+      return {
+        latest: null,
+        previous: null,
+        changePercent: null,
+        context: {
+          ...context,
+          stale: true,
+          latestTimestamp:
+            typeof context.latestObservedAt === "string"
+              ? context.latestObservedAt
+              : typeof context.snapshotUpdatedAt === "string"
+                ? context.snapshotUpdatedAt
+                : undefined,
+          maxStaleMinutes:
+            typeof context.staleThresholdSec === "number" &&
+            Number.isFinite(context.staleThresholdSec)
+              ? Math.max(1, Math.round(context.staleThresholdSec / 60))
+              : undefined,
+        },
+      };
+    }
     return {
       latest: evaluation.latest,
       previous: evaluation.previous,
       changePercent: evaluation.changePercent,
-      context: evaluation.context,
+      context,
     };
   }
 }

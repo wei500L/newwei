@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-
-import { ErrorsContent } from "./errors-content";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 export default async function ErrorsAdminPage() {
   const session = await auth();
@@ -10,6 +9,5 @@ export default async function ErrorsAdminPage() {
     redirect("/login");
   }
 
-  return <ErrorsContent />;
+  redirect(buildAdminLogsHref({ tab: "errors" }));
 }
-

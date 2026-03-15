@@ -1,5 +1,30 @@
 import { Field, InputType } from "@nestjs/graphql";
-import { ArrayNotEmpty, IsArray, IsOptional, IsString, MaxLength } from "class-validator";
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from "class-validator";
+
+@InputType()
+export class CreateRoleInput {
+  @Field()
+  @IsString()
+  @MaxLength(64)
+  name!: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @Field(() => [String])
+  @IsArray()
+  @ArrayNotEmpty()
+  permissions!: string[];
+}
 
 @InputType()
 export class AssignRoleInput {
@@ -28,4 +53,31 @@ export class UpdateRoleInput {
   @IsArray()
   @ArrayNotEmpty()
   permissions!: string[];
+}
+
+@InputType()
+export class UpdateMembershipRolesInput {
+  @Field()
+  @IsString()
+  userId!: string;
+
+  @Field()
+  @IsString()
+  primaryRoleId!: string;
+
+  @Field(() => [String])
+  @IsArray()
+  @ArrayNotEmpty()
+  roleIds!: string[];
+}
+
+@InputType()
+export class SetUserActiveInput {
+  @Field()
+  @IsString()
+  userId!: string;
+
+  @Field()
+  @IsBoolean()
+  isActive!: boolean;
 }

@@ -4,6 +4,7 @@ import { DatabaseModule } from "../config/database.module";
 import { GeoModule } from "../geo/geo.module";
 import { ItemsModule } from "../items/items.module";
 import { QueueModule } from "../queue/queue.module";
+import { RealtimeSignalsModule } from "../realtime-signals/realtime-signals.module";
 import { SituationMonitorModule } from "../situation-monitor/situation-monitor.module";
 
 import { DashboardChartsService } from "./dashboard-charts.service";
@@ -12,7 +13,14 @@ import { DashboardService } from "./dashboard.service";
 import { EntityImpactGraphService } from "./entity-impact-graph.service";
 
 @Module({
-  imports: [ItemsModule, QueueModule, DatabaseModule, GeoModule, SituationMonitorModule],
+  imports: [
+    ItemsModule,
+    QueueModule,
+    DatabaseModule,
+    GeoModule,
+    SituationMonitorModule,
+    RealtimeSignalsModule,
+  ],
   controllers: [DashboardController],
   providers: [DashboardService, DashboardChartsService, EntityImpactGraphService],
   exports: [DashboardService, EntityImpactGraphService]

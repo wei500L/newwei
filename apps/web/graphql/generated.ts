@@ -990,6 +990,12 @@ export type CreateOrgInput = {
   slug: Scalars['String']['input'];
 };
 
+export type CreateRoleInput = {
+  description?: InputMaybe<Scalars['String']['input']>;
+  name: Scalars['String']['input'];
+  permissions: Array<Scalars['String']['input']>;
+};
+
 export type DashboardModel = {
   __typename?: 'DashboardModel';
   config?: Maybe<Scalars['JSON']['output']>;
@@ -1517,6 +1523,7 @@ export type Mutation = {
   createItem: ItemModel;
   createItemFromCrawlResult: ItemModel;
   createOrg: OrgModel;
+  createRole: RoleModel;
   deleteAlertChannel: Scalars['Boolean']['output'];
   deleteAlertRule: Scalars['Boolean']['output'];
   deleteAssistantRun: Scalars['Boolean']['output'];
@@ -1536,6 +1543,7 @@ export type Mutation = {
   reviewKnowledgeGraphEvidence?: Maybe<KnowledgeGraphEvidenceReviewItemModel>;
   rollbackNewsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
   setOrgActive: OrgModel;
+  setUserActive: UserModel;
   translateRssItems: TranslateRssItemsPayloadModel;
   triggerAlertRule: Scalars['Boolean']['output'];
   triggerDataFetch: Scalars['Boolean']['output'];
@@ -1551,6 +1559,7 @@ export type Mutation = {
   updateEntityImpactGraphSettings: EntityImpactGraphSettingsModel;
   updateItem: ItemModel;
   updateKnowledgeGraphSettings: KnowledgeGraphSettingsModel;
+  updateMembershipRoles: UserModel;
   updateNewsClassificationSettings: NewsClassificationSettingsModel;
   updateNewsDedupeSettings: NewsDedupeSettingsModel;
   updateNewsEventSettings: NewsEventSettingsModel;
@@ -1593,6 +1602,11 @@ export type MutationCreateItemFromCrawlResultArgs = {
 
 export type MutationCreateOrgArgs = {
   input: CreateOrgInput;
+};
+
+
+export type MutationCreateRoleArgs = {
+  input: CreateRoleInput;
 };
 
 
@@ -1684,6 +1698,11 @@ export type MutationSetOrgActiveArgs = {
 };
 
 
+export type MutationSetUserActiveArgs = {
+  input: SetUserActiveInput;
+};
+
+
 export type MutationTranslateRssItemsArgs = {
   input: TranslateRssItemsInput;
 };
@@ -1760,6 +1779,11 @@ export type MutationUpdateItemArgs = {
 
 export type MutationUpdateKnowledgeGraphSettingsArgs = {
   input: UpdateKnowledgeGraphSettingsInput;
+};
+
+
+export type MutationUpdateMembershipRolesArgs = {
+  input: UpdateMembershipRolesInput;
 };
 
 
@@ -2496,6 +2520,7 @@ export type Query = {
   topicGroups: Array<TopicGroupModel>;
   topicSentimentSeries: Array<TopicSentimentSnapshotModel>;
   unreadNotificationCount: Scalars['Int']['output'];
+  userLoginRecords: Array<UserLoginRecordModel>;
   users: Array<UserModel>;
 };
 
@@ -2780,6 +2805,12 @@ export type QueryTopicSentimentSeriesArgs = {
 };
 
 
+export type QueryUserLoginRecordsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  userId: Scalars['String']['input'];
+};
+
+
 export type QueryUsersArgs = {
   after?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -2963,6 +2994,11 @@ export type SetOrgActiveInput = {
   isActive: Scalars['Boolean']['input'];
 };
 
+export type SetUserActiveInput = {
+  isActive: Scalars['Boolean']['input'];
+  userId: Scalars['String']['input'];
+};
+
 export type Subscription = {
   __typename?: 'Subscription';
   alertEvents: AlertEventModel;
@@ -3126,6 +3162,12 @@ export type UpdateKnowledgeGraphSettingsInput = {
   multiModelValidationModels?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
+export type UpdateMembershipRolesInput = {
+  primaryRoleId: Scalars['String']['input'];
+  roleIds: Array<Scalars['String']['input']>;
+  userId: Scalars['String']['input'];
+};
+
 export type UpdateNewsClassificationSettingsInput = {
   cacheTtlSeconds?: InputMaybe<Scalars['Int']['input']>;
   embeddingTopK?: InputMaybe<Scalars['Int']['input']>;
@@ -3274,16 +3316,29 @@ export type UpsertDashboardInput = {
   widgets: Array<DashboardWidgetInput>;
 };
 
+export type UserLoginRecordModel = {
+  __typename?: 'UserLoginRecordModel';
+  createdAt: Scalars['DateTime']['output'];
+  id: Scalars['String']['output'];
+  ipAddress?: Maybe<Scalars['String']['output']>;
+  method: Scalars['String']['output'];
+  userAgent?: Maybe<Scalars['String']['output']>;
+};
+
 export type UserModel = {
   __typename?: 'UserModel';
   avatarUrl?: Maybe<Scalars['String']['output']>;
   email: Scalars['String']['output'];
+  emailVerified?: Maybe<Scalars['DateTime']['output']>;
   firstName: Scalars['String']['output'];
   id: Scalars['String']['output'];
+  isActive: Scalars['Boolean']['output'];
+  lastLoginAt?: Maybe<Scalars['DateTime']['output']>;
   lastName: Scalars['String']['output'];
   orgId: Scalars['String']['output'];
   permissions: Array<Scalars['String']['output']>;
   planTier?: Maybe<Scalars['String']['output']>;
+  primaryRoleId?: Maybe<Scalars['String']['output']>;
   roleIds: Array<Scalars['String']['output']>;
   subscriptionStatus?: Maybe<Scalars['String']['output']>;
 };
@@ -3700,17 +3755,34 @@ export type QueueStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
 export type QueueStatsQuery = { __typename?: 'Query', queueStats: { __typename?: 'QueueStatsModel', processedCount: number, itemCount: number, counts: { __typename?: 'QueueCountsModel', waiting: number, active: number, completed: number, failed: number, delayed: number }, recentLogs: Array<{ __typename?: 'QueueEventModel', event: string, jobId: string, data?: string | null, timestamp: string }> } };
 
-export type RbacOverviewQueryVariables = Exact<{ [key: string]: never; }>;
+export type AccessSettingsMetaQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type RbacOverviewQuery = { __typename?: 'Query', roles: Array<{ __typename?: 'RoleModel', id: string, name: string, description?: string | null, isSystem: boolean, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> }>, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }>, memberships: Array<{ __typename?: 'MembershipModel', id: string, orgId: string, role: { __typename?: 'RoleModel', id: string, name: string, isSystem: boolean }, user: { __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string } }> };
+export type AccessSettingsMetaQuery = { __typename?: 'Query', roles: Array<{ __typename?: 'RoleModel', id: string, name: string, description?: string | null, isSystem: boolean, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> }>, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> };
 
-export type AssignRoleMutationVariables = Exact<{
-  input: AssignRoleInput;
+export type AccessSettingsUsersQueryVariables = Exact<{
+  first: Scalars['Int']['input'];
+  after?: InputMaybe<Scalars['String']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
 }>;
 
 
-export type AssignRoleMutation = { __typename?: 'Mutation', assignRole: { __typename?: 'MembershipModel', id: string, orgId: string, role: { __typename?: 'RoleModel', id: string, name: string, isSystem: boolean }, user: { __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string } } };
+export type AccessSettingsUsersQuery = { __typename?: 'Query', users: Array<{ __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string, primaryRoleId?: string | null, isActive: boolean, emailVerified?: any | null, lastLoginAt?: any | null, roleIds: Array<string>, permissions: Array<string> }> };
+
+export type UserLoginRecordsQueryVariables = Exact<{
+  userId: Scalars['String']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type UserLoginRecordsQuery = { __typename?: 'Query', userLoginRecords: Array<{ __typename?: 'UserLoginRecordModel', id: string, createdAt: any, ipAddress?: string | null, userAgent?: string | null, method: string }> };
+
+export type CreateRoleMutationVariables = Exact<{
+  input: CreateRoleInput;
+}>;
+
+
+export type CreateRoleMutation = { __typename?: 'Mutation', createRole: { __typename?: 'RoleModel', id: string, name: string, description?: string | null, isSystem: boolean, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> } };
 
 export type UpdateRoleMutationVariables = Exact<{
   input: UpdateRoleInput;
@@ -3718,6 +3790,20 @@ export type UpdateRoleMutationVariables = Exact<{
 
 
 export type UpdateRoleMutation = { __typename?: 'Mutation', updateRole: { __typename?: 'RoleModel', id: string, name: string, description?: string | null, isSystem: boolean, permissions: Array<{ __typename?: 'PermissionModel', id: string, name: string, description?: string | null }> } };
+
+export type UpdateMembershipRolesMutationVariables = Exact<{
+  input: UpdateMembershipRolesInput;
+}>;
+
+
+export type UpdateMembershipRolesMutation = { __typename?: 'Mutation', updateMembershipRoles: { __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string, primaryRoleId?: string | null, isActive: boolean, emailVerified?: any | null, lastLoginAt?: any | null, roleIds: Array<string>, permissions: Array<string> } };
+
+export type SetUserActiveMutationVariables = Exact<{
+  input: SetUserActiveInput;
+}>;
+
+
+export type SetUserActiveMutation = { __typename?: 'Mutation', setUserActive: { __typename?: 'UserModel', id: string, email: string, firstName: string, lastName: string, primaryRoleId?: string | null, isActive: boolean, emailVerified?: any | null, lastLoginAt?: any | null, roleIds: Array<string>, permissions: Array<string> } };
 
 export type SearchSuggestionsQueryVariables = Exact<{
   prefix: Scalars['String']['input'];
@@ -6727,9 +6813,9 @@ export type QueueStatsQueryHookResult = ReturnType<typeof useQueueStatsQuery>;
 export type QueueStatsLazyQueryHookResult = ReturnType<typeof useQueueStatsLazyQuery>;
 export type QueueStatsSuspenseQueryHookResult = ReturnType<typeof useQueueStatsSuspenseQuery>;
 export type QueueStatsQueryResult = Apollo.QueryResult<QueueStatsQuery, QueueStatsQueryVariables>;
-export const RbacOverviewDocument = gql`
-    query RbacOverview {
-  roles {
+export const AccessSettingsMetaDocument = gql`
+    query AccessSettingsMeta {
+  roles(includeSystem: true) {
     id
     name
     description
@@ -6745,100 +6831,177 @@ export const RbacOverviewDocument = gql`
     name
     description
   }
-  memberships {
-    id
-    orgId
-    role {
-      id
-      name
-      isSystem
-    }
-    user {
-      id
-      email
-      firstName
-      lastName
-    }
-  }
 }
     `;
 
 /**
- * __useRbacOverviewQuery__
+ * __useAccessSettingsMetaQuery__
  *
- * To run a query within a React component, call `useRbacOverviewQuery` and pass it any options that fit your needs.
- * When your component renders, `useRbacOverviewQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * To run a query within a React component, call `useAccessSettingsMetaQuery` and pass it any options that fit your needs.
+ * When your component renders, `useAccessSettingsMetaQuery` returns an object from Apollo Client that contains loading, error, and data properties
  * you can use to render your UI.
  *
  * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
  *
  * @example
- * const { data, loading, error } = useRbacOverviewQuery({
+ * const { data, loading, error } = useAccessSettingsMetaQuery({
  *   variables: {
  *   },
  * });
  */
-export function useRbacOverviewQuery(baseOptions?: Apollo.QueryHookOptions<RbacOverviewQuery, RbacOverviewQueryVariables>) {
+export function useAccessSettingsMetaQuery(baseOptions?: Apollo.QueryHookOptions<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>) {
         const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(RbacOverviewDocument, options);
+        return Apollo.useQuery<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>(AccessSettingsMetaDocument, options);
       }
-export function useRbacOverviewLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<RbacOverviewQuery, RbacOverviewQueryVariables>) {
+export function useAccessSettingsMetaLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>) {
           const options = {...defaultOptions, ...baseOptions}
-          return Apollo.useLazyQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(RbacOverviewDocument, options);
+          return Apollo.useLazyQuery<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>(AccessSettingsMetaDocument, options);
         }
-export function useRbacOverviewSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<RbacOverviewQuery, RbacOverviewQueryVariables>) {
+export function useAccessSettingsMetaSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>) {
           const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
-          return Apollo.useSuspenseQuery<RbacOverviewQuery, RbacOverviewQueryVariables>(RbacOverviewDocument, options);
+          return Apollo.useSuspenseQuery<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>(AccessSettingsMetaDocument, options);
         }
-export type RbacOverviewQueryHookResult = ReturnType<typeof useRbacOverviewQuery>;
-export type RbacOverviewLazyQueryHookResult = ReturnType<typeof useRbacOverviewLazyQuery>;
-export type RbacOverviewSuspenseQueryHookResult = ReturnType<typeof useRbacOverviewSuspenseQuery>;
-export type RbacOverviewQueryResult = Apollo.QueryResult<RbacOverviewQuery, RbacOverviewQueryVariables>;
-export const AssignRoleDocument = gql`
-    mutation AssignRole($input: AssignRoleInput!) {
-  assignRole(input: $input) {
+export type AccessSettingsMetaQueryHookResult = ReturnType<typeof useAccessSettingsMetaQuery>;
+export type AccessSettingsMetaLazyQueryHookResult = ReturnType<typeof useAccessSettingsMetaLazyQuery>;
+export type AccessSettingsMetaSuspenseQueryHookResult = ReturnType<typeof useAccessSettingsMetaSuspenseQuery>;
+export type AccessSettingsMetaQueryResult = Apollo.QueryResult<AccessSettingsMetaQuery, AccessSettingsMetaQueryVariables>;
+export const AccessSettingsUsersDocument = gql`
+    query AccessSettingsUsers($first: Int!, $after: String, $search: String) {
+  users(first: $first, after: $after, search: $search) {
     id
-    orgId
-    role {
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
+  }
+}
+    `;
+
+/**
+ * __useAccessSettingsUsersQuery__
+ *
+ * To run a query within a React component, call `useAccessSettingsUsersQuery` and pass it any options that fit your needs.
+ * When your component renders, `useAccessSettingsUsersQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useAccessSettingsUsersQuery({
+ *   variables: {
+ *      first: // value for 'first'
+ *      after: // value for 'after'
+ *      search: // value for 'search'
+ *   },
+ * });
+ */
+export function useAccessSettingsUsersQuery(baseOptions: Apollo.QueryHookOptions<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables> & ({ variables: AccessSettingsUsersQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>(AccessSettingsUsersDocument, options);
+      }
+export function useAccessSettingsUsersLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>(AccessSettingsUsersDocument, options);
+        }
+export function useAccessSettingsUsersSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>(AccessSettingsUsersDocument, options);
+        }
+export type AccessSettingsUsersQueryHookResult = ReturnType<typeof useAccessSettingsUsersQuery>;
+export type AccessSettingsUsersLazyQueryHookResult = ReturnType<typeof useAccessSettingsUsersLazyQuery>;
+export type AccessSettingsUsersSuspenseQueryHookResult = ReturnType<typeof useAccessSettingsUsersSuspenseQuery>;
+export type AccessSettingsUsersQueryResult = Apollo.QueryResult<AccessSettingsUsersQuery, AccessSettingsUsersQueryVariables>;
+export const UserLoginRecordsDocument = gql`
+    query UserLoginRecords($userId: String!, $limit: Int) {
+  userLoginRecords(userId: $userId, limit: $limit) {
+    id
+    createdAt
+    ipAddress
+    userAgent
+    method
+  }
+}
+    `;
+
+/**
+ * __useUserLoginRecordsQuery__
+ *
+ * To run a query within a React component, call `useUserLoginRecordsQuery` and pass it any options that fit your needs.
+ * When your component renders, `useUserLoginRecordsQuery` returns an object from Apollo Client that contains loading, error, and data properties
+ * you can use to render your UI.
+ *
+ * @param baseOptions options that will be passed into the query, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options;
+ *
+ * @example
+ * const { data, loading, error } = useUserLoginRecordsQuery({
+ *   variables: {
+ *      userId: // value for 'userId'
+ *      limit: // value for 'limit'
+ *   },
+ * });
+ */
+export function useUserLoginRecordsQuery(baseOptions: Apollo.QueryHookOptions<UserLoginRecordsQuery, UserLoginRecordsQueryVariables> & ({ variables: UserLoginRecordsQueryVariables; skip?: boolean; } | { skip: boolean; }) ) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useQuery<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>(UserLoginRecordsDocument, options);
+      }
+export function useUserLoginRecordsLazyQuery(baseOptions?: Apollo.LazyQueryHookOptions<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>) {
+          const options = {...defaultOptions, ...baseOptions}
+          return Apollo.useLazyQuery<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>(UserLoginRecordsDocument, options);
+        }
+export function useUserLoginRecordsSuspenseQuery(baseOptions?: Apollo.SkipToken | Apollo.SuspenseQueryHookOptions<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>) {
+          const options = baseOptions === Apollo.skipToken ? baseOptions : {...defaultOptions, ...baseOptions}
+          return Apollo.useSuspenseQuery<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>(UserLoginRecordsDocument, options);
+        }
+export type UserLoginRecordsQueryHookResult = ReturnType<typeof useUserLoginRecordsQuery>;
+export type UserLoginRecordsLazyQueryHookResult = ReturnType<typeof useUserLoginRecordsLazyQuery>;
+export type UserLoginRecordsSuspenseQueryHookResult = ReturnType<typeof useUserLoginRecordsSuspenseQuery>;
+export type UserLoginRecordsQueryResult = Apollo.QueryResult<UserLoginRecordsQuery, UserLoginRecordsQueryVariables>;
+export const CreateRoleDocument = gql`
+    mutation CreateRole($input: CreateRoleInput!) {
+  createRole(input: $input) {
+    id
+    name
+    description
+    isSystem
+    permissions {
       id
       name
-      isSystem
-    }
-    user {
-      id
-      email
-      firstName
-      lastName
+      description
     }
   }
 }
     `;
-export type AssignRoleMutationFn = Apollo.MutationFunction<AssignRoleMutation, AssignRoleMutationVariables>;
+export type CreateRoleMutationFn = Apollo.MutationFunction<CreateRoleMutation, CreateRoleMutationVariables>;
 
 /**
- * __useAssignRoleMutation__
+ * __useCreateRoleMutation__
  *
- * To run a mutation, you first call `useAssignRoleMutation` within a React component and pass it any options that fit your needs.
- * When your component renders, `useAssignRoleMutation` returns a tuple that includes:
+ * To run a mutation, you first call `useCreateRoleMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useCreateRoleMutation` returns a tuple that includes:
  * - A mutate function that you can call at any time to execute the mutation
  * - An object with fields that represent the current status of the mutation's execution
  *
  * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
  *
  * @example
- * const [assignRoleMutation, { data, loading, error }] = useAssignRoleMutation({
+ * const [createRoleMutation, { data, loading, error }] = useCreateRoleMutation({
  *   variables: {
  *      input: // value for 'input'
  *   },
  * });
  */
-export function useAssignRoleMutation(baseOptions?: Apollo.MutationHookOptions<AssignRoleMutation, AssignRoleMutationVariables>) {
+export function useCreateRoleMutation(baseOptions?: Apollo.MutationHookOptions<CreateRoleMutation, CreateRoleMutationVariables>) {
         const options = {...defaultOptions, ...baseOptions}
-        return Apollo.useMutation<AssignRoleMutation, AssignRoleMutationVariables>(AssignRoleDocument, options);
+        return Apollo.useMutation<CreateRoleMutation, CreateRoleMutationVariables>(CreateRoleDocument, options);
       }
-export type AssignRoleMutationHookResult = ReturnType<typeof useAssignRoleMutation>;
-export type AssignRoleMutationResult = Apollo.MutationResult<AssignRoleMutation>;
-export type AssignRoleMutationOptions = Apollo.BaseMutationOptions<AssignRoleMutation, AssignRoleMutationVariables>;
+export type CreateRoleMutationHookResult = ReturnType<typeof useCreateRoleMutation>;
+export type CreateRoleMutationResult = Apollo.MutationResult<CreateRoleMutation>;
+export type CreateRoleMutationOptions = Apollo.BaseMutationOptions<CreateRoleMutation, CreateRoleMutationVariables>;
 export const UpdateRoleDocument = gql`
     mutation UpdateRole($input: UpdateRoleInput!) {
   updateRole(input: $input) {
@@ -6880,6 +7043,90 @@ export function useUpdateRoleMutation(baseOptions?: Apollo.MutationHookOptions<U
 export type UpdateRoleMutationHookResult = ReturnType<typeof useUpdateRoleMutation>;
 export type UpdateRoleMutationResult = Apollo.MutationResult<UpdateRoleMutation>;
 export type UpdateRoleMutationOptions = Apollo.BaseMutationOptions<UpdateRoleMutation, UpdateRoleMutationVariables>;
+export const UpdateMembershipRolesDocument = gql`
+    mutation UpdateMembershipRoles($input: UpdateMembershipRolesInput!) {
+  updateMembershipRoles(input: $input) {
+    id
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
+  }
+}
+    `;
+export type UpdateMembershipRolesMutationFn = Apollo.MutationFunction<UpdateMembershipRolesMutation, UpdateMembershipRolesMutationVariables>;
+
+/**
+ * __useUpdateMembershipRolesMutation__
+ *
+ * To run a mutation, you first call `useUpdateMembershipRolesMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useUpdateMembershipRolesMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [updateMembershipRolesMutation, { data, loading, error }] = useUpdateMembershipRolesMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useUpdateMembershipRolesMutation(baseOptions?: Apollo.MutationHookOptions<UpdateMembershipRolesMutation, UpdateMembershipRolesMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<UpdateMembershipRolesMutation, UpdateMembershipRolesMutationVariables>(UpdateMembershipRolesDocument, options);
+      }
+export type UpdateMembershipRolesMutationHookResult = ReturnType<typeof useUpdateMembershipRolesMutation>;
+export type UpdateMembershipRolesMutationResult = Apollo.MutationResult<UpdateMembershipRolesMutation>;
+export type UpdateMembershipRolesMutationOptions = Apollo.BaseMutationOptions<UpdateMembershipRolesMutation, UpdateMembershipRolesMutationVariables>;
+export const SetUserActiveDocument = gql`
+    mutation SetUserActive($input: SetUserActiveInput!) {
+  setUserActive(input: $input) {
+    id
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
+  }
+}
+    `;
+export type SetUserActiveMutationFn = Apollo.MutationFunction<SetUserActiveMutation, SetUserActiveMutationVariables>;
+
+/**
+ * __useSetUserActiveMutation__
+ *
+ * To run a mutation, you first call `useSetUserActiveMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useSetUserActiveMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [setUserActiveMutation, { data, loading, error }] = useSetUserActiveMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useSetUserActiveMutation(baseOptions?: Apollo.MutationHookOptions<SetUserActiveMutation, SetUserActiveMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<SetUserActiveMutation, SetUserActiveMutationVariables>(SetUserActiveDocument, options);
+      }
+export type SetUserActiveMutationHookResult = ReturnType<typeof useSetUserActiveMutation>;
+export type SetUserActiveMutationResult = Apollo.MutationResult<SetUserActiveMutation>;
+export type SetUserActiveMutationOptions = Apollo.BaseMutationOptions<SetUserActiveMutation, SetUserActiveMutationVariables>;
 export const SearchSuggestionsDocument = gql`
     query SearchSuggestions($prefix: String!, $limit: Float) {
   searchSuggestions(prefix: $prefix, limit: $limit) {

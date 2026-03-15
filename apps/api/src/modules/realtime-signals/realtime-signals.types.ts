@@ -32,6 +32,64 @@ export interface RealtimeSignalFetchResult {
   context?: Record<string, unknown>;
 }
 
+export interface RealtimeAdsbAircraftSnapshot {
+  id: string;
+  icao24: string;
+  callsign?: string;
+  registration?: string;
+  aircraftType?: string;
+  lat: number;
+  lng: number;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  countryCode?: string;
+  countryName?: string;
+  observedAt: string;
+  source: "adsb";
+}
+
+export interface RealtimeAdsbSnapshotDiagnostics {
+  latestObservedAt?: string;
+  oldestObservedAt?: string;
+  staleThresholdSec: number;
+  droppedInvalidPositionCount: number;
+  droppedMissingIdentityCount: number;
+  droppedStalePositionCount: number;
+  deduplicatedCount: number;
+  retainedPreviousSnapshot: boolean;
+}
+
+export interface RealtimeAdsbLatestSnapshot {
+  source: "adsb";
+  sourceEndpoint: string;
+  updatedAt: string;
+  totalAircraft: number;
+  validPositionCount: number;
+  latestObservedAt?: string;
+  diagnostics: RealtimeAdsbSnapshotDiagnostics;
+  aircraft: RealtimeAdsbAircraftSnapshot[];
+}
+
+export type RealtimeAdsbSnapshotFreshness = "fresh" | "stale" | "missing";
+
+export interface RealtimeAdsbRuntimeDiagnostics {
+  freshness: RealtimeAdsbSnapshotFreshness;
+  rawAircraftCount: number;
+  currentValidPositionCount: number;
+  snapshotValidPositionCount: number;
+  snapshotUpdatedAt?: string;
+  snapshotAgeSec?: number;
+  latestObservedAt?: string;
+  latestObservedAgeSec?: number;
+  staleThresholdSec: number;
+  retainedPreviousSnapshot: boolean;
+  droppedInvalidPositionCount: number;
+  droppedMissingIdentityCount: number;
+  droppedStalePositionCount: number;
+  deduplicatedCount: number;
+}
+
 export interface RealtimeSignalsRuntimeConfig {
   enabled: boolean;
   requestTimeoutMs: number;
@@ -137,6 +195,7 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  adsbSnapshot?: RealtimeAdsbRuntimeDiagnostics;
 }
 
 export interface RealtimeSignalsMarkerReadiness {

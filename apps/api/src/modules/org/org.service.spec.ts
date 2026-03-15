@@ -45,6 +45,7 @@ describe("OrgService", () => {
     prismaMock.membership.findMany = jest.fn().mockResolvedValue([
       {
         orgId: "org-1",
+        isActive: true,
         org: {
           id: "org-1",
           name: "Acme",
@@ -57,6 +58,7 @@ describe("OrgService", () => {
       },
       {
         orgId: "org-1",
+        isActive: true,
         org: {
           id: "org-1",
           name: "Acme",
@@ -72,6 +74,33 @@ describe("OrgService", () => {
     const orgs = await service.listOrganizationsForUser("user-1");
     expect(orgs).toHaveLength(1);
     expect(orgs[0]?.id).toBe("org-1");
+  });
+
+  it("marks organization options inactive when the membership is disabled", async () => {
+    prismaMock.membership.findMany = jest.fn().mockResolvedValue([
+      {
+        orgId: "org-1",
+        isActive: false,
+        org: {
+          id: "org-1",
+          name: "Acme",
+          slug: "acme",
+          description: null,
+          isActive: true,
+          createdAt: new Date("2024-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2024-01-02T00:00:00.000Z")
+        }
+      }
+    ]);
+
+    const orgs = await service.listOrganizationsForUser("user-1");
+
+    expect(orgs).toEqual([
+      expect.objectContaining({
+        id: "org-1",
+        isActive: false
+      })
+    ]);
   });
 
   it("creates a new organization with default roles and membership", async () => {

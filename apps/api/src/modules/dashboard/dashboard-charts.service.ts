@@ -4,9 +4,15 @@ import {
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
+  type WarMapEvent,
+  type WarMapEventsResponse,
+  type WarMapFlightProperties,
   type WarMapLayerDataset,
   type WarMapLayerFeature,
   type WarMapLayerId,
+  type WarMapNewsGeoSource,
+  type WarMapNewsMarker,
+  type WarMapNewsMarkersResponse,
   WAR_MAP_LAYER_IDS,
   normalizeCountryCode,
 } from "@modular/utils";
@@ -21,13 +27,15 @@ import { createHash } from "node:crypto";
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
+import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
+import type { RealtimeAdsbAircraftSnapshot } from "../realtime-signals/realtime-signals.types";
 import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
 import {
   buildWarMapLayersResponse,
-  type WarMapLayersResponse,
+  type WarMapLayersResponse as WarMapStaticLayersResponse,
 } from "./war-map-layers";
 
 const logger = createLogger({ name: "dashboard-charts" });
@@ -44,6 +52,15 @@ const MAX_WAR_MAP_CLUSTER_ZOOM = 16;
 const DEFAULT_WAR_MAP_BBOX: [number, number, number, number] = [
   -180, -85, 180, 85,
 ];
+const MIN_WAR_MAP_FLIGHT_CELL_SIZE_DEG = 0.15;
+const MAX_WAR_MAP_FLIGHTS_GLOBAL_LOW_ZOOM = 180;
+const MAX_WAR_MAP_FLIGHTS_GLOBAL_MID_ZOOM = 320;
+const MAX_WAR_MAP_FLIGHTS_GLOBAL_HIGH_ZOOM = 520;
+const MAX_WAR_MAP_FLIGHTS_GLOBAL_MAX = 720;
+const MAX_WAR_MAP_FLIGHTS_VIEWPORT_LOW_ZOOM = 120;
+const MAX_WAR_MAP_FLIGHTS_VIEWPORT_MID_ZOOM = 220;
+const MAX_WAR_MAP_FLIGHTS_VIEWPORT_HIGH_ZOOM = 420;
+const MAX_WAR_MAP_FLIGHTS_VIEWPORT_MAX = 900;
 const MAX_SPACETIME_GEO_RECORDS = 2000;
 const MAX_SPACETIME_GEO_LOCATIONS = 500;
 const MAX_SPACETIME_GEO_POINTS = 300;
@@ -349,61 +366,6 @@ export interface WarMapGeoJsonResponse {
   zoom?: number;
 }
 
-interface WarMapEvent {
-  id: string;
-  name: string;
-  nameZh?: string;
-  lat: number;
-  lng: number;
-  severity: AlertSeverity;
-  isCluster?: boolean;
-  clusterId?: number;
-  clusterCount?: number;
-  latestAt?: string;
-  /**
-   * Aggregated score for the location, derived from alert severities.
-   * Current algorithm: sum of severity ranks (low=1, medium=2, high=3).
-   */
-  derivedScore: number;
-  value: number;
-  alertScore?: number;
-  alertCount?: number;
-  newsCount?: number;
-}
-
-export interface WarMapEventsResponse {
-  events: WarMapEvent[];
-  updatedAt?: string;
-  clustered?: boolean;
-}
-
-type WarMapNewsGeoSource = "geocoded" | "fallback-country";
-
-interface WarMapNewsMarker {
-  id: string;
-  title: string;
-  titleZh?: string;
-  url?: string | null;
-  location: string;
-  locationZh?: string;
-  lat: number;
-  lng: number;
-  publishedAt?: string;
-  ingestedAt?: string;
-  displayName?: string;
-  displayNameZh?: string;
-  geoSource: WarMapNewsGeoSource;
-  isCluster?: boolean;
-  clusterId?: number;
-  clusterCount?: number;
-}
-
-export interface WarMapNewsMarkersResponse {
-  markers: WarMapNewsMarker[];
-  updatedAt?: string;
-  clustered?: boolean;
-}
-
 interface WarMapNewsMarkersOptions {
   translateTarget?: "zh-CN";
   bbox?: [number, number, number, number];
@@ -415,6 +377,8 @@ interface WarMapLayersOptions {
   translateTarget?: "zh-CN";
   orgId?: string;
   range?: DateRange;
+  bbox?: [number, number, number, number];
+  zoom?: number;
 }
 
 interface WarMapEventsOptions {
@@ -574,7 +538,7 @@ export interface SpacetimePropagationArticlesResponse {
   updatedAt?: string;
 }
 
-export { type WarMapLayersResponse };
+export { type WarMapStaticLayersResponse as WarMapLayersResponse };
 
 interface SectorHeatmapCell {
   x: number;
@@ -846,6 +810,7 @@ export class DashboardChartsService {
     private readonly geocoding: GeocodingService,
     private readonly cache: CacheService,
     private readonly translation?: SituationMonitorTranslationService,
+    private readonly realtimeSignalsStore?: RealtimeSignalsSnapshotStore,
   ) {}
 
   private geoHeatmapSnapshotCacheKey(orgId: string, snapshotId: string) {
@@ -1237,6 +1202,124 @@ export class DashboardChartsService {
     return points.filter((point) =>
       this.isWithinWarMapBbox(point.lat, point.lng, bbox),
     );
+  }
+
+  private isAdsbSnapshotFresh(
+    snapshot: {
+      updatedAt: string;
+      latestObservedAt?: string;
+      validPositionCount: number;
+      diagnostics: { staleThresholdSec: number; latestObservedAt?: string };
+    },
+    nowMs: number,
+  ): boolean {
+    if (snapshot.validPositionCount <= 0) {
+      return false;
+    }
+    const staleThresholdMs = Math.max(
+      60_000,
+      snapshot.diagnostics.staleThresholdSec * 1_000,
+    );
+    const updatedAtMs = Date.parse(snapshot.updatedAt);
+    if (!Number.isFinite(updatedAtMs) || nowMs - updatedAtMs > staleThresholdMs) {
+      return false;
+    }
+    const latestObservedAt =
+      snapshot.latestObservedAt ?? snapshot.diagnostics.latestObservedAt;
+    const latestObservedAtMs = latestObservedAt
+      ? Date.parse(latestObservedAt)
+      : Number.NaN;
+    if (!Number.isFinite(latestObservedAtMs)) {
+      return false;
+    }
+    return nowMs - latestObservedAtMs <= staleThresholdMs;
+  }
+
+  private resolveWarMapFlightsMaxPoints(
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+  ): number {
+    const normalizedZoom = this.resolveWarMapClusterZoom(options.zoom);
+    if (!options.bbox) {
+      if (normalizedZoom <= 2) {
+        return MAX_WAR_MAP_FLIGHTS_GLOBAL_LOW_ZOOM;
+      }
+      if (normalizedZoom <= 4) {
+        return MAX_WAR_MAP_FLIGHTS_GLOBAL_MID_ZOOM;
+      }
+      if (normalizedZoom <= 6) {
+        return MAX_WAR_MAP_FLIGHTS_GLOBAL_HIGH_ZOOM;
+      }
+      return MAX_WAR_MAP_FLIGHTS_GLOBAL_MAX;
+    }
+
+    if (normalizedZoom <= 2) {
+      return MAX_WAR_MAP_FLIGHTS_VIEWPORT_LOW_ZOOM;
+    }
+    if (normalizedZoom <= 4) {
+      return MAX_WAR_MAP_FLIGHTS_VIEWPORT_MID_ZOOM;
+    }
+    if (normalizedZoom <= 6) {
+      return MAX_WAR_MAP_FLIGHTS_VIEWPORT_HIGH_ZOOM;
+    }
+    return MAX_WAR_MAP_FLIGHTS_VIEWPORT_MAX;
+  }
+
+  private resolveWarMapFlightsPerCellLimit(zoom?: number): number {
+    const normalizedZoom = this.resolveWarMapClusterZoom(zoom);
+    if (normalizedZoom <= 2) {
+      return 1;
+    }
+    if (normalizedZoom <= 4) {
+      return 2;
+    }
+    if (normalizedZoom <= 6) {
+      return 3;
+    }
+    if (normalizedZoom <= 8) {
+      return 5;
+    }
+    return 8;
+  }
+
+  private shapeWarMapFlightsForViewport(
+    aircraft: RealtimeAdsbAircraftSnapshot[],
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+  ): RealtimeAdsbAircraftSnapshot[] {
+    const filtered = this.filterWarMapPointsByBbox(aircraft, options.bbox);
+    const maxPoints = this.resolveWarMapFlightsMaxPoints(options);
+    if (filtered.length <= maxPoints) {
+      return filtered;
+    }
+
+    const bbox = this.resolveWarMapClusterBbox(options.bbox);
+    const cellSizeDeg = clampFinite(
+      this.resolveWarMapClusterCellSizeDegrees(options.zoom) * 0.75,
+      MIN_WAR_MAP_FLIGHT_CELL_SIZE_DEG,
+      24,
+    );
+    const perCellLimit = this.resolveWarMapFlightsPerCellLimit(options.zoom);
+    const cellCounts = new Map<string, number>();
+    const selected: RealtimeAdsbAircraftSnapshot[] = [];
+
+    for (const entry of filtered) {
+      const cellKey = this.buildWarMapClusterCellKey(
+        entry.lat,
+        entry.lng,
+        bbox,
+        cellSizeDeg,
+      );
+      const currentCount = cellCounts.get(cellKey) ?? 0;
+      if (currentCount >= perCellLimit) {
+        continue;
+      }
+      cellCounts.set(cellKey, currentCount + 1);
+      selected.push(entry);
+      if (selected.length >= maxPoints) {
+        break;
+      }
+    }
+
+    return selected.length > 0 ? selected : filtered.slice(0, maxPoints);
   }
 
   private clusterWarMapEvents(
@@ -1768,7 +1851,7 @@ export class DashboardChartsService {
   }
 
   private async enrichWarMapLayersWithRealtimeData(
-    response: WarMapLayersResponse,
+    response: WarMapStaticLayersResponse,
     orgId: string,
     range: DateRange,
   ): Promise<void> {
@@ -1786,7 +1869,11 @@ export class DashboardChartsService {
     }
 
     for (const layerId of WAR_MAP_LAYER_IDS) {
-      if (layerId === "monitors" || layerId === "dayNight") {
+      if (
+        layerId === "monitors" ||
+        layerId === "dayNight" ||
+        layerId === "flights"
+      ) {
         continue;
       }
       const dataset = response.layers[layerId];
@@ -1821,6 +1908,126 @@ export class DashboardChartsService {
           (dataset.geometryType === "point" ? 1 : undefined),
       };
     }
+  }
+
+  private async enrichWarMapFlightsLayer(
+    response: WarMapStaticLayersResponse,
+    orgId: string,
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+  ): Promise<void> {
+    const dataset = response.layers.flights;
+    if (!dataset || !this.realtimeSignalsStore) {
+      return;
+    }
+
+    const snapshot = await this.realtimeSignalsStore.getLatestAdsbSnapshot(orgId);
+    dataset.renderHints = {
+      ...dataset.renderHints,
+      pickable: true,
+      clusterable: true,
+      color: WAR_MAP_LAYER_COLORS.flights,
+      radiusScale: 1.15,
+    };
+
+    if (!snapshot) {
+      dataset.features = [];
+      dataset.updatedAt = undefined;
+      dataset.summary = {
+        source: "adsb",
+        freshness: "missing",
+        rawAircraftCount: 0,
+        snapshotValidPositionCount: 0,
+        returnedCount: 0,
+        truncated: false,
+        retainedPreviousSnapshot: false,
+      };
+      return;
+    }
+
+    if (!this.isAdsbSnapshotFresh(snapshot, Date.now())) {
+      dataset.features = [];
+      dataset.updatedAt = snapshot.updatedAt;
+      dataset.summary = {
+        source: "adsb",
+        freshness: "stale",
+        rawAircraftCount: snapshot.totalAircraft,
+        snapshotValidPositionCount: snapshot.validPositionCount,
+        returnedCount: 0,
+        truncated: false,
+        retainedPreviousSnapshot: snapshot.diagnostics.retainedPreviousSnapshot,
+      };
+      return;
+    }
+
+    const rawAircraft = snapshot.aircraft.map((entry) => ({
+      ...entry,
+      lat: clampFinite(entry.lat, -90, 90),
+      lng: clampFinite(entry.lng, -180, 180),
+    }));
+    const aircraft = this.shapeWarMapFlightsForViewport(
+      rawAircraft,
+      options,
+    );
+
+    dataset.features = aircraft.map((entry) =>
+      this.buildWarMapFlightFeature(entry, snapshot.updatedAt),
+    );
+    dataset.updatedAt = snapshot.updatedAt;
+    dataset.summary = {
+      source: "adsb",
+      freshness: "fresh",
+      rawAircraftCount: snapshot.totalAircraft,
+      snapshotValidPositionCount: snapshot.validPositionCount,
+      returnedCount: aircraft.length,
+      maxReturned: this.resolveWarMapFlightsMaxPoints(options),
+      truncated: aircraft.length < this.filterWarMapPointsByBbox(rawAircraft, options.bbox).length,
+      retainedPreviousSnapshot: snapshot.diagnostics.retainedPreviousSnapshot,
+    };
+  }
+
+  private buildWarMapFlightFeature(
+    aircraft: RealtimeAdsbAircraftSnapshot,
+    sourceUpdatedAt: string,
+  ): WarMapLayerFeature {
+    const properties: WarMapFlightProperties & {
+      name: string;
+      description: string;
+    } = {
+      sourceType: "adsb",
+      source: aircraft.source,
+      sourceUpdatedAt,
+      ...(aircraft.callsign ? { callsign: aircraft.callsign } : {}),
+      icao24: aircraft.icao24,
+      ...(aircraft.registration ? { registration: aircraft.registration } : {}),
+      ...(aircraft.aircraftType ? { aircraftType: aircraft.aircraftType } : {}),
+      ...(aircraft.countryCode ? { countryCode: aircraft.countryCode } : {}),
+      ...(aircraft.countryName ? { countryName: aircraft.countryName } : {}),
+      ...(typeof aircraft.heading === "number"
+        ? { heading: aircraft.heading }
+        : {}),
+      ...(typeof aircraft.altitudeFt === "number"
+        ? { altitudeFt: aircraft.altitudeFt }
+        : {}),
+      ...(typeof aircraft.groundSpeedKt === "number"
+        ? { groundSpeedKt: aircraft.groundSpeedKt }
+        : {}),
+      observedAt: aircraft.observedAt,
+      name:
+        aircraft.callsign ??
+        aircraft.registration ??
+        aircraft.icao24.toUpperCase(),
+      description: aircraft.aircraftType
+        ? `ADS-B ${aircraft.aircraftType}`
+        : "ADS-B military flight",
+    };
+
+    return {
+      id: aircraft.id,
+      lat: aircraft.lat,
+      lng: aircraft.lng,
+      timestamp: aircraft.observedAt,
+      properties: properties as unknown as Record<string, unknown>,
+    };
   }
 
   resolveRange(
@@ -1864,10 +2071,14 @@ export class DashboardChartsService {
 
   async getWarMapLayers(
     options: WarMapLayersOptions = {},
-  ): Promise<WarMapLayersResponse> {
+  ): Promise<WarMapStaticLayersResponse> {
     const response = buildWarMapLayersResponse();
 
     if (options.orgId && options.range) {
+      await this.enrichWarMapFlightsLayer(response, options.orgId, {
+        bbox: options.bbox,
+        zoom: options.zoom,
+      });
       await this.enrichWarMapLayersWithRealtimeData(
         response,
         options.orgId,

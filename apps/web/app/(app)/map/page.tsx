@@ -4,7 +4,6 @@ import { Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { WarMap } from "@/app/(app)/dashboard/charts/war-map";
-import { TimeRangeControls } from "@/components/time-range-controls";
 
 export default function MapPage() {
   const { t } = useTranslation();
@@ -20,7 +19,6 @@ export default function MapPage() {
             defaultValue: "Alerts and geo-tagged news signals by region."
           })}
         </Typography.Text>
-        <TimeRangeControls />
       </div>
       <div className="glass-panel border border-[var(--border)] h-[600px] relative overflow-hidden">
         <div className="absolute top-4 left-4 z-10">

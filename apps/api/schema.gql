@@ -226,13 +226,6 @@ enum ArchiveClassificationDecisionReason {
   STRONG_RULE_OVERRIDE
 }
 
-enum ArchiveClassificationStaleReason {
-  EMBEDDING_MODEL_CHANGED
-  PIPELINE_VERSION_CHANGED
-  RERANK_MODEL_CHANGED
-  TAXONOMY_VERSION_CHANGED
-}
-
 type ArchiveClassificationDetailModel {
   decisionReason: ArchiveClassificationDecisionReason!
   decisionReasonI18nKey: String!
@@ -255,6 +248,13 @@ type ArchiveClassificationScoreEntryModel {
   rerankScore: Float!
   ruleScore: Float!
   vertical: ArchiveVertical!
+}
+
+enum ArchiveClassificationStaleReason {
+  EMBEDDING_MODEL_CHANGED
+  PIPELINE_VERSION_CHANGED
+  RERANK_MODEL_CHANGED
+  TAXONOMY_VERSION_CHANGED
 }
 
 type ArchiveDetailModel {
@@ -942,6 +942,12 @@ input CreateOrgInput {
   slug: String!
 }
 
+input CreateRoleInput {
+  description: String
+  name: String!
+  permissions: [String!]!
+}
+
 type DashboardModel {
   config: JSON
   createdAt: DateTime!
@@ -1470,6 +1476,7 @@ type Mutation {
   createItem(input: CreateItemInput!): ItemModel!
   createItemFromCrawlResult(resultId: String!): ItemModel!
   createOrg(input: CreateOrgInput!): OrgModel!
+  createRole(input: CreateRoleInput!): RoleModel!
   deleteAlertChannel(channelId: String!): Boolean!
   deleteAlertRule(ruleId: String!): Boolean!
   deleteAssistantRun(runId: String!): Boolean!
@@ -1489,6 +1496,7 @@ type Mutation {
   reviewKnowledgeGraphEvidence(input: ReviewKnowledgeGraphEvidenceInput!): KnowledgeGraphEvidenceReviewItemModel
   rollbackNewsEventSourcePolicy(input: RollbackNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   setOrgActive(input: SetOrgActiveInput!): OrgModel!
+  setUserActive(input: SetUserActiveInput!): UserModel!
   translateRssItems(input: TranslateRssItemsInput!): TranslateRssItemsPayloadModel!
   triggerAlertRule(ruleId: String!): Boolean!
   triggerDataFetch(input: TriggerDataFetchInput!): Boolean!
@@ -1504,6 +1512,7 @@ type Mutation {
   updateEntityImpactGraphSettings(input: UpdateEntityImpactGraphSettingsInput!): EntityImpactGraphSettingsModel!
   updateItem(input: UpdateItemInput!): ItemModel!
   updateKnowledgeGraphSettings(input: UpdateKnowledgeGraphSettingsInput!): KnowledgeGraphSettingsModel!
+  updateMembershipRoles(input: UpdateMembershipRolesInput!): UserModel!
   updateNewsClassificationSettings(input: UpdateNewsClassificationSettingsInput!): NewsClassificationSettingsModel!
   updateNewsDedupeSettings(input: UpdateNewsDedupeSettingsInput!): NewsDedupeSettingsModel!
   updateNewsEventSettings(input: UpdateNewsEventSettingsInput!): NewsEventSettingsModel!
@@ -2168,6 +2177,7 @@ type Query {
   topicGroups(itemsPerGroup: Int, limit: Int, windowDays: Int): [TopicGroupModel!]!
   topicSentimentSeries(days: Int, topic: String!): [TopicSentimentSnapshotModel!]!
   unreadNotificationCount: Int!
+  userLoginRecords(limit: Int, userId: String!): [UserLoginRecordModel!]!
   users(after: String, first: Int, search: String): [UserModel!]!
 }
 
@@ -2339,6 +2349,11 @@ input SetOrgActiveInput {
   isActive: Boolean!
 }
 
+input SetUserActiveInput {
+  isActive: Boolean!
+  userId: String!
+}
+
 type Subscription {
   alertEvents: AlertEventModel!
   analysisEvents: AnalysisResultModel!
@@ -2497,6 +2512,12 @@ input UpdateKnowledgeGraphSettingsInput {
   multiModelValidationModels: [String!]
 }
 
+input UpdateMembershipRolesInput {
+  primaryRoleId: String!
+  roleIds: [String!]!
+  userId: String!
+}
+
 input UpdateNewsClassificationSettingsInput {
   cacheTtlSeconds: Int
   embeddingTopK: Int
@@ -2645,15 +2666,27 @@ input UpsertDashboardInput {
   widgets: [DashboardWidgetInput!]!
 }
 
+type UserLoginRecordModel {
+  createdAt: DateTime!
+  id: String!
+  ipAddress: String
+  method: String!
+  userAgent: String
+}
+
 type UserModel {
   avatarUrl: String
   email: String!
+  emailVerified: DateTime
   firstName: String!
   id: String!
+  isActive: Boolean!
+  lastLoginAt: DateTime
   lastName: String!
   orgId: String!
   permissions: [String!]!
   planTier: String
+  primaryRoleId: String
   roleIds: [String!]!
   subscriptionStatus: String
 }

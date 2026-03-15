@@ -34,6 +34,10 @@ const createCache = () => ({
 });
 
 describe("DashboardChartsService", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("resolves aligned UTC day range by default", () => {
     const service = new DashboardChartsService(
       {} as any,
@@ -421,6 +425,282 @@ describe("DashboardChartsService", () => {
         feature.id.includes("news-"),
       ),
     ).toBe(true);
+  });
+
+  it("builds the flights layer from the latest ADS-B snapshot and applies bbox filtering", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const geocoding = {
+      resolveCandidates: jest.fn(),
+    };
+    const realtimeSignalsStore = {
+      getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
+        source: "adsb",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        totalAircraft: 2,
+        validPositionCount: 2,
+        latestObservedAt: "2026-01-01T11:59:30.000Z",
+        diagnostics: {
+          latestObservedAt: "2026-01-01T11:59:30.000Z",
+          oldestObservedAt: "2026-01-01T11:58:30.000Z",
+          staleThresholdSec: 600,
+          droppedInvalidPositionCount: 0,
+          droppedMissingIdentityCount: 0,
+          droppedStalePositionCount: 0,
+          deduplicatedCount: 0,
+          retainedPreviousSnapshot: false,
+        },
+        aircraft: [
+          {
+            id: "ae017a",
+            icao24: "ae017a",
+            callsign: "SPAR416",
+          aircraftType: "LJ35",
+          lat: 39.315491,
+          lng: -99.342797,
+          heading: 261.89,
+          altitudeFt: 35975,
+          groundSpeedKt: 375.8,
+          countryCode: "US",
+          countryName: "United States",
+          observedAt: "2026-01-01T11:59:30.000Z",
+          source: "adsb",
+        },
+          {
+            id: "ae6306",
+            icao24: "ae6306",
+            callsign: "BLZR295",
+            aircraftType: "HAWK",
+            lat: 28.002242,
+            lng: -98.471051,
+            observedAt: "2026-01-01T11:58:30.000Z",
+            source: "adsb",
+          },
+        ],
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      geocoding as any,
+      createCache() as any,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range,
+      bbox: [-110, 35, -90, 45],
+    });
+
+    expect(realtimeSignalsStore.getLatestAdsbSnapshot).toHaveBeenCalledWith("org-1");
+    expect(response.layers.flights.updatedAt).toBe("2026-01-01T12:00:00.000Z");
+    expect(response.layers.flights.renderHints).toMatchObject({
+      pickable: true,
+      clusterable: true,
+    });
+    expect(response.layers.flights.features).toEqual([
+      expect.objectContaining({
+        id: "ae017a",
+        lat: 39.315491,
+        lng: -99.342797,
+        timestamp: "2026-01-01T11:59:30.000Z",
+        properties: expect.objectContaining({
+          sourceType: "adsb",
+          callsign: "SPAR416",
+          icao24: "ae017a",
+          aircraftType: "LJ35",
+          countryCode: "US",
+          countryName: "United States",
+          heading: 261.89,
+          altitudeFt: 35975,
+          groundSpeedKt: 375.8,
+          observedAt: "2026-01-01T11:59:30.000Z",
+          sourceUpdatedAt: "2026-01-01T12:00:00.000Z",
+        }),
+      }),
+    ]);
+    expect(response.layers.flights.summary).toEqual(
+      expect.objectContaining({
+        source: "adsb",
+        freshness: "fresh",
+        rawAircraftCount: 2,
+        snapshotValidPositionCount: 2,
+        returnedCount: 1,
+        truncated: false,
+        retainedPreviousSnapshot: false,
+      }),
+    );
+  });
+
+  it("returns an empty flights layer when the stored ADS-B snapshot is stale", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:15:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = {
+      getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
+        source: "adsb",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        totalAircraft: 1,
+        validPositionCount: 1,
+        latestObservedAt: "2026-01-01T11:59:00.000Z",
+        diagnostics: {
+          latestObservedAt: "2026-01-01T11:59:00.000Z",
+          oldestObservedAt: "2026-01-01T11:59:00.000Z",
+          staleThresholdSec: 600,
+          droppedInvalidPositionCount: 0,
+          droppedMissingIdentityCount: 0,
+          droppedStalePositionCount: 0,
+          deduplicatedCount: 0,
+          retainedPreviousSnapshot: false,
+        },
+        aircraft: [
+          {
+            id: "ae017a",
+            icao24: "ae017a",
+            lat: 39.315491,
+            lng: -99.342797,
+            observedAt: "2026-01-01T11:59:00.000Z",
+            source: "adsb",
+          },
+        ],
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      zoom: 2,
+    });
+
+    expect(response.layers.flights.updatedAt).toBe("2026-01-01T12:00:00.000Z");
+    expect(response.layers.flights.features).toEqual([]);
+    expect(response.layers.flights.summary).toEqual(
+      expect.objectContaining({
+        source: "adsb",
+        freshness: "stale",
+        rawAircraftCount: 1,
+        snapshotValidPositionCount: 1,
+        returnedCount: 0,
+        retainedPreviousSnapshot: false,
+      }),
+    );
+  });
+
+  it("shapes global flights density by zoom level", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
+    const aircraft = Array.from({ length: 260 }, (_, index) => {
+      const row = Math.floor(index / 13);
+      const col = index % 13;
+      return {
+        id: `ac-${index}`,
+        icao24: `ac${index.toString(16).padStart(4, "0")}`,
+        lat: -60 + row * 6,
+        lng: -170 + col * 12,
+        observedAt: "2026-01-01T11:59:30.000Z",
+        source: "adsb" as const,
+      };
+    });
+    const realtimeSignalsStore = {
+      getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
+        source: "adsb",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        totalAircraft: aircraft.length,
+        validPositionCount: aircraft.length,
+        latestObservedAt: "2026-01-01T11:59:30.000Z",
+        diagnostics: {
+          latestObservedAt: "2026-01-01T11:59:30.000Z",
+          oldestObservedAt: "2026-01-01T11:59:30.000Z",
+          staleThresholdSec: 600,
+          droppedInvalidPositionCount: 0,
+          droppedMissingIdentityCount: 0,
+          droppedStalePositionCount: 0,
+          deduplicatedCount: 0,
+          retainedPreviousSnapshot: false,
+        },
+        aircraft,
+      }),
+    };
+    const service = new DashboardChartsService(
+      {
+        alertEvent: { findMany: jest.fn().mockResolvedValue([]) },
+        processedArticle: { findMany: jest.fn().mockResolvedValue([]) },
+      } as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+    const range = {
+      start: new Date("2026-01-01T00:00:00.000Z"),
+      end: new Date("2026-01-02T00:00:00.000Z"),
+    };
+
+    const lowZoom = await service.getWarMapLayers({
+      orgId: "org-1",
+      range,
+      zoom: 2,
+    });
+    const highZoom = await service.getWarMapLayers({
+      orgId: "org-1",
+      range,
+      zoom: 7,
+    });
+
+    expect(lowZoom.layers.flights.features.length).toBeLessThan(260);
+    expect(lowZoom.layers.flights.features.length).toBeLessThan(
+      highZoom.layers.flights.features.length,
+    );
+    expect(highZoom.layers.flights.features).toHaveLength(260);
+    expect(lowZoom.layers.flights.summary).toEqual(
+      expect.objectContaining({
+        freshness: "fresh",
+        rawAircraftCount: 260,
+        snapshotValidPositionCount: 260,
+        returnedCount: lowZoom.layers.flights.features.length,
+        truncated: true,
+      }),
+    );
+    expect(highZoom.layers.flights.summary).toEqual(
+      expect.objectContaining({
+        freshness: "fresh",
+        rawAircraftCount: 260,
+        snapshotValidPositionCount: 260,
+        returnedCount: 260,
+        truncated: false,
+      }),
+    );
   });
 
   it("returns clustered war map events when clustering is requested", async () => {

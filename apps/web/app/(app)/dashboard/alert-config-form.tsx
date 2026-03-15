@@ -166,6 +166,7 @@ const isCrawlQualityMetricSlug = (
 
 type RealtimeMetricSlug =
   | "realtime.adsb.military_flights"
+  | "realtime.adsb.snapshot_health"
   | "realtime.ais.disruptions"
   | "realtime.unrest.events"
   | "realtime.outages.internet"
@@ -183,6 +184,11 @@ const realtimeMetricOptions: {
     value: "realtime.adsb.military_flights",
     labelKey: "alerts.config.realtime.metrics.adsb",
     fallbackLabel: "ADS-B military flights",
+  },
+  {
+    value: "realtime.adsb.snapshot_health",
+    labelKey: "alerts.config.realtime.metrics.adsbSnapshotHealth",
+    fallbackLabel: "ADS-B snapshot health",
   },
   {
     value: "realtime.ais.disruptions",
@@ -236,6 +242,13 @@ const realtimeMetricPresetConfig: Record<
     defaultName: "Realtime Signal: Military Flight Activity Surge",
     defaultDescription:
       "Alert when detected military flight count exceeds baseline threshold.",
+  },
+  "realtime.adsb.snapshot_health": {
+    operator: AlertOperator.Gte,
+    thresholdValue: 1,
+    defaultName: "Realtime Signal: ADS-B Snapshot Degraded",
+    defaultDescription:
+      "Alert when the ADS-B snapshot is stale or the map is temporarily using the previous retained snapshot.",
   },
   "realtime.ais.disruptions": {
     operator: AlertOperator.Gte,
@@ -301,6 +314,7 @@ const isRealtimeMetricSlug = (
   value: string | undefined,
 ): value is RealtimeMetricSlug =>
   value === "realtime.adsb.military_flights" ||
+  value === "realtime.adsb.snapshot_health" ||
   value === "realtime.ais.disruptions" ||
   value === "realtime.unrest.events" ||
   value === "realtime.outages.internet" ||

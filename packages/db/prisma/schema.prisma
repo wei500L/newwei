@@ -132,6 +132,7 @@ model Membership {
   role      Role   @relation(fields: [roleId, orgId], references: [id, orgId])
   roleId    String
   roles     MembershipRole[]
+  isActive  Boolean @default(true)
   createdAt DateTime @default(now())
 
   @@index([roleId, orgId])

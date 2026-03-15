@@ -63,7 +63,7 @@ export class OrgService {
         name: membership.org.name,
         slug: membership.org.slug,
         description: membership.org.description ?? undefined,
-        isActive: membership.org.isActive,
+        isActive: membership.org.isActive && (membership.isActive ?? true),
         createdAt: membership.org.createdAt,
         updatedAt: membership.org.updatedAt
       });

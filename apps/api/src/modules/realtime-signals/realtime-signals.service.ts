@@ -2,6 +2,8 @@ import { ProcessedItemModel } from "@modular/mongo";
 import {
   createLogger,
   extractCountryCodeFromText,
+  getCountryAlpha2,
+  getCountryName,
   normalizeCountryCode,
 } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
@@ -20,6 +22,9 @@ import {
 } from "./realtime-signals.constants";
 import { RealtimeSignalsSnapshotStore } from "./realtime-signals.snapshot-store";
 import type {
+  RealtimeAdsbAircraftSnapshot,
+  RealtimeAdsbLatestSnapshot,
+  RealtimeAdsbRuntimeDiagnostics,
   RealtimeSignalFetchResult,
   RealtimeSignalsRuntimeDiagnostics,
   RealtimeSignalRuntimeSourceDiagnostics,
@@ -99,6 +104,8 @@ const REALTIME_SIGNAL_INSIGHT_SOURCES = [
   "pizzint",
 ] as const;
 const REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS = 24 * 7;
+const MIN_ADSB_STALE_THRESHOLD_SEC = 10 * 60;
+const MAX_ADSB_STALE_THRESHOLD_SEC = 30 * 60;
 const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
   adsb: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
   ais: REALTIME_SIGNAL_METRIC_SLUGS.ais,
@@ -133,6 +140,11 @@ interface UnrestFeedFetchResult {
   events: UnrestEventCandidate[];
   configured: boolean;
   error?: string;
+}
+
+interface AdsbNormalizationResult {
+  snapshot: RealtimeAdsbAircraftSnapshot | null;
+  dropReason?: "invalid_position" | "missing_identity" | "stale_position";
 }
 
 @Injectable()
@@ -181,6 +193,7 @@ export class RealtimeSignalsService {
   ) {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
+      await this.store.clearLatestAdsbSnapshot(orgId);
       await this.store.setInsightSnapshot(
         orgId,
         this.createEmptyInsightSnapshot(),
@@ -197,6 +210,9 @@ export class RealtimeSignalsService {
     for (const source of REALTIME_SIGNAL_SOURCES) {
       const sourceConfig = runtime.sources[source];
       if (!sourceConfig?.enabled) {
+        if (source === "adsb") {
+          await this.store.clearLatestAdsbSnapshot(orgId);
+        }
         continue;
       }
       const previousSourceState = await this.store.getSourceState(orgId, source);
@@ -270,14 +286,14 @@ export class RealtimeSignalsService {
   async getRuntimeDiagnostics(
     orgId: string,
   ): Promise<RealtimeSignalsRuntimeDiagnostics> {
-    const [runtime, settingsSource, insight, markerReadiness] = await Promise.all(
-      [
+    const [runtime, settingsSource, insight, markerReadiness, adsbLatestSnapshot] =
+      await Promise.all([
         this.getRuntimeConfig({ refreshAcledToken: false }),
         this.getRuntimeSettingsSource(orgId),
         this.store.getInsightSnapshot(orgId),
         this.getMarkerReadiness(orgId),
-      ],
-    );
+        this.store.getLatestAdsbSnapshot(orgId),
+      ]);
     const nowMs = Date.now();
 
     const sources = await Promise.all(
@@ -297,6 +313,20 @@ export class RealtimeSignalsService {
         const context =
           this.toDiagnosticContext(evaluation.context) ??
           this.toDiagnosticContext(sourceState?.context);
+        const adsbSnapshot =
+          source === "adsb"
+            ? this.buildAdsbRuntimeDiagnostics(
+                adsbLatestSnapshot,
+                {
+                  rawAircraftCount:
+                    this.toFiniteNumber(context?.totalAircraft) ?? 0,
+                  currentValidPositionCount:
+                    this.toFiniteNumber(context?.validPositionCount) ?? 0,
+                },
+                nowMs,
+                sourceConfig.intervalSec,
+              )
+            : undefined;
         const runtimeStatus = this.resolveRuntimeSourceStatus({
           source,
           sourceConfig,
@@ -324,6 +354,7 @@ export class RealtimeSignalsService {
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
           context,
+          ...(adsbSnapshot ? { adsbSnapshot } : {}),
         } satisfies RealtimeSignalRuntimeSourceDiagnostics;
       }),
     );
@@ -462,7 +493,7 @@ export class RealtimeSignalsService {
   ): Promise<RealtimeSignalFetchResult[]> {
     switch (source) {
       case "adsb":
-        return this.fetchAdsbSignal(runtime);
+        return this.fetchAdsbSignal(orgId, runtime);
       case "ais":
         return this.fetchAisSignal(runtime);
       case "unrest":
@@ -482,7 +513,10 @@ export class RealtimeSignalsService {
     }
   }
 
-  private async fetchAdsbSignal(runtime: RealtimeSignalsRuntimeConfig) {
+  private async fetchAdsbSignal(
+    orgId: string,
+    runtime: RealtimeSignalsRuntimeConfig,
+  ) {
     const baseUrl =
       this.normalizeUrl(runtime.adsb.baseUrl) ?? "https://api.adsb.lol";
     const endpoint = `${baseUrl}/v2/mil`;
@@ -503,14 +537,44 @@ export class RealtimeSignalsService {
       }
       const record = entry as Record<string, unknown>;
       const countryCode =
-        this.extractCountryCode(record.countryCode) ??
-        this.extractCountryCode(record.country) ??
-        this.extractCountryCode(record.r) ??
-        this.extractCountryCode(record.flight);
+        this.toAdsbDisplayCountryCode(
+          this.extractCountryCode(record.countryCode) ??
+            this.extractCountryCode(record.country),
+        );
       if (countryCode) {
         countries.add(countryCode);
       }
     }
+
+    const nowMs = Date.now();
+    const previousSnapshot = await this.store.getLatestAdsbSnapshot(orgId);
+    const nextSnapshot = this.buildAdsbLatestSnapshot(
+      endpoint,
+      aircraft,
+      militaryCount,
+      nowMs,
+      this.getAdsbStaleThresholdSeconds(runtime.sources.adsb.intervalSec),
+    );
+    const latestSnapshot = this.selectAdsbSnapshotToStore(
+      previousSnapshot,
+      nextSnapshot,
+      nowMs,
+      runtime.sources.adsb.intervalSec,
+    );
+    await this.store.setLatestAdsbSnapshot(
+      orgId,
+      latestSnapshot,
+      this.getAdsbSnapshotTtlSeconds(runtime.sources.adsb.intervalSec),
+    );
+    const adsbSnapshot = this.buildAdsbRuntimeDiagnostics(
+      latestSnapshot,
+      {
+        rawAircraftCount: aircraft.length,
+        currentValidPositionCount: nextSnapshot.validPositionCount,
+      },
+      nowMs,
+      runtime.sources.adsb.intervalSec,
+    );
 
     return [
       {
@@ -521,10 +585,459 @@ export class RealtimeSignalsService {
           sourceEndpoint: endpoint,
           totalAircraft: aircraft.length,
           militaryCount,
+          validPositionCount: nextSnapshot.validPositionCount,
+          snapshotValidPositionCount: latestSnapshot.validPositionCount,
+          latestObservedAt:
+            latestSnapshot.latestObservedAt ??
+            latestSnapshot.diagnostics.latestObservedAt ??
+            latestSnapshot.updatedAt,
+          snapshotUpdatedAt: latestSnapshot.updatedAt,
+          snapshotFreshness: adsbSnapshot.freshness,
+          snapshotAgeSec: adsbSnapshot.snapshotAgeSec,
+          latestObservedAgeSec: adsbSnapshot.latestObservedAgeSec,
+          snapshotRetainedPrevious:
+            latestSnapshot.diagnostics.retainedPreviousSnapshot,
+          staleThresholdSec: latestSnapshot.diagnostics.staleThresholdSec,
+          droppedInvalidPositionCount:
+            nextSnapshot.diagnostics.droppedInvalidPositionCount,
+          droppedMissingIdentityCount:
+            nextSnapshot.diagnostics.droppedMissingIdentityCount,
+          droppedStalePositionCount:
+            nextSnapshot.diagnostics.droppedStalePositionCount,
+          deduplicatedCount: nextSnapshot.diagnostics.deduplicatedCount,
+          countryCodes: Array.from(countries),
+        },
+      },
+      {
+        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsbSnapshotHealth,
+        value: this.computeAdsbSnapshotHealthValue(
+          latestSnapshot,
+          adsbSnapshot,
+        ),
+        context: {
+          source: "adsb",
+          sourceEndpoint: endpoint,
+          healthState: adsbSnapshot.freshness,
+          stale: adsbSnapshot.freshness !== "fresh",
+          snapshotRetainedPrevious:
+            latestSnapshot.diagnostics.retainedPreviousSnapshot,
+          snapshotFreshness: adsbSnapshot.freshness,
+          snapshotUpdatedAt: latestSnapshot.updatedAt,
+          latestTimestamp:
+            latestSnapshot.latestObservedAt ??
+            latestSnapshot.diagnostics.latestObservedAt ??
+            latestSnapshot.updatedAt,
+          maxStaleMinutes: Math.max(
+            1,
+            Math.round(latestSnapshot.diagnostics.staleThresholdSec / 60),
+          ),
+          rawAircraftCount: adsbSnapshot.rawAircraftCount,
+          currentValidPositionCount: adsbSnapshot.currentValidPositionCount,
+          snapshotValidPositionCount: adsbSnapshot.snapshotValidPositionCount,
+          droppedInvalidPositionCount:
+            latestSnapshot.diagnostics.droppedInvalidPositionCount,
+          droppedMissingIdentityCount:
+            latestSnapshot.diagnostics.droppedMissingIdentityCount,
+          droppedStalePositionCount:
+            latestSnapshot.diagnostics.droppedStalePositionCount,
+          deduplicatedCount: latestSnapshot.diagnostics.deduplicatedCount,
           countryCodes: Array.from(countries),
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
+  }
+
+  private buildAdsbLatestSnapshot(
+    endpoint: string,
+    aircraft: unknown[],
+    totalAircraft: number,
+    fetchedAtMs: number,
+    staleThresholdSec: number,
+  ): RealtimeAdsbLatestSnapshot {
+    const normalizedAircraft = new Map<string, RealtimeAdsbAircraftSnapshot>();
+    let droppedInvalidPositionCount = 0;
+    let droppedMissingIdentityCount = 0;
+    let droppedStalePositionCount = 0;
+    let deduplicatedCount = 0;
+
+    for (const entry of aircraft) {
+      const result = this.normalizeAdsbAircraftSnapshot(
+        entry,
+        fetchedAtMs,
+        staleThresholdSec,
+      );
+      if (!result.snapshot) {
+        if (result.dropReason === "stale_position") {
+          droppedStalePositionCount += 1;
+        } else if (result.dropReason === "missing_identity") {
+          droppedMissingIdentityCount += 1;
+        } else {
+          droppedInvalidPositionCount += 1;
+        }
+        continue;
+      }
+      const existing = normalizedAircraft.get(result.snapshot.id);
+      if (existing) {
+        deduplicatedCount += 1;
+        normalizedAircraft.set(
+          result.snapshot.id,
+          this.selectPreferredAdsbAircraftSnapshot(existing, result.snapshot),
+        );
+        continue;
+      }
+      normalizedAircraft.set(result.snapshot.id, result.snapshot);
+    }
+
+    const normalizedEntries = Array.from(normalizedAircraft.values()).sort(
+      (left, right) => {
+        const observedDelta =
+          Date.parse(right.observedAt) - Date.parse(left.observedAt);
+        if (Number.isFinite(observedDelta) && observedDelta !== 0) {
+          return observedDelta;
+        }
+        return left.id.localeCompare(right.id);
+      },
+    );
+    const latestObservedAt = normalizedEntries[0]?.observedAt;
+    const oldestObservedAt = normalizedEntries[normalizedEntries.length - 1]?.observedAt;
+
+    return {
+      source: "adsb",
+      sourceEndpoint: endpoint,
+      updatedAt: new Date(fetchedAtMs).toISOString(),
+      totalAircraft,
+      validPositionCount: normalizedAircraft.size,
+      ...(latestObservedAt ? { latestObservedAt } : {}),
+      diagnostics: {
+        ...(latestObservedAt ? { latestObservedAt } : {}),
+        ...(oldestObservedAt ? { oldestObservedAt } : {}),
+        staleThresholdSec,
+        droppedInvalidPositionCount,
+        droppedMissingIdentityCount,
+        droppedStalePositionCount,
+        deduplicatedCount,
+        retainedPreviousSnapshot: false,
+      },
+      aircraft: normalizedEntries,
+    };
+  }
+
+  private normalizeAdsbAircraftSnapshot(
+    entry: unknown,
+    fetchedAtMs: number,
+    staleThresholdSec: number,
+  ): AdsbNormalizationResult {
+    if (!entry || typeof entry !== "object") {
+      return { snapshot: null, dropReason: "invalid_position" };
+    }
+
+    const record = entry as Record<string, unknown>;
+    const position = this.resolveAdsbAircraftPosition(record);
+    if (!position) {
+      return { snapshot: null, dropReason: "invalid_position" };
+    }
+
+    const icao24 =
+      this.normalizeString(record.hex)?.toLowerCase() ??
+      this.normalizeString(record.icao)?.toLowerCase();
+    if (!icao24) {
+      return { snapshot: null, dropReason: "missing_identity" };
+    }
+
+    const callsign = this.normalizeString(record.flight);
+    const registration = this.normalizeString(record.r);
+    const aircraftType = this.normalizeString(record.t);
+    const observedAt = this.resolveAdsbObservedAt(record, fetchedAtMs);
+    const observedAtMs = Date.parse(observedAt);
+    if (
+      Number.isFinite(observedAtMs) &&
+      fetchedAtMs - observedAtMs > staleThresholdSec * 1_000
+    ) {
+      return { snapshot: null, dropReason: "stale_position" };
+    }
+    const heading = this.resolveAdsbHeading(record);
+    const altitudeFt = this.resolveAdsbAltitudeFt(record);
+    const groundSpeedKt = this.resolveAdsbGroundSpeedKt(record);
+    const normalizedCountryCode = this.extractCountryCode(
+      record.countryCode ?? record.country,
+    );
+    const countryCode = this.toAdsbDisplayCountryCode(normalizedCountryCode);
+    const countryName = getCountryName(normalizedCountryCode);
+
+    return {
+      snapshot: {
+        id: icao24,
+        icao24,
+        ...(callsign ? { callsign } : {}),
+        ...(registration ? { registration } : {}),
+        ...(aircraftType ? { aircraftType } : {}),
+        lat: position.lat,
+        lng: position.lng,
+        ...(heading !== null ? { heading } : {}),
+        ...(altitudeFt !== null ? { altitudeFt } : {}),
+        ...(groundSpeedKt !== null ? { groundSpeedKt } : {}),
+        ...(countryCode ? { countryCode } : {}),
+        ...(countryName ? { countryName } : {}),
+        observedAt,
+        source: "adsb",
+      },
+    };
+  }
+
+  private selectPreferredAdsbAircraftSnapshot(
+    current: RealtimeAdsbAircraftSnapshot,
+    candidate: RealtimeAdsbAircraftSnapshot,
+  ) {
+    const currentObservedMs = Date.parse(current.observedAt);
+    const candidateObservedMs = Date.parse(candidate.observedAt);
+    if (Number.isFinite(candidateObservedMs) && Number.isFinite(currentObservedMs)) {
+      if (candidateObservedMs > currentObservedMs) {
+        return candidate;
+      }
+      if (candidateObservedMs < currentObservedMs) {
+        return current;
+      }
+    }
+
+    return this.scoreAdsbAircraftSnapshot(candidate) >=
+      this.scoreAdsbAircraftSnapshot(current)
+      ? candidate
+      : current;
+  }
+
+  private scoreAdsbAircraftSnapshot(snapshot: RealtimeAdsbAircraftSnapshot) {
+    let score = 0;
+    if (snapshot.callsign) score += 1;
+    if (snapshot.registration) score += 1;
+    if (snapshot.aircraftType) score += 1;
+    if (snapshot.countryCode) score += 1;
+    if (typeof snapshot.heading === "number") score += 1;
+    if (typeof snapshot.altitudeFt === "number") score += 1;
+    if (typeof snapshot.groundSpeedKt === "number") score += 1;
+    return score;
+  }
+
+  private selectAdsbSnapshotToStore(
+    previousSnapshot: RealtimeAdsbLatestSnapshot | null | undefined,
+    nextSnapshot: RealtimeAdsbLatestSnapshot,
+    fetchedAtMs: number,
+    intervalSec: number,
+  ): RealtimeAdsbLatestSnapshot {
+    if (nextSnapshot.validPositionCount > 0 || !previousSnapshot) {
+      return nextSnapshot;
+    }
+
+    const previousUpdatedMs = this.parseTimestampMs(previousSnapshot.updatedAt);
+    if (
+      previousUpdatedMs === null ||
+      fetchedAtMs - previousUpdatedMs >
+        this.getAdsbSnapshotRetentionGraceSeconds(intervalSec) * 1_000
+    ) {
+      return nextSnapshot;
+    }
+
+    return {
+      ...previousSnapshot,
+      sourceEndpoint: nextSnapshot.sourceEndpoint,
+      totalAircraft: nextSnapshot.totalAircraft,
+      ...(
+        previousSnapshot.latestObservedAt ??
+        previousSnapshot.diagnostics.latestObservedAt
+          ? {
+              latestObservedAt:
+                previousSnapshot.latestObservedAt ??
+                previousSnapshot.diagnostics.latestObservedAt,
+            }
+          : {}
+      ),
+      diagnostics: {
+        ...(previousSnapshot.latestObservedAt ??
+        previousSnapshot.diagnostics.latestObservedAt
+          ? {
+              latestObservedAt:
+                previousSnapshot.latestObservedAt ??
+                previousSnapshot.diagnostics.latestObservedAt,
+            }
+          : {}),
+        ...(previousSnapshot.diagnostics.oldestObservedAt
+          ? { oldestObservedAt: previousSnapshot.diagnostics.oldestObservedAt }
+          : {}),
+        staleThresholdSec: nextSnapshot.diagnostics.staleThresholdSec,
+        droppedInvalidPositionCount:
+          nextSnapshot.diagnostics.droppedInvalidPositionCount,
+        droppedMissingIdentityCount:
+          nextSnapshot.diagnostics.droppedMissingIdentityCount,
+        droppedStalePositionCount:
+          nextSnapshot.diagnostics.droppedStalePositionCount,
+        deduplicatedCount: nextSnapshot.diagnostics.deduplicatedCount,
+        retainedPreviousSnapshot: true,
+      },
+    };
+  }
+
+  private buildAdsbRuntimeDiagnostics(
+    snapshot: RealtimeAdsbLatestSnapshot | null | undefined,
+    current: {
+      rawAircraftCount: number;
+      currentValidPositionCount: number;
+    },
+    nowMs: number,
+    intervalSec: number,
+  ): RealtimeAdsbRuntimeDiagnostics {
+    const staleThresholdSec =
+      snapshot?.diagnostics.staleThresholdSec ??
+      this.getAdsbStaleThresholdSeconds(intervalSec);
+
+    if (!snapshot) {
+      return {
+        freshness: "missing",
+        rawAircraftCount: current.rawAircraftCount,
+        currentValidPositionCount: current.currentValidPositionCount,
+        snapshotValidPositionCount: 0,
+        staleThresholdSec,
+        retainedPreviousSnapshot: false,
+        droppedInvalidPositionCount: 0,
+        droppedMissingIdentityCount: 0,
+        droppedStalePositionCount: 0,
+        deduplicatedCount: 0,
+      };
+    }
+
+    const snapshotUpdatedMs = this.parseTimestampMs(snapshot.updatedAt);
+    const latestObservedMs = this.parseTimestampMs(
+      snapshot.latestObservedAt ?? snapshot.diagnostics.latestObservedAt,
+    );
+    const snapshotAgeSec =
+      snapshotUpdatedMs === null
+        ? undefined
+        : Math.max(0, Math.round((nowMs - snapshotUpdatedMs) / 1_000));
+    const latestObservedAgeSec =
+      latestObservedMs === null
+        ? undefined
+        : Math.max(0, Math.round((nowMs - latestObservedMs) / 1_000));
+    const freshness =
+      snapshot.validPositionCount <= 0 ||
+      (typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec) ||
+      (typeof latestObservedAgeSec === "number" &&
+        latestObservedAgeSec > staleThresholdSec)
+        ? "stale"
+        : "fresh";
+
+    return {
+      freshness,
+      rawAircraftCount: current.rawAircraftCount,
+      currentValidPositionCount: current.currentValidPositionCount,
+      snapshotValidPositionCount: snapshot.validPositionCount,
+      snapshotUpdatedAt: snapshot.updatedAt,
+      ...(typeof snapshotAgeSec === "number" ? { snapshotAgeSec } : {}),
+      ...(snapshot.latestObservedAt
+        ? { latestObservedAt: snapshot.latestObservedAt }
+        : snapshot.diagnostics.latestObservedAt
+          ? { latestObservedAt: snapshot.diagnostics.latestObservedAt }
+        : {}),
+      ...(typeof latestObservedAgeSec === "number" ? { latestObservedAgeSec } : {}),
+      staleThresholdSec,
+      retainedPreviousSnapshot: snapshot.diagnostics.retainedPreviousSnapshot,
+      droppedInvalidPositionCount:
+        snapshot.diagnostics.droppedInvalidPositionCount,
+      droppedMissingIdentityCount:
+        snapshot.diagnostics.droppedMissingIdentityCount,
+      droppedStalePositionCount: snapshot.diagnostics.droppedStalePositionCount,
+      deduplicatedCount: snapshot.diagnostics.deduplicatedCount,
+    };
+  }
+
+  private computeAdsbSnapshotHealthValue(
+    snapshot: RealtimeAdsbLatestSnapshot,
+    diagnostics: RealtimeAdsbRuntimeDiagnostics,
+  ) {
+    if (diagnostics.freshness === "missing" || diagnostics.freshness === "stale") {
+      return 2;
+    }
+    if (snapshot.diagnostics.retainedPreviousSnapshot) {
+      return 1;
+    }
+    return 0;
+  }
+
+  private resolveAdsbAircraftPosition(record: Record<string, unknown>) {
+    const lat = this.toFiniteNumber(record.lat);
+    const lng = this.toFiniteNumber(record.lon);
+    if (this.isValidCoordinate(lat, lng)) {
+      return { lat: lat!, lng: lng! };
+    }
+
+    const lastPosition =
+      record.lastPosition &&
+      typeof record.lastPosition === "object" &&
+      !Array.isArray(record.lastPosition)
+        ? (record.lastPosition as Record<string, unknown>)
+        : null;
+    const lastLat = this.toFiniteNumber(lastPosition?.lat);
+    const lastLng = this.toFiniteNumber(lastPosition?.lon);
+    if (this.isValidCoordinate(lastLat, lastLng)) {
+      return { lat: lastLat!, lng: lastLng! };
+    }
+
+    return null;
+  }
+
+  private resolveAdsbObservedAt(
+    record: Record<string, unknown>,
+    fetchedAtMs: number,
+  ) {
+    const seenPosSec =
+      this.toFiniteNumber(record.seen_pos) ??
+      this.toFiniteNumber(
+        record.lastPosition &&
+          typeof record.lastPosition === "object" &&
+          !Array.isArray(record.lastPosition)
+          ? (record.lastPosition as Record<string, unknown>).seen_pos
+          : undefined,
+      ) ??
+      0;
+    const observedAtMs = fetchedAtMs - Math.max(0, seenPosSec) * 1_000;
+    return new Date(observedAtMs).toISOString();
+  }
+
+  private resolveAdsbHeading(record: Record<string, unknown>) {
+    return (
+      this.toFiniteNumber(record.track) ??
+      this.toFiniteNumber(record.calc_track) ??
+      this.toFiniteNumber(record.nav_heading)
+    );
+  }
+
+  private resolveAdsbAltitudeFt(record: Record<string, unknown>) {
+    return (
+      this.toFiniteNumber(record.alt_baro) ??
+      this.toFiniteNumber(record.alt_geom)
+    );
+  }
+
+  private resolveAdsbGroundSpeedKt(record: Record<string, unknown>) {
+    return this.toFiniteNumber(record.gs);
+  }
+
+  private getAdsbStaleThresholdSeconds(intervalSec: number) {
+    const safeIntervalSec = Math.max(60, Math.trunc(intervalSec));
+    return Math.max(
+      MIN_ADSB_STALE_THRESHOLD_SEC,
+      Math.min(MAX_ADSB_STALE_THRESHOLD_SEC, safeIntervalSec * 6),
+    );
+  }
+
+  private getAdsbSnapshotRetentionGraceSeconds(intervalSec: number) {
+    return this.getAdsbStaleThresholdSeconds(intervalSec);
+  }
+
+  private toAdsbDisplayCountryCode(code: string | undefined) {
+    return getCountryAlpha2(code) ?? undefined;
+  }
+
+  private getAdsbSnapshotTtlSeconds(intervalSec: number) {
+    const safeIntervalSec = Math.max(60, Math.trunc(intervalSec));
+    return Math.max(20 * 60, safeIntervalSec * 2);
   }
 
   private async fetchAisSignal(runtime: RealtimeSignalsRuntimeConfig) {
@@ -1836,6 +2349,16 @@ export class RealtimeSignalsService {
       };
     }
 
+    if (
+      options.source === "adsb" &&
+      this.normalizeString(options.context?.snapshotFreshness) === "stale"
+    ) {
+      return {
+        status: "stale" as const,
+        reason: "Latest ADS-B snapshot is stale.",
+      };
+    }
+
     const contextReason = this.getRuntimeContextReason(
       options.source,
       options.context,
@@ -1876,6 +2399,21 @@ export class RealtimeSignalsService {
     context: Record<string, unknown> | undefined,
   ) {
     if (!context) {
+      return undefined;
+    }
+    if (source === "adsb") {
+      if (context.snapshotRetainedPrevious === true) {
+        return "Using retained ADS-B snapshot after empty or unusable fetch.";
+      }
+      const validPositionCount = this.toFiniteNumber(context.validPositionCount);
+      const totalAircraft = this.toFiniteNumber(context.totalAircraft);
+      if (
+        typeof totalAircraft === "number" &&
+        totalAircraft > 0 &&
+        validPositionCount === 0
+      ) {
+        return "ADS-B feed returned aircraft but no current positions passed validation.";
+      }
       return undefined;
     }
     if (source === "unrest") {
@@ -2099,6 +2637,17 @@ export class RealtimeSignalsService {
       return Number.isFinite(parsed) ? parsed : null;
     }
     return null;
+  }
+
+  private isValidCoordinate(lat: number | null, lng: number | null) {
+    return (
+      lat !== null &&
+      lng !== null &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      Math.abs(lat) <= 90 &&
+      Math.abs(lng) <= 180
+    );
   }
 
   private toIsoTimestamp(value: unknown) {

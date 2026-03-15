@@ -9,6 +9,7 @@ import {
   Sse,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { DASHBOARD_STREAM_EVENT_TYPES } from "@modular/utils";
 import { createHash } from "node:crypto";
 import { Observable } from "rxjs";
 
@@ -166,6 +167,8 @@ export class DashboardController {
       translateTarget: parseTranslateTarget(query.translate),
       orgId: user.orgId,
       range,
+      bbox: parseWarMapBbox(query.bbox),
+      zoom: parseWarMapZoom(query.zoom),
     });
   }
 
@@ -312,6 +315,8 @@ export class DashboardController {
       let closed = false;
       let inflight = false;
       let lastWarFingerprint = "";
+      let lastWarNewsFingerprint = "";
+      let lastWarLayersFingerprint = "";
       let lastCandleFingerprint = "";
       let lastGeoHeatmapFingerprint = "";
 
@@ -323,23 +328,51 @@ export class DashboardController {
             .getSpacetimeGeoHeatmap(range, user.orgId)
             .catch(() => null);
 
-          const [warEvents, candlestick] = await Promise.all([
+          const [warEvents, warNewsMarkers, warLayers, candlestick] = await Promise.all([
             this.chartsService.getWarMapEvents(range, user.orgId),
+            this.chartsService.getWarMapNewsMarkers(range, user.orgId),
+            this.chartsService.getWarMapLayers({
+              orgId: user.orgId,
+              range,
+            }),
             this.chartsService.getFinancialCandlestick(range),
           ]);
           const geoHeatmap = await geoHeatmapPromise;
 
           const warFingerprint = createDashboardStreamFingerprint(warEvents);
           if (force || warFingerprint !== lastWarFingerprint) {
-            subscriber.next({ type: "war-map-events", data: warEvents });
+            subscriber.next({
+              type: DASHBOARD_STREAM_EVENT_TYPES.warMapEvents,
+              data: warEvents,
+            });
             lastWarFingerprint = warFingerprint;
+          }
+
+          const warNewsFingerprint =
+            createDashboardStreamFingerprint(warNewsMarkers);
+          if (force || warNewsFingerprint !== lastWarNewsFingerprint) {
+            subscriber.next({
+              type: DASHBOARD_STREAM_EVENT_TYPES.warMapNewsMarkers,
+              data: warNewsMarkers,
+            });
+            lastWarNewsFingerprint = warNewsFingerprint;
+          }
+
+          const warLayersFingerprint =
+            createDashboardStreamFingerprint(warLayers);
+          if (force || warLayersFingerprint !== lastWarLayersFingerprint) {
+            subscriber.next({
+              type: DASHBOARD_STREAM_EVENT_TYPES.warMapLayers,
+              data: warLayers,
+            });
+            lastWarLayersFingerprint = warLayersFingerprint;
           }
 
           const candleFingerprint =
             createDashboardStreamFingerprint(candlestick);
           if (force || candleFingerprint !== lastCandleFingerprint) {
             subscriber.next({
-              type: "financial-candlestick",
+              type: DASHBOARD_STREAM_EVENT_TYPES.financialCandlestick,
               data: candlestick,
             });
             lastCandleFingerprint = candleFingerprint;
@@ -350,7 +383,7 @@ export class DashboardController {
               createDashboardStreamFingerprint(geoHeatmap);
             if (force || geoHeatmapFingerprint !== lastGeoHeatmapFingerprint) {
               subscriber.next({
-                type: "spacetime-geo-heatmap",
+                type: DASHBOARD_STREAM_EVENT_TYPES.spacetimeGeoHeatmap,
                 data: geoHeatmap,
               });
               lastGeoHeatmapFingerprint = geoHeatmapFingerprint;
@@ -379,7 +412,7 @@ export class DashboardController {
             }
           }
           subscriber.next({
-            type: "stream-error",
+            type: DASHBOARD_STREAM_EVENT_TYPES.streamError,
             data: {
               code,
               message: "Dashboard stream update failed",
@@ -399,7 +432,7 @@ export class DashboardController {
 
       const pingId = setInterval(() => {
         subscriber.next({
-          type: "ping",
+          type: DASHBOARD_STREAM_EVENT_TYPES.ping,
           data: { ts: new Date().toISOString() },
         });
       }, pingMs);

@@ -6,7 +6,6 @@ import {
   ClusterOutlined,
   DashboardOutlined,
   ExclamationCircleOutlined,
-  FileSearchOutlined,
   LineChartOutlined,
   RightOutlined,
   SettingOutlined,
@@ -26,6 +25,7 @@ import {
   type AdminGroupKey,
   type AdminLinkPermission,
 } from "./admin-content.utils";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { buildAdminSettingsHref } from "./settings/settings-navigation";
 import styles from "./admin-content.module.css";
 
@@ -136,14 +136,14 @@ export function AdminContent() {
       icon: AlertOutlined,
     },
     {
-      key: "errors",
-      title: t("adminConsole.links.errors.title", {
-        defaultValue: "Error Events",
+      key: "logs",
+      title: t("adminConsole.links.logs.title", {
+        defaultValue: "Logs",
       }),
-      description: t("adminConsole.links.errors.description", {
-        defaultValue: "Inspect recent system errors",
+      description: t("adminConsole.links.logs.description", {
+        defaultValue: "Inspect task, error, and audit events in one workspace",
       }),
-      href: "/admin/errors",
+      href: buildAdminLogsHref({ tab: "task" }),
       permission: "settings.manage",
       group: "monitoring",
       icon: ExclamationCircleOutlined,
@@ -191,19 +191,6 @@ export function AdminContent() {
       permission: "org.write",
       group: "governance",
       icon: TeamOutlined,
-    },
-    {
-      key: "audit",
-      title: t("adminConsole.links.audit.title", {
-        defaultValue: "Audit Logs",
-      }),
-      description: t("adminConsole.links.audit.description", {
-        defaultValue: "Review configuration and access events",
-      }),
-      href: "/admin/audit-logs",
-      permission: "settings.manage",
-      group: "governance",
-      icon: FileSearchOutlined,
     },
     {
       key: "settingsWorkspace",

@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 interface RateLimitPolicy {
   feature: string;
@@ -255,7 +256,7 @@ export function RateLimitPoliciesPanel() {
           description={
             <span>
               {t("settings.rateLimits.riskDescription")}{" "}
-              <Link href="/admin/audit-logs">{t("settings.rateLimits.auditLink")}</Link>
+              <Link href={buildAdminLogsHref({ tab: "audit" })}>{t("settings.rateLimits.auditLink")}</Link>
             </span>
           }
         />

@@ -19,11 +19,10 @@ const ADMIN_LINK_FIXTURES: AdminLinkFixture[] = [
   { key: 'ops', group: 'operations', permission: 'crawl.read' },
   { key: 'dashboards', group: 'operations', permission: 'dashboards.write' },
   { key: 'alerts', group: 'operations', permission: 'alerts.manage' },
-  { key: 'errors', group: 'monitoring', permission: 'settings.manage' },
+  { key: 'logs', group: 'monitoring', permission: 'settings.manage' },
   { key: 'quality', group: 'monitoring', permission: 'settings.manage' },
   { key: 'knowledgeGraphReview', group: 'monitoring', permission: 'knowledgegraph.review' },
   { key: 'orgs', group: 'governance', permission: 'org.write' },
-  { key: 'audit', group: 'governance', permission: 'settings.manage' },
   { key: 'settingsWorkspace', group: 'platform', permission: 'settings.manage' }
 ];
 
@@ -67,10 +66,10 @@ describe('admin homepage grouping', () => {
 
     const grouped = groupAdminLinksBySection(visible);
 
-    expect(visible).toHaveLength(9);
+    expect(visible).toHaveLength(8);
     expect(grouped.operations).toHaveLength(3);
     expect(grouped.monitoring).toHaveLength(3);
-    expect(grouped.governance).toHaveLength(2);
+    expect(grouped.governance).toHaveLength(1);
     expect(grouped.platform).toHaveLength(1);
   });
 
@@ -79,7 +78,7 @@ describe('admin homepage grouping', () => {
     const grouped = groupAdminLinksBySection(visible);
     const visibleGroupOrder = ADMIN_GROUP_ORDER.filter((group) => grouped[group].length > 0);
 
-    expect(visibleGroupOrder).toEqual(['monitoring', 'governance', 'platform']);
+    expect(visibleGroupOrder).toEqual(['monitoring', 'platform']);
   });
 
   it('returns all-empty groups when there are no visible links', () => {

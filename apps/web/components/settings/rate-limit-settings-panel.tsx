@@ -22,6 +22,7 @@ import {
 } from "@/graphql/generated";
 import type { UpdateRateLimitSettingsMutationVariables } from "@/graphql/generated";
 import { captureClientError } from "@/lib/client-telemetry";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 interface RateLimitFieldGroupProps {
   title: string;
@@ -148,7 +149,7 @@ export function RateLimitSettingsPanel() {
         description={
           <span>
             {t("settings.rateLimits.riskDescription")}{" "}
-            <Link href="/admin/audit-logs">
+            <Link href={buildAdminLogsHref({ tab: "audit" })}>
               {t("settings.rateLimits.auditLink")}
             </Link>
           </span>

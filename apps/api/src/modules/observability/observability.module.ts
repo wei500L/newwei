@@ -7,12 +7,15 @@ import { AnalysisModule } from "../analysis/analysis.module";
 import { AssistantModule } from "../assistant/assistant.module";
 import { AuthModule } from "../auth/auth.module";
 import { EnvService } from "../config/config.service";
+import { DatabaseModule } from "../config/database.module";
 import { toBullmqConnection } from "../config/redis-connection";
 import { CrawlModule } from "../crawl/crawl.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { QueueModule } from "../queue/queue.module";
 
+import { AdminLogsController } from "./admin-logs.controller";
+import { AdminLogsService } from "./admin-logs.service";
 import { AdminErrorsController } from "./admin-errors.controller";
 import { ClassificationQualityController } from "./classification-quality.controller";
 import { ClassificationQualityProcessor } from "./classification-quality.processor";
@@ -38,6 +41,7 @@ import { TaskLogsController } from "./task-logs.controller";
 
 @Module({
   imports: [
+    DatabaseModule,
     QueueModule,
     CrawlModule,
     AnalysisModule,
@@ -48,6 +52,7 @@ import { TaskLogsController } from "./task-logs.controller";
     NotificationsModule,
   ],
   controllers: [
+    AdminLogsController,
     AdminErrorsController,
     ClientExceptionEventsController,
     InternalExceptionEventsController,
@@ -59,6 +64,7 @@ import { TaskLogsController } from "./task-logs.controller";
   ],
   providers: [
     ExceptionEventsService,
+    AdminLogsService,
     ClassificationQualityService,
     ClassificationQualityProcessor,
     ClassificationQualityQueueCleanupService,

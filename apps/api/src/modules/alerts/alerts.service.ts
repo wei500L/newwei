@@ -459,6 +459,7 @@ export class AlertsService {
     orgId: string,
     key:
       | "adsb"
+      | "adsb_snapshot_health"
       | "ais"
       | "unrest"
       | "outages"

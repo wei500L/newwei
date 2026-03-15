@@ -13,6 +13,8 @@ dist
 build
 coverage
 logs
+!apps/web/app/(app)/admin/logs/
+!apps/web/app/(app)/admin/logs/**
 .prisma
 .pnp.*
 .DS_Store

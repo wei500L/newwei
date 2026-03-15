@@ -1,5 +1,5 @@
-query RbacOverview {
-  roles {
+query AccessSettingsMeta {
+  roles(includeSystem: true) {
     id
     name
     description
@@ -15,37 +15,43 @@ query RbacOverview {
     name
     description
   }
-  memberships {
+}
+
+query AccessSettingsUsers($first: Int!, $after: String, $search: String) {
+  users(first: $first, after: $after, search: $search) {
     id
-    orgId
-    role {
-      id
-      name
-      isSystem
-    }
-    user {
-      id
-      email
-      firstName
-      lastName
-    }
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
   }
 }
 
-mutation AssignRole($input: AssignRoleInput!) {
-  assignRole(input: $input) {
+query UserLoginRecords($userId: String!, $limit: Int) {
+  userLoginRecords(userId: $userId, limit: $limit) {
     id
-    orgId
-    role {
+    createdAt
+    ipAddress
+    userAgent
+    method
+  }
+}
+
+mutation CreateRole($input: CreateRoleInput!) {
+  createRole(input: $input) {
+    id
+    name
+    description
+    isSystem
+    permissions {
       id
       name
-      isSystem
-    }
-    user {
-      id
-      email
-      firstName
-      lastName
+      description
     }
   }
 }
@@ -61,5 +67,35 @@ mutation UpdateRole($input: UpdateRoleInput!) {
       name
       description
     }
+  }
+}
+
+mutation UpdateMembershipRoles($input: UpdateMembershipRolesInput!) {
+  updateMembershipRoles(input: $input) {
+    id
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
+  }
+}
+
+mutation SetUserActive($input: SetUserActiveInput!) {
+  setUserActive(input: $input) {
+    id
+    email
+    firstName
+    lastName
+    primaryRoleId
+    isActive
+    emailVerified
+    lastLoginAt
+    roleIds
+    permissions
   }
 }

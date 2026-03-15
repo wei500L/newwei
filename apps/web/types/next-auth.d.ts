@@ -20,14 +20,17 @@ declare module "next-auth" {
       id: string;
       email: string;
       emailVerified?: string | null;
+      lastLoginAt?: string | null;
       pendingEmail?: string | null;
       firstName: string;
       lastName: string;
       orgId: string;
+      primaryRoleId?: string | null;
       permissions: string[];
       roleIds: string[];
       organizations?: SessionOrganization[];
       avatarUrl?: string | null;
+      isActive?: boolean;
       planTier?: string | null;
       subscriptionStatus?: string | null;
       image?: string | null;

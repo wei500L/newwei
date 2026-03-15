@@ -792,6 +792,13 @@ const RealtimeSignalEvidence = ({
   const stale = context.stale === true;
   const latestTimestamp = toStringValue(context.latestTimestamp);
   const maxStaleMinutes = toNumber(context.maxStaleMinutes);
+  const snapshotFreshness = toStringValue(context.snapshotFreshness);
+  const snapshotRetainedPrevious = context.snapshotRetainedPrevious === true;
+  const snapshotFreshnessLabel = snapshotFreshness
+    ? t(`alerts.center.evidence.realtime.snapshotFreshnessValues.${snapshotFreshness}`, {
+        defaultValue: snapshotFreshness
+      })
+    : undefined;
   const countryCodes = Array.isArray(context.countryCodes)
     ? context.countryCodes
         .map((entry) => toStringValue(entry))
@@ -805,6 +812,27 @@ const RealtimeSignalEvidence = ({
         defaultValue: "Military flights"
       }),
       value: toNumber(context.militaryCount)
+    },
+    {
+      key: "currentValidPositionCount",
+      label: t("alerts.center.evidence.realtime.currentValidPositionCount", {
+        defaultValue: "Current valid positions"
+      }),
+      value: toNumber(context.currentValidPositionCount)
+    },
+    {
+      key: "snapshotValidPositionCount",
+      label: t("alerts.center.evidence.realtime.snapshotValidPositionCount", {
+        defaultValue: "Map snapshot positions"
+      }),
+      value: toNumber(context.snapshotValidPositionCount)
+    },
+    {
+      key: "droppedStalePositionCount",
+      label: t("alerts.center.evidence.realtime.droppedStalePositionCount", {
+        defaultValue: "Dropped stale positions"
+      }),
+      value: toNumber(context.droppedStalePositionCount)
     },
     {
       key: "disruptions",
@@ -921,6 +949,21 @@ const RealtimeSignalEvidence = ({
         {stale ? (
           <Tag color="red">
             {t("alerts.center.evidence.realtime.stale", { defaultValue: "Stale snapshot" })}
+          </Tag>
+        ) : null}
+        {snapshotFreshness ? (
+          <Tag color={snapshotFreshness === "fresh" ? "green" : snapshotFreshness === "stale" ? "orange" : "default"}>
+            {t("alerts.center.evidence.realtime.snapshotFreshness", {
+              defaultValue: "Snapshot"
+            })}
+            : {snapshotFreshnessLabel}
+          </Tag>
+        ) : null}
+        {snapshotRetainedPrevious ? (
+          <Tag color="gold">
+            {t("alerts.center.evidence.realtime.snapshotRetainedPrevious", {
+              defaultValue: "Retained previous snapshot"
+            })}
           </Tag>
         ) : null}
         {typeof maxStaleMinutes === "number" ? (

@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
-
-import { AuditLogsContent } from "./audit-logs-content";
+import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 export default async function AuditLogsAdminPage() {
   const session = await auth();
@@ -10,5 +9,5 @@ export default async function AuditLogsAdminPage() {
     redirect("/login");
   }
 
-  return <AuditLogsContent />;
+  redirect(buildAdminLogsHref({ tab: "audit" }));
 }

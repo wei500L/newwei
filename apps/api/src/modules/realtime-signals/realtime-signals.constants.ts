@@ -4,6 +4,7 @@ import type { RealtimeSignalSource } from "./realtime-signals.types";
 
 export const REALTIME_SIGNAL_METRIC_SLUGS = {
   adsb: "realtime.adsb.military_flights",
+  adsbSnapshotHealth: "realtime.adsb.snapshot_health",
   ais: "realtime.ais.disruptions",
   unrest: "realtime.unrest.events",
   outages: "realtime.outages.internet",
@@ -47,6 +48,7 @@ export const REALTIME_SIGNAL_SOURCES: RealtimeSignalSource[] = [
 export interface RealtimeSignalDefaultRuleDefinition {
   key:
     | "adsb"
+    | "adsb_snapshot_health"
     | "ais"
     | "unrest"
     | "outages"
@@ -73,6 +75,16 @@ export const REALTIME_SIGNAL_DEFAULT_RULES: RealtimeSignalDefaultRuleDefinition[
       operator: AlertOperator.gte,
       thresholdValue: 50,
       severity: AlertSeverity.medium,
+    },
+    {
+      key: "adsb_snapshot_health",
+      name: "Realtime Signal: ADS-B Snapshot Degraded",
+      description:
+        "Alert when the ADS-B snapshot is stale or the map is temporarily using the previous retained snapshot.",
+      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsbSnapshotHealth,
+      operator: AlertOperator.gte,
+      thresholdValue: 1,
+      severity: AlertSeverity.high,
     },
     {
       key: "ais",

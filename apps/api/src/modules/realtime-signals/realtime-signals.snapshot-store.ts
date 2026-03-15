@@ -7,6 +7,7 @@ import {
   REALTIME_SIGNALS_SERIES_TTL_SECONDS,
 } from "./realtime-signals.constants";
 import type {
+  RealtimeAdsbLatestSnapshot,
   RealtimeSignalMetricPoint,
   RealtimeSignalMetricSeries,
   RealtimeSignalSnapshotEvaluation,
@@ -152,6 +153,27 @@ export class RealtimeSignalsSnapshotStore {
     return latestPoint.context;
   }
 
+  async getLatestAdsbSnapshot(orgId: string) {
+    return this.cache.get<RealtimeAdsbLatestSnapshot>(this.adsbLatestKey(orgId));
+  }
+
+  async setLatestAdsbSnapshot(
+    orgId: string,
+    snapshot: RealtimeAdsbLatestSnapshot,
+    ttlSeconds: number,
+  ) {
+    const normalizedTtlSeconds = Math.max(60, Math.floor(ttlSeconds));
+    await this.cache.set(
+      this.adsbLatestKey(orgId),
+      snapshot,
+      normalizedTtlSeconds,
+    );
+  }
+
+  async clearLatestAdsbSnapshot(orgId: string) {
+    await this.cache.del(this.adsbLatestKey(orgId));
+  }
+
   async setLastRun(orgId: string, source: RealtimeSignalSource, tsMs: number) {
     await this.cache.set(this.lastRunKey(orgId, source), tsMs, 60 * 60 * 24 * 7);
   }
@@ -197,5 +219,9 @@ export class RealtimeSignalsSnapshotStore {
 
   private sourceStateKey(orgId: string, source: RealtimeSignalSource) {
     return `realtime-signals:source-state:${orgId}:${source}`;
+  }
+
+  private adsbLatestKey(orgId: string) {
+    return `realtime-signals:adsb-latest:${orgId}`;
   }
 }

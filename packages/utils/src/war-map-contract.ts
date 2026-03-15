@@ -76,7 +76,7 @@ export const WAR_MAP_DEFAULT_LAYER_VISIBILITY: WarMapLayerVisibility = {
   cyberThreats: false,
   datacenters: false,
   protests: false,
-  flights: false,
+  flights: true,
   military: true,
   natural: true,
   spaceports: false,
@@ -169,18 +169,112 @@ export interface WarMapLayerFeature {
   timestamp?: string;
 }
 
+export interface WarMapFlightProperties {
+  sourceType: "adsb";
+  source?: string;
+  callsign?: string;
+  icao24: string;
+  registration?: string;
+  aircraftType?: string;
+  countryCode?: string;
+  countryName?: string;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  observedAt?: string;
+  sourceUpdatedAt?: string;
+}
+
 export interface WarMapLayerDataset {
   layerId: WarMapLayerId;
   geometryType: WarMapGeometryType;
   updatedAt?: string;
   renderHints?: WarMapLayerRenderHints;
+  summary?: Record<string, unknown>;
   features: WarMapLayerFeature[];
 }
 
-export interface WarMapLayersResponseV2 {
-  updatedAt: string;
-  layers: Record<WarMapLayerId, WarMapLayerDataset>;
+export type WarMapTranslateTarget = "zh-CN";
+export type WarMapEventSeverity = "low" | "medium" | "high";
+export type WarMapNewsGeoSource = "geocoded" | "fallback-country";
+
+export interface WarMapEvent {
+  id: string;
+  name: string;
+  nameZh?: string;
+  lat: number;
+  lng: number;
+  severity: WarMapEventSeverity;
+  latestAt?: string;
+  derivedScore: number;
+  value: number;
+  alertScore?: number;
+  alertCount?: number;
+  newsCount?: number;
+  isCluster?: boolean;
+  clusterId?: number;
+  clusterCount?: number;
 }
+
+export interface WarMapNewsMarker {
+  id: string;
+  title: string;
+  titleZh?: string;
+  url?: string | null;
+  location: string;
+  locationZh?: string;
+  lat: number;
+  lng: number;
+  publishedAt?: string;
+  ingestedAt?: string;
+  displayName?: string;
+  displayNameZh?: string;
+  geoSource: WarMapNewsGeoSource;
+  isCluster?: boolean;
+  clusterId?: number;
+  clusterCount?: number;
+}
+
+export interface WarMapEventsResponse {
+  events: WarMapEvent[];
+  updatedAt?: string;
+  clustered?: boolean;
+}
+
+export interface WarMapNewsMarkersResponse {
+  markers: WarMapNewsMarker[];
+  updatedAt?: string;
+  clustered?: boolean;
+}
+
+export interface WarMapLayersResponse {
+  updatedAt: string;
+  layers: Partial<Record<WarMapLayerId, WarMapLayerDataset>>;
+}
+
+export type WarMapLayersResponseV2 = WarMapLayersResponse;
+
+export interface WarMapRequestParams {
+  start?: string;
+  end?: string;
+  translate?: WarMapTranslateTarget;
+  bbox?: string;
+  zoom?: string;
+  cluster?: string;
+}
+
+export const DASHBOARD_STREAM_EVENT_TYPES = {
+  warMapEvents: "war-map-events",
+  warMapNewsMarkers: "war-map-news-markers",
+  warMapLayers: "war-map-layers",
+  financialCandlestick: "financial-candlestick",
+  spacetimeGeoHeatmap: "spacetime-geo-heatmap",
+  streamError: "stream-error",
+  ping: "ping",
+} as const;
+
+export type DashboardStreamEventType =
+  (typeof DASHBOARD_STREAM_EVENT_TYPES)[keyof typeof DASHBOARD_STREAM_EVENT_TYPES];
 
 const DEFAULT_WAR_MAP_VIEW_STATE: WarMapViewState = {
   lat: 20,

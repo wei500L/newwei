@@ -17,14 +17,17 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   emailVerified?: string | null;
+  lastLoginAt?: string | null;
   pendingEmail?: string | null;
   firstName: string;
   lastName: string;
   orgId: string;
+  primaryRoleId?: string | null;
   roleIds: string[];
   permissions: string[];
   organizations?: OrganizationOption[];
   avatarUrl?: string | null;
+  isActive?: boolean;
   planTier?: string | null;
   subscriptionStatus?: string | null;
 }

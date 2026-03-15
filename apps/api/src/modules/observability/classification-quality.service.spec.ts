@@ -257,6 +257,58 @@ describe("ClassificationQualityService", () => {
     expect(ClassificationReviewModel.updateOne).not.toHaveBeenCalled();
   });
 
+  it("includes semantic summaries in classification quality notifications", async () => {
+    const { service, notifications } = createService();
+
+    await (service as any).notifyThresholdBreaches({
+      orgId: "org-1",
+      window: "24h",
+      latencyAlerts: [
+        {
+          stage: "llm",
+          thresholdMs: 1000,
+          p95Ms: 1200,
+          triggered: true,
+        },
+      ],
+      gateAlerts: [
+        {
+          metric: "reject_rate",
+          threshold: 0.2,
+          value: 0.35,
+          triggered: true,
+        },
+      ],
+    });
+
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        userId: null,
+        type: "system",
+        title: "Classification quality threshold exceeded",
+        body:
+          "Latency alerts: llm p95=1200ms > 1000ms | Category gate alerts: reject_rate=35% > 20%",
+        data: expect.objectContaining({
+          presentation: expect.objectContaining({
+            kind: "classification_quality_threshold_exceeded",
+            technicalDetail:
+              "Latency alerts: llm p95=1200ms > 1000ms | Category gate alerts: reject_rate=35% > 20%",
+            params: expect.objectContaining({
+              window: "24h",
+              latencyAlertCount: 1,
+              gateAlertCount: 1,
+              latencySummary: "llm p95=1200ms > 1000ms",
+              gateSummary: "reject_rate=35% > 20%",
+              latencyStages: ["llm"],
+              gateMetrics: ["reject_rate"],
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it("builds summary via aggregate facets instead of count+find dual queries", async () => {
     const { service, prisma } = createService();
 

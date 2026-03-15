@@ -110,6 +110,66 @@ describe("notification presentation", () => {
     );
   });
 
+  it("preserves the original trigger condition in semantic alert copy", () => {
+    const copy = formatNotificationPresentation(
+      {
+        type: NotificationType.AlertTriggered,
+        title: "Alert triggered: legacy",
+        body: "Value 12 is >= 10",
+        data: {
+          presentation: {
+            kind: "alert_triggered",
+            technicalDetail: "Value 12 is >= 10",
+            params: {
+              ruleName: "Threshold breach",
+              metricValue: 12,
+              changePercent: 20,
+              context: {
+                itemName: "CPI",
+              },
+            },
+          },
+        },
+      },
+      "en-US",
+      enTranslator,
+    );
+
+    expect(copy.title).toBe("Alert triggered: Threshold breach");
+    expect(copy.body).toBe(
+      "Value 12 is >= 10 Triggered alert condition: current value 12, change 20%, context CPI.",
+    );
+  });
+
+  it("uses classification quality summaries from semantic params", () => {
+    const copy = formatNotificationPresentation(
+      {
+        type: NotificationType.System,
+        title: "Classification quality threshold exceeded",
+        body: "legacy body",
+        data: {
+          presentation: {
+            kind: "classification_quality_threshold_exceeded",
+            technicalDetail:
+              "Latency alerts: llm p95=1200ms > 1000ms | Category gate alerts: reject_rate=35% > 20%",
+            params: {
+              window: "24h",
+              latencySummary: "llm p95=1200ms > 1000ms",
+              gateSummary: "reject_rate=35% > 20%",
+            },
+          },
+        },
+      },
+      "en-US",
+      enTranslator,
+    );
+
+    expect(copy.title).toBe("Classification quality threshold exceeded");
+    expect(copy.body).toBe(
+      "Latency: llm p95=1200ms > 1000ms | Category gates: reject_rate=35% > 20%",
+    );
+  });
+
   it("localizes built-in analysis labels for semantic copy", () => {
     const copy = formatNotificationPresentation(
       {
