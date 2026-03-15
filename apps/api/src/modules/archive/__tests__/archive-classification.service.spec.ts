@@ -20,7 +20,12 @@ import {
   type ArchiveRuleVerticalSignals,
 } from '../archive.classifier';
 import { ARCHIVE_VERTICAL_ANCHOR_ENTRIES } from '../archive-taxonomy';
-import { ArchiveRegion, ArchiveVertical, createArchiveVerticalScoreMap } from '../archive.types';
+import {
+  ArchiveClassificationDecisionReason,
+  ArchiveRegion,
+  ArchiveVertical,
+  createArchiveVerticalScoreMap,
+} from '../archive.types';
 
 const hashText = (value: string) =>
   createHash('sha256').update(value, 'utf8').digest('hex');
@@ -171,6 +176,9 @@ describe('ArchiveClassificationService', () => {
     expect(result.embeddingScores[ArchiveVertical.SOUTH_SEA]).toBe(0.5);
     expect(result.rerankScores[ArchiveVertical.EAST_SEA]).toBe(1);
     expect(result.rerankScores[ArchiveVertical.DOMESTIC_AFFAIRS]).toBe(0);
+    expect(result.decisionReason).toBe(
+      ArchiveClassificationDecisionReason.FUSED_WINNER,
+    );
     expect(result.fusedScores[ArchiveVertical.EAST_SEA]).toBeGreaterThan(
       result.fusedScores[ArchiveVertical.SOUTH_SEA],
     );
@@ -358,6 +366,56 @@ describe('ArchiveClassificationService', () => {
     expect(result.embeddingScores[ArchiveVertical.SOUTH_SEA]).toBe(1);
     expect(result.rerankScores[ArchiveVertical.SOUTH_SEA]).toBe(1);
     expect(result.vertical).toBe(ArchiveVertical.EAST_SEA);
+    expect(result.decisionReason).toBe(
+      ArchiveClassificationDecisionReason.STRONG_RULE_OVERRIDE,
+    );
+  });
+
+  it('returns stale cached detail output when only the active models changed', async () => {
+    const prisma = makePrismaMock();
+    const liteLlm = makeLiteLlmMock();
+    const input = makeInput();
+    const classificationText = [
+      'Title: Japan updates East China Sea posture',
+      'Summary: Tokyo reviews maritime security coordination.',
+      'Topics: east china sea | security',
+      'Entities: Japan',
+      'Location: Japan',
+      'Source: Kyodo',
+      'Country hint: Japan',
+      'Region hint: APAC',
+    ].join('\n');
+
+    prisma.archiveArticleClassification.findMany.mockResolvedValue([
+      {
+        processedArticleId: input.processedArticleId,
+        articleId: input.articleId,
+        region: ArchiveRegion.APAC,
+        vertical: ArchiveVertical.EAST_SEA,
+        ruleScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        embeddingScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        rerankScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        fusedScores: { ...createArchiveVerticalScoreMap(), [ArchiveVertical.EAST_SEA]: 1 },
+        classificationTextHash: hashText(classificationText),
+        classificationTextVersion: ARCHIVE_CLASSIFICATION_TEXT_VERSION,
+        taxonomyVersion: ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
+        pipelineVersion: ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
+        embeddingModel: 'previous-embedding-model',
+        rerankModel: 'previous-rerank-model',
+      },
+    ]);
+
+    const service = new ArchiveClassificationService(prisma as any, liteLlm as any);
+    const result = await service.getCachedHybridBatchWithStaleFallback('org-1', [input]);
+
+    expect(result.get(input.processedArticleId)?.isStale).toBe(true);
+    expect(result.get(input.processedArticleId)?.staleReasons).toEqual([
+      'embedding-model-changed',
+      'rerank-model-changed',
+    ]);
+    expect(result.get(input.processedArticleId)?.result.vertical).toBe(
+      ArchiveVertical.EAST_SEA,
+    );
   });
 
   it('throws instead of silently degrading when rerank fails', async () => {

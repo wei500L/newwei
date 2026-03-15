@@ -68,7 +68,6 @@ interface LiteLlmFileConfig {
   retry_attempts?: number;
   max_retries?: number;
   fallback_models?: string[];
-  requests_per_minute?: number;
   stream?: boolean;
   response_format?: "json_schema" | "text";
 }
@@ -262,10 +261,6 @@ export class NewsPipelineConfigService implements OnModuleDestroy {
       ),
       maxRetries: this.ensurePositiveInt(retryAttempts, envConfig.maxRetries),
       fallbackModels,
-      requestsPerMinute: this.ensurePositiveInt(
-        raw?.requests_per_minute,
-        envConfig.requestsPerMinute,
-      ),
       stream: raw?.stream ?? false,
       responseFormat: raw?.response_format ?? "json_schema",
     };

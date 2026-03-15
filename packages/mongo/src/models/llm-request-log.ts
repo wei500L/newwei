@@ -12,13 +12,6 @@ export const MIN_LLM_REQUEST_LOG_RETENTION_DAYS = 1;
 export const MAX_LLM_REQUEST_LOG_RETENTION_DAYS = 3650;
 export const LLM_REQUEST_LOG_TTL_INDEX_NAME = "llm_request_log_created_at_ttl";
 const SECONDS_PER_DAY = 24 * 60 * 60;
-const RUNTIME_DECISIONS = [
-  "allowed",
-  "warn_concurrency",
-  "warn_daily_budget",
-  "warn_monthly_budget",
-  "warn_multiple",
-] as const;
 
 const LlmRequestLogSchema = new Schema(
   {
@@ -41,17 +34,7 @@ const LlmRequestLogSchema = new Schema(
     totalTokens: { type: Number, default: null },
     costUsd: { type: Number, default: null },
     feature: { type: String, default: null, index: true },
-    runtimeRequestId: { type: String, default: null, index: true },
-    runtimeDecision: {
-      type: String,
-      enum: RUNTIME_DECISIONS,
-      default: null,
-      index: true,
-    },
-    currentConcurrency: { type: Number, default: null, min: 0 },
-    concurrencyLimit: { type: Number, default: null, min: 0 },
-    dailySpendUsdSnapshot: { type: Number, default: null, min: 0 },
-    monthlySpendUsdSnapshot: { type: Number, default: null, min: 0 },
+    gatewayProfileId: { type: String, default: null, index: true },
     latencyMs: { type: Number, required: true, min: 0 },
     error: { type: String, default: null },
     metadata: { type: Schema.Types.Mixed, default: null },
@@ -69,6 +52,7 @@ const LlmRequestLogSchema = new Schema(
 
 LlmRequestLogSchema.index({ orgId: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, feature: 1, createdAt: -1 });
+LlmRequestLogSchema.index({ orgId: 1, gatewayProfileId: 1, createdAt: -1 });
 LlmRequestLogSchema.index({ orgId: 1, model: 1, createdAt: -1 });
 LlmRequestLogSchema.index({
   orgId: 1,
@@ -76,7 +60,6 @@ LlmRequestLogSchema.index({
   status: 1,
   createdAt: -1,
 });
-LlmRequestLogSchema.index({ runtimeDecision: 1, createdAt: -1 });
 LlmRequestLogSchema.index(
   { createdAt: 1 },
   {

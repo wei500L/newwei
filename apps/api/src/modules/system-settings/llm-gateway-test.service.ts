@@ -32,6 +32,7 @@ import {
   LlmGatewaySettingsService,
   type LlmGatewayResponseFormatMode,
 } from "./llm-gateway-settings.service";
+import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import {
   LLM_GATEWAY_ERROR_CODE_API_BASE_REQUIRED as ERROR_CODE_API_BASE_REQUIRED,
   LLM_GATEWAY_ERROR_CODE_EMBEDDING_MODEL_REQUIRED as ERROR_CODE_EMBEDDING_MODEL_REQUIRED,
@@ -289,6 +290,7 @@ export class LlmGatewayTestService {
   constructor(
     private readonly settings: LlmGatewaySettingsService,
     private readonly cache: CacheService,
+    private readonly proxyGovernance: LiteLlmProxyGovernanceService,
   ) {}
 
   private buildErrorPayload(
@@ -365,7 +367,11 @@ export class LlmGatewayTestService {
     }
 
     const timeoutMs = Math.min(cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS, 10_000);
-    const apiKey = normalizeOpenAiApiKey(cfg.apiKey);
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
+      cfg.apiKey,
+      profileId,
+    );
     const client = axios.create({
       baseURL: baseUrl,
       timeout: timeoutMs,
@@ -430,15 +436,21 @@ export class LlmGatewayTestService {
       }
     }
 
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
+      cfg.apiKey,
+      profileId,
+    );
     const client = axios.create({
       baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
-
-    const context = { apiKeyConfigured: Boolean(cfg.apiKey) };
+    const context = {
+      apiKeyConfigured: Boolean(apiKey),
+    };
 
     try {
       const response = await getWithFallback<{ models?: unknown }>(
@@ -513,16 +525,22 @@ export class LlmGatewayTestService {
     const concurrency = clampInt(input.concurrency, 1, 10, 2);
     const prompt = normalizeOptionalString(input.prompt) ?? DEFAULT_PROMPT;
 
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
+      cfg.apiKey,
+      profileId,
+    );
     const client = axios.create({
       baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
-
-    const context = { apiKeyConfigured: Boolean(cfg.apiKey) };
+    const context = {
+      apiKeyConfigured: Boolean(apiKey),
+    };
     const startedAt = Date.now();
 
     const modelIdDistribution: Record<string, number> = {};
@@ -620,11 +638,16 @@ export class LlmGatewayTestService {
       );
     }
 
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
+      cfg.apiKey,
+      profileId,
+    );
     const client = axios.create({
       baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
 
@@ -639,7 +662,9 @@ export class LlmGatewayTestService {
       const models = normalizeModels(response.data);
       return { apiBase: baseUrl, models };
     } catch (error) {
-      this.throwGatewayError(error, { apiKeyConfigured: Boolean(cfg.apiKey) });
+      this.throwGatewayError(error, {
+        apiKeyConfigured: Boolean(apiKey),
+      });
     }
   }
 
@@ -657,10 +682,13 @@ export class LlmGatewayTestService {
       );
     }
 
-    const apiKey =
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
       typeof input.apiKey === "string"
         ? normalizeOpenAiApiKey(input.apiKey)
-        : stored?.apiKey;
+        : stored?.apiKey,
+      input.profileId,
+    );
     const timeoutMs =
       input.timeoutMs ?? stored?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -706,13 +734,22 @@ export class LlmGatewayTestService {
         "apiBase is not configured",
       );
     }
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
+      cfg.apiKey,
+      profileId,
+    );
+    const effectiveCfg = {
+      ...cfg,
+      apiKey,
+    };
 
     const client = axios.create({
       baseURL: baseUrl,
       timeout: cfg.timeoutMs,
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {}),
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
     });
 
@@ -734,7 +771,7 @@ export class LlmGatewayTestService {
       ? apiSurface === "responses"
         ? await this.testResponses(
             client,
-            cfg,
+            effectiveCfg,
             prompt,
             completionModelOverride,
             {
@@ -744,7 +781,7 @@ export class LlmGatewayTestService {
           )
         : await this.testCompletion(
             client,
-            cfg,
+            effectiveCfg,
             prompt,
             completionModelOverride,
             {
@@ -775,13 +812,13 @@ export class LlmGatewayTestService {
           : undefined;
         embedding = await this.testEmbeddings(
           client,
-          cfg,
+          effectiveCfg,
           embeddingInput,
           embeddingModelOverride,
         );
       } catch (error) {
         const info = this.toGatewayErrorInfo(error, {
-          apiKeyConfigured: Boolean(cfg.apiKey),
+          apiKeyConfigured: Boolean(apiKey),
           apiSurface: "embeddings",
         });
         embeddingError = info;
@@ -805,11 +842,11 @@ export class LlmGatewayTestService {
         rerank = await this.testRerank(
           client,
           {
-            model: cfg.model,
-            rerankModel: cfg.rerankModel,
-            rerankFallbackModels: cfg.rerankFallbackModels,
-            timeoutMs: cfg.timeoutMs,
-            apiKey: cfg.apiKey,
+            model: effectiveCfg.model,
+            rerankModel: effectiveCfg.rerankModel,
+            rerankFallbackModels: effectiveCfg.rerankFallbackModels,
+            timeoutMs: effectiveCfg.timeoutMs,
+            apiKey,
           },
           {
             query: rerankQuery,
@@ -820,7 +857,7 @@ export class LlmGatewayTestService {
         );
       } catch (error) {
         const info = this.toGatewayErrorInfo(error, {
-          apiKeyConfigured: Boolean(cfg.apiKey),
+          apiKeyConfigured: Boolean(apiKey),
         });
         rerankError = info;
         this.logger.warn(
@@ -887,10 +924,13 @@ export class LlmGatewayTestService {
       throw this.badRequest(ERROR_CODE_MODEL_REQUIRED, "model is not configured");
     }
 
-    const apiKey =
+    const apiKey = await this.resolveApiKeyForBase(
+      baseUrl,
       typeof input.apiKey === "string"
         ? normalizeOpenAiApiKey(input.apiKey)
-        : stored?.apiKey;
+        : stored?.apiKey,
+      input.profileId,
+    );
     const timeoutMs =
       input.timeoutMs ?? stored?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const temperature =
@@ -1794,6 +1834,18 @@ export class LlmGatewayTestService {
       );
     }
     return cfg;
+  }
+
+  private async resolveApiKeyForBase(
+    apiBase: string,
+    fallbackApiKey?: string,
+    profileId?: string,
+  ): Promise<string | undefined> {
+    return this.proxyGovernance.resolveTestingApiKey(
+      apiBase,
+      fallbackApiKey,
+      profileId,
+    );
   }
 }
 

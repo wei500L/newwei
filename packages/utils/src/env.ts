@@ -180,7 +180,6 @@ export const baseEnvSchema = z.object({
   LITELLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(1_200),
   LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
   LITELLM_FALLBACK_MODELS: z.string().optional(),
-  LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
   AKSHARE_HTTP_BASE_URL: z.string().url().default("http://localhost:8081"),
   AKSHARE_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
   AKSHARE_HTTP_MAX_RETRIES: z.coerce.number().int().positive().default(3),

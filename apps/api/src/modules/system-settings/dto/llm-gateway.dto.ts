@@ -23,8 +23,6 @@ const MIN_OUTPUT_TOKENS = 1;
 const MAX_OUTPUT_TOKENS = 1_000_000;
 const MIN_RETRIES = 1;
 const MAX_RETRIES = 20;
-const MIN_RPM = 1;
-const MAX_RPM = 100_000;
 const LLM_GATEWAY_API_SURFACES = ["chat_completions", "responses"] as const;
 
 export class CreateLlmGatewayDto {
@@ -140,13 +138,6 @@ export class CreateLlmGatewayDto {
   @ArrayMaxSize(MAX_MODEL_LIST)
   @IsString({ each: true })
   fallbackModels?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(MIN_RPM)
-  @Max(MAX_RPM)
-  requestsPerMinute?: number;
 
   @ApiPropertyOptional({
     description: "When false, the API runtime will not send metadata to upstream model requests."
@@ -282,13 +273,6 @@ export class UpdateLlmGatewayDto {
   @ArrayMaxSize(MAX_MODEL_LIST)
   @IsString({ each: true })
   fallbackModels?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  @Min(MIN_RPM)
-  @Max(MAX_RPM)
-  requestsPerMinute?: number;
 
   @ApiPropertyOptional({
     description: "When false, the API runtime will not send metadata to upstream model requests."

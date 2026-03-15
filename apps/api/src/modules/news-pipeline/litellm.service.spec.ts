@@ -2,9 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { AxiosError, AxiosHeaders, AxiosResponse } from "axios";
 import { Readable } from "node:stream";
 
-import { RateLimiterService } from "../cache/rate-limiter.service";
 import { LlmGatewaySettingsService } from "../system-settings/llm-gateway-settings.service";
-import { LlmRuntimeService } from "../system-settings/llm-runtime.service";
 
 import {
   LiteLlmGuardrailViolationError,
@@ -56,14 +54,8 @@ jest.mock("node:timers/promises", () => ({
 
 describe("LiteLlmService", () => {
   let service: LiteLlmService;
-  let rateLimiterService: jest.Mocked<RateLimiterService>;
   let llmGatewaySettings: jest.Mocked<LlmGatewaySettingsService>;
   let configService: jest.Mocked<NewsPipelineConfigService>;
-  let llmRuntimeService: {
-    startRequest: jest.Mock;
-    recordAttempt: jest.Mock;
-    releaseRequest: jest.Mock;
-  };
   let llmRequestLogService: {
     logRequest: jest.Mock;
     queryLogs: jest.Mock;
@@ -84,7 +76,6 @@ describe("LiteLlmService", () => {
       topP: 0.9,
       maxOutputTokens: 1200,
       maxRetries: 3,
-      requestsPerMinute: 60,
       assistantWebSearchEnabled: false,
     },
     pipeline: {
@@ -136,15 +127,13 @@ describe("LiteLlmService", () => {
     jest.useFakeTimers({ advanceTimers: true });
     mockAxiosCreate.mockImplementation(() => ({ post: mockAxiosPost }));
 
-    rateLimiterService = {
-      consume: jest.fn().mockResolvedValue(true),
-    } as unknown as jest.Mocked<RateLimiterService>;
-
     configService = {
       config: mockConfig,
     } as unknown as jest.Mocked<NewsPipelineConfigService>;
 
     const resolveActiveGatewayConfig = () => ({
+      profileId: "profile-1",
+      profileName: "Primary Gateway",
       ...configService.config.litellm,
       sendMetadata: true,
       responseFormatMode: "json_schema" as const,
@@ -168,43 +157,12 @@ describe("LiteLlmService", () => {
       queryLogs: jest.fn(),
       getUsageSummary: jest.fn(),
     };
-    llmRuntimeService = {
-      startRequest: jest.fn().mockResolvedValue({
-        runtimeRequestId: "runtime-1",
-        feature: "news_event_brief",
-        requestType: "completion",
-        currentConcurrency: 3,
-        concurrencyLimit: 10,
-        dailySpendUsdSnapshot: 0.12,
-        monthlySpendUsdSnapshot: 1.23,
-        settings: {
-          mode: "observe_only",
-          dailyBudgetUsd: 10,
-          monthlyBudgetUsd: 100,
-          maxConcurrency: 10,
-          alertCooldownSeconds: 60,
-          requestLeaseTtlSeconds: 120,
-        },
-      }),
-      recordAttempt: jest.fn().mockResolvedValue({
-        runtimeRequestId: "runtime-1",
-        feature: "news_event_brief",
-        runtimeDecision: "allowed",
-        currentConcurrency: 3,
-        concurrencyLimit: 10,
-        dailySpendUsdSnapshot: 0.13,
-        monthlySpendUsdSnapshot: 1.24,
-      }),
-      releaseRequest: jest.fn().mockResolvedValue(undefined),
-    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LiteLlmService,
-        { provide: RateLimiterService, useValue: rateLimiterService },
         { provide: LlmGatewaySettingsService, useValue: llmGatewaySettings },
         { provide: NewsPipelineConfigService, useValue: configService },
-        { provide: LlmRuntimeService, useValue: llmRuntimeService },
         {
           provide: LlmRequestLogService,
           useValue: llmRequestLogService,
@@ -250,7 +208,7 @@ describe("LiteLlmService", () => {
       );
     });
 
-    it("records runtime snapshots in request logs", async () => {
+    it("records feature metadata in request logs without runtime snapshots", async () => {
       await service.acompletion({
         ...completionParams,
         metadata: {
@@ -261,26 +219,10 @@ describe("LiteLlmService", () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(llmRuntimeService.startRequest).toHaveBeenCalledWith({
-        requestType: "completion",
-        metadata: {
-          feature: "news_event_brief",
-          source: "briefs",
-        },
-      });
-      expect(llmRuntimeService.recordAttempt).toHaveBeenCalled();
-      expect(llmRuntimeService.releaseRequest).toHaveBeenCalledWith(
-        "runtime-1",
-      );
       expect(llmRequestLogService.logRequest).toHaveBeenCalledWith(
         expect.objectContaining({
           feature: "news_event_brief",
-          runtimeRequestId: "runtime-1",
-          runtimeDecision: "allowed",
-          currentConcurrency: 3,
-          concurrencyLimit: 10,
-          dailySpendUsdSnapshot: 0.13,
-          monthlySpendUsdSnapshot: 1.24,
+          gatewayProfileId: "profile-1",
         }),
       );
     });
@@ -1250,29 +1192,10 @@ describe("LiteLlmService", () => {
     });
   });
 
-  describe("rate limiting", () => {
+  describe("client lifecycle", () => {
     const completionParams: LiteLlmCompletionParams = {
       messages: [{ role: "user", content: "Hello" }],
     };
-
-    it("should call rateLimiter.consume before each request", async () => {
-      await service.acompletion(completionParams);
-
-      expect(rateLimiterService.consume).toHaveBeenCalledWith(
-        "litellm:rpm:completion",
-        60, // requestsPerMinute
-        60, // rateLimitWindowSeconds
-      );
-    });
-
-    it("should throw when rate limiter returns false", async () => {
-      rateLimiterService.consume.mockResolvedValueOnce(false);
-
-      await expect(service.acompletion(completionParams)).rejects.toThrow(
-        "LiteLLM request throttled by local rate limiter",
-      );
-      expect(mockAxiosPost).not.toHaveBeenCalled();
-    });
 
     it("should rebuild client when apiBase changes", async () => {
       // First call
@@ -1324,6 +1247,7 @@ describe("LiteLlmService", () => {
         expect.any(Object),
       );
     });
+
   });
 
   describe("embedding", () => {

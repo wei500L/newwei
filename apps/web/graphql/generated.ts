@@ -236,14 +236,27 @@ export type ArchiveCalendarInput = {
   vertical?: InputMaybe<ArchiveVertical>;
 };
 
+export enum ArchiveClassificationDecisionReason {
+  DefaultForeignAffairsFallback = 'DEFAULT_FOREIGN_AFFAIRS_FALLBACK',
+  FusedWinner = 'FUSED_WINNER',
+  RuleFallbackLowSemanticConfidence = 'RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE',
+  StaleCachedResult = 'STALE_CACHED_RESULT',
+  StrongRuleOverride = 'STRONG_RULE_OVERRIDE'
+}
+
 export type ArchiveClassificationDetailModel = {
   __typename?: 'ArchiveClassificationDetailModel';
+  decisionReason: ArchiveClassificationDecisionReason;
+  decisionReasonI18nKey: Scalars['String']['output'];
   embeddingModel: Scalars['String']['output'];
+  isStale: Scalars['Boolean']['output'];
   pipelineVersion: Scalars['String']['output'];
   region: ArchiveRegion;
   rerankModel: Scalars['String']['output'];
   ruleSignals: Array<Scalars['String']['output']>;
   scoreEntries: Array<ArchiveClassificationScoreEntryModel>;
+  staleReasonI18nKeys: Array<Scalars['String']['output']>;
+  staleReasons: Array<ArchiveClassificationStaleReason>;
   taxonomyVersion: Scalars['String']['output'];
   vertical: ArchiveVertical;
 };
@@ -256,6 +269,13 @@ export type ArchiveClassificationScoreEntryModel = {
   ruleScore: Scalars['Float']['output'];
   vertical: ArchiveVertical;
 };
+
+export enum ArchiveClassificationStaleReason {
+  EmbeddingModelChanged = 'EMBEDDING_MODEL_CHANGED',
+  PipelineVersionChanged = 'PIPELINE_VERSION_CHANGED',
+  RerankModelChanged = 'RERANK_MODEL_CHANGED',
+  TaxonomyVersionChanged = 'TAXONOMY_VERSION_CHANGED'
+}
 
 export type ArchiveDetailModel = {
   __typename?: 'ArchiveDetailModel';

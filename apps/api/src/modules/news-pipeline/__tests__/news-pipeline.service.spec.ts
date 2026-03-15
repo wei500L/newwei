@@ -65,7 +65,6 @@ const baseConfig: NewsPipelineConfig = {
     maxOutputTokens: 1_200,
     maxRetries: 2,
     fallbackModels: [],
-    requestsPerMinute: 100,
     stream: false,
     responseFormat: "json_schema",
   },

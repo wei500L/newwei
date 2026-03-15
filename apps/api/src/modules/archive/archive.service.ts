@@ -20,6 +20,8 @@ import {
 import { ArchiveClassifier } from "./archive.classifier";
 import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
 import {
+  ARCHIVE_CLASSIFICATION_DECISION_I18N_KEY,
+  ARCHIVE_CLASSIFICATION_STALE_REASON_I18N_KEY,
   ArchivePreparationState,
   type ArchivePreparationStatus,
   ARCHIVE_VERTICAL_DISPLAY_NAME,
@@ -611,25 +613,30 @@ export class ArchiveService {
       location: article.location,
     });
 
-    const cached = await this.archiveClassification.getCachedHybridBatch(orgId, [
-      {
-        processedArticleId: article.id,
-        articleId: article.article.id,
-        title: article.title,
-        summary: article.summary,
-        source: article.source ?? article.article.sourceLabel,
-        topics: article.topics,
-        entities: article.entities,
-        location: article.location,
-        ruleContext,
-      },
-    ]);
+    const cached =
+      await this.archiveClassification.getCachedHybridBatchWithStaleFallback(
+        orgId,
+        [
+          {
+            processedArticleId: article.id,
+            articleId: article.article.id,
+            title: article.title,
+            summary: article.summary,
+            source: article.source ?? article.article.sourceLabel,
+            topics: article.topics,
+            entities: article.entities,
+            location: article.location,
+            ruleContext,
+          },
+        ],
+      );
 
-    const result = cached.get(article.id);
-    if (!result) {
+    const cachedEntry = cached.get(article.id);
+    if (!cachedEntry) {
       return null;
     }
 
+    const { result, isStale, staleReasons } = cachedEntry;
     return {
       region: result.region,
       vertical: result.vertical,
@@ -637,6 +644,14 @@ export class ArchiveService {
       pipelineVersion: result.pipelineVersion,
       embeddingModel: result.embeddingModel,
       rerankModel: result.rerankModel,
+      decisionReason: result.decisionReason,
+      decisionReasonI18nKey:
+        ARCHIVE_CLASSIFICATION_DECISION_I18N_KEY[result.decisionReason],
+      isStale,
+      staleReasons,
+      staleReasonI18nKeys: staleReasons.map(
+        (reason) => ARCHIVE_CLASSIFICATION_STALE_REASON_I18N_KEY[reason],
+      ),
       ruleSignals: this.buildDetailRuleSignals(ruleContext, result.vertical),
       scoreEntries: ARCHIVE_VERTICAL_ORDER.map((vertical) => ({
         vertical,

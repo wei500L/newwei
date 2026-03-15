@@ -1,5 +1,11 @@
 import { createLogger } from "@modular/utils";
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 
@@ -13,6 +19,7 @@ import {
   resolveSettingsKey
 } from "../storage/storage-settings.crypto";
 
+import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
 
 export type LlmGatewayEmbeddingMode = "follow_completion" | "use_default";
@@ -31,9 +38,12 @@ export interface LlmGatewayCompatibilityOptions {
 
 export type LlmGatewayResolvedConfig = LiteLlmEnvConfig &
   LlmGatewayCompatibilityOptions & {
+    profileId: string;
+    profileName: string;
     apiKey?: string;
     assistantModel?: string;
     assistantWebSearchEnabled: boolean;
+    managedByLiteLlmProxyGovernance?: boolean;
   };
 
 export type LlmGatewayProfilePublic = Omit<LiteLlmEnvConfig, "apiKey"> &
@@ -55,6 +65,13 @@ export interface LlmGatewaySettingsPublic {
   rerankActiveId: string | null;
   rerankMode: LlmGatewayRerankMode;
   profiles: LlmGatewayProfilePublic[];
+}
+
+export interface LlmGatewayProfileSummary {
+  id: string;
+  name: string;
+  apiBase: string;
+  enabled: boolean;
 }
 
 export type LlmGatewayProfileInput =
@@ -110,7 +127,9 @@ export class LlmGatewaySettingsService {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
-    private readonly securitySettings: SystemSecuritySettingsService
+    private readonly securitySettings: SystemSecuritySettingsService,
+    @Inject(forwardRef(() => LiteLlmProxyGovernanceService))
+    private readonly proxyGovernance: LiteLlmProxyGovernanceService
   ) {}
 
   async list(): Promise<LlmGatewaySettingsPublic> {
@@ -187,6 +206,11 @@ export class LlmGatewaySettingsService {
       existing,
       input
     );
+    await this.proxyGovernance.assertProfileUpdateAllowed(id, {
+      currentApiBase: existing.apiBase,
+      nextApiBase: updated.apiBase,
+      nextEnabled: updated.enabled,
+    });
     settings.profiles[index] = updated;
     if (settings.activeId === id && !updated.enabled) {
       settings.activeId = null;
@@ -219,6 +243,7 @@ export class LlmGatewaySettingsService {
 
   async deleteProfile(orgId: string, actorId: string, id: string) {
     const settings = await this.loadSettings();
+    await this.proxyGovernance.assertProfileDeletionAllowed(id);
     const nextProfiles = settings.profiles.filter((profile) => profile.id !== id);
     if (nextProfiles.length === settings.profiles.length) {
       throw new NotFoundException("LLM gateway profile not found");
@@ -336,7 +361,10 @@ export class LlmGatewaySettingsService {
       return null;
     }
 
-    return this.toResolvedConfig(profile);
+    return this.applyManagedProxyGovernance(
+      profile,
+      this.toResolvedConfig(profile)
+    );
   }
 
   async getActiveEmbeddingConfig(): Promise<LlmGatewayResolvedConfig | null> {
@@ -348,7 +376,10 @@ export class LlmGatewaySettingsService {
       ? settings.profiles.find((candidate) => candidate.id === resolvedId) ?? null
       : null;
     if (explicitProfile && explicitProfile.enabled && explicitProfile.embeddingModel) {
-      return this.toResolvedConfig(explicitProfile);
+      return this.applyManagedProxyGovernance(
+        explicitProfile,
+        this.toResolvedConfig(explicitProfile)
+      );
     }
     const fallbackProfile =
       settings.embeddingMode === "use_default" || !resolvedId
@@ -357,7 +388,10 @@ export class LlmGatewaySettingsService {
     if (!fallbackProfile) {
       return null;
     }
-    return this.toResolvedConfig(fallbackProfile);
+    return this.applyManagedProxyGovernance(
+      fallbackProfile,
+      this.toResolvedConfig(fallbackProfile)
+    );
   }
 
   async getActiveRerankConfig(): Promise<LlmGatewayResolvedConfig | null> {
@@ -369,7 +403,10 @@ export class LlmGatewaySettingsService {
       ? settings.profiles.find((candidate) => candidate.id === resolvedId) ?? null
       : null;
     if (explicitProfile && explicitProfile.enabled && explicitProfile.rerankModel) {
-      return this.toResolvedConfig(explicitProfile);
+      return this.applyManagedProxyGovernance(
+        explicitProfile,
+        this.toResolvedConfig(explicitProfile)
+      );
     }
     const fallbackProfile =
       settings.rerankMode === "use_default" || !resolvedId
@@ -378,7 +415,10 @@ export class LlmGatewaySettingsService {
     if (!fallbackProfile) {
       return null;
     }
-    return this.toResolvedConfig(fallbackProfile);
+    return this.applyManagedProxyGovernance(
+      fallbackProfile,
+      this.toResolvedConfig(fallbackProfile)
+    );
   }
 
   async getProfileConfig(id: string): Promise<LlmGatewayResolvedConfig | null> {
@@ -391,9 +431,54 @@ export class LlmGatewaySettingsService {
     return this.toResolvedConfig(profile);
   }
 
+  async getProfileSummary(id: string): Promise<LlmGatewayProfileSummary | null> {
+    const settings = await this.loadSettings();
+    const profile = settings.profiles.find((candidate) => candidate.id === id);
+    if (!profile) {
+      return null;
+    }
+
+    return {
+      id: profile.id,
+      name: profile.name,
+      apiBase: profile.apiBase,
+      enabled: profile.enabled,
+    };
+  }
+
+  private async applyManagedProxyGovernance(
+    profile: StoredProfile,
+    config: LlmGatewayResolvedConfig
+  ): Promise<LlmGatewayResolvedConfig> {
+    const managedApiKey =
+      await this.proxyGovernance.getManagedRuntimeApiKeyForProfile(
+        profile.id,
+        config.apiBase
+      );
+    if (!managedApiKey) {
+      return config;
+    }
+    const governanceApiBase =
+      await this.proxyGovernance.getGovernedApiBaseForProfile(
+        profile.id,
+        config.apiBase
+      );
+    if (!governanceApiBase) {
+      return config;
+    }
+    return {
+      ...config,
+      apiBase: governanceApiBase,
+      apiKey: managedApiKey,
+      managedByLiteLlmProxyGovernance: true
+    };
+  }
+
   private toResolvedConfig(profile: StoredProfile): LlmGatewayResolvedConfig {
     const apiKey = this.resolveApiKey(profile.apiKey);
     return {
+      profileId: profile.id,
+      profileName: profile.name,
       model: profile.model,
       embeddingModel: profile.embeddingModel,
       rerankModel: profile.rerankModel,
@@ -408,7 +493,6 @@ export class LlmGatewaySettingsService {
       maxRetries: profile.maxRetries,
       fallbackModels: profile.fallbackModels,
       rerankFallbackModels: profile.rerankFallbackModels,
-      requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,
       apiSurface: profile.apiSurface
@@ -600,7 +684,6 @@ export class LlmGatewaySettingsService {
       maxOutputTokens: this.asPositiveInt(record.maxOutputTokens, fallback.maxOutputTokens),
       maxRetries: this.asPositiveInt(record.maxRetries, fallback.maxRetries),
       fallbackModels: this.normalizeStringList(record.fallbackModels, []),
-      requestsPerMinute: this.asPositiveInt(record.requestsPerMinute, fallback.requestsPerMinute),
       sendMetadata: this.normalizeBoolean(record.sendMetadata, DEFAULT_SEND_METADATA),
       responseFormatMode: this.normalizeResponseFormatMode(
         record.responseFormatMode,
@@ -686,10 +769,6 @@ export class LlmGatewaySettingsService {
         input.fallbackModels !== undefined
           ? this.normalizeStringList(input.fallbackModels, base.fallbackModels ?? [])
           : base.fallbackModels ?? [],
-      requestsPerMinute:
-        input.requestsPerMinute !== undefined
-          ? this.asPositiveInt(input.requestsPerMinute, fallback.requestsPerMinute)
-          : base.requestsPerMinute ?? fallback.requestsPerMinute,
       sendMetadata:
         input.sendMetadata !== undefined
           ? input.sendMetadata
@@ -783,7 +862,6 @@ export class LlmGatewaySettingsService {
       maxRetries: profile.maxRetries,
       fallbackModels: profile.fallbackModels,
       rerankFallbackModels: profile.rerankFallbackModels,
-      requestsPerMinute: profile.requestsPerMinute,
       sendMetadata: profile.sendMetadata,
       responseFormatMode: profile.responseFormatMode,
       apiSurface: profile.apiSurface,

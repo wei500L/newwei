@@ -2009,6 +2009,19 @@
         "loadFailed": "Failed to load details.",
         "notFound": "No details found.",
         "untitled": "Untitled event",
+        "classificationReason": {
+          "fusedWinner": "Fusion score winner",
+          "strongRuleOverride": "Strong rule override",
+          "ruleFallbackLowSemanticConfidence": "Low-confidence semantic fallback to rule",
+          "defaultForeignAffairsFallback": "Low-confidence default fallback to Foreign Affairs",
+          "staleCachedResult": "Using stale cached classification"
+        },
+        "classificationStaleReason": {
+          "taxonomyVersionChanged": "taxonomy upgraded",
+          "pipelineVersionChanged": "pipeline upgraded",
+          "embeddingModelChanged": "embedding model switched",
+          "rerankModelChanged": "rerank model switched"
+        },
         "entities": "Countries / entities",
         "entitiesEmpty": "No entity tags.",
         "source": "Source",
@@ -3757,7 +3770,6 @@
         "topP": "Top P",
         "maxOutputTokens": "Max output tokens",
         "maxRetries": "Max retries",
-        "requestsPerMinute": "Requests per minute",
         "fallbackModels": "Fallback models",
         "sendMetadata": "Send metadata",
         "responseFormatMode": "response_format mode",

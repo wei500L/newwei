@@ -42,6 +42,7 @@ import {
   type ArchiveEventItem,
   type ArchiveMatchOrigin,
   type ArchiveRegion,
+  resolveArchiveClassificationI18nKeys,
   resolveArchiveClassificationSignals,
   resolveArchiveItemPreview,
   resolveArchiveRelevancePercent,
@@ -185,6 +186,11 @@ const ARCHIVE_DETAIL_QUERY = gql`
         pipelineVersion
         embeddingModel
         rerankModel
+        decisionReason
+        decisionReasonI18nKey
+        isStale
+        staleReasons
+        staleReasonI18nKeys
         ruleSignals
         scoreEntries {
           vertical
@@ -645,6 +651,16 @@ export function EventsArchiveContent() {
     () =>
       detailClassification
         ? resolveArchiveClassificationSignals(detailClassification.ruleSignals, 8)
+        : [],
+    [detailClassification],
+  );
+  const visibleClassificationStaleReasons = useMemo(
+    () =>
+      detailClassification?.isStale
+        ? resolveArchiveClassificationI18nKeys(
+            detailClassification.staleReasonI18nKeys,
+            4,
+          )
         : [],
     [detailClassification],
   );
@@ -1585,7 +1601,42 @@ export function EventsArchiveContent() {
                       <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
                         {`pipeline ${detailClassification.pipelineVersion}`}
                       </span>
+                      <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-50/80 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                        {t(detailClassification.decisionReasonI18nKey, {
+                          defaultValue: detailClassification.decisionReason,
+                        })}
+                      </span>
+                      {detailClassification.isStale ? (
+                        <span className="inline-flex rounded-full border border-rose-300/80 bg-rose-50/80 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                          {t("pages.eventsArchive.detail.classificationStale", {
+                            defaultValue: "展示旧分类结果",
+                          })}
+                        </span>
+                      ) : null}
                     </div>
+
+                    {detailClassification.isStale ? (
+                      <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 p-3 dark:border-amber-500/20 dark:bg-amber-500/10">
+                        <Typography.Text className="block text-sm text-amber-800 dark:text-amber-100">
+                          {t("pages.eventsArchive.detail.classificationStaleHint", {
+                            defaultValue:
+                              "当前分类结果与现行模型或分类版本不一致，正在展示最近一次可用的归档判断。",
+                          })}
+                        </Typography.Text>
+                        {visibleClassificationStaleReasons.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {visibleClassificationStaleReasons.map((reason) => (
+                              <span
+                                key={reason}
+                                className="inline-flex rounded-full border border-amber-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/30 dark:bg-slate-950/50 dark:text-amber-200"
+                              >
+                                {t(reason, { defaultValue: reason })}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                       <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">

@@ -24,12 +24,10 @@ import { GeoNominatimSettingsService } from "./geo-nominatim-settings.service";
 import { GeoNominatimTestController } from "./geo-nominatim-test.controller";
 import { LlmGatewaySettingsController } from "./llm-gateway-settings.controller";
 import { LlmGatewaySettingsService } from "./llm-gateway-settings.service";
-import { LlmRuntimeSettingsController } from "./llm-runtime-settings.controller";
-import { LlmRuntimeSettingsService } from "./llm-runtime-settings.service";
-import { LlmRuntimeService } from "./llm-runtime.service";
 import { LlmRequestLogSettingsController } from "./llm-request-log-settings.controller";
 import { LlmRequestLogSettingsService } from "./llm-request-log-settings.service";
 import { LlmGatewayTestService } from "./llm-gateway-test.service";
+import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
@@ -80,7 +78,6 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     GeoNominatimSettingsController,
     GeoNominatimTestController,
     LlmGatewaySettingsController,
-    LlmRuntimeSettingsController,
     AssistantSafetySettingsController,
     OpenAiKeysSettingsController,
     OpenAiKeysInternalController,
@@ -108,9 +105,8 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
       useValue: LlmRequestLogModel,
     },
     LlmGatewaySettingsService,
-    LlmRuntimeSettingsService,
-    LlmRuntimeService,
     LlmGatewayTestService,
+    LiteLlmProxyGovernanceService,
     LiteLlmProxyLoadBalancingSettingsService,
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
@@ -138,8 +134,7 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     GeoNominatimSettingsService,
     FinancialDataProviderSettingsService,
     LlmGatewaySettingsService,
-    LlmRuntimeSettingsService,
-    LlmRuntimeService,
+    LiteLlmProxyGovernanceService,
     LiteLlmProxyLoadBalancingSettingsService,
     AssistantSafetySettingsService,
     OpenAiKeysSettingsService,

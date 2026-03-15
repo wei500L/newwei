@@ -61,6 +61,27 @@ services:
       timeout: 5s
       retries: 5
 
+  litellm-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${LITELLM_POSTGRES_DB:-litellm}
+      POSTGRES_USER: ${LITELLM_POSTGRES_USER:-litellm}
+      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:-litellm}
+    ports:
+      - "5432:5432"
+    volumes:
+      - litellm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   qdrant:
     image: qdrant/qdrant:v1.10.1
     restart: unless-stopped
@@ -158,6 +179,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      litellm-postgres:
+        condition: service_healthy
       api:
         condition: service_healthy
     entrypoint: /bin/sh
@@ -170,6 +193,7 @@ services:
         python /app/generate-litellm-config.py --input /app/config.base.yaml --output /app/config.yaml
         exec litellm --config /app/config.yaml --detailed_debug
     environment:
+      DATABASE_URL: ${LITELLM_DATABASE_URL:-postgresql://litellm:litellm@litellm-postgres:5432/litellm}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       LITELLM_CONFIG_API_BASE: ${LITELLM_CONFIG_API_BASE:-http://api:4000/api}
       LITELLM_CONFIG_INTERNAL_TOKEN: ${LITELLM_CONFIG_INTERNAL_TOKEN:-}
@@ -512,6 +536,7 @@ volumes:
   redis-data:
   minio-data:
   qdrant-data:
+  litellm-postgres-data:
   api-node-modules:
   api-pnpm-store:
   api-app-api-node-modules:

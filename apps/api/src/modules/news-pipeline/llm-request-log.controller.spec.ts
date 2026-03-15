@@ -78,6 +78,7 @@ describe("LlmRequestLogController", () => {
       "50",
       " gpt-4o-mini ",
       " news_event_brief ",
+      " profile-1 ",
       "responses",
       "success",
       "2026-02-01T00:00:00.000Z",
@@ -89,6 +90,7 @@ describe("LlmRequestLogController", () => {
         orgId: "org-1",
         model: "gpt-4o-mini",
         feature: "news_event_brief",
+        profileId: "profile-1",
         requestType: "responses",
         status: "success",
         start: new Date("2026-02-01T00:00:00.000Z"),
@@ -106,6 +108,7 @@ describe("LlmRequestLogController", () => {
       user,
       " gpt-4o-mini ",
       "news_event_brief",
+      "profile-1",
       "responses",
       "error",
       "2026-02-01T00:00:00.000Z",
@@ -118,6 +121,7 @@ describe("LlmRequestLogController", () => {
         orgId: "org-1",
         model: "gpt-4o-mini",
         feature: "news_event_brief",
+        profileId: "profile-1",
         requestType: "responses",
         status: "error",
         start: new Date("2026-02-01T00:00:00.000Z"),
@@ -137,6 +141,7 @@ describe("LlmRequestLogController", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         "2026-02-10T00:00:00.000Z",
         "2026-02-01T00:00:00.000Z",
       ),
@@ -147,21 +152,48 @@ describe("LlmRequestLogController", () => {
 
   it("throws bad request for invalid requestType", async () => {
     await expect(
-      controller.export(user, undefined, undefined, "invalid-type", undefined, undefined, undefined),
+      controller.export(
+        user,
+        undefined,
+        undefined,
+        undefined,
+        "invalid-type",
+        undefined,
+        undefined,
+        undefined,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(llmRequestLogService.exportLogsCsvStream).not.toHaveBeenCalled();
   });
 
   it("throws bad request for invalid status", async () => {
     await expect(
-      controller.export(user, undefined, undefined, undefined, "pending", undefined, undefined),
+      controller.export(
+        user,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "pending",
+        undefined,
+        undefined,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(llmRequestLogService.exportLogsCsvStream).not.toHaveBeenCalled();
   });
 
   it("throws bad request for invalid start date format", async () => {
     await expect(
-      controller.export(user, undefined, undefined, undefined, undefined, "not-a-date", undefined),
+      controller.export(
+        user,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "not-a-date",
+        undefined,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(llmRequestLogService.exportLogsCsvStream).not.toHaveBeenCalled();
   });
@@ -170,6 +202,7 @@ describe("LlmRequestLogController", () => {
     await controller.summary(
       user,
       "news_event_brief",
+      "profile-1",
       "2026-02-01T00:00:00.000Z",
       "2026-02-28T23:59:59.999Z",
     );
@@ -178,12 +211,13 @@ describe("LlmRequestLogController", () => {
       start: new Date("2026-02-01T00:00:00.000Z"),
       end: new Date("2026-02-28T23:59:59.999Z"),
       feature: "news_event_brief",
+      profileId: "profile-1",
     });
   });
 
   it("throws bad request for invalid feature filter", async () => {
     await expect(
-      controller.summary(user, "INVALID FEATURE", undefined, undefined),
+      controller.summary(user, "INVALID FEATURE", undefined, undefined, undefined),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(llmRequestLogService.getUsageSummary).not.toHaveBeenCalled();
   });

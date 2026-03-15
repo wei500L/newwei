@@ -25,7 +25,9 @@ import {
   type ArchiveRuleClassificationSignals,
 } from './archive.classifier';
 import {
+  ArchiveClassificationStaleReason,
   ARCHIVE_VERTICAL_ORDER,
+  ArchiveClassificationDecisionReason,
   ArchiveRegion,
   ArchiveVertical,
   type ArchiveVerticalScores,
@@ -87,6 +89,17 @@ interface StoredArchiveClassificationRow {
   rerankModel: string;
 }
 
+interface CachedArchiveClassificationState {
+  result: ArchiveHybridClassificationResult;
+  isFresh: boolean;
+  staleReasons: ArchiveClassificationStaleReason[];
+}
+
+interface ArchiveSelectionOutcome {
+  vertical: ArchiveVertical;
+  reason: ArchiveClassificationDecisionReason;
+}
+
 export interface ArchiveHybridClassificationInput extends ArchiveClassifierInput {
   processedArticleId: string;
   articleId: string;
@@ -98,6 +111,7 @@ export interface ArchiveHybridClassificationResult {
   articleId: string;
   region: ArchiveRegion;
   vertical: ArchiveVertical;
+  decisionReason: ArchiveClassificationDecisionReason;
   countryCode: string | null;
   countryLabel: string;
   entityTags: string[];
@@ -111,6 +125,12 @@ export interface ArchiveHybridClassificationResult {
   pipelineVersion: string;
   embeddingModel: string;
   rerankModel: string;
+}
+
+export interface ArchiveCachedHybridClassificationResult {
+  result: ArchiveHybridClassificationResult;
+  isStale: boolean;
+  staleReasons: ArchiveClassificationStaleReason[];
 }
 
 @Injectable()
@@ -192,7 +212,7 @@ export class ArchiveClassificationService {
       } satisfies PreparedArchiveInput;
     });
 
-    const cachedResults = await this.loadCachedResults(
+    const cachedStates = await this.loadCachedResults(
       orgId,
       preparedInputs,
       {
@@ -200,6 +220,12 @@ export class ArchiveClassificationService {
         rerankModel,
       },
     );
+    const cachedResults = new Map<string, ArchiveHybridClassificationResult>();
+    for (const [processedArticleId, state] of cachedStates) {
+      if (state.isFresh) {
+        cachedResults.set(processedArticleId, state.result);
+      }
+    }
     const missingInputs = preparedInputs.filter(
       (input) => !cachedResults.has(input.processedArticleId),
     );
@@ -240,18 +266,20 @@ export class ArchiveClassificationService {
             embeddingScoreMap,
             rerankScoreMap,
           );
+          const selection = this.selectVerticalOutcome(
+            fusedScores,
+            input.ruleContext.ruleScores,
+            embeddingScoreMap,
+            rerankScoreMap,
+            input.ruleContext,
+          );
 
           return {
             processedArticleId: input.processedArticleId,
             articleId: input.articleId,
             region: input.ruleContext.region,
-            vertical: this.selectVertical(
-              fusedScores,
-              input.ruleContext.ruleScores,
-              embeddingScoreMap,
-              rerankScoreMap,
-              input.ruleContext,
-            ),
+            vertical: selection.vertical,
+            decisionReason: selection.reason,
             countryCode: input.ruleContext.countryCode,
             countryLabel: input.ruleContext.countryLabel,
             entityTags: input.ruleContext.entityTags,
@@ -296,6 +324,20 @@ export class ArchiveClassificationService {
     orgId: string,
     inputs: ArchiveHybridClassificationInput[],
   ): Promise<Map<string, ArchiveHybridClassificationResult>> {
+    const cached = await this.getCachedHybridBatchWithStaleFallback(orgId, inputs);
+    const result = new Map<string, ArchiveHybridClassificationResult>();
+    for (const [processedArticleId, entry] of cached) {
+      if (!entry.isStale) {
+        result.set(processedArticleId, entry.result);
+      }
+    }
+    return result;
+  }
+
+  async getCachedHybridBatchWithStaleFallback(
+    orgId: string,
+    inputs: ArchiveHybridClassificationInput[],
+  ): Promise<Map<string, ArchiveCachedHybridClassificationResult>> {
     if (inputs.length === 0) {
       return new Map();
     }
@@ -313,7 +355,7 @@ export class ArchiveClassificationService {
       } satisfies PreparedArchiveInput;
     });
 
-    return this.loadCachedResults(
+    const cachedStates = await this.loadCachedResults(
       orgId,
       preparedInputs,
       {
@@ -321,6 +363,15 @@ export class ArchiveClassificationService {
         rerankModel,
       },
     );
+    const result = new Map<string, ArchiveCachedHybridClassificationResult>();
+    for (const [processedArticleId, state] of cachedStates) {
+      result.set(processedArticleId, {
+        result: state.result,
+        isStale: !state.isFresh,
+        staleReasons: [...state.staleReasons],
+      });
+    }
+    return result;
   }
 
   private async loadCachedResults(
@@ -330,7 +381,7 @@ export class ArchiveClassificationService {
       embeddingModel?: string | null;
       rerankModel?: string | null;
     },
-  ): Promise<Map<string, ArchiveHybridClassificationResult>> {
+  ): Promise<Map<string, CachedArchiveClassificationState>> {
     const rows = (await this.prisma.archiveArticleClassification.findMany({
       where: {
         orgId,
@@ -359,7 +410,7 @@ export class ArchiveClassificationService {
     const inputById = new Map(
       inputs.map((input) => [input.processedArticleId, input]),
     );
-    const results = new Map<string, ArchiveHybridClassificationResult>();
+    const results = new Map<string, CachedArchiveClassificationState>();
 
     for (const row of rows) {
       const input = inputById.get(row.processedArticleId);
@@ -368,13 +419,7 @@ export class ArchiveClassificationService {
       }
       if (
         row.classificationTextHash !== input.classificationTextHash ||
-        row.classificationTextVersion !== ARCHIVE_CLASSIFICATION_TEXT_VERSION ||
-        row.taxonomyVersion !== ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION ||
-        row.pipelineVersion !== ARCHIVE_CLASSIFICATION_PIPELINE_VERSION ||
-        (modelSelection?.embeddingModel != null &&
-          row.embeddingModel !== modelSelection.embeddingModel) ||
-        (modelSelection?.rerankModel != null &&
-          row.rerankModel !== modelSelection.rerankModel)
+        row.classificationTextVersion !== ARCHIVE_CLASSIFICATION_TEXT_VERSION
       ) {
         continue;
       }
@@ -385,28 +430,81 @@ export class ArchiveClassificationService {
         continue;
       }
 
+      const ruleScores = this.parseScoreMap(row.ruleScores);
+      const embeddingScores = this.parseScoreMap(row.embeddingScores);
+      const rerankScores = this.parseScoreMap(row.rerankScores);
+      const fusedScores = this.parseScoreMap(row.fusedScores);
+      const selection = this.selectVerticalOutcome(
+        fusedScores,
+        ruleScores,
+        embeddingScores,
+        rerankScores,
+        input.ruleContext,
+      );
+      const staleReasons = this.resolveCachedResultStaleReasons(
+        row,
+        modelSelection,
+      );
+
       results.set(row.processedArticleId, {
-        processedArticleId: row.processedArticleId,
-        articleId: row.articleId,
-        region,
-        vertical,
-        countryCode: input.ruleContext.countryCode,
-        countryLabel: input.ruleContext.countryLabel,
-        entityTags: input.ruleContext.entityTags,
-        ruleScores: this.parseScoreMap(row.ruleScores),
-        embeddingScores: this.parseScoreMap(row.embeddingScores),
-        rerankScores: this.parseScoreMap(row.rerankScores),
-        fusedScores: this.parseScoreMap(row.fusedScores),
-        classificationTextHash: row.classificationTextHash,
-        classificationTextVersion: row.classificationTextVersion,
-        taxonomyVersion: row.taxonomyVersion,
-        pipelineVersion: row.pipelineVersion,
-        embeddingModel: row.embeddingModel,
-        rerankModel: row.rerankModel,
+        isFresh: staleReasons.length === 0,
+        staleReasons,
+        result: {
+          processedArticleId: row.processedArticleId,
+          articleId: row.articleId,
+          region,
+          vertical,
+          decisionReason:
+            staleReasons.length > 0 && selection.vertical !== vertical
+              ? ArchiveClassificationDecisionReason.STALE_CACHED_RESULT
+              : selection.reason,
+          countryCode: input.ruleContext.countryCode,
+          countryLabel: input.ruleContext.countryLabel,
+          entityTags: input.ruleContext.entityTags,
+          ruleScores,
+          embeddingScores,
+          rerankScores,
+          fusedScores,
+          classificationTextHash: row.classificationTextHash,
+          classificationTextVersion: row.classificationTextVersion,
+          taxonomyVersion: row.taxonomyVersion,
+          pipelineVersion: row.pipelineVersion,
+          embeddingModel: row.embeddingModel,
+          rerankModel: row.rerankModel,
+        },
       });
     }
 
     return results;
+  }
+
+  private resolveCachedResultStaleReasons(
+    row: StoredArchiveClassificationRow,
+    modelSelection?: {
+      embeddingModel?: string | null;
+      rerankModel?: string | null;
+    },
+  ): ArchiveClassificationStaleReason[] {
+    const reasons: ArchiveClassificationStaleReason[] = [];
+    if (row.taxonomyVersion !== ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION) {
+      reasons.push(ArchiveClassificationStaleReason.TAXONOMY_VERSION_CHANGED);
+    }
+    if (row.pipelineVersion !== ARCHIVE_CLASSIFICATION_PIPELINE_VERSION) {
+      reasons.push(ArchiveClassificationStaleReason.PIPELINE_VERSION_CHANGED);
+    }
+    if (
+      modelSelection?.embeddingModel != null &&
+      row.embeddingModel !== modelSelection.embeddingModel
+    ) {
+      reasons.push(ArchiveClassificationStaleReason.EMBEDDING_MODEL_CHANGED);
+    }
+    if (
+      modelSelection?.rerankModel != null &&
+      row.rerankModel !== modelSelection.rerankModel
+    ) {
+      reasons.push(ArchiveClassificationStaleReason.RERANK_MODEL_CHANGED);
+    }
+    return reasons;
   }
 
   private async loadAnchorEmbeddings(
@@ -928,13 +1026,13 @@ export class ArchiveClassificationService {
     return fusedScores;
   }
 
-  private selectVertical(
+  private selectVerticalOutcome(
     fusedScores: ArchiveVerticalScores,
     ruleScores: ArchiveVerticalScores,
     embeddingScores: ArchiveVerticalScores,
     rerankScores: ArchiveVerticalScores,
     ruleContext: ArchiveRuleClassificationSignals,
-  ): ArchiveVertical {
+  ): ArchiveSelectionOutcome {
     const rank = (scores: ArchiveVerticalScores) =>
       ARCHIVE_VERTICAL_ORDER.slice().sort((left, right) => {
         const delta = (scores[right] ?? 0) - (scores[left] ?? 0);
@@ -964,7 +1062,10 @@ export class ArchiveClassificationService {
         winnerScore < STRONG_RULE_CONFLICT_MAX_SCORE ||
         gap < STRONG_RULE_CONFLICT_MAX_GAP
       ) {
-        return strongRuleVertical;
+        return {
+          vertical: strongRuleVertical,
+          reason: ArchiveClassificationDecisionReason.STRONG_RULE_OVERRIDE,
+        };
       }
     }
 
@@ -973,7 +1074,11 @@ export class ArchiveClassificationService {
       (embeddingScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE &&
       (rerankScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE
     ) {
-      return ruleWinner;
+      return {
+        vertical: ruleWinner,
+        reason:
+          ArchiveClassificationDecisionReason.RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE,
+      };
     }
 
     if (
@@ -982,10 +1087,17 @@ export class ArchiveClassificationService {
       (rerankScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE &&
       (fusedScores[preliminaryWinner] ?? 0) < LOW_CONFIDENCE_FUSED_SCORE
     ) {
-      return ArchiveVertical.FOREIGN_AFFAIRS;
+      return {
+        vertical: ArchiveVertical.FOREIGN_AFFAIRS,
+        reason:
+          ArchiveClassificationDecisionReason.DEFAULT_FOREIGN_AFFAIRS_FALLBACK,
+      };
     }
 
-    return fusedRank[0] ?? ArchiveVertical.FOREIGN_AFFAIRS;
+    return {
+      vertical: fusedRank[0] ?? ArchiveVertical.FOREIGN_AFFAIRS,
+      reason: ArchiveClassificationDecisionReason.FUSED_WINNER,
+    };
   }
 
   private async persistResults(

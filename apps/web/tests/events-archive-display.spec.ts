@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   VERTICAL_SECTIONS,
+  resolveArchiveClassificationI18nKeys,
   resolveArchiveClassificationSignals,
   resolveArchiveItemPreview,
   resolveArchiveRelevancePercent,
@@ -90,5 +91,21 @@ describe('events archive display helpers', () => {
         2,
       ),
     ).toEqual(['Rule', 'Embedding']);
+  });
+
+  it('deduplicates and caps classification i18n keys', () => {
+    expect(
+      resolveArchiveClassificationI18nKeys(
+        [
+          'pages.eventsArchive.detail.classificationStaleReason.embeddingModelChanged',
+          'pages.eventsArchive.detail.classificationStaleReason.embeddingModelChanged',
+          'pages.eventsArchive.detail.classificationStaleReason.rerankModelChanged',
+        ],
+        2,
+      ),
+    ).toEqual([
+      'pages.eventsArchive.detail.classificationStaleReason.embeddingModelChanged',
+      'pages.eventsArchive.detail.classificationStaleReason.rerankModelChanged',
+    ]);
   });
 });

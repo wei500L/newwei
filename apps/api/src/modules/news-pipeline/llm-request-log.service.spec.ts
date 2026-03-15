@@ -97,7 +97,7 @@ describe("LlmRequestLogService", () => {
     expect(payload.metadata?.prompt).toBeUndefined();
   });
 
-  it("persists normalized feature and runtime fields", () => {
+  it("persists normalized feature without runtime governance fields", () => {
     service.logRequest({
       orgId: "org-1",
       requestType: "completion",
@@ -105,12 +105,7 @@ describe("LlmRequestLogService", () => {
       status: "success",
       latencyMs: 120,
       feature: "Situation_Monitor_Monitors",
-      runtimeRequestId: "runtime-123",
-      runtimeDecision: "warn_concurrency",
-      currentConcurrency: 7,
-      concurrencyLimit: 5,
-      dailySpendUsdSnapshot: 1.25,
-      monthlySpendUsdSnapshot: 12.5,
+      gatewayProfileId: "profile-1",
       metadata: {
         traceId: "trace-123",
         source: "situation-monitor-monitors",
@@ -122,12 +117,13 @@ describe("LlmRequestLogService", () => {
       unknown
     >;
     expect(payload.feature).toBe("situation_monitor_monitors");
-    expect(payload.runtimeRequestId).toBe("runtime-123");
-    expect(payload.runtimeDecision).toBe("warn_concurrency");
-    expect(payload.currentConcurrency).toBe(7);
-    expect(payload.concurrencyLimit).toBe(5);
-    expect(payload.dailySpendUsdSnapshot).toBe(1.25);
-    expect(payload.monthlySpendUsdSnapshot).toBe(12.5);
+    expect(payload.gatewayProfileId).toBe("profile-1");
+    expect(payload).not.toHaveProperty("runtimeRequestId");
+    expect(payload).not.toHaveProperty("runtimeDecision");
+    expect(payload).not.toHaveProperty("currentConcurrency");
+    expect(payload).not.toHaveProperty("concurrencyLimit");
+    expect(payload).not.toHaveProperty("dailySpendUsdSnapshot");
+    expect(payload).not.toHaveProperty("monthlySpendUsdSnapshot");
   });
 
   it("applies metadata allowlist from system settings dynamically", () => {
@@ -249,6 +245,27 @@ describe("LlmRequestLogService", () => {
           { feature: "news_event_brief" },
           { "metadata.feature": "news_event_brief" },
         ],
+      }),
+    );
+  });
+
+  it("applies gateway profile filter when querying logs", async () => {
+    modelMock.countDocuments = jest.fn().mockResolvedValue(0);
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    modelMock.find = jest.fn().mockReturnValue({ sort });
+
+    await service.queryLogs(
+      { orgId: "org-1", profileId: " profile-1 " },
+      {},
+    );
+
+    expect(modelMock.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        gatewayProfileId: "profile-1",
       }),
     );
   });

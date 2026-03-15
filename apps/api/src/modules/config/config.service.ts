@@ -16,7 +16,6 @@ export interface LiteLlmEnvConfig {
   maxOutputTokens: number;
   maxRetries: number;
   fallbackModels: string[];
-  requestsPerMinute: number;
 }
 
 export interface NewsPipelineEnvConfig {
@@ -778,8 +777,6 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxOutputTokens: maxTokens,
       maxRetries: retryAttempts,
       fallbackModels,
-      requestsPerMinute:
-        this.get<number>("LITELLM_REQUESTS_PER_MINUTE", { infer: true }) ?? 60,
     };
   }
 
@@ -808,6 +805,12 @@ export class EnvService extends ConfigService<ApiEnv> {
 
   get liteLlmConfigInternalToken(): string | undefined {
     return this.get<string | undefined>("LITELLM_CONFIG_INTERNAL_TOKEN", {
+      infer: true,
+    });
+  }
+
+  get liteLlmMasterKey(): string | undefined {
+    return this.get<string | undefined>("LITELLM_MASTER_KEY", {
       infer: true,
     });
   }

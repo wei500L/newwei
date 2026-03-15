@@ -210,6 +210,11 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().min(1).optional(),
     ),
+    LITELLM_MASTER_KEY: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
     LITELLM_CONFIG_INTERNAL_TOKEN: z.preprocess(
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -227,7 +232,6 @@ export const apiEnvSchema = baseEnvSchema
     LITELLM_RETRY_ATTEMPTS: z.coerce.number().int().positive().default(3),
     LITELLM_MAX_RETRIES: z.coerce.number().int().positive().default(3),
     LITELLM_FALLBACK_MODELS: z.string().optional(),
-    LITELLM_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
     ITEMS_SEARCH_RERANK_ENABLED: envBoolean.default(true),
     ITEMS_SEARCH_RECALL_MAX_CANDIDATES: z.coerce
       .number()

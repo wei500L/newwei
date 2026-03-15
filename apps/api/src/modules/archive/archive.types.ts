@@ -38,6 +38,51 @@ export enum ArchivePreparationState {
   FAILED = "FAILED",
 }
 
+export enum ArchiveClassificationDecisionReason {
+  FUSED_WINNER = "FUSED_WINNER",
+  STRONG_RULE_OVERRIDE = "STRONG_RULE_OVERRIDE",
+  RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE = "RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE",
+  DEFAULT_FOREIGN_AFFAIRS_FALLBACK = "DEFAULT_FOREIGN_AFFAIRS_FALLBACK",
+  STALE_CACHED_RESULT = "STALE_CACHED_RESULT",
+}
+
+export enum ArchiveClassificationStaleReason {
+  TAXONOMY_VERSION_CHANGED = "taxonomy-version-changed",
+  PIPELINE_VERSION_CHANGED = "pipeline-version-changed",
+  EMBEDDING_MODEL_CHANGED = "embedding-model-changed",
+  RERANK_MODEL_CHANGED = "rerank-model-changed",
+}
+
+export const ARCHIVE_CLASSIFICATION_DECISION_I18N_KEY: Record<
+  ArchiveClassificationDecisionReason,
+  string
+> = {
+  [ArchiveClassificationDecisionReason.FUSED_WINNER]:
+    "pages.eventsArchive.detail.classificationReason.fusedWinner",
+  [ArchiveClassificationDecisionReason.STRONG_RULE_OVERRIDE]:
+    "pages.eventsArchive.detail.classificationReason.strongRuleOverride",
+  [ArchiveClassificationDecisionReason.RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE]:
+    "pages.eventsArchive.detail.classificationReason.ruleFallbackLowSemanticConfidence",
+  [ArchiveClassificationDecisionReason.DEFAULT_FOREIGN_AFFAIRS_FALLBACK]:
+    "pages.eventsArchive.detail.classificationReason.defaultForeignAffairsFallback",
+  [ArchiveClassificationDecisionReason.STALE_CACHED_RESULT]:
+    "pages.eventsArchive.detail.classificationReason.staleCachedResult",
+};
+
+export const ARCHIVE_CLASSIFICATION_STALE_REASON_I18N_KEY: Record<
+  ArchiveClassificationStaleReason,
+  string
+> = {
+  [ArchiveClassificationStaleReason.TAXONOMY_VERSION_CHANGED]:
+    "pages.eventsArchive.detail.classificationStaleReason.taxonomyVersionChanged",
+  [ArchiveClassificationStaleReason.PIPELINE_VERSION_CHANGED]:
+    "pages.eventsArchive.detail.classificationStaleReason.pipelineVersionChanged",
+  [ArchiveClassificationStaleReason.EMBEDDING_MODEL_CHANGED]:
+    "pages.eventsArchive.detail.classificationStaleReason.embeddingModelChanged",
+  [ArchiveClassificationStaleReason.RERANK_MODEL_CHANGED]:
+    "pages.eventsArchive.detail.classificationStaleReason.rerankModelChanged",
+};
+
 export type ArchiveWeightValue = 1 | 2 | 3 | 4 | 5;
 
 export const ARCHIVE_WEIGHT_TO_VALUE: Record<
@@ -186,6 +231,11 @@ export interface ArchiveClassificationDetailResult {
   pipelineVersion: string;
   embeddingModel: string;
   rerankModel: string;
+  decisionReason: ArchiveClassificationDecisionReason;
+  decisionReasonI18nKey: string;
+  isStale: boolean;
+  staleReasons: ArchiveClassificationStaleReason[];
+  staleReasonI18nKeys: string[];
   ruleSignals: string[];
   scoreEntries: ArchiveClassificationScoreEntryResult[];
 }

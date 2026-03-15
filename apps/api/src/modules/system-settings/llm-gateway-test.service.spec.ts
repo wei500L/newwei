@@ -35,6 +35,9 @@ describe("LlmGatewayTestService", () => {
     set: jest.fn(),
     del: jest.fn(),
   } as any;
+  const proxyGovernanceMock = {
+    resolveTestingApiKey: jest.fn(),
+  } as any;
 
   let service: LlmGatewayTestService;
 
@@ -51,7 +54,6 @@ describe("LlmGatewayTestService", () => {
     maxOutputTokens: 1_200,
     maxRetries: 3,
     fallbackModels: ["openai/gpt-4o-mini"],
-    requestsPerMinute: 60,
     sendMetadata: true,
     responseFormatMode: "json_schema",
     apiSurface: "chat_completions",
@@ -108,7 +110,14 @@ describe("LlmGatewayTestService", () => {
     cacheMock.get.mockResolvedValue(null);
     cacheMock.set.mockResolvedValue(undefined);
     cacheMock.del.mockResolvedValue(undefined);
-    service = new LlmGatewayTestService(settingsMock, cacheMock);
+    proxyGovernanceMock.resolveTestingApiKey.mockImplementation(
+      (_apiBase: string, fallbackApiKey?: string) => fallbackApiKey,
+    );
+    service = new LlmGatewayTestService(
+      settingsMock,
+      cacheMock,
+      proxyGovernanceMock,
+    );
   });
 
   it("tests completion and embeddings", async () => {
@@ -1064,6 +1073,31 @@ describe("LlmGatewayTestService", () => {
       "/v1/embeddings",
       expect.objectContaining({ model: "openai/text-embedding-3-small" }),
       expect.any(Object),
+    );
+  });
+
+  it("uses LiteLLM admin key for tests when governance resolves one", async () => {
+    proxyGovernanceMock.resolveTestingApiKey.mockImplementation(
+      () => "litellm-master",
+    );
+    mockAxiosGet.mockResolvedValueOnce({
+      data: {
+        data: [{ id: "openai/gpt-4o-mini" }],
+      },
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    });
+
+    await service.listModels("profile-1");
+
+    expect(mockAxiosCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer litellm-master",
+        }),
+      }),
     );
   });
 });

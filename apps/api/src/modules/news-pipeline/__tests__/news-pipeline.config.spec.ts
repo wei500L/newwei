@@ -40,7 +40,6 @@ describe('NewsPipelineConfigService config watcher', () => {
       maxOutputTokens: 256,
       maxRetries: 1,
       fallbackModels: [],
-      requestsPerMinute: 60,
     },
     crawl4aiConfig: {
       baseUrl: 'http://crawl4ai',

@@ -218,13 +218,33 @@ input ArchiveCalendarInput {
   vertical: ArchiveVertical
 }
 
+enum ArchiveClassificationDecisionReason {
+  DEFAULT_FOREIGN_AFFAIRS_FALLBACK
+  FUSED_WINNER
+  RULE_FALLBACK_LOW_SEMANTIC_CONFIDENCE
+  STALE_CACHED_RESULT
+  STRONG_RULE_OVERRIDE
+}
+
+enum ArchiveClassificationStaleReason {
+  EMBEDDING_MODEL_CHANGED
+  PIPELINE_VERSION_CHANGED
+  RERANK_MODEL_CHANGED
+  TAXONOMY_VERSION_CHANGED
+}
+
 type ArchiveClassificationDetailModel {
+  decisionReason: ArchiveClassificationDecisionReason!
+  decisionReasonI18nKey: String!
   embeddingModel: String!
+  isStale: Boolean!
   pipelineVersion: String!
   region: ArchiveRegion!
   rerankModel: String!
   ruleSignals: [String!]!
   scoreEntries: [ArchiveClassificationScoreEntryModel!]!
+  staleReasonI18nKeys: [String!]!
+  staleReasons: [ArchiveClassificationStaleReason!]!
   taxonomyVersion: String!
   vertical: ArchiveVertical!
 }

@@ -31,10 +31,16 @@ const envMock = {
     topP: 0.9,
     maxOutputTokens: 1_200,
     maxRetries: 3,
-    fallbackModels: ["openai/gpt-4o-mini"],
-    requestsPerMinute: 60
+    fallbackModels: ["openai/gpt-4o-mini"]
   },
   systemSettingsEncryptionKey: undefined
+} as any;
+
+const proxyGovernanceMock = {
+  getManagedRuntimeApiKeyForProfile: jest.fn(),
+  getGovernedApiBaseForProfile: jest.fn(),
+  assertProfileUpdateAllowed: jest.fn(),
+  assertProfileDeletionAllowed: jest.fn(),
 } as any;
 
 describe("LlmGatewaySettingsService", () => {
@@ -86,8 +92,26 @@ describe("LlmGatewaySettingsService", () => {
       return { key: "llm_gateway_profiles", value: persistedValue };
     });
     prismaMock.auditLog.create = jest.fn().mockResolvedValue(undefined);
+    proxyGovernanceMock.getManagedRuntimeApiKeyForProfile = jest
+      .fn()
+      .mockResolvedValue(null);
+    proxyGovernanceMock.getGovernedApiBaseForProfile = jest
+      .fn()
+      .mockResolvedValue(null);
+    proxyGovernanceMock.assertProfileUpdateAllowed = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    proxyGovernanceMock.assertProfileDeletionAllowed = jest
+      .fn()
+      .mockResolvedValue(undefined);
 
-    service = new LlmGatewaySettingsService(prismaMock, cacheMock, envMock, securitySettingsMock);
+    service = new LlmGatewaySettingsService(
+      prismaMock,
+      cacheMock,
+      envMock,
+      securitySettingsMock,
+      proxyGovernanceMock
+    );
   });
 
   it("returns empty settings when no record exists", async () => {
@@ -543,5 +567,25 @@ describe("LlmGatewaySettingsService", () => {
     expect(cfg?.apiKey).toBe("sk-test");
     expect(cfg?.apiBase).toBe("http://localhost:4001");
     expect(cfg?.model).toBe("openai/gpt-4o-mini");
+  });
+
+  it("overrides active runtime apiKey with LiteLLM managed governance key", async () => {
+    await service.createProfile("org-1", "actor-1", {
+      name: "Gateway",
+      apiBase: "http://localhost:4001",
+      model: "openai/gpt-4o-mini",
+      apiKey: "profile-key"
+    });
+    proxyGovernanceMock.getManagedRuntimeApiKeyForProfile.mockResolvedValueOnce(
+      "managed-runtime-key"
+    );
+    proxyGovernanceMock.getGovernedApiBaseForProfile.mockResolvedValueOnce(
+      "http://localhost:4001"
+    );
+
+    const active = await service.getActiveConfig();
+
+    expect(active?.apiKey).toBe("managed-runtime-key");
+    expect(active?.managedByLiteLlmProxyGovernance).toBe(true);
   });
 });

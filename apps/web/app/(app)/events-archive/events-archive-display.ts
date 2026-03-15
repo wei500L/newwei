@@ -1,3 +1,8 @@
+import type {
+  ArchiveClassificationDetailModel,
+  ArchiveClassificationScoreEntryModel,
+} from '@/graphql/generated';
+
 export type ArchiveRegion =
   | 'APAC'
   | 'MIDDLE_EAST'
@@ -15,6 +20,9 @@ export type ArchiveVertical =
 
 export type ArchiveWeight = 'ONE' | 'TWO' | 'THREE' | 'FOUR' | 'FIVE';
 export type ArchiveMatchOrigin = 'LEXICAL' | 'SEMANTIC' | 'HYBRID';
+export type ArchiveClassificationStaleReason =
+  ArchiveClassificationDetailModel['staleReasons'][number];
+export type ArchiveClassificationI18nKey = `pages.eventsArchive.detail.${string}`;
 
 export interface ArchiveEventItem {
   processedArticleId: string;
@@ -36,24 +44,28 @@ export interface ArchiveEventItem {
   relevanceScore?: number | null;
 }
 
-export interface ArchiveClassificationScoreEntry {
+export type ArchiveClassificationScoreEntry = Omit<
+  ArchiveClassificationScoreEntryModel,
+  '__typename' | 'vertical'
+> & {
   vertical: ArchiveVertical;
-  ruleScore: number;
-  embeddingScore: number;
-  rerankScore: number;
-  fusedScore: number;
-}
+};
 
-export interface ArchiveClassificationDetail {
+export type ArchiveClassificationDetail = Omit<
+  ArchiveClassificationDetailModel,
+  | '__typename'
+  | 'region'
+  | 'vertical'
+  | 'scoreEntries'
+  | 'staleReasons'
+  | 'staleReasonI18nKeys'
+> & {
   region: ArchiveRegion;
   vertical: ArchiveVertical;
-  taxonomyVersion: string;
-  pipelineVersion: string;
-  embeddingModel: string;
-  rerankModel: string;
-  ruleSignals: string[];
   scoreEntries: ArchiveClassificationScoreEntry[];
-}
+  staleReasons: ArchiveClassificationStaleReason[];
+  staleReasonI18nKeys: ArchiveClassificationI18nKey[];
+};
 
 export interface ArchiveVerticalTone {
   accentDotClassName: string;
@@ -200,6 +212,18 @@ export const resolveArchiveClassificationSignals = (
       signals
         .map((signal) => signal.trim())
         .filter((signal) => signal.length > 0),
+    ),
+  ).slice(0, Math.max(1, limit));
+
+export const resolveArchiveClassificationI18nKeys = (
+  keys: string[],
+  limit = 4,
+) =>
+  Array.from(
+    new Set(
+      keys
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0),
     ),
   ).slice(0, Math.max(1, limit));
 

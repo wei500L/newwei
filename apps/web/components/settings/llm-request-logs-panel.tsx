@@ -44,12 +44,6 @@ type LlmRequestType =
   | "stream"
   | "responses";
 type LlmRequestStatus = "success" | "error";
-type LlmRuntimeDecision =
-  | "allowed"
-  | "warn_concurrency"
-  | "warn_daily_budget"
-  | "warn_monthly_budget"
-  | "warn_multiple";
 
 interface LlmRequestLogRow {
   id: string;
@@ -62,12 +56,6 @@ interface LlmRequestLogRow {
   totalTokens: number | null;
   costUsd: number | null;
   feature: string | null;
-  runtimeRequestId: string | null;
-  runtimeDecision: LlmRuntimeDecision | null;
-  currentConcurrency: number | null;
-  concurrencyLimit: number | null;
-  dailySpendUsdSnapshot: number | null;
-  monthlySpendUsdSnapshot: number | null;
   latencyMs: number;
   error: string | null;
   metadata: unknown;
@@ -419,56 +407,6 @@ function formatLatency(value: number | null): string {
     return "-";
   }
   return `${Math.round(value)} ms`;
-}
-
-function renderRuntimeDecisionTag(
-  value: LlmRuntimeDecision | null,
-  t: ReturnType<typeof useTranslation>["t"],
-) {
-  const decision = value ?? "allowed";
-  if (decision === "warn_multiple") {
-    return (
-      <Tag color="red">
-        {t("systemSettings.llmRequestLogs.runtime.warnMultiple", {
-          defaultValue: "Multiple warnings",
-        })}
-      </Tag>
-    );
-  }
-  if (decision === "warn_concurrency") {
-    return (
-      <Tag color="red">
-        {t("systemSettings.llmRequestLogs.runtime.warnConcurrency", {
-          defaultValue: "Concurrency warning",
-        })}
-      </Tag>
-    );
-  }
-  if (decision === "warn_daily_budget") {
-    return (
-      <Tag color="orange">
-        {t("systemSettings.llmRequestLogs.runtime.warnDailyBudget", {
-          defaultValue: "Daily budget warning",
-        })}
-      </Tag>
-    );
-  }
-  if (decision === "warn_monthly_budget") {
-    return (
-      <Tag color="orange">
-        {t("systemSettings.llmRequestLogs.runtime.warnMonthlyBudget", {
-          defaultValue: "Monthly budget warning",
-        })}
-      </Tag>
-    );
-  }
-  return (
-    <Tag color="green">
-      {t("systemSettings.llmRequestLogs.runtime.allowed", {
-        defaultValue: "Allowed",
-      })}
-    </Tag>
-  );
 }
 
 function normalizeMetadataTokenList(
@@ -1178,38 +1116,6 @@ export function LlmRequestLogsPanel() {
         key: "latencyMs",
         width: 120,
         render: (value: number | null) => formatLatency(value),
-      },
-      {
-        title: t("systemSettings.llmRequestLogs.table.runtime", {
-          defaultValue: "Runtime",
-        }),
-        key: "runtime",
-        width: 220,
-        render: (_, row) => (
-          <Space direction="vertical" size={0}>
-            {renderRuntimeDecisionTag(row.runtimeDecision, t)}
-            <Typography.Text type="secondary">
-              {t("systemSettings.llmRequestLogs.table.runtimeConcurrency", {
-                defaultValue: "Concurrency: {{current}} / {{limit}}",
-                current:
-                  typeof row.currentConcurrency === "number"
-                    ? row.currentConcurrency
-                    : "-",
-                limit:
-                  typeof row.concurrencyLimit === "number"
-                    ? row.concurrencyLimit
-                    : "-",
-              })}
-            </Typography.Text>
-            <Typography.Text type="secondary">
-              {t("systemSettings.llmRequestLogs.table.runtimeSpend", {
-                defaultValue: "D/M spend: {{day}} / {{month}}",
-                day: formatCurrency(row.dailySpendUsdSnapshot),
-                month: formatCurrency(row.monthlySpendUsdSnapshot),
-              })}
-            </Typography.Text>
-          </Space>
-        ),
       },
       {
         title: t("systemSettings.llmRequestLogs.table.error", {

@@ -31,12 +31,6 @@ export type LlmRequestType =
   | "responses";
 export type LlmRequestStatus = "success" | "error";
 export type LlmApiSurface = "chat_completions" | "responses" | "embeddings";
-export type LlmRuntimeDecision =
-  | "allowed"
-  | "warn_concurrency"
-  | "warn_daily_budget"
-  | "warn_monthly_budget"
-  | "warn_multiple";
 
 export interface LlmRequestLogEntry {
   orgId: string;
@@ -48,12 +42,7 @@ export interface LlmRequestLogEntry {
   totalTokens?: number | null;
   costUsd?: number | null;
   feature?: string | null;
-  runtimeRequestId?: string | null;
-  runtimeDecision?: LlmRuntimeDecision | null;
-  currentConcurrency?: number | null;
-  concurrencyLimit?: number | null;
-  dailySpendUsdSnapshot?: number | null;
-  monthlySpendUsdSnapshot?: number | null;
+  gatewayProfileId?: string | null;
   latencyMs: number;
   error?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -64,6 +53,7 @@ export interface LlmRequestLogFilter {
   orgId: string;
   model?: string;
   feature?: string;
+  profileId?: string;
   requestType?: LlmRequestType;
   status?: LlmRequestStatus;
   start?: Date;
@@ -86,12 +76,7 @@ export interface LlmRequestLogListItem {
   totalTokens: number | null;
   costUsd: number | null;
   feature: string | null;
-  runtimeRequestId: string | null;
-  runtimeDecision: LlmRuntimeDecision | null;
-  currentConcurrency: number | null;
-  concurrencyLimit: number | null;
-  dailySpendUsdSnapshot: number | null;
-  monthlySpendUsdSnapshot: number | null;
+  gatewayProfileId: string | null;
   latencyMs: number;
   error: string | null;
   metadata: unknown;
@@ -486,6 +471,7 @@ export class LlmRequestLogService {
           ? filter.model.trim() || undefined
           : undefined,
       feature: this.normalizeFeatureToken(filter.feature),
+      profileId: this.normalizeProfileId(filter.profileId) ?? undefined,
       requestType: filter.requestType,
       status: filter.status,
       start: filter.start,
@@ -584,13 +570,14 @@ export class LlmRequestLogService {
 
   async getUsageSummary(
     orgId: string,
-    dateRange?: { start?: Date; end?: Date; feature?: string },
+    dateRange?: { start?: Date; end?: Date; feature?: string; profileId?: string },
   ): Promise<LlmUsageSummary> {
     const usageWhere = this.buildWhere({
       orgId,
       start: dateRange?.start,
       end: dateRange?.end,
       feature: dateRange?.feature,
+      profileId: dateRange?.profileId,
     });
 
     const topErrorWhere: FilterQuery<LlmRequestLog> = {
@@ -769,20 +756,7 @@ export class LlmRequestLogService {
         this.normalizeFeatureToken(entry.feature) ??
         this.resolveFeatureFromMetadata(metadata.value) ??
         null,
-      runtimeRequestId: this.normalizeRuntimeRequestId(entry.runtimeRequestId),
-      runtimeDecision: this.normalizeRuntimeDecision(entry.runtimeDecision),
-      currentConcurrency: this.toNullableNonNegativeInteger(
-        entry.currentConcurrency,
-      ),
-      concurrencyLimit: this.toNullableNonNegativeInteger(
-        entry.concurrencyLimit,
-      ),
-      dailySpendUsdSnapshot: this.toNullableNonNegativeNumber(
-        entry.dailySpendUsdSnapshot,
-      ),
-      monthlySpendUsdSnapshot: this.toNullableNonNegativeNumber(
-        entry.monthlySpendUsdSnapshot,
-      ),
+      gatewayProfileId: this.normalizeProfileId(entry.gatewayProfileId),
       latencyMs: Math.max(0, Number(entry.latencyMs) || 0),
       error: this.normalizeError(entry.error),
       metadata: metadata.value,
@@ -1081,18 +1055,7 @@ export class LlmRequestLogService {
         this.normalizeFeatureToken(row.feature) ??
         this.resolveFeatureFromMetadata(row.metadata) ??
         null,
-      runtimeRequestId: this.normalizeRuntimeRequestId(row.runtimeRequestId),
-      runtimeDecision: this.normalizeRuntimeDecision(row.runtimeDecision),
-      currentConcurrency: this.toNullableNonNegativeInteger(
-        row.currentConcurrency,
-      ),
-      concurrencyLimit: this.toNullableNonNegativeInteger(row.concurrencyLimit),
-      dailySpendUsdSnapshot: this.toNullableNonNegativeNumber(
-        row.dailySpendUsdSnapshot,
-      ),
-      monthlySpendUsdSnapshot: this.toNullableNonNegativeNumber(
-        row.monthlySpendUsdSnapshot,
-      ),
+      gatewayProfileId: this.normalizeProfileId(row.gatewayProfileId),
       latencyMs: Math.max(0, Number(row.latencyMs ?? 0)),
       error: typeof row.error === "string" ? row.error : null,
       metadata: row.metadata ?? null,
@@ -1222,6 +1185,11 @@ export class LlmRequestLogService {
       ] as FilterQuery<LlmRequestLog>[];
     }
 
+    const gatewayProfileId = this.normalizeProfileId(filter.profileId);
+    if (gatewayProfileId) {
+      where.gatewayProfileId = gatewayProfileId;
+    }
+
     const range: Record<string, Date> = {};
     if (filter.start instanceof Date && !Number.isNaN(filter.start.getTime())) {
       range.$gte = filter.start;
@@ -1292,22 +1260,6 @@ export class LlmRequestLogService {
     return numeric;
   }
 
-  private toNullableNonNegativeInteger(value: unknown): number | null {
-    const numeric = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(numeric)) {
-      return null;
-    }
-    return Math.max(0, Math.trunc(numeric));
-  }
-
-  private toNullableNonNegativeNumber(value: unknown): number | null {
-    const numeric = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(numeric)) {
-      return null;
-    }
-    return Math.max(0, numeric);
-  }
-
   private normalizeFeatureToken(value: unknown): string | undefined {
     if (typeof value !== "string") {
       return undefined;
@@ -1337,24 +1289,15 @@ export class LlmRequestLogService {
     );
   }
 
-  private normalizeRuntimeRequestId(value: unknown): string | null {
+  private normalizeProfileId(value: unknown): string | null {
     if (typeof value !== "string") {
       return null;
     }
     const normalized = value.trim();
-    return normalized.length > 0 ? normalized : null;
+    if (!normalized || normalized.length > 128) {
+      return null;
+    }
+    return normalized;
   }
 
-  private normalizeRuntimeDecision(value: unknown): LlmRuntimeDecision | null {
-    if (
-      value === "allowed" ||
-      value === "warn_concurrency" ||
-      value === "warn_daily_budget" ||
-      value === "warn_monthly_budget" ||
-      value === "warn_multiple"
-    ) {
-      return value;
-    }
-    return null;
-  }
 }

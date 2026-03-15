@@ -2009,6 +2009,19 @@
         "loadFailed": "加载详情失败。",
         "notFound": "未找到详情。",
         "untitled": "未命名事件",
+        "classificationReason": {
+          "fusedWinner": "融合分数胜出",
+          "strongRuleOverride": "强规则优先",
+          "ruleFallbackLowSemanticConfidence": "低置信语义回退规则",
+          "defaultForeignAffairsFallback": "低置信默认回退外务",
+          "staleCachedResult": "沿用旧分类结果"
+        },
+        "classificationStaleReason": {
+          "taxonomyVersionChanged": "taxonomy 已升级",
+          "pipelineVersionChanged": "pipeline 已升级",
+          "embeddingModelChanged": "embedding 模型已切换",
+          "rerankModelChanged": "rerank 模型已切换"
+        },
         "entities": "涉及国家/实体",
         "entitiesEmpty": "暂无标签",
         "source": "来源",
@@ -3757,7 +3770,6 @@
         "topP": "Top P",
         "maxOutputTokens": "最大输出 Token",
         "maxRetries": "最大重试次数",
-        "requestsPerMinute": "每分钟请求数",
         "fallbackModels": "Fallback 模型",
         "sendMetadata": "发送 metadata",
         "responseFormatMode": "response_format 模式",

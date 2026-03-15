@@ -18,9 +18,11 @@ import {
   LlmGatewayModelsConfigDto,
   LlmGatewayTestConfigDto,
 } from "./dto/llm-gateway-test-config.dto";
+import { UpdateLlmGatewayProxyGovernanceDto } from "./dto/llm-gateway-proxy-governance.dto";
 import { UpdateLlmGatewayProxyLoadBalancingSettingsDto } from "./dto/llm-gateway-proxy-lb-settings.dto";
 import { LlmGatewayTestDto } from "./dto/llm-gateway-test.dto";
 import { LlmGatewayProxyLoadBalancingTestDto } from "./dto/llm-gateway-proxy-lb-test.dto";
+import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.service";
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import {
   CreateLlmGatewayDto,
@@ -39,6 +41,7 @@ export class LlmGatewaySettingsController {
   constructor(
     private readonly settings: LlmGatewaySettingsService,
     private readonly tester: LlmGatewayTestService,
+    private readonly proxyGovernance: LiteLlmProxyGovernanceService,
     private readonly proxyLoadBalancing: LiteLlmProxyLoadBalancingSettingsService,
   ) {}
 
@@ -96,6 +99,33 @@ export class LlmGatewaySettingsController {
       body.activeId ?? null,
       body.mode,
     );
+  }
+
+  @Get("proxy-governance")
+  @Permissions("settings.manage")
+  async getProxyGovernanceSettings() {
+    return this.proxyGovernance.getPublicSettings();
+  }
+
+  @Put("proxy-governance")
+  @Permissions("settings.manage")
+  async updateProxyGovernanceSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: UpdateLlmGatewayProxyGovernanceDto,
+  ) {
+    return this.proxyGovernance.updateSettings(user.orgId, user.id, body);
+  }
+
+  @Delete("proxy-governance")
+  @Permissions("settings.manage")
+  async resetProxyGovernanceSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.proxyGovernance.resetToDefaults(user.orgId, user.id);
+  }
+
+  @Post("proxy-governance/rotate-key")
+  @Permissions("settings.manage")
+  async rotateProxyGovernanceKey(@CurrentUser() user: AuthenticatedUser) {
+    return this.proxyGovernance.rotateManagedRuntimeKey(user.orgId, user.id);
   }
 
   @Get("proxy-load-balancing")

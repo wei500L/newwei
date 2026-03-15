@@ -37,7 +37,6 @@ import { KnowledgeGraphReviewPanel } from "@/components/settings/knowledge-graph
 import { KnowledgeGraphSettingsPanel } from "@/components/settings/knowledge-graph-settings-panel";
 import { LlmGatewaySettingsPanel } from "@/components/settings/llm-gateway-settings-panel";
 import { LlmRequestLogsPanel } from "@/components/settings/llm-request-logs-panel";
-import { LlmRuntimeSettingsPanel } from "@/components/settings/llm-runtime-settings-panel";
 import { ModelServiceSettingsPanel } from "@/components/settings/model-service-settings-panel";
 import { NewsDedupeSettingsPanel } from "@/components/settings/news-dedupe-settings-panel";
 import { NewsClassificationSettingsPanel } from "@/components/settings/news-classification-settings-panel";
@@ -2359,13 +2358,6 @@ export function SystemSettingsContent() {
         key: "llmGateway",
         label: t("settings.tabs.llmGateway"),
         children: <LlmGatewaySettingsPanel />,
-      },
-      {
-        key: "llmRuntime",
-        label: t("systemSettings.tabs.llmRuntime", {
-          defaultValue: "LLM runtime",
-        }),
-        children: <LlmRuntimeSettingsPanel />,
       },
       {
         key: "llmRequestLogs",

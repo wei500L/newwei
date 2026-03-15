@@ -11,6 +11,7 @@ import type { ProcessedArticleStatus } from "@prisma/client";
 
 import { ArchiveService } from "../archive.service";
 import {
+  ArchiveClassificationDecisionReason,
   ArchiveMatchOrigin,
   ArchivePreparationState,
   ArchiveRegion,
@@ -160,6 +161,7 @@ describe("ArchiveService", () => {
             articleId: input.articleId,
             region: input.ruleContext.region,
             vertical: ArchiveVertical.EAST_SEA,
+            decisionReason: ArchiveClassificationDecisionReason.FUSED_WINNER,
             countryCode: input.ruleContext.countryCode,
             countryLabel: input.ruleContext.countryLabel,
             entityTags: input.ruleContext.entityTags,
@@ -180,12 +182,48 @@ describe("ArchiveService", () => {
         ]),
       ),
     ),
+    getCachedHybridBatchWithStaleFallback: jest.fn(
+      async (_orgId: string, inputs: any[]) =>
+        new Map(
+          inputs.map((input) => [
+            input.processedArticleId,
+            {
+              result: {
+                processedArticleId: input.processedArticleId,
+                articleId: input.articleId,
+                region: input.ruleContext.region,
+                vertical: ArchiveVertical.EAST_SEA,
+                decisionReason: ArchiveClassificationDecisionReason.FUSED_WINNER,
+                countryCode: input.ruleContext.countryCode,
+                countryLabel: input.ruleContext.countryLabel,
+                entityTags: input.ruleContext.entityTags,
+                ruleScores: input.ruleContext.ruleScores,
+                embeddingScores: createArchiveVerticalScoreMap(),
+                rerankScores: createArchiveVerticalScoreMap(),
+                fusedScores: {
+                  ...createArchiveVerticalScoreMap(),
+                  [ArchiveVertical.EAST_SEA]: 1,
+                },
+                classificationTextHash: `hash-${input.processedArticleId}`,
+                classificationTextVersion: "archive-text-v1",
+                taxonomyVersion: "archive-vertical-v1",
+                pipelineVersion: "archive-hybrid-v1",
+                embeddingModel: "embedding-model",
+                rerankModel: "rerank-model",
+              },
+              isStale: false,
+              staleReasons: [],
+            },
+          ]),
+        ),
+    ),
     classifyHybridBatch: jest.fn(async (_orgId: string, inputs: any[]) =>
       inputs.map((input) => ({
         processedArticleId: input.processedArticleId,
         articleId: input.articleId,
         region: input.ruleContext.region,
         vertical: ArchiveVertical.EAST_SEA,
+        decisionReason: ArchiveClassificationDecisionReason.FUSED_WINNER,
         countryCode: input.ruleContext.countryCode,
         countryLabel: input.ruleContext.countryLabel,
         entityTags: input.ruleContext.entityTags,
@@ -959,35 +997,41 @@ describe("ArchiveService", () => {
     const vectorClient = { searchBestEffort: jest.fn() };
     const classifier = makeClassifierMock();
     const archiveClassification = {
-      getCachedHybridBatch: jest.fn().mockResolvedValue(
+      getCachedHybridBatchWithStaleFallback: jest.fn().mockResolvedValue(
         new Map([
           [
             row.id,
             {
-              processedArticleId: row.id,
-              articleId: row.article.id,
-              region: ArchiveRegion.APAC,
-              vertical: ArchiveVertical.EAST_SEA,
-              countryCode: "PHL",
-              countryLabel: "Philippines",
-              entityTags: ["Philippines"],
-              ruleScores: classifierSignalsResult.ruleScores,
-              embeddingScores: createArchiveVerticalScoreMap(),
-              rerankScores: createArchiveVerticalScoreMap(),
-              fusedScores: {
-                ...createArchiveVerticalScoreMap(),
-                [ArchiveVertical.EAST_SEA]: 1,
+              result: {
+                processedArticleId: row.id,
+                articleId: row.article.id,
+                region: ArchiveRegion.APAC,
+                vertical: ArchiveVertical.EAST_SEA,
+                decisionReason: ArchiveClassificationDecisionReason.FUSED_WINNER,
+                countryCode: "PHL",
+                countryLabel: "Philippines",
+                entityTags: ["Philippines"],
+                ruleScores: classifierSignalsResult.ruleScores,
+                embeddingScores: createArchiveVerticalScoreMap(),
+                rerankScores: createArchiveVerticalScoreMap(),
+                fusedScores: {
+                  ...createArchiveVerticalScoreMap(),
+                  [ArchiveVertical.EAST_SEA]: 1,
+                },
+                classificationTextHash: "hash-detail",
+                classificationTextVersion: "archive-text-v2",
+                taxonomyVersion: "archive-vertical-v2",
+                pipelineVersion: "archive-hybrid-v2",
+                embeddingModel: "embedding-model",
+                rerankModel: "rerank-model",
               },
-              classificationTextHash: "hash-detail",
-              classificationTextVersion: "archive-text-v2",
-              taxonomyVersion: "archive-vertical-v2",
-              pipelineVersion: "archive-hybrid-v2",
-              embeddingModel: "embedding-model",
-              rerankModel: "rerank-model",
+              isStale: false,
+              staleReasons: [],
             },
           ],
         ]),
       ),
+      getCachedHybridBatch: jest.fn(),
       classifyHybridBatch: jest.fn(),
     };
     const service = new ArchiveService(
@@ -1004,8 +1048,107 @@ describe("ArchiveService", () => {
 
     expect(result?.classification?.vertical).toBe(ArchiveVertical.EAST_SEA);
     expect(result?.classification?.taxonomyVersion).toBe("archive-vertical-v2");
+    expect(result?.classification?.decisionReason).toBe(
+      ArchiveClassificationDecisionReason.FUSED_WINNER,
+    );
+    expect(result?.classification?.isStale).toBe(false);
+    expect(result?.classification?.staleReasonI18nKeys).toEqual([]);
     expect(result?.classification?.ruleSignals).toContain("Country match: Philippines");
     expect(result?.classification?.scoreEntries).toHaveLength(5);
+  });
+
+  it("returns stale classification detail in archive detail when current model output drifted", async () => {
+    const row = makeRow("row-detail-stale", "2025-05-28T08:00:00.000Z");
+    const prisma = {
+      processedArticle: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...row,
+          article: {
+            id: row.article.id,
+            url: row.article.url,
+            sourceLabel: row.article.sourceLabel,
+            crawlAt: row.article.crawlAt,
+          },
+        }),
+      },
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      getCachedHybridBatchWithStaleFallback: jest.fn().mockResolvedValue(
+        new Map([
+          [
+            row.id,
+            {
+              result: {
+                processedArticleId: row.id,
+                articleId: row.article.id,
+                region: ArchiveRegion.APAC,
+                vertical: ArchiveVertical.EAST_SEA,
+                decisionReason:
+                  ArchiveClassificationDecisionReason.STALE_CACHED_RESULT,
+                countryCode: "PHL",
+                countryLabel: "Philippines",
+                entityTags: ["Philippines"],
+                ruleScores: classifierSignalsResult.ruleScores,
+                embeddingScores: createArchiveVerticalScoreMap(),
+                rerankScores: createArchiveVerticalScoreMap(),
+                fusedScores: {
+                  ...createArchiveVerticalScoreMap(),
+                  [ArchiveVertical.EAST_SEA]: 1,
+                },
+                classificationTextHash: "hash-detail-stale",
+                classificationTextVersion: "archive-text-v2",
+                taxonomyVersion: "archive-vertical-v2",
+                pipelineVersion: "archive-hybrid-v2",
+                embeddingModel: "previous-embedding-model",
+                rerankModel: "previous-rerank-model",
+              },
+              isStale: true,
+              staleReasons: [
+                "embedding-model-changed",
+                "rerank-model-changed",
+              ],
+            },
+          ],
+        ]),
+      ),
+      getCachedHybridBatch: jest.fn(),
+      classifyHybridBatch: jest.fn(),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
+    );
+
+    const result = await service.getDetail("org-1", row.id);
+
+    expect(result?.classification?.isStale).toBe(true);
+    expect(result?.classification?.staleReasons).toEqual([
+      "embedding-model-changed",
+      "rerank-model-changed",
+    ]);
+    expect(result?.classification?.staleReasonI18nKeys).toEqual([
+      "pages.eventsArchive.detail.classificationStaleReason.embeddingModelChanged",
+      "pages.eventsArchive.detail.classificationStaleReason.rerankModelChanged",
+    ]);
+    expect(result?.classification?.decisionReason).toBe(
+      ArchiveClassificationDecisionReason.STALE_CACHED_RESULT,
+    );
   });
 
   it("returns null classification in archive detail when cached classification is missing", async () => {
@@ -1035,7 +1178,8 @@ describe("ArchiveService", () => {
     const vectorClient = { searchBestEffort: jest.fn() };
     const classifier = makeClassifierMock();
     const archiveClassification = {
-      getCachedHybridBatch: jest.fn().mockResolvedValue(new Map()),
+      getCachedHybridBatchWithStaleFallback: jest.fn().mockResolvedValue(new Map()),
+      getCachedHybridBatch: jest.fn(),
       classifyHybridBatch: jest.fn(),
     };
     const service = new ArchiveService(

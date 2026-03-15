@@ -8,6 +8,8 @@ import {
 } from "@nestjs/graphql";
 
 import {
+  ArchiveClassificationDecisionReason,
+  ArchiveClassificationStaleReason,
   ArchivePreparationState,
   ArchiveMatchOrigin,
   ArchiveRegion,
@@ -20,6 +22,12 @@ registerEnumType(ArchiveVertical, { name: "ArchiveVertical" });
 registerEnumType(ArchiveWeight, { name: "ArchiveWeight" });
 registerEnumType(ArchiveMatchOrigin, { name: "ArchiveMatchOrigin" });
 registerEnumType(ArchivePreparationState, { name: "ArchivePreparationState" });
+registerEnumType(ArchiveClassificationDecisionReason, {
+  name: "ArchiveClassificationDecisionReason",
+});
+registerEnumType(ArchiveClassificationStaleReason, {
+  name: "ArchiveClassificationStaleReason",
+});
 
 @ObjectType()
 export class ArchivePreparationStatusModel {
@@ -220,6 +228,21 @@ export class ArchiveClassificationDetailModel {
 
   @Field()
   rerankModel!: string;
+
+  @Field(() => ArchiveClassificationDecisionReason)
+  decisionReason!: ArchiveClassificationDecisionReason;
+
+  @Field()
+  decisionReasonI18nKey!: string;
+
+  @Field(() => Boolean)
+  isStale!: boolean;
+
+  @Field(() => [ArchiveClassificationStaleReason])
+  staleReasons!: ArchiveClassificationStaleReason[];
+
+  @Field(() => [String])
+  staleReasonI18nKeys!: string[];
 
   @Field(() => [String])
   ruleSignals!: string[];

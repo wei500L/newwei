@@ -18,16 +18,12 @@ import {
   sanitizeUpstreamErrorText,
 } from "../../common/llm-openai-compat";
 import { extractOpenAiTextFromChoice } from "../../common/openai-chat";
-import { RateLimiterService } from "../cache/rate-limiter.service";
 import {
   LlmGatewaySettingsService,
   type LlmGatewayApiSurface,
+  type LlmGatewayResolvedConfig,
   type LlmGatewayResponseFormatMode,
 } from "../system-settings/llm-gateway-settings.service";
-import {
-  LlmRuntimeService,
-  type LlmRuntimeRequestContext,
-} from "../system-settings/llm-runtime.service";
 
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import type { JsonSchemaResponseFormat } from "./news-prompt.builder";
@@ -174,6 +170,11 @@ interface LiteLlmTokenUsageSnapshot {
   totalTokens: number | null;
 }
 
+interface LiteLlmRequestLogContext {
+  feature: string | null;
+  gatewayProfileId: string | null;
+}
+
 export type LiteLlmGuardrailViolationCode =
   | "GUARDRAIL_MISCONFIG"
   | "PROMPT_INJECTION"
@@ -227,9 +228,7 @@ export class LiteLlmService {
 
   constructor(
     private readonly configService: NewsPipelineConfigService,
-    private readonly rateLimiter: RateLimiterService,
     private readonly llmGatewaySettings: LlmGatewaySettingsService,
-    private readonly llmRuntime: LlmRuntimeService,
     private readonly llmRequestLogService: LlmRequestLogService,
   ) {}
 
@@ -285,6 +284,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "completion",
       params.metadata,
+      cfg.profileId,
     );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
@@ -351,6 +351,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "embedding",
       params.metadata,
+      cfg.profileId,
     );
     const model = params.model ?? cfg.embeddingModel ?? cfg.model;
     if (!model) {
@@ -385,6 +386,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "rerank",
       params.metadata,
+      cfg.profileId,
     );
     const requestedModel =
       typeof params.model === "string" && params.model.trim().length > 0
@@ -450,6 +452,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "stream",
       params.metadata,
+      cfg.profileId,
     );
     const apiSurface = this.resolveApiSurface(
       (cfg as { apiSurface?: unknown }).apiSurface,
@@ -527,6 +530,7 @@ export class LiteLlmService {
     const runtimeContext = await this.startRuntimeRequest(
       "responses",
       params.metadata,
+      cfg.profileId,
     );
     const models = [params.model ?? cfg.model, ...cfg.fallbackModels];
     const uniqueModels = Array.from(
@@ -658,7 +662,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ): Promise<LiteLlmCompletionResponse> {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -797,7 +801,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const requestStartedAt = Date.now();
     let streamUsage: LiteLlmTokenUsageSnapshot = {
@@ -1007,7 +1011,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ) {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -1157,7 +1161,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmCompletionParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ): AsyncGenerator<LiteLlmStreamChunk> {
     const requestStartedAt = Date.now();
     let streamUsage: LiteLlmTokenUsageSnapshot = {
@@ -1635,7 +1639,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmEmbeddingParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ) {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -1745,7 +1749,7 @@ export class LiteLlmService {
     apiKeyConfigured: boolean,
     model: string,
     params: LiteLlmRerankParams,
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ): Promise<LiteLlmRerankResponse> {
     const maxAttempts = Math.max(1, params.maxRetries ?? cfg.maxRetries);
     let attempt = 0;
@@ -2087,85 +2091,83 @@ export class LiteLlmService {
   }
 
   private async prepareRequest(kind: "completion" | "embedding" | "rerank") {
-    const pipelineCfg = this.configService.config;
-    const cfg =
+    const cfg: LlmGatewayResolvedConfig =
       kind === "embedding"
         ? await this.resolveEmbeddingConfig()
         : kind === "rerank"
           ? await this.resolveRerankConfig()
           : await this.resolveCompletionConfig();
-    const limitKey = `litellm:rpm:${kind}`;
-    const allowed = await this.rateLimiter.consume(
-      limitKey,
-      cfg.requestsPerMinute,
-      pipelineCfg.pipeline.rateLimitWindowSeconds,
-    );
-    if (!allowed) {
-      throw new Error("LiteLLM request throttled by local rate limiter");
-    }
 
     const { client, baseUrl, apiKeyConfigured } = this.getClient(cfg);
     return { cfg, client, baseUrl, apiKeyConfigured };
   }
 
-  private async resolveCompletionConfig() {
+  private async resolveCompletionConfig(): Promise<LlmGatewayResolvedConfig> {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveConfig();
     if (!overrides || !overrides.model?.trim()) {
       throw new Error(ERROR_COMPLETION_MODEL_NOT_CONFIGURED);
     }
-    const merged = overrides
-      ? { ...pipelineCfg.litellm, ...overrides }
-      : { ...pipelineCfg.litellm };
+    const merged = { ...pipelineCfg.litellm, ...overrides };
     merged.model = overrides.model.trim();
     merged.fallbackModels = overrides.fallbackModels ?? [];
     return {
       ...merged,
+      assistantModel: overrides?.assistantModel,
+      assistantWebSearchEnabled: overrides?.assistantWebSearchEnabled ?? false,
       sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
       responseFormatMode: this.resolveResponseFormatMode(
         overrides?.responseFormatMode,
       ),
       apiSurface: this.resolveApiSurface(overrides?.apiSurface),
+      managedByLiteLlmProxyGovernance:
+        overrides?.managedByLiteLlmProxyGovernance === true,
     };
   }
 
-  private async resolveEmbeddingConfig() {
+  private async resolveEmbeddingConfig(): Promise<LlmGatewayResolvedConfig> {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveEmbeddingConfig();
     if (!overrides || !overrides.embeddingModel?.trim()) {
       throw new Error(ERROR_EMBEDDING_MODEL_NOT_CONFIGURED);
     }
-    const merged = overrides
-      ? { ...pipelineCfg.litellm, ...overrides }
-      : { ...pipelineCfg.litellm };
+    const merged = { ...pipelineCfg.litellm, ...overrides };
     merged.embeddingModel = overrides.embeddingModel.trim();
     return {
       ...merged,
+      assistantModel: overrides?.assistantModel,
+      assistantWebSearchEnabled: overrides?.assistantWebSearchEnabled ?? false,
       sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
       responseFormatMode: this.resolveResponseFormatMode(
         overrides?.responseFormatMode,
       ),
+      apiSurface: this.resolveApiSurface(overrides?.apiSurface),
+      managedByLiteLlmProxyGovernance:
+        overrides?.managedByLiteLlmProxyGovernance === true,
     };
   }
 
-  private async resolveRerankConfig() {
+  private async resolveRerankConfig(): Promise<LlmGatewayResolvedConfig> {
     const pipelineCfg = this.configService.config;
     const overrides = await this.llmGatewaySettings.getActiveRerankConfig();
     if (!overrides || !overrides.rerankModel?.trim()) {
       throw new Error(ERROR_RERANK_MODEL_NOT_CONFIGURED);
     }
-    const merged = overrides
-      ? { ...pipelineCfg.litellm, ...overrides }
-      : { ...pipelineCfg.litellm };
+    const merged = { ...pipelineCfg.litellm, ...overrides };
     merged.rerankModel = overrides.rerankModel.trim();
     merged.rerankFallbackModels = overrides.rerankFallbackModels ?? [];
 
     return {
       ...merged,
+      assistantModel: overrides?.assistantModel,
+      assistantWebSearchEnabled: overrides?.assistantWebSearchEnabled ?? false,
       sendMetadata: this.resolveSendMetadata(overrides?.sendMetadata),
       responseFormatMode: this.resolveResponseFormatMode(
         overrides?.responseFormatMode,
       ),
+      apiSurface: this.resolveApiSurface(overrides?.apiSurface),
+      managedByLiteLlmProxyGovernance:
+        overrides?.managedByLiteLlmProxyGovernance === true,
     };
   }
 
@@ -2180,7 +2182,7 @@ export class LiteLlmService {
     usage?: LiteLlmTokenUsageSnapshot;
     costUsd?: number | null;
     apiSurface?: LlmApiSurface;
-    runtimeContext?: LlmRuntimeRequestContext | null;
+    runtimeContext?: LiteLlmRequestLogContext | null;
   }) {
     void this.writeRequestLog(params);
   }
@@ -2196,31 +2198,8 @@ export class LiteLlmService {
     usage?: LiteLlmTokenUsageSnapshot;
     costUsd?: number | null;
     apiSurface?: LlmApiSurface;
-    runtimeContext?: LlmRuntimeRequestContext | null;
+    runtimeContext?: LiteLlmRequestLogContext | null;
   }) {
-    let runtimeSnapshot: Awaited<
-      ReturnType<LlmRuntimeService["recordAttempt"]>
-    > | null = null;
-    if (params.runtimeContext) {
-      try {
-        runtimeSnapshot = await this.llmRuntime.recordAttempt(
-          params.runtimeContext,
-          params.costUsd ?? null,
-        );
-      } catch (error) {
-        this.logger.warn(
-          {
-            err: error,
-            requestType: params.requestType,
-            model: params.model,
-            metricName: "llm_runtime_log_total",
-            metricOutcome: "runtime_record_failed",
-          },
-          "Failed to record LiteLLM runtime attempt",
-        );
-      }
-    }
-
     this.llmRequestLogService.logRequest({
       orgId: this.resolveLogOrgId(params.orgId, params.metadata),
       requestType: params.requestType,
@@ -2231,31 +2210,10 @@ export class LiteLlmService {
       totalTokens: params.usage?.totalTokens ?? null,
       costUsd: this.toNullableNumber(params.costUsd),
       feature:
-        runtimeSnapshot?.feature ??
         params.runtimeContext?.feature ??
         this.resolveFeatureToken(params.metadata) ??
         null,
-      runtimeRequestId:
-        runtimeSnapshot?.runtimeRequestId ??
-        params.runtimeContext?.runtimeRequestId ??
-        null,
-      runtimeDecision: runtimeSnapshot?.runtimeDecision ?? null,
-      currentConcurrency:
-        runtimeSnapshot?.currentConcurrency ??
-        params.runtimeContext?.currentConcurrency ??
-        null,
-      concurrencyLimit:
-        runtimeSnapshot?.concurrencyLimit ??
-        params.runtimeContext?.concurrencyLimit ??
-        null,
-      dailySpendUsdSnapshot:
-        runtimeSnapshot?.dailySpendUsdSnapshot ??
-        params.runtimeContext?.dailySpendUsdSnapshot ??
-        null,
-      monthlySpendUsdSnapshot:
-        runtimeSnapshot?.monthlySpendUsdSnapshot ??
-        params.runtimeContext?.monthlySpendUsdSnapshot ??
-        null,
+      gatewayProfileId: params.runtimeContext?.gatewayProfileId ?? null,
       latencyMs: this.normalizeLatency(params.latencyMs),
       error:
         params.status === "error" ? this.normalizeLogError(params.error) : null,
@@ -2267,43 +2225,22 @@ export class LiteLlmService {
   private async startRuntimeRequest(
     requestType: LlmRequestType,
     metadata?: Record<string, unknown>,
-  ): Promise<LlmRuntimeRequestContext | null> {
-    try {
-      return await this.llmRuntime.startRequest({ requestType, metadata });
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          requestType,
-          feature: this.resolveFeatureToken(metadata) ?? "unknown",
-          metricName: "llm_runtime_start_total",
-          metricOutcome: "failure",
-        },
-        "Failed to initialize LiteLLM runtime context",
-      );
-      return null;
-    }
+    profileId?: string,
+  ): Promise<LiteLlmRequestLogContext | null> {
+    void requestType;
+    return Promise.resolve({
+      feature: this.resolveFeatureToken(metadata),
+      gatewayProfileId:
+        typeof profileId === "string" && profileId.trim().length > 0
+          ? profileId.trim()
+          : null,
+    });
   }
 
   private async releaseRuntimeRequest(
-    runtimeContext: LlmRuntimeRequestContext | null,
+    runtimeContext: LiteLlmRequestLogContext | null,
   ): Promise<void> {
-    if (!runtimeContext) {
-      return;
-    }
-    try {
-      await this.llmRuntime.releaseRequest(runtimeContext.runtimeRequestId);
-    } catch (error) {
-      this.logger.warn(
-        {
-          err: error,
-          runtimeRequestId: runtimeContext.runtimeRequestId,
-          metricName: "llm_runtime_release_total",
-          metricOutcome: "failure",
-        },
-        "Failed to release LiteLLM runtime context",
-      );
-    }
+    void runtimeContext;
   }
 
   private resolveLogOrgId(
