@@ -1,16 +1,17 @@
-import { sign } from 'jsonwebtoken';
+import { sign } from "jsonwebtoken";
+import { RealtimeSocketErrorCode } from "@modular/utils";
 
-import { NewsnowGateway } from './newsnow.gateway';
+import { NewsnowGateway } from "./newsnow.gateway";
 
-describe('NewsnowGateway', () => {
+describe("NewsnowGateway", () => {
   const envMock = {
     jwtConfig: {
-      secret: 'test-secret',
-      audience: 'test-audience',
-      issuer: 'test-issuer',
+      secret: "test-secret",
+      audience: "test-audience",
+      issuer: "test-issuer",
     },
     graphqlConfig: {
-      corsOrigin: 'http://localhost:3000',
+      corsOrigin: "http://localhost:3000",
     },
     webSocketSecurity: {
       connectRateLimitPerIp: 20,
@@ -51,12 +52,14 @@ describe('NewsnowGateway', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     realtimeListener = undefined;
-    dispatcherMock.registerListener.mockImplementation((listener: (event: any) => Promise<void>) => {
-      realtimeListener = listener;
-      return () => {
-        realtimeListener = undefined;
-      };
-    });
+    dispatcherMock.registerListener.mockImplementation(
+      (listener: (event: any) => Promise<void>) => {
+        realtimeListener = listener;
+        return () => {
+          realtimeListener = undefined;
+        };
+      },
+    );
     gateway = new NewsnowGateway(
       envMock,
       authServiceMock,
@@ -69,14 +72,14 @@ describe('NewsnowGateway', () => {
 
   function createClient(token: string) {
     return {
-      id: 'socket-1',
+      id: "socket-1",
       handshake: {
         headers: {
-          origin: 'http://localhost:3000',
+          origin: "http://localhost:3000",
         },
         auth: { token },
         query: {},
-        address: '::ffff:127.0.0.1',
+        address: "::ffff:127.0.0.1",
       },
       data: {},
       emit: jest.fn(),
@@ -84,12 +87,14 @@ describe('NewsnowGateway', () => {
     } as any;
   }
 
-  function createToken(overrides?: Partial<{ permissions: string[]; orgId: string; sub: string }>) {
+  function createToken(
+    overrides?: Partial<{ permissions: string[]; orgId: string; sub: string }>,
+  ) {
     return sign(
       {
-        sub: overrides?.sub ?? 'user-1',
-        orgId: overrides?.orgId ?? 'org-1',
-        permissions: overrides?.permissions ?? ['items.read'],
+        sub: overrides?.sub ?? "user-1",
+        orgId: overrides?.orgId ?? "org-1",
+        permissions: overrides?.permissions ?? ["items.read"],
       },
       envMock.jwtConfig.secret,
       {
@@ -99,11 +104,11 @@ describe('NewsnowGateway', () => {
     );
   }
 
-  it('connects authenticated sockets and emits connected event', async () => {
+  it("connects authenticated sockets and emits connected event", async () => {
     authServiceMock.getUserProfile.mockResolvedValue({
-      id: 'user-1',
-      orgId: 'org-1',
-      permissions: ['items.read'],
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
     });
     sessionsMock.register.mockResolvedValue({ userConnections: 1 });
 
@@ -111,19 +116,22 @@ describe('NewsnowGateway', () => {
 
     await gateway.handleConnection(client);
 
-    expect(authServiceMock.getUserProfile).toHaveBeenCalledWith('user-1', 'org-1');
+    expect(authServiceMock.getUserProfile).toHaveBeenCalledWith(
+      "user-1",
+      "org-1",
+    );
     expect(sessionsMock.register).toHaveBeenCalledTimes(1);
-    expect(client.emit).toHaveBeenCalledWith('newsnow:connected', {
-      orgId: 'org-1',
-      userId: 'user-1',
+    expect(client.emit).toHaveBeenCalledWith("newsnow:connected", {
+      orgId: "org-1",
+      userId: "user-1",
     });
     expect(client.disconnect).not.toHaveBeenCalled();
   });
 
-  it('rejects sockets without required permission', async () => {
+  it("rejects sockets without required permission", async () => {
     authServiceMock.getUserProfile.mockResolvedValue({
-      id: 'user-1',
-      orgId: 'org-1',
+      id: "user-1",
+      orgId: "org-1",
       permissions: [],
     });
 
@@ -131,31 +139,51 @@ describe('NewsnowGateway', () => {
 
     await gateway.handleConnection(client);
 
-    expect(client.emit).toHaveBeenCalledWith('newsnow:error', {
-      message: 'Unauthorized',
+    expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
+      code: RealtimeSocketErrorCode.Unauthorized,
+      message: "Unauthorized",
     });
     expect(client.disconnect).toHaveBeenCalledWith(true);
     expect(sessionsMock.unregister).toHaveBeenCalledWith(client);
   });
 
-  it('broadcasts realtime events received from dispatcher', async () => {
+  it("maps max-connection failures to stable websocket error codes", async () => {
+    authServiceMock.getUserProfile.mockResolvedValue({
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    });
+    sessionsMock.register.mockRejectedValue(new Error("Too many connections"));
+
+    const client = createClient(createToken());
+
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("newsnow:error", {
+      code: RealtimeSocketErrorCode.TooManyConnections,
+      message: "Too many connections",
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("broadcasts realtime events received from dispatcher", async () => {
     gateway.onModuleInit();
 
     expect(dispatcherMock.registerListener).toHaveBeenCalledTimes(1);
     expect(realtimeListener).toBeDefined();
 
     await realtimeListener?.({
-      sourceId: 'weibo',
+      sourceId: "weibo",
       newItemsCount: 2,
-      topTitles: ['a', 'b'],
+      topTitles: ["a", "b"],
       updatedTime: new Date().toISOString(),
       intervalMs: 120000,
       timestamp: new Date().toISOString(),
     });
 
     expect(serverMock.emit).toHaveBeenCalledWith(
-      'newsnow:update',
-      expect.objectContaining({ sourceId: 'weibo', newItemsCount: 2 }),
+      "newsnow:update",
+      expect.objectContaining({ sourceId: "weibo", newItemsCount: 2 }),
     );
   });
 });

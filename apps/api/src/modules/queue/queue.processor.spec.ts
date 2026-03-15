@@ -22,7 +22,9 @@ jest.mock("@modular/utils", () => {
       debug: jest.fn(),
     }),
     ensureTraceId: jest.fn((id?: string) => id ?? "test-trace-id"),
-    runWithTraceId: jest.fn(async (_traceId: string, fn: () => Promise<any>) => fn()),
+    runWithTraceId: jest.fn(async (_traceId: string, fn: () => Promise<any>) =>
+      fn(),
+    ),
   };
 });
 
@@ -43,7 +45,8 @@ jest.mock("bullmq", () => {
 });
 
 import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
-import { PipelineJobStatus } from "@prisma/client";
+import { NotificationPresentationKind } from "@modular/utils";
+import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError } from "bullmq";
 import { Types } from "mongoose";
 
@@ -69,7 +72,10 @@ const createValidJobData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const createMockJob = (data: Record<string, unknown>, overrides: Record<string, unknown> = {}) => ({
+const createMockJob = (
+  data: Record<string, unknown>,
+  overrides: Record<string, unknown> = {},
+) => ({
   id: "job-123",
   data,
   opts: { attempts: 3 },
@@ -133,7 +139,7 @@ const createMockPrisma = () => ({
       consecutiveFailures: 0,
       isActive: true,
       orgId: "org-1",
-      name: "Source 1"
+      name: "Source 1",
     }),
     update: jest.fn().mockResolvedValue({}),
   },
@@ -144,7 +150,7 @@ const createMockPrisma = () => ({
           consecutiveFailures: 0,
           isActive: true,
           orgId: "org-1",
-          name: "Source 1"
+          name: "Source 1",
         }),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -175,7 +181,7 @@ describe("QueueProcessor", () => {
     mockNotifications = { notify: jest.fn().mockResolvedValue(undefined) };
 
     (RawItemModel.findById as jest.Mock).mockImplementation((id: string) =>
-      Promise.resolve(createMockRawItem(id))
+      Promise.resolve(createMockRawItem(id)),
     );
 
     processor = new QueueProcessor(
@@ -184,7 +190,7 @@ describe("QueueProcessor", () => {
       mockEnv as any,
       mockPipeline as any,
       mockPrisma as any,
-      mockNotifications as any
+      mockNotifications as any,
     );
   });
 
@@ -205,7 +211,7 @@ describe("QueueProcessor", () => {
             host: "localhost",
             port: 6379,
           }),
-        })
+        }),
       );
     });
 
@@ -213,7 +219,10 @@ describe("QueueProcessor", () => {
       await processor.onModuleInit();
 
       const mockWorkerInstance = (Worker as jest.Mock).mock.results[0].value;
-      expect(mockWorkerInstance.on).toHaveBeenCalledWith("failed", expect.any(Function));
+      expect(mockWorkerInstance.on).toHaveBeenCalledWith(
+        "failed",
+        expect.any(Function),
+      );
     });
 
     it("uses default concurrency of 3 when config is 0", async () => {
@@ -226,7 +235,7 @@ describe("QueueProcessor", () => {
         expect.any(Function),
         expect.objectContaining({
           concurrency: 3,
-        })
+        }),
       );
     });
 
@@ -240,7 +249,7 @@ describe("QueueProcessor", () => {
         expect.any(Function),
         expect.objectContaining({
           concurrency: 3,
-        })
+        }),
       );
     });
 
@@ -277,7 +286,7 @@ describe("QueueProcessor", () => {
           pipelineJobId: jobData.pipelineJobId,
           sourceId: jobData.sourceId,
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -293,7 +302,7 @@ describe("QueueProcessor", () => {
             id: jobData.itemMetaId,
           }),
           data: { status: ItemStatus.Processing },
-        })
+        }),
       );
     });
 
@@ -324,7 +333,7 @@ describe("QueueProcessor", () => {
           id: jobData.rawItemId,
           itemMetaId: jobData.itemMetaId,
           payload: expect.any(Object),
-        })
+        }),
       );
     });
 
@@ -340,7 +349,7 @@ describe("QueueProcessor", () => {
           data: expect.objectContaining({
             status: PipelineJobStatus.completed,
           }),
-        })
+        }),
       );
     });
 
@@ -357,13 +366,16 @@ describe("QueueProcessor", () => {
           orgId: jobData.orgId,
           stage: "complete",
           status: "completed",
-        })
+        }),
       );
     });
 
     it("derives processedItemId from rawItemId when not provided", async () => {
       const rawItemId = new Types.ObjectId().toHexString();
-      const jobData = createValidJobData({ rawItemId, processedItemId: undefined });
+      const jobData = createValidJobData({
+        rawItemId,
+        processedItemId: undefined,
+      });
       const job = createMockJob(jobData);
 
       await workerCallback(job);
@@ -372,7 +384,7 @@ describe("QueueProcessor", () => {
         expect.objectContaining({
           processedItemId: rawItemId,
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -389,9 +401,12 @@ describe("QueueProcessor", () => {
         source: "test",
       });
 
-      await expect(workerCallback(job)).resolves.toEqual({ id: "processed-123" });
+      await expect(workerCallback(job)).resolves.toEqual({
+        id: "processed-123",
+      });
 
-      const [pipelineJobArg] = (mockPipeline.process as jest.Mock).mock.calls.at(-1) ?? [];
+      const [pipelineJobArg] =
+        (mockPipeline.process as jest.Mock).mock.calls.at(-1) ?? [];
       expect(pipelineJobArg.rawItemId).toBe("invalid-id");
       expect(Types.ObjectId.isValid(pipelineJobArg.processedItemId)).toBe(true);
       expect(pipelineJobArg.processedItemId).not.toBe("invalid-id");
@@ -437,7 +452,7 @@ describe("QueueProcessor", () => {
           stage: "dedupe",
           status: "failed",
           message: "Raw item not found",
-        })
+        }),
       );
     });
 
@@ -492,7 +507,7 @@ describe("QueueProcessor", () => {
       await processor.onModuleInit();
       const mockWorkerInstance = (Worker as jest.Mock).mock.results[0].value;
       failedHandler = mockWorkerInstance.on.mock.calls.find(
-        (call: any[]) => call[0] === "failed"
+        (call: any[]) => call[0] === "failed",
       )[1];
     });
 
@@ -515,13 +530,16 @@ describe("QueueProcessor", () => {
           removeOnComplete: false,
           removeOnFail: false,
           attempts: 1,
-        })
+        }),
       );
     });
 
     it("does NOT enqueue to DLQ for transient error with remaining retries", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 1, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 1,
+        opts: { attempts: 3 },
+      });
       const transientError = new QueueTransientError("Temporary failure");
 
       await failedHandler(job, transientError);
@@ -531,7 +549,10 @@ describe("QueueProcessor", () => {
 
     it("enqueues to DLQ when retries exhausted", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const transientError = new QueueTransientError("Temporary failure");
 
       await failedHandler(job, transientError);
@@ -541,7 +562,10 @@ describe("QueueProcessor", () => {
 
     it("creates DLQ payload with correct structure", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error");
 
       await failedHandler(job, error);
@@ -560,13 +584,16 @@ describe("QueueProcessor", () => {
           errorKind: expect.any(String),
           error: expect.any(Object),
         }),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     it("formats DLQ jobId correctly", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 2, opts: { attempts: 2 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 2,
+        opts: { attempts: 2 },
+      });
       const error = new Error("Test error");
 
       await failedHandler(job, error);
@@ -576,13 +603,16 @@ describe("QueueProcessor", () => {
         expect.any(Object),
         expect.objectContaining({
           jobId: `dlq-${ITEM_PIPELINE_QUEUE_NAME}-${job.id}-2`,
-        })
+        }),
       );
     });
 
     it("logs error but does not throw when DLQ enqueue fails", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error");
 
       mockDlqQueue.add.mockRejectedValueOnce(new Error("DLQ unavailable"));
@@ -605,7 +635,7 @@ describe("QueueProcessor", () => {
       workerCallback = (Worker as jest.Mock).mock.calls[0][1];
       const mockWorkerInstance = (Worker as jest.Mock).mock.results[0].value;
       failedHandler = mockWorkerInstance.on.mock.calls.find(
-        (call: any[]) => call[0] === "failed"
+        (call: any[]) => call[0] === "failed",
       )[1];
     });
 
@@ -622,7 +652,7 @@ describe("QueueProcessor", () => {
             status: { not: ItemStatus.Duplicate },
           }),
           data: { status: ItemStatus.Processing },
-        })
+        }),
       );
     });
 
@@ -639,7 +669,7 @@ describe("QueueProcessor", () => {
             status: ItemStatus.Processing,
           }),
         }),
-        { upsert: true }
+        { upsert: true },
       );
     });
 
@@ -656,7 +686,7 @@ describe("QueueProcessor", () => {
             status: PipelineJobStatus.running,
             startedAt: expect.any(Date),
           }),
-        })
+        }),
       );
     });
 
@@ -672,7 +702,7 @@ describe("QueueProcessor", () => {
           data: expect.objectContaining({
             lastRunAt: expect.any(Date),
           }),
-        })
+        }),
       );
     });
 
@@ -683,7 +713,7 @@ describe("QueueProcessor", () => {
       await workerCallback(job);
 
       const completedCall = mockPrisma.pipelineJob.updateMany.mock.calls.find(
-        (call: any[]) => call[0].data.status === PipelineJobStatus.completed
+        (call: any[]) => call[0].data.status === PipelineJobStatus.completed,
       );
       expect(completedCall).toBeDefined();
     });
@@ -701,13 +731,16 @@ describe("QueueProcessor", () => {
             consecutiveFailures: 0,
             circuitOpenUntil: null,
           }),
-        })
+        }),
       );
     });
 
     it("updates ItemMeta to failed only on finalFailure", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error");
 
       await failedHandler(job, error);
@@ -715,26 +748,32 @@ describe("QueueProcessor", () => {
       expect(mockPrisma.itemMeta.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: { status: ItemStatus.Failed },
-        })
+        }),
       );
     });
 
     it("does NOT update ItemMeta to failed when retries remain", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 1, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 1,
+        opts: { attempts: 3 },
+      });
       const error = new QueueTransientError("Temporary failure");
 
       await failedHandler(job, error);
 
       const failedCall = mockPrisma.itemMeta.updateMany.mock.calls.find(
-        (call: any[]) => call[0].data.status === ItemStatus.Failed
+        (call: any[]) => call[0].data.status === ItemStatus.Failed,
       );
       expect(failedCall).toBeUndefined();
     });
 
     it("upserts ProcessedItem with error details on failure", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error message");
 
       await failedHandler(job, error);
@@ -749,13 +788,16 @@ describe("QueueProcessor", () => {
             }),
           }),
         }),
-        { upsert: true }
+        { upsert: true },
       );
     });
 
     it("increments consecutiveFailures on source failure", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error");
 
       await failedHandler(job, error);
@@ -765,25 +807,49 @@ describe("QueueProcessor", () => {
 
     it("opens circuit breaker when threshold reached", async () => {
       const jobData = createValidJobData();
-      const job = createMockJob(jobData, { attemptsMade: 3, opts: { attempts: 3 } });
+      const job = createMockJob(jobData, {
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      });
       const error = new Error("Test error");
 
-      mockPrisma.$transaction.mockImplementationOnce(async (cb: (tx: any) => Promise<any>) => {
-        const tx = {
-          newsSource: {
-            findUnique: jest.fn().mockResolvedValue({
-              consecutiveFailures: 2,
-              isActive: true,
-            }),
-            update: jest.fn().mockResolvedValue({}),
-          },
-        };
-        return cb(tx);
-      });
+      mockPrisma.$transaction.mockImplementationOnce(
+        async (cb: (tx: any) => Promise<any>) => {
+          const tx = {
+            newsSource: {
+              findUnique: jest.fn().mockResolvedValue({
+                consecutiveFailures: 2,
+                isActive: true,
+                orgId: "org-1",
+                name: "Source 1",
+              }),
+              update: jest.fn().mockResolvedValue({}),
+            },
+          };
+          return cb(tx);
+        },
+      );
 
       await failedHandler(job, error);
 
       expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockNotifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: NotificationType.system,
+          data: expect.objectContaining({
+            sourceId: jobData.sourceId,
+            sourceName: "Source 1",
+            presentation: expect.objectContaining({
+              kind: NotificationPresentationKind.NewsSourceCircuitOpened,
+              params: expect.objectContaining({
+                sourceId: jobData.sourceId,
+                sourceName: "Source 1",
+                consecutiveFailures: 3,
+              }),
+            }),
+          }),
+        }),
+      );
     });
   });
 

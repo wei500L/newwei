@@ -1,6 +1,16 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, Select, Spin, Typography, message } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Form,
+  Input,
+  Select,
+  Spin,
+  Typography,
+  message,
+} from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -76,20 +86,22 @@ export function StorageSettingsContent() {
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
-    [session?.accessToken]
+    [session?.accessToken],
   );
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiClient.get<StorageSettingsResponse>("admin/settings/storage");
+      const response = await apiClient.get<StorageSettingsResponse>(
+        "admin/settings/storage",
+      );
       form.setFieldsValue({
         crawlImageStorage: response.data.crawlImageStorage ?? "mysql",
         region: response.data.region,
         bucket: response.data.bucket,
         endpoint: response.data.endpoint,
-        publicBaseUrl: response.data.publicBaseUrl
+        publicBaseUrl: response.data.publicBaseUrl,
       });
     } catch (err) {
       captureClientError("Failed to load storage settings", err);
@@ -116,7 +128,7 @@ export function StorageSettingsContent() {
         endpoint: values.endpoint?.trim() ? values.endpoint.trim() : null,
         publicBaseUrl: values.publicBaseUrl?.trim()
           ? values.publicBaseUrl.trim()
-          : undefined
+          : undefined,
       };
       await apiClient.patch("admin/settings/storage", payload);
       messageApi.success(t("storageSettings.saved"));
@@ -134,7 +146,7 @@ export function StorageSettingsContent() {
     setConnectionResult(null);
     try {
       const response = await apiClient.post<StorageConnectionTestResponse>(
-        "admin/settings/storage/test"
+        "admin/settings/storage/test",
       );
       setConnectionResult(response.data);
       if (response.data.ok) {
@@ -153,7 +165,9 @@ export function StorageSettingsContent() {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div
+        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+      >
         <Spin size="large" />
       </div>
     );
@@ -191,7 +205,12 @@ export function StorageSettingsContent() {
         {t("storageSettings.description")}
       </Typography.Paragraph>
       {error ? (
-        <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert
+          type="error"
+          message={error}
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
       ) : null}
       {connectionResult ? (
         <Alert
@@ -204,7 +223,10 @@ export function StorageSettingsContent() {
           }
           description={
             <div>
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginBottom: 8 }}
+              >
                 {connectionResult.error
                   ? connectionResult.error
                   : t("storageSettings.testResult.noError")}
@@ -228,28 +250,38 @@ export function StorageSettingsContent() {
             options={[
               {
                 value: "mysql",
-                label: t("storageSettings.options.crawlImageStorage.mysql")
+                label: t("storageSettings.options.crawlImageStorage.mysql"),
               },
               {
                 value: "s3",
-                label: t("storageSettings.options.crawlImageStorage.s3")
-              }
+                label: t("storageSettings.options.crawlImageStorage.s3"),
+              },
             ]}
           />
         </Form.Item>
         <Form.Item
           label={t("storageSettings.fields.endpoint")}
           name="endpoint"
-          rules={[{ type: "url", message: t("storageSettings.validation.endpoint") }]}
+          rules={[
+            { type: "url", message: t("storageSettings.validation.endpoint") },
+          ]}
         >
-          <Input placeholder={t("storageSettings.placeholders.endpoint")} allowClear />
+          <Input
+            placeholder={t("storageSettings.placeholders.endpoint")}
+            allowClear
+          />
         </Form.Item>
         <Form.Item
           label={t("storageSettings.fields.region")}
           name="region"
           rules={
             crawlImageStorage === "s3"
-              ? [{ required: true, message: t("storageSettings.validation.region") }]
+              ? [
+                  {
+                    required: true,
+                    message: t("storageSettings.validation.region"),
+                  },
+                ]
               : []
           }
         >
@@ -260,7 +292,12 @@ export function StorageSettingsContent() {
           name="bucket"
           rules={
             crawlImageStorage === "s3"
-              ? [{ required: true, message: t("storageSettings.validation.bucket") }]
+              ? [
+                  {
+                    required: true,
+                    message: t("storageSettings.validation.bucket"),
+                  },
+                ]
               : []
           }
         >
@@ -271,12 +308,19 @@ export function StorageSettingsContent() {
           name="publicBaseUrl"
           rules={[
             ...(crawlImageStorage === "s3"
-              ? [{ required: true, message: t("storageSettings.validation.publicBaseUrl") }]
+              ? [
+                  {
+                    required: true,
+                    message: t("storageSettings.validation.publicBaseUrl"),
+                  },
+                ]
               : []),
-            { type: "url", message: t("storageSettings.validation.endpoint") }
+            { type: "url", message: t("storageSettings.validation.endpoint") },
           ]}
         >
-          <Input placeholder={t("storageSettings.placeholders.publicBaseUrl")} />
+          <Input
+            placeholder={t("storageSettings.placeholders.publicBaseUrl")}
+          />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={saving}>

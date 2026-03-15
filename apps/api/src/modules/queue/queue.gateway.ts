@@ -1,16 +1,32 @@
-import { createLogger } from "@modular/utils";
+import {
+  createLogger,
+  RealtimeSocketErrorCode,
+  type RealtimeSocketErrorPayload,
+} from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  WebSocketGateway,
+  WebSocketServer,
+} from "@nestjs/websockets";
 import { verify } from "jsonwebtoken";
 import { Server, Socket } from "socket.io";
 
 import { AccessTokenBlacklistService } from "../auth/access-token-blacklist.service";
-import { AuthService, AuthenticatedUser, JwtPayload } from "../auth/auth.service";
+import {
+  AuthService,
+  AuthenticatedUser,
+  JwtPayload,
+} from "../auth/auth.service";
 import { EnvService } from "../config/config.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 import { WsConnectionRateLimiterService } from "../websocket/ws-connection-rate-limiter.service";
 
-import { QueueEventPayload, QueueEventPublisher } from "./queue-event.publisher";
+import {
+  QueueEventPayload,
+  QueueEventPublisher,
+} from "./queue-event.publisher";
 
 @WebSocketGateway({
   namespace: "queue",
@@ -19,7 +35,13 @@ import { QueueEventPayload, QueueEventPublisher } from "./queue-event.publisher"
     credentials: true,
   },
 })
-export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
+export class QueueGateway
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleInit,
+    OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server;
 
@@ -36,9 +58,11 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   ) {}
 
   onModuleInit() {
-    this.unsubscribe = this.queueEvents.registerListener(async (orgId, payload) => {
-      this.broadcast(orgId, payload);
-    });
+    this.unsubscribe = this.queueEvents.registerListener(
+      async (orgId, payload) => {
+        this.broadcast(orgId, payload);
+      },
+    );
   }
 
   async onModuleDestroy() {
@@ -52,19 +76,37 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const ip = this.extractClientIp(client);
     try {
       // Check rate limit before any authentication
-      const rateLimitResult = await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
+      const rateLimitResult =
+        await this.connectionRateLimiter.checkConnectionRateLimit(ip ?? "");
       if (!rateLimitResult.allowed) {
-        this.logger.warn({ socketId: client.id, ip }, "WebSocket connection rate limited");
-        client.emit("queue:error", { message: "Rate limit exceeded", retryAfterMs: rateLimitResult.retryAfterMs });
+        this.logger.warn(
+          { socketId: client.id, ip },
+          "WebSocket connection rate limited",
+        );
+        client.emit(
+          "queue:error",
+          this.toSocketErrorPayload(
+            "Rate limit exceeded",
+            rateLimitResult.retryAfterMs,
+          ),
+        );
         client.disconnect(true);
         return;
       }
 
       // Check backoff delay from previous failed auth attempts
-      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(ip ?? "");
+      const backoffDelay = await this.connectionRateLimiter.getBackoffDelay(
+        ip ?? "",
+      );
       if (backoffDelay > 0) {
-        this.logger.warn({ socketId: client.id, ip, backoffDelay }, "WebSocket connection in backoff period");
-        client.emit("queue:error", { message: "Too many failed attempts", retryAfterMs: backoffDelay });
+        this.logger.warn(
+          { socketId: client.id, ip, backoffDelay },
+          "WebSocket connection in backoff period",
+        );
+        client.emit(
+          "queue:error",
+          this.toSocketErrorPayload("Too many failed attempts", backoffDelay),
+        );
         client.disconnect(true);
         return;
       }
@@ -76,7 +118,10 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       const token = this.extractToken(client);
       const payload = this.verifyToken(token);
       await this.ensureNotRevoked(payload);
-      const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
+      const profile = await this.authService.getUserProfile(
+        payload.sub,
+        payload.orgId,
+      );
       if (!profile.permissions.includes("queue.manage")) {
         throw new Error("Insufficient permissions");
       }
@@ -87,15 +132,28 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       client.data.user = profile;
       client.data.clientIp = ip;
 
-      const { userConnections } = await this.sessions.register(this.server, client, {
-        userId: profile.id,
+      const { userConnections } = await this.sessions.register(
+        this.server,
+        client,
+        {
+          userId: profile.id,
+          orgId: profile.orgId,
+          ip,
+        },
+      );
+      client.emit("queue:connected", {
         orgId: profile.orgId,
-        ip
+        userId: profile.id,
       });
-      client.emit("queue:connected", { orgId: profile.orgId, userId: profile.id });
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
-        "Queue socket connected"
+        {
+          socketId: client.id,
+          orgId: profile.orgId,
+          userId: profile.id,
+          ip,
+          userConnections,
+        },
+        "Queue socket connected",
       );
     } catch (error) {
       // Record failed auth attempt for backoff
@@ -103,12 +161,16 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
       this.sessions.unregister(client);
       this.logger.warn(
-        { socketId: client.id, ip, error: error instanceof Error ? error.message : String(error) },
+        {
+          socketId: client.id,
+          ip,
+          error: error instanceof Error ? error.message : String(error),
+        },
         "Queue socket authentication failed",
       );
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const responseMessage = errorMessage === "Too many connections" ? "Too many connections" : "Unauthorized";
-      client.emit("queue:error", { message: responseMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      client.emit("queue:error", this.toSocketErrorPayload(errorMessage));
       client.disconnect(true);
     }
   }
@@ -117,7 +179,12 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     const profile = client.data?.user as AuthenticatedUser | undefined;
     this.sessions.unregister(client);
     this.logger.info(
-      { socketId: client.id, userId: profile?.id, orgId: profile?.orgId, ip: client.data?.clientIp },
+      {
+        socketId: client.id,
+        userId: profile?.id,
+        orgId: profile?.orgId,
+        ip: client.data?.clientIp,
+      },
       "Queue socket disconnected",
     );
   }
@@ -141,7 +208,9 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       throw new Error("Invalid token payload");
     }
     const permissions = Array.isArray(payload.permissions)
-      ? payload.permissions.filter((entry): entry is string => typeof entry === "string")
+      ? payload.permissions.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : [];
 
     return {
@@ -150,7 +219,7 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       permissions,
       jti: typeof payload.jti === "string" ? payload.jti : undefined,
       exp: typeof payload.exp === "number" ? payload.exp : undefined,
-      iat: typeof payload.iat === "number" ? payload.iat : undefined
+      iat: typeof payload.iat === "number" ? payload.iat : undefined,
     };
   }
 
@@ -179,30 +248,35 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     if (typeof queryToken === "string" && queryToken.length > 0) {
       return queryToken;
     }
-    if (Array.isArray(queryToken) && queryToken.length > 0 && typeof queryToken[0] === "string") {
+    if (
+      Array.isArray(queryToken) &&
+      queryToken.length > 0 &&
+      typeof queryToken[0] === "string"
+    ) {
       return queryToken[0];
     }
 
     throw new Error("Missing auth token");
   }
 
-	  private parseAuthorizationHeader(authHeader: string | string[] | undefined) {
-	    if (!authHeader) {
-	      return undefined;
-	    }
-	    const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-	    if (typeof headerValue !== "string") {
-	      return undefined;
-	    }
-	    const trimmed = headerValue.trim();
-	    if (trimmed.toLowerCase().startsWith("bearer ")) {
-	      return trimmed.slice(7);
-	    }
-	    return undefined;
-	  }
+  private parseAuthorizationHeader(authHeader: string | string[] | undefined) {
+    if (!authHeader) {
+      return undefined;
+    }
+    const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+    if (typeof headerValue !== "string") {
+      return undefined;
+    }
+    const trimmed = headerValue.trim();
+    if (trimmed.toLowerCase().startsWith("bearer ")) {
+      return trimmed.slice(7);
+    }
+    return undefined;
+  }
 
   private extractOrigin(client: Socket) {
-    const originHeader = client.handshake.headers.origin ?? client.handshake.headers.referer;
+    const originHeader =
+      client.handshake.headers.origin ?? client.handshake.headers.referer;
     const raw = Array.isArray(originHeader) ? originHeader[0] : originHeader;
     if (!raw) {
       return undefined;
@@ -241,7 +315,45 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     if (!this.server) {
       return;
     }
-    this.server.to(this.orgRoom(orgId)).emit("queue:event", { orgId, ...payload });
+    this.server
+      .to(this.orgRoom(orgId))
+      .emit("queue:event", { orgId, ...payload });
+  }
+
+  private toSocketErrorPayload(
+    errorMessage: string,
+    retryAfterMs?: number,
+  ): RealtimeSocketErrorPayload {
+    if (errorMessage === "Rate limit exceeded") {
+      return {
+        code: RealtimeSocketErrorCode.RateLimitExceeded,
+        message: "Rate limit exceeded",
+        retryAfterMs,
+      };
+    }
+    if (errorMessage === "Too many failed attempts") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyFailedAttempts,
+        message: "Too many failed attempts",
+        retryAfterMs,
+      };
+    }
+    if (errorMessage === "Too many connections") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnections,
+        message: "Too many connections",
+      };
+    }
+    if (errorMessage === "Too many connection attempts") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
+        message: "Too many connection attempts",
+      };
+    }
+    return {
+      code: RealtimeSocketErrorCode.Unauthorized,
+      message: "Unauthorized",
+    };
   }
 
   private orgRoom(orgId: string) {
@@ -250,9 +362,14 @@ export class QueueGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   private extractClientIp(client: Socket) {
     const forwardedHeader = client.handshake.headers["x-forwarded-for"];
-    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+    const forwarded = Array.isArray(forwardedHeader)
+      ? forwardedHeader[0]
+      : forwardedHeader;
     const ipFromForwarded = forwarded?.split(",")[0]?.trim();
-    const address = typeof client.handshake.address === "string" ? client.handshake.address : undefined;
+    const address =
+      typeof client.handshake.address === "string"
+        ? client.handshake.address
+        : undefined;
     const detectedIp = ipFromForwarded || address;
     return detectedIp ? detectedIp.replace(/^::ffff:/, "") : undefined;
   }

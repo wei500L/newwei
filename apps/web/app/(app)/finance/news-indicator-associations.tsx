@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -560,7 +561,14 @@ export function NewsIndicatorAssociations() {
           title={t("pages.newsIndicator.disabledTitle", { defaultValue: "Disabled" })}
           description={t("pages.newsIndicator.disabledDescription", { defaultValue: "Disabled by admin." })}
           actionLabel={t("pages.newsIndicator.disabledCta", { defaultValue: "Open system settings" })}
-          onAction={() => router.push("/admin/system?tab=newsIndicator")}
+          onAction={() =>
+            router.push(
+              buildAdminSettingsHref({
+                page: "news",
+                panel: "news-indicator",
+              }),
+            )
+          }
         />
       </div>
     );
@@ -591,7 +599,14 @@ export function NewsIndicatorAssociations() {
             defaultValue: "Scheduled refresh is disabled. You can still click Recompute to run once."
           })}
           actionLabel={t("pages.newsIndicator.ingestionOffCta", { defaultValue: "Open system settings" })}
-          onAction={() => router.push("/admin/system?tab=newsIndicator")}
+          onAction={() =>
+            router.push(
+              buildAdminSettingsHref({
+                page: "news",
+                panel: "news-indicator",
+              }),
+            )
+          }
         />
       ) : null}
 
@@ -719,7 +734,14 @@ export function NewsIndicatorAssociations() {
                   ) : null}
                   <Button
                     type={hasIndicatorSlugs && canRefresh ? "default" : "primary"}
-                    onClick={() => router.push("/admin/system?tab=newsIndicator")}
+                    onClick={() =>
+                      router.push(
+                        buildAdminSettingsHref({
+                          page: "news",
+                          panel: "news-indicator",
+                        }),
+                      )
+                    }
                   >
                     {t("pages.newsIndicator.emptyCta", { defaultValue: "Open system settings" })}
                   </Button>

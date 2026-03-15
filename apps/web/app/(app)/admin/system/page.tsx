@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-import { SystemSettingsContent } from "@/app/(app)/settings/system/system-settings-content";
 import { auth } from "@/lib/auth";
 
 export default async function AdminSystemSettingsPage() {
@@ -9,5 +8,5 @@ export default async function AdminSystemSettingsPage() {
     redirect("/login");
   }
 
-  return <SystemSettingsContent />;
+  redirect("/admin/settings");
 }

@@ -10,7 +10,7 @@ const read = (relativePath: string) =>
 
 describe('akshare manual refresh wiring', () => {
   it('wires the system settings panel to the preset mutation and shared preset registry', () => {
-    const source = read('app/(app)/settings/system/system-settings-content.tsx');
+    const source = read('components/settings/akshare-gateway-settings-panel.tsx');
 
     expect(source).toContain('useTriggerEconomicDataRefreshPresetMutation');
     expect(source).toContain('useEconomicDataRefreshPresetStatusQuery');

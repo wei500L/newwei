@@ -4,7 +4,6 @@ import {
   AlertOutlined,
   AppstoreOutlined,
   ClusterOutlined,
-  CloudSyncOutlined,
   DashboardOutlined,
   ExclamationCircleOutlined,
   FileSearchOutlined,
@@ -12,7 +11,6 @@ import {
   RightOutlined,
   SettingOutlined,
   TeamOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
 import { Alert, Card, Collapse, Empty, Space, Spin, Typography } from "antd";
 import Link from "next/link";
@@ -28,6 +26,7 @@ import {
   type AdminGroupKey,
   type AdminLinkPermission,
 } from "./admin-content.utils";
+import { buildAdminSettingsHref } from "./settings/settings-navigation";
 import styles from "./admin-content.module.css";
 
 interface AdminLinkItem {
@@ -172,7 +171,10 @@ export function AdminContent() {
         defaultValue:
           "Review low-confidence knowledge graph relations and record human feedback",
       }),
-      href: "/admin/system?tab=knowledgeGraphReview",
+      href: buildAdminSettingsHref({
+        page: "knowledge",
+        panel: "knowledge-graph-review",
+      }),
       permission: "knowledgegraph.review",
       group: "monitoring",
       icon: ClusterOutlined,
@@ -204,40 +206,15 @@ export function AdminContent() {
       icon: FileSearchOutlined,
     },
     {
-      key: "settings",
-      title: t("adminConsole.links.settings.title", {
-        defaultValue: "Access Settings",
+      key: "settingsWorkspace",
+      title: t("adminSettings.workspace.title", {
+        defaultValue: "Settings Workspace",
       }),
-      description: t("adminConsole.links.settings.description", {
-        defaultValue: "Manage roles, permissions, and memberships",
+      description: t("adminSettings.workspace.adminCardDescription", {
+        defaultValue:
+          "Open the unified workspace for access, system, storage, and service configuration.",
       }),
       href: "/admin/settings",
-      permission: "settings.manage",
-      group: "governance",
-      icon: UserOutlined,
-    },
-    {
-      key: "storage",
-      title: t("adminConsole.links.storage.title", {
-        defaultValue: "Storage Settings",
-      }),
-      description: t("adminConsole.links.storage.description", {
-        defaultValue: "Configure storage backends",
-      }),
-      href: "/admin/storage",
-      permission: "settings.manage",
-      group: "platform",
-      icon: CloudSyncOutlined,
-    },
-    {
-      key: "system",
-      title: t("adminConsole.links.system.title", {
-        defaultValue: "System Settings",
-      }),
-      description: t("adminConsole.links.system.description", {
-        defaultValue: "Tune cache, rate limits, and crawl defaults",
-      }),
-      href: "/admin/system",
       permission: "settings.manage",
       group: "platform",
       icon: SettingOutlined,

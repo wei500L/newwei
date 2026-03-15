@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { SettingsContent } from "@/app/(app)/settings/settings-content";
 import { auth } from "@/lib/auth";
+
+import { AdminSettingsOverviewContent } from "./settings-overview-content";
 
 export default async function AdminSettingsPage() {
   const session = await auth();
@@ -9,5 +10,5 @@ export default async function AdminSettingsPage() {
     redirect("/login");
   }
 
-  return <SettingsContent />;
+  return <AdminSettingsOverviewContent />;
 }

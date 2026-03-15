@@ -1,6 +1,26 @@
-'use client';
+"use client";
 
-import { App, Badge, Button, Card, Col, DatePicker, Form, Input, List, Modal, Popconfirm, Row, Select, Skeleton, Space, Switch, Tabs, Tag, Typography } from "antd";
+import {
+  App,
+  Badge,
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Form,
+  Input,
+  List,
+  Modal,
+  Popconfirm,
+  Row,
+  Select,
+  Skeleton,
+  Space,
+  Switch,
+  Tabs,
+  Tag,
+  Typography,
+} from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
@@ -20,20 +40,23 @@ import {
   useNotificationsQuery,
   useUpdateAlertChannelMutation,
   useUpsertAlertRuleMutation,
-  useUnreadNotificationCountQuery
-} from '@/graphql/generated';
+  useUnreadNotificationCountQuery,
+} from "@/graphql/generated";
 import dayjs, { toUtcIsoString } from "@/lib/dayjs";
-import { formatDateTime, resolveLocale } from '@/lib/i18n';
-import { resolveNotificationLink } from '@/lib/notifications';
+import { formatDateTime, resolveLocale } from "@/lib/i18n";
+import {
+  formatNotificationPresentation,
+  resolveNotificationLink,
+} from "@/lib/notifications";
 
 const typeColor: Record<NotificationType, string> = {
-  [NotificationType.CrawlCompleted]: 'green',
-  [NotificationType.CrawlFailed]: 'red',
-  [NotificationType.AnalysisCompleted]: 'blue',
-  [NotificationType.AnalysisFailed]: 'red',
-  [NotificationType.OrgInvite]: 'purple',
-  [NotificationType.AlertTriggered]: 'orange',
-  [NotificationType.System]: 'geekblue'
+  [NotificationType.CrawlCompleted]: "green",
+  [NotificationType.CrawlFailed]: "red",
+  [NotificationType.AnalysisCompleted]: "blue",
+  [NotificationType.AnalysisFailed]: "red",
+  [NotificationType.OrgInvite]: "purple",
+  [NotificationType.AlertTriggered]: "orange",
+  [NotificationType.System]: "geekblue",
 };
 
 const buildThresholdSummary = (
@@ -41,7 +64,7 @@ const buildThresholdSummary = (
   thresholdValue: number | undefined,
   lower: number | undefined,
   upper: number | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) => {
   if (!operator) {
     return t("common.notAvailable");
@@ -51,7 +74,7 @@ const buildThresholdSummary = (
     gte: ">=",
     lt: "<",
     lte: "<=",
-    eq: "="
+    eq: "=",
   };
   if (operator === "outside_range" || operator === "within_range") {
     if (lower === undefined || upper === undefined) {
@@ -62,7 +85,10 @@ const buildThresholdSummary = (
       operator === "outside_range"
         ? "alerts.center.threshold.outside"
         : "alerts.center.threshold.within",
-      { defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`, range }
+      {
+        defaultValue: `${operator === "outside_range" ? "Outside" : "Within"} ${range}`,
+        range,
+      },
     );
   }
   if (operator === "change_up_pct" || operator === "change_down_pct") {
@@ -73,7 +99,7 @@ const buildThresholdSummary = (
     return t("alerts.center.threshold.changePct", {
       defaultValue: `Change ${symbol} ${thresholdValue}%`,
       symbol,
-      value: thresholdValue
+      value: thresholdValue,
     });
   }
   if (thresholdValue === undefined) {
@@ -97,7 +123,10 @@ const formatContextValue = (value: unknown): string => {
     return value ? "true" : "false";
   }
   if (Array.isArray(value)) {
-    return value.map((item) => formatContextValue(item)).filter(Boolean).join(", ");
+    return value
+      .map((item) => formatContextValue(item))
+      .filter(Boolean)
+      .join(", ");
   }
   try {
     return JSON.stringify(value);
@@ -155,7 +184,9 @@ const extractMuteUntil = (config: Record<string, unknown> | null) => {
   return parseDateValue(raw);
 };
 
-const extractNotifyIntervalSeconds = (config: Record<string, unknown> | null) => {
+const extractNotifyIntervalSeconds = (
+  config: Record<string, unknown> | null,
+) => {
   const rawSeconds =
     config?.notifyIntervalSeconds ??
     config?.notifyIntervalSec ??
@@ -203,20 +234,28 @@ const extractNotifyIntervalSeconds = (config: Record<string, unknown> | null) =>
   return null;
 };
 
-const extractAlertEventId = (payload: Record<string, unknown> | null | undefined): string | undefined => {
+const extractAlertEventId = (
+  payload: Record<string, unknown> | null | undefined,
+): string | undefined => {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
   const rawId = payload.alertEventId ?? payload.eventId;
-  return typeof rawId === "string" && rawId.trim().length > 0 ? rawId : undefined;
+  return typeof rawId === "string" && rawId.trim().length > 0
+    ? rawId
+    : undefined;
 };
 
-const extractRuleId = (payload: Record<string, unknown> | null | undefined): string | undefined => {
+const extractRuleId = (
+  payload: Record<string, unknown> | null | undefined,
+): string | undefined => {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
   }
   const rawId = payload.ruleId;
-  return typeof rawId === "string" && rawId.trim().length > 0 ? rawId : undefined;
+  return typeof rawId === "string" && rawId.trim().length > 0
+    ? rawId
+    : undefined;
 };
 
 export default function SubscriptionsPage() {
@@ -232,36 +271,56 @@ export default function SubscriptionsPage() {
   const canReadAlerts = permissions.includes("alerts.read");
   const canManageAlerts = permissions.includes("alerts.manage");
   const activeTab = useMemo(() => {
-    const value = searchParams.get('tab');
-    return value === 'rules' || value === 'channels' || value === 'notifications'
+    const value = searchParams.get("tab");
+    return value === "rules" ||
+      value === "channels" ||
+      value === "notifications"
       ? value
-      : 'content';
+      : "content";
   }, [searchParams]);
-  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useAlertRulesQuery({
-    skip: !authenticated || !canReadAlerts
+  const {
+    data: rulesData,
+    loading: rulesLoading,
+    refetch: refetchRules,
+  } = useAlertRulesQuery({
+    skip: !authenticated || !canReadAlerts,
   });
-  const { data: channelsData, loading: channelsLoading, refetch: refetchChannels } = useAlertChannelsQuery({
-    skip: !authenticated || !canReadAlerts
+  const {
+    data: channelsData,
+    loading: channelsLoading,
+    refetch: refetchChannels,
+  } = useAlertChannelsQuery({
+    skip: !authenticated || !canReadAlerts,
   });
-  const { data: eventsData, loading: eventsLoading, refetch: refetchEvents } = useAlertEventsQuery({
+  const {
+    data: eventsData,
+    loading: eventsLoading,
+    refetch: refetchEvents,
+  } = useAlertEventsQuery({
     variables: { limit: 50 },
-    skip: !authenticated || !canReadAlerts
+    skip: !authenticated || !canReadAlerts,
   });
   const {
     data: notificationsData,
     loading: notificationsLoading,
-    refetch: refetchNotifications
+    refetch: refetchNotifications,
   } = useNotificationsQuery({ variables: { limit: 50 } });
-  const { data: unreadData, refetch: refetchUnread } = useUnreadNotificationCountQuery();
+  const { data: unreadData, refetch: refetchUnread } =
+    useUnreadNotificationCountQuery();
   const [markRead] = useMarkNotificationReadMutation();
   const [markAll] = useMarkAllNotificationsReadMutation();
-  const [createChannel, { loading: creatingChannel }] = useCreateAlertChannelMutation();
-  const [updateChannel, { loading: updatingChannel }] = useUpdateAlertChannelMutation();
-  const [deleteChannel, { loading: deletingChannel }] = useDeleteAlertChannelMutation();
+  const [createChannel, { loading: creatingChannel }] =
+    useCreateAlertChannelMutation();
+  const [updateChannel, { loading: updatingChannel }] =
+    useUpdateAlertChannelMutation();
+  const [deleteChannel, { loading: deletingChannel }] =
+    useDeleteAlertChannelMutation();
   const [upsertRule, { loading: updatingRule }] = useUpsertAlertRuleMutation();
 
   const [channelModalOpen, setChannelModalOpen] = useState(false);
-  const [channelModalMode, setChannelModalMode] = useState<"create" | "edit">("create");
+  const [channelModalMode, setChannelModalMode] = useState<"create" | "edit">(
+    "create",
+  );
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [channelForm] = Form.useForm();
 
@@ -277,18 +336,27 @@ export default function SubscriptionsPage() {
   const isRulesInitialLoading = rulesLoading && rules.length === 0;
   const isChannelsInitialLoading = channelsLoading && channels.length === 0;
   const isEventsInitialLoading = eventsLoading && events.length === 0;
-  const isNotificationsInitialLoading = notificationsLoading && notifications.length === 0;
+  const isNotificationsInitialLoading =
+    notificationsLoading && notifications.length === 0;
 
-  const eventById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const eventById = useMemo(
+    () => new Map(events.map((event) => [event.id, event])),
+    [events],
+  );
   const alertNotifications = useMemo(
-    () => notifications.filter((item) => item.type === NotificationType.AlertTriggered),
-    [notifications]
+    () =>
+      notifications.filter(
+        (item) => item.type === NotificationType.AlertTriggered,
+      ),
+    [notifications],
   );
   const notificationsByRuleId = useMemo(() => {
     const grouped = new Map<string, typeof alertNotifications>();
     for (const notification of alertNotifications) {
       const payload = notification.data ?? null;
-      const ruleId = extractRuleId(payload) ?? eventById.get(extractAlertEventId(payload) ?? "")?.ruleId;
+      const ruleId =
+        extractRuleId(payload) ??
+        eventById.get(extractAlertEventId(payload) ?? "")?.ruleId;
       if (!ruleId) {
         continue;
       }
@@ -313,9 +381,12 @@ export default function SubscriptionsPage() {
 
   const activeChannel = useMemo(
     () => channels.find((channel) => channel.id === activeChannelId) ?? null,
-    [activeChannelId, channels]
+    [activeChannelId, channels],
   );
-  const activeRule = useMemo(() => rules.find((rule) => rule.id === activeRuleId) ?? null, [activeRuleId, rules]);
+  const activeRule = useMemo(
+    () => rules.find((rule) => rule.id === activeRuleId) ?? null,
+    [activeRuleId, rules],
+  );
 
   useEffect(() => {
     if (!channelModalOpen) {
@@ -330,7 +401,7 @@ export default function SubscriptionsPage() {
           target: "",
           isActive: true,
           muteUntil: null,
-          notifyIntervalSeconds: null
+          notifyIntervalSeconds: null,
         });
         return;
       }
@@ -345,7 +416,7 @@ export default function SubscriptionsPage() {
         target: activeChannel.target,
         isActive: activeChannel.isActive ?? true,
         muteUntil: extractMuteUntil(config),
-        notifyIntervalSeconds: extractNotifyIntervalSeconds(config)
+        notifyIntervalSeconds: extractNotifyIntervalSeconds(config),
       });
     }, 0);
 
@@ -365,7 +436,9 @@ export default function SubscriptionsPage() {
       ruleForm.setFieldsValue({
         channelIds: (activeRule.channels ?? []).map((channel) => channel.id),
         muteUntil: parseDateValue(metadata?.muteUntil),
-        notifyAllMembers: metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true
+        notifyAllMembers:
+          metadata?.notifyAllMembers === true ||
+          metadata?.notifyAllUsers === true,
       });
     }, 0);
 
@@ -378,10 +451,19 @@ export default function SubscriptionsPage() {
     return eventId ? eventById.get(eventId) : undefined;
   };
 
-  const renderAlertEvidence = (notification: (typeof notifications)[number]) => {
+  const renderAlertEvidence = (
+    notification: (typeof notifications)[number],
+  ) => {
     const event = resolveAlertEvent(notification);
+    const presentation = formatNotificationPresentation(
+      notification,
+      locale,
+      t,
+    );
     const context =
-      event?.context && typeof event.context === "object" && !Array.isArray(event.context)
+      event?.context &&
+      typeof event.context === "object" &&
+      !Array.isArray(event.context)
         ? (event.context as Record<string, unknown>)
         : null;
     const source =
@@ -389,29 +471,81 @@ export default function SubscriptionsPage() {
       toStringValue(context?.sourceEndpoint) ??
       toStringValue(context?.sourceFunction) ??
       toStringValue(context?.sourceField);
-    const country = toStringValue(context?.countryName ?? context?.countryCode ?? context?.country);
+    const country = toStringValue(
+      context?.countryName ?? context?.countryCode ?? context?.country,
+    );
     const itemName = toStringValue(context?.itemName);
     const resource = toStringValue(context?.resource);
     const action = toStringValue(context?.action);
     const statusesValue = Array.isArray(context?.statuses)
-      ? (context?.statuses as unknown[]).map((entry) => formatContextValue(entry)).filter(Boolean).join(", ")
+      ? (context?.statuses as unknown[])
+          .map((entry) => formatContextValue(entry))
+          .filter(Boolean)
+          .join(", ")
       : toStringValue(context?.statuses ?? context?.status);
+    const formatEvidenceNumber = (value: number, maximumFractionDigits = 2) =>
+      new Intl.NumberFormat(locale, { maximumFractionDigits }).format(value);
     const evidenceTags = [
-      typeof event?.metricValue === "number" ? `value: ${event.metricValue}` : null,
-      typeof event?.changePercent === "number" ? `change: ${event.changePercent.toFixed(2)}%` : null,
-      source ? `source: ${source}` : null,
-      itemName ? `item: ${itemName}` : null,
-      country ? `country: ${country}` : null,
-      resource ? `resource: ${resource}` : null,
-      action ? `action: ${action}` : null,
-      statusesValue ? `statuses: ${statusesValue}` : null
+      typeof event?.metricValue === "number"
+        ? t("notifications.evidence.value", {
+            defaultValue: "Value: {{value}}",
+            value: formatEvidenceNumber(event.metricValue),
+          })
+        : null,
+      typeof event?.changePercent === "number"
+        ? t("notifications.evidence.change", {
+            defaultValue: "Change: {{value}}",
+            value: `${formatEvidenceNumber(event.changePercent)}%`,
+          })
+        : null,
+      source
+        ? t("notifications.evidence.source", {
+            defaultValue: "Source: {{value}}",
+            value: source,
+          })
+        : null,
+      itemName
+        ? t("notifications.evidence.item", {
+            defaultValue: "Item: {{value}}",
+            value: itemName,
+          })
+        : null,
+      country
+        ? t("notifications.evidence.country", {
+            defaultValue: "Country: {{value}}",
+            value: country,
+          })
+        : null,
+      resource
+        ? t("notifications.evidence.resource", {
+            defaultValue: "Resource: {{value}}",
+            value: resource,
+          })
+        : null,
+      action
+        ? t("notifications.evidence.action", {
+            defaultValue: "Action: {{value}}",
+            value: action,
+          })
+        : null,
+      statusesValue
+        ? t("notifications.evidence.statuses", {
+            defaultValue: "Statuses: {{value}}",
+            value: statusesValue,
+          })
+        : null,
     ]
       .filter(Boolean)
       .slice(0, 4) as string[];
-    const windowMinutes = event?.changeWindowMin ?? toNumber(context?.windowMinutes);
+    const windowMinutes =
+      event?.changeWindowMin ?? toNumber(context?.windowMinutes);
     const windowLabel =
       windowMinutes !== undefined && windowMinutes !== null
-        ? `${windowMinutes} min`
+        ? t(
+            "notifications.evidence.windowMinutes",
+            "{{count}} min",
+            { count: Math.trunc(windowMinutes) },
+          )
         : t("common.notAvailable");
     const thresholdSummary = event
       ? buildThresholdSummary(
@@ -419,15 +553,22 @@ export default function SubscriptionsPage() {
           event.thresholdValue ?? toNumber(context?.threshold),
           event.thresholdLower ?? toNumber(context?.lower),
           event.thresholdUpper ?? toNumber(context?.upper),
-          t
+          t,
         )
       : t("common.notAvailable");
-    const triggerReason = event?.message ?? notification.body ?? t("alerts.events.triggered");
+    const fallbackTriggerReason =
+      presentation.body ??
+      event?.message ??
+      notification.body ??
+      t("alerts.events.triggered");
 
     return (
       <Space direction="vertical" size={2}>
         <Typography.Text type="secondary">
-          {t("alerts.events.triggerReason", { defaultValue: "Trigger {{reason}}", reason: triggerReason })}
+          {t("alerts.events.triggerReason", {
+            defaultValue: "Trigger {{reason}}",
+            reason: fallbackTriggerReason,
+          })}
         </Typography.Text>
         {evidenceTags.length > 0 ? (
           <Space size={[4, 4]} wrap>
@@ -439,15 +580,20 @@ export default function SubscriptionsPage() {
           </Space>
         ) : (
           <Typography.Text type="secondary">
-            {t("alerts.events.evidenceEmpty", { defaultValue: "No evidence fields." })}
+            {t("alerts.events.evidenceEmpty", {
+              defaultValue: "No evidence fields.",
+            })}
           </Typography.Text>
         )}
         <Typography.Text type="secondary">
-          {t("alerts.events.window", { defaultValue: "Window {{window}}", window: windowLabel })}
+          {t("alerts.events.window", {
+            defaultValue: "Window {{window}}",
+            window: windowLabel,
+          })}
           {" · "}
           {t("alerts.rules.threshold", {
             defaultValue: "Threshold {{threshold}}",
-            threshold: thresholdSummary
+            threshold: thresholdSummary,
           })}
         </Typography.Text>
       </Space>
@@ -465,8 +611,14 @@ export default function SubscriptionsPage() {
       delete nextConfig.silenceUntil;
       delete nextConfig.silencedUntil;
     }
-    if (typeof values.notifyIntervalSeconds === "number" && values.notifyIntervalSeconds > 0) {
-      nextConfig.notifyIntervalSeconds = Math.max(1, Math.trunc(values.notifyIntervalSeconds));
+    if (
+      typeof values.notifyIntervalSeconds === "number" &&
+      values.notifyIntervalSeconds > 0
+    ) {
+      nextConfig.notifyIntervalSeconds = Math.max(
+        1,
+        Math.trunc(values.notifyIntervalSeconds),
+      );
     } else {
       delete nextConfig.notifyIntervalSeconds;
       delete nextConfig.notifyIntervalSec;
@@ -482,11 +634,15 @@ export default function SubscriptionsPage() {
               name: values.name,
               target: values.target,
               isActive: values.isActive ?? true,
-              config: nextConfig
-            }
-          }
+              config: nextConfig,
+            },
+          },
         });
-        message.success(t("subscriptions.channelCreated", { defaultValue: "Channel created" }));
+        message.success(
+          t("subscriptions.channelCreated", {
+            defaultValue: "Channel created",
+          }),
+        );
       } else {
         await updateChannel({
           variables: {
@@ -495,43 +651,58 @@ export default function SubscriptionsPage() {
               name: values.name,
               target: values.target,
               isActive: values.isActive,
-              config: nextConfig
-            }
-          }
+              config: nextConfig,
+            },
+          },
         });
-        message.success(t("subscriptions.channelUpdated", { defaultValue: "Channel updated" }));
+        message.success(
+          t("subscriptions.channelUpdated", {
+            defaultValue: "Channel updated",
+          }),
+        );
       }
       setChannelModalOpen(false);
       await refetchChannels();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+      message.error(
+        error instanceof Error ? error.message : t("common.error.unexpected"),
+      );
     }
   };
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
       await deleteChannel({ variables: { channelId } });
-      message.success(t("subscriptions.channelDeleted", { defaultValue: "Channel deleted" }));
+      message.success(
+        t("subscriptions.channelDeleted", { defaultValue: "Channel deleted" }),
+      );
       await refetchChannels();
       await refetchRules();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+      message.error(
+        error instanceof Error ? error.message : t("common.error.unexpected"),
+      );
     }
   };
 
-  const handleToggleChannelActive = async (channelId: string, isActive: boolean) => {
+  const handleToggleChannelActive = async (
+    channelId: string,
+    isActive: boolean,
+  ) => {
     try {
       await updateChannel({
         variables: {
           input: {
             id: channelId,
-            isActive
-          }
-        }
+            isActive,
+          },
+        },
       });
       await refetchChannels();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+      message.error(
+        error instanceof Error ? error.message : t("common.error.unexpected"),
+      );
     }
   };
 
@@ -575,31 +746,56 @@ export default function SubscriptionsPage() {
             metricProvider: activeRule.metricProvider,
             metricSlug,
             operator: activeRule.operator,
-            thresholdValue: typeof activeRule.thresholdValue === "number" ? activeRule.thresholdValue : undefined,
-            thresholdLower: typeof activeRule.thresholdLower === "number" ? activeRule.thresholdLower : undefined,
-            thresholdUpper: typeof activeRule.thresholdUpper === "number" ? activeRule.thresholdUpper : undefined,
-            changeWindowMin: typeof activeRule.changeWindowMin === "number" ? activeRule.changeWindowMin : undefined,
+            thresholdValue:
+              typeof activeRule.thresholdValue === "number"
+                ? activeRule.thresholdValue
+                : undefined,
+            thresholdLower:
+              typeof activeRule.thresholdLower === "number"
+                ? activeRule.thresholdLower
+                : undefined,
+            thresholdUpper:
+              typeof activeRule.thresholdUpper === "number"
+                ? activeRule.thresholdUpper
+                : undefined,
+            changeWindowMin:
+              typeof activeRule.changeWindowMin === "number"
+                ? activeRule.changeWindowMin
+                : undefined,
             cooldownSeconds: activeRule.cooldownSeconds,
             checkIntervalSec: activeRule.checkIntervalSec,
-            channelIds: Array.isArray(values.channelIds) ? values.channelIds : [],
-            metadata: nextMetadata
-          }
-        }
+            channelIds: Array.isArray(values.channelIds)
+              ? values.channelIds
+              : [],
+            metadata: nextMetadata,
+          },
+        },
       });
-      message.success(t("subscriptions.ruleUpdated", { defaultValue: "Rule subscriptions updated" }));
+      message.success(
+        t("subscriptions.ruleUpdated", {
+          defaultValue: "Rule subscriptions updated",
+        }),
+      );
       setRuleModalOpen(false);
-      await Promise.all([refetchRules(), refetchChannels(), refetchEvents(), refetchNotifications()]);
+      await Promise.all([
+        refetchRules(),
+        refetchChannels(),
+        refetchEvents(),
+        refetchNotifications(),
+      ]);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t("common.error.unexpected"));
+      message.error(
+        error instanceof Error ? error.message : t("common.error.unexpected"),
+      );
     }
   };
 
   const handleTabChange = (key: string) => {
     const next = new URLSearchParams(searchParams.toString());
-    if (key === 'content') {
-      next.delete('tab');
+    if (key === "content") {
+      next.delete("tab");
     } else {
-      next.set('tab', key);
+      next.set("tab", key);
     }
     const nextQuery = next.toString();
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
@@ -611,7 +807,9 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.rulesTitle", { defaultValue: "Rule Subscriptions" })}
+            {t("subscriptions.rulesTitle", {
+              defaultValue: "Rule Subscriptions",
+            })}
           </Typography.Text>
         </Space>
       }
@@ -636,7 +834,7 @@ export default function SubscriptionsPage() {
           title={t("common.accessDenied", { defaultValue: "Access denied" })}
           description={t("common.accessDeniedDescription", {
             defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
+              "You don't have permission to view this data. Contact an administrator if you need access.",
           })}
         />
       ) : isRulesInitialLoading || isEventsInitialLoading ? (
@@ -646,13 +844,14 @@ export default function SubscriptionsPage() {
           dataSource={rules}
           locale={{
             emptyText: t("subscriptions.rulesEmpty", {
-              defaultValue: "No alert rules configured."
-            })
+              defaultValue: "No alert rules configured.",
+            }),
           }}
           renderItem={(rule) => {
             const ruleMetadata = toRecord(rule.metadata);
             const ruleMuteUntil = parseDateValue(ruleMetadata?.muteUntil);
-            const isRuleMuted = !!ruleMuteUntil && ruleMuteUntil.isAfter(dayjs());
+            const isRuleMuted =
+              !!ruleMuteUntil && ruleMuteUntil.isAfter(dayjs());
             const ruleNotifications = notificationsByRuleId.get(rule.id) ?? [];
             const latestNotification = ruleNotifications[0];
             const latestNotificationTime = latestNotification
@@ -663,7 +862,7 @@ export default function SubscriptionsPage() {
                   hour: "2-digit",
                   minute: "2-digit",
                   second: "2-digit",
-                  hour12: false
+                  hour12: false,
                 })
               : t("common.notAvailable");
             return (
@@ -678,7 +877,7 @@ export default function SubscriptionsPage() {
                         <Tag color="gold">
                           {t("subscriptions.mutedUntil", {
                             defaultValue: "Muted until {{time}}",
-                            time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm")
+                            time: ruleMuteUntil?.format("YYYY-MM-DD HH:mm"),
                           })}
                         </Tag>
                       ) : null}
@@ -694,20 +893,21 @@ export default function SubscriptionsPage() {
                             rule.thresholdValue ?? undefined,
                             rule.thresholdLower ?? undefined,
                             rule.thresholdUpper ?? undefined,
-                            t
-                          )
+                            t,
+                          ),
                         })}
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("alerts.center.detail.window", {
                           defaultValue: "Window {{minutes}} min",
-                          minutes: rule.changeWindowMin ?? t("common.notAvailable")
+                          minutes:
+                            rule.changeWindowMin ?? t("common.notAvailable"),
                         })}
                       </Typography.Text>
                       <Typography.Text type="secondary">
                         {t("subscriptions.ruleCooldown", {
                           defaultValue: "Cooldown {{seconds}}s",
-                          seconds: rule.cooldownSeconds
+                          seconds: rule.cooldownSeconds,
                         })}
                       </Typography.Text>
                       <Space size={[4, 4]} wrap>
@@ -717,15 +917,18 @@ export default function SubscriptionsPage() {
                           ))
                         ) : (
                           <Typography.Text type="secondary">
-                            {t("subscriptions.channelsEmpty", { defaultValue: "No alert channels configured." })}
+                            {t("subscriptions.channelsEmpty", {
+                              defaultValue: "No alert channels configured.",
+                            })}
                           </Typography.Text>
                         )}
                       </Space>
                       <Typography.Text type="secondary">
                         {t("subscriptions.ruleNotifications", {
-                          defaultValue: "Notifications {{count}} · Latest {{time}}",
+                          defaultValue:
+                            "Notifications {{count}} · Latest {{time}}",
                           count: ruleNotifications.length,
-                          time: latestNotificationTime
+                          time: latestNotificationTime,
                         })}
                       </Typography.Text>
                     </Space>
@@ -756,7 +959,9 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.channelsTitle", { defaultValue: "Alert Channels" })}
+            {t("subscriptions.channelsTitle", {
+              defaultValue: "Alert Channels",
+            })}
           </Typography.Text>
         </Space>
       }
@@ -771,7 +976,7 @@ export default function SubscriptionsPage() {
             }}
             disabled={!canReadAlerts}
           >
-            {t('common.refresh')}
+            {t("common.refresh")}
           </Button>
           {canManageAlerts && canReadAlerts ? (
             <Button
@@ -795,7 +1000,7 @@ export default function SubscriptionsPage() {
           title={t("common.accessDenied", { defaultValue: "Access denied" })}
           description={t("common.accessDeniedDescription", {
             defaultValue:
-              "You don't have permission to view this data. Contact an administrator if you need access."
+              "You don't have permission to view this data. Contact an administrator if you need access.",
           })}
         />
       ) : isChannelsInitialLoading ? (
@@ -805,8 +1010,8 @@ export default function SubscriptionsPage() {
           dataSource={channels}
           locale={{
             emptyText: t("subscriptions.channelsEmpty", {
-              defaultValue: "No alert channels configured."
-            })
+              defaultValue: "No alert channels configured.",
+            }),
           }}
           renderItem={(channel) => (
             <List.Item
@@ -817,7 +1022,9 @@ export default function SubscriptionsPage() {
                         key="active"
                         size="small"
                         checked={channel.isActive ?? true}
-                        onChange={(checked) => void handleToggleChannelActive(channel.id, checked)}
+                        onChange={(checked) =>
+                          void handleToggleChannelActive(channel.id, checked)
+                        }
                       />,
                       <Button
                         key="edit"
@@ -833,14 +1040,14 @@ export default function SubscriptionsPage() {
                       <Popconfirm
                         key="delete"
                         title={t("subscriptions.deleteChannelConfirm", {
-                          defaultValue: "Delete this channel?"
+                          defaultValue: "Delete this channel?",
                         })}
                         onConfirm={() => void handleDeleteChannel(channel.id)}
                       >
                         <Button size="small" danger loading={deletingChannel}>
                           {t("common.delete")}
                         </Button>
-                      </Popconfirm>
+                      </Popconfirm>,
                     ]
                   : undefined
               }
@@ -857,37 +1064,39 @@ export default function SubscriptionsPage() {
                     )}
                   </Space>
                 }
-                description={
-                  (() => {
-                    const config = toRecord(channel.config);
-                    const muteUntil = extractMuteUntil(config);
-                    const isMuted = !!muteUntil && muteUntil.isAfter(dayjs());
-                    const intervalSeconds = extractNotifyIntervalSeconds(config);
-                    const intervalLabel = intervalSeconds
-                      ? t("subscriptions.notifyEvery", {
-                          defaultValue: "Every {{minutes}} min",
-                          minutes: Math.max(1, Math.round(intervalSeconds / 60))
-                        })
-                      : t("subscriptions.notifyImmediate", { defaultValue: "Immediate" });
-                    return (
-                      <Space direction="vertical" size={0}>
-                        <Typography.Text type="secondary">{channel.target}</Typography.Text>
-                        <Typography.Text type="secondary">
-                          {t("subscriptions.channelFrequency", {
-                            defaultValue: "Frequency: {{frequency}}",
-                            frequency: intervalLabel
-                          })}
-                          {isMuted
-                            ? ` · ${t("subscriptions.mutedUntil", {
-                                defaultValue: "Muted until {{time}}",
-                                time: muteUntil?.format("YYYY-MM-DD HH:mm")
-                              })}`
-                            : ""}
-                        </Typography.Text>
-                      </Space>
-                    );
-                  })()
-                }
+                description={(() => {
+                  const config = toRecord(channel.config);
+                  const muteUntil = extractMuteUntil(config);
+                  const isMuted = !!muteUntil && muteUntil.isAfter(dayjs());
+                  const intervalSeconds = extractNotifyIntervalSeconds(config);
+                  const intervalLabel = intervalSeconds
+                    ? t("subscriptions.notifyEvery", {
+                        defaultValue: "Every {{minutes}} min",
+                        minutes: Math.max(1, Math.round(intervalSeconds / 60)),
+                      })
+                    : t("subscriptions.notifyImmediate", {
+                        defaultValue: "Immediate",
+                      });
+                  return (
+                    <Space direction="vertical" size={0}>
+                      <Typography.Text type="secondary">
+                        {channel.target}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {t("subscriptions.channelFrequency", {
+                          defaultValue: "Frequency: {{frequency}}",
+                          frequency: intervalLabel,
+                        })}
+                        {isMuted
+                          ? ` · ${t("subscriptions.mutedUntil", {
+                              defaultValue: "Muted until {{time}}",
+                              time: muteUntil?.format("YYYY-MM-DD HH:mm"),
+                            })}`
+                          : ""}
+                      </Typography.Text>
+                    </Space>
+                  );
+                })()}
               />
             </List.Item>
           )}
@@ -902,7 +1111,9 @@ export default function SubscriptionsPage() {
       title={
         <Space size="middle" align="center">
           <Typography.Text strong>
-            {t("subscriptions.notificationsTitle", { defaultValue: "Notifications" })}
+            {t("subscriptions.notificationsTitle", {
+              defaultValue: "Notifications",
+            })}
           </Typography.Text>
           <Badge count={unreadCount} size="small" />
         </Space>
@@ -910,7 +1121,7 @@ export default function SubscriptionsPage() {
       extra={
         <Space size="small">
           <Button size="small" onClick={() => void refetchNotifications()}>
-            {t('common.refresh')}
+            {t("common.refresh")}
           </Button>
           <Button
             size="small"
@@ -919,7 +1130,7 @@ export default function SubscriptionsPage() {
               await Promise.all([refetchNotifications(), refetchUnread()]);
             }}
           >
-            {t('notifications.markAllRead')}
+            {t("notifications.markAllRead")}
           </Button>
         </Space>
       }
@@ -929,16 +1140,25 @@ export default function SubscriptionsPage() {
       ) : (
         <List
           dataSource={orderedNotifications}
-          locale={{ emptyText: t('notifications.empty') }}
+          locale={{ emptyText: t("notifications.empty") }}
           renderItem={(item) => {
             const action = resolveNotificationLink(item.data ?? null, t);
-            const isAlertNotification = item.type === NotificationType.AlertTriggered;
+            const isAlertNotification =
+              item.type === NotificationType.AlertTriggered;
+            const presentation = formatNotificationPresentation(
+              item,
+              locale,
+              t,
+            );
             return (
               <List.Item
                 onClick={async () => {
                   if (!item.readAt) {
                     await markRead({ variables: { id: item.id } });
-                    await Promise.all([refetchNotifications(), refetchUnread()]);
+                    await Promise.all([
+                      refetchNotifications(),
+                      refetchUnread(),
+                    ]);
                   }
                 }}
                 style={{ cursor: "pointer" }}
@@ -951,34 +1171,36 @@ export default function SubscriptionsPage() {
                 <List.Item.Meta
                   title={
                     <Space size="small" align="center">
-                      <Tag color={typeColor[item.type] ?? 'default'}>
+                      <Tag color={typeColor[item.type] ?? "default"}>
                         {t(`notifications.type.${item.type}`)}
                       </Tag>
-                      <Typography.Text strong>{item.title}</Typography.Text>
+                      <Typography.Text strong>
+                        {presentation.title}
+                      </Typography.Text>
                       {!item.readAt ? <Badge status="processing" /> : null}
                     </Space>
                   }
                   description={
                     <Space direction="vertical" size={0}>
-                      {item.body ? (
+                      {presentation.body ? (
                         <Typography.Paragraph
                           style={{ marginBottom: 6 }}
                           ellipsis={{ rows: 2, expandable: false }}
                         >
-                          {item.body}
+                          {presentation.body}
                         </Typography.Paragraph>
                       ) : null}
                       {isAlertNotification ? renderAlertEvidence(item) : null}
                       <Space size="small" align="center">
                         <Typography.Text type="secondary">
                           {formatDateTime(item.createdAt, locale, {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: false
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: false,
                           })}
                         </Typography.Text>
                         {action ? (
@@ -989,7 +1211,10 @@ export default function SubscriptionsPage() {
                               event.stopPropagation();
                               if (!item.readAt) {
                                 await markRead({ variables: { id: item.id } });
-                                await Promise.all([refetchNotifications(), refetchUnread()]);
+                                await Promise.all([
+                                  refetchNotifications(),
+                                  refetchUnread(),
+                                ]);
                               }
                               router.push(action.href);
                             }}
@@ -1018,7 +1243,8 @@ export default function SubscriptionsPage() {
         </Typography.Title>
         <Typography.Text type="secondary">
           {t("subscriptions.subtitle", {
-            defaultValue: "Review content subscriptions, alert rules, channels, and notification history in one place."
+            defaultValue:
+              "Review content subscriptions, alert rules, channels, and notification history in one place.",
           })}
         </Typography.Text>
       </Space>
@@ -1028,23 +1254,36 @@ export default function SubscriptionsPage() {
         onChange={handleTabChange}
         items={[
           {
-            key: 'content',
-            label: t('subscriptions.content.tabTitle', { defaultValue: 'Content subscriptions' }),
-            children: <ContentSubscriptionsTab accessToken={session?.accessToken} active={activeTab === 'content'} />,
+            key: "content",
+            label: t("subscriptions.content.tabTitle", {
+              defaultValue: "Content subscriptions",
+            }),
+            children: (
+              <ContentSubscriptionsTab
+                accessToken={session?.accessToken}
+                active={activeTab === "content"}
+              />
+            ),
           },
           {
-            key: 'rules',
-            label: t('subscriptions.rulesTitle', { defaultValue: 'Rule Subscriptions' }),
+            key: "rules",
+            label: t("subscriptions.rulesTitle", {
+              defaultValue: "Rule Subscriptions",
+            }),
             children: rulesTabContent,
           },
           {
-            key: 'channels',
-            label: t('subscriptions.channelsTitle', { defaultValue: 'Alert Channels' }),
+            key: "channels",
+            label: t("subscriptions.channelsTitle", {
+              defaultValue: "Alert Channels",
+            }),
             children: channelsTabContent,
           },
           {
-            key: 'notifications',
-            label: t('subscriptions.notificationsTitle', { defaultValue: 'Notifications' }),
+            key: "notifications",
+            label: t("subscriptions.notificationsTitle", {
+              defaultValue: "Notifications",
+            }),
             children: notificationsTabContent,
           },
         ]}
@@ -1088,51 +1327,106 @@ export default function SubscriptionsPage() {
             <Select
               disabled={channelModalMode === "edit"}
               options={[
-                { label: t("alerts.channels.types.webhook", { defaultValue: "Webhook" }), value: "webhook" },
-                { label: t("alerts.channels.types.email", { defaultValue: "Email" }), value: "email" }
+                {
+                  label: t("alerts.channels.types.webhook", {
+                    defaultValue: "Webhook",
+                  }),
+                  value: "webhook",
+                },
+                {
+                  label: t("alerts.channels.types.email", {
+                    defaultValue: "Email",
+                  }),
+                  value: "email",
+                },
               ]}
             />
           </Form.Item>
           <Form.Item
-            label={t("alerts.channels.fields.target", { defaultValue: "Target" })}
+            label={t("alerts.channels.fields.target", {
+              defaultValue: "Target",
+            })}
             name="target"
             rules={[{ required: true }]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelActive", { defaultValue: "Enabled" })}
+            label={t("subscriptions.channelActive", {
+              defaultValue: "Enabled",
+            })}
             name="isActive"
             valuePropName="checked"
           >
             <Switch />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelMuteUntil", { defaultValue: "Mute until" })}
+            label={t("subscriptions.channelMuteUntil", {
+              defaultValue: "Mute until",
+            })}
             name="muteUntil"
           >
             <DatePicker showTime allowClear style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
-            label={t("subscriptions.channelNotifyInterval", { defaultValue: "Notification frequency" })}
+            label={t("subscriptions.channelNotifyInterval", {
+              defaultValue: "Notification frequency",
+            })}
             name="notifyIntervalSeconds"
           >
             <Select
               allowClear
-              placeholder={t("subscriptions.notifyImmediate", { defaultValue: "Immediate" })}
+              placeholder={t("subscriptions.notifyImmediate", {
+                defaultValue: "Immediate",
+              })}
               options={[
-                { value: 300, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 5 }) },
-                { value: 900, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 15 }) },
-                { value: 3600, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 60 }) },
-                { value: 21600, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 360 }) },
-                { value: 86400, label: t("subscriptions.notifyEvery", { defaultValue: "Every {{minutes}} min", minutes: 1440 }) }
+                {
+                  value: 300,
+                  label: t("subscriptions.notifyEvery", {
+                    defaultValue: "Every {{minutes}} min",
+                    minutes: 5,
+                  }),
+                },
+                {
+                  value: 900,
+                  label: t("subscriptions.notifyEvery", {
+                    defaultValue: "Every {{minutes}} min",
+                    minutes: 15,
+                  }),
+                },
+                {
+                  value: 3600,
+                  label: t("subscriptions.notifyEvery", {
+                    defaultValue: "Every {{minutes}} min",
+                    minutes: 60,
+                  }),
+                },
+                {
+                  value: 21600,
+                  label: t("subscriptions.notifyEvery", {
+                    defaultValue: "Every {{minutes}} min",
+                    minutes: 360,
+                  }),
+                },
+                {
+                  value: 86400,
+                  label: t("subscriptions.notifyEvery", {
+                    defaultValue: "Every {{minutes}} min",
+                    minutes: 1440,
+                  }),
+                },
               ]}
             />
           </Form.Item>
         </Modal>
       </Form>
 
-      <Form form={ruleForm} layout="vertical" onFinish={handleSubmitRuleSubscriptions} component={false}>
+      <Form
+        form={ruleForm}
+        layout="vertical"
+        onFinish={handleSubmitRuleSubscriptions}
+        component={false}
+      >
         <Modal
           title={t("subscriptions.manageRule", { defaultValue: "Manage rule" })}
           open={ruleModalOpen}
@@ -1143,26 +1437,34 @@ export default function SubscriptionsPage() {
           destroyOnHidden
         >
           <Form.Item
-            label={t("alerts.config.fields.channels", { defaultValue: "Channels" })}
+            label={t("alerts.config.fields.channels", {
+              defaultValue: "Channels",
+            })}
             name="channelIds"
           >
             <Select
               mode="multiple"
-              placeholder={t("alerts.config.fields.channelsPlaceholder", { defaultValue: "Select channels" })}
+              placeholder={t("alerts.config.fields.channelsPlaceholder", {
+                defaultValue: "Select channels",
+              })}
               options={channels.map((channel) => ({
                 label: `${channel.name}${channel.isActive ? "" : ` (${t("common.disabled")})`}`,
-                value: channel.id
+                value: channel.id,
               }))}
             />
           </Form.Item>
           <Form.Item
-            label={t("alerts.config.fields.muteUntil", { defaultValue: "Mute until" })}
+            label={t("alerts.config.fields.muteUntil", {
+              defaultValue: "Mute until",
+            })}
             name="muteUntil"
           >
             <DatePicker showTime allowClear style={{ width: "100%" }} />
           </Form.Item>
           <Form.Item
-            label={t("alerts.config.fields.notifyAllMembers", { defaultValue: "Notify all members" })}
+            label={t("alerts.config.fields.notifyAllMembers", {
+              defaultValue: "Notify all members",
+            })}
             name="notifyAllMembers"
             valuePropName="checked"
           >

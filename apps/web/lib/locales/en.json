@@ -664,6 +664,17 @@
     },
     "queue": {
       "connectionFailed": "Queue connection failed: {{error}}",
+      "connectionError": {
+        "unauthorized": "Queue connection expired. Please sign in again.",
+        "tooManyConnections": "Queue connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many queue connection attempts. Please try again later.",
+        "rateLimitExceeded": "Queue connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed queue sign-in attempts. Please try again later.",
+        "timeout": "Connecting to the queue timed out. Please try again.",
+        "network": "Unable to connect to the queue. Please check the network and try again.",
+        "connect": "Unable to connect to the queue right now. Please try again later.",
+        "socket": "Queue connection is unstable. Please try again later."
+      },
       "jobFailed": "Job {{jobId}} failed",
       "jobCompleted": "Job {{jobId}} completed",
       "jobStarted": "Job {{jobId}} started",
@@ -1791,6 +1802,17 @@
       }
     },
     "newsnow": {
+      "connectionError": {
+        "unauthorized": "NewsNow realtime access expired. Please sign in again.",
+        "tooManyConnections": "NewsNow realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many NewsNow realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "NewsNow realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed NewsNow realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to NewsNow realtime timed out. Please try again.",
+        "network": "Unable to connect to NewsNow realtime. Please check the network and try again.",
+        "connect": "Unable to connect to NewsNow realtime right now. Please try again later.",
+        "socket": "NewsNow realtime connection is unstable. Please try again later."
+      },
       "runtimeSecrets": {
         "openSettings": "Go to System Settings > News source secrets",
         "openSettingsWithKey": "Go to System Settings > News source secrets (Suggested: {{key}})",
@@ -2285,6 +2307,166 @@
       "knowledgeGraphReview": {
         "title": "Knowledge Graph Review",
         "description": "Review low-confidence knowledge graph relations and record human feedback"
+      }
+    }
+  },
+  "adminSettings": {
+    "workspace": {
+      "title": "Settings Workspace",
+      "description": "Browse administrative settings by domain instead of navigating a single oversized tab strip.",
+      "overview": "Overview",
+      "overviewDescription": "See available domains, common shortcuts, and quick entry points.",
+      "summary": "Administrative settings are grouped by domain so high-risk controls are easier to find and operate.",
+      "quickLinks": "Quick links",
+      "quickLinkTag": "Shortcut",
+      "open": "Open",
+      "domains": "Settings domains",
+      "enterDomain": "Open domain",
+      "adminCardDescription": "Open the unified workspace for access, system, storage, and service configuration."
+    },
+    "pages": {
+      "access": {
+        "title": "Access Settings",
+        "description": "Manage roles, permissions, and organization memberships."
+      },
+      "security": {
+        "title": "Security & Governance",
+        "description": "Tune protections, caches, rate limits, and audit retention."
+      },
+      "ingestion": {
+        "title": "Ingestion & Delivery",
+        "description": "Configure crawl clients, scheduler behavior, secrets, and storage."
+      },
+      "ai": {
+        "title": "AI Services",
+        "description": "Manage gateway routing, safety, and model-adjacent infrastructure."
+      },
+      "knowledge": {
+        "title": "Knowledge Systems",
+        "description": "Operate knowledge extraction, review, and graph quality settings."
+      },
+      "news": {
+        "title": "News Intelligence",
+        "description": "Tune event extraction, indicators, dedupe, and classification."
+      },
+      "editorial": {
+        "title": "Editorial Controls",
+        "description": "Manage newsroom prompts and personalization behavior."
+      },
+      "monitoring": {
+        "title": "Monitoring",
+        "description": "Operate live monitoring, realtime signals, and RSS diagnostics."
+      },
+      "integrations": {
+        "title": "Integrations",
+        "description": "Manage external service connectivity and infrastructure adapters."
+      }
+    },
+    "panels": {
+      "roles": {
+        "description": "Define reusable permission bundles for operators and admins."
+      },
+      "permissions": {
+        "description": "Inspect the permission catalog available to the workspace."
+      },
+      "members": {
+        "description": "Assign roles to workspace members and review current access."
+      },
+      "security": {
+        "description": "Control secret encryption and validate key health."
+      },
+      "auth-cache": {
+        "description": "Configure profile cache TTLs, lock windows, and retry delays."
+      },
+      "rate-limits": {
+        "description": "Throttle sensitive write and authentication flows."
+      },
+      "rate-limit-policies": {
+        "description": "Review and edit reusable policy rules for shared rate limits."
+      },
+      "audit-log": {
+        "description": "Retain security and configuration events for investigations."
+      },
+      "crawl-client": {
+        "description": "Tune crawl request, retry, and adaptive concurrency defaults."
+      },
+      "archive-preparation": {
+        "description": "Configure archive packaging and retention preparation behavior."
+      },
+      "news-source-scheduler": {
+        "description": "Tune seed freshness, RSS cadence, and scheduling heuristics."
+      },
+      "news-source-runtime-secrets": {
+        "description": "Store per-source secrets required by news ingestion providers."
+      },
+      "storage": {
+        "description": "Configure storage backends and validate object access."
+      },
+      "llm-gateway": {
+        "description": "Configure model gateway endpoints, profiles, and governance."
+      },
+      "llm-request-logs": {
+        "description": "Inspect recent gateway requests and debugging traces."
+      },
+      "assistant-safety": {
+        "description": "Control moderation, guardrails, and safety diagnostics."
+      },
+      "vector-service": {
+        "description": "Connect and tune the vector retrieval service."
+      },
+      "model-service": {
+        "description": "Manage internal model service connectivity and credentials."
+      },
+      "knowledge-graph": {
+        "description": "Tune graph ingestion, thresholds, and extraction behavior."
+      },
+      "knowledge-graph-review": {
+        "description": "Review low-confidence relations and record human decisions."
+      },
+      "entity-impact-graph": {
+        "description": "Configure graph rendering, force settings, and thresholds."
+      },
+      "news-events": {
+        "description": "Configure event ingestion, scoring, and timeline behavior."
+      },
+      "news-event-source-policy": {
+        "description": "Set allowlists, penalties, and source policy behavior."
+      },
+      "news-indicator": {
+        "description": "Manage indicator matching, thresholds, and associations."
+      },
+      "news-dedupe": {
+        "description": "Adjust dedupe windows, similarity rules, and fallbacks."
+      },
+      "news-classification": {
+        "description": "Control category routing, model gates, and review defaults."
+      },
+      "news-prompts": {
+        "description": "Edit shared prompt templates used across news pipelines."
+      },
+      "newsnow-personalization": {
+        "description": "Tune ranking and personalization behavior for NewsNow."
+      },
+      "situation-monitor": {
+        "description": "Configure live monitoring feeds, translation, and Telegram."
+      },
+      "realtime-signals": {
+        "description": "Manage signal collectors, providers, and thresholds."
+      },
+      "rss-translation-metrics": {
+        "description": "Review translation request, cache, and latency metrics."
+      },
+      "rss-diagnostics": {
+        "description": "Inspect feed diagnostics and ingest pipeline health."
+      },
+      "geo-nominatim": {
+        "description": "Configure geocoding identification and request testing."
+      },
+      "email": {
+        "description": "Manage SMTP, test delivery, and auth email code settings."
+      },
+      "akshare": {
+        "description": "Review Akshare health and manual refresh controls."
       }
     }
   },
@@ -2906,11 +3088,91 @@
     "unreadCount_other": "{{count}} unread notifications",
     "markAllRead": "Mark all as read",
     "empty": "No notifications yet",
+    "live": {
+      "batchMessage": "{{count}} new notifications · {{titles}}"
+    },
     "openLink": "Open",
     "openTask": "Open task",
     "openItem": "Open item",
     "openAnalysis": "Open analysis",
     "openAlert": "Open alert",
+    "technicalDetail": "System detail: {{detail}}",
+    "connectionError": {
+      "unauthorized": "Notification connection expired. Please sign in again.",
+      "tooManyConnections": "Notification connections are at capacity. Please try again later.",
+      "tooManyConnectionAttempts": "Too many notification connection attempts. Please try again later.",
+      "timeout": "Connecting to notifications timed out. Please try again.",
+      "network": "Unable to connect to notifications. Please check the network and try again.",
+      "connect": "Unable to connect to notifications right now. Please try again later.",
+      "socket": "Notification connection is unstable. Please try again later."
+    },
+    "analysisType": {
+      "correlation": "Correlation analysis",
+      "anomaly": "Anomaly analysis"
+    },
+    "evidence": {
+      "value": "Value: {{value}}",
+      "change": "Change: {{value}}",
+      "source": "Source: {{value}}",
+      "item": "Item: {{value}}",
+      "country": "Country: {{value}}",
+      "resource": "Resource: {{value}}",
+      "action": "Action: {{value}}",
+      "statuses": "Statuses: {{value}}",
+      "windowMinutes": "{{count}} min"
+    },
+    "presentation": {
+      "crawlCompleted": {
+        "title": "Crawl completed: {{taskLabel}}",
+        "body": "Inserted {{inserted}} item(s), skipped {{skipped}} item(s){{retryableSuffix}}.",
+        "retryableSuffix": ", retryable failures {{count}}"
+      },
+      "crawlFailed": {
+        "title": "Crawl failed: {{taskLabel}}",
+        "body": "The crawl task did not complete successfully."
+      },
+      "analysisCompleted": {
+        "title": "Analysis completed: {{analysisLabel}}",
+        "body": "The analysis result is ready."
+      },
+      "analysisFailed": {
+        "title": "Analysis failed: {{analysisLabel}}",
+        "body": "The analysis job did not complete successfully."
+      },
+      "alertTriggered": {
+        "title": "Alert triggered: {{ruleName}}",
+        "metricValue": "current value {{value}}",
+        "changePercent": "change {{value}}",
+        "context": "context {{value}}",
+        "body": "Triggered alert condition: {{details}}."
+      },
+      "newsSourceCircuitOpened": {
+        "title": "Source paused: {{sourceLabel}}",
+        "body": "Consecutive failures reached {{count}} and the source is paused until {{until}}."
+      },
+      "newsSourceAutoDisabled": {
+        "title": "Source disabled: {{sourceLabel}}",
+        "body": "Consecutive failures reached {{count}} and the source was automatically disabled."
+      },
+      "newsSourceRssBodyMissingSpike": {
+        "title": "RSS body missing spike: {{sourceLabel}}",
+        "body": "In the last 24 hours, items without usable body reached {{count}}; threshold {{threshold}}."
+      },
+      "newsSourcePipelineRetrySpike": {
+        "title": "Pipeline retry spike: {{sourceLabel}}",
+        "body": "In the last 24 hours, pipeline retries reached {{count}}; threshold {{threshold}}."
+      },
+      "newsSourceSchedulerBackpressure": {
+        "title": "Scheduler backpressure warning",
+        "body": "{{delayedCount}} source(s) were delayed until {{rescheduleAt}}; pending jobs {{pendingJobs}}, threshold {{threshold}}."
+      },
+      "classificationQualityThresholdExceeded": {
+        "title": "Classification quality threshold exceeded",
+        "body": "Classification quality thresholds were exceeded in the {{window}} window. Review system monitoring for details.",
+        "latency": "Latency: {{summary}}",
+        "gate": "Category gates: {{summary}}"
+      }
+    },
     "type": {
       "alert_triggered": "Alert triggered",
       "analysis_completed": "Analysis completed",
@@ -7861,7 +8123,18 @@
     "realtime": {
       "connected": "RT ON",
       "disconnected": "RT OFF",
-      "error": "RT ERROR"
+      "error": "RT ERROR",
+      "connectionError": {
+        "unauthorized": "Situation monitor realtime access expired. Please sign in again.",
+        "tooManyConnections": "Situation monitor realtime connections are at capacity. Please try again later.",
+        "tooManyConnectionAttempts": "Too many situation monitor realtime connection attempts. Please try again later.",
+        "rateLimitExceeded": "Situation monitor realtime connection attempts are too frequent. Please try again later.",
+        "tooManyFailedAttempts": "Too many failed situation monitor realtime sign-in attempts. Please try again later.",
+        "timeout": "Connecting to situation monitor realtime timed out. Please try again.",
+        "network": "Unable to connect to situation monitor realtime. Please check the network and try again.",
+        "connect": "Unable to connect to situation monitor realtime right now. Please try again later.",
+        "socket": "Situation monitor realtime connection is unstable. Please try again later."
+      }
     },
     "presets": {
       "title": "Presets",

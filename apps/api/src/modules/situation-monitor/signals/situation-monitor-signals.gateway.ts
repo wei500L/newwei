@@ -1,24 +1,28 @@
-import { createLogger } from '@modular/utils';
-import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  createLogger,
+  RealtimeSocketErrorCode,
+  type RealtimeSocketErrorPayload,
+} from "@modular/utils";
+import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   WebSocketGateway,
   WebSocketServer,
-} from '@nestjs/websockets';
-import { verify } from 'jsonwebtoken';
-import { Server, Socket } from 'socket.io';
+} from "@nestjs/websockets";
+import { verify } from "jsonwebtoken";
+import { Server, Socket } from "socket.io";
 
-import { AccessTokenBlacklistService } from '../../auth/access-token-blacklist.service';
+import { AccessTokenBlacklistService } from "../../auth/access-token-blacklist.service";
 import {
   AuthService,
   type AuthenticatedUser,
   type JwtPayload,
-} from '../../auth/auth.service';
-import { EnvService } from '../../config/config.service';
-import { UserSessionManager } from '../../websocket/user-session-manager.service';
-import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from './situation-monitor-signals.constants';
-import { SituationMonitorSignalsDispatcher } from './situation-monitor-signals.dispatcher';
+} from "../../auth/auth.service";
+import { EnvService } from "../../config/config.service";
+import { UserSessionManager } from "../../websocket/user-session-manager.service";
+import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
+import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
 
 interface RateLimitState {
   windowStartMs: number;
@@ -26,19 +30,25 @@ interface RateLimitState {
 }
 
 @WebSocketGateway({
-  namespace: 'situation-monitor',
+  namespace: "situation-monitor",
   cors: {
     origin: true,
     credentials: true,
   },
 })
 export class SituationMonitorSignalsGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleInit,
+    OnModuleDestroy
 {
   @WebSocketServer()
   server!: Server;
 
-  private readonly logger = createLogger({ name: 'situation-monitor-signals-gateway' });
+  private readonly logger = createLogger({
+    name: "situation-monitor-signals-gateway",
+  });
   private unsubscribe?: () => void;
   private readonly connectAttemptsByIp = new Map<string, RateLimitState>();
   private readonly connectAttemptsByUserId = new Map<string, RateLimitState>();
@@ -53,7 +63,9 @@ export class SituationMonitorSignalsGateway
 
   onModuleInit() {
     this.unsubscribe = this.dispatcher.registerListener(async (event) => {
-      this.server.to(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM).emit(event.type, event.payload);
+      this.server
+        .to(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM)
+        .emit(event.type, event.payload);
     });
   }
 
@@ -69,12 +81,12 @@ export class SituationMonitorSignalsGateway
 
     try {
       if (!this.isOriginAllowed(this.extractOrigin(client))) {
-        throw new Error('Origin not allowed');
+        throw new Error("Origin not allowed");
       }
 
       this.enforceConnectRateLimit(
         this.connectAttemptsByIp,
-        ip ? `ip:${ip}` : 'ip:unknown',
+        ip ? `ip:${ip}` : "ip:unknown",
         this.env.webSocketSecurity.connectRateLimitPerIp,
       );
 
@@ -88,39 +100,60 @@ export class SituationMonitorSignalsGateway
       );
 
       await this.ensureNotRevoked(payload);
-      const profile = await this.authService.getUserProfile(payload.sub, payload.orgId);
-      if (!profile.permissions.includes('items.read')) {
-        throw new Error('Insufficient permissions');
+      const profile = await this.authService.getUserProfile(
+        payload.sub,
+        payload.orgId,
+      );
+      if (!profile.permissions.includes("items.read")) {
+        throw new Error("Insufficient permissions");
       }
 
       client.data.user = profile;
       client.data.clientIp = ip;
 
-      const { userConnections } = await this.sessions.register(this.server, client, {
-        userId: profile.id,
-        orgId: profile.orgId,
-        ip,
-      });
+      const { userConnections } = await this.sessions.register(
+        this.server,
+        client,
+        {
+          userId: profile.id,
+          orgId: profile.orgId,
+          ip,
+        },
+      );
       await client.join(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM);
 
-      client.emit('situation:connected', {
+      client.emit("situation:connected", {
         orgId: profile.orgId,
         userId: profile.id,
       });
 
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
-        'Situation monitor socket connected',
+        {
+          socketId: client.id,
+          orgId: profile.orgId,
+          userId: profile.id,
+          ip,
+          userConnections,
+        },
+        "Situation monitor socket connected",
       );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       const responseMessage =
-        errorMessage === 'Too many connections' || errorMessage === 'Too many connection attempts'
+        errorMessage === "Too many connections" ||
+        errorMessage === "Too many connection attempts"
           ? errorMessage
-          : 'Unauthorized';
+          : "Unauthorized";
       this.sessions.unregister(client);
-      this.logger.warn({ socketId: client.id, ip, error: errorMessage }, 'Situation monitor socket auth failed');
-      client.emit('situation:error', { message: responseMessage });
+      this.logger.warn(
+        { socketId: client.id, ip, error: errorMessage },
+        "Situation monitor socket auth failed",
+      );
+      client.emit(
+        "situation:error",
+        this.toSocketErrorPayload(responseMessage),
+      );
       client.disconnect(true);
     }
   }
@@ -135,7 +168,7 @@ export class SituationMonitorSignalsGateway
         orgId: profile?.orgId,
         ip: client.data?.clientIp,
       },
-      'Situation monitor socket disconnected',
+      "Situation monitor socket disconnected",
     );
   }
 
@@ -146,29 +179,31 @@ export class SituationMonitorSignalsGateway
       issuer: jwtConfig.issuer,
     });
 
-    if (!decoded || typeof decoded === 'string') {
-      throw new Error('Invalid token');
+    if (!decoded || typeof decoded === "string") {
+      throw new Error("Invalid token");
     }
 
     const payload = decoded as Partial<JwtPayload>;
-    if (!payload.sub || typeof payload.sub !== 'string') {
-      throw new Error('Invalid token payload');
+    if (!payload.sub || typeof payload.sub !== "string") {
+      throw new Error("Invalid token payload");
     }
-    if (!payload.orgId || typeof payload.orgId !== 'string') {
-      throw new Error('Invalid token payload');
+    if (!payload.orgId || typeof payload.orgId !== "string") {
+      throw new Error("Invalid token payload");
     }
 
     const permissions = Array.isArray(payload.permissions)
-      ? payload.permissions.filter((entry): entry is string => typeof entry === 'string')
+      ? payload.permissions.filter(
+          (entry): entry is string => typeof entry === "string",
+        )
       : [];
 
     return {
       sub: payload.sub,
       orgId: payload.orgId,
       permissions,
-      jti: typeof payload.jti === 'string' ? payload.jti : undefined,
-      exp: typeof payload.exp === 'number' ? payload.exp : undefined,
-      iat: typeof payload.iat === 'number' ? payload.iat : undefined,
+      jti: typeof payload.jti === "string" ? payload.jti : undefined,
+      exp: typeof payload.exp === "number" ? payload.exp : undefined,
+      iat: typeof payload.iat === "number" ? payload.iat : undefined,
     };
   }
 
@@ -178,7 +213,7 @@ export class SituationMonitorSignalsGateway
     }
     const revoked = await this.accessTokenBlacklist.has(payload.jti);
     if (revoked) {
-      throw new Error('Token revoked');
+      throw new Error("Token revoked");
     }
   }
 
@@ -190,34 +225,40 @@ export class SituationMonitorSignalsGateway
     }
 
     const authToken = client.handshake.auth?.token;
-    if (typeof authToken === 'string' && authToken.length > 0) {
+    if (typeof authToken === "string" && authToken.length > 0) {
       return authToken;
     }
 
     const queryToken = client.handshake.query?.token;
-    if (typeof queryToken === 'string' && queryToken.length > 0) {
+    if (typeof queryToken === "string" && queryToken.length > 0) {
       return queryToken;
     }
 
-    if (Array.isArray(queryToken) && queryToken.length > 0 && typeof queryToken[0] === 'string') {
+    if (
+      Array.isArray(queryToken) &&
+      queryToken.length > 0 &&
+      typeof queryToken[0] === "string"
+    ) {
       return queryToken[0];
     }
 
-    throw new Error('Missing auth token');
+    throw new Error("Missing auth token");
   }
 
-  private parseAuthorizationHeader(authHeader: string | string[] | undefined): string | undefined {
+  private parseAuthorizationHeader(
+    authHeader: string | string[] | undefined,
+  ): string | undefined {
     if (!authHeader) {
       return undefined;
     }
 
     const headerValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-    if (typeof headerValue !== 'string') {
+    if (typeof headerValue !== "string") {
       return undefined;
     }
 
     const trimmed = headerValue.trim();
-    if (trimmed.toLowerCase().startsWith('bearer ')) {
+    if (trimmed.toLowerCase().startsWith("bearer ")) {
       return trimmed.slice(7);
     }
 
@@ -229,7 +270,8 @@ export class SituationMonitorSignalsGateway
     key: string,
     limit: number,
   ) {
-    const windowMs = this.env.webSocketSecurity.connectRateLimitWindowSeconds * 1000;
+    const windowMs =
+      this.env.webSocketSecurity.connectRateLimitWindowSeconds * 1000;
     const now = Date.now();
     const current = map.get(key);
 
@@ -240,21 +282,48 @@ export class SituationMonitorSignalsGateway
 
     current.count += 1;
     if (current.count > limit) {
-      throw new Error('Too many connection attempts');
+      throw new Error("Too many connection attempts");
     }
   }
 
+  private toSocketErrorPayload(
+    errorMessage: string,
+  ): RealtimeSocketErrorPayload {
+    if (errorMessage === "Too many connections") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnections,
+        message: "Too many connections",
+      };
+    }
+    if (errorMessage === "Too many connection attempts") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
+        message: "Too many connection attempts",
+      };
+    }
+    return {
+      code: RealtimeSocketErrorCode.Unauthorized,
+      message: "Unauthorized",
+    };
+  }
+
   private extractClientIp(client: Socket): string | undefined {
-    const forwardedHeader = client.handshake.headers['x-forwarded-for'];
-    const forwarded = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
-    const ipFromForwarded = forwarded?.split(',')[0]?.trim();
-    const address = typeof client.handshake.address === 'string' ? client.handshake.address : undefined;
+    const forwardedHeader = client.handshake.headers["x-forwarded-for"];
+    const forwarded = Array.isArray(forwardedHeader)
+      ? forwardedHeader[0]
+      : forwardedHeader;
+    const ipFromForwarded = forwarded?.split(",")[0]?.trim();
+    const address =
+      typeof client.handshake.address === "string"
+        ? client.handshake.address
+        : undefined;
     const ip = ipFromForwarded || address;
-    return ip ? ip.replace(/^::ffff:/, '') : undefined;
+    return ip ? ip.replace(/^::ffff:/, "") : undefined;
   }
 
   private extractOrigin(client: Socket): string | undefined {
-    const originHeader = client.handshake.headers.origin ?? client.handshake.headers.referer;
+    const originHeader =
+      client.handshake.headers.origin ?? client.handshake.headers.referer;
     const raw = Array.isArray(originHeader) ? originHeader[0] : originHeader;
     if (!raw) {
       return undefined;
@@ -273,7 +342,7 @@ export class SituationMonitorSignalsGateway
       return true;
     }
 
-    const normalizedOrigin = origin.replace(/\/$/, '');
+    const normalizedOrigin = origin.replace(/\/$/, "");
     const configured = this.env.graphqlConfig.corsOrigin;
 
     if (!configured) {
@@ -281,12 +350,12 @@ export class SituationMonitorSignalsGateway
     }
 
     const allowlist = String(configured)
-      .split(',')
+      .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
-      .map((entry) => entry.replace(/\/$/, ''));
+      .map((entry) => entry.replace(/\/$/, ""));
 
-    if (allowlist.includes('*')) {
+    if (allowlist.includes("*")) {
       return true;
     }
 

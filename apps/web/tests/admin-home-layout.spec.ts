@@ -24,9 +24,7 @@ const ADMIN_LINK_FIXTURES: AdminLinkFixture[] = [
   { key: 'knowledgeGraphReview', group: 'monitoring', permission: 'knowledgegraph.review' },
   { key: 'orgs', group: 'governance', permission: 'org.write' },
   { key: 'audit', group: 'governance', permission: 'settings.manage' },
-  { key: 'settings', group: 'governance', permission: 'settings.manage' },
-  { key: 'storage', group: 'platform', permission: 'settings.manage' },
-  { key: 'system', group: 'platform', permission: 'settings.manage' }
+  { key: 'settingsWorkspace', group: 'platform', permission: 'settings.manage' }
 ];
 
 describe('admin homepage permission filtering', () => {
@@ -69,11 +67,11 @@ describe('admin homepage grouping', () => {
 
     const grouped = groupAdminLinksBySection(visible);
 
-    expect(visible).toHaveLength(11);
+    expect(visible).toHaveLength(9);
     expect(grouped.operations).toHaveLength(3);
     expect(grouped.monitoring).toHaveLength(3);
-    expect(grouped.governance).toHaveLength(3);
-    expect(grouped.platform).toHaveLength(2);
+    expect(grouped.governance).toHaveLength(2);
+    expect(grouped.platform).toHaveLength(1);
   });
 
   it('preserves canonical group order for rendering', () => {

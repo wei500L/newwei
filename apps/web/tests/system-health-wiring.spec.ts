@@ -31,7 +31,9 @@ describe("system health UI wiring", () => {
       "app/(app)/dashboard/components/system-health-summary-card.tsx",
     );
 
-    expect(source).toContain("/admin/system?tab=crawlClient");
+    expect(source).toContain("buildAdminSettingsHref");
+    expect(source).toContain('page: "ingestion"');
+    expect(source).toContain('panel: "crawl-client"');
     expect(source).toContain("/admin/ops/crawl-tasks");
     expect(source).toContain("setShowSystemStats(!showSystemStats)");
     expect(source).toContain("aria-controls={detailsId}");

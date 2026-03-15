@@ -20,6 +20,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import {
   extractApiError,
   NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
@@ -347,7 +348,12 @@ export function NewsnowCard({
   
   const sourceBehaviorKey = useMemo(() => id.trim() || source.name, [id, source.name]);
   const runtimeSecretsSettingsHref = useMemo(
-    () => `/settings/system?tab=newsSourceRuntimeSecrets&sourceId=${encodeURIComponent(id)}`,
+    () =>
+      buildAdminSettingsHref({
+        page: "ingestion",
+        panel: "news-source-runtime-secrets",
+        query: { sourceId: id },
+      }),
     [id],
   );
   const runtimeSecretPrimaryKey = useMemo(

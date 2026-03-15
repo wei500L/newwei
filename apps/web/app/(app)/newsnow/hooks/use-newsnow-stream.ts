@@ -3,9 +3,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
 import { env } from "@/lib/env";
+import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
 import { useNewsnowStore } from "../store/newsnow-store";
 
@@ -20,17 +22,25 @@ export interface NewsnowRealtimeMessage {
 
 export function useNewsnowStream() {
   const { data: session, status } = useSession();
+  const { t } = useTranslation();
   const token = session?.accessToken as string | undefined;
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canReadItems =
     permissions.includes("items.read") || permissions.includes("items.write");
   const socketRef = useRef<Socket | null>(null);
+  const tRef = useRef(t);
   const queryClient = useQueryClient();
 
-  const recordRealtimeArrival = useNewsnowStore((state) => state.recordRealtimeArrival);
+  const recordRealtimeArrival = useNewsnowStore(
+    (state) => state.recordRealtimeArrival,
+  );
   const setRealtimeConnectionState = useNewsnowStore(
     (state) => state.setRealtimeConnectionState,
   );
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     if (status !== "authenticated" || !token || !canReadItems) {
@@ -89,7 +99,9 @@ export function useNewsnowStream() {
 
     const handleUpdate = (payload: NewsnowRealtimeMessage) => {
       const sourceId =
-        payload && typeof payload.sourceId === "string" ? payload.sourceId.trim() : "";
+        payload && typeof payload.sourceId === "string"
+          ? payload.sourceId.trim()
+          : "";
       const newItemsCount =
         payload &&
         typeof payload.newItemsCount === "number" &&
@@ -105,9 +117,13 @@ export function useNewsnowStream() {
         count: newItemsCount,
         topTitles: Array.isArray(payload.topTitles) ? payload.topTitles : [],
         timestamp:
-          typeof payload.timestamp === "string" ? payload.timestamp : new Date().toISOString(),
+          typeof payload.timestamp === "string"
+            ? payload.timestamp
+            : new Date().toISOString(),
         updatedTime:
-          typeof payload.updatedTime === "string" ? payload.updatedTime : undefined,
+          typeof payload.updatedTime === "string"
+            ? payload.updatedTime
+            : undefined,
       });
       scheduleSourceRefetch(sourceId);
     };
@@ -118,19 +134,56 @@ export function useNewsnowStream() {
     const handleDisconnect = () => {
       setRealtimeConnectionState({ connected: false });
     };
+    const getLocalizedError = (
+      payload:
+        | { code?: string; message?: string; retryAfterMs?: number }
+        | undefined,
+      fallbackKind: "socket" | "connect",
+    ) =>
+      formatRealtimeSocketError(payload, tRef.current, {
+        keyPrefix: "newsnow.connectionError",
+        fallbackKind,
+        defaults: {
+          unauthorized:
+            "NewsNow realtime access expired. Please sign in again.",
+          tooManyConnections:
+            "NewsNow realtime connections are at capacity. Please try again later.",
+          tooManyConnectionAttempts:
+            "Too many NewsNow realtime connection attempts. Please try again later.",
+          rateLimitExceeded:
+            "NewsNow realtime connection attempts are too frequent. Please try again later.",
+          tooManyFailedAttempts:
+            "Too many failed NewsNow realtime sign-in attempts. Please try again later.",
+          timeout:
+            "Connecting to NewsNow realtime timed out. Please try again.",
+          network:
+            "Unable to connect to NewsNow realtime. Please check the network and try again.",
+          connect:
+            "Unable to connect to NewsNow realtime right now. Please try again later.",
+          socket:
+            "NewsNow realtime connection is unstable. Please try again later.",
+        },
+      });
 
     socket.on("connect", handleConnect);
     socket.on("newsnow:update", handleUpdate);
-    socket.on("newsnow:error", (payload: { message?: string } | undefined) => {
-      setRealtimeConnectionState({
-        connected: false,
-        error: payload?.message ?? "NewsNow realtime socket error",
-      });
-    });
+    socket.on(
+      "newsnow:error",
+      (
+        payload:
+          | { code?: string; message?: string; retryAfterMs?: number }
+          | undefined,
+      ) => {
+        setRealtimeConnectionState({
+          connected: false,
+          error: getLocalizedError(payload, "socket"),
+        });
+      },
+    );
     socket.on("connect_error", (error) => {
       setRealtimeConnectionState({
         connected: false,
-        error: error?.message ?? "NewsNow realtime socket connect error",
+        error: getLocalizedError(error, "connect"),
       });
     });
     socket.on("disconnect", handleDisconnect);

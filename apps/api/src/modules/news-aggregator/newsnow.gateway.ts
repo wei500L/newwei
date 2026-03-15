@@ -1,4 +1,8 @@
-import { createLogger } from "@modular/utils";
+import {
+  createLogger,
+  RealtimeSocketErrorCode,
+  type RealtimeSocketErrorPayload,
+} from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import {
   OnGatewayConnection,
@@ -36,7 +40,11 @@ interface RateLimitState {
   },
 })
 export class NewsnowGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+  implements
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleInit,
+    OnModuleDestroy
 {
   @WebSocketServer()
   server!: Server;
@@ -101,17 +109,27 @@ export class NewsnowGateway
       client.data.user = profile;
       client.data.clientIp = ip;
 
-      const { userConnections } = await this.sessions.register(this.server, client, {
-        userId: profile.id,
-        orgId: profile.orgId,
-        ip,
-      });
+      const { userConnections } = await this.sessions.register(
+        this.server,
+        client,
+        {
+          userId: profile.id,
+          orgId: profile.orgId,
+          ip,
+        },
+      );
       client.emit("newsnow:connected", {
         orgId: profile.orgId,
         userId: profile.id,
       });
       this.logger.info(
-        { socketId: client.id, orgId: profile.orgId, userId: profile.id, ip, userConnections },
+        {
+          socketId: client.id,
+          orgId: profile.orgId,
+          userId: profile.id,
+          ip,
+          userConnections,
+        },
         "NewsNow socket connected",
       );
     } catch (error) {
@@ -127,7 +145,7 @@ export class NewsnowGateway
         { socketId: client.id, ip, error: errorMessage },
         "NewsNow socket authentication failed",
       );
-      client.emit("newsnow:error", { message: responseMessage });
+      client.emit("newsnow:error", this.toSocketErrorPayload(responseMessage));
       client.disconnect(true);
     }
   }
@@ -151,7 +169,12 @@ export class NewsnowGateway
       return;
     }
     if (typeof event.orgId === "string" && event.orgId.trim().length > 0) {
-      this.sessions.emitToOrg(this.server, event.orgId, "newsnow:update", event);
+      this.sessions.emitToOrg(
+        this.server,
+        event.orgId,
+        "newsnow:update",
+        event,
+      );
       return;
     }
     this.server.emit("newsnow:update", event);
@@ -221,9 +244,7 @@ export class NewsnowGateway
     throw new Error("Missing auth token");
   }
 
-  private parseAuthorizationHeader(
-    authHeader: string | string[] | undefined,
-  ) {
+  private parseAuthorizationHeader(authHeader: string | string[] | undefined) {
     if (!authHeader) {
       return undefined;
     }
@@ -255,6 +276,27 @@ export class NewsnowGateway
     if (current.count > limit) {
       throw new Error("Too many connection attempts");
     }
+  }
+
+  private toSocketErrorPayload(
+    errorMessage: string,
+  ): RealtimeSocketErrorPayload {
+    if (errorMessage === "Too many connections") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnections,
+        message: "Too many connections",
+      };
+    }
+    if (errorMessage === "Too many connection attempts") {
+      return {
+        code: RealtimeSocketErrorCode.TooManyConnectionAttempts,
+        message: "Too many connection attempts",
+      };
+    }
+    return {
+      code: RealtimeSocketErrorCode.Unauthorized,
+      message: "Unauthorized",
+    };
   }
 
   private extractOrigin(client: Socket) {

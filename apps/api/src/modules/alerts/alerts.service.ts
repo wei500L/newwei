@@ -4,6 +4,7 @@ import {
   ensureTraceId,
   getCountryName,
   getCurrentTraceId,
+  NotificationPresentationKind,
   normalizeCountryCode,
 } from "@modular/utils";
 import { HttpService } from "@nestjs/axios";
@@ -17,7 +18,7 @@ import {
   AlertSeverity,
   AlertStatus,
   NotificationType,
-  Prisma
+  Prisma,
 } from "@prisma/client";
 import { DelayedError, Job, Queue } from "bullmq";
 import { PubSubEngine } from "graphql-subscriptions";
@@ -26,7 +27,10 @@ import { Agent as HttpsAgent } from "https";
 import type { LookupFunction } from "net";
 import { firstValueFrom } from "rxjs";
 
-import { toPrismaJsonValue, toPrismaJsonValueOrUndefined } from "../../common/prisma-json";
+import {
+  toPrismaJsonValue,
+  toPrismaJsonValueOrUndefined,
+} from "../../common/prisma-json";
 import {
   resolveValidatedSsrfUrlAsync,
   type SsrfResolvedAddress,
@@ -43,7 +47,12 @@ import {
 } from "../realtime-signals/realtime-signals.constants";
 
 import { AlertsNotificationThrottleService } from "./alerts-notification-throttle.service";
-import { AlertRuleTuningSuggestion, AlertTuningAction, quantile, safeMean } from "./alerts-tuning";
+import {
+  AlertRuleTuningSuggestion,
+  AlertTuningAction,
+  quantile,
+  safeMean,
+} from "./alerts-tuning";
 import { ALERTS_QUEUE, ALERT_METRIC_PROVIDERS } from "./alerts.constants";
 import { ALERTS_PUBSUB, AlertEventPayload } from "./alerts.pubsub";
 import { MetricProvider } from "./providers/metric-provider";
@@ -104,7 +113,10 @@ const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const normalizeMetricSlug = (value: unknown): string =>
   normalizeRealtimeSignalMetricSlug(value);
 const DEFAULT_CRAWL_QUALITY_RULES: Array<{
-  key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate";
+  key:
+    | "preflight_failure_rate"
+    | "http_304_hit_rate"
+    | "org_hash_dedupe_hit_rate";
   name: string;
   description: string;
   metricSlug: string;
@@ -119,7 +131,7 @@ const DEFAULT_CRAWL_QUALITY_RULES: Array<{
     metricSlug: "crawl_quality.preflight_failure_rate",
     operator: AlertOperator.gte,
     thresholdValue: 0.15,
-    severity: AlertSeverity.medium
+    severity: AlertSeverity.medium,
   },
   {
     key: "http_304_hit_rate",
@@ -128,7 +140,7 @@ const DEFAULT_CRAWL_QUALITY_RULES: Array<{
     metricSlug: "crawl_quality.http_304_hit_rate",
     operator: AlertOperator.lte,
     thresholdValue: 0.05,
-    severity: AlertSeverity.medium
+    severity: AlertSeverity.medium,
   },
   {
     key: "org_hash_dedupe_hit_rate",
@@ -137,8 +149,8 @@ const DEFAULT_CRAWL_QUALITY_RULES: Array<{
     metricSlug: "crawl_quality.org_hash_dedupe_hit_rate",
     operator: AlertOperator.gte,
     thresholdValue: 0.3,
-    severity: AlertSeverity.medium
-  }
+    severity: AlertSeverity.medium,
+  },
 ];
 
 const DEFAULT_REALTIME_SIGNAL_RULES = REALTIME_SIGNAL_DEFAULT_RULES;
@@ -161,7 +173,7 @@ export class AlertsService {
     private readonly env: EnvService,
     @Inject(ALERTS_QUEUE) private readonly queue: Queue<AlertJobPayload>,
     @Inject(ALERTS_PUBSUB) private readonly pubsub: PubSubEngine,
-    @Inject(ALERT_METRIC_PROVIDERS) metricProviders: MetricProvider[]
+    @Inject(ALERT_METRIC_PROVIDERS) metricProviders: MetricProvider[],
   ) {
     this.prisma = prisma;
     this.email = email;
@@ -174,11 +186,15 @@ export class AlertsService {
   async listChannels(orgId: string) {
     return this.prisma.alertNotificationChannel.findMany({
       where: { orgId },
-      orderBy: { createdAt: "asc" }
+      orderBy: { createdAt: "asc" },
     });
   }
 
-  async createChannel(orgId: string, input: AlertChannelInput, createdById?: string) {
+  async createChannel(
+    orgId: string,
+    input: AlertChannelInput,
+    createdById?: string,
+  ) {
     const target = await this.normalizeChannelTarget(input.type, input.target);
     return this.prisma.alertNotificationChannel.create({
       data: {
@@ -188,13 +204,19 @@ export class AlertsService {
         target,
         config: toPrismaJsonValue(input.config ?? {}),
         isActive: input.isActive ?? true,
-        createdById
-      }
+        createdById,
+      },
     });
   }
 
-  async updateChannel(orgId: string, channelId: string, input: UpdateAlertChannelInput) {
-    const existing = await this.prisma.alertNotificationChannel.findUnique({ where: { id: channelId } });
+  async updateChannel(
+    orgId: string,
+    channelId: string,
+    input: UpdateAlertChannelInput,
+  ) {
+    const existing = await this.prisma.alertNotificationChannel.findUnique({
+      where: { id: channelId },
+    });
     if (!existing || existing.orgId !== orgId) {
       throw new Error("Alert channel not found for this org");
     }
@@ -204,7 +226,10 @@ export class AlertsService {
       data.name = input.name;
     }
     if (input.target !== undefined) {
-      data.target = await this.normalizeChannelTarget(existing.type, input.target);
+      data.target = await this.normalizeChannelTarget(
+        existing.type,
+        input.target,
+      );
     }
     if (input.isActive !== undefined) {
       data.isActive = input.isActive;
@@ -215,12 +240,14 @@ export class AlertsService {
 
     return this.prisma.alertNotificationChannel.update({
       where: { id: channelId },
-      data
+      data,
     });
   }
 
   async deleteChannel(orgId: string, channelId: string) {
-    const existing = await this.prisma.alertNotificationChannel.findUnique({ where: { id: channelId } });
+    const existing = await this.prisma.alertNotificationChannel.findUnique({
+      where: { id: channelId },
+    });
     if (!existing || existing.orgId !== orgId) {
       return false;
     }
@@ -230,12 +257,12 @@ export class AlertsService {
         where: { channelId, status: AlertDeliveryStatus.pending },
         data: {
           status: AlertDeliveryStatus.failed,
-          error: "channel deleted"
-        }
+          error: "channel deleted",
+        },
       });
       await tx.alertDelivery.updateMany({
         where: { channelId },
-        data: { channelId: null }
+        data: { channelId: null },
       });
       await tx.alertNotificationChannel.delete({ where: { id: channelId } });
     });
@@ -255,13 +282,13 @@ export class AlertsService {
       where: { orgId },
       include: {
         channels: { include: { channel: true } },
-        dataItem: true
+        dataItem: true,
       },
-      orderBy: { createdAt: "asc" }
+      orderBy: { createdAt: "asc" },
     });
     return rules.map((rule) => ({
       ...rule,
-      metricSlug: normalizeMetricSlug(rule.metricSlug)
+      metricSlug: normalizeMetricSlug(rule.metricSlug),
     }));
   }
 
@@ -269,14 +296,16 @@ export class AlertsService {
     const existing = await this.prisma.alertRule.findMany({
       where: {
         orgId,
-        metricProvider: AlertMetricProvider.crawl_task
+        metricProvider: AlertMetricProvider.crawl_task,
       },
       select: {
-        metricSlug: true
-      }
+        metricSlug: true,
+      },
     });
     const existingSlugSet = new Set(
-      existing.map((entry) => normalizeMetricSlug(entry.metricSlug)).filter((slug) => slug.length > 0)
+      existing
+        .map((entry) => normalizeMetricSlug(entry.metricSlug))
+        .filter((slug) => slug.length > 0),
     );
 
     for (const definition of DEFAULT_CRAWL_QUALITY_RULES) {
@@ -305,10 +334,10 @@ export class AlertsService {
             metadata: toPrismaJsonValue({
               systemDefault: true,
               defaultRuleKey: definition.key,
-              version: 1
+              version: 1,
             }),
-            dataItemId: null
-          }
+            dataItemId: null,
+          },
         });
         existingSlugSet.add(definition.metricSlug);
         await this.ensureRuleSchedule(created);
@@ -320,7 +349,7 @@ export class AlertsService {
         ) {
           logger.debug(
             { orgId, metricSlug: definition.metricSlug },
-            "Default crawl quality alert rule already exists"
+            "Default crawl quality alert rule already exists",
           );
           existingSlugSet.add(definition.metricSlug);
           continue;
@@ -332,7 +361,7 @@ export class AlertsService {
 
   private async ensureDefaultCrawlQualityRulesForAllOrgs() {
     const orgs = await this.prisma.org.findMany({
-      select: { id: true }
+      select: { id: true },
     });
     for (const org of orgs) {
       await this.ensureDefaultCrawlQualityRules(org.id);
@@ -350,7 +379,9 @@ export class AlertsService {
       },
     });
     const existingSlugSet = new Set(
-      existing.map((entry) => normalizeMetricSlug(entry.metricSlug)).filter((slug) => slug.length > 0),
+      existing
+        .map((entry) => normalizeMetricSlug(entry.metricSlug))
+        .filter((slug) => slug.length > 0),
     );
 
     for (const definition of DEFAULT_REALTIME_SIGNAL_RULES) {
@@ -415,7 +446,10 @@ export class AlertsService {
 
   private buildDefaultCrawlQualityRuleId(
     orgId: string,
-    key: "preflight_failure_rate" | "http_304_hit_rate" | "org_hash_dedupe_hit_rate"
+    key:
+      | "preflight_failure_rate"
+      | "http_304_hit_rate"
+      | "org_hash_dedupe_hit_rate",
   ) {
     const normalizedOrgId = orgId.replace(/[^a-zA-Z0-9_-]/g, "_");
     return `default-crawl-quality-${key}-${normalizedOrgId}`.slice(0, 191);
@@ -441,19 +475,24 @@ export class AlertsService {
     const normalizedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 50;
     const boundedLimit = Math.min(Math.max(normalizedLimit, 1), 500);
     const normalizedMetricSlug = normalizeMetricSlug(metricSlug);
-    const include = { rule: true, deliveries: { include: { channel: true } } } as const;
+    const include = {
+      rule: true,
+      deliveries: { include: { channel: true } },
+    } as const;
     const orderBy = { triggeredAt: "desc" } as const;
-    const toNormalizedEvents = <T extends { rule?: { metricSlug: string } | null }>(
-      events: T[]
+    const toNormalizedEvents = <
+      T extends { rule?: { metricSlug: string } | null },
+    >(
+      events: T[],
     ) =>
       events.map((event) => ({
         ...event,
         rule: event.rule
           ? {
               ...event.rule,
-              metricSlug: normalizeMetricSlug(event.rule.metricSlug)
+              metricSlug: normalizeMetricSlug(event.rule.metricSlug),
             }
-          : event.rule
+          : event.rule,
       }));
 
     if (!normalizedMetricSlug) {
@@ -461,7 +500,7 @@ export class AlertsService {
         where: { rule: { orgId } },
         include,
         orderBy,
-        take: boundedLimit
+        take: boundedLimit,
       });
       return toNormalizedEvents(events);
     }
@@ -470,7 +509,7 @@ export class AlertsService {
       where: { rule: { orgId, metricSlug: normalizedMetricSlug } },
       include,
       orderBy,
-      take: boundedLimit
+      take: boundedLimit,
     });
     if (exactEvents.length >= boundedLimit) {
       return toNormalizedEvents(exactEvents);
@@ -482,14 +521,16 @@ export class AlertsService {
       where: { rule: { orgId } },
       include,
       orderBy,
-      take: fallbackTake
+      take: fallbackTake,
     });
     const mergedById = new Map<string, (typeof exactEvents)[number]>();
     for (const event of exactEvents) {
       mergedById.set(event.id, event);
     }
     for (const event of fallbackEvents) {
-      if (normalizeMetricSlug(event.rule?.metricSlug) !== normalizedMetricSlug) {
+      if (
+        normalizeMetricSlug(event.rule?.metricSlug) !== normalizedMetricSlug
+      ) {
         continue;
       }
       if (!mergedById.has(event.id)) {
@@ -517,7 +558,7 @@ export class AlertsService {
     const normalizedDays = Math.min(Math.max(Math.trunc(windowDays), 1), 365);
     const event = await this.prisma.alertEvent.findUnique({
       where: { id: eventId },
-      include: { rule: true }
+      include: { rule: true },
     });
     if (!event || !event.rule || event.rule.orgId !== orgId) {
       return null;
@@ -533,10 +574,13 @@ export class AlertsService {
       return null;
     }
     const context =
-      event.context && typeof event.context === "object" && !Array.isArray(event.context)
+      event.context &&
+      typeof event.context === "object" &&
+      !Array.isArray(event.context)
         ? (event.context as Record<string, unknown>)
         : null;
-    const recordedAtRaw = typeof context?.recordedAt === "string" ? context.recordedAt : null;
+    const recordedAtRaw =
+      typeof context?.recordedAt === "string" ? context.recordedAt : null;
     const center = recordedAtRaw ? new Date(recordedAtRaw) : event.triggeredAt;
     const windowMs = normalizedDays * 24 * 60 * 60 * 1000;
     const start = new Date(center.getTime() - windowMs);
@@ -547,15 +591,15 @@ export class AlertsService {
         item: { slug: metricSlug },
         recordedAt: {
           gte: start,
-          lte: end
-        }
+          lte: end,
+        },
       },
       orderBy: { recordedAt: "asc" },
       select: {
         recordedAt: true,
         value: true,
-        unit: true
-      }
+        unit: true,
+      },
     });
 
     const unit = points.find((point) => point.unit)?.unit ?? null;
@@ -566,14 +610,20 @@ export class AlertsService {
       unit,
       points: points.map((point) => ({
         timestamp: point.recordedAt,
-        value: Number(point.value)
-      }))
+        value: Number(point.value),
+      })),
     };
   }
 
-  async getRuleTuningSuggestion(orgId: string, ruleId: string, windowDays = 30): Promise<AlertRuleTuningSuggestion | null> {
+  async getRuleTuningSuggestion(
+    orgId: string,
+    ruleId: string,
+    windowDays = 30,
+  ): Promise<AlertRuleTuningSuggestion | null> {
     const normalizedDays = Math.min(Math.max(Math.trunc(windowDays), 1), 365);
-    const rule = await this.prisma.alertRule.findUnique({ where: { id: ruleId } });
+    const rule = await this.prisma.alertRule.findUnique({
+      where: { id: ruleId },
+    });
     if (!rule || rule.orgId !== orgId) {
       return null;
     }
@@ -582,15 +632,15 @@ export class AlertsService {
     const events = await this.prisma.alertEvent.findMany({
       where: {
         ruleId: rule.id,
-        triggeredAt: { gte: since }
+        triggeredAt: { gte: since },
       },
       orderBy: { triggeredAt: "desc" },
       take: 500,
       select: {
         status: true,
         metricValue: true,
-        changePercent: true
-      }
+        changePercent: true,
+      },
     });
 
     const totalEvents = events.length;
@@ -598,15 +648,31 @@ export class AlertsService {
     const ignored: number[] = [];
 
     for (const event of events) {
-      if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(event.status)) {
+      if (
+        !(
+          [
+            AlertEventStatus.confirmed,
+            AlertEventStatus.ignored,
+          ] as AlertEventStatus[]
+        ).includes(event.status)
+      ) {
         continue;
       }
       let value: number | null = null;
-      if (rule.operator === AlertOperator.change_up_pct || rule.operator === AlertOperator.change_down_pct) {
-        if (typeof event.changePercent !== "number" || !Number.isFinite(event.changePercent)) {
+      if (
+        rule.operator === AlertOperator.change_up_pct ||
+        rule.operator === AlertOperator.change_down_pct
+      ) {
+        if (
+          typeof event.changePercent !== "number" ||
+          !Number.isFinite(event.changePercent)
+        ) {
           continue;
         }
-        value = rule.operator === AlertOperator.change_down_pct ? -event.changePercent : event.changePercent;
+        value =
+          rule.operator === AlertOperator.change_down_pct
+            ? -event.changePercent
+            : event.changePercent;
       } else {
         value = Number(event.metricValue);
       }
@@ -623,7 +689,9 @@ export class AlertsService {
     const confirmedEvents = confirmed.length;
     const ignoredEvents = ignored.length;
     const reviewedEvents = confirmedEvents + ignoredEvents;
-    const falsePositiveRate = reviewedEvents ? ignoredEvents / reviewedEvents : null;
+    const falsePositiveRate = reviewedEvents
+      ? ignoredEvents / reviewedEvents
+      : null;
 
     const base: AlertRuleTuningSuggestion = {
       ruleId: rule.id,
@@ -637,20 +705,29 @@ export class AlertsService {
       message: null,
       suggestedThresholdValue: null,
       suggestedThresholdLower: null,
-      suggestedThresholdUpper: null
+      suggestedThresholdUpper: null,
     };
 
     if (reviewedEvents < 5) {
       return {
         ...base,
-        message: "Not enough reviewed alerts yet. Confirm/Ignore a few events to generate tuning suggestions."
+        message:
+          "Not enough reviewed alerts yet. Confirm/Ignore a few events to generate tuning suggestions.",
       };
     }
 
     const currentThresholdValue =
-      rule.thresholdValue !== null && rule.thresholdValue !== undefined ? Number(rule.thresholdValue) : null;
-    const currentLower = rule.thresholdLower !== null && rule.thresholdLower !== undefined ? Number(rule.thresholdLower) : null;
-    const currentUpper = rule.thresholdUpper !== null && rule.thresholdUpper !== undefined ? Number(rule.thresholdUpper) : null;
+      rule.thresholdValue !== null && rule.thresholdValue !== undefined
+        ? Number(rule.thresholdValue)
+        : null;
+    const currentLower =
+      rule.thresholdLower !== null && rule.thresholdLower !== undefined
+        ? Number(rule.thresholdLower)
+        : null;
+    const currentUpper =
+      rule.thresholdUpper !== null && rule.thresholdUpper !== undefined
+        ? Number(rule.thresholdUpper)
+        : null;
 
     const suggestHighThreshold = (current: number | null) => {
       if (!ignored.length) {
@@ -685,61 +762,100 @@ export class AlertsService {
     };
 
     if (
-      ([AlertOperator.gt, AlertOperator.gte, AlertOperator.change_up_pct, AlertOperator.change_down_pct] as AlertOperator[]).includes(
-        rule.operator
-      )
+      (
+        [
+          AlertOperator.gt,
+          AlertOperator.gte,
+          AlertOperator.change_up_pct,
+          AlertOperator.change_down_pct,
+        ] as AlertOperator[]
+      ).includes(rule.operator)
     ) {
       const suggested = suggestHighThreshold(currentThresholdValue);
-      if (suggested !== null && currentThresholdValue !== null && suggested > currentThresholdValue) {
+      if (
+        suggested !== null &&
+        currentThresholdValue !== null &&
+        suggested > currentThresholdValue
+      ) {
         const ignoredAvg = safeMean(ignored);
         const confirmedAvg = safeMean(confirmed);
         return {
           ...base,
           action: AlertTuningAction.increase_threshold,
           suggestedThresholdValue: suggested,
-          message: `High false-positive rate: consider raising threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`
+          message: `High false-positive rate: consider raising threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`,
         };
       }
       return base;
     }
 
-    if (([AlertOperator.lt, AlertOperator.lte] as AlertOperator[]).includes(rule.operator)) {
+    if (
+      ([AlertOperator.lt, AlertOperator.lte] as AlertOperator[]).includes(
+        rule.operator,
+      )
+    ) {
       const suggested = suggestLowThreshold(currentThresholdValue);
-      if (suggested !== null && currentThresholdValue !== null && suggested < currentThresholdValue) {
+      if (
+        suggested !== null &&
+        currentThresholdValue !== null &&
+        suggested < currentThresholdValue
+      ) {
         const ignoredAvg = safeMean(ignored);
         const confirmedAvg = safeMean(confirmed);
         return {
           ...base,
           action: AlertTuningAction.decrease_threshold,
           suggestedThresholdValue: suggested,
-          message: `High false-positive rate: consider lowering threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`
+          message: `High false-positive rate: consider lowering threshold from ${currentThresholdValue} to ~${suggested.toFixed(4)} (ignored avg ${ignoredAvg?.toFixed(4) ?? "n/a"}, confirmed avg ${confirmedAvg?.toFixed(4) ?? "n/a"}).`,
         };
       }
       return base;
     }
 
-    if (rule.operator === AlertOperator.outside_range && currentLower !== null && currentUpper !== null) {
+    if (
+      rule.operator === AlertOperator.outside_range &&
+      currentLower !== null &&
+      currentUpper !== null
+    ) {
       const lowerIgnored: number[] = [];
       const lowerConfirmed: number[] = [];
       const upperIgnored: number[] = [];
       const upperConfirmed: number[] = [];
 
       for (const event of events) {
-        if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(event.status)) {
+        if (
+          !(
+            [
+              AlertEventStatus.confirmed,
+              AlertEventStatus.ignored,
+            ] as AlertEventStatus[]
+          ).includes(event.status)
+        ) {
           continue;
         }
         const value = Number(event.metricValue);
         if (!Number.isFinite(value)) {
           continue;
         }
-        const target = value < currentLower ? "lower" : value > currentUpper ? "upper" : null;
+        const target =
+          value < currentLower
+            ? "lower"
+            : value > currentUpper
+              ? "upper"
+              : null;
         if (!target) {
           continue;
         }
         if (target === "lower") {
-          (event.status === AlertEventStatus.confirmed ? lowerConfirmed : lowerIgnored).push(value);
+          (event.status === AlertEventStatus.confirmed
+            ? lowerConfirmed
+            : lowerIgnored
+          ).push(value);
         } else {
-          (event.status === AlertEventStatus.confirmed ? upperConfirmed : upperIgnored).push(value);
+          (event.status === AlertEventStatus.confirmed
+            ? upperConfirmed
+            : upperIgnored
+          ).push(value);
         }
       }
 
@@ -748,12 +864,16 @@ export class AlertsService {
           return null;
         }
         const minIgnored = Math.min(...lowerIgnored);
-        const maxConfirmed = lowerConfirmed.length ? Math.max(...lowerConfirmed) : null;
+        const maxConfirmed = lowerConfirmed.length
+          ? Math.max(...lowerConfirmed)
+          : null;
         if (maxConfirmed !== null && maxConfirmed < minIgnored) {
           return (maxConfirmed + minIgnored) / 2;
         }
         const p10 = quantile(lowerIgnored, 0.1);
-        return typeof p10 === "number" && Number.isFinite(p10) ? Math.min(currentLower, p10) : null;
+        return typeof p10 === "number" && Number.isFinite(p10)
+          ? Math.min(currentLower, p10)
+          : null;
       };
 
       const suggestUpper = () => {
@@ -761,12 +881,16 @@ export class AlertsService {
           return null;
         }
         const maxIgnored = Math.max(...upperIgnored);
-        const minConfirmed = upperConfirmed.length ? Math.min(...upperConfirmed) : null;
+        const minConfirmed = upperConfirmed.length
+          ? Math.min(...upperConfirmed)
+          : null;
         if (minConfirmed !== null && minConfirmed > maxIgnored) {
           return (minConfirmed + maxIgnored) / 2;
         }
         const p90 = quantile(upperIgnored, 0.9);
-        return typeof p90 === "number" && Number.isFinite(p90) ? Math.max(currentUpper, p90) : null;
+        return typeof p90 === "number" && Number.isFinite(p90)
+          ? Math.max(currentUpper, p90)
+          : null;
       };
 
       const suggestedLower = suggestLower();
@@ -779,31 +903,48 @@ export class AlertsService {
         action: AlertTuningAction.adjust_range,
         suggestedThresholdLower: suggestedLower ?? null,
         suggestedThresholdUpper: suggestedUpper ?? null,
-        message: `Consider adjusting range from [${currentLower}, ${currentUpper}] to [${suggestedLower?.toFixed(4) ?? currentLower}, ${suggestedUpper?.toFixed(4) ?? currentUpper}] based on ignored/confirmed splits.`
+        message: `Consider adjusting range from [${currentLower}, ${currentUpper}] to [${suggestedLower?.toFixed(4) ?? currentLower}, ${suggestedUpper?.toFixed(4) ?? currentUpper}] based on ignored/confirmed splits.`,
       };
     }
 
     return base;
   }
 
-  async updateEventStatus(orgId: string, eventId: string, status: AlertEventStatus, note?: string, updatedById?: string) {
-    if (!([AlertEventStatus.confirmed, AlertEventStatus.ignored] as AlertEventStatus[]).includes(status)) {
+  async updateEventStatus(
+    orgId: string,
+    eventId: string,
+    status: AlertEventStatus,
+    note?: string,
+    updatedById?: string,
+  ) {
+    if (
+      !(
+        [
+          AlertEventStatus.confirmed,
+          AlertEventStatus.ignored,
+        ] as AlertEventStatus[]
+      ).includes(status)
+    ) {
       throw new Error("Unsupported alert event status update");
     }
     const existing = await this.prisma.alertEvent.findUnique({
       where: { id: eventId },
-      include: { rule: true }
+      include: { rule: true },
     });
     if (!existing || existing.rule?.orgId !== orgId) {
       throw new Error("Alert event not found for this org");
     }
     const trimmedNote = typeof note === "string" ? note.trim() : undefined;
     const existingContext =
-      existing.context && typeof existing.context === "object" && !Array.isArray(existing.context)
+      existing.context &&
+      typeof existing.context === "object" &&
+      !Array.isArray(existing.context)
         ? (existing.context as Record<string, unknown>)
         : null;
     const existingFeedback =
-      existingContext?.feedback && typeof existingContext.feedback === "object" && !Array.isArray(existingContext.feedback)
+      existingContext?.feedback &&
+      typeof existingContext.feedback === "object" &&
+      !Array.isArray(existingContext.feedback)
         ? (existingContext.feedback as Record<string, unknown>)
         : null;
     const nextContext =
@@ -819,29 +960,35 @@ export class AlertsService {
                 : {}),
               ...(updatedById ? { updatedById } : {}),
               status,
-              updatedAt: new Date().toISOString()
-            }
+              updatedAt: new Date().toISOString(),
+            },
           }
         : undefined;
 
     const updated = await this.prisma.alertEvent.update({
       where: { id: eventId },
       data: { status, ...(nextContext ? { context: nextContext } : {}) },
-      include: { rule: true, deliveries: { include: { channel: true } } }
+      include: { rule: true, deliveries: { include: { channel: true } } },
     });
     return {
       ...updated,
       rule: updated.rule
         ? {
             ...updated.rule,
-            metricSlug: normalizeMetricSlug(updated.rule.metricSlug)
+            metricSlug: normalizeMetricSlug(updated.rule.metricSlug),
           }
-        : updated.rule
+        : updated.rule,
     };
   }
 
-  async upsertRule(orgId: string, input: UpsertAlertRuleInput, createdById?: string) {
-    const existingRule = input.id ? await this.prisma.alertRule.findUnique({ where: { id: input.id } }) : null;
+  async upsertRule(
+    orgId: string,
+    input: UpsertAlertRuleInput,
+    createdById?: string,
+  ) {
+    const existingRule = input.id
+      ? await this.prisma.alertRule.findUnique({ where: { id: input.id } })
+      : null;
     if (input.id && (!existingRule || existingRule.orgId !== orgId)) {
       throw new Error("Alert rule not found for this org");
     }
@@ -851,9 +998,14 @@ export class AlertsService {
       throw new Error("metricSlug is required");
     }
 
-    const metricProvider = input.metricProvider ?? existingRule?.metricProvider ?? AlertMetricProvider.economic_data;
+    const metricProvider =
+      input.metricProvider ??
+      existingRule?.metricProvider ??
+      AlertMetricProvider.economic_data;
     if (!this.resolveMetricProvider({ metricProvider })) {
-      throw new Error(`No metric provider registered for type ${metricProvider}`);
+      throw new Error(
+        `No metric provider registered for type ${metricProvider}`,
+      );
     }
     if (
       metricProvider === AlertMetricProvider.system_metric &&
@@ -870,7 +1022,7 @@ export class AlertsService {
     const dataItem =
       metricProvider === AlertMetricProvider.economic_data
         ? await this.prisma.economicDataItem.findUnique({
-            where: { slug: metricSlug }
+            where: { slug: metricSlug },
           })
         : null;
     const baseData: Prisma.AlertRuleUncheckedCreateInput = {
@@ -882,15 +1034,27 @@ export class AlertsService {
       metricProvider,
       metricSlug,
       operator: input.operator,
-      thresholdValue: input.thresholdValue !== undefined ? new Prisma.Decimal(input.thresholdValue) : null,
-      thresholdLower: input.thresholdLower !== undefined ? new Prisma.Decimal(input.thresholdLower) : null,
-      thresholdUpper: input.thresholdUpper !== undefined ? new Prisma.Decimal(input.thresholdUpper) : null,
+      thresholdValue:
+        input.thresholdValue !== undefined
+          ? new Prisma.Decimal(input.thresholdValue)
+          : null,
+      thresholdLower:
+        input.thresholdLower !== undefined
+          ? new Prisma.Decimal(input.thresholdLower)
+          : null,
+      thresholdUpper:
+        input.thresholdUpper !== undefined
+          ? new Prisma.Decimal(input.thresholdUpper)
+          : null,
       changeWindowMin: input.changeWindowMin ?? null,
       cooldownSeconds: input.cooldownSeconds ?? 3600,
       checkIntervalSec: input.checkIntervalSec ?? 300,
       metadata: toPrismaJsonValue(input.metadata ?? {}),
       createdById,
-      dataItemId: metricProvider === AlertMetricProvider.economic_data ? dataItem?.id ?? null : null
+      dataItemId:
+        metricProvider === AlertMetricProvider.economic_data
+          ? (dataItem?.id ?? null)
+          : null,
     };
 
     const rule = await this.prisma.$transaction(async (tx) => {
@@ -913,21 +1077,23 @@ export class AlertsService {
             cooldownSeconds: baseData.cooldownSeconds,
             checkIntervalSec: baseData.checkIntervalSec,
             metadata: baseData.metadata,
-            dataItemId: baseData.dataItemId
-          }
+            dataItemId: baseData.dataItemId,
+          },
         });
       } else {
         currentRule = await tx.alertRule.create({ data: baseData });
       }
 
       if (input.channelIds) {
-        await tx.alertRuleChannel.deleteMany({ where: { ruleId: currentRule.id } });
+        await tx.alertRuleChannel.deleteMany({
+          where: { ruleId: currentRule.id },
+        });
         for (const channelId of input.channelIds) {
           await tx.alertRuleChannel.create({
             data: {
               ruleId: currentRule.id,
-              channelId
-            }
+              channelId,
+            },
           });
         }
       }
@@ -941,7 +1107,9 @@ export class AlertsService {
   }
 
   async deleteRule(orgId: string, ruleId: string) {
-    const existing = await this.prisma.alertRule.findUnique({ where: { id: ruleId } });
+    const existing = await this.prisma.alertRule.findUnique({
+      where: { id: ruleId },
+    });
     if (!existing || existing.orgId !== orgId) {
       return false;
     }
@@ -958,8 +1126,8 @@ export class AlertsService {
       {
         jobId: `evaluate:${ruleId}:${Date.now()}`,
         removeOnComplete: true,
-        removeOnFail: false
-      }
+        removeOnFail: false,
+      },
     );
   }
 
@@ -967,7 +1135,7 @@ export class AlertsService {
     await this.ensureDefaultCrawlQualityRulesForAllOrgs();
     await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
-      where: { status: AlertStatus.active }
+      where: { status: AlertStatus.active },
     });
     for (const rule of activeRules) {
       await this.enqueueRuleCheck(rule.id, rule.orgId);
@@ -978,7 +1146,7 @@ export class AlertsService {
     await this.ensureDefaultCrawlQualityRulesForAllOrgs();
     await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
-      where: { status: AlertStatus.active }
+      where: { status: AlertStatus.active },
     });
     for (const rule of activeRules) {
       await this.ensureRuleSchedule(rule);
@@ -988,14 +1156,15 @@ export class AlertsService {
   async evaluateRule(ruleId: string) {
     const rule = await this.prisma.alertRule.findUnique({
       where: { id: ruleId },
-      include: { channels: { include: { channel: true } } }
+      include: { channels: { include: { channel: true } } },
     });
     if (!rule || rule.status !== AlertStatus.active) {
       return null;
     }
 
     if (rule.lastTriggeredAt) {
-      const nextAllowed = rule.lastTriggeredAt.getTime() + rule.cooldownSeconds * 1000;
+      const nextAllowed =
+        rule.lastTriggeredAt.getTime() + rule.cooldownSeconds * 1000;
       if (Date.now() < nextAllowed) {
         return null;
       }
@@ -1003,11 +1172,19 @@ export class AlertsService {
 
     const provider = this.resolveMetricProvider(rule);
     if (!provider) {
-      logger.warn({ ruleId: rule.id, metricProvider: rule.metricProvider }, "Alert rule has no metric provider registered");
+      logger.warn(
+        { ruleId: rule.id, metricProvider: rule.metricProvider },
+        "Alert rule has no metric provider registered",
+      );
       return null;
     }
 
-    const { latest, previous, changePercent, context: providerContext } = await provider.fetch(rule);
+    const {
+      latest,
+      previous,
+      changePercent,
+      context: providerContext,
+    } = await provider.fetch(rule);
     if (latest === null || latest === undefined) {
       return null;
     }
@@ -1022,7 +1199,7 @@ export class AlertsService {
       previous,
       changePercent,
       ...(providerContext ?? {}),
-      ...(triggered.context ?? {})
+      ...(triggered.context ?? {}),
     });
     const event = await this.prisma.alertEvent.create({
       data: {
@@ -1033,18 +1210,21 @@ export class AlertsService {
         severity: rule.severity,
         status: AlertEventStatus.pending,
         message: triggered.message,
-        context: toPrismaJsonValueOrUndefined(context)
-      }
+        context: toPrismaJsonValueOrUndefined(context),
+      },
     });
 
     await this.prisma.alertRule.update({
       where: { id: rule.id },
-      data: { lastTriggeredAt: new Date() }
+      data: { lastTriggeredAt: new Date() },
     });
 
     const activeChannels = rule.channels
       .map((link) => link.channel)
-      .filter((channel): channel is NonNullable<typeof channel> => !!channel && channel.isActive);
+      .filter(
+        (channel): channel is NonNullable<typeof channel> =>
+          !!channel && channel.isActive,
+      );
 
     const externalDeliveries = await Promise.all(
       activeChannels.map((channel) =>
@@ -1053,10 +1233,10 @@ export class AlertsService {
             eventId: event.id,
             channelId: channel.id,
             channelType: channel.type,
-            targetSnapshot: channel
-          }
-        })
-      )
+            targetSnapshot: channel,
+          },
+        }),
+      ),
     );
 
     const inAppDeliveries = await this.createInAppDeliveries(rule, event.id);
@@ -1065,11 +1245,12 @@ export class AlertsService {
       await this.enqueueNotificationJobs(externalDeliveries, rule.orgId);
     }
 
-    const hasAnyDeliveries = externalDeliveries.length > 0 || inAppDeliveries.length > 0;
+    const hasAnyDeliveries =
+      externalDeliveries.length > 0 || inAppDeliveries.length > 0;
     if (!hasAnyDeliveries) {
       await this.prisma.alertEvent.update({
         where: { id: event.id },
-        data: { status: AlertEventStatus.delivered }
+        data: { status: AlertEventStatus.delivered },
       });
     }
 
@@ -1079,15 +1260,18 @@ export class AlertsService {
         {
           id: event.id,
           metricValue: event.metricValue,
+          severity: event.severity,
           changePercent: event.changePercent ?? null,
           message: event.message,
-          context: context ?? null
+          context: context ?? null,
         },
-        inAppDeliveries
+        inAppDeliveries,
       );
     }
 
-    const streamStatus = hasAnyDeliveries ? event.status : AlertEventStatus.delivered;
+    const streamStatus = hasAnyDeliveries
+      ? event.status
+      : AlertEventStatus.delivered;
     const normalizedRuleMetricSlug = normalizeMetricSlug(rule.metricSlug);
     await this.pubsub.publish("alertEvents", {
       orgId: rule.orgId,
@@ -1103,16 +1287,20 @@ export class AlertsService {
         metricValue: Number(event.metricValue),
         changePercent: event.changePercent ?? null,
         status: streamStatus,
-        context: (context as Record<string, unknown> | undefined) ?? null
-      }
+        context: (context as Record<string, unknown> | undefined) ?? null,
+      },
     } satisfies AlertEventPayload);
 
     return { event, deliveries: externalDeliveries };
   }
 
   private async createInAppDeliveries(
-    rule: { orgId: string; createdById?: string | null; metadata?: Prisma.JsonValue | null },
-    eventId: string
+    rule: {
+      orgId: string;
+      createdById?: string | null;
+      metadata?: Prisma.JsonValue | null;
+    },
+    eventId: string,
   ) {
     const muteUntilMs = this.extractMuteUntilMs(rule.metadata);
     if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
@@ -1128,48 +1316,73 @@ export class AlertsService {
           data: {
             eventId,
             channelType: AlertChannelType.in_app,
-            targetSnapshot: { userId }
-          }
+            targetSnapshot: { userId },
+          },
         });
         return { id: delivery.id, userId };
-      })
+      }),
     );
     return created;
   }
 
   private async deliverInAppNotifications(
-    rule: { id: string; orgId: string; name: string; metricSlug: string; severity: AlertSeverity; createdById?: string | null; metadata?: Prisma.JsonValue | null },
+    rule: {
+      id: string;
+      orgId: string;
+      name: string;
+      metricSlug: string;
+      severity: AlertSeverity;
+      createdById?: string | null;
+      metadata?: Prisma.JsonValue | null;
+    },
     event: {
       id: string;
       metricValue: Prisma.Decimal;
+      severity: AlertSeverity;
       changePercent?: number | null;
       message?: string | null;
       context?: Record<string, unknown> | null;
     },
-    deliveries: { id: string; userId: string }[]
+    deliveries: { id: string; userId: string }[],
   ) {
     const metricValue = Number(event.metricValue);
     const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const title = `Alert triggered: ${rule.name}`;
     const changeText =
-      typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
+      typeof event.changePercent === "number" &&
+      Number.isFinite(event.changePercent)
         ? ` (${event.changePercent.toFixed(2)}%)`
         : "";
     const body =
       event.message ??
       `Metric ${metricSlug} triggered at ${Number.isFinite(metricValue) ? metricValue : "N/A"}${changeText}`;
     const context =
-      event.context && typeof event.context === "object" && !Array.isArray(event.context)
+      event.context &&
+      typeof event.context === "object" &&
+      !Array.isArray(event.context)
         ? (event.context as Record<string, unknown>)
         : null;
     const contextSummary = context
       ? {
-          countryCode: typeof context.countryCode === "string" ? context.countryCode : undefined,
-          countryName: typeof context.countryName === "string" ? context.countryName : undefined,
-          itemName: typeof context.itemName === "string" ? context.itemName : undefined,
-          sourceName: typeof context.sourceName === "string" ? context.sourceName : undefined,
-          recordedAt: typeof context.recordedAt === "string" ? context.recordedAt : undefined,
-          unit: typeof context.unit === "string" ? context.unit : undefined
+          countryCode:
+            typeof context.countryCode === "string"
+              ? context.countryCode
+              : undefined,
+          countryName:
+            typeof context.countryName === "string"
+              ? context.countryName
+              : undefined,
+          itemName:
+            typeof context.itemName === "string" ? context.itemName : undefined,
+          sourceName:
+            typeof context.sourceName === "string"
+              ? context.sourceName
+              : undefined,
+          recordedAt:
+            typeof context.recordedAt === "string"
+              ? context.recordedAt
+              : undefined,
+          unit: typeof context.unit === "string" ? context.unit : undefined,
         }
       : null;
 
@@ -1187,13 +1400,33 @@ export class AlertsService {
               data: {
                 alertEventId: event.id,
                 ruleId: rule.id,
+                ruleName: rule.name,
+                severity: event.severity,
                 metricSlug,
                 metricValue,
-                ...(typeof event.changePercent === "number" && Number.isFinite(event.changePercent)
+                ...(typeof event.changePercent === "number" &&
+                Number.isFinite(event.changePercent)
                   ? { changePercent: event.changePercent }
                   : {}),
-                ...(contextSummary ? { context: contextSummary } : {})
-              }
+                ...(contextSummary ? { context: contextSummary } : {}),
+                presentation: {
+                  kind: NotificationPresentationKind.AlertTriggered,
+                  params: {
+                    alertEventId: event.id,
+                    ruleId: rule.id,
+                    ruleName: rule.name,
+                    severity: event.severity,
+                    metricSlug,
+                    metricValue,
+                    ...(typeof event.changePercent === "number" &&
+                    Number.isFinite(event.changePercent)
+                      ? { changePercent: event.changePercent }
+                      : {}),
+                    ...(contextSummary ? { context: contextSummary } : {}),
+                  },
+                  ...(event.message ? { technicalDetail: event.message } : {}),
+                },
+              },
             });
             await this.prisma.alertDelivery.update({
               where: { id: delivery.id },
@@ -1203,47 +1436,56 @@ export class AlertsService {
                 error: null,
                 targetSnapshot: {
                   userId,
-                  notificationId: record.id
-                }
-              }
+                  notificationId: record.id,
+                },
+              },
             });
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message =
+              error instanceof Error ? error.message : String(error);
             await this.prisma.alertDelivery.update({
               where: { id: delivery.id },
               data: {
                 status: AlertDeliveryStatus.failed,
                 error: message,
                 targetSnapshot: {
-                  userId
-                }
-              }
+                  userId,
+                },
+              },
             });
           }
-        })
+        }),
       );
     } catch (error) {
-      logger.warn({ ruleId: rule.id, eventId: event.id, error }, "Failed to send in-app alert notification");
+      logger.warn(
+        { ruleId: rule.id, eventId: event.id, error },
+        "Failed to send in-app alert notification",
+      );
     } finally {
       await this.reconcileEventStatus(event.id);
     }
   }
 
-  private async resolveInAppRecipients(rule: { orgId: string; createdById?: string | null; metadata?: Prisma.JsonValue | null }) {
+  private async resolveInAppRecipients(rule: {
+    orgId: string;
+    createdById?: string | null;
+    metadata?: Prisma.JsonValue | null;
+  }) {
     const metadata = this.toMetadata(rule.metadata);
     const recipients = new Set<string>();
     const configuredUsers = this.toStringArray(metadata?.notifyUserIds);
     if (configuredUsers.length) {
       configuredUsers.forEach((userId) => recipients.add(userId));
     }
-    const notifyAll = metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true;
+    const notifyAll =
+      metadata?.notifyAllMembers === true || metadata?.notifyAllUsers === true;
     if (notifyAll) {
       const members = await this.prisma.membership.findMany({
         where: {
           orgId: rule.orgId,
-          user: { isActive: true }
+          user: { isActive: true },
         },
-        select: { userId: true }
+        select: { userId: true },
       });
       members.forEach((member) => recipients.add(member.userId));
     }
@@ -1262,7 +1504,9 @@ export class AlertsService {
       .filter((entry) => entry.length > 0);
   }
 
-  private toMetadata(value: Prisma.JsonValue | null | undefined): Record<string, unknown> | null {
+  private toMetadata(
+    value: Prisma.JsonValue | null | undefined,
+  ): Record<string, unknown> | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
@@ -1273,22 +1517,36 @@ export class AlertsService {
     return this.metricProviders.find((provider) => provider.supports(rule));
   }
 
-  private normalizeAlertContext(context?: Record<string, unknown> | null): Record<string, unknown> | undefined {
+  private normalizeAlertContext(
+    context?: Record<string, unknown> | null,
+  ): Record<string, unknown> | undefined {
     if (!context) {
       return context ?? undefined;
     }
 
     const normalizedContext = { ...context };
-    const rawCountry = typeof normalizedContext.country === "string" ? normalizedContext.country : null;
-    const rawCountryCode = typeof normalizedContext.countryCode === "string" ? normalizedContext.countryCode : null;
+    const rawCountry =
+      typeof normalizedContext.country === "string"
+        ? normalizedContext.country
+        : null;
+    const rawCountryCode =
+      typeof normalizedContext.countryCode === "string"
+        ? normalizedContext.countryCode
+        : null;
     const countryValue = rawCountryCode ?? rawCountry;
     const normalizedCountry = normalizeCountryCode(countryValue);
 
     if (normalizedCountry) {
       normalizedContext.countryCode = normalizedCountry;
       if (!normalizedContext.countryName) {
-        const rawCountryLooksLikeCode = rawCountry ? /^[A-Za-z]{2,3}$/.test(rawCountry.trim()) : false;
-        if (rawCountry && rawCountry !== normalizedCountry && !rawCountryLooksLikeCode) {
+        const rawCountryLooksLikeCode = rawCountry
+          ? /^[A-Za-z]{2,3}$/.test(rawCountry.trim())
+          : false;
+        if (
+          rawCountry &&
+          rawCountry !== normalizedCountry &&
+          !rawCountryLooksLikeCode
+        ) {
           normalizedContext.countryName = rawCountry;
         } else {
           const resolvedName = getCountryName(normalizedCountry);
@@ -1311,60 +1569,97 @@ export class AlertsService {
     },
     latest: number,
     previous?: number | null,
-    changePercent?: number | null
+    changePercent?: number | null,
   ): false | { message?: string; context?: Record<string, unknown> } {
-    const thresholdValue = rule.thresholdValue !== null ? Number(rule.thresholdValue) : undefined;
-    const lower = rule.thresholdLower !== null ? Number(rule.thresholdLower) : undefined;
-    const upper = rule.thresholdUpper !== null ? Number(rule.thresholdUpper) : undefined;
+    const thresholdValue =
+      rule.thresholdValue !== null ? Number(rule.thresholdValue) : undefined;
+    const lower =
+      rule.thresholdLower !== null ? Number(rule.thresholdLower) : undefined;
+    const upper =
+      rule.thresholdUpper !== null ? Number(rule.thresholdUpper) : undefined;
     switch (rule.operator) {
       case "gt":
         return thresholdValue !== undefined && latest > thresholdValue
-          ? { message: `Value ${latest} is greater than ${thresholdValue}`, context: { latest, threshold: thresholdValue } }
+          ? {
+              message: `Value ${latest} is greater than ${thresholdValue}`,
+              context: { latest, threshold: thresholdValue },
+            }
           : false;
       case "gte":
         return thresholdValue !== undefined && latest >= thresholdValue
-          ? { message: `Value ${latest} is >= ${thresholdValue}`, context: { latest, threshold: thresholdValue } }
+          ? {
+              message: `Value ${latest} is >= ${thresholdValue}`,
+              context: { latest, threshold: thresholdValue },
+            }
           : false;
       case "lt":
         return thresholdValue !== undefined && latest < thresholdValue
-          ? { message: `Value ${latest} is below ${thresholdValue}`, context: { latest, threshold: thresholdValue } }
+          ? {
+              message: `Value ${latest} is below ${thresholdValue}`,
+              context: { latest, threshold: thresholdValue },
+            }
           : false;
       case "lte":
         return thresholdValue !== undefined && latest <= thresholdValue
-          ? { message: `Value ${latest} is <= ${thresholdValue}`, context: { latest, threshold: thresholdValue } }
+          ? {
+              message: `Value ${latest} is <= ${thresholdValue}`,
+              context: { latest, threshold: thresholdValue },
+            }
           : false;
       case "eq":
         return thresholdValue !== undefined && latest === thresholdValue
-          ? { message: `Value ${latest} equals ${thresholdValue}`, context: { latest, threshold: thresholdValue } }
+          ? {
+              message: `Value ${latest} equals ${thresholdValue}`,
+              context: { latest, threshold: thresholdValue },
+            }
           : false;
       case "outside_range":
         if (lower === undefined || upper === undefined) {
           return false;
         }
         return latest < lower || latest > upper
-          ? { message: `Value ${latest} is outside ${lower}-${upper}`, context: { latest, lower, upper } }
+          ? {
+              message: `Value ${latest} is outside ${lower}-${upper}`,
+              context: { latest, lower, upper },
+            }
           : false;
       case "within_range":
         if (lower === undefined || upper === undefined) {
           return false;
         }
         return latest >= lower && latest <= upper
-          ? { message: `Value ${latest} is within ${lower}-${upper}`, context: { latest, lower, upper } }
+          ? {
+              message: `Value ${latest} is within ${lower}-${upper}`,
+              context: { latest, lower, upper },
+            }
           : false;
       case "change_up_pct":
-        return typeof changePercent === "number" && thresholdValue !== undefined && changePercent >= thresholdValue
-          ? { message: `Change ${changePercent.toFixed(2)}% >= ${thresholdValue}%`, context: { changePercent } }
+        return typeof changePercent === "number" &&
+          thresholdValue !== undefined &&
+          changePercent >= thresholdValue
+          ? {
+              message: `Change ${changePercent.toFixed(2)}% >= ${thresholdValue}%`,
+              context: { changePercent },
+            }
           : false;
       case "change_down_pct":
-        return typeof changePercent === "number" && thresholdValue !== undefined && changePercent <= -1 * thresholdValue
-          ? { message: `Change ${changePercent.toFixed(2)}% <= -${thresholdValue}%`, context: { changePercent } }
+        return typeof changePercent === "number" &&
+          thresholdValue !== undefined &&
+          changePercent <= -1 * thresholdValue
+          ? {
+              message: `Change ${changePercent.toFixed(2)}% <= -${thresholdValue}%`,
+              context: { changePercent },
+            }
           : false;
       default:
         return false;
     }
   }
 
-  private async enqueueNotificationJobs(deliveries: { id: string }[], orgId?: string) {
+  private async enqueueNotificationJobs(
+    deliveries: { id: string }[],
+    orgId?: string,
+  ) {
     if (deliveries.length === 0) {
       return;
     }
@@ -1380,10 +1675,10 @@ export class AlertsService {
             attempts,
             backoff: { type: "alertNotifications" },
             removeOnComplete: true,
-            removeOnFail: false
-          }
-        )
-      )
+            removeOnFail: false,
+          },
+        ),
+      ),
     );
   }
 
@@ -1393,18 +1688,25 @@ export class AlertsService {
     }
     const delivery = await this.prisma.alertDelivery.findUnique({
       where: { id: job.data.deliveryId },
-      include: { event: { include: { rule: true } } }
+      include: { event: { include: { rule: true } } },
     });
     if (!delivery || !delivery.event || !delivery.event.rule) {
       return;
     }
-    const channel = delivery.targetSnapshot as
-      | { id?: string; type?: AlertChannelType; target?: string; name?: string; config?: unknown }
-      | null;
+    const channel = delivery.targetSnapshot as {
+      id?: string;
+      type?: AlertChannelType;
+      target?: string;
+      name?: string;
+      config?: unknown;
+    } | null;
     if (!channel?.type || !channel?.target) {
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
-        data: { status: AlertDeliveryStatus.failed, error: "Invalid channel snapshot" }
+        data: {
+          status: AlertDeliveryStatus.failed,
+          error: "Invalid channel snapshot",
+        },
       });
       await this.reconcileEventStatus(delivery.eventId);
       return;
@@ -1414,27 +1716,38 @@ export class AlertsService {
       return;
     }
 
-    const ruleMuteUntilMs = this.extractMuteUntilMs(delivery.event.rule.metadata);
+    const ruleMuteUntilMs = this.extractMuteUntilMs(
+      delivery.event.rule.metadata,
+    );
     const channelMuteUntilMs = this.extractMuteUntilMs(channel.config);
-    const muteUntilMs = Math.max(ruleMuteUntilMs ?? 0, channelMuteUntilMs ?? 0) || null;
+    const muteUntilMs =
+      Math.max(ruleMuteUntilMs ?? 0, channelMuteUntilMs ?? 0) || null;
     if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
         data: {
           status: AlertDeliveryStatus.sent,
           sentAt: new Date(),
-          error: `suppressed: muted until ${new Date(muteUntilMs!).toISOString()}`
-        }
+          error: `suppressed: muted until ${new Date(muteUntilMs!).toISOString()}`,
+        },
       });
       await this.reconcileEventStatus(delivery.eventId);
       return;
     }
 
-    const minIntervalSeconds = this.extractNotifyIntervalSeconds(channel.config);
-    if (channel.type !== AlertChannelType.email && channel.type !== AlertChannelType.webhook) {
+    const minIntervalSeconds = this.extractNotifyIntervalSeconds(
+      channel.config,
+    );
+    if (
+      channel.type !== AlertChannelType.email &&
+      channel.type !== AlertChannelType.webhook
+    ) {
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
-        data: { status: AlertDeliveryStatus.failed, error: `Unsupported channel type ${channel.type}` }
+        data: {
+          status: AlertDeliveryStatus.failed,
+          error: `Unsupported channel type ${channel.type}`,
+        },
       });
       await this.reconcileEventStatus(delivery.eventId);
       return;
@@ -1449,11 +1762,12 @@ export class AlertsService {
 
       if (!job.data.scheduledAtMs) {
         const channelType = channel.type;
-        const scheduledAtMs = await this.notificationThrottle.reserveNotificationScheduleMs({
-          channelType,
-          channelId: delivery.channelId ?? channel.id ?? null,
-          minIntervalSeconds
-        });
+        const scheduledAtMs =
+          await this.notificationThrottle.reserveNotificationScheduleMs({
+            channelType,
+            channelId: delivery.channelId ?? channel.id ?? null,
+            minIntervalSeconds,
+          });
         if (scheduledAtMs > Date.now()) {
           await job.updateData({ ...job.data, scheduledAtMs });
           await job.moveToDelayed(scheduledAtMs, token);
@@ -1470,15 +1784,23 @@ export class AlertsService {
       }
 
       if (channel.type === "email") {
-        await this.sendEmail(channel.target, delivery.event, delivery.event.rule);
+        await this.sendEmail(
+          channel.target,
+          delivery.event,
+          delivery.event.rule,
+        );
       } else if (channel.type === "webhook") {
-        await this.sendWebhook(channel.target, delivery.event, delivery.event.rule);
+        await this.sendWebhook(
+          channel.target,
+          delivery.event,
+          delivery.event.rule,
+        );
       } else {
         throw new Error(`Unsupported channel type ${channel.type}`);
       }
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
-        data: { status: AlertDeliveryStatus.sent, sentAt: new Date() }
+        data: { status: AlertDeliveryStatus.sent, sentAt: new Date() },
       });
     } catch (error) {
       if (error instanceof DelayedError) {
@@ -1489,13 +1811,20 @@ export class AlertsService {
       await this.prisma.alertDelivery.update({
         where: { id: delivery.id },
         data: {
-          status: isLastAttempt ? AlertDeliveryStatus.failed : AlertDeliveryStatus.pending,
-          error: message
-        }
+          status: isLastAttempt
+            ? AlertDeliveryStatus.failed
+            : AlertDeliveryStatus.pending,
+          error: message,
+        },
       });
       logger.error(
-        { delivery: delivery.id, channel: channel.name ?? channel.target, attempt: job.attemptsMade, error },
-        "Alert delivery attempt failed"
+        {
+          delivery: delivery.id,
+          channel: channel.name ?? channel.target,
+          attempt: job.attemptsMade,
+          error,
+        },
+        "Alert delivery attempt failed",
       );
       throw error;
     } finally {
@@ -1581,14 +1910,17 @@ export class AlertsService {
   }
 
   getNotificationBackoffDelay(attemptsMade: number): number {
-    const index = Math.min(Math.max(attemptsMade - 1, 0), NOTIFICATION_BACKOFF_DELAYS_MS.length - 1);
+    const index = Math.min(
+      Math.max(attemptsMade - 1, 0),
+      NOTIFICATION_BACKOFF_DELAYS_MS.length - 1,
+    );
     return NOTIFICATION_BACKOFF_DELAYS_MS[index] ?? 60_000;
   }
 
   private async reconcileEventStatus(eventId: string) {
     const current = await this.prisma.alertEvent.findUnique({
       where: { id: eventId },
-      select: { status: true }
+      select: { status: true },
     });
     if (
       !current ||
@@ -1597,25 +1929,46 @@ export class AlertsService {
     ) {
       return;
     }
-    const deliveries = await this.prisma.alertDelivery.findMany({ where: { eventId } });
+    const deliveries = await this.prisma.alertDelivery.findMany({
+      where: { eventId },
+    });
     if (!deliveries.length) {
       return;
     }
-    const hasPending = deliveries.some((delivery) => delivery.status === AlertDeliveryStatus.pending);
+    const hasPending = deliveries.some(
+      (delivery) => delivery.status === AlertDeliveryStatus.pending,
+    );
     if (hasPending) {
       return;
     }
-    const anySent = deliveries.some((delivery) => delivery.status === AlertDeliveryStatus.sent);
+    const anySent = deliveries.some(
+      (delivery) => delivery.status === AlertDeliveryStatus.sent,
+    );
     await this.prisma.alertEvent.update({
       where: { id: eventId },
-      data: { status: anySent ? AlertEventStatus.delivered : AlertEventStatus.failed }
+      data: {
+        status: anySent ? AlertEventStatus.delivered : AlertEventStatus.failed,
+      },
     });
   }
 
   private async sendEmail(
     target: string,
-    event: { metricValue: Prisma.Decimal; triggeredAt: Date; ruleId: string; message?: string | null; changePercent?: number | null },
-    rule: { name: string; metricSlug: string; operator?: AlertOperator; thresholdValue?: Prisma.Decimal | null; thresholdLower?: Prisma.Decimal | null; thresholdUpper?: Prisma.Decimal | null }
+    event: {
+      metricValue: Prisma.Decimal;
+      triggeredAt: Date;
+      ruleId: string;
+      message?: string | null;
+      changePercent?: number | null;
+    },
+    rule: {
+      name: string;
+      metricSlug: string;
+      operator?: AlertOperator;
+      thresholdValue?: Prisma.Decimal | null;
+      thresholdLower?: Prisma.Decimal | null;
+      thresholdUpper?: Prisma.Decimal | null;
+    },
   ) {
     const metricSlug = normalizeMetricSlug(rule.metricSlug);
     const threshold =
@@ -1633,7 +1986,7 @@ export class AlertsService {
       threshold,
       triggeredAt: event.triggeredAt.toISOString(),
       message: event.message ?? undefined,
-      changePercent: event.changePercent ?? null
+      changePercent: event.changePercent ?? null,
     });
     const text = this.email.buildAlertTextTemplate({
       ruleName: rule.name,
@@ -1642,19 +1995,26 @@ export class AlertsService {
       threshold,
       triggeredAt: event.triggeredAt.toISOString(),
       message: event.message ?? undefined,
-      changePercent: event.changePercent ?? null
+      changePercent: event.changePercent ?? null,
     });
     await this.email.send({
       to: target,
       subject: `[Alert] ${rule.name} triggered`,
       html,
-      text
+      text,
     });
   }
 
   private async sendWebhook(
     target: string,
-    event: { id: string; triggeredAt: Date; metricValue: Prisma.Decimal; severity: AlertSeverity; ruleId: string; message?: string | null },
+    event: {
+      id: string;
+      triggeredAt: Date;
+      metricValue: Prisma.Decimal;
+      severity: AlertSeverity;
+      ruleId: string;
+      message?: string | null;
+    },
     rule: {
       name: string;
       metricSlug: string;
@@ -1662,7 +2022,7 @@ export class AlertsService {
       thresholdValue?: Prisma.Decimal | null;
       thresholdLower?: Prisma.Decimal | null;
       thresholdUpper?: Prisma.Decimal | null;
-    }
+    },
   ) {
     const resolvedTarget = await this.resolveSafeWebhookTarget(target);
     const metricSlug = normalizeMetricSlug(rule.metricSlug);
@@ -1682,7 +2042,7 @@ export class AlertsService {
       triggeredAt: event.triggeredAt.toISOString(),
       severity: event.severity,
       operator: rule.operator,
-      message: event.message
+      message: event.message,
     };
     const pinnedLookup = this.createPinnedLookup(
       resolvedTarget.hostname,
@@ -1698,7 +2058,10 @@ export class AlertsService {
     );
   }
 
-  private async normalizeChannelTarget(type: AlertChannelType, target: string): Promise<string> {
+  private async normalizeChannelTarget(
+    type: AlertChannelType,
+    target: string,
+  ): Promise<string> {
     const normalizedTarget = target.trim();
     if (type === AlertChannelType.email) {
       return this.email.normalizeEmailTarget(normalizedTarget);
@@ -1748,9 +2111,15 @@ export class AlertsService {
     addresses: SsrfResolvedAddress[],
   ): LookupFunction {
     const normalizedExpectedHostname = expectedHostname.toLowerCase();
-    return ((hostname: string, options: any, callback: (...args: unknown[]) => void) => {
+    return ((
+      hostname: string,
+      options: any,
+      callback: (...args: unknown[]) => void,
+    ) => {
       if (hostname.toLowerCase() !== normalizedExpectedHostname) {
-        callback(new Error(`Pinned lookup rejected unexpected hostname: ${hostname}`));
+        callback(
+          new Error(`Pinned lookup rejected unexpected hostname: ${hostname}`),
+        );
         return;
       }
 
@@ -1767,7 +2136,11 @@ export class AlertsService {
 
       if (typeof options === "object" && options?.all === true) {
         if (filtered.length === 0) {
-          callback(new Error(`Pinned lookup has no ${requestedFamily || "usable"} addresses for ${hostname}`));
+          callback(
+            new Error(
+              `Pinned lookup has no ${requestedFamily || "usable"} addresses for ${hostname}`,
+            ),
+          );
           return;
         }
         callback(
@@ -1782,7 +2155,9 @@ export class AlertsService {
 
       const selected = filtered[0] ?? addresses[0];
       if (!selected) {
-        callback(new Error(`Pinned lookup has no usable addresses for ${hostname}`));
+        callback(
+          new Error(`Pinned lookup has no usable addresses for ${hostname}`),
+        );
         return;
       }
       callback(null, selected.address, selected.family);
@@ -1807,12 +2182,17 @@ export class AlertsService {
       {
         jobId: "scan-active-rules",
         repeat: { every: this.env.alertingConfig.scanIntervalMs },
-        removeOnComplete: true
-      }
+        removeOnComplete: true,
+      },
     );
   }
 
-  private async ensureRuleSchedule(rule: { id: string; orgId?: string; checkIntervalSec: number; status: AlertStatus }) {
+  private async ensureRuleSchedule(rule: {
+    id: string;
+    orgId?: string;
+    checkIntervalSec: number;
+    status: AlertStatus;
+  }) {
     await this.removeJob(rule.id, false);
     if (rule.status !== AlertStatus.active) {
       return;
@@ -1825,8 +2205,8 @@ export class AlertsService {
         jobId: `evaluate-${rule.id}`,
         repeat: { every },
         removeOnComplete: true,
-        removeOnFail: false
-      }
+        removeOnFail: false,
+      },
     );
   }
 

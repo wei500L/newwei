@@ -49,6 +49,7 @@ jest.mock("@modular/mongo", () => ({
 }));
 
 import { TaskLogModel } from "@modular/mongo";
+import { NotificationPresentationKind } from "@modular/utils";
 import { NotificationType } from "@prisma/client";
 import { CrawlExecutionService } from "../crawl-execution.service";
 import { Crawl4aiRequestException } from "../crawl4ai.exception";
@@ -237,6 +238,19 @@ describe("CrawlExecutionService", () => {
           orgId: "org-1",
           userId: "user-1",
           type: NotificationType.crawl_completed,
+          data: expect.objectContaining({
+            taskId: "task-1",
+            status: "completed",
+            presentation: expect.objectContaining({
+              kind: NotificationPresentationKind.CrawlCompleted,
+              params: expect.objectContaining({
+                taskId: "task-1",
+                taskLabel: "Test Task",
+                inserted: 1,
+                skipped: 2,
+              }),
+            }),
+          }),
         }),
       );
       expect(TaskLogModel.create).not.toHaveBeenCalled();
@@ -332,7 +346,7 @@ describe("CrawlExecutionService", () => {
         id: "result-previous",
         fetchedAt,
         metadata: {
-          httpEtag: "\"seed-v1\"",
+          httpEtag: '"seed-v1"',
           httpLastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
         },
       });
@@ -343,7 +357,7 @@ describe("CrawlExecutionService", () => {
         headers: {
           get: (key: string) => {
             if (key === "etag") {
-              return "\"seed-v1\"";
+              return '"seed-v1"';
             }
             if (key === "last-modified") {
               return "Mon, 01 Jan 2024 00:00:00 GMT";
@@ -373,7 +387,7 @@ describe("CrawlExecutionService", () => {
           expect.objectContaining({
             method: "HEAD",
             headers: expect.objectContaining({
-              "if-none-match": "\"seed-v1\"",
+              "if-none-match": '"seed-v1"',
               "if-modified-since": "Mon, 01 Jan 2024 00:00:00 GMT",
             }),
           }),
@@ -404,7 +418,7 @@ describe("CrawlExecutionService", () => {
         id: "result-previous",
         fetchedAt,
         metadata: {
-          httpEtag: "\"seed-v1\"",
+          httpEtag: '"seed-v1"',
           httpLastModified: "Mon, 01 Jan 2024 00:00:00 GMT",
         },
       });
@@ -420,7 +434,7 @@ describe("CrawlExecutionService", () => {
         headers: {
           get: (key: string) => {
             if (key === "etag") {
-              return "\"seed-v1\"";
+              return '"seed-v1"';
             }
             if (key === "last-modified") {
               return "Mon, 01 Jan 2024 00:00:00 GMT";
@@ -576,6 +590,11 @@ describe("CrawlExecutionService", () => {
         expect.objectContaining({
           type: NotificationType.crawl_completed,
           userId: "user-1",
+          data: expect.objectContaining({
+            presentation: expect.objectContaining({
+              kind: NotificationPresentationKind.CrawlCompleted,
+            }),
+          }),
         }),
       );
     });
@@ -989,7 +1008,9 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "expansion", status: "processing" }),
       );
-      expect(mockCrawlSettings.getSettings.mock.calls.length).toBeGreaterThanOrEqual(1);
+      expect(
+        mockCrawlSettings.getSettings.mock.calls.length,
+      ).toBeGreaterThanOrEqual(1);
       expect(result.inserted).toBe(1);
     });
   });
@@ -1362,7 +1383,9 @@ describe("CrawlExecutionService", () => {
 
   it("extracts publish-time confidence from html meta/jsonld/time signals", () => {
     const instance = service as unknown as {
-      extractPublishSignalFromHtml: (html: string) =>
+      extractPublishSignalFromHtml: (
+        html: string,
+      ) =>
         | { confidence: number; source: string; timestamp?: number }
         | undefined;
     };
@@ -1391,7 +1414,11 @@ describe("CrawlExecutionService", () => {
     const instance = service as unknown as {
       resolveCandidatePublishSignal: (
         url: string,
-        enriched?: { confidence: number; source: "meta" | "jsonld" | "time_tag" | "url_path" | "none"; timestamp?: number },
+        enriched?: {
+          confidence: number;
+          source: "meta" | "jsonld" | "time_tag" | "url_path" | "none";
+          timestamp?: number;
+        },
       ) => { confidence: number; source: string };
     };
 
@@ -1466,7 +1493,11 @@ describe("CrawlExecutionService", () => {
       enrichCandidatePublishSignals: (options: {
         urls: string[];
         requestTimeoutMs?: number;
-        settings: { timeoutMs: number; concurrency: number; maxReadBytes: number };
+        settings: {
+          timeoutMs: number;
+          concurrency: number;
+          maxReadBytes: number;
+        };
       }) => Promise<{
         attempted: number;
         skipped: boolean;
@@ -1533,7 +1564,11 @@ describe("CrawlExecutionService", () => {
       enrichCandidatePublishSignals: (options: {
         urls: string[];
         requestTimeoutMs?: number;
-        settings: { timeoutMs: number; concurrency: number; maxReadBytes: number };
+        settings: {
+          timeoutMs: number;
+          concurrency: number;
+          maxReadBytes: number;
+        };
       }) => Promise<{
         attempted: number;
         succeeded: number;
@@ -2148,6 +2183,18 @@ describe("CrawlExecutionService", () => {
       expect(mockNotifications.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           type: NotificationType.crawl_failed,
+          data: expect.objectContaining({
+            presentation: expect.objectContaining({
+              kind: NotificationPresentationKind.CrawlFailed,
+              technicalDetail: "Bad request",
+              params: expect.objectContaining({
+                taskId: "task-1",
+                taskLabel: "Test Task",
+                inserted: 0,
+                skipped: 0,
+              }),
+            }),
+          }),
         }),
       );
     });
@@ -2621,7 +2668,9 @@ describe("CrawlExecutionService", () => {
     it("parses detailExpansion fields from persisted crawl config", () => {
       const extracted = (
         service as unknown as {
-          extractOptions: (config: Record<string, unknown>) => Record<string, unknown>;
+          extractOptions: (
+            config: Record<string, unknown>,
+          ) => Record<string, unknown>;
         }
       ).extractOptions({
         autoExpandDetails: true,

@@ -1,4 +1,5 @@
 import { sign } from "jsonwebtoken";
+import { NotificationSocketErrorCode } from "@modular/utils";
 
 import type { AuthenticatedUser } from "../auth/auth.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
@@ -13,23 +14,23 @@ jest.mock("@modular/utils", () => {
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
-      debug: jest.fn()
-    })
+      debug: jest.fn(),
+    }),
   };
 });
 
 const jwtConfig = {
   secret: "test-secret-1234567890",
   issuer: "test-issuer",
-  audience: "test-audience"
+  audience: "test-audience",
 };
 
 function createToken(userId: string, orgId: string) {
-  return sign(
-    { sub: userId, orgId, permissions: [] },
-    jwtConfig.secret,
-    { issuer: jwtConfig.issuer, audience: jwtConfig.audience, jwtid: "jti-1" }
-  );
+  return sign({ sub: userId, orgId, permissions: [] }, jwtConfig.secret, {
+    issuer: jwtConfig.issuer,
+    audience: jwtConfig.audience,
+    jwtid: "jti-1",
+  });
 }
 
 function createFakeServer() {
@@ -51,16 +52,19 @@ function createFakeServer() {
     },
     in(room: string) {
       return {
-        allSockets: async () => new Set(rooms.get(room) ?? [])
+        allSockets: async () => new Set(rooms.get(room) ?? []),
       };
     },
     to() {
       return { emit };
-    }
+    },
   } as any;
 }
 
-function createClient(server: ReturnType<typeof createFakeServer>, params: { id: string; token: string; ip?: string }) {
+function createClient(
+  server: ReturnType<typeof createFakeServer>,
+  params: { id: string; token: string; ip?: string },
+) {
   const ip = params.ip ?? "127.0.0.1";
   return {
     id: params.id,
@@ -68,11 +72,11 @@ function createClient(server: ReturnType<typeof createFakeServer>, params: { id:
     handshake: {
       headers: {
         origin: "http://localhost:3000",
-        "x-forwarded-for": ip
+        "x-forwarded-for": ip,
       },
       auth: { token: params.token },
       query: {},
-      address: ip
+      address: ip,
     },
     join: jest.fn(async (rooms: string[]) => {
       server.addToRooms(params.id, rooms);
@@ -80,11 +84,52 @@ function createClient(server: ReturnType<typeof createFakeServer>, params: { id:
     emit: jest.fn(),
     disconnect: jest.fn(() => {
       server.removeSocket(params.id);
-    })
+    }),
   } as any;
 }
 
 describe("NotificationsGateway", () => {
+  it("emits unauthorized error code when authentication fails", async () => {
+    const env = {
+      jwtConfig,
+      graphqlConfig: { corsOrigin: undefined },
+      webSocketSecurity: {
+        maxConnectionsPerUser: 50,
+        maxConnectionsPerIp: 50,
+        connectRateLimitPerIp: 999,
+        connectRateLimitPerUser: 999,
+        connectRateLimitWindowSeconds: 60,
+      },
+    } as any;
+
+    const authService = { getUserProfile: jest.fn() } as any;
+    const accessTokenBlacklist = { has: jest.fn() } as any;
+    const dispatcher = { registerListener: jest.fn() } as any;
+    const sessions = new UserSessionManager(env as any);
+
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+    );
+    const server = createFakeServer();
+    (gateway as any).server = server;
+
+    const client = createClient(server, {
+      id: "s-unauthorized",
+      token: "bad-token",
+    });
+    await gateway.handleConnection(client);
+
+    expect(client.emit).toHaveBeenCalledWith("notification:error", {
+      code: NotificationSocketErrorCode.Unauthorized,
+      message: "Unauthorized",
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+
   it("enforces max connections per user", async () => {
     const profile: AuthenticatedUser = {
       id: "user-1",
@@ -93,7 +138,7 @@ describe("NotificationsGateway", () => {
       roleIds: [],
       permissions: [],
       firstName: "Test",
-      lastName: "User"
+      lastName: "User",
     };
 
     const env = {
@@ -104,16 +149,26 @@ describe("NotificationsGateway", () => {
         maxConnectionsPerIp: 50,
         connectRateLimitPerIp: 999,
         connectRateLimitPerUser: 999,
-        connectRateLimitWindowSeconds: 60
-      }
+        connectRateLimitWindowSeconds: 60,
+      },
     } as any;
 
-    const authService = { getUserProfile: jest.fn().mockResolvedValue(profile) } as any;
-    const accessTokenBlacklist = { has: jest.fn().mockResolvedValue(false) } as any;
+    const authService = {
+      getUserProfile: jest.fn().mockResolvedValue(profile),
+    } as any;
+    const accessTokenBlacklist = {
+      has: jest.fn().mockResolvedValue(false),
+    } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
     const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+    );
     const server = createFakeServer();
     (gateway as any).server = server;
     const token = createToken(profile.id, profile.orgId);
@@ -126,7 +181,10 @@ describe("NotificationsGateway", () => {
     const client2 = createClient(server, { id: "s2", token });
     await gateway.handleConnection(client2);
     expect(client2.join).not.toHaveBeenCalled();
-    expect(client2.emit).toHaveBeenCalledWith("notification:error", { message: "Too many connections" });
+    expect(client2.emit).toHaveBeenCalledWith("notification:error", {
+      code: NotificationSocketErrorCode.TooManyConnections,
+      message: "Too many connections",
+    });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
   });
 
@@ -138,7 +196,7 @@ describe("NotificationsGateway", () => {
       roleIds: [],
       permissions: [],
       firstName: "Test",
-      lastName: "User"
+      lastName: "User",
     };
 
     const env = {
@@ -149,16 +207,26 @@ describe("NotificationsGateway", () => {
         maxConnectionsPerIp: 50,
         connectRateLimitPerIp: 1,
         connectRateLimitPerUser: 999,
-        connectRateLimitWindowSeconds: 60
-      }
+        connectRateLimitWindowSeconds: 60,
+      },
     } as any;
 
-    const authService = { getUserProfile: jest.fn().mockResolvedValue(profile) } as any;
-    const accessTokenBlacklist = { has: jest.fn().mockResolvedValue(false) } as any;
+    const authService = {
+      getUserProfile: jest.fn().mockResolvedValue(profile),
+    } as any;
+    const accessTokenBlacklist = {
+      has: jest.fn().mockResolvedValue(false),
+    } as any;
     const dispatcher = { registerListener: jest.fn() } as any;
     const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+    );
     const server = createFakeServer();
     (gateway as any).server = server;
     const token = createToken(profile.id, profile.orgId);
@@ -169,7 +237,10 @@ describe("NotificationsGateway", () => {
 
     const client2 = createClient(server, { id: "s2", token, ip: "10.0.0.1" });
     await gateway.handleConnection(client2);
-    expect(client2.emit).toHaveBeenCalledWith("notification:error", { message: "Too many connection attempts" });
+    expect(client2.emit).toHaveBeenCalledWith("notification:error", {
+      code: NotificationSocketErrorCode.TooManyConnectionAttempts,
+      message: "Too many connection attempts",
+    });
     expect(client2.disconnect).toHaveBeenCalledWith(true);
   });
 
@@ -182,8 +253,8 @@ describe("NotificationsGateway", () => {
         maxConnectionsPerIp: 50,
         connectRateLimitPerIp: 999,
         connectRateLimitPerUser: 999,
-        connectRateLimitWindowSeconds: 60
-      }
+        connectRateLimitWindowSeconds: 60,
+      },
     } as any;
 
     const authService = { getUserProfile: jest.fn() } as any;
@@ -191,11 +262,24 @@ describe("NotificationsGateway", () => {
     const dispatcher = { registerListener: jest.fn() } as any;
     const sessions = new UserSessionManager(env as any);
 
-    const gateway = new NotificationsGateway(env, authService, accessTokenBlacklist, dispatcher, sessions);
+    const gateway = new NotificationsGateway(
+      env,
+      authService,
+      accessTokenBlacklist,
+      dispatcher,
+      sessions,
+    );
 
     const socket1 = { id: "s1", disconnect: jest.fn() };
     const socket2 = { id: "s2", disconnect: jest.fn() };
-    (gateway as any).server = { sockets: { sockets: new Map([["s1", socket1], ["s2", socket2]]) } };
+    (gateway as any).server = {
+      sockets: {
+        sockets: new Map([
+          ["s1", socket1],
+          ["s2", socket2],
+        ]),
+      },
+    };
     const unsubscribe = jest.fn();
     (gateway as any).unsubscribe = unsubscribe;
 

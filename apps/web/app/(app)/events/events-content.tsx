@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, formatRelativeTime, formatTimeZoneOffsetLabel, getDefaultTimeZone, resolveLocale } from "@/lib/i18n";
@@ -521,7 +522,17 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                 defaultValue: "No events yet. Enable ingestion in System Settings and wait for the scheduled job."
               })}
             >
-              <Button type="primary" onClick={() => router.push("/admin/system?tab=newsEvents")}>
+              <Button
+                type="primary"
+                onClick={() =>
+                  router.push(
+                    buildAdminSettingsHref({
+                      page: "news",
+                      panel: "news-events",
+                    }),
+                  )
+                }
+              >
                 {t("pages.events.emptyCta", { defaultValue: "Open system settings" })}
               </Button>
             </Empty>

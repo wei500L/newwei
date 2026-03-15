@@ -664,6 +664,17 @@
     },
     "queue": {
       "connectionFailed": "队列连接失败：{{error}}",
+      "connectionError": {
+        "unauthorized": "队列连接已失效，请重新登录后再试。",
+        "tooManyConnections": "队列连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "队列连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "队列连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "队列鉴权失败次数过多，请稍后再试。",
+        "timeout": "连接队列服务超时，请稍后重试。",
+        "network": "当前无法连接队列服务，请检查网络后重试。",
+        "connect": "暂时无法连接队列服务，请稍后再试。",
+        "socket": "队列连接出现异常，请稍后再试。"
+      },
       "jobFailed": "任务 {{jobId}} 失败",
       "jobCompleted": "任务 {{jobId}} 已完成",
       "jobStarted": "任务 {{jobId}} 已开始",
@@ -1791,6 +1802,17 @@
       }
     },
     "newsnow": {
+      "connectionError": {
+        "unauthorized": "NewsNow 实时连接已失效，请重新登录后再试。",
+        "tooManyConnections": "NewsNow 实时连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "NewsNow 实时连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "NewsNow 实时连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "NewsNow 实时鉴权失败次数过多，请稍后再试。",
+        "timeout": "连接 NewsNow 实时服务超时，请稍后重试。",
+        "network": "当前无法连接 NewsNow 实时服务，请检查网络后重试。",
+        "connect": "暂时无法连接 NewsNow 实时服务，请稍后再试。",
+        "socket": "NewsNow 实时连接出现异常，请稍后再试。"
+      },
       "runtimeSecrets": {
         "openSettings": "去系统设置 > 新闻源密钥",
         "openSettingsWithKey": "去系统设置 > 新闻源密钥（推荐：{{key}}）",
@@ -2285,6 +2307,166 @@
       "knowledgeGraphReview": {
         "title": "知识图谱审核",
         "description": "审核低置信度知识图谱关系并记录人工反馈"
+      }
+    }
+  },
+  "adminSettings": {
+    "workspace": {
+      "title": "设置工作台",
+      "description": "按领域浏览管理员配置，而不是在一条过长的标签导航里来回切换。",
+      "overview": "概览",
+      "overviewDescription": "查看可访问的设置域、常用入口和快捷跳转。",
+      "summary": "管理员设置按领域分组，高风险配置会更容易被找到和操作。",
+      "quickLinks": "快捷入口",
+      "quickLinkTag": "快捷方式",
+      "open": "打开",
+      "domains": "设置领域",
+      "enterDomain": "进入领域",
+      "adminCardDescription": "打开统一的设置工作台，集中管理访问控制、系统配置、存储和各类服务设置。"
+    },
+    "pages": {
+      "access": {
+        "title": "访问控制",
+        "description": "管理角色、权限以及组织成员分配。"
+      },
+      "security": {
+        "title": "安全与治理",
+        "description": "调整安全防护、缓存、限流与审计保留策略。"
+      },
+      "ingestion": {
+        "title": "采集与交付",
+        "description": "配置抓取客户端、调度行为、运行密钥与存储后端。"
+      },
+      "ai": {
+        "title": "AI 服务",
+        "description": "管理网关路由、安全策略以及模型相关基础设施。"
+      },
+      "knowledge": {
+        "title": "知识系统",
+        "description": "维护知识抽取、人工审核与图谱质量相关设置。"
+      },
+      "news": {
+        "title": "新闻智能",
+        "description": "调整事件提取、指标联动、去重与分类策略。"
+      },
+      "editorial": {
+        "title": "编辑控制",
+        "description": "管理新闻提示词与个性化策略。"
+      },
+      "monitoring": {
+        "title": "监控",
+        "description": "维护态势监控、实时信号与 RSS 诊断配置。"
+      },
+      "integrations": {
+        "title": "集成服务",
+        "description": "管理外部服务连接和基础设施适配器。"
+      }
+    },
+    "panels": {
+      "roles": {
+        "description": "定义管理员和运营角色可复用的权限集合。"
+      },
+      "permissions": {
+        "description": "查看当前工作区可分配的权限目录。"
+      },
+      "members": {
+        "description": "为成员分配角色，并核对当前访问状态。"
+      },
+      "security": {
+        "description": "控制密钥加密开关并校验密钥健康状态。"
+      },
+      "auth-cache": {
+        "description": "配置身份缓存 TTL、锁窗口与重试间隔。"
+      },
+      "rate-limits": {
+        "description": "限制敏感写操作和认证流程的请求速率。"
+      },
+      "rate-limit-policies": {
+        "description": "维护可复用的共享限流策略规则。"
+      },
+      "audit-log": {
+        "description": "保留安全与配置事件，支持排查与审计。"
+      },
+      "crawl-client": {
+        "description": "调整抓取请求、重试与自适应并发默认值。"
+      },
+      "archive-preparation": {
+        "description": "配置归档准备、打包与保留相关行为。"
+      },
+      "news-source-scheduler": {
+        "description": "调整种子新鲜度、RSS 节奏与调度启发式参数。"
+      },
+      "news-source-runtime-secrets": {
+        "description": "存储新闻采集源运行时所需的逐源密钥。"
+      },
+      "storage": {
+        "description": "配置存储后端并验证对象访问能力。"
+      },
+      "llm-gateway": {
+        "description": "配置模型网关端点、配置档与治理规则。"
+      },
+      "llm-request-logs": {
+        "description": "查看最近的网关请求与调试轨迹。"
+      },
+      "assistant-safety": {
+        "description": "管理内容审核、护栏策略与安全诊断。"
+      },
+      "vector-service": {
+        "description": "连接并调优向量检索服务。"
+      },
+      "model-service": {
+        "description": "管理内部模型服务的连接与凭据。"
+      },
+      "knowledge-graph": {
+        "description": "调整图谱摄取、阈值与抽取行为。"
+      },
+      "knowledge-graph-review": {
+        "description": "审核低置信度关系并记录人工判定。"
+      },
+      "entity-impact-graph": {
+        "description": "配置影响图谱渲染、力导参数与阈值。"
+      },
+      "news-events": {
+        "description": "配置事件摄取、评分与时间线行为。"
+      },
+      "news-event-source-policy": {
+        "description": "设置数据源白名单、惩罚项与策略行为。"
+      },
+      "news-indicator": {
+        "description": "管理指标匹配阈值、关联与刷新行为。"
+      },
+      "news-dedupe": {
+        "description": "调整去重窗口、相似度规则与回退策略。"
+      },
+      "news-classification": {
+        "description": "控制分类路由、模型门禁与审核默认值。"
+      },
+      "news-prompts": {
+        "description": "编辑新闻流水线共用的提示词模板。"
+      },
+      "newsnow-personalization": {
+        "description": "调整 NewsNow 的排序和个性化行为。"
+      },
+      "situation-monitor": {
+        "description": "配置实时监控 feed、翻译与 Telegram 能力。"
+      },
+      "realtime-signals": {
+        "description": "管理信号采集器、数据源与阈值设置。"
+      },
+      "rss-translation-metrics": {
+        "description": "查看翻译请求、缓存命中与延迟指标。"
+      },
+      "rss-diagnostics": {
+        "description": "检查 RSS 诊断信息与采集链路健康度。"
+      },
+      "geo-nominatim": {
+        "description": "配置地理编码标识信息并测试请求。"
+      },
+      "email": {
+        "description": "管理 SMTP、测试发送和邮箱验证码设置。"
+      },
+      "akshare": {
+        "description": "查看 Akshare 健康状态并执行手动刷新控制。"
       }
     }
   },
@@ -2905,11 +3087,91 @@
     "unreadCount_other": "{{count}} 条未读通知",
     "markAllRead": "全部标为已读",
     "empty": "暂无通知",
+    "live": {
+      "batchMessage": "{{count}} 条新通知 · {{titles}}"
+    },
     "openLink": "打开",
     "openTask": "查看任务",
     "openItem": "查看条目",
     "openAnalysis": "查看分析",
     "openAlert": "查看预警",
+    "technicalDetail": "系统详情：{{detail}}",
+    "connectionError": {
+      "unauthorized": "通知连接已失效，请重新登录后再试。",
+      "tooManyConnections": "通知连接数已达上限，请稍后再试。",
+      "tooManyConnectionAttempts": "通知连接尝试过于频繁，请稍后再试。",
+      "timeout": "连接通知服务超时，请检查网络后重试。",
+      "network": "当前无法连接通知服务，请检查网络后重试。",
+      "connect": "暂时无法连接通知服务，请稍后再试。",
+      "socket": "通知连接出现异常，请稍后再试。"
+    },
+    "analysisType": {
+      "correlation": "相关性分析",
+      "anomaly": "异常分析"
+    },
+    "evidence": {
+      "value": "数值：{{value}}",
+      "change": "变化：{{value}}",
+      "source": "来源：{{value}}",
+      "item": "条目：{{value}}",
+      "country": "国家/地区：{{value}}",
+      "resource": "资源：{{value}}",
+      "action": "动作：{{value}}",
+      "statuses": "状态：{{value}}",
+      "windowMinutes": "{{count}} 分钟"
+    },
+    "presentation": {
+      "crawlCompleted": {
+        "title": "采集完成：{{taskLabel}}",
+        "body": "本次新增 {{inserted}} 条，跳过 {{skipped}} 条{{retryableSuffix}}。",
+        "retryableSuffix": "，可重试失败 {{count}} 次"
+      },
+      "crawlFailed": {
+        "title": "采集失败：{{taskLabel}}",
+        "body": "本次采集任务未能成功完成。"
+      },
+      "analysisCompleted": {
+        "title": "分析完成：{{analysisLabel}}",
+        "body": "分析结果已生成。"
+      },
+      "analysisFailed": {
+        "title": "分析失败：{{analysisLabel}}",
+        "body": "本次分析任务未能成功完成。"
+      },
+      "alertTriggered": {
+        "title": "预警触发：{{ruleName}}",
+        "metricValue": "当前值 {{value}}",
+        "changePercent": "变化 {{value}}",
+        "context": "上下文 {{value}}",
+        "body": "已触发预警条件：{{details}}。"
+      },
+      "newsSourceCircuitOpened": {
+        "title": "数据源已暂停：{{sourceLabel}}",
+        "body": "连续失败达到 {{count}} 次，已暂停到 {{until}}。"
+      },
+      "newsSourceAutoDisabled": {
+        "title": "数据源已停用：{{sourceLabel}}",
+        "body": "连续失败达到 {{count}} 次，系统已自动停用该数据源。"
+      },
+      "newsSourceRssBodyMissingSpike": {
+        "title": "RSS 正文缺失异常：{{sourceLabel}}",
+        "body": "近 24 小时无有效正文的条目达到 {{count}} 条，阈值 {{threshold}}。"
+      },
+      "newsSourcePipelineRetrySpike": {
+        "title": "流水线重试异常：{{sourceLabel}}",
+        "body": "近 24 小时流水线重试达到 {{count}} 次，阈值 {{threshold}}。"
+      },
+      "newsSourceSchedulerBackpressure": {
+        "title": "调度积压告警",
+        "body": "{{delayedCount}} 个数据源已延后到 {{rescheduleAt}}；当前待处理 {{pendingJobs}}，阈值 {{threshold}}。"
+      },
+      "classificationQualityThresholdExceeded": {
+        "title": "分类质量阈值告警",
+        "body": "{{window}} 时间窗内触发了分类质量阈值，请前往系统监控查看详情。",
+        "latency": "延迟指标：{{summary}}",
+        "gate": "分类门控：{{summary}}"
+      }
+    },
     "unreadCount_one": "{{count}} 条未读通知",
     "type": {
       "alert_triggered": "预警触发",
@@ -7861,7 +8123,18 @@
     "realtime": {
       "connected": "实时在线",
       "disconnected": "实时离线",
-      "error": "实时错误"
+      "error": "实时错误",
+      "connectionError": {
+        "unauthorized": "态势监控实时连接已失效，请重新登录后再试。",
+        "tooManyConnections": "态势监控实时连接数已达上限，请稍后再试。",
+        "tooManyConnectionAttempts": "态势监控实时连接尝试过于频繁，请稍后再试。",
+        "rateLimitExceeded": "态势监控实时连接请求过于频繁，请稍后再试。",
+        "tooManyFailedAttempts": "态势监控实时鉴权失败次数过多，请稍后再试。",
+        "timeout": "连接态势监控实时服务超时，请稍后重试。",
+        "network": "当前无法连接态势监控实时服务，请检查网络后重试。",
+        "connect": "暂时无法连接态势监控实时服务，请稍后再试。",
+        "socket": "态势监控实时连接出现异常，请稍后再试。"
+      }
     },
     "presets": {
       "title": "预设",

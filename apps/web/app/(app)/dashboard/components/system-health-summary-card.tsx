@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { SystemHealthMeter } from "@/app/(app)/components/system-health-meter";
 import {
   getPrimarySystemPressure,
@@ -94,7 +95,13 @@ export function SystemHealthSummaryCard({
         label: t("dashboard.systemStatus.actions.openSystemSettings", {
           defaultValue: "Open system settings",
         }),
-        onClick: () => router.push("/admin/system?tab=crawlClient"),
+        onClick: () =>
+          router.push(
+            buildAdminSettingsHref({
+              page: "ingestion",
+              panel: "crawl-client",
+            }),
+          ),
       }
     : canViewCrawlTasks
       ? {

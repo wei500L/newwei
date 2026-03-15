@@ -1,7 +1,17 @@
 "use client";
 
 import { BellOutlined } from "@ant-design/icons";
-import { App, Badge, Button, List, Popover, Space, Spin, Tag, Typography } from "antd";
+import {
+  App,
+  Badge,
+  Button,
+  List,
+  Popover,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,14 +21,29 @@ import {
   useMarkAllNotificationsReadMutation,
   useMarkNotificationReadMutation,
   useNotificationsQuery,
-  useUnreadNotificationCountQuery
+  useUnreadNotificationCountQuery,
 } from "@/graphql/generated";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { dedupeNotifications, getNotificationDedupeKey, upsertNotification } from "@/lib/notification-dedupe";
-import { resolveNotificationLink } from "@/lib/notifications";
-import { useBufferedBatch, useScheduledAction, useTimedValueDeduper } from "@/lib/use-realtime-helpers";
+import {
+  dedupeNotifications,
+  getNotificationDedupeKey,
+  upsertNotification,
+} from "@/lib/notification-dedupe";
+import {
+  formatNotificationPresentation,
+  formatNotificationStreamError,
+  resolveNotificationLink,
+} from "@/lib/notifications";
+import {
+  useBufferedBatch,
+  useScheduledAction,
+  useTimedValueDeduper,
+} from "@/lib/use-realtime-helpers";
 
-import { useNotificationStream, type NotificationMessage } from "./use-notification-stream";
+import {
+  useNotificationStream,
+  type NotificationMessage,
+} from "./use-notification-stream";
 
 type NotificationItem = NotificationMessage;
 
@@ -29,7 +54,7 @@ const typeColor: Record<NotificationType, string> = {
   [NotificationType.AnalysisFailed]: "red",
   [NotificationType.OrgInvite]: "purple",
   [NotificationType.AlertTriggered]: "orange",
-  [NotificationType.System]: "geekblue"
+  [NotificationType.System]: "geekblue",
 };
 
 const MAX_ITEMS = 30;
@@ -43,9 +68,10 @@ export function NotificationCenter() {
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
   const { data, loading, refetch } = useNotificationsQuery({
-    variables: { limit: MAX_ITEMS }
+    variables: { limit: MAX_ITEMS },
   });
-  const { data: unreadData, refetch: refetchUnread } = useUnreadNotificationCountQuery();
+  const { data: unreadData, refetch: refetchUnread } =
+    useUnreadNotificationCountQuery();
   const [markRead] = useMarkNotificationReadMutation();
   const [markAll] = useMarkAllNotificationsReadMutation();
   const [open, setOpen] = useState(false);
@@ -57,7 +83,9 @@ export function NotificationCenter() {
   const { add: enqueueNotificationToast } = useBufferedBatch<string>({
     delayMs: LIVE_NOTIFICATION_TOAST_FLUSH_MS,
     onFlush: (titles) => {
-      const uniqueTitles = Array.from(new Set(titles.filter((title) => title.trim().length > 0)));
+      const uniqueTitles = Array.from(
+        new Set(titles.filter((title) => title.trim().length > 0)),
+      );
       if (uniqueTitles.length === 0) {
         return;
       }
@@ -67,7 +95,9 @@ export function NotificationCenter() {
           : t("notifications.live.batchMessage", {
               defaultValue: "{{count}} new notifications · {{titles}}",
               count: uniqueTitles.length,
-              titles: uniqueTitles.slice(0, 3).join(" · ") || t("notifications.title"),
+              titles:
+                uniqueTitles.slice(0, 3).join(" · ") ||
+                t("notifications.title"),
             });
       message.open({
         type: "info",
@@ -111,7 +141,9 @@ export function NotificationCenter() {
     (incoming: NotificationMessage) => {
       const incomingKey = getNotificationDedupeKey(incoming);
       const alreadySeen =
-        seenKeysRef.current.has(incoming.id) || seenKeysRef.current.has(incomingKey);
+        seenKeysRef.current.has(incoming.id) ||
+        seenKeysRef.current.has(incomingKey);
+      const presentation = formatNotificationPresentation(incoming, locale, t);
 
       if (!alreadySeen) {
         seenKeysRef.current.add(incoming.id);
@@ -122,24 +154,35 @@ export function NotificationCenter() {
         if (!alreadySeen && !incoming.readAt) {
           setUnread((prevCount) => prevCount + 1);
         }
-        return dedupeNotifications(upsertNotification(prev, incoming)).slice(0, MAX_ITEMS);
+        return dedupeNotifications(upsertNotification(prev, incoming)).slice(
+          0,
+          MAX_ITEMS,
+        );
       });
       if (!alreadySeen) {
-        enqueueNotificationToast(incoming.title);
+        enqueueNotificationToast(presentation.toastText);
       }
       scheduleUnreadCountSync();
     },
-    [enqueueNotificationToast, scheduleUnreadCountSync]
+    [enqueueNotificationToast, locale, scheduleUnreadCountSync, t],
   );
 
   const { connectionError } = useNotificationStream(handleIncoming);
 
   useEffect(() => {
-    if (!connectionError || !shouldShowConnectionError(connectionError)) {
+    if (!connectionError) {
       return;
     }
-    message.warning(connectionError);
-  }, [connectionError, message, shouldShowConnectionError]);
+    const localizedError = formatNotificationStreamError(
+      connectionError,
+      t,
+      connectionError.kind,
+    );
+    if (!shouldShowConnectionError(localizedError)) {
+      return;
+    }
+    message.warning(localizedError);
+  }, [connectionError, message, shouldShowConnectionError, t]);
 
   const markOneAsRead = useCallback(
     async (id: string) => {
@@ -147,16 +190,25 @@ export function NotificationCenter() {
       if (!target || target.readAt) {
         return;
       }
-      setItems((prev) => prev.map((item) => (item.id === id ? { ...item, readAt: new Date().toISOString() } : item)));
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, readAt: new Date().toISOString() } : item,
+        ),
+      );
       setUnread((prev) => Math.max(0, prev - 1));
       await markRead({ variables: { id } });
       void refetchUnread();
     },
-    [items, markRead, refetchUnread]
+    [items, markRead, refetchUnread],
   );
 
   const markAllAsRead = useCallback(async () => {
-    setItems((prev) => prev.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() })));
+    setItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        readAt: item.readAt ?? new Date().toISOString(),
+      })),
+    );
     setUnread(0);
     await markAll();
     void refetchUnread();
@@ -167,7 +219,11 @@ export function NotificationCenter() {
       <div style={{ width: 380 }}>
         <Space
           align="center"
-          style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}
+          style={{
+            width: "100%",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
         >
           <Space size="small" align="center">
             <Typography.Text strong>{t("notifications.title")}</Typography.Text>
@@ -179,7 +235,11 @@ export function NotificationCenter() {
             <Button size="small" type="text" onClick={() => void refetch()}>
               {t("common.refresh")}
             </Button>
-            <Button size="small" type="text" onClick={() => void markAllAsRead()}>
+            <Button
+              size="small"
+              type="text"
+              onClick={() => void markAllAsRead()}
+            >
               {t("notifications.markAllRead")}
             </Button>
           </Space>
@@ -189,12 +249,14 @@ export function NotificationCenter() {
             maxHeight: "min(60vh, 480px)",
             overflowY: "auto",
             overscrollBehavior: "contain",
-            WebkitOverflowScrolling: "touch"
+            WebkitOverflowScrolling: "touch",
           }}
           onWheelCapture={(event) => event.stopPropagation()}
         >
           {loading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
+            <div
+              style={{ display: "flex", justifyContent: "center", padding: 16 }}
+            >
               <Spin />
             </div>
           ) : (
@@ -204,15 +266,22 @@ export function NotificationCenter() {
               renderItem={(item) => {
                 const isUnread = !item.readAt;
                 const action = resolveNotificationLink(item.data ?? null, t);
+                const presentation = formatNotificationPresentation(
+                  item,
+                  locale,
+                  t,
+                );
                 return (
                   <List.Item
                     key={item.id}
                     style={{
                       cursor: "pointer",
-                      background: isUnread ? "rgba(24,144,255,0.06)" : undefined,
+                      background: isUnread
+                        ? "rgba(24,144,255,0.06)"
+                        : undefined,
                       borderRadius: 4,
                       paddingLeft: 12,
-                      paddingRight: 12
+                      paddingRight: 12,
                     }}
                     onClick={() => void markOneAsRead(item.id)}
                   >
@@ -222,17 +291,19 @@ export function NotificationCenter() {
                           <Tag color={typeColor[item.type] ?? "default"}>
                             {t(`notifications.type.${item.type}`)}
                           </Tag>
-                          <Typography.Text strong>{item.title}</Typography.Text>
+                          <Typography.Text strong>
+                            {presentation.title}
+                          </Typography.Text>
                         </Space>
                       }
                       description={
                         <div>
-                          {item.body ? (
+                          {presentation.body ? (
                             <Typography.Paragraph
                               style={{ marginBottom: 6 }}
                               ellipsis={{ rows: 2, expandable: false }}
                             >
-                              {item.body}
+                              {presentation.body}
                             </Typography.Paragraph>
                           ) : null}
                           <Space size="small" align="center">
@@ -244,7 +315,7 @@ export function NotificationCenter() {
                                 hour: "2-digit",
                                 minute: "2-digit",
                                 second: "2-digit",
-                                hour12: false
+                                hour12: false,
                               })}
                             </Typography.Text>
                             {action ? (
@@ -275,7 +346,17 @@ export function NotificationCenter() {
         </div>
       </div>
     );
-  }, [items, loading, locale, markAllAsRead, markOneAsRead, refetch, router, t, unread]);
+  }, [
+    items,
+    loading,
+    locale,
+    markAllAsRead,
+    markOneAsRead,
+    refetch,
+    router,
+    t,
+    unread,
+  ]);
 
   return (
     <Popover
@@ -290,7 +371,9 @@ export function NotificationCenter() {
           <Button
             type="text"
             icon={<BellOutlined />}
-            aria-label={t("notifications.title", { defaultValue: "Notifications" })}
+            aria-label={t("notifications.title", {
+              defaultValue: "Notifications",
+            })}
             className="inline-flex h-8 w-8 items-center justify-center p-0"
           />
         </Badge>

@@ -2,6 +2,7 @@ import { RawItemModel } from "@modular/mongo";
 import {
   createLogger,
   DEFAULT_URL_QUERY_PARAM_ALLOWLIST,
+  NotificationPresentationKind,
 } from "@modular/utils";
 import {
   Injectable,
@@ -770,6 +771,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
             await this.recordRssNoBodySkipMetric({
               orgId: source.orgId,
               sourceId: source.id,
+              sourceName: source.name ?? undefined,
               skippedCount: rssSkippedNoBodyCount,
               context: "dispatch_now",
             });
@@ -812,7 +814,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   ) {
     const source = await this.prisma.newsSource.findUnique({
       where: { id: sourceId },
-      select: { id: true, orgId: true },
+      select: { id: true, orgId: true, name: true },
     });
     if (!source || source.orgId !== orgId) {
       throw new NotFoundException("News source not found");
@@ -903,7 +905,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   ) {
     const source = await this.prisma.newsSource.findUnique({
       where: { id: sourceId },
-      select: { id: true, orgId: true },
+      select: { id: true, orgId: true, name: true },
     });
     if (!source || source.orgId !== orgId) {
       throw new NotFoundException("News source not found");
@@ -1013,6 +1015,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     await this.recordPipelineRetryMetric({
       orgId,
       sourceId: source.id,
+      sourceName: source.name ?? undefined,
       pipelineJobId: latestJob.id,
     });
     return {
@@ -1027,6 +1030,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   private async recordRssNoBodySkipMetric(options: {
     orgId: string;
     sourceId: string;
+    sourceName?: string;
     skippedCount: number;
     context: "dispatch_now" | "schedule";
   }) {
@@ -1078,19 +1082,41 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         return;
       }
 
+      const sourceName = options.sourceName?.trim().length
+        ? options.sourceName.trim()
+        : ((
+            await this.prisma.newsSource.findUnique({
+              where: { id: options.sourceId },
+              select: { name: true },
+            })
+          )?.name ?? null);
+
       await this.notifications.notify({
         orgId: options.orgId,
         userId: null,
         type: NotificationType.system,
         title: "News source RSS body-missing spike",
-        body: `Source ${options.sourceId} skipped ${sourceCount} RSS item(s) without usable body in the last 24h.`,
+        body: `Source ${sourceName ?? options.sourceId} skipped ${sourceCount} RSS item(s) without usable body in the last 24h.`,
         data: {
           sourceId: options.sourceId,
+          ...(sourceName ? { sourceName } : {}),
           skippedCount,
           sourceCount24h: sourceCount,
           orgCount24h: orgCount,
           context: options.context,
           threshold: RSS_NO_BODY_SKIP_ALERT_THRESHOLD,
+          presentation: {
+            kind: NotificationPresentationKind.NewsSourceRssBodyMissingSpike,
+            params: {
+              sourceId: options.sourceId,
+              ...(sourceName ? { sourceName } : {}),
+              skippedCount,
+              sourceCount24h: sourceCount,
+              orgCount24h: orgCount,
+              context: options.context,
+              threshold: RSS_NO_BODY_SKIP_ALERT_THRESHOLD,
+            },
+          },
         },
       });
     } catch (error) {
@@ -1109,6 +1135,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   private async recordPipelineRetryMetric(options: {
     orgId: string;
     sourceId: string;
+    sourceName?: string;
     pipelineJobId: string;
   }) {
     const sourceKey = `news-source:metric:pipeline-retry:source:${options.sourceId}:24h`;
@@ -1155,19 +1182,41 @@ export class NewsSourceSchedulerService implements OnModuleInit {
         return;
       }
 
+      const sourceName = options.sourceName?.trim().length
+        ? options.sourceName.trim()
+        : ((
+            await this.prisma.newsSource.findUnique({
+              where: { id: options.sourceId },
+              select: { name: true },
+            })
+          )?.name ?? null);
+
       await this.notifications.notify({
         orgId: options.orgId,
         userId: null,
         type: NotificationType.system,
         title: "News source pipeline retry spike",
-        body: `Source ${options.sourceId} retried ${sourceCount} pipeline job(s) in the last 24h.`,
+        body: `Source ${sourceName ?? options.sourceId} retried ${sourceCount} pipeline job(s) in the last 24h.`,
         data: {
           sourceId: options.sourceId,
+          ...(sourceName ? { sourceName } : {}),
           pipelineJobId: options.pipelineJobId,
           retryType: "pipeline",
           sourceCount24h: sourceCount,
           orgCount24h: orgCount,
           threshold: PIPELINE_RETRY_ALERT_THRESHOLD,
+          presentation: {
+            kind: NotificationPresentationKind.NewsSourcePipelineRetrySpike,
+            params: {
+              sourceId: options.sourceId,
+              ...(sourceName ? { sourceName } : {}),
+              pipelineJobId: options.pipelineJobId,
+              retryType: "pipeline",
+              sourceCount24h: sourceCount,
+              orgCount24h: orgCount,
+              threshold: PIPELINE_RETRY_ALERT_THRESHOLD,
+            },
+          },
         },
       });
     } catch (error) {
@@ -3856,6 +3905,15 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                       threshold: maxPending,
                       delayedCount,
                       rescheduleAt: rescheduleAt.toISOString(),
+                      presentation: {
+                        kind: NotificationPresentationKind.NewsSourceSchedulerBackpressure,
+                        params: {
+                          pendingJobs,
+                          threshold: maxPending,
+                          delayedCount,
+                          rescheduleAt: rescheduleAt.toISOString(),
+                        },
+                      },
                     },
                   });
                 },
@@ -4459,6 +4517,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           await this.recordRssNoBodySkipMetric({
             orgId: source.orgId,
             sourceId: source.id,
+            sourceName: source.name ?? undefined,
             skippedCount: rssSkippedNoBodyCount,
             context: "schedule",
           });

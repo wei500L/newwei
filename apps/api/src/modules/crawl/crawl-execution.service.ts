@@ -1,6 +1,7 @@
 import { TaskLogModel } from "@modular/mongo";
 import {
   createLogger,
+  NotificationPresentationKind,
   normalizeBrowserHeaders as normalizeSharedBrowserHeaders,
   sanitizeError,
 } from "@modular/utils";
@@ -304,9 +305,8 @@ export class CrawlExecutionService {
       const requestTimeoutMs = this.normalizeRequestTimeoutMs(
         retryContext?.requestTimeoutMs,
       );
-      const urlQueryParamAllowlist = extractUrlQueryParamAllowlistFromTaskConfig(
-        task.config,
-      );
+      const urlQueryParamAllowlist =
+        extractUrlQueryParamAllowlistFromTaskConfig(task.config);
       const conditionalRequestSettings =
         await this.getConditionalRequestSettings();
       assertNoCrawl4aiLlmOptions(options, "task.config.options");
@@ -1159,12 +1159,12 @@ export class CrawlExecutionService {
     validators: { etag?: string; lastModified?: string },
   ): Record<string, string> {
     const userAgent =
-      typeof options.userAgent === "string" && options.userAgent.trim().length > 0
+      typeof options.userAgent === "string" &&
+      options.userAgent.trim().length > 0
         ? options.userAgent.trim()
         : "Mozilla/5.0 (compatible; CrawlConditionalProbe/1.0; +https://example.com)";
     const headers: Record<string, string> = {
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "user-agent": userAgent,
     };
     if (validators.etag) {
@@ -2344,25 +2344,22 @@ export class CrawlExecutionService {
             linkCount: entry.quality.linkCount,
             linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
             publishTimeConfidence: Number(
-              (
-                typeof entry.quality.publishTimeConfidence === "number"
-                  ? entry.quality.publishTimeConfidence
-                  : 0
+              (typeof entry.quality.publishTimeConfidence === "number"
+                ? entry.quality.publishTimeConfidence
+                : 0
               ).toFixed(3),
             ),
             publishTimeSource: entry.quality.publishTimeSource ?? "none",
             mediaDensity: Number(
-              (
-                typeof entry.quality.mediaDensity === "number"
-                  ? entry.quality.mediaDensity
-                  : 0
+              (typeof entry.quality.mediaDensity === "number"
+                ? entry.quality.mediaDensity
+                : 0
               ).toFixed(4),
             ),
             domListRisk: Number(
-              (
-                typeof entry.quality.domListRisk === "number"
-                  ? entry.quality.domListRisk
-                  : 0
+              (typeof entry.quality.domListRisk === "number"
+                ? entry.quality.domListRisk
+                : 0
               ).toFixed(3),
             ),
             bulletLines: entry.quality.bulletLines,
@@ -2420,7 +2417,7 @@ export class CrawlExecutionService {
           detailExpansion.excludeUrlPatterns,
           detailExpansion.includeUrlPatterns,
           typeof detailExpansion.minPublishTimeConfidence === "number" &&
-          Number.isFinite(detailExpansion.minPublishTimeConfidence)
+            Number.isFinite(detailExpansion.minPublishTimeConfidence)
             ? Math.max(0, detailExpansion.minPublishTimeConfidence - 0.2)
             : undefined,
           fallbackCandidateDiagnostics,
@@ -2476,9 +2473,9 @@ export class CrawlExecutionService {
         publishSignalPool.set(url, score);
       }
     }
-    const sortedPublishSignalPool = Array.from(publishSignalPool.entries()).sort(
-      (left, right) => right[1] - left[1],
-    );
+    const sortedPublishSignalPool = Array.from(
+      publishSignalPool.entries(),
+    ).sort((left, right) => right[1] - left[1]);
     const publishSignalTopK = this.resolvePublishSignalTopK(
       candidateLimit,
       detailExpansion.maxDetailUrls,
@@ -2504,9 +2501,9 @@ export class CrawlExecutionService {
       );
     }
     const totalSignalCandidates = candidateSignalByUrl.size;
-    const urlPathFallbackCount = Array.from(candidateSignalByUrl.values()).filter(
-      (signal) => signal.source === "url_path",
-    ).length;
+    const urlPathFallbackCount = Array.from(
+      candidateSignalByUrl.values(),
+    ).filter((signal) => signal.source === "url_path").length;
     const urlPathFallbackRatio =
       totalSignalCandidates > 0
         ? Number((urlPathFallbackCount / totalSignalCandidates).toFixed(4))
@@ -2718,7 +2715,8 @@ export class CrawlExecutionService {
             effectiveConcurrency: publishSignalEnrichment.effectiveConcurrency,
             maxReadBytes: publishSignalEnrichment.maxReadBytes,
             truncatedResponses: publishSignalEnrichment.truncatedResponses,
-            earlyStoppedResponses: publishSignalEnrichment.earlyStoppedResponses,
+            earlyStoppedResponses:
+              publishSignalEnrichment.earlyStoppedResponses,
             softFailures: publishSignalEnrichment.softFailures,
             softFailureCount: publishSignalEnrichment.softFailureCount,
             urlPathFallbackCount,
@@ -3042,25 +3040,22 @@ export class CrawlExecutionService {
           linkCount: entry.quality.linkCount,
           linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
           publishTimeConfidence: Number(
-            (
-              typeof entry.quality.publishTimeConfidence === "number"
-                ? entry.quality.publishTimeConfidence
-                : 0
+            (typeof entry.quality.publishTimeConfidence === "number"
+              ? entry.quality.publishTimeConfidence
+              : 0
             ).toFixed(3),
           ),
           publishTimeSource: entry.quality.publishTimeSource ?? "none",
           mediaDensity: Number(
-            (
-              typeof entry.quality.mediaDensity === "number"
-                ? entry.quality.mediaDensity
-                : 0
+            (typeof entry.quality.mediaDensity === "number"
+              ? entry.quality.mediaDensity
+              : 0
             ).toFixed(4),
           ),
           domListRisk: Number(
-            (
-              typeof entry.quality.domListRisk === "number"
-                ? entry.quality.domListRisk
-                : 0
+            (typeof entry.quality.domListRisk === "number"
+              ? entry.quality.domListRisk
+              : 0
             ).toFixed(3),
           ),
           score: Number(entry.quality.score.toFixed(2)),
@@ -3380,10 +3375,7 @@ export class CrawlExecutionService {
         typeof minPublishTimeConfidence === "number" &&
         Number.isFinite(minPublishTimeConfidence)
       ) {
-        const prefilterThreshold = Math.max(
-          0,
-          minPublishTimeConfidence - 0.25,
-        );
+        const prefilterThreshold = Math.max(0, minPublishTimeConfidence - 0.25);
         if (publishConfidence < prefilterThreshold) {
           if (diagnostics) {
             diagnostics.publishConfidenceRejected += 1;
@@ -3400,7 +3392,8 @@ export class CrawlExecutionService {
           : 0;
       scored.push({
         url: normalized,
-        score: this.scoreDetailCandidateUrl(normalized, baseUrl) - precheckPenalty,
+        score:
+          this.scoreDetailCandidateUrl(normalized, baseUrl) - precheckPenalty,
       });
       if (scored.length >= 30) {
         break;
@@ -3925,12 +3918,14 @@ export class CrawlExecutionService {
             ? settings.detailPublishSignalHeadFetchTimeoutMs
             : fallback.timeoutMs,
         concurrency:
-          typeof settings.detailPublishSignalHeadFetchConcurrency === "number" &&
+          typeof settings.detailPublishSignalHeadFetchConcurrency ===
+            "number" &&
           Number.isFinite(settings.detailPublishSignalHeadFetchConcurrency)
             ? settings.detailPublishSignalHeadFetchConcurrency
             : fallback.concurrency,
         maxReadBytes:
-          typeof settings.detailPublishSignalHeadFetchMaxReadBytes === "number" &&
+          typeof settings.detailPublishSignalHeadFetchMaxReadBytes ===
+            "number" &&
           Number.isFinite(settings.detailPublishSignalHeadFetchMaxReadBytes)
             ? settings.detailPublishSignalHeadFetchMaxReadBytes
             : fallback.maxReadBytes,
@@ -4092,10 +4087,7 @@ export class CrawlExecutionService {
       typeof configuredTimeoutMs === "number" &&
       Number.isFinite(configuredTimeoutMs) &&
       configuredTimeoutMs > 0
-        ? Math.max(
-            500,
-            Math.min(10_000, Math.round(configuredTimeoutMs)),
-          )
+        ? Math.max(500, Math.min(10_000, Math.round(configuredTimeoutMs)))
         : this.defaultDetailPublishSignalHeadFetchTimeoutMs;
     if (
       typeof requestTimeoutMs === "number" &&
@@ -4111,7 +4103,9 @@ export class CrawlExecutionService {
     return fromSettings;
   }
 
-  private resolvePublishSignalFetchConcurrency(configuredConcurrency: number): number {
+  private resolvePublishSignalFetchConcurrency(
+    configuredConcurrency: number,
+  ): number {
     if (
       typeof configuredConcurrency !== "number" ||
       !Number.isFinite(configuredConcurrency) ||
@@ -4122,7 +4116,9 @@ export class CrawlExecutionService {
     return Math.max(1, Math.min(8, Math.round(configuredConcurrency)));
   }
 
-  private resolvePublishSignalMaxReadBytes(configuredMaxReadBytes: number): number {
+  private resolvePublishSignalMaxReadBytes(
+    configuredMaxReadBytes: number,
+  ): number {
     if (
       typeof configuredMaxReadBytes !== "number" ||
       !Number.isFinite(configuredMaxReadBytes) ||
@@ -4130,7 +4126,10 @@ export class CrawlExecutionService {
     ) {
       return this.defaultDetailPublishSignalHeadFetchMaxReadBytes;
     }
-    return Math.max(1_048_576, Math.min(64_000_000, Math.round(configuredMaxReadBytes)));
+    return Math.max(
+      1_048_576,
+      Math.min(64_000_000, Math.round(configuredMaxReadBytes)),
+    );
   }
 
   private async fetchCandidatePublishSignal(
@@ -4160,7 +4159,8 @@ export class CrawlExecutionService {
             failureReason: "http_status",
           };
         }
-        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        const contentType =
+          response.headers.get("content-type")?.toLowerCase() ?? "";
         if (
           contentType.length > 0 &&
           !contentType.includes("text/html") &&
@@ -4266,7 +4266,11 @@ export class CrawlExecutionService {
       if (text.length <= limit) {
         return { html: text, truncated: false, earlyStopped: false };
       }
-      return { html: text.slice(0, limit), truncated: true, earlyStopped: false };
+      return {
+        html: text.slice(0, limit),
+        truncated: true,
+        earlyStopped: false,
+      };
     }
 
     const reader = response.body.getReader();
@@ -4308,7 +4312,10 @@ export class CrawlExecutionService {
             const headSignal = this.extractPublishSignalFromHtml(html, {
               includeTimeTag: false,
             });
-            if (headSignal && (headSignal.source === "meta" || headSignal.source === "jsonld")) {
+            if (
+              headSignal &&
+              (headSignal.source === "meta" || headSignal.source === "jsonld")
+            ) {
               earlyStopped = true;
               break;
             }
@@ -4591,7 +4598,11 @@ export class CrawlExecutionService {
       const parsed = new URL(url);
       const path = parsed.pathname.toLowerCase();
       const toUtcTimestamp = (year: number, month: number, day: number) => {
-        if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        if (
+          !Number.isFinite(year) ||
+          !Number.isFinite(month) ||
+          !Number.isFinite(day)
+        ) {
           return undefined;
         }
         if (month < 1 || month > 12 || day < 1 || day > 31) {
@@ -4890,6 +4901,7 @@ export class CrawlExecutionService {
           ? truncateVarchar191(errorMessage)
           : "Crawl task failed";
 
+    const taskLabel = task.displayName ?? task.targetUrl;
     const payload = {
       orgId: task.orgId,
       userId: triggeredById,
@@ -4903,6 +4915,25 @@ export class CrawlExecutionService {
         taskId: task.id,
         status,
         lastResultAt,
+        presentation: {
+          kind:
+            status === "completed"
+              ? NotificationPresentationKind.CrawlCompleted
+              : NotificationPresentationKind.CrawlFailed,
+          params: {
+            taskId: task.id,
+            taskLabel,
+            inserted: summary.inserted,
+            skipped: summary.skipped,
+            ...(summary.retryableFailures
+              ? { retryableFailures: summary.retryableFailures }
+              : {}),
+            ...(lastResultAt ? { lastResultAt } : {}),
+          },
+          ...(status === "failed" && errorMessage
+            ? { technicalDetail: errorMessage }
+            : {}),
+        },
       },
     };
 
@@ -5495,12 +5526,19 @@ export class CrawlExecutionService {
       typeof value.allowExternalLinks === "boolean"
         ? value.allowExternalLinks
         : undefined;
-    const includeUrlPatterns = this.normalizePatternList(value.includeUrlPatterns);
-    const excludeUrlPatterns = this.normalizePatternList(value.excludeUrlPatterns);
+    const includeUrlPatterns = this.normalizePatternList(
+      value.includeUrlPatterns,
+    );
+    const excludeUrlPatterns = this.normalizePatternList(
+      value.excludeUrlPatterns,
+    );
     const minPublishTimeConfidence =
       typeof value.minPublishTimeConfidence === "number" &&
       Number.isFinite(value.minPublishTimeConfidence)
-        ? Math.max(0, Math.min(1, Number(value.minPublishTimeConfidence.toFixed(3))))
+        ? Math.max(
+            0,
+            Math.min(1, Number(value.minPublishTimeConfidence.toFixed(3))),
+          )
         : undefined;
     const preferFitMarkdownForQuality =
       typeof value.preferFitMarkdownForQuality === "boolean"
@@ -7356,8 +7394,19 @@ export class CrawlExecutionService {
           body: `News source "${notifyCircuitOpen.name}" reached ${threshold} consecutive failures and is paused until ${notifyCircuitOpen.circuitOpenUntil.toISOString()}.`,
           data: {
             sourceId: options.sourceId,
+            sourceName: notifyCircuitOpen.name,
             consecutiveFailures: threshold,
             circuitOpenUntil: notifyCircuitOpen.circuitOpenUntil.toISOString(),
+            presentation: {
+              kind: NotificationPresentationKind.NewsSourceCircuitOpened,
+              params: {
+                sourceId: options.sourceId,
+                sourceName: notifyCircuitOpen.name,
+                consecutiveFailures: threshold,
+                circuitOpenUntil:
+                  notifyCircuitOpen.circuitOpenUntil.toISOString(),
+              },
+            },
           },
         });
       } catch (error) {
@@ -7379,6 +7428,15 @@ export class CrawlExecutionService {
           data: {
             sourceId: options.sourceId,
             consecutiveFailures: notifyAutoDisable.failures,
+            sourceName: notifyAutoDisable.name,
+            presentation: {
+              kind: NotificationPresentationKind.NewsSourceAutoDisabled,
+              params: {
+                sourceId: options.sourceId,
+                sourceName: notifyAutoDisable.name,
+                consecutiveFailures: notifyAutoDisable.failures,
+              },
+            },
           },
         });
       } catch (error) {

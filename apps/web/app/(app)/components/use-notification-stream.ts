@@ -19,14 +19,24 @@ export interface NotificationMessage {
   createdAt: string;
 }
 
-interface NotificationStreamState {
-  connected: boolean;
-  connectionError?: string;
+export interface NotificationConnectionError {
+  kind: "socket" | "connect";
+  code?: string;
+  message?: string;
 }
 
-export function useNotificationStream(onNotification?: (notification: NotificationMessage) => void) {
+interface NotificationStreamState {
+  connected: boolean;
+  connectionError?: NotificationConnectionError;
+}
+
+export function useNotificationStream(
+  onNotification?: (notification: NotificationMessage) => void,
+) {
   const { data: session, status } = useSession();
-  const [state, setState] = useState<NotificationStreamState>({ connected: false });
+  const [state, setState] = useState<NotificationStreamState>({
+    connected: false,
+  });
   const socketRef = useRef<Socket | null>(null);
   const onNotificationRef = useRef(onNotification);
   const token = session?.accessToken as string | undefined;
@@ -49,7 +59,7 @@ export function useNotificationStream(onNotification?: (notification: Notificati
       transports: ["websocket"],
       auth: { token },
       withCredentials: true,
-      autoConnect: false
+      autoConnect: false,
     });
     socketRef.current = socket;
 
@@ -60,20 +70,34 @@ export function useNotificationStream(onNotification?: (notification: Notificati
     const handleNotification = (payload: NotificationMessage) => {
       onNotificationRef.current?.(payload);
     };
-    const handleConnect = () => setState({ connected: true, connectionError: undefined });
-    const handleDisconnect = () => setState((prev) => ({ ...prev, connected: false }));
-    const handleSocketError = (payload: { message?: string } | undefined) => {
+    const handleConnect = () =>
+      setState({ connected: true, connectionError: undefined });
+    const handleDisconnect = () =>
+      setState((prev) => ({ ...prev, connected: false }));
+    const handleSocketError = (
+      payload: { code?: string; message?: string } | undefined,
+    ) => {
       setState((prev) => ({
         ...prev,
-        connectionError: payload?.message ?? "Notification socket error",
-        connected: false
+        connectionError: {
+          kind: "socket",
+          code: payload?.code,
+          message: payload?.message,
+        },
+        connected: false,
       }));
     };
-    const handleConnectError = (error: { message?: string } | undefined) => {
+    const handleConnectError = (
+      error: { code?: string; message?: string } | undefined,
+    ) => {
       setState((prev) => ({
         ...prev,
-        connectionError: error?.message ?? "Notification socket connect error",
-        connected: false
+        connectionError: {
+          kind: "connect",
+          code: error?.code,
+          message: error?.message,
+        },
+        connected: false,
       }));
     };
 

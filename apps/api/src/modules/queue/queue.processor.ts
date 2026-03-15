@@ -1,5 +1,11 @@
 import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
-import { createLogger, ensureTraceId, runWithTraceId, sanitizeError } from "@modular/utils";
+import {
+  createLogger,
+  ensureTraceId,
+  NotificationPresentationKind,
+  runWithTraceId,
+  sanitizeError,
+} from "@modular/utils";
 import {
   Inject,
   Injectable,
@@ -88,15 +94,23 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
         return runWithTraceId(traceId, async () => {
           try {
             const rawItemId =
-              typeof jobData.rawItemId === "string" ? jobData.rawItemId : undefined;
+              typeof jobData.rawItemId === "string"
+                ? jobData.rawItemId
+                : undefined;
             const itemMetaId =
-              typeof jobData.itemMetaId === "string" ? jobData.itemMetaId : undefined;
+              typeof jobData.itemMetaId === "string"
+                ? jobData.itemMetaId
+                : undefined;
             const jobOrgId =
               typeof jobData.orgId === "string" ? jobData.orgId : undefined;
             const pipelineJobId =
-              typeof jobData.pipelineJobId === "string" ? jobData.pipelineJobId : undefined;
+              typeof jobData.pipelineJobId === "string"
+                ? jobData.pipelineJobId
+                : undefined;
             const sourceId =
-              typeof jobData.sourceId === "string" ? jobData.sourceId : undefined;
+              typeof jobData.sourceId === "string"
+                ? jobData.sourceId
+                : undefined;
 
             if (!rawItemId || !itemMetaId) {
               throw new QueuePermanentError(
@@ -105,14 +119,18 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             }
 
             if (!jobOrgId) {
-              logger.error({ jobId: job.id }, "Queue job missing orgId; failing job");
+              logger.error(
+                { jobId: job.id },
+                "Queue job missing orgId; failing job",
+              );
               throw new QueuePermanentError("Queue job missing orgId");
             }
 
             const orgId = jobOrgId;
             logger.info({ jobId: job.id }, "Processing item pipeline job");
             const processedItemId =
-              typeof jobData.processedItemId === "string" && jobData.processedItemId.length > 0
+              typeof jobData.processedItemId === "string" &&
+              jobData.processedItemId.length > 0
                 ? jobData.processedItemId
                 : Types.ObjectId.isValid(rawItemId)
                   ? rawItemId
@@ -159,7 +177,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
               source: rawItem.source ?? undefined,
             };
 
-            const processed = await this.pipeline.process(pipelineJob, rawPayload);
+            const processed = await this.pipeline.process(
+              pipelineJob,
+              rawPayload,
+            );
 
             await this.markSuccessState({
               itemMetaId,
@@ -180,7 +201,9 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           } catch (error) {
             const classified = classifyQueueError(error);
             if (classified.kind === QueueErrorKind.Permanent) {
-              const unrecoverable = new UnrecoverableError(classified.error.message);
+              const unrecoverable = new UnrecoverableError(
+                classified.error.message,
+              );
               (unrecoverable as Error & { cause?: unknown }).cause = error;
               throw unrecoverable;
             }
@@ -196,7 +219,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     this.worker.on("failed", async (job, err) => {
       const data = (job?.data ?? {}) as Partial<PipelineQueueJobData>;
-      const traceId = typeof data.traceId === "string" ? data.traceId : undefined;
+      const traceId =
+        typeof data.traceId === "string" ? data.traceId : undefined;
       const classified = classifyQueueError(err);
 
       const handler = async () => {
@@ -226,7 +250,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           const itemMetaId =
             typeof data.itemMetaId === "string" ? data.itemMetaId : undefined;
           const processedItemId =
-            typeof data.processedItemId === "string" && data.processedItemId.length > 0
+            typeof data.processedItemId === "string" &&
+            data.processedItemId.length > 0
               ? data.processedItemId
               : rawItemId && Types.ObjectId.isValid(rawItemId)
                 ? rawItemId
@@ -249,7 +274,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           });
 
           const shouldSendToDlq =
-            classified.kind === QueueErrorKind.Permanent || remainingAttempts === 0;
+            classified.kind === QueueErrorKind.Permanent ||
+            remainingAttempts === 0;
 
           await this.markFailureState({
             itemMetaId,
@@ -257,8 +283,11 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
             orgId: jobOrgId,
             processedItemId,
             pipelineJobId:
-              typeof data.pipelineJobId === "string" ? data.pipelineJobId : undefined,
-            sourceId: typeof data.sourceId === "string" ? data.sourceId : undefined,
+              typeof data.pipelineJobId === "string"
+                ? data.pipelineJobId
+                : undefined,
+            sourceId:
+              typeof data.sourceId === "string" ? data.sourceId : undefined,
             // Preserve the original error so sanitizeError can keep the message (vs. "[object Object]").
             error: err,
             attemptsMade,
@@ -327,12 +356,17 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       await this.prisma.itemMeta.updateMany({
         where: {
           id: itemMetaId,
-          ...(options?.skipIfDuplicate ? { status: { not: ItemStatus.Duplicate } } : {}),
+          ...(options?.skipIfDuplicate
+            ? { status: { not: ItemStatus.Duplicate } }
+            : {}),
         },
         data: { status },
       });
     } catch (error) {
-      logger.warn({ itemMetaId, status, error }, "Failed to update item meta status");
+      logger.warn(
+        { itemMetaId, status, error },
+        "Failed to update item meta status",
+      );
     }
   }
 
@@ -349,7 +383,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       !Types.ObjectId.isValid(options.rawItemId)
     ) {
       logger.warn(
-        { processedItemId: options.processedItemId, rawItemId: options.rawItemId },
+        {
+          processedItemId: options.processedItemId,
+          rawItemId: options.rawItemId,
+        },
         "Skipped processed item upsert due to invalid object id",
       );
       return;
@@ -439,7 +476,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     try {
       await Promise.all(actions);
     } catch (error) {
-      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark processing state");
+      logger.warn(
+        { error, itemMetaId: options.itemMetaId },
+        "Failed to mark processing state",
+      );
     }
   }
 
@@ -480,7 +520,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     try {
       await Promise.all(actions);
     } catch (error) {
-      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark success state");
+      logger.warn(
+        { error, itemMetaId: options.itemMetaId },
+        "Failed to mark success state",
+      );
     }
   }
 
@@ -507,73 +550,95 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       ? Math.max(0, Math.floor(autoDisableThresholdRaw))
       : 0;
 
-    const { notifyCircuitOpen, notifyAutoDisable } = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.newsSource.findUnique({
-        where: { id: options.sourceId },
-        select: { consecutiveFailures: true, isActive: true, orgId: true, name: true },
-      });
-      if (!existing?.isActive) {
-        return { notifyCircuitOpen: null, notifyAutoDisable: null };
-      }
+    const { notifyCircuitOpen, notifyAutoDisable } =
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.newsSource.findUnique({
+          where: { id: options.sourceId },
+          select: {
+            consecutiveFailures: true,
+            isActive: true,
+            orgId: true,
+            name: true,
+          },
+        });
+        if (!existing?.isActive) {
+          return { notifyCircuitOpen: null, notifyAutoDisable: null };
+        }
 
-      const previousFailures = Number(existing.consecutiveFailures ?? 0);
-      const consecutiveFailures = previousFailures + 1;
+        const previousFailures = Number(existing.consecutiveFailures ?? 0);
+        const consecutiveFailures = previousFailures + 1;
 
-      const retryDelayMs = this.computeExponentialBackoffDelay(
-        cfg.failureRecoveryDelayMs,
-        consecutiveFailures,
-        cfg.failureMaxDelayMs,
-      );
-      const retryAt = new Date(options.failureAt.getTime() + retryDelayMs);
-
-      let circuitOpenUntil: Date | null = null;
-      if (threshold > 0 && consecutiveFailures >= threshold) {
-        const circuitAttempt = consecutiveFailures - threshold + 1;
-        const circuitDelayMs = this.computeExponentialBackoffDelay(
-          cfg.circuitBreakerBaseDelayMs,
-          circuitAttempt,
-          cfg.circuitBreakerMaxDelayMs,
-        );
-        circuitOpenUntil = new Date(options.failureAt.getTime() + circuitDelayMs);
-      }
-
-      let notifyCircuitOpen: { orgId: string; name: string; circuitOpenUntil: Date } | null = null;
-      if (threshold > 0 && consecutiveFailures === threshold && circuitOpenUntil) {
-        notifyCircuitOpen = {
-          orgId: existing.orgId,
-          name: existing.name,
-          circuitOpenUntil
-        };
-      }
-
-      const nextRunAt =
-        circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
-          ? circuitOpenUntil
-          : retryAt;
-
-      const shouldDisable = autoDisableThreshold > 0 && consecutiveFailures >= autoDisableThreshold;
-      let notifyAutoDisable: { orgId: string; name: string; failures: number } | null = null;
-      if (shouldDisable && consecutiveFailures === autoDisableThreshold) {
-        notifyAutoDisable = {
-          orgId: existing.orgId,
-          name: existing.name,
-          failures: consecutiveFailures
-        };
-      }
-
-      await tx.newsSource.update({
-        where: { id: options.sourceId },
-        data: {
-          lastFailureAt: options.failureAt,
+        const retryDelayMs = this.computeExponentialBackoffDelay(
+          cfg.failureRecoveryDelayMs,
           consecutiveFailures,
-          circuitOpenUntil,
-          nextRunAt: shouldDisable ? null : nextRunAt,
-          isActive: shouldDisable ? false : undefined,
-        },
-      });
+          cfg.failureMaxDelayMs,
+        );
+        const retryAt = new Date(options.failureAt.getTime() + retryDelayMs);
 
-      return { notifyCircuitOpen, notifyAutoDisable };
-    });
+        let circuitOpenUntil: Date | null = null;
+        if (threshold > 0 && consecutiveFailures >= threshold) {
+          const circuitAttempt = consecutiveFailures - threshold + 1;
+          const circuitDelayMs = this.computeExponentialBackoffDelay(
+            cfg.circuitBreakerBaseDelayMs,
+            circuitAttempt,
+            cfg.circuitBreakerMaxDelayMs,
+          );
+          circuitOpenUntil = new Date(
+            options.failureAt.getTime() + circuitDelayMs,
+          );
+        }
+
+        let notifyCircuitOpen: {
+          orgId: string;
+          name: string;
+          circuitOpenUntil: Date;
+        } | null = null;
+        if (
+          threshold > 0 &&
+          consecutiveFailures === threshold &&
+          circuitOpenUntil
+        ) {
+          notifyCircuitOpen = {
+            orgId: existing.orgId,
+            name: existing.name,
+            circuitOpenUntil,
+          };
+        }
+
+        const nextRunAt =
+          circuitOpenUntil && circuitOpenUntil.getTime() > retryAt.getTime()
+            ? circuitOpenUntil
+            : retryAt;
+
+        const shouldDisable =
+          autoDisableThreshold > 0 &&
+          consecutiveFailures >= autoDisableThreshold;
+        let notifyAutoDisable: {
+          orgId: string;
+          name: string;
+          failures: number;
+        } | null = null;
+        if (shouldDisable && consecutiveFailures === autoDisableThreshold) {
+          notifyAutoDisable = {
+            orgId: existing.orgId,
+            name: existing.name,
+            failures: consecutiveFailures,
+          };
+        }
+
+        await tx.newsSource.update({
+          where: { id: options.sourceId },
+          data: {
+            lastFailureAt: options.failureAt,
+            consecutiveFailures,
+            circuitOpenUntil,
+            nextRunAt: shouldDisable ? null : nextRunAt,
+            isActive: shouldDisable ? false : undefined,
+          },
+        });
+
+        return { notifyCircuitOpen, notifyAutoDisable };
+      });
 
     if (notifyCircuitOpen) {
       try {
@@ -585,9 +650,20 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           body: `News source "${notifyCircuitOpen.name}" reached ${threshold} consecutive failures and is paused until ${notifyCircuitOpen.circuitOpenUntil.toISOString()}.`,
           data: {
             sourceId: options.sourceId,
+            sourceName: notifyCircuitOpen.name,
             consecutiveFailures: threshold,
-            circuitOpenUntil: notifyCircuitOpen.circuitOpenUntil.toISOString()
-          }
+            circuitOpenUntil: notifyCircuitOpen.circuitOpenUntil.toISOString(),
+            presentation: {
+              kind: NotificationPresentationKind.NewsSourceCircuitOpened,
+              params: {
+                sourceId: options.sourceId,
+                sourceName: notifyCircuitOpen.name,
+                consecutiveFailures: threshold,
+                circuitOpenUntil:
+                  notifyCircuitOpen.circuitOpenUntil.toISOString(),
+              },
+            },
+          },
         });
       } catch (error) {
         logger.warn(
@@ -607,8 +683,17 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
           body: `News source "${notifyAutoDisable.name}" was disabled after ${notifyAutoDisable.failures} consecutive failures.`,
           data: {
             sourceId: options.sourceId,
-            consecutiveFailures: notifyAutoDisable.failures
-          }
+            sourceName: notifyAutoDisable.name,
+            consecutiveFailures: notifyAutoDisable.failures,
+            presentation: {
+              kind: NotificationPresentationKind.NewsSourceAutoDisabled,
+              params: {
+                sourceId: options.sourceId,
+                sourceName: notifyAutoDisable.name,
+                consecutiveFailures: notifyAutoDisable.failures,
+              },
+            },
+          },
         });
       } catch (error) {
         logger.warn(
@@ -680,7 +765,10 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     try {
       await Promise.all(actions);
     } catch (error) {
-      logger.warn({ error, itemMetaId: options.itemMetaId }, "Failed to mark failure state");
+      logger.warn(
+        { error, itemMetaId: options.itemMetaId },
+        "Failed to mark failure state",
+      );
     }
   }
 

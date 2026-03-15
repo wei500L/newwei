@@ -7,7 +7,12 @@ import {
   ProcessedItemModel,
   TaskLogModel,
 } from "@modular/mongo";
-import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
+import {
+  createLogger,
+  ensureTraceId,
+  getCurrentTraceId,
+  NotificationPresentationKind,
+} from "@modular/utils";
 import { NotificationType } from "@prisma/client";
 import { Queue } from "bullmq";
 import {
@@ -81,9 +86,24 @@ export interface ClassificationQualitySummary {
     avgConfidence: number | null;
   }>;
   latencyPercentiles: {
-    llm: { sampleSize: number; p50Ms: number | null; p95Ms: number | null; p99Ms: number | null };
-    embedding: { sampleSize: number; p50Ms: number | null; p95Ms: number | null; p99Ms: number | null };
-    rerank: { sampleSize: number; p50Ms: number | null; p95Ms: number | null; p99Ms: number | null };
+    llm: {
+      sampleSize: number;
+      p50Ms: number | null;
+      p95Ms: number | null;
+      p99Ms: number | null;
+    };
+    embedding: {
+      sampleSize: number;
+      p50Ms: number | null;
+      p95Ms: number | null;
+      p99Ms: number | null;
+    };
+    rerank: {
+      sampleSize: number;
+      p50Ms: number | null;
+      p95Ms: number | null;
+      p99Ms: number | null;
+    };
   };
   categoryGate: {
     reject: number;
@@ -172,7 +192,8 @@ const REPORT_JOB_RETENTION_DAYS = 365;
 const REPORT_RESULT_RETENTION_DAYS = 365;
 const ALERT_NOTIFICATION_CACHE_PREFIX = "quality:classification:alert:notify:";
 const ALERT_NOTIFICATION_TTL_SECONDS = 15 * 60;
-const ALERT_RECIPIENTS_CACHE_PREFIX = "quality:classification:alert:recipients:";
+const ALERT_RECIPIENTS_CACHE_PREFIX =
+  "quality:classification:alert:recipients:";
 const ALERT_RECIPIENTS_CACHE_TTL_SECONDS = 5 * 60;
 const SETTINGS_MANAGE_PERMISSION = "settings.manage";
 const REVIEW_SEED_QUEUE_JOB_PREFIX = "classification-quality-review-seed-item:";
@@ -216,12 +237,16 @@ export class ClassificationQualityService {
     const { from, to } = this.resolveWindow(input.window);
     const settings = await this.qualitySettings.getSettings(input.orgId);
     const maxConfidence =
-      typeof input.maxConfidence === "number" && Number.isFinite(input.maxConfidence)
+      typeof input.maxConfidence === "number" &&
+      Number.isFinite(input.maxConfidence)
         ? Math.max(0, Math.min(1, input.maxConfidence))
         : settings.lowConfidenceThreshold;
     const limit = Math.max(
       1,
-      Math.min(SOURCE_ITEMS_LIMIT_MAX, Math.floor(input.limit ?? SOURCE_ITEMS_LIMIT_DEFAULT)),
+      Math.min(
+        SOURCE_ITEMS_LIMIT_MAX,
+        Math.floor(input.limit ?? SOURCE_ITEMS_LIMIT_DEFAULT),
+      ),
     );
     const beforeCursor = this.parseCursor(input.cursor);
 
@@ -273,12 +298,16 @@ export class ClassificationQualityService {
         categoryPath: this.readString(result?.category_path),
         confidence: this.readConfidence(result?.category_confidence),
         method: this.readString(result?.category_method),
-        createdAt: this.readDate(doc?.createdAt)?.toISOString() ?? new Date().toISOString(),
+        createdAt:
+          this.readDate(doc?.createdAt)?.toISOString() ??
+          new Date().toISOString(),
       };
     });
 
     const last = docs[docs.length - 1];
-    const nextCursor = last ? this.readDate(last.createdAt)?.toISOString() ?? null : null;
+    const nextCursor = last
+      ? (this.readDate(last.createdAt)?.toISOString() ?? null)
+      : null;
 
     return {
       sourceId: input.sourceId,
@@ -300,14 +329,21 @@ export class ClassificationQualityService {
     const { from, to } = this.resolveWindow(input.window);
     const limit = Math.max(
       1,
-      Math.min(REVIEW_QUEUE_LIMIT_MAX, Math.floor(input.limit ?? REVIEW_QUEUE_LIMIT_DEFAULT)),
+      Math.min(
+        REVIEW_QUEUE_LIMIT_MAX,
+        Math.floor(input.limit ?? REVIEW_QUEUE_LIMIT_DEFAULT),
+      ),
     );
     const where: Record<string, unknown> = {
       orgId: input.orgId,
       createdAt: { $gte: from, $lte: to },
       ...(input.onlyUnreviewed ? { status: "pending" } : {}),
       ...(typeof input.maxConfidence === "number"
-        ? { predictedConfidence: { $lte: Math.max(0, Math.min(1, input.maxConfidence)) } }
+        ? {
+            predictedConfidence: {
+              $lte: Math.max(0, Math.min(1, input.maxConfidence)),
+            },
+          }
         : {}),
     };
 
@@ -354,15 +390,21 @@ export class ClassificationQualityService {
       predictedLegacyCategory: this.readString(row?.predictedLegacyCategory),
       predictedConfidence: this.readConfidence(row?.predictedConfidence),
       predictedMethod: this.readString(row?.predictedMethod),
-      candidatePaths: Array.isArray(row?.candidatePaths) ? row.candidatePaths : [],
+      candidatePaths: Array.isArray(row?.candidatePaths)
+        ? row.candidatePaths
+        : [],
       status: this.readString(row?.status) ?? "pending",
       correctedCategoryPath: this.readString(row?.correctedCategoryPath),
       note: this.readString(row?.note),
       quickTags: this.readStringArray(row?.quickTags),
       reviewerId: this.readString(row?.reviewerId),
       reviewedAt: this.readDate(row?.reviewedAt)?.toISOString() ?? null,
-      createdAt: this.readDate(row?.createdAt)?.toISOString() ?? new Date().toISOString(),
-      updatedAt: this.readDate(row?.updatedAt)?.toISOString() ?? new Date().toISOString(),
+      createdAt:
+        this.readDate(row?.createdAt)?.toISOString() ??
+        new Date().toISOString(),
+      updatedAt:
+        this.readDate(row?.updatedAt)?.toISOString() ??
+        new Date().toISOString(),
     }));
   }
 
@@ -421,10 +463,18 @@ export class ClassificationQualityService {
           },
         },
       },
-      { orgId: input.orgId, actorId: input.actorId, reviewId, status: input.status },
+      {
+        orgId: input.orgId,
+        actorId: input.actorId,
+        reviewId,
+        status: input.status,
+      },
     );
 
-    return ClassificationReviewModel.findOne({ _id: reviewId, orgId: input.orgId })
+    return ClassificationReviewModel.findOne({
+      _id: reviewId,
+      orgId: input.orgId,
+    })
       .lean()
       .exec();
   }
@@ -514,7 +564,10 @@ export class ClassificationQualityService {
     const sourceFilterSet = this.toSet(input.sourceIds);
     const methodFilterSet = this.toSet(input.methods);
     const bandFilterSet = this.toSet(input.confidenceBands);
-    const perStratum = Math.max(1, Math.min(200, Math.floor(input.perStratum ?? 20)));
+    const perStratum = Math.max(
+      1,
+      Math.min(200, Math.floor(input.perStratum ?? 20)),
+    );
     const sourceFilterValues = Array.from(sourceFilterSet);
     const methodFilterValues = Array.from(methodFilterSet);
     const normalizedCategoryPrefix = this.normalizePath(input.categoryPrefix);
@@ -527,7 +580,9 @@ export class ClassificationQualityService {
       status: "completed",
       createdAt: { $gte: from, $lte: to },
       "result.category_confidence": { $type: "number" },
-      ...(sourceFilterValues.length > 0 ? { sourceId: { $in: sourceFilterValues } } : {}),
+      ...(sourceFilterValues.length > 0
+        ? { sourceId: { $in: sourceFilterValues } }
+        : {}),
       ...(methodFilterValues.length > 0
         ? {
             "result.category_method": {
@@ -575,7 +630,10 @@ export class ClassificationQualityService {
             const articleContext = processedItemId
               ? articleContextMap.get(processedItemId)
               : undefined;
-            return [this.readString(doc.sourceId), articleContext?.sourceId ?? null];
+            return [
+              this.readString(doc.sourceId),
+              articleContext?.sourceId ?? null,
+            ];
           })
           .filter((entry): entry is string => Boolean(entry)),
       ),
@@ -605,7 +663,9 @@ export class ClassificationQualityService {
       const articleContext = articleContextMap.get(processedItemId);
       const sourceInfo =
         (sourceId && sourceMap.get(sourceId)) ||
-        (articleContext?.sourceId ? sourceMap.get(articleContext.sourceId) : undefined) ||
+        (articleContext?.sourceId
+          ? sourceMap.get(articleContext.sourceId)
+          : undefined) ||
         null;
       const sourceType = classifySourceByLabelAndUrl(
         sourceInfo?.name ?? result?.source,
@@ -670,7 +730,9 @@ export class ClassificationQualityService {
         count: rows.length,
       })),
       items: selectedItems,
-      createdAt: this.readDate(sampleDoc?.createdAt)?.toISOString() ?? new Date().toISOString(),
+      createdAt:
+        this.readDate(sampleDoc?.createdAt)?.toISOString() ??
+        new Date().toISOString(),
     };
   }
 
@@ -716,7 +778,9 @@ export class ClassificationQualityService {
       if (!processedItemId) {
         continue;
       }
-      const humanCategoryPath = this.normalizePath(annotation.humanCategoryPath);
+      const humanCategoryPath = this.normalizePath(
+        annotation.humanCategoryPath,
+      );
       if (!humanCategoryPath) {
         continue;
       }
@@ -734,9 +798,13 @@ export class ClassificationQualityService {
         {
           $set: {
             annotatorId: input.actorId,
-            predictedCategoryPath: this.readString(sampleItem.predictedCategoryPath),
+            predictedCategoryPath: this.readString(
+              sampleItem.predictedCategoryPath,
+            ),
             predictedMethod: this.readString(sampleItem.predictedMethod),
-            predictedConfidence: this.readConfidence(sampleItem.predictedConfidence),
+            predictedConfidence: this.readConfidence(
+              sampleItem.predictedConfidence,
+            ),
             humanCategoryPath,
             note: this.normalizeText(annotation.note, 500),
             quickTags: this.normalizeQuickTags(annotation.quickTags),
@@ -807,8 +875,7 @@ export class ClassificationQualityService {
             status: "failed",
             completedAt: new Date(),
             error: {
-              message:
-                error instanceof Error ? error.message : String(error),
+              message: error instanceof Error ? error.message : String(error),
             },
           },
         },
@@ -822,7 +889,9 @@ export class ClassificationQualityService {
       jobId,
       status: "pending",
       sampleId,
-      createdAt: this.readDate(job?.createdAt)?.toISOString() ?? new Date().toISOString(),
+      createdAt:
+        this.readDate(job?.createdAt)?.toISOString() ??
+        new Date().toISOString(),
     };
   }
 
@@ -895,8 +964,12 @@ export class ClassificationQualityService {
         startedAt: this.readDate(job?.startedAt)?.toISOString() ?? null,
         completedAt: this.readDate(job?.completedAt)?.toISOString() ?? null,
         error: job?.error ?? null,
-        createdAt: this.readDate(job?.createdAt)?.toISOString() ?? new Date().toISOString(),
-        updatedAt: this.readDate(job?.updatedAt)?.toISOString() ?? new Date().toISOString(),
+        createdAt:
+          this.readDate(job?.createdAt)?.toISOString() ??
+          new Date().toISOString(),
+        updatedAt:
+          this.readDate(job?.updatedAt)?.toISOString() ??
+          new Date().toISOString(),
       },
       result: result
         ? {
@@ -957,10 +1030,9 @@ export class ClassificationQualityService {
     }
 
     const policy = await this.getSourcePolicy(input.orgId);
-    const articleContextMap = await this.loadArticleContextMap(
-      input.orgId,
-      [processedItemId],
-    );
+    const articleContextMap = await this.loadArticleContextMap(input.orgId, [
+      processedItemId,
+    ]);
     const sourceId = this.readString(doc.sourceId);
     const articleContext = articleContextMap.get(processedItemId);
     const resolvedSourceId = sourceId ?? articleContext?.sourceId ?? null;
@@ -1147,13 +1219,22 @@ export class ClassificationQualityService {
     );
     const sourceMap = await this.loadSourceMapByIds(input.orgId, sourceIds);
 
-    const methodCounters: Record<"llm_embedding_rerank" | "rule_fallback", number> = {
+    const methodCounters: Record<
+      "llm_embedding_rerank" | "rule_fallback",
+      number
+    > = {
       llm_embedding_rerank: 0,
       rule_fallback: 0,
     };
     const confidenceValues: number[] = [];
-    const trendBuckets = new Map<number, { total: number; low: number; sum: number }>();
-    const lowBySource = new Map<string, { total: number; low: number; sum: number }>();
+    const trendBuckets = new Map<
+      number,
+      { total: number; low: number; sum: number }
+    >();
+    const lowBySource = new Map<
+      string,
+      { total: number; low: number; sum: number }
+    >();
     const sourceCategory = new Map<string, number>();
 
     for (const doc of docs) {
@@ -1174,7 +1255,11 @@ export class ClassificationQualityService {
       confidenceValues.push(confidence);
       const createdAt = this.readDate(doc.createdAt) ?? new Date();
       const bucketStart = this.floorDate(createdAt, bucketMinutes).getTime();
-      const trend = trendBuckets.get(bucketStart) ?? { total: 0, low: 0, sum: 0 };
+      const trend = trendBuckets.get(bucketStart) ?? {
+        total: 0,
+        low: 0,
+        sum: 0,
+      };
       trend.total += 1;
       trend.sum += confidence;
       if (confidence < settings.lowConfidenceThreshold) {
@@ -1183,7 +1268,11 @@ export class ClassificationQualityService {
       trendBuckets.set(bucketStart, trend);
 
       const sourceId = this.readString(doc.sourceId) ?? "unknown";
-      const sourceEntry = lowBySource.get(sourceId) ?? { total: 0, low: 0, sum: 0 };
+      const sourceEntry = lowBySource.get(sourceId) ?? {
+        total: 0,
+        low: 0,
+        sum: 0,
+      };
       sourceEntry.total += 1;
       sourceEntry.sum += confidence;
       if (confidence < settings.lowConfidenceThreshold) {
@@ -1205,28 +1294,34 @@ export class ClassificationQualityService {
     const methodDistributionTotal =
       methodCounters.llm_embedding_rerank + methodCounters.rule_fallback;
     const totalItems = totalMatchedItems;
-    const methodDistribution: ClassificationQualitySummary["methodDistribution"] = [
-      {
-        group: "llm_embedding_rerank",
-        count: methodCounters.llm_embedding_rerank,
-        share:
-          methodDistributionTotal > 0
-            ? Number(
-                (methodCounters.llm_embedding_rerank / methodDistributionTotal).toFixed(4),
-              )
-            : 0,
-      },
-      {
-        group: "rule_fallback",
-        count: methodCounters.rule_fallback,
-        share:
-          methodDistributionTotal > 0
-            ? Number(
-                (methodCounters.rule_fallback / methodDistributionTotal).toFixed(4),
-              )
-            : 0,
-      },
-    ];
+    const methodDistribution: ClassificationQualitySummary["methodDistribution"] =
+      [
+        {
+          group: "llm_embedding_rerank",
+          count: methodCounters.llm_embedding_rerank,
+          share:
+            methodDistributionTotal > 0
+              ? Number(
+                  (
+                    methodCounters.llm_embedding_rerank /
+                    methodDistributionTotal
+                  ).toFixed(4),
+                )
+              : 0,
+        },
+        {
+          group: "rule_fallback",
+          count: methodCounters.rule_fallback,
+          share:
+            methodDistributionTotal > 0
+              ? Number(
+                  (
+                    methodCounters.rule_fallback / methodDistributionTotal
+                  ).toFixed(4),
+                )
+              : 0,
+        },
+      ];
 
     const confidenceHistogram = this.buildHistogram(confidenceValues, 10);
     const confidenceTrend = Array.from(trendBuckets.entries())
@@ -1252,15 +1347,26 @@ export class ClassificationQualityService {
           lowConfidenceCount: entry.low,
           lowConfidenceRate,
           avgConfidence:
-            entry.total > 0 ? Number((entry.sum / entry.total).toFixed(4)) : null,
+            entry.total > 0
+              ? Number((entry.sum / entry.total).toFixed(4))
+              : null,
         };
       })
       .sort((a, b) => b.lowConfidenceCount - a.lowConfidenceCount)
       .slice(0, 10);
 
-    const latencyPercentilesResult = await this.computeLatencyPercentiles(input.orgId, from, to);
-    const categoryGateResult = await this.computeCategoryGateStats(input.orgId, from, to);
-    const { meta: latencySamplingMeta, ...latencyPercentiles } = latencyPercentilesResult;
+    const latencyPercentilesResult = await this.computeLatencyPercentiles(
+      input.orgId,
+      from,
+      to,
+    );
+    const categoryGateResult = await this.computeCategoryGateStats(
+      input.orgId,
+      from,
+      to,
+    );
+    const { meta: latencySamplingMeta, ...latencyPercentiles } =
+      latencyPercentilesResult;
     const { meta: gateSamplingMeta, ...categoryGate } = categoryGateResult;
     const sourceCategoryBreakdown = Array.from(sourceCategory.entries())
       .map(([key, count]) => {
@@ -1294,7 +1400,8 @@ export class ClassificationQualityService {
         p95Ms: latencyPercentiles.embedding.p95Ms,
         triggered:
           latencyPercentiles.embedding.p95Ms !== null &&
-          latencyPercentiles.embedding.p95Ms > settings.embeddingP95LatencyWarnMs,
+          latencyPercentiles.embedding.p95Ms >
+            settings.embeddingP95LatencyWarnMs,
       },
       {
         stage: "rerank",
@@ -1330,8 +1437,7 @@ export class ClassificationQualityService {
         metric: "penalized_rate",
         threshold: settings.gatePenalizedRateWarn,
         value: categoryGate.penalizedRate,
-        triggered:
-          categoryGate.penalizedRate > settings.gatePenalizedRateWarn,
+        triggered: categoryGate.penalizedRate > settings.gatePenalizedRateWarn,
       },
     ];
 
@@ -1533,7 +1639,9 @@ export class ClassificationQualityService {
     latencyAlerts: ClassificationQualitySummary["alertStatus"];
     gateAlerts: ClassificationQualitySummary["gateAlertStatus"];
   }) {
-    const triggeredLatency = input.latencyAlerts.filter((entry) => entry.triggered);
+    const triggeredLatency = input.latencyAlerts.filter(
+      (entry) => entry.triggered,
+    );
     const triggeredGate = input.gateAlerts.filter((entry) => entry.triggered);
     if (triggeredLatency.length === 0 && triggeredGate.length === 0) {
       return;
@@ -1598,6 +1706,17 @@ export class ClassificationQualityService {
         window: input.window,
         latencyAlerts: triggeredLatency,
         gateAlerts: triggeredGate,
+        presentation: {
+          kind: NotificationPresentationKind.ClassificationQualityThresholdExceeded,
+          params: {
+            window: input.window,
+            latencyAlertCount: triggeredLatency.length,
+            gateAlertCount: triggeredGate.length,
+            latencyStages: triggeredLatency.map((entry) => entry.stage),
+            gateMetrics: triggeredGate.map((entry) => entry.metric),
+          },
+          technicalDetail: bodyParts.join(" | "),
+        },
       },
     } as const;
 
@@ -1619,10 +1738,18 @@ export class ClassificationQualityService {
           }),
         ),
       );
-      const failed = notifyResults.filter((entry) => entry.status === "rejected").length;
+      const failed = notifyResults.filter(
+        (entry) => entry.status === "rejected",
+      ).length;
       if (failed > 0) {
         this.logger.warn(
-          { orgId: input.orgId, window: input.window, signature, failed, total: notifyResults.length },
+          {
+            orgId: input.orgId,
+            window: input.window,
+            signature,
+            failed,
+            total: notifyResults.length,
+          },
           "Classification quality notifications partially failed",
         );
       }
@@ -1720,8 +1847,12 @@ export class ClassificationQualityService {
     let total = 0;
     let correct = 0;
     for (const row of rows) {
-      const predicted = this.normalizePath(this.readString(row?.predictedCategoryPath)) ?? "unknown";
-      const actual = this.normalizePath(this.readString(row?.humanCategoryPath)) ?? "unknown";
+      const predicted =
+        this.normalizePath(this.readString(row?.predictedCategoryPath)) ??
+        "unknown";
+      const actual =
+        this.normalizePath(this.readString(row?.humanCategoryPath)) ??
+        "unknown";
       total += 1;
       if (predicted === actual) {
         correct += 1;
@@ -1795,7 +1926,10 @@ export class ClassificationQualityService {
     return map;
   }
 
-  private async loadSourceInfo(orgId: string, sourceId: string): Promise<SourceInfo | null> {
+  private async loadSourceInfo(
+    orgId: string,
+    sourceId: string,
+  ): Promise<SourceInfo | null> {
     const row = await this.prisma.newsSource.findFirst({
       where: {
         id: sourceId,
@@ -1813,7 +1947,10 @@ export class ClassificationQualityService {
     };
   }
 
-  private async loadArticleContextMap(orgId: string, processedItemIds: string[]) {
+  private async loadArticleContextMap(
+    orgId: string,
+    processedItemIds: string[],
+  ) {
     if (processedItemIds.length === 0) {
       return new Map<string, ArticleContext>();
     }
@@ -1888,7 +2025,11 @@ export class ClassificationQualityService {
       return fallback;
     }
     const record = raw as Record<string, unknown>;
-    if (record.version === 2 && record.delta && typeof record.delta === "object") {
+    if (
+      record.version === 2 &&
+      record.delta &&
+      typeof record.delta === "object"
+    ) {
       const delta = record.delta as Record<string, unknown>;
       return normalizeSourcePolicy(
         {
@@ -1916,7 +2057,10 @@ export class ClassificationQualityService {
         fallback,
       );
     }
-    return normalizeSourcePolicy(record as Partial<NewsEventSourcePolicy>, fallback);
+    return normalizeSourcePolicy(
+      record as Partial<NewsEventSourcePolicy>,
+      fallback,
+    );
   }
 
   private applyDeltaList(base: string[], adds: string[], removes: string[]) {
@@ -1980,10 +2124,7 @@ export class ClassificationQualityService {
     const counters = new Array<number>(safeBins).fill(0);
     for (const value of values) {
       const normalized = Math.max(0, Math.min(1, value));
-      const index = Math.min(
-        safeBins - 1,
-        Math.floor(normalized * safeBins),
-      );
+      const index = Math.min(safeBins - 1, Math.floor(normalized * safeBins));
       counters[index] = (counters[index] ?? 0) + 1;
     }
     return counters.map((count, index) => {
@@ -2146,7 +2287,11 @@ export class ClassificationQualityService {
       where: { key: `${GATE_SETTINGS_KEY_PREFIX}${orgId}` },
       select: { value: true },
     });
-    if (!record?.value || typeof record.value !== "object" || Array.isArray(record.value)) {
+    if (
+      !record?.value ||
+      typeof record.value !== "object" ||
+      Array.isArray(record.value)
+    ) {
       return 0.4;
     }
     const raw = record.value as Record<string, unknown>;

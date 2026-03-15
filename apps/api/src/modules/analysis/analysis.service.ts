@@ -1,4 +1,8 @@
-import { AnalysisResultModel, type AnalysisResultDocument } from "@modular/mongo";
+import {
+  AnalysisResultModel,
+  type AnalysisResultDocument,
+} from "@modular/mongo";
+import { NotificationPresentationKind } from "@modular/utils";
 import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 // eslint-disable-next-line import/no-unresolved
@@ -7,14 +11,24 @@ import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
 
 import { EnvService } from "../config/config.service";
-import { LiteLlmService, type LiteLlmMessage } from "../news-pipeline/litellm.service";
+import {
+  LiteLlmService,
+  type LiteLlmMessage,
+} from "../news-pipeline/litellm.service";
 import { NotificationsService } from "../notifications/notifications.service";
 
 import { AnalysisPromptService } from "./analysis-prompt.service";
 import { ANALYSIS_QUEUE } from "./analysis.constants";
-import { getPartialSummaryFromError, AnalysisStreamError } from "./analysis.errors";
+import {
+  getPartialSummaryFromError,
+  AnalysisStreamError,
+} from "./analysis.errors";
 import { ANALYSIS_PUBSUB } from "./analysis.pubsub";
-import type { AnalysisJobPayload, AnomalyInput, CorrelationInput } from "./analysis.types";
+import type {
+  AnalysisJobPayload,
+  AnomalyInput,
+  CorrelationInput,
+} from "./analysis.types";
 
 const logger = createLogger({ name: "analysis-service" });
 
@@ -26,45 +40,64 @@ export class AnalysisService {
     private readonly prompts: AnalysisPromptService,
     @Inject(ANALYSIS_QUEUE) private readonly queue: Queue<AnalysisJobPayload>,
     @Inject(ANALYSIS_PUBSUB) private readonly pubsub: PubSubEngine,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
   ) {}
 
-  async submitCorrelation(orgId: string, input: CorrelationInput, triggeredById?: string) {
+  async submitCorrelation(
+    orgId: string,
+    input: CorrelationInput,
+    triggeredById?: string,
+  ) {
     const record = await AnalysisResultModel.create({
       orgId,
       type: "correlation",
       status: "pending",
       input,
-      triggeredById
+      triggeredById,
     });
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "correlation",
       { type: "correlation", analysisId: record.id, orgId, traceId },
-      { jobId: `corr-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
+      {
+        jobId: `corr-${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.analysisConfig.maxRetries,
+      },
     );
     return record;
   }
 
-  async submitAnomaly(orgId: string, input: AnomalyInput, triggeredById?: string) {
+  async submitAnomaly(
+    orgId: string,
+    input: AnomalyInput,
+    triggeredById?: string,
+  ) {
     const record = await AnalysisResultModel.create({
       orgId,
       type: "anomaly",
       status: "pending",
       input,
-      triggeredById
+      triggeredById,
     });
     const traceId = ensureTraceId(getCurrentTraceId());
     await this.queue.add(
       "anomaly",
       { type: "anomaly", analysisId: record.id, orgId, traceId },
-      { jobId: `anomaly-${record.id}`, removeOnComplete: true, attempts: this.env.analysisConfig.maxRetries }
+      {
+        jobId: `anomaly-${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.analysisConfig.maxRetries,
+      },
     );
     return record;
   }
 
   async listResults(orgId: string, limit = 50) {
-    return AnalysisResultModel.find({ orgId }).sort({ createdAt: -1 }).limit(limit).lean();
+    return AnalysisResultModel.find({ orgId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
   }
 
   async process(job: AnalysisJobPayload) {
@@ -73,24 +106,50 @@ export class AnalysisService {
       logger.warn({ job }, "Analysis record not found");
       return;
     }
-    const createdAt = record.createdAt ? new Date(record.createdAt) : new Date();
+    const createdAt = record.createdAt
+      ? new Date(record.createdAt)
+      : new Date();
     record.status = "running";
     await record.save();
-    await this.publish(record.orgId, record.id, record.type, record.status, undefined, createdAt);
+    await this.publish(
+      record.orgId,
+      record.id,
+      record.type,
+      record.status,
+      undefined,
+      createdAt,
+    );
 
     try {
       if (job.type === "correlation") {
-        const output = await this.runCorrelation(record.orgId, record.id, createdAt, record.input as CorrelationInput);
+        const output = await this.runCorrelation(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as CorrelationInput,
+        );
         record.output = output;
         record.summary = output.summary;
       } else {
-        const output = await this.runAnomaly(record.orgId, record.id, createdAt, record.input as AnomalyInput);
+        const output = await this.runAnomaly(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as AnomalyInput,
+        );
         record.output = output;
         record.summary = output.summary;
       }
       record.status = "completed";
       await record.save();
-      await this.publish(record.orgId, record.id, record.type, record.status, record.summary ?? undefined, createdAt);
+      await this.publish(
+        record.orgId,
+        record.id,
+        record.type,
+        record.status,
+        record.summary ?? undefined,
+        createdAt,
+      );
       await this.notifyResult(record);
     } catch (error: unknown) {
       logger.error({ job, error }, "Analysis job failed");
@@ -106,7 +165,7 @@ export class AnalysisService {
         record.status,
         record.summary ?? undefined,
         createdAt,
-        record.error ?? undefined
+        record.error ?? undefined,
       );
       await this.notifyResult(record);
       throw error;
@@ -117,7 +176,8 @@ export class AnalysisService {
     if (!record.triggeredById) {
       return;
     }
-    const analysisId = (record.id as string | undefined) ?? record._id?.toString?.() ?? "";
+    const analysisId =
+      (record.id as string | undefined) ?? record._id?.toString?.() ?? "";
     try {
       await this.notifications.notify({
         orgId: record.orgId,
@@ -129,29 +189,74 @@ export class AnalysisService {
         title: `${record.type} analysis ${record.status}`,
         body:
           record.status === "completed"
-            ? record.summary ?? undefined
-            : record.error ?? "Analysis job failed",
+            ? (record.summary ?? undefined)
+            : (record.error ?? "Analysis job failed"),
         data: {
           analysisId,
           status: record.status,
-          type: record.type
-        }
+          type: record.type,
+          presentation: {
+            kind:
+              record.status === "completed"
+                ? NotificationPresentationKind.AnalysisCompleted
+                : NotificationPresentationKind.AnalysisFailed,
+            params: {
+              analysisId,
+              analysisType: record.type,
+              ...(record.status === "completed" && record.summary
+                ? { summary: record.summary }
+                : {}),
+            },
+            ...(record.status === "failed" && record.error
+              ? { technicalDetail: record.error }
+              : {}),
+          },
+        },
       });
     } catch (error) {
-      logger.warn({ analysisId, error }, "Failed to send analysis notification");
+      logger.warn(
+        { analysisId, error },
+        "Failed to send analysis notification",
+      );
     }
   }
 
-  private async runCorrelation(orgId: string, analysisId: string, createdAt: Date, input: CorrelationInput) {
+  private async runCorrelation(
+    orgId: string,
+    analysisId: string,
+    createdAt: Date,
+    input: CorrelationInput,
+  ) {
     const messages = this.prompts.buildCorrelationMessages(input);
-    const { summary, raw } = await this.streamMessages(orgId, analysisId, "correlation", createdAt, messages);
+    const { summary, raw } = await this.streamMessages(
+      orgId,
+      analysisId,
+      "correlation",
+      createdAt,
+      messages,
+    );
     return { summary, raw };
   }
 
-  private async runAnomaly(orgId: string, analysisId: string, createdAt: Date, input: AnomalyInput) {
-    const { messages, statisticalFindings, statsSummary } = this.prompts.buildAnomalyMessages(input);
-    const prefix = statisticalFindings.length ? `统计检测：\n${statsSummary}\n\n` : "";
-    const { summary: content, raw } = await this.streamMessages(orgId, analysisId, "anomaly", createdAt, messages, prefix);
+  private async runAnomaly(
+    orgId: string,
+    analysisId: string,
+    createdAt: Date,
+    input: AnomalyInput,
+  ) {
+    const { messages, statisticalFindings, statsSummary } =
+      this.prompts.buildAnomalyMessages(input);
+    const prefix = statisticalFindings.length
+      ? `统计检测：\n${statsSummary}\n\n`
+      : "";
+    const { summary: content, raw } = await this.streamMessages(
+      orgId,
+      analysisId,
+      "anomaly",
+      createdAt,
+      messages,
+      prefix,
+    );
     return { summary: content, raw, statisticalFindings };
   }
 
@@ -161,10 +266,16 @@ export class AnalysisService {
     type: string,
     createdAt: Date,
     messages: LiteLlmMessage[],
-    initialChunk?: string
+    initialChunk?: string,
   ): Promise<{ summary: string; raw: Record<string, unknown> }> {
-    const flushChars = Math.max(1, Number(this.env.analysisConfig.streamFlushChars ?? 80));
-    const flushMs = Math.max(0, Number(this.env.analysisConfig.streamFlushMs ?? 250));
+    const flushChars = Math.max(
+      1,
+      Number(this.env.analysisConfig.streamFlushChars ?? 80),
+    );
+    const flushMs = Math.max(
+      0,
+      Number(this.env.analysisConfig.streamFlushMs ?? 250),
+    );
 
     let buffer = "";
     let summary = "";
@@ -187,7 +298,11 @@ export class AnalysisService {
         buffer += initialChunk;
         await flush();
       }
-      for await (const chunk of this.llm.stream({ orgId, messages, timeoutMs: this.env.analysisConfig.llmTimeoutMs })) {
+      for await (const chunk of this.llm.stream({
+        orgId,
+        messages,
+        timeoutMs: this.env.analysisConfig.llmTimeoutMs,
+      })) {
         if (typeof chunk.model === "string") {
           lastModel = chunk.model;
         }
@@ -206,10 +321,16 @@ export class AnalysisService {
       try {
         await flush();
       } catch (flushError) {
-        logger.warn({ flushError }, "Failed to flush partial summary after stream error");
+        logger.warn(
+          { flushError },
+          "Failed to flush partial summary after stream error",
+        );
       }
-      const normalized = error instanceof Error ? error : new Error(String(error));
-      const streamError = new AnalysisStreamError(normalized.message, summary, { cause: normalized });
+      const normalized =
+        error instanceof Error ? error : new Error(String(error));
+      const streamError = new AnalysisStreamError(normalized.message, summary, {
+        cause: normalized,
+      });
       streamError.stack = normalized.stack;
       throw streamError;
     }
@@ -222,7 +343,7 @@ export class AnalysisService {
     status: string,
     summary?: string,
     createdAt?: Date,
-    error?: string
+    error?: string,
   ) {
     await this.pubsub.publish("analysisEvents", {
       orgId,
@@ -232,8 +353,8 @@ export class AnalysisService {
         status,
         summary,
         error,
-        createdAt: (createdAt ?? new Date()).toISOString()
-      }
+        createdAt: (createdAt ?? new Date()).toISOString(),
+      },
     });
   }
 }
