@@ -31,7 +31,7 @@ describe("system health UI wiring", () => {
       "app/(app)/dashboard/components/system-health-summary-card.tsx",
     );
 
-    expect(source).toContain("/settings/system?tab=crawlClient");
+    expect(source).toContain("/admin/system?tab=crawlClient");
     expect(source).toContain("/admin/ops/crawl-tasks");
     expect(source).toContain("setShowSystemStats(!showSystemStats)");
     expect(source).toContain("aria-controls={detailsId}");

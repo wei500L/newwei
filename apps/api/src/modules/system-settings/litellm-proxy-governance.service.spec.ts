@@ -392,5 +392,69 @@ describe("LiteLlmProxyGovernanceService", () => {
         max_budget: 0,
       }),
     );
+    expect(prismaMock.systemSetting.upsert).toHaveBeenCalledTimes(1);
+    expect(cacheMock.del).toHaveBeenCalledTimes(1);
+    expect(prismaMock.systemSetting.upsert.mock.invocationCallOrder[0]).toBeLessThan(
+      oldProxyPost.mock.invocationCallOrder[0],
+    );
+    expect(cacheMock.del.mock.invocationCallOrder[0]).toBeLessThan(
+      oldProxyPost.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not disable the previous managed key and team when persistence fails during a cross-instance move", async () => {
+    persistedValue = {
+      enabled: true,
+      targetProfileId: "profile-1",
+      managedTeamId: "managed-team-1",
+      managedRuntimeKey: "runtime-key-1",
+      managedRuntimeKeyAlias: "runtime-key-alias-1",
+      dailyBudgetUsd: 12.5,
+      monthlyBudgetUsd: 300,
+      maxParallelRequests: 9,
+    };
+    securitySettingsMock.encodeSecretForStorage = jest.fn(async () => {
+      throw new Error("encode failed");
+    });
+
+    const newProxyPost = jest
+      .fn()
+      .mockResolvedValueOnce(okResponse({ team_id: "managed-team-1" }))
+      .mockRejectedValueOnce(
+        notFoundResponse({ detail: "managed runtime key not found" }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          key: "runtime-key-2",
+          key_alias: "runtime-key-alias-2",
+        }),
+      );
+    const oldProxyPost = jest.fn();
+
+    mockAxiosCreate.mockImplementation((config: { baseURL?: string }) => {
+      if (config.baseURL === "http://localhost:4002/v1") {
+        return { post: newProxyPost };
+      }
+      if (config.baseURL === "http://localhost:4001/v1") {
+        return { post: oldProxyPost };
+      }
+      return { post: jest.fn() };
+    });
+
+    await expect(
+      service.updateSettings("org-1", "actor-1", {
+        enabled: true,
+        targetProfileId: "profile-2",
+        dailyBudgetUsd: 15,
+        monthlyBudgetUsd: 350,
+        maxParallelRequests: 7,
+      }),
+    ).rejects.toThrow("encode failed");
+
+    expect(newProxyPost).toHaveBeenCalledTimes(3);
+    expect(oldProxyPost).not.toHaveBeenCalled();
+    expect(prismaMock.systemSetting.upsert).not.toHaveBeenCalled();
+    expect(cacheMock.del).not.toHaveBeenCalled();
+    expect(persistedValue.targetProfileId).toBe("profile-1");
   });
 });

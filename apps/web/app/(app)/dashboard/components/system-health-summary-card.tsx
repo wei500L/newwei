@@ -94,7 +94,7 @@ export function SystemHealthSummaryCard({
         label: t("dashboard.systemStatus.actions.openSystemSettings", {
           defaultValue: "Open system settings",
         }),
-        onClick: () => router.push("/settings/system?tab=crawlClient"),
+        onClick: () => router.push("/admin/system?tab=crawlClient"),
       }
     : canViewCrawlTasks
       ? {

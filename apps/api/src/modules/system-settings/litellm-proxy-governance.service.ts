@@ -136,6 +136,8 @@ export class LiteLlmProxyGovernanceService {
   ): Promise<LiteLlmProxyGovernanceSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const current = this.resolveEffectiveConfig(stored);
+    let managedResourcesToDisable: ResolvedLiteLlmProxyGovernanceSettings | null =
+      null;
 
     const next: ResolvedLiteLlmProxyGovernanceSettings = {
       ...current,
@@ -167,25 +169,28 @@ export class LiteLlmProxyGovernanceService {
           targetProfile.apiBase,
         );
       const synced = await this.syncEnabledSettings(next, targetProfile.apiBase);
-      if (shouldDisablePreviousManagedResources) {
-        await this.disableManagedResourcesBestEffort(current);
-      }
       next.managedTeamId = synced.managedTeamId;
       next.managedRuntimeKey = synced.managedRuntimeKey;
       next.managedRuntimeKeyAlias = synced.managedRuntimeKeyAlias;
       next.lastSyncedAt = new Date().toISOString();
       next.lastSyncError = null;
+      if (shouldDisablePreviousManagedResources) {
+        managedResourcesToDisable = current;
+      }
     } else {
       action = "litellm_proxy_governance_disable";
-      await this.disableManagedResourcesBestEffort(current);
       next.managedTeamId = null;
       next.managedRuntimeKey = undefined;
       next.managedRuntimeKeyAlias = null;
       next.lastSyncedAt = current.lastSyncedAt;
       next.lastSyncError = null;
+      managedResourcesToDisable = current;
     }
 
-    await this.persistSettings(actorId, next);
+    await this.persistSettingsAndInvalidateCache(actorId, next);
+    if (managedResourcesToDisable) {
+      await this.disableManagedResourcesBestEffort(managedResourcesToDisable);
+    }
     await this.writeAuditLog(orgId, actorId, action, {
       enabled: next.enabled,
       apiBase: await this.resolveGovernedApiBase(next),
@@ -197,8 +202,6 @@ export class LiteLlmProxyGovernanceService {
       managedTeamId: next.managedTeamId,
       managedRuntimeKeyAlias: next.managedRuntimeKeyAlias,
     });
-
-    await this.invalidateCache();
     return this.toPublicSettings("db", next, {
       hasManagedRuntimeKey: Boolean(next.managedRuntimeKey),
     });
@@ -210,19 +213,15 @@ export class LiteLlmProxyGovernanceService {
   ): Promise<LiteLlmProxyGovernanceSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const current = this.resolveEffectiveConfig(stored);
-    await this.disableManagedResourcesBestEffort(current);
 
-    await this.prisma.systemSetting.deleteMany({
-      where: { key: SETTINGS_KEY },
-    });
+    await this.deleteStoredSettingsAndInvalidateCache();
+    await this.disableManagedResourcesBestEffort(current);
 
     await this.writeAuditLog(orgId, actorId, "litellm_proxy_governance_reset", {
       ok: true,
       apiBase: await this.resolveGovernedApiBase(current),
       targetProfileId: current.targetProfileId,
     });
-
-    await this.invalidateCache();
     return this.getPublicSettings();
   }
 
@@ -251,10 +250,8 @@ export class LiteLlmProxyGovernanceService {
       dailyBudgetUsd: current.dailyBudgetUsd,
       maxParallelRequests: current.maxParallelRequests,
     });
-
-    if (oldKey && oldKey !== generated.key) {
-      await this.blockRuntimeKeyBestEffort(adminClient, oldKey);
-    }
+    const previousRuntimeKey =
+      oldKey && oldKey !== generated.key ? oldKey : null;
 
     const next: ResolvedLiteLlmProxyGovernanceSettings = {
       ...current,
@@ -264,7 +261,10 @@ export class LiteLlmProxyGovernanceService {
       lastSyncError: null,
     };
 
-    await this.persistSettings(actorId, next);
+    await this.persistSettingsAndInvalidateCache(actorId, next);
+    if (previousRuntimeKey) {
+      await this.blockRuntimeKeyBestEffort(adminClient, previousRuntimeKey);
+    }
     await this.writeAuditLog(
       orgId,
       actorId,
@@ -276,8 +276,6 @@ export class LiteLlmProxyGovernanceService {
         managedRuntimeKeyAlias: next.managedRuntimeKeyAlias,
       },
     );
-
-    await this.invalidateCache();
     return this.toPublicSettings("db", next, {
       hasManagedRuntimeKey: Boolean(next.managedRuntimeKey),
     });
@@ -560,6 +558,21 @@ export class LiteLlmProxyGovernanceService {
         isPublic: false,
       },
     });
+  }
+
+  private async persistSettingsAndInvalidateCache(
+    actorId: string,
+    settings: ResolvedLiteLlmProxyGovernanceSettings,
+  ): Promise<void> {
+    await this.persistSettings(actorId, settings);
+    await this.invalidateCache();
+  }
+
+  private async deleteStoredSettingsAndInvalidateCache(): Promise<void> {
+    await this.prisma.systemSetting.deleteMany({
+      where: { key: SETTINGS_KEY },
+    });
+    await this.invalidateCache();
   }
 
   private async writeAuditLog(
