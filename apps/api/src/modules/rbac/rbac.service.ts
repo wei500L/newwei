@@ -4,26 +4,26 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
+} from "@nestjs/common";
 
-import { writeAuditLogBestEffort } from '../audit/audit-log.writer';
-import { ActionRateLimitService } from '../cache/action-rate-limit.service';
-import { PrismaService } from '../config/prisma.service';
+import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
+import { ActionRateLimitService } from "../cache/action-rate-limit.service";
+import { PrismaService } from "../config/prisma.service";
 
-import { AssignRoleDto } from './dto/assign-role.dto';
-import { CreateRoleDto } from './dto/create-role.dto';
-import { UpdateRoleDto } from './dto/update-role.dto';
-import { UserAdminService } from './user-admin.service';
+import { AssignRoleDto } from "./dto/assign-role.dto";
+import { CreateRoleDto } from "./dto/create-role.dto";
+import { UpdateRoleDto } from "./dto/update-role.dto";
+import { UserAdminService } from "./user-admin.service";
 
 function isPrismaUniqueConstraintError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
+  if (!error || typeof error !== "object") {
     return false;
   }
 
-  return (error as { code?: unknown }).code === 'P2002';
+  return (error as { code?: unknown }).code === "P2002";
 }
 
-const SYSTEM_ADMIN_ROLE_NAME = 'admin';
+const SYSTEM_ADMIN_ROLE_NAME = "admin";
 
 @Injectable()
 export class RbacService {
@@ -58,10 +58,11 @@ export class RbacService {
       },
     });
     if (!membership) {
-      throw new ForbiddenException('Actor is not a member of the organization');
+      throw new ForbiddenException("Actor is not a member of the organization");
     }
 
-    const roles = membership.roles?.map((link) => link.role).filter(Boolean) ?? [];
+    const roles =
+      membership.roles?.map((link) => link.role).filter(Boolean) ?? [];
     if (roles.length === 0 && membership.role) {
       roles.push(membership.role);
     }
@@ -77,15 +78,19 @@ export class RbacService {
     actorPermissions: Set<string>,
     requested: string[],
   ) {
-    const missing = requested.find((permission) => !actorPermissions.has(permission));
+    const missing = requested.find(
+      (permission) => !actorPermissions.has(permission),
+    );
     if (missing) {
-      throw new ForbiddenException('Insufficient permission scope for RBAC change');
+      throw new ForbiddenException(
+        "Insufficient permission scope for RBAC change",
+      );
     }
   }
 
   async listPermissions() {
     return this.prisma.permission.findMany({
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
   }
 
@@ -101,7 +106,7 @@ export class RbacService {
           include: { permission: true },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
   }
 
@@ -113,10 +118,12 @@ export class RbacService {
     const normalizedDescription = dto.description?.trim() || undefined;
 
     if (!normalizedName) {
-      throw new BadRequestException('Role name is required');
+      throw new BadRequestException("Role name is required");
     }
     if (normalizedName.toLowerCase() === SYSTEM_ADMIN_ROLE_NAME) {
-      throw new BadRequestException('System administrator role name is reserved');
+      throw new BadRequestException(
+        "System administrator role name is reserved",
+      );
     }
 
     let role;
@@ -126,7 +133,7 @@ export class RbacService {
           where: { name: { in: dto.permissions } },
         });
         if (permissions.length !== dto.permissions.length) {
-          throw new NotFoundException('One or more permissions not found');
+          throw new NotFoundException("One or more permissions not found");
         }
         this.assertActorCanManagePermissions(
           actorPermissions,
@@ -158,7 +165,7 @@ export class RbacService {
       });
     } catch (error) {
       if (isPrismaUniqueConstraintError(error)) {
-        throw new ConflictException('Role name already exists');
+        throw new ConflictException("Role name already exists");
       }
       throw error;
     }
@@ -169,8 +176,8 @@ export class RbacService {
         data: {
           orgId,
           actorId,
-          resource: 'roles',
-          action: 'create',
+          resource: "roles",
+          action: "create",
           metadata: {
             roleId: role?.id,
             name: normalizedName,
@@ -181,8 +188,8 @@ export class RbacService {
       {
         orgId,
         actorId,
-        resource: 'roles',
-        action: 'create',
+        resource: "roles",
+        action: "create",
       },
     );
 
@@ -210,22 +217,18 @@ export class RbacService {
         },
       },
     });
-    if (!targetMembership) {
-      throw new NotFoundException('User is not a member of the organization');
-    }
-
     const targetRoles =
-      targetMembership.roles?.map((link) => link.role).filter(Boolean) ?? [];
-    if (targetRoles.length === 0 && targetMembership.role) {
+      targetMembership?.roles?.map((link) => link.role).filter(Boolean) ?? [];
+    if (targetRoles.length === 0 && targetMembership?.role) {
       targetRoles.push(targetMembership.role);
     }
     if (
       dto.userId === actorId ||
       targetRoles.some(
-        (role) => role.isSystem && role.name.toLowerCase() === 'admin',
+        (role) => role.isSystem && role.name.toLowerCase() === "admin",
       )
     ) {
-      throw new ForbiddenException('System administrators cannot be managed');
+      throw new ForbiddenException("System administrators cannot be managed");
     }
 
     const role = await this.prisma.role.findFirst({
@@ -240,11 +243,11 @@ export class RbacService {
       },
     });
     if (!role) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException("Role not found");
     }
-    if (role.isSystem && role.name.toLowerCase() === 'admin') {
+    if (role.isSystem && role.name.toLowerCase() === "admin") {
       throw new ForbiddenException(
-        'System administrator role cannot be assigned from user management',
+        "System administrator role cannot be assigned from user management",
       );
     }
     this.assertActorCanManagePermissions(
@@ -253,14 +256,19 @@ export class RbacService {
     );
 
     const membership = await this.prisma.$transaction(async (tx) => {
-      const updatedMembership = await tx.membership.update({
+      const updatedMembership = await tx.membership.upsert({
         where: {
           userId_orgId: {
             userId: dto.userId,
             orgId,
           },
         },
-        data: {
+        create: {
+          userId: dto.userId,
+          orgId,
+          roleId: dto.roleId,
+        },
+        update: {
           roleId: dto.roleId,
         },
       });
@@ -311,8 +319,8 @@ export class RbacService {
         data: {
           orgId,
           actorId,
-          resource: 'users',
-          action: 'assign_role',
+          resource: "users",
+          action: "assign_role",
           metadata: {
             targetUserId: dto.userId,
             roleId: dto.roleId,
@@ -322,8 +330,8 @@ export class RbacService {
       {
         orgId,
         actorId,
-        resource: 'users',
-        action: 'assign_role',
+        resource: "users",
+        action: "assign_role",
       },
     );
 
@@ -374,10 +382,10 @@ export class RbacService {
       },
     });
     if (!existingRole) {
-      throw new NotFoundException('Role not found');
+      throw new NotFoundException("Role not found");
     }
     if (existingRole.isSystem) {
-      throw new ForbiddenException('System roles cannot be edited');
+      throw new ForbiddenException("System roles cannot be edited");
     }
     this.assertActorCanManagePermissions(
       actorPermissions,
@@ -388,7 +396,7 @@ export class RbacService {
       where: { name: { in: dto.permissions } },
     });
     if (permissions.length !== dto.permissions.length) {
-      throw new NotFoundException('One or more permissions not found');
+      throw new NotFoundException("One or more permissions not found");
     }
     this.assertActorCanManagePermissions(
       actorPermissions,
@@ -396,7 +404,9 @@ export class RbacService {
     );
 
     const role = await this.prisma.$transaction(async (tx) => {
-      await tx.rolePermission.deleteMany({ where: { roleId: existingRole.id } });
+      await tx.rolePermission.deleteMany({
+        where: { roleId: existingRole.id },
+      });
       if (permissions.length > 0) {
         await tx.rolePermission.createMany({
           data: permissions.map((permission) => ({
@@ -424,8 +434,8 @@ export class RbacService {
         data: {
           orgId,
           actorId,
-          resource: 'roles',
-          action: 'update',
+          resource: "roles",
+          action: "update",
           metadata: {
             roleId: dto.id,
             description: dto.description ?? null,
@@ -436,8 +446,8 @@ export class RbacService {
       {
         orgId,
         actorId,
-        resource: 'roles',
-        action: 'update',
+        resource: "roles",
+        action: "update",
       },
     );
 
@@ -447,7 +457,7 @@ export class RbacService {
   async auditLogs(orgId: string, limit = 20) {
     return this.prisma.auditLog.findMany({
       where: { orgId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       take: limit,
     });
   }

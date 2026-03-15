@@ -1,4 +1,4 @@
-import { ForbiddenException, UseGuards } from '@nestjs/common';
+import { ForbiddenException, UseGuards } from "@nestjs/common";
 import {
   Args,
   Context,
@@ -7,24 +7,29 @@ import {
   Query,
   ResolveField,
   Resolver,
-} from '@nestjs/graphql';
-import type DataLoader from 'dataloader';
-import { Loader } from 'nestjs-dataloader';
+} from "@nestjs/graphql";
+import type DataLoader from "dataloader";
+import { Loader } from "nestjs-dataloader";
 
-import { GqlAuthGuard } from '../../common/guards/gql-auth.guard';
-import { GqlPermissionsGuard } from '../../common/guards/gql-permissions.guard';
-import { AuthenticatedUser } from '../../modules/auth/auth.service';
-import { RbacService } from '../../modules/rbac/rbac.service';
-import { HasPermission } from '../decorators/has-permission.decorator';
+import { GqlAuthGuard } from "../../common/guards/gql-auth.guard";
+import { GqlPermissionsGuard } from "../../common/guards/gql-permissions.guard";
+import { AuthenticatedUser } from "../../modules/auth/auth.service";
+import { RbacService } from "../../modules/rbac/rbac.service";
+import { HasPermission } from "../decorators/has-permission.decorator";
 import {
   AssignRoleInput,
   CreateRoleInput,
   UpdateRoleInput,
-} from '../dto/rbac.input';
-import type { GqlRequest } from '../graphql.types';
-import { UserLoader } from '../loaders/user.loader';
-import { MembershipModel, PermissionModel, RoleModel } from '../models/rbac.model';
-import { UserModel } from '../models/user.model';
+} from "../dto/rbac.input";
+import type { GqlRequest } from "../graphql.types";
+import { UserLoader } from "../loaders/user.loader";
+import {
+  MembershipModel,
+  PermissionModel,
+  RoleModel,
+} from "../models/rbac.model";
+import { UserModel } from "../models/user.model";
+import { resolveEffectiveUserActive } from "../utils/resolve-effective-user-active";
 
 interface RolePermissionRecord {
   permission: {
@@ -74,16 +79,16 @@ interface MembershipRecord {
 export class RbacResolver {
   constructor(private readonly rbacService: RbacService) {}
 
-  @HasPermission('roles.read')
+  @HasPermission("roles.read")
   @Query(() => [RoleModel])
   async roles(
-    @Context('req') req: GqlRequest,
-    @Args('includeSystem', { type: () => Boolean, nullable: true })
+    @Context("req") req: GqlRequest,
+    @Args("includeSystem", { type: () => Boolean, nullable: true })
     includeSystem?: boolean,
   ): Promise<RoleModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
-      throw new ForbiddenException('Unauthenticated');
+      throw new ForbiddenException("Unauthenticated");
     }
     const data = await this.rbacService.listRoles(requester.orgId, {
       includeSystem,
@@ -91,7 +96,7 @@ export class RbacResolver {
     return data.map((role) => this.mapRole(role));
   }
 
-  @HasPermission('permissions.read')
+  @HasPermission("permissions.read")
   @Query(() => [PermissionModel])
   async permissions(): Promise<PermissionModel[]> {
     const data = await this.rbacService.listPermissions();
@@ -102,43 +107,49 @@ export class RbacResolver {
     }));
   }
 
-  @HasPermission('users.read')
+  @HasPermission("users.read")
   @Query(() => [MembershipModel])
-  async memberships(@Context('req') req: GqlRequest): Promise<MembershipModel[]> {
+  async memberships(
+    @Context("req") req: GqlRequest,
+  ): Promise<MembershipModel[]> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
-      throw new ForbiddenException('Unauthenticated');
+      throw new ForbiddenException("Unauthenticated");
     }
     const memberships = await this.rbacService.listMembers(requester.orgId);
     return memberships.map((membership) => this.mapMembership(membership));
   }
 
-  @HasPermission('roles.write')
+  @HasPermission("roles.write")
   @Mutation(() => RoleModel)
   async createRole(
-    @Context('req') req: GqlRequest,
-    @Args('input') input: CreateRoleInput,
+    @Context("req") req: GqlRequest,
+    @Args("input") input: CreateRoleInput,
   ): Promise<RoleModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
-      throw new ForbiddenException('Unauthenticated');
+      throw new ForbiddenException("Unauthenticated");
     }
-    const role = await this.rbacService.createRole(requester.orgId, requester.id, input);
+    const role = await this.rbacService.createRole(
+      requester.orgId,
+      requester.id,
+      input,
+    );
     if (!role) {
-      throw new ForbiddenException('Role not found after creation');
+      throw new ForbiddenException("Role not found after creation");
     }
     return this.mapRole(role);
   }
 
-  @HasPermission('roles.write')
+  @HasPermission("roles.write")
   @Mutation(() => MembershipModel)
   async assignRole(
-    @Context('req') req: GqlRequest,
-    @Args('input') input: AssignRoleInput,
+    @Context("req") req: GqlRequest,
+    @Args("input") input: AssignRoleInput,
   ): Promise<MembershipModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
-      throw new ForbiddenException('Unauthenticated');
+      throw new ForbiddenException("Unauthenticated");
     }
     const membership = await this.rbacService.assignRole(
       requester.orgId,
@@ -148,17 +159,21 @@ export class RbacResolver {
     return this.mapMembership(membership);
   }
 
-  @HasPermission('roles.write')
+  @HasPermission("roles.write")
   @Mutation(() => RoleModel)
   async updateRole(
-    @Context('req') req: GqlRequest,
-    @Args('input') input: UpdateRoleInput,
+    @Context("req") req: GqlRequest,
+    @Args("input") input: UpdateRoleInput,
   ): Promise<RoleModel> {
     const requester = req?.user as AuthenticatedUser | undefined;
     if (!requester) {
-      throw new ForbiddenException('Unauthenticated');
+      throw new ForbiddenException("Unauthenticated");
     }
-    const role = await this.rbacService.updateRole(requester.orgId, requester.id, input);
+    const role = await this.rbacService.updateRole(
+      requester.orgId,
+      requester.id,
+      input,
+    );
     return this.mapRole(role);
   }
 
@@ -173,14 +188,14 @@ export class RbacResolver {
 
     const user = await userLoader.load(membership.userId);
     if (!user) {
-      throw new ForbiddenException('User not found');
+      throw new ForbiddenException("User not found");
     }
 
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName ?? '',
-      lastName: user.lastName ?? '',
+      firstName: user.firstName ?? "",
+      lastName: user.lastName ?? "",
       avatarUrl: user.avatarUrl ?? undefined,
       orgId: membership.orgId,
       primaryRoleId: undefined,
@@ -216,12 +231,16 @@ export class RbacResolver {
     }
 
     const roleIds = (
-      roleLinks.length > 0 ? roleLinks.map((link) => link.roleId) : [membership.roleId]
-    ).filter((id): id is string => typeof id === 'string');
+      roleLinks.length > 0
+        ? roleLinks.map((link) => link.roleId)
+        : [membership.roleId]
+    ).filter((id): id is string => typeof id === "string");
     const permissions = Array.from(
       new Set(
         roles.flatMap((role) =>
-          (role.permissions ?? []).map((permission) => permission.permission.name),
+          (role.permissions ?? []).map(
+            (permission) => permission.permission.name,
+          ),
         ),
       ),
     );
@@ -235,12 +254,15 @@ export class RbacResolver {
       user: {
         id: membership.user.id,
         email: membership.user.email,
-        firstName: membership.user.firstName ?? '',
-        lastName: membership.user.lastName ?? '',
+        firstName: membership.user.firstName ?? "",
+        lastName: membership.user.lastName ?? "",
         avatarUrl: membership.user.avatarUrl ?? undefined,
         orgId: membership.orgId,
         primaryRoleId: membership.roleId ?? undefined,
-        isActive: membership.isActive ?? membership.user.isActive ?? true,
+        isActive: resolveEffectiveUserActive(
+          membership.user.isActive,
+          membership.isActive,
+        ),
         emailVerified: membership.user.emailVerified ?? undefined,
         lastLoginAt: membership.user.lastLoginAt ?? undefined,
         roleIds,
