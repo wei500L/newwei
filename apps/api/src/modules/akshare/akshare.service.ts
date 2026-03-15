@@ -116,6 +116,9 @@ export class AkshareService implements OnModuleInit {
     "sp500_index",
     "china_treasury_yield_curve",
   ]);
+  // Existing catalogs may still point sp500_index at legacy Akshare metadata.
+  // Force a source sync so persisted records follow the Yahoo Finance-backed
+  // yfinance provider registered in the mainline definitions.
   private readonly forceSourceSyncSlugs = new Set<string>(["sp500_index"]);
   private readonly forceFilterSyncSlugs = new Set<string>([
     "bitcoin_spot_price",

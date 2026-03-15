@@ -189,10 +189,16 @@ function createYfinanceHistoryDefinition(input: {
   };
 }
 
+// sp500_index keeps its legacy slug, but the canonical source is no longer the
+// old Akshare history definition. Exclude it here so it is only registered via
+// the dedicated Yahoo Finance-backed provider below.
 const AKSHARE_FINANCIAL_DEFINITIONS: FinancialDataItemDefinition[] = AKSHARE_DATA_DEFINITIONS
   .filter((definition) => definition.slug !== "sp500_index")
   .map(toAkshareDefinition);
 
+// This is the canonical S&P 500 series consumed by the dashboard. The
+// provider kind is named "yfinance" for compatibility, but the backend fetches
+// Yahoo Finance chart data directly instead of importing the Python package.
 const YFINANCE_DEFINITIONS: FinancialDataItemDefinition[] = [
   createYfinanceHistoryDefinition({
     id: "sp500-index",

@@ -184,6 +184,51 @@ export class ArchiveRelatedArticleModel {
 }
 
 @ObjectType()
+export class ArchiveClassificationScoreEntryModel {
+  @Field(() => ArchiveVertical)
+  vertical!: ArchiveVertical;
+
+  @Field(() => Float)
+  ruleScore!: number;
+
+  @Field(() => Float)
+  embeddingScore!: number;
+
+  @Field(() => Float)
+  rerankScore!: number;
+
+  @Field(() => Float)
+  fusedScore!: number;
+}
+
+@ObjectType()
+export class ArchiveClassificationDetailModel {
+  @Field(() => ArchiveRegion)
+  region!: ArchiveRegion;
+
+  @Field(() => ArchiveVertical)
+  vertical!: ArchiveVertical;
+
+  @Field()
+  taxonomyVersion!: string;
+
+  @Field()
+  pipelineVersion!: string;
+
+  @Field()
+  embeddingModel!: string;
+
+  @Field()
+  rerankModel!: string;
+
+  @Field(() => [String])
+  ruleSignals!: string[];
+
+  @Field(() => [ArchiveClassificationScoreEntryModel])
+  scoreEntries!: ArchiveClassificationScoreEntryModel[];
+}
+
+@ObjectType()
 export class ArchiveDetailModel {
   @Field()
   processedArticleId!: string;
@@ -205,6 +250,9 @@ export class ArchiveDetailModel {
 
   @Field(() => String, { nullable: true })
   sourceLabel?: string | null;
+
+  @Field(() => ArchiveClassificationDetailModel, { nullable: true })
+  classification?: ArchiveClassificationDetailModel | null;
 
   @Field(() => [ArchiveTimelineEntryModel])
   timeline!: ArchiveTimelineEntryModel[];

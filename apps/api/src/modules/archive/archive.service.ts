@@ -492,6 +492,7 @@ export class ArchiveService {
       include: {
         article: {
           select: {
+            id: true,
             url: true,
             sourceLabel: true,
             crawlAt: true,
@@ -509,6 +510,7 @@ export class ArchiveService {
       return null;
     }
 
+    const classification = await this.loadDetailClassification(orgId, article);
     const eventId = article.newsEventItems[0]?.eventId ?? null;
     let timeline: ArchiveDetailResult["timeline"] = [];
     let relatedArticles: ArchiveDetailResult["relatedArticles"] = [];
@@ -578,9 +580,90 @@ export class ArchiveService {
       sourceLabel:
         this.normalizeOptionalString(article.source) ??
         this.normalizeOptionalString(article.article.sourceLabel),
+      classification,
       timeline,
       relatedArticles,
     };
+  }
+
+  private async loadDetailClassification(
+    orgId: string,
+    article: {
+      id: string;
+      title: string | null;
+      summary: string | null;
+      source: string | null;
+      topics: unknown;
+      entities: unknown;
+      location: string | null;
+      article: {
+        id: string;
+        sourceLabel: string | null;
+      };
+    },
+  ): Promise<ArchiveDetailResult['classification']> {
+    const ruleContext = this.classifier.classifyRuleSignals({
+      title: article.title,
+      summary: article.summary,
+      source: article.source ?? article.article.sourceLabel,
+      topics: article.topics,
+      entities: article.entities,
+      location: article.location,
+    });
+
+    const cached = await this.archiveClassification.getCachedHybridBatch(orgId, [
+      {
+        processedArticleId: article.id,
+        articleId: article.article.id,
+        title: article.title,
+        summary: article.summary,
+        source: article.source ?? article.article.sourceLabel,
+        topics: article.topics,
+        entities: article.entities,
+        location: article.location,
+        ruleContext,
+      },
+    ]);
+
+    const result = cached.get(article.id);
+    if (!result) {
+      return null;
+    }
+
+    return {
+      region: result.region,
+      vertical: result.vertical,
+      taxonomyVersion: result.taxonomyVersion,
+      pipelineVersion: result.pipelineVersion,
+      embeddingModel: result.embeddingModel,
+      rerankModel: result.rerankModel,
+      ruleSignals: this.buildDetailRuleSignals(ruleContext, result.vertical),
+      scoreEntries: ARCHIVE_VERTICAL_ORDER.map((vertical) => ({
+        vertical,
+        ruleScore: result.ruleScores[vertical] ?? 0,
+        embeddingScore: result.embeddingScores[vertical] ?? 0,
+        rerankScore: result.rerankScores[vertical] ?? 0,
+        fusedScore: result.fusedScores[vertical] ?? 0,
+      })),
+    };
+  }
+
+  private buildDetailRuleSignals(
+    ruleContext: ReturnType<ArchiveClassifier['classifyRuleSignals']>,
+    vertical: ArchiveVertical,
+  ): string[] {
+    const selected = ruleContext.verticalSignals[vertical];
+    if (!selected) {
+      return [];
+    }
+
+    return [
+      ...selected.matchedCountries.map((value) => `Country match: ${value}`),
+      ...selected.matchedStrongKeywords.map((value) => `Strong keyword: ${value}`),
+      ...selected.matchedWeakKeywords.map((value) => `Keyword: ${value}`),
+      ...selected.excludedKeywords.map((value) => `Boundary suppressor: ${value}`),
+      ...selected.conflictKeywords.map((value) => `Conflict suppressor: ${value}`),
+    ].slice(0, 12);
   }
 
   private async loadSearchCandidates(
@@ -1208,12 +1291,14 @@ export class ArchiveService {
       articleId: row.article.id,
       title: row.title,
       summary: row.summary,
+      source: row.source ?? row.article.sourceLabel,
       topics: row.topics,
       entities: row.entities,
       location: row.location,
       ruleContext: this.classifier.classifyRuleSignals({
         title: row.title,
         summary: row.summary,
+        source: row.source ?? row.article.sourceLabel,
         topics: row.topics,
         entities: row.entities,
         location: row.location,

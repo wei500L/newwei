@@ -50,6 +50,9 @@ interface YfinanceChartResponse {
 
 @Injectable()
 export class YfinanceFinancialDataProvider implements FinancialDataProvider {
+  // This provider mirrors yfinance history semantics for config and payload
+  // shape, but the Nest backend talks to Yahoo Finance's chart endpoint
+  // directly via HTTP instead of embedding the Python yfinance project.
   readonly kind = 'yfinance' as const;
 
   async isConfigured(): Promise<boolean> {
@@ -173,6 +176,8 @@ export class YfinanceFinancialDataProvider implements FinancialDataProvider {
 
   private async fetchChart(provider: YfinanceFinancialDataProviderConfig): Promise<YfinanceChartResponse> {
     const params = this.buildRequestParams(provider);
+    // Use Yahoo Finance's public chart API directly so this provider stays
+    // self-contained in the Node service.
     const url = new URL(
       `${this.getBaseUrl()}${provider.endpoint}/${encodeURIComponent(provider.symbol)}`,
     );

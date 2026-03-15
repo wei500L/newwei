@@ -97,6 +97,52 @@ describe("ArchiveService", () => {
       ...createArchiveVerticalScoreMap(),
       [ArchiveVertical.EAST_SEA]: 1,
     },
+    matchedCountries: ["【东海】 Philippines"],
+    matchedKeywords: ["【东海】 maritime security"],
+    suppressedKeywords: [],
+    countryMatchedVerticals: [ArchiveVertical.EAST_SEA],
+    verticalSignals: {
+      [ArchiveVertical.EAST_SEA]: {
+        countryMatched: true,
+        matchedCountries: ["Philippines"],
+        matchedStrongKeywords: ["maritime security"],
+        matchedWeakKeywords: [],
+        excludedKeywords: [],
+        conflictKeywords: [],
+      },
+      [ArchiveVertical.SOUTH_SEA]: {
+        countryMatched: false,
+        matchedCountries: [],
+        matchedStrongKeywords: [],
+        matchedWeakKeywords: [],
+        excludedKeywords: [],
+        conflictKeywords: [],
+      },
+      [ArchiveVertical.WEST_FRONT]: {
+        countryMatched: false,
+        matchedCountries: [],
+        matchedStrongKeywords: [],
+        matchedWeakKeywords: [],
+        excludedKeywords: [],
+        conflictKeywords: [],
+      },
+      [ArchiveVertical.FOREIGN_AFFAIRS]: {
+        countryMatched: false,
+        matchedCountries: [],
+        matchedStrongKeywords: [],
+        matchedWeakKeywords: [],
+        excludedKeywords: [],
+        conflictKeywords: [],
+      },
+      [ArchiveVertical.DOMESTIC_AFFAIRS]: {
+        countryMatched: false,
+        matchedCountries: [],
+        matchedStrongKeywords: [],
+        matchedWeakKeywords: [],
+        excludedKeywords: [],
+        conflictKeywords: [],
+      },
+    },
   };
 
   const makeClassifierMock = () => ({
@@ -884,5 +930,126 @@ describe("ArchiveService", () => {
     );
     expect(result.preparation.state).toBe(ArchivePreparationState.FAILED);
     expect(result.preparation.errorMessage).toBe("BullMQ unavailable");
+  });
+
+  it("returns classification detail in archive detail when cached classification exists", async () => {
+    const row = makeRow("row-detail", "2025-05-28T08:00:00.000Z");
+    const prisma = {
+      processedArticle: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...row,
+          article: {
+            id: row.article.id,
+            url: row.article.url,
+            sourceLabel: row.article.sourceLabel,
+            crawlAt: row.article.crawlAt,
+          },
+        }),
+      },
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      getCachedHybridBatch: jest.fn().mockResolvedValue(
+        new Map([
+          [
+            row.id,
+            {
+              processedArticleId: row.id,
+              articleId: row.article.id,
+              region: ArchiveRegion.APAC,
+              vertical: ArchiveVertical.EAST_SEA,
+              countryCode: "PHL",
+              countryLabel: "Philippines",
+              entityTags: ["Philippines"],
+              ruleScores: classifierSignalsResult.ruleScores,
+              embeddingScores: createArchiveVerticalScoreMap(),
+              rerankScores: createArchiveVerticalScoreMap(),
+              fusedScores: {
+                ...createArchiveVerticalScoreMap(),
+                [ArchiveVertical.EAST_SEA]: 1,
+              },
+              classificationTextHash: "hash-detail",
+              classificationTextVersion: "archive-text-v2",
+              taxonomyVersion: "archive-vertical-v2",
+              pipelineVersion: "archive-hybrid-v2",
+              embeddingModel: "embedding-model",
+              rerankModel: "rerank-model",
+            },
+          ],
+        ]),
+      ),
+      classifyHybridBatch: jest.fn(),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
+    );
+
+    const result = await service.getDetail("org-1", row.id);
+
+    expect(result?.classification?.vertical).toBe(ArchiveVertical.EAST_SEA);
+    expect(result?.classification?.taxonomyVersion).toBe("archive-vertical-v2");
+    expect(result?.classification?.ruleSignals).toContain("Country match: Philippines");
+    expect(result?.classification?.scoreEntries).toHaveLength(5);
+  });
+
+  it("returns null classification in archive detail when cached classification is missing", async () => {
+    const row = makeRow("row-detail-missing", "2025-05-28T08:00:00.000Z");
+    const prisma = {
+      processedArticle: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...row,
+          article: {
+            id: row.article.id,
+            url: row.article.url,
+            sourceLabel: row.article.sourceLabel,
+            crawlAt: row.article.crawlAt,
+          },
+        }),
+      },
+      newsEvent: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      getCachedHybridBatch: jest.fn().mockResolvedValue(new Map()),
+      classifyHybridBatch: jest.fn(),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
+    );
+
+    const result = await service.getDetail("org-1", row.id);
+
+    expect(result?.classification).toBeNull();
   });
 });

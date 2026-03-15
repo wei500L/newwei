@@ -6,8 +6,14 @@ import {
 import { Injectable } from '@nestjs/common';
 
 import {
+  ARCHIVE_VERTICAL_TAXONOMY,
+} from './archive-taxonomy';
+import {
+  ARCHIVE_RULE_CONFLICT_KEYWORD_PENALTY,
+  ARCHIVE_RULE_EXCLUDED_KEYWORD_PENALTY,
+  ARCHIVE_RULE_STRONG_KEYWORD_INCREMENT,
   ARCHIVE_RULE_STRONG_SCORE,
-  ARCHIVE_RULE_WEAK_SCORE,
+  ARCHIVE_RULE_WEAK_KEYWORD_INCREMENT,
 } from './archive-classification.constants';
 import {
   ARCHIVE_VERTICAL_ORDER,
@@ -119,100 +125,6 @@ const AFRICA_COUNTRIES = new Set([
   'ZAF',
 ]);
 
-const EAST_SEA_COUNTRIES = new Set(['JPN', 'KOR', 'PRK', 'TWN']);
-const SOUTH_SEA_COUNTRIES = new Set([
-  'BRN',
-  'IDN',
-  'KHM',
-  'LAO',
-  'MYS',
-  'MMR',
-  'PHL',
-  'SGP',
-  'THA',
-  'VNM',
-]);
-const WEST_FRONT_COUNTRIES = new Set([
-  'AFG',
-  'IND',
-  'IRN',
-  'KAZ',
-  'KGZ',
-  'PAK',
-  'TJK',
-  'TKM',
-  'UZB',
-]);
-
-const EAST_SEA_KEYWORDS = [
-  '东海',
-  '朝鲜半岛',
-  '钓鱼岛',
-  '日本海',
-  '防卫白皮书',
-  'korean peninsula',
-  'east china sea',
-  'japan defense',
-  'ww',
-];
-
-const SOUTH_SEA_KEYWORDS = [
-  '南海',
-  '黄岩岛',
-  '仁爱礁',
-  '海警',
-  '南沙',
-  '西沙',
-  '马六甲',
-  'south china sea',
-  'spratly',
-  'scarborough',
-];
-
-const WEST_FRONT_KEYWORDS = [
-  '西面',
-  '阿富汗',
-  '中亚',
-  '克什米尔',
-  '边境冲突',
-  'afghanistan',
-  'central asia',
-  'kashmir',
-  'india pakistan',
-  'tajik',
-  'uzbek',
-];
-
-const FOREIGN_AFFAIRS_KEYWORDS = [
-  '外交',
-  '制裁',
-  '反制',
-  '关税',
-  '贸易争端',
-  '多边会谈',
-  'diplomacy',
-  'sanction',
-  'countermeasure',
-  'trade dispute',
-  'embargo',
-  'summit',
-];
-
-const DOMESTIC_AFFAIRS_KEYWORDS = [
-  '内务',
-  '国内',
-  '政策调整',
-  '五年规划',
-  '农业',
-  '能源战略',
-  '基建',
-  'domestic policy',
-  'internal policy',
-  'energy strategy',
-  'agriculture plan',
-  'infrastructure',
-];
-
 const APAC_KEYWORDS = [
   '亚太',
   'asia pacific',
@@ -228,7 +140,7 @@ const AMERICAS_KEYWORDS = [
   'latin america',
   'north america',
 ];
-const EUROPE_KEYWORDS = ['欧洲', 'europe', 'eu'];
+const EUROPE_KEYWORDS = ['欧洲', 'europe'];
 const AFRICA_KEYWORDS = ['非洲', 'africa', 'sahel'];
 
 const DEFAULT_COUNTRY_LABEL = '';
@@ -236,12 +148,31 @@ const TIE_BREAK_ORDER = new Map(
   ARCHIVE_VERTICAL_ORDER.map((vertical, index) => [vertical, index]),
 );
 
+interface ArchiveVerticalRuleSignalResult extends ArchiveRuleVerticalSignals {
+  score: number;
+}
+
+export interface ArchiveRuleVerticalSignals {
+  countryMatched: boolean;
+  matchedCountries: string[];
+  matchedStrongKeywords: string[];
+  matchedWeakKeywords: string[];
+  excludedKeywords: string[];
+  conflictKeywords: string[];
+}
+
+export type ArchiveRuleVerticalSignalMap = Record<
+  ArchiveVertical,
+  ArchiveRuleVerticalSignals
+>;
+
 export interface ArchiveClassifierInput {
   title?: string | null;
   summary?: string | null;
   topics?: unknown;
   entities?: unknown;
   location?: string | null;
+  source?: string | null;
 }
 
 export interface ArchiveClassificationResult {
@@ -259,7 +190,29 @@ export interface ArchiveRuleClassificationSignals {
   countryLabel: string;
   entityTags: string[];
   ruleScores: ArchiveVerticalScores;
+  matchedCountries: string[];
+  matchedKeywords: string[];
+  suppressedKeywords: string[];
+  countryMatchedVerticals: ArchiveVertical[];
+  verticalSignals: ArchiveRuleVerticalSignalMap;
 }
+
+const createEmptyVerticalSignals = (): ArchiveRuleVerticalSignals => ({
+  countryMatched: false,
+  matchedCountries: [],
+  matchedStrongKeywords: [],
+  matchedWeakKeywords: [],
+  excludedKeywords: [],
+  conflictKeywords: [],
+});
+
+const createVerticalSignalMap = (): ArchiveRuleVerticalSignalMap => ({
+  [ArchiveVertical.EAST_SEA]: createEmptyVerticalSignals(),
+  [ArchiveVertical.SOUTH_SEA]: createEmptyVerticalSignals(),
+  [ArchiveVertical.WEST_FRONT]: createEmptyVerticalSignals(),
+  [ArchiveVertical.FOREIGN_AFFAIRS]: createEmptyVerticalSignals(),
+  [ArchiveVertical.DOMESTIC_AFFAIRS]: createEmptyVerticalSignals(),
+});
 
 @Injectable()
 export class ArchiveClassifier {
@@ -286,7 +239,43 @@ export class ArchiveClassifier {
       input.location,
       entityTags,
     );
-    const ruleScores = this.resolveRuleScores(countryCodes, text);
+    const perVertical = this.resolveVerticalRuleSignals(countryCodes, text);
+    const ruleScores = createArchiveVerticalScoreMap();
+    const verticalSignals = createVerticalSignalMap();
+    const matchedCountries: string[] = [];
+    const matchedKeywords: string[] = [];
+    const suppressedKeywords: string[] = [];
+    const countryMatchedVerticals: ArchiveVertical[] = [];
+
+    for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+      const signal = perVertical.get(vertical);
+      if (!signal) {
+        continue;
+      }
+
+      ruleScores[vertical] = signal.score;
+      verticalSignals[vertical] = {
+        countryMatched: signal.countryMatched,
+        matchedCountries: [...signal.matchedCountries],
+        matchedStrongKeywords: [...signal.matchedStrongKeywords],
+        matchedWeakKeywords: [...signal.matchedWeakKeywords],
+        excludedKeywords: [...signal.excludedKeywords],
+        conflictKeywords: [...signal.conflictKeywords],
+      };
+
+      matchedCountries.push(...signal.matchedCountries);
+      matchedKeywords.push(
+        ...signal.matchedStrongKeywords,
+        ...signal.matchedWeakKeywords,
+      );
+      suppressedKeywords.push(
+        ...signal.excludedKeywords,
+        ...signal.conflictKeywords,
+      );
+      if (signal.countryMatched) {
+        countryMatchedVerticals.push(vertical);
+      }
+    }
 
     return {
       region: this.resolveRegion(countryCodes, text),
@@ -295,6 +284,11 @@ export class ArchiveClassifier {
       countryLabel,
       entityTags,
       ruleScores,
+      matchedCountries: Array.from(new Set(matchedCountries)),
+      matchedKeywords: Array.from(new Set(matchedKeywords)),
+      suppressedKeywords: Array.from(new Set(suppressedKeywords)),
+      countryMatchedVerticals,
+      verticalSignals,
     };
   }
 
@@ -335,38 +329,55 @@ export class ArchiveClassifier {
     return ArchiveRegion.OTHER;
   }
 
-  private resolveRuleScores(
+  private resolveVerticalRuleSignals(
     countryCodes: string[],
     text: string,
-  ): ArchiveVerticalScores {
-    const scores = createArchiveVerticalScoreMap();
+  ): Map<ArchiveVertical, ArchiveVerticalRuleSignalResult> {
+    const results = new Map<ArchiveVertical, ArchiveVerticalRuleSignalResult>();
 
-    scores[ArchiveVertical.EAST_SEA] = this.scoreVerticalRule({
-      countryCodes,
-      text,
-      countrySet: EAST_SEA_COUNTRIES,
-      keywords: EAST_SEA_KEYWORDS,
-    });
-    scores[ArchiveVertical.SOUTH_SEA] = this.scoreVerticalRule({
-      countryCodes,
-      text,
-      countrySet: SOUTH_SEA_COUNTRIES,
-      keywords: SOUTH_SEA_KEYWORDS,
-    });
-    scores[ArchiveVertical.WEST_FRONT] = this.scoreVerticalRule({
-      countryCodes,
-      text,
-      countrySet: WEST_FRONT_COUNTRIES,
-      keywords: WEST_FRONT_KEYWORDS,
-    });
-    if (this.matchAnyKeyword(text, FOREIGN_AFFAIRS_KEYWORDS)) {
-      scores[ArchiveVertical.FOREIGN_AFFAIRS] = ARCHIVE_RULE_WEAK_SCORE;
-    }
-    if (this.matchAnyKeyword(text, DOMESTIC_AFFAIRS_KEYWORDS)) {
-      scores[ArchiveVertical.DOMESTIC_AFFAIRS] = ARCHIVE_RULE_WEAK_SCORE;
+    for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+      const definition = ARCHIVE_VERTICAL_TAXONOMY[vertical];
+      const countrySet = new Set(definition.countries);
+      const matchedCountryCodes = countryCodes.filter((code) =>
+        countrySet.has(code),
+      );
+      const matchedStrongKeywords = this.collectKeywordMatches(
+        text,
+        definition.strongKeywords,
+      );
+      const matchedWeakKeywords = this.collectKeywordMatches(
+        text,
+        definition.weakKeywords,
+      );
+      const excludedKeywords = this.collectKeywordMatches(
+        text,
+        definition.excludedKeywords,
+      );
+      const conflictKeywords = this.collectKeywordMatches(
+        text,
+        definition.conflictKeywords,
+      );
+      const rawScore =
+        (matchedCountryCodes.length > 0 ? ARCHIVE_RULE_STRONG_SCORE : 0) +
+        matchedStrongKeywords.length * ARCHIVE_RULE_STRONG_KEYWORD_INCREMENT +
+        matchedWeakKeywords.length * ARCHIVE_RULE_WEAK_KEYWORD_INCREMENT -
+        excludedKeywords.length * ARCHIVE_RULE_EXCLUDED_KEYWORD_PENALTY -
+        conflictKeywords.length * ARCHIVE_RULE_CONFLICT_KEYWORD_PENALTY;
+
+      results.set(vertical, {
+        score: this.clamp01(rawScore),
+        countryMatched: matchedCountryCodes.length > 0,
+        matchedCountries: matchedCountryCodes.map(
+          (code) => getCountryName(code) ?? code,
+        ),
+        matchedStrongKeywords,
+        matchedWeakKeywords,
+        excludedKeywords,
+        conflictKeywords,
+      });
     }
 
-    return scores;
+    return results;
   }
 
   private resolveRuleVertical(ruleScores: ArchiveVerticalScores): ArchiveVertical {
@@ -392,31 +403,11 @@ export class ArchiveClassifier {
     return bestScore > 0 ? bestVertical : ArchiveVertical.FOREIGN_AFFAIRS;
   }
 
-  private scoreVerticalRule(params: {
-    countryCodes: string[];
-    text: string;
-    countrySet: Set<string>;
-    keywords: readonly string[];
-  }): number {
-    const countryMatch = params.countryCodes.some((code) =>
-      params.countrySet.has(code),
-    );
-    const keywordMatch = this.matchAnyKeyword(params.text, params.keywords);
-
-    if (countryMatch) {
-      return ARCHIVE_RULE_STRONG_SCORE;
-    }
-    if (keywordMatch) {
-      return ARCHIVE_RULE_WEAK_SCORE;
-    }
-    return 0;
-  }
-
   private resolveCountryLabel(
     countryCode: string | null,
     location: string | null | undefined,
     entityTags: string[],
-  ) {
+  ): string {
     if (countryCode) {
       const countryName = getCountryName(countryCode);
       if (countryName) {
@@ -441,7 +432,7 @@ export class ArchiveClassifier {
   private resolveCountryCodes(
     input: ArchiveClassifierInput,
     entityTags: string[],
-  ) {
+  ): string[] {
     const candidates: string[] = [];
     const push = (value: string | null) => {
       const normalized = normalizeCountryCode(value);
@@ -503,14 +494,16 @@ export class ArchiveClassifier {
         names.push(name);
       }
     }
-    return names;
+
+    return Array.from(new Set(names));
   }
 
-  private buildSearchText(input: ArchiveClassifierInput) {
+  private buildSearchText(input: ArchiveClassifierInput): string {
     return [
       this.normalizeOptionalString(input.title),
       this.normalizeOptionalString(input.summary),
       this.normalizeOptionalString(input.location),
+      this.normalizeOptionalString(input.source),
       ...this.normalizeStringArray(input.topics),
       ...this.normalizeEntityNames(input.entities),
     ]
@@ -519,11 +512,26 @@ export class ArchiveClassifier {
       .toLowerCase();
   }
 
-  private matchAnyKeyword(text: string, keywords: readonly string[]) {
+  private collectKeywordMatches(
+    text: string,
+    keywords: readonly string[],
+  ): string[] {
     if (!text) {
-      return false;
+      return [];
     }
-    return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+
+    return Array.from(
+      new Set(
+        keywords.filter((keyword) => {
+          const normalized = keyword.trim().toLowerCase();
+          return normalized.length > 0 && text.includes(normalized);
+        }),
+      ),
+    );
+  }
+
+  private matchAnyKeyword(text: string, keywords: readonly string[]): boolean {
+    return this.collectKeywordMatches(text, keywords).length > 0;
   }
 
   private normalizeOptionalString(value: unknown): string | null {
@@ -532,5 +540,18 @@ export class ArchiveClassifier {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private clamp01(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    if (value <= 0) {
+      return 0;
+    }
+    if (value >= 1) {
+      return 1;
+    }
+    return Number(value.toFixed(6));
   }
 }

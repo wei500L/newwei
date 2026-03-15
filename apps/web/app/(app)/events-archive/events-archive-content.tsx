@@ -38,9 +38,11 @@ import {
   REGION_OPTIONS,
   VERTICAL_FALLBACK_LABEL,
   VERTICAL_SECTIONS,
+  type ArchiveClassificationDetail,
   type ArchiveEventItem,
   type ArchiveMatchOrigin,
   type ArchiveRegion,
+  resolveArchiveClassificationSignals,
   resolveArchiveItemPreview,
   resolveArchiveRelevancePercent,
   resolveArchiveSearchFeedbackVisualState,
@@ -95,6 +97,7 @@ interface ArchiveDetailData {
   fullEntities: string[];
   sourceUrl?: string | null;
   sourceLabel?: string | null;
+  classification?: ArchiveClassificationDetail | null;
   timeline: Array<{
     id: string;
     bucketStart: string;
@@ -175,6 +178,22 @@ const ARCHIVE_DETAIL_QUERY = gql`
       fullEntities
       sourceUrl
       sourceLabel
+      classification {
+        region
+        vertical
+        taxonomyVersion
+        pipelineVersion
+        embeddingModel
+        rerankModel
+        ruleSignals
+        scoreEntries {
+          vertical
+          ruleScore
+          embeddingScore
+          rerankScore
+          fusedScore
+        }
+      }
       timeline {
         id
         bucketStart
@@ -426,6 +445,13 @@ export function EventsArchiveContent() {
       })),
     [t],
   );
+  const regionLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        regionOptions.map((option) => [option.value, option.label]),
+      ) as Record<ArchiveRegion, string>,
+    [regionOptions],
+  );
   const sectionLabels = useMemo(
     () => ({
       geo: t("pages.eventsArchive.sections.geo", {
@@ -614,6 +640,14 @@ export function EventsArchiveContent() {
     },
   );
   const detail = detailData?.archiveDetail ?? null;
+  const detailClassification = detail?.classification ?? null;
+  const visibleClassificationSignals = useMemo(
+    () =>
+      detailClassification
+        ? resolveArchiveClassificationSignals(detailClassification.ruleSignals, 8)
+        : [],
+    [detailClassification],
+  );
   const searchMode = archiveSearchQuery.length > 0;
   const normalizedSearchInput = searchInput.trim();
   const isSearchPending = normalizedSearchInput !== normalizedDebouncedSearch;
@@ -1517,6 +1551,157 @@ export function EventsArchiveContent() {
                     {detail.summary}
                   </Typography.Paragraph>
                 ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+              <div className="flex flex-col gap-3">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {t("pages.eventsArchive.detail.classification", {
+                    defaultValue: "分类依据",
+                  })}
+                </Typography.Text>
+                {!detailClassification ? (
+                  <Typography.Text type="secondary">
+                    {t("pages.eventsArchive.detail.classificationPending", {
+                      defaultValue: "分类准备中，后台完成归档后会显示判定依据。",
+                    })}
+                  </Typography.Text>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${resolveArchiveVerticalTone(detailClassification.vertical).titlePillClassName}`}
+                      >
+                        {verticalLabels[detailClassification.vertical]}
+                      </span>
+                      <span className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-200">
+                        {regionLabels[detailClassification.region] ??
+                          detailClassification.region}
+                      </span>
+                      <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                        {`taxonomy ${detailClassification.taxonomyVersion}`}
+                      </span>
+                      <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                        {`pipeline ${detailClassification.pipelineVersion}`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                      <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
+                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                          {t("pages.eventsArchive.detail.embeddingModel", {
+                            defaultValue: "Embedding model",
+                          })}
+                        </Typography.Text>
+                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
+                          {detailClassification.embeddingModel}
+                        </Typography.Paragraph>
+                      </div>
+                      <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
+                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                          {t("pages.eventsArchive.detail.rerankModel", {
+                            defaultValue: "Rerank model",
+                          })}
+                        </Typography.Text>
+                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
+                          {detailClassification.rerankModel}
+                        </Typography.Paragraph>
+                      </div>
+                    </div>
+
+                    {visibleClassificationSignals.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {visibleClassificationSignals.map((signal) => (
+                          <span
+                            key={signal}
+                            className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300"
+                          >
+                            {signal}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-col gap-2">
+                      {detailClassification.scoreEntries.map((entry) => {
+                        const fusedPercent =
+                          resolveArchiveRelevancePercent(entry.fusedScore) ?? 0;
+                        const tone = resolveArchiveVerticalTone(entry.vertical);
+                        return (
+                          <div
+                            key={entry.vertical}
+                            className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${tone.titlePillClassName}`}
+                              >
+                                {verticalLabels[entry.vertical]}
+                              </span>
+                              <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                {t("pages.eventsArchive.detail.fusedScore", {
+                                  defaultValue: "融合 {{percent}}%",
+                                  percent: fusedPercent,
+                                })}
+                              </Typography.Text>
+                            </div>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800/80">
+                              <div
+                                className={`h-full bg-gradient-to-r ${tone.accentGlowClassName}`}
+                                style={{ width: `${fusedPercent}%` }}
+                              />
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                              {[
+                                {
+                                  key: "rule",
+                                  label: t("pages.eventsArchive.detail.ruleScore", {
+                                    defaultValue: "Rule",
+                                  }),
+                                  value: entry.ruleScore,
+                                },
+                                {
+                                  key: "embedding",
+                                  label: t("pages.eventsArchive.detail.embeddingScore", {
+                                    defaultValue: "Embedding",
+                                  }),
+                                  value: entry.embeddingScore,
+                                },
+                                {
+                                  key: "rerank",
+                                  label: t("pages.eventsArchive.detail.rerankScore", {
+                                    defaultValue: "Rerank",
+                                  }),
+                                  value: entry.rerankScore,
+                                },
+                                {
+                                  key: "fused",
+                                  label: t("pages.eventsArchive.detail.fused", {
+                                    defaultValue: "Fusion",
+                                  }),
+                                  value: entry.fusedScore,
+                                },
+                              ].map((metric) => (
+                                <div
+                                  key={`${entry.vertical}-${metric.key}`}
+                                  className="rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-2 dark:border-slate-700/80 dark:bg-slate-950/70"
+                                >
+                                  <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                                    {metric.label}
+                                  </Typography.Text>
+                                  <Typography.Text className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                    {`${resolveArchiveRelevancePercent(metric.value) ?? 0}%`}
+                                  </Typography.Text>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             </section>
 

@@ -18,8 +18,8 @@ import {
   ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
   ARCHIVE_CLASSIFICATION_TEXT_VERSION,
   ARCHIVE_FUSION_WEIGHTS,
-  ARCHIVE_VERTICAL_ANCHORS,
 } from './archive-classification.constants';
+import { ARCHIVE_VERTICAL_ANCHOR_ENTRIES } from './archive-taxonomy';
 import {
   type ArchiveClassifierInput,
   type ArchiveRuleClassificationSignals,
@@ -33,9 +33,24 @@ import {
 } from './archive.types';
 
 const SCORE_TIE_EPSILON = 1e-9;
+const STRONG_RULE_CONFLICT_MAX_SCORE = 0.62;
+const STRONG_RULE_CONFLICT_MAX_GAP = 0.08;
+const SEMANTIC_MIN_CONFIDENCE = 0.55;
+const LOW_CONFIDENCE_FUSED_SCORE = 0.5;
 const VERTICAL_ORDER_INDEX = new Map<ArchiveVertical, number>(
   ARCHIVE_VERTICAL_ORDER.map((vertical, index) => [vertical, index]),
 );
+
+interface PreparedAnchorVariant {
+  vertical: ArchiveVertical;
+  anchorText: string;
+  anchorTextHash: string;
+}
+
+interface AnchorVectorEntry {
+  anchorTextHash: string;
+  vector: number[];
+}
 
 interface ClassifiedArchiveInput extends ArchiveClassifierInput {
   processedArticleId: string;
@@ -233,7 +248,9 @@ export class ArchiveClassificationService {
             vertical: this.selectVertical(
               fusedScores,
               input.ruleContext.ruleScores,
+              embeddingScoreMap,
               rerankScoreMap,
+              input.ruleContext,
             ),
             countryCode: input.ruleContext.countryCode,
             countryLabel: input.ruleContext.countryLabel,
@@ -396,12 +413,14 @@ export class ArchiveClassificationService {
     orgId: string,
     embeddingModel: string,
     inputs: PreparedArchiveInput[],
-  ): Promise<Map<ArchiveVertical, number[]>> {
-    const anchors = ARCHIVE_VERTICAL_ORDER.map((vertical) => ({
-      vertical,
-      anchorText: ARCHIVE_VERTICAL_ANCHORS[vertical],
-      anchorTextHash: this.hashText(ARCHIVE_VERTICAL_ANCHORS[vertical]),
-    }));
+  ): Promise<Map<ArchiveVertical, AnchorVectorEntry[]>> {
+    const anchors = this.buildAnchorVariants();
+    const anchorByKey = new Map(
+      anchors.map((anchor) => [
+        `${anchor.vertical}:${anchor.anchorTextHash}`,
+        anchor,
+      ]),
+    );
 
     const rows = await this.prisma.archiveVerticalAnchorEmbedding.findMany({
       where: {
@@ -416,25 +435,38 @@ export class ArchiveClassificationService {
       },
     });
 
-    const vectors = new Map<ArchiveVertical, number[]>();
+    const vectors = new Map<ArchiveVertical, AnchorVectorEntry[]>(
+      ARCHIVE_VERTICAL_ORDER.map((vertical) => [vertical, []]),
+    );
     for (const row of rows) {
       const vertical = this.parseVertical(row.vertical);
       if (!vertical) {
         continue;
       }
-      const anchor = anchors.find((entry) => entry.vertical === vertical);
-      if (!anchor || row.anchorTextHash !== anchor.anchorTextHash) {
+      const anchor = anchorByKey.get(`${vertical}:${row.anchorTextHash}`);
+      if (!anchor) {
         continue;
       }
       const vector = this.parseVector(row.embeddingVector);
       if (vector.length === 0) {
         continue;
       }
-      vectors.set(vertical, vector);
+      const existing = vectors.get(vertical) ?? [];
+      if (existing.some((entry) => entry.anchorTextHash === row.anchorTextHash)) {
+        continue;
+      }
+      existing.push({
+        anchorTextHash: row.anchorTextHash,
+        vector,
+      });
+      vectors.set(vertical, existing);
     }
 
     const missingAnchors = anchors.filter(
-      (anchor) => !vectors.has(anchor.vertical),
+      (anchor) =>
+        !(vectors.get(anchor.vertical) ?? []).some(
+          (entry) => entry.anchorTextHash === anchor.anchorTextHash,
+        ),
     );
     if (missingAnchors.length === 0) {
       return vectors;
@@ -494,7 +526,12 @@ export class ArchiveClassificationService {
           },
         );
       }
-      vectors.set(anchor.vertical, vector);
+      const existing = vectors.get(anchor.vertical) ?? [];
+      existing.push({
+        anchorTextHash: anchor.anchorTextHash,
+        vector,
+      });
+      vectors.set(anchor.vertical, existing);
 
       return this.prisma.archiveVerticalAnchorEmbedding.upsert({
         where: {
@@ -543,13 +580,13 @@ export class ArchiveClassificationService {
     orgId: string,
     inputs: PreparedArchiveInput[],
     embeddingModel: string,
-    anchorVectors: Map<ArchiveVertical, number[]>,
+    anchorVectors: Map<ArchiveVertical, AnchorVectorEntry[]>,
     runtime: ArchiveClassificationRuntimeOptions,
   ): Promise<Map<string, ArchiveVerticalScores>> {
-    const normalizedAnchors = new Map<ArchiveVertical, number[]>();
+    const normalizedAnchors = new Map<ArchiveVertical, number[][]>();
     for (const vertical of ARCHIVE_VERTICAL_ORDER) {
-      const vector = anchorVectors.get(vertical);
-      if (!vector || vector.length === 0) {
+      const vectors = anchorVectors.get(vertical) ?? [];
+      if (vectors.length === 0) {
         throw this.buildException(
           'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
           'Archive anchor embedding is missing for one or more verticals.',
@@ -562,21 +599,28 @@ export class ArchiveClassificationService {
           },
         );
       }
-      const normalizedVector = this.normalizeVector(vector);
-      if (normalizedVector.length === 0) {
-        throw this.buildException(
-          'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-          'Archive anchor embedding vector is invalid.',
-          {
-            orgId,
-            layer: 'embedding',
-            embeddingModel,
-            vertical,
-            processedArticleIds: inputs.map((input) => input.processedArticleId),
-          },
-        );
-      }
-      normalizedAnchors.set(vertical, normalizedVector);
+      normalizedAnchors.set(
+        vertical,
+        vectors.map((entry) => {
+          const normalizedVector = this.normalizeVector(entry.vector);
+          if (normalizedVector.length === 0) {
+            throw this.buildException(
+              'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
+              'Archive anchor embedding vector is invalid.',
+              {
+                orgId,
+                layer: 'embedding',
+                embeddingModel,
+                vertical,
+                processedArticleIds: inputs.map(
+                  (input) => input.processedArticleId,
+                ),
+              },
+            );
+          }
+          return normalizedVector;
+        }),
+      );
     }
 
     const chunks: PreparedArchiveInput[][] = [];
@@ -670,11 +714,11 @@ export class ArchiveClassificationService {
 
           const scores = createArchiveVerticalScoreMap();
           for (const vertical of ARCHIVE_VERTICAL_ORDER) {
-            const normalizedAnchor = normalizedAnchors.get(vertical);
-            if (!normalizedAnchor || normalizedAnchor.length !== normalizedQuery.length) {
+            const perVerticalAnchors = normalizedAnchors.get(vertical);
+            if (!perVerticalAnchors || perVerticalAnchors.length === 0) {
               throw this.buildException(
                 'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
-                'Archive embedding vectors use inconsistent dimensions.',
+                'Archive embedding vectors are missing for one or more verticals.',
                 {
                   orgId,
                   processedArticleId: input.processedArticleId,
@@ -685,9 +729,27 @@ export class ArchiveClassificationService {
                 },
               );
             }
-
-            const cosine = this.dot(normalizedQuery, normalizedAnchor);
-            scores[vertical] = this.clamp01((cosine + 1) / 2);
+            const perVariantScores = perVerticalAnchors.map((normalizedAnchor) => {
+              if (normalizedAnchor.length !== normalizedQuery.length) {
+                throw this.buildException(
+                  'ARCHIVE_CLASSIFICATION_EMBEDDING_FAILED',
+                  'Archive embedding vectors use inconsistent dimensions.',
+                  {
+                    orgId,
+                    processedArticleId: input.processedArticleId,
+                    articleId: input.articleId,
+                    layer: 'embedding',
+                    embeddingModel,
+                    vertical,
+                  },
+                );
+              }
+              const cosine = this.dot(normalizedQuery, normalizedAnchor);
+              return this.clamp01((cosine + 1) / 2);
+            });
+            scores[vertical] = this.clamp01(
+              this.averageTopScores(perVariantScores),
+            );
           }
           result.set(input.processedArticleId, scores);
         }
@@ -712,9 +774,8 @@ export class ArchiveClassificationService {
     runtime: ArchiveClassificationRuntimeOptions,
   ): Promise<Map<string, ArchiveVerticalScores>> {
     const scoresById = new Map<string, ArchiveVerticalScores>();
-    const documents = ARCHIVE_VERTICAL_ORDER.map(
-      (vertical) => ARCHIVE_VERTICAL_ANCHORS[vertical],
-    );
+    const anchorVariants = this.buildAnchorVariants();
+    const documents = anchorVariants.map((anchor) => anchor.anchorText);
 
     const results = await this.mapWithConcurrency(
       inputs,
@@ -755,11 +816,15 @@ export class ArchiveClassificationService {
           .map((entry) => {
             const index = typeof entry.index === 'number' ? entry.index : -1;
             const score = typeof entry.score === 'number' ? entry.score : null;
-            if (index < 0 || index >= ARCHIVE_VERTICAL_ORDER.length || score === null) {
+            if (index < 0 || index >= anchorVariants.length || score === null) {
+              return null;
+            }
+            const anchor = anchorVariants[index];
+            if (!anchor) {
               return null;
             }
             return {
-              vertical: ARCHIVE_VERTICAL_ORDER[index]!,
+              vertical: anchor.vertical,
               score,
             };
           })
@@ -784,15 +849,33 @@ export class ArchiveClassificationService {
           );
         }
 
-        const minScore = Math.min(...rawResults.map((entry) => entry.score));
-        const maxScore = Math.max(...rawResults.map((entry) => entry.score));
+        const groupedScores = new Map<ArchiveVertical, number[]>();
+        for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+          groupedScores.set(vertical, []);
+        }
+        for (const entry of rawResults) {
+          groupedScores.get(entry.vertical)?.push(entry.score);
+        }
+
+        const aggregated = createArchiveVerticalScoreMap();
+        for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+          aggregated[vertical] = this.averageTopScores(
+            groupedScores.get(vertical) ?? [],
+          );
+        }
+
+        const values = ARCHIVE_VERTICAL_ORDER.map((vertical) => aggregated[vertical]);
+        const minScore = Math.min(...values);
+        const maxScore = Math.max(...values);
         const normalized = createArchiveVerticalScoreMap();
 
-        for (const entry of rawResults) {
-          normalized[entry.vertical] =
+        for (const vertical of ARCHIVE_VERTICAL_ORDER) {
+          normalized[vertical] =
             maxScore === minScore
               ? 1
-              : this.clamp01((entry.score - minScore) / (maxScore - minScore));
+              : this.clamp01(
+                  (aggregated[vertical] - minScore) / (maxScore - minScore),
+                );
         }
 
         return {
@@ -848,29 +931,61 @@ export class ArchiveClassificationService {
   private selectVertical(
     fusedScores: ArchiveVerticalScores,
     ruleScores: ArchiveVerticalScores,
+    embeddingScores: ArchiveVerticalScores,
     rerankScores: ArchiveVerticalScores,
+    ruleContext: ArchiveRuleClassificationSignals,
   ): ArchiveVertical {
-    return ARCHIVE_VERTICAL_ORDER.slice().sort((left, right) => {
-      const fusedDelta = (fusedScores[right] ?? 0) - (fusedScores[left] ?? 0);
-      if (Math.abs(fusedDelta) > SCORE_TIE_EPSILON) {
-        return fusedDelta > 0 ? 1 : -1;
-      }
+    const rank = (scores: ArchiveVerticalScores) =>
+      ARCHIVE_VERTICAL_ORDER.slice().sort((left, right) => {
+        const delta = (scores[right] ?? 0) - (scores[left] ?? 0);
+        if (Math.abs(delta) > SCORE_TIE_EPSILON) {
+          return delta > 0 ? 1 : -1;
+        }
+        return (
+          (VERTICAL_ORDER_INDEX.get(left) ?? Number.MAX_SAFE_INTEGER) -
+          (VERTICAL_ORDER_INDEX.get(right) ?? Number.MAX_SAFE_INTEGER)
+        );
+      });
 
-      const ruleDelta = (ruleScores[right] ?? 0) - (ruleScores[left] ?? 0);
-      if (Math.abs(ruleDelta) > SCORE_TIE_EPSILON) {
-        return ruleDelta > 0 ? 1 : -1;
-      }
+    const fusedRank = rank(fusedScores);
+    const ruleRank = rank(ruleScores);
+    const preliminaryWinner = fusedRank[0] ?? ArchiveVertical.FOREIGN_AFFAIRS;
+    const ruleWinner = ruleRank[0] ?? ArchiveVertical.FOREIGN_AFFAIRS;
+    const strongRuleVertical =
+      ruleContext.countryMatchedVerticals.find((vertical) =>
+        ARCHIVE_VERTICAL_ORDER.includes(vertical),
+      ) ?? null;
 
-      const rerankDelta = (rerankScores[right] ?? 0) - (rerankScores[left] ?? 0);
-      if (Math.abs(rerankDelta) > SCORE_TIE_EPSILON) {
-        return rerankDelta > 0 ? 1 : -1;
+    if (strongRuleVertical && preliminaryWinner !== strongRuleVertical) {
+      const winnerScore = fusedScores[preliminaryWinner] ?? 0;
+      const strongRuleScore = fusedScores[strongRuleVertical] ?? 0;
+      const gap = winnerScore - strongRuleScore;
+      if (
+        winnerScore < STRONG_RULE_CONFLICT_MAX_SCORE ||
+        gap < STRONG_RULE_CONFLICT_MAX_GAP
+      ) {
+        return strongRuleVertical;
       }
+    }
 
-      return (
-        (VERTICAL_ORDER_INDEX.get(left) ?? Number.MAX_SAFE_INTEGER) -
-        (VERTICAL_ORDER_INDEX.get(right) ?? Number.MAX_SAFE_INTEGER)
-      );
-    })[0]!;
+    if (
+      preliminaryWinner !== strongRuleVertical &&
+      (embeddingScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE &&
+      (rerankScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE
+    ) {
+      return ruleWinner;
+    }
+
+    if (
+      (ruleScores[ruleWinner] ?? 0) <= 0 &&
+      (embeddingScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE &&
+      (rerankScores[preliminaryWinner] ?? 0) < SEMANTIC_MIN_CONFIDENCE &&
+      (fusedScores[preliminaryWinner] ?? 0) < LOW_CONFIDENCE_FUSED_SCORE
+    ) {
+      return ArchiveVertical.FOREIGN_AFFAIRS;
+    }
+
+    return fusedRank[0] ?? ArchiveVertical.FOREIGN_AFFAIRS;
   }
 
   private async persistResults(
@@ -949,12 +1064,17 @@ export class ArchiveClassificationService {
     }
   }
 
-  private buildClassificationText(input: ArchiveClassifierInput): string {
+  private buildClassificationText(input: ClassifiedArchiveInput): string {
     const title = this.normalizeOptionalString(input.title);
     const summary = this.normalizeOptionalString(input.summary);
     const topics = this.normalizeStringArray(input.topics);
     const entities = this.normalizeEntityNames(input.entities);
     const location = this.normalizeOptionalString(input.location);
+    const source = this.normalizeOptionalString(input.source);
+    const countryHint =
+      this.normalizeOptionalString(input.ruleContext.countryLabel) ??
+      input.ruleContext.countryCode;
+    const regionHint = input.ruleContext.region;
 
     const lines = [
       title ? `Title: ${title}` : null,
@@ -962,6 +1082,9 @@ export class ArchiveClassificationService {
       topics.length > 0 ? `Topics: ${topics.join(' | ')}` : null,
       entities.length > 0 ? `Entities: ${entities.join(' | ')}` : null,
       location ? `Location: ${location}` : null,
+      source ? `Source: ${source}` : null,
+      countryHint ? `Country hint: ${countryHint}` : null,
+      `Region hint: ${regionHint}`,
     ].filter((entry): entry is string => Boolean(entry));
 
     return lines.length > 0 ? lines.join('\n') : ARCHIVE_CLASSIFICATION_EMPTY_TEXT;
@@ -1073,6 +1196,29 @@ export class ArchiveClassificationService {
       total += left[index]! * right[index]!;
     }
     return total;
+  }
+
+  private averageTopScores(scores: number[], take = 2): number {
+    if (scores.length === 0) {
+      return 0;
+    }
+    const selected = scores
+      .filter((score) => Number.isFinite(score))
+      .sort((left, right) => right - left)
+      .slice(0, Math.max(1, take));
+    if (selected.length === 0) {
+      return 0;
+    }
+    const total = selected.reduce((sum, score) => sum + score, 0);
+    return this.clamp01(total / selected.length);
+  }
+
+  private buildAnchorVariants(): PreparedAnchorVariant[] {
+    return ARCHIVE_VERTICAL_ANCHOR_ENTRIES.map((anchor) => ({
+      vertical: anchor.vertical,
+      anchorText: anchor.anchorText,
+      anchorTextHash: this.hashText(anchor.anchorText),
+    }));
   }
 
   private clamp01(value: number): number {

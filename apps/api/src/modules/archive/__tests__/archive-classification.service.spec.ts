@@ -15,18 +15,78 @@ import {
   ARCHIVE_CLASSIFICATION_PIPELINE_VERSION,
   ARCHIVE_CLASSIFICATION_TAXONOMY_VERSION,
   ARCHIVE_CLASSIFICATION_TEXT_VERSION,
-  ARCHIVE_VERTICAL_ANCHORS,
 } from '../archive-classification.constants';
+import {
+  type ArchiveRuleVerticalSignals,
+} from '../archive.classifier';
+import { ARCHIVE_VERTICAL_ANCHOR_ENTRIES } from '../archive-taxonomy';
 import { ArchiveRegion, ArchiveVertical, createArchiveVerticalScoreMap } from '../archive.types';
 
 const hashText = (value: string) =>
   createHash('sha256').update(value, 'utf8').digest('hex');
+
+const ANCHOR_VARIANTS = ARCHIVE_VERTICAL_ANCHOR_ENTRIES;
+
+const VERTICAL_VECTORS: Record<ArchiveVertical, number[]> = {
+  [ArchiveVertical.EAST_SEA]: [1, 0, 0, 0, 0],
+  [ArchiveVertical.SOUTH_SEA]: [0, 1, 0, 0, 0],
+  [ArchiveVertical.WEST_FRONT]: [0, 0, 1, 0, 0],
+  [ArchiveVertical.FOREIGN_AFFAIRS]: [0, 0, 0, 1, 0],
+  [ArchiveVertical.DOMESTIC_AFFAIRS]: [0, 0, 0, 0, 1],
+};
+
+const makeAnchorEmbeddingResponse = () => ({
+  model: 'embedding-model',
+  data: ANCHOR_VARIANTS.map((anchor, index) => ({
+    index,
+    embedding: VERTICAL_VECTORS[anchor.vertical],
+  })),
+});
+
+const makeStoredAnchorRows = () =>
+  ANCHOR_VARIANTS.map((anchor) => ({
+    vertical: anchor.vertical,
+    anchorTextHash: hashText(anchor.anchorText),
+    embeddingVector: VERTICAL_VECTORS[anchor.vertical],
+  }));
+
+const firstAnchorIndexFor = (vertical: ArchiveVertical) =>
+  ANCHOR_VARIANTS.findIndex((anchor) => anchor.vertical === vertical);
+
+const makeVerticalSignal = (
+  overrides: Partial<ArchiveRuleVerticalSignals> = {},
+): ArchiveRuleVerticalSignals => ({
+  countryMatched: false,
+  matchedCountries: [],
+  matchedStrongKeywords: [],
+  matchedWeakKeywords: [],
+  excludedKeywords: [],
+  conflictKeywords: [],
+  ...overrides,
+});
+
+const makeVerticalSignalMap = (
+  overrides: Partial<Record<ArchiveVertical, Partial<ArchiveRuleVerticalSignals>>> = {},
+) => ({
+  [ArchiveVertical.EAST_SEA]: makeVerticalSignal(overrides[ArchiveVertical.EAST_SEA]),
+  [ArchiveVertical.SOUTH_SEA]: makeVerticalSignal(overrides[ArchiveVertical.SOUTH_SEA]),
+  [ArchiveVertical.WEST_FRONT]: makeVerticalSignal(overrides[ArchiveVertical.WEST_FRONT]),
+  [ArchiveVertical.FOREIGN_AFFAIRS]: makeVerticalSignal(overrides[ArchiveVertical.FOREIGN_AFFAIRS]),
+  [ArchiveVertical.DOMESTIC_AFFAIRS]: makeVerticalSignal(overrides[ArchiveVertical.DOMESTIC_AFFAIRS]),
+});
 
 const makeRuleContext = (
   ruleScores = {
     ...createArchiveVerticalScoreMap(),
     [ArchiveVertical.EAST_SEA]: 1,
   },
+  overrides?: Partial<{
+    countryMatchedVerticals: ArchiveVertical[];
+    verticalSignals: Partial<Record<ArchiveVertical, Partial<ArchiveRuleVerticalSignals>>>;
+    matchedCountries: string[];
+    matchedKeywords: string[];
+    suppressedKeywords: string[];
+  }>,
 ) => ({
   region: ArchiveRegion.APAC,
   ruleVertical: ArchiveVertical.EAST_SEA,
@@ -34,6 +94,19 @@ const makeRuleContext = (
   countryLabel: 'Japan',
   entityTags: ['Japan'],
   ruleScores,
+  matchedCountries: overrides?.matchedCountries ?? ['【东海】 Japan'],
+  matchedKeywords: overrides?.matchedKeywords ?? ['【东海】 east china sea'],
+  suppressedKeywords: overrides?.suppressedKeywords ?? [],
+  countryMatchedVerticals:
+    overrides?.countryMatchedVerticals ?? [ArchiveVertical.EAST_SEA],
+  verticalSignals: makeVerticalSignalMap({
+    [ArchiveVertical.EAST_SEA]: {
+      countryMatched: true,
+      matchedCountries: ['Japan'],
+      matchedStrongKeywords: ['east china sea'],
+    },
+    ...overrides?.verticalSignals,
+  }),
 });
 
 const makeInput = (
@@ -43,6 +116,7 @@ const makeInput = (
   articleId: 'article-1',
   title: 'Japan updates East China Sea posture',
   summary: 'Tokyo reviews maritime security coordination.',
+  source: 'Kyodo',
   topics: ['east china sea', 'security'],
   entities: [{ name: 'Japan' }],
   location: 'Japan',
@@ -74,26 +148,17 @@ describe('ArchiveClassificationService', () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
     liteLlm.embedding
+      .mockResolvedValueOnce(makeAnchorEmbeddingResponse())
       .mockResolvedValueOnce({
         model: 'embedding-model',
-        data: [
-          { index: 0, embedding: [1, 0, 0, 0, 0] },
-          { index: 1, embedding: [0, 1, 0, 0, 0] },
-          { index: 2, embedding: [0, 0, 1, 0, 0] },
-          { index: 3, embedding: [0, 0, 0, 1, 0] },
-          { index: 4, embedding: [0, 0, 0, 0, 1] },
-        ],
-      })
-      .mockResolvedValueOnce({
-        model: 'embedding-model',
-        data: [{ index: 0, embedding: [1, 0, 0, 0, 0] }],
+        data: [{ index: 0, embedding: VERTICAL_VECTORS[ArchiveVertical.EAST_SEA] }],
       });
     liteLlm.rerank.mockResolvedValue({
       model: 'rerank-model',
       results: [
-        { index: 0, score: 0.95 },
-        { index: 1, score: 0.4 },
-        { index: 2, score: 0.2 },
+        { index: firstAnchorIndexFor(ArchiveVertical.EAST_SEA), score: 0.95 },
+        { index: firstAnchorIndexFor(ArchiveVertical.SOUTH_SEA), score: 0.4 },
+        { index: firstAnchorIndexFor(ArchiveVertical.WEST_FRONT), score: 0.2 },
       ],
     });
 
@@ -109,7 +174,9 @@ describe('ArchiveClassificationService', () => {
     expect(result.fusedScores[ArchiveVertical.EAST_SEA]).toBeGreaterThan(
       result.fusedScores[ArchiveVertical.SOUTH_SEA],
     );
-    expect(prisma.archiveVerticalAnchorEmbedding.upsert).toHaveBeenCalledTimes(5);
+    expect(prisma.archiveVerticalAnchorEmbedding.upsert).toHaveBeenCalledTimes(
+      ANCHOR_VARIANTS.length,
+    );
     expect(prisma.archiveArticleClassification.upsert).toHaveBeenCalledTimes(1);
   });
 
@@ -123,6 +190,9 @@ describe('ArchiveClassificationService', () => {
       'Topics: east china sea | security',
       'Entities: Japan',
       'Location: Japan',
+      'Source: Kyodo',
+      'Country hint: Japan',
+      'Region hint: APAC',
     ].join('\n');
     prisma.archiveArticleClassification.findMany.mockResolvedValue([
       {
@@ -165,6 +235,9 @@ describe('ArchiveClassificationService', () => {
       'Topics: east china sea | security',
       'Entities: Japan',
       'Location: Japan',
+      'Source: Kyodo',
+      'Country hint: Japan',
+      'Region hint: APAC',
     ].join('\n');
     prisma.archiveArticleClassification.findMany.mockResolvedValue([
       {
@@ -200,28 +273,15 @@ describe('ArchiveClassificationService', () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
     prisma.archiveVerticalAnchorEmbedding.findMany.mockResolvedValue(
-      Object.entries(ARCHIVE_VERTICAL_ANCHORS).map(([vertical, anchorText], index) => ({
-        vertical,
-        anchorTextHash: hashText(anchorText),
-        embeddingVector:
-          index === 0
-            ? [1, 0, 0, 0, 0]
-            : index === 1
-              ? [-1, 0, 0, 0, 0]
-              : index === 2
-                ? [0, 0, 1, 0, 0]
-                : index === 3
-                  ? [0, 0, 0, 1, 0]
-                  : [0, 0, 0, 0, 1],
-      })),
+      makeStoredAnchorRows(),
     );
     liteLlm.embedding.mockResolvedValue({
       model: 'embedding-model',
-      data: [{ index: 0, embedding: [1, 0, 0, 0, 0] }],
+      data: [{ index: 0, embedding: VERTICAL_VECTORS[ArchiveVertical.EAST_SEA] }],
     });
     liteLlm.rerank.mockResolvedValue({
       model: 'rerank-model',
-      results: [{ index: 0, score: 0.9 }],
+      results: [{ index: firstAnchorIndexFor(ArchiveVertical.EAST_SEA), score: 0.9 }],
     });
 
     const service = new ArchiveClassificationService(prisma as any, liteLlm as any);
@@ -235,38 +295,39 @@ describe('ArchiveClassificationService', () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
     prisma.archiveVerticalAnchorEmbedding.findMany.mockResolvedValue(
-      Object.entries(ARCHIVE_VERTICAL_ANCHORS).map(([vertical, anchorText], index) => ({
-        vertical,
-        anchorTextHash: hashText(anchorText),
-        embeddingVector:
-          index === 0
-            ? [1, 0, 0, 0, 0]
-            : index === 1
-              ? [-1, 0, 0, 0, 0]
-              : index === 2
-                ? [0, 0, 1, 0, 0]
-                : index === 3
-                  ? [0, 0, 0, 1, 0]
-                  : [0, 0, 0, 0, 1],
-      })),
+      makeStoredAnchorRows(),
     );
     liteLlm.embedding.mockResolvedValue({
       model: 'embedding-model',
-      data: [{ index: 0, embedding: [0, 1, 0, 0, 0] }],
+      data: [{ index: 0, embedding: VERTICAL_VECTORS[ArchiveVertical.SOUTH_SEA] }],
     });
     liteLlm.rerank.mockResolvedValue({
       model: 'rerank-model',
-      results: [{ index: 2, score: 0.8 }],
+      results: [{ index: firstAnchorIndexFor(ArchiveVertical.WEST_FRONT), score: 0.8 }],
     });
 
     const service = new ArchiveClassificationService(prisma as any, liteLlm as any);
     const result = await service.classifyHybrid(
       'org-1',
       makeInput({
-        ruleContext: makeRuleContext({
-          ...createArchiveVerticalScoreMap(),
-          [ArchiveVertical.WEST_FRONT]: 1,
-        }),
+        ruleContext: makeRuleContext(
+          {
+            ...createArchiveVerticalScoreMap(),
+            [ArchiveVertical.WEST_FRONT]: 1,
+          },
+          {
+            matchedCountries: ['【西面】 Pakistan'],
+            matchedKeywords: ['【西面】 kashmir'],
+            countryMatchedVerticals: [ArchiveVertical.WEST_FRONT],
+            verticalSignals: {
+              [ArchiveVertical.WEST_FRONT]: {
+                countryMatched: true,
+                matchedCountries: ['Pakistan'],
+                matchedStrongKeywords: ['kashmir'],
+              },
+            },
+          },
+        ),
       }),
     );
 
@@ -276,72 +337,37 @@ describe('ArchiveClassificationService', () => {
     expect(result.vertical).toBe(ArchiveVertical.WEST_FRONT);
   });
 
-  it('uses rerank score as the second tie-break when fused and rule scores tie', async () => {
+  it('falls back to the strong country rule when the semantic winner is marginal', async () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
     prisma.archiveVerticalAnchorEmbedding.findMany.mockResolvedValue(
-      Object.entries(ARCHIVE_VERTICAL_ANCHORS).map(([vertical, anchorText], index) => ({
-        vertical,
-        anchorTextHash: hashText(anchorText),
-        embeddingVector:
-          index === 0
-            ? [1, 0, 0, 0, 0]
-            : index === 1
-              ? [-1, 0, 0, 0, 0]
-              : index === 2
-                ? [0, 0, 1, 0, 0]
-                : index === 3
-                  ? [0, 0, 0, 1, 0]
-                  : [0, 0, 0, 0, 1],
-      })),
+      makeStoredAnchorRows(),
     );
     liteLlm.embedding.mockResolvedValue({
       model: 'embedding-model',
-      data: [{ index: 0, embedding: [1, 0, 0, 0, 0] }],
+      data: [{ index: 0, embedding: VERTICAL_VECTORS[ArchiveVertical.SOUTH_SEA] }],
     });
     liteLlm.rerank.mockResolvedValue({
       model: 'rerank-model',
-      results: [
-        { index: 1, score: 1 },
-        { index: 0, score: 0 },
-      ],
+      results: [{ index: firstAnchorIndexFor(ArchiveVertical.SOUTH_SEA), score: 0.95 }],
     });
 
     const service = new ArchiveClassificationService(prisma as any, liteLlm as any);
-    const result = await service.classifyHybrid(
-      'org-1',
-      makeInput({
-        ruleContext: makeRuleContext({
-          ...createArchiveVerticalScoreMap(),
-          [ArchiveVertical.EAST_SEA]: 1,
-          [ArchiveVertical.SOUTH_SEA]: 1,
-        }),
-      }),
-    );
+    const result = await service.classifyHybrid('org-1', makeInput());
 
-    expect(result.fusedScores[ArchiveVertical.EAST_SEA]).toBe(
-      result.fusedScores[ArchiveVertical.SOUTH_SEA],
-    );
-    expect(result.vertical).toBe(ArchiveVertical.SOUTH_SEA);
+    expect(result.embeddingScores[ArchiveVertical.SOUTH_SEA]).toBe(1);
+    expect(result.rerankScores[ArchiveVertical.SOUTH_SEA]).toBe(1);
+    expect(result.vertical).toBe(ArchiveVertical.EAST_SEA);
   });
 
   it('throws instead of silently degrading when rerank fails', async () => {
     const prisma = makePrismaMock();
     const liteLlm = makeLiteLlmMock();
     liteLlm.embedding
+      .mockResolvedValueOnce(makeAnchorEmbeddingResponse())
       .mockResolvedValueOnce({
         model: 'embedding-model',
-        data: [
-          { index: 0, embedding: [1, 0, 0, 0, 0] },
-          { index: 1, embedding: [0, 1, 0, 0, 0] },
-          { index: 2, embedding: [0, 0, 1, 0, 0] },
-          { index: 3, embedding: [0, 0, 0, 1, 0] },
-          { index: 4, embedding: [0, 0, 0, 0, 1] },
-        ],
-      })
-      .mockResolvedValueOnce({
-        model: 'embedding-model',
-        data: [{ index: 0, embedding: [1, 0, 0, 0, 0] }],
+        data: [{ index: 0, embedding: VERTICAL_VECTORS[ArchiveVertical.EAST_SEA] }],
       });
     liteLlm.rerank.mockRejectedValue(new Error('rerank down'));
 

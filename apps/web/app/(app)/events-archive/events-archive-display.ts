@@ -36,6 +36,25 @@ export interface ArchiveEventItem {
   relevanceScore?: number | null;
 }
 
+export interface ArchiveClassificationScoreEntry {
+  vertical: ArchiveVertical;
+  ruleScore: number;
+  embeddingScore: number;
+  rerankScore: number;
+  fusedScore: number;
+}
+
+export interface ArchiveClassificationDetail {
+  region: ArchiveRegion;
+  vertical: ArchiveVertical;
+  taxonomyVersion: string;
+  pipelineVersion: string;
+  embeddingModel: string;
+  rerankModel: string;
+  ruleSignals: string[];
+  scoreEntries: ArchiveClassificationScoreEntry[];
+}
+
 export interface ArchiveVerticalTone {
   accentDotClassName: string;
   accentGlowClassName: string;
@@ -171,6 +190,18 @@ export const resolveArchiveRelevancePercent = (score?: number | null) =>
   typeof score === 'number' && Number.isFinite(score)
     ? Math.round(score * 100)
     : null;
+
+export const resolveArchiveClassificationSignals = (
+  signals: string[],
+  limit = 6,
+) =>
+  Array.from(
+    new Set(
+      signals
+        .map((signal) => signal.trim())
+        .filter((signal) => signal.length > 0),
+    ),
+  ).slice(0, Math.max(1, limit));
 
 export const resolveArchiveSearchFeedbackVisualState = (
   tone: ArchiveSearchFeedbackTone,

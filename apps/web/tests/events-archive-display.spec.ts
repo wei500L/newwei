@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   VERTICAL_SECTIONS,
+  resolveArchiveClassificationSignals,
   resolveArchiveItemPreview,
   resolveArchiveRelevancePercent,
   resolveArchiveSearchFeedbackVisualState,
@@ -80,5 +81,14 @@ describe('events archive display helpers', () => {
     );
     expect(resolveArchiveSearchFeedbackVisualState('info')).toBe('minChars');
     expect(resolveArchiveSearchFeedbackVisualState('ready')).toBe('ready');
+  });
+
+  it('deduplicates and caps classification rule signals for the detail drawer', () => {
+    expect(
+      resolveArchiveClassificationSignals(
+        [' Rule ', 'Rule', 'Embedding', '', 'Rerank'],
+        2,
+      ),
+    ).toEqual(['Rule', 'Embedding']);
   });
 });

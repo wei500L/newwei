@@ -218,7 +218,27 @@ input ArchiveCalendarInput {
   vertical: ArchiveVertical
 }
 
+type ArchiveClassificationDetailModel {
+  embeddingModel: String!
+  pipelineVersion: String!
+  region: ArchiveRegion!
+  rerankModel: String!
+  ruleSignals: [String!]!
+  scoreEntries: [ArchiveClassificationScoreEntryModel!]!
+  taxonomyVersion: String!
+  vertical: ArchiveVertical!
+}
+
+type ArchiveClassificationScoreEntryModel {
+  embeddingScore: Float!
+  fusedScore: Float!
+  rerankScore: Float!
+  ruleScore: Float!
+  vertical: ArchiveVertical!
+}
+
 type ArchiveDetailModel {
+  classification: ArchiveClassificationDetailModel
   eventId: String
   fullEntities: [String!]!
   processedArticleId: String!

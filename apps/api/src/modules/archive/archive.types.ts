@@ -171,6 +171,25 @@ export interface ArchiveRelatedArticleResult {
   sourceUrl: string | null;
 }
 
+export interface ArchiveClassificationScoreEntryResult {
+  vertical: ArchiveVertical;
+  ruleScore: number;
+  embeddingScore: number;
+  rerankScore: number;
+  fusedScore: number;
+}
+
+export interface ArchiveClassificationDetailResult {
+  region: ArchiveRegion;
+  vertical: ArchiveVertical;
+  taxonomyVersion: string;
+  pipelineVersion: string;
+  embeddingModel: string;
+  rerankModel: string;
+  ruleSignals: string[];
+  scoreEntries: ArchiveClassificationScoreEntryResult[];
+}
+
 export interface ArchiveDetailResult {
   processedArticleId: string;
   eventId: string | null;
@@ -179,6 +198,7 @@ export interface ArchiveDetailResult {
   fullEntities: string[];
   sourceUrl: string | null;
   sourceLabel: string | null;
+  classification: ArchiveClassificationDetailResult | null;
   timeline: ArchiveTimelineEntryResult[];
   relatedArticles: ArchiveRelatedArticleResult[];
 }
