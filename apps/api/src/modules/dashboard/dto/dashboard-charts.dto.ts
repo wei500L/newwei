@@ -53,6 +53,14 @@ export class DashboardWarMapQueryDto extends DashboardTimeRangeQueryDto {
   @IsOptional()
   @IsString()
   flightMode?: string;
+
+  @ApiPropertyOptional({
+    description: "AIS layer mode. Supported: military, density, all",
+    example: "military",
+  })
+  @IsOptional()
+  @IsString()
+  aisMode?: string;
 }
 
 export class DashboardWarMapNewsMarkersQueryDto extends DashboardWarMapQueryDto {}

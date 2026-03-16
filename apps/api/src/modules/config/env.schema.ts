@@ -336,7 +336,7 @@ export const apiEnvSchema = baseEnvSchema
       .number()
       .int()
       .positive()
-      .default(600),
+      .default(900),
     REALTIME_SIGNALS_ADSB_ENABLED: envBoolean.optional(),
     REALTIME_SIGNALS_ADSB_INTERVAL_SEC: z.coerce
       .number()

@@ -4,7 +4,11 @@ import {
   extractCountryCodeFromText,
   getCountryAlpha2,
   getCountryName,
+  type WarMapAisDensityProperties,
+  type WarMapAisDisruptionProperties,
+  type WarMapAisVesselProperties,
   type WarMapEvent,
+  type WarMapEventSeverity,
   type WarMapEventsResponse,
   type WarMapFlightProperties,
   type WarMapLayerDataset,
@@ -29,7 +33,11 @@ import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
 import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
 import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
-import type { RealtimeAdsbAircraftSnapshot } from "../realtime-signals/realtime-signals.types";
+import type {
+  RealtimeAdsbAircraftSnapshot,
+  RealtimeAisLatestSnapshot,
+  RealtimeAisVesselSnapshot,
+} from "../realtime-signals/realtime-signals.types";
 import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
 import worldGeoJson from "./assets/world.geo.json";
@@ -54,6 +62,8 @@ const DEFAULT_WAR_MAP_BBOX: [number, number, number, number] = [
   -180, -85, 180, 85,
 ];
 const MIN_WAR_MAP_FLIGHT_CELL_SIZE_DEG = 0.15;
+const MIN_WAR_MAP_AIS_CELL_SIZE_DEG = 0.25;
+const MAX_WAR_MAP_AIS_CELL_SIZE_DEG = 18;
 const MAX_WAR_MAP_FLIGHTS_GLOBAL_LOW_ZOOM = 180;
 const MAX_WAR_MAP_FLIGHTS_GLOBAL_MID_ZOOM = 320;
 const MAX_WAR_MAP_FLIGHTS_GLOBAL_HIGH_ZOOM = 520;
@@ -62,6 +72,18 @@ const MAX_WAR_MAP_FLIGHTS_VIEWPORT_LOW_ZOOM = 120;
 const MAX_WAR_MAP_FLIGHTS_VIEWPORT_MID_ZOOM = 220;
 const MAX_WAR_MAP_FLIGHTS_VIEWPORT_HIGH_ZOOM = 420;
 const MAX_WAR_MAP_FLIGHTS_VIEWPORT_MAX = 900;
+const MAX_WAR_MAP_AIS_GLOBAL_LOW_ZOOM = 180;
+const MAX_WAR_MAP_AIS_GLOBAL_MID_ZOOM = 320;
+const MAX_WAR_MAP_AIS_GLOBAL_HIGH_ZOOM = 520;
+const MAX_WAR_MAP_AIS_GLOBAL_MAX = 720;
+const MAX_WAR_MAP_AIS_VIEWPORT_LOW_ZOOM = 120;
+const MAX_WAR_MAP_AIS_VIEWPORT_MID_ZOOM = 220;
+const MAX_WAR_MAP_AIS_VIEWPORT_HIGH_ZOOM = 420;
+const MAX_WAR_MAP_AIS_VIEWPORT_MAX = 900;
+const AIS_ALL_MODE_BLOCKED_REASON_CODES = {
+  snapshotUnavailable: "snapshot_unavailable",
+  missingVesselsSnapshot: "missing_vessels_snapshot",
+} as const;
 const MAX_SPACETIME_GEO_RECORDS = 2000;
 const MAX_SPACETIME_GEO_LOCATIONS = 500;
 const MAX_SPACETIME_GEO_POINTS = 300;
@@ -381,6 +403,7 @@ interface WarMapLayersOptions {
   bbox?: [number, number, number, number];
   zoom?: number;
   flightMode?: "military" | "all";
+  aisMode?: "all" | "military" | "density";
 }
 
 interface WarMapEventsOptions {
@@ -866,7 +889,9 @@ export class DashboardChartsService {
     return undefined;
   }
 
-  private buildWarMapMongoRangeFilter(range: DateRange): Record<string, unknown> {
+  private buildWarMapMongoRangeFilter(
+    range: DateRange,
+  ): Record<string, unknown> {
     return {
       $or: [
         { sortAt: { $gte: range.start, $lte: range.end } },
@@ -990,8 +1015,7 @@ export class DashboardChartsService {
       pushCandidate(entity.name);
     }
 
-    const primaryLocationChunk =
-      location.split(/[,，;；/|]/)[0]?.trim() ?? "";
+    const primaryLocationChunk = location.split(/[,，;；/|]/)[0]?.trim() ?? "";
     if (primaryLocationChunk && primaryLocationChunk !== location) {
       if (
         countryName &&
@@ -1090,9 +1114,7 @@ export class DashboardChartsService {
                 ? (payload.payload as Record<string, unknown>)
                 : null;
             const url =
-              typeof rawPayload?.url === "string"
-                ? rawPayload.url.trim()
-                : "";
+              typeof rawPayload?.url === "string" ? rawPayload.url.trim() : "";
             if (url) {
               rawUrlByRawItemId.set(rawItemId, url);
             }
@@ -1110,7 +1132,9 @@ export class DashboardChartsService {
       }
       const doc = entry as Record<string, unknown>;
       const result =
-        doc.result && typeof doc.result === "object" && !Array.isArray(doc.result)
+        doc.result &&
+        typeof doc.result === "object" &&
+        !Array.isArray(doc.result)
           ? (doc.result as Record<string, unknown>)
           : null;
       const location =
@@ -1124,7 +1148,7 @@ export class DashboardChartsService {
         continue;
       }
       const rawItemId = normalizeMongoId(doc.rawItemId);
-      const url = rawItemId ? rawUrlByRawItemId.get(rawItemId) ?? null : null;
+      const url = rawItemId ? (rawUrlByRawItemId.get(rawItemId) ?? null) : null;
       const title =
         typeof result?.title === "string" ? result.title.trim() : undefined;
 
@@ -1224,7 +1248,10 @@ export class DashboardChartsService {
       snapshot.diagnostics.staleThresholdSec * 1_000,
     );
     const updatedAtMs = Date.parse(snapshot.updatedAt);
-    if (!Number.isFinite(updatedAtMs) || nowMs - updatedAtMs > staleThresholdMs) {
+    if (
+      !Number.isFinite(updatedAtMs) ||
+      nowMs - updatedAtMs > staleThresholdMs
+    ) {
       return false;
     }
     const latestObservedAt =
@@ -1282,6 +1309,60 @@ export class DashboardChartsService {
       return 5;
     }
     return 8;
+  }
+
+  private resolveWarMapAisMaxPoints(
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+  ): number {
+    const normalizedZoom = this.resolveWarMapClusterZoom(options.zoom);
+    if (!options.bbox) {
+      if (normalizedZoom <= 2) {
+        return MAX_WAR_MAP_AIS_GLOBAL_LOW_ZOOM;
+      }
+      if (normalizedZoom <= 4) {
+        return MAX_WAR_MAP_AIS_GLOBAL_MID_ZOOM;
+      }
+      if (normalizedZoom <= 6) {
+        return MAX_WAR_MAP_AIS_GLOBAL_HIGH_ZOOM;
+      }
+      return MAX_WAR_MAP_AIS_GLOBAL_MAX;
+    }
+
+    if (normalizedZoom <= 2) {
+      return MAX_WAR_MAP_AIS_VIEWPORT_LOW_ZOOM;
+    }
+    if (normalizedZoom <= 4) {
+      return MAX_WAR_MAP_AIS_VIEWPORT_MID_ZOOM;
+    }
+    if (normalizedZoom <= 6) {
+      return MAX_WAR_MAP_AIS_VIEWPORT_HIGH_ZOOM;
+    }
+    return MAX_WAR_MAP_AIS_VIEWPORT_MAX;
+  }
+
+  private resolveWarMapAisPerCellLimit(zoom?: number): number {
+    const normalizedZoom = this.resolveWarMapClusterZoom(zoom);
+    if (normalizedZoom <= 2) {
+      return 1;
+    }
+    if (normalizedZoom <= 4) {
+      return 2;
+    }
+    if (normalizedZoom <= 6) {
+      return 3;
+    }
+    if (normalizedZoom <= 8) {
+      return 5;
+    }
+    return 8;
+  }
+
+  private resolveWarMapAisCellSizeDegrees(zoom?: number): number {
+    return clampFinite(
+      this.resolveWarMapClusterCellSizeDegrees(zoom),
+      MIN_WAR_MAP_AIS_CELL_SIZE_DEG,
+      MAX_WAR_MAP_AIS_CELL_SIZE_DEG,
+    );
   }
 
   private shapeWarMapFlightsForViewport(
@@ -1419,11 +1500,11 @@ export class DashboardChartsService {
       const centerLat =
         group.weightTotal > 0
           ? group.latWeighted / group.weightTotal
-          : group.events[0]?.lat ?? 0;
+          : (group.events[0]?.lat ?? 0);
       const centerLng =
         group.weightTotal > 0
           ? group.lngWeighted / group.weightTotal
-          : group.events[0]?.lng ?? 0;
+          : (group.events[0]?.lng ?? 0);
 
       result.push({
         id: `cluster-${group.clusterId}`,
@@ -1453,7 +1534,10 @@ export class DashboardChartsService {
     markers: WarMapNewsMarker[],
     options: Pick<WarMapNewsMarkersOptions, "bbox" | "zoom" | "cluster">,
   ): WarMapNewsMarker[] {
-    const filteredMarkers = this.filterWarMapPointsByBbox(markers, options.bbox);
+    const filteredMarkers = this.filterWarMapPointsByBbox(
+      markers,
+      options.bbox,
+    );
     if (!options.cluster) {
       return filteredMarkers;
     }
@@ -1561,7 +1645,8 @@ export class DashboardChartsService {
         continue;
       }
       const description = `severity=${event.severity}; alerts=${event.alertCount ?? 0}; news=${event.newsCount ?? 0}; score=${event.derivedScore ?? event.value ?? 0}`;
-      const textCorpus = `${event.name} ${event.nameZh ?? ""} ${description}`.toLowerCase();
+      const textCorpus =
+        `${event.name} ${event.nameZh ?? ""} ${description}`.toLowerCase();
       points.push({
         id: `evt-${event.id}`,
         lat: event.lat,
@@ -1587,7 +1672,8 @@ export class DashboardChartsService {
       const nameZh = marker.displayNameZh?.trim() || marker.locationZh;
       const description = marker.title;
       const descriptionZh = marker.titleZh;
-      const textCorpus = `${name} ${nameZh ?? ""} ${description} ${descriptionZh ?? ""} ${marker.location}`.toLowerCase();
+      const textCorpus =
+        `${name} ${nameZh ?? ""} ${description} ${descriptionZh ?? ""} ${marker.location}`.toLowerCase();
       points.push({
         id: `news-${marker.id}`,
         lat: marker.lat,
@@ -1662,8 +1748,14 @@ export class DashboardChartsService {
         features.push({
           id: `${layerId}-path-0-${point.id}`,
           path: [
-            [clampFinite(point.lng - lngOffset, -180, 180), clampFinite(point.lat - latOffset, -90, 90)],
-            [clampFinite(point.lng + lngOffset, -180, 180), clampFinite(point.lat + latOffset, -90, 90)],
+            [
+              clampFinite(point.lng - lngOffset, -180, 180),
+              clampFinite(point.lat - latOffset, -90, 90),
+            ],
+            [
+              clampFinite(point.lng + lngOffset, -180, 180),
+              clampFinite(point.lat + latOffset, -90, 90),
+            ],
           ],
           properties: {
             name: point.name,
@@ -1711,7 +1803,7 @@ export class DashboardChartsService {
         if (!point) {
           continue;
         }
-        const offset = 0.8 + ((index % 3) * 0.35);
+        const offset = 0.8 + (index % 3) * 0.35;
         const minLng = clampFinite(point.lng - offset, -180, 180);
         const maxLng = clampFinite(point.lng + offset, -180, 180);
         const minLat = clampFinite(point.lat - offset, -90, 90);
@@ -1875,7 +1967,8 @@ export class DashboardChartsService {
       if (
         layerId === "monitors" ||
         layerId === "dayNight" ||
-        layerId === "flights"
+        layerId === "flights" ||
+        layerId === "ais"
       ) {
         continue;
       }
@@ -1911,6 +2004,314 @@ export class DashboardChartsService {
           (dataset.geometryType === "point" ? 1 : undefined),
       };
     }
+  }
+
+  private mapAisDisruptionSeverity(
+    severity: "low" | "elevated" | "high",
+  ): WarMapEventSeverity {
+    if (severity === "high") {
+      return "high";
+    }
+    if (severity === "elevated") {
+      return "medium";
+    }
+    return "low";
+  }
+
+  private buildWarMapAisVesselFeature(
+    vessel: RealtimeAisVesselSnapshot,
+    mode: "all" | "military",
+  ): WarMapLayerFeature {
+    const properties: WarMapAisVesselProperties & {
+      name: string;
+      description: string;
+    } = {
+      sourceType: "ais",
+      featureKind: "vessel",
+      mmsi: vessel.mmsi,
+      ...(vessel.name ? { name: vessel.name } : {}),
+      ...(typeof vessel.shipType === "number"
+        ? { shipType: vessel.shipType }
+        : {}),
+      ...(typeof vessel.heading === "number"
+        ? { heading: vessel.heading }
+        : {}),
+      ...(typeof vessel.speed === "number" ? { speed: vessel.speed } : {}),
+      ...(typeof vessel.course === "number" ? { course: vessel.course } : {}),
+      observedAt: vessel.observedAt,
+      name: vessel.name ?? vessel.mmsi,
+      description:
+        mode === "military"
+          ? "AIS military/government candidate vessel"
+          : "AIS vessel",
+    };
+
+    return {
+      id: `ais-vessel-${vessel.mmsi}`,
+      lat: vessel.lat,
+      lng: vessel.lng,
+      timestamp: vessel.observedAt,
+      properties: properties as unknown as Record<string, unknown>,
+    };
+  }
+
+  private buildWarMapAisDensityFeature(
+    zone: RealtimeAisLatestSnapshot["density"][number],
+  ): WarMapLayerFeature {
+    const properties: WarMapAisDensityProperties & {
+      name: string;
+      description: string;
+    } = {
+      sourceType: "ais",
+      featureKind: "density",
+      intensity: zone.intensity,
+      ...(typeof zone.deltaPct === "number" ? { deltaPct: zone.deltaPct } : {}),
+      ...(typeof zone.shipsPerDay === "number"
+        ? { shipsPerDay: zone.shipsPerDay }
+        : {}),
+      ...(zone.note ? { note: zone.note } : {}),
+      name: zone.name ?? zone.id,
+      description: zone.note ?? "AIS traffic density zone",
+    };
+
+    return {
+      id: zone.id,
+      lat: zone.lat,
+      lng: zone.lng,
+      properties: properties as unknown as Record<string, unknown>,
+    };
+  }
+
+  private buildWarMapAisDisruptionFeature(
+    disruption: RealtimeAisLatestSnapshot["disruptions"][number],
+    observedAt: string,
+  ): WarMapLayerFeature {
+    const properties: WarMapAisDisruptionProperties = {
+      sourceType: "ais",
+      featureKind: "disruption",
+      name: disruption.name,
+      disruptionType: disruption.type,
+      severity: this.mapAisDisruptionSeverity(disruption.severity),
+      ...(typeof disruption.vesselCount === "number"
+        ? { vesselCount: disruption.vesselCount }
+        : {}),
+      ...(typeof disruption.changePct === "number"
+        ? { changePct: disruption.changePct }
+        : {}),
+      ...(typeof disruption.windowHours === "number"
+        ? { windowHours: disruption.windowHours }
+        : {}),
+      ...(disruption.region ? { region: disruption.region } : {}),
+      ...(disruption.description
+        ? { description: disruption.description }
+        : {}),
+      ...(typeof disruption.darkShips === "number"
+        ? { darkShips: disruption.darkShips }
+        : {}),
+    };
+
+    return {
+      id: disruption.id,
+      lat: disruption.lat,
+      lng: disruption.lng,
+      timestamp: observedAt,
+      properties: properties as unknown as Record<string, unknown>,
+    };
+  }
+
+  private shapeWarMapAisVesselsForViewport(
+    vessels: RealtimeAisVesselSnapshot[],
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+  ): RealtimeAisVesselSnapshot[] {
+    const filtered = this.filterWarMapPointsByBbox(vessels, options.bbox);
+    const maxPoints = this.resolveWarMapAisMaxPoints(options);
+    if (filtered.length <= maxPoints) {
+      return filtered;
+    }
+
+    const bbox = this.resolveWarMapClusterBbox(options.bbox);
+    const cellSizeDeg = this.resolveWarMapAisCellSizeDegrees(options.zoom);
+    const perCellLimit = this.resolveWarMapAisPerCellLimit(options.zoom);
+    const cellCounts = new Map<string, number>();
+    const selected: RealtimeAisVesselSnapshot[] = [];
+    const sorted = [...filtered].sort((left, right) =>
+      right.observedAt.localeCompare(left.observedAt),
+    );
+
+    for (const vessel of sorted) {
+      const cellKey = this.buildWarMapClusterCellKey(
+        vessel.lat,
+        vessel.lng,
+        bbox,
+        cellSizeDeg,
+      );
+      const currentCellCount = cellCounts.get(cellKey) ?? 0;
+      if (currentCellCount >= perCellLimit) {
+        continue;
+      }
+      cellCounts.set(cellKey, currentCellCount + 1);
+      selected.push(vessel);
+      if (selected.length >= maxPoints) {
+        break;
+      }
+    }
+
+    return selected;
+  }
+
+  private async enrichWarMapAisLayer(
+    response: WarMapStaticLayersResponse,
+    orgId: string,
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom" | "aisMode">,
+  ): Promise<void> {
+    const dataset = response.layers.ais;
+    if (!dataset || !this.realtimeSignalsStore) {
+      return;
+    }
+
+    dataset.renderHints = {
+      ...dataset.renderHints,
+      pickable: true,
+      clusterable: false,
+      color: WAR_MAP_LAYER_COLORS.ais,
+      radiusScale: 1.1,
+    };
+
+    const aisMode = options.aisMode ?? "military";
+    const [snapshot, sourceState] = await Promise.all([
+      this.realtimeSignalsStore.getLatestAisSnapshot(orgId),
+      this.realtimeSignalsStore.getSourceState(orgId, "ais"),
+    ]);
+    const sourceContext =
+      sourceState?.context &&
+      typeof sourceState.context === "object" &&
+      !Array.isArray(sourceState.context)
+        ? sourceState.context
+        : undefined;
+    const staleThresholdSec =
+      typeof sourceContext?.staleThresholdSec === "number" &&
+      Number.isFinite(sourceContext.staleThresholdSec)
+        ? Math.max(60, Math.round(sourceContext.staleThresholdSec))
+        : 20 * 60;
+
+    if (!snapshot) {
+      dataset.features = [];
+      dataset.updatedAt = sourceState?.lastSuccessAt;
+      dataset.summary = {
+        source: "relay",
+        mode: aisMode,
+        configured: sourceContext?.configured !== false,
+        connected: false,
+        freshness: "missing",
+        staleThresholdSec,
+        relayVesselCount: 0,
+        disruptionsCount: 0,
+        densityCount: 0,
+        candidateCount: 0,
+        renderedVesselCount: 0,
+        allVesselsAvailable: false,
+        ...(aisMode === "all"
+          ? {
+              maxReturned: this.resolveWarMapAisMaxPoints(options),
+              truncated: false,
+            }
+          : {}),
+        ...(aisMode === "all"
+          ? {
+              blockedReasonCode:
+                AIS_ALL_MODE_BLOCKED_REASON_CODES.snapshotUnavailable,
+              blockedReason: "AIS relay snapshot is not available yet.",
+            }
+          : {}),
+      };
+      return;
+    }
+
+    const nowMs = Date.now();
+    const updatedAtMs = Date.parse(snapshot.updatedAt);
+    const snapshotAgeSec = Number.isFinite(updatedAtMs)
+      ? Math.max(0, Math.round((nowMs - updatedAtMs) / 1_000))
+      : undefined;
+    const freshness =
+      typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec
+        ? "stale"
+        : "fresh";
+
+    const disruptionFeatures = this.filterWarMapPointsByBbox(
+      snapshot.disruptions,
+      options.bbox,
+    ).map((disruption) =>
+      this.buildWarMapAisDisruptionFeature(disruption, snapshot.updatedAt),
+    );
+    const densityFeatures =
+      aisMode === "military"
+        ? []
+        : this.filterWarMapPointsByBbox(snapshot.density, options.bbox).map(
+            (zone) => this.buildWarMapAisDensityFeature(zone),
+          );
+
+    const vesselPool =
+      aisMode === "all"
+        ? snapshot.hasVesselSnapshot
+          ? snapshot.vessels
+          : []
+        : aisMode === "military"
+          ? snapshot.candidateReports
+          : [];
+    const filteredVessels = this.filterWarMapPointsByBbox(
+      vesselPool,
+      options.bbox,
+    );
+    const shapedVessels =
+      aisMode === "all"
+        ? this.shapeWarMapAisVesselsForViewport(vesselPool, options)
+        : filteredVessels;
+    const vesselFeatures = shapedVessels.map((vessel) =>
+      this.buildWarMapAisVesselFeature(
+        vessel,
+        aisMode === "all" ? "all" : "military",
+      ),
+    );
+
+    dataset.features = [
+      ...densityFeatures,
+      ...disruptionFeatures,
+      ...vesselFeatures,
+    ];
+    dataset.updatedAt = snapshot.updatedAt;
+    dataset.summary = {
+      source: "relay",
+      sourceEndpoint: snapshot.sourceEndpoint,
+      mode: aisMode,
+      configured: sourceContext?.configured !== false,
+      connected: snapshot.status.connected,
+      freshness,
+      snapshotUpdatedAt: snapshot.updatedAt,
+      ...(typeof snapshotAgeSec === "number" ? { snapshotAgeSec } : {}),
+      staleThresholdSec,
+      relayVesselCount: snapshot.status.vessels,
+      disruptionsCount: snapshot.disruptions.length,
+      densityCount: snapshot.density.length,
+      candidateCount: snapshot.candidateReports.length,
+      renderedVesselCount: vesselFeatures.length,
+      allVesselsAvailable: snapshot.hasVesselSnapshot,
+      messageCount: snapshot.status.messages,
+      clientCount: snapshot.status.clients,
+      droppedMessages: snapshot.status.droppedMessages,
+      ...(aisMode === "all"
+        ? {
+            maxReturned: this.resolveWarMapAisMaxPoints(options),
+            truncated: vesselFeatures.length < filteredVessels.length,
+          }
+        : {}),
+      ...(aisMode === "all" && !snapshot.hasVesselSnapshot
+        ? {
+            blockedReasonCode:
+              AIS_ALL_MODE_BLOCKED_REASON_CODES.missingVesselsSnapshot,
+            blockedReason: "AIS relay snapshot does not include vessels[] yet.",
+          }
+        : {}),
+    };
   }
 
   private async enrichWarMapFlightsLayer(
@@ -2020,7 +2421,8 @@ export class DashboardChartsService {
       return;
     }
 
-    const snapshot = await this.realtimeSignalsStore.getLatestAdsbSnapshot(orgId);
+    const snapshot =
+      await this.realtimeSignalsStore.getLatestAdsbSnapshot(orgId);
 
     if (!snapshot) {
       dataset.features = [];
@@ -2058,10 +2460,7 @@ export class DashboardChartsService {
       lat: clampFinite(entry.lat, -90, 90),
       lng: clampFinite(entry.lng, -180, 180),
     }));
-    const aircraft = this.shapeWarMapFlightsForViewport(
-      rawAircraft,
-      options,
-    );
+    const aircraft = this.shapeWarMapFlightsForViewport(rawAircraft, options);
 
     dataset.features = aircraft.map((entry) =>
       this.buildWarMapFlightFeature(entry, snapshot.updatedAt, flightMode),
@@ -2075,7 +2474,9 @@ export class DashboardChartsService {
       snapshotValidPositionCount: snapshot.validPositionCount,
       returnedCount: aircraft.length,
       maxReturned: this.resolveWarMapFlightsMaxPoints(options),
-      truncated: aircraft.length < this.filterWarMapPointsByBbox(rawAircraft, options.bbox).length,
+      truncated:
+        aircraft.length <
+        this.filterWarMapPointsByBbox(rawAircraft, options.bbox).length,
       retainedPreviousSnapshot: snapshot.diagnostics.retainedPreviousSnapshot,
     };
   }
@@ -2141,7 +2542,9 @@ export class DashboardChartsService {
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException("Invalid date range");
     }
-    const resolvedStart = alignToUtcDay ? alignUtcDayStart(start) : new Date(start);
+    const resolvedStart = alignToUtcDay
+      ? alignUtcDayStart(start)
+      : new Date(start);
     const resolvedEnd = alignToUtcDay ? alignUtcDayEnd(end) : new Date(end);
 
     if (resolvedStart > resolvedEnd) {
@@ -2177,6 +2580,11 @@ export class DashboardChartsService {
         bbox: options.bbox,
         zoom: options.zoom,
         flightMode: options.flightMode,
+      });
+      await this.enrichWarMapAisLayer(response, options.orgId, {
+        bbox: options.bbox,
+        zoom: options.zoom,
+        aisMode: options.aisMode,
       });
       await this.enrichWarMapLayersWithRealtimeData(
         response,
@@ -2710,10 +3118,7 @@ export class DashboardChartsService {
         (record.title ?? record.titleGuess ?? record.url ?? "").trim() ||
         location;
       const latestAt =
-        record.publishedAt ??
-        record.crawlAt ??
-        record.processedAt ??
-        undefined;
+        record.publishedAt ?? record.crawlAt ?? record.processedAt ?? undefined;
 
       markers.push({
         id: record.id,
@@ -2725,9 +3130,7 @@ export class DashboardChartsService {
         publishedAt: record.publishedAt
           ? record.publishedAt.toISOString()
           : undefined,
-        ingestedAt: record.crawlAt
-          ? record.crawlAt.toISOString()
-          : undefined,
+        ingestedAt: record.crawlAt ? record.crawlAt.toISOString() : undefined,
         displayName,
         geoSource,
       });

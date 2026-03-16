@@ -34,6 +34,66 @@ export interface RealtimeSignalFetchResult {
 
 export type RealtimeSignalFlightMode = "military" | "all";
 
+export interface RealtimeAisRelayStatusSnapshot {
+  connected: boolean;
+  vessels: number;
+  messages: number;
+  clients: number;
+  droppedMessages: number;
+}
+
+export type RealtimeAisDisruptionSeverity = "low" | "elevated" | "high";
+
+export interface RealtimeAisDisruptionSnapshot {
+  id: string;
+  name: string;
+  type: string;
+  lat: number;
+  lng: number;
+  severity: RealtimeAisDisruptionSeverity;
+  changePct?: number;
+  windowHours?: number;
+  vesselCount?: number;
+  region?: string;
+  description?: string;
+  darkShips?: number;
+}
+
+export interface RealtimeAisDensitySnapshot {
+  id: string;
+  name?: string;
+  lat: number;
+  lng: number;
+  intensity: number;
+  deltaPct?: number;
+  shipsPerDay?: number;
+  note?: string;
+}
+
+export interface RealtimeAisVesselSnapshot {
+  mmsi: string;
+  name?: string;
+  lat: number;
+  lng: number;
+  shipType?: number;
+  heading?: number;
+  speed?: number;
+  course?: number;
+  observedAt: string;
+}
+
+export interface RealtimeAisLatestSnapshot {
+  source: "relay";
+  sourceEndpoint: string;
+  updatedAt: string;
+  status: RealtimeAisRelayStatusSnapshot;
+  disruptions: RealtimeAisDisruptionSnapshot[];
+  density: RealtimeAisDensitySnapshot[];
+  candidateReports: RealtimeAisVesselSnapshot[];
+  vessels: RealtimeAisVesselSnapshot[];
+  hasVesselSnapshot: boolean;
+}
+
 export interface RealtimeOpenskyAircraftSnapshot {
   id: string;
   icao24: string;

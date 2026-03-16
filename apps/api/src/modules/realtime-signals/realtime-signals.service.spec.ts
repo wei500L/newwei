@@ -47,6 +47,9 @@ describe("RealtimeSignalsService unrest merge", () => {
       getLatestAdsbSnapshot: jest.fn().mockResolvedValue(null),
       setLatestAdsbSnapshot: jest.fn(),
       clearLatestAdsbSnapshot: jest.fn(),
+      getLatestAisSnapshot: jest.fn().mockResolvedValue(null),
+      setLatestAisSnapshot: jest.fn(),
+      clearLatestAisSnapshot: jest.fn(),
     };
     const service = new RealtimeSignalsService(
       {} as any,
@@ -357,7 +360,7 @@ describe("RealtimeSignalsService unrest merge", () => {
   });
 
   it("fetches AIS snapshots from the bare relay endpoint with compatible auth headers", async () => {
-    const { service } = buildService();
+    const { service, store } = buildService();
     const runtime = {
       ...runtimeConfig,
       relay: {
@@ -372,14 +375,54 @@ describe("RealtimeSignalsService unrest merge", () => {
     const fetchJsonSpy = jest
       .spyOn(service as any, "fetchJsonWithRetry")
       .mockResolvedValue({
-        disruptions: [{ countryCode: "US" }],
-        density: [{ id: "density-1" }],
+        timestamp: "2026-03-02T12:00:00.000Z",
+        status: {
+          connected: true,
+          vessels: 42,
+          messages: 1200,
+          clients: 3,
+          droppedMessages: 4,
+        },
+        disruptions: [
+          {
+            id: "global-gap-spike",
+            name: "AIS Gap Spike Detected",
+            type: "gap_spike",
+            lat: 0,
+            lon: 0,
+            severity: "elevated",
+            darkShips: 2,
+          },
+        ],
+        density: [
+          {
+            id: "density-1",
+            lat: 10,
+            lon: 20,
+            intensity: 0.8,
+            deltaPct: 15,
+            shipsPerDay: 96,
+          },
+        ],
+        candidateReports: [
+          {
+            mmsi: "123456789",
+            name: "USS Example",
+            lat: 30,
+            lon: 40,
+            shipType: 55,
+            heading: 90,
+            speed: 12,
+            course: 95,
+            timestamp: 1_772_452_800_000,
+          },
+        ],
       });
 
-    const result = await (service as any).fetchAisSignal(runtime);
+    const result = await (service as any).fetchAisSignal("org-1", runtime);
 
     expect(fetchJsonSpy).toHaveBeenCalledWith(
-      "https://relay.example.com/ais/snapshot?candidates=false",
+      "https://relay.example.com/ais/snapshot?candidates=true",
       runtime,
       {
         headers: {
@@ -395,10 +438,68 @@ describe("RealtimeSignalsService unrest merge", () => {
       value: 1,
       context: {
         source: "relay",
+        configured: true,
+        connected: true,
         disruptions: 1,
         densityRegions: 1,
+        candidateCount: 1,
+        vesselCount: 42,
+        allVesselsAvailable: false,
+        snapshotUpdatedAt: "2026-03-02T12:00:00.000Z",
+        messageCount: 1200,
+        droppedMessages: 4,
+        countryCodes: [],
       },
     });
+    expect(store.setLatestAisSnapshot).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({
+        source: "relay",
+        sourceEndpoint: "https://relay.example.com/ais/snapshot",
+        updatedAt: "2026-03-02T12:00:00.000Z",
+        status: {
+          connected: true,
+          vessels: 42,
+          messages: 1200,
+          clients: 3,
+          droppedMessages: 4,
+        },
+        hasVesselSnapshot: false,
+        disruptions: [
+          expect.objectContaining({
+            id: "global-gap-spike",
+            type: "gap_spike",
+            severity: "elevated",
+            darkShips: 2,
+          }),
+        ],
+        density: [
+          expect.objectContaining({
+            id: "density-1",
+            lat: 10,
+            lng: 20,
+            intensity: 0.8,
+            deltaPct: 15,
+            shipsPerDay: 96,
+          }),
+        ],
+        candidateReports: [
+          expect.objectContaining({
+            mmsi: "123456789",
+            name: "USS Example",
+            lat: 30,
+            lng: 40,
+            shipType: 55,
+            heading: 90,
+            speed: 12,
+            course: 95,
+            observedAt: "2026-03-02T12:00:00.000Z",
+          }),
+        ],
+        vessels: [],
+      }),
+      600,
+    );
   });
 
   it("fails AIS refreshes when the relay payload is malformed", async () => {
@@ -413,7 +514,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       density: [],
     });
 
-    await expect((service as any).fetchAisSignal(runtime)).rejects.toThrow(
+    await expect((service as any).fetchAisSignal("org-1", runtime)).rejects.toThrow(
       "AIS relay returned an invalid snapshot payload. Expected disruptions[] and density[].",
     );
   });
@@ -677,6 +778,8 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       getSourceState: jest.fn(),
       clearLatestAdsbSnapshot: jest.fn(),
       setLatestAdsbSnapshot: jest.fn(),
+      clearLatestAisSnapshot: jest.fn(),
+      setLatestAisSnapshot: jest.fn(),
       appendPoint: jest.fn(),
       setLastRun: jest.fn(),
       setSourceState: jest.fn(),
@@ -946,6 +1049,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       getLastRun: jest.fn().mockResolvedValue(null),
       getSourceState: jest.fn().mockResolvedValue(null),
       getLatestAdsbSnapshot: jest.fn().mockResolvedValue(null),
+      getLatestAisSnapshot: jest.fn().mockResolvedValue(null),
       evaluateMetric: jest.fn().mockResolvedValue({
         latest: null,
         previous: null,

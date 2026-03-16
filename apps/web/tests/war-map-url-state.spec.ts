@@ -2,26 +2,26 @@ import {
   WAR_MAP_PRESETS,
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   type WarMapLayerVisibility,
-} from '@modular/utils';
-import { beforeEach, describe, expect, it } from 'vitest';
+} from "@modular/utils";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   readWarMapUrlState,
   writeWarMapUrlState,
-} from '@/app/(app)/dashboard/charts/war-map/url-state';
+} from "@/app/(app)/dashboard/charts/war-map/url-state";
 import {
   WAR_MAP_PRESET_VIEW_STATE,
   useWarMapSettingsStore,
-} from '@/store/war-map-settings';
+} from "@/store/war-map-settings";
 
 function cloneDefaultLayerVisibility(): WarMapLayerVisibility {
   return { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY };
 }
 
-describe('war-map url-state', () => {
-  it('parses view/preset/time-range/layers from url', () => {
+describe("war-map url-state", () => {
+  it("parses view/preset/time-range/layers from url", () => {
     const params = new URLSearchParams(
-      'lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&fm=all&layers=conflicts,weather,monitors',
+      "lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&fm=all&am=density&layers=conflicts,weather,monitors",
     );
 
     const parsed = readWarMapUrlState(params);
@@ -33,17 +33,18 @@ describe('war-map url-state', () => {
       bearing: 0,
       pitch: 0,
     });
-    expect(parsed.activePreset).toBe('asia');
-    expect(parsed.timeRangePreset).toBe('24h');
-    expect(parsed.flightMode).toBe('all');
+    expect(parsed.activePreset).toBe("asia");
+    expect(parsed.timeRangePreset).toBe("24h");
+    expect(parsed.flightMode).toBe("all");
+    expect(parsed.aisMode).toBe("density");
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.monitors).toBe(true);
     expect(parsed.layerVisibility?.bases).toBe(false);
   });
 
-  it('serializes state and strips default layers token', () => {
-    const params = new URLSearchParams('foo=bar');
+  it("serializes state and strips default layers token", () => {
+    const params = new URLSearchParams("foo=bar");
 
     const next = writeWarMapUrlState(params, {
       viewState: {
@@ -53,22 +54,26 @@ describe('war-map url-state', () => {
         bearing: 0,
         pitch: 0,
       },
-      activePreset: 'global',
-      timeRangePreset: '7d',
+      activePreset: "global",
+      timeRangePreset: "7d",
       layerVisibility: cloneDefaultLayerVisibility(),
-      flightMode: 'military',
+      flightMode: "military",
+      aisMode: "military",
     });
 
-    expect(next.get('preset')).toBe('global');
-    expect(next.get('tr')).toBe('7d');
-    expect(next.get('fm')).toBeNull();
-    expect(next.get('layers')).toBeNull();
-    expect(next.get('foo')).toBe('bar');
+    expect(next.get("preset")).toBe("global");
+    expect(next.get("tr")).toBe("7d");
+    expect(next.get("fm")).toBeNull();
+    expect(next.get("am")).toBeNull();
+    expect(next.get("layers")).toBeNull();
+    expect(next.get("foo")).toBe("bar");
   });
 
-  it('persists all-disabled layers via an empty layers token', () => {
+  it("persists all-disabled layers via an empty layers token", () => {
     const noneVisible = cloneDefaultLayerVisibility();
-    for (const layerId of Object.keys(noneVisible) as Array<keyof WarMapLayerVisibility>) {
+    for (const layerId of Object.keys(noneVisible) as Array<
+      keyof WarMapLayerVisibility
+    >) {
       noneVisible[layerId] = false;
     }
 
@@ -80,22 +85,25 @@ describe('war-map url-state', () => {
         bearing: 0,
         pitch: 0,
       },
-      activePreset: 'global',
-      timeRangePreset: '7d',
+      activePreset: "global",
+      timeRangePreset: "7d",
       layerVisibility: noneVisible,
-      flightMode: 'military',
+      flightMode: "military",
+      aisMode: "military",
     });
 
-    expect(written.get('layers')).toBe('');
+    expect(written.get("layers")).toBe("");
 
     const parsed = readWarMapUrlState(written);
     expect(parsed.layerVisibility).toBeDefined();
-    expect(Object.values(parsed.layerVisibility ?? {}).every((visible) => visible === false)).toBe(
-      true,
-    );
+    expect(
+      Object.values(parsed.layerVisibility ?? {}).every(
+        (visible) => visible === false,
+      ),
+    ).toBe(true);
   });
 
-  it('round-trips non-default layer visibility', () => {
+  it("round-trips non-default layer visibility", () => {
     const visibility = cloneDefaultLayerVisibility();
     visibility.conflicts = true;
     visibility.weather = true;
@@ -110,17 +118,19 @@ describe('war-map url-state', () => {
         bearing: 24,
         pitch: 33,
       },
-      activePreset: 'oceania',
-      timeRangePreset: '48h',
+      activePreset: "oceania",
+      timeRangePreset: "48h",
       layerVisibility: visibility,
-      flightMode: 'all',
+      flightMode: "all",
+      aisMode: "density",
     });
 
     const parsed = readWarMapUrlState(written);
 
-    expect(parsed.activePreset).toBe('oceania');
-    expect(parsed.timeRangePreset).toBe('48h');
-    expect(parsed.flightMode).toBe('all');
+    expect(parsed.activePreset).toBe("oceania");
+    expect(parsed.timeRangePreset).toBe("48h");
+    expect(parsed.flightMode).toBe("all");
+    expect(parsed.aisMode).toBe("density");
     expect(parsed.viewState?.bearing).toBe(0);
     expect(parsed.viewState?.pitch).toBe(0);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
@@ -130,18 +140,23 @@ describe('war-map url-state', () => {
   });
 });
 
-describe('war-map settings store', () => {
+describe("war-map settings store", () => {
   beforeEach(() => {
     useWarMapSettingsStore.getState().resetAll();
   });
 
-  it('keeps the OpenSky flights layer enabled by default', () => {
+  it("keeps the OpenSky flights layer enabled by default", () => {
     expect(WAR_MAP_DEFAULT_LAYER_VISIBILITY.flights).toBe(true);
-    expect(useWarMapSettingsStore.getState().layerVisibility.flights).toBe(true);
-    expect(useWarMapSettingsStore.getState().flightMode).toBe('military');
+    expect(WAR_MAP_DEFAULT_LAYER_VISIBILITY.ais).toBe(true);
+    expect(useWarMapSettingsStore.getState().layerVisibility.flights).toBe(
+      true,
+    );
+    expect(useWarMapSettingsStore.getState().layerVisibility.ais).toBe(true);
+    expect(useWarMapSettingsStore.getState().flightMode).toBe("military");
+    expect(useWarMapSettingsStore.getState().aisMode).toBe("military");
   });
 
-  it('forces 2D camera in setViewState', () => {
+  it("forces 2D camera in setViewState", () => {
     useWarMapSettingsStore.getState().setViewState({
       lat: 10,
       lon: 20,
@@ -158,7 +173,7 @@ describe('war-map settings store', () => {
     expect(viewState.pitch).toBe(0);
   });
 
-  it('keeps all presets in flat 2D view', () => {
+  it("keeps all presets in flat 2D view", () => {
     for (const preset of WAR_MAP_PRESETS) {
       useWarMapSettingsStore.getState().setActivePreset(preset);
       const { activePreset, viewState } = useWarMapSettingsStore.getState();
@@ -169,7 +184,7 @@ describe('war-map settings store', () => {
     }
   });
 
-  it('normalizes remote settings to 2D camera', () => {
+  it("normalizes remote settings to 2D camera", () => {
     useWarMapSettingsStore.getState().hydrateFromRemote({
       viewState: {
         lat: -15,
@@ -178,16 +193,18 @@ describe('war-map settings store', () => {
         bearing: 80,
         pitch: 45,
       },
-      activePreset: 'asia',
-      timeRangePreset: '24h',
-      flightMode: 'all',
+      activePreset: "asia",
+      timeRangePreset: "24h",
+      flightMode: "all",
+      aisMode: "density",
     });
 
-    const { viewState, activePreset, timeRangePreset, flightMode } =
+    const { viewState, activePreset, timeRangePreset, flightMode, aisMode } =
       useWarMapSettingsStore.getState();
-    expect(activePreset).toBe('asia');
-    expect(timeRangePreset).toBe('24h');
-    expect(flightMode).toBe('all');
+    expect(activePreset).toBe("asia");
+    expect(timeRangePreset).toBe("24h");
+    expect(flightMode).toBe("all");
+    expect(aisMode).toBe("density");
     expect(viewState.lat).toBe(-15);
     expect(viewState.lon).toBe(130);
     expect(viewState.zoom).toBe(3.5);

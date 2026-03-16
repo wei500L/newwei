@@ -530,7 +530,7 @@ export class EnvService extends ConfigService<ApiEnv> {
             ) ??
             this.get<number | undefined>("REALTIME_SIGNALS_ADSB_INTERVAL_SEC", {
               infer: true,
-            }) ?? 600,
+            }) ?? 900,
         },
         ais: {
           enabled:

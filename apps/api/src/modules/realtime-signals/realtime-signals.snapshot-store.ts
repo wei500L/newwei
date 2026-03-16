@@ -8,6 +8,7 @@ import {
 } from "./realtime-signals.constants";
 import type {
   RealtimeAdsbLatestSnapshot,
+  RealtimeAisLatestSnapshot,
   RealtimeSignalMetricPoint,
   RealtimeSignalMetricSeries,
   RealtimeSignalSnapshotEvaluation,
@@ -174,6 +175,27 @@ export class RealtimeSignalsSnapshotStore {
     await this.cache.del(this.adsbLatestKey(orgId));
   }
 
+  async getLatestAisSnapshot(orgId: string) {
+    return this.cache.get<RealtimeAisLatestSnapshot>(this.aisLatestKey(orgId));
+  }
+
+  async setLatestAisSnapshot(
+    orgId: string,
+    snapshot: RealtimeAisLatestSnapshot,
+    ttlSeconds: number,
+  ) {
+    const normalizedTtlSeconds = Math.max(60, Math.floor(ttlSeconds));
+    await this.cache.set(
+      this.aisLatestKey(orgId),
+      snapshot,
+      normalizedTtlSeconds,
+    );
+  }
+
+  async clearLatestAisSnapshot(orgId: string) {
+    await this.cache.del(this.aisLatestKey(orgId));
+  }
+
   async setLastRun(orgId: string, source: RealtimeSignalSource, tsMs: number) {
     await this.cache.set(this.lastRunKey(orgId, source), tsMs, 60 * 60 * 24 * 7);
   }
@@ -223,5 +245,9 @@ export class RealtimeSignalsSnapshotStore {
 
   private adsbLatestKey(orgId: string) {
     return `realtime-signals:opensky-latest:${orgId}`;
+  }
+
+  private aisLatestKey(orgId: string) {
+    return `realtime-signals:ais-latest:${orgId}`;
   }
 }

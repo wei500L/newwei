@@ -65,7 +65,7 @@ export const WAR_MAP_DEFAULT_LAYER_VISIBILITY: WarMapLayerVisibility = {
   cables: false,
   pipelines: false,
   hotspots: true,
-  ais: false,
+  ais: true,
   nuclear: true,
   irradiators: false,
   sanctions: true,
@@ -120,6 +120,7 @@ export const WAR_MAP_PRESETS = [
 
 export type WarMapPreset = (typeof WAR_MAP_PRESETS)[number];
 export type WarMapFlightMode = "military" | "all";
+export type WarMapAisMode = "all" | "military" | "density";
 
 export const WAR_MAP_TIME_RANGE_PRESETS = [
   "1h",
@@ -146,6 +147,7 @@ export interface WarMapSettings {
   activePreset: WarMapPreset;
   timeRangePreset: WarMapTimeRangePreset;
   flightMode: WarMapFlightMode;
+  aisMode: WarMapAisMode;
 }
 
 export type WarMapGeometryType = "point" | "path" | "polygon" | "raster";
@@ -185,6 +187,43 @@ export interface WarMapFlightProperties {
   groundSpeedKt?: number;
   observedAt?: string;
   sourceUpdatedAt?: string;
+}
+
+export type WarMapAisFeatureKind = "vessel" | "density" | "disruption";
+
+export interface WarMapAisVesselProperties {
+  sourceType: "ais";
+  featureKind: "vessel";
+  mmsi: string;
+  name?: string;
+  shipType?: number;
+  heading?: number;
+  speed?: number;
+  course?: number;
+  observedAt?: string;
+}
+
+export interface WarMapAisDensityProperties {
+  sourceType: "ais";
+  featureKind: "density";
+  intensity: number;
+  deltaPct?: number;
+  shipsPerDay?: number;
+  note?: string;
+}
+
+export interface WarMapAisDisruptionProperties {
+  sourceType: "ais";
+  featureKind: "disruption";
+  name: string;
+  disruptionType: string;
+  severity: WarMapEventSeverity;
+  vesselCount?: number;
+  changePct?: number;
+  windowHours?: number;
+  region?: string;
+  description?: string;
+  darkShips?: number;
 }
 
 export interface WarMapLayerDataset {
@@ -264,6 +303,7 @@ export interface WarMapRequestParams {
   zoom?: string;
   cluster?: string;
   flightMode?: WarMapFlightMode;
+  aisMode?: WarMapAisMode;
 }
 
 export const DASHBOARD_STREAM_EVENT_TYPES = {
@@ -367,6 +407,7 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
       activePreset: "global",
       timeRangePreset: "7d",
       flightMode: "military",
+      aisMode: "military",
     };
   }
 
@@ -377,5 +418,11 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
     activePreset: normalizeWarMapPreset(record.activePreset),
     timeRangePreset: normalizeWarMapTimeRangePreset(record.timeRangePreset),
     flightMode: record.flightMode === "all" ? "all" : "military",
+    aisMode:
+      record.aisMode === "all"
+        ? "all"
+        : record.aisMode === "density"
+          ? "density"
+          : "military",
   };
 }

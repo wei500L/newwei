@@ -89,6 +89,7 @@ WorldMonitor 的实时聚合不是“单一后端流式管道”，而是**前�
 ### 缓存与降级
 
 - 本地 flight cache：15 分钟
+- 当前项目默认把军事快照轮询设置为 15 分钟。按 6 个固定 region 拉取时，每轮约 24 credits，全天约 2304 credits，给视口查询保留余量。
 - 区域 stale fallback：10 分钟（单区域失败可回退旧数据）
 - circuit breaker：失败 3 次，冷却 5 分钟
 

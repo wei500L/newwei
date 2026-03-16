@@ -1,4 +1,5 @@
 import {
+  type WarMapAisMode,
   type WarMapFlightMode,
   type WarMapLayerVisibility,
   type WarMapPreset,
@@ -17,6 +18,7 @@ export interface WarMapUrlState {
   timeRangePreset?: WarMapTimeRangePreset;
   layerVisibility?: WarMapLayerVisibility;
   flightMode?: WarMapFlightMode;
+  aisMode?: WarMapAisMode;
 }
 
 function parseFiniteNumber(value: string | null): number | undefined {
@@ -73,6 +75,19 @@ function parseFlightMode(value: string | null): WarMapFlightMode | undefined {
   return value === 'all' ? 'all' : value === 'military' ? 'military' : undefined;
 }
 
+function parseAisMode(value: string | null): WarMapAisMode | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value === 'all'
+    ? 'all'
+    : value === 'density'
+      ? 'density'
+      : value === 'military'
+        ? 'military'
+        : undefined;
+}
+
 export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
   const lat = parseFiniteNumber(search.get('lat'));
   const lon = parseFiniteNumber(search.get('lon'));
@@ -95,6 +110,7 @@ export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
   const timeRangePreset = parseTimeRangePreset(search.get('tr'));
   const layerVisibility = parseLayerVisibility(search.get('layers'));
   const flightMode = parseFlightMode(search.get('fm'));
+  const aisMode = parseAisMode(search.get('am'));
 
   return {
     viewState,
@@ -102,6 +118,7 @@ export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
     timeRangePreset,
     layerVisibility,
     flightMode,
+    aisMode,
   };
 }
 
@@ -113,6 +130,7 @@ export function writeWarMapUrlState(
     timeRangePreset: WarMapTimeRangePreset;
     layerVisibility: WarMapLayerVisibility;
     flightMode: WarMapFlightMode;
+    aisMode: WarMapAisMode;
   },
 ): URLSearchParams {
   const next = new URLSearchParams(search.toString());
@@ -127,6 +145,11 @@ export function writeWarMapUrlState(
     next.set('fm', 'all');
   } else {
     next.delete('fm');
+  }
+  if (state.aisMode !== 'military') {
+    next.set('am', state.aisMode);
+  } else {
+    next.delete('am');
   }
 
   const enabledLayers = WAR_MAP_LAYER_IDS.filter(

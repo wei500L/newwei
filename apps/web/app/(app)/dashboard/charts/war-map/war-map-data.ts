@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  type WarMapAisMode,
   type WarMapEvent,
   type WarMapEventsResponse,
   type WarMapFlightMode,
@@ -37,6 +38,7 @@ export interface WarMapQueryInput {
   zoom?: number;
   cluster?: boolean;
   flightMode?: WarMapFlightMode;
+  aisMode?: WarMapAisMode;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -264,7 +266,7 @@ export function buildWarMapNewsMarkersQueryKey(input: WarMapQueryInput) {
 export function buildWarMapLayersQueryKey(
   input: Pick<
     WarMapQueryInput,
-    'start' | 'end' | 'bbox' | 'zoom' | 'translateTarget' | 'flightMode'
+    'start' | 'end' | 'bbox' | 'zoom' | 'translateTarget' | 'flightMode' | 'aisMode'
   >,
 ) {
   return [
@@ -275,6 +277,7 @@ export function buildWarMapLayersQueryKey(
     typeof input.zoom === 'number' ? Number(input.zoom.toFixed(2)) : null,
     input.translateTarget ?? null,
     input.flightMode ?? 'military',
+    input.aisMode ?? 'military',
   ] as const;
 }
 
@@ -298,6 +301,9 @@ export function buildWarMapRequestParams(input: WarMapQueryInput): WarMapRequest
   }
   if (input.flightMode) {
     params.flightMode = input.flightMode;
+  }
+  if (input.aisMode) {
+    params.aisMode = input.aisMode;
   }
 
   return params;

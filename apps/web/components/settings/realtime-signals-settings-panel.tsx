@@ -244,7 +244,7 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   acledApiEnabled: false,
   acledApiDisabledReason: undefined,
   openskyEnabled: true,
-  openskyIntervalSec: 600,
+  openskyIntervalSec: 900,
   aisEnabled: true,
   aisIntervalSec: 600,
   unrestEnabled: true,

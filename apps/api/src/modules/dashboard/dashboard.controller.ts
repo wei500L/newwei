@@ -23,6 +23,17 @@ import { DashboardService } from "./dashboard.service";
 function parseWarMapFlightMode(value?: string): "military" | "all" {
   return value?.trim().toLowerCase() === "all" ? "all" : "military";
 }
+
+function parseWarMapAisMode(value?: string): "all" | "military" | "density" {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "all") {
+    return "all";
+  }
+  if (normalized === "density") {
+    return "density";
+  }
+  return "military";
+}
 import {
   DashboardWarMapQueryDto,
   DashboardWarMapNewsMarkersQueryDto,
@@ -174,6 +185,7 @@ export class DashboardController {
       bbox: parseWarMapBbox(query.bbox),
       zoom: parseWarMapZoom(query.zoom),
       flightMode: parseWarMapFlightMode(query.flightMode),
+      aisMode: parseWarMapAisMode(query.aisMode),
     });
   }
 

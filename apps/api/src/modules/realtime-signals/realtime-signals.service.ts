@@ -25,6 +25,12 @@ import type {
   RealtimeAdsbAircraftSnapshot,
   RealtimeAdsbLatestSnapshot,
   RealtimeAdsbRuntimeDiagnostics,
+  RealtimeAisDensitySnapshot,
+  RealtimeAisDisruptionSeverity,
+  RealtimeAisDisruptionSnapshot,
+  RealtimeAisLatestSnapshot,
+  RealtimeAisRelayStatusSnapshot,
+  RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
   RealtimeSignalFlightMode,
   RealtimeSignalsRuntimeDiagnostics,
@@ -234,6 +240,7 @@ export class RealtimeSignalsService {
     const runtime = runtimeConfig ?? (await this.getRuntimeConfig());
     if (!runtime.enabled) {
       await this.store.clearLatestAdsbSnapshot(orgId);
+      await this.store.clearLatestAisSnapshot(orgId);
       await this.store.setInsightSnapshot(
         orgId,
         this.createEmptyInsightSnapshot(),
@@ -252,6 +259,8 @@ export class RealtimeSignalsService {
       if (!sourceConfig?.enabled) {
         if (source === "opensky") {
           await this.store.clearLatestAdsbSnapshot(orgId);
+        } else if (source === "ais") {
+          await this.store.clearLatestAisSnapshot(orgId);
         }
         continue;
       }
@@ -540,7 +549,7 @@ export class RealtimeSignalsService {
       case "opensky":
         return this.fetchAdsbSignal(orgId, runtime);
       case "ais":
-        return this.fetchAisSignal(runtime);
+        return this.fetchAisSignal(orgId, runtime);
       case "unrest":
         return this.fetchUnrestSignal(runtime);
       case "outages":
@@ -1423,9 +1432,18 @@ export class RealtimeSignalsService {
     return Math.max(20 * 60, safeIntervalSec * 2);
   }
 
-  private async fetchAisSignal(runtime: RealtimeSignalsRuntimeConfig) {
+  private getAisSnapshotTtlSeconds(intervalSec: number) {
+    const safeIntervalSec = Math.max(60, Math.trunc(intervalSec));
+    return Math.max(10 * 60, safeIntervalSec * 2);
+  }
+
+  private async fetchAisSignal(
+    orgId: string,
+    runtime: RealtimeSignalsRuntimeConfig,
+  ) {
     const relayBase = this.normalizeUrl(runtime.relay.baseUrl);
     if (!relayBase) {
+      await this.store.clearLatestAisSnapshot(orgId);
       return [
         {
           metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.ais,
@@ -1433,8 +1451,12 @@ export class RealtimeSignalsService {
           context: {
             source: "relay",
             configured: false,
+            connected: false,
             disruptions: 0,
             densityRegions: 0,
+            candidateCount: 0,
+            vesselCount: 0,
+            allVesselsAvailable: false,
             countryCodes: [],
           },
         },
@@ -1447,20 +1469,24 @@ export class RealtimeSignalsService {
       ...(aisApiKey ? { "X-AIS-API-Key": aisApiKey } : {}),
     };
     const payload = await this.fetchJsonWithRetry(
-      `${relayBase}/ais/snapshot?candidates=false`,
+      `${relayBase}/ais/snapshot?candidates=true`,
       runtime,
       Object.keys(headers).length > 0 ? { headers } : undefined,
     );
-    const { disruptions, density } = this.readAisSnapshotPayload(payload);
+    const snapshot = this.buildAisLatestSnapshot(
+      payload,
+      `${relayBase}/ais/snapshot`,
+    );
+    await this.store.setLatestAisSnapshot(
+      orgId,
+      snapshot,
+      this.getAisSnapshotTtlSeconds(runtime.sources.ais.intervalSec),
+    );
 
     const countries = new Set<string>();
-    for (const disruption of disruptions) {
-      if (!disruption || typeof disruption !== "object") {
-        continue;
-      }
-      const record = disruption as Record<string, unknown>;
+    for (const disruption of snapshot.disruptions) {
       const code = this.extractCountryCode(
-        record.countryCode ?? record.country,
+        disruption.region,
       );
       if (code) {
         countries.add(code);
@@ -1470,11 +1496,19 @@ export class RealtimeSignalsService {
     return [
       {
         metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.ais,
-        value: disruptions.length,
+        value: snapshot.disruptions.length,
         context: {
           source: "relay",
-          disruptions: disruptions.length,
-          densityRegions: density.length,
+          configured: true,
+          connected: snapshot.status.connected,
+          disruptions: snapshot.disruptions.length,
+          densityRegions: snapshot.density.length,
+          candidateCount: snapshot.candidateReports.length,
+          vesselCount: snapshot.status.vessels,
+          snapshotUpdatedAt: snapshot.updatedAt,
+          allVesselsAvailable: snapshot.hasVesselSnapshot,
+          messageCount: snapshot.status.messages,
+          droppedMessages: snapshot.status.droppedMessages,
           countryCodes: Array.from(countries),
         },
       },
@@ -3037,6 +3071,179 @@ export class RealtimeSignalsService {
     return Array.isArray(value) ? value : [];
   }
 
+  private buildAisLatestSnapshot(
+    payload: unknown,
+    sourceEndpoint: string,
+  ): RealtimeAisLatestSnapshot {
+    const { updatedAt, status, disruptions, density, candidateReports, vessels } =
+      this.readAisSnapshotPayload(payload);
+    return {
+      source: "relay",
+      sourceEndpoint,
+      updatedAt,
+      status,
+      disruptions,
+      density,
+      candidateReports,
+      vessels,
+      hasVesselSnapshot: Array.isArray(
+        (payload as { vessels?: unknown } | null | undefined)?.vessels,
+      ),
+    };
+  }
+
+  private normalizeAisStatusPayload(
+    value: unknown,
+  ): RealtimeAisRelayStatusSnapshot {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return {
+      connected: record.connected === true,
+      vessels: Math.max(0, Math.round(this.toFiniteNumber(record.vessels) ?? 0)),
+      messages: Math.max(0, Math.round(this.toFiniteNumber(record.messages) ?? 0)),
+      clients: Math.max(0, Math.round(this.toFiniteNumber(record.clients) ?? 0)),
+      droppedMessages: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.droppedMessages) ?? 0),
+      ),
+    };
+  }
+
+  private normalizeAisDisruptionSeverity(
+    value: unknown,
+  ): RealtimeAisDisruptionSeverity {
+    const normalized = this.normalizeString(value)?.toLowerCase();
+    if (normalized === "high") {
+      return "high";
+    }
+    if (normalized === "elevated" || normalized === "medium") {
+      return "elevated";
+    }
+    return "low";
+  }
+
+  private normalizeAisDisruptionSnapshot(
+    value: unknown,
+    index: number,
+  ): RealtimeAisDisruptionSnapshot | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const lat = this.toFiniteNumber(record.lat);
+    const lng = this.toFiniteNumber(record.lon ?? record.lng);
+    if (!this.isValidCoordinate(lat, lng)) {
+      return null;
+    }
+
+    const id =
+      this.normalizeString(record.id) ?? `ais-disruption-${index + 1}`;
+    const name = this.normalizeString(record.name) ?? id;
+    const type = this.normalizeString(record.type) ?? "unknown";
+    return {
+      id,
+      name,
+      type,
+      lat: lat!,
+      lng: lng!,
+      severity: this.normalizeAisDisruptionSeverity(record.severity),
+      ...(typeof this.toFiniteNumber(record.changePct) === "number"
+        ? { changePct: this.toFiniteNumber(record.changePct)! }
+        : {}),
+      ...(typeof this.toFiniteNumber(record.windowHours) === "number"
+        ? { windowHours: this.toFiniteNumber(record.windowHours)! }
+        : {}),
+      ...(typeof this.toFiniteNumber(record.vesselCount) === "number"
+        ? { vesselCount: this.toFiniteNumber(record.vesselCount)! }
+        : {}),
+      ...(typeof this.toFiniteNumber(record.darkShips) === "number"
+        ? { darkShips: this.toFiniteNumber(record.darkShips)! }
+        : {}),
+      ...(this.normalizeString(record.region)
+        ? { region: this.normalizeString(record.region) }
+        : {}),
+      ...(this.normalizeString(record.description)
+        ? { description: this.normalizeString(record.description) }
+        : {}),
+    };
+  }
+
+  private normalizeAisDensitySnapshot(
+    value: unknown,
+    index: number,
+  ): RealtimeAisDensitySnapshot | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const lat = this.toFiniteNumber(record.lat);
+    const lng = this.toFiniteNumber(record.lon ?? record.lng);
+    const intensity = this.toFiniteNumber(record.intensity);
+    if (!this.isValidCoordinate(lat, lng) || intensity === null) {
+      return null;
+    }
+
+    return {
+      id: this.normalizeString(record.id) ?? `ais-density-${index + 1}`,
+      ...(this.normalizeString(record.name)
+        ? { name: this.normalizeString(record.name) }
+        : {}),
+      lat: lat!,
+      lng: lng!,
+      intensity: Math.min(1, Math.max(0, intensity)),
+      ...(typeof this.toFiniteNumber(record.deltaPct) === "number"
+        ? { deltaPct: this.toFiniteNumber(record.deltaPct)! }
+        : {}),
+      ...(typeof this.toFiniteNumber(record.shipsPerDay) === "number"
+        ? { shipsPerDay: this.toFiniteNumber(record.shipsPerDay)! }
+        : {}),
+      ...(this.normalizeString(record.note)
+        ? { note: this.normalizeString(record.note) }
+        : {}),
+    };
+  }
+
+  private normalizeAisVesselSnapshot(
+    value: unknown,
+    fallbackObservedAt: string,
+  ): RealtimeAisVesselSnapshot | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const mmsi = this.normalizeString(record.mmsi ?? record.MMSI);
+    const lat = this.toFiniteNumber(record.lat);
+    const lng = this.toFiniteNumber(record.lon ?? record.lng);
+    if (!mmsi || !this.isValidCoordinate(lat, lng)) {
+      return null;
+    }
+
+    const shipType = this.toFiniteNumber(
+      record.shipType ?? record.ship_type ?? record.ShipType,
+    );
+    const heading = this.toFiniteNumber(record.heading ?? record.TrueHeading);
+    const speed = this.toFiniteNumber(record.speed ?? record.Sog);
+    const course = this.toFiniteNumber(record.course ?? record.Cog);
+
+    return {
+      mmsi,
+      ...(this.normalizeString(record.name ?? record.ShipName)
+        ? { name: this.normalizeString(record.name ?? record.ShipName) }
+        : {}),
+      lat: lat!,
+      lng: lng!,
+      ...(typeof shipType === "number" ? { shipType } : {}),
+      ...(typeof heading === "number" ? { heading } : {}),
+      ...(typeof speed === "number" ? { speed } : {}),
+      ...(typeof course === "number" ? { course } : {}),
+      observedAt: this.toIsoTimestamp(
+        record.observedAt ?? record.timestamp ?? fallbackObservedAt,
+      ),
+    };
+  }
+
   private readAisSnapshotPayload(payload: unknown) {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new Error(
@@ -3045,8 +3252,12 @@ export class RealtimeSignalsService {
     }
 
     const record = payload as {
+      timestamp?: unknown;
+      status?: unknown;
       disruptions?: unknown;
       density?: unknown;
+      candidateReports?: unknown;
+      vessels?: unknown;
     };
     if (!Array.isArray(record.disruptions) || !Array.isArray(record.density)) {
       throw new Error(
@@ -3054,9 +3265,24 @@ export class RealtimeSignalsService {
       );
     }
 
+    const updatedAt = this.toIsoTimestamp(record.timestamp ?? new Date());
     return {
-      disruptions: record.disruptions,
-      density: record.density,
+      updatedAt,
+      status: this.normalizeAisStatusPayload(record.status),
+      disruptions: record.disruptions
+        .map((entry, index) => this.normalizeAisDisruptionSnapshot(entry, index))
+        .filter(
+          (entry): entry is RealtimeAisDisruptionSnapshot => Boolean(entry),
+        ),
+      density: record.density
+        .map((entry, index) => this.normalizeAisDensitySnapshot(entry, index))
+        .filter((entry): entry is RealtimeAisDensitySnapshot => Boolean(entry)),
+      candidateReports: this.readArray(record.candidateReports)
+        .map((entry) => this.normalizeAisVesselSnapshot(entry, updatedAt))
+        .filter((entry): entry is RealtimeAisVesselSnapshot => Boolean(entry)),
+      vessels: this.readArray(record.vessels)
+        .map((entry) => this.normalizeAisVesselSnapshot(entry, updatedAt))
+        .filter((entry): entry is RealtimeAisVesselSnapshot => Boolean(entry)),
     };
   }
 

@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.2.6",
     "@deck.gl/core": "^9.2.6",
     "@deck.gl/layers": "^9.2.6",
     "@deck.gl/mapbox": "^9.2.6",
