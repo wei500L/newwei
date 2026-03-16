@@ -1928,12 +1928,16 @@ export class DashboardChartsService {
       color: WAR_MAP_LAYER_COLORS.flights,
       radiusScale: 1.15,
     };
+    const summaryBase = {
+      source: "adsb",
+      scope: "military",
+    } as const;
 
     if (!snapshot) {
       dataset.features = [];
       dataset.updatedAt = undefined;
       dataset.summary = {
-        source: "adsb",
+        ...summaryBase,
         freshness: "missing",
         rawAircraftCount: 0,
         snapshotValidPositionCount: 0,
@@ -1948,7 +1952,8 @@ export class DashboardChartsService {
       dataset.features = [];
       dataset.updatedAt = snapshot.updatedAt;
       dataset.summary = {
-        source: "adsb",
+        ...summaryBase,
+        sourceEndpoint: snapshot.sourceEndpoint,
         freshness: "stale",
         rawAircraftCount: snapshot.totalAircraft,
         snapshotValidPositionCount: snapshot.validPositionCount,
@@ -1974,7 +1979,8 @@ export class DashboardChartsService {
     );
     dataset.updatedAt = snapshot.updatedAt;
     dataset.summary = {
-      source: "adsb",
+      ...summaryBase,
+      sourceEndpoint: snapshot.sourceEndpoint,
       freshness: "fresh",
       rawAircraftCount: snapshot.totalAircraft,
       snapshotValidPositionCount: snapshot.validPositionCount,

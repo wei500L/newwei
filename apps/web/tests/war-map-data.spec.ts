@@ -173,6 +173,8 @@ describe('war-map page wiring', () => {
 
     expect(source).not.toContain('TimeRangeControls');
     expect(source).toContain('<WarMap className="h-full" />');
+    expect(source).toContain('military ADS-B flight activity');
+    expect(source).toContain('Signals, News & Military Flights');
   });
 
   it('wires dashboard stream coverage for map news and layers', () => {
@@ -208,6 +210,11 @@ describe('war-map page wiring', () => {
     expect(source).not.toContain('useDashboardRangeStore');
     expect(source).toContain('const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now())');
     expect(source).toContain('onEffectiveRangeChange');
+    expect(source).toContain("const flightsSource = readSummaryString(flightsSummary, 'source');");
+    expect(source).toContain("const flightsScope = readSummaryString(flightsSummary, 'scope');");
+    expect(source).toContain("defaultValue: 'Flight source'");
+    expect(source).toContain("defaultValue: 'ADS-B'");
+    expect(source).toContain("defaultValue: 'Military'");
   });
 
   it('keeps loading non-blocking and refreshes only the current query window', () => {

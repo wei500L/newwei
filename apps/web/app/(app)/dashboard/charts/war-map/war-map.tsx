@@ -341,6 +341,14 @@ function readSummaryNumber(
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function readSummaryString(
+  summary: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = summary?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 function severityColor(severity: WarMapEventSeverity): [number, number, number, number] {
   switch (severity) {
     case 'high':
@@ -1707,9 +1715,39 @@ export function WarMap({
     'snapshotValidPositionCount',
   );
   const flightsRawCount = readSummaryNumber(flightsSummary, 'rawAircraftCount');
+  const flightsMaxReturned = readSummaryNumber(flightsSummary, 'maxReturned');
   const flightsTruncated = flightsSummary?.truncated === true;
   const flightsFreshness =
     typeof flightsSummary?.freshness === 'string' ? flightsSummary.freshness : undefined;
+  const flightsSource = readSummaryString(flightsSummary, 'source');
+  const flightsScope = readSummaryString(flightsSummary, 'scope');
+  const flightsSourceEndpoint = readSummaryString(flightsSummary, 'sourceEndpoint');
+  const flightsSourceLabel =
+    flightsSource === 'adsb'
+      ? t('dashboard.charts.warMap.stats.flightSourceAdsb', {
+          defaultValue: 'ADS-B',
+        })
+      : flightsSource
+        ? flightsSource.toUpperCase()
+        : undefined;
+  const flightsScopeLabel =
+    flightsScope === 'military'
+      ? t('dashboard.charts.warMap.stats.flightScopeMilitary', {
+          defaultValue: 'Military',
+        })
+      : flightsScope;
+  const flightsSourceBadgeLabel =
+    flightsSourceLabel && flightsScopeLabel
+      ? `${flightsSourceLabel} / ${flightsScopeLabel}`
+      : flightsSourceLabel ?? flightsScopeLabel ?? null;
+  const flightsCoverageLabel =
+    typeof flightsSnapshotCount === 'number' && typeof flightsRawCount === 'number'
+      ? t('dashboard.charts.warMap.stats.flightCoverage', {
+          defaultValue: 'Positioned {{positioned}} / Raw {{raw}}',
+          positioned: flightsSnapshotCount,
+          raw: flightsRawCount,
+        })
+      : null;
   const flightsRawLabel =
     typeof flightsRawCount === 'number'
       ? t('dashboard.charts.warMap.stats.flightsRaw', {
@@ -1717,6 +1755,35 @@ export function WarMap({
           count: flightsRawCount,
         })
       : null;
+  const flightsTooltipText = [
+    flightsSourceLabel
+      ? `${t('dashboard.charts.warMap.stats.flightSource', {
+          defaultValue: 'Flight source',
+        })}: ${flightsSourceLabel}`
+      : null,
+    flightsScopeLabel
+      ? `${t('dashboard.charts.warMap.stats.flightScope', {
+          defaultValue: 'Scope',
+        })}: ${flightsScopeLabel}`
+      : null,
+    flightsCoverageLabel
+      ? `${t('dashboard.charts.warMap.stats.flightCoverageLabel', {
+          defaultValue: 'Coverage',
+        })}: ${flightsCoverageLabel}`
+      : null,
+    typeof flightsReturnedCount === 'number'
+      ? `${t('dashboard.charts.warMap.stats.flightRendered', {
+          defaultValue: 'Rendered',
+        })}: ${flightsReturnedCount}${typeof flightsMaxReturned === 'number' ? ` / ${flightsMaxReturned}` : ''}`
+      : null,
+    flightsSourceEndpoint
+      ? `${t('dashboard.charts.warMap.stats.flightEndpoint', {
+          defaultValue: 'Endpoint',
+        })}: ${flightsSourceEndpoint}`
+      : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join('\n');
   const visibleLayerCount =
     DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId]).length +
     (layerVisibility.monitors ? 1 : 0);
@@ -2334,26 +2401,47 @@ export function WarMap({
             })}
             : {visibleLayerCount}
           </Tag>
-          {layerVisibility.flights && typeof flightsReturnedCount === 'number' ? (
-            <Tag
-              color={
-                flightsFreshness === 'stale'
-                  ? 'orange'
-                  : flightsFreshness === 'missing'
-                    ? 'default'
-                    : flightsTruncated
-                      ? 'gold'
-                      : 'cyan'
+          {layerVisibility.flights && flightsSourceBadgeLabel ? (
+            <Tooltip
+              title={
+                flightsTooltipText ? (
+                  <span className="whitespace-pre-line">{flightsTooltipText}</span>
+                ) : null
               }
-              className="text-xs"
             >
-              {t('dashboard.charts.warMap.stats.flights', {
-                defaultValue: 'Flights',
-              })}
-              : {flightsReturnedCount}
-              {typeof flightsSnapshotCount === 'number' ? `/${flightsSnapshotCount}` : ''}
-              {flightsRawLabel ? ` ${flightsRawLabel}` : ''}
-            </Tag>
+              <Tag color="geekblue" className="text-xs">
+                {flightsSourceBadgeLabel}
+              </Tag>
+            </Tooltip>
+          ) : null}
+          {layerVisibility.flights && typeof flightsReturnedCount === 'number' ? (
+            <Tooltip
+              title={
+                flightsTooltipText ? (
+                  <span className="whitespace-pre-line">{flightsTooltipText}</span>
+                ) : null
+              }
+            >
+              <Tag
+                color={
+                  flightsFreshness === 'stale'
+                    ? 'orange'
+                    : flightsFreshness === 'missing'
+                      ? 'default'
+                      : flightsTruncated
+                        ? 'gold'
+                        : 'cyan'
+                }
+                className="text-xs"
+              >
+                {t('dashboard.charts.warMap.stats.flights', {
+                  defaultValue: 'Flights',
+                })}
+                : {flightsReturnedCount}
+                {typeof flightsSnapshotCount === 'number' ? `/${flightsSnapshotCount}` : ''}
+                {flightsRawLabel ? ` ${flightsRawLabel}` : ''}
+              </Tag>
+            </Tooltip>
           ) : null}
         </Space>
         <Space size={6} wrap>

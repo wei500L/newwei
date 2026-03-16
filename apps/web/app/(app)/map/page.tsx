@@ -16,14 +16,17 @@ export default function MapPage() {
         </Typography.Title>
         <Typography.Text type="secondary">
           {t("pages.map.subtitle", {
-            defaultValue: "Alerts and geo-tagged news signals by region."
+            defaultValue:
+              "Alerts, geo-tagged news, and military ADS-B flight activity by region."
           })}
         </Typography.Text>
       </div>
       <div className="glass-panel border border-[var(--border)] h-[600px] relative overflow-hidden">
         <div className="absolute top-4 left-4 z-10">
           <Typography.Text className="text-slate-600">
-            {t("pages.map.overlay", { defaultValue: "Alert & News Signals Overview" })}
+            {t("pages.map.overlay", {
+              defaultValue: "Signals, News & Military Flights"
+            })}
           </Typography.Text>
         </div>
         <WarMap className="h-full" />

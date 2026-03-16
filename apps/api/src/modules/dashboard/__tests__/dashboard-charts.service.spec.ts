@@ -536,6 +536,8 @@ describe("DashboardChartsService", () => {
     expect(response.layers.flights.summary).toEqual(
       expect.objectContaining({
         source: "adsb",
+        scope: "military",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
         freshness: "fresh",
         rawAircraftCount: 2,
         snapshotValidPositionCount: 2,
@@ -608,6 +610,8 @@ describe("DashboardChartsService", () => {
     expect(response.layers.flights.summary).toEqual(
       expect.objectContaining({
         source: "adsb",
+        scope: "military",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
         freshness: "stale",
         rawAircraftCount: 1,
         snapshotValidPositionCount: 1,
@@ -685,6 +689,9 @@ describe("DashboardChartsService", () => {
     expect(highZoom.layers.flights.features).toHaveLength(260);
     expect(lowZoom.layers.flights.summary).toEqual(
       expect.objectContaining({
+        source: "adsb",
+        scope: "military",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
         freshness: "fresh",
         rawAircraftCount: 260,
         snapshotValidPositionCount: 260,
@@ -694,6 +701,9 @@ describe("DashboardChartsService", () => {
     );
     expect(highZoom.layers.flights.summary).toEqual(
       expect.objectContaining({
+        source: "adsb",
+        scope: "military",
+        sourceEndpoint: "https://api.adsb.lol/v2/mil",
         freshness: "fresh",
         rawAircraftCount: 260,
         snapshotValidPositionCount: 260,
