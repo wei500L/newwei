@@ -8,10 +8,11 @@ import { createApiClient } from '@/lib/api-client';
 
 import {
   WAR_MAP_QUERY_KEYS,
+  buildWarMapBaseRequestParams,
   buildWarMapEventsQueryKey,
+  buildWarMapLayerRequestParams,
   buildWarMapLayersQueryKey,
   buildWarMapNewsMarkersQueryKey,
-  buildWarMapRequestParams,
   normalizeStoredSituationMonitors,
   normalizeWarMapEventsResponse,
   normalizeWarMapLayersResponse,
@@ -32,7 +33,7 @@ export function useWarMapData(options: UseWarMapDataOptions) {
     queryKey: buildWarMapEventsQueryKey(queryInput),
     queryFn: async () => {
       const response = await apiClient.get('dashboard/war-map/events', {
-        params: buildWarMapRequestParams({ ...queryInput, cluster: false }),
+        params: buildWarMapBaseRequestParams({ ...queryInput, cluster: false }),
       });
       return normalizeWarMapEventsResponse(response.data);
     },
@@ -45,7 +46,7 @@ export function useWarMapData(options: UseWarMapDataOptions) {
     queryKey: buildWarMapNewsMarkersQueryKey(queryInput),
     queryFn: async () => {
       const response = await apiClient.get('dashboard/war-map/news-markers', {
-        params: buildWarMapRequestParams({ ...queryInput, cluster: false }),
+        params: buildWarMapBaseRequestParams({ ...queryInput, cluster: false }),
       });
       return normalizeWarMapNewsMarkersResponse(response.data);
     },
@@ -58,7 +59,7 @@ export function useWarMapData(options: UseWarMapDataOptions) {
     queryKey: buildWarMapLayersQueryKey(queryInput),
     queryFn: async () => {
       const response = await apiClient.get('dashboard/war-map/layers', {
-        params: buildWarMapRequestParams(queryInput),
+        params: buildWarMapLayerRequestParams(queryInput),
       });
       return normalizeWarMapLayersResponse(response.data);
     },

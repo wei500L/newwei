@@ -6,6 +6,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import {
+  mergeWarMapSettingsWithUrlState,
+} from "@/app/(app)/dashboard/charts/war-map/url-state";
+import {
   buildDefaultSituationMonitorLayoutPayload,
   fingerprintSituationMonitorLayout,
   type SituationMonitorLayoutPayload,
@@ -707,9 +710,13 @@ export function UserUiSettingsSync() {
             const remoteHasSettings = Boolean(data) && data.settings !== null;
 
             if (remoteHasSettings && data.settings) {
+              const settings = mergeWarMapSettingsWithUrlState(
+                data.settings,
+                new URLSearchParams(window.location.search),
+              );
               useWarMapSettingsStore
                 .getState()
-                .hydrateFromRemote(data.settings);
+                .hydrateFromRemote(settings);
             }
 
             const currentState = useWarMapSettingsStore.getState();

@@ -281,7 +281,15 @@ export function buildWarMapLayersQueryKey(
   ] as const;
 }
 
-export function buildWarMapRequestParams(input: WarMapQueryInput): WarMapRequestParams {
+type WarMapBaseRequestInput = Pick<
+  WarMapQueryInput,
+  'start' | 'end' | 'translateTarget' | 'bbox' | 'zoom' | 'cluster'
+>;
+
+type WarMapLayerRequestInput = WarMapBaseRequestInput &
+  Pick<WarMapQueryInput, 'flightMode' | 'aisMode'>;
+
+export function buildWarMapBaseRequestParams(input: WarMapBaseRequestInput): WarMapRequestParams {
   const params: WarMapRequestParams = {
     start: input.start,
     end: input.end,
@@ -299,6 +307,15 @@ export function buildWarMapRequestParams(input: WarMapQueryInput): WarMapRequest
   if (typeof input.cluster === 'boolean') {
     params.cluster = input.cluster ? '1' : '0';
   }
+
+  return params;
+}
+
+export function buildWarMapLayerRequestParams(
+  input: WarMapLayerRequestInput,
+): WarMapRequestParams {
+  const params = buildWarMapBaseRequestParams(input);
+
   if (input.flightMode) {
     params.flightMode = input.flightMode;
   }

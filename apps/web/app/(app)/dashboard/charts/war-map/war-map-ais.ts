@@ -105,6 +105,14 @@ function readFirstString(
   return undefined;
 }
 
+function readTranslatedString(
+  properties: Record<string, unknown>,
+  translatedKeys: readonly string[],
+  fallbackKeys: readonly string[],
+): string | undefined {
+  return readFirstString(properties, [...translatedKeys, ...fallbackKeys]);
+}
+
 function readFirstNumber(
   properties: Record<string, unknown>,
   keys: readonly string[],
@@ -134,7 +142,7 @@ function inferFeatureKind(
     return "disruption";
   }
   if (
-    normalizeString(properties.name) &&
+    readTranslatedString(properties, ["nameZh"], ["name"]) &&
     (normalizeSeverity(properties.severity) ||
       typeof normalizeNumber(properties.vesselCount) === "number" ||
       typeof normalizeNumber(properties.darkShips) === "number")
@@ -170,7 +178,11 @@ export function readWarMapAisProperties(
       sourceType: "ais",
       featureKind: "vessel",
       mmsi,
-      name: readFirstString(properties, ["name", "vesselName", "label"]),
+      name: readTranslatedString(properties, ["nameZh"], [
+        "name",
+        "vesselName",
+        "label",
+      ]),
       shipType: readFirstNumber(properties, ["shipType"]),
       heading: readFirstNumber(properties, ["heading"]),
       speed: readFirstNumber(properties, ["speed"]),
@@ -180,7 +192,9 @@ export function readWarMapAisProperties(
         "timestamp",
         "sourceUpdatedAt",
       ]),
-      description: readFirstString(properties, ["description"]),
+      description: readTranslatedString(properties, ["descriptionZh"], [
+        "description",
+      ]),
     };
   }
 
@@ -196,14 +210,22 @@ export function readWarMapAisProperties(
       intensity,
       deltaPct: readFirstNumber(properties, ["deltaPct"]),
       shipsPerDay: readFirstNumber(properties, ["shipsPerDay"]),
-      note: readFirstString(properties, ["note", "description"]),
-      name: readFirstString(properties, ["name", "label"]),
-      description: readFirstString(properties, ["description"]),
+      note: readTranslatedString(properties, ["descriptionZh"], [
+        "note",
+        "description",
+      ]),
+      name: readTranslatedString(properties, ["nameZh"], ["name", "label"]),
+      description: readTranslatedString(properties, ["descriptionZh"], [
+        "description",
+      ]),
     };
   }
 
   if (featureKind === "disruption") {
-    const name = readFirstString(properties, ["name", "label"]);
+    const name = readTranslatedString(properties, ["nameZh"], [
+      "name",
+      "label",
+    ]);
     const disruptionType = readFirstString(properties, [
       "disruptionType",
       "type",
@@ -223,7 +245,9 @@ export function readWarMapAisProperties(
       changePct: readFirstNumber(properties, ["changePct"]),
       windowHours: readFirstNumber(properties, ["windowHours"]),
       region: readFirstString(properties, ["region"]),
-      description: readFirstString(properties, ["description"]),
+      description: readTranslatedString(properties, ["descriptionZh"], [
+        "description",
+      ]),
       darkShips: readFirstNumber(properties, ["darkShips"]),
     };
   }

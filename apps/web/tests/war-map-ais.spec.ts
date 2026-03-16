@@ -83,6 +83,78 @@ describe("war-map AIS helpers", () => {
     });
   });
 
+  it("prefers translated AIS labels and descriptions when available", () => {
+    expect(
+      readWarMapAisProperties({
+        sourceType: "ais",
+        featureKind: "vessel",
+        mmsi: "123456789",
+        name: "USS Example",
+        nameZh: "示例号",
+        description: "Candidate vessel",
+        descriptionZh: "候选舰船",
+      }),
+    ).toEqual({
+      sourceType: "ais",
+      featureKind: "vessel",
+      mmsi: "123456789",
+      name: "示例号",
+      description: "候选舰船",
+      shipType: undefined,
+      heading: undefined,
+      speed: undefined,
+      course: undefined,
+      observedAt: undefined,
+    });
+
+    expect(
+      readWarMapAisProperties({
+        sourceType: "ais",
+        featureKind: "density",
+        intensity: 0.78,
+        name: "Malacca Strait",
+        nameZh: "马六甲海峡",
+        note: "Heavy traffic lane",
+        description: "Heavy traffic lane",
+        descriptionZh: "高流量航道",
+      }),
+    ).toEqual({
+      sourceType: "ais",
+      featureKind: "density",
+      intensity: 0.78,
+      deltaPct: undefined,
+      shipsPerDay: undefined,
+      note: "高流量航道",
+      name: "马六甲海峡",
+      description: "高流量航道",
+    });
+
+    expect(
+      readWarMapAisProperties({
+        sourceType: "ais",
+        featureKind: "disruption",
+        name: "Bab el-Mandeb",
+        nameZh: "曼德海峡",
+        disruptionType: "congestion",
+        severity: "high",
+        description: "Traffic disruption",
+        descriptionZh: "航运受阻",
+      }),
+    ).toEqual({
+      sourceType: "ais",
+      featureKind: "disruption",
+      name: "曼德海峡",
+      disruptionType: "congestion",
+      severity: "high",
+      vesselCount: undefined,
+      changePct: undefined,
+      windowHours: undefined,
+      region: undefined,
+      description: "航运受阻",
+      darkShips: undefined,
+    });
+  });
+
   it("rejects invalid or foreign AIS properties", () => {
     expect(readWarMapAisProperties(null)).toBeNull();
     expect(

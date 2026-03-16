@@ -6,6 +6,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  mergeWarMapSettingsWithUrlState,
   readWarMapUrlState,
   writeWarMapUrlState,
 } from "@/app/(app)/dashboard/charts/war-map/url-state";
@@ -137,6 +138,23 @@ describe("war-map url-state", () => {
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.hotspots).toBe(false);
     expect(parsed.layerVisibility?.monitors).toBe(false);
+  });
+
+  it("preserves URL-selected AIS mode when merging remote settings", () => {
+    const merged = mergeWarMapSettingsWithUrlState(
+      {
+        activePreset: "asia",
+        timeRangePreset: "24h",
+        flightMode: "all",
+        aisMode: "military",
+      },
+      new URLSearchParams("am=density"),
+    );
+
+    expect(merged.activePreset).toBe("asia");
+    expect(merged.timeRangePreset).toBe("24h");
+    expect(merged.flightMode).toBe("all");
+    expect(merged.aisMode).toBe("density");
   });
 });
 

@@ -579,7 +579,7 @@ describe("DashboardChartsService", () => {
         freshness: "fresh",
         relayVesselCount: 42,
         disruptionsCount: 1,
-        densityCount: 1,
+        densityCount: 0,
         candidateCount: 1,
         renderedVesselCount: 1,
         allVesselsAvailable: false,
@@ -712,6 +712,115 @@ describe("DashboardChartsService", () => {
         renderedVesselCount: 0,
         densityCount: 1,
         disruptionsCount: 1,
+      }),
+    );
+  });
+
+  it("reports AIS density and disruption counts for the current viewport", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:05:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignalsStore = createRealtimeSignalsStore({
+      getLatestAisSnapshot: jest.fn().mockResolvedValue({
+        source: "relay",
+        sourceEndpoint: "https://relay.example.com/ais/snapshot",
+        updatedAt: "2026-01-01T12:00:00.000Z",
+        status: {
+          connected: true,
+          vessels: 15,
+          messages: 800,
+          clients: 1,
+          droppedMessages: 0,
+        },
+        disruptions: [
+          {
+            id: "chokepoint-1",
+            name: "Suez Canal",
+            type: "chokepoint_congestion",
+            lat: 30.1,
+            lng: 32.3,
+            severity: "high",
+          },
+          {
+            id: "chokepoint-2",
+            name: "Strait of Hormuz",
+            type: "chokepoint_congestion",
+            lat: 26.5,
+            lng: 56.4,
+            severity: "medium",
+          },
+        ],
+        density: [
+          {
+            id: "density-1",
+            name: "Zone 1",
+            lat: 30.2,
+            lng: 32.4,
+            intensity: 0.75,
+          },
+          {
+            id: "density-2",
+            name: "Zone 2",
+            lat: 2.5,
+            lng: 101.3,
+            intensity: 0.9,
+          },
+        ],
+        candidateReports: [],
+        vessels: [],
+        hasVesselSnapshot: false,
+      }),
+      getSourceState: jest.fn().mockResolvedValue({
+        source: "ais",
+        status: "success",
+        lastAttemptAt: "2026-01-01T12:00:00.000Z",
+        lastSuccessAt: "2026-01-01T12:00:00.000Z",
+        context: {
+          configured: true,
+          staleThresholdSec: 600,
+        },
+      }),
+    });
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      undefined,
+      realtimeSignalsStore as any,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      aisMode: "density",
+      bbox: [31, 29.5, 33, 31],
+    });
+
+    expect(response.layers.ais.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "density-1" }),
+        expect.objectContaining({ id: "chokepoint-1" }),
+      ]),
+    );
+    expect(
+      response.layers.ais.features.map((feature) => feature.id).sort(),
+    ).toEqual(["chokepoint-1", "density-1"]);
+    expect(response.layers.ais.summary).toEqual(
+      expect.objectContaining({
+        mode: "density",
+        densityCount: 1,
+        disruptionsCount: 1,
+        renderedVesselCount: 0,
       }),
     );
   });

@@ -5,7 +5,6 @@ import {
   ExpandOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { HeatmapLayer } from "@deck.gl/aggregation-layers";
 import { PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
@@ -256,14 +255,6 @@ const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
 );
 const STREAM_MESSAGE_STALE_MS = 45_000;
 const DATA_REFRESH_STALE_MS = 150_000;
-const AIS_HEATMAP_COLOR_RANGE: Array<[number, number, number, number]> = [
-  [191, 219, 254, 0],
-  [147, 197, 253, 100],
-  [96, 165, 250, 155],
-  [249, 115, 22, 210],
-  [185, 28, 28, 240],
-];
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -1700,16 +1691,39 @@ export function WarMap({
 
       if (aisDensityZones.length > 0) {
         aisLayers.push(
-          new HeatmapLayer({
-            id: "wm-ais-density-heatmap",
+          new ScatterplotLayer({
+            id: "wm-ais-density-glow",
             data: aisDensityZones,
             pickable: false,
+            stroked: false,
+            filled: true,
             getPosition: (point: DeckPoint) => [point.lng, point.lat],
-            getWeight: (point: DeckPoint) => point.intensity ?? 0.2,
-            colorRange: AIS_HEATMAP_COLOR_RANGE,
-            radiusPixels: 45,
-            intensity: 1,
-            threshold: 0.03,
+            getFillColor: (point: DeckPoint) =>
+              getAisDensityColor(
+                point.intensity ?? 0.2,
+                0.1 + (point.intensity ?? 0.2) * 0.18,
+              ),
+            getRadius: (point: DeckPoint) => point.radius * 2.6,
+            radiusMinPixels: 22,
+            radiusMaxPixels: 76,
+          }),
+        );
+        aisLayers.push(
+          new ScatterplotLayer({
+            id: "wm-ais-density-core",
+            data: aisDensityZones,
+            pickable: false,
+            stroked: false,
+            filled: true,
+            getPosition: (point: DeckPoint) => [point.lng, point.lat],
+            getFillColor: (point: DeckPoint) =>
+              getAisDensityColor(
+                point.intensity ?? 0.2,
+                0.22 + (point.intensity ?? 0.2) * 0.2,
+              ),
+            getRadius: (point: DeckPoint) => point.radius * 1.6,
+            radiusMinPixels: 14,
+            radiusMaxPixels: 48,
           }),
         );
         aisLayers.push(
@@ -1718,6 +1732,7 @@ export function WarMap({
             data: aisDensityZones,
             pickable: true,
             stroked: false,
+            filled: true,
             getFillColor: (point: DeckPoint) => point.color,
             getRadius: (point: DeckPoint) => point.radius,
             radiusMinPixels: 10,
@@ -2771,6 +2786,33 @@ export function WarMap({
     : t("dashboard.charts.warMap.status.loadingData", {
         defaultValue: "Loading map data…",
       });
+  const hasFatalDataError = !anyLoading && errors.length > 0 && !hasData;
+  const fatalOverlay = mapLoadError
+    ? {
+        title: mapLoadError.title,
+        description: mapLoadError.description,
+        actionLabel: t("common.retry", { defaultValue: "Retry" }),
+        actionLoading: false,
+        onAction: retryMapLoad,
+      }
+    : hasFatalDataError
+      ? {
+          title: t("dashboard.dataAbnormal", { defaultValue: "Data error" }),
+          description:
+            getErrorMessage(errors[0]) ??
+            t("common.serviceUnavailable", {
+              defaultValue: "Service is unavailable. Please try again.",
+            }),
+          actionLabel: t("dashboard.actions.retryFetch", {
+            defaultValue: "Retry fetch",
+          }),
+          actionLoading: refreshingMapData,
+          onAction: () => {
+            void refreshMapData();
+          },
+        }
+      : null;
+  const hasFatalOverlay = Boolean(fatalOverlay);
   const latestQueryUpdatedAt = chainStatuses.reduce<number | null>(
     (latest, status) => {
       if (!status.dataUpdatedAt) {
@@ -3316,547 +3358,583 @@ export function WarMap({
 
   return (
     <div ref={wrapperRef} className={containerClassName}>
-      {errors.length > 0 && hasData ? (
-        <div className="absolute left-4 right-4 top-4 z-20">
-          <RequestErrorBanner
-            error={errors[0]}
-            showCachedDataHint
-            actionLoading={refreshingMapData}
-            onRetry={() => {
-              void refreshMapData();
-            }}
-          />
-        </div>
-      ) : null}
-
-      <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
-        <Space size={6} wrap>
-          <Tooltip
-            title={
-              streamMessageExact
-                ? `${t("dashboard.charts.warMap.stats.streamMessage", {
-                    defaultValue: "Stream message",
-                  })}: ${streamMessageExact}`
-                : (resolvedStreamState.error ?? undefined)
-            }
-          >
-            <Tag color={streamStatusColor} className="text-xs">
-              {streamStatusLabel}
-            </Tag>
-          </Tooltip>
-          {streamMessageRelative ? (
-            <Tooltip
-              title={`${t("dashboard.charts.warMap.stats.streamMessage", {
-                defaultValue: "Stream message",
-              })}: ${streamMessageExact}`}
-            >
-              <Tag
-                color={streamLagging ? "gold" : "default"}
-                className="text-xs"
-              >
-                {t("dashboard.charts.warMap.stats.streamMessage", {
-                  defaultValue: "Stream message",
-                })}
-                : {streamMessageRelative}
-              </Tag>
-            </Tooltip>
+      {!hasFatalOverlay ? (
+        <>
+          {errors.length > 0 && hasData ? (
+            <div className="absolute left-4 right-4 top-4 z-20">
+              <RequestErrorBanner
+                error={errors[0]}
+                showCachedDataHint
+                actionLoading={refreshingMapData}
+                onRetry={() => {
+                  void refreshMapData();
+                }}
+              />
+            </div>
           ) : null}
-          <Tooltip
-            title={
-              latestQueryUpdatedExact
-                ? `${t("dashboard.charts.warMap.stats.dataUpdated", {
-                    defaultValue: "Data updated",
-                  })}: ${latestQueryUpdatedExact}`
-                : undefined
-            }
-          >
-            <Tag color={dataStatusColor} className="text-xs">
-              {dataStatusLabel}
-            </Tag>
-          </Tooltip>
-          <Tag color="default" className="text-xs">
-            {t("dashboard.charts.warMap.stats.window", {
-              defaultValue: "Window",
-            })}
-            : {windowLabel}
-          </Tag>
-          <Tag color="geekblue" className="text-xs">
-            {t("dashboard.charts.warMap.stats.signals", {
-              defaultValue: "Signals",
-            })}
-            : {rawEvents.length}
-          </Tag>
-          <Tag color="green" className="text-xs">
-            {t("dashboard.charts.warMap.stats.news", { defaultValue: "News" })}:{" "}
-            {rawNewsMarkers.length}
-          </Tag>
-          <Tag color="cyan" className="text-xs">
-            {t("dashboard.charts.warMap.stats.monitors", {
-              defaultValue: "Monitors",
-            })}
-            : {monitors.length}
-          </Tag>
-          <Tag color="purple" className="text-xs">
-            {t("dashboard.charts.warMap.stats.visibleLayers", {
-              defaultValue: "Visible layers",
-            })}
-            : {visibleLayerCount}
-          </Tag>
-          <Space size={4}>
-            <Button
-              size="small"
-              type={flightMode === "military" ? "primary" : "default"}
-              onClick={() => setFlightMode("military")}
-            >
-              {t("dashboard.charts.warMap.stats.flightModeMilitary", {
-                defaultValue: "Military",
-              })}
-            </Button>
-            <Button
-              size="small"
-              type={flightMode === "all" ? "primary" : "default"}
-              onClick={() => setFlightMode("all")}
-            >
-              {t("dashboard.charts.warMap.stats.flightModeAll", {
-                defaultValue: "All",
-              })}
-            </Button>
-          </Space>
-          {layerVisibility.ais ? (
-            <Space size={4}>
-              <Button
-                size="small"
-                type={aisMode === "military" ? "primary" : "default"}
-                onClick={() => setAisMode("military")}
-              >
-                {t("dashboard.charts.warMap.stats.aisModeMilitary", {
-                  defaultValue: "Military candidates",
-                })}
-              </Button>
-              <Button
-                size="small"
-                type={aisMode === "density" ? "primary" : "default"}
-                onClick={() => setAisMode("density")}
-              >
-                {t("dashboard.charts.warMap.stats.aisModeDensity", {
-                  defaultValue: "Density only",
-                })}
-              </Button>
+
+          <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
+            <Space size={6} wrap>
               <Tooltip
-                title={aisAllModeDisabled ? aisAllModeDisabledLabel : null}
+                title={
+                  streamMessageExact
+                    ? `${t("dashboard.charts.warMap.stats.streamMessage", {
+                        defaultValue: "Stream message",
+                      })}: ${streamMessageExact}`
+                    : (resolvedStreamState.error ?? undefined)
+                }
               >
+                <Tag color={streamStatusColor} className="text-xs">
+                  {streamStatusLabel}
+                </Tag>
+              </Tooltip>
+              {streamMessageRelative ? (
+                <Tooltip
+                  title={`${t("dashboard.charts.warMap.stats.streamMessage", {
+                    defaultValue: "Stream message",
+                  })}: ${streamMessageExact}`}
+                >
+                  <Tag
+                    color={streamLagging ? "gold" : "default"}
+                    className="text-xs"
+                  >
+                    {t("dashboard.charts.warMap.stats.streamMessage", {
+                      defaultValue: "Stream message",
+                    })}
+                    : {streamMessageRelative}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              <Tooltip
+                title={
+                  latestQueryUpdatedExact
+                    ? `${t("dashboard.charts.warMap.stats.dataUpdated", {
+                        defaultValue: "Data updated",
+                      })}: ${latestQueryUpdatedExact}`
+                    : undefined
+                }
+              >
+                <Tag color={dataStatusColor} className="text-xs">
+                  {dataStatusLabel}
+                </Tag>
+              </Tooltip>
+              <Tag color="default" className="text-xs">
+                {t("dashboard.charts.warMap.stats.window", {
+                  defaultValue: "Window",
+                })}
+                : {windowLabel}
+              </Tag>
+              <Tag color="geekblue" className="text-xs">
+                {t("dashboard.charts.warMap.stats.signals", {
+                  defaultValue: "Signals",
+                })}
+                : {rawEvents.length}
+              </Tag>
+              <Tag color="green" className="text-xs">
+                {t("dashboard.charts.warMap.stats.news", {
+                  defaultValue: "News",
+                })}
+                : {rawNewsMarkers.length}
+              </Tag>
+              <Tag color="cyan" className="text-xs">
+                {t("dashboard.charts.warMap.stats.monitors", {
+                  defaultValue: "Monitors",
+                })}
+                : {monitors.length}
+              </Tag>
+              <Tag color="purple" className="text-xs">
+                {t("dashboard.charts.warMap.stats.visibleLayers", {
+                  defaultValue: "Visible layers",
+                })}
+                : {visibleLayerCount}
+              </Tag>
+              <Space size={4}>
                 <Button
                   size="small"
-                  type={aisMode === "all" ? "primary" : "default"}
-                  disabled={aisAllModeDisabled}
-                  onClick={() => setAisMode("all")}
+                  type={flightMode === "military" ? "primary" : "default"}
+                  onClick={() => setFlightMode("military")}
                 >
-                  {t("dashboard.charts.warMap.stats.aisModeAll", {
-                    defaultValue: "All vessels",
+                  {t("dashboard.charts.warMap.stats.flightModeMilitary", {
+                    defaultValue: "Military",
                   })}
                 </Button>
-              </Tooltip>
-            </Space>
-          ) : null}
-          {layerVisibility.flights && flightsSourceBadgeLabel ? (
-            <Tooltip
-              title={
-                flightsTooltipText ? (
-                  <span className="whitespace-pre-line">
-                    {flightsTooltipText}
-                  </span>
-                ) : null
-              }
-            >
-              <Tag color="geekblue" className="text-xs">
-                {flightsSourceBadgeLabel}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.flights &&
-          typeof flightsReturnedCount === "number" ? (
-            <Tooltip
-              title={
-                flightsTooltipText ? (
-                  <span className="whitespace-pre-line">
-                    {flightsTooltipText}
-                  </span>
-                ) : null
-              }
-            >
-              <Tag
-                color={
-                  flightsFreshness === "stale"
-                    ? "orange"
-                    : flightsFreshness === "zoom_required"
-                      ? "purple"
-                      : flightsFreshness === "budget_limited"
-                        ? "magenta"
-                        : flightsFreshness === "not_configured"
-                          ? "red"
-                          : flightsFreshness === "missing"
-                            ? "default"
-                            : flightsTruncated
-                              ? "gold"
-                              : "cyan"
-                }
-                className="text-xs"
-              >
-                {t("dashboard.charts.warMap.stats.flights", {
-                  defaultValue: "Flights",
-                })}
-                : {flightsReturnedCount}
-                {typeof flightsSnapshotCount === "number"
-                  ? `/${flightsSnapshotCount}`
-                  : ""}
-                {flightsRawLabel ? ` ${flightsRawLabel}` : ""}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais ? (
-            <Tooltip
-              title={
-                aisTooltipText ? (
-                  <span className="whitespace-pre-line">{aisTooltipText}</span>
-                ) : null
-              }
-            >
-              <Tag color={aisSourceStatusColor} className="text-xs">
-                {t("dashboard.charts.warMap.layerNames.ais", {
-                  defaultValue: "AIS traffic",
-                })}
-                : {aisSourceStatusLabel}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais ? (
-            <Tooltip
-              title={
-                aisTooltipText ? (
-                  <span className="whitespace-pre-line">{aisTooltipText}</span>
-                ) : null
-              }
-            >
-              <Tag color="cyan" className="text-xs">
-                {aisModeLabel}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais && typeof aisRelayVesselCount === "number" ? (
-            <Tooltip
-              title={
-                aisTooltipText ? (
-                  <span className="whitespace-pre-line">{aisTooltipText}</span>
-                ) : null
-              }
-            >
-              <Tag color="blue" className="text-xs">
-                {t("dashboard.charts.warMap.stats.aisTrackedVessels", {
-                  defaultValue: "Tracked vessels",
-                })}
-                : {aisRelayVesselCount}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais && aisSnapshotRelative ? (
-            <Tooltip
-              title={
-                aisSnapshotExact
-                  ? `${t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
+                <Button
+                  size="small"
+                  type={flightMode === "all" ? "primary" : "default"}
+                  onClick={() => setFlightMode("all")}
+                >
+                  {t("dashboard.charts.warMap.stats.flightModeAll", {
+                    defaultValue: "All",
+                  })}
+                </Button>
+              </Space>
+              {layerVisibility.ais ? (
+                <Space size={4}>
+                  <Button
+                    size="small"
+                    type={aisMode === "military" ? "primary" : "default"}
+                    onClick={() => setAisMode("military")}
+                  >
+                    {t("dashboard.charts.warMap.stats.aisModeMilitary", {
+                      defaultValue: "Military candidates",
+                    })}
+                  </Button>
+                  <Button
+                    size="small"
+                    type={aisMode === "density" ? "primary" : "default"}
+                    onClick={() => setAisMode("density")}
+                  >
+                    {t("dashboard.charts.warMap.stats.aisModeDensity", {
+                      defaultValue: "Density only",
+                    })}
+                  </Button>
+                  <Tooltip
+                    title={aisAllModeDisabled ? aisAllModeDisabledLabel : null}
+                  >
+                    <Button
+                      size="small"
+                      type={aisMode === "all" ? "primary" : "default"}
+                      disabled={aisAllModeDisabled}
+                      onClick={() => setAisMode("all")}
+                    >
+                      {t("dashboard.charts.warMap.stats.aisModeAll", {
+                        defaultValue: "All vessels",
+                      })}
+                    </Button>
+                  </Tooltip>
+                </Space>
+              ) : null}
+              {layerVisibility.flights && flightsSourceBadgeLabel ? (
+                <Tooltip
+                  title={
+                    flightsTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {flightsTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color="geekblue" className="text-xs">
+                    {flightsSourceBadgeLabel}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.flights &&
+              typeof flightsReturnedCount === "number" ? (
+                <Tooltip
+                  title={
+                    flightsTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {flightsTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag
+                    color={
+                      flightsFreshness === "stale"
+                        ? "orange"
+                        : flightsFreshness === "zoom_required"
+                          ? "purple"
+                          : flightsFreshness === "budget_limited"
+                            ? "magenta"
+                            : flightsFreshness === "not_configured"
+                              ? "red"
+                              : flightsFreshness === "missing"
+                                ? "default"
+                                : flightsTruncated
+                                  ? "gold"
+                                  : "cyan"
+                    }
+                    className="text-xs"
+                  >
+                    {t("dashboard.charts.warMap.stats.flights", {
+                      defaultValue: "Flights",
+                    })}
+                    : {flightsReturnedCount}
+                    {typeof flightsSnapshotCount === "number"
+                      ? `/${flightsSnapshotCount}`
+                      : ""}
+                    {flightsRawLabel ? ` ${flightsRawLabel}` : ""}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais ? (
+                <Tooltip
+                  title={
+                    aisTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {aisTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color={aisSourceStatusColor} className="text-xs">
+                    {t("dashboard.charts.warMap.layerNames.ais", {
+                      defaultValue: "AIS traffic",
+                    })}
+                    : {aisSourceStatusLabel}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais ? (
+                <Tooltip
+                  title={
+                    aisTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {aisTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color="cyan" className="text-xs">
+                    {aisModeLabel}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais &&
+              typeof aisRelayVesselCount === "number" ? (
+                <Tooltip
+                  title={
+                    aisTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {aisTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color="blue" className="text-xs">
+                    {t("dashboard.charts.warMap.stats.aisTrackedVessels", {
+                      defaultValue: "Tracked vessels",
+                    })}
+                    : {aisRelayVesselCount}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais && aisSnapshotRelative ? (
+                <Tooltip
+                  title={
+                    aisSnapshotExact
+                      ? `${t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
+                          defaultValue: "AIS updated",
+                        })}: ${aisSnapshotExact}`
+                      : undefined
+                  }
+                >
+                  <Tag
+                    color={aisFreshness === "stale" ? "gold" : "default"}
+                    className="text-xs"
+                  >
+                    {t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
                       defaultValue: "AIS updated",
-                    })}: ${aisSnapshotExact}`
-                  : undefined
-              }
-            >
-              <Tag
-                color={aisFreshness === "stale" ? "gold" : "default"}
-                className="text-xs"
-              >
-                {t("dashboard.charts.warMap.stats.aisSnapshotUpdated", {
-                  defaultValue: "AIS updated",
-                })}
-                : {aisSnapshotRelative}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais && typeof aisPrimaryCountValue === "number" ? (
-            <Tooltip
-              title={
-                aisTooltipText ? (
-                  <span className="whitespace-pre-line">{aisTooltipText}</span>
-                ) : null
-              }
-            >
-              <Tag color="geekblue" className="text-xs">
-                {aisPrimaryCountLabel}: {aisPrimaryCountValue}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais && typeof aisDisruptionsCount === "number" ? (
-            <Tooltip
-              title={
-                aisTooltipText ? (
-                  <span className="whitespace-pre-line">{aisTooltipText}</span>
-                ) : null
-              }
-            >
-              <Tag color="orange" className="text-xs">
-                {t("dashboard.charts.warMap.stats.aisDisruptions", {
-                  defaultValue: "Disruptions",
-                })}
-                : {aisDisruptionsCount}
-              </Tag>
-            </Tooltip>
-          ) : null}
-          {layerVisibility.ais && aisMode === "all" && aisAllModeDisabled ? (
-            <Tooltip title={aisAllModeDisabledLabel}>
-              <Tag color="magenta" className="text-xs">
-                {t("dashboard.charts.warMap.stats.aisAllUnavailable", {
-                  defaultValue: "All vessels unavailable",
-                })}
-              </Tag>
-            </Tooltip>
-          ) : null}
-        </Space>
-        <Space size={6} wrap>
-          {detailedChainStatuses.map((status) => (
-            <Tooltip key={status.key} title={status.tooltip}>
-              <Tag color={status.color} className="text-xs">
-                {status.text}
-              </Tag>
-            </Tooltip>
-          ))}
-        </Space>
-        <Space size={6} wrap>
-          {WAR_MAP_PRESETS.map((preset) => (
-            <Button
-              key={preset}
-              size="small"
-              type={activePreset === preset ? "primary" : "default"}
-              onClick={() => setActivePreset(preset)}
-            >
-              {t(`dashboard.charts.warMap.presets.${preset}`, {
-                defaultValue: PRESET_LABELS[preset],
-              })}
-            </Button>
-          ))}
-        </Space>
-        <Space size={6} wrap>
-          {WAR_MAP_TIME_RANGE_PRESETS.map((preset) => (
-            <Button
-              key={preset}
-              size="small"
-              type={timeRangePreset === preset ? "primary" : "default"}
-              onClick={() => setTimeRangePreset(preset)}
-            >
-              {t(`dashboard.charts.warMap.timeRange.${preset}`, {
-                defaultValue: TIME_RANGE_LABELS[preset],
-              })}
-            </Button>
-          ))}
-        </Space>
-      </div>
+                    })}
+                    : {aisSnapshotRelative}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais &&
+              typeof aisPrimaryCountValue === "number" ? (
+                <Tooltip
+                  title={
+                    aisTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {aisTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color="geekblue" className="text-xs">
+                    {aisPrimaryCountLabel}: {aisPrimaryCountValue}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais &&
+              typeof aisDisruptionsCount === "number" ? (
+                <Tooltip
+                  title={
+                    aisTooltipText ? (
+                      <span className="whitespace-pre-line">
+                        {aisTooltipText}
+                      </span>
+                    ) : null
+                  }
+                >
+                  <Tag color="orange" className="text-xs">
+                    {t("dashboard.charts.warMap.stats.aisDisruptions", {
+                      defaultValue: "Disruptions",
+                    })}
+                    : {aisDisruptionsCount}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+              {layerVisibility.ais &&
+              aisMode === "all" &&
+              aisAllModeDisabled ? (
+                <Tooltip title={aisAllModeDisabledLabel}>
+                  <Tag color="magenta" className="text-xs">
+                    {t("dashboard.charts.warMap.stats.aisAllUnavailable", {
+                      defaultValue: "All vessels unavailable",
+                    })}
+                  </Tag>
+                </Tooltip>
+              ) : null}
+            </Space>
+            <Space size={6} wrap>
+              {detailedChainStatuses.map((status) => (
+                <Tooltip key={status.key} title={status.tooltip}>
+                  <Tag color={status.color} className="text-xs">
+                    {status.text}
+                  </Tag>
+                </Tooltip>
+              ))}
+            </Space>
+            <Space size={6} wrap>
+              {WAR_MAP_PRESETS.map((preset) => (
+                <Button
+                  key={preset}
+                  size="small"
+                  type={activePreset === preset ? "primary" : "default"}
+                  onClick={() => setActivePreset(preset)}
+                >
+                  {t(`dashboard.charts.warMap.presets.${preset}`, {
+                    defaultValue: PRESET_LABELS[preset],
+                  })}
+                </Button>
+              ))}
+            </Space>
+            <Space size={6} wrap>
+              {WAR_MAP_TIME_RANGE_PRESETS.map((preset) => (
+                <Button
+                  key={preset}
+                  size="small"
+                  type={timeRangePreset === preset ? "primary" : "default"}
+                  onClick={() => setTimeRangePreset(preset)}
+                >
+                  {t(`dashboard.charts.warMap.timeRange.${preset}`, {
+                    defaultValue: TIME_RANGE_LABELS[preset],
+                  })}
+                </Button>
+              ))}
+            </Space>
+          </div>
 
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-        <Button
-          size="small"
-          type="default"
-          loading={refreshingMapData}
-          onClick={() => {
-            void refreshMapData();
-          }}
-        >
-          {t("dashboard.actions.fetchLatest", { defaultValue: "Refresh" })}
-        </Button>
-        <Popover
-          content={layerSelector}
-          title={t("dashboard.charts.warMap.layers", {
-            defaultValue: "Layers",
-          })}
-          trigger="click"
-          placement="bottomRight"
-        >
-          <Button size="small" type="default" icon={<SettingOutlined />} />
-        </Popover>
-      </div>
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+            <Button
+              size="small"
+              type="default"
+              loading={refreshingMapData}
+              onClick={() => {
+                void refreshMapData();
+              }}
+            >
+              {t("dashboard.actions.fetchLatest", { defaultValue: "Refresh" })}
+            </Button>
+            <Popover
+              content={layerSelector}
+              title={t("dashboard.charts.warMap.layers", {
+                defaultValue: "Layers",
+              })}
+              trigger="click"
+              placement="bottomRight"
+            >
+              <Button size="small" type="default" icon={<SettingOutlined />} />
+            </Popover>
+          </div>
+        </>
+      ) : null}
 
       <div
         ref={mapContainerRef}
         className="h-full w-full overflow-hidden rounded-lg"
       />
 
-      <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-sm rounded-xl border border-slate-200/80 bg-white/90 px-3 py-3 shadow-lg backdrop-blur">
-        <Space direction="vertical" size={4}>
-          <Typography.Text
-            strong
-            className="text-xs uppercase tracking-[0.18em] text-slate-500"
-          >
-            {t("dashboard.charts.warMap.legend.title", {
-              defaultValue: "Legend",
-            })}
-          </Typography.Text>
-          <Space size={[6, 6]} wrap>
-            <Tag color="red">
-              {t("dashboard.charts.warMap.stats.high", {
-                defaultValue: "High",
-              })}
-            </Tag>
-            <Tag color="gold">
-              {t("dashboard.charts.warMap.stats.medium", {
-                defaultValue: "Medium",
-              })}
-            </Tag>
-            <Tag color="blue">
-              {t("dashboard.charts.warMap.stats.low", { defaultValue: "Low" })}
-            </Tag>
-          </Space>
-          <Space size={[6, 6]} wrap>
-            <Tag color="green">
-              {t("dashboard.charts.warMap.stats.geocoded", {
-                defaultValue: "Geocoded news",
-              })}
-            </Tag>
-            <Tag color="cyan">
-              {t("dashboard.charts.warMap.stats.fallbackCountry", {
-                defaultValue: "Fallback country",
-              })}
-            </Tag>
-            <Tag color="purple">
-              {t("dashboard.charts.warMap.stats.monitors", {
-                defaultValue: "Monitors",
-              })}
-            </Tag>
-          </Space>
-          {layerVisibility.ais ? (
+      {!hasFatalOverlay ? (
+        <>
+          <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-sm rounded-xl border border-slate-200/80 bg-white/90 px-3 py-3 shadow-lg backdrop-blur">
             <Space direction="vertical" size={4}>
               <Typography.Text
                 strong
-                className="text-[11px] uppercase tracking-[0.16em] text-slate-500"
+                className="text-xs uppercase tracking-[0.18em] text-slate-500"
               >
-                {t("dashboard.charts.warMap.legend.aisTitle", {
-                  defaultValue: "AIS",
+                {t("dashboard.charts.warMap.legend.title", {
+                  defaultValue: "Legend",
                 })}
               </Typography.Text>
               <Space size={[6, 6]} wrap>
-                {[
-                  {
-                    key: "military",
-                    color: "rgb(220 38 38)",
-                    label: t("dashboard.charts.warMap.legend.aisMilitary", {
-                      defaultValue: "Military / government",
-                    }),
-                  },
-                  {
-                    key: "fishing",
-                    color: "rgb(34 197 94)",
-                    label: t("dashboard.charts.warMap.legend.aisFishing", {
-                      defaultValue: "Fishing",
-                    }),
-                  },
-                  {
-                    key: "passenger",
-                    color: "rgb(59 130 246)",
-                    label: t("dashboard.charts.warMap.legend.aisPassenger", {
-                      defaultValue: "Passenger",
-                    }),
-                  },
-                  {
-                    key: "cargo",
-                    color: "rgb(148 163 184)",
-                    label: t("dashboard.charts.warMap.legend.aisCargo", {
-                      defaultValue: "Cargo",
-                    }),
-                  },
-                  {
-                    key: "tanker",
-                    color: "rgb(249 115 22)",
-                    label: t("dashboard.charts.warMap.legend.aisTanker", {
-                      defaultValue: "Tanker",
-                    }),
-                  },
-                  {
-                    key: "other",
-                    color: "rgb(248 250 252)",
-                    label: t("dashboard.charts.warMap.legend.aisOther", {
-                      defaultValue: "Other",
-                    }),
-                  },
-                ].map((item) => (
-                  <span
-                    key={item.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-1 text-[11px] text-slate-700"
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full border border-slate-300/80"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span>{item.label}</span>
-                  </span>
-                ))}
+                <Tag color="red">
+                  {t("dashboard.charts.warMap.stats.high", {
+                    defaultValue: "High",
+                  })}
+                </Tag>
+                <Tag color="gold">
+                  {t("dashboard.charts.warMap.stats.medium", {
+                    defaultValue: "Medium",
+                  })}
+                </Tag>
+                <Tag color="blue">
+                  {t("dashboard.charts.warMap.stats.low", {
+                    defaultValue: "Low",
+                  })}
+                </Tag>
               </Space>
               <Space size={[6, 6]} wrap>
-                {[
-                  {
-                    key: "density",
-                    color:
-                      "linear-gradient(90deg, rgb(147 197 253), rgb(185 28 28))",
-                    label: t("dashboard.charts.warMap.legend.aisDensity", {
-                      defaultValue: "Traffic density heatmap",
-                    }),
-                    gradient: true,
-                  },
-                  {
-                    key: "disruption",
-                    color: "rgb(220 38 38)",
-                    label: t("dashboard.charts.warMap.legend.aisDisruption", {
-                      defaultValue: "Chokepoint disruption",
-                    }),
-                  },
-                ].map((item) => (
-                  <span
-                    key={item.key}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-1 text-[11px] text-slate-700"
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full border border-slate-300/80"
-                      style={
-                        item.gradient
-                          ? { backgroundImage: item.color }
-                          : { backgroundColor: item.color }
-                      }
-                    />
-                    <span>{item.label}</span>
-                  </span>
-                ))}
+                <Tag color="green">
+                  {t("dashboard.charts.warMap.stats.geocoded", {
+                    defaultValue: "Geocoded news",
+                  })}
+                </Tag>
+                <Tag color="cyan">
+                  {t("dashboard.charts.warMap.stats.fallbackCountry", {
+                    defaultValue: "Fallback country",
+                  })}
+                </Tag>
+                <Tag color="purple">
+                  {t("dashboard.charts.warMap.stats.monitors", {
+                    defaultValue: "Monitors",
+                  })}
+                </Tag>
               </Space>
+              {layerVisibility.ais ? (
+                <Space direction="vertical" size={4}>
+                  <Typography.Text
+                    strong
+                    className="text-[11px] uppercase tracking-[0.16em] text-slate-500"
+                  >
+                    {t("dashboard.charts.warMap.legend.aisTitle", {
+                      defaultValue: "AIS",
+                    })}
+                  </Typography.Text>
+                  <Space size={[6, 6]} wrap>
+                    {[
+                      {
+                        key: "military",
+                        color: "rgb(220 38 38)",
+                        label: t("dashboard.charts.warMap.legend.aisMilitary", {
+                          defaultValue: "Military / government",
+                        }),
+                      },
+                      {
+                        key: "fishing",
+                        color: "rgb(34 197 94)",
+                        label: t("dashboard.charts.warMap.legend.aisFishing", {
+                          defaultValue: "Fishing",
+                        }),
+                      },
+                      {
+                        key: "passenger",
+                        color: "rgb(59 130 246)",
+                        label: t(
+                          "dashboard.charts.warMap.legend.aisPassenger",
+                          {
+                            defaultValue: "Passenger",
+                          },
+                        ),
+                      },
+                      {
+                        key: "cargo",
+                        color: "rgb(148 163 184)",
+                        label: t("dashboard.charts.warMap.legend.aisCargo", {
+                          defaultValue: "Cargo",
+                        }),
+                      },
+                      {
+                        key: "tanker",
+                        color: "rgb(249 115 22)",
+                        label: t("dashboard.charts.warMap.legend.aisTanker", {
+                          defaultValue: "Tanker",
+                        }),
+                      },
+                      {
+                        key: "other",
+                        color: "rgb(248 250 252)",
+                        label: t("dashboard.charts.warMap.legend.aisOther", {
+                          defaultValue: "Other",
+                        }),
+                      },
+                    ].map((item) => (
+                      <span
+                        key={item.key}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-1 text-[11px] text-slate-700"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full border border-slate-300/80"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span>{item.label}</span>
+                      </span>
+                    ))}
+                  </Space>
+                  <Space size={[6, 6]} wrap>
+                    {[
+                      {
+                        key: "density",
+                        color:
+                          "linear-gradient(90deg, rgb(147 197 253), rgb(185 28 28))",
+                        label: t(
+                          "dashboard.charts.warMap.legend.aisDensity",
+                          {
+                            defaultValue: "Traffic density heatmap",
+                          },
+                        ),
+                        gradient: true,
+                      },
+                      {
+                        key: "disruption",
+                        color: "rgb(220 38 38)",
+                        label: t(
+                          "dashboard.charts.warMap.legend.aisDisruption",
+                          {
+                            defaultValue: "Chokepoint disruption",
+                          },
+                        ),
+                      },
+                    ].map((item) => (
+                      <span
+                        key={item.key}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-1 text-[11px] text-slate-700"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full border border-slate-300/80"
+                          style={
+                            item.gradient
+                              ? { backgroundImage: item.color }
+                              : { backgroundColor: item.color }
+                          }
+                        />
+                        <span>{item.label}</span>
+                      </span>
+                    ))}
+                  </Space>
+                </Space>
+              ) : null}
+              <Typography.Text type="secondary" className="text-xs">
+                {t("dashboard.charts.warMap.legend.radius", {
+                  defaultValue:
+                    "Larger points indicate stronger aggregated signal density.",
+                })}
+              </Typography.Text>
             </Space>
+          </div>
+
+          {useDesktopInspector && inspectorPanelContent ? (
+            <div className="absolute bottom-4 right-4 top-16 z-20 hidden w-[360px] lg:block">
+              {inspectorPanelContent}
+            </div>
           ) : null}
-          <Typography.Text type="secondary" className="text-xs">
-            {t("dashboard.charts.warMap.legend.radius", {
-              defaultValue:
-                "Larger points indicate stronger aggregated signal density.",
-            })}
-          </Typography.Text>
-        </Space>
-      </div>
 
-      {useDesktopInspector && inspectorPanelContent ? (
-        <div className="absolute bottom-4 right-4 top-16 z-20 hidden w-[360px] lg:block">
-          {inspectorPanelContent}
-        </div>
-      ) : null}
-
-      {!useDesktopInspector ? (
-        <Drawer
-          open={Boolean(inspectorPanelContent)}
-          onClose={closeSelectedInspector}
-          placement="right"
-          width="100%"
-          destroyOnClose={false}
-          title={null}
-        >
-          {inspectorPanelContent}
-        </Drawer>
+          {!useDesktopInspector ? (
+            <Drawer
+              open={Boolean(inspectorPanelContent)}
+              onClose={closeSelectedInspector}
+              placement="right"
+              width="100%"
+              destroyOnClose={false}
+              title={null}
+            >
+              {inspectorPanelContent}
+            </Drawer>
+          ) : null}
+        </>
       ) : null}
 
       {showBootOverlay ? (
@@ -3867,28 +3945,6 @@ export function WarMap({
               <Typography.Text>{bootOverlayLabel}</Typography.Text>
             </Space>
           </div>
-        </div>
-      ) : null}
-
-      {!anyLoading && errors.length > 0 && !hasData ? (
-        <div className="absolute inset-0">
-          <ChartEmptyState
-            variant="error"
-            title={t("dashboard.dataAbnormal", { defaultValue: "Data error" })}
-            description={
-              getErrorMessage(errors[0]) ??
-              t("common.serviceUnavailable", {
-                defaultValue: "Service is unavailable. Please try again.",
-              })
-            }
-            actionLabel={t("dashboard.actions.retryFetch", {
-              defaultValue: "Retry fetch",
-            })}
-            actionLoading={refreshingMapData}
-            onAction={() => {
-              void refreshMapData();
-            }}
-          />
         </div>
       ) : null}
 
@@ -3903,14 +3959,15 @@ export function WarMap({
         </div>
       ) : null}
 
-      {mapLoadError ? (
-        <div className="absolute inset-0">
+      {fatalOverlay ? (
+        <div className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm">
           <ChartEmptyState
             variant="error"
-            title={mapLoadError.title}
-            description={mapLoadError.description}
-            actionLabel={t("common.retry", { defaultValue: "Retry" })}
-            onAction={retryMapLoad}
+            title={fatalOverlay.title}
+            description={fatalOverlay.description}
+            actionLabel={fatalOverlay.actionLabel}
+            actionLoading={fatalOverlay.actionLoading}
+            onAction={fatalOverlay.onAction}
           />
         </div>
       ) : null}

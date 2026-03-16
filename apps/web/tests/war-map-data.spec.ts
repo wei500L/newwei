@@ -6,10 +6,11 @@ import { describe, expect, it } from "vitest";
 import {
   WAR_MAP_QUERY_KEYS,
   WAR_MAP_UNSUPPORTED_LAYER_IDS,
+  buildWarMapBaseRequestParams,
   buildWarMapEventsQueryKey,
+  buildWarMapLayerRequestParams,
   buildWarMapLayersQueryKey,
   buildWarMapNewsMarkersQueryKey,
-  buildWarMapRequestParams,
   normalizeStoredSituationMonitors,
   normalizeWarMapEventsResponse,
   normalizeWarMapLayersResponse,
@@ -63,9 +64,29 @@ describe("war-map data contract helpers", () => {
     ]);
   });
 
-  it("builds request params without leaking undefined values", () => {
+  it("builds base request params without leaking layer-only controls", () => {
+    const input = {
+      start: "2026-03-01T00:00:00.000Z",
+      end: "2026-03-02T00:00:00.000Z",
+      zoom: 3.555,
+      cluster: false,
+      flightMode: "all" as const,
+      aisMode: "density" as const,
+    };
+
     expect(
-      buildWarMapRequestParams({
+      buildWarMapBaseRequestParams(input),
+    ).toEqual({
+      start: "2026-03-01T00:00:00.000Z",
+      end: "2026-03-02T00:00:00.000Z",
+      zoom: "3.56",
+      cluster: "0",
+    });
+  });
+
+  it("builds layer request params with explicit flight and AIS modes", () => {
+    expect(
+      buildWarMapLayerRequestParams({
         start: "2026-03-01T00:00:00.000Z",
         end: "2026-03-02T00:00:00.000Z",
         zoom: 3.555,
@@ -204,20 +225,34 @@ describe("war-map page wiring", () => {
     expect(source).toContain("WAR_MAP_QUERY_KEYS.layersPrefix");
   });
 
-  it("requests viewport-aware layers without keeping stale placeholder data", () => {
+  it("routes layer-only params exclusively to the layers chain", () => {
     const source = read(
       "app/(app)/dashboard/charts/war-map/use-war-map-data.ts",
     );
+    const eventsBlock =
+      source
+        .split("const eventsQuery = useQuery({")[1]
+        ?.split("const newsQuery = useQuery({")[0] ?? "";
+    const newsBlock =
+      source
+        .split("const newsQuery = useQuery({")[1]
+        ?.split("const layersQuery = useQuery({")[0] ?? "";
     const layersBlock =
       source
         .split("const layersQuery = useQuery({")[1]
         ?.split("const monitorsQuery = useQuery({")[0] ?? "";
 
+    expect(eventsBlock).toContain(
+      "params: buildWarMapBaseRequestParams({ ...queryInput, cluster: false })",
+    );
+    expect(newsBlock).toContain(
+      "params: buildWarMapBaseRequestParams({ ...queryInput, cluster: false })",
+    );
     expect(layersBlock).toContain(
       "queryKey: buildWarMapLayersQueryKey(queryInput)",
     );
     expect(layersBlock).toContain(
-      "params: buildWarMapRequestParams(queryInput)",
+      "params: buildWarMapLayerRequestParams(queryInput)",
     );
     expect(layersBlock).not.toContain(
       "placeholderData: (previous) => previous",
@@ -265,8 +300,23 @@ describe("war-map page wiring", () => {
     expect(source).toContain('onClick={() => setFlightMode("all")}');
     expect(source).toContain('onClick={() => setAisMode("density")}');
     expect(source).toContain('onClick={() => setAisMode("all")}');
-    expect(source).toContain('id: "wm-ais-density-heatmap"');
+    expect(source).toContain('id: "wm-ais-density-zones"');
     expect(source).toContain("dashboard.charts.warMap.legend.aisTitle");
+  });
+
+  it("suppresses map chrome behind fatal overlays while keeping nonfatal retry banners", () => {
+    const source = read("app/(app)/dashboard/charts/war-map/war-map.tsx");
+
+    expect(source).toContain(
+      "const hasFatalDataError = !anyLoading && errors.length > 0 && !hasData;",
+    );
+    expect(source).toContain("const fatalOverlay = mapLoadError");
+    expect(source).toContain("const hasFatalOverlay = Boolean(fatalOverlay);");
+    expect(source).toContain("{!hasFatalOverlay ? (");
+    expect(source).toContain(
+      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm"',
+    );
+    expect(source).toContain("showCachedDataHint");
   });
 
   it("keeps loading non-blocking and refreshes only the current query window", () => {

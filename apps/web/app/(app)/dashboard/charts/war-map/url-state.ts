@@ -3,12 +3,14 @@ import {
   type WarMapFlightMode,
   type WarMapLayerVisibility,
   type WarMapPreset,
+  type WarMapSettings,
   type WarMapTimeRangePreset,
   type WarMapViewState,
   WAR_MAP_DEFAULT_LAYER_VISIBILITY,
   WAR_MAP_LAYER_IDS,
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
+  normalizeWarMapSettings,
   normalizeWarMapViewState,
 } from '@modular/utils';
 
@@ -119,6 +121,22 @@ export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
     layerVisibility,
     flightMode,
     aisMode,
+  };
+}
+
+export function mergeWarMapSettingsWithUrlState(
+  payload: unknown,
+  search: URLSearchParams,
+): WarMapSettings {
+  const normalized = normalizeWarMapSettings(payload);
+  const parsed = readWarMapUrlState(search);
+  if (!parsed.aisMode) {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    aisMode: parsed.aisMode,
   };
 }
 
