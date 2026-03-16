@@ -93,6 +93,26 @@ function resolveLocalizedValue(
   return resolved.length > 0 ? resolved : fallback;
 }
 
+function compareLocalizedItems(
+  left: LocalizedAccessSettingsItem,
+  right: LocalizedAccessSettingsItem,
+  locale?: string,
+): number {
+  const labelComparison = left.label.localeCompare(right.label, locale, {
+    sensitivity: 'base',
+    numeric: true,
+  });
+
+  if (labelComparison !== 0) {
+    return labelComparison;
+  }
+
+  return left.rawLabel.localeCompare(right.rawLabel, locale, {
+    sensitivity: 'base',
+    numeric: true,
+  });
+}
+
 export function localizeAccessRole(
   role: AccessSettingsRoleLike,
   t: TFunction,
@@ -195,6 +215,32 @@ export function formatAccessPermissionOptionLabel(
   return localized.localized && localized.label !== localized.rawLabel
     ? `${localized.label} (${localized.rawLabel})`
     : localized.label;
+}
+
+export function compareAccessRoleLabels(
+  left: AccessSettingsRoleLike,
+  right: AccessSettingsRoleLike,
+  t: TFunction,
+  locale?: string,
+): number {
+  return compareLocalizedItems(
+    localizeAccessRole(left, t),
+    localizeAccessRole(right, t),
+    locale,
+  );
+}
+
+export function compareAccessPermissionLabels(
+  left: AccessSettingsPermissionLike,
+  right: AccessSettingsPermissionLike,
+  t: TFunction,
+  locale?: string,
+): number {
+  return compareLocalizedItems(
+    localizeAccessPermission(left, t),
+    localizeAccessPermission(right, t),
+    locale,
+  );
 }
 
 export function getCorePermissionTranslationEntries(): Array<{

@@ -37,6 +37,8 @@ import {
   normalizeRoleSelection,
 } from '@/lib/access-settings';
 import {
+  compareAccessPermissionLabels,
+  compareAccessRoleLabels,
   formatAccessPermissionOptionLabel,
   formatAccessRoleOptionLabel,
   localizeAccessPermission,
@@ -944,9 +946,13 @@ function RolesPanel({
   onCreate: (values: CreateRoleFormValues) => Promise<void>;
   onSave: (roleId: string, values: RoleFormValues) => Promise<void>;
 }) {
+  const { t, i18n } = useTranslation();
   const sortedPermissions = useMemo(
-    () => [...permissions].sort((left, right) => left.name.localeCompare(right.name)),
-    [permissions],
+    () =>
+      [...permissions].sort((left, right) =>
+        compareAccessPermissionLabels(left, right, t, i18n.language),
+      ),
+    [i18n.language, permissions, t],
   );
   const sortedRoles = useMemo(
     () =>
@@ -954,9 +960,9 @@ function RolesPanel({
         if (left.isSystem !== right.isSystem) {
           return Number(right.isSystem) - Number(left.isSystem);
         }
-        return left.name.localeCompare(right.name);
+        return compareAccessRoleLabels(left, right, t, i18n.language);
       }),
-    [roles],
+    [i18n.language, roles, t],
   );
 
   return (
@@ -1189,7 +1195,7 @@ function PermissionsPanel({
   permissions: PermissionListItem[];
   roles: RoleListItem[];
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const adminRoleIds = useMemo(() => getSystemAdminRoleIds(roles), [roles]);
   const usageMap = useMemo(() => {
     const map = new Map<
@@ -1248,7 +1254,20 @@ function PermissionsPanel({
           return (
             <Space size={[6, 6]} wrap>
               {rolesForPermission
-                .sort((left, right) => left.name.localeCompare(right.name))
+                .sort((left, right) =>
+                  compareAccessRoleLabels(
+                    {
+                      name: left.name,
+                      isSystem: left.isSystem,
+                    },
+                    {
+                      name: right.name,
+                      isSystem: right.isSystem,
+                    },
+                    t,
+                    i18n.language,
+                  ),
+                )
                 .map((role) => (
                   <Tag
                     key={`${record.id}-${role.id}`}
@@ -1276,7 +1295,9 @@ function PermissionsPanel({
     <Table
       rowKey="id"
       columns={columns}
-      dataSource={[...permissions].sort((left, right) => left.name.localeCompare(right.name))}
+      dataSource={[...permissions].sort((left, right) =>
+        compareAccessPermissionLabels(left, right, t, i18n.language),
+      )}
       pagination={false}
       scroll={{ x: 820 }}
     />
@@ -1580,10 +1601,13 @@ function UserAccessDrawer({
   onClose: () => void;
   onSave: (user: UserListItem, primaryRoleId: string, roleIds: string[]) => Promise<void>;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const assignableRoles = useMemo(
-    () => getAssignableRoles(roles, adminRoleIds),
-    [adminRoleIds, roles],
+    () =>
+      getAssignableRoles(roles, adminRoleIds).sort((left, right) =>
+        compareAccessRoleLabels(left, right, t, i18n.language),
+      ),
+    [adminRoleIds, i18n.language, roles, t],
   );
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [primaryRoleId, setPrimaryRoleId] = useState<string>();
@@ -1614,8 +1638,12 @@ function UserAccessDrawer({
   );
   const initialPrimaryRoleId = user?.primaryRoleId ?? initialRoleIds[0];
   const permissionPreview = useMemo(
-    () => getPermissionPreview(normalizedSelectedRoleIds, assignableRoles),
-    [assignableRoles, normalizedSelectedRoleIds],
+    () =>
+      getPermissionPreview(normalizedSelectedRoleIds, assignableRoles).sort(
+        (left, right) =>
+          compareAccessPermissionLabels(left, right, t, i18n.language),
+      ),
+    [assignableRoles, i18n.language, normalizedSelectedRoleIds, t],
   );
   const hasChanges =
     Boolean(user) &&
