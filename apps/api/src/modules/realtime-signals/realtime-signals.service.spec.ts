@@ -7,6 +7,10 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
   enabled: true,
   requestTimeoutMs: 10_000,
   maxRetries: 0,
+  capabilities: {
+    acledApiEnabled: false,
+    acledApiDisabledReason: "Open myACLED does not include API access.",
+  },
   sources: {
     adsb: { enabled: true, intervalSec: 60 },
     ais: { enabled: true, intervalSec: 60 },
@@ -308,6 +312,68 @@ describe("RealtimeSignalsService unrest merge", () => {
     expect(storedSnapshot?.aircraft?.[0]?.countryCode).toBeUndefined();
   });
 
+  it("fetches AIS snapshots from the bare relay endpoint with compatible auth headers", async () => {
+    const { service } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      relay: {
+        baseUrl: "https://relay.example.com/",
+        sharedSecret: "relay-secret",
+      },
+      credentials: {
+        ...runtimeConfig.credentials,
+        aisApiKey: "ais-key",
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+    const fetchJsonSpy = jest
+      .spyOn(service as any, "fetchJsonWithRetry")
+      .mockResolvedValue({
+        disruptions: [{ countryCode: "US" }],
+        density: [{ id: "density-1" }],
+      });
+
+    const result = await (service as any).fetchAisSignal(runtime);
+
+    expect(fetchJsonSpy).toHaveBeenCalledWith(
+      "https://relay.example.com/ais/snapshot?candidates=false",
+      runtime,
+      {
+        headers: {
+          Authorization: "Bearer relay-secret",
+          "x-relay-key": "relay-secret",
+          "X-Relay-Secret": "relay-secret",
+          "X-AIS-API-Key": "ais-key",
+        },
+      },
+    );
+    expect(result[0]).toMatchObject({
+      metricSlug: "realtime.ais.disruptions",
+      value: 1,
+      context: {
+        source: "relay",
+        disruptions: 1,
+        densityRegions: 1,
+      },
+    });
+  });
+
+  it("fails AIS refreshes when the relay payload is malformed", async () => {
+    const { service } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      relay: {
+        baseUrl: "https://relay.example.com",
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
+    jest.spyOn(service as any, "fetchJsonWithRetry").mockResolvedValue({
+      density: [],
+    });
+
+    await expect((service as any).fetchAisSignal(runtime)).rejects.toThrow(
+      "AIS relay returned an invalid snapshot payload. Expected disruptions[] and density[].",
+    );
+  });
+
   it("deduplicates unrest events by rounded geo/date key and prefers ACLED", () => {
     const { service } = buildService();
     const acled = [
@@ -355,8 +421,49 @@ describe("RealtimeSignalsService unrest merge", () => {
     expect(overlapEntry?.countryCode).toBe("US");
   });
 
+  it("uses GDELT-only unrest mode when ACLED API is disabled", async () => {
+    const { service } = buildService();
+    const gdelt = [
+      {
+        id: "gdelt-1",
+        lat: 10.03,
+        lon: 20.02,
+        occurredAt: "2026-03-01T12:00:00.000Z",
+        source: "gdelt" as const,
+        countryCode: "US",
+        reports: 8,
+      },
+    ];
+    const fetchAcledSpy = jest.spyOn(service as any, "fetchAcledUnrestEvents");
+    jest
+      .spyOn(service as any, "fetchGdeltUnrestEvents")
+      .mockResolvedValue({ events: gdelt, configured: true });
+
+    const result = await (service as any).fetchUnrestSignal(runtimeConfig);
+
+    expect(fetchAcledSpy).not.toHaveBeenCalled();
+    expect(result[0]).toMatchObject({
+      value: 1,
+      context: {
+        source: "gdelt",
+        unrestCount: 1,
+        acledCount: 0,
+        gdeltCount: 1,
+        acledConfigured: false,
+        acledApiEnabled: false,
+        unrestMode: "gdelt_only",
+      },
+    });
+  });
+
   it("reports acled+gdelt source when both feeds contributed", async () => {
     const { service } = buildService();
+    const runtime = {
+      ...runtimeConfig,
+      capabilities: {
+        acledApiEnabled: true,
+      },
+    } satisfies RealtimeSignalsRuntimeConfig;
     const acled = [
       {
         id: "acled-1",
@@ -386,7 +493,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       .spyOn(service as any, "fetchGdeltUnrestEvents")
       .mockResolvedValue({ events: gdelt, configured: true });
 
-    const result = await (service as any).fetchUnrestSignal(runtimeConfig);
+    const result = await (service as any).fetchUnrestSignal(runtime);
     const metric = result[0];
 
     expect(metric.value).toBe(1);
@@ -418,6 +525,9 @@ describe("RealtimeSignalsService unrest merge", () => {
       .mockResolvedValueOnce({ data: [] });
     const runtime = {
       ...runtimeConfig,
+      capabilities: {
+        acledApiEnabled: true,
+      },
       credentials: {
         ...runtimeConfig.credentials,
       },

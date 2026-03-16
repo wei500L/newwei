@@ -148,6 +148,8 @@ export interface RealtimeSignalsSettingsPublic {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
+  acledApiEnabled: boolean;
+  acledApiDisabledReason?: string;
   adsbEnabled: boolean;
   adsbIntervalSec: number;
   aisEnabled: boolean;
@@ -207,6 +209,9 @@ const ACLED_AUTH_CACHE_KEY = "realtime-signals:acled-auth-state";
 const ACLED_AUTH_REFRESH_LOCK_KEY = "realtime-signals:acled-auth-refresh";
 const ACLED_OAUTH_URL = "https://acleddata.com/oauth/token";
 const DEFAULT_ACLED_CLIENT_ID = "acled";
+const ACLED_API_ENABLED = false;
+const ACLED_API_DISABLED_REASON =
+  "Open myACLED does not include API access.";
 const ACLED_TOKEN_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const ACLED_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const ACLED_REFRESH_LOCK_TTL_MS = 30_000;
@@ -226,6 +231,7 @@ export class RealtimeSignalsSettingsService {
   async getPublicSettings(): Promise<RealtimeSignalsSettingsPublic> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
+    const acledApiPolicy = this.getAcledApiPolicy();
     const resolvedAcledToken = await this.resolveAcledAccessToken(effective, {
       refreshMode: "none",
     });
@@ -258,6 +264,8 @@ export class RealtimeSignalsSettingsService {
       enabled: effective.enabled,
       requestTimeoutMs: effective.requestTimeoutMs,
       maxRetries: effective.maxRetries,
+      acledApiEnabled: acledApiPolicy.enabled,
+      acledApiDisabledReason: acledApiPolicy.reason,
       adsbEnabled: effective.adsbEnabled,
       adsbIntervalSec: effective.adsbIntervalSec,
       aisEnabled: effective.aisEnabled,
@@ -316,6 +324,7 @@ export class RealtimeSignalsSettingsService {
   }): Promise<RealtimeSignalsRuntimeConfig> {
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
+    const acledApiPolicy = this.getAcledApiPolicy();
     const resolvedAcledToken = await this.resolveAcledAccessToken(effective, {
       refreshMode: options?.refreshAcledToken === false ? "none" : "if_needed",
     });
@@ -323,6 +332,10 @@ export class RealtimeSignalsSettingsService {
       enabled: effective.enabled,
       requestTimeoutMs: effective.requestTimeoutMs,
       maxRetries: effective.maxRetries,
+      capabilities: {
+        acledApiEnabled: acledApiPolicy.enabled,
+        acledApiDisabledReason: acledApiPolicy.reason,
+      },
       sources: {
         adsb: {
           enabled: effective.adsbEnabled,
@@ -373,7 +386,9 @@ export class RealtimeSignalsSettingsService {
       },
       credentials: {
         aisApiKey: effective.aisApiKey,
-        acledAccessToken: resolvedAcledToken.token,
+        acledAccessToken: acledApiPolicy.enabled
+          ? resolvedAcledToken.token
+          : undefined,
         cloudflareApiToken: effective.cloudflareApiToken,
         wingbitsApiKey: effective.wingbitsApiKey,
       },
@@ -384,6 +399,9 @@ export class RealtimeSignalsSettingsService {
   }
 
   async forceRefreshAcledAccessToken(): Promise<string | undefined> {
+    if (!this.getAcledApiPolicy().enabled) {
+      return undefined;
+    }
     const stored = await this.loadStoredSettings();
     const effective = this.resolveEffectiveConfig(stored);
     const resolved = await this.resolveAcledAccessToken(effective, {
@@ -609,7 +627,7 @@ export class RealtimeSignalsSettingsService {
       input.acledOauthUsername !== undefined ||
       input.acledOauthPassword !== undefined ||
       input.acledOauthClientId !== undefined;
-    if (acledOauthUpdated) {
+    if (acledOauthUpdated && this.getAcledApiPolicy().enabled) {
       await this.clearAcledAuthState();
     }
 
@@ -645,7 +663,10 @@ export class RealtimeSignalsSettingsService {
     await this.invalidateCache();
 
     const nextEffective = this.resolveEffectiveConfig(nextStored);
-    if (this.hasAcledOauthCredentials(nextEffective)) {
+    if (
+      this.getAcledApiPolicy().enabled &&
+      this.hasAcledOauthCredentials(nextEffective)
+    ) {
       await this.resolveAcledAccessToken(nextEffective, {
         refreshMode: "force",
       });
@@ -1084,6 +1105,13 @@ export class RealtimeSignalsSettingsService {
     effective: EffectiveRealtimeSignalsSettings,
     options: { refreshMode: AcledAccessTokenRefreshMode },
   ): Promise<ResolvedAcledAccessToken> {
+    if (!this.getAcledApiPolicy().enabled) {
+      return {
+        source: "none",
+        status: "missing",
+      };
+    }
+
     let state = await this.loadAcledAuthState();
     const hasUsableToken = Boolean(
       state?.accessToken && this.isAcledTokenUsable(state.expiresAt),
@@ -1321,6 +1349,13 @@ export class RealtimeSignalsSettingsService {
       return error.message;
     }
     return "Unknown ACLED OAuth error";
+  }
+
+  private getAcledApiPolicy() {
+    return {
+      enabled: ACLED_API_ENABLED,
+      reason: ACLED_API_DISABLED_REASON,
+    };
   }
 
   private async loadStoredSettings(): Promise<StoredRealtimeSignalsSettings | null> {

@@ -94,6 +94,10 @@ export interface RealtimeSignalsRuntimeConfig {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
+  capabilities: {
+    acledApiEnabled: boolean;
+    acledApiDisabledReason?: string;
+  };
   sources: Record<
     RealtimeSignalSource,
     {

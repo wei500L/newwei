@@ -65,6 +65,8 @@ interface RealtimeSignalsSettingsResponse {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
+  acledApiEnabled: boolean;
+  acledApiDisabledReason?: string;
   adsbEnabled: boolean;
   adsbIntervalSec: number;
   aisEnabled: boolean;
@@ -211,6 +213,8 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   enabled: true,
   requestTimeoutMs: 12_000,
   maxRetries: 2,
+  acledApiEnabled: false,
+  acledApiDisabledReason: undefined,
   adsbEnabled: true,
   adsbIntervalSec: 600,
   aisEnabled: true,
@@ -376,9 +380,12 @@ function summarizeRuntimeContext(
       return `military=${num(resolvedContext.militaryCount) ?? 0}, raw=${adsbSnapshot?.rawAircraftCount ?? num(resolvedContext.totalAircraft) ?? 0}, current=${adsbSnapshot?.currentValidPositionCount ?? num(resolvedContext.validPositionCount) ?? 0}, map=${adsbSnapshot?.snapshotValidPositionCount ?? num(resolvedContext.snapshotValidPositionCount) ?? num(resolvedContext.validPositionCount) ?? 0}`;
     case "ais":
       return resolvedContext.configured === false
-        ? "relay not configured"
+        ? "AIS relay not configured"
         : `disruptions=${num(resolvedContext.disruptions) ?? 0}, density=${num(resolvedContext.densityRegions) ?? 0}`;
     case "unrest":
+      if (resolvedContext.acledApiEnabled === false) {
+        return `mode=gdelt-only, gdelt=${num(resolvedContext.gdeltCount) ?? 0}, total=${num(resolvedContext.unrestCount) ?? 0}`;
+      }
       return `acled=${num(resolvedContext.acledCount) ?? 0}, gdelt=${num(resolvedContext.gdeltCount) ?? 0}, total=${num(resolvedContext.unrestCount) ?? 0}`;
     case "outages":
       return resolvedContext.configured === false
@@ -514,16 +521,19 @@ export function RealtimeSignalsSettingsPanel() {
         relayBaseUrl: values.relayBaseUrl?.trim()
           ? values.relayBaseUrl.trim()
           : null,
-        acledOauthUsername: values.acledOauthUsername?.trim()
-          ? values.acledOauthUsername.trim()
-          : null,
-        acledOauthClientId: values.acledOauthClientId?.trim()
-          ? values.acledOauthClientId.trim()
-          : null,
         polymarketProxyUrl: values.polymarketProxyUrl?.trim()
           ? values.polymarketProxyUrl.trim()
           : null,
       };
+
+      if (settings.acledApiEnabled) {
+        payload.acledOauthUsername = values.acledOauthUsername?.trim()
+          ? values.acledOauthUsername.trim()
+          : null;
+        payload.acledOauthClientId = values.acledOauthClientId?.trim()
+          ? values.acledOauthClientId.trim()
+          : null;
+      }
 
       const touchedSecrets = Object.fromEntries(
         REALTIME_SIGNALS_SECRET_FIELD_NAMES.map((fieldName) => [
@@ -610,6 +620,14 @@ export function RealtimeSignalsSettingsPanel() {
     settings.source === "db"
       ? t("systemSettings.realtimeSignals.status.saved")
       : t("systemSettings.realtimeSignals.status.env");
+  const acledApiDisabled = !settings.acledApiEnabled;
+  const acledApiStatusLabel = settings.acledApiEnabled
+    ? t("systemSettings.realtimeSignals.status.acledApiEnabled", {
+        defaultValue: "Available",
+      })
+    : t("systemSettings.realtimeSignals.status.acledApiDisabled", {
+        defaultValue: "Disabled for now",
+      });
   const runtimeSettingsSource = diagnostics?.settingsSource ?? "unknown";
   const runtimeSettingsSourceColor =
     runtimeSettingsSource === "db"
@@ -674,12 +692,16 @@ export function RealtimeSignalsSettingsPanel() {
       has: settings.hasAisApiKey,
       source: settings.aisApiKeySource,
     },
-    {
-      key: "acledOauthPassword",
-      label: t("systemSettings.realtimeSignals.status.acledOauthPassword"),
-      has: settings.hasAcledOauthPassword,
-      source: settings.acledOauthPasswordSource,
-    },
+    ...(settings.acledApiEnabled
+      ? [
+          {
+            key: "acledOauthPassword",
+            label: t("systemSettings.realtimeSignals.status.acledOauthPassword"),
+            has: settings.hasAcledOauthPassword,
+            source: settings.acledOauthPasswordSource,
+          },
+        ]
+      : []),
     {
       key: "cloudflareApiToken",
       label: t("systemSettings.realtimeSignals.status.cloudflareApiToken"),
@@ -692,7 +714,7 @@ export function RealtimeSignalsSettingsPanel() {
       has: settings.hasWingbitsApiKey,
       source: settings.wingbitsApiKeySource,
     },
-  ] as const;
+  ];
 
   const sourceStatusRows = SOURCE_CONFIGS.map((sourceConfig) => {
     const sourceName = t(sourceConfig.nameKey, {
@@ -886,6 +908,21 @@ export function RealtimeSignalsSettingsPanel() {
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.acledApi")}
+          </Typography.Text>
+          <Tag color={settings.acledApiEnabled ? "green" : "gold"}>
+            {acledApiStatusLabel}
+          </Tag>
+          {acledApiDisabled ? (
+            <Typography.Text type="secondary">
+              {t("systemSettings.realtimeSignals.alerts.acledDisabled.inline", {
+                defaultValue: "Open myACLED does not include API access.",
+              })}
+            </Typography.Text>
+          ) : null}
+        </Space>
+        <Space wrap>
+          <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.acledOauthUsername")}
           </Typography.Text>
           <Tag color="geekblue">
@@ -907,46 +944,50 @@ export function RealtimeSignalsSettingsPanel() {
             {secretSourceLabel(settings.acledOauthClientIdSource)}
           </Tag>
         </Space>
-        <Space wrap>
-          <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.acledAccessToken")}
-          </Typography.Text>
-          <Tag color={acledTokenStatusColor}>{acledTokenStatusLabel}</Tag>
-          <Tag color={settings.hasAcledAccessToken ? "blue" : "default"}>
-            {secretSourceLabel(settings.acledAccessTokenSource)}
-          </Tag>
-          <Typography.Text type="secondary">
-            {t(
-              "systemSettings.realtimeSignals.status.acledAccessTokenExpiresAt",
-            )}
-          </Typography.Text>
-          <Tag color="geekblue">
-            {formatTimestamp(settings.acledAccessTokenExpiresAt)}
-          </Tag>
-          <Typography.Text type="secondary">
-            {t(
-              "systemSettings.realtimeSignals.status.acledAccessTokenRefreshedAt",
-            )}
-          </Typography.Text>
-          <Tag color="geekblue">
-            {formatTimestamp(settings.acledAccessTokenRefreshedAt)}
-          </Tag>
-          <Typography.Text type="secondary">
-            {t(
-              "systemSettings.realtimeSignals.status.acledAccessTokenLastAttemptAt",
-            )}
-          </Typography.Text>
-          <Tag color="geekblue">
-            {formatTimestamp(settings.acledAccessTokenLastAttemptAt)}
-          </Tag>
-        </Space>
-        {settings.acledAccessTokenLastError ? (
-          <Typography.Text type="danger">
-            {t(
-              "systemSettings.realtimeSignals.status.acledAccessTokenLastError",
-            )}
-            {`: ${settings.acledAccessTokenLastError}`}
-          </Typography.Text>
+        {settings.acledApiEnabled ? (
+          <>
+            <Space wrap>
+              <Typography.Text type="secondary">
+                {t("systemSettings.realtimeSignals.status.acledAccessToken")}
+              </Typography.Text>
+              <Tag color={acledTokenStatusColor}>{acledTokenStatusLabel}</Tag>
+              <Tag color={settings.hasAcledAccessToken ? "blue" : "default"}>
+                {secretSourceLabel(settings.acledAccessTokenSource)}
+              </Tag>
+              <Typography.Text type="secondary">
+                {t(
+                  "systemSettings.realtimeSignals.status.acledAccessTokenExpiresAt",
+                )}
+              </Typography.Text>
+              <Tag color="geekblue">
+                {formatTimestamp(settings.acledAccessTokenExpiresAt)}
+              </Tag>
+              <Typography.Text type="secondary">
+                {t(
+                  "systemSettings.realtimeSignals.status.acledAccessTokenRefreshedAt",
+                )}
+              </Typography.Text>
+              <Tag color="geekblue">
+                {formatTimestamp(settings.acledAccessTokenRefreshedAt)}
+              </Tag>
+              <Typography.Text type="secondary">
+                {t(
+                  "systemSettings.realtimeSignals.status.acledAccessTokenLastAttemptAt",
+                )}
+              </Typography.Text>
+              <Tag color="geekblue">
+                {formatTimestamp(settings.acledAccessTokenLastAttemptAt)}
+              </Tag>
+            </Space>
+            {settings.acledAccessTokenLastError ? (
+              <Typography.Text type="danger">
+                {t(
+                  "systemSettings.realtimeSignals.status.acledAccessTokenLastError",
+                )}
+                {`: ${settings.acledAccessTokenLastError}`}
+              </Typography.Text>
+            ) : null}
+          </>
         ) : null}
         {secretStatusRows.map((row) => (
           <Space key={row.key} wrap>
@@ -1256,6 +1297,16 @@ export function RealtimeSignalsSettingsPanel() {
                       title={sourceNameByKey[row.source] ?? row.source}
                       extra={
                         <Space wrap size={[8, 8]}>
+                          {row.source === "unrest" && acledApiDisabled ? (
+                            <Tag color="gold">
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.unrestModeGdeltOnly",
+                                {
+                                  defaultValue: "GDELT-only",
+                                },
+                              )}
+                            </Tag>
+                          ) : null}
                           <Tag color={runtimeStatusColor(row.status)}>
                             {runtimeStatusLabel(row.status)}
                           </Tag>
@@ -1291,6 +1342,17 @@ export function RealtimeSignalsSettingsPanel() {
                         </Space>
                         {summary ? (
                           <Typography.Text type="secondary">{summary}</Typography.Text>
+                        ) : null}
+                        {row.source === "unrest" && acledApiDisabled ? (
+                          <Typography.Text type="secondary">
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.unrestAcledDisabled",
+                              {
+                                defaultValue:
+                                  "ACLED API is disabled. Unrest events currently use GDELT only.",
+                              },
+                            )}
+                          </Typography.Text>
                         ) : null}
                         {row.adsbSnapshot ? (
                           <Space wrap size={[8, 8]}>
@@ -1731,6 +1793,23 @@ export function RealtimeSignalsSettingsPanel() {
         >
           {t("systemSettings.realtimeSignals.hints.secretOptional")}
         </Typography.Paragraph>
+        {acledApiDisabled ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: "1rem" }}
+            message={t("systemSettings.realtimeSignals.alerts.acledDisabled.title", {
+              defaultValue: "ACLED API is disabled for now",
+            })}
+            description={t(
+              "systemSettings.realtimeSignals.alerts.acledDisabled.body",
+              {
+                defaultValue:
+                  "Open myACLED does not include API access. ACLED credentials remain visible for future use, and unrest events currently run in GDELT-only mode.",
+              },
+            )}
+          />
+        ) : null}
         <Space direction="vertical" style={{ width: "100%" }} size={0}>
           <Form.Item
             label={t("systemSettings.realtimeSignals.fields.relaySharedSecret")}
@@ -1763,6 +1842,7 @@ export function RealtimeSignalsSettingsPanel() {
           >
             <Input
               autoComplete="username"
+              disabled={acledApiDisabled}
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.acledOauthUsername",
               )}
@@ -1776,6 +1856,7 @@ export function RealtimeSignalsSettingsPanel() {
           >
             <Input.Password
               autoComplete="new-password"
+              disabled={acledApiDisabled}
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.secretValue",
               )}
@@ -1790,6 +1871,7 @@ export function RealtimeSignalsSettingsPanel() {
           >
             <Input
               autoComplete="off"
+              disabled={acledApiDisabled}
               placeholder={t(
                 "systemSettings.realtimeSignals.placeholders.acledOauthClientId",
               )}

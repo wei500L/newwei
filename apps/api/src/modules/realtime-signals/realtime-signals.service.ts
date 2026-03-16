@@ -1064,17 +1064,11 @@ export class RealtimeSignalsService {
       ...(aisApiKey ? { "X-AIS-API-Key": aisApiKey } : {}),
     };
     const payload = await this.fetchJsonWithRetry(
-      `${relayBase}/ais-snapshot?candidates=false`,
+      `${relayBase}/ais/snapshot?candidates=false`,
       runtime,
       Object.keys(headers).length > 0 ? { headers } : undefined,
     );
-
-    const disruptions = this.readArray(
-      (payload as { disruptions?: unknown[] })?.disruptions,
-    );
-    const density = this.readArray(
-      (payload as { density?: unknown[] })?.density,
-    );
+    const { disruptions, density } = this.readAisSnapshotPayload(payload);
 
     const countries = new Set<string>();
     for (const disruption of disruptions) {
@@ -1106,7 +1100,12 @@ export class RealtimeSignalsService {
 
   private async fetchUnrestSignal(runtime: RealtimeSignalsRuntimeConfig) {
     const [acledFeed, gdeltFeed] = await Promise.all([
-      this.fetchAcledUnrestEvents(runtime),
+      runtime.capabilities.acledApiEnabled
+        ? this.fetchAcledUnrestEvents(runtime)
+        : Promise.resolve({
+            events: [] as UnrestEventCandidate[],
+            configured: false,
+          } satisfies UnrestFeedFetchResult),
       this.fetchGdeltUnrestEvents(runtime),
     ]);
     const acledEvents = acledFeed.events;
@@ -1139,9 +1138,16 @@ export class RealtimeSignalsService {
           dedupeReducedBy:
             acledEvents.length + gdeltEvents.length - merged.length,
           acledConfigured: acledFeed.configured,
+          acledApiEnabled: runtime.capabilities.acledApiEnabled,
+          acledApiDisabledReason: runtime.capabilities.acledApiDisabledReason,
+          unrestMode: runtime.capabilities.acledApiEnabled
+            ? "acled_gdelt"
+            : "gdelt_only",
           countryCodes: Array.from(countries),
           feedErrors: {
-            acled: acledFeed.error ?? null,
+            acled: runtime.capabilities.acledApiEnabled
+              ? acledFeed.error ?? null
+              : null,
             gdelt: gdeltFeed.error ?? null,
           },
         },
@@ -1150,6 +1156,13 @@ export class RealtimeSignalsService {
   }
 
   private async fetchAcledUnrestEvents(runtime: RealtimeSignalsRuntimeConfig) {
+    if (!runtime.capabilities.acledApiEnabled) {
+      return {
+        events: [] as UnrestEventCandidate[],
+        configured: false,
+      } satisfies UnrestFeedFetchResult;
+    }
+
     const now = Date.now();
     const startDate = new Date(now - 30 * 24 * 60 * 60 * 1_000)
       .toISOString()
@@ -2386,7 +2399,7 @@ export class RealtimeSignalsService {
       return undefined;
     }
     if (source === "ais" && context.configured === false) {
-      return "Relay base URL is not configured.";
+      return "AIS relay base URL is not configured.";
     }
     if (source === "outages" && context.configured === false) {
       return "Cloudflare API token is not configured.";
@@ -2417,6 +2430,7 @@ export class RealtimeSignalsService {
       return undefined;
     }
     if (source === "unrest") {
+      const acledApiEnabled = context.acledApiEnabled !== false;
       const feedErrors =
         context.feedErrors &&
         typeof context.feedErrors === "object" &&
@@ -2424,7 +2438,7 @@ export class RealtimeSignalsService {
           ? (context.feedErrors as Record<string, unknown>)
           : null;
       const messages = [
-        this.normalizeString(feedErrors?.acled),
+        acledApiEnabled ? this.normalizeString(feedErrors?.acled) : undefined,
         this.normalizeString(feedErrors?.gdelt),
       ].filter((value): value is string => Boolean(value));
       if (messages.length > 0) {
@@ -2472,6 +2486,10 @@ export class RealtimeSignalsService {
       enabled: cfg.enabled,
       requestTimeoutMs: cfg.requestTimeoutMs,
       maxRetries: cfg.maxRetries,
+      capabilities: {
+        acledApiEnabled: false,
+        acledApiDisabledReason: "Open myACLED does not include API access.",
+      },
       sources: {
         adsb: cfg.sources.adsb,
         ais: cfg.sources.ais,
@@ -2485,7 +2503,11 @@ export class RealtimeSignalsService {
       thresholds: cfg.thresholds,
       relay: cfg.relay,
       adsb: cfg.adsb,
-      credentials: cfg.credentials,
+      credentials: {
+        aisApiKey: cfg.credentials.aisApiKey,
+        cloudflareApiToken: cfg.credentials.cloudflareApiToken,
+        wingbitsApiKey: cfg.credentials.wingbitsApiKey,
+      },
       polymarket: cfg.polymarket,
     };
   }
@@ -2618,6 +2640,29 @@ export class RealtimeSignalsService {
 
   private readArray(value: unknown): unknown[] {
     return Array.isArray(value) ? value : [];
+  }
+
+  private readAisSnapshotPayload(payload: unknown) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error(
+        "AIS relay returned an invalid snapshot payload. Expected disruptions[] and density[].",
+      );
+    }
+
+    const record = payload as {
+      disruptions?: unknown;
+      density?: unknown;
+    };
+    if (!Array.isArray(record.disruptions) || !Array.isArray(record.density)) {
+      throw new Error(
+        "AIS relay returned an invalid snapshot payload. Expected disruptions[] and density[].",
+      );
+    }
+
+    return {
+      disruptions: record.disruptions,
+      density: record.density,
+    };
   }
 
   private normalizeString(value: unknown) {
@@ -2782,6 +2827,7 @@ export class RealtimeSignalsService {
     }
     return {
       Authorization: `Bearer ${secret}`,
+      "x-relay-key": secret,
       "X-Relay-Secret": secret,
     } satisfies Record<string, string>;
   }

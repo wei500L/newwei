@@ -37,6 +37,12 @@ import {
   normalizeRoleSelection,
 } from '@/lib/access-settings';
 import {
+  formatAccessPermissionOptionLabel,
+  formatAccessRoleOptionLabel,
+  localizeAccessPermission,
+  localizeAccessRole,
+} from '@/lib/access-settings-rbac-i18n';
+import {
   buildAdminSettingsPanelSelectionHref,
   getAdminSettingsPanelDescriptionKey,
 } from '@/lib/admin-settings-panel-links';
@@ -1044,8 +1050,10 @@ function CreateRoleCard({
             disabled={creatingRole || permissions.length === 0}
             options={permissions.map((permission) => ({
               value: permission.name,
-              label: permission.name,
-              title: permission.description ?? undefined,
+              label: formatAccessPermissionOptionLabel(permission, t),
+              title:
+                localizeAccessPermission(permission, t).description ??
+                permission.name,
             }))}
           />
         </Form.Item>
@@ -1079,12 +1087,13 @@ function RoleInlineEditor({
 }) {
   const { t } = useTranslation();
   const [form] = Form.useForm<RoleFormValues>();
+  const localizedRole = localizeAccessRole(role, t);
   const initialValues = useMemo(
     () => ({
-      description: role.description ?? '',
+      description: localizedRole.description ?? '',
       permissions: role.permissions.map((permission) => permission.name),
     }),
-    [role.description, role.permissions],
+    [localizedRole.description, role.permissions],
   );
 
   useEffect(() => {
@@ -1120,7 +1129,7 @@ function RoleInlineEditor({
         }}
       >
         <Typography.Title level={5} style={{ margin: 0 }}>
-          {role.name}
+          {localizedRole.label}
         </Typography.Title>
         <Tag color={role.isSystem ? 'gold' : 'default'}>
           {role.isSystem ? t('settings.roles.system') : t('settings.roles.custom')}
@@ -1147,9 +1156,11 @@ function RoleInlineEditor({
           optionFilterProp="label"
           placeholder={t('settings.roles.permissionsPlaceholder')}
           options={permissions.map((permission) => ({
-            label: permission.name,
+            label: formatAccessPermissionOptionLabel(permission, t),
             value: permission.name,
-            title: permission.description ?? undefined,
+            title:
+              localizeAccessPermission(permission, t).description ??
+              permission.name,
           }))}
           disabled={isBusy}
         />
@@ -1181,7 +1192,10 @@ function PermissionsPanel({
   const { t } = useTranslation();
   const adminRoleIds = useMemo(() => getSystemAdminRoleIds(roles), [roles]);
   const usageMap = useMemo(() => {
-    const map = new Map<string, Array<{ id: string; name: string; isAdmin: boolean }>>();
+    const map = new Map<
+      string,
+      Array<{ id: string; name: string; isAdmin: boolean; isSystem: boolean }>
+    >();
     for (const role of roles) {
       for (const permission of role.permissions) {
         const entry = map.get(permission.name) ?? [];
@@ -1189,6 +1203,7 @@ function PermissionsPanel({
           id: role.id,
           name: role.name,
           isAdmin: adminRoleIds.includes(role.id),
+          isSystem: role.isSystem,
         });
         map.set(permission.name, entry);
       }
@@ -1202,14 +1217,23 @@ function PermissionsPanel({
         title: t('settings.permissions.name'),
         dataIndex: 'name',
         key: 'name',
-        render: (_value, record) => (
-          <Space direction="vertical" size={2}>
-            <Typography.Text strong>{record.name}</Typography.Text>
-            <Typography.Text type="secondary">
-              {record.description || t('settings.permissions.pending')}
-            </Typography.Text>
-          </Space>
-        ),
+        render: (_value, record) => {
+          const localizedPermission = localizeAccessPermission(record, t);
+
+          return (
+            <Space direction="vertical" size={2}>
+              <Typography.Text strong>{localizedPermission.label}</Typography.Text>
+              {localizedPermission.localized ? (
+                <Typography.Text type="secondary">
+                  <code>{localizedPermission.rawLabel}</code>
+                </Typography.Text>
+              ) : null}
+              <Typography.Text type="secondary">
+                {localizedPermission.description || t('settings.permissions.pending')}
+              </Typography.Text>
+            </Space>
+          );
+        },
       },
       {
         title: t('settings.permissions.usedBy'),
@@ -1226,8 +1250,18 @@ function PermissionsPanel({
               {rolesForPermission
                 .sort((left, right) => left.name.localeCompare(right.name))
                 .map((role) => (
-                  <Tag key={`${record.id}-${role.id}`} color={role.isAdmin ? 'gold' : 'default'}>
-                    {role.name}
+                  <Tag
+                    key={`${record.id}-${role.id}`}
+                    color={role.isAdmin ? 'gold' : 'default'}
+                    title={role.name}
+                  >
+                    {localizeAccessRole(
+                      {
+                        name: role.name,
+                        isSystem: role.isSystem,
+                      },
+                      t,
+                    ).label}
                   </Tag>
                 ))}
             </Space>
@@ -1354,8 +1388,11 @@ function UsersPanel({
 
           const role = roleMap.get(value);
           return (
-            <Tag color={adminRoleIds.includes(value) ? 'gold' : role?.isSystem ? 'blue' : 'default'}>
-              {role?.name ?? value}
+            <Tag
+              color={adminRoleIds.includes(value) ? 'gold' : role?.isSystem ? 'blue' : 'default'}
+              title={role?.name ?? value}
+            >
+              {role ? localizeAccessRole(role, t).label : value}
             </Tag>
           );
         },
@@ -1378,6 +1415,7 @@ function UsersPanel({
                 return (
                   <Tag
                     key={`${record.id}-${roleId}-${index}`}
+                    title={role?.name ?? roleId}
                     color={
                       adminRoleIds.includes(roleId)
                         ? 'gold'
@@ -1386,7 +1424,9 @@ function UsersPanel({
                           : 'default'
                     }
                   >
-                    {role?.name ?? roleNames[index] ?? roleId}
+                    {role
+                      ? localizeAccessRole(role, t).label
+                      : roleNames[index] ?? roleId}
                   </Tag>
                 );
               })}
@@ -1650,7 +1690,7 @@ function UserAccessDrawer({
                 placeholder={t('settings.members.primaryRolePlaceholder')}
                 options={assignableRoles.map((role) => ({
                   value: role.id,
-                  label: role.name,
+                  label: formatAccessRoleOptionLabel(role, t),
                 }))}
               />
             </Form.Item>
@@ -1663,7 +1703,7 @@ function UserAccessDrawer({
                 optionFilterProp="label"
                 options={assignableRoles.map((role) => ({
                   value: role.id,
-                  label: role.name,
+                  label: formatAccessRoleOptionLabel(role, t),
                 }))}
               />
             </Form.Item>
@@ -1680,9 +1720,10 @@ function UserAccessDrawer({
                 renderItem={(permission) => (
                   <List.Item key={permission.name}>
                     <List.Item.Meta
-                      title={permission.name}
+                      title={formatAccessPermissionOptionLabel(permission, t)}
                       description={
-                        permission.description || t('settings.permissions.pending')
+                        localizeAccessPermission(permission, t).description ||
+                        t('settings.permissions.pending')
                       }
                     />
                   </List.Item>

@@ -5064,6 +5064,128 @@
       "members": "用户"
     },
     "title": "访问控制",
+    "rbac": {
+      "roles": {
+        "admin": {
+          "label": "工作区管理员",
+          "description": "管理工作区访问控制、系统设置、数据操作以及审核流程。"
+        },
+        "manager": {
+          "label": "经理",
+          "description": "管理成员、内容和运营流程，但不具备完整的系统设置权限。"
+        },
+        "analyst": {
+          "label": "分析员",
+          "description": "可查看工作区数据、仪表盘、告警和分析工具，但没有写入权限。"
+        }
+      },
+      "permissions": {
+        "orgRead": {
+          "label": "查看组织",
+          "description": "查看组织信息及其成员范围。"
+        },
+        "orgWrite": {
+          "label": "管理组织",
+          "description": "创建、更新并管理组织记录。"
+        },
+        "settingsManage": {
+          "label": "管理设置",
+          "description": "访问并修改工作区的管理设置。"
+        },
+        "usersRead": {
+          "label": "查看用户",
+          "description": "查看工作区成员、资料和访问分配。"
+        },
+        "usersWrite": {
+          "label": "管理用户",
+          "description": "修改用户访问权限、启停状态及相关管理操作。"
+        },
+        "rolesRead": {
+          "label": "查看角色",
+          "description": "查看系统角色和自定义角色定义。"
+        },
+        "rolesWrite": {
+          "label": "管理角色",
+          "description": "创建或更新角色权限组合及其分配。"
+        },
+        "permissionsRead": {
+          "label": "查看权限",
+          "description": "查看当前可用的权限目录。"
+        },
+        "permissionsWrite": {
+          "label": "管理权限",
+          "description": "调整权限定义及其策略映射。"
+        },
+        "itemsRead": {
+          "label": "查看内容条目",
+          "description": "查看已入库的内容条目及相关记录。"
+        },
+        "itemsWrite": {
+          "label": "管理内容条目",
+          "description": "创建、编辑或删除内容条目。"
+        },
+        "dashboardsRead": {
+          "label": "查看仪表盘",
+          "description": "打开仪表盘并查看工作区指标。"
+        },
+        "dashboardsWrite": {
+          "label": "管理仪表盘",
+          "description": "创建、编辑并发布仪表盘。"
+        },
+        "knowledgegraphReview": {
+          "label": "审核知识图谱",
+          "description": "审核低置信度图谱关系及相关人工审核队列。"
+        },
+        "alertsRead": {
+          "label": "查看告警",
+          "description": "查看告警规则、状态和最近触发记录。"
+        },
+        "alertsManage": {
+          "label": "管理告警",
+          "description": "创建、编辑并运行告警流程。"
+        },
+        "analysisRead": {
+          "label": "查看分析结果",
+          "description": "查看已保存的分析输出及相关结果。"
+        },
+        "analysisRun": {
+          "label": "运行分析",
+          "description": "发起分析任务并刷新派生结果。"
+        },
+        "assistantRead": {
+          "label": "查看助手",
+          "description": "访问助手功能并查看历史运行记录。"
+        },
+        "assistantRun": {
+          "label": "运行助手",
+          "description": "发送提示词并执行助手工作流。"
+        },
+        "queueManage": {
+          "label": "管理队列",
+          "description": "管理队列状态、重试以及面向 worker 的控制项。"
+        },
+        "crawlRead": {
+          "label": "查看抓取任务",
+          "description": "查看抓取任务、状态和输出历史。"
+        },
+        "crawlWrite": {
+          "label": "管理抓取任务",
+          "description": "创建、编辑或执行抓取任务。"
+        },
+        "economicdataRead": {
+          "label": "查看经济数据",
+          "description": "查看经济序列、快照及派生视图。"
+        },
+        "economicdataManage": {
+          "label": "管理经济数据",
+          "description": "刷新、配置并管理经济数据流水线。"
+        },
+        "akshareFetch": {
+          "label": "执行 AKShare 抓取",
+          "description": "触发基于 AKShare 的市场和宏观数据采集。"
+        }
+      }
+    },
     "roles": {
       "created": "角色已创建",
       "createFailed": "创建角色失败",
@@ -6362,10 +6484,13 @@
         "notConfigured": "未配置",
         "sourceSnapshot": "信号源快照",
         "adsbBaseUrl": "ADS-B 基础地址",
-        "relayBaseUrl": "Relay 基础地址",
+        "relayBaseUrl": "AIS Relay 基础地址",
         "polymarketProxyUrl": "Polymarket 代理地址",
         "relaySharedSecret": "Relay 共享密钥",
         "aisApiKey": "AIS API Key",
+        "acledApi": "ACLED API",
+        "acledApiEnabled": "可用",
+        "acledApiDisabled": "当前停用",
         "acledAccessToken": "ACLED Access Token",
         "acledAccessTokenExpiresAt": "ACLED Token 到期时间",
         "acledAccessTokenRefreshedAt": "ACLED Token 最近刷新时间",
@@ -6416,7 +6541,7 @@
         "predictionShiftThreshold": "预测价格变化阈值",
         "predictionNewsActivityThreshold": "预测新闻活跃度阈值",
         "adsbBaseUrl": "ADS-B 基础地址",
-        "relayBaseUrl": "Relay 基础地址",
+        "relayBaseUrl": "AIS Relay 基础地址",
         "polymarketProxyUrl": "Polymarket 代理地址",
         "relaySharedSecret": "Relay 共享密钥",
         "aisApiKey": "AIS API Key",
@@ -6428,7 +6553,7 @@
       },
       "hints": {
         "adsbBaseUrl": "用于军事航班采集的 ADS-B API 基础地址。",
-        "relayBaseUrl": "可选。用于 AIS/Polymarket 请求转发的 Relay 地址。",
+        "relayBaseUrl": "裸 AIS relay 根地址。后端会在这个基础地址上请求 `/ais/snapshot`。",
         "polymarketProxyUrl": "可选。用于 Polymarket 请求的代理端点。",
         "acledOauthUsername": "用于自动刷新 ACLED OAuth Token 的账号邮箱。",
         "acledOauthClientId": "默认值为 `acled`，只有 ACLED 发放了其他 client_id 时才需要修改。",
@@ -6436,11 +6561,18 @@
       },
       "placeholders": {
         "adsbBaseUrl": "https://api.adsb.lol",
-        "relayBaseUrl": "https://your-relay.example.com",
+        "relayBaseUrl": "https://your-ais-relay.example.com",
         "polymarketProxyUrl": "https://your-proxy.example.com/polymarket",
         "acledOauthUsername": "weidu500l@gmail.com",
         "acledOauthClientId": "acled",
         "secretValue": "留空表示保持当前值"
+      },
+      "alerts": {
+        "acledDisabled": {
+          "title": "ACLED API 当前已停用",
+          "body": "Open myACLED 不包含 API 权限。相关凭证字段会保留在页面中供未来启用时使用，当前抗议事件仅使用 GDELT。",
+          "inline": "Open myACLED 不包含 API 权限。"
+        }
       },
       "actions": {
         "reset": "重置为环境变量"
@@ -6526,6 +6658,8 @@
         "adsbLatestObservedAt": "最近观测时间",
         "adsbSnapshotUpdatedAt": "快照更新时间",
         "adsbRetainedPrevious": "最新一次 ADS-B 拉取没有可用位置，因此当前仍在沿用上一份快照。",
+        "unrestModeGdeltOnly": "仅 GDELT",
+        "unrestAcledDisabled": "ACLED API 当前已停用，抗议事件暂时仅使用 GDELT。",
         "lastRunAt": "最近运行",
         "lastAttemptAt": "最近尝试",
         "lastSuccessAt": "最近成功",

@@ -13,6 +13,7 @@
     "migrate": "tsx src/scripts/migrate.ts",
     "validate:migration-identifiers": "tsx src/scripts/validate-migration-identifiers.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "rbac:backfill-default-descriptions": "tsx src/scripts/backfill-rbac-default-descriptions.ts",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "pnpm run validate:migration-identifiers && eslint src --ext .ts",
     "test": "tsx --test src/**/*.spec.ts",

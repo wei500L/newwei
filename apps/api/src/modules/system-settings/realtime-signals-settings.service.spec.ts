@@ -2,6 +2,7 @@ import { RealtimeSignalsSettingsService } from "./realtime-signals-settings.serv
 
 const REALTIME_SIGNALS_SETTINGS_KEY = "realtime_signals_settings";
 const ACLED_AUTH_STATE_KEY = "realtime_signals_acled_auth_state";
+const ACLED_DISABLED_REASON = "Open myACLED does not include API access.";
 
 const baseEnvConfig = {
   enabled: true,
@@ -126,75 +127,63 @@ describe("RealtimeSignalsSettingsService", () => {
     global.fetch = originalFetch;
   });
 
-  it("does not refresh ACLED token when only reading public settings", async () => {
+  it("reports ACLED API as disabled and never refreshes tokens in public settings", async () => {
     envConfig.credentials.acledOauthUsername = "env-user@example.com";
     envConfig.credentials.acledOauthPassword = "env-password";
     envConfig.credentials.acledOauthClientId = "acled";
+    store.set(ACLED_AUTH_STATE_KEY, {
+      version: 1,
+      accessToken: "derived-token",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      refreshedAt: "2030-01-01T00:00:00.000Z",
+      lastAttemptAt: "2030-01-01T00:00:00.000Z",
+      lastError: null,
+    });
     global.fetch = jest.fn();
 
     const response = await service.getPublicSettings();
 
+    expect(response.acledApiEnabled).toBe(false);
+    expect(response.acledApiDisabledReason).toBe(ACLED_DISABLED_REASON);
     expect(response.hasAcledAccessToken).toBe(false);
     expect(response.acledAccessTokenStatus).toBe("missing");
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("refreshes ACLED token from env OAuth credentials and persists derived state", async () => {
+  it("omits ACLED runtime tokens even when OAuth credentials and stored auth state exist", async () => {
     envConfig.credentials.acledOauthUsername = "env-user@example.com";
     envConfig.credentials.acledOauthPassword = "env-password";
     envConfig.credentials.acledOauthClientId = "acled";
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        access_token: "derived-token",
-        expires_in: 3600,
-      }),
-    } as any);
+    store.set(ACLED_AUTH_STATE_KEY, {
+      version: 1,
+      accessToken: "derived-token",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      refreshedAt: "2030-01-01T00:00:00.000Z",
+      lastAttemptAt: "2030-01-01T00:00:00.000Z",
+      lastError: null,
+    });
+    global.fetch = jest.fn();
 
     const runtime = await service.getRuntimeConfig();
 
-    expect(runtime.credentials.acledAccessToken).toBe("derived-token");
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://acleddata.com/oauth/token",
-      expect.objectContaining({
-        body: "username=env-user%40example.com&password=env-password&grant_type=password&client_id=acled",
-        method: "POST",
-      }),
-    );
-    expect(store.get(ACLED_AUTH_STATE_KEY)).toMatchObject({
-      accessToken: "derived-token",
-      lastError: null,
-      lastAttemptAt: expect.any(String),
-      version: 1,
+    expect(runtime.capabilities).toEqual({
+      acledApiEnabled: false,
+      acledApiDisabledReason: ACLED_DISABLED_REASON,
     });
+    expect(runtime.credentials.acledAccessToken).toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("clears stale auth state and eagerly refreshes when OAuth credentials change", async () => {
-    store.set(REALTIME_SIGNALS_SETTINGS_KEY, {
-      enabled: true,
-      acledOauthUsername: "old-user@example.com",
-      acledOauthPassword: "old-password",
-      acledOauthClientId: "acled",
-    });
+  it("stores ACLED credentials without clearing auth state or refreshing while disabled", async () => {
     store.set(ACLED_AUTH_STATE_KEY, {
       version: 1,
       accessToken: "stale-token",
       expiresAt: "2030-01-01T00:00:00.000Z",
       refreshedAt: "2030-01-01T00:00:00.000Z",
       lastAttemptAt: "2030-01-01T00:00:00.000Z",
-      lastError: null,
+      lastError: "403",
     });
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        access_token: "fresh-token",
-        expires_in: 7200,
-      }),
-    } as any);
+    global.fetch = jest.fn();
 
     const result = await service.updateSettings("org-1", "user-1", {
       acledOauthUsername: "new-user@example.com",
@@ -202,120 +191,30 @@ describe("RealtimeSignalsSettingsService", () => {
       acledOauthClientId: "acled",
     });
 
+    expect(result.acledApiEnabled).toBe(false);
     expect(result.acledOauthUsername).toBe("new-user@example.com");
-    expect(result.acledAccessTokenStatus).toBe("ready");
+    expect(result.acledAccessTokenStatus).toBe("missing");
     expect(store.get(REALTIME_SIGNALS_SETTINGS_KEY)).toMatchObject({
       acledOauthUsername: "new-user@example.com",
       acledOauthPassword: "new-password",
       acledOauthClientId: "acled",
     });
     expect(store.get(ACLED_AUTH_STATE_KEY)).toMatchObject({
-      accessToken: "fresh-token",
-      lastError: null,
-      lastAttemptAt: expect.any(String),
+      accessToken: "stale-token",
+      lastError: "403",
       version: 1,
     });
-  });
-
-  it("does not fall back to a legacy ACLED token when OAuth credentials are missing", async () => {
-    global.fetch = jest.fn();
-
-    const runtime = await service.getRuntimeConfig();
-
-    expect(runtime.credentials.acledAccessToken).toBeUndefined();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("respects refresh cooldown while the current ACLED token is still usable", async () => {
+  it("returns undefined for forced ACLED token refresh while the API is disabled", async () => {
     envConfig.credentials.acledOauthUsername = "env-user@example.com";
     envConfig.credentials.acledOauthPassword = "env-password";
-    envConfig.credentials.acledOauthClientId = "acled";
-    const now = Date.parse("2026-03-11T00:00:00.000Z");
-    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
-    store.set(ACLED_AUTH_STATE_KEY, {
-      version: 1,
-      accessToken: "still-valid-token",
-      expiresAt: new Date(now + 60_000).toISOString(),
-      refreshedAt: new Date(now - 120_000).toISOString(),
-      lastAttemptAt: new Date(now - 60_000).toISOString(),
-      lastError: "bad credentials",
-    });
     global.fetch = jest.fn();
 
-    const result = await service.getPublicSettings();
+    const token = await service.forceRefreshAcledAccessToken();
 
-    expect(result.acledAccessTokenStatus).toBe("expiring");
-    expect(result.acledAccessTokenLastAttemptAt).toBe(
-      new Date(now - 60_000).toISOString(),
-    );
+    expect(token).toBeUndefined();
     expect(global.fetch).not.toHaveBeenCalled();
-    nowSpy.mockRestore();
-  });
-
-  it("refreshes again when the previous failed ACLED token is already expired", async () => {
-    envConfig.credentials.acledOauthUsername = "env-user@example.com";
-    envConfig.credentials.acledOauthPassword = "env-password";
-    envConfig.credentials.acledOauthClientId = "acled";
-    const now = Date.parse("2026-03-11T00:00:00.000Z");
-    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(now);
-    store.set(ACLED_AUTH_STATE_KEY, {
-      version: 1,
-      accessToken: "expired-token",
-      expiresAt: new Date(now - 1_000).toISOString(),
-      refreshedAt: new Date(now - 120_000).toISOString(),
-      lastAttemptAt: new Date(now - 60_000).toISOString(),
-      lastError: "bad credentials",
-    });
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        access_token: "new-token",
-        expires_in: 3600,
-      }),
-    } as any);
-
-    const runtime = await service.getRuntimeConfig();
-
-    expect(runtime.credentials.acledAccessToken).toBe("new-token");
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    nowSpy.mockRestore();
-  });
-
-  it("waits for ACLED refresh result when another request holds the lock", async () => {
-    envConfig.credentials.acledOauthUsername = "env-user@example.com";
-    envConfig.credentials.acledOauthPassword = "env-password";
-    envConfig.credentials.acledOauthClientId = "acled";
-    store.set(ACLED_AUTH_STATE_KEY, {
-      version: 1,
-      accessToken: null,
-      expiresAt: null,
-      refreshedAt: null,
-      lastAttemptAt: null,
-      lastError: null,
-    });
-    cacheMock.withLock = jest.fn(async () => null);
-    const sleepSpy = jest
-      .spyOn(service as any, "sleep")
-      .mockImplementation(async () => {
-        cacheStore.clear();
-        store.set(ACLED_AUTH_STATE_KEY, {
-          version: 1,
-          accessToken: "fresh-token",
-          expiresAt: "2030-01-01T00:00:00.000Z",
-          refreshedAt: "2030-01-01T00:00:00.000Z",
-          lastAttemptAt: "2030-01-01T00:00:00.000Z",
-          lastError: null,
-        });
-      });
-    global.fetch = jest.fn();
-
-    const runtime = await service.getRuntimeConfig();
-
-    expect(runtime.credentials.acledAccessToken).toBe("fresh-token");
-    expect(cacheMock.withLock).toHaveBeenCalled();
-    expect(global.fetch).not.toHaveBeenCalled();
-    sleepSpy.mockRestore();
   });
 });
