@@ -28,6 +28,7 @@ import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { GeocodingService } from "../geo/geocoding.service";
 import { RealtimeSignalsSnapshotStore } from "../realtime-signals/realtime-signals.snapshot-store";
+import { RealtimeSignalsService } from "../realtime-signals/realtime-signals.service";
 import type { RealtimeAdsbAircraftSnapshot } from "../realtime-signals/realtime-signals.types";
 import { SituationMonitorTranslationService } from "../situation-monitor/situation-monitor-translation.service";
 
@@ -379,6 +380,7 @@ interface WarMapLayersOptions {
   range?: DateRange;
   bbox?: [number, number, number, number];
   zoom?: number;
+  flightMode?: "military" | "all";
 }
 
 interface WarMapEventsOptions {
@@ -810,6 +812,7 @@ export class DashboardChartsService {
     private readonly geocoding: GeocodingService,
     private readonly cache: CacheService,
     private readonly translation?: SituationMonitorTranslationService,
+    private readonly realtimeSignals?: RealtimeSignalsService,
     private readonly realtimeSignalsStore?: RealtimeSignalsSnapshotStore,
   ) {}
 
@@ -1913,14 +1916,13 @@ export class DashboardChartsService {
   private async enrichWarMapFlightsLayer(
     response: WarMapStaticLayersResponse,
     orgId: string,
-    options: Pick<WarMapLayersOptions, "bbox" | "zoom">,
+    options: Pick<WarMapLayersOptions, "bbox" | "zoom" | "flightMode">,
   ): Promise<void> {
     const dataset = response.layers.flights;
-    if (!dataset || !this.realtimeSignalsStore) {
+    if (!dataset) {
       return;
     }
 
-    const snapshot = await this.realtimeSignalsStore.getLatestAdsbSnapshot(orgId);
     dataset.renderHints = {
       ...dataset.renderHints,
       pickable: true,
@@ -1928,10 +1930,97 @@ export class DashboardChartsService {
       color: WAR_MAP_LAYER_COLORS.flights,
       radiusScale: 1.15,
     };
+    const flightMode = options.flightMode ?? "military";
     const summaryBase = {
-      source: "adsb",
-      scope: "military",
+      source: "opensky",
+      scope: flightMode,
     } as const;
+
+    if (flightMode === "all") {
+      if (!this.realtimeSignals) {
+        return;
+      }
+      const result = await this.realtimeSignals.fetchOpenskyViewportSnapshot({
+        bbox: options.bbox,
+      });
+      if (!result.configured) {
+        dataset.features = [];
+        dataset.updatedAt = undefined;
+        dataset.summary = {
+          ...summaryBase,
+          freshness: "not_configured",
+          rawAircraftCount: 0,
+          snapshotValidPositionCount: 0,
+          returnedCount: 0,
+          truncated: false,
+          retainedPreviousSnapshot: false,
+        };
+        return;
+      }
+      if (result.requiresZoom) {
+        dataset.features = [];
+        dataset.updatedAt = undefined;
+        dataset.summary = {
+          ...summaryBase,
+          sourceEndpoint: result.sourceEndpoint,
+          freshness: "zoom_required",
+          rawAircraftCount: 0,
+          snapshotValidPositionCount: 0,
+          returnedCount: 0,
+          truncated: false,
+          retainedPreviousSnapshot: false,
+          requiresZoom: true,
+        };
+        return;
+      }
+      const snapshot = result.snapshot;
+      if (!snapshot) {
+        dataset.features = [];
+        dataset.updatedAt = undefined;
+        dataset.summary = {
+          ...summaryBase,
+          sourceEndpoint: result.sourceEndpoint,
+          freshness: "missing",
+          rawAircraftCount: 0,
+          snapshotValidPositionCount: 0,
+          returnedCount: 0,
+          truncated: false,
+          retainedPreviousSnapshot: false,
+        };
+        return;
+      }
+
+      const rawAircraft = snapshot.aircraft.map((entry) => ({
+        ...entry,
+        lat: clampFinite(entry.lat, -90, 90),
+        lng: clampFinite(entry.lng, -180, 180),
+      }));
+      const aircraft = this.shapeWarMapFlightsForViewport(rawAircraft, options);
+      dataset.features = aircraft.map((entry) =>
+        this.buildWarMapFlightFeature(entry, snapshot.updatedAt, flightMode),
+      );
+      dataset.updatedAt = snapshot.updatedAt;
+      dataset.summary = {
+        ...summaryBase,
+        sourceEndpoint: result.sourceEndpoint,
+        freshness: "fresh",
+        rawAircraftCount: snapshot.totalAircraft,
+        snapshotValidPositionCount: snapshot.validPositionCount,
+        returnedCount: aircraft.length,
+        maxReturned: this.resolveWarMapFlightsMaxPoints(options),
+        truncated:
+          aircraft.length <
+          this.filterWarMapPointsByBbox(rawAircraft, options.bbox).length,
+        retainedPreviousSnapshot: false,
+      };
+      return;
+    }
+
+    if (!this.realtimeSignalsStore) {
+      return;
+    }
+
+    const snapshot = await this.realtimeSignalsStore.getLatestAdsbSnapshot(orgId);
 
     if (!snapshot) {
       dataset.features = [];
@@ -1975,7 +2064,7 @@ export class DashboardChartsService {
     );
 
     dataset.features = aircraft.map((entry) =>
-      this.buildWarMapFlightFeature(entry, snapshot.updatedAt),
+      this.buildWarMapFlightFeature(entry, snapshot.updatedAt, flightMode),
     );
     dataset.updatedAt = snapshot.updatedAt;
     dataset.summary = {
@@ -1994,12 +2083,13 @@ export class DashboardChartsService {
   private buildWarMapFlightFeature(
     aircraft: RealtimeAdsbAircraftSnapshot,
     sourceUpdatedAt: string,
+    flightMode: "military" | "all",
   ): WarMapLayerFeature {
     const properties: WarMapFlightProperties & {
       name: string;
       description: string;
     } = {
-      sourceType: "adsb",
+      sourceType: "opensky",
       source: aircraft.source,
       sourceUpdatedAt,
       ...(aircraft.callsign ? { callsign: aircraft.callsign } : {}),
@@ -2023,8 +2113,10 @@ export class DashboardChartsService {
         aircraft.registration ??
         aircraft.icao24.toUpperCase(),
       description: aircraft.aircraftType
-        ? `ADS-B ${aircraft.aircraftType}`
-        : "ADS-B military flight",
+        ? `OpenSky ${aircraft.aircraftType}`
+        : flightMode === "military"
+          ? "OpenSky military/possibly military flight"
+          : "OpenSky flight",
     };
 
     return {
@@ -2084,6 +2176,7 @@ export class DashboardChartsService {
       await this.enrichWarMapFlightsLayer(response, options.orgId, {
         bbox: options.bbox,
         zoom: options.zoom,
+        flightMode: options.flightMode,
       });
       await this.enrichWarMapLayersWithRealtimeData(
         response,

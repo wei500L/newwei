@@ -427,7 +427,7 @@ describe("DashboardChartsService", () => {
     ).toBe(true);
   });
 
-  it("builds the flights layer from the latest ADS-B snapshot and applies bbox filtering", async () => {
+  it("builds the military flights layer from the latest OpenSky snapshot and applies bbox filtering", async () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
     const prisma = {
       alertEvent: {
@@ -442,8 +442,8 @@ describe("DashboardChartsService", () => {
     };
     const realtimeSignalsStore = {
       getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
-        source: "adsb",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        source: "opensky",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         updatedAt: "2026-01-01T12:00:00.000Z",
         totalAircraft: 2,
         validPositionCount: 2,
@@ -472,7 +472,7 @@ describe("DashboardChartsService", () => {
           countryCode: "US",
           countryName: "United States",
           observedAt: "2026-01-01T11:59:30.000Z",
-          source: "adsb",
+          source: "opensky",
         },
           {
             id: "ae6306",
@@ -482,7 +482,7 @@ describe("DashboardChartsService", () => {
             lat: 28.002242,
             lng: -98.471051,
             observedAt: "2026-01-01T11:58:30.000Z",
-            source: "adsb",
+            source: "opensky",
           },
         ],
       }),
@@ -491,6 +491,7 @@ describe("DashboardChartsService", () => {
       prisma as any,
       geocoding as any,
       createCache() as any,
+      undefined,
       undefined,
       realtimeSignalsStore as any,
     );
@@ -519,7 +520,7 @@ describe("DashboardChartsService", () => {
         lng: -99.342797,
         timestamp: "2026-01-01T11:59:30.000Z",
         properties: expect.objectContaining({
-          sourceType: "adsb",
+          sourceType: "opensky",
           callsign: "SPAR416",
           icao24: "ae017a",
           aircraftType: "LJ35",
@@ -535,9 +536,9 @@ describe("DashboardChartsService", () => {
     ]);
     expect(response.layers.flights.summary).toEqual(
       expect.objectContaining({
-        source: "adsb",
+        source: "opensky",
         scope: "military",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         freshness: "fresh",
         rawAircraftCount: 2,
         snapshotValidPositionCount: 2,
@@ -548,7 +549,7 @@ describe("DashboardChartsService", () => {
     );
   });
 
-  it("returns an empty flights layer when the stored ADS-B snapshot is stale", async () => {
+  it("returns an empty flights layer when the stored OpenSky snapshot is stale", async () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:15:00.000Z"));
     const prisma = {
       alertEvent: {
@@ -560,8 +561,8 @@ describe("DashboardChartsService", () => {
     };
     const realtimeSignalsStore = {
       getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
-        source: "adsb",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        source: "opensky",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         updatedAt: "2026-01-01T12:00:00.000Z",
         totalAircraft: 1,
         validPositionCount: 1,
@@ -583,7 +584,7 @@ describe("DashboardChartsService", () => {
             lat: 39.315491,
             lng: -99.342797,
             observedAt: "2026-01-01T11:59:00.000Z",
-            source: "adsb",
+            source: "opensky",
           },
         ],
       }),
@@ -592,6 +593,7 @@ describe("DashboardChartsService", () => {
       prisma as any,
       { resolveCandidates: jest.fn() } as any,
       createCache() as any,
+      undefined,
       undefined,
       realtimeSignalsStore as any,
     );
@@ -609,9 +611,9 @@ describe("DashboardChartsService", () => {
     expect(response.layers.flights.features).toEqual([]);
     expect(response.layers.flights.summary).toEqual(
       expect.objectContaining({
-        source: "adsb",
+        source: "opensky",
         scope: "military",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         freshness: "stale",
         rawAircraftCount: 1,
         snapshotValidPositionCount: 1,
@@ -632,13 +634,13 @@ describe("DashboardChartsService", () => {
         lat: -60 + row * 6,
         lng: -170 + col * 12,
         observedAt: "2026-01-01T11:59:30.000Z",
-        source: "adsb" as const,
+        source: "opensky" as const,
       };
     });
     const realtimeSignalsStore = {
       getLatestAdsbSnapshot: jest.fn().mockResolvedValue({
-        source: "adsb",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        source: "opensky",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         updatedAt: "2026-01-01T12:00:00.000Z",
         totalAircraft: aircraft.length,
         validPositionCount: aircraft.length,
@@ -663,6 +665,7 @@ describe("DashboardChartsService", () => {
       } as any,
       { resolveCandidates: jest.fn() } as any,
       createCache() as any,
+      undefined,
       undefined,
       realtimeSignalsStore as any,
     );
@@ -689,9 +692,9 @@ describe("DashboardChartsService", () => {
     expect(highZoom.layers.flights.features).toHaveLength(260);
     expect(lowZoom.layers.flights.summary).toEqual(
       expect.objectContaining({
-        source: "adsb",
+        source: "opensky",
         scope: "military",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         freshness: "fresh",
         rawAircraftCount: 260,
         snapshotValidPositionCount: 260,
@@ -701,9 +704,9 @@ describe("DashboardChartsService", () => {
     );
     expect(highZoom.layers.flights.summary).toEqual(
       expect.objectContaining({
-        source: "adsb",
+        source: "opensky",
         scope: "military",
-        sourceEndpoint: "https://api.adsb.lol/v2/mil",
+        sourceEndpoint: "https://opensky-network.org/api/states/all",
         freshness: "fresh",
         rawAircraftCount: 260,
         snapshotValidPositionCount: 260,

@@ -47,11 +47,11 @@ describe("RealtimeSignalsSnapshotStore.evaluateMetric", () => {
     });
   });
 
-  it("stores and clears the latest ADS-B snapshot independently from metric series", async () => {
+  it("stores and clears the latest OpenSky snapshot independently from metric series", async () => {
     const { store, cache } = createStore();
     const snapshot = {
-      source: "adsb" as const,
-      sourceEndpoint: "https://api.adsb.lol/v2/mil",
+      source: "opensky" as const,
+      sourceEndpoint: "https://opensky-network.org/api/states/all",
       updatedAt: "2026-03-02T12:00:00.000Z",
       totalAircraft: 2,
       validPositionCount: 1,
@@ -73,7 +73,7 @@ describe("RealtimeSignalsSnapshotStore.evaluateMetric", () => {
           lat: 39.315491,
           lng: -99.342797,
           observedAt: "2026-03-02T11:59:30.000Z",
-          source: "adsb" as const,
+          source: "opensky" as const,
         },
       ],
     };
@@ -82,7 +82,7 @@ describe("RealtimeSignalsSnapshotStore.evaluateMetric", () => {
 
     expect(await store.getLatestAdsbSnapshot("org-1")).toEqual(snapshot);
     expect(cache.set).toHaveBeenCalledWith(
-      "realtime-signals:adsb-latest:org-1",
+      "realtime-signals:opensky-latest:org-1",
       snapshot,
       300,
     );
@@ -90,6 +90,6 @@ describe("RealtimeSignalsSnapshotStore.evaluateMetric", () => {
     await store.clearLatestAdsbSnapshot("org-1");
 
     expect(await store.getLatestAdsbSnapshot("org-1")).toBeNull();
-    expect(cache.del).toHaveBeenCalledWith("realtime-signals:adsb-latest:org-1");
+    expect(cache.del).toHaveBeenCalledWith("realtime-signals:opensky-latest:org-1");
   });
 });

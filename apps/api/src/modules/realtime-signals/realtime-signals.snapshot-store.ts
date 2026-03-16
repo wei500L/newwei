@@ -222,6 +222,6 @@ export class RealtimeSignalsSnapshotStore {
   }
 
   private adsbLatestKey(orgId: string) {
-    return `realtime-signals:adsb-latest:${orgId}`;
+    return `realtime-signals:opensky-latest:${orgId}`;
   }
 }

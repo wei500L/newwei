@@ -46,7 +46,7 @@ export class RealtimeSignalMetricProvider implements MetricProvider {
         ? { ...evaluation.context }
         : undefined;
     if (
-      metricSlug === REALTIME_SIGNAL_METRIC_SLUGS.adsb &&
+      metricSlug === REALTIME_SIGNAL_METRIC_SLUGS.opensky &&
       context &&
       (context.snapshotRetainedPrevious === true ||
         context.snapshotFreshness === "stale")

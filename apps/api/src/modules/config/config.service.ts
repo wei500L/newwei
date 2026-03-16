@@ -152,7 +152,7 @@ export interface RealtimeSignalsEnvConfig {
   requestTimeoutMs: number;
   maxRetries: number;
   sources: {
-    adsb: RealtimeSignalSourceEnvConfig;
+    opensky: RealtimeSignalSourceEnvConfig;
     ais: RealtimeSignalSourceEnvConfig;
     unrest: RealtimeSignalSourceEnvConfig;
     outages: RealtimeSignalSourceEnvConfig;
@@ -171,8 +171,11 @@ export interface RealtimeSignalsEnvConfig {
     baseUrl?: string;
     sharedSecret?: string;
   };
-  adsb: {
+  opensky: {
     baseUrl?: string;
+    tokenUrl?: string;
+    clientId?: string;
+    clientSecret?: string;
   };
   credentials: {
     aisApiKey?: string;
@@ -510,13 +513,22 @@ export class EnvService extends ConfigService<ApiEnv> {
       maxRetries:
         this.get<number>("REALTIME_SIGNALS_MAX_RETRIES", { infer: true }) ?? 2,
       sources: {
-        adsb: {
+        opensky: {
           enabled:
-            this.get<boolean>("REALTIME_SIGNALS_ADSB_ENABLED", {
+            this.get<boolean | undefined>("REALTIME_SIGNALS_OPENSKY_ENABLED", {
+              infer: true,
+            }) ??
+            this.get<boolean | undefined>("REALTIME_SIGNALS_ADSB_ENABLED", {
               infer: true,
             }) ?? true,
           intervalSec:
-            this.get<number>("REALTIME_SIGNALS_ADSB_INTERVAL_SEC", {
+            this.get<number | undefined>(
+              "REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC",
+              {
+                infer: true,
+              },
+            ) ??
+            this.get<number | undefined>("REALTIME_SIGNALS_ADSB_INTERVAL_SEC", {
               infer: true,
             }) ?? 600,
         },
@@ -624,11 +636,32 @@ export class EnvService extends ConfigService<ApiEnv> {
           { infer: true },
         ),
       },
-      adsb: {
+      opensky: {
         baseUrl:
+          this.get<string | undefined>("REALTIME_SIGNALS_OPENSKY_BASE_URL", {
+            infer: true,
+          }) ??
           this.get<string | undefined>("REALTIME_SIGNALS_ADSB_BASE_URL", {
             infer: true,
-          }) ?? "https://api.adsb.lol",
+          }) ??
+          "https://opensky-network.org/api",
+        tokenUrl:
+          this.get<string | undefined>("REALTIME_SIGNALS_OPENSKY_TOKEN_URL", {
+            infer: true,
+          }) ??
+          "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+        clientId: this.get<string | undefined>(
+          "REALTIME_SIGNALS_OPENSKY_CLIENT_ID",
+          {
+            infer: true,
+          },
+        ),
+        clientSecret: this.get<string | undefined>(
+          "REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET",
+          {
+            infer: true,
+          },
+        ),
       },
       credentials: {
         aisApiKey: this.get<string | undefined>(

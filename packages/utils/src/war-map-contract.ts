@@ -119,6 +119,7 @@ export const WAR_MAP_PRESETS = [
 ] as const;
 
 export type WarMapPreset = (typeof WAR_MAP_PRESETS)[number];
+export type WarMapFlightMode = "military" | "all";
 
 export const WAR_MAP_TIME_RANGE_PRESETS = [
   "1h",
@@ -144,6 +145,7 @@ export interface WarMapSettings {
   viewState: WarMapViewState;
   activePreset: WarMapPreset;
   timeRangePreset: WarMapTimeRangePreset;
+  flightMode: WarMapFlightMode;
 }
 
 export type WarMapGeometryType = "point" | "path" | "polygon" | "raster";
@@ -170,7 +172,7 @@ export interface WarMapLayerFeature {
 }
 
 export interface WarMapFlightProperties {
-  sourceType: "adsb";
+  sourceType: "opensky";
   source?: string;
   callsign?: string;
   icao24: string;
@@ -261,6 +263,7 @@ export interface WarMapRequestParams {
   bbox?: string;
   zoom?: string;
   cluster?: string;
+  flightMode?: WarMapFlightMode;
 }
 
 export const DASHBOARD_STREAM_EVENT_TYPES = {
@@ -363,6 +366,7 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
       viewState: createDefaultWarMapViewState(),
       activePreset: "global",
       timeRangePreset: "7d",
+      flightMode: "military",
     };
   }
 
@@ -372,5 +376,6 @@ export function normalizeWarMapSettings(value: unknown): WarMapSettings {
     viewState: normalizeWarMapViewState(record.viewState),
     activePreset: normalizeWarMapPreset(record.activePreset),
     timeRangePreset: normalizeWarMapTimeRangePreset(record.timeRangePreset),
+    flightMode: record.flightMode === "all" ? "all" : "military",
   };
 }

@@ -22,7 +22,7 @@ function normalizeNumber(value: unknown): number | undefined {
 export function readWarMapFlightProperties(
   properties: Record<string, unknown> | null | undefined,
 ): WarMapFlightProperties | null {
-  if (!properties || properties.sourceType !== 'adsb') {
+  if (!properties || properties.sourceType !== 'opensky') {
     return null;
   }
 
@@ -32,7 +32,7 @@ export function readWarMapFlightProperties(
   }
 
   return {
-    sourceType: 'adsb',
+    sourceType: 'opensky',
     source: normalizeString(properties.source),
     callsign: normalizeString(properties.callsign),
     icao24,

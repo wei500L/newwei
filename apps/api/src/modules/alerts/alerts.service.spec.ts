@@ -259,27 +259,27 @@ describe("AlertsService.listEvents", () => {
     return { prisma, service };
   };
 
-  it("normalizes legacy opensky metric slug to adsb in query result", async () => {
+  it("normalizes legacy adsb metric slug to opensky in query result", async () => {
     const { prisma, service } = buildService();
     prisma.alertEvent.findMany.mockResolvedValue([
       {
         id: "event-1",
-        rule: { metricSlug: "  realtime.opensky.military_flights  " },
+        rule: { metricSlug: "  realtime.adsb.military_flights  " },
       },
     ]);
 
     const result = await service.listEvents("org-1", 50);
 
-    expect(result[0]?.rule?.metricSlug).toBe("realtime.adsb.military_flights");
+    expect(result[0]?.rule?.metricSlug).toBe("realtime.opensky.military_flights");
   });
 
-  it("maps legacy opensky metric slug query parameter to adsb", async () => {
+  it("maps legacy adsb metric slug query parameter to opensky", async () => {
     const { prisma, service } = buildService();
     prisma.alertEvent.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
-    await service.listEvents("org-1", 10, "realtime.opensky.military_flights");
+    await service.listEvents("org-1", 10, "realtime.adsb.military_flights");
 
     expect(prisma.alertEvent.findMany).toHaveBeenNthCalledWith(
       1,
@@ -287,7 +287,7 @@ describe("AlertsService.listEvents", () => {
         where: {
           rule: {
             orgId: "org-1",
-            metricSlug: "realtime.adsb.military_flights",
+            metricSlug: "realtime.opensky.military_flights",
           },
         },
       }),

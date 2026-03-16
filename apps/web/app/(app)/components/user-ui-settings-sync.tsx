@@ -80,6 +80,7 @@ const defaultWarMapFingerprint = fingerprintWarMapSettings({
   viewState: WAR_MAP_PRESET_VIEW_STATE.global,
   activePreset: "global",
   timeRangePreset: "7d",
+  flightMode: "military",
 });
 
 type UiCacheSection = "situation-monitor" | "war-map";
@@ -336,6 +337,7 @@ function writeWarMapCache(orgId: string, userId: string) {
     viewState: state.viewState,
     activePreset: state.activePreset,
     timeRangePreset: state.timeRangePreset,
+    flightMode: state.flightMode,
   };
   writeJsonToStorage(key, {
     version: 1,
@@ -388,6 +390,7 @@ export function UserUiSettingsSync() {
     viewState: state.viewState,
     activePreset: state.activePreset,
     timeRangePreset: state.timeRangePreset,
+    flightMode: state.flightMode,
   }));
 
   const hydratingRef = useRef(false);
@@ -712,6 +715,7 @@ export function UserUiSettingsSync() {
               viewState: currentState.viewState,
               activePreset: currentState.activePreset,
               timeRangePreset: currentState.timeRangePreset,
+              flightMode: currentState.flightMode,
             };
             const currentFingerprint =
               fingerprintWarMapSettings(currentSettings);

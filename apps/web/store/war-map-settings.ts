@@ -3,6 +3,7 @@
 import {
   type WarMapLayerId,
   type WarMapLayerVisibility,
+  type WarMapFlightMode,
   type WarMapPreset,
   type WarMapSettings,
   type WarMapTimeRangePreset,
@@ -13,6 +14,7 @@ import {
 import { create } from "zustand";
 
 export {
+  type WarMapFlightMode,
   type WarMapLayerId,
   type WarMapLayerVisibility,
   type WarMapPreset,
@@ -37,6 +39,7 @@ const DEFAULT_SETTINGS: WarMapSettings = {
   viewState: { ...WAR_MAP_PRESET_VIEW_STATE.global },
   activePreset: "global",
   timeRangePreset: "7d",
+  flightMode: "military",
 };
 
 const WAR_MAP_TIME_RANGE_PRESET_VALUES: readonly WarMapTimeRangePreset[] = [
@@ -59,6 +62,7 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
       viewState: { ...DEFAULT_SETTINGS.viewState },
       activePreset: DEFAULT_SETTINGS.activePreset,
       timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
+      flightMode: DEFAULT_SETTINGS.flightMode,
     };
   }
 
@@ -102,12 +106,14 @@ function normalizeWarMapSettingsFallback(payload: unknown): WarMapSettings {
     WAR_MAP_TIME_RANGE_PRESET_VALUES.includes(record.timeRangePreset as WarMapTimeRangePreset)
       ? (record.timeRangePreset as WarMapTimeRangePreset)
       : DEFAULT_SETTINGS.timeRangePreset;
+  const flightMode = record.flightMode === "all" ? "all" : DEFAULT_SETTINGS.flightMode;
 
   return {
     layerVisibility,
     viewState,
     activePreset,
     timeRangePreset,
+    flightMode,
   };
 }
 
@@ -123,11 +129,13 @@ export interface WarMapSettingsState {
   viewState: WarMapViewState;
   activePreset: WarMapPreset;
   timeRangePreset: WarMapTimeRangePreset;
+  flightMode: WarMapFlightMode;
   setLayerVisible: (id: WarMapLayerId, visible: boolean) => void;
   setLayerVisibility: (visibility: WarMapLayerVisibility) => void;
   setViewState: (viewState: Partial<WarMapViewState>) => void;
   setActivePreset: (preset: WarMapPreset) => void;
   setTimeRangePreset: (preset: WarMapTimeRangePreset) => void;
+  setFlightMode: (mode: WarMapFlightMode) => void;
   resetLayers: () => void;
   resetAll: () => void;
   hydrateFromRemote: (payload: unknown) => void;
@@ -141,6 +149,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
   viewState: { ...DEFAULT_SETTINGS.viewState },
   activePreset: DEFAULT_SETTINGS.activePreset,
   timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
+  flightMode: DEFAULT_SETTINGS.flightMode,
   setLayerVisible: (id, visible) =>
     set((state) => ({
       layerVisibility: { ...state.layerVisibility, [id]: visible },
@@ -173,6 +182,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
       viewState: { ...WAR_MAP_PRESET_VIEW_STATE[preset] },
     }),
   setTimeRangePreset: (preset) => set({ timeRangePreset: preset }),
+  setFlightMode: (flightMode) => set({ flightMode }),
   resetLayers: () =>
     set({ layerVisibility: { ...WAR_MAP_DEFAULT_LAYER_VISIBILITY } }),
   resetAll: () =>
@@ -181,6 +191,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
       viewState: { ...DEFAULT_SETTINGS.viewState },
       activePreset: DEFAULT_SETTINGS.activePreset,
       timeRangePreset: DEFAULT_SETTINGS.timeRangePreset,
+      flightMode: DEFAULT_SETTINGS.flightMode,
     }),
   hydrateFromRemote: (payload) => {
     const normalized = normalizeWarMapSettingsSafe(payload);
@@ -189,6 +200,7 @@ export const useWarMapSettingsStore = create<WarMapSettingsState>((set) => ({
       viewState: normalized.viewState,
       activePreset: normalized.activePreset,
       timeRangePreset: normalized.timeRangePreset,
+      flightMode: normalized.flightMode,
     });
   },
 }));

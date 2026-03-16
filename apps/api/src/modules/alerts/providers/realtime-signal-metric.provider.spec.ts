@@ -11,7 +11,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     return { provider, realtimeSignals };
   };
 
-  it("suppresses ADS-B count alerts when the snapshot is stale", async () => {
+  it("suppresses OpenSky count alerts when the snapshot is stale", async () => {
     const { provider, realtimeSignals } = buildProvider();
     realtimeSignals.evaluateMetric.mockResolvedValue({
       latest: 42,
@@ -28,7 +28,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     const result = await provider.fetch({
       orgId: "org-1",
       metricProvider: AlertMetricProvider.realtime_signal,
-      metricSlug: "realtime.adsb.military_flights",
+      metricSlug: "realtime.opensky.military_flights",
       operator: "gte" as any,
       changeWindowMin: 60,
       metadata: {},
@@ -50,7 +50,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     });
   });
 
-  it("suppresses ADS-B count alerts when the map is using a retained snapshot", async () => {
+  it("suppresses OpenSky count alerts when the map is using a retained snapshot", async () => {
     const { provider, realtimeSignals } = buildProvider();
     realtimeSignals.evaluateMetric.mockResolvedValue({
       latest: 42,
@@ -67,7 +67,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     const result = await provider.fetch({
       orgId: "org-1",
       metricProvider: AlertMetricProvider.realtime_signal,
-      metricSlug: "realtime.adsb.military_flights",
+      metricSlug: "realtime.opensky.military_flights",
       operator: "gte" as any,
       changeWindowMin: 60,
       metadata: {},
@@ -89,7 +89,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     });
   });
 
-  it("passes through ADS-B snapshot health evaluations without suppression", async () => {
+  it("passes through OpenSky snapshot health evaluations without suppression", async () => {
     const { provider, realtimeSignals } = buildProvider();
     realtimeSignals.evaluateMetric.mockResolvedValue({
       latest: 1,
@@ -103,7 +103,7 @@ describe("RealtimeSignalMetricProvider.fetch", () => {
     const result = await provider.fetch({
       orgId: "org-1",
       metricProvider: AlertMetricProvider.realtime_signal,
-      metricSlug: "realtime.adsb.snapshot_health",
+      metricSlug: "realtime.opensky.snapshot_health",
       operator: "gte" as any,
       changeWindowMin: 60,
       metadata: {},

@@ -165,8 +165,8 @@ const isCrawlQualityMetricSlug = (
   value === "crawl_quality.org_hash_dedupe_hit_rate";
 
 type RealtimeMetricSlug =
-  | "realtime.adsb.military_flights"
-  | "realtime.adsb.snapshot_health"
+  | "realtime.opensky.military_flights"
+  | "realtime.opensky.snapshot_health"
   | "realtime.ais.disruptions"
   | "realtime.unrest.events"
   | "realtime.outages.internet"
@@ -181,14 +181,14 @@ const realtimeMetricOptions: {
   fallbackLabel: string;
 }[] = [
   {
-    value: "realtime.adsb.military_flights",
-    labelKey: "alerts.config.realtime.metrics.adsb",
-    fallbackLabel: "ADS-B military flights",
+    value: "realtime.opensky.military_flights",
+    labelKey: "alerts.config.realtime.metrics.opensky",
+    fallbackLabel: "OpenSky military flights",
   },
   {
-    value: "realtime.adsb.snapshot_health",
-    labelKey: "alerts.config.realtime.metrics.adsbSnapshotHealth",
-    fallbackLabel: "ADS-B snapshot health",
+    value: "realtime.opensky.snapshot_health",
+    labelKey: "alerts.config.realtime.metrics.openskySnapshotHealth",
+    fallbackLabel: "OpenSky snapshot health",
   },
   {
     value: "realtime.ais.disruptions",
@@ -236,19 +236,19 @@ const realtimeMetricPresetConfig: Record<
     defaultDescription: string;
   }
 > = {
-  "realtime.adsb.military_flights": {
+  "realtime.opensky.military_flights": {
     operator: AlertOperator.Gte,
     thresholdValue: 50,
     defaultName: "Realtime Signal: Military Flight Activity Surge",
     defaultDescription:
-      "Alert when detected military flight count exceeds baseline threshold.",
+      "Alert when conservative OpenSky military detections exceed baseline threshold.",
   },
-  "realtime.adsb.snapshot_health": {
+  "realtime.opensky.snapshot_health": {
     operator: AlertOperator.Gte,
     thresholdValue: 1,
-    defaultName: "Realtime Signal: ADS-B Snapshot Degraded",
+    defaultName: "Realtime Signal: OpenSky Snapshot Degraded",
     defaultDescription:
-      "Alert when the ADS-B snapshot is stale or the map is temporarily using the previous retained snapshot.",
+      "Alert when the OpenSky military snapshot is stale or the map is temporarily using the previous retained snapshot.",
   },
   "realtime.ais.disruptions": {
     operator: AlertOperator.Gte,
@@ -300,7 +300,7 @@ const realtimeMetricPresetConfig: Record<
   },
 };
 const DEFAULT_REALTIME_METRIC_SLUG: RealtimeMetricSlug =
-  "realtime.adsb.military_flights";
+  "realtime.opensky.military_flights";
 const realtimePresetDefaultNames = new Set(
   Object.values(realtimeMetricPresetConfig).map((preset) => preset.defaultName),
 );
@@ -313,8 +313,8 @@ const realtimePresetDefaultDescriptions = new Set(
 const isRealtimeMetricSlug = (
   value: string | undefined,
 ): value is RealtimeMetricSlug =>
-  value === "realtime.adsb.military_flights" ||
-  value === "realtime.adsb.snapshot_health" ||
+  value === "realtime.opensky.military_flights" ||
+  value === "realtime.opensky.snapshot_health" ||
   value === "realtime.ais.disruptions" ||
   value === "realtime.unrest.events" ||
   value === "realtime.outages.internet" ||
@@ -352,7 +352,7 @@ export function AlertConfigForm() {
               AlertMetricProvider.PipelineJob
             ? "pipeline_job"
             : existingRule?.metricProvider === REALTIME_SIGNAL_PROVIDER
-              ? "realtime.adsb.military_flights"
+              ? "realtime.opensky.military_flights"
               : existingRule?.metricProvider ===
                   AlertMetricProvider.CrawlTask
                 ? "crawl_task"

@@ -45,6 +45,14 @@ export class DashboardWarMapQueryDto extends DashboardTimeRangeQueryDto {
   @IsOptional()
   @IsString()
   cluster?: string;
+
+  @ApiPropertyOptional({
+    description: "Flight layer mode. Supported: military, all",
+    example: "military",
+  })
+  @IsOptional()
+  @IsString()
+  flightMode?: string;
 }
 
 export class DashboardWarMapNewsMarkersQueryDto extends DashboardWarMapQueryDto {}

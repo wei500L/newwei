@@ -6,10 +6,10 @@ import {
 } from '../app/(app)/dashboard/charts/war-map/war-map-flights';
 
 describe('war-map flights helpers', () => {
-  it('normalizes ADS-B flight properties defensively', () => {
+  it('normalizes OpenSky flight properties defensively', () => {
     expect(
       readWarMapFlightProperties({
-        sourceType: 'adsb',
+        sourceType: 'opensky',
         callsign: ' SPAR416 ',
         icao24: 'AE017A',
         registration: '84-0142',
@@ -23,7 +23,7 @@ describe('war-map flights helpers', () => {
         sourceUpdatedAt: '2026-01-01T12:00:00.000Z',
       }),
     ).toEqual({
-      sourceType: 'adsb',
+      sourceType: 'opensky',
       callsign: 'SPAR416',
       icao24: 'ae017a',
       registration: '84-0142',
@@ -41,17 +41,17 @@ describe('war-map flights helpers', () => {
 
   it('picks the best available flight label', () => {
     const fromCallsign = readWarMapFlightProperties({
-      sourceType: 'adsb',
+      sourceType: 'opensky',
       callsign: 'SPAR416',
       icao24: 'ae017a',
     });
     const fromRegistration = readWarMapFlightProperties({
-      sourceType: 'adsb',
+      sourceType: 'opensky',
       registration: '84-0142',
       icao24: 'ae017a',
     });
     const fromHex = readWarMapFlightProperties({
-      sourceType: 'adsb',
+      sourceType: 'opensky',
       icao24: 'ae017a',
     });
 

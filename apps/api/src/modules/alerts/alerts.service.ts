@@ -479,8 +479,8 @@ export class AlertsService {
   private buildDefaultRealtimeSignalRuleId(
     orgId: string,
     key:
-      | "adsb"
-      | "adsb_snapshot_health"
+      | "opensky"
+      | "opensky_snapshot_health"
       | "ais"
       | "unrest"
       | "outages"

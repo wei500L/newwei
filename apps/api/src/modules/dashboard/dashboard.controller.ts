@@ -19,6 +19,10 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 
 import { DashboardChartsService } from "./dashboard-charts.service";
 import { DashboardService } from "./dashboard.service";
+
+function parseWarMapFlightMode(value?: string): "military" | "all" {
+  return value?.trim().toLowerCase() === "all" ? "all" : "military";
+}
 import {
   DashboardWarMapQueryDto,
   DashboardWarMapNewsMarkersQueryDto,
@@ -169,6 +173,7 @@ export class DashboardController {
       range,
       bbox: parseWarMapBbox(query.bbox),
       zoom: parseWarMapZoom(query.zoom),
+      flightMode: parseWarMapFlightMode(query.flightMode),
     });
   }
 

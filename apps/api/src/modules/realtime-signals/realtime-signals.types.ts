@@ -1,5 +1,5 @@
 export type RealtimeSignalSource =
-  | "adsb"
+  | "opensky"
   | "ais"
   | "unrest"
   | "outages"
@@ -32,7 +32,9 @@ export interface RealtimeSignalFetchResult {
   context?: Record<string, unknown>;
 }
 
-export interface RealtimeAdsbAircraftSnapshot {
+export type RealtimeSignalFlightMode = "military" | "all";
+
+export interface RealtimeOpenskyAircraftSnapshot {
   id: string;
   icao24: string;
   callsign?: string;
@@ -46,10 +48,12 @@ export interface RealtimeAdsbAircraftSnapshot {
   countryCode?: string;
   countryName?: string;
   observedAt: string;
-  source: "adsb";
+  source: "opensky";
 }
 
-export interface RealtimeAdsbSnapshotDiagnostics {
+export type RealtimeAdsbAircraftSnapshot = RealtimeOpenskyAircraftSnapshot;
+
+export interface RealtimeOpenskySnapshotDiagnostics {
   latestObservedAt?: string;
   oldestObservedAt?: string;
   staleThresholdSec: number;
@@ -60,20 +64,26 @@ export interface RealtimeAdsbSnapshotDiagnostics {
   retainedPreviousSnapshot: boolean;
 }
 
-export interface RealtimeAdsbLatestSnapshot {
-  source: "adsb";
+export type RealtimeAdsbSnapshotDiagnostics = RealtimeOpenskySnapshotDiagnostics;
+
+export interface RealtimeOpenskyLatestSnapshot {
+  source: "opensky";
   sourceEndpoint: string;
   updatedAt: string;
   totalAircraft: number;
   validPositionCount: number;
   latestObservedAt?: string;
-  diagnostics: RealtimeAdsbSnapshotDiagnostics;
-  aircraft: RealtimeAdsbAircraftSnapshot[];
+  diagnostics: RealtimeOpenskySnapshotDiagnostics;
+  aircraft: RealtimeOpenskyAircraftSnapshot[];
 }
 
-export type RealtimeAdsbSnapshotFreshness = "fresh" | "stale" | "missing";
+export type RealtimeAdsbLatestSnapshot = RealtimeOpenskyLatestSnapshot;
 
-export interface RealtimeAdsbRuntimeDiagnostics {
+export type RealtimeOpenskySnapshotFreshness = "fresh" | "stale" | "missing";
+
+export type RealtimeAdsbSnapshotFreshness = RealtimeOpenskySnapshotFreshness;
+
+export interface RealtimeOpenskyRuntimeDiagnostics {
   freshness: RealtimeAdsbSnapshotFreshness;
   rawAircraftCount: number;
   currentValidPositionCount: number;
@@ -89,6 +99,8 @@ export interface RealtimeAdsbRuntimeDiagnostics {
   droppedStalePositionCount: number;
   deduplicatedCount: number;
 }
+
+export type RealtimeAdsbRuntimeDiagnostics = RealtimeOpenskyRuntimeDiagnostics;
 
 export interface RealtimeSignalsRuntimeConfig {
   enabled: boolean;
@@ -115,8 +127,11 @@ export interface RealtimeSignalsRuntimeConfig {
     baseUrl?: string;
     sharedSecret?: string;
   };
-  adsb: {
+  opensky: {
     baseUrl?: string;
+    tokenUrl?: string;
+    clientId?: string;
+    clientSecret?: string;
   };
   credentials: {
     aisApiKey?: string;
@@ -199,7 +214,8 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
-  adsbSnapshot?: RealtimeAdsbRuntimeDiagnostics;
+  openskySnapshot?: RealtimeOpenskyRuntimeDiagnostics;
+  adsbSnapshot?: RealtimeOpenskyRuntimeDiagnostics;
 }
 
 export interface RealtimeSignalsMarkerReadiness {

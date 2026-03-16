@@ -26,6 +26,7 @@ import type {
   RealtimeAdsbLatestSnapshot,
   RealtimeAdsbRuntimeDiagnostics,
   RealtimeSignalFetchResult,
+  RealtimeSignalFlightMode,
   RealtimeSignalsRuntimeDiagnostics,
   RealtimeSignalRuntimeSourceDiagnostics,
   RealtimeSignalSource,
@@ -106,8 +107,27 @@ const REALTIME_SIGNAL_INSIGHT_SOURCES = [
 const REALTIME_SIGNAL_DIAGNOSTICS_WINDOW_HOURS = 24 * 7;
 const MIN_ADSB_STALE_THRESHOLD_SEC = 10 * 60;
 const MAX_ADSB_STALE_THRESHOLD_SEC = 30 * 60;
+const OPENSKY_DEFAULT_BASE_URL = "https://opensky-network.org/api";
+const OPENSKY_DEFAULT_TOKEN_URL =
+  "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+const OPENSKY_VIEWPORT_CACHE_TTL_SECONDS = 15;
+const OPENSKY_REGION_CACHE_TTL_SECONDS = 60;
+const FEET_PER_METER = 3.28084;
+const KNOTS_PER_METER_PER_SECOND = 1.94384;
+const OPENSKY_MILITARY_QUERY_REGIONS = [
+  { key: "america", bbox: [-130, 24, -60, 55] as [number, number, number, number] },
+  { key: "eu", bbox: [-15, 35, 40, 65] as [number, number, number, number] },
+  { key: "mena", bbox: [-20, 12, 65, 45] as [number, number, number, number] },
+  { key: "asia", bbox: [95, 18, 150, 52] as [number, number, number, number] },
+  { key: "oceania", bbox: [110, -47, 180, 5] as [number, number, number, number] },
+  { key: "arctic", bbox: [-80, 55, 60, 85] as [number, number, number, number] },
+] as const;
+const OPENSKY_HIGH_CONFIDENCE_CALLSIGN_PATTERNS = [
+  /^(RCH|RRR|CNV|QID|GAF|BAF|NVY|NAF|VM)[A-Z0-9]{1,6}$/i,
+  /^ASCOT[A-Z0-9]{1,6}$/i,
+] as const;
 const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
-  adsb: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+  opensky: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
   ais: REALTIME_SIGNAL_METRIC_SLUGS.ais,
   unrest: REALTIME_SIGNAL_METRIC_SLUGS.unrest,
   outages: REALTIME_SIGNAL_METRIC_SLUGS.outages,
@@ -134,12 +154,32 @@ interface JsonFetchOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: unknown;
+  rawBody?: string;
 }
 
 interface UnrestFeedFetchResult {
   events: UnrestEventCandidate[];
   configured: boolean;
   error?: string;
+}
+
+interface OpenSkyStateResponse {
+  time?: unknown;
+  states?: unknown[];
+}
+
+interface OpenSkyStateVector {
+  icao24: string;
+  callsign?: string;
+  countryName?: string;
+  lastContactAt?: string;
+  lastContactMs: number;
+  longitude?: number;
+  latitude?: number;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  raw: unknown[];
 }
 
 interface AdsbNormalizationResult {
@@ -210,7 +250,7 @@ export class RealtimeSignalsService {
     for (const source of REALTIME_SIGNAL_SOURCES) {
       const sourceConfig = runtime.sources[source];
       if (!sourceConfig?.enabled) {
-        if (source === "adsb") {
+        if (source === "opensky") {
           await this.store.clearLatestAdsbSnapshot(orgId);
         }
         continue;
@@ -313,8 +353,8 @@ export class RealtimeSignalsService {
         const context =
           this.toDiagnosticContext(evaluation.context) ??
           this.toDiagnosticContext(sourceState?.context);
-        const adsbSnapshot =
-          source === "adsb"
+        const openskySnapshot =
+          source === "opensky"
             ? this.buildAdsbRuntimeDiagnostics(
                 adsbLatestSnapshot,
                 {
@@ -354,7 +394,12 @@ export class RealtimeSignalsService {
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
           context,
-          ...(adsbSnapshot ? { adsbSnapshot } : {}),
+          ...(openskySnapshot
+            ? {
+                openskySnapshot,
+                adsbSnapshot: openskySnapshot,
+              }
+            : {}),
         } satisfies RealtimeSignalRuntimeSourceDiagnostics;
       }),
     );
@@ -492,7 +537,7 @@ export class RealtimeSignalsService {
     runtime: RealtimeSignalsRuntimeConfig,
   ): Promise<RealtimeSignalFetchResult[]> {
     switch (source) {
-      case "adsb":
+      case "opensky":
         return this.fetchAdsbSignal(orgId, runtime);
       case "ais":
         return this.fetchAisSignal(runtime);
@@ -517,73 +562,104 @@ export class RealtimeSignalsService {
     orgId: string,
     runtime: RealtimeSignalsRuntimeConfig,
   ) {
-    const baseUrl =
-      this.normalizeUrl(runtime.adsb.baseUrl) ?? "https://api.adsb.lol";
-    const endpoint = `${baseUrl}/v2/mil`;
-    const payload = await this.fetchJsonWithRetry(endpoint, runtime);
-    const aircraft = this.readArray((payload as { ac?: unknown[] })?.ac);
-    const totalFromPayload = this.toFiniteNumber(
-      (payload as { total?: unknown })?.total,
-    );
-    const militaryCount =
-      totalFromPayload === null
-        ? aircraft.length
-        : Math.max(0, Math.trunc(totalFromPayload));
+    const endpoint = `${this.getOpenskyBaseUrl(runtime)}/states/all?regions=${OPENSKY_MILITARY_QUERY_REGIONS.map((region) => region.key).join(",")}`;
+    if (!this.hasOpenskyCredentials(runtime)) {
+      await this.store.clearLatestAdsbSnapshot(orgId);
+      return [
+        {
+          metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+          value: 0,
+          context: {
+            source: "opensky",
+            scope: "military",
+            configured: false,
+            authRequired: true,
+            authMode: "oauth2_client_credentials",
+            sourceEndpoint: endpoint,
+            totalAircraft: 0,
+            militaryCount: 0,
+            validPositionCount: 0,
+            snapshotValidPositionCount: 0,
+            countryCodes: [],
+          },
+        },
+        {
+          metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
+          value: 0,
+          context: {
+            source: "opensky",
+            scope: "military",
+            configured: false,
+            authRequired: true,
+            authMode: "oauth2_client_credentials",
+            sourceEndpoint: endpoint,
+            healthState: "missing",
+            snapshotFreshness: "missing",
+            stale: false,
+            rawAircraftCount: 0,
+            currentValidPositionCount: 0,
+            snapshotValidPositionCount: 0,
+            countryCodes: [],
+          },
+        },
+      ] satisfies RealtimeSignalFetchResult[];
+    }
 
+    const militaryStates = await this.fetchConservativeMilitaryOpenSkyStates(
+      runtime,
+    );
+    const militaryCount = militaryStates.length;
     const countries = new Set<string>();
-    for (const entry of aircraft) {
-      if (!entry || typeof entry !== "object") {
-        continue;
-      }
-      const record = entry as Record<string, unknown>;
-      const countryCode =
-        this.toAdsbDisplayCountryCode(
-          this.extractCountryCode(record.countryCode) ??
-            this.extractCountryCode(record.country),
-        );
+    for (const state of militaryStates) {
+      const countryCode = this.resolveOpenSkyCountryCode(state.countryName);
       if (countryCode) {
         countries.add(countryCode);
       }
     }
+    const countryCodes = Array.from(countries).sort();
 
     const nowMs = Date.now();
     const previousSnapshot = await this.store.getLatestAdsbSnapshot(orgId);
     const nextSnapshot = this.buildAdsbLatestSnapshot(
       endpoint,
-      aircraft,
+      militaryStates.map((entry) => entry.raw),
       militaryCount,
       nowMs,
-      this.getAdsbStaleThresholdSeconds(runtime.sources.adsb.intervalSec),
+      this.getAdsbStaleThresholdSeconds(runtime.sources.opensky.intervalSec),
     );
     const latestSnapshot = this.selectAdsbSnapshotToStore(
       previousSnapshot,
       nextSnapshot,
       nowMs,
-      runtime.sources.adsb.intervalSec,
+      runtime.sources.opensky.intervalSec,
     );
     await this.store.setLatestAdsbSnapshot(
       orgId,
       latestSnapshot,
-      this.getAdsbSnapshotTtlSeconds(runtime.sources.adsb.intervalSec),
+      this.getAdsbSnapshotTtlSeconds(runtime.sources.opensky.intervalSec),
     );
     const adsbSnapshot = this.buildAdsbRuntimeDiagnostics(
       latestSnapshot,
       {
-        rawAircraftCount: aircraft.length,
+        rawAircraftCount: militaryCount,
         currentValidPositionCount: nextSnapshot.validPositionCount,
       },
       nowMs,
-      runtime.sources.adsb.intervalSec,
+      runtime.sources.opensky.intervalSec,
     );
 
     return [
       {
-        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
         value: militaryCount,
         context: {
-          source: "adsb",
+          source: "opensky",
           sourceEndpoint: endpoint,
-          totalAircraft: aircraft.length,
+          scope: "military",
+          configured: true,
+          authRequired: true,
+          authMode: "oauth2_client_credentials",
+          totalAircraft: militaryCount,
           militaryCount,
           validPositionCount: nextSnapshot.validPositionCount,
           snapshotValidPositionCount: latestSnapshot.validPositionCount,
@@ -605,18 +681,22 @@ export class RealtimeSignalsService {
           droppedStalePositionCount:
             nextSnapshot.diagnostics.droppedStalePositionCount,
           deduplicatedCount: nextSnapshot.diagnostics.deduplicatedCount,
-          countryCodes: Array.from(countries),
+          countryCodes,
         },
       },
       {
-        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsbSnapshotHealth,
+        metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
         value: this.computeAdsbSnapshotHealthValue(
           latestSnapshot,
           adsbSnapshot,
         ),
         context: {
-          source: "adsb",
+          source: "opensky",
           sourceEndpoint: endpoint,
+          scope: "military",
+          configured: true,
+          authRequired: true,
+          authMode: "oauth2_client_credentials",
           healthState: adsbSnapshot.freshness,
           stale: adsbSnapshot.freshness !== "fresh",
           snapshotRetainedPrevious:
@@ -641,10 +721,299 @@ export class RealtimeSignalsService {
           droppedStalePositionCount:
             latestSnapshot.diagnostics.droppedStalePositionCount,
           deduplicatedCount: latestSnapshot.diagnostics.deduplicatedCount,
-          countryCodes: Array.from(countries),
+          countryCodes,
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
+  }
+
+  async fetchOpenskyViewportSnapshot(options: {
+    bbox?: [number, number, number, number];
+  }): Promise<{
+    configured: boolean;
+    requiresZoom: boolean;
+    sourceEndpoint: string;
+    snapshot: RealtimeAdsbLatestSnapshot | null;
+  }> {
+    const runtime = await this.getRuntimeConfig({ refreshAcledToken: false });
+    const sourceEndpoint = options.bbox
+      ? this.buildOpenskyStatesEndpoint(
+          this.getOpenskyBaseUrl(runtime),
+          options.bbox,
+        )
+      : `${this.getOpenskyBaseUrl(runtime)}/states/all`;
+    if (!runtime.enabled || !runtime.sources.opensky.enabled) {
+      return {
+        configured: false,
+        requiresZoom: false,
+        sourceEndpoint,
+        snapshot: null,
+      };
+    }
+    if (!this.hasOpenskyCredentials(runtime)) {
+      return {
+        configured: false,
+        requiresZoom: false,
+        sourceEndpoint,
+        snapshot: null,
+      };
+    }
+    if (!options.bbox) {
+      return {
+        configured: true,
+        requiresZoom: true,
+        sourceEndpoint,
+        snapshot: null,
+      };
+    }
+
+    const states = await this.fetchOpenSkyViewportStates(runtime, options.bbox);
+    const snapshot = this.buildAdsbLatestSnapshot(
+      sourceEndpoint,
+      states.map((entry) => entry.raw),
+      states.length,
+      Date.now(),
+      this.getAdsbStaleThresholdSeconds(runtime.sources.opensky.intervalSec),
+    );
+    return {
+      configured: true,
+      requiresZoom: false,
+      sourceEndpoint,
+      snapshot,
+    };
+  }
+
+  private hasOpenskyCredentials(runtime: RealtimeSignalsRuntimeConfig) {
+    return Boolean(
+      this.normalizeString(runtime.opensky.clientId) &&
+        this.normalizeString(runtime.opensky.clientSecret),
+    );
+  }
+
+  private getOpenskyBaseUrl(runtime: RealtimeSignalsRuntimeConfig) {
+    return this.normalizeUrl(runtime.opensky.baseUrl) ?? OPENSKY_DEFAULT_BASE_URL;
+  }
+
+  private getOpenskyTokenUrl(runtime: RealtimeSignalsRuntimeConfig) {
+    return (
+      this.normalizeUrl(runtime.opensky.tokenUrl) ?? OPENSKY_DEFAULT_TOKEN_URL
+    );
+  }
+
+  private async fetchConservativeMilitaryOpenSkyStates(
+    runtime: RealtimeSignalsRuntimeConfig,
+  ) {
+    const regionStates = await Promise.all(
+      OPENSKY_MILITARY_QUERY_REGIONS.map((region) =>
+        this.fetchOpenSkyStates(runtime, {
+          bbox: region.bbox,
+          cacheKey: `realtime-signals:opensky:region:${region.key}`,
+          cacheTtlSeconds: OPENSKY_REGION_CACHE_TTL_SECONDS,
+        }),
+      ),
+    );
+    return this.dedupeOpenskyStateVectors(
+      regionStates
+        .flat()
+        .filter((state) => this.isConservativeMilitaryState(state)),
+    );
+  }
+
+  private async fetchOpenSkyViewportStates(
+    runtime: RealtimeSignalsRuntimeConfig,
+    bbox: [number, number, number, number],
+  ) {
+    const signature = bbox.map((value) => value.toFixed(3)).join(",");
+    return this.fetchOpenSkyStates(runtime, {
+      bbox,
+      cacheKey: `realtime-signals:opensky:viewport:${signature}`,
+      cacheTtlSeconds: OPENSKY_VIEWPORT_CACHE_TTL_SECONDS,
+    });
+  }
+
+  private async fetchOpenSkyStates(
+    runtime: RealtimeSignalsRuntimeConfig,
+    options: {
+      bbox: [number, number, number, number];
+      cacheKey: string;
+      cacheTtlSeconds: number;
+    },
+  ) {
+    return this.cache.wrap(
+      options.cacheKey,
+      options.cacheTtlSeconds,
+      async () => {
+        const accessToken = await this.getOpenskyAccessToken(runtime);
+        const endpoint = this.buildOpenskyStatesEndpoint(
+          this.getOpenskyBaseUrl(runtime),
+          options.bbox,
+        );
+        const payload = await this.fetchJsonWithRetry<OpenSkyStateResponse>(
+          endpoint,
+          runtime,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        return this.readOpenskyStateVectors(payload);
+      },
+      {
+        lockTtlMs: 20_000,
+        retryDelayMs: 100,
+        maxWaitMs: 10_000,
+      },
+    );
+  }
+
+  private async getOpenskyAccessToken(runtime: RealtimeSignalsRuntimeConfig) {
+    const clientId = this.normalizeString(runtime.opensky.clientId);
+    const clientSecret = this.normalizeString(runtime.opensky.clientSecret);
+    if (!clientId || !clientSecret) {
+      throw new Error("OpenSky OAuth client credentials are not configured");
+    }
+
+    const tokenUrl = this.getOpenskyTokenUrl(runtime);
+    const cacheKey = `realtime-signals:opensky:oauth:${encodeURIComponent(
+      `${tokenUrl}|${clientId}`,
+    )}`;
+    const cached = await this.cache.get<{ accessToken: string }>(cacheKey);
+    if (cached?.accessToken) {
+      return cached.accessToken;
+    }
+
+    const payload = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    const response = await this.fetchJsonWithRetry<{
+      access_token?: unknown;
+      expires_in?: unknown;
+    }>(tokenUrl, runtime, {
+      method: "POST",
+      rawBody: payload.toString(),
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+      },
+    });
+
+    const accessToken = this.normalizeString(response.access_token);
+    if (!accessToken) {
+      throw new Error("OpenSky OAuth token response did not include access_token");
+    }
+    const expiresInSec = Math.max(
+      60,
+      Math.trunc(this.toFiniteNumber(response.expires_in) ?? 300),
+    );
+    await this.cache.set(
+      cacheKey,
+      { accessToken },
+      Math.max(30, expiresInSec - 60),
+    );
+    return accessToken;
+  }
+
+  private buildOpenskyStatesEndpoint(
+    baseUrl: string,
+    bbox: [number, number, number, number],
+  ) {
+    const [minLng, minLat, maxLng, maxLat] = bbox;
+    const url = new URL(`${baseUrl}/states/all`);
+    url.searchParams.set("lamin", String(minLat));
+    url.searchParams.set("lomin", String(minLng));
+    url.searchParams.set("lamax", String(maxLat));
+    url.searchParams.set("lomax", String(maxLng));
+    return url.toString();
+  }
+
+  private readOpenskyStateVectors(payload: unknown) {
+    const states = this.readArray((payload as OpenSkyStateResponse)?.states);
+    const parsed: OpenSkyStateVector[] = [];
+    for (const entry of states) {
+      const state = this.parseOpenskyStateVector(entry);
+      if (state) {
+        parsed.push(state);
+      }
+    }
+    return parsed;
+  }
+
+  private parseOpenskyStateVector(entry: unknown): OpenSkyStateVector | null {
+    if (!Array.isArray(entry)) {
+      return null;
+    }
+
+    const icao24 = this.normalizeString(entry[0])?.toLowerCase();
+    if (!icao24) {
+      return null;
+    }
+
+    const callsign = this.normalizeString(entry[1]);
+    const countryName = this.normalizeString(entry[2]);
+    const lastContactSec =
+      this.toFiniteNumber(entry[4]) ?? this.toFiniteNumber(entry[3]) ?? 0;
+    const lastContactMs = Math.max(0, Math.trunc(lastContactSec * 1_000));
+    const altitudeMeters =
+      this.toFiniteNumber(entry[13]) ?? this.toFiniteNumber(entry[7]);
+    const velocityMetersPerSecond = this.toFiniteNumber(entry[9]);
+    const heading = this.toFiniteNumber(entry[10]);
+    const longitude = this.toFiniteNumber(entry[5]) ?? undefined;
+    const latitude = this.toFiniteNumber(entry[6]) ?? undefined;
+
+    return {
+      icao24,
+      ...(callsign ? { callsign } : {}),
+      ...(countryName ? { countryName } : {}),
+      ...(lastContactMs > 0
+        ? {
+            lastContactAt: new Date(lastContactMs).toISOString(),
+          }
+        : {}),
+      lastContactMs,
+      ...(typeof longitude === "number" ? { longitude } : {}),
+      ...(typeof latitude === "number" ? { latitude } : {}),
+      ...(typeof heading === "number" ? { heading } : {}),
+      ...(typeof altitudeMeters === "number"
+        ? { altitudeFt: Math.round(altitudeMeters * FEET_PER_METER) }
+        : {}),
+      ...(typeof velocityMetersPerSecond === "number"
+        ? {
+            groundSpeedKt: Math.round(
+              velocityMetersPerSecond * KNOTS_PER_METER_PER_SECOND,
+            ),
+          }
+        : {}),
+      raw: entry,
+    };
+  }
+
+  private dedupeOpenskyStateVectors(states: OpenSkyStateVector[]) {
+    const deduped = new Map<string, OpenSkyStateVector>();
+    for (const state of states) {
+      const current = deduped.get(state.icao24);
+      if (!current) {
+        deduped.set(state.icao24, state);
+        continue;
+      }
+      deduped.set(
+        state.icao24,
+        state.lastContactMs >= current.lastContactMs ? state : current,
+      );
+    }
+    return Array.from(deduped.values());
+  }
+
+  private isConservativeMilitaryState(state: OpenSkyStateVector) {
+    const callsign = this.normalizeString(state.callsign)?.toUpperCase();
+    const hasMilitaryCallsign = callsign
+      ? OPENSKY_HIGH_CONFIDENCE_CALLSIGN_PATTERNS.some((pattern) =>
+          pattern.test(callsign),
+        )
+      : false;
+    const hasMilitaryHexRange = state.icao24.startsWith("ae");
+    return hasMilitaryCallsign || hasMilitaryHexRange;
   }
 
   private buildAdsbLatestSnapshot(
@@ -702,7 +1071,7 @@ export class RealtimeSignalsService {
     const oldestObservedAt = normalizedEntries[normalizedEntries.length - 1]?.observedAt;
 
     return {
-      source: "adsb",
+      source: "opensky",
       sourceEndpoint: endpoint,
       updatedAt: new Date(fetchedAtMs).toISOString(),
       totalAircraft,
@@ -727,27 +1096,28 @@ export class RealtimeSignalsService {
     fetchedAtMs: number,
     staleThresholdSec: number,
   ): AdsbNormalizationResult {
-    if (!entry || typeof entry !== "object") {
+    const state = this.parseOpenskyStateVector(entry);
+    if (!state) {
       return { snapshot: null, dropReason: "invalid_position" };
     }
 
-    const record = entry as Record<string, unknown>;
-    const position = this.resolveAdsbAircraftPosition(record);
-    if (!position) {
+    if (
+      typeof state.latitude !== "number" ||
+      typeof state.longitude !== "number" ||
+      state.latitude < -90 ||
+      state.latitude > 90 ||
+      state.longitude < -180 ||
+      state.longitude > 180
+    ) {
       return { snapshot: null, dropReason: "invalid_position" };
     }
 
-    const icao24 =
-      this.normalizeString(record.hex)?.toLowerCase() ??
-      this.normalizeString(record.icao)?.toLowerCase();
-    if (!icao24) {
+    if (!state.icao24) {
       return { snapshot: null, dropReason: "missing_identity" };
     }
 
-    const callsign = this.normalizeString(record.flight);
-    const registration = this.normalizeString(record.r);
-    const aircraftType = this.normalizeString(record.t);
-    const observedAt = this.resolveAdsbObservedAt(record, fetchedAtMs);
+    const observedAt =
+      state.lastContactAt ?? new Date(fetchedAtMs).toISOString();
     const observedAtMs = Date.parse(observedAt);
     if (
       Number.isFinite(observedAtMs) &&
@@ -755,31 +1125,29 @@ export class RealtimeSignalsService {
     ) {
       return { snapshot: null, dropReason: "stale_position" };
     }
-    const heading = this.resolveAdsbHeading(record);
-    const altitudeFt = this.resolveAdsbAltitudeFt(record);
-    const groundSpeedKt = this.resolveAdsbGroundSpeedKt(record);
-    const normalizedCountryCode = this.extractCountryCode(
-      record.countryCode ?? record.country,
-    );
-    const countryCode = this.toAdsbDisplayCountryCode(normalizedCountryCode);
-    const countryName = getCountryName(normalizedCountryCode);
+    const countryCode = this.resolveOpenSkyCountryCode(state.countryName);
+    const countryName =
+      this.normalizeString(state.countryName) ??
+      (countryCode ? getCountryName(countryCode) : undefined);
 
     return {
       snapshot: {
-        id: icao24,
-        icao24,
-        ...(callsign ? { callsign } : {}),
-        ...(registration ? { registration } : {}),
-        ...(aircraftType ? { aircraftType } : {}),
-        lat: position.lat,
-        lng: position.lng,
-        ...(heading !== null ? { heading } : {}),
-        ...(altitudeFt !== null ? { altitudeFt } : {}),
-        ...(groundSpeedKt !== null ? { groundSpeedKt } : {}),
+        id: state.icao24,
+        icao24: state.icao24,
+        ...(state.callsign ? { callsign: state.callsign } : {}),
+        lat: state.latitude,
+        lng: state.longitude,
+        ...(typeof state.heading === "number" ? { heading: state.heading } : {}),
+        ...(typeof state.altitudeFt === "number"
+          ? { altitudeFt: state.altitudeFt }
+          : {}),
+        ...(typeof state.groundSpeedKt === "number"
+          ? { groundSpeedKt: state.groundSpeedKt }
+          : {}),
         ...(countryCode ? { countryCode } : {}),
         ...(countryName ? { countryName } : {}),
         observedAt,
-        source: "adsb",
+        source: "opensky",
       },
     };
   }
@@ -1035,6 +1403,21 @@ export class RealtimeSignalsService {
     return getCountryAlpha2(code) ?? undefined;
   }
 
+  private resolveOpenSkyCountryCode(countryName: string | undefined) {
+    if (!countryName) {
+      return undefined;
+    }
+    const extractedCountryCode =
+      extractCountryCodeFromText(countryName) ?? undefined;
+    const normalizedCountryCode =
+      normalizeCountryCode(countryName) ?? undefined;
+    return (
+      this.toAdsbDisplayCountryCode(extractedCountryCode) ??
+      this.toAdsbDisplayCountryCode(normalizedCountryCode) ??
+      this.toAdsbDisplayCountryCode(countryName)
+    );
+  }
+
   private getAdsbSnapshotTtlSeconds(intervalSec: number) {
     const safeIntervalSec = Math.max(60, Math.trunc(intervalSec));
     return Math.max(20 * 60, safeIntervalSec * 2);
@@ -1146,9 +1529,11 @@ export class RealtimeSignalsService {
           countryCodes: Array.from(countries),
           feedErrors: {
             acled: runtime.capabilities.acledApiEnabled
-              ? acledFeed.error ?? null
+              ? "error" in acledFeed
+                ? acledFeed.error ?? null
+                : null
               : null,
-            gdelt: gdeltFeed.error ?? null,
+            gdelt: "error" in gdeltFeed ? gdeltFeed.error ?? null : null,
           },
         },
       },
@@ -2363,12 +2748,12 @@ export class RealtimeSignalsService {
     }
 
     if (
-      options.source === "adsb" &&
+      options.source === "opensky" &&
       this.normalizeString(options.context?.snapshotFreshness) === "stale"
     ) {
       return {
         status: "stale" as const,
-        reason: "Latest ADS-B snapshot is stale.",
+        reason: "Latest OpenSky snapshot is stale.",
       };
     }
 
@@ -2398,6 +2783,9 @@ export class RealtimeSignalsService {
     if (!context) {
       return undefined;
     }
+    if (source === "opensky" && context.configured === false) {
+      return "OpenSky OAuth client credentials are not configured.";
+    }
     if (source === "ais" && context.configured === false) {
       return "AIS relay base URL is not configured.";
     }
@@ -2414,9 +2802,9 @@ export class RealtimeSignalsService {
     if (!context) {
       return undefined;
     }
-    if (source === "adsb") {
+    if (source === "opensky") {
       if (context.snapshotRetainedPrevious === true) {
-        return "Using retained ADS-B snapshot after empty or unusable fetch.";
+        return "Using retained OpenSky snapshot after empty or unusable fetch.";
       }
       const validPositionCount = this.toFiniteNumber(context.validPositionCount);
       const totalAircraft = this.toFiniteNumber(context.totalAircraft);
@@ -2425,7 +2813,7 @@ export class RealtimeSignalsService {
         totalAircraft > 0 &&
         validPositionCount === 0
       ) {
-        return "ADS-B feed returned aircraft but no current positions passed validation.";
+        return "OpenSky returned aircraft but no current positions passed validation.";
       }
       return undefined;
     }
@@ -2491,7 +2879,7 @@ export class RealtimeSignalsService {
         acledApiDisabledReason: "Open myACLED does not include API access.",
       },
       sources: {
-        adsb: cfg.sources.adsb,
+        opensky: cfg.sources.opensky,
         ais: cfg.sources.ais,
         unrest: cfg.sources.unrest,
         outages: cfg.sources.outages,
@@ -2502,7 +2890,7 @@ export class RealtimeSignalsService {
       },
       thresholds: cfg.thresholds,
       relay: cfg.relay,
-      adsb: cfg.adsb,
+      opensky: cfg.opensky,
       credentials: {
         aisApiKey: cfg.credentials.aisApiKey,
         cloudflareApiToken: cfg.credentials.cloudflareApiToken,
@@ -2529,10 +2917,17 @@ export class RealtimeSignalsService {
           method: options.method ?? "GET",
           headers: {
             accept: "application/json",
-            ...(options.body ? { "content-type": "application/json" } : {}),
+            ...(options.body && !options.rawBody
+              ? { "content-type": "application/json" }
+              : {}),
             ...(options.headers ?? {}),
           },
-          body: options.body ? JSON.stringify(options.body) : undefined,
+          body:
+            typeof options.rawBody === "string"
+              ? options.rawBody
+              : options.body
+                ? JSON.stringify(options.body)
+                : undefined,
           signal: controller.signal,
         });
         if (!response.ok) {

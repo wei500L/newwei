@@ -84,7 +84,7 @@ interface DeckPoint {
   geoSource?: WarMapNewsGeoSource;
   query?: string;
   layerId?: WarMapLayerId;
-  sourceType?: 'adsb';
+  sourceType?: 'opensky';
   callsign?: string;
   icao24?: string;
   registration?: string;
@@ -437,11 +437,13 @@ export function WarMap({
   const viewState = useWarMapSettingsStore((state) => state.viewState);
   const activePreset = useWarMapSettingsStore((state) => state.activePreset);
   const timeRangePreset = useWarMapSettingsStore((state) => state.timeRangePreset);
+  const flightMode = useWarMapSettingsStore((state) => state.flightMode);
   const setLayerVisible = useWarMapSettingsStore((state) => state.setLayerVisible);
   const setLayerVisibility = useWarMapSettingsStore((state) => state.setLayerVisibility);
   const setViewState = useWarMapSettingsStore((state) => state.setViewState);
   const setActivePreset = useWarMapSettingsStore((state) => state.setActivePreset);
   const setTimeRangePreset = useWarMapSettingsStore((state) => state.setTimeRangePreset);
+  const setFlightMode = useWarMapSettingsStore((state) => state.setFlightMode);
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const viewStateRef = useRef(viewState);
 
@@ -546,6 +548,7 @@ export function WarMap({
     translateTarget,
     bbox: queryBbox,
     zoom: queryZoom,
+    flightMode,
   });
   const monitors = monitorsQuery.data ?? [];
   const internalStreamState = useDashboardStream({
@@ -664,12 +667,15 @@ export function WarMap({
     if (parsed.timeRangePreset) {
       setTimeRangePreset(parsed.timeRangePreset);
     }
+    if (parsed.flightMode) {
+      setFlightMode(parsed.flightMode);
+    }
     if (parsed.viewState) {
       setViewState(parsed.viewState);
     }
 
     hasHydratedUrlRef.current = true;
-  }, [setActivePreset, setLayerVisibility, setTimeRangePreset, setViewState]);
+  }, [setActivePreset, setFlightMode, setLayerVisibility, setTimeRangePreset, setViewState]);
 
   useEffect(() => {
     if (!hasHydratedUrlRef.current || typeof window === 'undefined') {
@@ -683,6 +689,7 @@ export function WarMap({
         activePreset,
         timeRangePreset,
         layerVisibility,
+        flightMode,
       });
       const nextSearch = nextParams.toString();
       const currentSearch = current.searchParams.toString();
@@ -693,7 +700,7 @@ export function WarMap({
     }, 300);
 
     return () => window.clearTimeout(timer);
-  }, [activePreset, layerVisibility, timeRangePreset, viewState]);
+  }, [activePreset, flightMode, layerVisibility, timeRangePreset, viewState]);
 
   const monitorPoints = useMemo(
     () =>
@@ -1179,7 +1186,10 @@ export function WarMap({
             description:
               layerId === 'flights'
                 ? t('dashboard.charts.warMap.tooltip.clusterFlights', {
-                    defaultValue: '{{count}} military flights. Click to zoom in.',
+                    defaultValue:
+                      flightMode === 'all'
+                        ? '{{count}} flights. Click to zoom in.'
+                        : '{{count}} military/possible military flights. Click to zoom in.',
                     count: cluster.count,
                   })
                 : t('dashboard.charts.warMap.tooltip.clusterLayer', {
@@ -1470,6 +1480,7 @@ export function WarMap({
     rawNewsMarkers.length,
     queryZoom,
     t,
+    flightMode,
     translateTarget,
     zoomToLayerCluster,
   ]);
@@ -1509,7 +1520,10 @@ export function WarMap({
             text:
               object.layerId === 'flights'
                 ? t('dashboard.charts.warMap.tooltip.clusterFlights', {
-                    defaultValue: '{{count}} military flights. Click to zoom in.',
+                    defaultValue:
+                      flightMode === 'all'
+                        ? '{{count}} flights. Click to zoom in.'
+                        : '{{count}} military/possible military flights. Click to zoom in.',
                     count,
                   })
                 : t('dashboard.charts.warMap.tooltip.clusterLayer', {
@@ -1723,9 +1737,9 @@ export function WarMap({
   const flightsScope = readSummaryString(flightsSummary, 'scope');
   const flightsSourceEndpoint = readSummaryString(flightsSummary, 'sourceEndpoint');
   const flightsSourceLabel =
-    flightsSource === 'adsb'
-      ? t('dashboard.charts.warMap.stats.flightSourceAdsb', {
-          defaultValue: 'ADS-B',
+    flightsSource === 'opensky'
+      ? t('dashboard.charts.warMap.stats.flightSourceOpensky', {
+          defaultValue: 'OpenSky',
         })
       : flightsSource
         ? flightsSource.toUpperCase()
@@ -1733,8 +1747,12 @@ export function WarMap({
   const flightsScopeLabel =
     flightsScope === 'military'
       ? t('dashboard.charts.warMap.stats.flightScopeMilitary', {
-          defaultValue: 'Military',
+          defaultValue: 'Military / possible military',
         })
+      : flightsScope === 'all'
+        ? t('dashboard.charts.warMap.stats.flightScopeAll', {
+            defaultValue: 'All flights',
+          })
       : flightsScope;
   const flightsSourceBadgeLabel =
     flightsSourceLabel && flightsScopeLabel
@@ -1780,6 +1798,16 @@ export function WarMap({
       ? `${t('dashboard.charts.warMap.stats.flightEndpoint', {
           defaultValue: 'Endpoint',
         })}: ${flightsSourceEndpoint}`
+      : null,
+    flightsFreshness === 'zoom_required'
+      ? t('dashboard.charts.warMap.stats.flightZoomRequired', {
+          defaultValue: 'Zoom in to request all-flight OpenSky data for the current viewport.',
+        })
+      : null,
+    flightsFreshness === 'not_configured'
+      ? t('dashboard.charts.warMap.stats.flightNotConfigured', {
+          defaultValue: 'OpenSky OAuth client credentials are not configured.',
+        })
       : null,
   ]
     .filter((value): value is string => Boolean(value))
@@ -2401,6 +2429,26 @@ export function WarMap({
             })}
             : {visibleLayerCount}
           </Tag>
+          <Space size={4}>
+            <Button
+              size="small"
+              type={flightMode === 'military' ? 'primary' : 'default'}
+              onClick={() => setFlightMode('military')}
+            >
+              {t('dashboard.charts.warMap.stats.flightModeMilitary', {
+                defaultValue: 'Military',
+              })}
+            </Button>
+            <Button
+              size="small"
+              type={flightMode === 'all' ? 'primary' : 'default'}
+              onClick={() => setFlightMode('all')}
+            >
+              {t('dashboard.charts.warMap.stats.flightModeAll', {
+                defaultValue: 'All',
+              })}
+            </Button>
+          </Space>
           {layerVisibility.flights && flightsSourceBadgeLabel ? (
             <Tooltip
               title={
@@ -2426,6 +2474,10 @@ export function WarMap({
                 color={
                   flightsFreshness === 'stale'
                     ? 'orange'
+                    : flightsFreshness === 'zoom_required'
+                      ? 'purple'
+                      : flightsFreshness === 'not_configured'
+                        ? 'red'
                     : flightsFreshness === 'missing'
                       ? 'default'
                       : flightsTruncated

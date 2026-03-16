@@ -44,7 +44,7 @@ type RealtimeSignalsAcledAccessTokenStatus =
   | "missing"
   | "refresh_failed";
 type RealtimeSignalSourceKey =
-  | "adsb"
+  | "opensky"
   | "ais"
   | "unrest"
   | "outages"
@@ -58,7 +58,11 @@ type RealtimeSignalRuntimeStatus =
   | "stale"
   | "not_configured"
   | "idle";
-type RealtimeAdsbSnapshotFreshness = "fresh" | "stale" | "missing";
+type RealtimeOpenskySnapshotFreshness = "fresh" | "stale" | "missing";
+type RealtimeSignalsTranslate = (
+  key: string,
+  options?: Record<string, unknown>,
+) => string;
 
 interface RealtimeSignalsSettingsResponse {
   source: RealtimeSignalsSettingsSource;
@@ -67,8 +71,8 @@ interface RealtimeSignalsSettingsResponse {
   maxRetries: number;
   acledApiEnabled: boolean;
   acledApiDisabledReason?: string;
-  adsbEnabled: boolean;
-  adsbIntervalSec: number;
+  openskyEnabled: boolean;
+  openskyIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -87,9 +91,14 @@ interface RealtimeSignalsSettingsResponse {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
-  adsbBaseUrl?: string;
+  openskyBaseUrl?: string;
+  openskyTokenUrl?: string;
   relayBaseUrl?: string;
   polymarketProxyUrl?: string;
+  openskyClientId?: string;
+  openskyClientIdSource: RealtimeSignalsSecretSource;
+  hasOpenskyClientSecret: boolean;
+  openskyClientSecretSource: RealtimeSignalsSecretSource;
   hasRelaySharedSecret: boolean;
   relaySharedSecretSource: RealtimeSignalsSecretSource;
   hasAisApiKey: boolean;
@@ -117,8 +126,8 @@ interface RealtimeSignalsSettingsFormValues {
   enabled: boolean;
   requestTimeoutMs: number;
   maxRetries: number;
-  adsbEnabled: boolean;
-  adsbIntervalSec: number;
+  openskyEnabled: boolean;
+  openskyIntervalSec: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -137,9 +146,12 @@ interface RealtimeSignalsSettingsFormValues {
   keywordSpikeMultiplier: number;
   predictionShiftThreshold: number;
   predictionNewsActivityThreshold: number;
-  adsbBaseUrl?: string;
+  openskyBaseUrl?: string;
+  openskyTokenUrl?: string;
   relayBaseUrl?: string;
   polymarketProxyUrl?: string;
+  openskyClientId?: string;
+  openskyClientSecret?: string;
   relaySharedSecret?: string;
   aisApiKey?: string;
   acledOauthUsername?: string;
@@ -164,8 +176,24 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   previousValue: number | null;
   changePercent: number | null;
   context?: Record<string, unknown>;
+  openskySnapshot?: {
+    freshness: RealtimeOpenskySnapshotFreshness;
+    rawAircraftCount: number;
+    currentValidPositionCount: number;
+    snapshotValidPositionCount: number;
+    snapshotUpdatedAt?: string;
+    snapshotAgeSec?: number;
+    latestObservedAt?: string;
+    latestObservedAgeSec?: number;
+    staleThresholdSec: number;
+    retainedPreviousSnapshot: boolean;
+    droppedInvalidPositionCount: number;
+    droppedMissingIdentityCount: number;
+    droppedStalePositionCount: number;
+    deduplicatedCount: number;
+  };
   adsbSnapshot?: {
-    freshness: RealtimeAdsbSnapshotFreshness;
+    freshness: RealtimeOpenskySnapshotFreshness;
     rawAircraftCount: number;
     currentValidPositionCount: number;
     snapshotValidPositionCount: number;
@@ -215,8 +243,8 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   maxRetries: 2,
   acledApiEnabled: false,
   acledApiDisabledReason: undefined,
-  adsbEnabled: true,
-  adsbIntervalSec: 600,
+  openskyEnabled: true,
+  openskyIntervalSec: 600,
   aisEnabled: true,
   aisIntervalSec: 600,
   unrestEnabled: true,
@@ -235,9 +263,15 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   keywordSpikeMultiplier: 3,
   predictionShiftThreshold: 5,
   predictionNewsActivityThreshold: 3,
-  adsbBaseUrl: "https://api.adsb.lol",
+  openskyBaseUrl: "https://opensky-network.org/api",
+  openskyTokenUrl:
+    "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
   relayBaseUrl: "",
   polymarketProxyUrl: "",
+  openskyClientId: "",
+  openskyClientIdSource: "none",
+  hasOpenskyClientSecret: false,
+  openskyClientSecretSource: "none",
   hasRelaySharedSecret: false,
   relaySharedSecretSource: "none",
   hasAisApiKey: false,
@@ -263,11 +297,11 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
 
 const SOURCE_CONFIGS = [
   {
-    sourceKey: "adsb",
-    nameKey: "systemSettings.realtimeSignals.sources.adsb",
-    fallbackName: "ADS-B military flights",
-    enabledField: "adsbEnabled",
-    intervalField: "adsbIntervalSec",
+    sourceKey: "opensky",
+    nameKey: "systemSettings.realtimeSignals.sources.opensky",
+    fallbackName: "OpenSky military flights",
+    enabledField: "openskyEnabled",
+    intervalField: "openskyIntervalSec",
   },
   {
     sourceKey: "ais",
@@ -327,8 +361,8 @@ function toFormValues(
     enabled: settings.enabled,
     requestTimeoutMs: settings.requestTimeoutMs,
     maxRetries: settings.maxRetries,
-    adsbEnabled: settings.adsbEnabled,
-    adsbIntervalSec: settings.adsbIntervalSec,
+    openskyEnabled: settings.openskyEnabled,
+    openskyIntervalSec: settings.openskyIntervalSec,
     aisEnabled: settings.aisEnabled,
     aisIntervalSec: settings.aisIntervalSec,
     unrestEnabled: settings.unrestEnabled,
@@ -347,9 +381,12 @@ function toFormValues(
     keywordSpikeMultiplier: settings.keywordSpikeMultiplier,
     predictionShiftThreshold: settings.predictionShiftThreshold,
     predictionNewsActivityThreshold: settings.predictionNewsActivityThreshold,
-    adsbBaseUrl: settings.adsbBaseUrl ?? "",
+    openskyBaseUrl: settings.openskyBaseUrl ?? "",
+    openskyTokenUrl: settings.openskyTokenUrl ?? "",
     relayBaseUrl: settings.relayBaseUrl ?? "",
     polymarketProxyUrl: settings.polymarketProxyUrl ?? "",
+    openskyClientId: settings.openskyClientId ?? "",
+    openskyClientSecret: "",
     relaySharedSecret: "",
     aisApiKey: "",
     acledOauthUsername: settings.acledOauthUsername ?? "",
@@ -361,11 +398,12 @@ function toFormValues(
 }
 
 function summarizeRuntimeContext(
+  t: RealtimeSignalsTranslate,
   source: RealtimeSignalSourceKey,
   context?: Record<string, unknown>,
-  adsbSnapshot?: RealtimeSignalRuntimeDiagnosticsSource["adsbSnapshot"],
+  openskySnapshot?: RealtimeSignalRuntimeDiagnosticsSource["openskySnapshot"],
 ) {
-  if (!context && source !== "adsb") {
+  if (!context && source !== "opensky") {
     return null;
   }
   const resolvedContext = context ?? {};
@@ -376,35 +414,119 @@ function summarizeRuntimeContext(
     typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
   switch (source) {
-    case "adsb":
-      return `military=${num(resolvedContext.militaryCount) ?? 0}, raw=${adsbSnapshot?.rawAircraftCount ?? num(resolvedContext.totalAircraft) ?? 0}, current=${adsbSnapshot?.currentValidPositionCount ?? num(resolvedContext.validPositionCount) ?? 0}, map=${adsbSnapshot?.snapshotValidPositionCount ?? num(resolvedContext.snapshotValidPositionCount) ?? num(resolvedContext.validPositionCount) ?? 0}`;
+    case "opensky":
+      return t("systemSettings.realtimeSignals.runtime.contextSummary.opensky", {
+        defaultValue:
+          "scope={{scope}}, military={{military}}, raw={{raw}}, current={{current}}, map={{map}}",
+        scope: str(resolvedContext.scope) ?? "military",
+        military: num(resolvedContext.militaryCount) ?? 0,
+        raw:
+          openskySnapshot?.rawAircraftCount ??
+          num(resolvedContext.totalAircraft) ??
+          0,
+        current:
+          openskySnapshot?.currentValidPositionCount ??
+          num(resolvedContext.validPositionCount) ??
+          0,
+        map:
+          openskySnapshot?.snapshotValidPositionCount ??
+          num(resolvedContext.snapshotValidPositionCount) ??
+          num(resolvedContext.validPositionCount) ??
+          0,
+      });
     case "ais":
       return resolvedContext.configured === false
-        ? "AIS relay not configured"
-        : `disruptions=${num(resolvedContext.disruptions) ?? 0}, density=${num(resolvedContext.densityRegions) ?? 0}`;
+        ? t(
+            "systemSettings.realtimeSignals.runtime.contextSummary.aisNotConfigured",
+            {
+              defaultValue: "AIS relay root URL not configured",
+            },
+          )
+        : t("systemSettings.realtimeSignals.runtime.contextSummary.ais", {
+            defaultValue: "disruptions={{disruptions}}, density={{density}}",
+            disruptions: num(resolvedContext.disruptions) ?? 0,
+            density: num(resolvedContext.densityRegions) ?? 0,
+          });
     case "unrest":
       if (resolvedContext.acledApiEnabled === false) {
-        return `mode=gdelt-only, gdelt=${num(resolvedContext.gdeltCount) ?? 0}, total=${num(resolvedContext.unrestCount) ?? 0}`;
+        return t(
+          "systemSettings.realtimeSignals.runtime.contextSummary.unrestGdeltOnly",
+          {
+            defaultValue: "mode=gdelt-only, gdelt={{gdelt}}, total={{total}}",
+            gdelt: num(resolvedContext.gdeltCount) ?? 0,
+            total: num(resolvedContext.unrestCount) ?? 0,
+          },
+        );
       }
-      return `acled=${num(resolvedContext.acledCount) ?? 0}, gdelt=${num(resolvedContext.gdeltCount) ?? 0}, total=${num(resolvedContext.unrestCount) ?? 0}`;
+      return t("systemSettings.realtimeSignals.runtime.contextSummary.unrest", {
+        defaultValue: "acled={{acled}}, gdelt={{gdelt}}, total={{total}}",
+        acled: num(resolvedContext.acledCount) ?? 0,
+        gdelt: num(resolvedContext.gdeltCount) ?? 0,
+        total: num(resolvedContext.unrestCount) ?? 0,
+      });
     case "outages":
       return resolvedContext.configured === false
-        ? "cloudflare token not configured"
-        : `outages=${num(resolvedContext.outages) ?? 0}`;
+        ? t(
+            "systemSettings.realtimeSignals.runtime.contextSummary.outagesNotConfigured",
+            {
+              defaultValue: "Cloudflare token not configured",
+            },
+          )
+        : t(
+            "systemSettings.realtimeSignals.runtime.contextSummary.outages",
+            {
+              defaultValue: "outages={{outages}}",
+              outages: num(resolvedContext.outages) ?? 0,
+            },
+          );
     case "keyword_spike":
-      return `recent=${num(resolvedContext.recentArticleCount) ?? 0}, baseline=${num(resolvedContext.baselineArticleCount) ?? 0}, spikes=${Array.isArray(resolvedContext.spikes) ? resolvedContext.spikes.length : 0}`;
+      return t(
+        "systemSettings.realtimeSignals.runtime.contextSummary.keywordSpike",
+        {
+          defaultValue:
+            "recent={{recent}}, baseline={{baseline}}, spikes={{spikes}}",
+          recent: num(resolvedContext.recentArticleCount) ?? 0,
+          baseline: num(resolvedContext.baselineArticleCount) ?? 0,
+          spikes: Array.isArray(resolvedContext.spikes)
+            ? resolvedContext.spikes.length
+            : 0,
+        },
+      );
     case "pizzint":
-      return `defcon=${num(resolvedContext.defcon) ?? 0}, open=${num(resolvedContext.openLocations) ?? 0}, spikes=${num(resolvedContext.activeSpikes) ?? 0}`;
+      return t("systemSettings.realtimeSignals.runtime.contextSummary.pizzint", {
+        defaultValue: "defcon={{defcon}}, open={{open}}, spikes={{spikes}}",
+        defcon: num(resolvedContext.defcon) ?? 0,
+        open: num(resolvedContext.openLocations) ?? 0,
+        spikes: num(resolvedContext.activeSpikes) ?? 0,
+      });
     case "gdelt_tension":
-      return `pairs=${Array.isArray(resolvedContext.tensions) ? resolvedContext.tensions.length : 0}, window=${str(resolvedContext.dateStart) ?? "-"}..${str(resolvedContext.dateEnd) ?? "-"}`;
+      return t(
+        "systemSettings.realtimeSignals.runtime.contextSummary.gdeltTension",
+        {
+          defaultValue: "pairs={{pairs}}, window={{start}}..{{end}}",
+          pairs: Array.isArray(resolvedContext.tensions)
+            ? resolvedContext.tensions.length
+            : 0,
+          start: str(resolvedContext.dateStart) ?? "-",
+          end: str(resolvedContext.dateEnd) ?? "-",
+        },
+      );
     case "polymarket_leads":
-      return `leads=${Array.isArray(resolvedContext.leads) ? resolvedContext.leads.length : 0}`;
+      return t(
+        "systemSettings.realtimeSignals.runtime.contextSummary.polymarketLeads",
+        {
+          defaultValue: "leads={{leads}}",
+          leads: Array.isArray(resolvedContext.leads)
+            ? resolvedContext.leads.length
+            : 0,
+        },
+      );
     default:
       return null;
   }
 }
 
-function runtimeFreshnessColor(freshness: RealtimeAdsbSnapshotFreshness) {
+function runtimeFreshnessColor(freshness: RealtimeOpenskySnapshotFreshness) {
   switch (freshness) {
     case "fresh":
       return "green";
@@ -495,8 +617,8 @@ export function RealtimeSignalsSettingsPanel() {
         enabled: values.enabled,
         requestTimeoutMs: values.requestTimeoutMs,
         maxRetries: values.maxRetries,
-        adsbEnabled: values.adsbEnabled,
-        adsbIntervalSec: values.adsbIntervalSec,
+        openskyEnabled: values.openskyEnabled,
+        openskyIntervalSec: values.openskyIntervalSec,
         aisEnabled: values.aisEnabled,
         aisIntervalSec: values.aisIntervalSec,
         unrestEnabled: values.unrestEnabled,
@@ -515,14 +637,20 @@ export function RealtimeSignalsSettingsPanel() {
         keywordSpikeMultiplier: values.keywordSpikeMultiplier,
         predictionShiftThreshold: values.predictionShiftThreshold,
         predictionNewsActivityThreshold: values.predictionNewsActivityThreshold,
-        adsbBaseUrl: values.adsbBaseUrl?.trim()
-          ? values.adsbBaseUrl.trim()
+        openskyBaseUrl: values.openskyBaseUrl?.trim()
+          ? values.openskyBaseUrl.trim()
+          : null,
+        openskyTokenUrl: values.openskyTokenUrl?.trim()
+          ? values.openskyTokenUrl.trim()
           : null,
         relayBaseUrl: values.relayBaseUrl?.trim()
           ? values.relayBaseUrl.trim()
           : null,
         polymarketProxyUrl: values.polymarketProxyUrl?.trim()
           ? values.polymarketProxyUrl.trim()
+          : null,
+        openskyClientId: values.openskyClientId?.trim()
+          ? values.openskyClientId.trim()
           : null,
       };
 
@@ -680,6 +808,14 @@ export function RealtimeSignalsSettingsPanel() {
   };
 
   const secretStatusRows = [
+    {
+      key: "openskyClientSecret",
+      label: t("systemSettings.realtimeSignals.status.openskyClientSecret", {
+        defaultValue: "OpenSky client secret",
+      }),
+      has: settings.hasOpenskyClientSecret,
+      source: settings.openskyClientSecretSource,
+    },
     {
       key: "relaySharedSecret",
       label: t("systemSettings.realtimeSignals.status.relaySharedSecret"),
@@ -885,11 +1021,34 @@ export function RealtimeSignalsSettingsPanel() {
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.adsbBaseUrl")}
+            {t("systemSettings.realtimeSignals.status.openskyBaseUrl", {
+              defaultValue: "OpenSky base URL",
+            })}
           </Typography.Text>
           <Tag color="geekblue">
-            {settings.adsbBaseUrl ||
+            {settings.openskyBaseUrl ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.openskyTokenUrl", {
+              defaultValue: "OpenSky token URL",
+            })}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {settings.openskyTokenUrl ||
+              t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
+          <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.openskyClientId", {
+              defaultValue: "OpenSky client ID",
+            })}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {settings.openskyClientId ||
+              t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
+          <Tag color={settings.openskyClientId ? "blue" : "default"}>
+            {secretSourceLabel(settings.openskyClientIdSource)}
           </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.relayBaseUrl")}
@@ -1285,10 +1444,13 @@ export function RealtimeSignalsSettingsPanel() {
 
             <Row gutter={[12, 12]}>
               {diagnostics.sources.map((row) => {
+                const openskySnapshot =
+                  row.openskySnapshot ?? row.adsbSnapshot;
                 const summary = summarizeRuntimeContext(
+                  t,
                   row.source,
                   row.context,
-                  row.adsbSnapshot,
+                  openskySnapshot,
                 );
                 return (
                   <Col key={row.source} xs={24} lg={12}>
@@ -1354,71 +1516,71 @@ export function RealtimeSignalsSettingsPanel() {
                             )}
                           </Typography.Text>
                         ) : null}
-                        {row.adsbSnapshot ? (
+                        {openskySnapshot ? (
                           <Space wrap size={[8, 8]}>
-                            <Tag color={runtimeFreshnessColor(row.adsbSnapshot.freshness)}>
-                              {t("systemSettings.realtimeSignals.runtime.adsbSnapshotFreshness", {
+                            <Tag color={runtimeFreshnessColor(openskySnapshot.freshness)}>
+                              {t("systemSettings.realtimeSignals.runtime.openskySnapshotFreshness", {
                                 defaultValue: "Snapshot",
                               })}
                               :{" "}
                               {t(
-                                `systemSettings.realtimeSignals.runtime.adsbFreshness.${row.adsbSnapshot.freshness}`,
+                                `systemSettings.realtimeSignals.runtime.openskyFreshness.${openskySnapshot.freshness}`,
                                 {
-                                  defaultValue: row.adsbSnapshot.freshness,
+                                  defaultValue: openskySnapshot.freshness,
                                 },
                               )}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.adsbMapPoints", {
+                              {t("systemSettings.realtimeSignals.runtime.openskyMapPoints", {
                                 defaultValue: "Map points",
                               })}
-                              : {row.adsbSnapshot.snapshotValidPositionCount}
+                              : {openskySnapshot.snapshotValidPositionCount}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.adsbCurrentValidPoints", {
+                              {t("systemSettings.realtimeSignals.runtime.openskyCurrentValidPoints", {
                                 defaultValue: "Current valid",
                               })}
-                              : {row.adsbSnapshot.currentValidPositionCount}
+                              : {openskySnapshot.currentValidPositionCount}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.adsbDroppedStale", {
+                              {t("systemSettings.realtimeSignals.runtime.openskyDroppedStale", {
                                 defaultValue: "Dropped stale",
                               })}
-                              : {row.adsbSnapshot.droppedStalePositionCount}
+                              : {openskySnapshot.droppedStalePositionCount}
                             </Tag>
                           </Space>
                         ) : null}
-                        {row.adsbSnapshot?.latestObservedAt ? (
+                        {openskySnapshot?.latestObservedAt ? (
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.adsbLatestObservedAt", {
+                            {t("systemSettings.realtimeSignals.runtime.openskyLatestObservedAt", {
                               defaultValue: "Latest observed",
                             })}
-                            : {formatTimestamp(row.adsbSnapshot.latestObservedAt)}
-                            {typeof row.adsbSnapshot.latestObservedAgeSec === "number"
-                              ? ` (${row.adsbSnapshot.latestObservedAgeSec}s)`
+                            : {formatTimestamp(openskySnapshot.latestObservedAt)}
+                            {typeof openskySnapshot.latestObservedAgeSec === "number"
+                              ? ` (${openskySnapshot.latestObservedAgeSec}s)`
                               : ""}
                           </Typography.Text>
                         ) : null}
-                        {row.adsbSnapshot?.snapshotUpdatedAt ? (
+                        {openskySnapshot?.snapshotUpdatedAt ? (
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.adsbSnapshotUpdatedAt", {
+                            {t("systemSettings.realtimeSignals.runtime.openskySnapshotUpdatedAt", {
                               defaultValue: "Snapshot updated",
                             })}
-                            : {formatTimestamp(row.adsbSnapshot.snapshotUpdatedAt)}
-                            {typeof row.adsbSnapshot.snapshotAgeSec === "number"
-                              ? ` (${row.adsbSnapshot.snapshotAgeSec}s)`
+                            : {formatTimestamp(openskySnapshot.snapshotUpdatedAt)}
+                            {typeof openskySnapshot.snapshotAgeSec === "number"
+                              ? ` (${openskySnapshot.snapshotAgeSec}s)`
                               : ""}
                           </Typography.Text>
                         ) : null}
-                        {row.adsbSnapshot?.retainedPreviousSnapshot ? (
+                        {openskySnapshot?.retainedPreviousSnapshot ? (
                           <Alert
                             type="warning"
                             showIcon
                             message={t(
-                              "systemSettings.realtimeSignals.runtime.adsbRetainedPrevious",
+                              "systemSettings.realtimeSignals.runtime.openskyRetainedPrevious",
                               {
                                 defaultValue:
-                                  "Using the previous ADS-B snapshot because the latest fetch returned no usable positions.",
+                                  "Using the previous OpenSky snapshot because the latest fetch returned no usable positions.",
                               },
                             )}
                           />
@@ -1743,16 +1905,62 @@ export function RealtimeSignalsSettingsPanel() {
         <Typography.Title level={5}>
           {t("systemSettings.realtimeSignals.sections.endpoints")}
         </Typography.Title>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: "1rem" }}
+          message={t(
+            "systemSettings.realtimeSignals.alerts.aisRelayPurpose.title",
+            {
+              defaultValue:
+                "AIS relay address means the aggregation service root",
+            },
+          )}
+          description={t(
+            "systemSettings.realtimeSignals.alerts.aisRelayPurpose.body",
+            {
+              defaultValue:
+                "This is not a generic proxy. The backend calls `/ais/snapshot` on the AIS relay service and expects structured `disruptions` and `density` data. The Polymarket proxy setting below is separate.",
+            },
+          )}
+        />
         <Space wrap style={{ display: "flex", width: "100%" }}>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.adsbBaseUrl")}
-            name="adsbBaseUrl"
+            label={t("systemSettings.realtimeSignals.fields.openskyBaseUrl", {
+              defaultValue: "OpenSky base URL",
+            })}
+            name="openskyBaseUrl"
             style={{ minWidth: 280, flex: 1 }}
-            extra={t("systemSettings.realtimeSignals.hints.adsbBaseUrl")}
+            extra={t("systemSettings.realtimeSignals.hints.openskyBaseUrl", {
+              defaultValue: "REST API base URL for OpenSky state queries.",
+            })}
           >
             <Input
               placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.adsbBaseUrl",
+                "systemSettings.realtimeSignals.placeholders.openskyBaseUrl",
+                {
+                  defaultValue: "https://opensky-network.org/api",
+                },
+              )}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("systemSettings.realtimeSignals.fields.openskyTokenUrl", {
+              defaultValue: "OpenSky token URL",
+            })}
+            name="openskyTokenUrl"
+            style={{ minWidth: 280, flex: 1 }}
+            extra={t("systemSettings.realtimeSignals.hints.openskyTokenUrl", {
+              defaultValue: "OAuth token endpoint used for client-credentials authentication.",
+            })}
+          >
+            <Input
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.openskyTokenUrl",
+                {
+                  defaultValue:
+                    "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+                },
               )}
             />
           </Form.Item>
@@ -1793,6 +2001,25 @@ export function RealtimeSignalsSettingsPanel() {
         >
           {t("systemSettings.realtimeSignals.hints.secretOptional")}
         </Typography.Paragraph>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: "1rem" }}
+          message={t(
+            "systemSettings.realtimeSignals.alerts.aisCredentials.title",
+            {
+              defaultValue:
+                "Most AIS setups only need the relay shared secret here",
+            },
+          )}
+          description={t(
+            "systemSettings.realtimeSignals.alerts.aisCredentials.body",
+            {
+              defaultValue:
+                "Set the relay shared secret to match `RELAY_SHARED_SECRET` on the AIS relay. `AIS API key` is optional and mainly for custom relays; the stock bare relay reads `AISSTREAM_API_KEY` from its own environment.",
+            },
+          )}
+        />
         {acledApiDisabled ? (
           <Alert
             type="warning"
@@ -1812,8 +2039,41 @@ export function RealtimeSignalsSettingsPanel() {
         ) : null}
         <Space direction="vertical" style={{ width: "100%" }} size={0}>
           <Form.Item
+            label={t("systemSettings.realtimeSignals.fields.openskyClientId", {
+              defaultValue: "OpenSky client ID",
+            })}
+            name="openskyClientId"
+            extra={t("systemSettings.realtimeSignals.hints.openskyClientId", {
+              defaultValue: "OAuth client ID used for OpenSky access tokens.",
+            })}
+          >
+            <Input
+              autoComplete="username"
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.openskyClientId",
+                {
+                  defaultValue: "client-id",
+                },
+              )}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("systemSettings.realtimeSignals.fields.openskyClientSecret", {
+              defaultValue: "OpenSky client secret",
+            })}
+            name="openskyClientSecret"
+          >
+            <Input.Password
+              autoComplete="new-password"
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.secretValue",
+              )}
+            />
+          </Form.Item>
+          <Form.Item
             label={t("systemSettings.realtimeSignals.fields.relaySharedSecret")}
             name="relaySharedSecret"
+            extra={t("systemSettings.realtimeSignals.hints.relaySharedSecret")}
           >
             <Input.Password
               autoComplete="new-password"
@@ -1825,6 +2085,7 @@ export function RealtimeSignalsSettingsPanel() {
           <Form.Item
             label={t("systemSettings.realtimeSignals.fields.aisApiKey")}
             name="aisApiKey"
+            extra={t("systemSettings.realtimeSignals.hints.aisApiKey")}
           >
             <Input.Password
               autoComplete="new-password"

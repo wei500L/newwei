@@ -66,6 +66,8 @@ WorldMonitor 的实时聚合不是“单一后端流式管道”，而是**前�
 1. **区域拉取**  
    使用固定 bbox 区域（`MILITARY_QUERY_REGIONS`）批量请求 OpenSky，而不是全球全量拉。
 
+   当前项目实现里，军机链路使用 OpenSky REST `GET /states/all`，并通过 OAuth2 client credentials 获取 access token。
+
 2. **军机识别规则**  
    `isMilitaryFlight()` 同时用：
 
@@ -75,6 +77,8 @@ WorldMonitor 的实时聚合不是“单一后端流式管道”，而是**前�
 
 3. **结构化转换**  
    OpenSky state array 转 `MilitaryFlight`（高度、速度单位换算，track 历史保留）。
+
+   当前项目对上游继续暴露兼容字段：`icao24/callsign/lat/lng/heading/altitudeFt/groundSpeedKt/observedAt/sourceUpdatedAt`；`registration/aircraftType` 允许为空。
 
 4. **增强（可选）**  
    如果 Wingbits 可用，按 hex 批量补充 owner/operator/typecode，并提升置信度。

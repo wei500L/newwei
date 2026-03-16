@@ -29,6 +29,7 @@ describe('war-map data contract helpers', () => {
       translateTarget: 'zh-CN' as const,
       bbox: '10,20,30,40',
       zoom: 4.257,
+      flightMode: 'all' as const,
     };
 
     expect(buildWarMapEventsQueryKey(input)).toEqual([
@@ -54,6 +55,7 @@ describe('war-map data contract helpers', () => {
       input.bbox,
       4.26,
       'zh-CN',
+      'all',
     ]);
   });
 
@@ -64,12 +66,14 @@ describe('war-map data contract helpers', () => {
         end: '2026-03-02T00:00:00.000Z',
         zoom: 3.555,
         cluster: false,
+        flightMode: 'all',
       }),
     ).toEqual({
       start: '2026-03-01T00:00:00.000Z',
       end: '2026-03-02T00:00:00.000Z',
       zoom: '3.56',
       cluster: '0',
+      flightMode: 'all',
     });
   });
 
@@ -173,8 +177,8 @@ describe('war-map page wiring', () => {
 
     expect(source).not.toContain('TimeRangeControls');
     expect(source).toContain('<WarMap className="h-full" />');
-    expect(source).toContain('military ADS-B flight activity');
-    expect(source).toContain('Signals, News & Military Flights');
+    expect(source).toContain('OpenSky flight activity');
+    expect(source).toContain('Signals, News & Flights');
   });
 
   it('wires dashboard stream coverage for map news and layers', () => {
@@ -213,8 +217,10 @@ describe('war-map page wiring', () => {
     expect(source).toContain("const flightsSource = readSummaryString(flightsSummary, 'source');");
     expect(source).toContain("const flightsScope = readSummaryString(flightsSummary, 'scope');");
     expect(source).toContain("defaultValue: 'Flight source'");
-    expect(source).toContain("defaultValue: 'ADS-B'");
-    expect(source).toContain("defaultValue: 'Military'");
+    expect(source).toContain("defaultValue: 'OpenSky'");
+    expect(source).toContain("defaultValue: 'Military / possible military'");
+    expect(source).toContain("const flightMode = useWarMapSettingsStore((state) => state.flightMode);");
+    expect(source).toContain("onClick={() => setFlightMode('all')}");
   });
 
   it('keeps loading non-blocking and refreshes only the current query window', () => {

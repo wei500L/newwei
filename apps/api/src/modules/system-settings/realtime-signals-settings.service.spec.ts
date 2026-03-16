@@ -9,7 +9,7 @@ const baseEnvConfig = {
   requestTimeoutMs: 12_000,
   maxRetries: 1,
   sources: {
-    adsb: { enabled: true, intervalSec: 600 },
+    opensky: { enabled: true, intervalSec: 600 },
     ais: { enabled: true, intervalSec: 600 },
     unrest: { enabled: true, intervalSec: 600 },
     outages: { enabled: true, intervalSec: 600 },
@@ -25,7 +25,13 @@ const baseEnvConfig = {
     predictionNewsActivityThreshold: 3,
   },
   relay: {},
-  adsb: { baseUrl: "https://api.adsb.lol" },
+  opensky: {
+    baseUrl: "https://opensky-network.org/api",
+    tokenUrl:
+      "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+    clientId: undefined,
+    clientSecret: undefined,
+  },
   credentials: {
     aisApiKey: undefined,
     acledOauthUsername: undefined,

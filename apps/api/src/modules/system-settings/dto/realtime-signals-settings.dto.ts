@@ -27,7 +27,17 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsBoolean()
+  openskyEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   adsbEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(86_400)
+  openskyIntervalSec?: number;
 
   @IsOptional()
   @IsInt()
@@ -131,7 +141,23 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsString()
+  openskyBaseUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
   adsbBaseUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  openskyTokenUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  openskyClientId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  openskyClientSecret?: string | null;
 
   @IsOptional()
   @IsString()

@@ -321,6 +321,45 @@ services:
       retries: 5
       start_period: 20s
 
+  ais-relay:
+    image: ${NODE_IMAGE:-node:20}
+    restart: unless-stopped
+    working_dir: /workspace/worldmonitor/scripts
+    command: >
+      sh -ec "
+      echo '[ais-relay] npm ci...';
+      npm ci --omit=dev;
+      echo '[ais-relay] starting relay...';
+      exec node ais-relay.cjs
+      "
+    environment:
+      PORT: 3004
+      NODE_ENV: production
+      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-}
+      RELAY_SHARED_SECRET: ${REALTIME_SIGNALS_RELAY_SHARED_SECRET:-}
+      RELAY_AUTH_HEADER: x-relay-key
+      npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    dns:
+      - ${DOCKER_DNS_1:-223.5.5.5}
+      - ${DOCKER_DNS_2:-114.114.114.114}
+    ports:
+      - "${AIS_RELAY_PORT:-3004}:3004"
+    volumes:
+      - ../..:/workspace
+      - ais-relay-node-modules:/workspace/worldmonitor/scripts/node_modules
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3004/health').then((response) => response.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
   api:
     build:
       context: ../..
@@ -571,3 +610,4 @@ volumes:
   web-package-vector-client-node-modules:
   web-infra-scripts-node-modules:
   web-next-dist:
+  ais-relay-node-modules:

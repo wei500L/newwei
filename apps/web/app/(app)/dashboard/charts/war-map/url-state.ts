@@ -1,4 +1,5 @@
 import {
+  type WarMapFlightMode,
   type WarMapLayerVisibility,
   type WarMapPreset,
   type WarMapTimeRangePreset,
@@ -15,6 +16,7 @@ export interface WarMapUrlState {
   activePreset?: WarMapPreset;
   timeRangePreset?: WarMapTimeRangePreset;
   layerVisibility?: WarMapLayerVisibility;
+  flightMode?: WarMapFlightMode;
 }
 
 function parseFiniteNumber(value: string | null): number | undefined {
@@ -64,6 +66,13 @@ function parseLayerVisibility(value: string | null): WarMapLayerVisibility | und
   return next;
 }
 
+function parseFlightMode(value: string | null): WarMapFlightMode | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value === 'all' ? 'all' : value === 'military' ? 'military' : undefined;
+}
+
 export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
   const lat = parseFiniteNumber(search.get('lat'));
   const lon = parseFiniteNumber(search.get('lon'));
@@ -85,12 +94,14 @@ export function readWarMapUrlState(search: URLSearchParams): WarMapUrlState {
   const activePreset = parsePreset(search.get('preset'));
   const timeRangePreset = parseTimeRangePreset(search.get('tr'));
   const layerVisibility = parseLayerVisibility(search.get('layers'));
+  const flightMode = parseFlightMode(search.get('fm'));
 
   return {
     viewState,
     activePreset,
     timeRangePreset,
     layerVisibility,
+    flightMode,
   };
 }
 
@@ -101,6 +112,7 @@ export function writeWarMapUrlState(
     activePreset: WarMapPreset;
     timeRangePreset: WarMapTimeRangePreset;
     layerVisibility: WarMapLayerVisibility;
+    flightMode: WarMapFlightMode;
   },
 ): URLSearchParams {
   const next = new URLSearchParams(search.toString());
@@ -111,6 +123,11 @@ export function writeWarMapUrlState(
   next.set('pitch', state.viewState.pitch.toFixed(2));
   next.set('preset', state.activePreset);
   next.set('tr', state.timeRangePreset);
+  if (state.flightMode === 'all') {
+    next.set('fm', 'all');
+  } else {
+    next.delete('fm');
+  }
 
   const enabledLayers = WAR_MAP_LAYER_IDS.filter(
     (layerId) => state.layerVisibility[layerId],

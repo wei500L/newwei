@@ -331,12 +331,18 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .nonnegative()
       .default(2),
-    REALTIME_SIGNALS_ADSB_ENABLED: envBoolean.default(true),
-    REALTIME_SIGNALS_ADSB_INTERVAL_SEC: z.coerce
+    REALTIME_SIGNALS_OPENSKY_ENABLED: envBoolean.default(true),
+    REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC: z.coerce
       .number()
       .int()
       .positive()
       .default(600),
+    REALTIME_SIGNALS_ADSB_ENABLED: envBoolean.optional(),
+    REALTIME_SIGNALS_ADSB_INTERVAL_SEC: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional(),
     REALTIME_SIGNALS_AIS_ENABLED: envBoolean.default(true),
     REALTIME_SIGNALS_AIS_INTERVAL_SEC: z.coerce
       .number()
@@ -407,10 +413,35 @@ export const apiEnvSchema = baseEnvSchema
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().min(1).optional(),
     ),
+    REALTIME_SIGNALS_OPENSKY_BASE_URL: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().url().default("https://opensky-network.org/api"),
+    ),
+    REALTIME_SIGNALS_OPENSKY_TOKEN_URL: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z
+        .string()
+        .url()
+        .default(
+          "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
+        ),
+    ),
+    REALTIME_SIGNALS_OPENSKY_CLIENT_ID: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
+    REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
     REALTIME_SIGNALS_ADSB_BASE_URL: z.preprocess(
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
-      z.string().url().default("https://api.adsb.lol"),
+      z.string().url().optional(),
     ),
     REALTIME_SIGNALS_AIS_API_KEY: z.preprocess(
       (value) =>

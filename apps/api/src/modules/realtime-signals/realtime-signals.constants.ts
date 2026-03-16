@@ -3,8 +3,8 @@ import { AlertOperator, AlertSeverity } from "@prisma/client";
 import type { RealtimeSignalSource } from "./realtime-signals.types";
 
 export const REALTIME_SIGNAL_METRIC_SLUGS = {
-  adsb: "realtime.adsb.military_flights",
-  adsbSnapshotHealth: "realtime.adsb.snapshot_health",
+  opensky: "realtime.opensky.military_flights",
+  openskySnapshotHealth: "realtime.opensky.snapshot_health",
   ais: "realtime.ais.disruptions",
   unrest: "realtime.unrest.events",
   outages: "realtime.outages.internet",
@@ -20,7 +20,12 @@ export type RealtimeSignalMetricSlug =
 const REALTIME_SIGNAL_METRIC_SLUG_ALIASES: Readonly<
   Record<string, RealtimeSignalMetricSlug>
 > = {
-  "realtime.opensky.military_flights": REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+  "realtime.opensky.military_flights": REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+  "realtime.adsb.military_flights": REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+  "realtime.opensky.snapshot_health":
+    REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
+  "realtime.adsb.snapshot_health":
+    REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
 };
 
 export function normalizeRealtimeSignalMetricSlug(value: unknown): string {
@@ -35,7 +40,7 @@ export function normalizeRealtimeSignalMetricSlug(value: unknown): string {
 }
 
 export const REALTIME_SIGNAL_SOURCES: RealtimeSignalSource[] = [
-  "adsb",
+  "opensky",
   "ais",
   "unrest",
   "outages",
@@ -47,8 +52,8 @@ export const REALTIME_SIGNAL_SOURCES: RealtimeSignalSource[] = [
 
 export interface RealtimeSignalDefaultRuleDefinition {
   key:
-    | "adsb"
-    | "adsb_snapshot_health"
+    | "opensky"
+    | "opensky_snapshot_health"
     | "ais"
     | "unrest"
     | "outages"
@@ -67,21 +72,21 @@ export interface RealtimeSignalDefaultRuleDefinition {
 export const REALTIME_SIGNAL_DEFAULT_RULES: RealtimeSignalDefaultRuleDefinition[] =
   [
     {
-      key: "adsb",
+      key: "opensky",
       name: "Realtime Signal: Military Flight Activity Surge",
       description:
-        "Alert when detected military flight count exceeds baseline threshold.",
-      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsb,
+        "Alert when conservative OpenSky military flight detections exceed baseline threshold.",
+      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
       operator: AlertOperator.gte,
       thresholdValue: 50,
       severity: AlertSeverity.medium,
     },
     {
-      key: "adsb_snapshot_health",
-      name: "Realtime Signal: ADS-B Snapshot Degraded",
+      key: "opensky_snapshot_health",
+      name: "Realtime Signal: OpenSky Snapshot Degraded",
       description:
-        "Alert when the ADS-B snapshot is stale or the map is temporarily using the previous retained snapshot.",
-      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.adsbSnapshotHealth,
+        "Alert when the OpenSky military snapshot is stale or the map is temporarily using the previous retained snapshot.",
+      metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
       operator: AlertOperator.gte,
       thresholdValue: 1,
       severity: AlertSeverity.high,

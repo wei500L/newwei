@@ -17,7 +17,7 @@ export default function MapPage() {
         <Typography.Text type="secondary">
           {t("pages.map.subtitle", {
             defaultValue:
-              "Alerts, geo-tagged news, and military ADS-B flight activity by region."
+              "Alerts, geo-tagged news, and OpenSky flight activity by region.",
           })}
         </Typography.Text>
       </div>
@@ -25,7 +25,7 @@ export default function MapPage() {
         <div className="absolute top-4 left-4 z-10">
           <Typography.Text className="text-slate-600">
             {t("pages.map.overlay", {
-              defaultValue: "Signals, News & Military Flights"
+              defaultValue: "Signals, News & Flights",
             })}
           </Typography.Text>
         </div>

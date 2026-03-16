@@ -21,7 +21,7 @@ function cloneDefaultLayerVisibility(): WarMapLayerVisibility {
 describe('war-map url-state', () => {
   it('parses view/preset/time-range/layers from url', () => {
     const params = new URLSearchParams(
-      'lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&layers=conflicts,weather,monitors',
+      'lat=34.1&lon=108.9&zoom=4.2&bearing=12&pitch=41&preset=asia&tr=24h&fm=all&layers=conflicts,weather,monitors',
     );
 
     const parsed = readWarMapUrlState(params);
@@ -35,6 +35,7 @@ describe('war-map url-state', () => {
     });
     expect(parsed.activePreset).toBe('asia');
     expect(parsed.timeRangePreset).toBe('24h');
+    expect(parsed.flightMode).toBe('all');
     expect(parsed.layerVisibility?.conflicts).toBe(true);
     expect(parsed.layerVisibility?.weather).toBe(true);
     expect(parsed.layerVisibility?.monitors).toBe(true);
@@ -55,10 +56,12 @@ describe('war-map url-state', () => {
       activePreset: 'global',
       timeRangePreset: '7d',
       layerVisibility: cloneDefaultLayerVisibility(),
+      flightMode: 'military',
     });
 
     expect(next.get('preset')).toBe('global');
     expect(next.get('tr')).toBe('7d');
+    expect(next.get('fm')).toBeNull();
     expect(next.get('layers')).toBeNull();
     expect(next.get('foo')).toBe('bar');
   });
@@ -80,6 +83,7 @@ describe('war-map url-state', () => {
       activePreset: 'global',
       timeRangePreset: '7d',
       layerVisibility: noneVisible,
+      flightMode: 'military',
     });
 
     expect(written.get('layers')).toBe('');
@@ -109,12 +113,14 @@ describe('war-map url-state', () => {
       activePreset: 'oceania',
       timeRangePreset: '48h',
       layerVisibility: visibility,
+      flightMode: 'all',
     });
 
     const parsed = readWarMapUrlState(written);
 
     expect(parsed.activePreset).toBe('oceania');
     expect(parsed.timeRangePreset).toBe('48h');
+    expect(parsed.flightMode).toBe('all');
     expect(parsed.viewState?.bearing).toBe(0);
     expect(parsed.viewState?.pitch).toBe(0);
     expect(parsed.layerVisibility?.conflicts).toBe(true);
@@ -129,9 +135,10 @@ describe('war-map settings store', () => {
     useWarMapSettingsStore.getState().resetAll();
   });
 
-  it('keeps ADS-B flights enabled by default', () => {
+  it('keeps the OpenSky flights layer enabled by default', () => {
     expect(WAR_MAP_DEFAULT_LAYER_VISIBILITY.flights).toBe(true);
     expect(useWarMapSettingsStore.getState().layerVisibility.flights).toBe(true);
+    expect(useWarMapSettingsStore.getState().flightMode).toBe('military');
   });
 
   it('forces 2D camera in setViewState', () => {
@@ -173,11 +180,14 @@ describe('war-map settings store', () => {
       },
       activePreset: 'asia',
       timeRangePreset: '24h',
+      flightMode: 'all',
     });
 
-    const { viewState, activePreset, timeRangePreset } = useWarMapSettingsStore.getState();
+    const { viewState, activePreset, timeRangePreset, flightMode } =
+      useWarMapSettingsStore.getState();
     expect(activePreset).toBe('asia');
     expect(timeRangePreset).toBe('24h');
+    expect(flightMode).toBe('all');
     expect(viewState.lat).toBe(-15);
     expect(viewState.lon).toBe(130);
     expect(viewState.zoom).toBe(3.5);

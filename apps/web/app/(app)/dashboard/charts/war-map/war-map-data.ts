@@ -3,6 +3,7 @@
 import {
   type WarMapEvent,
   type WarMapEventsResponse,
+  type WarMapFlightMode,
   type WarMapLayerDataset,
   type WarMapLayerFeature,
   type WarMapLayerId,
@@ -35,6 +36,7 @@ export interface WarMapQueryInput {
   bbox?: string;
   zoom?: number;
   cluster?: boolean;
+  flightMode?: WarMapFlightMode;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -260,7 +262,10 @@ export function buildWarMapNewsMarkersQueryKey(input: WarMapQueryInput) {
 }
 
 export function buildWarMapLayersQueryKey(
-  input: Pick<WarMapQueryInput, 'start' | 'end' | 'bbox' | 'zoom' | 'translateTarget'>,
+  input: Pick<
+    WarMapQueryInput,
+    'start' | 'end' | 'bbox' | 'zoom' | 'translateTarget' | 'flightMode'
+  >,
 ) {
   return [
     ...WAR_MAP_QUERY_KEYS.layersPrefix,
@@ -269,6 +274,7 @@ export function buildWarMapLayersQueryKey(
     input.bbox ?? null,
     typeof input.zoom === 'number' ? Number(input.zoom.toFixed(2)) : null,
     input.translateTarget ?? null,
+    input.flightMode ?? 'military',
   ] as const;
 }
 
@@ -289,6 +295,9 @@ export function buildWarMapRequestParams(input: WarMapQueryInput): WarMapRequest
   }
   if (typeof input.cluster === 'boolean') {
     params.cluster = input.cluster ? '1' : '0';
+  }
+  if (input.flightMode) {
+    params.flightMode = input.flightMode;
   }
 
   return params;
