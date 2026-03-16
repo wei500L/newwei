@@ -44,7 +44,7 @@ export function getNewsnowAnalysisPermissions(
 }
 
 export function canReadNewsnowAnalysis(permissions: readonly string[]): boolean {
-  return permissions.includes('items.read') || permissions.includes('items.write');
+  return permissions.includes('items.read');
 }
 
 export function getNewsnowAnalysisAccessState(

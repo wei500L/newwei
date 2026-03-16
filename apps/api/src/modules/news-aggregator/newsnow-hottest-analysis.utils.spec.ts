@@ -130,7 +130,6 @@ describe('newsnow hottest analysis utils', () => {
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: '2026-03-16T00:00:00.000Z',
           failed: false,
           items: [
             {
@@ -148,7 +147,6 @@ describe('newsnow hottest analysis utils', () => {
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: '2026-03-16T00:00:00.000Z',
           failed: false,
           items: [
             {
@@ -166,12 +164,11 @@ describe('newsnow hottest analysis utils', () => {
     expect(first).toBe(second);
   });
 
-  it('changes the global input signature when updated time or rank payload changes', () => {
+  it('ignores updated time-only changes in the global input signature', () => {
     const base = buildGlobalInputSignature({
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: '2026-03-16T00:00:00.000Z',
           failed: false,
           items: [
             {
@@ -189,7 +186,45 @@ describe('newsnow hottest analysis utils', () => {
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: '2026-03-16T01:00:00.000Z',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(changed).toBe(base);
+  });
+
+  it('changes the global input signature when rank payload changes', () => {
+    const base = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 1,
+            },
+          ],
+        },
+      ],
+    });
+    const changed = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
           failed: false,
           items: [
             {
@@ -212,7 +247,6 @@ describe('newsnow hottest analysis utils', () => {
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: null,
           failed: true,
           items: [],
         },
@@ -222,7 +256,6 @@ describe('newsnow hottest analysis utils', () => {
       entries: [
         {
           sourceId: 'source-a',
-          updatedTime: null,
           failed: true,
           items: [],
         },

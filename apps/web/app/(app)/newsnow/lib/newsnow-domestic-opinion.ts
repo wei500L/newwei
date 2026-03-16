@@ -32,3 +32,28 @@ export function shouldShowDomesticOpinionPanel(input: {
   }
   return input.domesticOpinion !== undefined;
 }
+
+export function shouldSyncDomesticOpinionWithHottestAnalysis(input: {
+  columnKey: string;
+  hottestAnalysisGeneratedAt?: string | null;
+  lastSyncedAnalysisGeneratedAt?: string | null;
+}): boolean {
+  if (input.columnKey !== 'hottest') {
+    return false;
+  }
+
+  const hottestAnalysisGeneratedAt =
+    typeof input.hottestAnalysisGeneratedAt === 'string'
+      ? input.hottestAnalysisGeneratedAt.trim()
+      : '';
+  if (!hottestAnalysisGeneratedAt) {
+    return false;
+  }
+
+  const lastSyncedAnalysisGeneratedAt =
+    typeof input.lastSyncedAnalysisGeneratedAt === 'string'
+      ? input.lastSyncedAnalysisGeneratedAt.trim()
+      : '';
+
+  return hottestAnalysisGeneratedAt !== lastSyncedAnalysisGeneratedAt;
+}

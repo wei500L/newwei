@@ -4,7 +4,11 @@ import {
   NewsnowDataState,
   NewsnowDomesticOpinionEmptyReason,
 } from '../app/(app)/newsnow/lib/newsnow-analysis-access';
-import { buildDomesticOpinionSparklinePath, shouldShowDomesticOpinionPanel } from '../app/(app)/newsnow/lib/newsnow-domestic-opinion';
+import {
+  buildDomesticOpinionSparklinePath,
+  shouldShowDomesticOpinionPanel,
+  shouldSyncDomesticOpinionWithHottestAnalysis,
+} from '../app/(app)/newsnow/lib/newsnow-domestic-opinion';
 
 describe('newsnow domestic opinion helpers', () => {
   it('builds a deterministic sparkline path for trend values', () => {
@@ -115,6 +119,30 @@ describe('newsnow domestic opinion helpers', () => {
         domesticOpinion: undefined,
         isLoading: false,
         isError: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('syncs domestic opinion once per hottest analysis snapshot', () => {
+    expect(
+      shouldSyncDomesticOpinionWithHottestAnalysis({
+        columnKey: 'hottest',
+        hottestAnalysisGeneratedAt: '2026-03-16T10:00:00.000Z',
+        lastSyncedAnalysisGeneratedAt: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSyncDomesticOpinionWithHottestAnalysis({
+        columnKey: 'hottest',
+        hottestAnalysisGeneratedAt: '2026-03-16T10:00:00.000Z',
+        lastSyncedAnalysisGeneratedAt: '2026-03-16T10:00:00.000Z',
+      }),
+    ).toBe(false);
+    expect(
+      shouldSyncDomesticOpinionWithHottestAnalysis({
+        columnKey: 'ai',
+        hottestAnalysisGeneratedAt: '2026-03-16T10:00:00.000Z',
+        lastSyncedAnalysisGeneratedAt: null,
       }),
     ).toBe(false);
   });

@@ -370,7 +370,7 @@ export function NewsnowHottestCandidates({
     return (
       <ProtectedStateCard
         title="需要 items.read 权限"
-        description="国内舆情指数和热点候选属于增强分析能力。当前账号没有 items.read/items.write 权限，因此只展示原始热榜。"
+        description="国内舆情指数和热点候选属于增强分析能力。当前账号没有 items.read 权限，因此只展示原始热榜。"
         variant="permission"
       />
     );

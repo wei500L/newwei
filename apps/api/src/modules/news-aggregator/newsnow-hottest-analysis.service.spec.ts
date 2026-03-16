@@ -18,9 +18,12 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-function createSourceResponse(items: Array<{ id: string; title: string; url: string; info?: string }>) {
+function createSourceResponse(
+  items: Array<{ id: string; title: string; url: string; info?: string }>,
+  options?: { updatedTime?: string },
+) {
   return {
-    updatedTime: '2026-03-06T00:00:00.000Z',
+    updatedTime: options?.updatedTime ?? '2026-03-06T00:00:00.000Z',
     items: items.map((item) => ({
       id: item.id,
       title: item.title,
@@ -372,16 +375,33 @@ describe('NewsnowHottestAnalysisService', () => {
         'source-a': { name: 'Reuters', home: 'https://www.reuters.com' },
       },
     });
-    aggregator.fetchSource.mockResolvedValue(
-      createSourceResponse([
-        {
-          id: '1',
-          title: 'Stable hottest topic',
-          url: 'https://example.com/stable-hottest-topic',
-          info: '1000',
-        },
-      ]),
-    );
+    aggregator.fetchSource
+      .mockResolvedValueOnce(
+        createSourceResponse(
+          [
+            {
+              id: '1',
+              title: 'Stable hottest topic',
+              url: 'https://example.com/stable-hottest-topic',
+              info: '1000',
+            },
+          ],
+          { updatedTime: '2026-03-06T00:00:00.000Z' },
+        ),
+      )
+      .mockResolvedValueOnce(
+        createSourceResponse(
+          [
+            {
+              id: '1',
+              title: 'Stable hottest topic',
+              url: 'https://example.com/stable-hottest-topic',
+              info: '1000',
+            },
+          ],
+          { updatedTime: '2026-03-06T00:02:00.000Z' },
+        ),
+      );
     aggregator.resolveByUrl.mockResolvedValue({ matched: false });
 
     const liteLlm = liteLlmFactory();

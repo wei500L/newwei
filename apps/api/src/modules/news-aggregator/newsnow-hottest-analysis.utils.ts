@@ -161,7 +161,6 @@ export function buildSignalKey(input: {
 export function buildGlobalInputSignature(input: {
   entries: Array<{
     sourceId: string;
-    updatedTime: string | null;
     failed: boolean;
     items: Array<{
       id: string;
@@ -175,7 +174,6 @@ export function buildGlobalInputSignature(input: {
   const payload = input.entries
     .map((entry) => ({
       sourceId: entry.sourceId.trim().toLowerCase(),
-      updatedTime: entry.updatedTime?.trim() ?? null,
       failed: entry.failed,
       items: entry.items
         .map((item) => ({

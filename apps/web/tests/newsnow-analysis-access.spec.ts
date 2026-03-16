@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canReadNewsnowAnalysis,
   NewsnowAnalysisAccessKind,
   NewsnowDomesticOpinionEmptyReason,
   NewsnowHottestAnalysisEmptyReason,
@@ -44,6 +45,15 @@ describe('newsnow analysis access helpers', () => {
       canQuery: true,
       kind: NewsnowAnalysisAccessKind.Available,
     });
+    expect(getNewsnowAnalysisAccessState('authenticated', ['items.write'])).toEqual({
+      canQuery: false,
+      kind: NewsnowAnalysisAccessKind.Forbidden,
+    });
+  });
+
+  it('requires items.read for NewsNow analysis access', () => {
+    expect(canReadNewsnowAnalysis(['items.read'])).toBe(true);
+    expect(canReadNewsnowAnalysis(['items.write'])).toBe(false);
   });
 
   it('describes hottest analysis empty reasons', () => {

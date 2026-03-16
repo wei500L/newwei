@@ -3,7 +3,7 @@
 import { StarOutlined } from "@ant-design/icons";
 import { Skeleton, Empty, Button, Result, Alert, Space } from "antd";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
 
@@ -16,6 +16,7 @@ import {
   useHottestAnalysis,
   useNewsMetadata,
 } from "../hooks/use-news-sources";
+import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
 import { useNewsnowUiSync } from "../hooks/use-newsnow-ui-sync";
 import { useNewsnowStore } from "../store/newsnow-store";
@@ -86,9 +87,9 @@ export default function NewsnowColumnPage() {
   const domesticOpinionIndex = useDomesticOpinionIndex(
     resolvedColumnKey === "hottest",
   );
-  const domesticOpinionGeneratedAt = domesticOpinionIndex.data?.generatedAt;
   const hottestAnalysisGeneratedAt = hottestAnalysis.data?.generatedAt;
   const refetchDomesticOpinion = domesticOpinionIndex.refetch;
+  const lastSyncedDomesticOpinionAnalysisRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (sourceIds.length > 0) {
@@ -97,17 +98,23 @@ export default function NewsnowColumnPage() {
   }, [sourceIds, batchPrefetch]);
 
   useEffect(() => {
-    if (resolvedColumnKey !== "hottest" || !hottestAnalysisGeneratedAt) {
+    if (
+      !shouldSyncDomesticOpinionWithHottestAnalysis({
+        columnKey: resolvedColumnKey,
+        hottestAnalysisGeneratedAt,
+        lastSyncedAnalysisGeneratedAt:
+          lastSyncedDomesticOpinionAnalysisRef.current,
+      })
+    ) {
       return;
     }
-    if (domesticOpinionGeneratedAt === hottestAnalysisGeneratedAt) {
-      return;
-    }
+
+    lastSyncedDomesticOpinionAnalysisRef.current =
+      hottestAnalysisGeneratedAt ?? null;
     void refetchDomesticOpinion();
   }, [
     resolvedColumnKey,
     hottestAnalysisGeneratedAt,
-    domesticOpinionGeneratedAt,
     refetchDomesticOpinion,
   ]);
 

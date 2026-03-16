@@ -1294,7 +1294,6 @@ export class NewsnowHottestAnalysisService {
     return buildGlobalInputSignature({
       entries: fetches.map((fetch) => ({
         sourceId: fetch.sourceId,
-        updatedTime: fetch.response ? this.toIsoDateTime(fetch.response.updatedTime) : null,
         failed: !fetch.response,
         items: (fetch.response?.items ?? []).slice(0, MAX_ITEMS_PER_SOURCE).map((item, index) => ({
           id: String(item.id),
