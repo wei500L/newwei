@@ -6,6 +6,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 
+import {
+  collectMembershipPermissionSet,
+  collectMembershipRoles,
+} from "../../common/authz/membership-permissions";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { ActionRateLimitService } from "../cache/action-rate-limit.service";
 import { PrismaService } from "../config/prisma.service";
@@ -61,17 +65,7 @@ export class RbacService {
       throw new ForbiddenException("Actor is not a member of the organization");
     }
 
-    const roles =
-      membership.roles?.map((link) => link.role).filter(Boolean) ?? [];
-    if (roles.length === 0 && membership.role) {
-      roles.push(membership.role);
-    }
-
-    return new Set(
-      roles.flatMap((role) =>
-        role.permissions.map((permission) => permission.permission.name),
-      ),
-    );
+    return collectMembershipPermissionSet(membership);
   }
 
   private assertActorCanManagePermissions(
@@ -217,11 +211,7 @@ export class RbacService {
         },
       },
     });
-    const targetRoles =
-      targetMembership?.roles?.map((link) => link.role).filter(Boolean) ?? [];
-    if (targetRoles.length === 0 && targetMembership?.role) {
-      targetRoles.push(targetMembership.role);
-    }
+    const targetRoles = collectMembershipRoles(targetMembership);
     if (
       dto.userId === actorId ||
       targetRoles.some(

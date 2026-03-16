@@ -541,11 +541,9 @@ export default function SubscriptionsPage() {
       event?.changeWindowMin ?? toNumber(context?.windowMinutes);
     const windowLabel =
       windowMinutes !== undefined && windowMinutes !== null
-        ? t(
-            "notifications.evidence.windowMinutes",
-            "{{count}} min",
-            { count: Math.trunc(windowMinutes) },
-          )
+        ? t("notifications.evidence.windowMinutes", "{{count}} min", {
+            count: Math.trunc(windowMinutes),
+          })
         : t("common.notAvailable");
     const thresholdSummary = event
       ? buildThresholdSummary(
@@ -1142,7 +1140,9 @@ export default function SubscriptionsPage() {
           dataSource={orderedNotifications}
           locale={{ emptyText: t("notifications.empty") }}
           renderItem={(item) => {
-            const action = resolveNotificationLink(item.data ?? null, t);
+            const action = resolveNotificationLink(item.data ?? null, t, {
+              canReadAlerts,
+            });
             const isAlertNotification =
               item.type === NotificationType.AlertTriggered;
             const presentation = formatNotificationPresentation(

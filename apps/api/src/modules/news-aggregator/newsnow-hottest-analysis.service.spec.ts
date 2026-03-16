@@ -1,4 +1,6 @@
 import { NewsnowHottestAnalysisService } from './newsnow-hottest-analysis.service';
+import { NewsnowDataState } from './news-aggregator.types';
+import { NewsnowHottestAnalysisEmptyReason } from './newsnow-hottest-analysis.types';
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -26,6 +28,23 @@ function createSourceResponse(items: Array<{ id: string; title: string; url: str
       extra: item.info ? { info: item.info } : undefined,
     })),
   };
+}
+
+function createCacheStoreMock() {
+  const store = new Map<string, unknown>();
+  const cache = {
+    get: jest.fn(async (key: string) => store.get(key) ?? null),
+    getMany: jest.fn(async (keys: string[]) => keys.map((key) => store.get(key) ?? null)),
+    set: jest.fn(async (key: string, value: unknown) => {
+      store.set(key, value);
+    }),
+    withLock: jest.fn(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
+        await runner(),
+    ),
+  };
+
+  return { cache, store };
 }
 
 describe('NewsnowHottestAnalysisService', () => {
@@ -121,7 +140,10 @@ describe('NewsnowHottestAnalysisService', () => {
     cache.set.mockImplementation(async (key: string, value: unknown) => {
       cacheStore.set(key, value);
     });
-    cache.withLock.mockImplementation(async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) => {
+    cache.withLock.mockImplementation(async (key: string, _ttlMs: number, runner: () => Promise<unknown>) => {
+      if (!key.includes('analysis:v1:org-1:fresh:refresh')) {
+        return await runner();
+      }
       if (lockHeld) {
         return null;
       }
@@ -289,5 +311,152 @@ describe('NewsnowHottestAnalysisService', () => {
     expect(itemsService.create).not.toHaveBeenCalled();
     expect(result.bySource.thepaper?.['3']?.bridgeStatus).toBe('existing');
     expect(result.bySource.thepaper?.['3']?.matchedItemId).toBe('existing-item-1');
+  });
+
+  it('returns an explicit empty reason when hottest sources produce no items', async () => {
+    const cache = cacheFactory();
+    cache.get.mockResolvedValue(null);
+    cache.getMany.mockResolvedValue([]);
+    cache.set.mockResolvedValue(undefined);
+    cache.withLock.mockImplementation(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
+        await runner(),
+    );
+
+    const aggregator = aggregatorFactory();
+    aggregator.getMetadata.mockReturnValue({
+      columns: { hottest: { sources: ['source-a'] } },
+      sources: {
+        'source-a': { name: 'source-a', home: 'https://source-a.example.com' },
+      },
+    });
+    aggregator.fetchSource.mockResolvedValue(createSourceResponse([]));
+    aggregator.resolveByUrl.mockResolvedValue({ matched: false });
+
+    const liteLlm = liteLlmFactory();
+    const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
+
+    const service = new NewsnowHottestAnalysisService(
+      cache as never,
+      aggregator as never,
+      liteLlm as never,
+      itemsService as never,
+      domesticOpinionIndex as never,
+    );
+
+    const result = await service.getHottestAnalysis({
+      orgId: 'org-1',
+      forceRefresh: true,
+    });
+
+    expect(result.dataState).toBe(NewsnowDataState.Empty);
+    expect(result.emptyReason).toBe(
+      NewsnowHottestAnalysisEmptyReason.NoSourceItems,
+    );
+    expect(result.diagnostics).toEqual({
+      sourcesRequested: 1,
+      sourcesSucceeded: 1,
+      sourcesFailed: 0,
+      sourceItemsFetched: 0,
+    });
+  });
+
+  it('reuses the global snapshot when the signature is unchanged while still refreshing org projection', async () => {
+    const { cache } = createCacheStoreMock();
+
+    const aggregator = aggregatorFactory();
+    aggregator.getMetadata.mockReturnValue({
+      columns: { hottest: { sources: ['source-a'] } },
+      sources: {
+        'source-a': { name: 'Reuters', home: 'https://www.reuters.com' },
+      },
+    });
+    aggregator.fetchSource.mockResolvedValue(
+      createSourceResponse([
+        {
+          id: '1',
+          title: 'Stable hottest topic',
+          url: 'https://example.com/stable-hottest-topic',
+          info: '1000',
+        },
+      ]),
+    );
+    aggregator.resolveByUrl.mockResolvedValue({ matched: false });
+
+    const liteLlm = liteLlmFactory();
+    liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
+
+    const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
+
+    const service = new NewsnowHottestAnalysisService(
+      cache as never,
+      aggregator as never,
+      liteLlm as never,
+      itemsService as never,
+      domesticOpinionIndex as never,
+    );
+
+    const first = await service.getHottestAnalysis({
+      orgId: 'org-1',
+      forceRefresh: true,
+    });
+    const second = await service.getHottestAnalysis({
+      orgId: 'org-1',
+      forceRefresh: true,
+    });
+
+    expect(aggregator.fetchSource).toHaveBeenCalledTimes(2);
+    expect(aggregator.fetchSource).toHaveBeenNthCalledWith(1, 'source-a', false);
+    expect(aggregator.fetchSource).toHaveBeenNthCalledWith(2, 'source-a', false);
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+    expect(domesticOpinionIndex.persistSnapshots).toHaveBeenCalledTimes(2);
+    expect(first.candidates[0]?.candidateId).toBe(second.candidates[0]?.candidateId);
+    expect(first.candidates[0]?.freshnessScore).not.toBe(second.candidates[0]?.freshnessScore);
+  });
+
+  it('does not force source refresh when the caller requests the latest org projection', async () => {
+    const { cache } = createCacheStoreMock();
+
+    const aggregator = aggregatorFactory();
+    aggregator.getMetadata.mockReturnValue({
+      columns: { hottest: { sources: ['source-a'] } },
+      sources: {
+        'source-a': { name: 'Reuters', home: 'https://www.reuters.com' },
+      },
+    });
+    aggregator.fetchSource.mockResolvedValue(
+      createSourceResponse([
+        {
+          id: '1',
+          title: 'Fresh projection only',
+          url: 'https://example.com/fresh-projection-only',
+          info: '1000',
+        },
+      ]),
+    );
+    aggregator.resolveByUrl.mockResolvedValue({ matched: false });
+
+    const liteLlm = liteLlmFactory();
+    liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
+
+    const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
+
+    const service = new NewsnowHottestAnalysisService(
+      cache as never,
+      aggregator as never,
+      liteLlm as never,
+      itemsService as never,
+      domesticOpinionIndex as never,
+    );
+
+    await service.getHottestAnalysis({
+      orgId: 'org-1',
+      forceRefresh: true,
+    });
+
+    expect(aggregator.fetchSource).toHaveBeenCalledWith('source-a', false);
   });
 });

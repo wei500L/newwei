@@ -151,10 +151,8 @@ function SettingsPanelSection({
     <section
       id={panel.id}
       ref={sectionRef}
-      className={`scroll-mt-28 rounded-[28px] border bg-white/75 p-5 shadow-sm backdrop-blur ${
-        active
-          ? 'border-[var(--primary)] ring-2 ring-[rgba(59,130,246,0.18)]'
-          : 'border-[var(--border)]'
+      className={`settings-section-shell scroll-mt-28 rounded-[28px] p-5 ${
+        active ? 'settings-section-shell--active' : ''
       }`}
     >
       <div className="mb-5">

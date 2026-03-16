@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Descriptions, Divider, Form, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Divider, Form, Input, Modal, Select, Space, Spin, Switch, Table, Tag, Typography, message, theme } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -102,6 +102,7 @@ const OPENAI_MODERATION_FREE_CALLS_PER_DAY = 5000;
 
 export function AssistantSafetySettingsPanel() {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const [form] = Form.useForm<AssistantSafetySettingsFormValues>();
@@ -708,7 +709,11 @@ export function AssistantSafetySettingsPanel() {
                 dataIndex: "blockedRuns",
                 key: "blockedRuns",
                 width: 100,
-                render: (value: number) => <span style={{ color: value > 0 ? "#cf1322" : undefined }}>{value}</span>
+                render: (value: number) => (
+                  <span style={{ color: value > 0 ? token.colorError : undefined }}>
+                    {value}
+                  </span>
+                )
               },
               {
                 title: t("settings.assistantSafety.metrics.columns.rate", { defaultValue: "Blocked rate" }),

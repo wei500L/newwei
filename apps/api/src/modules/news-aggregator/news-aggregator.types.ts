@@ -95,6 +95,21 @@ export interface NewsnowCandidateKeywordSummary {
   weight: number
 }
 
+export enum NewsnowDataState {
+  Ready = "ready",
+  Empty = "empty",
+}
+
+export enum NewsnowDomesticOpinionEmptyReason {
+  NoRecentSnapshotsOrPipelineData = "no_recent_snapshots_or_pipeline_data",
+}
+
+export interface NewsnowDomesticOpinionDiagnostics {
+  requestedHours: number
+  snapshotCount: number
+  pipelineBucketCount: number
+}
+
 export interface NewsnowDomesticOpinionIndexPoint {
   bucketStart: string
   indexValue: number
@@ -145,6 +160,9 @@ export interface NewsnowDomesticOpinionIndexTopCandidate {
 
 export interface NewsnowDomesticOpinionIndexResponse {
   generatedAt: string
+  dataState: NewsnowDataState
+  emptyReason: NewsnowDomesticOpinionEmptyReason | null
+  diagnostics: NewsnowDomesticOpinionDiagnostics
   latest: NewsnowDomesticOpinionIndexPoint | null
   trend: NewsnowDomesticOpinionIndexPoint[]
   topKeywords: NewsnowCandidateKeywordSummary[]

@@ -107,6 +107,13 @@
       "rulesTitle": "规则列表",
       "eventsTitle": "触发历史",
       "evidenceTitle": "证据详情",
+      "loadFailed": {
+        "title": "无法加载预警历史",
+        "permission": "当前会话无权读取此工作区的预警历史。请确认账号具备 alerts.read 权限后重试。",
+        "service": "预警历史暂时不可用。请检查 API 连通性或预警服务状态后重试。",
+        "default": "预警历史加载失败。请检查工作区访问权限和后端服务状态后重试。",
+        "detail": "技术细节"
+      },
       "emptyRules": "暂无预警规则。",
       "emptyEvents": "暂无预警事件。",
       "selectEvent": "选择一条事件查看证据详情。",
@@ -1350,6 +1357,8 @@
           "monitors": "监控器",
           "monitorsHint": "带地理位置的自定义监控器",
           "monitorsUpdated": "监控器更新时间",
+          "dataUpdated": "数据已更新",
+          "streamMessage": "流消息",
           "total": "总数",
           "renderable": "可展示",
           "showing": "显示中",
@@ -1362,7 +1371,17 @@
         },
         "status": {
           "ready": "就绪",
-          "error": "错误"
+          "error": "错误",
+          "updated": "已更新",
+          "refreshing": "刷新中",
+          "refreshingChains": "正在刷新 {{count}} 条链路",
+          "waiting": "等待中",
+          "waitingData": "等待首批数据",
+          "stale": "偏旧",
+          "lagging": "流延迟",
+          "loadingMap": "正在加载地图底图…",
+          "loadingData": "正在加载地图数据…",
+          "preparing": "正在准备地图…"
         },
         "tooltip": {
           "location": "位置",

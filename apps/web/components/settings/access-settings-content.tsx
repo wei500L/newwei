@@ -861,10 +861,8 @@ export function AccessSettingsContent() {
           ref={(node) => {
             sectionRefs.current[section.key] = node;
           }}
-          className={`scroll-mt-28 rounded-[28px] border bg-white/75 p-5 shadow-sm backdrop-blur ${
-            selectedPanel === section.key
-              ? 'border-[var(--primary)] ring-2 ring-[rgba(59,130,246,0.18)]'
-              : 'border-[var(--border)]'
+          className={`settings-section-shell scroll-mt-28 rounded-[28px] p-5 ${
+            selectedPanel === section.key ? 'settings-section-shell--active' : ''
           }`}
         >
           <Typography.Title level={5} style={{ marginBottom: 6 }}>

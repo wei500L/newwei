@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildDomesticOpinionSparklinePath,
-  shouldShowDomesticOpinionPanel,
-} from '../app/(app)/newsnow/lib/newsnow-domestic-opinion';
+  NewsnowDataState,
+  NewsnowDomesticOpinionEmptyReason,
+} from '../app/(app)/newsnow/lib/newsnow-analysis-access';
+import { buildDomesticOpinionSparklinePath, shouldShowDomesticOpinionPanel } from '../app/(app)/newsnow/lib/newsnow-domestic-opinion';
 
 describe('newsnow domestic opinion helpers', () => {
   it('builds a deterministic sparkline path for trend values', () => {
@@ -18,6 +19,13 @@ describe('newsnow domestic opinion helpers', () => {
       shouldShowDomesticOpinionPanel({
         domesticOpinion: {
           generatedAt: '2026-03-13T10:00:00.000Z',
+          dataState: NewsnowDataState.Ready,
+          emptyReason: null,
+          diagnostics: {
+            requestedHours: 24,
+            snapshotCount: 1,
+            pipelineBucketCount: 0,
+          },
           latest: {
             bucketStart: '2026-03-13T10:00:00.000Z',
             indexValue: 0.64,
@@ -57,6 +65,14 @@ describe('newsnow domestic opinion helpers', () => {
       shouldShowDomesticOpinionPanel({
         domesticOpinion: {
           generatedAt: '2026-03-13T10:00:00.000Z',
+          dataState: NewsnowDataState.Empty,
+          emptyReason:
+            NewsnowDomesticOpinionEmptyReason.NoRecentSnapshotsOrPipelineData,
+          diagnostics: {
+            requestedHours: 24,
+            snapshotCount: 0,
+            pipelineBucketCount: 0,
+          },
           latest: null,
           trend: [],
           topKeywords: [],
@@ -71,7 +87,7 @@ describe('newsnow domestic opinion helpers', () => {
           },
         },
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldShowDomesticOpinionPanel({
         isError: true,

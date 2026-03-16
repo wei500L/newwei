@@ -5,6 +5,14 @@ import { useCallback, useMemo } from "react";
 import { createApiClient } from "@/lib/api-client";
 import type { NewsSourceRuntimeSecretsConfig } from '@/lib/news-source-runtime-secrets';
 
+import {
+  type NewsnowAnalysisAccessState,
+  NewsnowDataState,
+  type NewsnowDomesticOpinionEmptyReason,
+  type NewsnowHottestAnalysisEmptyReason,
+  getNewsnowAnalysisAccessState,
+  getNewsnowAnalysisPermissions,
+} from "../lib/newsnow-analysis-access";
 import { getNewsItemStableKey, sanitizeNewsItems } from "../lib/newsnow-items";
 
 export interface NewsItem {
@@ -106,11 +114,21 @@ export interface NewsnowEventCandidate {
 export interface NewsnowHottestAnalysisResponse {
   generatedAt: string;
   cached: boolean;
+  dataState: NewsnowDataState;
+  emptyReason: NewsnowHottestAnalysisEmptyReason | null;
+  diagnostics: NewsnowHottestAnalysisDiagnostics;
   sourcesAnalyzed: number;
   itemsAnalyzed: number;
   bySource: Record<string, Record<string, NewsnowAnalyzedItem>>;
   candidates: NewsnowEventCandidate[];
   errors: Array<{ sourceId: string; message: string }>;
+}
+
+export interface NewsnowHottestAnalysisDiagnostics {
+  sourcesRequested: number;
+  sourcesSucceeded: number;
+  sourcesFailed: number;
+  sourceItemsFetched: number;
 }
 
 export interface NewsnowDomesticOpinionIndexPoint {
@@ -163,6 +181,9 @@ export interface NewsnowDomesticOpinionTopCandidate {
 
 export interface NewsnowDomesticOpinionIndexResponse {
   generatedAt: string;
+  dataState: NewsnowDataState;
+  emptyReason: NewsnowDomesticOpinionEmptyReason | null;
+  diagnostics: NewsnowDomesticOpinionDiagnostics;
   latest: NewsnowDomesticOpinionIndexPoint | null;
   trend: NewsnowDomesticOpinionIndexPoint[];
   topKeywords: NewsnowDomesticOpinionKeywordSummary[];
@@ -175,6 +196,12 @@ export interface NewsnowDomesticOpinionIndexResponse {
       pipeline: NewsnowDomesticOpinionKeywordSummary[];
     };
   };
+}
+
+export interface NewsnowDomesticOpinionDiagnostics {
+  requestedHours: number;
+  snapshotCount: number;
+  pipelineBucketCount: number;
 }
 
 interface ResolveNewsUrlOptions {
@@ -359,16 +386,19 @@ export function useResolveNewsUrl() {
 export function useHottestAnalysis(enabled: boolean) {
   const { data: session, status } = useSession();
   const accessToken = session?.accessToken as string | undefined;
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadItems =
-    permissions.includes('items.read') || permissions.includes('items.write');
+  const permissions = getNewsnowAnalysisPermissions(session);
+  const accessState = getNewsnowAnalysisAccessState(status, permissions);
+  const resolvedAccessState =
+    status === 'authenticated' && !accessToken
+      ? getNewsnowAnalysisAccessState('unauthenticated', permissions)
+      : accessState;
   const apiClient = useMemo(
     () => createApiClient({ accessToken }),
     [accessToken],
   );
-  const queryEnabled = enabled && status === 'authenticated' && !!accessToken && canReadItems;
+  const queryEnabled = enabled && resolvedAccessState.canQuery && !!accessToken;
 
-  return useQuery<NewsnowHottestAnalysisResponse>({
+  const query = useQuery<NewsnowHottestAnalysisResponse>({
     queryKey: [
       'newsnow-hottest-analysis',
       session?.orgId ?? 'anonymous-org',
@@ -380,21 +410,30 @@ export function useHottestAnalysis(enabled: boolean) {
     refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
     refetchOnWindowFocus: false,
   });
+
+  return {
+    ...query,
+    accessState: resolvedAccessState,
+    permissions,
+  };
 }
 
 export function useDomesticOpinionIndex(enabled: boolean) {
   const { data: session, status } = useSession();
   const accessToken = session?.accessToken as string | undefined;
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadItems =
-    permissions.includes('items.read') || permissions.includes('items.write');
+  const permissions = getNewsnowAnalysisPermissions(session);
+  const accessState = getNewsnowAnalysisAccessState(status, permissions);
+  const resolvedAccessState =
+    status === 'authenticated' && !accessToken
+      ? getNewsnowAnalysisAccessState('unauthenticated', permissions)
+      : accessState;
   const apiClient = useMemo(
     () => createApiClient({ accessToken }),
     [accessToken],
   );
-  const queryEnabled = enabled && status === 'authenticated' && !!accessToken && canReadItems;
+  const queryEnabled = enabled && resolvedAccessState.canQuery && !!accessToken;
 
-  return useQuery<NewsnowDomesticOpinionIndexResponse>({
+  const query = useQuery<NewsnowDomesticOpinionIndexResponse>({
     queryKey: [
       'newsnow-domestic-opinion-index',
       session?.orgId ?? 'anonymous-org',
@@ -405,4 +444,10 @@ export function useDomesticOpinionIndex(enabled: boolean) {
     refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
     refetchOnWindowFocus: false,
   });
+
+  return {
+    ...query,
+    accessState: resolvedAccessState,
+    permissions,
+  };
 }

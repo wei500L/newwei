@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 
 import {
   buildBridgeExternalId,
+  buildGlobalInputSignature,
   buildHeuristicClusters,
   buildSignalKey,
   computeCandidateScore,
@@ -122,6 +123,113 @@ describe('newsnow hottest analysis utils', () => {
         confidence: 0.9,
       }),
     ).toBeLessThanOrEqual(1);
+  });
+
+  it('builds a stable global input signature for identical source payloads', () => {
+    const first = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: '2026-03-16T00:00:00.000Z',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 1,
+            },
+          ],
+        },
+      ],
+    });
+    const second = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: '2026-03-16T00:00:00.000Z',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(first).toBe(second);
+  });
+
+  it('changes the global input signature when updated time or rank payload changes', () => {
+    const base = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: '2026-03-16T00:00:00.000Z',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 1,
+            },
+          ],
+        },
+      ],
+    });
+    const changed = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: '2026-03-16T01:00:00.000Z',
+          failed: false,
+          items: [
+            {
+              id: '1',
+              title: 'OpenAI 发布新模型',
+              url: 'https://example.com/a',
+              heatText: '10万热度',
+              rank: 2,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(changed).not.toBe(base);
+  });
+
+  it('does not let error message text change the failure signature', () => {
+    const first = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: null,
+          failed: true,
+          items: [],
+        },
+      ],
+    });
+    const second = buildGlobalInputSignature({
+      entries: [
+        {
+          sourceId: 'source-a',
+          updatedTime: null,
+          failed: true,
+          items: [],
+        },
+      ],
+    });
+
+    expect(first).toBe(second);
   });
 
   it('favors cross-source heat and authority in the revised heat score', () => {

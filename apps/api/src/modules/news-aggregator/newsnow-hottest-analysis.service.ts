@@ -15,11 +15,13 @@ import { LiteLlmService, type LiteLlmMessage } from '../news-pipeline/litellm.se
 import type { JsonSchemaResponseFormat } from '../news-pipeline/news-prompt.builder';
 
 import { NewsAggregatorService } from './news-aggregator.service';
+import { NewsnowDataState } from './news-aggregator.types';
 import type { NewsItem, Source, SourceResponse } from './news-aggregator.types';
 import {
   NewsnowDomesticOpinionIndexService,
   type NewsnowCandidatePersistenceInput,
 } from './newsnow-domestic-opinion-index.service';
+import { NewsnowHottestAnalysisEmptyReason } from './newsnow-hottest-analysis.types';
 import type {
   NewsnowAnalyzedItem,
   NewsnowClusterInsight,
@@ -27,13 +29,20 @@ import type {
   NewsnowEventCandidate,
   NewsnowHotSignal,
   NewsnowHotSignalCluster,
+  NewsnowHotSignalSeed,
   NewsnowHotSignalState,
+  NewsnowHottestAnalysisDiagnostics,
   NewsnowHottestAnalysisResponse,
+  NewsnowHottestGlobalSnapshot,
 } from './newsnow-hottest-analysis.types';
 import {
   buildAnalysisCacheKey,
   buildAnalysisStaleCacheKey,
   buildBridgeExternalId,
+  buildGlobalInputSignature,
+  buildGlobalSignatureCacheKey,
+  buildGlobalSnapshotCacheKey,
+  buildGlobalSnapshotStaleCacheKey,
   buildHeuristicClusters,
   buildSignalKey,
   buildStateKey,
@@ -51,6 +60,11 @@ const ANALYSIS_STALE_TTL_SECONDS = 600;
 const ANALYSIS_LOCK_TTL_MS = 45_000;
 const ANALYSIS_WAIT_TIMEOUT_MS = 120_000;
 const ANALYSIS_WAIT_POLL_MS = 50;
+const GLOBAL_SNAPSHOT_FRESH_TTL_SECONDS = 2 * 60 * 60;
+const GLOBAL_SNAPSHOT_STALE_TTL_SECONDS = 24 * 60 * 60;
+const GLOBAL_SNAPSHOT_LOCK_TTL_MS = 45_000;
+const GLOBAL_SNAPSHOT_WAIT_TIMEOUT_MS = 120_000;
+const GLOBAL_SNAPSHOT_WAIT_POLL_MS = 50;
 const SIGNAL_STATE_TTL_SECONDS = 36 * 60 * 60;
 const MAX_ITEMS_PER_SOURCE = 8;
 const MAX_TOTAL_ITEMS = 160;
@@ -128,9 +142,45 @@ interface CandidateClusterAggregate {
   candidateScore: number;
 }
 
+interface HottestMetadataContext {
+  hottestSourceIds: string[];
+  sourcesById: Record<string, Source>;
+  totalDomesticSourceCount: number;
+}
+
+function resolveHottestAnalysisEmptyReason(input: {
+  candidates: NewsnowEventCandidate[];
+  diagnostics: NewsnowHottestAnalysisDiagnostics;
+  itemsAnalyzed: number;
+}): NewsnowHottestAnalysisEmptyReason | null {
+  if (input.candidates.length > 0) {
+    return null;
+  }
+  if (input.diagnostics.sourcesRequested === 0) {
+    return NewsnowHottestAnalysisEmptyReason.NoHottestSourcesConfigured;
+  }
+  if (
+    input.diagnostics.sourcesSucceeded === 0 &&
+    input.diagnostics.sourcesFailed > 0
+  ) {
+    return NewsnowHottestAnalysisEmptyReason.AllSourcesFailed;
+  }
+  if (input.diagnostics.sourceItemsFetched === 0) {
+    return NewsnowHottestAnalysisEmptyReason.NoSourceItems;
+  }
+  if (input.itemsAnalyzed === 0) {
+    return NewsnowHottestAnalysisEmptyReason.NoHotSignals;
+  }
+  return NewsnowHottestAnalysisEmptyReason.NoCandidates;
+}
+
 @Injectable()
 export class NewsnowHottestAnalysisService {
   private readonly inflightRefreshes = new Map<string, Promise<NewsnowHottestAnalysisResponse>>();
+  private readonly inflightGlobalSnapshots = new Map<
+    string,
+    Promise<NewsnowHottestGlobalSnapshot>
+  >();
 
   constructor(
     private readonly cache: CacheService,
@@ -142,7 +192,7 @@ export class NewsnowHottestAnalysisService {
 
   async getHottestAnalysis(input: {
     orgId: string;
-    userId: string;
+    userId?: string;
     forceRefresh?: boolean;
     allowAutoBridge?: boolean;
   }): Promise<NewsnowHottestAnalysisResponse> {
@@ -152,16 +202,99 @@ export class NewsnowHottestAnalysisService {
     if (!input.forceRefresh) {
       const cached = await this.safeGet<NewsnowHottestAnalysisResponse>(freshKey);
       if (cached) {
-        return { ...cached, cached: true };
+        return this.normalizeAnalysisResponse({ ...cached, cached: true });
       }
     }
 
+    return await this.runOrgRefreshWithInflight(
+      freshKey,
+      this.refreshAnalysisWithLock(input, freshKey, staleKey),
+    );
+  }
+
+  async refreshAnalysisForOrg(orgId: string): Promise<NewsnowHottestAnalysisResponse> {
+    return await this.refreshProjectionForOrg({
+      orgId,
+      allowAutoBridge: false,
+    });
+  }
+
+  async refreshProjectionForOrg(input: {
+    orgId: string;
+    userId?: string;
+    allowAutoBridge?: boolean;
+    globalSnapshot?: NewsnowHottestGlobalSnapshot;
+  }): Promise<NewsnowHottestAnalysisResponse> {
+    const freshKey = buildAnalysisCacheKey(input.orgId);
+    const staleKey = buildAnalysisStaleCacheKey(input.orgId);
+
+    return await this.runOrgRefreshWithInflight(
+      freshKey,
+      this.refreshAnalysisWithLock(
+        {
+          ...input,
+          forceRefresh: true,
+        },
+        freshKey,
+        staleKey,
+      ),
+    );
+  }
+
+  async ensureGlobalSnapshot(input?: {
+    orgId?: string;
+  }): Promise<NewsnowHottestGlobalSnapshot> {
+    const context = this.getHottestMetadataContext();
+    const fetches = await this.fetchHottestSources(
+      context.hottestSourceIds,
+      false,
+      context.sourcesById,
+    );
+    const signature = this.buildCurrentGlobalSignature(fetches);
+    const freshKey = buildGlobalSnapshotCacheKey();
+    const staleKey = buildGlobalSnapshotStaleCacheKey();
+    const signatureKey = buildGlobalSignatureCacheKey();
+
+    const [fresh, stale, cachedSignature] = await Promise.all([
+      this.safeGet<NewsnowHottestGlobalSnapshot>(freshKey),
+      this.safeGet<NewsnowHottestGlobalSnapshot>(staleKey),
+      this.safeGet<string>(signatureKey),
+    ]);
+
+    if (fresh?.signature === signature) {
+      return fresh;
+    }
+
+    if (cachedSignature === signature && stale?.signature === signature) {
+      return stale;
+    }
+
+    return await this.runGlobalSnapshotWithInflight(
+      signature,
+      this.refreshGlobalSnapshotWithLock(
+        {
+          orgId: input?.orgId,
+          context,
+          fetches,
+          signature,
+        },
+        freshKey,
+        staleKey,
+        signatureKey,
+      ),
+    );
+  }
+
+  private async runOrgRefreshWithInflight(
+    freshKey: string,
+    refreshPromiseFactory: () => Promise<NewsnowHottestAnalysisResponse>,
+  ): Promise<NewsnowHottestAnalysisResponse> {
     const inflightRefresh = this.inflightRefreshes.get(freshKey);
     if (inflightRefresh) {
       return await inflightRefresh;
     }
 
-    const refreshPromise = this.refreshAnalysisWithLock(input, freshKey, staleKey);
+    const refreshPromise = refreshPromiseFactory();
     this.inflightRefreshes.set(freshKey, refreshPromise);
 
     try {
@@ -173,136 +306,224 @@ export class NewsnowHottestAnalysisService {
     }
   }
 
-  private async refreshAnalysisWithLock(
-    input: {
-      orgId: string;
-      userId: string;
-      forceRefresh?: boolean;
-      allowAutoBridge?: boolean;
-    },
-    freshKey: string,
-    staleKey: string,
-  ): Promise<NewsnowHottestAnalysisResponse> {
+  private async runGlobalSnapshotWithInflight(
+    signature: string,
+    refreshPromiseFactory: () => Promise<NewsnowHottestGlobalSnapshot>,
+  ): Promise<NewsnowHottestGlobalSnapshot> {
+    const inflightRefresh = this.inflightGlobalSnapshots.get(signature);
+    if (inflightRefresh) {
+      return await inflightRefresh;
+    }
 
-    const refresh = async (): Promise<NewsnowHottestAnalysisResponse> => {
-      const next = await this.buildAnalysis(input);
-      await Promise.allSettled([
-        this.cache.set(freshKey, next, ANALYSIS_FRESH_TTL_SECONDS),
-        this.cache.set(staleKey, next, ANALYSIS_STALE_TTL_SECONDS),
-      ]);
-      return next;
-    };
+    const refreshPromise = refreshPromiseFactory();
+    this.inflightGlobalSnapshots.set(signature, refreshPromise);
 
     try {
-      const locked = await this.cache.withLock(`${freshKey}:refresh`, ANALYSIS_LOCK_TTL_MS, refresh);
-      if (locked) {
-        return locked;
+      return await refreshPromise;
+    } finally {
+      if (this.inflightGlobalSnapshots.get(signature) === refreshPromise) {
+        this.inflightGlobalSnapshots.delete(signature);
       }
-
-      if (!input.forceRefresh) {
-        const cached = await this.safeGet<NewsnowHottestAnalysisResponse>(freshKey);
-        if (cached) {
-          return { ...cached, cached: true };
-        }
-      }
-
-      const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
-      if (stale && !input.forceRefresh) {
-        return { ...stale, cached: true };
-      }
-
-      const waited = await this.waitForReadyAnalysis({
-        freshKey,
-        staleKey,
-        allowStale: !input.forceRefresh,
-      });
-      if (waited) {
-        return waited;
-      }
-
-      if (stale) {
-        return { ...stale, cached: true };
-      }
-
-      throw new Error('Timed out waiting for in-flight hottest analysis refresh');
-    } catch (error) {
-      const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
-      if (stale) {
-        logger.warn({ error, orgId: input.orgId }, 'Serving stale hottest analysis after refresh failure');
-        return { ...stale, cached: true };
-      }
-      throw error;
     }
   }
 
-  private async buildAnalysis(input: {
-    orgId: string;
-    userId: string;
-    forceRefresh?: boolean;
-    allowAutoBridge?: boolean;
-  }): Promise<NewsnowHottestAnalysisResponse> {
+  private refreshAnalysisWithLock(
+    input: {
+      orgId: string;
+      userId?: string;
+      forceRefresh?: boolean;
+      allowAutoBridge?: boolean;
+      globalSnapshot?: NewsnowHottestGlobalSnapshot;
+    },
+    freshKey: string,
+    staleKey: string,
+  ): () => Promise<NewsnowHottestAnalysisResponse> {
+    return async () => {
+      const refresh = async (): Promise<NewsnowHottestAnalysisResponse> => {
+        const globalSnapshot =
+          input.globalSnapshot ??
+          (await this.ensureGlobalSnapshot({ orgId: input.orgId }));
+        const next = await this.buildAnalysisFromGlobalSnapshot({
+          orgId: input.orgId,
+          userId: input.userId,
+          allowAutoBridge: input.allowAutoBridge,
+          globalSnapshot,
+        });
+        await Promise.allSettled([
+          this.cache.set(freshKey, next, ANALYSIS_FRESH_TTL_SECONDS),
+          this.cache.set(staleKey, next, ANALYSIS_STALE_TTL_SECONDS),
+        ]);
+        return next;
+      };
+
+      try {
+        const locked = await this.cache.withLock(
+          `${freshKey}:refresh`,
+          ANALYSIS_LOCK_TTL_MS,
+          refresh,
+        );
+        if (locked) {
+          return locked;
+        }
+
+        if (!input.forceRefresh) {
+          const cached = await this.safeGet<NewsnowHottestAnalysisResponse>(freshKey);
+          if (cached) {
+            return this.normalizeAnalysisResponse({ ...cached, cached: true });
+          }
+        }
+
+        const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
+        if (stale && !input.forceRefresh) {
+          return this.normalizeAnalysisResponse({ ...stale, cached: true });
+        }
+
+        const waited = await this.waitForReadyAnalysis({
+          freshKey,
+          staleKey,
+          allowStale: !input.forceRefresh,
+        });
+        if (waited) {
+          return waited;
+        }
+
+        if (stale) {
+          return this.normalizeAnalysisResponse({ ...stale, cached: true });
+        }
+
+        throw new Error('Timed out waiting for in-flight hottest analysis refresh');
+      } catch (error) {
+        const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(staleKey);
+        if (stale) {
+          logger.warn({ error, orgId: input.orgId }, 'Serving stale hottest analysis after refresh failure');
+          return this.normalizeAnalysisResponse({ ...stale, cached: true });
+        }
+        throw error;
+      }
+    };
+  }
+
+  private refreshGlobalSnapshotWithLock(
+    input: {
+      orgId?: string;
+      context: HottestMetadataContext;
+      fetches: SourceFetchResult[];
+      signature: string;
+    },
+    freshKey: string,
+    staleKey: string,
+    signatureKey: string,
+  ): () => Promise<NewsnowHottestGlobalSnapshot> {
+    return async () => {
+      const refresh = async (): Promise<NewsnowHottestGlobalSnapshot> => {
+        const next = await this.buildGlobalSnapshot(input);
+        await Promise.allSettled([
+          this.cache.set(freshKey, next, GLOBAL_SNAPSHOT_FRESH_TTL_SECONDS),
+          this.cache.set(staleKey, next, GLOBAL_SNAPSHOT_STALE_TTL_SECONDS),
+          this.cache.set(signatureKey, next.signature, GLOBAL_SNAPSHOT_STALE_TTL_SECONDS),
+        ]);
+        return next;
+      };
+
+      try {
+        const locked = await this.cache.withLock(
+          `${freshKey}:refresh`,
+          GLOBAL_SNAPSHOT_LOCK_TTL_MS,
+          refresh,
+        );
+        if (locked) {
+          return locked;
+        }
+
+        const fresh = await this.safeGet<NewsnowHottestGlobalSnapshot>(freshKey);
+        if (fresh?.signature === input.signature) {
+          return fresh;
+        }
+
+        const waited = await this.waitForReadyGlobalSnapshot({
+          freshKey,
+          staleKey,
+          signature: input.signature,
+        });
+        if (waited) {
+          return waited;
+        }
+
+        const stale = await this.safeGet<NewsnowHottestGlobalSnapshot>(staleKey);
+        if (stale) {
+          return stale;
+        }
+
+        throw new Error('Timed out waiting for in-flight hottest global snapshot refresh');
+      } catch (error) {
+        const stale = await this.safeGet<NewsnowHottestGlobalSnapshot>(staleKey);
+        if (stale) {
+          logger.warn({ error }, 'Serving stale hottest global snapshot after refresh failure');
+          return stale;
+        }
+        throw error;
+      }
+    };
+  }
+
+  private async buildGlobalSnapshot(input: {
+    orgId?: string;
+    context: HottestMetadataContext;
+    fetches: SourceFetchResult[];
+    signature: string;
+  }): Promise<NewsnowHottestGlobalSnapshot> {
     const generatedAt = new Date();
-    const metadata = this.aggregator.getMetadata();
-    const hottestSourceIds = (metadata.columns?.hottest?.sources ?? []).slice(0, 64);
-    const fetches = await this.fetchHottestSources(hottestSourceIds, Boolean(input.forceRefresh), metadata.sources ?? {});
-    const normalizedSignals = await this.buildSignals(input.orgId, fetches);
-    const globalMaxHeatValue = normalizedSignals.reduce(
+    const signalSeeds = this.buildSignalSeeds(input.fetches);
+    const globalMaxHeatValue = signalSeeds.reduce(
       (best, signal) => Math.max(best, signal.heatValue ?? 0),
       0,
     );
-    const clusters = buildHeuristicClusters(normalizedSignals);
+    const clusters = buildHeuristicClusters(signalSeeds);
     const insightByClusterId = await this.generateClusterInsights(
       input.orgId,
       clusters.slice(0, MAX_LLM_CLUSTERS),
-      normalizedSignals,
+      signalSeeds,
     );
-    const signalByKey = new Map(normalizedSignals.map((signal) => [signal.signalKey, signal] as const));
-    const clusterBySignalKey = new Map<string, CandidateClusterAggregate>();
 
-    const clusterAggregates = clusters.map((cluster) => {
-      const items = cluster.itemKeys
-        .map((itemKey) => signalByKey.get(itemKey))
-        .filter((value): value is NewsnowHotSignal => Boolean(value));
-      const authority =
-        items.length > 0
-          ? items.reduce((sum, item) => sum + item.authority, 0) / items.length
-          : 0;
-      const heatScore = computeHeatScore({
-        rank: Math.max(1, Math.round(cluster.avgRank)),
-        rankCap: MAX_ITEMS_PER_SOURCE,
-        heatValue: cluster.maxHeatValue,
-        maxHeatValue: globalMaxHeatValue,
-        sourceCount: cluster.sourceIds.length,
-        authority,
-      });
-      const freshnessScore =
-        items.length > 0
-          ? Number(
-              (
-                items.reduce((sum, item) => sum + item.freshnessScore, 0) /
-                items.length
-              ).toFixed(4),
-            )
-          : 0;
-      const insight = insightByClusterId.get(cluster.clusterId) ?? null;
-      const candidateScore = computeCandidateScore({
-        heatScore,
-        freshnessScore,
-        sourceCount: cluster.sourceIds.length,
-        authority,
-        confidence: insight?.confidence ?? 0.5,
-      });
-      const aggregate: CandidateClusterAggregate = {
-        cluster,
-        insight,
-        items,
-        authority,
-        heatScore,
-        freshnessScore,
-        candidateScore,
-      };
-      items.forEach((item) => clusterBySignalKey.set(item.signalKey, aggregate));
-      return aggregate;
+    return {
+      signature: input.signature,
+      generatedAt: generatedAt.toISOString(),
+      diagnostics: this.buildDiagnostics(input.fetches),
+      errors: input.fetches
+        .filter((entry) => entry.error)
+        .map((entry) => ({
+          sourceId: entry.sourceId,
+          message: entry.error as string,
+        })),
+      totalDomesticSourceCount: input.context.totalDomesticSourceCount,
+      globalMaxHeatValue,
+      signalSeeds,
+      clusters,
+      clusterInsights: Array.from(insightByClusterId.values()),
+    };
+  }
+
+  private async buildAnalysisFromGlobalSnapshot(input: {
+    orgId: string;
+    userId?: string;
+    allowAutoBridge?: boolean;
+    globalSnapshot: NewsnowHottestGlobalSnapshot;
+  }): Promise<NewsnowHottestAnalysisResponse> {
+    const generatedAt = new Date();
+    const metadataContext = this.getHottestMetadataContext();
+    const normalizedSignals = await this.buildSignalsFromSeeds(
+      input.orgId,
+      input.globalSnapshot.signalSeeds,
+      generatedAt,
+    );
+    const insightByClusterId = new Map(
+      input.globalSnapshot.clusterInsights.map((insight) => [insight.clusterId, insight] as const),
+    );
+    const { clusterAggregates, clusterBySignalKey } = this.buildClusterAggregates({
+      signals: normalizedSignals,
+      clusters: input.globalSnapshot.clusters,
+      insightByClusterId,
+      globalMaxHeatValue: input.globalSnapshot.globalMaxHeatValue,
     });
 
     const analysisBySignalKey = new Map<string, NewsnowAnalyzedItem>();
@@ -374,7 +595,7 @@ export class NewsnowHottestAnalysisService {
           rank: signal.rank,
           rankCap: MAX_ITEMS_PER_SOURCE,
           heatValue: signal.heatValue,
-          maxHeatValue: globalMaxHeatValue,
+          maxHeatValue: input.globalSnapshot.globalMaxHeatValue,
           sourceCount: aggregate?.cluster.sourceIds.length ?? 1,
           authority: signal.authority,
         }),
@@ -401,21 +622,24 @@ export class NewsnowHottestAnalysisService {
       });
     }
 
-    if (input.allowAutoBridge) {
-      await this.bridgeEligibleItems(input, normalizedSignals, analysisBySignalKey);
+    if (input.allowAutoBridge && input.userId) {
+      await this.bridgeEligibleItems(
+        { orgId: input.orgId, userId: input.userId },
+        normalizedSignals,
+        analysisBySignalKey,
+      );
     }
+
     await this.persistSignalState(input.orgId, normalizedSignals);
     await this.persistDomesticOpinionSnapshotsBestEffort({
       orgId: input.orgId,
       generatedAt,
-      totalDomesticSourceCount: hottestSourceIds.filter(
-        (sourceId) => metadata.sources?.[sourceId]?.column === 'china',
-      ).length,
+      totalDomesticSourceCount: input.globalSnapshot.totalDomesticSourceCount,
       candidates: clusterAggregates.map((aggregate) =>
         this.toCandidatePersistenceInput(
           aggregate,
           analysisBySignalKey,
-          metadata.sources ?? {},
+          metadataContext.sourcesById,
         ),
       ),
     });
@@ -443,18 +667,88 @@ export class NewsnowHottestAnalysisService {
       })
       .slice(0, MAX_RETURNED_CANDIDATES)
       .map((aggregate) => this.toCandidate(aggregate, analysisBySignalKey));
+    const emptyReason = resolveHottestAnalysisEmptyReason({
+      candidates,
+      diagnostics: input.globalSnapshot.diagnostics,
+      itemsAnalyzed: normalizedSignals.length,
+    });
 
     return {
       generatedAt: generatedAt.toISOString(),
       cached: false,
-      sourcesAnalyzed: fetches.filter((entry) => Boolean(entry.response)).length,
+      dataState:
+        candidates.length > 0 ? NewsnowDataState.Ready : NewsnowDataState.Empty,
+      emptyReason,
+      diagnostics: input.globalSnapshot.diagnostics,
+      sourcesAnalyzed: input.globalSnapshot.diagnostics.sourcesSucceeded,
       itemsAnalyzed: normalizedSignals.length,
       bySource,
       candidates,
-      errors: fetches
-        .filter((entry) => entry.error)
-        .map((entry) => ({ sourceId: entry.sourceId, message: entry.error as string })),
+      errors: input.globalSnapshot.errors,
     };
+  }
+
+  private buildClusterAggregates(input: {
+    signals: NewsnowHotSignal[];
+    clusters: NewsnowHotSignalCluster[];
+    insightByClusterId: Map<string, NewsnowClusterInsight>;
+    globalMaxHeatValue: number;
+  }): {
+    clusterAggregates: CandidateClusterAggregate[];
+    clusterBySignalKey: Map<string, CandidateClusterAggregate>;
+  } {
+    const signalByKey = new Map(
+      input.signals.map((signal) => [signal.signalKey, signal] as const),
+    );
+    const clusterBySignalKey = new Map<string, CandidateClusterAggregate>();
+
+    const clusterAggregates = input.clusters.map((cluster) => {
+      const items = cluster.itemKeys
+        .map((itemKey) => signalByKey.get(itemKey))
+        .filter((value): value is NewsnowHotSignal => Boolean(value));
+      const authority =
+        items.length > 0
+          ? items.reduce((sum, item) => sum + item.authority, 0) / items.length
+          : 0;
+      const heatScore = computeHeatScore({
+        rank: Math.max(1, Math.round(cluster.avgRank)),
+        rankCap: MAX_ITEMS_PER_SOURCE,
+        heatValue: cluster.maxHeatValue,
+        maxHeatValue: input.globalMaxHeatValue,
+        sourceCount: cluster.sourceIds.length,
+        authority,
+      });
+      const freshnessScore =
+        items.length > 0
+          ? Number(
+              (
+                items.reduce((sum, item) => sum + item.freshnessScore, 0) /
+                items.length
+              ).toFixed(4),
+            )
+          : 0;
+      const insight = input.insightByClusterId.get(cluster.clusterId) ?? null;
+      const candidateScore = computeCandidateScore({
+        heatScore,
+        freshnessScore,
+        sourceCount: cluster.sourceIds.length,
+        authority,
+        confidence: insight?.confidence ?? 0.5,
+      });
+      const aggregate: CandidateClusterAggregate = {
+        cluster,
+        insight,
+        items,
+        authority,
+        heatScore,
+        freshnessScore,
+        candidateScore,
+      };
+      items.forEach((item) => clusterBySignalKey.set(item.signalKey, aggregate));
+      return aggregate;
+    });
+
+    return { clusterAggregates, clusterBySignalKey };
   }
 
   private async fetchHottestSources(
@@ -465,7 +759,11 @@ export class NewsnowHottestAnalysisService {
     return this.mapWithConcurrency(sourceIds, 6, async (sourceId) => {
       try {
         const response = await this.aggregator.fetchSource(sourceId, forceRefresh);
-        return { response, source: sourcesById[sourceId] ?? null, sourceId } satisfies SourceFetchResult;
+        return {
+          response,
+          source: sourcesById[sourceId] ?? null,
+          sourceId,
+        } satisfies SourceFetchResult;
       } catch (error) {
         return {
           response: null,
@@ -477,13 +775,9 @@ export class NewsnowHottestAnalysisService {
     });
   }
 
-  private async buildSignals(
-    orgId: string,
-    fetches: SourceFetchResult[],
-  ): Promise<NewsnowHotSignal[]> {
-    const now = new Date();
+  private buildSignalSeeds(fetches: SourceFetchResult[]): NewsnowHotSignalSeed[] {
     const policy = getDefaultNewsEventSourcePolicy();
-    const pending: Array<{ signal: Omit<NewsnowHotSignal, 'state' | 'isNew' | 'isRising' | 'freshnessScore'>; stateKey: string }> = [];
+    const pending: NewsnowHotSignalSeed[] = [];
     let total = 0;
 
     for (const fetch of fetches) {
@@ -495,14 +789,19 @@ export class NewsnowHottestAnalysisService {
         if (total >= MAX_TOTAL_ITEMS) {
           break;
         }
-        const normalizedItem = this.toSignalItem(fetch.sourceId, sourceName, fetch.source?.home ?? null, fetch.response, item, index + 1, policy, now);
+        const normalizedItem = this.toSignalSeed(
+          fetch.sourceId,
+          sourceName,
+          fetch.source?.home ?? null,
+          fetch.response,
+          item,
+          index + 1,
+          policy,
+        );
         if (!normalizedItem) {
           continue;
         }
-        pending.push({
-          signal: normalizedItem,
-          stateKey: buildStateKey(orgId, normalizedItem.signalKey),
-        });
+        pending.push(normalizedItem);
         total += 1;
       }
       if (total >= MAX_TOTAL_ITEMS) {
@@ -510,17 +809,35 @@ export class NewsnowHottestAnalysisService {
       }
     }
 
-    const states = pending.length > 0 ? await this.safeGetMany<NewsnowHotSignalState>(pending.map((entry) => entry.stateKey)) : [];
+    return pending;
+  }
+
+  private async buildSignalsFromSeeds(
+    orgId: string,
+    seeds: NewsnowHotSignalSeed[],
+    capturedAt: Date,
+  ): Promise<NewsnowHotSignal[]> {
+    const pending = seeds.map((seed) => ({
+      seed,
+      stateKey: buildStateKey(orgId, seed.signalKey),
+    }));
+    const states =
+      pending.length > 0
+        ? await this.safeGetMany<NewsnowHotSignalState>(
+            pending.map((entry) => entry.stateKey),
+          )
+        : [];
 
     return pending.map((entry, index) => {
       const state = states[index] ?? null;
       const freshness = computeFreshness({
-        nowMs: now.getTime(),
+        nowMs: capturedAt.getTime(),
         state,
-        rank: entry.signal.rank,
+        rank: entry.seed.rank,
       });
       return {
-        ...entry.signal,
+        ...entry.seed,
+        capturedAt: capturedAt.toISOString(),
         state,
         isNew: freshness.isNew,
         isRising: freshness.isRising,
@@ -529,7 +846,7 @@ export class NewsnowHottestAnalysisService {
     });
   }
 
-  private toSignalItem(
+  private toSignalSeed(
     sourceId: string,
     sourceName: string,
     sourceHome: string | null,
@@ -537,15 +854,15 @@ export class NewsnowHottestAnalysisService {
     item: NewsItem,
     rank: number,
     policy: ReturnType<typeof getDefaultNewsEventSourcePolicy>,
-    capturedAt: Date,
-  ): Omit<NewsnowHotSignal, 'state' | 'isNew' | 'isRising' | 'freshnessScore'> | null {
+  ): NewsnowHotSignalSeed | null {
     const url = typeof item.url === 'string' ? item.url.trim() : '';
     const title = typeof item.title === 'string' ? item.title.trim() : '';
     if (!url || !title) {
       return null;
     }
     const authorityType = classifySourceByLabelAndUrl(sourceName, sourceHome ?? url, policy);
-    const authority = authorityType === 'authoritative' ? 1 : authorityType === 'blog' ? 0.22 : 0.55;
+    const authority =
+      authorityType === 'authoritative' ? 1 : authorityType === 'blog' ? 0.22 : 0.55;
     const hoverSummary =
       item.extra && typeof item.extra.hover === 'string' && item.extra.hover.trim().length > 0
         ? item.extra.hover.trim()
@@ -559,8 +876,7 @@ export class NewsnowHottestAnalysisService {
       sourceId,
       sourceName,
       sourceHome,
-      sourceUpdatedTime:
-        this.toIsoDateTime(response.updatedTime),
+      sourceUpdatedTime: this.toIsoDateTime(response.updatedTime),
       itemId: String(item.id),
       title,
       url,
@@ -572,16 +888,15 @@ export class NewsnowHottestAnalysisService {
       heatText,
       heatValue: parseHeatValue(heatText),
       rank,
-      capturedAt: capturedAt.toISOString(),
       normalizedTitle: normalizeTitle(title),
       authority,
     };
   }
 
   private async generateClusterInsights(
-    orgId: string,
+    orgId: string | undefined,
     clusters: NewsnowHotSignalCluster[],
-    signals: NewsnowHotSignal[],
+    signals: NewsnowHotSignalSeed[],
   ): Promise<Map<string, NewsnowClusterInsight>> {
     if (clusters.length === 0) {
       return new Map();
@@ -593,7 +908,7 @@ export class NewsnowHottestAnalysisService {
       representativeTitle: cluster.representativeTitle,
       items: cluster.itemKeys
         .map((itemKey) => signalByKey.get(itemKey))
-        .filter((value): value is NewsnowHotSignal => Boolean(value))
+        .filter((value): value is NewsnowHotSignalSeed => Boolean(value))
         .sort((left, right) => left.rank - right.rank)
         .slice(0, 5)
         .map((item) => ({
@@ -803,6 +1118,40 @@ export class NewsnowHottestAnalysisService {
     );
   }
 
+  private normalizeAnalysisResponse(
+    response: NewsnowHottestAnalysisResponse,
+  ): NewsnowHottestAnalysisResponse {
+    const candidates = Array.isArray(response.candidates) ? response.candidates : [];
+    const errors = Array.isArray(response.errors) ? response.errors : [];
+    const diagnostics: NewsnowHottestAnalysisDiagnostics = response.diagnostics ?? {
+      sourcesRequested: Math.max(response.sourcesAnalyzed, 0) + errors.length,
+      sourcesSucceeded: Math.max(response.sourcesAnalyzed, 0),
+      sourcesFailed: errors.length,
+      sourceItemsFetched: Math.max(response.itemsAnalyzed, 0),
+    };
+    const dataState =
+      response.dataState ??
+      (candidates.length > 0 ? NewsnowDataState.Ready : NewsnowDataState.Empty);
+    const emptyReason =
+      response.emptyReason ??
+      (dataState === NewsnowDataState.Empty
+        ? resolveHottestAnalysisEmptyReason({
+            candidates,
+            diagnostics,
+            itemsAnalyzed: response.itemsAnalyzed,
+          })
+        : null);
+
+    return {
+      ...response,
+      dataState,
+      emptyReason,
+      diagnostics,
+      candidates,
+      errors,
+    };
+  }
+
   private async persistDomesticOpinionSnapshotsBestEffort(input: {
     orgId: string;
     generatedAt: Date;
@@ -826,7 +1175,8 @@ export class NewsnowHottestAnalysisService {
     const analysisItems = aggregate.items
       .map((signal) => ({ signal, analysis: analysisBySignalKey.get(signal.signalKey) }))
       .filter(
-        (entry): entry is { signal: NewsnowHotSignal; analysis: NewsnowAnalyzedItem } => Boolean(entry.analysis),
+        (entry): entry is { signal: NewsnowHotSignal; analysis: NewsnowAnalyzedItem } =>
+          Boolean(entry.analysis),
       )
       .sort((left, right) => left.signal.rank - right.signal.rank);
     const insight = aggregate.insight;
@@ -869,9 +1219,7 @@ export class NewsnowHottestAnalysisService {
     const domesticItems = aggregate.items.filter(
       (item) => sourcesById[item.sourceId]?.column === 'china',
     );
-    const domesticSourceIds = Array.from(
-      new Set(domesticItems.map((item) => item.sourceId)),
-    );
+    const domesticSourceIds = Array.from(new Set(domesticItems.map((item) => item.sourceId)));
     const matchedItemIds = Array.from(
       new Set(
         aggregate.items
@@ -913,6 +1261,53 @@ export class NewsnowHottestAnalysisService {
     return value === 'article' || value === 'discussion' || value === 'video' || value === 'mixed'
       ? value
       : 'unknown';
+  }
+
+  private getHottestMetadataContext(): HottestMetadataContext {
+    const metadata = this.aggregator.getMetadata();
+    const hottestSourceIds = (metadata.columns?.hottest?.sources ?? []).slice(0, 64);
+    const sourcesById = metadata.sources ?? {};
+    return {
+      hottestSourceIds,
+      sourcesById,
+      totalDomesticSourceCount: hottestSourceIds.filter(
+        (sourceId) => sourcesById[sourceId]?.column === 'china',
+      ).length,
+    };
+  }
+
+  private buildDiagnostics(
+    fetches: SourceFetchResult[],
+  ): NewsnowHottestAnalysisDiagnostics {
+    return {
+      sourcesRequested: fetches.length,
+      sourcesSucceeded: fetches.filter((entry) => Boolean(entry.response)).length,
+      sourcesFailed: fetches.filter((entry) => Boolean(entry.error)).length,
+      sourceItemsFetched: fetches.reduce(
+        (total, entry) => total + (entry.response?.items.length ?? 0),
+        0,
+      ),
+    };
+  }
+
+  private buildCurrentGlobalSignature(fetches: SourceFetchResult[]): string {
+    return buildGlobalInputSignature({
+      entries: fetches.map((fetch) => ({
+        sourceId: fetch.sourceId,
+        updatedTime: fetch.response ? this.toIsoDateTime(fetch.response.updatedTime) : null,
+        failed: !fetch.response,
+        items: (fetch.response?.items ?? []).slice(0, MAX_ITEMS_PER_SOURCE).map((item, index) => ({
+          id: String(item.id),
+          title: typeof item.title === 'string' ? item.title : '',
+          url: typeof item.url === 'string' ? item.url : '',
+          heatText:
+            item.extra && typeof item.extra.info === 'string' && item.extra.info.trim().length > 0
+              ? item.extra.info.trim()
+              : null,
+          rank: index + 1,
+        })),
+      })),
+    });
   }
 
   private toIsoDateTime(value: unknown): string | null {
@@ -958,17 +1353,41 @@ export class NewsnowHottestAnalysisService {
     while (Date.now() - startedAt < ANALYSIS_WAIT_TIMEOUT_MS) {
       const fresh = await this.safeGet<NewsnowHottestAnalysisResponse>(input.freshKey);
       if (fresh) {
-        return { ...fresh, cached: true };
+        return this.normalizeAnalysisResponse({ ...fresh, cached: true });
       }
 
       if (input.allowStale) {
         const stale = await this.safeGet<NewsnowHottestAnalysisResponse>(input.staleKey);
         if (stale) {
-          return { ...stale, cached: true };
+          return this.normalizeAnalysisResponse({ ...stale, cached: true });
         }
       }
 
       await this.delay(ANALYSIS_WAIT_POLL_MS);
+    }
+
+    return null;
+  }
+
+  private async waitForReadyGlobalSnapshot(input: {
+    freshKey: string;
+    staleKey: string;
+    signature: string;
+  }): Promise<NewsnowHottestGlobalSnapshot | null> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < GLOBAL_SNAPSHOT_WAIT_TIMEOUT_MS) {
+      const fresh = await this.safeGet<NewsnowHottestGlobalSnapshot>(input.freshKey);
+      if (fresh?.signature === input.signature) {
+        return fresh;
+      }
+
+      const stale = await this.safeGet<NewsnowHottestGlobalSnapshot>(input.staleKey);
+      if (stale?.signature === input.signature) {
+        return stale;
+      }
+
+      await this.delay(GLOBAL_SNAPSHOT_WAIT_POLL_MS);
     }
 
     return null;

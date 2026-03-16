@@ -2,6 +2,43 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  --admin-metric-border: rgba(148, 163, 184, 0.38);
+  --admin-metric-bg-start: rgba(255, 255, 255, 0.95);
+  --admin-metric-bg-end: rgba(248, 250, 252, 0.92);
+  --admin-metric-accent-glow: rgba(47, 108, 229, 0.08);
+  --admin-metric-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  --admin-surface-inset-highlight: rgba(255, 255, 255, 0.7);
+  --admin-section-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  --admin-icon-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  --admin-link-border: rgba(148, 163, 184, 0.32);
+  --admin-link-bg-start: rgba(255, 255, 255, 0.96);
+  --admin-link-bg-end: rgba(248, 250, 252, 0.9);
+  --admin-link-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
+  --admin-link-shadow-hover: 0 14px 30px rgba(15, 23, 42, 0.14);
+  --admin-collapse-border: rgba(148, 163, 184, 0.36);
+  --admin-collapse-bg-start: rgba(255, 255, 255, 0.96);
+  --admin-collapse-bg-end: rgba(248, 250, 252, 0.9);
+  --admin-collapse-content-border: rgba(148, 163, 184, 0.24);
+}
+
+:global(.dark) .adminShell {
+  --admin-metric-border: rgba(71, 85, 105, 0.75);
+  --admin-metric-bg-start: rgba(15, 23, 42, 0.86);
+  --admin-metric-bg-end: rgba(15, 23, 42, 0.68);
+  --admin-metric-accent-glow: rgba(59, 130, 246, 0.2);
+  --admin-metric-shadow: 0 10px 26px rgba(2, 6, 23, 0.45);
+  --admin-surface-inset-highlight: rgba(255, 255, 255, 0.06);
+  --admin-section-shadow: 0 14px 28px rgba(2, 6, 23, 0.44);
+  --admin-icon-shadow: 0 6px 14px rgba(2, 6, 23, 0.34);
+  --admin-link-border: rgba(71, 85, 105, 0.72);
+  --admin-link-bg-start: rgba(15, 23, 42, 0.83);
+  --admin-link-bg-end: rgba(15, 23, 42, 0.66);
+  --admin-link-shadow: 0 10px 22px rgba(2, 6, 23, 0.32);
+  --admin-link-shadow-hover: 0 16px 32px rgba(2, 6, 23, 0.54);
+  --admin-collapse-border: rgba(71, 85, 105, 0.72);
+  --admin-collapse-bg-start: rgba(15, 23, 42, 0.83);
+  --admin-collapse-bg-end: rgba(15, 23, 42, 0.66);
+  --admin-collapse-content-border: rgba(71, 85, 105, 0.45);
 }
 
 .headerBlock {
@@ -27,16 +64,16 @@
 
 .metricCard {
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.38);
+  border: 1px solid var(--admin-metric-border);
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.95),
-      rgba(248, 250, 252, 0.92)
+      var(--admin-metric-bg-start),
+      var(--admin-metric-bg-end)
     ),
-    radial-gradient(circle at 8% 0%, rgba(47, 108, 229, 0.08), transparent 56%);
+    radial-gradient(circle at 8% 0%, var(--admin-metric-accent-glow), transparent 56%);
   padding: 0.75rem 0.9rem;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--admin-metric-shadow);
 }
 
 .metricLabel {
@@ -62,7 +99,7 @@
   display: block;
   margin-top: 0.25rem;
   font-size: 12px;
-  color: rgba(71, 85, 105, 0.92);
+  color: var(--secondary-foreground);
 }
 
 .mainCard {
@@ -100,10 +137,10 @@
   --tone-accent-glow: rgba(148, 163, 184, 0.22);
   --tone-icon-bg: rgba(241, 245, 249, 0.96);
   --tone-icon-border: rgba(148, 163, 184, 0.45);
-  --tone-icon-fg: #0f172a;
+  --tone-icon-fg: var(--foreground);
   --tone-counter-bg: rgba(255, 255, 255, 0.92);
   --tone-counter-border: rgba(148, 163, 184, 0.5);
-  --tone-counter-fg: #0f172a;
+  --tone-counter-fg: var(--foreground);
   --tone-link-hover-border: rgba(100, 116, 139, 0.62);
 }
 
@@ -120,8 +157,8 @@
   );
   padding: 1rem;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 10px 24px rgba(15, 23, 42, 0.08);
+    inset 0 1px 0 var(--admin-surface-inset-highlight),
+    var(--admin-section-shadow);
 }
 
 .groupSection::after {
@@ -170,7 +207,7 @@
   border-radius: 0.7rem;
   border: 1px solid var(--tone-icon-border);
   background: var(--tone-icon-bg);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--admin-icon-shadow);
 }
 
 .groupIconShellCompact {
@@ -241,14 +278,14 @@
   display: block;
   height: 100%;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: 1px solid var(--admin-link-border);
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.96),
-    rgba(248, 250, 252, 0.9)
+    var(--admin-link-bg-start),
+    var(--admin-link-bg-end)
   );
   padding: 0.9rem;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
+  box-shadow: var(--admin-link-shadow);
   transition:
     transform 180ms ease,
     border-color 180ms ease,
@@ -258,7 +295,7 @@
 .linkCard:hover {
   transform: translateY(-2px);
   border-color: var(--tone-link-hover-border);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--admin-link-shadow-hover);
 }
 
 .linkCard:focus-visible {
@@ -314,7 +351,7 @@
   align-items: center;
   font-size: 0.75rem;
   font-weight: 600;
-  color: rgba(71, 85, 105, 0.9);
+  color: var(--secondary-foreground);
   transition: color 180ms ease;
 }
 
@@ -358,12 +395,12 @@
 .adminCollapse :global(.ant-collapse-item) {
   margin-bottom: 0.75rem;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.36);
+  border: 1px solid var(--admin-collapse-border);
   border-radius: 14px !important;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.96),
-    rgba(248, 250, 252, 0.9)
+    var(--admin-collapse-bg-start),
+    var(--admin-collapse-bg-end)
   );
 }
 
@@ -373,7 +410,7 @@
 }
 
 .adminCollapse :global(.ant-collapse-content) {
-  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  border-top: 1px solid var(--admin-collapse-content-border);
   background: transparent;
 }
 
@@ -442,60 +479,11 @@
   --tone-accent-glow: rgba(100, 116, 139, 0.23);
   --tone-icon-bg: rgba(226, 232, 240, 0.95);
   --tone-icon-border: rgba(148, 163, 184, 0.72);
-  --tone-icon-fg: #334155;
+  --tone-icon-fg: var(--secondary-foreground);
   --tone-counter-bg: rgba(248, 250, 252, 0.95);
   --tone-counter-border: rgba(148, 163, 184, 0.74);
-  --tone-counter-fg: #334155;
+  --tone-counter-fg: var(--secondary-foreground);
   --tone-link-hover-border: rgba(100, 116, 139, 0.68);
-}
-
-:global(.dark) .metricCard {
-  border-color: rgba(71, 85, 105, 0.75);
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.68)),
-    radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.2), transparent 58%);
-  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.45);
-}
-
-:global(.dark) .metricHint {
-  color: rgba(203, 213, 225, 0.86);
-}
-
-:global(.dark) .groupSection {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 14px 28px rgba(2, 6, 23, 0.44);
-}
-
-:global(.dark) .linkCard {
-  border-color: rgba(71, 85, 105, 0.72);
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.83),
-    rgba(15, 23, 42, 0.66)
-  );
-  box-shadow: 0 10px 22px rgba(2, 6, 23, 0.32);
-}
-
-:global(.dark) .linkCard:hover {
-  box-shadow: 0 16px 32px rgba(2, 6, 23, 0.54);
-}
-
-:global(.dark) .cardAction {
-  color: rgba(148, 163, 184, 0.94);
-}
-
-:global(.dark) .adminCollapse :global(.ant-collapse-item) {
-  border-color: rgba(71, 85, 105, 0.72);
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.83),
-    rgba(15, 23, 42, 0.66)
-  );
-}
-
-:global(.dark) .adminCollapse :global(.ant-collapse-content) {
-  border-top-color: rgba(71, 85, 105, 0.45);
 }
 
 :global(.dark) .groupSection[data-tone="operations"],
@@ -559,9 +547,9 @@
   --tone-accent-glow: rgba(148, 163, 184, 0.2);
   --tone-icon-bg: rgba(148, 163, 184, 0.16);
   --tone-icon-border: rgba(148, 163, 184, 0.34);
-  --tone-icon-fg: #e2e8f0;
+  --tone-icon-fg: var(--foreground);
   --tone-counter-bg: rgba(148, 163, 184, 0.16);
   --tone-counter-border: rgba(148, 163, 184, 0.38);
-  --tone-counter-fg: #e2e8f0;
+  --tone-counter-fg: var(--foreground);
   --tone-link-hover-border: rgba(148, 163, 184, 0.62);
 }

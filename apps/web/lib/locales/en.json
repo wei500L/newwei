@@ -107,6 +107,13 @@
       "rulesTitle": "Rules",
       "eventsTitle": "Trigger History",
       "evidenceTitle": "Evidence Details",
+      "loadFailed": {
+        "title": "Unable to load alert history",
+        "permission": "This session cannot read alert history for the current workspace. Verify that the account has alerts.read access, then retry.",
+        "service": "Alert history is temporarily unavailable. Check API connectivity or alert service health, then retry.",
+        "default": "Alert history could not be loaded. Check workspace access and backend health, then retry.",
+        "detail": "Technical detail"
+      },
       "emptyRules": "No alert rules configured.",
       "emptyEvents": "No alert events yet.",
       "selectEvent": "Select an event to see evidence details.",
@@ -1350,6 +1357,8 @@
           "monitors": "Monitors",
           "monitorsHint": "Custom monitors with saved locations",
           "monitorsUpdated": "Monitors updated",
+          "dataUpdated": "Data updated",
+          "streamMessage": "Stream message",
           "total": "Total",
           "renderable": "Renderable",
           "showing": "Showing",
@@ -1362,7 +1371,17 @@
         },
         "status": {
           "ready": "Ready",
-          "error": "Error"
+          "error": "Error",
+          "updated": "Updated",
+          "refreshing": "Refreshing",
+          "refreshingChains": "Refreshing {{count}} chains",
+          "waiting": "Waiting",
+          "waitingData": "Waiting for first data",
+          "stale": "Stale",
+          "lagging": "Lagging",
+          "loadingMap": "Loading map base layer…",
+          "loadingData": "Loading map data…",
+          "preparing": "Preparing map…"
         },
         "tooltip": {
           "location": "Location",

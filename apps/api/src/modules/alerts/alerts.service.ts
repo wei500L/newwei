@@ -28,6 +28,11 @@ import type { LookupFunction } from "net";
 import { firstValueFrom } from "rxjs";
 
 import {
+  hasMembershipPermission,
+  type MembershipRoleWithPermissions,
+  type MembershipWithRoles,
+} from "../../common/authz/membership-permissions";
+import {
   toPrismaJsonValue,
   toPrismaJsonValueOrUndefined,
 } from "../../common/prisma-json";
@@ -110,8 +115,24 @@ export type AlertJobPayload =
 
 const logger = createLogger({ name: "alerts" });
 const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
+const FILTERED_RECIPIENT_SAMPLE_LIMIT = 20;
 const normalizeMetricSlug = (value: unknown): string =>
   normalizeRealtimeSignalMetricSlug(value);
+const ALERTS_READ_PERMISSION = "alerts.read";
+
+interface InAppRecipientRoleRecord extends MembershipRoleWithPermissions {}
+
+interface InAppRecipientMembershipRecord
+  extends MembershipWithRoles<InAppRecipientRoleRecord> {
+  userId: string;
+}
+
+interface InAppRecipientResolution {
+  candidateUserIds: string[];
+  allowedUserIds: string[];
+  missingPermissionUserIds: string[];
+}
+
 const DEFAULT_CRAWL_QUALITY_RULES: Array<{
   key:
     | "preflight_failure_rate"
@@ -1297,6 +1318,7 @@ export class AlertsService {
 
   private async createInAppDeliveries(
     rule: {
+      id?: string;
       orgId: string;
       createdById?: string | null;
       metadata?: Prisma.JsonValue | null;
@@ -1307,12 +1329,20 @@ export class AlertsService {
     if (this.notificationThrottle.isMutedNow(muteUntilMs)) {
       return [] as { id: string; userId: string }[];
     }
-    const recipients = await this.resolveInAppRecipients(rule);
-    if (!recipients.length) {
+    const recipientResolution = await this.resolveInAppRecipients(rule);
+    this.logFilteredInAppRecipients({
+      orgId: rule.orgId,
+      ruleId: rule.id,
+      eventId,
+      candidateUserIds: recipientResolution.candidateUserIds,
+      allowedUserIds: recipientResolution.allowedUserIds,
+      missingPermissionUserIds: recipientResolution.missingPermissionUserIds,
+    });
+    if (!recipientResolution.allowedUserIds.length) {
       return [] as { id: string; userId: string }[];
     }
     const created = await Promise.all(
-      recipients.map(async (userId) => {
+      recipientResolution.allowedUserIds.map(async (userId) => {
         const delivery = await this.prisma.alertDelivery.create({
           data: {
             eventId,
@@ -1471,7 +1501,7 @@ export class AlertsService {
     orgId: string;
     createdById?: string | null;
     metadata?: Prisma.JsonValue | null;
-  }) {
+  }): Promise<InAppRecipientResolution> {
     const metadata = this.toMetadata(rule.metadata);
     const recipients = new Set<string>();
     const configuredUsers = this.toStringArray(metadata?.notifyUserIds);
@@ -1493,7 +1523,117 @@ export class AlertsService {
     if (!recipients.size && rule.createdById) {
       recipients.add(rule.createdById);
     }
-    return Array.from(recipients);
+    const candidateUserIds = Array.from(recipients);
+    const resolution = await this.filterRecipientsWithAlertReadAccess(
+      rule.orgId,
+      candidateUserIds,
+    );
+    return {
+      candidateUserIds,
+      ...resolution,
+    };
+  }
+
+  private async filterRecipientsWithAlertReadAccess(
+    orgId: string,
+    userIds: string[],
+  ): Promise<Pick<InAppRecipientResolution, "allowedUserIds" | "missingPermissionUserIds">> {
+    if (userIds.length === 0) {
+      return {
+        allowedUserIds: [],
+        missingPermissionUserIds: [],
+      };
+    }
+
+    const memberships = await this.prisma.membership.findMany({
+      where: {
+        orgId,
+        userId: { in: userIds },
+        isActive: true,
+        user: { isActive: true },
+        org: { isActive: true },
+      },
+      select: {
+        userId: true,
+        role: {
+          select: {
+            permissions: {
+              select: {
+                permission: {
+                  select: { name: true },
+                },
+              },
+            },
+          },
+        },
+        roles: {
+          select: {
+            role: {
+              select: {
+                permissions: {
+                  select: {
+                    permission: {
+                      select: { name: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const allowedRecipients = new Set<string>();
+    const missingPermissionRecipients = new Set<string>();
+
+    for (const membership of memberships) {
+      if (hasMembershipPermission(membership, ALERTS_READ_PERMISSION)) {
+        allowedRecipients.add(membership.userId);
+      } else {
+        missingPermissionRecipients.add(membership.userId);
+      }
+    }
+
+    return {
+      allowedUserIds: userIds.filter((userId) => allowedRecipients.has(userId)),
+      missingPermissionUserIds: userIds.filter((userId) =>
+        missingPermissionRecipients.has(userId),
+      ),
+    };
+  }
+
+  private logFilteredInAppRecipients(input: {
+    orgId: string;
+    ruleId?: string;
+    eventId: string;
+    candidateUserIds: string[];
+    allowedUserIds: string[];
+    missingPermissionUserIds: string[];
+  }) {
+    if (input.missingPermissionUserIds.length === 0) {
+      return;
+    }
+
+    const filteredUserIdSample = input.missingPermissionUserIds.slice(
+      0,
+      FILTERED_RECIPIENT_SAMPLE_LIMIT,
+    );
+    logger.warn(
+      {
+        orgId: input.orgId,
+        ruleId: input.ruleId,
+        eventId: input.eventId,
+        requiredPermission: ALERTS_READ_PERMISSION,
+        candidateRecipientCount: input.candidateUserIds.length,
+        allowedRecipientCount: input.allowedUserIds.length,
+        filteredRecipientCount: input.missingPermissionUserIds.length,
+        filteredUserIdSample,
+        hasMoreFilteredRecipients:
+          input.missingPermissionUserIds.length > filteredUserIdSample.length,
+      },
+      "Filtered in-app alert recipients without required permission",
+    );
   }
 
   private toStringArray(value: unknown): string[] {

@@ -17,7 +17,6 @@ import {
   Grid,
   Input,
   Select,
-  Space,
   Spin,
   Typography,
 } from "antd";
@@ -76,7 +75,7 @@ interface ArchiveDigestData {
   region: ArchiveRegion;
   totalCount: number;
   preparation: {
-    state: 'IDLE' | 'QUEUED' | 'PROCESSING' | 'PARTIAL' | 'READY' | 'FAILED';
+    state: "IDLE" | "QUEUED" | "PROCESSING" | "PARTIAL" | "READY" | "FAILED";
     readyCount: number;
     missingCount: number;
     updatedAt: string;
@@ -232,11 +231,11 @@ const WEIGHT_LABEL_KEY: Record<
 const SEARCH_DEBOUNCE_MS = 300;
 const MATCH_ORIGIN_BADGE_CLASS_NAME: Record<ArchiveMatchOrigin, string> = {
   LEXICAL:
-    'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200',
+    "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200",
   SEMANTIC:
-    'border-violet-500/20 bg-violet-500/10 text-violet-700 dark:border-violet-400/30 dark:bg-violet-400/15 dark:text-violet-200',
+    "border-violet-500/20 bg-violet-500/10 text-violet-700 dark:border-violet-400/30 dark:bg-violet-400/15 dark:text-violet-200",
   HYBRID:
-    'border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/15 dark:text-fuchsia-200',
+    "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/15 dark:text-fuchsia-200",
 };
 
 const weightToEnum = (value: number): ArchiveWeight | null => {
@@ -301,7 +300,10 @@ function renderHighlightedText(text: string, tokens: string[]) {
         const key = `${part}-${index}`;
         if (tokenSet.has(part.toLowerCase())) {
           return (
-            <mark key={key} className="rounded-sm bg-amber-200 px-0.5 text-amber-950 dark:bg-amber-400/30 dark:text-amber-100">
+            <mark
+              key={key}
+              className="rounded-sm bg-amber-200 px-0.5 text-amber-950 dark:bg-amber-400/30 dark:text-amber-100"
+            >
               {part}
             </mark>
           );
@@ -590,10 +592,7 @@ export function EventsArchiveContent() {
     () => buildCalendarCountMap(nextMonthCalendarData?.archiveCalendar),
     [nextMonthCalendarData?.archiveCalendar],
   );
-  const todayDateParam = useMemo(
-    () => dayjs.utc().format("YYYY-MM-DD"),
-    [],
-  );
+  const todayDateParam = useMemo(() => dayjs.utc().format("YYYY-MM-DD"), []);
   const hasPreparationPending = useMemo(
     () =>
       Boolean(
@@ -603,30 +602,27 @@ export function EventsArchiveContent() {
       ),
     [preparation],
   );
-  const canGoNext = useMemo(
-    () => {
-      if (hasPreparationPending) {
-        return nextDateParam <= todayDateParam;
-      }
-      return canNavigateToNextDay({
-        nextDateParam,
-        currentMonthParam: monthParam,
-        currentMonthCountByDate: calendarCountByDate,
-        nextMonthCountByDate: needsNextMonthCalendar
-          ? nextMonthCountByDate
-          : undefined,
-      });
-    },
-    [
-      calendarCountByDate,
-      hasPreparationPending,
-      monthParam,
-      needsNextMonthCalendar,
+  const canGoNext = useMemo(() => {
+    if (hasPreparationPending) {
+      return nextDateParam <= todayDateParam;
+    }
+    return canNavigateToNextDay({
       nextDateParam,
-      nextMonthCountByDate,
-      todayDateParam,
-    ],
-  );
+      currentMonthParam: monthParam,
+      currentMonthCountByDate: calendarCountByDate,
+      nextMonthCountByDate: needsNextMonthCalendar
+        ? nextMonthCountByDate
+        : undefined,
+    });
+  }, [
+    calendarCountByDate,
+    hasPreparationPending,
+    monthParam,
+    needsNextMonthCalendar,
+    nextDateParam,
+    nextMonthCountByDate,
+    todayDateParam,
+  ]);
 
   const highlightTokens = useMemo(
     () => tokenizeSearch(debouncedSearch),
@@ -650,7 +646,10 @@ export function EventsArchiveContent() {
   const visibleClassificationSignals = useMemo(
     () =>
       detailClassification
-        ? resolveArchiveClassificationSignals(detailClassification.ruleSignals, 8)
+        ? resolveArchiveClassificationSignals(
+            detailClassification.ruleSignals,
+            8,
+          )
         : [],
     [detailClassification],
   );
@@ -792,7 +791,11 @@ export function EventsArchiveContent() {
     }
   }, [digestAppCode, digestError, searchMode, t]);
   const preparationAlert = useMemo(() => {
-    if (!preparation || preparation.state === "READY" || preparation.state === "IDLE") {
+    if (
+      !preparation ||
+      preparation.state === "READY" ||
+      preparation.state === "IDLE"
+    ) {
       return null;
     }
 
@@ -1050,154 +1053,179 @@ export function EventsArchiveContent() {
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/75 px-5 py-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)] dark:border-slate-700/70 dark:bg-slate-900/45 sm:px-6">
+      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/75 px-5 py-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)] dark:border-slate-700/70 dark:bg-slate-900/45 sm:px-6 sm:py-6">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_30%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.18),transparent_30%)]" />
-        <div className="relative flex flex-col gap-3">
-          <Space direction="vertical" size={2}>
+        <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="flex max-w-3xl flex-col gap-2">
             <Typography.Title level={4} style={{ margin: 0 }}>
               {t("pages.eventsArchive.title", { defaultValue: "历史档案日报" })}
             </Typography.Title>
-            <Typography.Text type="secondary">
+            <Typography.Text type="secondary" className="max-w-2xl">
               {t("pages.eventsArchive.subtitle", {
-                defaultValue: "按日期回溯已处理新闻情报，并按预设领域编年归档。",
+                defaultValue:
+                  "按日期回溯已处理新闻情报，并按预设领域编年归档。",
               })}
             </Typography.Text>
-          </Space>
+          </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
+          <div className="flex flex-wrap items-center gap-2.5 xl:justify-end">
+            <span className="inline-flex items-center gap-2 rounded-2xl border border-slate-300/80 bg-white/72 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
+              <span className="h-2 w-2 rounded-full bg-sky-500 dark:bg-sky-300" />
               {currentRegionLabel}
             </span>
-            <span className="inline-flex items-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
+            <span className="inline-flex items-center rounded-2xl border border-slate-300/80 bg-white/72 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
               {archiveDateDisplay}
             </span>
-            <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 shadow-sm dark:border-amber-400/30 dark:bg-amber-400/15 dark:text-amber-200">
-              {t("pages.eventsArchive.dailyCount", {
-                defaultValue: "本日 {{count}} 条动态",
-                count: totalCount,
-              })}
-            </span>
+            {currentSearch ? (
+              <span className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3.5 py-2 text-xs font-medium text-cyan-800 shadow-sm dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-100">
+                <SearchOutlined className="text-[11px]" />
+                <span className="max-w-[16rem] truncate">{currentSearch}</span>
+              </span>
+            ) : null}
           </div>
         </div>
       </section>
 
       <Card className="content-card !overflow-hidden">
         <div className="flex flex-col gap-5">
-          <div className="overflow-x-auto">
-            <div className="inline-flex min-w-full rounded-2xl border border-slate-200/70 bg-white/40 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:border-slate-700/70 dark:bg-slate-950/35">
-              {regionOptions.map((region) => {
-                const active = region.value === currentRegion;
-                return (
-                  <button
-                    key={region.value}
-                    type="button"
-                    className={`rounded-xl px-4 py-2 text-sm font-medium whitespace-nowrap transition-[background-color,color,box-shadow] ${
-                      active
-                        ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950"
-                        : "text-slate-600 hover:bg-slate-900/5 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/8 dark:hover:text-white"
-                    }`}
-                    onClick={() => updateUrl({ region: region.value })}
-                  >
-                    {region.label}
-                  </button>
-                );
-              })}
+          <section className="archive-toolbar">
+            <div className="archive-toolbar__region-rail">
+              <div className="archive-toolbar__region-track">
+                {regionOptions.map((region) => {
+                  const active = region.value === currentRegion;
+                  return (
+                    <button
+                      key={region.value}
+                      type="button"
+                      className={`archive-region-tab ${
+                        active ? "archive-region-tab--active" : ""
+                      }`}
+                      onClick={() => updateUrl({ region: region.value })}
+                    >
+                      {region.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
-          <div className="rounded-[24px] border border-slate-200/70 bg-slate-50/70 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:border-slate-700/70 dark:bg-slate-900/50">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex flex-col gap-2">
-                <Space wrap size={[8, 12]}>
-                  <Space size={8}>
+            <div className="archive-toolbar__main">
+              <div className="archive-toolbar__panel archive-toolbar__panel--summary">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <Typography.Text className="archive-toolbar__eyebrow">
+                      {archiveDateDisplay}
+                    </Typography.Text>
+                    <Typography.Title
+                      level={3}
+                      className="archive-toolbar__metric"
+                    >
+                      {t("pages.eventsArchive.dailyCount", {
+                        defaultValue: "本日 {{count}} 条动态",
+                        count: totalCount,
+                      })}
+                    </Typography.Title>
+                  </div>
+
+                  <div className="archive-toolbar__date-controls">
                     <Button
-                      className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
                       icon={<LeftOutlined />}
                       onClick={() => updateUrl({ date: prevDateParam })}
                     />
-                    <DatePicker
-                      allowClear={false}
-                      value={selectedDate}
-                      format="YYYY/M/D"
-                      onChange={handleDateSelect}
-                      disabledDate={(value) =>
-                        value.utc().isAfter(dayjs.utc(), "day")
-                      }
-                      cellRender={(current, info) => {
-                        if (info.type !== "date") {
-                          return info.originNode;
+                    <div className="min-w-0 flex-1 sm:flex-none sm:min-w-[188px]">
+                      <DatePicker
+                        allowClear={false}
+                        value={selectedDate}
+                        format="YYYY/M/D"
+                        onChange={handleDateSelect}
+                        disabledDate={(value) =>
+                          value.utc().isAfter(dayjs.utc(), "day")
                         }
-                        const dateCell = dayjs(current as Dayjs).utc();
-                        if (!dateCell.isValid()) {
-                          return info.originNode;
-                        }
-                        const key = dateCell.format("YYYY-MM-DD");
-                        const count = calendarCountByDate.get(key) ?? 0;
-                        if (count <= 0) {
-                          return info.originNode;
-                        }
-                        return (
-                          <div className="relative h-full">
-                            {info.originNode}
-                            <span className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-500" />
-                          </div>
-                        );
-                      }}
-                    />
+                        cellRender={(current, info) => {
+                          if (info.type !== "date") {
+                            return info.originNode;
+                          }
+                          const dateCell = dayjs(current as Dayjs).utc();
+                          if (!dateCell.isValid()) {
+                            return info.originNode;
+                          }
+                          const key = dateCell.format("YYYY-MM-DD");
+                          const count = calendarCountByDate.get(key) ?? 0;
+                          if (count <= 0) {
+                            return info.originNode;
+                          }
+                          return (
+                            <div className="relative h-full">
+                              {info.originNode}
+                              <span className="absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-amber-500" />
+                            </div>
+                          );
+                        }}
+                      />
+                    </div>
                     <Button
-                      className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
                       icon={<RightOutlined />}
                       onClick={() => updateUrl({ date: nextDateParam })}
                       disabled={!canGoNext}
                     />
-                  </Space>
-                </Space>
-                <Typography.Text className="pl-1 text-sm font-medium text-slate-700 dark:text-slate-200">
-                  {t("pages.eventsArchive.dailyCount", {
-                    defaultValue: "本日 {{count}} 条动态",
-                    count: totalCount,
-                  })}
-                </Typography.Text>
-                {calendarCoverageHint ? (
-                  <Typography.Text type="secondary" className="pl-2 text-xs">
-                    {calendarCoverageHint}
+                  </div>
+
+                  <Typography.Text className="archive-toolbar__hint">
+                    {calendarCoverageHint ?? "\u00A0"}
                   </Typography.Text>
-                ) : null}
+                </div>
               </div>
 
-              <div className="flex flex-1 flex-col gap-3 xl:max-w-[720px]">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-end">
-                  <Select
-                    mode="multiple"
-                    size="small"
-                    value={currentWeights}
-                    options={weightOptions}
-                    onChange={handleWeightChange}
-                    style={{ minWidth: screens.md ? 220 : undefined, width: screens.md ? undefined : "100%" }}
-                    maxTagCount="responsive"
-                    placeholder={t(
-                      "pages.eventsArchive.filters.weightPlaceholder",
-                      { defaultValue: "所有权重" },
-                    )}
-                  />
-                  <div className="min-w-0 flex-1" style={{ width: screens.md ? 320 : "100%" }}>
-                    <div className="flex flex-col gap-2">
-                      <Input
-                        allowClear
-                        prefix={<SearchOutlined className="text-slate-400 dark:text-slate-500" />}
-                        value={searchInput}
-                        onChange={(event) => setSearchInput(event.target.value)}
-                        placeholder={t("pages.eventsArchive.searchPlaceholder", {
-                          defaultValue: "搜索国家、事件、关键词...",
-                        })}
+              <div className="archive-toolbar__panel archive-toolbar__panel--filters">
+                <div className="archive-toolbar__controls">
+                  <div className="archive-toolbar__control-row">
+                    <div className="w-full lg:max-w-[248px]">
+                      <Select
+                        mode="multiple"
+                        size="middle"
+                        value={currentWeights}
+                        options={weightOptions}
+                        onChange={handleWeightChange}
+                        className="w-full"
+                        maxTagCount="responsive"
+                        placeholder={t(
+                          "pages.eventsArchive.filters.weightPlaceholder",
+                          { defaultValue: "所有权重" },
+                        )}
                       />
+                    </div>
+                    <Button
+                      className="archive-toolbar__refresh-button"
+                      onClick={() => refetchDigest()}
+                      loading={digestLoading}
+                    >
+                      {t("common.refresh", { defaultValue: "Refresh" })}
+                    </Button>
+                  </div>
+
+                  <div className="archive-toolbar__search-stack">
+                    <Input
+                      allowClear
+                      prefix={
+                        <SearchOutlined className="text-slate-400 dark:text-slate-500" />
+                      }
+                      value={searchInput}
+                      onChange={(event) => setSearchInput(event.target.value)}
+                      placeholder={t("pages.eventsArchive.searchPlaceholder", {
+                        defaultValue: "搜索国家、事件、关键词...",
+                      })}
+                    />
+                    <div className="archive-toolbar__feedback-slot">
                       {searchFeedback && searchFeedbackVisualState ? (
                         <div
-                          className={`search-feedback-pill search-feedback-pill--${searchFeedbackVisualState}`}
+                          className={`search-feedback-pill archive-toolbar__feedback search-feedback-pill--${searchFeedbackVisualState}`}
                           role="status"
                           aria-live="polite"
                         >
-                          <span className="search-feedback-pill__icon" aria-hidden>
+                          <span
+                            className="search-feedback-pill__icon"
+                            aria-hidden
+                          >
                             {searchFeedbackVisualState === "loading" ||
                             searchFeedbackVisualState === "debouncing" ? (
                               <Spin size="small" />
@@ -1212,17 +1240,10 @@ export function EventsArchiveContent() {
                       ) : null}
                     </div>
                   </div>
-                  <Button
-                    className="border-slate-300/70 bg-white/75 text-slate-700 shadow-sm hover:border-slate-400/70 hover:text-slate-900 dark:border-slate-600/70 dark:bg-slate-950/55 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:text-white"
-                    onClick={() => refetchDigest()}
-                    loading={digestLoading}
-                  >
-                    {t("common.refresh", { defaultValue: "Refresh" })}
-                  </Button>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
           {digestError ? (
             <Alert
@@ -1304,17 +1325,17 @@ export function EventsArchiveContent() {
               ) : null}
             </Empty>
           ) : (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               {VERTICAL_SECTIONS.map((section) => (
                 <section key={section.key} className="flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/80" />
-                    <Typography.Text className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-2.5">
+                    <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-300/75 to-slate-200/40 dark:via-slate-600/75 dark:to-slate-700/30" />
+                    <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
                       {sectionLabels[section.key as keyof typeof sectionLabels]}
                     </Typography.Text>
-                    <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/80" />
+                    <span className="h-px flex-1 bg-gradient-to-l from-transparent via-slate-300/75 to-slate-200/40 dark:via-slate-600/75 dark:to-slate-700/30" />
                   </div>
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:gap-5">
                     {section.verticals.map((vertical) => {
                       const group = groupMap.get(vertical);
                       const items = group?.items ?? [];
@@ -1329,13 +1350,17 @@ export function EventsArchiveContent() {
                               padding: 0,
                             },
                           }}
-                          className="overflow-hidden border border-slate-200/80 bg-white/72 shadow-[0_24px_50px_-42px_rgba(15,23,42,0.55)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_24px_50px_-36px_rgba(15,23,42,0.28)] dark:border-slate-800/80 dark:bg-slate-950/58 dark:hover:border-slate-700/80"
+                          className="h-full overflow-hidden border border-slate-200/80 bg-white/72 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.22)] dark:border-slate-800/80 dark:bg-slate-950/58 dark:hover:border-slate-700/80"
                         >
-                          <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accentGlowClassName}`} />
+                          <div
+                            className={`h-1.5 w-full bg-gradient-to-r ${tone.accentGlowClassName}`}
+                          />
                           <div className="flex flex-col gap-4 p-4 sm:p-5">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0 flex items-start gap-3">
-                                <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ${tone.accentDotClassName}`} />
+                                <span
+                                  className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ${tone.accentDotClassName}`}
+                                />
                                 <div className="min-w-0">
                                   <span
                                     className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone.titlePillClassName}`}
@@ -1344,7 +1369,7 @@ export function EventsArchiveContent() {
                                   </span>
                                 </div>
                               </div>
-                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-600/80 dark:bg-slate-950/70 dark:text-slate-200">
+                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600/80 dark:bg-slate-950/70 dark:text-slate-200">
                                 {group?.totalCount ?? 0}
                               </span>
                             </div>
@@ -1358,7 +1383,7 @@ export function EventsArchiveContent() {
                                 </Typography.Text>
                               </div>
                             ) : (
-                              <div className="flex flex-col gap-3">
+                              <div className="flex flex-col gap-2.5">
                                 {items.map((item) => {
                                   const { country, summary } =
                                     resolveArchiveItemPreview(item, {
@@ -1395,7 +1420,7 @@ export function EventsArchiveContent() {
                                   return (
                                     <div
                                       key={item.processedArticleId}
-                                      className="group rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_12px_30px_-28px_rgba(15,23,42,0.75)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_40px_-30px_rgba(15,23,42,0.45)] dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
+                                      className="group rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.24)] dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
                                     >
                                       <div className="flex items-start gap-3">
                                         <span
@@ -1403,7 +1428,7 @@ export function EventsArchiveContent() {
                                         />
                                         <div className="min-w-0 flex-1">
                                           <Typography.Paragraph
-                                            className="!mb-2 text-sm leading-6 text-slate-700 dark:text-slate-300"
+                                            className="!mb-1.5 text-sm leading-6 text-slate-700 dark:text-slate-300"
                                             ellipsis={{
                                               rows: 2,
                                               expandable: false,
@@ -1463,7 +1488,7 @@ export function EventsArchiveContent() {
                                             ) : null}
                                           </div>
                                           {item.keywordHighlights.length > 0 ? (
-                                            <div className="mt-3 flex flex-wrap gap-2">
+                                            <div className="mt-2.5 flex flex-wrap gap-2">
                                               {item.keywordHighlights
                                                 .slice(0, 4)
                                                 .map((keyword) => (
@@ -1502,7 +1527,9 @@ export function EventsArchiveContent() {
                               <Button
                                 type="link"
                                 className="!px-0 !text-slate-600 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!text-white"
-                                loading={Boolean(loadingMoreByVertical[vertical])}
+                                loading={Boolean(
+                                  loadingMoreByVertical[vertical],
+                                )}
                                 onClick={() => handleLoadMore(vertical)}
                               >
                                 {t("pages.eventsArchive.loadMore", {
@@ -1580,7 +1607,8 @@ export function EventsArchiveContent() {
                 {!detailClassification ? (
                   <Typography.Text type="secondary">
                     {t("pages.eventsArchive.detail.classificationPending", {
-                      defaultValue: "分类准备中，后台完成归档后会显示判定依据。",
+                      defaultValue:
+                        "分类准备中，后台完成归档后会显示判定依据。",
                     })}
                   </Typography.Text>
                 ) : (
@@ -1618,10 +1646,13 @@ export function EventsArchiveContent() {
                     {detailClassification.isStale ? (
                       <div className="rounded-xl border border-amber-200/80 bg-amber-50/80 p-3 dark:border-amber-500/20 dark:bg-amber-500/10">
                         <Typography.Text className="block text-sm text-amber-800 dark:text-amber-100">
-                          {t("pages.eventsArchive.detail.classificationStaleHint", {
-                            defaultValue:
-                              "当前分类结果与现行模型或分类版本不一致，正在展示最近一次可用的归档判断。",
-                          })}
+                          {t(
+                            "pages.eventsArchive.detail.classificationStaleHint",
+                            {
+                              defaultValue:
+                                "当前分类结果与现行模型或分类版本不一致，正在展示最近一次可用的归档判断。",
+                            },
+                          )}
                         </Typography.Text>
                         {visibleClassificationStaleReasons.length > 0 ? (
                           <div className="mt-2 flex flex-wrap gap-2">
@@ -1707,23 +1738,32 @@ export function EventsArchiveContent() {
                               {[
                                 {
                                   key: "rule",
-                                  label: t("pages.eventsArchive.detail.ruleScore", {
-                                    defaultValue: "Rule",
-                                  }),
+                                  label: t(
+                                    "pages.eventsArchive.detail.ruleScore",
+                                    {
+                                      defaultValue: "Rule",
+                                    },
+                                  ),
                                   value: entry.ruleScore,
                                 },
                                 {
                                   key: "embedding",
-                                  label: t("pages.eventsArchive.detail.embeddingScore", {
-                                    defaultValue: "Embedding",
-                                  }),
+                                  label: t(
+                                    "pages.eventsArchive.detail.embeddingScore",
+                                    {
+                                      defaultValue: "Embedding",
+                                    },
+                                  ),
                                   value: entry.embeddingScore,
                                 },
                                 {
                                   key: "rerank",
-                                  label: t("pages.eventsArchive.detail.rerankScore", {
-                                    defaultValue: "Rerank",
-                                  }),
+                                  label: t(
+                                    "pages.eventsArchive.detail.rerankScore",
+                                    {
+                                      defaultValue: "Rerank",
+                                    },
+                                  ),
                                   value: entry.rerankScore,
                                 },
                                 {
@@ -1872,7 +1912,10 @@ export function EventsArchiveContent() {
                         key={article.processedArticleId}
                         className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
                       >
-                        <Typography.Text strong className="block text-slate-900 dark:text-slate-100">
+                        <Typography.Text
+                          strong
+                          className="block text-slate-900 dark:text-slate-100"
+                        >
                           {article.title || untitledArchiveLabel}
                         </Typography.Text>
                         {article.summary ? (
@@ -1916,5 +1959,5 @@ export function EventsArchiveContent() {
         )}
       </Drawer>
     </div>
-    );
+  );
 }

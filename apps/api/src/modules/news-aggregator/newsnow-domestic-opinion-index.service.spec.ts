@@ -1,5 +1,9 @@
 import { ProcessedItemModel } from '@modular/mongo';
 
+import {
+  NewsnowDataState,
+  NewsnowDomesticOpinionEmptyReason,
+} from './news-aggregator.types';
 import { NewsnowDomesticOpinionIndexService } from './newsnow-domestic-opinion-index.service';
 
 describe('NewsnowDomesticOpinionIndexService', () => {
@@ -198,6 +202,13 @@ describe('NewsnowDomesticOpinionIndexService', () => {
 
     expect(response).toEqual({
       generatedAt: expect.any(String),
+      dataState: NewsnowDataState.Empty,
+      emptyReason: NewsnowDomesticOpinionEmptyReason.NoRecentSnapshotsOrPipelineData,
+      diagnostics: {
+        requestedHours: 24,
+        snapshotCount: 0,
+        pipelineBucketCount: 0,
+      },
       latest: null,
       trend: [],
       topKeywords: [],
@@ -243,6 +254,13 @@ describe('NewsnowDomesticOpinionIndexService', () => {
 
     const response = await service.getDomesticOpinionIndex('org-1', { hours: 48 });
 
+    expect(response.dataState).toBe(NewsnowDataState.Ready);
+    expect(response.emptyReason).toBeNull();
+    expect(response.diagnostics).toEqual({
+      requestedHours: 48,
+      snapshotCount: 2,
+      pipelineBucketCount: 0,
+    });
     expect(response.latest).toMatchObject({
       bucketStart: '2026-03-13T10:00:00.000Z',
       indexValue: 0.64,

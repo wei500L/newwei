@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type {
   NewsnowHotSignal,
+  NewsnowHotSignalSeed,
   NewsnowHotSignalCluster,
   NewsnowHotSignalState,
 } from './newsnow-hottest-analysis.types';
@@ -157,6 +158,48 @@ export function buildSignalKey(input: {
   );
 }
 
+export function buildGlobalInputSignature(input: {
+  entries: Array<{
+    sourceId: string;
+    updatedTime: string | null;
+    failed: boolean;
+    items: Array<{
+      id: string;
+      title: string;
+      url: string;
+      heatText: string | null;
+      rank: number;
+    }>;
+  }>;
+}): string {
+  const payload = input.entries
+    .map((entry) => ({
+      sourceId: entry.sourceId.trim().toLowerCase(),
+      updatedTime: entry.updatedTime?.trim() ?? null,
+      failed: entry.failed,
+      items: entry.items
+        .map((item) => ({
+          id: item.id.trim(),
+          title: normalizeTitle(item.title),
+          url: item.url.trim().toLowerCase(),
+          heatText: item.heatText?.trim() ?? null,
+          rank: item.rank,
+        }))
+        .sort((left, right) => {
+          if (left.rank !== right.rank) {
+            return left.rank - right.rank;
+          }
+          if (left.id !== right.id) {
+            return left.id.localeCompare(right.id);
+          }
+          return left.url.localeCompare(right.url);
+        }),
+    }))
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+
+  return sha1Hex(JSON.stringify(payload));
+}
+
 export function computeFreshness(input: {
   nowMs: number;
   state: NewsnowHotSignalState | null;
@@ -195,11 +238,18 @@ export function computeFreshness(input: {
 }
 
 export function buildHeuristicClusters(
-  signals: NewsnowHotSignal[],
+  signals: Array<
+    Pick<
+      NewsnowHotSignal | NewsnowHotSignalSeed,
+      'signalKey' | 'sourceId' | 'title' | 'heatValue' | 'rank'
+    >
+  >,
 ): NewsnowHotSignalCluster[] {
   if (signals.length === 0) {
     return [];
   }
+
+  type ClusterableSignal = (typeof signals)[number];
 
   const parents = signals.map((_, index) => index);
   const find = (index: number): number => {
@@ -235,7 +285,7 @@ export function buildHeuristicClusters(
     }
   }
 
-  const groups = new Map<number, NewsnowHotSignal[]>();
+  const groups = new Map<number, ClusterableSignal[]>();
   signals.forEach((signal, index) => {
     const root = find(index);
     const current = groups.get(root) ?? [];
@@ -323,6 +373,18 @@ export function buildAnalysisCacheKey(orgId: string): string {
 
 export function buildAnalysisStaleCacheKey(orgId: string): string {
   return `newsnow:hottest:analysis:v1:${orgId}:stale`;
+}
+
+export function buildGlobalSignatureCacheKey(): string {
+  return 'newsnow:hottest:global:v1:signature';
+}
+
+export function buildGlobalSnapshotCacheKey(): string {
+  return 'newsnow:hottest:global:v1:fresh';
+}
+
+export function buildGlobalSnapshotStaleCacheKey(): string {
+  return 'newsnow:hottest:global:v1:stale';
 }
 
 export function buildBridgeExternalId(sourceId: string, url: string): string {

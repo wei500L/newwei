@@ -410,6 +410,7 @@ function buildLineOption(
   labels: string[],
   values: number[],
   color: string,
+  axisColor: string,
 ): EChartsOption {
   return {
     title: {
@@ -423,11 +424,11 @@ function buildLineOption(
     xAxis: {
       type: "category",
       data: labels,
-      axisLabel: { color: "#94a3b8", fontSize: 10 },
+      axisLabel: { color: axisColor, fontSize: 10 },
     },
     yAxis: {
       type: "value",
-      axisLabel: { color: "#94a3b8", fontSize: 10 },
+      axisLabel: { color: axisColor, fontSize: 10 },
       splitLine: { show: true },
     },
     series: [
@@ -448,6 +449,7 @@ function buildBrowserOption(
   labels: string[],
   data: { permanent: number[]; hot: number[]; cold: number[] },
   colors: { permanent: string; hot: string; cold: string },
+  axisColor: string,
 ): EChartsOption {
   return {
     title: {
@@ -462,11 +464,11 @@ function buildBrowserOption(
     xAxis: {
       type: "category",
       data: labels,
-      axisLabel: { color: "#94a3b8", fontSize: 10 },
+      axisLabel: { color: axisColor, fontSize: 10 },
     },
     yAxis: {
       type: "value",
-      axisLabel: { color: "#94a3b8", fontSize: 10 },
+      axisLabel: { color: axisColor, fontSize: 10 },
       splitLine: { show: true },
     },
     series: [
@@ -2042,8 +2044,8 @@ export function CrawlMonitorContent({
             maxHeight: 540,
             overflow: "auto",
             padding: 12,
-            background: "#0b1220",
-            color: "#e2e8f0",
+            background: chartTheme.colors.tooltipBg,
+            color: chartTheme.colors.tooltipText,
             borderRadius: 8,
           }}
         >
@@ -2954,6 +2956,7 @@ export function CrawlMonitorContent({
                           memorySeries.labels,
                           memorySeries.values,
                           chartTheme.colors.accent,
+                          chartTheme.colors.foreground,
                         )}
                         height={280}
                         theme={chartTheme.echartsTheme}
@@ -2979,6 +2982,7 @@ export function CrawlMonitorContent({
                           requestSeries.labels,
                           requestSeries.values,
                           chartTheme.colors.bullish,
+                          chartTheme.colors.foreground,
                         )}
                         height={280}
                         theme={chartTheme.echartsTheme}
@@ -3004,6 +3008,7 @@ export function CrawlMonitorContent({
                             hot: chartTheme.colors.accent,
                             cold: chartTheme.colors.secondary,
                           },
+                          chartTheme.colors.foreground,
                         )}
                         height={280}
                         theme={chartTheme.echartsTheme}
@@ -3102,7 +3107,7 @@ export function CrawlMonitorContent({
                     style={{
                       width: "100%",
                       height: "78vh",
-                      border: "1px solid #f0f0f0",
+                      border: `1px solid ${chartTheme.colors.border}`,
                       borderRadius: 8,
                     }}
                     referrerPolicy="no-referrer"
@@ -3140,8 +3145,8 @@ export function CrawlMonitorContent({
                       maxHeight: 520,
                       overflow: "auto",
                       padding: 12,
-                      background: "#0b1220",
-                      color: "#e2e8f0",
+                      background: chartTheme.colors.tooltipBg,
+                      color: chartTheme.colors.tooltipText,
                       borderRadius: 8,
                     }}
                   >

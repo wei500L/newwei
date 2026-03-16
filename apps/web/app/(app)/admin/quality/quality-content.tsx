@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, Checkbox, Col, Divider, Grid, Input, InputNumber, Popover, Progress, Row, Select, Space, Spin, Statistic, Switch, Table, Tabs, Tag, Tooltip, Typography, message } from "antd";
+import { Alert, Button, Card, Checkbox, Col, Divider, Grid, Input, InputNumber, Popover, Progress, Row, Select, Space, Spin, Statistic, Switch, Table, Tabs, Tag, Tooltip, Typography, message, theme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -312,6 +312,7 @@ function extractErrorSummary(error: unknown): string | null {
 
 export function QualityContent() {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const { data: session, status } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
   const canView = session?.permissions?.includes("settings.manage") ?? false;
@@ -1140,7 +1141,7 @@ export function QualityContent() {
           }
           size="small"
           showInfo={false}
-          strokeColor="#1677ff"
+          strokeColor={token.colorPrimary}
         />
       )
     }
@@ -1780,7 +1781,11 @@ export function QualityContent() {
                           <Statistic
                             title={t("quality.taskLogs.summary.totals.failed", { defaultValue: "Failed" })}
                             value={taskLogsSummary.totals.failed}
-                            valueStyle={taskLogsSummary.totals.failed > 0 ? { color: "#cf1322" } : undefined}
+                            valueStyle={
+                              taskLogsSummary.totals.failed > 0
+                                ? { color: token.colorError }
+                                : undefined
+                            }
                           />
                         </Col>
                       </Row>

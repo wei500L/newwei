@@ -18,7 +18,7 @@ import {
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
 } from '@modular/utils';
-import { Button, Checkbox, Drawer, Grid, List, Popover, Skeleton, Space, Tag, Typography } from 'antd';
+import { Button, Checkbox, Drawer, Grid, List, Popover, Space, Spin, Tag, Tooltip, Typography } from 'antd';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useSession } from 'next-auth/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,7 +29,7 @@ import { ChartEmptyState } from '@/components/chart-empty-state';
 import { RequestErrorBanner } from '@/components/request-error-banner';
 import { usePendingAction } from '@/hooks/use-pending-action';
 import { createApiClient } from '@/lib/api-client';
-import { formatDateTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
+import { formatDateTime, formatRelativeTime, formatUpdatedAt, resolveLocale } from '@/lib/i18n';
 import { captureClientError } from '@/lib/client-telemetry';
 import { classifyMapLoadError, type MapLoadErrorPresentation } from '@/lib/map/map-load-error';
 import { createDeckMapRuntime, extractMapBbox, setDeckOverlayProps } from '@/lib/map/map-runtime';
@@ -198,6 +198,8 @@ const warMapSanitizationWarningSignatures = new Map<string, string>();
 const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
   (layerId) => !WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId),
 );
+const STREAM_MESSAGE_STALE_MS = 45_000;
+const DATA_REFRESH_STALE_MS = 150_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -375,6 +377,23 @@ function toSingleSelectionKey(kind: 'event' | 'news', id: string): string {
   return `${kind}:${id}`;
 }
 
+function formatWarMapRelativeTimestamp(
+  value: string | number | Date | undefined,
+  locale: ReturnType<typeof resolveLocale>,
+  base: number,
+): string | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  return (
+    formatRelativeTime(value, locale, {
+      base,
+      style: 'short',
+    }) || formatUpdatedAt(value, locale)
+  );
+}
+
 export function WarMap({
   className,
   translateTarget,
@@ -444,7 +463,7 @@ export function WarMap({
     return () => observer.disconnect();
   }, []);
 
-  const enabled = Boolean(session?.accessToken && inView && hasRenderableMapContainer);
+  const dataEnabled = Boolean(session?.accessToken && inView);
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
@@ -513,7 +532,7 @@ export function WarMap({
   );
   const { eventsQuery, newsQuery, layersQuery, monitorsQuery } = useWarMapData({
     apiClient,
-    enabled,
+    enabled: dataEnabled,
     start: effectiveRange.start.toISOString(),
     end: effectiveRange.end.toISOString(),
     translateTarget,
@@ -1643,6 +1662,11 @@ export function WarMap({
     newsQuery.isLoading ||
     layersQuery.isLoading ||
     monitorsQuery.isLoading;
+  const anyFetching =
+    eventsQuery.isFetching ||
+    newsQuery.isFetching ||
+    layersQuery.isFetching ||
+    monitorsQuery.isFetching;
   const errors = [
     eventsQuery.error,
     newsQuery.error,
@@ -1651,7 +1675,6 @@ export function WarMap({
   ].filter(Boolean);
   const { pending: refreshingMapData, run: refreshMapData } = usePendingAction(
     async () => {
-      refreshRangeAnchor();
       await Promise.all([
         eventsQuery.refetch(),
         newsQuery.refetch(),
@@ -1672,16 +1695,6 @@ export function WarMap({
   const windowLabel = `${formatDateTime(effectiveRange.start, locale, {
     dateStyle: 'medium',
   })} - ${formatDateTime(effectiveRange.end, locale, { dateStyle: 'medium' })}`;
-
-  const eventsUpdatedAt = eventsQuery.data?.updatedAt
-    ? formatUpdatedAt(eventsQuery.data.updatedAt, locale)
-    : null;
-  const newsUpdatedAt = newsQuery.data?.updatedAt
-    ? formatUpdatedAt(newsQuery.data.updatedAt, locale)
-    : null;
-  const layersUpdatedAt = layersQuery.data?.updatedAt
-    ? formatUpdatedAt(layersQuery.data.updatedAt, locale)
-    : null;
   const flightsSummary =
     layersQuery.data?.layers.flights?.summary &&
     typeof layersQuery.data.layers.flights.summary === 'object' &&
@@ -1704,9 +1717,6 @@ export function WarMap({
           count: flightsRawCount,
         })
       : null;
-  const monitorsUpdatedAt = monitorsQuery.dataUpdatedAt
-    ? formatUpdatedAt(monitorsQuery.dataUpdatedAt, locale)
-    : null;
   const visibleLayerCount =
     DISPLAYABLE_WAR_MAP_LAYER_IDS.filter((layerId) => layerVisibility[layerId]).length +
     (layerVisibility.monitors ? 1 : 0);
@@ -1714,32 +1724,184 @@ export function WarMap({
     {
       key: 'signals',
       label: t('dashboard.charts.warMap.stats.signals', { defaultValue: 'Signals' }),
-      loading: eventsQuery.isLoading,
+      fetching: eventsQuery.isFetching,
       error: Boolean(eventsQuery.error),
       ready: Boolean(eventsQuery.data),
+      errorMessage: getErrorMessage(eventsQuery.error),
+      dataUpdatedAt: eventsQuery.dataUpdatedAt || undefined,
+      sourceUpdatedAt: eventsQuery.data?.updatedAt,
+      sourceUpdatedLabel: t('dashboard.charts.warMap.stats.signalsUpdated', {
+        defaultValue: 'Signals updated',
+      }),
     },
     {
       key: 'news',
       label: t('dashboard.charts.warMap.stats.news', { defaultValue: 'News' }),
-      loading: newsQuery.isLoading,
+      fetching: newsQuery.isFetching,
       error: Boolean(newsQuery.error),
       ready: Boolean(newsQuery.data),
+      errorMessage: getErrorMessage(newsQuery.error),
+      dataUpdatedAt: newsQuery.dataUpdatedAt || undefined,
+      sourceUpdatedAt: newsQuery.data?.updatedAt,
+      sourceUpdatedLabel: t('dashboard.charts.warMap.stats.newsUpdated', {
+        defaultValue: 'News updated',
+      }),
     },
     {
       key: 'layers',
       label: t('dashboard.charts.warMap.layers', { defaultValue: 'Layers' }),
-      loading: layersQuery.isLoading,
+      fetching: layersQuery.isFetching,
       error: Boolean(layersQuery.error),
       ready: Boolean(layersQuery.data),
+      errorMessage: getErrorMessage(layersQuery.error),
+      dataUpdatedAt: layersQuery.dataUpdatedAt || undefined,
+      sourceUpdatedAt: layersQuery.data?.updatedAt,
+      sourceUpdatedLabel: t('dashboard.charts.warMap.stats.layersUpdated', {
+        defaultValue: 'Layers updated',
+      }),
     },
     {
       key: 'monitors',
       label: t('dashboard.charts.warMap.stats.monitors', { defaultValue: 'Monitors' }),
-      loading: monitorsQuery.isLoading,
+      fetching: monitorsQuery.isFetching,
       error: Boolean(monitorsQuery.error),
       ready: Boolean(monitorsQuery.data),
+      errorMessage: getErrorMessage(monitorsQuery.error),
+      dataUpdatedAt: monitorsQuery.dataUpdatedAt || undefined,
+      sourceUpdatedAt: monitorsQuery.dataUpdatedAt || undefined,
+      sourceUpdatedLabel: t('dashboard.charts.warMap.stats.monitorsUpdated', {
+        defaultValue: 'Monitors updated',
+      }),
     },
   ] as const;
+  const showBootOverlay = !mapLoadError && (!mapReady || (anyLoading && !hasData));
+  const bootOverlayLabel = !mapReady
+    ? t('dashboard.charts.warMap.status.loadingMap', {
+        defaultValue: 'Loading map base layer…',
+      })
+    : t('dashboard.charts.warMap.status.loadingData', {
+        defaultValue: 'Loading map data…',
+      });
+  const nowMs = Date.now();
+  const latestQueryUpdatedAt = chainStatuses.reduce<number | null>((latest, status) => {
+    if (!status.dataUpdatedAt) {
+      return latest;
+    }
+    if (latest === null || status.dataUpdatedAt > latest) {
+      return status.dataUpdatedAt;
+    }
+    return latest;
+  }, null);
+  const latestQueryUpdatedRelative = latestQueryUpdatedAt
+    ? formatWarMapRelativeTimestamp(latestQueryUpdatedAt, locale, nowMs)
+    : null;
+  const latestQueryUpdatedExact = latestQueryUpdatedAt
+    ? formatUpdatedAt(latestQueryUpdatedAt, locale)
+    : null;
+  const streamMessageRelative = resolvedStreamState.lastMessageAt
+    ? formatWarMapRelativeTimestamp(resolvedStreamState.lastMessageAt, locale, nowMs)
+    : null;
+  const streamMessageExact = resolvedStreamState.lastMessageAt
+    ? formatUpdatedAt(resolvedStreamState.lastMessageAt, locale)
+    : null;
+  const streamLagging =
+    resolvedStreamState.status === 'live' &&
+    (!resolvedStreamState.lastMessageAt ||
+      nowMs - resolvedStreamState.lastMessageAt > STREAM_MESSAGE_STALE_MS);
+  const streamStatusColor =
+    resolvedStreamState.status !== 'live' ? 'red' : streamLagging ? 'gold' : 'green';
+  const streamStatusLabel =
+    resolvedStreamState.status !== 'live'
+      ? t('dashboard.stream.status.offline', { defaultValue: 'Offline' })
+      : streamLagging
+        ? t('dashboard.charts.warMap.status.lagging', { defaultValue: 'Lagging' })
+        : t('dashboard.stream.status.live', { defaultValue: 'Live' });
+  const refreshingChainCount = chainStatuses.filter((status) => status.fetching).length;
+  const hasErroredChain = chainStatuses.some((status) => status.error);
+  const dataStatusColor = !latestQueryUpdatedAt
+    ? 'default'
+    : anyFetching
+      ? 'processing'
+      : hasErroredChain
+        ? 'gold'
+        : nowMs - latestQueryUpdatedAt > DATA_REFRESH_STALE_MS
+          ? 'gold'
+          : 'blue';
+  const dataStatusLabel = !latestQueryUpdatedAt
+    ? t('dashboard.charts.warMap.status.waitingData', {
+        defaultValue: 'Waiting for first data',
+      })
+    : anyFetching
+      ? t('dashboard.charts.warMap.status.refreshingChains', {
+          defaultValue: 'Refreshing {{count}} chains',
+          count: Math.max(refreshingChainCount, 1),
+        })
+      : `${t('dashboard.charts.warMap.stats.dataUpdated', {
+          defaultValue: 'Data updated',
+        })}: ${latestQueryUpdatedRelative ?? latestQueryUpdatedExact}`;
+  const detailedChainStatuses = chainStatuses.map((status) => {
+    const isStale =
+      Boolean(status.dataUpdatedAt) &&
+      !status.fetching &&
+      nowMs - (status.dataUpdatedAt ?? 0) > DATA_REFRESH_STALE_MS;
+    const stateLabel = status.error
+      ? t('dashboard.charts.warMap.status.error', { defaultValue: 'Error' })
+      : status.fetching
+        ? t('dashboard.charts.warMap.status.refreshing', {
+            defaultValue: 'Refreshing',
+          })
+        : !status.ready
+          ? t('dashboard.charts.warMap.status.waiting', {
+              defaultValue: 'Waiting',
+            })
+          : isStale
+            ? t('dashboard.charts.warMap.status.stale', {
+                defaultValue: 'Stale',
+              })
+            : t('dashboard.charts.warMap.status.updated', {
+                defaultValue: 'Updated',
+              });
+    const relativeUpdated = status.dataUpdatedAt
+      ? formatWarMapRelativeTimestamp(status.dataUpdatedAt, locale, nowMs)
+      : null;
+    const exactUpdated = status.dataUpdatedAt
+      ? formatUpdatedAt(status.dataUpdatedAt, locale)
+      : null;
+    const sourceUpdated = status.sourceUpdatedAt
+      ? formatUpdatedAt(status.sourceUpdatedAt, locale)
+      : null;
+    const color = status.error
+      ? 'red'
+      : status.fetching
+        ? 'processing'
+        : !status.ready
+          ? 'default'
+          : isStale
+            ? 'gold'
+            : 'green';
+    const text =
+      status.ready && relativeUpdated && !status.fetching && !status.error
+        ? `${status.label}: ${relativeUpdated}`
+        : `${status.label}: ${stateLabel}`;
+    const tooltipLines = [
+      `${status.label}: ${stateLabel}`,
+      exactUpdated
+        ? `${t('dashboard.charts.warMap.stats.dataUpdated', {
+            defaultValue: 'Data updated',
+          })}: ${exactUpdated}`
+        : null,
+      sourceUpdated
+        ? `${status.sourceUpdatedLabel}: ${sourceUpdated}`
+        : null,
+      status.errorMessage ?? null,
+    ].filter(Boolean);
+    return {
+      ...status,
+      color,
+      text,
+      tooltip: tooltipLines.join('\n'),
+    };
+  });
 
   const layerSelector = (
     <div style={{ minWidth: 260, maxHeight: 360, overflowY: 'auto' }}>
@@ -2083,8 +2245,15 @@ export function WarMap({
   if (!inView) {
     return (
       <div ref={wrapperRef} className={containerClassName}>
-        <div className="h-full flex items-center">
-          <Skeleton active paragraph={{ rows: 6 }} />
+        <div className="flex h-full items-center justify-center">
+          <Space size={8}>
+            <Spin size="small" />
+            <Typography.Text type="secondary">
+              {t('dashboard.charts.warMap.status.preparing', {
+                defaultValue: 'Preparing map…',
+              })}
+            </Typography.Text>
+          </Space>
         </div>
       </div>
     );
@@ -2107,14 +2276,46 @@ export function WarMap({
 
       <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
         <Space size={6} wrap>
-          <Tag
-            color={resolvedStreamState.status === 'live' ? 'green' : 'red'}
-            className="text-xs"
+          <Tooltip
+            title={
+              streamMessageExact
+                ? `${t('dashboard.charts.warMap.stats.streamMessage', {
+                    defaultValue: 'Stream message',
+                  })}: ${streamMessageExact}`
+                : resolvedStreamState.error ?? undefined
+            }
           >
-            {resolvedStreamState.status === 'live'
-              ? t('dashboard.stream.status.live', { defaultValue: 'Live' })
-              : t('dashboard.stream.status.offline', { defaultValue: 'Offline' })}
-          </Tag>
+            <Tag color={streamStatusColor} className="text-xs">
+              {streamStatusLabel}
+            </Tag>
+          </Tooltip>
+          {streamMessageRelative ? (
+            <Tooltip
+              title={`${t('dashboard.charts.warMap.stats.streamMessage', {
+                defaultValue: 'Stream message',
+              })}: ${streamMessageExact}`}
+            >
+              <Tag color={streamLagging ? 'gold' : 'default'} className="text-xs">
+                {t('dashboard.charts.warMap.stats.streamMessage', {
+                  defaultValue: 'Stream message',
+                })}
+                : {streamMessageRelative}
+              </Tag>
+            </Tooltip>
+          ) : null}
+          <Tooltip
+            title={
+              latestQueryUpdatedExact
+                ? `${t('dashboard.charts.warMap.stats.dataUpdated', {
+                    defaultValue: 'Data updated',
+                  })}: ${latestQueryUpdatedExact}`
+                : undefined
+            }
+          >
+            <Tag color={dataStatusColor} className="text-xs">
+              {dataStatusLabel}
+            </Tag>
+          </Tooltip>
           <Tag color="default" className="text-xs">
             {t('dashboard.charts.warMap.stats.window', { defaultValue: 'Window' })}: {windowLabel}
           </Tag>
@@ -2154,53 +2355,14 @@ export function WarMap({
               {flightsRawLabel ? ` ${flightsRawLabel}` : ''}
             </Tag>
           ) : null}
-          {eventsUpdatedAt ? (
-            <Tag color="default" className="text-xs">
-              {t('dashboard.charts.warMap.stats.signalsUpdated', {
-                defaultValue: 'Signals updated',
-              })}
-              : {eventsUpdatedAt}
-            </Tag>
-          ) : null}
-          {newsUpdatedAt ? (
-            <Tag color="default" className="text-xs">
-              {t('dashboard.charts.warMap.stats.newsUpdated', {
-                defaultValue: 'News updated',
-              })}
-              : {newsUpdatedAt}
-            </Tag>
-          ) : null}
-          {layersUpdatedAt ? (
-            <Tag color="default" className="text-xs">
-              {t('dashboard.charts.warMap.stats.layersUpdated', {
-                defaultValue: 'Layers updated',
-              })}
-              : {layersUpdatedAt}
-            </Tag>
-          ) : null}
-          {monitorsUpdatedAt ? (
-            <Tag color="default" className="text-xs">
-              {t('dashboard.charts.warMap.stats.monitorsUpdated', {
-                defaultValue: 'Monitors updated',
-              })}
-              : {monitorsUpdatedAt}
-            </Tag>
-          ) : null}
         </Space>
         <Space size={6} wrap>
-          {chainStatuses.map((status) => (
-            <Tag
-              key={status.key}
-              color={status.error ? 'red' : status.loading ? 'processing' : status.ready ? 'green' : 'default'}
-              className="text-xs"
-            >
-              {status.label}:{' '}
-              {status.error
-                ? t('dashboard.charts.warMap.status.error', { defaultValue: 'Error' })
-                : status.loading
-                  ? t('common.loading', { defaultValue: 'Loading' })
-                  : t('dashboard.charts.warMap.status.ready', { defaultValue: 'Ready' })}
-            </Tag>
+          {detailedChainStatuses.map((status) => (
+            <Tooltip key={status.key} title={status.tooltip}>
+              <Tag color={status.color} className="text-xs">
+                {status.text}
+              </Tag>
+            </Tooltip>
           ))}
         </Space>
         <Space size={6} wrap>
@@ -2306,9 +2468,14 @@ export function WarMap({
         </Drawer>
       ) : null}
 
-      {anyLoading && !hasData ? (
+      {showBootOverlay ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Skeleton active paragraph={{ rows: 6 }} />
+          <div className="rounded-xl border border-slate-200/80 bg-white/92 px-4 py-3 shadow-lg backdrop-blur">
+            <Space size={10}>
+              <Spin size="small" />
+              <Typography.Text>{bootOverlayLabel}</Typography.Text>
+            </Space>
+          </div>
         </div>
       ) : null}
 
@@ -2353,12 +2520,6 @@ export function WarMap({
             actionLabel={t('common.retry', { defaultValue: 'Retry' })}
             onAction={retryMapLoad}
           />
-        </div>
-      ) : null}
-
-      {!mapLoadError && !mapReady ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <Skeleton active paragraph={{ rows: 4 }} />
         </div>
       ) : null}
     </div>

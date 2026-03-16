@@ -202,10 +202,33 @@ describe('war-map page wiring', () => {
     expect(source).toContain('onClick={() => resetLayers()}');
     expect(source).toContain('const internalStreamState = useDashboardStream(');
     expect(source).toContain('const resolvedStreamState = streamState ?? internalStreamState;');
+    expect(source).toContain('const dataEnabled = Boolean(session?.accessToken && inView);');
+    expect(source).toContain('enabled: dataEnabled,');
     expect(source).toContain('WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId)');
     expect(source).not.toContain('useDashboardRangeStore');
     expect(source).toContain('const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now())');
     expect(source).toContain('onEffectiveRangeChange');
+  });
+
+  it('keeps loading non-blocking and refreshes only the current query window', () => {
+    const source = read('app/(app)/dashboard/charts/war-map/war-map.tsx');
+    const refreshBlock =
+      source.split('const { pending: refreshingMapData, run: refreshMapData } = usePendingAction(')[1]
+        ?.split(');')[0] ?? '';
+
+    expect(source).toContain("import { Button, Checkbox, Drawer, Grid, List, Popover, Space, Spin, Tag, Tooltip, Typography } from 'antd';");
+    expect(source).not.toContain('Skeleton');
+    expect(source).toContain('formatRelativeTime');
+    expect(source).toContain('const showBootOverlay = !mapLoadError && (!mapReady || (anyLoading && !hasData));');
+    expect(source).toContain("defaultValue: 'Loading map base layer…'");
+    expect(source).toContain("defaultValue: 'Refreshing {{count}} chains'");
+    expect(source).toContain("defaultValue: 'Stream message'");
+    expect(source).toContain("defaultValue: 'Data updated'");
+    expect(refreshBlock).not.toContain('refreshRangeAnchor();');
+    expect(refreshBlock).toContain('eventsQuery.refetch()');
+    expect(refreshBlock).toContain('newsQuery.refetch()');
+    expect(refreshBlock).toContain('layersQuery.refetch()');
+    expect(refreshBlock).toContain('monitorsQuery.refetch()');
   });
 
   it('shares a single dashboard stream connection with the embedded map', () => {

@@ -39,6 +39,7 @@ import {
   useScheduledAction,
   useTimedValueDeduper,
 } from "@/lib/use-realtime-helpers";
+import { useSession } from "next-auth/react";
 
 import {
   useNotificationStream,
@@ -67,6 +68,9 @@ export function NotificationCenter() {
   const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const router = useRouter();
+  const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canReadAlerts = permissions.includes("alerts.read");
   const { data, loading, refetch } = useNotificationsQuery({
     variables: { limit: MAX_ITEMS },
   });
@@ -265,7 +269,9 @@ export function NotificationCenter() {
               locale={{ emptyText: t("notifications.empty") }}
               renderItem={(item) => {
                 const isUnread = !item.readAt;
-                const action = resolveNotificationLink(item.data ?? null, t);
+                const action = resolveNotificationLink(item.data ?? null, t, {
+                  canReadAlerts,
+                });
                 const presentation = formatNotificationPresentation(
                   item,
                   locale,
@@ -355,6 +361,7 @@ export function NotificationCenter() {
     refetch,
     router,
     t,
+    canReadAlerts,
     unread,
   ]);
 

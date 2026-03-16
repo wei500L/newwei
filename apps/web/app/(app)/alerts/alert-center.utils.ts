@@ -1,10 +1,10 @@
-import dayjs from '@/lib/dayjs';
-import type { AlertEventsQuery } from '@/graphql/generated';
-import type { CsvCellValue } from '@/lib/data-export';
+import dayjs from "@/lib/dayjs";
+import type { AlertEventsQuery } from "@/graphql/generated";
+import type { CsvCellValue } from "@/lib/data-export";
 
-export type AlertEventItem = AlertEventsQuery['alertEvents'][number];
+export type AlertEventItem = AlertEventsQuery["alertEvents"][number];
 
-export type AlertDatePreset = 'today' | '7d' | '30d' | 'custom';
+export type AlertDatePreset = "today" | "7d" | "30d" | "custom";
 
 export interface AlertFilterState {
   severities: string[];
@@ -38,7 +38,7 @@ export interface AlertTrendPoint {
 
 export interface SimilarAlertItem {
   event: AlertEventItem;
-  reason: 'same_rule' | 'same_metric';
+  reason: "same_rule" | "same_metric";
 }
 
 export interface AlertRuleTrendPoint {
@@ -66,7 +66,32 @@ export interface ResolveSelectedEventIdOptions {
   filteredEvents: AlertEventItem[];
 }
 
-const PENDING_STATUSES = new Set(['pending', 'delivered', 'failed']);
+export type AlertCenterSessionStatus =
+  | "authenticated"
+  | "loading"
+  | "unauthenticated";
+
+export interface AlertCenterAccessState {
+  authenticated: boolean;
+  canReadAlerts: boolean;
+  shouldQueryEvents: boolean;
+}
+
+const PENDING_STATUSES = new Set(["pending", "delivered", "failed"]);
+
+export function resolveAlertCenterAccess(
+  sessionStatus: AlertCenterSessionStatus,
+  permissions: readonly string[],
+): AlertCenterAccessState {
+  const authenticated = sessionStatus === "authenticated";
+  const canReadAlerts = permissions.includes("alerts.read");
+
+  return {
+    authenticated,
+    canReadAlerts,
+    shouldQueryEvents: authenticated && canReadAlerts,
+  };
+}
 
 export const getEventTimestamp = (event: AlertEventItem): number => {
   const timestamp = new Date(event.triggeredAt).getTime();
@@ -75,38 +100,38 @@ export const getEventTimestamp = (event: AlertEventItem): number => {
 
 export function resolveFilterTimeWindow(
   filterState: AlertFilterState,
-  now: Date | number = Date.now()
+  now: Date | number = Date.now(),
 ): AlertTimeWindow {
   const nowTime = dayjs(now);
-  const endMs = nowTime.endOf('day').valueOf();
+  const endMs = nowTime.endOf("day").valueOf();
 
-  if (filterState.datePreset === 'today') {
+  if (filterState.datePreset === "today") {
     return {
-      startMs: nowTime.startOf('day').valueOf(),
-      endMs
+      startMs: nowTime.startOf("day").valueOf(),
+      endMs,
     };
   }
 
-  if (filterState.datePreset === '7d') {
+  if (filterState.datePreset === "7d") {
     return {
-      startMs: nowTime.subtract(6, 'day').startOf('day').valueOf(),
-      endMs
+      startMs: nowTime.subtract(6, "day").startOf("day").valueOf(),
+      endMs,
     };
   }
 
-  if (filterState.datePreset === '30d') {
+  if (filterState.datePreset === "30d") {
     return {
-      startMs: nowTime.subtract(29, 'day').startOf('day').valueOf(),
-      endMs
+      startMs: nowTime.subtract(29, "day").startOf("day").valueOf(),
+      endMs,
     };
   }
 
-  if (filterState.datePreset === 'custom' && filterState.customRangeMs) {
+  if (filterState.datePreset === "custom" && filterState.customRangeMs) {
     const [start, end] = filterState.customRangeMs;
-    if (typeof start === 'number' && typeof end === 'number') {
+    if (typeof start === "number" && typeof end === "number") {
       return {
-        startMs: dayjs(start).startOf('day').valueOf(),
-        endMs: dayjs(end).endOf('day').valueOf()
+        startMs: dayjs(start).startOf("day").valueOf(),
+        endMs: dayjs(end).endOf("day").valueOf(),
       };
     }
   }
@@ -117,27 +142,34 @@ export function resolveFilterTimeWindow(
 export function filterAlertEvents(
   events: AlertEventItem[],
   filterState: AlertFilterState,
-  window: AlertTimeWindow
+  window: AlertTimeWindow,
 ): AlertEventItem[] {
   const keyword = filterState.ruleKeyword.trim().toLowerCase();
   return events.filter((event) => {
-    if (filterState.severities.length > 0 && !filterState.severities.includes(event.severity)) {
+    if (
+      filterState.severities.length > 0 &&
+      !filterState.severities.includes(event.severity)
+    ) {
       return false;
     }
 
-    if (filterState.statuses.length > 0 && !filterState.statuses.includes(event.status)) {
+    if (
+      filterState.statuses.length > 0 &&
+      !filterState.statuses.includes(event.status)
+    ) {
       return false;
     }
 
     if (
       filterState.providers.length > 0 &&
-      (!event.metricProvider || !filterState.providers.includes(event.metricProvider))
+      (!event.metricProvider ||
+        !filterState.providers.includes(event.metricProvider))
     ) {
       return false;
     }
 
     if (keyword) {
-      const ruleName = (event.ruleName ?? '').toLowerCase();
+      const ruleName = (event.ruleName ?? "").toLowerCase();
       if (!ruleName.includes(keyword)) {
         return false;
       }
@@ -157,9 +189,13 @@ export function filterAlertEvents(
 
 export function buildAlertStats(events: AlertEventItem[]): AlertStats {
   const total = events.length;
-  const confirmed = events.filter((event) => event.status === 'confirmed').length;
-  const ignored = events.filter((event) => event.status === 'ignored').length;
-  const pending = events.filter((event) => PENDING_STATUSES.has(event.status)).length;
+  const confirmed = events.filter(
+    (event) => event.status === "confirmed",
+  ).length;
+  const ignored = events.filter((event) => event.status === "ignored").length;
+  const pending = events.filter((event) =>
+    PENDING_STATUSES.has(event.status),
+  ).length;
   const reviewed = confirmed + ignored;
 
   return {
@@ -167,27 +203,29 @@ export function buildAlertStats(events: AlertEventItem[]): AlertStats {
     pending,
     confirmed,
     ignored,
-    falsePositiveRate: reviewed > 0 ? ignored / reviewed : null
+    falsePositiveRate: reviewed > 0 ? ignored / reviewed : null,
   };
 }
 
 export function buildAlertTrend(
   events: AlertEventItem[],
-  window: AlertTimeWindow
+  window: AlertTimeWindow,
 ): AlertTrendPoint[] {
   if (events.length === 0) {
     return [];
   }
 
-  const timestampList = events.map((event) => getEventTimestamp(event)).filter((value) => value > 0);
+  const timestampList = events
+    .map((event) => getEventTimestamp(event))
+    .filter((value) => value > 0);
   if (timestampList.length === 0) {
     return [];
   }
 
   const minTs = window.startMs ?? Math.min(...timestampList);
   const maxTs = window.endMs ?? Math.max(...timestampList);
-  const startDay = dayjs(minTs).startOf('day');
-  const endDay = dayjs(maxTs).startOf('day');
+  const startDay = dayjs(minTs).startOf("day");
+  const endDay = dayjs(maxTs).startOf("day");
   if (endDay.valueOf() < startDay.valueOf()) {
     return [];
   }
@@ -195,15 +233,15 @@ export function buildAlertTrend(
   const bucketByDate = new Map<string, AlertTrendPoint>();
   let cursor = startDay;
   while (cursor.valueOf() <= endDay.valueOf()) {
-    const date = cursor.format('YYYY-MM-DD');
+    const date = cursor.format("YYYY-MM-DD");
     bucketByDate.set(date, {
       date,
       low: 0,
       medium: 0,
       high: 0,
-      total: 0
+      total: 0,
     });
-    cursor = cursor.add(1, 'day');
+    cursor = cursor.add(1, "day");
   }
 
   for (const event of events) {
@@ -218,16 +256,16 @@ export function buildAlertTrend(
       continue;
     }
 
-    const date = dayjs(timestamp).format('YYYY-MM-DD');
+    const date = dayjs(timestamp).format("YYYY-MM-DD");
     const bucket = bucketByDate.get(date);
     if (!bucket) {
       continue;
     }
-    if (event.severity === 'low') {
+    if (event.severity === "low") {
       bucket.low += 1;
-    } else if (event.severity === 'medium') {
+    } else if (event.severity === "medium") {
       bucket.medium += 1;
-    } else if (event.severity === 'high') {
+    } else if (event.severity === "high") {
       bucket.high += 1;
     }
     bucket.total += 1;
@@ -240,7 +278,7 @@ export function resolveSelectedEventId({
   eventParam,
   selectedEventId,
   sortedEvents,
-  filteredEvents
+  filteredEvents,
 }: ResolveSelectedEventIdOptions): string | null {
   if (sortedEvents.length === 0) {
     return null;
@@ -262,20 +300,25 @@ export function resolveSelectedEventId({
 export function buildSimilarAlerts(
   selectedEvent: AlertEventItem | null,
   events: AlertEventItem[],
-  limit = 5
+  limit = 5,
 ): SimilarAlertItem[] {
   if (!selectedEvent) {
     return [];
   }
 
   const selectedMetricSlug =
-    typeof selectedEvent.metricSlug === 'string' ? selectedEvent.metricSlug.trim() : '';
+    typeof selectedEvent.metricSlug === "string"
+      ? selectedEvent.metricSlug.trim()
+      : "";
   const candidates = events
     .filter((event) => event.id !== selectedEvent.id)
     .map((event) => {
-      const eventMetricSlug = typeof event.metricSlug === 'string' ? event.metricSlug.trim() : '';
+      const eventMetricSlug =
+        typeof event.metricSlug === "string" ? event.metricSlug.trim() : "";
       const sameRule =
-        Boolean(selectedEvent.ruleId) && Boolean(event.ruleId) && selectedEvent.ruleId === event.ruleId;
+        Boolean(selectedEvent.ruleId) &&
+        Boolean(event.ruleId) &&
+        selectedEvent.ruleId === event.ruleId;
       const sameMetric =
         Boolean(selectedEvent.metricProvider) &&
         Boolean(event.metricProvider) &&
@@ -283,7 +326,9 @@ export function buildSimilarAlerts(
         selectedMetricSlug.length > 0 &&
         eventMetricSlug.length > 0 &&
         selectedMetricSlug === eventMetricSlug;
-      const timeDistance = Math.abs(getEventTimestamp(event) - getEventTimestamp(selectedEvent));
+      const timeDistance = Math.abs(
+        getEventTimestamp(event) - getEventTimestamp(selectedEvent),
+      );
       return { event, sameRule, sameMetric, timeDistance };
     })
     .filter((entry) => entry.sameRule || entry.sameMetric)
@@ -300,26 +345,33 @@ export function buildSimilarAlerts(
 
   return candidates.map((entry) => ({
     event: entry.event,
-    reason: entry.sameRule ? 'same_rule' : 'same_metric'
+    reason: entry.sameRule ? "same_rule" : "same_metric",
   }));
 }
 
-const resolveRuleTrendDays = (window: AlertTimeWindow, points: AlertRuleTrendPoint[]): number => {
+const resolveRuleTrendDays = (
+  window: AlertTimeWindow,
+  points: AlertRuleTrendPoint[],
+): number => {
   if (
-    typeof window.startMs === 'number' &&
+    typeof window.startMs === "number" &&
     Number.isFinite(window.startMs) &&
-    typeof window.endMs === 'number' &&
+    typeof window.endMs === "number" &&
     Number.isFinite(window.endMs) &&
     window.endMs >= window.startMs
   ) {
-    const startDay = dayjs(window.startMs).startOf('day');
-    const endDay = dayjs(window.endMs).startOf('day');
+    const startDay = dayjs(window.startMs).startOf("day");
+    const endDay = dayjs(window.endMs).startOf("day");
     if (endDay.valueOf() >= startDay.valueOf()) {
-      return endDay.diff(startDay, 'day') + 1;
+      return endDay.diff(startDay, "day") + 1;
     }
   }
 
-  if (window.startMs !== null && window.endMs !== null && window.endMs < window.startMs) {
+  if (
+    window.startMs !== null &&
+    window.endMs !== null &&
+    window.endMs < window.startMs
+  ) {
     return 1;
   }
 
@@ -329,14 +381,14 @@ const resolveRuleTrendDays = (window: AlertTimeWindow, points: AlertRuleTrendPoi
 export function buildRuleTrendAnalysis(
   ruleId: string | null | undefined,
   events: AlertEventItem[],
-  window: AlertTimeWindow
+  window: AlertTimeWindow,
 ): AlertRuleTrendAnalysis {
   if (!ruleId) {
     return {
       points: [],
       totalTriggers: 0,
       averageDailyTriggers: 0,
-      falsePositiveRate: null
+      falsePositiveRate: null,
     };
   }
 
@@ -359,7 +411,7 @@ export function buildRuleTrendAnalysis(
       points: [],
       totalTriggers: 0,
       averageDailyTriggers: 0,
-      falsePositiveRate: null
+      falsePositiveRate: null,
     };
   }
 
@@ -369,13 +421,17 @@ export function buildRuleTrendAnalysis(
   >();
 
   for (const event of scopedEvents) {
-    const date = dayjs(getEventTimestamp(event)).format('YYYY-MM-DD');
-    const current = dateMap.get(date) ?? { triggers: 0, confirmed: 0, ignored: 0 };
+    const date = dayjs(getEventTimestamp(event)).format("YYYY-MM-DD");
+    const current = dateMap.get(date) ?? {
+      triggers: 0,
+      confirmed: 0,
+      ignored: 0,
+    };
     current.triggers += 1;
-    if (event.status === 'confirmed') {
+    if (event.status === "confirmed") {
       current.confirmed += 1;
     }
-    if (event.status === 'ignored') {
+    if (event.status === "ignored") {
       current.ignored += 1;
     }
     dateMap.set(date, current);
@@ -388,39 +444,43 @@ export function buildRuleTrendAnalysis(
       return {
         date,
         triggers: 0,
-        falsePositiveRate: null
+        falsePositiveRate: null,
       };
     }
     const reviewed = current.confirmed + current.ignored;
     return {
       date,
       triggers: current.triggers,
-      falsePositiveRate: reviewed > 0 ? current.ignored / reviewed : null
+      falsePositiveRate: reviewed > 0 ? current.ignored / reviewed : null,
     };
   });
 
   const totalTriggers = scopedEvents.length;
   const days = resolveRuleTrendDays(window, points);
-  const totalConfirmed = scopedEvents.filter((event) => event.status === 'confirmed').length;
-  const totalIgnored = scopedEvents.filter((event) => event.status === 'ignored').length;
+  const totalConfirmed = scopedEvents.filter(
+    (event) => event.status === "confirmed",
+  ).length;
+  const totalIgnored = scopedEvents.filter(
+    (event) => event.status === "ignored",
+  ).length;
   const reviewed = totalConfirmed + totalIgnored;
 
   return {
     points,
     totalTriggers,
     averageDailyTriggers: totalTriggers / days,
-    falsePositiveRate: reviewed > 0 ? totalIgnored / reviewed : null
+    falsePositiveRate: reviewed > 0 ? totalIgnored / reviewed : null,
   };
 }
 
 const toSerializable = (value: unknown): string => {
   if (value === null || value === undefined) {
-    return '';
+    return "";
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
-  if (typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   try {
@@ -431,31 +491,35 @@ const toSerializable = (value: unknown): string => {
 };
 
 const resolveThresholdText = (event: AlertEventItem): string => {
-  if (typeof event.thresholdValue === 'number') {
-    return `${event.operator ?? ''} ${event.thresholdValue}`.trim();
+  if (typeof event.thresholdValue === "number") {
+    return `${event.operator ?? ""} ${event.thresholdValue}`.trim();
   }
-  if (typeof event.thresholdLower === 'number' || typeof event.thresholdUpper === 'number') {
-    return `${event.thresholdLower ?? '-'} ~ ${event.thresholdUpper ?? '-'}`;
+  if (
+    typeof event.thresholdLower === "number" ||
+    typeof event.thresholdUpper === "number"
+  ) {
+    return `${event.thresholdLower ?? "-"} ~ ${event.thresholdUpper ?? "-"}`;
   }
-  return '';
+  return "";
 };
 
 const toBasicExportRecord = (
   event: AlertEventItem,
-  options: AlertExportOptions
+  options: AlertExportOptions,
 ): Record<string, unknown> => {
   const record: Record<string, unknown> = {
     id: event.id,
     triggeredAt: event.triggeredAt,
     severity: event.severity,
     status: event.status,
-    ruleName: event.ruleName ?? '',
-    metricProvider: event.metricProvider ?? '',
-    metricSlug: event.metricSlug ?? '',
+    ruleName: event.ruleName ?? "",
+    metricProvider: event.metricProvider ?? "",
+    metricSlug: event.metricSlug ?? "",
     metricValue: event.metricValue,
-    changePercent: typeof event.changePercent === 'number' ? event.changePercent : '',
+    changePercent:
+      typeof event.changePercent === "number" ? event.changePercent : "",
     threshold: resolveThresholdText(event),
-    message: event.message ?? ''
+    message: event.message ?? "",
   };
 
   if (options.includeContext) {
@@ -470,28 +534,28 @@ const toBasicExportRecord = (
 
 export function buildAlertExportRows(
   events: AlertEventItem[],
-  options: AlertExportOptions = {}
+  options: AlertExportOptions = {},
 ): CsvCellValue[][] {
   const includeContext = Boolean(options.includeContext);
   const includeDeliveries = Boolean(options.includeDeliveries);
   const header: CsvCellValue[] = [
-    'id',
-    'triggeredAt',
-    'severity',
-    'status',
-    'ruleName',
-    'metricProvider',
-    'metricSlug',
-    'metricValue',
-    'changePercent',
-    'threshold',
-    'message'
+    "id",
+    "triggeredAt",
+    "severity",
+    "status",
+    "ruleName",
+    "metricProvider",
+    "metricSlug",
+    "metricValue",
+    "changePercent",
+    "threshold",
+    "message",
   ];
   if (includeContext) {
-    header.push('context');
+    header.push("context");
   }
   if (includeDeliveries) {
-    header.push('deliveries');
+    header.push("deliveries");
   }
 
   const rows = events.map((event) => {
@@ -500,13 +564,13 @@ export function buildAlertExportRows(
       event.triggeredAt,
       event.severity,
       event.status,
-      event.ruleName ?? '',
-      event.metricProvider ?? '',
-      event.metricSlug ?? '',
+      event.ruleName ?? "",
+      event.metricProvider ?? "",
+      event.metricSlug ?? "",
       event.metricValue,
-      typeof event.changePercent === 'number' ? event.changePercent : '',
+      typeof event.changePercent === "number" ? event.changePercent : "",
       resolveThresholdText(event),
-      event.message ?? ''
+      event.message ?? "",
     ];
     if (includeContext) {
       row.push(toSerializable(event.context));
@@ -522,7 +586,7 @@ export function buildAlertExportRows(
 
 export function buildAlertExportJson(
   events: AlertEventItem[],
-  options: AlertExportOptions = {}
+  options: AlertExportOptions = {},
 ): Record<string, unknown>[] {
   return events.map((event) => toBasicExportRecord(event, options));
 }

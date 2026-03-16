@@ -29,14 +29,12 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
-        active
-          ? 'border-[var(--primary)] bg-[rgba(17,24,39,0.04)] text-slate-900'
-          : 'border-[var(--border)] bg-white/70 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+      className={`settings-nav-button w-full rounded-2xl px-4 py-3 text-left ${
+        active ? 'settings-nav-button--active' : ''
       }`}
     >
       <div className="text-sm font-semibold">{label}</div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">
+      <div className="settings-nav-button__description mt-1 text-xs leading-5">
         {description}
       </div>
     </button>

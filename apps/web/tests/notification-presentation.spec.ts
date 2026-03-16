@@ -271,4 +271,31 @@ describe("notification presentation", () => {
       label: "查看分析",
     });
   });
+
+  it("hides alert deep links when the viewer lacks alerts.read", () => {
+    const link = resolveNotificationLink(
+      {
+        alertEventId: "evt-123",
+      },
+      enTranslator,
+      { canReadAlerts: false },
+    );
+
+    expect(link).toBeNull();
+  });
+
+  it("preserves alert deep links for viewers with alerts.read", () => {
+    const link = resolveNotificationLink(
+      {
+        alertEventId: "evt-123",
+      },
+      enTranslator,
+      { canReadAlerts: true },
+    );
+
+    expect(link).toEqual({
+      href: "/alerts?eventId=evt-123",
+      label: "Open alert",
+    });
+  });
 });

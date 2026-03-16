@@ -18,6 +18,7 @@ import {
   Tooltip,
   Typography,
   message,
+  theme,
 } from "antd";
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -614,8 +615,13 @@ function resolveDefaultGatewayProfile(
 
 export function LlmGatewaySettingsPanel() {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const { data: session } = useSession();
   const [messageApi, contextHolder] = message.useMessage();
+  const helpIconStyle = useMemo(
+    () => ({ marginLeft: 8, color: token.colorTextSecondary }),
+    [token.colorTextSecondary],
+  );
   const [settings, setSettings] =
     useState<LlmGatewaySettingsResponse>(EMPTY_SETTINGS);
   const [loading, setLoading] = useState(false);
@@ -5169,7 +5175,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -5204,7 +5210,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -5532,7 +5538,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -5567,7 +5573,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -5709,7 +5715,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -5739,7 +5745,7 @@ export function LlmGatewaySettingsPanel() {
                   })}
                 >
                   <QuestionCircleOutlined
-                    style={{ marginLeft: 8, color: "#999" }}
+                    style={helpIconStyle}
                   />
                 </Tooltip>
               </span>
@@ -6789,7 +6795,7 @@ export function LlmGatewaySettingsPanel() {
                       )}
                     >
                       <QuestionCircleOutlined
-                        style={{ marginLeft: 8, color: "#999" }}
+                        style={helpIconStyle}
                       />
                     </Tooltip>
                   </span>
@@ -6817,7 +6823,7 @@ export function LlmGatewaySettingsPanel() {
                       )}
                     >
                       <QuestionCircleOutlined
-                        style={{ marginLeft: 8, color: "#999" }}
+                        style={helpIconStyle}
                       />
                     </Tooltip>
                   </span>
@@ -6863,7 +6869,7 @@ export function LlmGatewaySettingsPanel() {
                       )}
                     >
                       <QuestionCircleOutlined
-                        style={{ marginLeft: 8, color: "#999" }}
+                        style={helpIconStyle}
                       />
                     </Tooltip>
                   </span>
@@ -6925,7 +6931,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>
@@ -6967,7 +6973,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>
@@ -7001,7 +7007,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>
@@ -7038,7 +7044,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>
@@ -7078,7 +7084,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>
@@ -7112,7 +7118,7 @@ export function LlmGatewaySettingsPanel() {
                         )}
                       >
                         <QuestionCircleOutlined
-                          style={{ marginLeft: 8, color: "#999" }}
+                          style={helpIconStyle}
                         />
                       </Tooltip>
                     </span>

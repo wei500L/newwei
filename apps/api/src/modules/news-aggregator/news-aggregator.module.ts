@@ -10,6 +10,7 @@ import { NewsnowGateway } from "./newsnow.gateway";
 import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
 import { NewsAggregatorService } from "./news-aggregator.service"
 import { NewsnowDomesticOpinionIndexService } from "./newsnow-domestic-opinion-index.service";
+import { NewsnowHottestAnalysisSchedulerService } from "./newsnow-hottest-analysis.scheduler.service";
 import { NewsnowHottestAnalysisService } from "./newsnow-hottest-analysis.service";
 import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
 
@@ -20,6 +21,7 @@ import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
     NewsAggregatorRegistryService,
     NewsAggregatorService,
     NewsnowDomesticOpinionIndexService,
+    NewsnowHottestAnalysisSchedulerService,
     NewsnowHottestAnalysisService,
     NewsnowRealtimeDispatcher,
     NewsnowGateway,

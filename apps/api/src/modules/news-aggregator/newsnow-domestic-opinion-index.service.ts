@@ -7,8 +7,13 @@ import { ArchiveVertical } from '../archive/archive.types';
 import { PrismaService } from '../config/prisma.service';
 import { genMetadata } from './data/metadata';
 import { genSources } from './data/pre-sources';
+import {
+  NewsnowDataState,
+  NewsnowDomesticOpinionEmptyReason,
+} from './news-aggregator.types';
 import type {
   NewsnowCandidateKeywordSummary,
+  NewsnowDomesticOpinionDiagnostics,
   NewsnowDomesticOpinionIndexBreakdownPoint,
   NewsnowDomesticOpinionIndexBreakdownSourcePoint,
   NewsnowDomesticOpinionIndexBreakdownTopKeywords,
@@ -490,9 +495,14 @@ export class NewsnowDomesticOpinionIndexService {
     const pipelineTrend = await this.loadPipelineTrend(orgId, since);
     const mergedTrend = this.mergeTrendRows(trendRows, pipelineTrend);
     const latest = mergedTrend.at(-1) ?? null;
+    const diagnostics: NewsnowDomesticOpinionDiagnostics = {
+      requestedHours: hours,
+      snapshotCount: trendRows.length,
+      pipelineBucketCount: pipelineTrend.length,
+    };
 
     if (!latest) {
-      return this.buildEmptyResponse();
+      return this.buildEmptyResponse(diagnostics);
     }
 
     const topCandidates = latest.newsnow
@@ -506,6 +516,9 @@ export class NewsnowDomesticOpinionIndexService {
 
     return {
       generatedAt: new Date().toISOString(),
+      dataState: NewsnowDataState.Ready,
+      emptyReason: null,
+      diagnostics,
       latest: latest.point,
       trend: mergedTrend.map((row) => row.point),
       topKeywords,
@@ -760,9 +773,15 @@ export class NewsnowDomesticOpinionIndexService {
     };
   }
 
-  private buildEmptyResponse(): NewsnowDomesticOpinionIndexResponse {
+  private buildEmptyResponse(
+    diagnostics: NewsnowDomesticOpinionDiagnostics,
+  ): NewsnowDomesticOpinionIndexResponse {
     return {
       generatedAt: new Date().toISOString(),
+      dataState: NewsnowDataState.Empty,
+      emptyReason:
+        NewsnowDomesticOpinionEmptyReason.NoRecentSnapshotsOrPipelineData,
+      diagnostics,
       latest: null,
       trend: [],
       topKeywords: [],

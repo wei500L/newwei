@@ -18,6 +18,7 @@ import {
   Table,
   Tabs,
   Tag,
+  theme,
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -299,6 +300,7 @@ function renderKind(kind: ErrorKind, t: (key: string, options?: Record<string, u
 
 export function AdminLogsContent() {
   const { t, i18n } = useTranslation();
+  const { token } = theme.useToken();
   const locale = resolveLocale(i18n.language);
   const pathname = usePathname();
   const router = useRouter();
@@ -1065,7 +1067,11 @@ export function AdminLogsContent() {
                           <Statistic
                             title={t("quality.taskLogs.summary.totals.failed", { defaultValue: "Failed" })}
                             value={taskSummary.totals.failed}
-                            valueStyle={taskSummary.totals.failed > 0 ? { color: "#cf1322" } : undefined}
+                            valueStyle={
+                              taskSummary.totals.failed > 0
+                                ? { color: token.colorError }
+                                : undefined
+                            }
                           />
                         </Col>
                       </Row>

@@ -387,7 +387,7 @@ export function ArchivePreparationSettingsPanel() {
             opsStatus?.recentStatuses.map((item) => (
               <div
                 key={`${item.scope}:${item.scopeValue}:${item.updatedAt}`}
-                className="rounded-lg border border-slate-200/80 px-3 py-2 dark:border-slate-700/80"
+                className="rounded-lg border border-[var(--border)] px-3 py-2"
               >
                 <div className="flex items-center justify-between gap-3">
                   <Space wrap size={[8, 8]}>

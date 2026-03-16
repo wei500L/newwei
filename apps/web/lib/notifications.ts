@@ -26,6 +26,10 @@ export interface NotificationPresentationCopy {
 export interface NotificationStreamErrorPayload
   extends RealtimeSocketErrorPayload {}
 
+export interface ResolveNotificationLinkOptions {
+  canReadAlerts?: boolean;
+}
+
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 interface NotificationPresentationPayload {
@@ -584,6 +588,7 @@ export const formatNotificationStreamError = (
 export const resolveNotificationLink = (
   payload: Record<string, unknown> | null | undefined,
   t: Translate,
+  options: ResolveNotificationLinkOptions = {},
 ): NotificationLink | null => {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
@@ -646,7 +651,7 @@ export const resolveNotificationLink = (
       params?.alertEventId ??
       params?.eventId,
   );
-  if (alertEventId) {
+  if (alertEventId && options.canReadAlerts !== false) {
     return {
       href: `/alerts?eventId=${encodeURIComponent(alertEventId)}`,
       label: t("notifications.openAlert", { defaultValue: "Open alert" }),

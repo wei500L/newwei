@@ -1,3 +1,18 @@
+const mockLoggerWarn = jest.fn();
+
+jest.mock("@modular/utils", () => {
+  const actual = jest.requireActual("@modular/utils");
+  return {
+    ...actual,
+    createLogger: () => ({
+      error: jest.fn(),
+      info: jest.fn(),
+      warn: mockLoggerWarn,
+      debug: jest.fn(),
+    }),
+  };
+});
+
 import { CUSTOM_MANUAL_SYSTEM_METRIC_SLUG } from "@modular/utils";
 import {
   AlertEventStatus,
@@ -15,13 +30,13 @@ describe("AlertsService.updateEventStatus", () => {
   const buildService = () => {
     const prisma = {
       alertRule: {
-        findUnique: jest.fn()
+        findUnique: jest.fn(),
       },
       alertEvent: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
-        update: jest.fn()
-      }
+        update: jest.fn(),
+      },
     } as any;
 
     const service = new AlertsService(
@@ -30,10 +45,12 @@ describe("AlertsService.updateEventStatus", () => {
       {} as any,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       {} as any,
       {} as any,
-      []
+      [],
     );
 
     return { prisma, service };
@@ -41,20 +58,27 @@ describe("AlertsService.updateEventStatus", () => {
 
   it("updates alert events to confirmed", async () => {
     const { prisma, service } = buildService();
-    prisma.alertEvent.findUnique.mockResolvedValue({ id: "event-1", rule: { orgId: "org-1" } });
+    prisma.alertEvent.findUnique.mockResolvedValue({
+      id: "event-1",
+      rule: { orgId: "org-1" },
+    });
     prisma.alertEvent.update.mockResolvedValue({
       id: "event-1",
       status: AlertEventStatus.confirmed,
       rule: { orgId: "org-1" },
-      deliveries: []
+      deliveries: [],
     });
 
-    const result = await service.updateEventStatus("org-1", "event-1", AlertEventStatus.confirmed);
+    const result = await service.updateEventStatus(
+      "org-1",
+      "event-1",
+      AlertEventStatus.confirmed,
+    );
 
     expect(prisma.alertEvent.update).toHaveBeenCalledWith({
       where: { id: "event-1" },
       data: { status: AlertEventStatus.confirmed },
-      include: { rule: true, deliveries: { include: { channel: true } } }
+      include: { rule: true, deliveries: { include: { channel: true } } },
     });
     expect(result.status).toBe(AlertEventStatus.confirmed);
   });
@@ -64,16 +88,22 @@ describe("AlertsService.updateEventStatus", () => {
     prisma.alertEvent.findUnique.mockResolvedValue({
       id: "event-1",
       context: { foo: "bar" },
-      rule: { orgId: "org-1" }
+      rule: { orgId: "org-1" },
     });
     prisma.alertEvent.update.mockResolvedValue({
       id: "event-1",
       status: AlertEventStatus.ignored,
       rule: { orgId: "org-1" },
-      deliveries: []
+      deliveries: [],
     });
 
-    await service.updateEventStatus("org-1", "event-1", AlertEventStatus.ignored, "looks safe", "user-1");
+    await service.updateEventStatus(
+      "org-1",
+      "event-1",
+      AlertEventStatus.ignored,
+      "looks safe",
+      "user-1",
+    );
 
     expect(prisma.alertEvent.update).toHaveBeenCalledWith({
       where: { id: "event-1" },
@@ -85,26 +115,32 @@ describe("AlertsService.updateEventStatus", () => {
             note: "looks safe",
             updatedById: "user-1",
             status: AlertEventStatus.ignored,
-            updatedAt: expect.any(String)
-          }
-        }
+            updatedAt: expect.any(String),
+          },
+        },
       },
-      include: { rule: true, deliveries: { include: { channel: true } } }
+      include: { rule: true, deliveries: { include: { channel: true } } },
     });
   });
 
   it("rejects unsupported statuses", async () => {
     const { prisma, service } = buildService();
-    prisma.alertEvent.findUnique.mockResolvedValue({ id: "event-1", rule: { orgId: "org-1" } });
+    prisma.alertEvent.findUnique.mockResolvedValue({
+      id: "event-1",
+      rule: { orgId: "org-1" },
+    });
 
-    await expect(service.updateEventStatus("org-1", "event-1", AlertEventStatus.pending)).rejects.toThrow(
-      "Unsupported alert event status update"
-    );
+    await expect(
+      service.updateEventStatus("org-1", "event-1", AlertEventStatus.pending),
+    ).rejects.toThrow("Unsupported alert event status update");
   });
 
   it("normalizes rule metric slug in updated event response", async () => {
     const { prisma, service } = buildService();
-    prisma.alertEvent.findUnique.mockResolvedValue({ id: "event-1", rule: { orgId: "org-1" } });
+    prisma.alertEvent.findUnique.mockResolvedValue({
+      id: "event-1",
+      rule: { orgId: "org-1" },
+    });
     prisma.alertEvent.update.mockResolvedValue({
       id: "event-1",
       status: AlertEventStatus.confirmed,
@@ -112,7 +148,11 @@ describe("AlertsService.updateEventStatus", () => {
       deliveries: [],
     });
 
-    const result = await service.updateEventStatus("org-1", "event-1", AlertEventStatus.confirmed);
+    const result = await service.updateEventStatus(
+      "org-1",
+      "event-1",
+      AlertEventStatus.confirmed,
+    );
 
     expect(result.rule?.metricSlug).toBe("crawl_task");
   });
@@ -122,11 +162,11 @@ describe("AlertsService.getRuleTuningSuggestion", () => {
   const buildService = () => {
     const prisma = {
       alertRule: {
-        findUnique: jest.fn()
+        findUnique: jest.fn(),
       },
       alertEvent: {
-        findMany: jest.fn()
-      }
+        findMany: jest.fn(),
+      },
     } as any;
 
     const service = new AlertsService(
@@ -135,10 +175,12 @@ describe("AlertsService.getRuleTuningSuggestion", () => {
       {} as any,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       {} as any,
       {} as any,
-      []
+      [],
     );
 
     return { prisma, service };
@@ -150,15 +192,39 @@ describe("AlertsService.getRuleTuningSuggestion", () => {
       id: "rule-1",
       orgId: "org-1",
       operator: AlertOperator.gt,
-      thresholdValue: 100
+      thresholdValue: 100,
     });
     prisma.alertEvent.findMany.mockResolvedValue([
-      { status: AlertEventStatus.ignored, metricValue: 110, changePercent: null },
-      { status: AlertEventStatus.ignored, metricValue: 115, changePercent: null },
-      { status: AlertEventStatus.ignored, metricValue: 120, changePercent: null },
-      { status: AlertEventStatus.ignored, metricValue: 125, changePercent: null },
-      { status: AlertEventStatus.confirmed, metricValue: 150, changePercent: null },
-      { status: AlertEventStatus.confirmed, metricValue: 160, changePercent: null }
+      {
+        status: AlertEventStatus.ignored,
+        metricValue: 110,
+        changePercent: null,
+      },
+      {
+        status: AlertEventStatus.ignored,
+        metricValue: 115,
+        changePercent: null,
+      },
+      {
+        status: AlertEventStatus.ignored,
+        metricValue: 120,
+        changePercent: null,
+      },
+      {
+        status: AlertEventStatus.ignored,
+        metricValue: 125,
+        changePercent: null,
+      },
+      {
+        status: AlertEventStatus.confirmed,
+        metricValue: 150,
+        changePercent: null,
+      },
+      {
+        status: AlertEventStatus.confirmed,
+        metricValue: 160,
+        changePercent: null,
+      },
     ]);
 
     const result = await service.getRuleTuningSuggestion("org-1", "rule-1", 30);
@@ -182,10 +248,12 @@ describe("AlertsService.listEvents", () => {
       {} as any,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       {} as any,
       {} as any,
-      []
+      [],
     );
 
     return { prisma, service };
@@ -254,14 +322,12 @@ describe("AlertsService.listEvents", () => {
 
   it("falls back to normalized in-memory filtering when exact metric slug lookup misses legacy spaced rows", async () => {
     const { prisma, service } = buildService();
-    prisma.alertEvent.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "event-legacy",
-          rule: { metricSlug: "  crawl_task  " },
-        },
-      ]);
+    prisma.alertEvent.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "event-legacy",
+        rule: { metricSlug: "  crawl_task  " },
+      },
+    ]);
 
     const result = await service.listEvents("org-1", 10, "crawl_task");
 
@@ -328,7 +394,229 @@ describe("AlertsService.listEvents", () => {
 
     const result = await service.listEvents("org-1", 10, "crawl_task");
 
-    expect(result.map((entry) => entry.id)).toEqual(["event-legacy-new", "event-exact-old"]);
+    expect(result.map((entry) => entry.id)).toEqual([
+      "event-legacy-new",
+      "event-exact-old",
+    ]);
+  });
+});
+
+describe("AlertsService in-app recipients", () => {
+  const buildService = () => {
+    const prisma = {
+      membership: {
+        findMany: jest.fn(),
+      },
+      alertDelivery: {
+        create: jest.fn(),
+      },
+    } as any;
+    const notificationThrottle = {
+      parseMuteUntilMs: jest.fn().mockReturnValue(null),
+      isMutedNow: jest.fn().mockReturnValue(false),
+    } as any;
+
+    const service = new AlertsService(
+      prisma,
+      {} as any,
+      {} as any,
+      notificationThrottle,
+      {} as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
+      {} as any,
+      {} as any,
+      [],
+    );
+
+    return { prisma, service, notificationThrottle };
+  };
+
+  it("creates in-app deliveries only for recipients with alerts.read", async () => {
+    mockLoggerWarn.mockReset();
+    const { prisma, service } = buildService();
+    prisma.membership.findMany.mockResolvedValue([
+      {
+        userId: "user-without-alerts",
+        role: {
+          permissions: [{ permission: { name: "items.read" } }],
+        },
+        roles: [],
+      },
+      {
+        userId: "user-with-alerts",
+        role: {
+          permissions: [],
+        },
+        roles: [
+          {
+            role: {
+              permissions: [{ permission: { name: "alerts.read" } }],
+            },
+          },
+        ],
+      },
+    ]);
+    prisma.alertDelivery.create.mockImplementation(
+      async ({ data }: { data: { targetSnapshot: { userId: string } } }) => ({
+        id: `delivery-${data.targetSnapshot.userId}`,
+      }),
+    );
+
+    const deliveries = await (service as any).createInAppDeliveries(
+      {
+        id: "rule-1",
+        orgId: "org-1",
+        metadata: {
+          notifyUserIds: ["user-without-alerts", "user-with-alerts"],
+        },
+      },
+      "event-1",
+    );
+
+    expect(prisma.membership.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          orgId: "org-1",
+          userId: { in: ["user-without-alerts", "user-with-alerts"] },
+          isActive: true,
+          user: { isActive: true },
+          org: { isActive: true },
+        }),
+      }),
+    );
+    expect(prisma.alertDelivery.create).toHaveBeenCalledTimes(1);
+    expect(prisma.alertDelivery.create).toHaveBeenCalledWith({
+      data: {
+        eventId: "event-1",
+        channelType: "in_app",
+        targetSnapshot: { userId: "user-with-alerts" },
+      },
+    });
+    expect(deliveries).toEqual([
+      { id: "delivery-user-with-alerts", userId: "user-with-alerts" },
+    ]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        ruleId: "rule-1",
+        eventId: "event-1",
+        requiredPermission: "alerts.read",
+        candidateRecipientCount: 2,
+        allowedRecipientCount: 1,
+        filteredRecipientCount: 1,
+        filteredUserIdSample: ["user-without-alerts"],
+        hasMoreFilteredRecipients: false,
+      }),
+      "Filtered in-app alert recipients without required permission",
+    );
+  });
+
+  it("does not fall back to the creator when the creator lacks alerts.read", async () => {
+    mockLoggerWarn.mockReset();
+    const { prisma, service } = buildService();
+    prisma.membership.findMany.mockResolvedValue([
+      {
+        userId: "creator-1",
+        role: {
+          permissions: [{ permission: { name: "items.read" } }],
+        },
+        roles: [],
+      },
+    ]);
+
+    const deliveries = await (service as any).createInAppDeliveries(
+      {
+        orgId: "org-1",
+        createdById: "creator-1",
+        metadata: {},
+      },
+      "event-1",
+    );
+
+    expect(prisma.alertDelivery.create).not.toHaveBeenCalled();
+    expect(deliveries).toEqual([]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        eventId: "event-1",
+        requiredPermission: "alerts.read",
+        candidateRecipientCount: 1,
+        allowedRecipientCount: 0,
+        filteredRecipientCount: 1,
+        filteredUserIdSample: ["creator-1"],
+        hasMoreFilteredRecipients: false,
+      }),
+      "Filtered in-app alert recipients without required permission",
+    );
+  });
+
+  it("does not log when every resolved recipient can read alerts", async () => {
+    mockLoggerWarn.mockReset();
+    const { prisma, service } = buildService();
+    prisma.membership.findMany.mockResolvedValue([
+      {
+        userId: "user-with-alerts",
+        role: {
+          permissions: [{ permission: { name: "alerts.read" } }],
+        },
+        roles: [],
+      },
+    ]);
+    prisma.alertDelivery.create.mockResolvedValue({ id: "delivery-1" });
+
+    const deliveries = await (service as any).createInAppDeliveries(
+      {
+        orgId: "org-1",
+        metadata: {
+          notifyUserIds: ["user-with-alerts"],
+        },
+      },
+      "event-1",
+    );
+
+    expect(deliveries).toEqual([{ id: "delivery-1", userId: "user-with-alerts" }]);
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
+  });
+
+  it("caps filtered recipient samples and ignores missing memberships", async () => {
+    mockLoggerWarn.mockReset();
+    const { prisma, service } = buildService();
+    const deniedUserIds = Array.from({ length: 21 }, (_, index) => `user-${index + 1}`);
+    prisma.membership.findMany.mockResolvedValue(
+      deniedUserIds.map((userId) => ({
+        userId,
+        role: {
+          permissions: [{ permission: { name: "items.read" } }],
+        },
+        roles: [],
+      })),
+    );
+
+    const deliveries = await (service as any).createInAppDeliveries(
+      {
+        orgId: "org-1",
+        metadata: {
+          notifyUserIds: [...deniedUserIds, "user-missing"],
+        },
+      },
+      "event-1",
+    );
+
+    expect(deliveries).toEqual([]);
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+    const payload = mockLoggerWarn.mock.calls[0]?.[0] as {
+      candidateRecipientCount: number;
+      filteredRecipientCount: number;
+      filteredUserIdSample: string[];
+      hasMoreFilteredRecipients: boolean;
+    };
+    expect(payload.candidateRecipientCount).toBe(22);
+    expect(payload.filteredRecipientCount).toBe(21);
+    expect(payload.filteredUserIdSample).toHaveLength(20);
+    expect(payload.filteredUserIdSample).toEqual(deniedUserIds.slice(0, 20));
+    expect(payload.hasMoreFilteredRecipients).toBe(true);
   });
 });
 
@@ -337,7 +625,7 @@ describe("AlertsService.listRules default crawl quality rules", () => {
     const createdRules: Array<{ id: string; orgId: string }> = [];
     const prisma = {
       org: {
-        findMany: jest.fn().mockResolvedValue([{ id: "org-1" }])
+        findMany: jest.fn().mockResolvedValue([{ id: "org-1" }]),
       },
       alertRule: {
         findMany: jest
@@ -350,7 +638,7 @@ describe("AlertsService.listRules default crawl quality rules", () => {
             id: data.id,
             orgId: data.orgId,
             checkIntervalSec: data.checkIntervalSec,
-            status: data.status
+            status: data.status,
           };
           createdRules.push(created);
           return created;
@@ -361,7 +649,7 @@ describe("AlertsService.listRules default crawl quality rules", () => {
       add: jest.fn().mockResolvedValue(undefined),
       getRepeatableJobs: jest.fn().mockResolvedValue([]),
       removeRepeatableByKey: jest.fn().mockResolvedValue(undefined),
-      remove: jest.fn().mockResolvedValue(undefined)
+      remove: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new AlertsService(
@@ -370,10 +658,12 @@ describe("AlertsService.listRules default crawl quality rules", () => {
       {} as any,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       queue,
       {} as any,
-      []
+      [],
     );
 
     return { prisma, queue, service, createdRules };
@@ -393,13 +683,17 @@ describe("AlertsService.listRules default crawl quality rules", () => {
     const { service, prisma, createdRules } = buildService();
     prisma.alertRule.findMany = jest
       .fn()
-      .mockResolvedValueOnce([{ metricSlug: "  crawl_quality.preflight_failure_rate  " }])
+      .mockResolvedValueOnce([
+        { metricSlug: "  crawl_quality.preflight_failure_rate  " },
+      ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     await service.listRules("org-1");
 
-    expect(createdRules.some((entry) => entry.id.includes("preflight_failure_rate"))).toBe(false);
+    expect(
+      createdRules.some((entry) => entry.id.includes("preflight_failure_rate")),
+    ).toBe(false);
   });
 });
 
@@ -418,7 +712,9 @@ describe("AlertsService.upsertRule system manual metric", () => {
           status: AlertStatus.active,
         }),
       },
-      $transaction: jest.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma)),
+      $transaction: jest.fn(async (callback: (tx: any) => Promise<unknown>) =>
+        callback(prisma),
+      ),
     } as any;
     const queue = {
       add: jest.fn().mockResolvedValue(undefined),
@@ -428,8 +724,9 @@ describe("AlertsService.upsertRule system manual metric", () => {
     } as any;
     const providers = [
       {
-        supports: jest.fn((rule: { metricProvider: AlertMetricProvider }) =>
-          rule.metricProvider === AlertMetricProvider.system_metric,
+        supports: jest.fn(
+          (rule: { metricProvider: AlertMetricProvider }) =>
+            rule.metricProvider === AlertMetricProvider.system_metric,
         ),
       },
     ] as any;
@@ -440,7 +737,9 @@ describe("AlertsService.upsertRule system manual metric", () => {
       {} as any,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       queue,
       {} as any,
       providers,
@@ -563,12 +862,16 @@ describe("AlertsService channel target validation", () => {
     const service = new AlertsService(
       prisma,
       {
-        normalizeEmailTarget: jest.fn((value: string) => value.trim().toLowerCase()),
+        normalizeEmailTarget: jest.fn((value: string) =>
+          value.trim().toLowerCase(),
+        ),
       } as any,
       http,
       {} as any,
       {} as any,
-      { alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 } } as any,
+      {
+        alertingConfig: { webhookTimeoutMs: 1000, scanIntervalMs: 1000 },
+      } as any,
       {} as any,
       {} as any,
       [],

@@ -5,6 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import {
+  collectMembershipPermissionSet,
+  collectMembershipRoles,
+  type MembershipRoleWithPermissions,
+} from '../../common/authz/membership-permissions';
 import { writeAuditLogBestEffort } from '../audit/audit-log.writer';
 import { ActionRateLimitService } from '../cache/action-rate-limit.service';
 import { CacheService } from '../cache/cache.service';
@@ -22,11 +27,10 @@ interface UpdateMembershipRolesInput {
   roleIds: string[];
 }
 
-interface MembershipRoleRecord {
+interface MembershipRoleRecord extends MembershipRoleWithPermissions {
   id: string;
   name: string;
   isSystem: boolean;
-  permissions?: Array<{ permission: { name: string } }>;
 }
 
 const SYSTEM_ADMIN_ROLE_NAME = 'admin';
@@ -75,35 +79,6 @@ export class UserAdminService {
     });
   }
 
-  private collectRoles(
-    membership:
-      | {
-          role?: MembershipRoleRecord | null;
-          roles?: Array<{ role?: MembershipRoleRecord | null }> | null;
-        }
-      | null
-      | undefined,
-  ) {
-    const roles =
-      membership?.roles
-        ?.map((link) => link.role)
-        .filter((role): role is MembershipRoleRecord => Boolean(role)) ?? [];
-
-    if (roles.length === 0 && membership?.role) {
-      roles.push(membership.role);
-    }
-
-    return roles;
-  }
-
-  private buildPermissionSet(roles: MembershipRoleRecord[]) {
-    return new Set(
-      roles.flatMap((role) =>
-        (role.permissions ?? []).map((entry) => entry.permission.name),
-      ),
-    );
-  }
-
   private isSystemAdminRole(role: { name: string; isSystem: boolean }) {
     return role.isSystem && role.name.toLowerCase() === SYSTEM_ADMIN_ROLE_NAME;
   }
@@ -114,7 +89,12 @@ export class UserAdminService {
   ) {
     const missing = roles
       .flatMap((role) =>
-        (role.permissions ?? []).map((entry) => entry.permission.name),
+        (role.permissions ?? [])
+          .map((entry) => entry?.permission?.name)
+          .filter(
+            (permission): permission is string =>
+              typeof permission === 'string' && permission.trim().length > 0,
+          ),
       )
       .find((permission) => !actorPermissions.has(permission));
     if (missing) {
@@ -153,7 +133,7 @@ export class UserAdminService {
       throw new ForbiddenException('Actor is not a member of the organization');
     }
 
-    const roles = this.collectRoles(membership);
+    const roles = collectMembershipRoles(membership);
     if (!roles.some((role) => this.isSystemAdminRole(role))) {
       throw new ForbiddenException('Admin access required');
     }
@@ -238,7 +218,7 @@ export class UserAdminService {
       throw new ForbiddenException('Administrators cannot change their own roles');
     }
 
-    const targetRoles = this.collectRoles(targetMembership);
+    const targetRoles = collectMembershipRoles(targetMembership);
     if (targetRoles.some((role) => this.isSystemAdminRole(role))) {
       throw new ForbiddenException('System administrators cannot be managed');
     }
@@ -279,9 +259,7 @@ export class UserAdminService {
       );
     }
 
-    const actorPermissions = this.buildPermissionSet(
-      this.collectRoles(actorMembership),
-    );
+    const actorPermissions = collectMembershipPermissionSet(actorMembership);
     this.ensureRoleScope(actorPermissions, roles);
 
     const membership = await this.prisma.$transaction(async (tx) => {
@@ -379,7 +357,7 @@ export class UserAdminService {
       throw new ForbiddenException('Administrators cannot change their own status');
     }
 
-    const targetRoles = this.collectRoles(targetMembership);
+    const targetRoles = collectMembershipRoles(targetMembership);
     if (targetRoles.some((role) => this.isSystemAdminRole(role))) {
       throw new ForbiddenException('System administrators cannot be managed');
     }
@@ -454,7 +432,7 @@ export class UserAdminService {
       throw new NotFoundException('User is not a member of the organization');
     }
 
-    const targetRoles = this.collectRoles(targetMembership);
+    const targetRoles = collectMembershipRoles(targetMembership);
     if (targetRoles.some((role) => this.isSystemAdminRole(role))) {
       throw new ForbiddenException('System administrators cannot be managed');
     }

@@ -81,17 +81,35 @@ export default function NewsnowColumnPage() {
     [focusSources, metadata?.columns, resolvedColumnKey],
   );
   const hottestAnalysis = useHottestAnalysis(
-    resolvedColumnKey === "hottest" && sourceIds.length > 0,
+    resolvedColumnKey === "hottest",
   );
   const domesticOpinionIndex = useDomesticOpinionIndex(
-    resolvedColumnKey === "hottest" && sourceIds.length > 0,
+    resolvedColumnKey === "hottest",
   );
+  const domesticOpinionGeneratedAt = domesticOpinionIndex.data?.generatedAt;
+  const hottestAnalysisGeneratedAt = hottestAnalysis.data?.generatedAt;
+  const refetchDomesticOpinion = domesticOpinionIndex.refetch;
 
   useEffect(() => {
     if (sourceIds.length > 0) {
       batchPrefetch(sourceIds);
     }
   }, [sourceIds, batchPrefetch]);
+
+  useEffect(() => {
+    if (resolvedColumnKey !== "hottest" || !hottestAnalysisGeneratedAt) {
+      return;
+    }
+    if (domesticOpinionGeneratedAt === hottestAnalysisGeneratedAt) {
+      return;
+    }
+    void refetchDomesticOpinion();
+  }, [
+    resolvedColumnKey,
+    hottestAnalysisGeneratedAt,
+    domesticOpinionGeneratedAt,
+    refetchDomesticOpinion,
+  ]);
 
   const visibleRealtimeUnread = sourceIds.reduce(
     (total, sourceId) => total + (liveUnreadBySource[sourceId] ?? 0),
@@ -250,12 +268,15 @@ export default function NewsnowColumnPage() {
         <main>
           {resolvedColumnKey === "hottest" ? (
             <NewsnowHottestCandidates
-              candidates={hottestAnalysis.data?.candidates}
+              analysis={hottestAnalysis.data}
+              accessState={hottestAnalysis.accessState}
               isLoading={hottestAnalysis.isLoading}
               isError={hottestAnalysis.isError}
+              error={hottestAnalysis.error}
               domesticOpinion={domesticOpinionIndex.data}
               isDomesticOpinionLoading={domesticOpinionIndex.isLoading}
               isDomesticOpinionError={domesticOpinionIndex.isError}
+              domesticOpinionError={domesticOpinionIndex.error}
             />
           ) : null}
           <NewsnowColumn

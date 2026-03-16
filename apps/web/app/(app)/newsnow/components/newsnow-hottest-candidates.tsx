@@ -1,11 +1,21 @@
 "use client";
 
-import { Empty, Skeleton } from 'antd';
+import { Skeleton } from 'antd';
+
+import { ChartEmptyState } from '@/components/chart-empty-state';
+import { classifyRequestError } from '@/lib/request-error';
 
 import type {
   NewsnowDomesticOpinionIndexResponse,
-  NewsnowEventCandidate,
+  NewsnowHottestAnalysisResponse,
 } from '../hooks/use-news-sources';
+import {
+  NewsnowAnalysisAccessKind,
+  type NewsnowAnalysisAccessState,
+  NewsnowDataState,
+  describeDomesticOpinionEmptyReason,
+  describeHottestAnalysisEmptyReason,
+} from '../lib/newsnow-analysis-access';
 import {
   buildDomesticOpinionSparklinePath,
   shouldShowDomesticOpinionPanel,
@@ -13,16 +23,73 @@ import {
 import { selectTopHottestCandidates } from '../lib/newsnow-hottest-analysis';
 
 interface NewsnowHottestCandidatesProps {
-  candidates?: NewsnowEventCandidate[];
+  analysis?: NewsnowHottestAnalysisResponse;
+  accessState: NewsnowAnalysisAccessState;
   isLoading?: boolean;
   isError?: boolean;
+  error?: unknown;
   domesticOpinion?: NewsnowDomesticOpinionIndexResponse;
   isDomesticOpinionLoading?: boolean;
   isDomesticOpinionError?: boolean;
+  domesticOpinionError?: unknown;
 }
 
 function formatPercent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}`;
+}
+
+function formatHottestAnalysisEmptyDescription(
+  analysis?: NewsnowHottestAnalysisResponse,
+): string {
+  const base = describeHottestAnalysisEmptyReason(analysis?.emptyReason);
+  const diagnostics = analysis?.diagnostics;
+
+  if (!diagnostics) {
+    return base;
+  }
+
+  return `${base} 本轮请求 ${diagnostics.sourcesRequested} 个源，成功 ${diagnostics.sourcesSucceeded} 个，失败 ${diagnostics.sourcesFailed} 个。`;
+}
+
+function formatDomesticOpinionEmptyDescription(
+  domesticOpinion?: NewsnowDomesticOpinionIndexResponse,
+): string {
+  const base = describeDomesticOpinionEmptyReason(domesticOpinion?.emptyReason);
+  const requestedHours = domesticOpinion?.diagnostics.requestedHours ?? 24;
+
+  return `${base} 当前查询窗口为最近 ${requestedHours} 小时。`;
+}
+
+function ProtectedStateCard({
+  title,
+  description,
+  variant,
+}: {
+  title: string;
+  description: string;
+  variant: 'empty' | 'permission';
+}) {
+  return (
+    <section className="mx-auto w-full max-w-[1760px] px-4 pt-4 md:px-6 xl:px-8">
+      <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--secondary-foreground)]/70">
+              Hottest Analysis
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-[var(--foreground)]">热点候选</h2>
+          </div>
+          <div className="text-xs text-[var(--secondary-foreground)]">热点分析增强</div>
+        </div>
+        <ChartEmptyState
+          title={title}
+          description={description}
+          variant={variant}
+          className="min-h-[220px]"
+        />
+      </div>
+    </section>
+  );
 }
 
 function DomesticOpinionPanel({
@@ -36,6 +103,8 @@ function DomesticOpinionPanel({
 }) {
   const latest = domesticOpinion?.latest ?? null;
   const trend = domesticOpinion?.trend ?? [];
+  const hasResponse = domesticOpinion !== undefined;
+  const hasContent = Boolean(latest) || trend.length > 0;
   const latestBreakdown = domesticOpinion?.breakdown?.latest ?? null;
   const latestNewsnow = latestBreakdown?.newsnow ?? null;
   const latestPipeline = latestBreakdown?.pipeline ?? null;
@@ -48,7 +117,7 @@ function DomesticOpinionPanel({
     60,
   );
 
-  if (!isLoading && !isError && !latest && trend.length === 0) {
+  if (!isLoading && !isError && !hasContent && !hasResponse) {
     return null;
   }
 
@@ -71,6 +140,10 @@ function DomesticOpinionPanel({
       ) : isError ? (
         <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/5 p-4 text-sm text-rose-200">
           国内舆情指数暂时不可用，热点候选仍会继续刷新。
+        </div>
+      ) : !hasContent ? (
+        <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm text-amber-50/90">
+          {formatDomesticOpinionEmptyDescription(domesticOpinion)}
         </div>
       ) : latest ? (
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
@@ -250,21 +323,60 @@ function DomesticOpinionPanel({
 }
 
 export function NewsnowHottestCandidates({
-  candidates = [],
+  analysis,
+  accessState,
   isLoading = false,
   isError = false,
+  error,
   domesticOpinion,
   isDomesticOpinionLoading = false,
   isDomesticOpinionError = false,
+  domesticOpinionError,
 }: NewsnowHottestCandidatesProps) {
-  const topCandidates = selectTopHottestCandidates(candidates, 6);
+  const topCandidates = selectTopHottestCandidates(analysis?.candidates ?? [], 6);
+  const analysisErrorKind = error ? classifyRequestError(error).kind : null;
+  const domesticOpinionErrorKind = domesticOpinionError
+    ? classifyRequestError(domesticOpinionError).kind
+    : null;
+  const showLoading =
+    accessState.kind === NewsnowAnalysisAccessKind.Loading || isLoading;
+  const showAuthState =
+    accessState.kind === NewsnowAnalysisAccessKind.Unauthenticated ||
+    analysisErrorKind === 'auth' ||
+    domesticOpinionErrorKind === 'auth';
+  const showPermissionState =
+    accessState.kind === NewsnowAnalysisAccessKind.Forbidden ||
+    analysisErrorKind === 'permission' ||
+    domesticOpinionErrorKind === 'permission';
   const hasDomesticPanel = shouldShowDomesticOpinionPanel({
     domesticOpinion,
-    isLoading: isDomesticOpinionLoading,
+    isLoading:
+      accessState.kind === NewsnowAnalysisAccessKind.Loading ||
+      isDomesticOpinionLoading,
     isError: isDomesticOpinionError,
   });
 
-  if (!isLoading && !isError && topCandidates.length === 0 && !hasDomesticPanel) {
+  if (showAuthState) {
+    return (
+      <ProtectedStateCard
+        title="登录后查看热点分析增强"
+        description="国内舆情指数和跨源热点候选需要登录后才能加载。未登录时仍可浏览原始热榜列表。"
+        variant="empty"
+      />
+    );
+  }
+
+  if (showPermissionState) {
+    return (
+      <ProtectedStateCard
+        title="需要 items.read 权限"
+        description="国内舆情指数和热点候选属于增强分析能力。当前账号没有 items.read/items.write 权限，因此只展示原始热榜。"
+        variant="permission"
+      />
+    );
+  }
+
+  if (!showLoading && !isError && topCandidates.length === 0 && !hasDomesticPanel) {
     return null;
   }
 
@@ -273,7 +385,10 @@ export function NewsnowHottestCandidates({
       <div className="glass-panel rounded-[26px] border border-white/10 px-4 py-4 shadow-[0_20px_48px_-32px_rgba(15,23,42,0.65)] md:px-5">
         <DomesticOpinionPanel
           domesticOpinion={domesticOpinion}
-          isLoading={isDomesticOpinionLoading}
+          isLoading={
+            accessState.kind === NewsnowAnalysisAccessKind.Loading ||
+            isDomesticOpinionLoading
+          }
           isError={isDomesticOpinionError}
         />
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -286,7 +401,7 @@ export function NewsnowHottestCandidates({
           <div className="text-xs text-[var(--secondary-foreground)]">跨源聚类 / 热度 / 新鲜度</div>
         </div>
 
-        {isLoading ? (
+        {showLoading ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-2xl border border-white/10 bg-black/10 p-4">
@@ -299,7 +414,16 @@ export function NewsnowHottestCandidates({
             热点分析暂时不可用，页面仍可继续浏览原始热榜。
           </div>
         ) : topCandidates.length === 0 ? (
-          <Empty description="暂无候选热点" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <ChartEmptyState
+            title={
+              analysis?.dataState === NewsnowDataState.Empty
+                ? '当前没有可展示的热点候选'
+                : '暂无候选热点'
+            }
+            description={formatHottestAnalysisEmptyDescription(analysis)}
+            variant="empty"
+            className="min-h-[220px]"
+          />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {topCandidates.map((candidate) => (

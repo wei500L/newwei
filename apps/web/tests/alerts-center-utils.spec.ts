@@ -1,13 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
 import {
   AlertChannelType,
   AlertDeliveryStatus,
   AlertEventStatus,
   AlertMetricProvider,
-  AlertSeverity
-} from '../graphql/generated';
-import dayjs from '../lib/dayjs';
+  AlertSeverity,
+} from "../graphql/generated";
+import dayjs from "../lib/dayjs";
 import {
   buildAlertExportJson,
   buildAlertExportRows,
@@ -16,48 +16,50 @@ import {
   buildRuleTrendAnalysis,
   buildSimilarAlerts,
   filterAlertEvents,
+  resolveAlertCenterAccess,
   resolveSelectedEventId,
   resolveFilterTimeWindow,
   type AlertEventItem,
-  type AlertFilterState
-} from '../app/(app)/alerts/alert-center.utils';
+  type AlertFilterState,
+} from "../app/(app)/alerts/alert-center.utils";
 
 const createEvent = (
-  overrides: Partial<AlertEventItem> & Pick<AlertEventItem, 'id' | 'triggeredAt'>
+  overrides: Partial<AlertEventItem> &
+    Pick<AlertEventItem, "id" | "triggeredAt">,
 ): AlertEventItem => {
   const { id, triggeredAt, ...rest } = overrides;
   return {
-    __typename: 'AlertEventModel',
+    __typename: "AlertEventModel",
     id,
     triggeredAt,
     metricValue: 42,
     changePercent: null,
     severity: AlertSeverity.Medium,
     status: AlertEventStatus.Delivered,
-    message: 'Alert triggered',
-    ruleId: 'rule-1',
-    ruleName: 'Economic anomaly rule',
+    message: "Alert triggered",
+    ruleId: "rule-1",
+    ruleName: "Economic anomaly rule",
     metricProvider: AlertMetricProvider.EconomicAnomaly,
-    metricSlug: 'economy.cpi',
+    metricSlug: "economy.cpi",
     operator: null,
     thresholdValue: null,
     thresholdLower: null,
     thresholdUpper: null,
     changeWindowMin: null,
-    context: { foo: 'bar' },
+    context: { foo: "bar" },
     deliveries: [
       {
-        __typename: 'AlertDeliveryModel',
+        __typename: "AlertDeliveryModel",
         id: `delivery-${id}`,
         status: AlertDeliveryStatus.Pending,
         channelType: AlertChannelType.Webhook,
-        channelName: 'Ops webhook',
-        target: 'https://example.com',
+        channelName: "Ops webhook",
+        target: "https://example.com",
         sentAt: null,
-        error: null
-      }
+        error: null,
+      },
     ],
-    ...rest
+    ...rest,
   };
 };
 
@@ -65,36 +67,56 @@ const defaultFilterState: AlertFilterState = {
   severities: [],
   statuses: [],
   providers: [],
-  ruleKeyword: '',
-  datePreset: '30d',
-  customRangeMs: null
+  ruleKeyword: "",
+  datePreset: "30d",
+  customRangeMs: null,
 };
 
-describe('alert-center utils', () => {
-  it('filters events by severity, status, provider, keyword, and date range', () => {
+describe("alert-center utils", () => {
+  it("only queries alert events for authenticated users with alerts.read", () => {
+    expect(resolveAlertCenterAccess("loading", [])).toEqual({
+      authenticated: false,
+      canReadAlerts: false,
+      shouldQueryEvents: false,
+    });
+
+    expect(resolveAlertCenterAccess("authenticated", ["items.read"])).toEqual({
+      authenticated: true,
+      canReadAlerts: false,
+      shouldQueryEvents: false,
+    });
+
+    expect(resolveAlertCenterAccess("authenticated", ["alerts.read"])).toEqual({
+      authenticated: true,
+      canReadAlerts: true,
+      shouldQueryEvents: true,
+    });
+  });
+
+  it("filters events by severity, status, provider, keyword, and date range", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-20T10:00:00Z',
+        id: "evt-1",
+        triggeredAt: "2026-01-20T10:00:00Z",
         severity: AlertSeverity.High,
-        status: AlertEventStatus.Pending
+        status: AlertEventStatus.Pending,
       }),
       createEvent({
-        id: 'evt-2',
-        triggeredAt: '2026-01-28T10:00:00Z',
+        id: "evt-2",
+        triggeredAt: "2026-01-28T10:00:00Z",
         severity: AlertSeverity.High,
         status: AlertEventStatus.Pending,
         metricProvider: AlertMetricProvider.EntitySentiment,
-        ruleName: 'Sentiment spike'
+        ruleName: "Sentiment spike",
       }),
       createEvent({
-        id: 'evt-3',
-        triggeredAt: '2026-01-29T10:00:00Z',
+        id: "evt-3",
+        triggeredAt: "2026-01-29T10:00:00Z",
         severity: AlertSeverity.High,
         status: AlertEventStatus.Pending,
         metricProvider: AlertMetricProvider.EntitySentiment,
-        ruleName: 'Sentiment spike alpha'
-      })
+        ruleName: "Sentiment spike alpha",
+      }),
     ];
 
     const filterState: AlertFilterState = {
@@ -102,22 +124,45 @@ describe('alert-center utils', () => {
       severities: [AlertSeverity.High],
       statuses: [AlertEventStatus.Pending],
       providers: [AlertMetricProvider.EntitySentiment],
-      ruleKeyword: 'alpha',
-      datePreset: '7d'
+      ruleKeyword: "alpha",
+      datePreset: "7d",
     };
-    const window = resolveFilterTimeWindow(filterState, new Date('2026-01-30T00:00:00Z'));
+    const window = resolveFilterTimeWindow(
+      filterState,
+      new Date("2026-01-30T00:00:00Z"),
+    );
     const filtered = filterAlertEvents(events, filterState, window);
 
-    expect(filtered.map((event) => event.id)).toEqual(['evt-3']);
+    expect(filtered.map((event) => event.id)).toEqual(["evt-3"]);
   });
 
-  it('computes stats and false positive rate', () => {
+  it("computes stats and false positive rate", () => {
     const events = [
-      createEvent({ id: 'evt-1', triggeredAt: '2026-01-01T00:00:00Z', status: AlertEventStatus.Pending }),
-      createEvent({ id: 'evt-2', triggeredAt: '2026-01-02T00:00:00Z', status: AlertEventStatus.Delivered }),
-      createEvent({ id: 'evt-3', triggeredAt: '2026-01-03T00:00:00Z', status: AlertEventStatus.Failed }),
-      createEvent({ id: 'evt-4', triggeredAt: '2026-01-04T00:00:00Z', status: AlertEventStatus.Confirmed }),
-      createEvent({ id: 'evt-5', triggeredAt: '2026-01-05T00:00:00Z', status: AlertEventStatus.Ignored })
+      createEvent({
+        id: "evt-1",
+        triggeredAt: "2026-01-01T00:00:00Z",
+        status: AlertEventStatus.Pending,
+      }),
+      createEvent({
+        id: "evt-2",
+        triggeredAt: "2026-01-02T00:00:00Z",
+        status: AlertEventStatus.Delivered,
+      }),
+      createEvent({
+        id: "evt-3",
+        triggeredAt: "2026-01-03T00:00:00Z",
+        status: AlertEventStatus.Failed,
+      }),
+      createEvent({
+        id: "evt-4",
+        triggeredAt: "2026-01-04T00:00:00Z",
+        status: AlertEventStatus.Confirmed,
+      }),
+      createEvent({
+        id: "evt-5",
+        triggeredAt: "2026-01-05T00:00:00Z",
+        status: AlertEventStatus.Ignored,
+      }),
     ];
 
     const stats = buildAlertStats(events);
@@ -128,178 +173,200 @@ describe('alert-center utils', () => {
     expect(stats.falsePositiveRate).toBe(0.5);
   });
 
-  it('builds daily trend buckets with severity distribution', () => {
+  it("builds daily trend buckets with severity distribution", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-01T03:00:00Z',
-        severity: AlertSeverity.Low
+        id: "evt-1",
+        triggeredAt: "2026-01-01T03:00:00Z",
+        severity: AlertSeverity.Low,
       }),
       createEvent({
-        id: 'evt-2',
-        triggeredAt: '2026-01-01T08:00:00Z',
-        severity: AlertSeverity.High
+        id: "evt-2",
+        triggeredAt: "2026-01-01T08:00:00Z",
+        severity: AlertSeverity.High,
       }),
       createEvent({
-        id: 'evt-3',
-        triggeredAt: '2026-01-03T08:00:00Z',
-        severity: AlertSeverity.Medium
-      })
+        id: "evt-3",
+        triggeredAt: "2026-01-03T08:00:00Z",
+        severity: AlertSeverity.Medium,
+      }),
     ];
 
     const trend = buildAlertTrend(events, {
-      startMs: new Date('2026-01-01T00:00:00Z').getTime(),
-      endMs: new Date('2026-01-03T23:59:59Z').getTime()
+      startMs: new Date("2026-01-01T00:00:00Z").getTime(),
+      endMs: new Date("2026-01-03T23:59:59Z").getTime(),
     });
 
     expect(trend.length).toBeGreaterThanOrEqual(3);
     const byDate = new Map(trend.map((item) => [item.date, item]));
-    expect(byDate.get('2026-01-01')).toMatchObject({ low: 1, medium: 0, high: 1, total: 2 });
-    expect(byDate.get('2026-01-02')).toMatchObject({ total: 0 });
-    expect(byDate.get('2026-01-03')).toMatchObject({ low: 0, medium: 1, high: 0, total: 1 });
+    expect(byDate.get("2026-01-01")).toMatchObject({
+      low: 1,
+      medium: 0,
+      high: 1,
+      total: 2,
+    });
+    expect(byDate.get("2026-01-02")).toMatchObject({ total: 0 });
+    expect(byDate.get("2026-01-03")).toMatchObject({
+      low: 0,
+      medium: 1,
+      high: 0,
+      total: 1,
+    });
   });
 
-  it('preserves explicit selection even when selected event is outside active filters', () => {
+  it("preserves explicit selection even when selected event is outside active filters", () => {
     const newest = createEvent({
-      id: 'evt-1',
-      triggeredAt: '2026-01-02T00:00:00Z'
+      id: "evt-1",
+      triggeredAt: "2026-01-02T00:00:00Z",
     });
     const older = createEvent({
-      id: 'evt-2',
-      triggeredAt: '2026-01-01T00:00:00Z'
+      id: "evt-2",
+      triggeredAt: "2026-01-01T00:00:00Z",
     });
 
     const selectedFromUrl = resolveSelectedEventId({
-      eventParam: 'evt-2',
-      selectedEventId: 'evt-1',
+      eventParam: "evt-2",
+      selectedEventId: "evt-1",
       sortedEvents: [newest, older],
-      filteredEvents: [newest]
+      filteredEvents: [newest],
     });
-    expect(selectedFromUrl).toBe('evt-2');
+    expect(selectedFromUrl).toBe("evt-2");
 
     const preservedCurrentSelection = resolveSelectedEventId({
       eventParam: null,
-      selectedEventId: 'evt-2',
+      selectedEventId: "evt-2",
       sortedEvents: [newest, older],
-      filteredEvents: [newest]
+      filteredEvents: [newest],
     });
-    expect(preservedCurrentSelection).toBe('evt-2');
+    expect(preservedCurrentSelection).toBe("evt-2");
   });
 
-  it('ranks similar alerts by same rule then same metric', () => {
+  it("ranks similar alerts by same rule then same metric", () => {
     const selected = createEvent({
-      id: 'evt-1',
-      triggeredAt: '2026-01-10T00:00:00Z',
-      ruleId: 'rule-1',
+      id: "evt-1",
+      triggeredAt: "2026-01-10T00:00:00Z",
+      ruleId: "rule-1",
       metricProvider: AlertMetricProvider.EconomicAnomaly,
-      metricSlug: 'economy.cpi'
+      metricSlug: "economy.cpi",
     });
     const sameRule = createEvent({
-      id: 'evt-2',
-      triggeredAt: '2026-01-09T00:00:00Z',
-      ruleId: 'rule-1',
+      id: "evt-2",
+      triggeredAt: "2026-01-09T00:00:00Z",
+      ruleId: "rule-1",
       metricProvider: AlertMetricProvider.SystemMetric,
-      metricSlug: 'cpu.usage'
+      metricSlug: "cpu.usage",
     });
     const sameMetric = createEvent({
-      id: 'evt-3',
-      triggeredAt: '2026-01-11T00:00:00Z',
-      ruleId: 'rule-2',
+      id: "evt-3",
+      triggeredAt: "2026-01-11T00:00:00Z",
+      ruleId: "rule-2",
       metricProvider: AlertMetricProvider.EconomicAnomaly,
-      metricSlug: 'economy.cpi'
+      metricSlug: "economy.cpi",
     });
     const unrelated = createEvent({
-      id: 'evt-4',
-      triggeredAt: '2026-01-12T00:00:00Z',
-      ruleId: 'rule-3',
+      id: "evt-4",
+      triggeredAt: "2026-01-12T00:00:00Z",
+      ruleId: "rule-3",
       metricProvider: AlertMetricProvider.EntityAssociation,
-      metricSlug: 'entity.association'
+      metricSlug: "entity.association",
     });
 
-    const similar = buildSimilarAlerts(selected, [selected, sameMetric, unrelated, sameRule], 5);
-    expect(similar.map((item) => item.event.id)).toEqual(['evt-2', 'evt-3']);
-    expect(similar[0]?.reason).toBe('same_rule');
-    expect(similar[1]?.reason).toBe('same_metric');
+    const similar = buildSimilarAlerts(
+      selected,
+      [selected, sameMetric, unrelated, sameRule],
+      5,
+    );
+    expect(similar.map((item) => item.event.id)).toEqual(["evt-2", "evt-3"]);
+    expect(similar[0]?.reason).toBe("same_rule");
+    expect(similar[1]?.reason).toBe("same_metric");
   });
 
-  it('does not treat missing metric slugs as same metric', () => {
+  it("does not treat missing metric slugs as same metric", () => {
     const selected = createEvent({
-      id: 'evt-1',
-      triggeredAt: '2026-01-10T00:00:00Z',
-      ruleId: 'rule-1',
+      id: "evt-1",
+      triggeredAt: "2026-01-10T00:00:00Z",
+      ruleId: "rule-1",
       metricProvider: AlertMetricProvider.EconomicAnomaly,
-      metricSlug: null
+      metricSlug: null,
     });
     const sameProviderMissingSlug = createEvent({
-      id: 'evt-2',
-      triggeredAt: '2026-01-09T00:00:00Z',
-      ruleId: 'rule-2',
+      id: "evt-2",
+      triggeredAt: "2026-01-09T00:00:00Z",
+      ruleId: "rule-2",
       metricProvider: AlertMetricProvider.EconomicAnomaly,
-      metricSlug: null
+      metricSlug: null,
     });
 
-    const similar = buildSimilarAlerts(selected, [selected, sameProviderMissingSlug], 5);
+    const similar = buildSimilarAlerts(
+      selected,
+      [selected, sameProviderMissingSlug],
+      5,
+    );
     expect(similar).toEqual([]);
   });
 
-  it('builds rule trend analysis with frequency and false positive rate', () => {
+  it("builds rule trend analysis with frequency and false positive rate", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-01T00:00:00Z',
-        ruleId: 'rule-1',
-        status: AlertEventStatus.Confirmed
+        id: "evt-1",
+        triggeredAt: "2026-01-01T00:00:00Z",
+        ruleId: "rule-1",
+        status: AlertEventStatus.Confirmed,
       }),
       createEvent({
-        id: 'evt-2',
-        triggeredAt: '2026-01-01T06:00:00Z',
-        ruleId: 'rule-1',
-        status: AlertEventStatus.Ignored
+        id: "evt-2",
+        triggeredAt: "2026-01-01T06:00:00Z",
+        ruleId: "rule-1",
+        status: AlertEventStatus.Ignored,
       }),
       createEvent({
-        id: 'evt-3',
-        triggeredAt: '2026-01-02T00:00:00Z',
-        ruleId: 'rule-1',
-        status: AlertEventStatus.Ignored
+        id: "evt-3",
+        triggeredAt: "2026-01-02T00:00:00Z",
+        ruleId: "rule-1",
+        status: AlertEventStatus.Ignored,
       }),
       createEvent({
-        id: 'evt-4',
-        triggeredAt: '2026-01-03T00:00:00Z',
-        ruleId: 'rule-2',
-        status: AlertEventStatus.Pending
-      })
+        id: "evt-4",
+        triggeredAt: "2026-01-03T00:00:00Z",
+        ruleId: "rule-2",
+        status: AlertEventStatus.Pending,
+      }),
     ];
 
-    const analysis = buildRuleTrendAnalysis(
-      'rule-1',
-      events,
-      {
-        startMs: dayjs('2026-01-01').startOf('day').valueOf(),
-        endMs: dayjs('2026-01-02').endOf('day').valueOf()
-      }
-    );
+    const analysis = buildRuleTrendAnalysis("rule-1", events, {
+      startMs: dayjs("2026-01-01").startOf("day").valueOf(),
+      endMs: dayjs("2026-01-02").endOf("day").valueOf(),
+    });
 
     expect(analysis.totalTriggers).toBe(3);
     expect(analysis.points).toHaveLength(2);
-    expect(analysis.points[0]).toMatchObject({ date: '2026-01-01', triggers: 2, falsePositiveRate: 0.5 });
-    expect(analysis.points[1]).toMatchObject({ date: '2026-01-02', triggers: 1, falsePositiveRate: 1 });
+    expect(analysis.points[0]).toMatchObject({
+      date: "2026-01-01",
+      triggers: 2,
+      falsePositiveRate: 0.5,
+    });
+    expect(analysis.points[1]).toMatchObject({
+      date: "2026-01-02",
+      triggers: 1,
+      falsePositiveRate: 1,
+    });
     expect(analysis.averageDailyTriggers).toBeCloseTo(1.5, 6);
     expect(analysis.falsePositiveRate).toBeCloseTo(2 / 3, 6);
   });
 
-  it('uses full date window when computing average daily triggers', () => {
+  it("uses full date window when computing average daily triggers", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-15T12:00:00Z',
-        ruleId: 'rule-1',
-        status: AlertEventStatus.Pending
-      })
+        id: "evt-1",
+        triggeredAt: "2026-01-15T12:00:00Z",
+        ruleId: "rule-1",
+        status: AlertEventStatus.Pending,
+      }),
     ];
 
-    const analysis = buildRuleTrendAnalysis('rule-1', events, {
-      startMs: dayjs('2026-01-01').startOf('day').valueOf(),
-      endMs: dayjs('2026-01-30').endOf('day').valueOf()
+    const analysis = buildRuleTrendAnalysis("rule-1", events, {
+      startMs: dayjs("2026-01-01").startOf("day").valueOf(),
+      endMs: dayjs("2026-01-30").endOf("day").valueOf(),
     });
 
     expect(analysis.totalTriggers).toBe(1);
@@ -307,76 +374,82 @@ describe('alert-center utils', () => {
     expect(analysis.averageDailyTriggers).toBeCloseTo(1 / 30, 8);
   });
 
-  it('builds export rows with stable headers', () => {
+  it("builds export rows with stable headers", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-01T00:00:00Z',
-        thresholdValue: 12.5
-      })
+        id: "evt-1",
+        triggeredAt: "2026-01-01T00:00:00Z",
+        thresholdValue: 12.5,
+      }),
     ];
 
     const rows = buildAlertExportRows(events);
     expect(rows[0]).toEqual([
-      'id',
-      'triggeredAt',
-      'severity',
-      'status',
-      'ruleName',
-      'metricProvider',
-      'metricSlug',
-      'metricValue',
-      'changePercent',
-      'threshold',
-      'message'
+      "id",
+      "triggeredAt",
+      "severity",
+      "status",
+      "ruleName",
+      "metricProvider",
+      "metricSlug",
+      "metricValue",
+      "changePercent",
+      "threshold",
+      "message",
     ]);
-    expect(rows[1]?.[0]).toBe('evt-1');
-    expect(rows[1]?.[9]).toBe('12.5');
+    expect(rows[1]?.[0]).toBe("evt-1");
+    expect(rows[1]?.[9]).toBe("12.5");
   });
 
-  it('includes context and deliveries when full export is enabled', () => {
+  it("includes context and deliveries when full export is enabled", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-01T00:00:00Z',
-        context: { region: 'apac' }
-      })
+        id: "evt-1",
+        triggeredAt: "2026-01-01T00:00:00Z",
+        context: { region: "apac" },
+      }),
     ];
 
-    const rows = buildAlertExportRows(events, { includeContext: true, includeDeliveries: true });
+    const rows = buildAlertExportRows(events, {
+      includeContext: true,
+      includeDeliveries: true,
+    });
     expect(rows[0]).toEqual([
-      'id',
-      'triggeredAt',
-      'severity',
-      'status',
-      'ruleName',
-      'metricProvider',
-      'metricSlug',
-      'metricValue',
-      'changePercent',
-      'threshold',
-      'message',
-      'context',
-      'deliveries'
+      "id",
+      "triggeredAt",
+      "severity",
+      "status",
+      "ruleName",
+      "metricProvider",
+      "metricSlug",
+      "metricValue",
+      "changePercent",
+      "threshold",
+      "message",
+      "context",
+      "deliveries",
     ]);
-    expect(typeof rows[1]?.[11]).toBe('string');
-    expect(typeof rows[1]?.[12]).toBe('string');
+    expect(typeof rows[1]?.[11]).toBe("string");
+    expect(typeof rows[1]?.[12]).toBe("string");
   });
 
-  it('builds JSON export with optional raw fields', () => {
+  it("builds JSON export with optional raw fields", () => {
     const events = [
       createEvent({
-        id: 'evt-1',
-        triggeredAt: '2026-01-01T00:00:00Z',
-        context: { region: 'emea' }
-      })
+        id: "evt-1",
+        triggeredAt: "2026-01-01T00:00:00Z",
+        context: { region: "emea" },
+      }),
     ];
 
     const basic = buildAlertExportJson(events);
-    expect(basic[0]).not.toHaveProperty('context');
+    expect(basic[0]).not.toHaveProperty("context");
 
-    const full = buildAlertExportJson(events, { includeContext: true, includeDeliveries: true });
-    expect(full[0]).toHaveProperty('context');
-    expect(full[0]).toHaveProperty('deliveries');
+    const full = buildAlertExportJson(events, {
+      includeContext: true,
+      includeDeliveries: true,
+    });
+    expect(full[0]).toHaveProperty("context");
+    expect(full[0]).toHaveProperty("deliveries");
   });
 });

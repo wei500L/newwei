@@ -1,3 +1,5 @@
+import type { NewsnowDataState } from './news-aggregator.types';
+
 export type NewsnowContentKind =
   | 'article'
   | 'discussion'
@@ -5,13 +7,28 @@ export type NewsnowContentKind =
   | 'mixed'
   | 'unknown';
 
+export enum NewsnowHottestAnalysisEmptyReason {
+  NoHottestSourcesConfigured = 'no_hottest_sources_configured',
+  AllSourcesFailed = 'all_sources_failed',
+  NoSourceItems = 'no_source_items',
+  NoHotSignals = 'no_hot_signals',
+  NoCandidates = 'no_candidates',
+}
+
+export interface NewsnowHottestAnalysisDiagnostics {
+  sourcesRequested: number;
+  sourcesSucceeded: number;
+  sourcesFailed: number;
+  sourceItemsFetched: number;
+}
+
 export interface NewsnowHotSignalState {
   firstSeenAt: string;
   lastSeenAt: string;
   lastRank: number | null;
 }
 
-export interface NewsnowHotSignal {
+export interface NewsnowHotSignalSeed {
   signalKey: string;
   sourceId: string;
   sourceName: string;
@@ -25,13 +42,28 @@ export interface NewsnowHotSignal {
   heatText: string | null;
   heatValue: number | null;
   rank: number;
-  capturedAt: string;
   normalizedTitle: string;
   authority: number;
+}
+
+export interface NewsnowHotSignal extends NewsnowHotSignalSeed {
+  capturedAt: string;
   state: NewsnowHotSignalState | null;
   isNew: boolean;
   isRising: boolean;
   freshnessScore: number;
+}
+
+export interface NewsnowHottestGlobalSnapshot {
+  signature: string;
+  generatedAt: string;
+  diagnostics: NewsnowHottestAnalysisDiagnostics;
+  errors: Array<{ sourceId: string; message: string }>;
+  totalDomesticSourceCount: number;
+  globalMaxHeatValue: number;
+  signalSeeds: NewsnowHotSignalSeed[];
+  clusters: NewsnowHotSignalCluster[];
+  clusterInsights: NewsnowClusterInsight[];
 }
 
 export interface NewsnowHotSignalCluster {
@@ -105,6 +137,9 @@ export interface NewsnowEventCandidate {
 export interface NewsnowHottestAnalysisResponse {
   generatedAt: string;
   cached: boolean;
+  dataState: NewsnowDataState;
+  emptyReason: NewsnowHottestAnalysisEmptyReason | null;
+  diagnostics: NewsnowHottestAnalysisDiagnostics;
   sourcesAnalyzed: number;
   itemsAnalyzed: number;
   bySource: Record<string, Record<string, NewsnowAnalyzedItem>>;

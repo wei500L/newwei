@@ -8,6 +8,12 @@ import bcrypt from "bcrypt";
 import { decode, sign } from "jsonwebtoken";
 import crypto from "node:crypto";
 
+import {
+  collectMembershipPermissionSet,
+  collectMembershipRoleIds,
+  type MembershipRoleWithPermissions,
+  type MembershipWithRoles,
+} from "../../common/authz/membership-permissions";
 import { TooManyRequestsException } from "../../common/exceptions/too-many-requests.exception";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
 import { CacheService } from "../cache/cache.service";
@@ -54,23 +60,9 @@ export interface AuthenticatedUser {
   accessTokenExpiresAt?: number;
 }
 
-interface MembershipRolePermission {
-  permission?: { name?: string | null };
-}
+interface MembershipRole extends MembershipRoleWithPermissions {}
 
-interface MembershipRole {
-  permissions?: MembershipRolePermission[];
-}
-
-interface MembershipRoleLink {
-  roleId?: string | null;
-  role?: MembershipRole | null;
-}
-
-interface MembershipRecord {
-  roleId?: string | null;
-  roles?: MembershipRoleLink[] | null;
-  role?: MembershipRole | null;
+interface MembershipRecord extends MembershipWithRoles<MembershipRole> {
   isActive?: boolean;
   org?: {
     isActive?: boolean;
@@ -315,44 +307,10 @@ export class AuthService {
     AuthenticatedUser,
     "primaryRoleId" | "roleIds" | "permissions" | "planTier" | "subscriptionStatus"
   > {
-    const roleIds = new Set<string>();
-    const permissions = new Set<string>();
-
-    const roleLinks = Array.isArray(membership?.roles) ? membership.roles : [];
-    if (roleLinks.length > 0) {
-      for (const link of roleLinks) {
-        if (typeof link?.roleId === "string") {
-          roleIds.add(link.roleId);
-        }
-        const rolePermissions = Array.isArray(link?.role?.permissions)
-          ? link.role.permissions
-          : [];
-        for (const rolePermission of rolePermissions) {
-          const name = rolePermission?.permission?.name;
-          if (typeof name === "string") {
-            permissions.add(name);
-          }
-        }
-      }
-    } else {
-      if (typeof membership?.roleId === "string") {
-        roleIds.add(membership.roleId);
-      }
-      const rolePermissions = Array.isArray(membership?.role?.permissions)
-        ? membership.role.permissions
-        : [];
-      for (const rolePermission of rolePermissions) {
-        const name = rolePermission?.permission?.name;
-        if (typeof name === "string") {
-          permissions.add(name);
-        }
-      }
-    }
-
     return {
       primaryRoleId: membership.roleId ?? null,
-      roleIds: Array.from(roleIds),
-      permissions: Array.from(permissions),
+      roleIds: collectMembershipRoleIds(membership),
+      permissions: Array.from(collectMembershipPermissionSet(membership)),
       planTier: membership.org?.planTier ?? null,
       subscriptionStatus: membership.org?.subscriptionStatus ?? null,
     };

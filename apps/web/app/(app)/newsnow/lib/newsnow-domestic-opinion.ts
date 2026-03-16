@@ -30,5 +30,5 @@ export function shouldShowDomesticOpinionPanel(input: {
   if (input.isLoading || input.isError) {
     return true;
   }
-  return Boolean(input.domesticOpinion?.latest) || (input.domesticOpinion?.trend.length ?? 0) > 0;
+  return input.domesticOpinion !== undefined;
 }
