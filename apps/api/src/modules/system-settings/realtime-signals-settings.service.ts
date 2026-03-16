@@ -33,6 +33,13 @@ interface StoredRealtimeSignalsSettings {
   adsbEnabled?: unknown;
   openskyIntervalSec?: unknown;
   adsbIntervalSec?: unknown;
+  openskyDailyCreditBudget?: unknown;
+  openskyDayIntervalSec?: unknown;
+  openskyNightIntervalSec?: unknown;
+  openskyDayStartHourHkt?: unknown;
+  openskyNightStartHourHkt?: unknown;
+  openskyWarningRemainingPct?: unknown;
+  openskyCriticalRemainingPct?: unknown;
   aisEnabled?: unknown;
   aisIntervalSec?: unknown;
   unrestEnabled?: unknown;
@@ -101,6 +108,13 @@ interface EffectiveRealtimeSignalsSettings {
   maxRetries: number;
   openskyEnabled: boolean;
   openskyIntervalSec: number;
+  openskyDailyCreditBudget: number;
+  openskyDayIntervalSec: number;
+  openskyNightIntervalSec: number;
+  openskyDayStartHourHkt: number;
+  openskyNightStartHourHkt: number;
+  openskyWarningRemainingPct: number;
+  openskyCriticalRemainingPct: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -163,6 +177,13 @@ export interface RealtimeSignalsSettingsPublic {
   acledApiDisabledReason?: string;
   openskyEnabled: boolean;
   openskyIntervalSec: number;
+  openskyDailyCreditBudget: number;
+  openskyDayIntervalSec: number;
+  openskyNightIntervalSec: number;
+  openskyDayStartHourHkt: number;
+  openskyNightStartHourHkt: number;
+  openskyWarningRemainingPct: number;
+  openskyCriticalRemainingPct: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -291,6 +312,13 @@ export class RealtimeSignalsSettingsService {
       acledApiDisabledReason: acledApiPolicy.reason,
       openskyEnabled: effective.openskyEnabled,
       openskyIntervalSec: effective.openskyIntervalSec,
+      openskyDailyCreditBudget: effective.openskyDailyCreditBudget,
+      openskyDayIntervalSec: effective.openskyDayIntervalSec,
+      openskyNightIntervalSec: effective.openskyNightIntervalSec,
+      openskyDayStartHourHkt: effective.openskyDayStartHourHkt,
+      openskyNightStartHourHkt: effective.openskyNightStartHourHkt,
+      openskyWarningRemainingPct: effective.openskyWarningRemainingPct,
+      openskyCriticalRemainingPct: effective.openskyCriticalRemainingPct,
       aisEnabled: effective.aisEnabled,
       aisIntervalSec: effective.aisIntervalSec,
       unrestEnabled: effective.unrestEnabled,
@@ -414,6 +442,13 @@ export class RealtimeSignalsSettingsService {
         tokenUrl: effective.openskyTokenUrl,
         clientId: effective.openskyClientId,
         clientSecret: effective.openskyClientSecret,
+        dailyCreditBudget: effective.openskyDailyCreditBudget,
+        dayIntervalSec: effective.openskyDayIntervalSec,
+        nightIntervalSec: effective.openskyNightIntervalSec,
+        dayStartHourHkt: effective.openskyDayStartHourHkt,
+        nightStartHourHkt: effective.openskyNightStartHourHkt,
+        warningRemainingPct: effective.openskyWarningRemainingPct,
+        criticalRemainingPct: effective.openskyCriticalRemainingPct,
       },
       credentials: {
         aisApiKey: effective.aisApiKey,
@@ -452,6 +487,13 @@ export class RealtimeSignalsSettingsService {
       adsbEnabled?: boolean;
       openskyIntervalSec?: number;
       adsbIntervalSec?: number;
+      openskyDailyCreditBudget?: number;
+      openskyDayIntervalSec?: number;
+      openskyNightIntervalSec?: number;
+      openskyDayStartHourHkt?: number;
+      openskyNightStartHourHkt?: number;
+      openskyWarningRemainingPct?: number;
+      openskyCriticalRemainingPct?: number;
       aisEnabled?: boolean;
       aisIntervalSec?: number;
       unrestEnabled?: boolean;
@@ -512,6 +554,48 @@ export class RealtimeSignalsSettingsService {
         effective.openskyIntervalSec,
         30,
         86_400,
+      ),
+      openskyDailyCreditBudget: this.asBoundedInt(
+        input.openskyDailyCreditBudget,
+        effective.openskyDailyCreditBudget,
+        1,
+        100_000,
+      ),
+      openskyDayIntervalSec: this.asBoundedInt(
+        input.openskyDayIntervalSec,
+        effective.openskyDayIntervalSec,
+        30,
+        86_400,
+      ),
+      openskyNightIntervalSec: this.asBoundedInt(
+        input.openskyNightIntervalSec,
+        effective.openskyNightIntervalSec,
+        30,
+        86_400,
+      ),
+      openskyDayStartHourHkt: this.asBoundedInt(
+        input.openskyDayStartHourHkt,
+        effective.openskyDayStartHourHkt,
+        0,
+        23,
+      ),
+      openskyNightStartHourHkt: this.asBoundedInt(
+        input.openskyNightStartHourHkt,
+        effective.openskyNightStartHourHkt,
+        0,
+        23,
+      ),
+      openskyWarningRemainingPct: this.asBoundedInt(
+        input.openskyWarningRemainingPct,
+        effective.openskyWarningRemainingPct,
+        1,
+        99,
+      ),
+      openskyCriticalRemainingPct: this.asBoundedInt(
+        input.openskyCriticalRemainingPct,
+        effective.openskyCriticalRemainingPct,
+        0,
+        98,
       ),
       aisEnabled: this.asBoolean(input.aisEnabled, effective.aisEnabled),
       aisIntervalSec: this.asBoundedInt(
@@ -662,6 +746,17 @@ export class RealtimeSignalsSettingsService {
         "polymarketProxyUrl",
       ),
     };
+
+    this.validateOpenskyBudgetSettings({
+      openskyDailyCreditBudget: nextStored.openskyDailyCreditBudget as number,
+      openskyDayIntervalSec: nextStored.openskyDayIntervalSec as number,
+      openskyNightIntervalSec: nextStored.openskyNightIntervalSec as number,
+      openskyDayStartHourHkt: nextStored.openskyDayStartHourHkt as number,
+      openskyNightStartHourHkt: nextStored.openskyNightStartHourHkt as number,
+      openskyWarningRemainingPct: nextStored.openskyWarningRemainingPct as number,
+      openskyCriticalRemainingPct:
+        nextStored.openskyCriticalRemainingPct as number,
+    });
 
     await this.prisma.systemSetting.upsert({
       where: { key: SETTINGS_KEY },
@@ -830,7 +925,7 @@ export class RealtimeSignalsSettingsService {
       "wingbits api key",
     );
 
-    return {
+    const effective: EffectiveRealtimeSignalsSettings = {
       enabled: this.asBoolean(stored?.enabled, envConfig.enabled),
       requestTimeoutMs: this.asBoundedInt(
         stored?.requestTimeoutMs,
@@ -853,6 +948,48 @@ export class RealtimeSignalsSettingsService {
         envConfig.sources.opensky.intervalSec,
         30,
         86_400,
+      ),
+      openskyDailyCreditBudget: this.asBoundedInt(
+        stored?.openskyDailyCreditBudget,
+        envConfig.opensky.dailyCreditBudget,
+        1,
+        100_000,
+      ),
+      openskyDayIntervalSec: this.asBoundedInt(
+        stored?.openskyDayIntervalSec,
+        envConfig.opensky.dayIntervalSec,
+        30,
+        86_400,
+      ),
+      openskyNightIntervalSec: this.asBoundedInt(
+        stored?.openskyNightIntervalSec,
+        envConfig.opensky.nightIntervalSec,
+        30,
+        86_400,
+      ),
+      openskyDayStartHourHkt: this.asBoundedInt(
+        stored?.openskyDayStartHourHkt,
+        envConfig.opensky.dayStartHourHkt,
+        0,
+        23,
+      ),
+      openskyNightStartHourHkt: this.asBoundedInt(
+        stored?.openskyNightStartHourHkt,
+        envConfig.opensky.nightStartHourHkt,
+        0,
+        23,
+      ),
+      openskyWarningRemainingPct: this.asBoundedInt(
+        stored?.openskyWarningRemainingPct,
+        envConfig.opensky.warningRemainingPct,
+        1,
+        99,
+      ),
+      openskyCriticalRemainingPct: this.asBoundedInt(
+        stored?.openskyCriticalRemainingPct,
+        envConfig.opensky.criticalRemainingPct,
+        0,
+        98,
       ),
       aisEnabled: this.asBoolean(
         stored?.aisEnabled,
@@ -996,6 +1133,9 @@ export class RealtimeSignalsSettingsService {
         this.normalizeUrl(stored?.polymarketProxyUrl) ??
         this.normalizeUrl(envConfig.polymarket.proxyUrl),
     };
+
+    this.validateOpenskyBudgetSettings(effective);
+    return effective;
   }
 
   private resolveSecretPresence(
@@ -1084,6 +1224,37 @@ export class RealtimeSignalsSettingsService {
       return parsed.toString().replace(/\/+$/, "");
     } catch {
       throw new BadRequestException(`${fieldName} must be a valid http(s) URL`);
+    }
+  }
+
+  private validateOpenskyBudgetSettings(input: {
+    openskyDailyCreditBudget: number;
+    openskyDayIntervalSec: number;
+    openskyNightIntervalSec: number;
+    openskyDayStartHourHkt: number;
+    openskyNightStartHourHkt: number;
+    openskyWarningRemainingPct: number;
+    openskyCriticalRemainingPct: number;
+  }) {
+    if (input.openskyDailyCreditBudget <= 0) {
+      throw new BadRequestException(
+        "openskyDailyCreditBudget must be greater than 0",
+      );
+    }
+    if (input.openskyDayStartHourHkt >= input.openskyNightStartHourHkt) {
+      throw new BadRequestException(
+        "openskyDayStartHourHkt must be earlier than openskyNightStartHourHkt",
+      );
+    }
+    if (input.openskyCriticalRemainingPct >= input.openskyWarningRemainingPct) {
+      throw new BadRequestException(
+        "openskyCriticalRemainingPct must be lower than openskyWarningRemainingPct",
+      );
+    }
+    if (input.openskyDayIntervalSec > input.openskyNightIntervalSec) {
+      throw new BadRequestException(
+        "openskyDayIntervalSec must be less than or equal to openskyNightIntervalSec",
+      );
     }
   }
 

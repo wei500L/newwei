@@ -337,6 +337,45 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .positive()
       .default(900),
+    REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4000),
+    REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(600),
+    REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1800),
+    REALTIME_SIGNALS_OPENSKY_DAY_START_HKT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(23)
+      .default(8),
+    REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(23)
+      .default(22),
+    REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(99)
+      .default(20),
+    REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(98)
+      .default(10),
     REALTIME_SIGNALS_ADSB_ENABLED: envBoolean.optional(),
     REALTIME_SIGNALS_ADSB_INTERVAL_SEC: z.coerce
       .number()

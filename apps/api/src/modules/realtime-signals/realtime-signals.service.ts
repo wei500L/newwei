@@ -6,11 +6,13 @@ import {
   getCountryName,
   normalizeCountryCode,
 } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus } from "@prisma/client";
+import type Redis from "ioredis";
 
 import { CacheService } from "../cache/cache.service";
+import { REDIS_CLIENT } from "../cache/cache.tokens";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { RealtimeSignalsSettingsService } from "../system-settings/realtime-signals-settings.service";
@@ -33,6 +35,11 @@ import type {
   RealtimeAisVesselSnapshot,
   RealtimeSignalFetchResult,
   RealtimeSignalFlightMode,
+  RealtimeOpenskyBudgetDaySummary,
+  RealtimeOpenskyBudgetDegradationLevel,
+  RealtimeOpenskyErrorKind,
+  RealtimeOpenskyBudgetPeriod,
+  RealtimeOpenskyBudgetSummary,
   RealtimeSignalsRuntimeDiagnostics,
   RealtimeSignalRuntimeSourceDiagnostics,
   RealtimeSignalSource,
@@ -118,19 +125,100 @@ const OPENSKY_DEFAULT_TOKEN_URL =
   "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 const OPENSKY_VIEWPORT_CACHE_TTL_SECONDS = 15;
 const OPENSKY_REGION_CACHE_TTL_SECONDS = 60;
+const OPENSKY_BUDGET_RETENTION_DAYS = 14;
+const OPENSKY_BUDGET_RECENT_DAYS = 7;
+const OPENSKY_HKT_TIME_ZONE = "Asia/Hong_Kong";
+const OPENSKY_BUDGET_RESERVE_LUA_KEYS = 1;
+const OPENSKY_BUDGET_RESERVE_LUA_SCRIPT = `
+local key = KEYS[1]
+local daily_budget = tonumber(ARGV[1]) or 0
+local credits = tonumber(ARGV[2]) or 0
+local request_count = tonumber(ARGV[3]) or 0
+local calls_field = ARGV[4]
+local credits_field = ARGV[5]
+local ttl_seconds = tonumber(ARGV[6]) or 0
+
+local used_credits = tonumber(redis.call('HGET', key, 'usedCredits') or '0')
+local remaining_credits = math.max(0, daily_budget - used_credits)
+
+if credits > 0 and used_credits + credits > daily_budget then
+  return {0, used_credits, remaining_credits}
+end
+
+if credits > 0 then
+  redis.call('HINCRBY', key, 'usedCredits', credits)
+end
+if request_count > 0 then
+  redis.call('HINCRBY', key, 'requestCount', request_count)
+  if calls_field and calls_field ~= '' then
+    redis.call('HINCRBY', key, calls_field, request_count)
+  end
+end
+if credits > 0 and credits_field and credits_field ~= '' then
+  redis.call('HINCRBY', key, credits_field, credits)
+end
+if ttl_seconds > 0 then
+  redis.call('EXPIRE', key, ttl_seconds)
+end
+
+local next_used = used_credits + credits
+local next_remaining = math.max(0, daily_budget - next_used)
+return {1, next_used, next_remaining}
+`;
 const FEET_PER_METER = 3.28084;
 const KNOTS_PER_METER_PER_SECOND = 1.94384;
 const OPENSKY_MILITARY_QUERY_REGIONS = [
-  { key: "america", bbox: [-130, 24, -60, 55] as [number, number, number, number] },
-  { key: "eu", bbox: [-15, 35, 40, 65] as [number, number, number, number] },
-  { key: "mena", bbox: [-20, 12, 65, 45] as [number, number, number, number] },
-  { key: "asia", bbox: [95, 18, 150, 52] as [number, number, number, number] },
-  { key: "oceania", bbox: [110, -47, 180, 5] as [number, number, number, number] },
-  { key: "arctic", bbox: [-80, 55, 60, 85] as [number, number, number, number] },
+  {
+    key: "america",
+    bbox: [-130, 24, -60, 55] as [number, number, number, number],
+    credits: 4,
+  },
+  {
+    key: "eu",
+    bbox: [-15, 35, 40, 65] as [number, number, number, number],
+    credits: 4,
+  },
+  {
+    key: "mena",
+    bbox: [-20, 12, 65, 45] as [number, number, number, number],
+    credits: 4,
+  },
+  {
+    key: "asia",
+    bbox: [95, 18, 150, 52] as [number, number, number, number],
+    credits: 4,
+  },
+  {
+    key: "oceania",
+    bbox: [110, -47, 180, 5] as [number, number, number, number],
+    credits: 4,
+  },
+  {
+    key: "arctic",
+    bbox: [-80, 55, 60, 85] as [number, number, number, number],
+    credits: 4,
+  },
 ] as const;
 const OPENSKY_HIGH_CONFIDENCE_CALLSIGN_PATTERNS = [
   /^(RCH|RRR|CNV|QID|GAF|BAF|NVY|NAF|VM)[A-Z0-9]{1,6}$/i,
   /^ASCOT[A-Z0-9]{1,6}$/i,
+] as const;
+const OPENSKY_BUDGET_HASH_FIELDS = [
+  "usedCredits",
+  "requestCount",
+  "militaryCredits",
+  "militaryCalls",
+  "allCredits",
+  "allCalls",
+  "errorCalls",
+  "authErrorCalls",
+  "rateLimitedErrorCalls",
+  "serverErrorCalls",
+  "timeoutErrorCalls",
+  "networkErrorCalls",
+  "unknownErrorCalls",
+  "blockedAllModeCount",
+  "skippedMilitaryCount",
 ] as const;
 const SOURCE_TO_METRIC_SLUG: Record<RealtimeSignalSource, string> = {
   opensky: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
@@ -161,6 +249,9 @@ interface JsonFetchOptions {
   headers?: Record<string, string>;
   body?: unknown;
   rawBody?: string;
+  beforeAttempt?: () => Promise<void> | void;
+  maxRetries?: number;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
 interface UnrestFeedFetchResult {
@@ -193,11 +284,58 @@ interface AdsbNormalizationResult {
   dropReason?: "invalid_position" | "missing_identity" | "stale_position";
 }
 
+type OpenSkyCreditScope = "military" | "all";
+
+type OpenSkyBudgetCounterField = (typeof OPENSKY_BUDGET_HASH_FIELDS)[number];
+
+interface OpenSkyBudgetReserveResult {
+  allowed: boolean;
+  usedCredits: number;
+  remainingCredits: number;
+}
+
+interface OpenSkyDiagnosticMessage {
+  code?: string;
+  message?: string;
+}
+
+interface OpenSkyErrorDetails {
+  kind: RealtimeOpenskyErrorKind;
+  status?: number;
+  message: string;
+}
+
+const OPENSKY_HKT_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: OPENSKY_HKT_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+class OpenSkyBudgetExhaustedError extends Error {
+  constructor(message = "OpenSky daily credit budget is exhausted") {
+    super(message);
+    this.name = "OpenSkyBudgetExhaustedError";
+  }
+}
+
+class OpenSkyBudgetReserveError extends Error {
+  constructor(
+    message = "OpenSky daily credit budget does not have enough remaining credits for this request",
+  ) {
+    super(message);
+    this.name = "OpenSkyBudgetReserveError";
+  }
+}
+
 @Injectable()
 export class RealtimeSignalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly env: EnvService,
     private readonly store: RealtimeSignalsSnapshotStore,
     private readonly settings: RealtimeSignalsSettingsService,
@@ -253,6 +391,9 @@ export class RealtimeSignalsService {
       this.createEmptyInsightSnapshot();
     const nextInsight = this.createEmptyInsightSnapshot();
     const nowMs = Date.now();
+    const openskyBudget = runtime.sources.opensky.enabled
+      ? await this.getOpenskyBudgetSummary(runtime, nowMs)
+      : undefined;
 
     for (const source of REALTIME_SIGNAL_SOURCES) {
       const sourceConfig = runtime.sources[source];
@@ -264,12 +405,20 @@ export class RealtimeSignalsService {
         }
         continue;
       }
-      const previousSourceState = await this.store.getSourceState(orgId, source);
+      const previousSourceState = await this.store.getSourceState(
+        orgId,
+        source,
+      );
+      const effectiveIntervalSec =
+        source === "opensky"
+          ? (openskyBudget?.effectiveMilitaryIntervalSec ??
+            sourceConfig.intervalSec)
+          : sourceConfig.intervalSec;
 
       const refreshState = await this.resolveRefreshState(
         orgId,
         source,
-        sourceConfig.intervalSec,
+        effectiveIntervalSec,
       );
       if (!refreshState.shouldRun) {
         this.carryForwardInsightSnapshot(
@@ -277,7 +426,7 @@ export class RealtimeSignalsService {
           currentInsight,
           source,
           refreshState.lastRunMs,
-          sourceConfig.intervalSec,
+          effectiveIntervalSec,
           nowMs,
         );
         continue;
@@ -307,13 +456,18 @@ export class RealtimeSignalsService {
         this.updateInsightSnapshot(nextInsight, source, results, nowIso);
       } catch (error) {
         const nowIso = new Date().toISOString();
+        const diagnosticError = this.toDiagnosticErrorDetails(error);
         await this.store.setSourceState(orgId, {
           source,
           status: "error",
           lastAttemptAt: nowIso,
           lastSuccessAt: previousSourceState?.lastSuccessAt,
           lastErrorAt: nowIso,
-          lastError: this.toDiagnosticErrorMessage(error),
+          lastError: diagnosticError.message,
+          lastErrorKind:
+            source === "opensky" ? diagnosticError.kind : undefined,
+          lastErrorStatus:
+            source === "opensky" ? diagnosticError.status : undefined,
           metricSlug: previousSourceState?.metricSlug,
           latestValue: previousSourceState?.latestValue,
           context: previousSourceState?.context,
@@ -335,19 +489,29 @@ export class RealtimeSignalsService {
   async getRuntimeDiagnostics(
     orgId: string,
   ): Promise<RealtimeSignalsRuntimeDiagnostics> {
-    const [runtime, settingsSource, insight, markerReadiness, adsbLatestSnapshot] =
-      await Promise.all([
-        this.getRuntimeConfig({ refreshAcledToken: false }),
-        this.getRuntimeSettingsSource(orgId),
-        this.store.getInsightSnapshot(orgId),
-        this.getMarkerReadiness(orgId),
-        this.store.getLatestAdsbSnapshot(orgId),
-      ]);
+    const [
+      runtime,
+      settingsSource,
+      insight,
+      markerReadiness,
+      adsbLatestSnapshot,
+    ] = await Promise.all([
+      this.getRuntimeConfig({ refreshAcledToken: false }),
+      this.getRuntimeSettingsSource(orgId),
+      this.store.getInsightSnapshot(orgId),
+      this.getMarkerReadiness(orgId),
+      this.store.getLatestAdsbSnapshot(orgId),
+    ]);
     const nowMs = Date.now();
+    const openskyBudget = await this.getOpenskyBudgetSummary(runtime, nowMs);
 
     const sources = await Promise.all(
       REALTIME_SIGNAL_SOURCES.map(async (source) => {
         const sourceConfig = runtime.sources[source];
+        const effectiveIntervalSec =
+          source === "opensky"
+            ? openskyBudget.effectiveMilitaryIntervalSec
+            : sourceConfig.intervalSec;
         const metricSlug = SOURCE_TO_METRIC_SLUG[source];
         const [lastRunMs, sourceState, evaluation] = await Promise.all([
           this.store.getLastRun(orgId, source),
@@ -355,7 +519,7 @@ export class RealtimeSignalsService {
           this.store.evaluateMetric(
             orgId,
             metricSlug,
-            Math.max(60, Math.round(sourceConfig.intervalSec / 60)),
+            Math.max(60, Math.round(effectiveIntervalSec / 60)),
           ),
         ]);
 
@@ -373,12 +537,15 @@ export class RealtimeSignalsService {
                     this.toFiniteNumber(context?.validPositionCount) ?? 0,
                 },
                 nowMs,
-                sourceConfig.intervalSec,
+                effectiveIntervalSec,
               )
             : undefined;
         const runtimeStatus = this.resolveRuntimeSourceStatus({
           source,
-          sourceConfig,
+          sourceConfig: {
+            enabled: sourceConfig.enabled,
+            intervalSec: effectiveIntervalSec,
+          },
           sourceState,
           lastRunMs,
           context,
@@ -388,9 +555,13 @@ export class RealtimeSignalsService {
         return {
           source,
           enabled: sourceConfig.enabled,
-          intervalSec: sourceConfig.intervalSec,
+          intervalSec: effectiveIntervalSec,
+          ...(source === "opensky"
+            ? { configuredIntervalSec: sourceConfig.intervalSec }
+            : {}),
           status: runtimeStatus.status,
           statusReason: runtimeStatus.reason,
+          statusReasonCode: runtimeStatus.code,
           lastRunAt:
             typeof lastRunMs === "number" && Number.isFinite(lastRunMs)
               ? new Date(lastRunMs).toISOString()
@@ -399,6 +570,8 @@ export class RealtimeSignalsService {
           lastSuccessAt: sourceState?.lastSuccessAt,
           lastErrorAt: sourceState?.lastErrorAt,
           lastError: sourceState?.lastError,
+          lastErrorKind: sourceState?.lastErrorKind,
+          lastErrorStatus: sourceState?.lastErrorStatus,
           latestValue: evaluation.latest,
           previousValue: evaluation.previous,
           changePercent: evaluation.changePercent,
@@ -420,6 +593,7 @@ export class RealtimeSignalsService {
       sources,
       insight: insight ?? this.createEmptyInsightSnapshot(),
       markerReadiness,
+      openskyBudget,
     };
   }
 
@@ -572,6 +746,10 @@ export class RealtimeSignalsService {
     runtime: RealtimeSignalsRuntimeConfig,
   ) {
     const endpoint = `${this.getOpenskyBaseUrl(runtime)}/states/all?regions=${OPENSKY_MILITARY_QUERY_REGIONS.map((region) => region.key).join(",")}`;
+    const nowMs = Date.now();
+    const budgetSummary = await this.getOpenskyBudgetSummary(runtime, nowMs);
+    const effectiveIntervalSec = budgetSummary.effectiveMilitaryIntervalSec;
+    const budgetContext = this.buildOpenskyBudgetContext(budgetSummary);
     if (!this.hasOpenskyCredentials(runtime)) {
       await this.store.clearLatestAdsbSnapshot(orgId);
       return [
@@ -590,6 +768,7 @@ export class RealtimeSignalsService {
             validPositionCount: 0,
             snapshotValidPositionCount: 0,
             countryCodes: [],
+            ...budgetContext,
           },
         },
         {
@@ -609,14 +788,142 @@ export class RealtimeSignalsService {
             currentValidPositionCount: 0,
             snapshotValidPositionCount: 0,
             countryCodes: [],
+            ...budgetContext,
           },
         },
       ] satisfies RealtimeSignalFetchResult[];
     }
 
-    const militaryStates = await this.fetchConservativeMilitaryOpenSkyStates(
-      runtime,
-    );
+    const previousSnapshot = await this.store.getLatestAdsbSnapshot(orgId);
+    let militaryStates: OpenSkyStateVector[];
+    try {
+      militaryStates = await this.fetchConservativeMilitaryOpenSkyStates(
+        runtime,
+        budgetSummary,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof OpenSkyBudgetExhaustedError) &&
+        !(error instanceof OpenSkyBudgetReserveError)
+      ) {
+        throw error;
+      }
+
+      const pausedSnapshot = previousSnapshot;
+      const adsbSnapshot = this.buildAdsbRuntimeDiagnostics(
+        pausedSnapshot,
+        {
+          rawAircraftCount: pausedSnapshot?.totalAircraft ?? 0,
+          currentValidPositionCount: pausedSnapshot?.validPositionCount ?? 0,
+        },
+        nowMs,
+        effectiveIntervalSec,
+      );
+      const countryCodes = Array.from(
+        new Set(
+          (pausedSnapshot?.aircraft ?? [])
+            .map((entry) => entry.countryCode)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ).sort();
+      const militaryCount = pausedSnapshot?.aircraft.length ?? 0;
+      const budgetReserveFailureContext =
+        error instanceof OpenSkyBudgetReserveError
+          ? {
+              budgetReservationFailed: true,
+              budgetReservationFailureCode:
+                "opensky_budget_insufficient_credits",
+            }
+          : {};
+
+      return [
+        {
+          metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.opensky,
+          value: militaryCount,
+          context: {
+            source: "opensky",
+            sourceEndpoint: endpoint,
+            scope: "military",
+            configured: true,
+            authRequired: true,
+            authMode: "oauth2_client_credentials",
+            totalAircraft: pausedSnapshot?.totalAircraft ?? 0,
+            militaryCount,
+            validPositionCount: pausedSnapshot?.validPositionCount ?? 0,
+            snapshotValidPositionCount: pausedSnapshot?.validPositionCount ?? 0,
+            latestObservedAt:
+              pausedSnapshot?.latestObservedAt ??
+              pausedSnapshot?.diagnostics.latestObservedAt ??
+              pausedSnapshot?.updatedAt,
+            snapshotUpdatedAt: pausedSnapshot?.updatedAt,
+            snapshotFreshness: adsbSnapshot.freshness,
+            snapshotAgeSec: adsbSnapshot.snapshotAgeSec,
+            latestObservedAgeSec: adsbSnapshot.latestObservedAgeSec,
+            snapshotRetainedPrevious:
+              pausedSnapshot?.diagnostics.retainedPreviousSnapshot ?? false,
+            staleThresholdSec: adsbSnapshot.staleThresholdSec,
+            droppedInvalidPositionCount:
+              pausedSnapshot?.diagnostics.droppedInvalidPositionCount ?? 0,
+            droppedMissingIdentityCount:
+              pausedSnapshot?.diagnostics.droppedMissingIdentityCount ?? 0,
+            droppedStalePositionCount:
+              pausedSnapshot?.diagnostics.droppedStalePositionCount ?? 0,
+            deduplicatedCount:
+              pausedSnapshot?.diagnostics.deduplicatedCount ?? 0,
+            countryCodes,
+            ...budgetContext,
+            ...budgetReserveFailureContext,
+          },
+        },
+        {
+          metricSlug: REALTIME_SIGNAL_METRIC_SLUGS.openskySnapshotHealth,
+          value:
+            pausedSnapshot && adsbSnapshot.freshness === "fresh"
+              ? this.computeAdsbSnapshotHealthValue(
+                  pausedSnapshot,
+                  adsbSnapshot,
+                )
+              : 2,
+          context: {
+            source: "opensky",
+            sourceEndpoint: endpoint,
+            scope: "military",
+            configured: true,
+            authRequired: true,
+            authMode: "oauth2_client_credentials",
+            healthState: adsbSnapshot.freshness,
+            stale: adsbSnapshot.freshness !== "fresh",
+            snapshotRetainedPrevious:
+              pausedSnapshot?.diagnostics.retainedPreviousSnapshot ?? false,
+            snapshotFreshness: adsbSnapshot.freshness,
+            snapshotUpdatedAt: pausedSnapshot?.updatedAt,
+            latestTimestamp:
+              pausedSnapshot?.latestObservedAt ??
+              pausedSnapshot?.diagnostics.latestObservedAt ??
+              pausedSnapshot?.updatedAt,
+            maxStaleMinutes: Math.max(
+              1,
+              Math.round(adsbSnapshot.staleThresholdSec / 60),
+            ),
+            rawAircraftCount: pausedSnapshot?.totalAircraft ?? 0,
+            currentValidPositionCount: pausedSnapshot?.validPositionCount ?? 0,
+            snapshotValidPositionCount: pausedSnapshot?.validPositionCount ?? 0,
+            droppedInvalidPositionCount:
+              pausedSnapshot?.diagnostics.droppedInvalidPositionCount ?? 0,
+            droppedMissingIdentityCount:
+              pausedSnapshot?.diagnostics.droppedMissingIdentityCount ?? 0,
+            droppedStalePositionCount:
+              pausedSnapshot?.diagnostics.droppedStalePositionCount ?? 0,
+            deduplicatedCount:
+              pausedSnapshot?.diagnostics.deduplicatedCount ?? 0,
+            countryCodes,
+            ...budgetContext,
+            ...budgetReserveFailureContext,
+          },
+        },
+      ] satisfies RealtimeSignalFetchResult[];
+    }
+
     const militaryCount = militaryStates.length;
     const countries = new Set<string>();
     for (const state of militaryStates) {
@@ -627,25 +934,23 @@ export class RealtimeSignalsService {
     }
     const countryCodes = Array.from(countries).sort();
 
-    const nowMs = Date.now();
-    const previousSnapshot = await this.store.getLatestAdsbSnapshot(orgId);
     const nextSnapshot = this.buildAdsbLatestSnapshot(
       endpoint,
       militaryStates.map((entry) => entry.raw),
       militaryCount,
       nowMs,
-      this.getAdsbStaleThresholdSeconds(runtime.sources.opensky.intervalSec),
+      this.getAdsbStaleThresholdSeconds(effectiveIntervalSec),
     );
     const latestSnapshot = this.selectAdsbSnapshotToStore(
       previousSnapshot,
       nextSnapshot,
       nowMs,
-      runtime.sources.opensky.intervalSec,
+      effectiveIntervalSec,
     );
     await this.store.setLatestAdsbSnapshot(
       orgId,
       latestSnapshot,
-      this.getAdsbSnapshotTtlSeconds(runtime.sources.opensky.intervalSec),
+      this.getAdsbSnapshotTtlSeconds(effectiveIntervalSec),
     );
     const adsbSnapshot = this.buildAdsbRuntimeDiagnostics(
       latestSnapshot,
@@ -654,7 +959,7 @@ export class RealtimeSignalsService {
         currentValidPositionCount: nextSnapshot.validPositionCount,
       },
       nowMs,
-      runtime.sources.opensky.intervalSec,
+      effectiveIntervalSec,
     );
 
     return [
@@ -691,6 +996,7 @@ export class RealtimeSignalsService {
             nextSnapshot.diagnostics.droppedStalePositionCount,
           deduplicatedCount: nextSnapshot.diagnostics.deduplicatedCount,
           countryCodes,
+          ...budgetContext,
         },
       },
       {
@@ -731,6 +1037,7 @@ export class RealtimeSignalsService {
             latestSnapshot.diagnostics.droppedStalePositionCount,
           deduplicatedCount: latestSnapshot.diagnostics.deduplicatedCount,
           countryCodes,
+          ...budgetContext,
         },
       },
     ] satisfies RealtimeSignalFetchResult[];
@@ -741,7 +1048,11 @@ export class RealtimeSignalsService {
   }): Promise<{
     configured: boolean;
     requiresZoom: boolean;
+    budgetLimited: boolean;
     sourceEndpoint: string;
+    statusReasonCode?: string;
+    statusReason?: string;
+    budgetSummary?: RealtimeOpenskyBudgetSummary;
     snapshot: RealtimeAdsbLatestSnapshot | null;
   }> {
     const runtime = await this.getRuntimeConfig({ refreshAcledToken: false });
@@ -755,6 +1066,7 @@ export class RealtimeSignalsService {
       return {
         configured: false,
         requiresZoom: false,
+        budgetLimited: false,
         sourceEndpoint,
         snapshot: null,
       };
@@ -763,6 +1075,7 @@ export class RealtimeSignalsService {
       return {
         configured: false,
         requiresZoom: false,
+        budgetLimited: false,
         sourceEndpoint,
         snapshot: null,
       };
@@ -771,23 +1084,78 @@ export class RealtimeSignalsService {
       return {
         configured: true,
         requiresZoom: true,
+        budgetLimited: false,
         sourceEndpoint,
         snapshot: null,
       };
     }
 
-    const states = await this.fetchOpenSkyViewportStates(runtime, options.bbox);
+    const budgetSummary = await this.getOpenskyBudgetSummary(
+      runtime,
+      Date.now(),
+    );
+    if (budgetSummary.allModeBlocked) {
+      await this.recordOpenskyBudgetEvent("blockedAllModeCount");
+      const budgetMessage = this.getOpenskyBudgetLimitedMessage(
+        budgetSummary.degradationLevel,
+      );
+      return {
+        configured: true,
+        requiresZoom: false,
+        budgetLimited: true,
+        sourceEndpoint,
+        statusReasonCode: budgetMessage.code,
+        statusReason: budgetMessage.message,
+        budgetSummary,
+        snapshot: null,
+      };
+    }
+
+    let states: OpenSkyStateVector[];
+    try {
+      states = await this.fetchOpenSkyViewportStates(runtime, options.bbox);
+    } catch (error) {
+      if (!(error instanceof OpenSkyBudgetReserveError)) {
+        throw error;
+      }
+      await this.recordOpenskyBudgetEvent("blockedAllModeCount");
+      const reserveSummary = await this.getOpenskyBudgetSummary(
+        runtime,
+        Date.now(),
+      );
+      const budgetMessage = this.getOpenskyBudgetLimitedMessage(
+        reserveSummary.degradationLevel,
+        "opensky_budget_insufficient_credits",
+      );
+      return {
+        configured: true,
+        requiresZoom: false,
+        budgetLimited: true,
+        sourceEndpoint,
+        statusReasonCode: budgetMessage.code,
+        statusReason: budgetMessage.message,
+        budgetSummary: reserveSummary,
+        snapshot: null,
+      };
+    }
+    const staleIntervalSec = this.getEffectiveOpenskyMilitaryIntervalSec(
+      runtime,
+      budgetSummary.currentPeriod,
+      budgetSummary.degradationLevel,
+    );
     const snapshot = this.buildAdsbLatestSnapshot(
       sourceEndpoint,
       states.map((entry) => entry.raw),
       states.length,
       Date.now(),
-      this.getAdsbStaleThresholdSeconds(runtime.sources.opensky.intervalSec),
+      this.getAdsbStaleThresholdSeconds(staleIntervalSec),
     );
     return {
       configured: true,
       requiresZoom: false,
+      budgetLimited: false,
       sourceEndpoint,
+      budgetSummary,
       snapshot,
     };
   }
@@ -800,7 +1168,9 @@ export class RealtimeSignalsService {
   }
 
   private getOpenskyBaseUrl(runtime: RealtimeSignalsRuntimeConfig) {
-    return this.normalizeUrl(runtime.opensky.baseUrl) ?? OPENSKY_DEFAULT_BASE_URL;
+    return (
+      this.normalizeUrl(runtime.opensky.baseUrl) ?? OPENSKY_DEFAULT_BASE_URL
+    );
   }
 
   private getOpenskyTokenUrl(runtime: RealtimeSignalsRuntimeConfig) {
@@ -811,15 +1181,65 @@ export class RealtimeSignalsService {
 
   private async fetchConservativeMilitaryOpenSkyStates(
     runtime: RealtimeSignalsRuntimeConfig,
+    budgetSummary?: RealtimeOpenskyBudgetSummary,
   ) {
+    const regionCacheKeys = OPENSKY_MILITARY_QUERY_REGIONS.map(
+      (region) => `realtime-signals:opensky:region:${region.key}`,
+    );
+    const cachedRegions =
+      await this.cache.getMany<OpenSkyStateVector[]>(regionCacheKeys);
+    const effectiveBudget =
+      budgetSummary ??
+      (await this.getOpenskyBudgetSummary(runtime, Date.now()));
+    const missingRegions = OPENSKY_MILITARY_QUERY_REGIONS.filter(
+      (_, index) => !Array.isArray(cachedRegions[index]),
+    );
+    if (effectiveBudget.militaryPaused && missingRegions.length > 0) {
+      await this.recordOpenskyBudgetEvent("skippedMilitaryCount");
+      throw new OpenSkyBudgetExhaustedError(
+        "OpenSky military polling is paused because the daily credit budget is exhausted.",
+      );
+    }
+    if (missingRegions.length === 0) {
+      return this.dedupeOpenskyStateVectors(
+        cachedRegions
+          .flatMap((entry) => (Array.isArray(entry) ? entry : []))
+          .filter((state) => this.isConservativeMilitaryState(state)),
+      );
+    }
+
+    const accessToken = await this.getOpenskyAccessToken(runtime);
+    const missingRegionCredits = missingRegions.reduce(
+      (total, region) => total + region.credits,
+      0,
+    );
+    const reserveResult = await this.reserveOpenskyCredits(runtime, {
+      scope: "military",
+      credits: missingRegionCredits,
+      requestCount: missingRegions.length,
+    });
+    if (!reserveResult.allowed) {
+      await this.recordOpenskyBudgetEvent("skippedMilitaryCount");
+      throw new OpenSkyBudgetReserveError(
+        "OpenSky military polling skipped because there are not enough remaining daily credits for the next region batch.",
+      );
+    }
+
     const regionStates = await Promise.all(
-      OPENSKY_MILITARY_QUERY_REGIONS.map((region) =>
-        this.fetchOpenSkyStates(runtime, {
+      OPENSKY_MILITARY_QUERY_REGIONS.map((region, index) => {
+        const cached = cachedRegions[index];
+        if (Array.isArray(cached)) {
+          return cached;
+        }
+        return this.fetchOpenSkyStates(runtime, {
+          scope: "military",
           bbox: region.bbox,
-          cacheKey: `realtime-signals:opensky:region:${region.key}`,
+          cacheKey: regionCacheKeys[index]!,
           cacheTtlSeconds: OPENSKY_REGION_CACHE_TTL_SECONDS,
-        }),
-      ),
+          reserveBudget: false,
+          accessToken,
+        });
+      }),
     );
     return this.dedupeOpenskyStateVectors(
       regionStates
@@ -834,39 +1254,64 @@ export class RealtimeSignalsService {
   ) {
     const signature = bbox.map((value) => value.toFixed(3)).join(",");
     return this.fetchOpenSkyStates(runtime, {
+      scope: "all",
       bbox,
       cacheKey: `realtime-signals:opensky:viewport:${signature}`,
       cacheTtlSeconds: OPENSKY_VIEWPORT_CACHE_TTL_SECONDS,
+      reserveBudget: true,
     });
   }
 
   private async fetchOpenSkyStates(
     runtime: RealtimeSignalsRuntimeConfig,
     options: {
+      scope: OpenSkyCreditScope;
       bbox: [number, number, number, number];
       cacheKey: string;
       cacheTtlSeconds: number;
+      reserveBudget: boolean;
+      accessToken?: string;
     },
   ) {
+    const credits = this.estimateOpenskyCreditsForBbox(options.bbox);
     return this.cache.wrap(
       options.cacheKey,
       options.cacheTtlSeconds,
       async () => {
-        const accessToken = await this.getOpenskyAccessToken(runtime);
+        const accessToken =
+          options.accessToken ?? (await this.getOpenskyAccessToken(runtime));
         const endpoint = this.buildOpenskyStatesEndpoint(
           this.getOpenskyBaseUrl(runtime),
           options.bbox,
         );
-        const payload = await this.fetchJsonWithRetry<OpenSkyStateResponse>(
-          endpoint,
-          runtime,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
+        if (options.reserveBudget) {
+          const reserveResult = await this.reserveOpenskyCredits(runtime, {
+            scope: options.scope,
+            credits,
+            requestCount: 1,
+          });
+          if (!reserveResult.allowed) {
+            throw new OpenSkyBudgetReserveError(
+              "OpenSky daily credit budget does not have enough remaining credits for this viewport request.",
+            );
+          }
+        }
+        try {
+          const payload = await this.fetchJsonWithRetry<OpenSkyStateResponse>(
+            endpoint,
+            runtime,
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+              maxRetries: 0,
             },
-          },
-        );
-        return this.readOpenskyStateVectors(payload);
+          );
+          return this.readOpenskyStateVectors(payload);
+        } catch (error) {
+          await this.recordOpenskyError(error);
+          throw error;
+        }
       },
       {
         lockTtlMs: 20_000,
@@ -897,31 +1342,47 @@ export class RealtimeSignalsService {
       client_id: clientId,
       client_secret: clientSecret,
     });
-    const response = await this.fetchJsonWithRetry<{
-      access_token?: unknown;
-      expires_in?: unknown;
-    }>(tokenUrl, runtime, {
-      method: "POST",
-      rawBody: payload.toString(),
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-      },
-    });
+    try {
+      const response = await this.fetchJsonWithRetry<{
+        access_token?: unknown;
+        expires_in?: unknown;
+      }>(tokenUrl, runtime, {
+        method: "POST",
+        rawBody: payload.toString(),
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        shouldRetry: (error) => {
+          const kind = this.classifyOpenskyError(error);
+          return (
+            kind === "rate_limited" ||
+            kind === "server" ||
+            kind === "timeout" ||
+            kind === "network"
+          );
+        },
+      });
 
-    const accessToken = this.normalizeString(response.access_token);
-    if (!accessToken) {
-      throw new Error("OpenSky OAuth token response did not include access_token");
+      const accessToken = this.normalizeString(response.access_token);
+      if (!accessToken) {
+        throw new Error(
+          "OpenSky OAuth token response did not include access_token",
+        );
+      }
+      const expiresInSec = Math.max(
+        60,
+        Math.trunc(this.toFiniteNumber(response.expires_in) ?? 300),
+      );
+      await this.cache.set(
+        cacheKey,
+        { accessToken },
+        Math.max(30, expiresInSec - 60),
+      );
+      return accessToken;
+    } catch (error) {
+      await this.recordOpenskyError(error);
+      throw error;
     }
-    const expiresInSec = Math.max(
-      60,
-      Math.trunc(this.toFiniteNumber(response.expires_in) ?? 300),
-    );
-    await this.cache.set(
-      cacheKey,
-      { accessToken },
-      Math.max(30, expiresInSec - 60),
-    );
-    return accessToken;
   }
 
   private buildOpenskyStatesEndpoint(
@@ -1077,7 +1538,8 @@ export class RealtimeSignalsService {
       },
     );
     const latestObservedAt = normalizedEntries[0]?.observedAt;
-    const oldestObservedAt = normalizedEntries[normalizedEntries.length - 1]?.observedAt;
+    const oldestObservedAt =
+      normalizedEntries[normalizedEntries.length - 1]?.observedAt;
 
     return {
       source: "opensky",
@@ -1146,7 +1608,9 @@ export class RealtimeSignalsService {
         ...(state.callsign ? { callsign: state.callsign } : {}),
         lat: state.latitude,
         lng: state.longitude,
-        ...(typeof state.heading === "number" ? { heading: state.heading } : {}),
+        ...(typeof state.heading === "number"
+          ? { heading: state.heading }
+          : {}),
         ...(typeof state.altitudeFt === "number"
           ? { altitudeFt: state.altitudeFt }
           : {}),
@@ -1167,7 +1631,10 @@ export class RealtimeSignalsService {
   ) {
     const currentObservedMs = Date.parse(current.observedAt);
     const candidateObservedMs = Date.parse(candidate.observedAt);
-    if (Number.isFinite(candidateObservedMs) && Number.isFinite(currentObservedMs)) {
+    if (
+      Number.isFinite(candidateObservedMs) &&
+      Number.isFinite(currentObservedMs)
+    ) {
       if (candidateObservedMs > currentObservedMs) {
         return candidate;
       }
@@ -1217,19 +1684,17 @@ export class RealtimeSignalsService {
       ...previousSnapshot,
       sourceEndpoint: nextSnapshot.sourceEndpoint,
       totalAircraft: nextSnapshot.totalAircraft,
-      ...(
-        previousSnapshot.latestObservedAt ??
-        previousSnapshot.diagnostics.latestObservedAt
-          ? {
-              latestObservedAt:
-                previousSnapshot.latestObservedAt ??
-                previousSnapshot.diagnostics.latestObservedAt,
-            }
-          : {}
-      ),
+      ...((previousSnapshot.latestObservedAt ??
+      previousSnapshot.diagnostics.latestObservedAt)
+        ? {
+            latestObservedAt:
+              previousSnapshot.latestObservedAt ??
+              previousSnapshot.diagnostics.latestObservedAt,
+          }
+        : {}),
       diagnostics: {
-        ...(previousSnapshot.latestObservedAt ??
-        previousSnapshot.diagnostics.latestObservedAt
+        ...((previousSnapshot.latestObservedAt ??
+        previousSnapshot.diagnostics.latestObservedAt)
           ? {
               latestObservedAt:
                 previousSnapshot.latestObservedAt ??
@@ -1294,7 +1759,8 @@ export class RealtimeSignalsService {
         : Math.max(0, Math.round((nowMs - latestObservedMs) / 1_000));
     const freshness =
       snapshot.validPositionCount <= 0 ||
-      (typeof snapshotAgeSec === "number" && snapshotAgeSec > staleThresholdSec) ||
+      (typeof snapshotAgeSec === "number" &&
+        snapshotAgeSec > staleThresholdSec) ||
       (typeof latestObservedAgeSec === "number" &&
         latestObservedAgeSec > staleThresholdSec)
         ? "stale"
@@ -1311,8 +1777,10 @@ export class RealtimeSignalsService {
         ? { latestObservedAt: snapshot.latestObservedAt }
         : snapshot.diagnostics.latestObservedAt
           ? { latestObservedAt: snapshot.diagnostics.latestObservedAt }
+          : {}),
+      ...(typeof latestObservedAgeSec === "number"
+        ? { latestObservedAgeSec }
         : {}),
-      ...(typeof latestObservedAgeSec === "number" ? { latestObservedAgeSec } : {}),
       staleThresholdSec,
       retainedPreviousSnapshot: snapshot.diagnostics.retainedPreviousSnapshot,
       droppedInvalidPositionCount:
@@ -1328,7 +1796,10 @@ export class RealtimeSignalsService {
     snapshot: RealtimeAdsbLatestSnapshot,
     diagnostics: RealtimeAdsbRuntimeDiagnostics,
   ) {
-    if (diagnostics.freshness === "missing" || diagnostics.freshness === "stale") {
+    if (
+      diagnostics.freshness === "missing" ||
+      diagnostics.freshness === "stale"
+    ) {
       return 2;
     }
     if (snapshot.diagnostics.retainedPreviousSnapshot) {
@@ -1427,6 +1898,382 @@ export class RealtimeSignalsService {
     );
   }
 
+  private buildOpenskyBudgetContext(
+    budgetSummary: RealtimeOpenskyBudgetSummary,
+  ) {
+    return {
+      dateHkt: budgetSummary.dateHkt,
+      dailyCreditBudget: budgetSummary.dailyBudget,
+      usedCredits: budgetSummary.usedCredits,
+      remainingCredits: budgetSummary.remainingCredits,
+      usagePct: budgetSummary.usagePct,
+      currentPeriod: budgetSummary.currentPeriod,
+      effectiveIntervalSec: budgetSummary.effectiveMilitaryIntervalSec,
+      budgetDegradation: budgetSummary.degradationLevel,
+      allModeBlocked: budgetSummary.allModeBlocked,
+      militaryPaused: budgetSummary.militaryPaused,
+    };
+  }
+
+  private getOpenskyBudgetKey(dateHkt: string) {
+    return `realtime-signals:opensky:credits:${dateHkt}`;
+  }
+
+  private getOpenskyHktParts(nowMs: number) {
+    const parts = OPENSKY_HKT_FORMATTER.formatToParts(new Date(nowMs));
+    const byType = new Map<string, string>();
+    for (const part of parts) {
+      byType.set(part.type, part.value);
+    }
+    return {
+      year: Number(byType.get("year")),
+      month: Number(byType.get("month")),
+      day: Number(byType.get("day")),
+      hour: Number(byType.get("hour")),
+    };
+  }
+
+  private getOpenskyHktDate(nowMs: number) {
+    const parts = this.getOpenskyHktParts(nowMs);
+    return `${parts.year.toString().padStart(4, "0")}-${parts.month
+      .toString()
+      .padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
+  }
+
+  private getOpenskyBudgetPeriod(
+    runtime: RealtimeSignalsRuntimeConfig,
+    nowMs: number,
+  ): RealtimeOpenskyBudgetPeriod {
+    const hour = this.getOpenskyHktParts(nowMs).hour;
+    return hour >= runtime.opensky.dayStartHourHkt &&
+      hour < runtime.opensky.nightStartHourHkt
+      ? "day"
+      : "night";
+  }
+
+  private getConfiguredOpenskyMilitaryIntervalSec(
+    runtime: RealtimeSignalsRuntimeConfig,
+    currentPeriod: RealtimeOpenskyBudgetPeriod,
+  ) {
+    return currentPeriod === "day"
+      ? runtime.opensky.dayIntervalSec
+      : runtime.opensky.nightIntervalSec;
+  }
+
+  private resolveOpenskyBudgetDegradationLevel(
+    runtime: RealtimeSignalsRuntimeConfig,
+    remainingCredits: number,
+    remainingPct: number,
+  ): RealtimeOpenskyBudgetDegradationLevel {
+    if (remainingCredits <= 0) {
+      return "exhausted";
+    }
+    if (remainingPct <= runtime.opensky.criticalRemainingPct) {
+      return "critical";
+    }
+    if (remainingPct <= runtime.opensky.warningRemainingPct) {
+      return "warning";
+    }
+    return "normal";
+  }
+
+  private getEffectiveOpenskyMilitaryIntervalSec(
+    runtime: RealtimeSignalsRuntimeConfig,
+    currentPeriod: RealtimeOpenskyBudgetPeriod,
+    degradationLevel: RealtimeOpenskyBudgetDegradationLevel,
+  ) {
+    const configured = this.getConfiguredOpenskyMilitaryIntervalSec(
+      runtime,
+      currentPeriod,
+    );
+    if (degradationLevel === "critical" || degradationLevel === "exhausted") {
+      return Math.max(configured, runtime.opensky.nightIntervalSec);
+    }
+    return configured;
+  }
+
+  private readOpenskyBudgetNumber(
+    payload: Record<string, string>,
+    field: OpenSkyBudgetCounterField,
+  ) {
+    const parsed = Number(payload[field] ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private buildEmptyOpenskyBudgetDaySummary(
+    dateHkt: string,
+  ): RealtimeOpenskyBudgetDaySummary {
+    return {
+      dateHkt,
+      usedCredits: 0,
+      requestCount: 0,
+      militaryCredits: 0,
+      allCredits: 0,
+      militaryCalls: 0,
+      allCalls: 0,
+      errorCalls: 0,
+      authErrorCalls: 0,
+      rateLimitedErrorCalls: 0,
+      serverErrorCalls: 0,
+      timeoutErrorCalls: 0,
+      networkErrorCalls: 0,
+      unknownErrorCalls: 0,
+      blockedAllModeCount: 0,
+      skippedMilitaryCount: 0,
+    };
+  }
+
+  private async getOpenskyBudgetDaySummary(dateHkt: string) {
+    const payload = await this.cache.hgetall(this.getOpenskyBudgetKey(dateHkt));
+    if (!payload || Object.keys(payload).length === 0) {
+      return this.buildEmptyOpenskyBudgetDaySummary(dateHkt);
+    }
+    return {
+      dateHkt,
+      usedCredits: this.readOpenskyBudgetNumber(payload, "usedCredits"),
+      requestCount: this.readOpenskyBudgetNumber(payload, "requestCount"),
+      militaryCredits: this.readOpenskyBudgetNumber(payload, "militaryCredits"),
+      allCredits: this.readOpenskyBudgetNumber(payload, "allCredits"),
+      militaryCalls: this.readOpenskyBudgetNumber(payload, "militaryCalls"),
+      allCalls: this.readOpenskyBudgetNumber(payload, "allCalls"),
+      errorCalls: this.readOpenskyBudgetNumber(payload, "errorCalls"),
+      authErrorCalls: this.readOpenskyBudgetNumber(payload, "authErrorCalls"),
+      rateLimitedErrorCalls: this.readOpenskyBudgetNumber(
+        payload,
+        "rateLimitedErrorCalls",
+      ),
+      serverErrorCalls: this.readOpenskyBudgetNumber(
+        payload,
+        "serverErrorCalls",
+      ),
+      timeoutErrorCalls: this.readOpenskyBudgetNumber(
+        payload,
+        "timeoutErrorCalls",
+      ),
+      networkErrorCalls: this.readOpenskyBudgetNumber(
+        payload,
+        "networkErrorCalls",
+      ),
+      unknownErrorCalls: this.readOpenskyBudgetNumber(
+        payload,
+        "unknownErrorCalls",
+      ),
+      blockedAllModeCount: this.readOpenskyBudgetNumber(
+        payload,
+        "blockedAllModeCount",
+      ),
+      skippedMilitaryCount: this.readOpenskyBudgetNumber(
+        payload,
+        "skippedMilitaryCount",
+      ),
+    };
+  }
+
+  private buildRecentOpenskyBudgetDates(nowMs: number, days: number) {
+    return Array.from({ length: days }, (_, index) =>
+      this.getOpenskyHktDate(nowMs - index * 24 * 60 * 60 * 1_000),
+    );
+  }
+
+  private getOpenskyBudgetTtlSeconds() {
+    return 60 * 60 * 24 * OPENSKY_BUDGET_RETENTION_DAYS;
+  }
+
+  private getOpenskyBudgetCallsField(scope: OpenSkyCreditScope) {
+    return scope === "military" ? "militaryCalls" : "allCalls";
+  }
+
+  private getOpenskyBudgetCreditsField(scope: OpenSkyCreditScope) {
+    return scope === "military" ? "militaryCredits" : "allCredits";
+  }
+
+  private async reserveOpenskyCredits(
+    runtime: RealtimeSignalsRuntimeConfig,
+    options: {
+      scope: OpenSkyCreditScope;
+      credits: number;
+      requestCount: number;
+      occurredAtMs?: number;
+    },
+  ): Promise<OpenSkyBudgetReserveResult> {
+    const dateHkt = this.getOpenskyHktDate(options.occurredAtMs ?? Date.now());
+    const key = this.getOpenskyBudgetKey(dateHkt);
+    const response = (await this.redis.eval(
+      OPENSKY_BUDGET_RESERVE_LUA_SCRIPT,
+      OPENSKY_BUDGET_RESERVE_LUA_KEYS,
+      key,
+      Math.max(1, runtime.opensky.dailyCreditBudget),
+      Math.max(0, Math.trunc(options.credits)),
+      Math.max(0, Math.trunc(options.requestCount)),
+      this.getOpenskyBudgetCallsField(options.scope),
+      this.getOpenskyBudgetCreditsField(options.scope),
+      this.getOpenskyBudgetTtlSeconds(),
+    )) as unknown[];
+    const allowed = Number(response?.[0]) === 1;
+    const usedCredits = Number(response?.[1] ?? 0);
+    const remainingCredits = Number(response?.[2] ?? 0);
+    return {
+      allowed,
+      usedCredits: Number.isFinite(usedCredits) ? usedCredits : 0,
+      remainingCredits: Number.isFinite(remainingCredits)
+        ? remainingCredits
+        : 0,
+    };
+  }
+
+  private getOpenskyErrorBudgetField(kind: RealtimeOpenskyErrorKind) {
+    switch (kind) {
+      case "auth":
+        return "authErrorCalls";
+      case "rate_limited":
+        return "rateLimitedErrorCalls";
+      case "server":
+        return "serverErrorCalls";
+      case "timeout":
+        return "timeoutErrorCalls";
+      case "network":
+        return "networkErrorCalls";
+      default:
+        return "unknownErrorCalls";
+    }
+  }
+
+  private async recordOpenskyError(error: unknown, occurredAtMs?: number) {
+    if (
+      error &&
+      typeof error === "object" &&
+      (error as { __openskyBudgetErrorRecorded?: boolean })
+        .__openskyBudgetErrorRecorded === true
+    ) {
+      return;
+    }
+    const details = this.toDiagnosticErrorDetails(error);
+    const dateHkt = this.getOpenskyHktDate(occurredAtMs ?? Date.now());
+    const key = this.getOpenskyBudgetKey(dateHkt);
+    await Promise.all([
+      this.cache.hincrby(key, "errorCalls", 1),
+      this.cache.hincrby(key, this.getOpenskyErrorBudgetField(details.kind), 1),
+      this.cache.expire(key, this.getOpenskyBudgetTtlSeconds()),
+    ]);
+    if (error && typeof error === "object") {
+      (
+        error as { __openskyBudgetErrorRecorded?: boolean }
+      ).__openskyBudgetErrorRecorded = true;
+    }
+  }
+
+  private async recordOpenskyBudgetEvent(
+    field:
+      | "errorCalls"
+      | "authErrorCalls"
+      | "rateLimitedErrorCalls"
+      | "serverErrorCalls"
+      | "timeoutErrorCalls"
+      | "networkErrorCalls"
+      | "unknownErrorCalls"
+      | "blockedAllModeCount"
+      | "skippedMilitaryCount",
+    occurredAtMs?: number,
+  ) {
+    const dateHkt = this.getOpenskyHktDate(occurredAtMs ?? Date.now());
+    const key = this.getOpenskyBudgetKey(dateHkt);
+    await Promise.all([
+      this.cache.hincrby(key, field, 1),
+      this.cache.expire(key, this.getOpenskyBudgetTtlSeconds()),
+    ]);
+  }
+
+  private estimateOpenskyCreditsForBbox(
+    bbox?: [number, number, number, number],
+  ) {
+    if (!bbox) {
+      return 4;
+    }
+    const area = Math.abs((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]));
+    if (area <= 25) {
+      return 1;
+    }
+    if (area <= 100) {
+      return 2;
+    }
+    if (area <= 400) {
+      return 3;
+    }
+    return 4;
+  }
+
+  private async getOpenskyBudgetSummary(
+    runtime: RealtimeSignalsRuntimeConfig,
+    nowMs = Date.now(),
+  ): Promise<RealtimeOpenskyBudgetSummary> {
+    const dateHkt = this.getOpenskyHktDate(nowMs);
+    const recentDates = this.buildRecentOpenskyBudgetDates(
+      nowMs,
+      OPENSKY_BUDGET_RECENT_DAYS,
+    );
+    const [today, recentDays] = await Promise.all([
+      this.getOpenskyBudgetDaySummary(dateHkt),
+      Promise.all(
+        recentDates.map((entryDate) =>
+          this.getOpenskyBudgetDaySummary(entryDate),
+        ),
+      ),
+    ]);
+    const dailyBudget = Math.max(1, runtime.opensky.dailyCreditBudget);
+    const usedCredits = today.usedCredits;
+    const remainingCredits = Math.max(0, dailyBudget - usedCredits);
+    const usagePct = Number(((usedCredits / dailyBudget) * 100).toFixed(2));
+    const remainingPct = Number(
+      ((remainingCredits / dailyBudget) * 100).toFixed(2),
+    );
+    const currentPeriod = this.getOpenskyBudgetPeriod(runtime, nowMs);
+    const degradationLevel = this.resolveOpenskyBudgetDegradationLevel(
+      runtime,
+      remainingCredits,
+      remainingPct,
+    );
+    const effectiveMilitaryIntervalSec =
+      this.getEffectiveOpenskyMilitaryIntervalSec(
+        runtime,
+        currentPeriod,
+        degradationLevel,
+      );
+
+    return {
+      timezone: OPENSKY_HKT_TIME_ZONE,
+      dateHkt,
+      dailyBudget,
+      usedCredits,
+      remainingCredits,
+      usagePct,
+      remainingPct,
+      requestCount: today.requestCount,
+      militaryCredits: today.militaryCredits,
+      allCredits: today.allCredits,
+      militaryCalls: today.militaryCalls,
+      allCalls: today.allCalls,
+      errorCalls: today.errorCalls,
+      authErrorCalls: today.authErrorCalls,
+      rateLimitedErrorCalls: today.rateLimitedErrorCalls,
+      serverErrorCalls: today.serverErrorCalls,
+      timeoutErrorCalls: today.timeoutErrorCalls,
+      networkErrorCalls: today.networkErrorCalls,
+      unknownErrorCalls: today.unknownErrorCalls,
+      blockedAllModeCount: today.blockedAllModeCount,
+      skippedMilitaryCount: today.skippedMilitaryCount,
+      currentPeriod,
+      dayIntervalSec: runtime.opensky.dayIntervalSec,
+      nightIntervalSec: runtime.opensky.nightIntervalSec,
+      effectiveMilitaryIntervalSec,
+      degradationLevel,
+      allModeBlocked: degradationLevel !== "normal",
+      militaryPaused: degradationLevel === "exhausted",
+      warningRemainingPct: runtime.opensky.warningRemainingPct,
+      criticalRemainingPct: runtime.opensky.criticalRemainingPct,
+      recentDays,
+    };
+  }
+
   private getAdsbSnapshotTtlSeconds(intervalSec: number) {
     const safeIntervalSec = Math.max(60, Math.trunc(intervalSec));
     return Math.max(20 * 60, safeIntervalSec * 2);
@@ -1485,9 +2332,7 @@ export class RealtimeSignalsService {
 
     const countries = new Set<string>();
     for (const disruption of snapshot.disruptions) {
-      const code = this.extractCountryCode(
-        disruption.region,
-      );
+      const code = this.extractCountryCode(disruption.region);
       if (code) {
         countries.add(code);
       }
@@ -1564,10 +2409,10 @@ export class RealtimeSignalsService {
           feedErrors: {
             acled: runtime.capabilities.acledApiEnabled
               ? "error" in acledFeed
-                ? acledFeed.error ?? null
+                ? (acledFeed.error ?? null)
                 : null
               : null,
-            gdelt: "error" in gdeltFeed ? gdeltFeed.error ?? null : null,
+            gdelt: "error" in gdeltFeed ? (gdeltFeed.error ?? null) : null,
           },
         },
       },
@@ -2570,31 +3415,29 @@ export class RealtimeSignalsService {
     let latestProcessedArticleAt: string | undefined;
 
     try {
-      const [
-        articleCount,
-        articleWithLocationCount,
-        latestProcessedArticle,
-      ] = await Promise.all([
-        this.prisma.processedArticle.count({
-          where: {
-            status: ProcessedArticleStatus.completed,
-            article: { orgId },
-            processedAt: { gte: since },
-          },
-        }),
-        this.countRecentProcessedArticlesWithLocation(orgId, since),
-        this.prisma.processedArticle.findFirst({
-          where: {
-            status: ProcessedArticleStatus.completed,
-            article: { orgId },
-          },
-          orderBy: { processedAt: "desc" },
-          select: { processedAt: true },
-        }),
-      ]);
+      const [articleCount, articleWithLocationCount, latestProcessedArticle] =
+        await Promise.all([
+          this.prisma.processedArticle.count({
+            where: {
+              status: ProcessedArticleStatus.completed,
+              article: { orgId },
+              processedAt: { gte: since },
+            },
+          }),
+          this.countRecentProcessedArticlesWithLocation(orgId, since),
+          this.prisma.processedArticle.findFirst({
+            where: {
+              status: ProcessedArticleStatus.completed,
+              article: { orgId },
+            },
+            orderBy: { processedAt: "desc" },
+            select: { processedAt: true },
+          }),
+        ]);
       recentProcessedArticles = articleCount;
       recentProcessedArticlesWithLocation = articleWithLocationCount;
-      latestProcessedArticleAt = latestProcessedArticle?.processedAt?.toISOString();
+      latestProcessedArticleAt =
+        latestProcessedArticle?.processedAt?.toISOString();
     } catch (error) {
       logger.warn(
         {
@@ -2661,37 +3504,40 @@ export class RealtimeSignalsService {
           { createdAt: { $gte: since } },
         ],
       };
-      const [recentProcessedItems, recentProcessedItemsWithLocation, latestDoc] =
-        await Promise.all([
-          ProcessedItemModel.countDocuments({
+      const [
+        recentProcessedItems,
+        recentProcessedItemsWithLocation,
+        latestDoc,
+      ] = await Promise.all([
+        ProcessedItemModel.countDocuments({
+          orgId,
+          status: "completed",
+          duplicateOf: null,
+          ...timeFilter,
+        }),
+        ProcessedItemModel.countDocuments({
+          orgId,
+          status: "completed",
+          duplicateOf: null,
+          "result.location": { $type: "string", $regex: /\S/ },
+          ...timeFilter,
+        }),
+        ProcessedItemModel.findOne(
+          {
             orgId,
             status: "completed",
             duplicateOf: null,
-            ...timeFilter,
-          }),
-          ProcessedItemModel.countDocuments({
-            orgId,
-            status: "completed",
-            duplicateOf: null,
-            "result.location": { $type: "string", $regex: /\S/ },
-            ...timeFilter,
-          }),
-          ProcessedItemModel.findOne(
-            {
-              orgId,
-              status: "completed",
-              duplicateOf: null,
-            },
-            {
-              sortAt: 1,
-              ingestedAt: 1,
-              createdAt: 1,
-            },
-          )
-            .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
-            .lean()
-            .exec(),
-        ]);
+          },
+          {
+            sortAt: 1,
+            ingestedAt: 1,
+            createdAt: 1,
+          },
+        )
+          .sort({ sortAt: -1, ingestedAt: -1, createdAt: -1 })
+          .lean()
+          .exec(),
+      ]);
 
       const latestProcessedItemValue =
         latestDoc?.sortAt ?? latestDoc?.ingestedAt ?? latestDoc?.createdAt;
@@ -2730,6 +3576,7 @@ export class RealtimeSignalsService {
     if (!options.sourceConfig.enabled) {
       return {
         status: "idle" as const,
+        code: "source_disabled",
         reason: "Source is disabled.",
       };
     }
@@ -2741,13 +3588,15 @@ export class RealtimeSignalsService {
     if (missingConfigReason) {
       return {
         status: "not_configured" as const,
-        reason: missingConfigReason,
+        code: missingConfigReason.code,
+        reason: missingConfigReason.message,
       };
     }
 
     const lastSuccessMs =
       this.parseTimestampMs(options.sourceState?.lastSuccessAt) ??
-      (typeof options.lastRunMs === "number" && Number.isFinite(options.lastRunMs)
+      (typeof options.lastRunMs === "number" &&
+      Number.isFinite(options.lastRunMs)
         ? options.lastRunMs
         : null);
     const lastErrorMs = this.parseTimestampMs(options.sourceState?.lastErrorAt);
@@ -2759,6 +3608,10 @@ export class RealtimeSignalsService {
     ) {
       return {
         status: "error" as const,
+        code:
+          options.source === "opensky"
+            ? options.sourceState.lastErrorKind
+            : undefined,
         reason: options.sourceState.lastError,
       };
     }
@@ -2766,6 +3619,7 @@ export class RealtimeSignalsService {
     if (lastSuccessMs === null) {
       return {
         status: "idle" as const,
+        code: "no_successful_run",
         reason: "No successful run yet.",
       };
     }
@@ -2777,6 +3631,7 @@ export class RealtimeSignalsService {
     if (options.nowMs - lastSuccessMs > staleAfterMs) {
       return {
         status: "stale" as const,
+        code: "last_success_stale",
         reason: "Last successful run is stale.",
       };
     }
@@ -2787,6 +3642,7 @@ export class RealtimeSignalsService {
     ) {
       return {
         status: "stale" as const,
+        code: "opensky_snapshot_stale",
         reason: "Latest OpenSky snapshot is stale.",
       };
     }
@@ -2797,7 +3653,8 @@ export class RealtimeSignalsService {
     );
     return {
       status: "ok" as const,
-      reason: contextReason,
+      code: contextReason?.code,
+      reason: contextReason?.message,
     };
   }
 
@@ -2810,21 +3667,76 @@ export class RealtimeSignalsService {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  private normalizeOpenskyBudgetDegradation(
+    value: string | undefined,
+  ): RealtimeOpenskyBudgetDegradationLevel | undefined {
+    switch (value) {
+      case "normal":
+      case "warning":
+      case "critical":
+      case "exhausted":
+        return value;
+      default:
+        return undefined;
+    }
+  }
+
+  private getOpenskyStatusReasonMessage(code: string, message: string) {
+    return { code, message } satisfies OpenSkyDiagnosticMessage;
+  }
+
+  private getOpenskyBudgetLimitedMessage(
+    degradationLevel: RealtimeOpenskyBudgetDegradationLevel,
+    code?: string,
+  ) {
+    if (code === "opensky_budget_insufficient_credits") {
+      return this.getOpenskyStatusReasonMessage(
+        code,
+        "OpenSky does not have enough remaining daily credits for this request.",
+      );
+    }
+    if (degradationLevel === "critical") {
+      return this.getOpenskyStatusReasonMessage(
+        code ?? "opensky_budget_critical",
+        "OpenSky all-flight mode is limited and military polling is running at the night interval to preserve the daily credit budget.",
+      );
+    }
+    if (degradationLevel === "exhausted") {
+      return this.getOpenskyStatusReasonMessage(
+        code ?? "opensky_budget_exhausted",
+        "OpenSky daily credit budget is exhausted; all-flight mode is paused until the next Hong Kong day begins.",
+      );
+    }
+    return this.getOpenskyStatusReasonMessage(
+      code ?? "opensky_budget_warning",
+      "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
+    );
+  }
+
   private getMissingConfigReason(
     source: RealtimeSignalSource,
     context: Record<string, unknown> | undefined,
-  ) {
+  ): OpenSkyDiagnosticMessage | undefined {
     if (!context) {
       return undefined;
     }
     if (source === "opensky" && context.configured === false) {
-      return "OpenSky OAuth client credentials are not configured.";
+      return {
+        code: "opensky_not_configured",
+        message: "OpenSky OAuth client credentials are not configured.",
+      };
     }
     if (source === "ais" && context.configured === false) {
-      return "AIS relay base URL is not configured.";
+      return {
+        code: "ais_not_configured",
+        message: "AIS relay base URL is not configured.",
+      };
     }
     if (source === "outages" && context.configured === false) {
-      return "Cloudflare API token is not configured.";
+      return {
+        code: "outages_not_configured",
+        message: "Cloudflare API token is not configured.",
+      };
     }
     return undefined;
   }
@@ -2832,22 +3744,59 @@ export class RealtimeSignalsService {
   private getRuntimeContextReason(
     source: RealtimeSignalSource,
     context: Record<string, unknown> | undefined,
-  ) {
+  ): OpenSkyDiagnosticMessage | undefined {
     if (!context) {
       return undefined;
     }
     if (source === "opensky") {
-      if (context.snapshotRetainedPrevious === true) {
-        return "Using retained OpenSky snapshot after empty or unusable fetch.";
+      const budgetReservationFailureCode = this.normalizeString(
+        context.budgetReservationFailureCode,
+      );
+      if (budgetReservationFailureCode) {
+        return this.getOpenskyBudgetLimitedMessage(
+          this.normalizeOpenskyBudgetDegradation(
+            this.normalizeString(context.budgetDegradation),
+          ) ?? "warning",
+          budgetReservationFailureCode,
+        );
       }
-      const validPositionCount = this.toFiniteNumber(context.validPositionCount);
+      if (context.militaryPaused === true) {
+        return this.getOpenskyStatusReasonMessage(
+          "opensky_budget_exhausted",
+          "OpenSky military polling is paused because the daily credit budget is exhausted.",
+        );
+      }
+      if (this.normalizeString(context.budgetDegradation) === "critical") {
+        return this.getOpenskyStatusReasonMessage(
+          "opensky_budget_critical",
+          "OpenSky all-flight mode is limited and military polling is running at the night interval to preserve daily credits.",
+        );
+      }
+      if (context.allModeBlocked === true) {
+        return this.getOpenskyStatusReasonMessage(
+          "opensky_budget_warning",
+          "OpenSky all-flight mode is temporarily limited to preserve daily credits.",
+        );
+      }
+      if (context.snapshotRetainedPrevious === true) {
+        return this.getOpenskyStatusReasonMessage(
+          "opensky_snapshot_retained_previous",
+          "Using retained OpenSky snapshot after empty or unusable fetch.",
+        );
+      }
+      const validPositionCount = this.toFiniteNumber(
+        context.validPositionCount,
+      );
       const totalAircraft = this.toFiniteNumber(context.totalAircraft);
       if (
         typeof totalAircraft === "number" &&
         totalAircraft > 0 &&
         validPositionCount === 0
       ) {
-        return "OpenSky returned aircraft but no current positions passed validation.";
+        return this.getOpenskyStatusReasonMessage(
+          "opensky_no_valid_positions",
+          "OpenSky returned aircraft but no current positions passed validation.",
+        );
       }
       return undefined;
     }
@@ -2864,7 +3813,7 @@ export class RealtimeSignalsService {
         this.normalizeString(feedErrors?.gdelt),
       ].filter((value): value is string => Boolean(value));
       if (messages.length > 0) {
-        return messages.join(" | ");
+        return { message: messages.join(" | ") };
       }
       return undefined;
     }
@@ -2876,6 +3825,65 @@ export class RealtimeSignalsService {
       return undefined;
     }
     return value as Record<string, unknown>;
+  }
+
+  private isAbortError(error: unknown) {
+    return (
+      error instanceof Error &&
+      (error.name === "AbortError" ||
+        error.message.toLowerCase().includes("aborted"))
+    );
+  }
+
+  private readHttpStatus(error: unknown) {
+    if (!error || typeof error !== "object") {
+      return undefined;
+    }
+    const status = Number((error as { status?: unknown }).status);
+    return Number.isFinite(status) ? status : undefined;
+  }
+
+  private classifyOpenskyError(error: unknown): RealtimeOpenskyErrorKind {
+    const status = this.readHttpStatus(error);
+    if (status === 401 || status === 403) {
+      return "auth";
+    }
+    if (status === 429) {
+      return "rate_limited";
+    }
+    if (typeof status === "number" && status >= 500) {
+      return "server";
+    }
+    if (this.isAbortError(error)) {
+      return "timeout";
+    }
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("oauth client credentials") ||
+        message.includes("access_token") ||
+        message.includes("unauthorized") ||
+        message.includes("forbidden")
+      ) {
+        return "auth";
+      }
+      if (message.includes("429") || message.includes("rate limit")) {
+        return "rate_limited";
+      }
+      if (message.includes("fetch failed") || message.includes("network")) {
+        return "network";
+      }
+    }
+    return "unknown";
+  }
+
+  private toDiagnosticErrorDetails(error: unknown): OpenSkyErrorDetails {
+    const status = this.readHttpStatus(error);
+    return {
+      kind: this.classifyOpenskyError(error),
+      status,
+      message: this.toDiagnosticErrorMessage(error),
+    };
   }
 
   private toDiagnosticErrorMessage(error: unknown) {
@@ -2940,13 +3948,17 @@ export class RealtimeSignalsService {
     options: JsonFetchOptions = {},
   ): Promise<T> {
     const timeoutMs = Math.max(1_000, Math.trunc(runtime.requestTimeoutMs));
-    const maxRetries = Math.max(0, Math.trunc(runtime.maxRetries));
+    const maxRetries = Math.max(
+      0,
+      Math.trunc(options.maxRetries ?? runtime.maxRetries),
+    );
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
+        await options.beforeAttempt?.();
         const response = await fetch(url, {
           method: options.method ?? "GET",
           headers: {
@@ -2979,7 +3991,13 @@ export class RealtimeSignalsService {
         return (await response.json()) as T;
       } catch (error) {
         lastError = error;
-        if (attempt < maxRetries) {
+        const shouldRetry =
+          attempt < maxRetries &&
+          (options.shouldRetry ? options.shouldRetry(error) : true);
+        if (!shouldRetry) {
+          break;
+        }
+        if (shouldRetry) {
           const delayMs = Math.min(5_000, 300 * (attempt + 1));
           await this.sleep(delayMs);
         }
@@ -3057,16 +4075,6 @@ export class RealtimeSignalsService {
     return rows;
   }
 
-  private readHttpStatus(error: unknown) {
-    if (!error || typeof error !== "object") {
-      return null;
-    }
-    const status = (error as { status?: unknown }).status;
-    return typeof status === "number" && Number.isFinite(status)
-      ? status
-      : null;
-  }
-
   private readArray(value: unknown): unknown[] {
     return Array.isArray(value) ? value : [];
   }
@@ -3075,8 +4083,14 @@ export class RealtimeSignalsService {
     payload: unknown,
     sourceEndpoint: string,
   ): RealtimeAisLatestSnapshot {
-    const { updatedAt, status, disruptions, density, candidateReports, vessels } =
-      this.readAisSnapshotPayload(payload);
+    const {
+      updatedAt,
+      status,
+      disruptions,
+      density,
+      candidateReports,
+      vessels,
+    } = this.readAisSnapshotPayload(payload);
     return {
       source: "relay",
       sourceEndpoint,
@@ -3101,9 +4115,18 @@ export class RealtimeSignalsService {
         : {};
     return {
       connected: record.connected === true,
-      vessels: Math.max(0, Math.round(this.toFiniteNumber(record.vessels) ?? 0)),
-      messages: Math.max(0, Math.round(this.toFiniteNumber(record.messages) ?? 0)),
-      clients: Math.max(0, Math.round(this.toFiniteNumber(record.clients) ?? 0)),
+      vessels: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.vessels) ?? 0),
+      ),
+      messages: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.messages) ?? 0),
+      ),
+      clients: Math.max(
+        0,
+        Math.round(this.toFiniteNumber(record.clients) ?? 0),
+      ),
       droppedMessages: Math.max(
         0,
         Math.round(this.toFiniteNumber(record.droppedMessages) ?? 0),
@@ -3138,8 +4161,7 @@ export class RealtimeSignalsService {
       return null;
     }
 
-    const id =
-      this.normalizeString(record.id) ?? `ais-disruption-${index + 1}`;
+    const id = this.normalizeString(record.id) ?? `ais-disruption-${index + 1}`;
     const name = this.normalizeString(record.name) ?? id;
     const type = this.normalizeString(record.type) ?? "unknown";
     return {
@@ -3270,9 +4292,11 @@ export class RealtimeSignalsService {
       updatedAt,
       status: this.normalizeAisStatusPayload(record.status),
       disruptions: record.disruptions
-        .map((entry, index) => this.normalizeAisDisruptionSnapshot(entry, index))
-        .filter(
-          (entry): entry is RealtimeAisDisruptionSnapshot => Boolean(entry),
+        .map((entry, index) =>
+          this.normalizeAisDisruptionSnapshot(entry, index),
+        )
+        .filter((entry): entry is RealtimeAisDisruptionSnapshot =>
+          Boolean(entry),
         ),
       density: record.density
         .map((entry, index) => this.normalizeAisDensitySnapshot(entry, index))

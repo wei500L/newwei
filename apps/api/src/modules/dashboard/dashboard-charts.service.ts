@@ -2358,6 +2358,33 @@ export class DashboardChartsService {
         };
         return;
       }
+      if (result.budgetLimited) {
+        dataset.features = [];
+        dataset.updatedAt = undefined;
+        dataset.summary = {
+          ...summaryBase,
+          sourceEndpoint: result.sourceEndpoint,
+          freshness: "budget_limited",
+          rawAircraftCount: 0,
+          snapshotValidPositionCount: 0,
+          returnedCount: 0,
+          truncated: false,
+          retainedPreviousSnapshot: false,
+          ...(result.statusReasonCode
+            ? { statusReasonCode: result.statusReasonCode }
+            : {}),
+          ...(result.statusReason ? { statusReason: result.statusReason } : {}),
+          ...(result.budgetSummary
+            ? {
+                remainingCredits: result.budgetSummary.remainingCredits,
+                dailyBudget: result.budgetSummary.dailyBudget,
+                dateHkt: result.budgetSummary.dateHkt,
+                degradationLevel: result.budgetSummary.degradationLevel,
+              }
+            : {}),
+        };
+        return;
+      }
       if (result.requiresZoom) {
         dataset.features = [];
         dataset.updatedAt = undefined;

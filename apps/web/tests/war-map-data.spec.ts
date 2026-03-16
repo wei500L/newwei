@@ -252,6 +252,10 @@ describe("war-map page wiring", () => {
     expect(source).toContain('defaultValue: "Flight source"');
     expect(source).toContain('defaultValue: "OpenSky"');
     expect(source).toContain('defaultValue: "Military / possible military"');
+    expect(source).toContain("flightBudgetLimited");
+    expect(source).toContain(
+      "temporarily limited to preserve the daily credit budget",
+    );
     expect(source).toContain(
       "const flightMode = useWarMapSettingsStore((state) => state.flightMode);",
     );
@@ -329,6 +333,9 @@ describe("war-map zh locale", () => {
 
     expect(zhWarMap.stats.flightNotConfigured).toBe(
       "尚未配置 OpenSky OAuth 客户端凭据。",
+    );
+    expect(zhWarMap.stats.flightBudgetLimited).toBe(
+      "为了保留当天额度，OpenSky 全部航班模式已被临时限制。",
     );
     expect(zhWarMap.stats.aisClients).toBe("中继客户端");
     expect(zhWarMap.stats.aisAllUnavailableHint).toBe(

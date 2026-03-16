@@ -176,6 +176,13 @@ export interface RealtimeSignalsEnvConfig {
     tokenUrl?: string;
     clientId?: string;
     clientSecret?: string;
+    dailyCreditBudget: number;
+    dayIntervalSec: number;
+    nightIntervalSec: number;
+    dayStartHourHkt: number;
+    nightStartHourHkt: number;
+    warningRemainingPct: number;
+    criticalRemainingPct: number;
   };
   credentials: {
     aisApiKey?: string;
@@ -662,6 +669,34 @@ export class EnvService extends ConfigService<ApiEnv> {
             infer: true,
           },
         ),
+        dailyCreditBudget:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET", {
+            infer: true,
+          }) ?? 4000,
+        dayIntervalSec:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC", {
+            infer: true,
+          }) ?? 600,
+        nightIntervalSec:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC", {
+            infer: true,
+          }) ?? 1800,
+        dayStartHourHkt:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_DAY_START_HKT", {
+            infer: true,
+          }) ?? 8,
+        nightStartHourHkt:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT", {
+            infer: true,
+          }) ?? 22,
+        warningRemainingPct:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT", {
+            infer: true,
+          }) ?? 20,
+        criticalRemainingPct:
+          this.get<number>("REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT", {
+            infer: true,
+          }) ?? 10,
       },
       credentials: {
         aisApiKey: this.get<string | undefined>(

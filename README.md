@@ -301,7 +301,7 @@ pnpm --filter infra-scripts run env:check
 - 抓取：`CRAWL4AI_BASE_URL`、`CRAWL4AI_DASHBOARD_URL`、`CRAWL4AI_SSRF_PROXY_URL`、`CRAWL4AI_*`
 - LLM 网关：`LITELLM_API_BASE`、`LITELLM_API_KEY`、`LITELLM_MODEL`、`LITELLM_EMBEDDING_MODEL`
 - 向量：`VECTOR_SERVICE_ENABLED`、`VECTOR_SERVICE_BASE_URL`、`VECTOR_INTERNAL_TOKEN`、`QDRANT_URL`
-- 实时信号：`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
+- 实时信号：`REALTIME_SIGNALS_OPENSKY_BASE_URL`、`REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`（OpenSky 飞行数据源），`REALTIME_SIGNALS_OPENSKY_DAILY_CREDIT_BUDGET`、`REALTIME_SIGNALS_OPENSKY_DAY_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_NIGHT_INTERVAL_SEC`、`REALTIME_SIGNALS_OPENSKY_DAY_START_HKT`、`REALTIME_SIGNALS_OPENSKY_NIGHT_START_HKT`、`REALTIME_SIGNALS_OPENSKY_WARNING_REMAINING_PCT`、`REALTIME_SIGNALS_OPENSKY_CRITICAL_REMAINING_PCT`（OpenSky credits 预算与香港时间日夜调度），以及 `REALTIME_SIGNALS_ACLED_USERNAME`、`REALTIME_SIGNALS_ACLED_PASSWORD`、`REALTIME_SIGNALS_ACLED_CLIENT_ID`（自动刷新 ACLED token）
 - 助手安全：`ASSISTANT_GUARDRAILS_ENABLED`、`ASSISTANT_GUARDRAILS`
 - 对象存储：`S3_*`（Docker 默认用 MinIO）
 - 经济数据：`AKSHARE_ENABLED`、`AKSHARE_HTTP_BASE_URL`、`AKSHARE_ADMIN_TOKEN`
@@ -312,7 +312,9 @@ pnpm --filter infra-scripts run env:check
 - 当前飞行态势数据已从 ADS-B 源切换到 OpenSky Network。后端统一通过 `https://opensky-network.org/api/states/all` 拉取 state vectors，再适配为项目内部的标准飞行结构。
 - 认证方式为 OpenSky OAuth2 client credentials。需要配置 `REALTIME_SIGNALS_OPENSKY_TOKEN_URL`、`REALTIME_SIGNALS_OPENSKY_CLIENT_ID`、`REALTIME_SIGNALS_OPENSKY_CLIENT_SECRET`；不要把凭证写死在代码里。
 - `military` 模式用于定时抓取和告警，按固定 bbox 分区请求并做保守的军事/疑似军事识别；`all` 模式仅在 War Map 带 viewport bbox 时即时请求当前视口的全部航班。
-- 当前军事快照默认轮询为 **900 秒（15 分钟）**。按现有 6 个固定 region 的实现，每轮大约消耗 24 credits，日常后台轮询约消耗 2304 credits/天，剩余预算留给 `all` 模式视口查询和人工排查。
+- OpenSky credits 预算默认按香港时间自然日统计，默认 `4000 credits/day`。`all` 模式和军事快照共享同一预算池。
+- 当前军事快照默认采用香港时间日夜双档调度：`08:00-22:00` 为 **600 秒（10 分钟）**，`22:00-08:00` 为 **1800 秒（30 分钟）**。
+- 当剩余额度低于 `20%` 时，War Map 的 `all` 模式会自动返回预算受限状态；低于 `10%` 时，军事快照也会强制降到夜间频率；当日额度耗尽后，会暂停新的军事 OpenSky 拉取直到下一个香港自然日开始。
 - 为了减少前端改动，内部仍保留 `icao24`、`callsign`、`lat`、`lng`、`heading`、`altitudeFt`、`groundSpeedKt`、`observedAt`、`sourceUpdatedAt` 等标准字段；高度和速度会从 OpenSky 的米、米/秒转换为英尺和节。
 - `REALTIME_SIGNALS_ADSB_*` 与系统设置里的 `adsb*` 字段只作为兼容别名继续读取，新部署应只使用 `opensky*` 配置。
 

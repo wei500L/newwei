@@ -34,11 +34,41 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
     clientId: "opensky-client",
     clientSecret: "opensky-secret",
+    dailyCreditBudget: 4000,
+    dayIntervalSec: 600,
+    nightIntervalSec: 1800,
+    dayStartHourHkt: 8,
+    nightStartHourHkt: 22,
+    warningRemainingPct: 20,
+    criticalRemainingPct: 10,
   },
   credentials: {
     acledAccessToken: "token",
   },
   polymarket: {},
+};
+
+const createRealtimeSignalsCache = () => {
+  const hashStore = new Map<string, Record<string, string>>();
+  return {
+    getMany: jest.fn(async (keys: string[]) => keys.map(() => null)),
+    hgetall: jest.fn(async (key: string) => hashStore.get(key) ?? {}),
+    hincrby: jest.fn(async (key: string, field: string, value: number) => {
+      const current = { ...(hashStore.get(key) ?? {}) };
+      const next = Number(current[field] ?? 0) + value;
+      current[field] = String(next);
+      hashStore.set(key, current);
+      return next;
+    }),
+    expire: jest.fn(async () => 1),
+    wrap: jest.fn(
+      async (
+        _key: string,
+        _ttlSeconds: number,
+        loader: () => Promise<unknown>,
+      ) => loader(),
+    ),
+  };
 };
 
 describe("RealtimeSignalsService unrest merge", () => {
@@ -51,14 +81,15 @@ describe("RealtimeSignalsService unrest merge", () => {
       setLatestAisSnapshot: jest.fn(),
       clearLatestAisSnapshot: jest.fn(),
     };
+    const cache = createRealtimeSignalsCache();
     const service = new RealtimeSignalsService(
       {} as any,
-      {} as any,
+      cache as any,
       {} as any,
       store as any,
       {} as any,
     );
-    return { service, store };
+    return { service, store, cache };
   };
 
   afterEach(() => {
@@ -144,7 +175,7 @@ describe("RealtimeSignalsService unrest merge", () => {
         snapshotValidPositionCount: 2,
         snapshotRetainedPrevious: false,
         snapshotFreshness: "fresh",
-        staleThresholdSec: 600,
+        staleThresholdSec: 1800,
         droppedStalePositionCount: 0,
         deduplicatedCount: 0,
         countryCodes: ["GB", "US"],
@@ -161,7 +192,7 @@ describe("RealtimeSignalsService unrest merge", () => {
         currentValidPositionCount: 2,
         snapshotValidPositionCount: 2,
         rawAircraftCount: 2,
-        maxStaleMinutes: 10,
+        maxStaleMinutes: 30,
         countryCodes: ["GB", "US"],
       },
     });
@@ -175,7 +206,7 @@ describe("RealtimeSignalsService unrest merge", () => {
         validPositionCount: 2,
         latestObservedAt: "2026-03-02T11:59:55.000Z",
         diagnostics: expect.objectContaining({
-          staleThresholdSec: 600,
+          staleThresholdSec: 1800,
           droppedInvalidPositionCount: 0,
           droppedMissingIdentityCount: 0,
           droppedStalePositionCount: 0,
@@ -222,7 +253,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       diagnostics: {
         latestObservedAt: "2026-03-02T11:58:20.000Z",
         oldestObservedAt: "2026-03-02T11:58:20.000Z",
-        staleThresholdSec: 600,
+        staleThresholdSec: 1800,
         droppedInvalidPositionCount: 0,
         droppedMissingIdentityCount: 0,
         droppedStalePositionCount: 0,
@@ -248,16 +279,16 @@ describe("RealtimeSignalsService unrest merge", () => {
           icao24: "ae6306",
           callsign: "RCH295",
           countryName: "United States",
-          lastContactAt: "2026-03-02T11:44:59.000Z",
-          lastContactMs: Date.parse("2026-03-02T11:44:59.000Z"),
+          lastContactAt: "2026-03-02T11:20:00.000Z",
+          lastContactMs: Date.parse("2026-03-02T11:20:00.000Z"),
           latitude: 28.002242,
           longitude: -98.471051,
           raw: [
             "ae6306",
             "RCH295",
             "United States",
-            1_772_451_899,
-            1_772_451_899,
+            1_772_450_400,
+            1_772_450_400,
             -98.471051,
             28.002242,
             null,
@@ -655,9 +686,10 @@ describe("RealtimeSignalsService unrest merge", () => {
     const settings = {
       forceRefreshAcledAccessToken: jest.fn().mockResolvedValue("fresh-token"),
     };
+    const cache = createRealtimeSignalsCache();
     const service = new RealtimeSignalsService(
       {} as any,
-      {} as any,
+      cache as any,
       {} as any,
       {} as any,
       settings as any,
@@ -789,9 +821,13 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
     const settings = {
       getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig),
     };
+    const runtimeCache = {
+      ...createRealtimeSignalsCache(),
+      withLock: jest.fn(),
+    };
     const service = new RealtimeSignalsService(
       prisma as any,
-      cache as any,
+      { ...cache, ...runtimeCache } as any,
       {} as any,
       store as any,
       settings as any,
@@ -1060,14 +1096,15 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       getRuntimeConfig: jest.fn().mockResolvedValue(runtimeConfig),
       getSettingsSource: jest.fn().mockResolvedValue("db"),
     };
+    const cache = createRealtimeSignalsCache();
     const service = new RealtimeSignalsService(
       prisma as any,
-      {} as any,
+      cache as any,
       {} as any,
       store as any,
       settings as any,
     );
-    return { service, prisma, store, settings };
+    return { service, prisma, store, settings, cache };
   };
 
   afterEach(() => {
@@ -1112,7 +1149,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       rawAircraftCount: 0,
       currentValidPositionCount: 0,
       snapshotValidPositionCount: 0,
-      staleThresholdSec: 600,
+      staleThresholdSec: 1800,
       retainedPreviousSnapshot: false,
       droppedInvalidPositionCount: 0,
       droppedMissingIdentityCount: 0,
@@ -1175,5 +1212,78 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       recentProcessedItemsWithLocation: 0,
       latestProcessedItemAt: "2026-03-12T09:00:00.000Z",
     });
+  });
+
+  it("reports OpenSky budget summary and HKT day interval in runtime diagnostics", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-12T03:30:00.000Z"));
+    const { service, cache, prisma } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "usedCredits", 600);
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "militaryCredits",
+      480,
+    );
+    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "allCredits", 120);
+    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "militaryCalls", 20);
+    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "allCalls", 40);
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(result.openskyBudget).toMatchObject({
+      timezone: "Asia/Hong_Kong",
+      dateHkt: "2026-03-12",
+      dailyBudget: 4000,
+      usedCredits: 600,
+      remainingCredits: 3400,
+      currentPeriod: "day",
+      effectiveMilitaryIntervalSec: 600,
+      degradationLevel: "normal",
+      allModeBlocked: false,
+      militaryPaused: false,
+    });
+    const openskySource = result.sources.find(
+      (source) => source.source === "opensky",
+    );
+    expect(openskySource?.intervalSec).toBe(600);
+    expect(openskySource?.configuredIntervalSec).toBe(60);
+  });
+
+  it("elevates OpenSky runtime interval and blocks all mode when budget is critical", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-03-12T03:30:00.000Z"));
+    const { service, cache, prisma } = buildService();
+    prisma.processedArticle.count.mockResolvedValue(0);
+    prisma.processedArticle.findFirst.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([{ count: BigInt(0) }]);
+    jest.spyOn(service as any, "getMongoMarkerReadiness").mockResolvedValue({
+      recentProcessedItems: 0,
+      recentProcessedItemsWithLocation: 0,
+    });
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "usedCredits",
+      3700,
+    );
+
+    const result = await service.getRuntimeDiagnostics("org-1");
+
+    expect(result.openskyBudget).toMatchObject({
+      remainingCredits: 300,
+      currentPeriod: "day",
+      effectiveMilitaryIntervalSec: 1800,
+      degradationLevel: "critical",
+      allModeBlocked: true,
+      militaryPaused: false,
+    });
+    const openskySource = result.sources.find(
+      (source) => source.source === "opensky",
+    );
+    expect(openskySource?.intervalSec).toBe(1800);
   });
 });

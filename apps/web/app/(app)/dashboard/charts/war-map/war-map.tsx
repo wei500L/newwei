@@ -514,6 +514,24 @@ function readSummaryBoolean(
   return typeof value === "boolean" ? value : undefined;
 }
 
+function readFlightBudgetSummary(summary: Record<string, unknown> | undefined) {
+  const degradationLevel = readSummaryString(summary, "degradationLevel");
+  return {
+    remainingCredits: readSummaryNumber(summary, "remainingCredits"),
+    dailyBudget: readSummaryNumber(summary, "dailyBudget"),
+    dateHkt: readSummaryString(summary, "dateHkt"),
+    statusReasonCode: readSummaryString(summary, "statusReasonCode"),
+    statusReason: readSummaryString(summary, "statusReason"),
+    degradationLevel:
+      degradationLevel === "normal" ||
+      degradationLevel === "warning" ||
+      degradationLevel === "critical" ||
+      degradationLevel === "exhausted"
+        ? degradationLevel
+        : undefined,
+  };
+}
+
 function severityColor(
   severity: WarMapEventSeverity,
 ): [number, number, number, number] {
@@ -2384,6 +2402,7 @@ export function WarMap({
     flightsSummary,
     "sourceEndpoint",
   );
+  const flightsBudget = readFlightBudgetSummary(flightsSummary);
   const flightsSourceLabel =
     flightsSource === "opensky"
       ? t("dashboard.charts.warMap.stats.flightSourceOpensky", {
@@ -2422,6 +2441,32 @@ export function WarMap({
           count: flightsRawCount,
         })
       : null;
+  const flightsBudgetReason =
+    flightsFreshness === "budget_limited"
+      ? flightsBudget.statusReasonCode === "opensky_budget_critical"
+        ? t("dashboard.charts.warMap.stats.flightBudgetLimitedCritical", {
+            defaultValue:
+              "OpenSky all-flight mode is limited and military polling is using the night interval to preserve daily credits.",
+          })
+        : flightsBudget.statusReasonCode === "opensky_budget_exhausted"
+          ? t("dashboard.charts.warMap.stats.flightBudgetLimitedExhausted", {
+              defaultValue:
+                "OpenSky daily credit budget is exhausted. All-flight mode is paused until the next HKT day begins.",
+            })
+          : flightsBudget.statusReasonCode ===
+              "opensky_budget_insufficient_credits"
+            ? t(
+                "dashboard.charts.warMap.stats.flightBudgetLimitedInsufficient",
+                {
+                  defaultValue:
+                    "OpenSky does not have enough remaining daily credits for this viewport request.",
+                },
+              )
+            : t("dashboard.charts.warMap.stats.flightBudgetLimited", {
+                defaultValue:
+                  "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
+              })
+      : null;
   const flightsTooltipText = [
     flightsSourceLabel
       ? `${t("dashboard.charts.warMap.stats.flightSource", {
@@ -2458,6 +2503,32 @@ export function WarMap({
       ? t("dashboard.charts.warMap.stats.flightNotConfigured", {
           defaultValue: "OpenSky OAuth client credentials are not configured.",
         })
+      : flightsFreshness === "budget_limited"
+        ? flightsBudgetReason
+        : null,
+    flightsFreshness === "budget_limited" &&
+    typeof flightsBudget.remainingCredits === "number" &&
+    typeof flightsBudget.dailyBudget === "number"
+      ? t("dashboard.charts.warMap.stats.flightBudgetRemaining", {
+          defaultValue: "Remaining {{remaining}} / {{budget}} credits",
+          remaining: flightsBudget.remainingCredits,
+          budget: flightsBudget.dailyBudget,
+        })
+      : null,
+    flightsFreshness === "budget_limited" && flightsBudget.dateHkt
+      ? t("dashboard.charts.warMap.stats.flightBudgetReset", {
+          defaultValue: "Budget day {{date}} HKT. Resets at 00:00 HKT.",
+          date: flightsBudget.dateHkt,
+        })
+      : null,
+    flightsFreshness === "budget_limited" && flightsBudget.degradationLevel
+      ? t("dashboard.charts.warMap.stats.flightBudgetDegradation", {
+          defaultValue: "Degradation: {{value}}",
+          value: flightsBudget.degradationLevel,
+        })
+      : null,
+    flightsFreshness === "budget_limited" && flightsBudget.statusReason
+      ? flightsBudget.statusReason
       : null,
   ]
     .filter((value): value is string => Boolean(value))
@@ -3419,13 +3490,15 @@ export function WarMap({
                     ? "orange"
                     : flightsFreshness === "zoom_required"
                       ? "purple"
-                      : flightsFreshness === "not_configured"
-                        ? "red"
-                        : flightsFreshness === "missing"
-                          ? "default"
-                          : flightsTruncated
-                            ? "gold"
-                            : "cyan"
+                      : flightsFreshness === "budget_limited"
+                        ? "magenta"
+                        : flightsFreshness === "not_configured"
+                          ? "red"
+                          : flightsFreshness === "missing"
+                            ? "default"
+                            : flightsTruncated
+                              ? "gold"
+                              : "cyan"
                 }
                 className="text-xs"
               >

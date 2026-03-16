@@ -31,6 +31,13 @@ const baseEnvConfig = {
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
     clientId: undefined,
     clientSecret: undefined,
+    dailyCreditBudget: 4000,
+    dayIntervalSec: 600,
+    nightIntervalSec: 1800,
+    dayStartHourHkt: 8,
+    nightStartHourHkt: 22,
+    warningRemainingPct: 20,
+    criticalRemainingPct: 10,
   },
   credentials: {
     aisApiKey: undefined,
@@ -222,5 +229,42 @@ describe("RealtimeSignalsSettingsService", () => {
 
     expect(token).toBeUndefined();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("exposes OpenSky budget and HKT schedule defaults in public settings", async () => {
+    const response = await service.getPublicSettings();
+
+    expect(response.openskyDailyCreditBudget).toBe(4000);
+    expect(response.openskyDayIntervalSec).toBe(600);
+    expect(response.openskyNightIntervalSec).toBe(1800);
+    expect(response.openskyDayStartHourHkt).toBe(8);
+    expect(response.openskyNightStartHourHkt).toBe(22);
+    expect(response.openskyWarningRemainingPct).toBe(20);
+    expect(response.openskyCriticalRemainingPct).toBe(10);
+  });
+
+  it("returns OpenSky budget config in runtime settings", async () => {
+    const runtime = await service.getRuntimeConfig();
+
+    expect(runtime.opensky).toMatchObject({
+      dailyCreditBudget: 4000,
+      dayIntervalSec: 600,
+      nightIntervalSec: 1800,
+      dayStartHourHkt: 8,
+      nightStartHourHkt: 22,
+      warningRemainingPct: 20,
+      criticalRemainingPct: 10,
+    });
+  });
+
+  it("rejects invalid OpenSky HKT schedule settings", async () => {
+    await expect(
+      service.updateSettings("org-1", "user-1", {
+        openskyDayStartHourHkt: 22,
+        openskyNightStartHourHkt: 8,
+      }),
+    ).rejects.toThrow(
+      "openskyDayStartHourHkt must be earlier than openskyNightStartHourHkt",
+    );
   });
 });

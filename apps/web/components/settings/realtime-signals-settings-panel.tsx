@@ -16,6 +16,7 @@ import {
   Spin,
   Statistic,
   Switch,
+  Table,
   Tag,
   Typography,
   message,
@@ -59,6 +60,19 @@ type RealtimeSignalRuntimeStatus =
   | "not_configured"
   | "idle";
 type RealtimeOpenskySnapshotFreshness = "fresh" | "stale" | "missing";
+type RealtimeOpenskyBudgetPeriod = "day" | "night";
+type RealtimeOpenskyBudgetDegradationLevel =
+  | "normal"
+  | "warning"
+  | "critical"
+  | "exhausted";
+type RealtimeOpenskyErrorKind =
+  | "auth"
+  | "rate_limited"
+  | "server"
+  | "timeout"
+  | "network"
+  | "unknown";
 type RealtimeSignalsTranslate = (
   key: string,
   options?: Record<string, unknown>,
@@ -73,6 +87,13 @@ interface RealtimeSignalsSettingsResponse {
   acledApiDisabledReason?: string;
   openskyEnabled: boolean;
   openskyIntervalSec: number;
+  openskyDailyCreditBudget: number;
+  openskyDayIntervalSec: number;
+  openskyNightIntervalSec: number;
+  openskyDayStartHourHkt: number;
+  openskyNightStartHourHkt: number;
+  openskyWarningRemainingPct: number;
+  openskyCriticalRemainingPct: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -128,6 +149,13 @@ interface RealtimeSignalsSettingsFormValues {
   maxRetries: number;
   openskyEnabled: boolean;
   openskyIntervalSec: number;
+  openskyDailyCreditBudget: number;
+  openskyDayIntervalSec: number;
+  openskyNightIntervalSec: number;
+  openskyDayStartHourHkt: number;
+  openskyNightStartHourHkt: number;
+  openskyWarningRemainingPct: number;
+  openskyCriticalRemainingPct: number;
   aisEnabled: boolean;
   aisIntervalSec: number;
   unrestEnabled: boolean;
@@ -165,13 +193,17 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   source: RealtimeSignalSourceKey;
   enabled: boolean;
   intervalSec: number;
+  configuredIntervalSec?: number;
   status: RealtimeSignalRuntimeStatus;
   statusReason?: string;
+  statusReasonCode?: string;
   lastRunAt?: string;
   lastAttemptAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorKind?: RealtimeOpenskyErrorKind;
+  lastErrorStatus?: number;
   latestValue: number | null;
   previousValue: number | null;
   changePercent: number | null;
@@ -210,6 +242,59 @@ interface RealtimeSignalRuntimeDiagnosticsSource {
   };
 }
 
+interface RealtimeOpenskyBudgetDaySummary {
+  dateHkt: string;
+  usedCredits: number;
+  requestCount: number;
+  militaryCredits: number;
+  allCredits: number;
+  militaryCalls: number;
+  allCalls: number;
+  errorCalls: number;
+  authErrorCalls: number;
+  rateLimitedErrorCalls: number;
+  serverErrorCalls: number;
+  timeoutErrorCalls: number;
+  networkErrorCalls: number;
+  unknownErrorCalls: number;
+  blockedAllModeCount: number;
+  skippedMilitaryCount: number;
+}
+
+interface RealtimeOpenskyBudgetSummary {
+  timezone: string;
+  dateHkt: string;
+  dailyBudget: number;
+  usedCredits: number;
+  remainingCredits: number;
+  usagePct: number;
+  remainingPct: number;
+  requestCount: number;
+  militaryCredits: number;
+  allCredits: number;
+  militaryCalls: number;
+  allCalls: number;
+  errorCalls: number;
+  authErrorCalls: number;
+  rateLimitedErrorCalls: number;
+  serverErrorCalls: number;
+  timeoutErrorCalls: number;
+  networkErrorCalls: number;
+  unknownErrorCalls: number;
+  blockedAllModeCount: number;
+  skippedMilitaryCount: number;
+  currentPeriod: RealtimeOpenskyBudgetPeriod;
+  dayIntervalSec: number;
+  nightIntervalSec: number;
+  effectiveMilitaryIntervalSec: number;
+  degradationLevel: RealtimeOpenskyBudgetDegradationLevel;
+  allModeBlocked: boolean;
+  militaryPaused: boolean;
+  warningRemainingPct: number;
+  criticalRemainingPct: number;
+  recentDays: RealtimeOpenskyBudgetDaySummary[];
+}
+
 interface RealtimeSignalsRuntimeDiagnosticsResponse {
   checkedAt: string;
   settingsSource: RealtimeSignalsRuntimeSettingsSource;
@@ -234,6 +319,7 @@ interface RealtimeSignalsRuntimeDiagnosticsResponse {
     newsMarkersReady: boolean;
   };
   sources: RealtimeSignalRuntimeDiagnosticsSource[];
+  openskyBudget?: RealtimeOpenskyBudgetSummary;
 }
 
 const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
@@ -245,6 +331,13 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   acledApiDisabledReason: undefined,
   openskyEnabled: true,
   openskyIntervalSec: 900,
+  openskyDailyCreditBudget: 4000,
+  openskyDayIntervalSec: 600,
+  openskyNightIntervalSec: 1800,
+  openskyDayStartHourHkt: 8,
+  openskyNightStartHourHkt: 22,
+  openskyWarningRemainingPct: 20,
+  openskyCriticalRemainingPct: 10,
   aisEnabled: true,
   aisIntervalSec: 600,
   unrestEnabled: true,
@@ -296,13 +389,6 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
 };
 
 const SOURCE_CONFIGS = [
-  {
-    sourceKey: "opensky",
-    nameKey: "systemSettings.realtimeSignals.sources.opensky",
-    fallbackName: "OpenSky military flights",
-    enabledField: "openskyEnabled",
-    intervalField: "openskyIntervalSec",
-  },
   {
     sourceKey: "ais",
     nameKey: "systemSettings.realtimeSignals.sources.ais",
@@ -363,6 +449,13 @@ function toFormValues(
     maxRetries: settings.maxRetries,
     openskyEnabled: settings.openskyEnabled,
     openskyIntervalSec: settings.openskyIntervalSec,
+    openskyDailyCreditBudget: settings.openskyDailyCreditBudget,
+    openskyDayIntervalSec: settings.openskyDayIntervalSec,
+    openskyNightIntervalSec: settings.openskyNightIntervalSec,
+    openskyDayStartHourHkt: settings.openskyDayStartHourHkt,
+    openskyNightStartHourHkt: settings.openskyNightStartHourHkt,
+    openskyWarningRemainingPct: settings.openskyWarningRemainingPct,
+    openskyCriticalRemainingPct: settings.openskyCriticalRemainingPct,
     aisEnabled: settings.aisEnabled,
     aisIntervalSec: settings.aisIntervalSec,
     unrestEnabled: settings.unrestEnabled,
@@ -415,25 +508,28 @@ function summarizeRuntimeContext(
 
   switch (source) {
     case "opensky":
-      return t("systemSettings.realtimeSignals.runtime.contextSummary.opensky", {
-        defaultValue:
-          "scope={{scope}}, military={{military}}, raw={{raw}}, current={{current}}, map={{map}}",
-        scope: str(resolvedContext.scope) ?? "military",
-        military: num(resolvedContext.militaryCount) ?? 0,
-        raw:
-          openskySnapshot?.rawAircraftCount ??
-          num(resolvedContext.totalAircraft) ??
-          0,
-        current:
-          openskySnapshot?.currentValidPositionCount ??
-          num(resolvedContext.validPositionCount) ??
-          0,
-        map:
-          openskySnapshot?.snapshotValidPositionCount ??
-          num(resolvedContext.snapshotValidPositionCount) ??
-          num(resolvedContext.validPositionCount) ??
-          0,
-      });
+      return t(
+        "systemSettings.realtimeSignals.runtime.contextSummary.opensky",
+        {
+          defaultValue:
+            "scope={{scope}}, military={{military}}, raw={{raw}}, current={{current}}, map={{map}}",
+          scope: str(resolvedContext.scope) ?? "military",
+          military: num(resolvedContext.militaryCount) ?? 0,
+          raw:
+            openskySnapshot?.rawAircraftCount ??
+            num(resolvedContext.totalAircraft) ??
+            0,
+          current:
+            openskySnapshot?.currentValidPositionCount ??
+            num(resolvedContext.validPositionCount) ??
+            0,
+          map:
+            openskySnapshot?.snapshotValidPositionCount ??
+            num(resolvedContext.snapshotValidPositionCount) ??
+            num(resolvedContext.validPositionCount) ??
+            0,
+        },
+      );
     case "ais":
       return resolvedContext.configured === false
         ? t(
@@ -472,13 +568,10 @@ function summarizeRuntimeContext(
               defaultValue: "Cloudflare token not configured",
             },
           )
-        : t(
-            "systemSettings.realtimeSignals.runtime.contextSummary.outages",
-            {
-              defaultValue: "outages={{outages}}",
-              outages: num(resolvedContext.outages) ?? 0,
-            },
-          );
+        : t("systemSettings.realtimeSignals.runtime.contextSummary.outages", {
+            defaultValue: "outages={{outages}}",
+            outages: num(resolvedContext.outages) ?? 0,
+          });
     case "keyword_spike":
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.keywordSpike",
@@ -493,12 +586,15 @@ function summarizeRuntimeContext(
         },
       );
     case "pizzint":
-      return t("systemSettings.realtimeSignals.runtime.contextSummary.pizzint", {
-        defaultValue: "defcon={{defcon}}, open={{open}}, spikes={{spikes}}",
-        defcon: num(resolvedContext.defcon) ?? 0,
-        open: num(resolvedContext.openLocations) ?? 0,
-        spikes: num(resolvedContext.activeSpikes) ?? 0,
-      });
+      return t(
+        "systemSettings.realtimeSignals.runtime.contextSummary.pizzint",
+        {
+          defaultValue: "defcon={{defcon}}, open={{open}}, spikes={{spikes}}",
+          defcon: num(resolvedContext.defcon) ?? 0,
+          open: num(resolvedContext.openLocations) ?? 0,
+          spikes: num(resolvedContext.activeSpikes) ?? 0,
+        },
+      );
     case "gdelt_tension":
       return t(
         "systemSettings.realtimeSignals.runtime.contextSummary.gdeltTension",
@@ -535,6 +631,52 @@ function runtimeFreshnessColor(freshness: RealtimeOpenskySnapshotFreshness) {
     default:
       return "default";
   }
+}
+
+function openskyBudgetDegradationColor(
+  degradation: RealtimeOpenskyBudgetDegradationLevel | undefined,
+) {
+  switch (degradation) {
+    case "warning":
+      return "gold";
+    case "critical":
+      return "orange";
+    case "exhausted":
+      return "red";
+    default:
+      return "green";
+  }
+}
+
+function formatPercentValue(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(2)}%`
+    : "—";
+}
+
+function formatOpenskyRuntimeReason(
+  t: RealtimeSignalsTranslate,
+  code: string | undefined,
+  fallback: string | undefined,
+) {
+  if (!code) {
+    return fallback;
+  }
+  return t(`systemSettings.realtimeSignals.runtime.openskyReason.${code}`, {
+    defaultValue: fallback ?? code,
+  });
+}
+
+function formatOpenskyErrorKindLabel(
+  t: RealtimeSignalsTranslate,
+  kind: RealtimeOpenskyErrorKind | undefined,
+) {
+  if (!kind) {
+    return undefined;
+  }
+  return t(`systemSettings.realtimeSignals.runtime.openskyErrorKind.${kind}`, {
+    defaultValue: kind,
+  });
 }
 
 export function RealtimeSignalsSettingsPanel() {
@@ -619,6 +761,13 @@ export function RealtimeSignalsSettingsPanel() {
         maxRetries: values.maxRetries,
         openskyEnabled: values.openskyEnabled,
         openskyIntervalSec: values.openskyIntervalSec,
+        openskyDailyCreditBudget: values.openskyDailyCreditBudget,
+        openskyDayIntervalSec: values.openskyDayIntervalSec,
+        openskyNightIntervalSec: values.openskyNightIntervalSec,
+        openskyDayStartHourHkt: values.openskyDayStartHourHkt,
+        openskyNightStartHourHkt: values.openskyNightStartHourHkt,
+        openskyWarningRemainingPct: values.openskyWarningRemainingPct,
+        openskyCriticalRemainingPct: values.openskyCriticalRemainingPct,
         aisEnabled: values.aisEnabled,
         aisIntervalSec: values.aisIntervalSec,
         unrestEnabled: values.unrestEnabled,
@@ -832,7 +981,9 @@ export function RealtimeSignalsSettingsPanel() {
       ? [
           {
             key: "acledOauthPassword",
-            label: t("systemSettings.realtimeSignals.status.acledOauthPassword"),
+            label: t(
+              "systemSettings.realtimeSignals.status.acledOauthPassword",
+            ),
             has: settings.hasAcledOauthPassword,
             source: settings.acledOauthPasswordSource,
           },
@@ -852,23 +1003,41 @@ export function RealtimeSignalsSettingsPanel() {
     },
   ];
 
-  const sourceStatusRows = SOURCE_CONFIGS.map((sourceConfig) => {
-    const sourceName = t(sourceConfig.nameKey, {
-      defaultValue: sourceConfig.fallbackName,
-    });
-    const enabled = Boolean(settings[sourceConfig.enabledField]);
-    const intervalSec =
-      typeof settings[sourceConfig.intervalField] === "number"
-        ? settings[sourceConfig.intervalField]
-        : null;
-    return {
-      sourceKey: sourceConfig.sourceKey,
-      key: sourceConfig.enabledField,
-      sourceName,
-      enabled,
-      intervalSec,
-    };
-  });
+  const openskySourceName = t(
+    "systemSettings.realtimeSignals.sources.opensky",
+    {
+      defaultValue: "OpenSky military flights",
+    },
+  );
+  const sourceStatusRows = [
+    {
+      sourceKey: "opensky" as const,
+      key: "openskyEnabled",
+      sourceName: openskySourceName,
+      enabled: settings.openskyEnabled,
+      intervalSec: settings.openskyDayIntervalSec,
+      intervalLabel: `${settings.openskyDayIntervalSec}s / ${settings.openskyNightIntervalSec}s`,
+    },
+    ...SOURCE_CONFIGS.map((sourceConfig) => {
+      const sourceName = t(sourceConfig.nameKey, {
+        defaultValue: sourceConfig.fallbackName,
+      });
+      const enabled = Boolean(settings[sourceConfig.enabledField]);
+      const intervalSec =
+        typeof settings[sourceConfig.intervalField] === "number"
+          ? settings[sourceConfig.intervalField]
+          : null;
+      return {
+        sourceKey: sourceConfig.sourceKey,
+        key: sourceConfig.enabledField,
+        sourceName,
+        enabled,
+        intervalSec,
+        intervalLabel:
+          typeof intervalSec === "number" ? `${intervalSec}s` : undefined,
+      };
+    }),
+  ];
 
   const enabledSourceCount = sourceStatusRows.filter(
     (row) => row.enabled,
@@ -914,6 +1083,117 @@ export function RealtimeSignalsSettingsPanel() {
     ) ?? [];
   const runtimeWarnings =
     diagnostics?.sources.filter((row) => row.status === "not_configured") ?? [];
+  const openskyBudget = diagnostics?.openskyBudget;
+  const openskyBudgetPeriodLabel =
+    openskyBudget?.currentPeriod === "day"
+      ? t("systemSettings.realtimeSignals.runtime.openskyBudget.periods.day", {
+          defaultValue: "HKT day",
+        })
+      : openskyBudget?.currentPeriod === "night"
+        ? t(
+            "systemSettings.realtimeSignals.runtime.openskyBudget.periods.night",
+            {
+              defaultValue: "HKT night",
+            },
+          )
+        : "—";
+  const openskyBudgetDegradationLabel = openskyBudget
+    ? t(
+        `systemSettings.realtimeSignals.runtime.openskyBudget.degradation.${openskyBudget.degradationLevel}`,
+        {
+          defaultValue: openskyBudget.degradationLevel,
+        },
+      )
+    : "—";
+  const openskyBudgetErrorBreakdown = openskyBudget
+    ? [
+        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.auth", {
+          defaultValue: "auth",
+        })} ${openskyBudget.authErrorCalls}`,
+        `${t(
+          "systemSettings.realtimeSignals.runtime.openskyErrorKind.rate_limited",
+          {
+            defaultValue: "rate_limited",
+          },
+        )} ${openskyBudget.rateLimitedErrorCalls}`,
+        `${t("systemSettings.realtimeSignals.runtime.openskyErrorKind.server", {
+          defaultValue: "server",
+        })} ${openskyBudget.serverErrorCalls}`,
+        `${t(
+          "systemSettings.realtimeSignals.runtime.openskyErrorKind.timeout",
+          {
+            defaultValue: "timeout",
+          },
+        )} ${openskyBudget.timeoutErrorCalls}`,
+        `${t(
+          "systemSettings.realtimeSignals.runtime.openskyErrorKind.network",
+          {
+            defaultValue: "network",
+          },
+        )} ${openskyBudget.networkErrorCalls}`,
+        `${t(
+          "systemSettings.realtimeSignals.runtime.openskyErrorKind.unknown",
+          {
+            defaultValue: "unknown",
+          },
+        )} ${openskyBudget.unknownErrorCalls}`,
+      ].join(" / ")
+    : "—";
+  const openskyBudgetColumns = useMemo(
+    () => [
+      {
+        title: t(
+          "systemSettings.realtimeSignals.runtime.openskyBudget.table.date",
+          {
+            defaultValue: "Date (HKT)",
+          },
+        ),
+        dataIndex: "dateHkt",
+        key: "dateHkt",
+      },
+      {
+        title: t(
+          "systemSettings.realtimeSignals.runtime.openskyBudget.table.usedCredits",
+          {
+            defaultValue: "Used",
+          },
+        ),
+        dataIndex: "usedCredits",
+        key: "usedCredits",
+      },
+      {
+        title: t(
+          "systemSettings.realtimeSignals.runtime.openskyBudget.table.militaryCredits",
+          {
+            defaultValue: "Military",
+          },
+        ),
+        dataIndex: "militaryCredits",
+        key: "militaryCredits",
+      },
+      {
+        title: t(
+          "systemSettings.realtimeSignals.runtime.openskyBudget.table.allCredits",
+          {
+            defaultValue: "All",
+          },
+        ),
+        dataIndex: "allCredits",
+        key: "allCredits",
+      },
+      {
+        title: t(
+          "systemSettings.realtimeSignals.runtime.openskyBudget.table.calls",
+          {
+            defaultValue: "Calls",
+          },
+        ),
+        dataIndex: "requestCount",
+        key: "requestCount",
+      },
+    ],
+    [t],
+  );
 
   if (loading && !loadedOnce) {
     return (
@@ -1175,9 +1455,7 @@ export function RealtimeSignalsSettingsPanel() {
                 : t("systemSettings.realtimeSignals.status.disabled", {
                     defaultValue: "Disabled",
                   })}
-              {typeof row.intervalSec === "number"
-                ? ` · ${row.intervalSec}s`
-                : ""}
+              {row.intervalLabel ? ` · ${row.intervalLabel}` : ""}
             </Tag>
           ))}
         </Space>
@@ -1206,7 +1484,10 @@ export function RealtimeSignalsSettingsPanel() {
                 })}
               </Typography.Text>
             ) : null}
-            <Button onClick={() => void loadDiagnostics()} loading={diagnosticsLoading}>
+            <Button
+              onClick={() => void loadDiagnostics()}
+              loading={diagnosticsLoading}
+            >
               {t("common.refresh", { defaultValue: "Refresh" })}
             </Button>
           </Space>
@@ -1255,8 +1536,12 @@ export function RealtimeSignalsSettingsPanel() {
             description={
               <Space wrap size={[8, 8]}>
                 {runtimeIssues.map((row) => (
-                  <Tag key={`${row.source}-issue`} color={runtimeStatusColor(row.status)}>
-                    {sourceNameByKey[row.source]} · {runtimeStatusLabel(row.status)}
+                  <Tag
+                    key={`${row.source}-issue`}
+                    color={runtimeStatusColor(row.status)}
+                  >
+                    {sourceNameByKey[row.source]} ·{" "}
+                    {runtimeStatusLabel(row.status)}
                   </Tag>
                 ))}
               </Space>
@@ -1270,13 +1555,18 @@ export function RealtimeSignalsSettingsPanel() {
             showIcon
             style={{ marginBottom: "1rem" }}
             message={t("systemSettings.realtimeSignals.runtime.warnings", {
-              defaultValue: "Some sources are enabled but not fully configured.",
+              defaultValue:
+                "Some sources are enabled but not fully configured.",
             })}
             description={
               <Space wrap size={[8, 8]}>
                 {runtimeWarnings.map((row) => (
-                  <Tag key={`${row.source}-warning`} color={runtimeStatusColor(row.status)}>
-                    {sourceNameByKey[row.source]} · {runtimeStatusLabel(row.status)}
+                  <Tag
+                    key={`${row.source}-warning`}
+                    color={runtimeStatusColor(row.status)}
+                  >
+                    {sourceNameByKey[row.source]} ·{" "}
+                    {runtimeStatusLabel(row.status)}
                   </Tag>
                 ))}
               </Space>
@@ -1290,11 +1580,15 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={12} lg={6}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.summary.healthy", {
-                      defaultValue: "Healthy sources",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.summary.healthy",
+                      {
+                        defaultValue: "Healthy sources",
+                      },
+                    )}
                     value={
-                      diagnostics.sources.filter((row) => row.status === "ok").length
+                      diagnostics.sources.filter((row) => row.status === "ok")
+                        .length
                     }
                     suffix={`/ ${diagnostics.sources.length}`}
                   />
@@ -1303,9 +1597,12 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={12} lg={6}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.summary.issues", {
-                      defaultValue: "Issue sources",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.summary.issues",
+                      {
+                        defaultValue: "Issue sources",
+                      },
+                    )}
                     value={runtimeIssues.length}
                   />
                 </Card>
@@ -1313,13 +1610,18 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={12} lg={6}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.summary.markerReadiness", {
-                      defaultValue: "News markers",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.summary.markerReadiness",
+                      {
+                        defaultValue: "News markers",
+                      },
+                    )}
                     value={
                       diagnostics.markerReadiness.newsMarkersReady
                         ? t("common.ok", { defaultValue: "OK" })
-                        : t("common.unavailable", { defaultValue: "Unavailable" })
+                        : t("common.unavailable", {
+                            defaultValue: "Unavailable",
+                          })
                     }
                   />
                 </Card>
@@ -1327,26 +1629,245 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={12} lg={6}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.summary.pizzint", {
-                      defaultValue: "PizzINT DEFCON",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.summary.pizzint",
+                      {
+                        defaultValue: "PizzINT DEFCON",
+                      },
+                    )}
                     value={diagnostics.insight.pizzint?.defcon ?? "—"}
                   />
                 </Card>
               </Col>
             </Row>
 
+            <Card
+              size="small"
+              title={t(
+                "systemSettings.realtimeSignals.runtime.openskyBudget.title",
+                {
+                  defaultValue: "OpenSky budget & schedule",
+                },
+              )}
+            >
+              <Space
+                direction="vertical"
+                size="middle"
+                style={{ display: "flex" }}
+              >
+                <Space wrap size={[8, 8]}>
+                  <Tag color="geekblue">
+                    {t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.date",
+                      {
+                        defaultValue: "Date",
+                      },
+                    )}
+                    : {openskyBudget?.dateHkt ?? "—"}
+                  </Tag>
+                  <Tag color="purple">
+                    {t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.timezone",
+                      {
+                        defaultValue: "Timezone",
+                      },
+                    )}
+                    : {openskyBudget?.timezone ?? "Asia/Hong_Kong"}
+                  </Tag>
+                  <Tag
+                    color={openskyBudgetDegradationColor(
+                      openskyBudget?.degradationLevel,
+                    )}
+                  >
+                    {t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.degradationLabel",
+                      {
+                        defaultValue: "Degradation",
+                      },
+                    )}
+                    : {openskyBudgetDegradationLabel}
+                  </Tag>
+                  {openskyBudget?.allModeBlocked ? (
+                    <Tag color="magenta">
+                      {t(
+                        "systemSettings.realtimeSignals.runtime.openskyBudget.allModeBlocked",
+                        {
+                          defaultValue: "All mode limited",
+                        },
+                      )}
+                    </Tag>
+                  ) : null}
+                </Space>
+
+                <Row gutter={[12, 12]}>
+                  <Col xs={24} sm={12} lg={6}>
+                    <Card size="small">
+                      <Statistic
+                        title={t(
+                          "systemSettings.realtimeSignals.runtime.openskyBudget.dailyBudget",
+                          {
+                            defaultValue: "Daily budget",
+                          },
+                        )}
+                        value={openskyBudget?.dailyBudget ?? "—"}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24} sm={12} lg={6}>
+                    <Card size="small">
+                      <Statistic
+                        title={t(
+                          "systemSettings.realtimeSignals.runtime.openskyBudget.usedCredits",
+                          {
+                            defaultValue: "Used credits",
+                          },
+                        )}
+                        value={openskyBudget?.usedCredits ?? "—"}
+                        suffix={
+                          openskyBudget
+                            ? `/ ${formatPercentValue(openskyBudget.usagePct)}`
+                            : undefined
+                        }
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24} sm={12} lg={6}>
+                    <Card size="small">
+                      <Statistic
+                        title={t(
+                          "systemSettings.realtimeSignals.runtime.openskyBudget.remainingCredits",
+                          {
+                            defaultValue: "Remaining credits",
+                          },
+                        )}
+                        value={openskyBudget?.remainingCredits ?? "—"}
+                        suffix={
+                          openskyBudget
+                            ? `/ ${formatPercentValue(openskyBudget.remainingPct)}`
+                            : undefined
+                        }
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24} sm={12} lg={6}>
+                    <Card size="small">
+                      <Statistic
+                        title={t(
+                          "systemSettings.realtimeSignals.runtime.openskyBudget.currentPeriod",
+                          {
+                            defaultValue: "Current period",
+                          },
+                        )}
+                        value={openskyBudgetPeriodLabel}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Descriptions size="small" bordered column={1}>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.effectiveInterval",
+                      {
+                        defaultValue: "Effective military interval",
+                      },
+                    )}
+                  >
+                    {typeof openskyBudget?.effectiveMilitaryIntervalSec ===
+                    "number"
+                      ? `${openskyBudget.effectiveMilitaryIntervalSec}s`
+                      : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.configuredSchedule",
+                      {
+                        defaultValue: "Configured HKT schedule",
+                      },
+                    )}
+                  >
+                    {openskyBudget
+                      ? `${openskyBudget.dayIntervalSec}s (${settings.openskyDayStartHourHkt.toString().padStart(2, "0")}:00-${settings.openskyNightStartHourHkt.toString().padStart(2, "0")}:00) / ${openskyBudget.nightIntervalSec}s (${settings.openskyNightStartHourHkt.toString().padStart(2, "0")}:00-${settings.openskyDayStartHourHkt.toString().padStart(2, "0")}:00)`
+                      : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.calls",
+                      {
+                        defaultValue: "Today calls",
+                      },
+                    )}
+                  >
+                    {openskyBudget
+                      ? `${openskyBudget.requestCount} charged / ${openskyBudget.militaryCalls} military / ${openskyBudget.allCalls} all / ${openskyBudget.errorCalls} errors`
+                      : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.errorBreakdown",
+                      {
+                        defaultValue: "Error breakdown",
+                      },
+                    )}
+                  >
+                    {openskyBudgetErrorBreakdown}
+                  </Descriptions.Item>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.resetAt",
+                      {
+                        defaultValue: "Daily reset",
+                      },
+                    )}
+                  >
+                    {t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.resetAtValue",
+                      {
+                        defaultValue: "00:00 HKT",
+                      },
+                    )}
+                  </Descriptions.Item>
+                  <Descriptions.Item
+                    label={t(
+                      "systemSettings.realtimeSignals.runtime.openskyBudget.blockedCounts",
+                      {
+                        defaultValue: "Budget blocks",
+                      },
+                    )}
+                  >
+                    {openskyBudget
+                      ? `${openskyBudget.blockedAllModeCount} all blocked / ${openskyBudget.skippedMilitaryCount} military skipped`
+                      : "—"}
+                  </Descriptions.Item>
+                </Descriptions>
+
+                <Table
+                  size="small"
+                  pagination={false}
+                  columns={openskyBudgetColumns}
+                  dataSource={openskyBudget?.recentDays ?? []}
+                  rowKey="dateHkt"
+                />
+              </Space>
+            </Card>
+
             {!diagnostics.markerReadiness.newsMarkersReady ? (
               <Alert
                 type="warning"
                 showIcon
-                message={t("systemSettings.realtimeSignals.runtime.markerWarning.title", {
-                  defaultValue: "War Map news markers are not ready.",
-                })}
-                description={t("systemSettings.realtimeSignals.runtime.markerWarning.body", {
-                  defaultValue:
-                    "Recent processed articles with location data are empty, so news markers will stay blank until the content pipeline produces geo-tagged results.",
-                })}
+                message={t(
+                  "systemSettings.realtimeSignals.runtime.markerWarning.title",
+                  {
+                    defaultValue: "War Map news markers are not ready.",
+                  },
+                )}
+                description={t(
+                  "systemSettings.realtimeSignals.runtime.markerWarning.body",
+                  {
+                    defaultValue:
+                      "Recent processed articles with location data are empty, so news markers will stay blank until the content pipeline produces geo-tagged results.",
+                  },
+                )}
               />
             ) : null}
 
@@ -1354,58 +1875,92 @@ export function RealtimeSignalsSettingsPanel() {
               size="small"
               column={1}
               bordered
-              title={t("systemSettings.realtimeSignals.runtime.markerReadiness", {
-                defaultValue: "Marker readiness",
-              })}
+              title={t(
+                "systemSettings.realtimeSignals.runtime.markerReadiness",
+                {
+                  defaultValue: "Marker readiness",
+                },
+              )}
             >
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerWindow", {
-                  defaultValue: "Lookback window",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerWindow",
+                  {
+                    defaultValue: "Lookback window",
+                  },
+                )}
               >
                 {diagnostics.markerReadiness.windowHours}h
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerRecentArticles", {
-                  defaultValue: "Recent processed articles",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerRecentArticles",
+                  {
+                    defaultValue: "Recent processed articles",
+                  },
+                )}
               >
                 {diagnostics.markerReadiness.recentProcessedArticles}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerRecentArticlesWithLocation", {
-                  defaultValue: "Recent articles with location",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerRecentArticlesWithLocation",
+                  {
+                    defaultValue: "Recent articles with location",
+                  },
+                )}
               >
-                {diagnostics.markerReadiness.recentProcessedArticlesWithLocation}
+                {
+                  diagnostics.markerReadiness
+                    .recentProcessedArticlesWithLocation
+                }
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerRecentMongo", {
-                  defaultValue: "Recent Mongo processed items",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerRecentMongo",
+                  {
+                    defaultValue: "Recent Mongo processed items",
+                  },
+                )}
               >
                 {diagnostics.markerReadiness.recentMongoProcessedItems}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerRecentMongoWithLocation", {
-                  defaultValue: "Recent Mongo items with location",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerRecentMongoWithLocation",
+                  {
+                    defaultValue: "Recent Mongo items with location",
+                  },
+                )}
               >
-                {diagnostics.markerReadiness.recentMongoProcessedItemsWithLocation}
+                {
+                  diagnostics.markerReadiness
+                    .recentMongoProcessedItemsWithLocation
+                }
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerLatestArticle", {
-                  defaultValue: "Latest processed article",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerLatestArticle",
+                  {
+                    defaultValue: "Latest processed article",
+                  },
+                )}
               >
-                {formatTimestamp(diagnostics.markerReadiness.latestProcessedArticleAt)}
+                {formatTimestamp(
+                  diagnostics.markerReadiness.latestProcessedArticleAt,
+                )}
               </Descriptions.Item>
               <Descriptions.Item
-                label={t("systemSettings.realtimeSignals.runtime.markerLatestMongo", {
-                  defaultValue: "Latest processed item",
-                })}
+                label={t(
+                  "systemSettings.realtimeSignals.runtime.markerLatestMongo",
+                  {
+                    defaultValue: "Latest processed item",
+                  },
+                )}
               >
-                {formatTimestamp(diagnostics.markerReadiness.latestProcessedItemAt)}
+                {formatTimestamp(
+                  diagnostics.markerReadiness.latestProcessedItemAt,
+                )}
               </Descriptions.Item>
             </Descriptions>
 
@@ -1413,9 +1968,12 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={8}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.insight.keywordSpikes", {
-                      defaultValue: "Keyword spikes",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.insight.keywordSpikes",
+                      {
+                        defaultValue: "Keyword spikes",
+                      },
+                    )}
                     value={diagnostics.insight.keywordSpikes.length}
                   />
                 </Card>
@@ -1423,9 +1981,12 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={8}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.insight.predictionLeads", {
-                      defaultValue: "Prediction leads",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.insight.predictionLeads",
+                      {
+                        defaultValue: "Prediction leads",
+                      },
+                    )}
                     value={diagnostics.insight.predictionLeads.length}
                   />
                 </Card>
@@ -1433,9 +1994,12 @@ export function RealtimeSignalsSettingsPanel() {
               <Col xs={24} sm={8}>
                 <Card size="small">
                   <Statistic
-                    title={t("systemSettings.realtimeSignals.runtime.insight.tensions", {
-                      defaultValue: "Tension pairs",
-                    })}
+                    title={t(
+                      "systemSettings.realtimeSignals.runtime.insight.tensions",
+                      {
+                        defaultValue: "Tension pairs",
+                      },
+                    )}
                     value={diagnostics.insight.tensions.length}
                   />
                 </Card>
@@ -1444,14 +2008,25 @@ export function RealtimeSignalsSettingsPanel() {
 
             <Row gutter={[12, 12]}>
               {diagnostics.sources.map((row) => {
-                const openskySnapshot =
-                  row.openskySnapshot ?? row.adsbSnapshot;
+                const openskySnapshot = row.openskySnapshot ?? row.adsbSnapshot;
                 const summary = summarizeRuntimeContext(
                   t,
                   row.source,
                   row.context,
                   openskySnapshot,
                 );
+                const runtimeStatusReason =
+                  row.source === "opensky"
+                    ? formatOpenskyRuntimeReason(
+                        t,
+                        row.statusReasonCode,
+                        row.statusReason,
+                      )
+                    : row.statusReason;
+                const openskyErrorKindLabel =
+                  row.source === "opensky"
+                    ? formatOpenskyErrorKindLabel(t, row.lastErrorKind)
+                    : undefined;
                 return (
                   <Col key={row.source} xs={24} lg={12}>
                     <Card
@@ -1473,29 +2048,61 @@ export function RealtimeSignalsSettingsPanel() {
                             {runtimeStatusLabel(row.status)}
                           </Tag>
                           <Tag color={row.enabled ? "green" : "default"}>
-                            {row.intervalSec}s
+                            {row.source === "opensky"
+                              ? t(
+                                  "systemSettings.realtimeSignals.runtime.effectiveIntervalTag",
+                                  {
+                                    defaultValue: "effective {{value}}s",
+                                    value: row.intervalSec,
+                                  },
+                                )
+                              : `${row.intervalSec}s`}
                           </Tag>
+                          {typeof row.configuredIntervalSec === "number" ? (
+                            <Tag color="default">
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.configuredIntervalTag",
+                                {
+                                  defaultValue: "base {{value}}s",
+                                  value: row.configuredIntervalSec,
+                                },
+                              )}
+                            </Tag>
+                          ) : null}
                         </Space>
                       }
                     >
-                      <Space direction="vertical" size="small" style={{ display: "flex" }}>
+                      <Space
+                        direction="vertical"
+                        size="small"
+                        style={{ display: "flex" }}
+                      >
                         <Space wrap size={[8, 8]}>
                           <Typography.Text strong>
-                            {t("systemSettings.realtimeSignals.runtime.latestValue", {
-                              defaultValue: "Latest",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.latestValue",
+                              {
+                                defaultValue: "Latest",
+                              },
+                            )}
                             : {row.latestValue ?? "—"}
                           </Typography.Text>
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.previousValue", {
-                              defaultValue: "Previous",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.previousValue",
+                              {
+                                defaultValue: "Previous",
+                              },
+                            )}
                             : {row.previousValue ?? "—"}
                           </Typography.Text>
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.changePercent", {
-                              defaultValue: "Change",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.changePercent",
+                              {
+                                defaultValue: "Change",
+                              },
+                            )}
                             :{" "}
                             {typeof row.changePercent === "number"
                               ? `${row.changePercent.toFixed(2)}%`
@@ -1503,7 +2110,9 @@ export function RealtimeSignalsSettingsPanel() {
                           </Typography.Text>
                         </Space>
                         {summary ? (
-                          <Typography.Text type="secondary">{summary}</Typography.Text>
+                          <Typography.Text type="secondary">
+                            {summary}
+                          </Typography.Text>
                         ) : null}
                         {row.source === "unrest" && acledApiDisabled ? (
                           <Typography.Text type="secondary">
@@ -1518,10 +2127,17 @@ export function RealtimeSignalsSettingsPanel() {
                         ) : null}
                         {openskySnapshot ? (
                           <Space wrap size={[8, 8]}>
-                            <Tag color={runtimeFreshnessColor(openskySnapshot.freshness)}>
-                              {t("systemSettings.realtimeSignals.runtime.openskySnapshotFreshness", {
-                                defaultValue: "Snapshot",
-                              })}
+                            <Tag
+                              color={runtimeFreshnessColor(
+                                openskySnapshot.freshness,
+                              )}
+                            >
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.openskySnapshotFreshness",
+                                {
+                                  defaultValue: "Snapshot",
+                                },
+                              )}
                               :{" "}
                               {t(
                                 `systemSettings.realtimeSignals.runtime.openskyFreshness.${openskySnapshot.freshness}`,
@@ -1531,42 +2147,60 @@ export function RealtimeSignalsSettingsPanel() {
                               )}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.openskyMapPoints", {
-                                defaultValue: "Map points",
-                              })}
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.openskyMapPoints",
+                                {
+                                  defaultValue: "Map points",
+                                },
+                              )}
                               : {openskySnapshot.snapshotValidPositionCount}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.openskyCurrentValidPoints", {
-                                defaultValue: "Current valid",
-                              })}
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.openskyCurrentValidPoints",
+                                {
+                                  defaultValue: "Current valid",
+                                },
+                              )}
                               : {openskySnapshot.currentValidPositionCount}
                             </Tag>
                             <Tag>
-                              {t("systemSettings.realtimeSignals.runtime.openskyDroppedStale", {
-                                defaultValue: "Dropped stale",
-                              })}
+                              {t(
+                                "systemSettings.realtimeSignals.runtime.openskyDroppedStale",
+                                {
+                                  defaultValue: "Dropped stale",
+                                },
+                              )}
                               : {openskySnapshot.droppedStalePositionCount}
                             </Tag>
                           </Space>
                         ) : null}
                         {openskySnapshot?.latestObservedAt ? (
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.openskyLatestObservedAt", {
-                              defaultValue: "Latest observed",
-                            })}
-                            : {formatTimestamp(openskySnapshot.latestObservedAt)}
-                            {typeof openskySnapshot.latestObservedAgeSec === "number"
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.openskyLatestObservedAt",
+                              {
+                                defaultValue: "Latest observed",
+                              },
+                            )}
+                            :{" "}
+                            {formatTimestamp(openskySnapshot.latestObservedAt)}
+                            {typeof openskySnapshot.latestObservedAgeSec ===
+                            "number"
                               ? ` (${openskySnapshot.latestObservedAgeSec}s)`
                               : ""}
                           </Typography.Text>
                         ) : null}
                         {openskySnapshot?.snapshotUpdatedAt ? (
                           <Typography.Text type="secondary">
-                            {t("systemSettings.realtimeSignals.runtime.openskySnapshotUpdatedAt", {
-                              defaultValue: "Snapshot updated",
-                            })}
-                            : {formatTimestamp(openskySnapshot.snapshotUpdatedAt)}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.openskySnapshotUpdatedAt",
+                              {
+                                defaultValue: "Snapshot updated",
+                              },
+                            )}
+                            :{" "}
+                            {formatTimestamp(openskySnapshot.snapshotUpdatedAt)}
                             {typeof openskySnapshot.snapshotAgeSec === "number"
                               ? ` (${openskySnapshot.snapshotAgeSec}s)`
                               : ""}
@@ -1585,38 +2219,61 @@ export function RealtimeSignalsSettingsPanel() {
                             )}
                           />
                         ) : null}
-                        {row.statusReason ? (
+                        {runtimeStatusReason ? (
                           <Typography.Text type="secondary">
-                            {row.statusReason}
+                            {runtimeStatusReason}
                           </Typography.Text>
                         ) : null}
                         <Space wrap size={[8, 8]}>
                           <Tag>
-                            {t("systemSettings.realtimeSignals.runtime.lastRunAt", {
-                              defaultValue: "Last run",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.lastRunAt",
+                              {
+                                defaultValue: "Last run",
+                              },
+                            )}
                             : {formatTimestamp(row.lastRunAt)}
                           </Tag>
                           <Tag>
-                            {t("systemSettings.realtimeSignals.runtime.lastAttemptAt", {
-                              defaultValue: "Last attempt",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.lastAttemptAt",
+                              {
+                                defaultValue: "Last attempt",
+                              },
+                            )}
                             : {formatTimestamp(row.lastAttemptAt)}
                           </Tag>
                           <Tag>
-                            {t("systemSettings.realtimeSignals.runtime.lastSuccessAt", {
-                              defaultValue: "Last success",
-                            })}
+                            {t(
+                              "systemSettings.realtimeSignals.runtime.lastSuccessAt",
+                              {
+                                defaultValue: "Last success",
+                              },
+                            )}
                             : {formatTimestamp(row.lastSuccessAt)}
                           </Tag>
                         </Space>
+                        {openskyErrorKindLabel ||
+                        typeof row.lastErrorStatus === "number" ? (
+                          <Space wrap size={[8, 8]}>
+                            {openskyErrorKindLabel ? (
+                              <Tag color="volcano">{openskyErrorKindLabel}</Tag>
+                            ) : null}
+                            {typeof row.lastErrorStatus === "number" ? (
+                              <Tag color="default">{`HTTP ${row.lastErrorStatus}`}</Tag>
+                            ) : null}
+                          </Space>
+                        ) : null}
                         {row.lastError ? (
                           <Alert
                             type="error"
                             showIcon
-                            message={t("systemSettings.realtimeSignals.runtime.lastError", {
-                              defaultValue: "Last error",
-                            })}
+                            message={t(
+                              "systemSettings.realtimeSignals.runtime.lastError",
+                              {
+                                defaultValue: "Last error",
+                              },
+                            )}
                             description={`${row.lastError}${row.lastErrorAt ? ` (${formatTimestamp(row.lastErrorAt)})` : ""}`}
                           />
                         ) : null}
@@ -1628,7 +2285,13 @@ export function RealtimeSignalsSettingsPanel() {
             </Row>
           </Space>
         ) : diagnosticsLoading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: "1rem 0" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              padding: "1rem 0",
+            }}
+          >
             <Spin />
           </div>
         ) : (
@@ -1776,6 +2439,282 @@ export function RealtimeSignalsSettingsPanel() {
             </Space>
           );
         })}
+
+        <Typography.Title level={5}>
+          {t("systemSettings.realtimeSignals.sections.openskyBudget", {
+            defaultValue: "OpenSky budget & schedule",
+          })}
+        </Typography.Title>
+        <Typography.Paragraph type="secondary">
+          {t("systemSettings.realtimeSignals.hints.openskyBudget", {
+            defaultValue:
+              "Configure the HKT day/night polling profile and the daily credit guardrails used to protect OpenSky /states/all usage.",
+          })}
+        </Typography.Paragraph>
+        <Space wrap style={{ display: "flex", width: "100%" }}>
+          <Form.Item
+            name="openskyEnabled"
+            valuePropName="checked"
+            label={t("systemSettings.realtimeSignals.fields.sourceEnabled", {
+              source: openskySourceName,
+            })}
+            style={{ minWidth: 280, flex: 1 }}
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyDailyCreditBudget",
+              {
+                defaultValue: "OpenSky daily credit budget",
+              },
+            )}
+            name="openskyDailyCreditBudget"
+            style={{ minWidth: 280, flex: 1 }}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyDailyCreditBudget",
+                  {
+                    defaultValue: "Daily credit budget is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 1,
+                max: 100_000,
+                message: t("common.validation.numberRange", {
+                  min: 1,
+                  max: 100_000,
+                }),
+              },
+            ]}
+          >
+            <InputNumber
+              min={1}
+              max={100_000}
+              step={100}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyDayIntervalSec",
+              {
+                defaultValue: "OpenSky day interval (sec)",
+              },
+            )}
+            name="openskyDayIntervalSec"
+            style={{ minWidth: 280, flex: 1 }}
+            extra={t(
+              "systemSettings.realtimeSignals.hints.openskyDayIntervalSec",
+              {
+                defaultValue: "Applied during HKT daytime.",
+              },
+            )}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyDayIntervalSec",
+                  {
+                    defaultValue: "Day interval is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 30,
+                max: 86_400,
+                message: t("common.validation.numberRange", {
+                  min: 30,
+                  max: 86_400,
+                }),
+              },
+            ]}
+          >
+            <InputNumber
+              min={30}
+              max={86_400}
+              step={30}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyNightIntervalSec",
+              {
+                defaultValue: "OpenSky night interval (sec)",
+              },
+            )}
+            name="openskyNightIntervalSec"
+            style={{ minWidth: 280, flex: 1 }}
+            extra={t(
+              "systemSettings.realtimeSignals.hints.openskyNightIntervalSec",
+              {
+                defaultValue:
+                  "Applied during HKT nighttime and critical budget mode.",
+              },
+            )}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyNightIntervalSec",
+                  {
+                    defaultValue: "Night interval is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 30,
+                max: 86_400,
+                message: t("common.validation.numberRange", {
+                  min: 30,
+                  max: 86_400,
+                }),
+              },
+            ]}
+          >
+            <InputNumber
+              min={30}
+              max={86_400}
+              step={30}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyDayStartHourHkt",
+              {
+                defaultValue: "HKT day start hour",
+              },
+            )}
+            name="openskyDayStartHourHkt"
+            style={{ minWidth: 280, flex: 1 }}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyDayStartHourHkt",
+                  {
+                    defaultValue: "Day start hour is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 0,
+                max: 23,
+                message: t("common.validation.numberRange", {
+                  min: 0,
+                  max: 23,
+                }),
+              },
+            ]}
+          >
+            <InputNumber min={0} max={23} step={1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyNightStartHourHkt",
+              {
+                defaultValue: "HKT night start hour",
+              },
+            )}
+            name="openskyNightStartHourHkt"
+            style={{ minWidth: 280, flex: 1 }}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyNightStartHourHkt",
+                  {
+                    defaultValue: "Night start hour is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 0,
+                max: 23,
+                message: t("common.validation.numberRange", {
+                  min: 0,
+                  max: 23,
+                }),
+              },
+            ]}
+          >
+            <InputNumber min={0} max={23} step={1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyWarningRemainingPct",
+              {
+                defaultValue: "Warning threshold remaining (%)",
+              },
+            )}
+            name="openskyWarningRemainingPct"
+            style={{ minWidth: 280, flex: 1 }}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyWarningRemainingPct",
+                  {
+                    defaultValue: "Warning threshold is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 1,
+                max: 99,
+                message: t("common.validation.numberRange", {
+                  min: 1,
+                  max: 99,
+                }),
+              },
+            ]}
+          >
+            <InputNumber min={1} max={99} step={1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyCriticalRemainingPct",
+              {
+                defaultValue: "Critical threshold remaining (%)",
+              },
+            )}
+            name="openskyCriticalRemainingPct"
+            style={{ minWidth: 280, flex: 1 }}
+            rules={[
+              {
+                required: true,
+                message: t(
+                  "systemSettings.realtimeSignals.validation.openskyCriticalRemainingPct",
+                  {
+                    defaultValue: "Critical threshold is required",
+                  },
+                ),
+              },
+              {
+                type: "number",
+                min: 0,
+                max: 98,
+                message: t("common.validation.numberRange", {
+                  min: 0,
+                  max: 98,
+                }),
+              },
+            ]}
+          >
+            <InputNumber min={0} max={98} step={1} style={{ width: "100%" }} />
+          </Form.Item>
+        </Space>
 
         <Typography.Title level={5}>
           {t("systemSettings.realtimeSignals.sections.thresholds")}
@@ -1951,7 +2890,8 @@ export function RealtimeSignalsSettingsPanel() {
             name="openskyTokenUrl"
             style={{ minWidth: 280, flex: 1 }}
             extra={t("systemSettings.realtimeSignals.hints.openskyTokenUrl", {
-              defaultValue: "OAuth token endpoint used for client-credentials authentication.",
+              defaultValue:
+                "OAuth token endpoint used for client-credentials authentication.",
             })}
           >
             <Input
@@ -2025,9 +2965,12 @@ export function RealtimeSignalsSettingsPanel() {
             type="warning"
             showIcon
             style={{ marginBottom: "1rem" }}
-            message={t("systemSettings.realtimeSignals.alerts.acledDisabled.title", {
-              defaultValue: "ACLED API is disabled for now",
-            })}
+            message={t(
+              "systemSettings.realtimeSignals.alerts.acledDisabled.title",
+              {
+                defaultValue: "ACLED API is disabled for now",
+              },
+            )}
             description={t(
               "systemSettings.realtimeSignals.alerts.acledDisabled.body",
               {
@@ -2058,9 +3001,12 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.openskyClientSecret", {
-              defaultValue: "OpenSky client secret",
-            })}
+            label={t(
+              "systemSettings.realtimeSignals.fields.openskyClientSecret",
+              {
+                defaultValue: "OpenSky client secret",
+              },
+            )}
             name="openskyClientSecret"
           >
             <Input.Password

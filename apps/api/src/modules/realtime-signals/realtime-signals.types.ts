@@ -124,7 +124,8 @@ export interface RealtimeOpenskySnapshotDiagnostics {
   retainedPreviousSnapshot: boolean;
 }
 
-export type RealtimeAdsbSnapshotDiagnostics = RealtimeOpenskySnapshotDiagnostics;
+export type RealtimeAdsbSnapshotDiagnostics =
+  RealtimeOpenskySnapshotDiagnostics;
 
 export interface RealtimeOpenskyLatestSnapshot {
   source: "opensky";
@@ -162,6 +163,75 @@ export interface RealtimeOpenskyRuntimeDiagnostics {
 
 export type RealtimeAdsbRuntimeDiagnostics = RealtimeOpenskyRuntimeDiagnostics;
 
+export type RealtimeOpenskyBudgetPeriod = "day" | "night";
+
+export type RealtimeOpenskyBudgetDegradationLevel =
+  | "normal"
+  | "warning"
+  | "critical"
+  | "exhausted";
+
+export type RealtimeOpenskyErrorKind =
+  | "auth"
+  | "rate_limited"
+  | "server"
+  | "timeout"
+  | "network"
+  | "unknown";
+
+export interface RealtimeOpenskyBudgetDaySummary {
+  dateHkt: string;
+  usedCredits: number;
+  requestCount: number;
+  militaryCredits: number;
+  allCredits: number;
+  militaryCalls: number;
+  allCalls: number;
+  errorCalls: number;
+  authErrorCalls: number;
+  rateLimitedErrorCalls: number;
+  serverErrorCalls: number;
+  timeoutErrorCalls: number;
+  networkErrorCalls: number;
+  unknownErrorCalls: number;
+  blockedAllModeCount: number;
+  skippedMilitaryCount: number;
+}
+
+export interface RealtimeOpenskyBudgetSummary {
+  timezone: string;
+  dateHkt: string;
+  dailyBudget: number;
+  usedCredits: number;
+  remainingCredits: number;
+  usagePct: number;
+  remainingPct: number;
+  requestCount: number;
+  militaryCredits: number;
+  allCredits: number;
+  militaryCalls: number;
+  allCalls: number;
+  errorCalls: number;
+  authErrorCalls: number;
+  rateLimitedErrorCalls: number;
+  serverErrorCalls: number;
+  timeoutErrorCalls: number;
+  networkErrorCalls: number;
+  unknownErrorCalls: number;
+  blockedAllModeCount: number;
+  skippedMilitaryCount: number;
+  currentPeriod: RealtimeOpenskyBudgetPeriod;
+  dayIntervalSec: number;
+  nightIntervalSec: number;
+  effectiveMilitaryIntervalSec: number;
+  degradationLevel: RealtimeOpenskyBudgetDegradationLevel;
+  allModeBlocked: boolean;
+  militaryPaused: boolean;
+  warningRemainingPct: number;
+  criticalRemainingPct: number;
+  recentDays: RealtimeOpenskyBudgetDaySummary[];
+}
+
 export interface RealtimeSignalsRuntimeConfig {
   enabled: boolean;
   requestTimeoutMs: number;
@@ -192,6 +262,13 @@ export interface RealtimeSignalsRuntimeConfig {
     tokenUrl?: string;
     clientId?: string;
     clientSecret?: string;
+    dailyCreditBudget: number;
+    dayIntervalSec: number;
+    nightIntervalSec: number;
+    dayStartHourHkt: number;
+    nightStartHourHkt: number;
+    warningRemainingPct: number;
+    criticalRemainingPct: number;
   };
   credentials: {
     aisApiKey?: string;
@@ -247,6 +324,8 @@ export interface RealtimeSignalSourceState {
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorKind?: RealtimeOpenskyErrorKind;
+  lastErrorStatus?: number;
   metricSlug?: string;
   latestValue?: number;
   context?: Record<string, unknown>;
@@ -263,13 +342,17 @@ export interface RealtimeSignalRuntimeSourceDiagnostics {
   source: RealtimeSignalSource;
   enabled: boolean;
   intervalSec: number;
+  configuredIntervalSec?: number;
   status: RealtimeSignalRuntimeStatus;
   statusReason?: string;
+  statusReasonCode?: string;
   lastRunAt?: string;
   lastAttemptAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;
+  lastErrorKind?: RealtimeOpenskyErrorKind;
+  lastErrorStatus?: number;
   latestValue: number | null;
   previousValue: number | null;
   changePercent: number | null;
@@ -298,4 +381,5 @@ export interface RealtimeSignalsRuntimeDiagnostics {
   sources: RealtimeSignalRuntimeSourceDiagnostics[];
   insight: RealtimeSignalsInsightSnapshot;
   markerReadiness: RealtimeSignalsMarkerReadiness;
+  openskyBudget?: RealtimeOpenskyBudgetSummary;
 }

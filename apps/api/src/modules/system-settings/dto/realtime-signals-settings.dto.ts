@@ -41,6 +41,48 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsInt()
+  @Min(1)
+  @Max(100_000)
+  openskyDailyCreditBudget?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(86_400)
+  openskyDayIntervalSec?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(86_400)
+  openskyNightIntervalSec?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(23)
+  openskyDayStartHourHkt?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(23)
+  openskyNightStartHourHkt?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  openskyWarningRemainingPct?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(98)
+  openskyCriticalRemainingPct?: number;
+
+  @IsOptional()
+  @IsInt()
   @Min(30)
   @Max(86_400)
   adsbIntervalSec?: number;

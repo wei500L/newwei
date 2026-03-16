@@ -1287,6 +1287,74 @@ describe("DashboardChartsService", () => {
     );
   });
 
+  it("marks OpenSky all mode as budget-limited when daily credits are constrained", async () => {
+    jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:15:00.000Z"));
+    const prisma = {
+      alertEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      processedArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const realtimeSignals = {
+      fetchOpenskyViewportSnapshot: jest.fn().mockResolvedValue({
+        configured: true,
+        requiresZoom: false,
+        budgetLimited: true,
+        sourceEndpoint:
+          "https://opensky-network.org/api/states/all?lamin=30&lomin=100&lamax=40&lomax=110",
+        statusReason:
+          "OpenSky all-flight mode is temporarily limited to preserve the daily credit budget.",
+        budgetSummary: {
+          dateHkt: "2026-01-01",
+          dailyBudget: 4000,
+          remainingCredits: 250,
+          degradationLevel: "critical",
+        },
+        snapshot: null,
+      }),
+    };
+    const service = new DashboardChartsService(
+      prisma as any,
+      { resolveCandidates: jest.fn() } as any,
+      createCache() as any,
+      undefined,
+      realtimeSignals as any,
+      undefined,
+    );
+
+    const response = await service.getWarMapLayers({
+      orgId: "org-1",
+      range: {
+        start: new Date("2026-01-01T00:00:00.000Z"),
+        end: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      zoom: 5,
+      bbox: [100, 30, 110, 40],
+      flightMode: "all",
+    });
+
+    expect(realtimeSignals.fetchOpenskyViewportSnapshot).toHaveBeenCalledWith({
+      bbox: [100, 30, 110, 40],
+    });
+    expect(response.layers.flights.features).toEqual([]);
+    expect(response.layers.flights.summary).toEqual(
+      expect.objectContaining({
+        source: "opensky",
+        scope: "all",
+        freshness: "budget_limited",
+        sourceEndpoint:
+          "https://opensky-network.org/api/states/all?lamin=30&lomin=100&lamax=40&lomax=110",
+        returnedCount: 0,
+        remainingCredits: 250,
+        dailyBudget: 4000,
+        dateHkt: "2026-01-01",
+        degradationLevel: "critical",
+      }),
+    );
+  });
+
   it("shapes global flights density by zoom level", async () => {
     jest.useFakeTimers().setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
     const aircraft = Array.from({ length: 260 }, (_, index) => {

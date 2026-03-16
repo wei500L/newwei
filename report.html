@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCC 代码库多维分析报告</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;       /* 深沉的背景蓝 */
+            --card-bg: #1e293b;        /* 卡片背景 */
+            --border-color: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #06b6d4;   /* 极客感蓝绿色 */
+            --accent-glow: rgba(6, 182, 212, 0.3);
+            --row-hover: #2dd4bf11;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 40px 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin: 0 0 10px 0;
+            background: linear-gradient(to right, #22d3ee, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+
+        /* 顶部统计卡片 */
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-color), #3b82f6);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px var(--accent-glow);
+            border-color: var(--accent-color);
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        .stat-title {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            font-family: 'Fira Code', 'Consolas', monospace;
+        }
+
+        /* 表格样式 */
+        .table-container {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: right;
+        }
+
+        th, td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        /* 语言列左对齐 */
+        th:first-child, td:first-child {
+            text-align: left;
+        }
+
+        th {
+            background-color: rgba(0,0,0,0.2);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+        }
+
+        tbody tr {
+            transition: background-color 0.2s ease;
+        }
+
+        tbody tr:hover {
+            background-color: var(--row-hover);
+        }
+
+        td {
+            font-family: 'Fira Code', 'Consolas', monospace; /* 数字使用等宽字体 */
+            font-size: 0.95rem;
+        }
+
+        td:first-child {
+            font-family: inherit; /* 语言名称不用等宽 */
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* 底部合计行 */
+        tfoot {
+            background-color: rgba(6, 182, 212, 0.05);
+            font-weight: 700;
+        }
+        tfoot th {
+            color: var(--accent-color);
+            border-top: 2px solid var(--accent-color);
+            border-bottom: none;
+            font-family: 'Fira Code', 'Consolas', monospace;
+        }
+        tfoot th:first-child {
+            font-family: inherit;
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>SCC 源码分析报告</h1>
+        <p>基于基本代码行、复杂度及构建成本的多维数据概览</p>
+    </div>
+
+    <div class="dashboard">
+        <div class="stat-card">
+            <div class="stat-title">预估开发成本 (Organic)</div>
+            <div class="stat-value">$15,046,921</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">预估开发周期 (Organic)</div>
+            <div class="stat-value">38.53 月</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">预估所需人力 (Organic)</div>
+            <div class="stat-value">34.69 人</div>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>编程语言</th>
+                    <th>文件数</th>
+                    <th>总行数</th>
+                    <th>空行数</th>
+                    <th>注释行数</th>
+                    <th>代码行数</th>
+                    <th>代码复杂度</th>
+                    <th>字节数</th>
+                    <th>未修改行</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>TypeScript</td><td>1,394</td><td>408,905</td><td>32,085</td><td>3,114</td><td>373,706</td><td>36,139</td><td>13,093,682</td><td>0</td></tr>
+                <tr><td>JSON</td><td>50</td><td>22,063</td><td>6</td><td>0</td><td>22,057</td><td>0</td><td>1,182,258</td><td>0</td></tr>
+                <tr><td>SQL</td><td>36</td><td>1,528</td><td>209</td><td>156</td><td>1,163</td><td>0</td><td>67,318</td><td>0</td></tr>
+                <tr><td>JavaScript</td><td>26</td><td>2,169</td><td>245</td><td>27</td><td>1,897</td><td>298</td><td>65,174</td><td>0</td></tr>
+                <tr><td>GraphQL</td><td>20</td><td>1,452</td><td>62</td><td>0</td><td>1,390</td><td>78</td><td>25,090</td><td>0</td></tr>
+                <tr><td>Markdown</td><td>9</td><td>3,353</td><td>921</td><td>0</td><td>2,432</td><td>0</td><td>168,330</td><td>0</td></tr>
+                <tr><td>YAML</td><td>6</td><td>830</td><td>30</td><td>37</td><td>763</td><td>0</td><td>27,895</td><td>0</td></tr>
+                <tr><td>CSS</td><td>4</td><td>3,226</td><td>417</td><td>5</td><td>2,804</td><td>0</td><td>78,415</td><td>0</td></tr>
+                <tr><td>Dockerfile</td><td>4</td><td>102</td><td>28</td><td>0</td><td>74</td><td>18</td><td>2,801</td><td>0</td></tr>
+                <tr><td>Handlebars</td><td>4</td><td>42</td><td>1</td><td>0</td><td>41</td><td>0</td><td>1,436</td><td>0</td></tr>
+                <tr><td>Python</td><td>4</td><td>1,777</td><td>291</td><td>15</td><td>1,471</td><td>459</td><td>58,328</td><td>0</td></tr>
+                <tr><td>TypeScript Typings</td><td>4</td><td>114</td><td>12</td><td>5</td><td>97</td><td>0</td><td>2,951</td><td>0</td></tr>
+                <tr><td>Plain Text</td><td>3</td><td>31</td><td>5</td><td>0</td><td>26</td><td>0</td><td>1,232</td><td>0</td></tr>
+                <tr><td>Docker ignore</td><td>1</td><td>24</td><td>6</td><td>0</td><td>18</td><td>0</td><td>206</td><td>0</td></tr>
+                <tr><td>HTML</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+                <tr><td>Patch</td><td>1</td><td>4,097</td><td>0</td><td>0</td><td>4,097</td><td>0</td><td>119,378</td><td>0</td></tr>
+                <tr><td>SVG</td><td>1</td><td>7</td><td>0</td><td>0</td><td>7</td><td>0</td><td>216</td><td>0</td></tr>
+                <tr><td>Shell</td><td>1</td><td>168</td><td>21</td><td>1</td><td>146</td><td>21</td><td>4,357</td><td>0</td></tr>
+                <tr><td>TOML</td><td>1</td><td>3</td><td>0</td><td>2</td><td>1</td><td>0</td><td>122</td><td>0</td></tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th style="text-align: left;">总计</th>
+                    <th>1,570</th>
+                    <th>449,891</th>
+                    <th>34,339</th>
+                    <th>3,362</th>
+                    <th>412,190</th>
+                    <th>37,013</th>
+                    <th>14,899,189</th>
+                    <th>0</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+</body>
+</html>
