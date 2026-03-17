@@ -261,9 +261,13 @@ describe("war-map page wiring", () => {
 
   it("uses layer-only reset and realtime status in the shared WarMap component", () => {
     const source = read("app/(app)/dashboard/charts/war-map/war-map.tsx");
+    const controlsSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-controls-panel.tsx",
+    );
 
     expect(source).toContain("const resetLayers = useWarMapSettingsStore");
-    expect(source).toContain("onClick={() => resetLayers()}");
+    expect(source).toContain("onResetLayers: resetLayers,");
+    expect(controlsSource).toContain("onClick={view.onResetLayers}");
     expect(source).toContain("const internalStreamState = useDashboardStream(");
     expect(source).toContain(
       "const resolvedStreamState = streamState ?? internalStreamState;",
@@ -297,11 +301,19 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "const aisMode = useWarMapSettingsStore((state) => state.aisMode);",
     );
-    expect(source).toContain('onClick={() => setFlightMode("all")}');
-    expect(source).toContain('onClick={() => setAisMode("density")}');
-    expect(source).toContain('onClick={() => setAisMode("all")}');
+    expect(source).toContain("onFlightModeChange: setFlightMode,");
+    expect(source).toContain("onAisModeChange: setAisMode,");
+    expect(controlsSource).toContain(
+      'onClick={() => transport.onFlightModeChange("all")}',
+    );
+    expect(controlsSource).toContain(
+      'onClick={() => transport.onAisModeChange("density")}',
+    );
+    expect(controlsSource).toContain(
+      'onClick={() => transport.onAisModeChange("all")}',
+    );
     expect(source).toContain('id: "wm-ais-density-zones"');
-    expect(source).toContain("dashboard.charts.warMap.legend.aisTitle");
+    expect(controlsSource).toContain("dashboard.charts.warMap.legend.aisTitle");
   });
 
   it("suppresses map chrome behind fatal overlays while keeping nonfatal retry banners", () => {
@@ -314,13 +326,16 @@ describe("war-map page wiring", () => {
     expect(source).toContain("const hasFatalOverlay = Boolean(fatalOverlay);");
     expect(source).toContain("{!hasFatalOverlay ? (");
     expect(source).toContain(
-      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm"',
+      'className="absolute inset-0 z-30 rounded-lg bg-white/80 backdrop-blur-sm dark:bg-slate-950/72"',
     );
     expect(source).toContain("showCachedDataHint");
   });
 
   it("keeps loading non-blocking and refreshes only the current query window", () => {
     const source = read("app/(app)/dashboard/charts/war-map/war-map.tsx");
+    const overlayModelSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-overlay-model.ts",
+    );
     const refreshBlock =
       source
         .split(
@@ -328,12 +343,6 @@ describe("war-map page wiring", () => {
         )[1]
         ?.split(");")[0] ?? "";
 
-    expect(source).toContain("import {");
-    expect(source).toContain("  Button,");
-    expect(source).toContain("  Checkbox,");
-    expect(source).toContain("  Drawer,");
-    expect(source).toContain("  Typography,");
-    expect(source).toContain('} from "antd";');
     expect(source).not.toContain("Skeleton");
     expect(source).toContain("formatRelativeTime");
     expect(source).toContain("const showBootOverlay =");
@@ -342,13 +351,65 @@ describe("war-map page wiring", () => {
     );
     expect(source).toContain('defaultValue: "Loading map base layer…"');
     expect(source).toContain('defaultValue: "Refreshing {{count}} chains"');
-    expect(source).toContain('defaultValue: "Stream message"');
+    expect(overlayModelSource).toContain('defaultValue: "Stream message"');
     expect(source).toContain('defaultValue: "Data updated"');
     expect(refreshBlock).not.toContain("refreshRangeAnchor();");
     expect(refreshBlock).toContain("eventsQuery.refetch()");
     expect(refreshBlock).toContain("newsQuery.refetch()");
     expect(refreshBlock).toContain("layersQuery.refetch()");
     expect(refreshBlock).toContain("monitorsQuery.refetch()");
+  });
+
+  it("extracts overlay models and components while keeping controls stateful", () => {
+    const source = read("app/(app)/dashboard/charts/war-map/war-map.tsx");
+
+    expect(source).toContain('from "./war-map-overlay-model";');
+    expect(source).toContain('from "./war-map-controls-panel";');
+    expect(source).toContain('from "./war-map-overlay-rail";');
+    expect(source).toContain('from "./war-map-inspector-panel";');
+    expect(source).toContain("buildWarMapOverlayLayout({");
+    expect(source).toContain("buildWarMapOverlayViewModel({");
+    expect(source).toContain("<WarMapOverlayRail");
+    expect(source).toContain("<WarMapControlsPanel");
+    expect(source).toContain("<WarMapInspectorPanel");
+    expect(source).not.toContain('setControlsSection("overview");');
+    expect(source).not.toContain('openOverlayPanel === "legend"');
+    expect(source).not.toContain("legendOverlayRef");
+    expect(source).toContain(
+      'current === "controls" ? null : "controls"',
+    );
+  });
+
+  it("keeps overlay settings surfaces dark-theme aware", () => {
+    const source = read("app/(app)/dashboard/charts/war-map/war-map.tsx");
+    const overlayModelSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-overlay-model.ts",
+    );
+    const controlsSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-controls-panel.tsx",
+    );
+    const railSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-overlay-rail.tsx",
+    );
+    const inspectorSource = read(
+      "app/(app)/dashboard/charts/war-map/war-map-inspector-panel.tsx",
+    );
+
+    expect(overlayModelSource).toContain("dark:bg-slate-950/[0.72]");
+    expect(overlayModelSource).toContain("dark:hover:bg-slate-950/[0.82]");
+    expect(overlayModelSource).toContain("resolveOverlayButtonClassName");
+    expect(overlayModelSource).toContain("OVERLAY_STATUS_TAG_CLASS_NAME");
+    expect(controlsSource).toContain("bg-white/[0.85]");
+    expect(controlsSource).toContain("dark:bg-slate-900/70");
+    expect(controlsSource).toContain("OVERLAY_BUTTON_GROUP_CLASS_NAME");
+    expect(controlsSource).toContain("resolveOverlayButtonClassName({");
+    expect(railSource).toContain("dark:bg-slate-950/[0.78]");
+    expect(railSource).toContain("dark:from-slate-950/[0.92]");
+    expect(railSource).toContain("iconOnly: !showActionLabels");
+    expect(inspectorSource).toContain("dark:from-amber-500/10");
+    expect(inspectorSource).toContain("dark:bg-slate-950/[0.78]");
+    expect(inspectorSource).toContain("OVERLAY_NEUTRAL_TAG_CLASS_NAME");
+    expect(source).toContain("OVERLAY_SURFACE_CLASS_NAME");
   });
 
   it("shares a single dashboard stream connection with the embedded map", () => {
@@ -364,6 +425,11 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "onEffectiveRangeChange={handleWarMapRangeChange}",
     );
+    expect(source).toContain(
+      'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',
+    );
+    expect(source).toContain('className="min-h-0 flex-1"');
+    expect(source).not.toContain('className="absolute top-4 left-4 z-10"');
   });
 });
 

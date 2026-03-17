@@ -647,19 +647,21 @@ export function DashboardContent() {
         {/* Charts Section - Immersive Map & Analytics */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Indicator Map - Dominant Central Feature */}
-          <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] relative overflow-hidden">
-            <div className="absolute top-4 left-4 z-10">
+          <div className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col">
+            <div className="px-5 pt-4">
               <h3 className="text-lg text-slate-700">
                 {t("dashboard.charts.warMap.title", {
                   defaultValue: "Indicator Situation Map",
                 })}
               </h3>
             </div>
-            <WarMap
-              className="h-full"
-              streamState={dashboardStreamState}
-              onEffectiveRangeChange={handleWarMapRangeChange}
-            />
+            <div className="min-h-0 flex-1">
+              <WarMap
+                className="h-full"
+                streamState={dashboardStreamState}
+                onEffectiveRangeChange={handleWarMapRangeChange}
+              />
+            </div>
           </div>
 
           {/* Sector Heatmap - Side Panel */}
