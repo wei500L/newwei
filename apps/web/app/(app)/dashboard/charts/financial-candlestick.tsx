@@ -1,8 +1,7 @@
 "use client";
 
-import { LineChartOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Skeleton, Space, Tag, Tooltip } from "antd";
+import { Button, Skeleton, Space, Tag } from "antd";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
 import { useCallback, useMemo } from "react";
@@ -10,7 +9,6 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { DashboardChart } from "@/components/echart";
-import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { useCsvExport } from "@/hooks/use-csv-export";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -48,9 +46,9 @@ interface FinancialCandlestickResponse {
   unit?: string | null;
   sourceFields?: Record<string, string>;
   updatedAt?: string;
+  latestObservedAt?: string;
+  skippedIncompleteCount?: number;
 }
-
-const MIN_CANDLESTICK_POINTS = 5;
 
 export function FinancialCandlestick() {
   const { t, i18n } = useTranslation();
@@ -71,18 +69,39 @@ export function FinancialCandlestick() {
   const highLabel = t("dashboard.candlestick.high", { defaultValue: "High" });
   const lowLabel = t("dashboard.candlestick.low", { defaultValue: "Low" });
   const closeLabel = t("dashboard.candlestick.close", { defaultValue: "Close" });
+  const changeLabel = t("dashboard.candlestick.change", { defaultValue: "Change" });
+  const sessionRangeLabel = t("dashboard.candlestick.sessionRange", {
+    defaultValue: "Session range"
+  });
   const timestampLabel = t("dashboard.candlestick.timestamp", { defaultValue: "Timestamp" });
   const volumeLabel = t("dashboard.candlestick.volume", { defaultValue: "Volume" });
+  const latestCloseLabelText = t("dashboard.candlestick.latestClose", {
+    defaultValue: "Latest close"
+  });
+  const windowChangeLabelText = t("dashboard.candlestick.windowChange", {
+    defaultValue: "Window change"
+  });
   const notAvailableShort = t("dashboard.candlestick.notAvailableShort", {
     defaultValue: "N/A"
-  });
-  const trendViewLabel = t("dashboard.candlestick.degraded", { defaultValue: "Trend view" });
-  const insufficientDataTrendHint = t("dashboard.candlestick.insufficientDataTrendHint", {
-    defaultValue: "Insufficient data points, switched to trend view."
   });
   const startLabel = formatDateForFilename(start);
   const endLabel = formatDateForFilename(end);
   const windowLabel = `${startLabel} - ${endLabel}`;
+  const numberFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 2
+      }),
+    [locale]
+  );
+  const signedNumberFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 2,
+        signDisplay: "always"
+      }),
+    [locale]
+  );
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -116,7 +135,6 @@ export function FinancialCandlestick() {
     },
     staleTime: 10_000,
     enabled: Boolean(session?.accessToken),
-    placeholderData: (previous) => previous
   });
   const { pending: refreshingCandles, run: refreshCandles } = usePendingAction(
     () => refetch(),
@@ -128,6 +146,27 @@ export function FinancialCandlestick() {
     const formatted = formatUpdatedAt(iso, locale);
     return formatted ? formatted : null;
   }, [data?.updatedAt, locale]);
+
+  const latestObservedAtLabel = useMemo(() => {
+    const iso = data?.latestObservedAt;
+    if (!iso || iso === data?.updatedAt) return null;
+    const formatted = formatUpdatedAt(iso, locale);
+    return formatted ? formatted : null;
+  }, [data?.latestObservedAt, data?.updatedAt, locale]);
+
+  const updatedAtTagText = useMemo(() => {
+    if (!updatedAtLabel) return null;
+    if (data?.skippedIncompleteCount) {
+      return t("dashboard.candlestick.latestComplete", {
+        time: updatedAtLabel,
+        defaultValue: "Latest complete: {{time}}"
+      });
+    }
+    return t("dashboard.updatedAt", {
+      time: updatedAtLabel,
+      defaultValue: "Updated: {{time}}"
+    });
+  }, [data?.skippedIncompleteCount, t, updatedAtLabel]);
 
   const normalizedPoints = useMemo(() => {
     if (!data) return [];
@@ -161,6 +200,36 @@ export function FinancialCandlestick() {
     });
   }, [data]);
 
+  const summaryMetrics = useMemo(() => {
+    if (!data || normalizedPoints.length === 0) return null;
+    const first = normalizedPoints[0];
+    const last = normalizedPoints.at(-1);
+    if (!first || !last) return null;
+
+    const unitSuffix = data.unit ? ` ${data.unit}` : "";
+    const latestCloseText = `${numberFormatter.format(last.close)}${unitSuffix}`;
+    if (normalizedPoints.length < 2 || !Number.isFinite(first.close) || first.close === 0) {
+      return {
+        latestCloseText,
+        windowChangeText: null,
+        windowChangeColor: "default" as const
+      };
+    }
+
+    const absoluteChange = last.close - first.close;
+    const percentChange = (absoluteChange / first.close) * 100;
+    const absoluteText = `${signedNumberFormatter.format(absoluteChange)}${unitSuffix}`;
+    const percentText = `${signedNumberFormatter.format(percentChange)}%`;
+    const windowChangeColor =
+      absoluteChange > 0 ? "success" : absoluteChange < 0 ? "error" : "default";
+
+    return {
+      latestCloseText,
+      windowChangeText: `${absoluteText} (${percentText})`,
+      windowChangeColor
+    };
+  }, [data, normalizedPoints, numberFormatter, signedNumberFormatter]);
+
   const option = useMemo<EChartsOption>(() => {
     if (!data || normalizedPoints.length === 0) return {};
     const parsedInterval = parseInterval(data.interval);
@@ -171,7 +240,6 @@ export function FinancialCandlestick() {
       intervalGranularity === UiTimeGranularity.Minute ||
       intervalGranularity === UiTimeGranularity.Hour ||
       intervalGranularity === UiTimeGranularity.Realtime;
-    const useCandlestick = normalizedPoints.length >= MIN_CANDLESTICK_POINTS;
     const timestamps = normalizedPoints.map((point) => point.timestamp);
     const ohlc = normalizedPoints.map((point) => [
       point.open,
@@ -179,7 +247,6 @@ export function FinancialCandlestick() {
       point.low,
       point.high
     ]);
-    const closeSeries = normalizedPoints.map((point) => point.close);
     const unitSuffix = data.unit ? ` ${data.unit}` : "";
     const lastClose = normalizedPoints.at(-1)?.close;
 
@@ -212,33 +279,30 @@ export function FinancialCandlestick() {
               : "";
           const bucketLabel = endLabel ? `${startLabel} - ${endLabel}` : startLabel;
           const fmt = (value: number | undefined) =>
-            typeof value === "number" ? `${value}${unitSuffix}` : notAvailableShort;
-          if (!useCandlestick) {
-            const closeValue =
-              typeof values === "number"
-                ? values
-                : typeof payload?.value === "number"
-                  ? payload.value
-                  : typeof payload?.data === "number"
-                    ? payload.data
-                    : undefined;
-            return [
-              `<div style="min-width:220px;">`,
-              `<div style="font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;">`,
-              `<span>${bucketLabel}</span>`,
-              `<span style="font-size:11px;font-weight:400;color:#fa8c16;background:#fff7e6;padding:2px 6px;border-radius:4px;">${trendViewLabel}</span>`,
-              `</div>`,
-              `<div style="display:flex;justify-content:space-between;"><span>${closeLabel}</span><span>${fmt(closeValue)}</span></div>`,
-              `<div style="margin-top:8px;color:#64748b;font-size:11px;">`,
-              `${bucketLabelText}: ${intervalGranularityLabel}${intervalUnitSuffix} · ${insufficientDataTrendHint}`,
-              `</div>`,
-              `</div>`
-            ].join("");
-          }
+            typeof value === "number"
+              ? `${numberFormatter.format(value)}${unitSuffix}`
+              : notAvailableShort;
+          const fmtSigned = (value: number | undefined) =>
+            typeof value === "number"
+              ? `${signedNumberFormatter.format(value)}${unitSuffix}`
+              : notAvailableShort;
+          const fmtPercent = (value: number | undefined) =>
+            typeof value === "number" ? `${signedNumberFormatter.format(value)}%` : null;
           const open = Array.isArray(values) ? values[0] : undefined;
           const close = Array.isArray(values) ? values[1] : undefined;
           const low = Array.isArray(values) ? values[2] : undefined;
           const high = Array.isArray(values) ? values[3] : undefined;
+          const change =
+            typeof open === "number" && typeof close === "number" ? close - open : undefined;
+          const changePercent =
+            typeof change === "number" && typeof open === "number" && open !== 0
+              ? (change / open) * 100
+              : undefined;
+          const sessionRange =
+            typeof high === "number" && typeof low === "number" ? high - low : undefined;
+          const changeText = fmtPercent(changePercent)
+            ? `${fmtSigned(change)} (${fmtPercent(changePercent)})`
+            : fmtSigned(change);
 
           return [
             `<div style="min-width:220px;">`,
@@ -247,6 +311,8 @@ export function FinancialCandlestick() {
             `<div style="display:flex;justify-content:space-between;"><span>${highLabel}</span><span>${fmt(high)}</span></div>`,
             `<div style="display:flex;justify-content:space-between;"><span>${lowLabel}</span><span>${fmt(low)}</span></div>`,
             `<div style="display:flex;justify-content:space-between;"><span>${closeLabel}</span><span>${fmt(close)}</span></div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>${changeLabel}</span><span>${changeText}</span></div>`,
+            `<div style="display:flex;justify-content:space-between;"><span>${sessionRangeLabel}</span><span>${fmt(sessionRange)}</span></div>`,
             `<div style="margin-top:8px;color:#64748b;">${bucketLabelText}: ${intervalGranularityLabel}${intervalUnitSuffix}</div>`,
             `</div>`
           ].join("");
@@ -290,69 +356,44 @@ export function FinancialCandlestick() {
         axisLine: { show: false }
       },
       series: [
-        useCandlestick
-          ? {
-              name: data.symbol ?? "Index",
-              type: "candlestick",
-              data: ohlc,
-              itemStyle: {
-                color: theme.colors.bullish,
-                color0: theme.colors.bearish,
-                borderColor: theme.colors.bullish,
-                borderColor0: theme.colors.bearish,
-                shadowBlur: 5,
-                shadowColor: "inherit"
-              },
-              markLine:
-                typeof lastClose === "number"
-                  ? {
-                      symbol: ["none", "none"],
-                      data: [
-                        {
-                          yAxis: lastClose,
-                          label: {
-                            show: true,
-                            position: "end",
-                            backgroundColor: theme.colors.primary,
-                            color: "#ffffff",
-                            padding: [2, 4],
-                            borderRadius: 2,
-                            formatter: unitSuffix ? `{c}${unitSuffix}` : "{c}"
-                          },
-                          lineStyle: {
-                            color: theme.colors.primary,
-                            type: "dashed",
-                            opacity: 0.5
-                          }
-                        }
-                      ]
+        {
+          name: data.symbol ?? "Index",
+          type: "candlestick",
+          data: ohlc,
+          itemStyle: {
+            color: theme.colors.bullish,
+            color0: theme.colors.bearish,
+            borderColor: theme.colors.bullish,
+            borderColor0: theme.colors.bearish,
+            shadowBlur: 5,
+            shadowColor: "inherit"
+          },
+          markLine:
+            typeof lastClose === "number"
+              ? {
+                  symbol: ["none", "none"],
+                  data: [
+                    {
+                      yAxis: lastClose,
+                      label: {
+                        show: true,
+                        position: "end",
+                        backgroundColor: theme.colors.primary,
+                        color: "#ffffff",
+                        padding: [2, 4],
+                        borderRadius: 2,
+                        formatter: unitSuffix ? `{c}${unitSuffix}` : "{c}"
+                      },
+                      lineStyle: {
+                        color: theme.colors.primary,
+                        type: "dashed",
+                        opacity: 0.5
+                      }
                     }
-                  : undefined
-            }
-          : {
-              name: data.symbol ?? "Index",
-              type: "line",
-              data: closeSeries,
-              smooth: true,
-              showSymbol: false,
-              lineStyle: {
-                color: theme.colors.primary,
-                width: 2
-              },
-              areaStyle: {
-                color: {
-                  type: "linear",
-                  x: 0,
-                  y: 0,
-                  x2: 0,
-                  y2: 1,
-                  colorStops: [
-                    { offset: 0, color: "rgba(31, 59, 123, 0.28)" },
-                    { offset: 1, color: "rgba(31, 59, 123, 0.02)" }
                   ]
                 }
-              }
-            }
+              : undefined
+        }
       ],
     };
   }, [
@@ -363,12 +404,14 @@ export function FinancialCandlestick() {
     t,
     bucketLabelText,
     closeLabel,
+    changeLabel,
     highLabel,
-    insufficientDataTrendHint,
     lowLabel,
     notAvailableShort,
+    numberFormatter,
     openLabel,
-    trendViewLabel,
+    sessionRangeLabel,
+    signedNumberFormatter,
   ]);
 
   const parsedInterval = useMemo(() => parseInterval(data?.interval), [data?.interval]);
@@ -405,14 +448,6 @@ export function FinancialCandlestick() {
   }, [closeLabel, data, endLabel, exportCsv, highLabel, lowLabel, normalizedPoints, openLabel, startLabel, timestampLabel, volumeLabel]);
   // csvLabel handled by useCsvExport
 
-  const hasRenderableData = Boolean(data && normalizedPoints.length > 0);
-  const showStaleErrorBanner = Boolean(isError && hasRenderableData);
-
-  // 判断是否降级显示（数据点不足时使用折线图）
-  const isDegradedView =
-    normalizedPoints.length > 0 &&
-    normalizedPoints.length < MIN_CANDLESTICK_POINTS;
-
   if (sessionStatus === "loading") {
     return (
       <div className="h-[350px] flex items-center transition-all duration-300">
@@ -429,7 +464,7 @@ export function FinancialCandlestick() {
     );
   }
 
-  if (isError && !data) {
+  if (isError) {
     const emptyState = buildRequestErrorEmptyState({
       t,
       error,
@@ -449,11 +484,29 @@ export function FinancialCandlestick() {
   }
 
   if (!data || normalizedPoints.length === 0) {
+    const awaitingCompleteCandle = Boolean(data?.skippedIncompleteCount);
+    const emptyStateTitle = awaitingCompleteCandle
+      ? t("dashboard.candlestick.awaitingCompleteTitle", {
+          defaultValue: "Awaiting complete candle"
+        })
+      : emptyTitle;
+    const emptyStateDescription = awaitingCompleteCandle
+      ? latestObservedAtLabel
+        ? t("dashboard.candlestick.awaitingCompleteDescriptionWithTime", {
+            time: latestObservedAtLabel,
+            defaultValue:
+              "Latest observed data at {{time}} is still in progress, so no complete candle can be shown yet. Try again shortly."
+          })
+        : t("dashboard.candlestick.awaitingCompleteDescription", {
+            defaultValue:
+              "The latest observation is still in progress, so no complete candle can be shown yet. Try again shortly."
+          })
+      : emptyHint;
     return (
       <div className="h-[350px] transition-all duration-300">
         <ChartEmptyState
-          title={emptyTitle}
-          description={emptyHint}
+          title={emptyStateTitle}
+          description={emptyStateDescription}
           actionLabel={t("dashboard.actions.fetchLatest", {
             defaultValue: "Pull latest data"
           })}
@@ -468,18 +521,6 @@ export function FinancialCandlestick() {
 
   return (
     <div className="relative h-[350px] transition-all duration-300">
-      {showStaleErrorBanner ? (
-        <div className="absolute left-2 right-2 top-2 z-20">
-          <RequestErrorBanner
-            error={error}
-            onRetry={() => {
-              void refreshCandles();
-            }}
-            actionLoading={refreshingCandles}
-            showCachedDataHint
-          />
-        </div>
-      ) : null}
       <div className="absolute left-2 top-2 z-10 flex flex-wrap items-center gap-2">
         <Tag color="default" className="text-xs">
           {rangeLabel}: {range}
@@ -490,31 +531,42 @@ export function FinancialCandlestick() {
         <Tag color={intervalColor} className="text-xs">
           {intervalTagText}
         </Tag>
-        {updatedAtLabel ? (
+        <Tag color="default" className="text-xs">
+          {t("dashboard.candlestick.candlesCount", {
+            count: normalizedPoints.length,
+            defaultValue: "Candles: {{count}}"
+          })}
+        </Tag>
+        {summaryMetrics?.latestCloseText ? (
           <Tag color="default" className="text-xs">
-            {t("dashboard.updatedAt", {
-              time: updatedAtLabel,
-              defaultValue: "Updated: {{time}}"
+            {latestCloseLabelText}: {summaryMetrics.latestCloseText}
+          </Tag>
+        ) : null}
+        {summaryMetrics?.windowChangeText ? (
+          <Tag color={summaryMetrics.windowChangeColor} className="text-xs">
+            {windowChangeLabelText}: {summaryMetrics.windowChangeText}
+          </Tag>
+        ) : null}
+        {updatedAtTagText ? (
+          <Tag color="default" className="text-xs">
+            {updatedAtTagText}
+          </Tag>
+        ) : null}
+        {latestObservedAtLabel && data?.skippedIncompleteCount ? (
+          <Tag color="processing" className="text-xs">
+            {t("dashboard.candlestick.observedThrough", {
+              time: latestObservedAtLabel,
+              defaultValue: "Observed through: {{time}}"
             })}
           </Tag>
         ) : null}
-        {isDegradedView ? (
-          <Tooltip
-            title={t("dashboard.candlestick.degradedTooltip", {
-              count: normalizedPoints.length,
-              defaultValue:
-                "Only {{count}} data points available. Switched to trend view for readability; candlestick will return when data is sufficient."
+        {data?.skippedIncompleteCount ? (
+          <Tag color="orange" className="text-xs">
+            {t("dashboard.candlestick.inProgressOmitted", {
+              count: data.skippedIncompleteCount,
+              defaultValue: "In-progress candles omitted: {{count}}"
             })}
-          >
-            <Tag
-              color="orange"
-              icon={<LineChartOutlined />}
-              className="text-xs font-medium animate-pulse cursor-help"
-            >
-              {trendViewLabel}
-              <InfoCircleOutlined className="ml-1 opacity-70" />
-            </Tag>
-          </Tooltip>
+          </Tag>
         ) : null}
       </div>
       <DashboardChart

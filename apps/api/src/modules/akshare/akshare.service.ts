@@ -58,6 +58,7 @@ import {
 } from "./akshare.types";
 import type { ParsedDataPoint } from "./parsers";
 import {
+  type FinancialDataProviderCleanup,
   FinancialDataProviderConfigurationError,
   FinancialDataProviderRegistry,
 } from "./providers/financial-data-provider";
@@ -1285,6 +1286,10 @@ export class AkshareService implements OnModuleInit {
       const provider = this.providerRegistry.get(definition.providerKind);
       const response = await provider.fetch(definition);
       await this.archiveProviderResponse(definition, response);
+      const deletedCount = await this.applyProviderCleanup(
+        definition.itemId,
+        response.cleanup,
+      );
       const storedCount = await this.bulkUpsertDataPoints(
         definition.itemId,
         response.points,
@@ -1295,7 +1300,11 @@ export class AkshareService implements OnModuleInit {
         EconomicDataRunStatus.success,
       );
 
-      this.logger.log(`Stored ${storedCount} points for ${definition.slug}`);
+      const cleanupSuffix =
+        deletedCount > 0 ? ` after deleting ${deletedCount} stale points` : "";
+      this.logger.log(
+        `Stored ${storedCount} points for ${definition.slug}${cleanupSuffix}`,
+      );
       return storedCount;
     } catch (error) {
       try {
@@ -1509,6 +1518,34 @@ export class AkshareService implements OnModuleInit {
     }
 
     return deduped.size;
+  }
+
+  private async applyProviderCleanup(
+    itemId: string,
+    cleanup?: FinancialDataProviderCleanup,
+  ): Promise<number> {
+    const uniqueRecordedAts = new Map<number, Date>();
+    for (const recordedAt of cleanup?.deleteRecordedAts ?? []) {
+      if (!(recordedAt instanceof Date) || Number.isNaN(recordedAt.getTime())) {
+        continue;
+      }
+      uniqueRecordedAts.set(recordedAt.getTime(), recordedAt);
+    }
+
+    if (uniqueRecordedAts.size === 0) {
+      return 0;
+    }
+
+    const result = await this.prisma.economicDataPoint.deleteMany({
+      where: {
+        itemId,
+        recordedAt: {
+          in: Array.from(uniqueRecordedAts.values()),
+        },
+      },
+    });
+
+    return result.count;
   }
 
   private toUpsertDataPointRow(

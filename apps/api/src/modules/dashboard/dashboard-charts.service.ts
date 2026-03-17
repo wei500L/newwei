@@ -598,6 +598,8 @@ export interface FinancialCandlestickResponse {
   unit?: string | null;
   sourceFields?: Record<string, string>;
   updatedAt?: string;
+  latestObservedAt?: string;
+  skippedIncompleteCount?: number;
 }
 
 interface DateRange {
@@ -5334,6 +5336,8 @@ export class DashboardChartsService {
 
     const resultPoints: FinancialCandlestickPoint[] = [];
     let updatedAt: Date | undefined;
+    const incompleteEntries: Array<{ timestamp: string; missing: string[] }> = [];
+    const latestObservedAt = sorted.at(-1)?.timestamp;
     for (const entry of sorted) {
       const missing: string[] = [];
       if (entry.open === undefined) missing.push("open");
@@ -5341,16 +5345,11 @@ export class DashboardChartsService {
       if (entry.low === undefined) missing.push("low");
       if (entry.close === undefined) missing.push("close");
       if (missing.length > 0) {
-        throw new InternalServerErrorException({
-          code: "DASHBOARD_CANDLESTICK_OHLC_INCOMPLETE",
-          message: "Candlestick OHLC data incomplete",
-          detail: `Missing ${missing.join(", ")} at ${entry.timestamp.toISOString()}`,
-          item: {
-            id: item.id,
-            slug: DEFAULT_CANDLESTICK_SLUG,
-            displayName: item.displayName,
-          },
+        incompleteEntries.push({
+          timestamp: entry.timestamp.toISOString(),
+          missing,
         });
+        continue;
       }
 
       const open = entry.open!;
@@ -5369,6 +5368,18 @@ export class DashboardChartsService {
       updatedAt = entry.timestamp;
     }
 
+    if (incompleteEntries.length > 0) {
+      logger.warn(
+        {
+          itemId: item.id,
+          slug: DEFAULT_CANDLESTICK_SLUG,
+          skippedCount: incompleteEntries.length,
+          skippedEntries: incompleteEntries.slice(0, 10),
+        },
+        "Skipped incomplete candlestick OHLC entries",
+      );
+    }
+
     return {
       symbol: item.displayName,
       interval: item.defaultFrequency,
@@ -5379,6 +5390,9 @@ export class DashboardChartsService {
           ? (sourceFields as Record<string, string>)
           : undefined,
       updatedAt: updatedAt ? updatedAt.toISOString() : undefined,
+      latestObservedAt: latestObservedAt ? latestObservedAt.toISOString() : undefined,
+      skippedIncompleteCount:
+        incompleteEntries.length > 0 ? incompleteEntries.length : undefined,
     };
   }
 }

@@ -2221,7 +2221,7 @@ describe("DashboardChartsService", () => {
     ]);
   });
 
-  it("throws candlestick error code when OHLC values are incomplete", async () => {
+  it("skips incomplete candlestick entries and returns remaining complete candles", async () => {
     const prisma = {
       economicDataItem: {
         findUnique: jest.fn().mockResolvedValue({
@@ -2255,6 +2255,13 @@ describe("DashboardChartsService", () => {
           {
             itemId: "item-ohlc",
             recordedAt: new Date("2026-01-01T00:00:00.000Z"),
+            value: 15,
+            unit: "pts",
+            sourceField: "h",
+          },
+          {
+            itemId: "item-ohlc",
+            recordedAt: new Date("2026-01-01T00:00:00.000Z"),
             value: 8,
             unit: "pts",
             sourceField: "l",
@@ -2265,6 +2272,27 @@ describe("DashboardChartsService", () => {
             value: 12,
             unit: "pts",
             sourceField: "c",
+          },
+          {
+            itemId: "item-ohlc",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 12.5,
+            unit: "pts",
+            sourceField: "o",
+          },
+          {
+            itemId: "item-ohlc",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 19,
+            unit: "pts",
+            sourceField: "h",
+          },
+          {
+            itemId: "item-ohlc",
+            recordedAt: new Date("2026-01-02T00:00:00.000Z"),
+            value: 11,
+            unit: "pts",
+            sourceField: "l",
           },
         ]),
         count: jest.fn().mockResolvedValue(0),
@@ -2284,16 +2312,19 @@ describe("DashboardChartsService", () => {
       end: new Date("2026-01-02T23:59:59.999Z"),
     };
 
-    try {
-      await service.getFinancialCandlestick(range);
-      throw new Error("Expected getFinancialCandlestick to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(InternalServerErrorException);
-      expect((error as any).getResponse?.()).toEqual(
-        expect.objectContaining({
-          code: "DASHBOARD_CANDLESTICK_OHLC_INCOMPLETE",
-        }),
-      );
-    }
+    const response = await service.getFinancialCandlestick(range);
+
+    expect(response.points).toEqual([
+      {
+        timestamp: "2026-01-01T00:00:00.000Z",
+        open: 10,
+        close: 12,
+        high: 15,
+        low: 8,
+      },
+    ]);
+    expect(response.updatedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(response.latestObservedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(response.skippedIncompleteCount).toBe(1);
   });
 });

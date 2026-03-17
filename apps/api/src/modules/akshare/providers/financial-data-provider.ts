@@ -13,9 +13,14 @@ export class FinancialDataProviderConfigurationError extends Error {
   }
 }
 
+export interface FinancialDataProviderCleanup {
+  deleteRecordedAts?: Date[];
+}
+
 export interface FinancialDataProviderFetchResult {
   payload: unknown;
   points: ParsedDataPoint[];
+  cleanup?: FinancialDataProviderCleanup;
   requestParams?: Record<string, unknown>;
   method?: string;
   providerIdentity?: string;

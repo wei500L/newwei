@@ -7,6 +7,7 @@ import type {
 } from '../financial-data.types';
 
 import {
+  type FinancialDataProviderCleanup,
   FinancialDataProvider,
   FinancialDataProviderFetchResult,
 } from './financial-data-provider';
@@ -94,40 +95,49 @@ export class YfinanceFinancialDataProvider implements FinancialDataProvider {
       regularMarketPrice: this.normalizeFiniteNumber(result.meta?.regularMarketPrice),
     };
 
+    const incompleteRecordedAts: Date[] = [];
     const points = timestamps.flatMap((timestamp, index) => {
       const recordedAt = new Date(timestamp * 1000);
-      const entries = [
+      const ohlcEntries = [
         {
           sourceField: sourceFields.open,
-          value: quote.open?.[index],
+          value: this.normalizeFiniteNumber(quote.open?.[index]),
         },
         {
           sourceField: sourceFields.high,
-          value: quote.high?.[index],
+          value: this.normalizeFiniteNumber(quote.high?.[index]),
         },
         {
           sourceField: sourceFields.low,
-          value: quote.low?.[index],
+          value: this.normalizeFiniteNumber(quote.low?.[index]),
         },
         {
           sourceField: sourceFields.close,
-          value: quote.close?.[index],
+          value: this.normalizeFiniteNumber(quote.close?.[index]),
         },
+      ] as const;
+
+      const hasCompleteOhlc = ohlcEntries.every(
+        (entry) => Boolean(entry.sourceField) && entry.value !== null,
+      );
+      if (!hasCompleteOhlc) {
+        incompleteRecordedAts.push(recordedAt);
+        return [];
+      }
+
+      const entries = [
+        ...ohlcEntries,
         ...(sourceFields.volume
           ? [
               {
                 sourceField: sourceFields.volume,
-                value: quote.volume?.[index],
+                value: this.normalizeFiniteNumber(quote.volume?.[index]),
               },
             ]
           : []),
       ];
 
       return entries
-        .map((entry) => ({
-          sourceField: entry.sourceField,
-          value: this.normalizeFiniteNumber(entry.value),
-        }))
         .filter(
           (entry): entry is { sourceField: string; value: number } =>
             Boolean(entry.sourceField) && entry.value !== null,
@@ -146,9 +156,12 @@ export class YfinanceFinancialDataProvider implements FinancialDataProvider {
       throw new Error(`yfinance_history_points_empty:${provider.symbol}`);
     }
 
+    const cleanup = this.buildCleanup(incompleteRecordedAts);
+
     return {
       payload,
       points,
+      ...(cleanup ? { cleanup } : {}),
       requestParams,
       method: 'GET',
       providerIdentity: provider.symbol,
@@ -192,6 +205,23 @@ export class YfinanceFinancialDataProvider implements FinancialDataProvider {
 
   private getBaseUrl(): string {
     return 'https://query1.finance.yahoo.com';
+  }
+
+  private buildCleanup(recordedAts: Date[]): FinancialDataProviderCleanup | undefined {
+    if (recordedAts.length === 0) {
+      return undefined;
+    }
+
+    const uniqueRecordedAts = new Map<number, Date>();
+    for (const recordedAt of recordedAts) {
+      uniqueRecordedAts.set(recordedAt.getTime(), recordedAt);
+    }
+
+    return {
+      deleteRecordedAts: Array.from(uniqueRecordedAts.values()).sort(
+        (a, b) => a.getTime() - b.getTime(),
+      ),
+    };
   }
 
   private resolvePeriod2(provider: YfinanceFinancialDataProviderConfig): number {

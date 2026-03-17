@@ -125,6 +125,79 @@ describe('YfinanceFinancialDataProvider', () => {
       sourceField: 'close',
       value: 5105.21,
     });
+    expect(result.cleanup).toBeUndefined();
+  });
+
+  it('skips incomplete OHLC candles and returns cleanup timestamps for stale rows', async () => {
+    mockedAxiosGet.mockResolvedValue({
+      status: 200,
+      statusText: 'OK',
+      data: JSON.stringify({
+        chart: {
+          result: [
+            {
+              meta: {
+                currency: 'USD',
+                exchangeName: 'SNP',
+                fullExchangeName: 'SNP',
+                instrumentType: 'INDEX',
+                regularMarketPrice: 5105.21,
+                symbol: '^GSPC',
+              },
+              timestamp: [1710374400, 1710460800],
+              indicators: {
+                quote: [
+                  {
+                    open: [5080.12, 5092.5],
+                    high: [5098.44, 5110.33],
+                    low: [5074.2, 5087.11],
+                    close: [5094.77, null],
+                  },
+                ],
+              },
+            },
+          ],
+          error: null,
+        },
+      }),
+      headers: {},
+      config: {} as never,
+    });
+
+    const provider = new YfinanceFinancialDataProvider();
+    const result = await provider.fetch({
+      itemId: 'item-sp500',
+      slug: 'sp500_index',
+      displayName: '标普500指数',
+      categories: ['key-monitor'],
+      sourceFunction: 'yfinance.history',
+      endpoint: '/v8/finance/chart',
+      docUrl: 'https://ranaroussi.github.io/yfinance/reference/api/yfinance.Ticker.history.html',
+      valueType: EconomicDataValueType.index,
+      defaultUnit: 'pts',
+      defaultFrequency: 'daily',
+      providerKind: 'yfinance',
+      providerConfig: {
+        kind: 'yfinance',
+        symbol: '^GSPC',
+        endpoint: '/v8/finance/chart',
+        docUrl: 'https://ranaroussi.github.io/yfinance/reference/api/yfinance.Ticker.history.html',
+        interval: '1d',
+        period1: 0,
+        period2: 1710547200,
+        includePrePost: false,
+        events: 'div,splits',
+      },
+      defaultEnabled: true,
+      mainlineRole: 'canonical',
+      tags: [],
+    });
+
+    expect(result.points).toHaveLength(4);
+    expect(result.points.every((point) => point.recordedAt.getTime() === 1710374400 * 1000)).toBe(true);
+    expect(result.cleanup).toEqual({
+      deleteRecordedAts: [new Date(1710460800 * 1000)],
+    });
   });
 
   it('retries throttled Yahoo responses before succeeding', async () => {

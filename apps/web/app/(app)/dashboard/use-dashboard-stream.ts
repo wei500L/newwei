@@ -27,6 +27,8 @@ interface FinancialCandlestickResponse {
   interval: string;
   points: FinancialCandlePoint[];
   updatedAt?: string;
+  latestObservedAt?: string;
+  skippedIncompleteCount?: number;
 }
 
 interface SpacetimeGeoHeatPoint {
