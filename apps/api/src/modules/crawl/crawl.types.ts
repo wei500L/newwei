@@ -1,6 +1,24 @@
 import type { CrawlTaskStatus } from "@prisma/client";
 
 export type CrawlPriorityClass = "hot" | "normal";
+export type CrawlJobKind = "task" | "frontier_node";
+export type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
+export type CrawlFrontierRunStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "canceled";
+export type CrawlFrontierPageType = "home" | "category" | "list" | "article";
+export type CrawlFrontierNodeStatus =
+  | "pending"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "canceled";
 
 export interface CrawlJobData {
   taskId: string;
@@ -10,6 +28,121 @@ export interface CrawlJobData {
   memoryPressureRequeues?: number;
   priorityClass?: CrawlPriorityClass;
   sourcePriority?: number;
+  jobKind?: CrawlJobKind;
+  frontierRunId?: string;
+  frontierNodeId?: string;
+}
+
+export interface CrawlDeepCrawlComponent {
+  type: string;
+  params?: Record<string, unknown>;
+}
+
+export interface CrawlSiteProfileConfig {
+  keywords?: string[];
+  blockedDomains?: string[];
+  urlQueryParamAllowlist?: string[];
+  urlPatterns?: Partial<Record<CrawlFrontierPageType | "exclude", string[]>>;
+  pageRules?: Partial<Record<CrawlFrontierPageType, Record<string, unknown>>>;
+  layeredOptions?: {
+    maxDepth?: number;
+    maxPages?: number;
+    maxChildrenPerNode?: number;
+    paginationKeepCount?: number;
+    scoreThreshold?: number;
+  };
+  nativeOptions?: {
+    deepCrawlStrategy?: CrawlDeepCrawlComponent;
+    filterChain?: CrawlDeepCrawlComponent;
+    urlScorer?: CrawlDeepCrawlComponent;
+    adaptiveCrawling?: CrawlDeepCrawlComponent;
+    stream?: boolean;
+  };
+  crawlOptions?: Record<string, unknown>;
+}
+
+export interface CrawlSiteProfileRecord {
+  id: string;
+  orgId: string;
+  name: string;
+  description?: string | null;
+  matchHost: string;
+  isActive: boolean;
+  executionMode: CrawlSiteExecutionMode;
+  version: number;
+  config: CrawlSiteProfileConfig;
+  createdById: string;
+  updatedById?: string | null;
+  publishedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrawlSiteProfileVersionRecord {
+  id: string;
+  profileId: string;
+  orgId: string;
+  version: number;
+  name: string;
+  description?: string | null;
+  matchHost: string;
+  isActive: boolean;
+  executionMode: CrawlSiteExecutionMode;
+  config: CrawlSiteProfileConfig;
+  createdById: string;
+  createdAt: Date;
+}
+
+export interface CrawlFrontierRunRecord {
+  id: string;
+  orgId: string;
+  profileId?: string | null;
+  seedUrl: string;
+  crawlTaskId?: string | null;
+  executionMode: CrawlSiteExecutionMode;
+  status: CrawlFrontierRunStatus;
+  maxDepth: number;
+  maxPages: number;
+  keywords?: string[];
+  pageCount: number;
+  nodeCount: number;
+  articleCount: number;
+  failedCount: number;
+  duplicateCount: number;
+  nativeRunId?: string | null;
+  lastError?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdById: string;
+  startedAt?: Date | null;
+  finishedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CrawlFrontierNodeRecord {
+  id: string;
+  runId: string;
+  parentNodeId?: string | null;
+  orgId: string;
+  url: string;
+  canonicalUrl?: string | null;
+  urlFingerprint?: string | null;
+  pageType: CrawlFrontierPageType;
+  depth: number;
+  queueClass: CrawlPriorityClass;
+  status: CrawlFrontierNodeStatus;
+  score?: number | null;
+  freshnessScore?: number | null;
+  attempts: number;
+  queuedAt?: Date | null;
+  crawledAt?: Date | null;
+  crawlResultId?: string | null;
+  rejectionReason?: string | null;
+  lastError?: string | null;
+  metadata?: Record<string, unknown> | null;
+  discoveredAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface CrawlExecutionSummary {
@@ -400,6 +533,11 @@ export interface CrawlTaskOptions {
   autoExpandDetails?: boolean;
   detailExpansion?: CrawlDetailExpansionOptions;
   qualityProfile?: CrawlQualityProfile;
+  deepCrawlStrategy?: CrawlDeepCrawlComponent;
+  filterChain?: CrawlDeepCrawlComponent;
+  urlScorer?: CrawlDeepCrawlComponent;
+  adaptiveCrawling?: CrawlDeepCrawlComponent;
+  stream?: boolean;
 }
 
 export interface CrawlMemoryStats {

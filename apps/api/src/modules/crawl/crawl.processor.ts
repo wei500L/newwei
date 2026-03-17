@@ -6,6 +6,8 @@ import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 
 import { CrawlExecutionService } from "./crawl-execution.service";
+import { CrawlFrontierService } from "./crawl-frontier.service";
+import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_EVENTS_LEGACY,
   CRAWL_QUEUE_EVENTS_HOT,
@@ -17,7 +19,6 @@ import {
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
-import { CrawlSettingsService } from "./crawl-settings.service";
 import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
@@ -40,11 +41,11 @@ const MEMORY_PRESSURE_HINTS = [
   "cannot allocate memory"
 ];
 
-type QueueEventBinding = {
+interface QueueEventBinding {
   events: QueueEvents;
   onStalled: ({ jobId }: { jobId: string }) => Promise<void>;
   onFailed: ({ jobId, failedReason }: { jobId: string; failedReason?: string }) => Promise<void>;
-};
+}
 
 interface QueueRuntimeContext {
   queueClass: CrawlPriorityClass;
@@ -388,6 +389,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly env: EnvService,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly crawlExecutionService: CrawlExecutionService,
+    private readonly crawlFrontierService: CrawlFrontierService,
     private readonly prisma: PrismaService,
     @Inject(CRAWL_QUEUE_LEGACY) private readonly legacyQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
@@ -451,8 +453,6 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   }
 
   private createWorker(context: QueueRuntimeContext, concurrency: number): Worker<CrawlJobData> {
-    let workerRef!: Worker<CrawlJobData>;
-
     const worker = new Worker<CrawlJobData>(
       context.queueName,
       async (job) => {
@@ -470,6 +470,17 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
             const backoffDelayMs = resolveBackoffDelayMs(job.opts?.backoff, attempt);
             const requestTimeoutMs = await this.resolveQueueTimeoutMs(context.queueClass);
             try {
+              if (
+                job.data.jobKind === "frontier_node" &&
+                typeof job.data.frontierNodeId === "string" &&
+                job.data.frontierNodeId.length > 0
+              ) {
+                return await this.crawlFrontierService.processQueuedNode(
+                  job.data.frontierNodeId,
+                  job.data.orgId,
+                  requestTimeoutMs,
+                );
+              }
               return await this.crawlExecutionService.runTask(
                 job.data.taskId,
                 job.data.orgId,
@@ -525,7 +536,7 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
                   await this.rateLimitAllWorkers(cooldownMs, {
                     queueClass: context.queueClass,
                     queueName: context.queueName,
-                    worker: workerRef
+                    worker
                   });
                 } catch (rateLimitError) {
                   logger.error(
@@ -606,8 +617,6 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
         }
       }
     );
-
-    workerRef = worker;
 
     worker.on("failed", (job, error) => {
       const traceId = job?.data?.traceId;

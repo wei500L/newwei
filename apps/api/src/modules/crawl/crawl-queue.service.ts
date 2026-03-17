@@ -2,13 +2,13 @@ import { createLogger, ensureTraceId, getCurrentTraceId } from "@modular/utils";
 import { Inject, Injectable } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
 
+import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
-import { CrawlSettingsService } from "./crawl-settings.service";
 import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
 
 const logger = createLogger({ name: "crawl-queue-service" });
@@ -21,6 +21,15 @@ type CrawlQueueClass = CrawlPriorityClass;
 type QueueCounts = Record<string, number>;
 
 export interface EnqueueCrawlTaskOptions {
+  priorityClass?: CrawlQueueClass;
+  sourcePriority?: number;
+}
+
+export interface EnqueueFrontierNodeOptions {
+  taskId: string;
+  orgId: string;
+  frontierRunId: string;
+  frontierNodeId: string;
   priorityClass?: CrawlQueueClass;
   sourcePriority?: number;
 }
@@ -146,6 +155,47 @@ export class CrawlQueueService {
           : undefined,
         priority: jobPriority
       }
+    );
+  }
+
+  async enqueueFrontierNode(options: EnqueueFrontierNodeOptions) {
+    const settings = await this.crawlSettings.getSettings();
+    const attempts = Math.max(1, settings.maxRetries);
+    const traceId = ensureTraceId(getCurrentTraceId());
+    const queueClass = normalizeQueueClass(options.priorityClass);
+    const queueEntry = this.getQueueEntry(queueClass);
+    const deduplicationId = `crawl-frontier-node:${options.frontierNodeId}:${queueClass}`;
+    const jobPriority = toBullmqPriority(options.sourcePriority);
+
+    await queueEntry.queue.add(
+      "crawl-frontier-node",
+      {
+        taskId: options.taskId,
+        orgId: options.orgId,
+        traceId,
+        memoryPressureRequeues: 0,
+        priorityClass: queueClass,
+        sourcePriority: options.sourcePriority,
+        jobKind: "frontier_node",
+        frontierRunId: options.frontierRunId,
+        frontierNodeId: options.frontierNodeId,
+      },
+      {
+        jobId: `${options.frontierNodeId}-${Date.now()}-${queueClass}`,
+        deduplication: {
+          id: deduplicationId,
+        },
+        removeOnComplete: true,
+        removeOnFail: false,
+        attempts,
+        backoff: settings.retryBackoffMs
+          ? {
+              type: "exponential",
+              delay: settings.retryBackoffMs,
+            }
+          : undefined,
+        priority: jobPriority,
+      },
     );
   }
 

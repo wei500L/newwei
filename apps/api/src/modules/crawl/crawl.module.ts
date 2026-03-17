@@ -11,13 +11,19 @@ import { StorageModule } from "../storage/storage.module";
 import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
+import { CrawlFrontierController } from "./crawl-frontier.controller";
+import { CrawlFrontierService } from "./crawl-frontier.service";
+import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
+import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
+import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
 import { CrawlQualityStrategyService } from "./crawl-quality.strategy";
 import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
 import { CrawlQueueEventPublisher } from "./crawl-queue-event.publisher";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
+import { CrawlSiteProfileService } from "./crawl-site-profile.service";
 import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlTemplateController } from "./crawl-template.controller";
@@ -36,17 +42,14 @@ import {
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
 import { CrawlController } from "./crawl.controller";
-import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlQueueProcessor } from "./crawl.processor";
 import type { CrawlJobData } from "./crawl.types";
 import { Crawl4aiQualityController } from "./crawl4ai-quality.controller";
 import { Crawl4aiQueueController } from "./crawl4ai-queue.controller";
 import { Crawl4aiClient } from "./crawl4ai.client";
-import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { NewsSourceOpmlService } from "./news-source-opml.service";
 import { NewsSourceController } from "./news-source.controller";
 import { NewsSourceService } from "./news-source.service";
-import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
 import { JsCodeAuditService } from "./services/js-code-audit.service";
 
 @Module({
@@ -74,6 +77,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlMediaAssetController,
     NewsSourceController,
     CrawlTemplateController,
+    CrawlFrontierController,
     Crawl4aiQueueController,
     Crawl4aiQualityController
   ],
@@ -82,6 +86,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlTaskService,
     CrawlTaskJanitorService,
     CrawlExecutionService,
+    CrawlFrontierService,
     CrawlQueueService,
     CrawlResultService,
     CrawlMediaAssetService,
@@ -206,6 +211,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   ],
   exports: [
     CrawlSettingsService,
+    CrawlSiteProfileService,
     CrawlTaskService,
     CrawlExecutionService,
     CrawlQueueService,

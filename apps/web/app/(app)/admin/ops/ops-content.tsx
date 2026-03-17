@@ -48,6 +48,18 @@ export function OpsContent() {
       permission: "crawl.read"
     },
     {
+      key: "crawl-frontier",
+      title: t("ops.links.crawlFrontier.title", {
+        defaultValue: "Crawl Frontier",
+      }),
+      description: t("ops.links.crawlFrontier.description", {
+        defaultValue:
+          "Manage crawl site profiles, frontier runs, and layered/native execution.",
+      }),
+      href: "/admin/ops/crawl-frontier",
+      permission: "crawl.read",
+    },
+    {
       key: "news-sources",
       title: t("ops.links.newsSources.title", { defaultValue: "News Sources" }),
       description: t("ops.links.newsSources.description", {

@@ -304,6 +304,81 @@ describe("Crawl4aiClient", () => {
     expect(payload.crawler_config.params.adjust_viewport_to_content).toBe(true);
   });
 
+  it("serializes deep crawl components into crawler_config", async () => {
+    const client = new Crawl4aiClient(httpMock, crawlSettingsMock, envMock);
+    await client.crawl({
+      url: "https://example.com/",
+      options: {
+        deepCrawlStrategy: {
+          type: "BFSDeepCrawlStrategy",
+          params: {
+            max_depth: 3,
+            max_pages: 60,
+          },
+        },
+        filterChain: {
+          type: "FilterChain",
+          params: {
+            filters: [
+              {
+                type: "ContentTypeFilter",
+                params: { allowed_types: ["text/html"] },
+              },
+            ],
+          },
+        },
+        urlScorer: {
+          type: "KeywordRelevanceScorer",
+          params: {
+            keywords: ["latest", "breaking"],
+            weight: 0.7,
+          },
+        },
+        adaptiveCrawling: {
+          type: "StatisticalAdaptiveStrategy",
+          params: {
+            confidence_threshold: 0.9,
+            min_pages: 10,
+          },
+        },
+      } as any,
+    });
+
+    const payload = httpMock.post.mock.calls[0]?.[1];
+    expect(payload.crawler_config.params.deep_crawl_strategy).toEqual({
+      type: "BFSDeepCrawlStrategy",
+      params: {
+        max_depth: 3,
+        max_pages: 60,
+      },
+    });
+    expect(payload.crawler_config.params.filter_chain).toEqual({
+      type: "FilterChain",
+      params: {
+        filters: [
+          {
+            type: "ContentTypeFilter",
+            params: { allowed_types: ["text/html"] },
+          },
+        ],
+      },
+    });
+    expect(payload.crawler_config.params.url_scorer).toEqual({
+      type: "KeywordRelevanceScorer",
+      params: {
+        keywords: ["latest", "breaking"],
+        weight: 0.7,
+      },
+    });
+    expect(payload.crawler_config.params.adaptive_crawling).toEqual({
+      type: "StatisticalAdaptiveStrategy",
+      params: {
+        confidence_threshold: 0.9,
+        min_pages: 10,
+      },
+    });
+  });
+
   it("falls back to bounded virtual scroll when scan_full_page times out", async () => {
     httpMock.post = jest
       .fn()

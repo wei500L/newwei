@@ -38,8 +38,8 @@ jest.mock("bullmq", () => ({
 
 import { Worker, UnrecoverableError } from "bullmq";
 
-import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { CrawlQueueProcessor } from "./crawl.processor";
+import { Crawl4aiRequestException } from "./crawl4ai.exception";
 
 describe("CrawlQueueProcessor", () => {
   const createContext = (
@@ -72,6 +72,10 @@ describe("CrawlQueueProcessor", () => {
 
     const crawlExecutionService = {
       runTask: jest.fn()
+    } as any;
+
+    const crawlFrontierService = {
+      processQueuedNode: jest.fn()
     } as any;
 
     const prisma = {
@@ -126,6 +130,7 @@ describe("CrawlQueueProcessor", () => {
       env,
       crawlSettings,
       crawlExecutionService,
+      crawlFrontierService,
       prisma,
       legacyQueue,
       hotQueue,
@@ -138,6 +143,7 @@ describe("CrawlQueueProcessor", () => {
     return {
       processor,
       crawlExecutionService,
+      crawlFrontierService,
       legacyQueue,
       hotQueue,
       normalQueue,
@@ -298,6 +304,40 @@ describe("CrawlQueueProcessor", () => {
       expect(worker.rateLimit).toHaveBeenCalledWith(90_000);
     }
     expect(WorkerMock.RateLimitError).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispatches frontier-node jobs to crawlFrontierService", async () => {
+    const { processor, crawlExecutionService, crawlFrontierService } = createContext({
+      requestTimeoutHotMs: 60_000
+    });
+    crawlFrontierService.processQueuedNode.mockResolvedValue({ inserted: 1, skipped: 0 });
+
+    await processor.onModuleInit();
+
+    const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
+    await hotCallback({
+      id: "job-frontier-1",
+      data: {
+        taskId: "task-1",
+        orgId: "org-1",
+        triggeredById: "user-1",
+        jobKind: "frontier_node",
+        frontierNodeId: "node-1"
+      },
+      opts: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5_000 }
+      },
+      attemptsMade: 0,
+      attemptsStarted: 1
+    });
+
+    expect(crawlFrontierService.processQueuedNode).toHaveBeenCalledWith(
+      "node-1",
+      "org-1",
+      60_000
+    );
+    expect(crawlExecutionService.runTask).not.toHaveBeenCalled();
   });
 
   it("marks non-retryable errors as unrecoverable", async () => {

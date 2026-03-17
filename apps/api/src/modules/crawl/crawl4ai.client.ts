@@ -35,6 +35,7 @@ import type {
   CrawlTableExtractionStrategy,
   Crawl4aiTablePayload,
   CrawlVirtualScrollConfig,
+  CrawlDeepCrawlComponent,
 } from "./crawl.types";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
 import { translateLocalhostProxyUrlForCrawl4ai } from "./crawl4ai-proxy";
@@ -939,6 +940,14 @@ export class Crawl4aiClient {
           options.tableScoreThreshold,
         ),
         table_extraction: this.buildTableExtraction(options.tableExtraction),
+        deep_crawl_strategy: this.buildDeepCrawlComponent(
+          options.deepCrawlStrategy,
+        ),
+        filter_chain: this.buildDeepCrawlComponent(options.filterChain),
+        url_scorer: this.buildDeepCrawlComponent(options.urlScorer),
+        adaptive_crawling: this.buildDeepCrawlComponent(
+          options.adaptiveCrawling,
+        ),
         word_count_threshold: wordCountThreshold,
         exclude_external_links: excludeExternalLinks,
         exclude_external_images: excludeExternalImages,
@@ -1098,6 +1107,25 @@ export class Crawl4aiClient {
       return undefined;
     }
     const params = this.normalizeCustomParams(strategy.params);
+    return params && Object.keys(params).length > 0
+      ? {
+          type: trimmed,
+          params,
+        }
+      : {
+          type: trimmed,
+        };
+  }
+
+  private buildDeepCrawlComponent(component?: CrawlDeepCrawlComponent) {
+    if (!component || typeof component.type !== "string") {
+      return undefined;
+    }
+    const trimmed = component.type.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const params = this.normalizeCustomParams(component.params);
     return params && Object.keys(params).length > 0
       ? {
           type: trimmed,

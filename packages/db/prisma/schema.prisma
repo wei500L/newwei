@@ -30,6 +30,9 @@ model Org {
   items       ItemMeta[]
   crawlTasks  CrawlTask[]
   crawlTemplates CrawlTemplate[]
+  crawlSiteProfiles CrawlSiteProfile[]
+  crawlFrontierRuns CrawlFrontierRun[]
+  crawlFrontierNodes CrawlFrontierNode[]
   newsSources NewsSource[]
   pipelineJobs PipelineJob[]
   articles    Article[]
@@ -259,6 +262,118 @@ model CrawlResult {
   @@unique([taskId, contentHash])
 }
 
+model CrawlSiteProfile {
+  id            String                 @id @default(cuid())
+  org           Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId         String
+  name          String
+  description   String?
+  matchHost     String
+  isActive      Boolean                @default(true)
+  executionMode CrawlSiteExecutionMode @default(layered)
+  version       Int                    @default(1)
+  config        Json
+  createdById   String
+  updatedById   String?
+  publishedAt   DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  versions      CrawlSiteProfileVersion[]
+  runs          CrawlFrontierRun[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive, updatedAt])
+  @@index([orgId, matchHost, isActive])
+}
+
+model CrawlSiteProfileVersion {
+  id            String                 @id @default(cuid())
+  profile       CrawlSiteProfile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId     String
+  orgId         String
+  version       Int
+  name          String
+  description   String?
+  matchHost     String
+  isActive      Boolean
+  executionMode CrawlSiteExecutionMode
+  config        Json
+  createdById   String
+  createdAt     DateTime               @default(now())
+
+  @@unique([profileId, version])
+  @@index([orgId, createdAt])
+}
+
+model CrawlFrontierRun {
+  id             String                 @id @default(cuid())
+  org            Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId          String
+  profile        CrawlSiteProfile?      @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  profileId      String?
+  seedUrl        String
+  crawlTaskId    String?
+  executionMode  CrawlSiteExecutionMode @default(layered)
+  status         CrawlFrontierRunStatus @default(pending)
+  maxDepth       Int                    @default(3)
+  maxPages       Int                    @default(60)
+  keywords       Json?
+  pageCount      Int                    @default(0)
+  nodeCount      Int                    @default(0)
+  articleCount   Int                    @default(0)
+  failedCount    Int                    @default(0)
+  duplicateCount Int                    @default(0)
+  nativeRunId    String?
+  lastError      String?                @db.Text
+  metadata       Json?
+  createdById    String
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  nodes          CrawlFrontierNode[]
+
+  @@index([orgId, status, createdAt])
+  @@index([orgId, profileId, createdAt])
+}
+
+model CrawlFrontierNode {
+  id              String                   @id @default(cuid())
+  run             CrawlFrontierRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId           String
+  parent          CrawlFrontierNode?       @relation("CrawlFrontierNodeToParent", fields: [parentNodeId], references: [id], onDelete: SetNull)
+  parentNodeId    String?
+  children        CrawlFrontierNode[]      @relation("CrawlFrontierNodeToParent")
+  org             Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId           String
+  url             String
+  canonicalUrl    String?
+  urlFingerprint  String?                  @db.VarChar(64)
+  pageType        CrawlFrontierPageType
+  depth           Int
+  queueClass      CrawlQueueClass          @default(normal)
+  status          CrawlFrontierNodeStatus  @default(pending)
+  score           Float?
+  freshnessScore  Float?
+  attempts        Int                      @default(0)
+  queuedAt        DateTime?
+  crawledAt       DateTime?
+  crawlResultId   String?
+  rejectionReason String?
+  lastError       String?                  @db.Text
+  metadata        Json?
+  discoveredAt    DateTime                 @default(now())
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@index([runId, status, depth])
+  @@index([orgId, pageType, status])
+  @@index([runId, urlFingerprint])
+  @@index([runId, parentNodeId])
+}
+
 model CrawlMediaAsset {
   id        String                    @id @default(cuid())
   result    CrawlResult               @relation(fields: [resultId], references: [id], onDelete: Cascade)
@@ -427,6 +542,43 @@ enum CrawlTaskStatus {
   completed
   failed
   paused
+}
+
+enum CrawlSiteExecutionMode {
+  layered
+  native
+  hybrid
+}
+
+enum CrawlFrontierRunStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  canceled
+}
+
+enum CrawlFrontierPageType {
+  home
+  category
+  list
+  article
+}
+
+enum CrawlFrontierNodeStatus {
+  pending
+  queued
+  running
+  completed
+  failed
+  skipped
+  canceled
+}
+
+enum CrawlQueueClass {
+  hot
+  normal
 }
 
 enum CrawlImageStorageProvider {
