@@ -74,9 +74,7 @@ describe("war-map data contract helpers", () => {
       aisMode: "density" as const,
     };
 
-    expect(
-      buildWarMapBaseRequestParams(input),
-    ).toEqual({
+    expect(buildWarMapBaseRequestParams(input)).toEqual({
       start: "2026-03-01T00:00:00.000Z",
       end: "2026-03-02T00:00:00.000Z",
       zoom: "3.56",
@@ -351,8 +349,15 @@ describe("war-map page wiring", () => {
     );
     expect(source).toContain('defaultValue: "Loading map base layer…"');
     expect(source).toContain('defaultValue: "Refreshing {{count}} chains"');
-    expect(overlayModelSource).toContain('defaultValue: "Stream message"');
-    expect(source).toContain('defaultValue: "Data updated"');
+    expect(overlayModelSource).toContain(
+      'defaultValue: "Latest stream update"',
+    );
+    expect(overlayModelSource).toContain(
+      'defaultValue: "No stream update yet"',
+    );
+    expect(overlayModelSource).toContain('defaultValue: "Awaiting refresh"');
+    expect(source).toContain('defaultValue: "Awaiting first refresh"');
+    expect(source).toContain('defaultValue: "Last updated {{value}}"');
     expect(refreshBlock).not.toContain("refreshRangeAnchor();");
     expect(refreshBlock).toContain("eventsQuery.refetch()");
     expect(refreshBlock).toContain("newsQuery.refetch()");
@@ -372,12 +377,17 @@ describe("war-map page wiring", () => {
     expect(source).toContain("<WarMapOverlayRail");
     expect(source).toContain("<WarMapControlsPanel");
     expect(source).toContain("<WarMapInspectorPanel");
+    expect(source).toContain('useState<OverlayControlsSection>("view")');
+    expect(source).toContain(
+      'onOpenLegend: () => setControlsSection("legend")',
+    );
     expect(source).not.toContain('setControlsSection("overview");');
     expect(source).not.toContain('openOverlayPanel === "legend"');
     expect(source).not.toContain("legendOverlayRef");
-    expect(source).toContain(
-      'current === "controls" ? null : "controls"',
+    expect(source).not.toContain(
+      "legend={{ showAisLegend: layerVisibility.ais }}",
     );
+    expect(source).toContain('current === "controls" ? null : "controls"');
   });
 
   it("keeps overlay settings surfaces dark-theme aware", () => {
@@ -403,9 +413,18 @@ describe("war-map page wiring", () => {
     expect(controlsSource).toContain("dark:bg-slate-900/70");
     expect(controlsSource).toContain("OVERLAY_BUTTON_GROUP_CLASS_NAME");
     expect(controlsSource).toContain("resolveOverlayButtonClassName({");
+    expect(controlsSource).toContain("ControlsHeaderSummary");
+    expect(controlsSource).toContain("renderControlsTabLabel");
+    expect(controlsSource).toContain("ResizeObserver");
+    expect(controlsSource).toContain("transport.onOpenLegend");
+    expect(controlsSource).not.toContain("legend.showAisLegend");
+    expect(controlsSource).not.toContain("overlayPanelMaxHeight - 108");
     expect(railSource).toContain("dark:bg-slate-950/[0.78]");
     expect(railSource).toContain("dark:from-slate-950/[0.92]");
     expect(railSource).toContain("iconOnly: !showActionLabels");
+    expect(railSource).toContain(
+      'const hideRailSummaryCards =\n    !useDrawerControls && openOverlayPanel === "controls";',
+    );
     expect(inspectorSource).toContain("dark:from-amber-500/10");
     expect(inspectorSource).toContain("dark:bg-slate-950/[0.78]");
     expect(inspectorSource).toContain("OVERLAY_NEUTRAL_TAG_CLASS_NAME");

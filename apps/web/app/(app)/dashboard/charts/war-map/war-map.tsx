@@ -14,14 +14,7 @@ import {
   WAR_MAP_PRESETS,
   WAR_MAP_TIME_RANGE_PRESETS,
 } from "@modular/utils";
-import {
-  Checkbox,
-  Drawer,
-  Grid,
-  Space,
-  Spin,
-  Typography,
-} from "antd";
+import { Checkbox, Drawer, Grid, Space, Spin, Typography } from "antd";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useSession } from "next-auth/react";
 import type { ReactNode } from "react";
@@ -554,7 +547,7 @@ export function WarMap({
   const [openOverlayPanel, setOpenOverlayPanel] =
     useState<OverlayPanelKey | null>(null);
   const [controlsSection, setControlsSection] =
-    useState<OverlayControlsSection>("overview");
+    useState<OverlayControlsSection>("view");
   const [desktopInspectorMinimized, setDesktopInspectorMinimized] =
     useState(false);
   const [selectedInspectorKey, setSelectedInspectorKey] = useState<
@@ -1131,7 +1124,11 @@ export function WarMap({
   }, [selectedInspector?.key]);
 
   useEffect(() => {
-    if (!openOverlayPanel || useDrawerControls || typeof document === "undefined") {
+    if (
+      !openOverlayPanel ||
+      useDrawerControls ||
+      typeof document === "undefined"
+    ) {
       return;
     }
 
@@ -1163,7 +1160,11 @@ export function WarMap({
         setOpenOverlayPanel(null);
         return;
       }
-      if (useDesktopInspector && selectedInspector && !desktopInspectorMinimized) {
+      if (
+        useDesktopInspector &&
+        selectedInspector &&
+        !desktopInspectorMinimized
+      ) {
         closeSelectedInspector();
       }
     };
@@ -2922,16 +2923,20 @@ export function WarMap({
           : "blue";
   const dataStatusLabel = !latestQueryUpdatedAt
     ? t("dashboard.charts.warMap.status.waitingData", {
-        defaultValue: "Waiting for first data",
+        defaultValue: "Awaiting first refresh",
       })
     : anyFetching
       ? t("dashboard.charts.warMap.status.refreshingChains", {
           defaultValue: "Refreshing {{count}} chains",
           count: Math.max(refreshingChainCount, 1),
         })
-      : `${t("dashboard.charts.warMap.stats.dataUpdated", {
-          defaultValue: "Data updated",
-        })}: ${latestQueryUpdatedRelative ?? latestQueryUpdatedExact}`;
+      : t("dashboard.charts.warMap.overlay.updatedSummary", {
+          defaultValue: "Last updated {{value}}",
+          value:
+            latestQueryUpdatedRelative ??
+            latestQueryUpdatedExact ??
+            t("common.justNow", { defaultValue: "just now" }),
+        });
   const detailedChainStatuses = chainStatuses.map((status) => {
     const isStale =
       Boolean(status.dataUpdatedAt) &&
@@ -2979,8 +2984,8 @@ export function WarMap({
     const tooltipLines = [
       `${status.label}: ${stateLabel}`,
       exactUpdated
-        ? `${t("dashboard.charts.warMap.stats.dataUpdated", {
-            defaultValue: "Data updated",
+        ? `${t("dashboard.charts.warMap.overlay.lastUpdatedLabel", {
+            defaultValue: "Last updated",
           })}: ${exactUpdated}`
         : null,
       sourceUpdated ? `${status.sourceUpdatedLabel}: ${sourceUpdated}` : null,
@@ -2997,7 +3002,7 @@ export function WarMap({
   const hasNonFatalDataError = errors.length > 0 && hasData;
   const summaryDataLabel = !latestQueryUpdatedAt
     ? t("dashboard.charts.warMap.status.waitingData", {
-        defaultValue: "Waiting for data",
+        defaultValue: "Awaiting first refresh",
       })
     : anyFetching
       ? t("dashboard.charts.warMap.status.refreshingChains", {
@@ -3005,7 +3010,7 @@ export function WarMap({
           count: Math.max(refreshingChainCount, 1),
         })
       : t("dashboard.charts.warMap.overlay.updatedSummary", {
-          defaultValue: "Updated {{value}}",
+          defaultValue: "Last updated {{value}}",
           value:
             latestQueryUpdatedRelative ??
             latestQueryUpdatedExact ??
@@ -3117,9 +3122,11 @@ export function WarMap({
       })}
     </div>
   );
+  const activeControlsSection =
+    controlsSection === "overview" ? "view" : controlsSection;
   const controlsPanelContent: ReactNode = (
     <WarMapControlsPanel
-      controlsSection={controlsSection}
+      controlsSection={activeControlsSection}
       controlsSectionMeta={overlayViewModel.controlsSectionMeta}
       controlsTabs={overlayViewModel.controlsTabs}
       useDrawerControls={useDrawerControls}
@@ -3166,8 +3173,8 @@ export function WarMap({
         aisPrimaryCountValue,
         aisPrimaryCountLabel,
         aisDisruptionsCount,
+        onOpenLegend: () => setControlsSection("legend"),
       }}
-      legend={{ showAisLegend: layerVisibility.ais }}
       onControlsSectionChange={setControlsSection}
       t={t}
     />
@@ -3233,7 +3240,7 @@ export function WarMap({
             refreshingMapData={refreshingMapData}
             showActionLabels={overlayLayout.showActionLabels}
             openOverlayPanel={openOverlayPanel}
-            controlsSection={controlsSection}
+            controlsSection={activeControlsSection}
             onRefresh={() => {
               void refreshMapData();
             }}
@@ -3281,7 +3288,10 @@ export function WarMap({
               placement="right"
               width="100%"
               destroyOnClose={false}
-              title={overlayViewModel.controlsSectionMeta[controlsSection].label}
+              title={
+                overlayViewModel.controlsSectionMeta[activeControlsSection]
+                  .label
+              }
             >
               {controlsPanelContent}
             </Drawer>

@@ -58,6 +58,8 @@ export function WarMapOverlayRail({
 }: WarMapOverlayRailProps) {
   const streamStatus = summaryStatusCards.find((card) => card.key === "stream");
   const dataStatus = summaryStatusCards.find((card) => card.key === "data");
+  const hideRailSummaryCards =
+    !useDrawerControls && openOverlayPanel === "controls";
 
   return (
     <div
@@ -66,7 +68,7 @@ export function WarMapOverlayRail({
       style={useDrawerControls ? undefined : { width: overlayRailWidth }}
     >
       <div className="flex max-w-full flex-col items-end gap-1.5">
-        {overlayDensity === "minimal" ? (
+        {hideRailSummaryCards ? null : overlayDensity === "minimal" ? (
           <div
             className={`${OVERLAY_SURFACE_INTERACTIVE_CLASS_NAME} pointer-events-auto flex max-w-full items-center gap-2 px-3 py-2`}
           >
@@ -96,7 +98,9 @@ export function WarMapOverlayRail({
               <Tooltip key={card.key} title={card.tooltip}>
                 <div className="min-w-0 rounded-xl border border-white/80 bg-gradient-to-br from-white via-white to-slate-50 px-2.5 py-2 shadow-sm ring-1 ring-white/40 dark:border-white/10 dark:from-slate-950/[0.92] dark:via-slate-950/[0.86] dark:to-slate-900/80 dark:shadow-[0_16px_28px_-24px_rgba(2,6,23,0.82)] dark:ring-white/5">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${card.dotClassName}`} />
+                    <span
+                      className={`h-2 w-2 rounded-full ${card.dotClassName}`}
+                    />
                     <Typography.Text
                       type="secondary"
                       className="text-[10px] uppercase tracking-[0.16em]"
@@ -179,7 +183,8 @@ export function WarMapOverlayRail({
                 type="default"
                 className={resolveOverlayButtonClassName({
                   tone:
-                    openOverlayPanel === "controls" && controlsSection === "legend"
+                    openOverlayPanel === "controls" &&
+                    controlsSection === "legend"
                       ? "active"
                       : "neutral",
                   iconOnly: !showActionLabels,
@@ -199,7 +204,9 @@ export function WarMapOverlayRail({
             </Tooltip>
           ) : null}
         </div>
-        {!useDrawerControls && openOverlayPanel === "controls" ? controlsPanel : null}
+        {!useDrawerControls && openOverlayPanel === "controls"
+          ? controlsPanel
+          : null}
       </div>
     </div>
   );

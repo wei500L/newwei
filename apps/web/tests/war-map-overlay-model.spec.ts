@@ -6,8 +6,16 @@ import {
   resolveOverlayDensity,
 } from "../app/(app)/dashboard/charts/war-map/war-map-overlay-model";
 
-const t = (_key: string, options?: { defaultValue?: string }) =>
-  options?.defaultValue ?? _key;
+const t = (
+  _key: string,
+  options?: { defaultValue?: string; [key: string]: unknown },
+) =>
+  typeof options?.defaultValue === "string"
+    ? options.defaultValue.replace(/\{\{(\w+)\}\}/g, (_match, token) => {
+        const value = options[token];
+        return value == null ? `{{${token}}}` : String(value);
+      })
+    : _key;
 
 describe("war-map overlay model", () => {
   it("resolves density from container breakpoints", () => {
@@ -52,7 +60,7 @@ describe("war-map overlay model", () => {
     });
   });
 
-  it("builds tabs, cards, and pending data labels for the controls panel", () => {
+  it("builds tabs, cards, and empty-state status labels for the controls panel", () => {
     const viewModel = buildWarMapOverlayViewModel({
       t,
       rawEventsCount: 12,
@@ -64,11 +72,11 @@ describe("war-map overlay model", () => {
       streamMessageRelative: "2m ago",
       streamMessageExact: "Mar 17, 2026, 16:00",
       streamError: null,
-      dataStatusLabel: "Waiting for first data",
+      dataStatusLabel: "Awaiting first refresh",
       dataStatusColor: "default",
       latestQueryUpdatedRelative: null,
       latestQueryUpdatedExact: null,
-      summaryDataLabel: "Waiting for data",
+      summaryDataLabel: "Awaiting first refresh",
       healthyChainCount: 2,
       refreshingChainCount: 1,
       errorChainCount: 0,
@@ -76,25 +84,66 @@ describe("war-map overlay model", () => {
     });
 
     expect(viewModel.controlsTabs.map((tab) => tab.key)).toEqual([
-      "overview",
       "view",
       "transport",
       "feeds",
       "legend",
     ]);
+    expect(viewModel.controlsSectionMeta.overview.label).toBe("Overview");
+    expect(viewModel.controlsTabs.some((tab) => tab.key === "overview")).toBe(
+      false,
+    );
     expect(viewModel.overviewMetricCards.map((card) => card.value)).toEqual([
-      12,
-      7,
-      3,
-      5,
+      12, 7, 3, 5,
     ]);
-    expect(viewModel.summaryDataLabel).toBe("Waiting for data");
-    expect(viewModel.overviewDataTagLabel).toBe("Pending");
-    expect(viewModel.summaryStatusCards[0]?.tooltip).toContain("Stream message");
+    expect(viewModel.summaryDataLabel).toBe("Awaiting first refresh");
+    expect(viewModel.overviewDataTagLabel).toBe("Awaiting refresh");
+    expect(viewModel.summaryStatusCards[0]?.tooltip).toContain(
+      "Latest stream update",
+    );
+    expect(
+      viewModel.controlsTabs.find((tab) => tab.key === "feeds")?.attentionLabel,
+    ).toBeUndefined();
     expect(viewModel.feedSummaryCards.map((card) => card.value)).toEqual([
-      2,
-      1,
-      0,
+      2, 1, 0,
+    ]);
+  });
+
+  it("adds a feeds attention label when ingestion issues exist", () => {
+    const viewModel = buildWarMapOverlayViewModel({
+      t,
+      rawEventsCount: 4,
+      rawNewsMarkersCount: 2,
+      monitorsCount: 1,
+      visibleLayerCount: 3,
+      streamStatusLabel: "Lagging",
+      streamStatusColor: "gold",
+      streamMessageRelative: null,
+      streamMessageExact: null,
+      streamError: null,
+      dataStatusLabel: "Awaiting first refresh",
+      dataStatusColor: "default",
+      latestQueryUpdatedRelative: null,
+      latestQueryUpdatedExact: null,
+      summaryDataLabel: "Awaiting first refresh",
+      healthyChainCount: 1,
+      refreshingChainCount: 1,
+      errorChainCount: 2,
+      detailedChainStatuses: [],
+    });
+
+    expect(
+      viewModel.controlsTabs.find((tab) => tab.key === "feeds"),
+    ).toMatchObject({
+      attentionLabel: "Issues",
+      attentionTone: "warning",
+      attentionTooltip: "Affected feed chains: 2",
+    });
+    expect(viewModel.summaryStatusCards[0]?.detail).toBe(
+      "No stream update yet",
+    );
+    expect(viewModel.feedSummaryCards.map((card) => card.value)).toEqual([
+      1, 1, 2,
     ]);
   });
 });
