@@ -12,6 +12,7 @@
 
 - [系统架构](#系统架构)
 - [功能特性](#功能特性)
+- [采集策略](#采集策略)
 - [技术栈与选型理由](#技术栈与选型理由)
 - [快速开始](#快速开始)
 - [常用命令](#常用命令)
@@ -101,6 +102,28 @@ flowchart LR
 - 抓取编排与结果存档：`crawl`（任务、重试、质量指标、媒体抓取、OPML/RSS 工具链）
 - LLM 清洗与结构化：`news-pipeline`（LiteLLM OpenAI-compatible 接口，支持摘要、要点、主题、实体等结构化产物）
 - 语义去重与检索：对接 `apps/vector`（Qdrant）并提供回填脚本 `pnpm --filter @modular/api run vector:backfill`
+
+## 采集策略
+
+### Seed-first + LLM-assisted Frontier
+
+新闻采集默认采用 `Seed-first, Frontier-second, LLM-adaptive` 双通道策略：
+
+- 大站优先走 `robots.txt -> news sitemap / sitemap index -> sitemap common paths`，先拿高价值文章种子，再进入正文抓取。
+- 同时保留轻量 `home/category/list` 拓扑通道，用于栏目学习、站点漂移检测、导航 lineage 和 DOM scope 自学习。
+- 当 sitemap 不可用、质量差、或站点结构漂移时，系统自动回退到 `LLM-assisted frontier V1`，通过 `rule -> rerank -> LLM judge` 自适应识别 `home/category/list/article`。
+
+这意味着系统并不依赖单一策略：
+
+- `Reuters / Arc CMS` 这类大站，优先从 `robots.txt` 暴露的 `news-sitemap-index` 获取新闻文章，再用 frontier 做结构校验和补充。
+- `BBC / Guardian / AP / Al Jazeera` 这类开放门户，可以同时利用 seed 与 frontier，降低纯 deep crawl 成本并保留栏目结构发现。
+- 小站、国别门户、无 sitemap 站点、结构漂移站、反爬重站，`LLM-assisted frontier V1` 会成为主路径；即使没有标准列表页，也允许 `synthetic list` 语义来维持四层导航与文章发现。
+
+实现约束也保持清晰：
+
+- 与 Crawl4AI 的交互仍然是 `HTTP REST /crawl`，不直接调用 Python SDK。
+- Crawl 阶段禁止 LLM extraction；LLM 只用于 frontier 判别、站点学习、以及 post-crawl 抽取修复。
+- `news-source` 的 `sitemap/rss/list/deep` 种子发现，与 `crawl-frontier` 的 layered/native/hybrid 运行共享同一套去重、诊断和 profile 学习逻辑。
 
 ### 🌍 态势监控（全球事件追踪与可视化）
 

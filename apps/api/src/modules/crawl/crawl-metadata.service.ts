@@ -13,6 +13,7 @@ import type {
   CrawlMetadataResult,
   CrawlMetadataTag,
   CrawlMetadataSource,
+  CrawlSeedDiscoveryMode,
   CrawlTaskOptions,
 } from "./crawl.types";
 
@@ -140,6 +141,35 @@ const RSS_PREFETCH_MAX_MARKDOWN_CHARS = 20_000;
 const RSS_PREFETCH_MAX_TITLE_CHARS = 500;
 const RSS_PREFETCH_MAX_AUTHOR_CHARS = 200;
 const RSS_PREFETCH_MAX_DESCRIPTION_CHARS = 4_000;
+const DEFAULT_SITEMAP_SEEDS = [
+  "sitemap.xml",
+  "sitemap_index.xml",
+  "sitemap-index.xml",
+  "sitemap-news.xml",
+  "news-sitemap.xml",
+  "sitemap_news.xml",
+  "sitemap-news-index.xml",
+  "news-sitemap-index.xml",
+  "wp-sitemap.xml",
+  "arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+  "arc/outboundfeeds/sitemap-index/?outputType=xml",
+] as const;
+
+export interface CrawlSitemapDiscoveryDiagnostics {
+  discoveryMode: CrawlSeedDiscoveryMode;
+  seedMethod: "robots" | "common_paths" | "none";
+  robotsUrl?: string;
+  robotsDiscoveredSitemaps: string[];
+  attemptedSitemaps: string[];
+  fetchedSitemaps: string[];
+  parsedSitemaps: number;
+  candidateCount: number;
+}
+
+export interface CrawlSitemapDiscoveryResult {
+  candidates: CrawlDiscoveryCandidate[];
+  diagnostics: CrawlSitemapDiscoveryDiagnostics;
+}
 
 @Injectable()
 export class CrawlMetadataService {
@@ -187,9 +217,10 @@ export class CrawlMetadataService {
     pattern?: string;
     maxUrls?: number;
     requestTimeoutMs?: number;
+    discoveryMode?: CrawlSeedDiscoveryMode;
   }): Promise<string[]> {
-    const candidates = await this.discoverSitemapCandidates(input);
-    return candidates.map((candidate) => candidate.url);
+    const discovered = await this.discoverSitemap(input);
+    return discovered.candidates.map((candidate) => candidate.url);
   }
 
   async discoverSitemapCandidates(input: {
@@ -198,10 +229,34 @@ export class CrawlMetadataService {
     maxUrls?: number;
     requestTimeoutMs?: number;
     freshnessCutoffTs?: number;
+    discoveryMode?: CrawlSeedDiscoveryMode;
   }): Promise<CrawlDiscoveryCandidate[]> {
+    const discovered = await this.discoverSitemap(input);
+    return discovered.candidates;
+  }
+
+  async discoverSitemap(input: {
+    domain?: string;
+    pattern?: string;
+    maxUrls?: number;
+    requestTimeoutMs?: number;
+    freshnessCutoffTs?: number;
+    discoveryMode?: CrawlSeedDiscoveryMode;
+  }): Promise<CrawlSitemapDiscoveryResult> {
     const domain = this.normalizeDomain(input.domain);
     if (!domain) {
-      return [];
+      return {
+        candidates: [],
+        diagnostics: {
+          discoveryMode: this.normalizeSitemapDiscoveryMode(input.discoveryMode),
+          seedMethod: "none",
+          robotsDiscoveredSitemaps: [],
+          attemptedSitemaps: [],
+          fetchedSitemaps: [],
+          parsedSitemaps: 0,
+          candidateCount: 0,
+        },
+      };
     }
     const maxUrls = this.clampNumber(input.maxUrls, 1, 200, 50);
     const patternMatcher = this.normalizePattern(input.pattern);
@@ -215,20 +270,42 @@ export class CrawlMetadataService {
       Number.isFinite(input.freshnessCutoffTs)
         ? Math.max(0, Math.floor(input.freshnessCutoffTs))
         : undefined;
+    const discoveryMode = this.normalizeSitemapDiscoveryMode(input.discoveryMode);
+    const diagnostics: CrawlSitemapDiscoveryDiagnostics = {
+      discoveryMode,
+      seedMethod: "none",
+      robotsDiscoveredSitemaps: [],
+      attemptedSitemaps: [],
+      fetchedSitemaps: [],
+      parsedSitemaps: 0,
+      candidateCount: 0,
+    };
 
-    return this.discoverFromSitemapsCandidates({
-      source: "sitemap",
-      domain,
-      patternMatcher,
-      maxUrls,
-      includeJsonLd: false,
-      includeOpenGraph: false,
-      includeMeta: false,
-      concurrency: 1,
-      scoreThreshold: 0,
-      requestTimeoutMs,
-      freshnessCutoffTs,
-    });
+    const candidates = await this.discoverFromSitemapsCandidates(
+      {
+        source: "sitemap",
+        domain,
+        patternMatcher,
+        maxUrls,
+        includeJsonLd: false,
+        includeOpenGraph: false,
+        includeMeta: false,
+        concurrency: 1,
+        scoreThreshold: 0,
+        requestTimeoutMs,
+        freshnessCutoffTs,
+      },
+      {
+        discoveryMode,
+        diagnostics,
+      },
+    );
+
+    diagnostics.candidateCount = candidates.length;
+    return {
+      candidates,
+      diagnostics,
+    };
   }
 
   async discoverRssUrls(input: {
@@ -2123,33 +2200,47 @@ export class CrawlMetadataService {
 
   private async discoverFromSitemapsCandidates(
     config: NormalizedMetadataConfig,
+    options?: {
+      discoveryMode?: CrawlSeedDiscoveryMode;
+      diagnostics?: CrawlSitemapDiscoveryDiagnostics;
+    },
   ) {
     if (!config.domain) {
       return [];
     }
-    const seeds = ["sitemap.xml", "sitemap_index.xml", "sitemap-index.xml"];
+    const discoveryMode =
+      options?.discoveryMode ?? this.normalizeSitemapDiscoveryMode(undefined);
+    const diagnostics = options?.diagnostics;
+    const sitemapSeeds = await this.resolveSitemapSeedUrls(
+      config.domain,
+      config.requestTimeoutMs,
+      discoveryMode,
+      diagnostics,
+    );
     const collected = new Map<string, CrawlDiscoveryCandidate>();
     const visitedSitemapUrls = new Set<string>();
 
-    for (const seed of seeds) {
+    for (const sitemapUrl of sitemapSeeds) {
       if (collected.size >= config.maxUrls) {
         break;
       }
-      const sitemapUrl = this.joinUrl(config.domain, seed);
       if (visitedSitemapUrls.has(sitemapUrl)) {
         continue;
       }
       visitedSitemapUrls.add(sitemapUrl);
+      diagnostics?.attemptedSitemaps.push(sitemapUrl);
       const xml = await this.fetchMaybe(sitemapUrl, config.requestTimeoutMs);
       if (!xml) {
         continue;
       }
+      diagnostics?.fetchedSitemaps.push(sitemapUrl);
       await this.extractFromSitemapPayload(
         sitemapUrl,
         xml,
         config,
         collected,
         visitedSitemapUrls,
+        diagnostics,
       );
     }
 
@@ -2162,11 +2253,13 @@ export class CrawlMetadataService {
     config: NormalizedMetadataConfig,
     collected: Map<string, CrawlDiscoveryCandidate>,
     visitedSitemapUrls: Set<string>,
+    diagnostics?: CrawlSitemapDiscoveryDiagnostics,
   ) {
     const parsed = await this.parseSitemapPayload(sitemapUrl, xml);
     if (!parsed) {
       return;
     }
+    diagnostics && (diagnostics.parsedSitemaps += 1);
     const crawledAtTs = Date.now();
 
     for (const entry of parsed.urls) {
@@ -2225,15 +2318,91 @@ export class CrawlMetadataService {
         config.requestTimeoutMs,
       );
       if (xmlChild) {
+        diagnostics?.attemptedSitemaps.push(normalizedLoc);
+        diagnostics?.fetchedSitemaps.push(normalizedLoc);
         await this.extractFromSitemapPayload(
           normalizedLoc,
           xmlChild,
           config,
           collected,
           visitedSitemapUrls,
+          diagnostics,
         );
       }
     }
+  }
+
+  private normalizeSitemapDiscoveryMode(
+    value: unknown,
+  ): CrawlSeedDiscoveryMode {
+    if (typeof value !== "string") {
+      return "robots";
+    }
+    const normalized = value.trim().toLowerCase();
+    if (
+      normalized === "robots" ||
+      normalized === "common_paths" ||
+      normalized === "sitemap_only" ||
+      normalized === "disabled"
+    ) {
+      return normalized;
+    }
+    return "robots";
+  }
+
+  private async resolveSitemapSeedUrls(
+    origin: string,
+    timeoutMs: number,
+    discoveryMode: CrawlSeedDiscoveryMode,
+    diagnostics?: CrawlSitemapDiscoveryDiagnostics,
+  ) {
+    if (discoveryMode === "disabled") {
+      return [];
+    }
+    const robotsUrl = this.joinUrl(origin, "robots.txt");
+    diagnostics && (diagnostics.robotsUrl = robotsUrl);
+    const robotsDiscovered =
+      discoveryMode === "robots" || discoveryMode === "sitemap_only"
+        ? await this.discoverRobotsSitemapUrls(robotsUrl, timeoutMs)
+        : [];
+    if (robotsDiscovered.length > 0) {
+      diagnostics && (diagnostics.seedMethod = "robots");
+      diagnostics?.robotsDiscoveredSitemaps.push(...robotsDiscovered);
+      return robotsDiscovered;
+    }
+    const fallbackSeeds = DEFAULT_SITEMAP_SEEDS.map((seed) =>
+      this.joinUrl(origin, seed),
+    );
+    diagnostics && (diagnostics.seedMethod = "common_paths");
+    return fallbackSeeds;
+  }
+
+  private async discoverRobotsSitemapUrls(
+    robotsUrl: string,
+    timeoutMs: number,
+  ) {
+    const body = await this.fetchMaybe(robotsUrl, timeoutMs);
+    if (typeof body !== "string" || body.trim().length === 0) {
+      return [];
+    }
+    const discovered: string[] = [];
+    const seen = new Set<string>();
+    for (const line of body.split(/\r?\n/)) {
+      const match = line.match(/^\s*Sitemap:\s*(\S+)\s*$/i);
+      if (!match) {
+        continue;
+      }
+      const normalized = this.normalizeUrl(match[1]);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      discovered.push(normalized);
+      if (discovered.length >= 256) {
+        break;
+      }
+    }
+    return discovered;
   }
 
   private async parseSitemapPayload(sitemapUrl: string, xml: string) {

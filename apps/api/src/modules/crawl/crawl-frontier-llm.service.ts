@@ -50,6 +50,30 @@ const FrontierJudgeResponseSchema = z.object({
 });
 
 const FrontierProfilePatchSchema = z.object({
+  seedDiscovery: z
+    .object({
+      strategy: z
+        .enum(["auto", "seed_first", "frontier_first", "frontier_only"])
+        .optional(),
+      mode: z
+        .enum(["robots", "common_paths", "sitemap_only", "disabled"])
+        .optional(),
+      freshnessWindowHours: z.number().int().min(1).max(24 * 365).optional(),
+      maxSeedUrls: z.number().int().min(1).max(500).optional(),
+      topologyBudgetPages: z.number().int().min(1).max(100).optional(),
+      topologyBudgetDepth: z.number().int().min(1).max(8).optional(),
+      qualityThresholds: z
+        .object({
+          minCandidates: z.number().int().min(1).max(200).optional(),
+          minArticleRatio: z.number().min(0).max(1).optional(),
+          maxNoiseRatio: z.number().min(0).max(1).optional(),
+          minFreshRatio: z.number().min(0).max(1).optional(),
+        })
+        .partial()
+        .optional(),
+    })
+    .partial()
+    .optional(),
   urlPatterns: z
     .object({
       home: z.array(z.string().min(1)).max(24).optional(),
@@ -651,12 +675,20 @@ export class CrawlFrontierLlmService {
       rootDiagnosis: options.run.metadata?.rootDiagnosis ?? null,
       coverage: options.run.metadata?.coverage ?? null,
       candidateStats: options.run.metadata?.candidateStats ?? null,
+      seedDiagnostics: options.run.metadata?.seedDiagnostics ?? null,
+      seedQuality: options.run.metadata?.seedQuality ?? null,
+      seedYield: options.run.metadata?.seedYield ?? null,
+      fallbackStage:
+        typeof options.run.metadata?.fallbackStage === "string"
+          ? options.run.metadata.fallbackStage
+          : null,
       warningFlags: asStringArray(options.run.metadata?.warningFlags),
       activeProfile: {
         id: options.profile.id,
         name: options.profile.name,
         matchHost: options.profile.matchHost,
         executionMode: options.profile.executionMode,
+        seedDiscovery: options.profile.config.seedDiscovery ?? null,
         sourceTier: options.profile.config.sourceTier ?? "tier2",
         hostScope: options.profile.config.hostScope ?? "registrable_domain",
         localeScope: options.profile.config.localeScope ?? null,

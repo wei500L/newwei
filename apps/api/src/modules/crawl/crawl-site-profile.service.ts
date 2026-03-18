@@ -552,6 +552,14 @@ export class CrawlSiteProfileService {
         ...(base.localeScope ?? {}),
         ...(patch.localeScope ?? {}),
       },
+      seedDiscovery: {
+        ...(base.seedDiscovery ?? {}),
+        ...(patch.seedDiscovery ?? {}),
+        qualityThresholds: {
+          ...(base.seedDiscovery?.qualityThresholds ?? {}),
+          ...(patch.seedDiscovery?.qualityThresholds ?? {}),
+        },
+      },
       llmAssist: {
         ...(base.llmAssist ?? {}),
         ...(patch.llmAssist ?? {}),

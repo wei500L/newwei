@@ -209,9 +209,18 @@ function formatPath(value: unknown) {
 
 function summarizeProfileConfig(config: Record<string, unknown>) {
   const summary: string[] = [];
+  const seedDiscovery = asRecord(config.seedDiscovery);
   const llmAssist = asRecord(config.llmAssist);
   const nativeOptions = asRecord(config.nativeOptions);
   const nativeDeepCrawlStrategy = asRecord(nativeOptions?.deepCrawlStrategy);
+  if (seedDiscovery) {
+    if (typeof seedDiscovery.strategy === "string") {
+      summary.push(`seed:${seedDiscovery.strategy}`);
+    }
+    if (typeof seedDiscovery.mode === "string") {
+      summary.push(`sitemap:${seedDiscovery.mode}`);
+    }
+  }
   if (typeof config.hostScope === "string") {
     summary.push(config.hostScope);
   }
@@ -398,6 +407,20 @@ export function CrawlFrontierContent() {
         priorityKeywords: ["breaking", "latest", "war", "election", "markets"],
         denyKeywords: ["newsletter", "podcast", "video", "gallery", "sponsored"],
         hostScope: "registrable_domain",
+        seedDiscovery: {
+          strategy: "auto",
+          mode: "robots",
+          freshnessWindowHours: 168,
+          maxSeedUrls: 80,
+          topologyBudgetPages: 12,
+          topologyBudgetDepth: 2,
+          qualityThresholds: {
+            minCandidates: 3,
+            minArticleRatio: 0.4,
+            maxNoiseRatio: 0.45,
+            minFreshRatio: 0.2,
+          },
+        },
         sourceTier: "tier2",
         blockedDomains: [],
         allowedHosts: [],
@@ -823,6 +846,14 @@ export function CrawlFrontierContent() {
           typeof metadata?.failureKind === "string" ? metadata.failureKind : null;
         const judgeSummary = asRecord(metadata?.judgeSummary);
         const llmLifecycle = asRecord(metadata?.llmLifecycle);
+        const seedStrategy =
+          typeof metadata?.seedStrategy === "string" ? metadata.seedStrategy : null;
+        const seedMethod =
+          typeof metadata?.seedMethod === "string" ? metadata.seedMethod : null;
+        const fallbackStage =
+          typeof metadata?.fallbackStage === "string"
+            ? metadata.fallbackStage
+            : null;
         const runRole =
           typeof metadata?.runRole === "string"
             ? metadata.runRole
@@ -837,6 +868,13 @@ export function CrawlFrontierContent() {
           <Space wrap size={[4, 4]}>
             {failureKind ? <Tag color="red">{failureKind}</Tag> : null}
             {runRole ? <Tag color="blue">{runRole}</Tag> : null}
+            {seedStrategy ? <Tag color="green">{`seed:${seedStrategy}`}</Tag> : null}
+            {seedMethod ? <Tag color="lime">{seedMethod}</Tag> : null}
+            {fallbackStage ? (
+              <Tag color={fallbackStage === "seed" ? "cyan" : "gold"}>
+                {fallbackStage}
+              </Tag>
+            ) : null}
             {shadowProfileId ? <Tag color="purple">shadow-profile</Tag> : null}
             {judgeSummary && asNumber(judgeSummary.count) ? (
               <Tag color="cyan">
@@ -1021,6 +1059,30 @@ export function CrawlFrontierContent() {
     typeof selectedRunMetadata?.runRole === "string"
       ? selectedRunMetadata.runRole
       : null;
+  const selectedSeedStrategy =
+    typeof selectedRunMetadata?.seedStrategy === "string"
+      ? selectedRunMetadata.seedStrategy
+      : typeof selectedRootDiagnosis?.seedStrategy === "string"
+        ? selectedRootDiagnosis.seedStrategy
+        : null;
+  const selectedSeedMethod =
+    typeof selectedRunMetadata?.seedMethod === "string"
+      ? selectedRunMetadata.seedMethod
+      : typeof selectedRootDiagnosis?.seedMethod === "string"
+        ? selectedRootDiagnosis.seedMethod
+        : null;
+  const selectedFallbackStage =
+    typeof selectedRunMetadata?.fallbackStage === "string"
+      ? selectedRunMetadata.fallbackStage
+      : typeof selectedRootDiagnosis?.fallbackStage === "string"
+        ? selectedRootDiagnosis.fallbackStage
+        : null;
+  const selectedSeedYield = asRecord(selectedRunMetadata?.seedYield)
+    ?? asRecord(selectedRootDiagnosis?.seedYield);
+  const selectedSeedQuality = asRecord(selectedRunMetadata?.seedQuality)
+    ?? asRecord(selectedRootDiagnosis?.seedQuality);
+  const selectedSeedDiagnostics = asRecord(selectedRunMetadata?.seedDiagnostics)
+    ?? asRecord(selectedRootDiagnosis?.seedDiagnostics);
   const selectedNativeStrategyType =
     typeof selectedRootDiagnosis?.nativeStrategyType === "string"
       ? selectedRootDiagnosis.nativeStrategyType
@@ -1402,6 +1464,19 @@ export function CrawlFrontierContent() {
                 {selectedRunFailureKind ? (
                   <Tag color="red">{selectedRunFailureKind}</Tag>
                 ) : null}
+                {selectedSeedStrategy ? (
+                  <Tag color="green">{`seed:${selectedSeedStrategy}`}</Tag>
+                ) : null}
+                {selectedSeedMethod ? (
+                  <Tag color="lime">{selectedSeedMethod}</Tag>
+                ) : null}
+                {selectedFallbackStage ? (
+                  <Tag
+                    color={selectedFallbackStage === "seed" ? "cyan" : "gold"}
+                  >
+                    {selectedFallbackStage}
+                  </Tag>
+                ) : null}
                 {selectedShadowProfileId ? (
                   <Tag color="purple">shadow-profile</Tag>
                 ) : null}
@@ -1531,6 +1606,30 @@ export function CrawlFrontierContent() {
                     ? ` · avg:${selectedJudgeAverageConfidence.toFixed(2)}`
                     : ""}
                 </Typography.Text>
+                {selectedSeedYield ? (
+                  <Typography.Text>
+                    {t("crawlFrontier.runs.seedYield", {
+                      defaultValue: "Seed yield",
+                    })}
+                    : {formatCountSummary(selectedSeedYield)}
+                  </Typography.Text>
+                ) : null}
+                {selectedSeedQuality ? (
+                  <Typography.Text>
+                    {t("crawlFrontier.runs.seedQuality", {
+                      defaultValue: "Seed quality",
+                    })}
+                    : {JSON.stringify(selectedSeedQuality)}
+                  </Typography.Text>
+                ) : null}
+                {selectedSeedDiagnostics ? (
+                  <Typography.Text>
+                    {t("crawlFrontier.runs.seedDiagnostics", {
+                      defaultValue: "Seed diagnostics",
+                    })}
+                    : {JSON.stringify(selectedSeedDiagnostics)}
+                  </Typography.Text>
+                ) : null}
                 {selectedShadowComparison ? (
                   <Typography.Text>
                     {t("crawlFrontier.runs.shadowComparison", {

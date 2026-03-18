@@ -9,6 +9,10 @@ import type {
   CrawlLlmAssistShadowRole,
   CrawlLlmAssistShadowState,
   CrawlLocaleScopeConfig,
+  CrawlSeedDiscoveryConfig,
+  CrawlSeedDiscoveryMode,
+  CrawlSeedQualityThresholds,
+  CrawlSeedStrategy,
   CrawlPageTypeSignalConfig,
   CrawlPriorityClass,
   CrawlSiteProfileConfig,
@@ -203,6 +207,38 @@ function toSourceTier(value: unknown): CrawlSourceTier | undefined {
   return undefined;
 }
 
+function toSeedStrategy(value: unknown): CrawlSeedStrategy | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "auto" ||
+    normalized === "seed_first" ||
+    normalized === "frontier_first" ||
+    normalized === "frontier_only"
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function toSeedDiscoveryMode(value: unknown): CrawlSeedDiscoveryMode | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "robots" ||
+    normalized === "common_paths" ||
+    normalized === "sitemap_only" ||
+    normalized === "disabled"
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
 function toLocale(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -295,6 +331,20 @@ function toFreshnessRules(value: unknown): CrawlFreshnessRules | undefined {
   };
 }
 
+function toSeedQualityThresholds(
+  value: unknown,
+): CrawlSeedQualityThresholds | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  return {
+    minCandidates: toPositiveInt(value.minCandidates, 1, 200, 3),
+    minArticleRatio: toScore(value.minArticleRatio, 0.4),
+    maxNoiseRatio: toScore(value.maxNoiseRatio, 0.45),
+    minFreshRatio: toScore(value.minFreshRatio, 0.2),
+  };
+}
+
 function toLocaleScope(value: unknown): CrawlLocaleScopeConfig | undefined {
   if (!isPlainObject(value)) {
     return undefined;
@@ -311,6 +361,51 @@ function toLocaleScope(value: unknown): CrawlLocaleScopeConfig | undefined {
     acceptLanguages,
     denyUrlPatterns,
     denyHostPatterns,
+  };
+}
+
+function toSeedDiscovery(value: unknown): CrawlSeedDiscoveryConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const strategy = toSeedStrategy(value.strategy) ?? "auto";
+  const mode = toSeedDiscoveryMode(value.mode) ?? "robots";
+  const freshnessWindowHours =
+    value.freshnessWindowHours !== undefined
+      ? toPositiveInt(value.freshnessWindowHours, 1, 24 * 365, 24 * 7)
+      : undefined;
+  const maxSeedUrls =
+    value.maxSeedUrls !== undefined
+      ? toPositiveInt(value.maxSeedUrls, 1, 500, 80)
+      : undefined;
+  const topologyBudgetPages =
+    value.topologyBudgetPages !== undefined
+      ? toPositiveInt(value.topologyBudgetPages, 1, 100, 12)
+      : undefined;
+  const topologyBudgetDepth =
+    value.topologyBudgetDepth !== undefined
+      ? toPositiveInt(value.topologyBudgetDepth, 1, 8, 2)
+      : undefined;
+  const qualityThresholds = toSeedQualityThresholds(value.qualityThresholds);
+  const hasExplicitFields =
+    value.strategy !== undefined ||
+    value.mode !== undefined ||
+    value.freshnessWindowHours !== undefined ||
+    value.maxSeedUrls !== undefined ||
+    value.topologyBudgetPages !== undefined ||
+    value.topologyBudgetDepth !== undefined ||
+    value.qualityThresholds !== undefined;
+  if (!hasExplicitFields) {
+    return undefined;
+  }
+  return {
+    strategy,
+    mode,
+    freshnessWindowHours,
+    maxSeedUrls,
+    topologyBudgetPages,
+    topologyBudgetDepth,
+    qualityThresholds,
   };
 }
 
@@ -535,6 +630,7 @@ export function normalizeCrawlSiteProfileConfig(
     })(),
     freshnessRules: toFreshnessRules(value.freshnessRules),
     localeScope: toLocaleScope(value.localeScope),
+    seedDiscovery: toSeedDiscovery(value.seedDiscovery),
     llmAssist: toLlmAssistConfig(value.llmAssist),
     sourceTier: toSourceTier(value.sourceTier),
     pageRules: (() => {

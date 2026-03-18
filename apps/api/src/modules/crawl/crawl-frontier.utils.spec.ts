@@ -247,6 +247,20 @@ describe("crawl-frontier.utils", () => {
   it("normalizes llm assist settings for active and shadow profiles", () => {
     const normalized = normalizeCrawlSiteProfileConfig({
       ...config,
+      seedDiscovery: {
+        strategy: "auto",
+        mode: "robots",
+        freshnessWindowHours: 72,
+        maxSeedUrls: 40,
+        topologyBudgetPages: 10,
+        topologyBudgetDepth: 2,
+        qualityThresholds: {
+          minCandidates: 2,
+          minArticleRatio: 0.5,
+          maxNoiseRatio: 0.25,
+          minFreshRatio: 0.4,
+        },
+      },
       llmAssist: {
         enabled: true,
         recallMode: "high_recall",
@@ -294,6 +308,22 @@ describe("crawl-frontier.utils", () => {
           state: "evaluating",
           evaluationRunsCompleted: 2,
           consecutivePasses: 1,
+        }),
+      }),
+    );
+    expect(normalized.seedDiscovery).toEqual(
+      expect.objectContaining({
+        strategy: "auto",
+        mode: "robots",
+        freshnessWindowHours: 72,
+        maxSeedUrls: 40,
+        topologyBudgetPages: 10,
+        topologyBudgetDepth: 2,
+        qualityThresholds: expect.objectContaining({
+          minCandidates: 2,
+          minArticleRatio: 0.5,
+          maxNoiseRatio: 0.25,
+          minFreshRatio: 0.4,
         }),
       }),
     );

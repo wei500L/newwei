@@ -5,6 +5,16 @@ export type CrawlJobKind = "task" | "frontier_node";
 export type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 export type CrawlHostScope = "registrable_domain" | "strict_hosts";
 export type CrawlSourceTier = "tier1" | "tier2" | "tier3";
+export type CrawlSeedStrategy =
+  | "auto"
+  | "seed_first"
+  | "frontier_first"
+  | "frontier_only";
+export type CrawlSeedDiscoveryMode =
+  | "robots"
+  | "common_paths"
+  | "sitemap_only"
+  | "disabled";
 export type CrawlLlmAssistRecallMode =
   | "high_recall"
   | "balanced"
@@ -67,6 +77,23 @@ export interface CrawlLocaleScopeConfig {
   denyHostPatterns?: string[];
 }
 
+export interface CrawlSeedQualityThresholds {
+  minCandidates?: number;
+  minArticleRatio?: number;
+  maxNoiseRatio?: number;
+  minFreshRatio?: number;
+}
+
+export interface CrawlSeedDiscoveryConfig {
+  strategy?: CrawlSeedStrategy;
+  mode?: CrawlSeedDiscoveryMode;
+  freshnessWindowHours?: number;
+  maxSeedUrls?: number;
+  topologyBudgetPages?: number;
+  topologyBudgetDepth?: number;
+  qualityThresholds?: CrawlSeedQualityThresholds;
+}
+
 export interface CrawlLlmAssistAutoPublishThresholds {
   minArticleLift?: number;
   minNoiseReduction?: number;
@@ -117,6 +144,7 @@ export interface CrawlSiteProfileConfig {
   >;
   freshnessRules?: CrawlFreshnessRules;
   localeScope?: CrawlLocaleScopeConfig;
+  seedDiscovery?: CrawlSeedDiscoveryConfig;
   llmAssist?: CrawlLlmAssistConfig;
   sourceTier?: CrawlSourceTier;
   pageRules?: Partial<Record<CrawlFrontierPageType, Record<string, unknown>>>;

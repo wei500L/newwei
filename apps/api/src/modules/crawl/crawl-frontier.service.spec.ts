@@ -16,18 +16,34 @@ describe("CrawlFrontierService", () => {
     const queueService = {
       enqueueFrontierNode: jest.fn().mockResolvedValue(undefined),
     } as any;
+    const metadataService = {
+      discoverSitemap: jest.fn().mockResolvedValue({
+        candidates: [],
+        diagnostics: {
+          discoveryMode: "robots",
+          seedMethod: "none",
+          robotsDiscoveredSitemaps: [],
+          attemptedSitemaps: [],
+          fetchedSitemaps: [],
+          parsedSitemaps: 0,
+          candidateCount: 0,
+        },
+      }),
+    } as any;
     const service = new CrawlFrontierService(
       prisma,
       {} as any,
       {} as any,
       {} as any,
       queueService,
+      metadataService,
       frontierLlm as any,
     );
     return {
       service,
       prisma,
       queueService,
+      metadataService,
       frontierLlm,
     };
   };
@@ -829,6 +845,117 @@ describe("CrawlFrontierService", () => {
         llmJudgeAttempted: true,
         llmJudgeDropped: 1,
         llmJudgeRetyped: 1,
+      }),
+    );
+  });
+
+  it("discovers sitemap seed candidates via metadata service and queues article nodes", async () => {
+    const { service, prisma, queueService, metadataService } = createService();
+    metadataService.discoverSitemap.mockResolvedValue({
+      candidates: [
+        {
+          url: "https://www.reuters.com/world/europe/2026/03/18/example-one/",
+          publishedAtTs: Date.parse("2026-03-18T06:00:00Z"),
+          crawledAtTs: Date.parse("2026-03-18T06:05:00Z"),
+        },
+        {
+          url: "https://www.reuters.com/world/asia-pacific/2026/03/18/example-two/",
+          publishedAtTs: Date.parse("2026-03-18T07:00:00Z"),
+          crawledAtTs: Date.parse("2026-03-18T07:05:00Z"),
+        },
+      ],
+      diagnostics: {
+        discoveryMode: "robots",
+        seedMethod: "robots",
+        robotsDiscoveredSitemaps: [
+          "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+        ],
+        attemptedSitemaps: [
+          "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+        ],
+        fetchedSitemaps: [
+          "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+        ],
+        parsedSitemaps: 1,
+        candidateCount: 2,
+      },
+    });
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        canonicalUrl: "https://www.reuters.com/",
+        urlFingerprint: "seed",
+        pageType: "home",
+      },
+    ]);
+    prisma.crawlFrontierNode.create.mockImplementation(async ({ data }: any) => ({
+      id: `node-${data.url}`,
+      ...data,
+    }));
+
+    const discovered = await (service as any).discoverSeedNodes({
+      node: {
+        id: "seed-node",
+        orgId: "org-1",
+        url: "https://www.reuters.com/",
+        pageType: "home",
+        depth: 0,
+      },
+      run: {
+        id: "run-1",
+        seedUrl: "https://www.reuters.com/",
+        maxDepth: 3,
+        maxPages: 10,
+      },
+      profile: {
+        id: "profile-1",
+        orgId: "org-1",
+        name: "Reuters",
+        description: null,
+        matchHost: "www.reuters.com",
+        isActive: true,
+        executionMode: "layered",
+        version: 1,
+        createdById: "user-1",
+        updatedById: "user-1",
+        publishedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        config: {
+          seedDiscovery: {
+            strategy: "auto",
+            mode: "robots",
+            maxSeedUrls: 20,
+            qualityThresholds: {
+              minCandidates: 1,
+              minArticleRatio: 0.4,
+              maxNoiseRatio: 0.5,
+              minFreshRatio: 0.2,
+            },
+          },
+          freshnessRules: {
+            recentHours: 24,
+            weekHours: 168,
+            monthHours: 720,
+          },
+          urlPatterns: {
+            article: ["https://www.reuters.com/*/*/20*/*/*/*"],
+          },
+          layeredOptions: {
+            paginationKeepCount: 2,
+          },
+        },
+      },
+      taskId: "task-1",
+    });
+
+    expect(metadataService.discoverSitemap).toHaveBeenCalledTimes(1);
+    expect(prisma.crawlFrontierNode.create).toHaveBeenCalledTimes(2);
+    expect(queueService.enqueueFrontierNode).toHaveBeenCalledTimes(2);
+    expect(discovered?.diagnostics).toEqual(
+      expect.objectContaining({
+        seedOrigin: "sitemap",
+        seedMethod: "robots",
+        fallbackStage: "seed",
       }),
     );
   });

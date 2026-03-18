@@ -24,6 +24,10 @@ import {
   shouldRejectFrontierUrl,
   toRegistrableDomain,
 } from "./crawl-frontier.utils";
+import {
+  CrawlMetadataService,
+  type CrawlDiscoveryCandidate,
+} from "./crawl-metadata.service";
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSiteProfileService } from "./crawl-site-profile.service";
@@ -38,6 +42,8 @@ import type {
   CrawlFrontierNodeRecord,
   CrawlFrontierPageType,
   CrawlPriorityClass,
+  CrawlSeedDiscoveryConfig,
+  CrawlSeedStrategy,
   CrawlSiteExecutionMode,
   CrawlSiteProfileConfig,
   CrawlSiteProfileRecord,
@@ -81,6 +87,12 @@ interface FrontierCandidateExtraction {
     warningFlags: string[];
     syntheticListActivated: boolean;
   };
+}
+
+interface SeedDiscoveryOutcome {
+  created: number;
+  selectedPageTypeCounts: Record<CrawlFrontierPageType, number>;
+  diagnostics: Record<string, unknown>;
 }
 
 interface FrontierLifecycleNode {
@@ -204,6 +216,7 @@ export class CrawlFrontierService {
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
     private readonly queueService: CrawlQueueService,
+    private readonly metadataService: CrawlMetadataService,
     @Optional()
     private readonly frontierLlm?: CrawlFrontierLlmService,
   ) {}
@@ -386,6 +399,12 @@ export class CrawlFrontierService {
             maxDepth: options.maxDepth,
             maxPages: options.maxPages,
           }),
+          seedStrategy: this.resolveSeedStrategy(options.profile.config),
+          seedDiscoveryMode: options.profile.config.seedDiscovery?.mode ?? "robots",
+          topologyBudgetPages:
+            options.profile.config.seedDiscovery?.topologyBudgetPages ?? null,
+          topologyBudgetDepth:
+            options.profile.config.seedDiscovery?.topologyBudgetDepth ?? null,
           sourceTier: options.profile.config.sourceTier ?? "tier2",
           hostScope:
             options.profile.config.hostScope ??
@@ -411,6 +430,8 @@ export class CrawlFrontierService {
         metadata: toPrismaJsonValue({
           seed: true,
           profileId: options.profile.id,
+          seedStrategy: this.resolveSeedStrategy(options.profile.config),
+          seedOrigin: "frontier_root",
           sourceTier: options.profile.config.sourceTier ?? "tier2",
           discoveryPath: ["home"],
           frontierPath: ["home"],
@@ -692,6 +713,16 @@ export class CrawlFrontierService {
       selfMetadata,
       crawlOptions,
     });
+    const seedStrategy = this.resolveSeedStrategy(options.profile.config);
+    const seedConfig = this.resolveSeedDiscoveryConfig(
+      options.profile.config,
+      options.run.maxPages,
+      options.run.maxDepth,
+    );
+    const useLightweightTopologyBudget =
+      options.node.depth === 0 &&
+      seedStrategy !== "frontier_only" &&
+      seedStrategy !== "frontier_first";
     const discoveryMetadata =
       options.node.pageType !== "article" &&
       options.node.depth < options.run.maxDepth
@@ -703,8 +734,32 @@ export class CrawlFrontierService {
             maxPages: options.run.maxPages,
             profile: options.profile,
             results: response.results,
+            maxDepthOverride: useLightweightTopologyBudget
+              ? seedConfig.topologyBudgetDepth
+              : undefined,
+            maxNewNodes: useLightweightTopologyBudget
+              ? seedConfig.topologyBudgetPages
+              : undefined,
+            metadataPatch: useLightweightTopologyBudget
+              ? {
+                  topologyChannel: true,
+                  topologyDepthLimit: seedConfig.topologyBudgetDepth,
+                }
+              : undefined,
           })
         : undefined;
+    const seedDiscovery = await this.discoverSeedNodes({
+      node: options.node,
+      run: {
+        id: options.run.id,
+        seedUrl: options.run.seedUrl,
+        maxDepth: options.run.maxDepth,
+        maxPages: options.run.maxPages,
+      },
+      profile: options.profile,
+      taskId: options.task.id,
+      requestTimeoutMs: options.requestTimeoutMs,
+    });
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -729,6 +784,16 @@ export class CrawlFrontierService {
             options.node.metadata,
             runtimeMetadata,
             discoveryMetadata,
+            seedDiscovery?.diagnostics,
+            {
+              seedStrategy,
+              topologyBudgetPages: useLightweightTopologyBudget
+                ? seedConfig.topologyBudgetPages
+                : null,
+              topologyBudgetDepth: useLightweightTopologyBudget
+                ? seedConfig.topologyBudgetDepth
+                : null,
+            },
           ),
         ),
       },
@@ -1024,6 +1089,36 @@ export class CrawlFrontierService {
           maxPages: options.run.maxPages,
           profile: options.profile,
           results: rootResults.length > 0 ? rootResults : response.results.slice(0, 1),
+          maxDepthOverride:
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
+              ? this.resolveSeedDiscoveryConfig(
+                  options.profile.config,
+                  options.run.maxPages,
+                  options.run.maxDepth,
+                ).topologyBudgetDepth
+              : undefined,
+          maxNewNodes:
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
+              ? this.resolveSeedDiscoveryConfig(
+                  options.profile.config,
+                  options.run.maxPages,
+                  options.run.maxDepth,
+                ).topologyBudgetPages
+              : undefined,
+          metadataPatch:
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
+            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
+              ? {
+                  topologyChannel: true,
+                  topologyDepthLimit: this.resolveSeedDiscoveryConfig(
+                    options.profile.config,
+                    options.run.maxPages,
+                    options.run.maxDepth,
+                  ).topologyBudgetDepth,
+                }
+              : undefined,
         })
       : undefined;
     const fallbackCandidateStats = toNumericRecord(
@@ -1083,6 +1178,24 @@ export class CrawlFrontierService {
       nativeAcceptedArticles: selectedPageTypeCounts.article,
       nativeFallbackActivated: shouldFallbackToLayered,
     };
+    const seedStrategy = this.resolveSeedStrategy(options.profile.config);
+    const seedConfig = this.resolveSeedDiscoveryConfig(
+      options.profile.config,
+      options.run.maxPages,
+      options.run.maxDepth,
+    );
+    const seedDiscovery = await this.discoverSeedNodes({
+      node: options.node,
+      run: {
+        id: options.run.id,
+        seedUrl: options.run.seedUrl,
+        maxDepth: options.run.maxDepth,
+        maxPages: options.run.maxPages,
+      },
+      profile: options.profile,
+      taskId: options.task.id,
+      requestTimeoutMs: options.requestTimeoutMs,
+    });
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -1096,12 +1209,24 @@ export class CrawlFrontierService {
             options.node.metadata,
             runtimeMetadata,
             fallbackDiscoveryMetadata,
+            seedDiscovery?.diagnostics,
             {
               nativeDiscovered: true,
               sourceTier: options.profile.config.sourceTier ?? "tier2",
               discoveryPath: ["home"],
               frontierPath: ["home"],
               warningFlags: combinedWarningFlags,
+              seedStrategy,
+              topologyBudgetPages:
+                seedStrategy !== "frontier_only" &&
+                seedStrategy !== "frontier_first"
+                  ? seedConfig.topologyBudgetPages
+                  : null,
+              topologyBudgetDepth:
+                seedStrategy !== "frontier_only" &&
+                seedStrategy !== "frontier_first"
+                  ? seedConfig.topologyBudgetDepth
+                  : null,
               nativeStrategyType:
                 nativeComponents.deepCrawlStrategy?.type ?? null,
               nativeStrategyResolvedFrom:
@@ -1727,6 +1852,86 @@ export class CrawlFrontierService {
     };
   }
 
+  private resolveSeedStrategy(config: CrawlSiteProfileConfig): CrawlSeedStrategy {
+    return config.seedDiscovery?.strategy ?? "auto";
+  }
+
+  private resolveSeedDiscoveryConfig(
+    config: CrawlSiteProfileConfig,
+    maxPages: number,
+    maxDepth: number,
+  ): Required<
+    Pick<
+      CrawlSeedDiscoveryConfig,
+      | "mode"
+      | "freshnessWindowHours"
+      | "maxSeedUrls"
+      | "topologyBudgetPages"
+      | "topologyBudgetDepth"
+    >
+  > & {
+    qualityThresholds: Required<
+      NonNullable<CrawlSeedDiscoveryConfig["qualityThresholds"]>
+    >;
+  } {
+    return {
+      mode: config.seedDiscovery?.mode ?? "robots",
+      freshnessWindowHours: Math.max(
+        1,
+        config.seedDiscovery?.freshnessWindowHours ?? 24 * 7,
+      ),
+      maxSeedUrls: Math.max(
+        1,
+        config.seedDiscovery?.maxSeedUrls ?? Math.min(120, maxPages),
+      ),
+      topologyBudgetPages: Math.max(
+        1,
+        config.seedDiscovery?.topologyBudgetPages ?? Math.min(12, maxPages),
+      ),
+      topologyBudgetDepth: Math.max(
+        1,
+        config.seedDiscovery?.topologyBudgetDepth ?? Math.min(2, maxDepth),
+      ),
+      qualityThresholds: {
+        minCandidates:
+          config.seedDiscovery?.qualityThresholds?.minCandidates ?? 3,
+        minArticleRatio:
+          config.seedDiscovery?.qualityThresholds?.minArticleRatio ?? 0.4,
+        maxNoiseRatio:
+          config.seedDiscovery?.qualityThresholds?.maxNoiseRatio ?? 0.45,
+        minFreshRatio:
+          config.seedDiscovery?.qualityThresholds?.minFreshRatio ?? 0.2,
+      },
+    };
+  }
+
+  private estimateSeedCandidateFreshnessScore(
+    candidate: CrawlDiscoveryCandidate,
+    config: CrawlSiteProfileConfig,
+  ) {
+    if (
+      typeof candidate.publishedAtTs !== "number" ||
+      !Number.isFinite(candidate.publishedAtTs)
+    ) {
+      return estimateFreshnessScore(candidate.url, config);
+    }
+    const ageHours = (Date.now() - candidate.publishedAtTs) / (1000 * 60 * 60);
+    const freshnessRules = config.freshnessRules;
+    const recentHours = freshnessRules?.recentHours ?? 24;
+    const weekHours = freshnessRules?.weekHours ?? 24 * 7;
+    const monthHours = freshnessRules?.monthHours ?? 24 * 30;
+    if (ageHours <= recentHours) {
+      return 1;
+    }
+    if (ageHours <= weekHours) {
+      return 0.75;
+    }
+    if (ageHours <= monthHours) {
+      return 0.4;
+    }
+    return 0.1;
+  }
+
   private applyCandidateDiscoveryMetadata(options: {
     node: Pick<CrawlFrontierNodeRecord, "pageType">;
     config: CrawlSiteProfileConfig;
@@ -2053,6 +2258,9 @@ export class CrawlFrontierService {
     maxPages: number;
     profile: CrawlSiteProfileRecord;
     results: Crawl4aiArticle[];
+    maxDepthOverride?: number;
+    maxNewNodes?: number;
+    metadataPatch?: Record<string, unknown>;
   }): Promise<Record<string, unknown> | undefined> {
     const extraction = this.extractCandidates(
       options.node,
@@ -2070,8 +2278,12 @@ export class CrawlFrontierService {
         ? (llmAssistance.diagnostics as Record<string, unknown>)
         : undefined;
     const extractedCandidates = llmAssistance.candidates;
+    const effectiveMaxDepth = Math.min(
+      options.maxDepth,
+      options.maxDepthOverride ?? options.maxDepth,
+    );
     const childDepth = options.node.depth + 1;
-    if (childDepth > options.maxDepth) {
+    if (childDepth > effectiveMaxDepth) {
       return {
         ...extraction.diagnostics,
         ...(llmDiagnostics ?? {}),
@@ -2095,7 +2307,7 @@ export class CrawlFrontierService {
     }
 
     const pageTypeBudgets = computeFrontierPageTypeBudgets({
-      maxDepth: options.maxDepth,
+      maxDepth: effectiveMaxDepth,
       maxPages: options.maxPages,
     });
     const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
@@ -2108,10 +2320,14 @@ export class CrawlFrontierService {
     });
     const existingCount = existingNodesForRun.length;
     const remainingBudget = Math.max(0, options.maxPages - existingCount);
+    const creationBudget =
+      typeof options.maxNewNodes === "number" && Number.isFinite(options.maxNewNodes)
+        ? Math.max(0, Math.min(remainingBudget, Math.round(options.maxNewNodes)))
+        : remainingBudget;
     const rejectionCounts = {
       ...extraction.diagnostics.rejectionCounts,
     };
-    if (remainingBudget === 0) {
+    if (creationBudget === 0) {
       bumpCount(rejectionCounts, "run_budget_exhausted");
       return {
         ...extraction.diagnostics,
@@ -2156,7 +2372,7 @@ export class CrawlFrontierService {
       candidates: extractedCandidates,
     });
     for (const candidate of prioritizedCandidates) {
-      if (created >= remainingBudget) {
+      if (created >= creationBudget) {
         bumpCount(rejectionCounts, "run_budget_exhausted");
         break;
       }
@@ -2200,9 +2416,13 @@ export class CrawlFrontierService {
           freshnessScore: candidate.freshnessScore,
           queuedAt: new Date(),
           metadata: toPrismaJsonValue(
-            mergeMetadataRecords(candidate.metadata, {
-              sourceTier: options.profile.config.sourceTier ?? "tier2",
-            }),
+            mergeMetadataRecords(
+              candidate.metadata,
+              {
+                sourceTier: options.profile.config.sourceTier ?? "tier2",
+              },
+              options.metadataPatch,
+            ),
           ),
         },
       });
@@ -2232,6 +2452,7 @@ export class CrawlFrontierService {
           typeof llmDiagnostics?.llmJudgeDropped === "number"
             ? llmDiagnostics.llmJudgeDropped
             : undefined,
+        budgeted: creationBudget,
         selected: created,
         rejected: Object.values(rejectionCounts).reduce(
           (sum, value) => sum + value,
@@ -2243,6 +2464,297 @@ export class CrawlFrontierService {
         coerceStringArray(llmDiagnostics?.warningFlags),
         created === 0 ? ["no_child_nodes_created"] : undefined,
       ) ?? [],
+    };
+  }
+
+  private async discoverSeedNodes(options: {
+    node: CrawlFrontierNodeRecord;
+    run: {
+      id: string;
+      seedUrl: string;
+      maxDepth: number;
+      maxPages: number;
+    };
+    profile: CrawlSiteProfileRecord;
+    taskId: string;
+    requestTimeoutMs?: number | null;
+  }): Promise<SeedDiscoveryOutcome | undefined> {
+    if (options.node.depth !== 0 || this.resolveSeedStrategy(options.profile.config) === "frontier_only") {
+      return undefined;
+    }
+
+    const seedConfig = this.resolveSeedDiscoveryConfig(
+      options.profile.config,
+      options.run.maxPages,
+      options.run.maxDepth,
+    );
+    const freshnessCutoffTs =
+      Date.now() - seedConfig.freshnessWindowHours * 60 * 60 * 1000;
+    const sitemap = await this.metadataService.discoverSitemap({
+      domain: new URL(options.run.seedUrl).origin,
+      maxUrls: seedConfig.maxSeedUrls,
+      requestTimeoutMs:
+        typeof options.requestTimeoutMs === "number"
+          ? options.requestTimeoutMs
+          : undefined,
+      freshnessCutoffTs,
+      discoveryMode: seedConfig.mode,
+    });
+
+    const seedCandidates = sitemap.candidates
+      .map((candidate) => {
+        const pageType = inferFrontierPageType({
+          url: candidate.url,
+          parentPageType: "home",
+          config: options.profile.config,
+        });
+        const freshnessScore = this.estimateSeedCandidateFreshnessScore(
+          candidate,
+          options.profile.config,
+        );
+        return {
+          url: candidate.url,
+          pageType,
+          freshnessScore,
+          score: scoreFrontierCandidate({
+            url: candidate.url,
+            pageType,
+            parentPageType: "home",
+            parentUrl: options.run.seedUrl,
+            config: options.profile.config,
+            rawScore: 1,
+            freshnessScore,
+          }),
+          metadata: {
+            seedCandidate: true,
+            seedOrigin: "sitemap",
+            seedMethod: sitemap.diagnostics.seedMethod,
+            seedPublishedAt:
+              typeof candidate.publishedAtTs === "number"
+                ? new Date(candidate.publishedAtTs).toISOString()
+                : null,
+            seedCrawledAt:
+              typeof candidate.crawledAtTs === "number"
+                ? new Date(candidate.crawledAtTs).toISOString()
+                : null,
+            freshnessBucket: resolveFreshnessBucket(freshnessScore),
+          },
+        } satisfies FrontierCandidate;
+      })
+      .filter((candidate) => candidate.pageType !== "home");
+
+    const llmAssistance = await this.applyLlmCandidateAssistance({
+      node: options.node,
+      runId: options.run.id,
+      profile: options.profile,
+      candidates: seedCandidates,
+    });
+    const llmDiagnostics =
+      llmAssistance.diagnostics && isPlainObject(llmAssistance.diagnostics)
+        ? (llmAssistance.diagnostics as Record<string, unknown>)
+        : undefined;
+    const normalizedCandidates = llmAssistance.candidates.map((candidate) => {
+      const synthetic =
+        candidate.metadata &&
+        isPlainObject(candidate.metadata) &&
+        candidate.metadata.syntheticList === true &&
+        candidate.pageType === "article";
+      const discoveryPath = synthetic
+        ? ["seed", "synthetic_list", "article"]
+        : ["seed", candidate.pageType];
+      return {
+        ...candidate,
+        metadata: mergeMetadataRecords(candidate.metadata, {
+          seedCandidate: true,
+          seedOrigin: "sitemap",
+          seedMethod: sitemap.diagnostics.seedMethod,
+          discoveryPath,
+          frontierPath: discoveryPath,
+        }) ?? {},
+      };
+    });
+
+    const selectedPageTypeCounts = this.createPageTypeCountRecord();
+    for (const candidate of normalizedCandidates) {
+      selectedPageTypeCounts[candidate.pageType] += 1;
+    }
+    const articleCount = selectedPageTypeCounts.article;
+    const freshCount = normalizedCandidates.filter(
+      (candidate) => candidate.freshnessScore >= 0.75,
+    ).length;
+    const candidateCount = sitemap.candidates.length;
+    const selectedCount = normalizedCandidates.length;
+    const articleRatio =
+      selectedCount > 0 ? Number((articleCount / selectedCount).toFixed(4)) : 0;
+    const noiseRatio =
+      candidateCount > 0
+        ? Number(
+            Math.max(0, (candidateCount - selectedCount) / candidateCount).toFixed(4),
+          )
+        : 1;
+    const freshRatio =
+      selectedCount > 0 ? Number((freshCount / selectedCount).toFixed(4)) : 0;
+    const qualityThresholds = seedConfig.qualityThresholds;
+    const qualityPassed =
+      selectedCount >= qualityThresholds.minCandidates &&
+      articleRatio >= qualityThresholds.minArticleRatio &&
+      noiseRatio <= qualityThresholds.maxNoiseRatio &&
+      freshRatio >= qualityThresholds.minFreshRatio;
+
+    const rejectionCounts: Record<string, number> = {};
+    if (!qualityPassed && selectedCount > 0) {
+      bumpCount(rejectionCounts, "seed_low_quality");
+    }
+
+    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
+      where: { runId: options.run.id },
+      select: {
+        canonicalUrl: true,
+        urlFingerprint: true,
+        pageType: true,
+      },
+    });
+    const seenFingerprints = new Set(
+      existingNodesForRun
+        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
+        .filter((entry) => entry.length > 0),
+    );
+    const countsByPageType = this.createPageTypeCountRecord();
+    for (const entry of existingNodesForRun) {
+      countsByPageType[entry.pageType] += 1;
+    }
+    const pageTypeBudgets = computeFrontierPageTypeBudgets({
+      maxDepth: options.run.maxDepth,
+      maxPages: options.run.maxPages,
+    });
+    const remainingBudget = Math.max(0, options.run.maxPages - existingNodesForRun.length);
+    const paginationKeepCount = this.clampInt(
+      options.profile.config.layeredOptions?.paginationKeepCount,
+      1,
+      10,
+      3,
+    );
+    let listPagesCreated = 0;
+    let created = 0;
+
+    if (qualityPassed) {
+      const prioritizedCandidates = prioritizeFrontierCandidates({
+        parentPageType: "home",
+        candidates: normalizedCandidates,
+      });
+      for (const candidate of prioritizedCandidates) {
+        if (created >= remainingBudget) {
+          bumpCount(rejectionCounts, "run_budget_exhausted");
+          break;
+        }
+        if (countsByPageType[candidate.pageType] >= pageTypeBudgets[candidate.pageType]) {
+          bumpCount(rejectionCounts, "page_type_budget");
+          continue;
+        }
+        const canonical = buildCanonicalUrlFingerprint(
+          candidate.url,
+          options.profile.config.urlQueryParamAllowlist,
+        );
+        const dedupeKey =
+          canonical?.fingerprint ?? canonical?.canonicalUrl ?? candidate.url;
+        if (seenFingerprints.has(dedupeKey)) {
+          bumpCount(rejectionCounts, "duplicate");
+          continue;
+        }
+        if (
+          candidate.pageType === "list" &&
+          listPagesCreated >= paginationKeepCount
+        ) {
+          bumpCount(rejectionCounts, "pagination_limit");
+          continue;
+        }
+        const queueClass = resolveNodeQueueClass({
+          pageType: candidate.pageType,
+          freshnessScore: candidate.freshnessScore,
+        });
+        const node = await this.prisma.crawlFrontierNode.create({
+          data: {
+            runId: options.run.id,
+            parentNodeId: options.node.id,
+            orgId: options.node.orgId,
+            url: candidate.url,
+            canonicalUrl: canonical?.canonicalUrl,
+            urlFingerprint: canonical?.fingerprint,
+            pageType: candidate.pageType,
+            depth: candidate.pageType === "article" ? Math.min(options.run.maxDepth, 3) : 1,
+            queueClass,
+            status: "queued",
+            score: candidate.score,
+            freshnessScore: candidate.freshnessScore,
+            queuedAt: new Date(),
+            metadata: toPrismaJsonValue(
+              mergeMetadataRecords(candidate.metadata, {
+                sourceTier: options.profile.config.sourceTier ?? "tier2",
+              }),
+            ),
+          },
+        });
+        seenFingerprints.add(dedupeKey);
+        countsByPageType[candidate.pageType] += 1;
+        created += 1;
+        if (candidate.pageType === "list") {
+          listPagesCreated += 1;
+        }
+        await this.queueService.enqueueFrontierNode({
+          orgId: options.node.orgId,
+          taskId: options.taskId,
+          frontierRunId: options.run.id,
+          frontierNodeId: node.id,
+          priorityClass: queueClass,
+        });
+      }
+    }
+
+    const diagnostics: Record<string, unknown> = {
+      seedOrigin: "sitemap",
+      seedMethod: sitemap.diagnostics.seedMethod,
+      seedDiscoveryMode: sitemap.diagnostics.discoveryMode,
+      seedDiagnostics: sitemap.diagnostics,
+      seedYield: {
+        discovered: candidateCount,
+        selected: selectedCount,
+        created,
+        fresh: freshCount,
+      },
+      seedQuality: {
+        passed: qualityPassed,
+        articleRatio,
+        noiseRatio,
+        freshRatio,
+        thresholds: qualityThresholds,
+      },
+      seedSelectedPageTypeCounts: selectedPageTypeCounts,
+      seedRejectionCounts: rejectionCounts,
+      fallbackStage:
+        qualityPassed && created > 0 ? "seed" : "frontier",
+      warningFlags: uniqueStringList(
+        !qualityPassed ? ["seed_low_quality"] : undefined,
+        created === 0 ? ["seed_no_nodes_created"] : undefined,
+        coerceStringArray(llmDiagnostics?.warningFlags),
+      ) ?? [],
+      candidateStats: {
+        scanned: candidateCount,
+        unique: candidateCount,
+        accepted: selectedCount,
+        selected: created,
+        rejected: Object.values(rejectionCounts).reduce(
+          (sum, value) => sum + value,
+          0,
+        ),
+        trimmed: Math.max(0, selectedCount - created),
+      },
+      rejectionCounts,
+    };
+
+    return {
+      created,
+      selectedPageTypeCounts,
+      diagnostics: mergeMetadataRecords(diagnostics, llmDiagnostics) ?? diagnostics,
     };
   }
 
@@ -2537,6 +3049,35 @@ export class CrawlFrontierService {
             candidateStats: nodeCandidateStats ?? null,
             rejectionCounts: nodeRejectionCounts ?? null,
             lastError: node.lastError ?? null,
+            seedStrategy:
+              typeof metadata.seedStrategy === "string"
+                ? metadata.seedStrategy
+                : null,
+            seedOrigin:
+              typeof metadata.seedOrigin === "string"
+                ? metadata.seedOrigin
+                : null,
+            seedMethod:
+              typeof metadata.seedMethod === "string"
+                ? metadata.seedMethod
+                : null,
+            seedDiscoveryMode:
+              typeof metadata.seedDiscoveryMode === "string"
+                ? metadata.seedDiscoveryMode
+                : null,
+            fallbackStage:
+              typeof metadata.fallbackStage === "string"
+                ? metadata.fallbackStage
+                : null,
+            seedYield: isPlainObject(metadata.seedYield)
+              ? metadata.seedYield
+              : null,
+            seedQuality: isPlainObject(metadata.seedQuality)
+              ? metadata.seedQuality
+              : null,
+            seedDiagnostics: isPlainObject(metadata.seedDiagnostics)
+              ? metadata.seedDiagnostics
+              : null,
             nativeStrategyType:
               typeof metadata.nativeStrategyType === "string"
                 ? metadata.nativeStrategyType
@@ -2647,6 +3188,35 @@ export class CrawlFrontierService {
         rejectionCounts,
         warningFlags: Array.from(warningFlags),
         failureKind,
+        seedStrategy:
+          typeof rootDiagnosis?.seedStrategy === "string"
+            ? rootDiagnosis.seedStrategy
+            : undefined,
+        seedOrigin:
+          typeof rootDiagnosis?.seedOrigin === "string"
+            ? rootDiagnosis.seedOrigin
+            : undefined,
+        seedMethod:
+          typeof rootDiagnosis?.seedMethod === "string"
+            ? rootDiagnosis.seedMethod
+            : undefined,
+        seedDiscoveryMode:
+          typeof rootDiagnosis?.seedDiscoveryMode === "string"
+            ? rootDiagnosis.seedDiscoveryMode
+            : undefined,
+        fallbackStage:
+          typeof rootDiagnosis?.fallbackStage === "string"
+            ? rootDiagnosis.fallbackStage
+            : undefined,
+        seedYield: isPlainObject(rootDiagnosis?.seedYield)
+          ? rootDiagnosis.seedYield
+          : undefined,
+        seedQuality: isPlainObject(rootDiagnosis?.seedQuality)
+          ? rootDiagnosis.seedQuality
+          : undefined,
+        seedDiagnostics: isPlainObject(rootDiagnosis?.seedDiagnostics)
+          ? rootDiagnosis.seedDiagnostics
+          : undefined,
         judgeSummary: {
           methods: judgeMethodCounts,
           averageConfidence:

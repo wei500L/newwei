@@ -267,6 +267,7 @@ describe("CrawlMetadataService sitemap discovery", () => {
       domain: "https://example.com",
       maxUrls: 1,
       requestTimeoutMs: 5000,
+      discoveryMode: "common_paths",
     });
 
     const fetchedUrls = (global.fetch as jest.Mock).mock.calls.map(
@@ -326,11 +327,13 @@ describe("CrawlMetadataService sitemap discovery", () => {
       domain: "https://example.com",
       maxUrls: 1,
       requestTimeoutMs: 5000,
+      discoveryMode: "common_paths",
     });
     const secondRun = await service.discoverSitemapUrls({
       domain: "https://example.com",
       maxUrls: 1,
       requestTimeoutMs: 5000,
+      discoveryMode: "common_paths",
     });
 
     expect(firstRun).toEqual(["https://example.com/news/cached"]);
@@ -518,18 +521,28 @@ describe("CrawlMetadataService sitemap discovery", () => {
         <url><loc>https://example.com/news/fallback</loc></url>
       </urlset>`;
 
-    global.fetch = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 304,
-        headers: makeHeaders({
-          etag: '"seed-v1"',
-          "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT",
-        }),
-        arrayBuffer: async () => Buffer.from("", "utf8"),
-      })
-      .mockResolvedValueOnce({
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url !== "https://example.com/sitemap.xml") {
+        return {
+          ok: false,
+          status: 404,
+          headers: makeHeaders({}),
+          arrayBuffer: async () => Buffer.from("", "utf8"),
+        } as any;
+      }
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (headers["if-none-match"] === '"seed-v1"') {
+        return {
+          ok: false,
+          status: 304,
+          headers: makeHeaders({
+            etag: '"seed-v1"',
+            "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT",
+          }),
+          arrayBuffer: async () => Buffer.from("", "utf8"),
+        } as any;
+      }
+      return {
         ok: true,
         status: 200,
         headers: makeHeaders({
@@ -537,18 +550,106 @@ describe("CrawlMetadataService sitemap discovery", () => {
           etag: '"seed-v2"',
         }),
         arrayBuffer: async () => Buffer.from(urlsetXml, "utf8"),
-      }) as any;
+      } as any;
+    }) as any;
 
     const service = new CrawlMetadataService(undefined, cache as any);
     const urls = await service.discoverSitemapUrls({
       domain: "https://example.com",
       maxUrls: 1,
       requestTimeoutMs: 5000,
+      discoveryMode: "common_paths",
     });
 
     expect(urls).toEqual(["https://example.com/news/fallback"]);
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://example.com/sitemap.xml",
+      expect.any(Object),
+    );
     expect(cache.set).toHaveBeenCalled();
+  });
+
+  it("discovers sitemap seeds from robots.txt before common sitemap paths", async () => {
+    const robotsPayload = `User-agent: *\nDisallow:\nSitemap: https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml\nSitemap: https://www.reuters.com/arc/outboundfeeds/sitemap-index/?outputType=xml\n`;
+    const newsIndex = `<?xml version="1.0" encoding="UTF-8"?>
+      <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <sitemap>
+          <loc>https://www.reuters.com/arc/outboundfeeds/news-sitemap-1/?outputType=xml</loc>
+        </sitemap>
+      </sitemapindex>`;
+    const newsChild = `<?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url>
+          <loc>https://www.reuters.com/world/europe/example-story/</loc>
+          <lastmod>2026-03-18T06:00:00Z</lastmod>
+        </url>
+      </urlset>`;
+
+    global.fetch = jest.fn(async (url: string) => {
+      if (url === "https://www.reuters.com/robots.txt") {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "text/plain" }),
+          arrayBuffer: async () => Buffer.from(robotsPayload, "utf8"),
+        } as any;
+      }
+      if (
+        url ===
+        "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml"
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => Buffer.from(newsIndex, "utf8"),
+        } as any;
+      }
+      if (
+        url ===
+        "https://www.reuters.com/arc/outboundfeeds/news-sitemap-1/?outputType=xml"
+      ) {
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ "content-type": "application/xml" }),
+          arrayBuffer: async () => Buffer.from(newsChild, "utf8"),
+        } as any;
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: makeHeaders({}),
+        arrayBuffer: async () => Buffer.from("", "utf8"),
+      } as any;
+    }) as any;
+
+    const service = new CrawlMetadataService();
+    const discovered = await service.discoverSitemap({
+      domain: "https://www.reuters.com",
+      maxUrls: 10,
+      discoveryMode: "robots",
+    });
+
+    expect(discovered.candidates).toEqual([
+      expect.objectContaining({
+        url: "https://www.reuters.com/world/europe/example-story/",
+      }),
+    ]);
+    expect(discovered.diagnostics).toEqual(
+      expect.objectContaining({
+        discoveryMode: "robots",
+        seedMethod: "robots",
+        parsedSitemaps: 2,
+        candidateCount: 1,
+      }),
+    );
+    expect(discovered.diagnostics.robotsDiscoveredSitemaps).toContain(
+      "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+    );
+    expect(discovered.diagnostics.attemptedSitemaps).toContain(
+      "https://www.reuters.com/arc/outboundfeeds/news-sitemap-index/?outputType=xml",
+    );
   });
 });
 
