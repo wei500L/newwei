@@ -1,0 +1,25 @@
+{
+  "name": "@modular/ais-relay",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "pnpm run start:dev",
+    "start:dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/ws": "^8.5.14",
+    "cross-env": "^7.0.3",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.20.5",
+    "typescript": "^5.4.5"
+  }
+}

@@ -8,11 +8,13 @@ describe("applyRealtimeSignalsSecretFields", () => {
     applyRealtimeSignalsSecretFields(
       payload,
       {
-        relaySharedSecret: "",
+        aisRelaySharedSecret: "",
+        openskyClientSecret: "",
         acledOauthPassword: "   ",
       },
       {
-        relaySharedSecret: false,
+        aisRelaySharedSecret: false,
+        openskyClientSecret: false,
         acledOauthPassword: false,
       },
     );
@@ -24,16 +26,19 @@ describe("applyRealtimeSignalsSecretFields", () => {
     applyRealtimeSignalsSecretFields(
       payload,
       {
-        relaySharedSecret: "   ",
+        aisRelaySharedSecret: "",
+        openskyClientSecret: "   ",
         acledOauthPassword: "",
       },
       {
-        relaySharedSecret: true,
+        aisRelaySharedSecret: true,
+        openskyClientSecret: true,
         acledOauthPassword: true,
       },
     );
     expect(payload).toEqual({
-      relaySharedSecret: null,
+      aisRelaySharedSecret: null,
+      openskyClientSecret: null,
       acledOauthPassword: null,
     });
   });
@@ -43,14 +48,17 @@ describe("applyRealtimeSignalsSecretFields", () => {
     applyRealtimeSignalsSecretFields(
       payload,
       {
-        relaySharedSecret: "  secret-1  ",
+        aisRelaySharedSecret: "  relay-secret  ",
+        openskyClientSecret: "  secret-1  ",
       },
       {
-        relaySharedSecret: true,
+        aisRelaySharedSecret: true,
+        openskyClientSecret: true,
       },
     );
     expect(payload).toEqual({
-      relaySharedSecret: "secret-1",
+      aisRelaySharedSecret: "relay-secret",
+      openskyClientSecret: "secret-1",
     });
   });
 });

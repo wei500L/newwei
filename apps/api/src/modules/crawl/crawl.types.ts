@@ -5,6 +5,15 @@ export type CrawlJobKind = "task" | "frontier_node";
 export type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 export type CrawlHostScope = "registrable_domain" | "strict_hosts";
 export type CrawlSourceTier = "tier1" | "tier2" | "tier3";
+export type CrawlLlmAssistRecallMode =
+  | "high_recall"
+  | "balanced"
+  | "low_cost";
+export type CrawlLlmAssistShadowRole = "active" | "shadow";
+export type CrawlLlmAssistShadowState =
+  | "candidate"
+  | "evaluating"
+  | "published";
 export type CrawlFrontierRunStatus =
   | "pending"
   | "queued"
@@ -58,6 +67,39 @@ export interface CrawlLocaleScopeConfig {
   denyHostPatterns?: string[];
 }
 
+export interface CrawlLlmAssistAutoPublishThresholds {
+  minArticleLift?: number;
+  minNoiseReduction?: number;
+  minJudgeConfidence?: number;
+}
+
+export interface CrawlLlmAssistShadowConfig {
+  role?: CrawlLlmAssistShadowRole;
+  shadowOfProfileId?: string;
+  originProfileVersion?: number;
+  state?: CrawlLlmAssistShadowState;
+  evaluationRunsCompleted?: number;
+  consecutivePasses?: number;
+  lastOriginRunId?: string;
+  lastShadowRunId?: string;
+  lastPublishedAt?: string | null;
+  lastSuggestedAt?: string | null;
+  lastSuggestionConfidence?: number;
+  lastSuggestionReason?: string | null;
+}
+
+export interface CrawlLlmAssistConfig {
+  enabled?: boolean;
+  recallMode?: CrawlLlmAssistRecallMode;
+  judgeModel?: string;
+  siteLearnerModel?: string;
+  candidateBudgetByPageType?: Partial<Record<CrawlFrontierPageType, number>>;
+  minJudgeConfidence?: number;
+  shadowEvaluationRuns?: number;
+  autoPublishThresholds?: CrawlLlmAssistAutoPublishThresholds;
+  shadow?: CrawlLlmAssistShadowConfig;
+}
+
 export interface CrawlSiteProfileConfig {
   keywords?: string[];
   priorityKeywords?: string[];
@@ -75,6 +117,7 @@ export interface CrawlSiteProfileConfig {
   >;
   freshnessRules?: CrawlFreshnessRules;
   localeScope?: CrawlLocaleScopeConfig;
+  llmAssist?: CrawlLlmAssistConfig;
   sourceTier?: CrawlSourceTier;
   pageRules?: Partial<Record<CrawlFrontierPageType, Record<string, unknown>>>;
   layeredOptions?: {

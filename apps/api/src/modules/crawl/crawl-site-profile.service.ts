@@ -15,6 +15,7 @@ import {
 import type {
   CrawlSiteExecutionMode,
   CrawlSiteProfileConfig,
+  CrawlSiteProfileRecord,
 } from "./crawl.types";
 import {
   CreateCrawlSiteProfileDto,
@@ -25,6 +26,182 @@ import {
 @Injectable()
 export class CrawlSiteProfileService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async findShadowProfileForActiveProfile(orgId: string, activeProfileId: string) {
+    const profiles = await this.prisma.crawlSiteProfile.findMany({
+      where: {
+        orgId,
+        isActive: false,
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    });
+    const matched = profiles.find((profile) => {
+      const config = normalizeCrawlSiteProfileConfig(profile.config);
+      return config.llmAssist?.shadow?.shadowOfProfileId === activeProfileId;
+    });
+    return matched ? this.mapProfile(matched) : null;
+  }
+
+  async upsertShadowProfileFromSuggestion(options: {
+    orgId: string;
+    actorId: string;
+    activeProfile: CrawlSiteProfileRecord;
+    suggestionConfidence: number;
+    suggestionReason?: string | null;
+    suggestionPatch?: Partial<CrawlSiteProfileConfig>;
+    sourceRunId: string;
+  }) {
+    const existingShadow = await this.findShadowProfileForActiveProfile(
+      options.orgId,
+      options.activeProfile.id,
+    );
+    const nextConfig = this.buildShadowProfileConfig({
+      activeConfig: options.activeProfile.config,
+      existingShadowConfig: existingShadow?.config,
+      activeProfileId: options.activeProfile.id,
+      activeProfileVersion: options.activeProfile.version,
+      suggestionConfidence: options.suggestionConfidence,
+      suggestionReason: options.suggestionReason,
+      sourceRunId: options.sourceRunId,
+      suggestionPatch: options.suggestionPatch,
+    });
+    if (existingShadow) {
+      return this.updateProfile(options.orgId, options.actorId, existingShadow.id, {
+        name: existingShadow.name,
+        description:
+          existingShadow.description ??
+          `Shadow profile learned from ${options.activeProfile.name}`,
+        matchHost: existingShadow.matchHost,
+        isActive: false,
+        executionMode: existingShadow.executionMode,
+        config: nextConfig as Record<string, unknown>,
+      });
+    }
+    return this.createProfile(options.orgId, options.actorId, {
+      name: `${options.activeProfile.name} [shadow]`,
+      description:
+        options.activeProfile.description ??
+        `Shadow profile learned from ${options.activeProfile.name}`,
+      matchHost: options.activeProfile.matchHost,
+      isActive: false,
+      executionMode: options.activeProfile.executionMode,
+      config: nextConfig as Record<string, unknown>,
+    });
+  }
+
+  async recordShadowEvaluation(options: {
+    orgId: string;
+    actorId: string;
+    shadowProfileId: string;
+    originRunId: string;
+    shadowRunId: string;
+    passed: boolean;
+    metrics: Record<string, unknown>;
+  }) {
+    const shadowProfile = await this.getProfile(options.orgId, options.shadowProfileId);
+    const shadow = shadowProfile.config.llmAssist?.shadow;
+    const updatedShadowConfig = normalizeCrawlSiteProfileConfig({
+      ...shadowProfile.config,
+      llmAssist: {
+        ...shadowProfile.config.llmAssist,
+        shadow: {
+          ...shadow,
+          role: "shadow",
+          state: "evaluating",
+          evaluationRunsCompleted: (shadow?.evaluationRunsCompleted ?? 0) + 1,
+          consecutivePasses: options.passed
+            ? (shadow?.consecutivePasses ?? 0) + 1
+            : 0,
+          lastOriginRunId: options.originRunId,
+          lastShadowRunId: options.shadowRunId,
+          lastSuggestionReason:
+            typeof options.metrics.summary === "string"
+              ? options.metrics.summary
+              : shadow?.lastSuggestionReason ?? null,
+        },
+      },
+    });
+    return this.updateProfile(options.orgId, options.actorId, shadowProfile.id, {
+      name: shadowProfile.name,
+      description: shadowProfile.description ?? undefined,
+      matchHost: shadowProfile.matchHost,
+      isActive: false,
+      executionMode: shadowProfile.executionMode,
+      config: updatedShadowConfig as Record<string, unknown>,
+    });
+  }
+
+  async publishShadowProfile(options: {
+    orgId: string;
+    actorId: string;
+    activeProfileId: string;
+    shadowProfileId: string;
+    shadowRunId: string;
+    comparison: Record<string, unknown>;
+  }) {
+    const activeProfile = await this.getProfile(options.orgId, options.activeProfileId);
+    const shadowProfile = await this.getProfile(options.orgId, options.shadowProfileId);
+    const publishedAt = new Date().toISOString();
+    const nextActiveConfig = normalizeCrawlSiteProfileConfig({
+      ...shadowProfile.config,
+      llmAssist: {
+        ...shadowProfile.config.llmAssist,
+        shadow: {
+          role: "active",
+          state: "published",
+          lastShadowRunId: options.shadowRunId,
+          lastPublishedAt: publishedAt,
+        },
+      },
+    });
+    const updatedActive = await this.updateProfile(
+      options.orgId,
+      options.actorId,
+      activeProfile.id,
+      {
+        name: activeProfile.name,
+        description: activeProfile.description ?? undefined,
+        matchHost: activeProfile.matchHost,
+        isActive: activeProfile.isActive,
+        executionMode: shadowProfile.executionMode,
+        config: nextActiveConfig as Record<string, unknown>,
+      },
+    );
+    const updatedShadow = await this.updateProfile(
+      options.orgId,
+      options.actorId,
+      shadowProfile.id,
+      {
+        name: shadowProfile.name,
+        description: shadowProfile.description ?? undefined,
+        matchHost: shadowProfile.matchHost,
+        isActive: false,
+        executionMode: shadowProfile.executionMode,
+        config: normalizeCrawlSiteProfileConfig({
+          ...shadowProfile.config,
+          llmAssist: {
+            ...shadowProfile.config.llmAssist,
+            shadow: {
+              ...shadowProfile.config.llmAssist?.shadow,
+              role: "shadow",
+              state: "published",
+              lastShadowRunId: options.shadowRunId,
+              lastPublishedAt: publishedAt,
+              lastSuggestionReason:
+                typeof options.comparison.summary === "string"
+                  ? options.comparison.summary
+                  : shadowProfile.config.llmAssist?.shadow?.lastSuggestionReason ??
+                    null,
+            },
+          },
+        }) as Record<string, unknown>,
+      },
+    );
+    return {
+      activeProfile: updatedActive,
+      shadowProfile: updatedShadow,
+    };
+  }
 
   async listProfiles(orgId: string, query?: ListCrawlSiteProfileDto) {
     const where: Prisma.CrawlSiteProfileWhereInput = { orgId };
@@ -308,6 +485,78 @@ export class CrawlSiteProfileService {
     } catch {
       throw new BadRequestException("url must be a valid absolute URL");
     }
+  }
+
+  private buildShadowProfileConfig(options: {
+    activeConfig: CrawlSiteProfileConfig;
+    existingShadowConfig?: CrawlSiteProfileConfig;
+    activeProfileId: string;
+    activeProfileVersion: number;
+    suggestionConfidence: number;
+    suggestionReason?: string | null;
+    sourceRunId: string;
+    suggestionPatch?: Partial<CrawlSiteProfileConfig>;
+  }): CrawlSiteProfileConfig {
+    const mergedPatch = this.mergeProfilePatch(
+      options.activeConfig,
+      options.suggestionPatch,
+    );
+    return normalizeCrawlSiteProfileConfig({
+      ...mergedPatch,
+      llmAssist: {
+        ...options.activeConfig.llmAssist,
+        ...options.existingShadowConfig?.llmAssist,
+        enabled: true,
+        shadowEvaluationRuns:
+          options.activeConfig.llmAssist?.shadowEvaluationRuns ?? 3,
+        autoPublishThresholds:
+          options.activeConfig.llmAssist?.autoPublishThresholds ?? {
+            minArticleLift: 0.15,
+            minNoiseReduction: 0.2,
+            minJudgeConfidence: 0.75,
+          },
+        shadow: {
+          ...options.existingShadowConfig?.llmAssist?.shadow,
+          role: "shadow",
+          shadowOfProfileId: options.activeProfileId,
+          originProfileVersion: options.activeProfileVersion,
+          state: "evaluating",
+          lastOriginRunId: options.sourceRunId,
+          lastSuggestedAt: new Date().toISOString(),
+          lastSuggestionConfidence: options.suggestionConfidence,
+          lastSuggestionReason: options.suggestionReason ?? null,
+        },
+      },
+    });
+  }
+
+  private mergeProfilePatch(
+    base: CrawlSiteProfileConfig,
+    patch?: Partial<CrawlSiteProfileConfig>,
+  ): CrawlSiteProfileConfig {
+    if (!patch) {
+      return base;
+    }
+    return normalizeCrawlSiteProfileConfig({
+      ...base,
+      ...patch,
+      urlPatterns: {
+        ...(base.urlPatterns ?? {}),
+        ...(patch.urlPatterns ?? {}),
+      },
+      pageTypeSignals: {
+        ...(base.pageTypeSignals ?? {}),
+        ...(patch.pageTypeSignals ?? {}),
+      },
+      localeScope: {
+        ...(base.localeScope ?? {}),
+        ...(patch.localeScope ?? {}),
+      },
+      llmAssist: {
+        ...(base.llmAssist ?? {}),
+        ...(patch.llmAssist ?? {}),
+      },
+    });
   }
 
   private mapProfile(

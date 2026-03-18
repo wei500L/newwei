@@ -195,6 +195,14 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsString()
+  aisRelayBaseUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  relayBaseUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
   openskyClientId?: string | null;
 
   @IsOptional()
@@ -203,15 +211,11 @@ export class UpdateRealtimeSignalsSettingsDto {
 
   @IsOptional()
   @IsString()
-  relayBaseUrl?: string | null;
+  aisRelaySharedSecret?: string | null;
 
   @IsOptional()
   @IsString()
   relaySharedSecret?: string | null;
-
-  @IsOptional()
-  @IsString()
-  aisApiKey?: string | null;
 
   @IsOptional()
   @IsString()

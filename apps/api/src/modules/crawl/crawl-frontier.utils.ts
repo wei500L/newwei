@@ -2,6 +2,12 @@ import type {
   CrawlFrontierPageType,
   CrawlFreshnessRules,
   CrawlHostScope,
+  CrawlLlmAssistAutoPublishThresholds,
+  CrawlLlmAssistConfig,
+  CrawlLlmAssistRecallMode,
+  CrawlLlmAssistShadowConfig,
+  CrawlLlmAssistShadowRole,
+  CrawlLlmAssistShadowState,
   CrawlLocaleScopeConfig,
   CrawlPageTypeSignalConfig,
   CrawlPriorityClass,
@@ -205,6 +211,55 @@ function toLocale(value: unknown): string | undefined {
   return normalized.length > 0 ? normalized.slice(0, 16) : undefined;
 }
 
+function toTrimmedString(value: unknown, max = 191): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.slice(0, max) : undefined;
+}
+
+function toRecallMode(value: unknown): CrawlLlmAssistRecallMode | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "high_recall" ||
+    normalized === "balanced" ||
+    normalized === "low_cost"
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
+function toShadowRole(value: unknown): CrawlLlmAssistShadowRole | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "active" || normalized === "shadow") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function toShadowState(value: unknown): CrawlLlmAssistShadowState | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "candidate" ||
+    normalized === "evaluating" ||
+    normalized === "published"
+  ) {
+    return normalized;
+  }
+  return undefined;
+}
+
 function toPageTypeSignalConfig(
   value: unknown,
 ): CrawlPageTypeSignalConfig | undefined {
@@ -256,6 +311,154 @@ function toLocaleScope(value: unknown): CrawlLocaleScopeConfig | undefined {
     acceptLanguages,
     denyUrlPatterns,
     denyHostPatterns,
+  };
+}
+
+function toLlmAssistAutoPublishThresholds(
+  value: unknown,
+): CrawlLlmAssistAutoPublishThresholds | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  return {
+    minArticleLift: toScore(value.minArticleLift, 0.15),
+    minNoiseReduction: toScore(value.minNoiseReduction, 0.2),
+    minJudgeConfidence: toScore(value.minJudgeConfidence, 0.75),
+  };
+}
+
+function toLlmAssistShadowConfig(
+  value: unknown,
+): CrawlLlmAssistShadowConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const role = toShadowRole(value.role);
+  const shadowOfProfileId = toTrimmedString(value.shadowOfProfileId);
+  const originProfileVersion =
+    value.originProfileVersion !== undefined
+      ? toPositiveInt(value.originProfileVersion, 1, 10_000, 1)
+      : undefined;
+  const state = toShadowState(value.state);
+  const evaluationRunsCompleted =
+    value.evaluationRunsCompleted !== undefined
+      ? toPositiveInt(value.evaluationRunsCompleted, 0, 10_000, 0)
+      : undefined;
+  const consecutivePasses =
+    value.consecutivePasses !== undefined
+      ? toPositiveInt(value.consecutivePasses, 0, 10_000, 0)
+      : undefined;
+  const lastOriginRunId = toTrimmedString(value.lastOriginRunId);
+  const lastShadowRunId = toTrimmedString(value.lastShadowRunId);
+  const lastPublishedAt =
+    value.lastPublishedAt === null
+      ? null
+      : toTrimmedString(value.lastPublishedAt, 64);
+  const lastSuggestedAt =
+    value.lastSuggestedAt === null
+      ? null
+      : toTrimmedString(value.lastSuggestedAt, 64);
+  const lastSuggestionConfidence =
+    typeof value.lastSuggestionConfidence === "number"
+      ? toScore(value.lastSuggestionConfidence, 0.75)
+      : undefined;
+  const lastSuggestionReason =
+    value.lastSuggestionReason === null
+      ? null
+      : toTrimmedString(value.lastSuggestionReason, 500);
+  if (
+    !role &&
+    !shadowOfProfileId &&
+    !state &&
+    evaluationRunsCompleted === undefined &&
+    consecutivePasses === undefined &&
+    !lastOriginRunId &&
+    !lastShadowRunId &&
+    lastPublishedAt === undefined &&
+    lastSuggestedAt === undefined &&
+    lastSuggestionConfidence === undefined &&
+    lastSuggestionReason === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    role,
+    shadowOfProfileId,
+    originProfileVersion,
+    state,
+    evaluationRunsCompleted,
+    consecutivePasses,
+    lastOriginRunId,
+    lastShadowRunId,
+    lastPublishedAt,
+    lastSuggestedAt,
+    lastSuggestionConfidence,
+    lastSuggestionReason,
+  };
+}
+
+function toLlmAssistConfig(value: unknown): CrawlLlmAssistConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const candidateBudgetByPageType: Partial<
+    Record<CrawlFrontierPageType, number>
+  > = {};
+  if (isPlainObject(value.candidateBudgetByPageType)) {
+    for (const key of ["home", "category", "list", "article"] as const) {
+      if (value.candidateBudgetByPageType[key] !== undefined) {
+        candidateBudgetByPageType[key] = toPositiveInt(
+          value.candidateBudgetByPageType[key],
+          0,
+          200,
+          key === "article" ? 0 : 24,
+        );
+      }
+    }
+  }
+  const autoPublishThresholds = toLlmAssistAutoPublishThresholds(
+    value.autoPublishThresholds,
+  );
+  const shadow = toLlmAssistShadowConfig(value.shadow);
+  const enabled =
+    typeof value.enabled === "boolean" ? value.enabled : undefined;
+  const recallMode = toRecallMode(value.recallMode);
+  const judgeModel = toTrimmedString(value.judgeModel);
+  const siteLearnerModel = toTrimmedString(value.siteLearnerModel);
+  const minJudgeConfidence =
+    value.minJudgeConfidence !== undefined
+      ? toScore(value.minJudgeConfidence, 0.75)
+      : undefined;
+  const shadowEvaluationRuns =
+    value.shadowEvaluationRuns !== undefined
+      ? toPositiveInt(value.shadowEvaluationRuns, 1, 20, 3)
+      : undefined;
+  if (
+    enabled === undefined &&
+    !recallMode &&
+    !judgeModel &&
+    !siteLearnerModel &&
+    Object.keys(candidateBudgetByPageType).length === 0 &&
+    minJudgeConfidence === undefined &&
+    shadowEvaluationRuns === undefined &&
+    !autoPublishThresholds &&
+    !shadow
+  ) {
+    return undefined;
+  }
+  return {
+    enabled,
+    recallMode,
+    judgeModel,
+    siteLearnerModel,
+    candidateBudgetByPageType:
+      Object.keys(candidateBudgetByPageType).length > 0
+        ? candidateBudgetByPageType
+        : undefined,
+    minJudgeConfidence,
+    shadowEvaluationRuns,
+    autoPublishThresholds,
+    shadow,
   };
 }
 
@@ -332,6 +535,7 @@ export function normalizeCrawlSiteProfileConfig(
     })(),
     freshnessRules: toFreshnessRules(value.freshnessRules),
     localeScope: toLocaleScope(value.localeScope),
+    llmAssist: toLlmAssistConfig(value.llmAssist),
     sourceTier: toSourceTier(value.sourceTier),
     pageRules: (() => {
       const rules = toObjectRecord(value.pageRules);

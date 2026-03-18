@@ -167,7 +167,7 @@ export interface RealtimeSignalsEnvConfig {
     predictionShiftThreshold: number;
     predictionNewsActivityThreshold: number;
   };
-  relay: {
+  ais: {
     baseUrl?: string;
     sharedSecret?: string;
   };
@@ -185,7 +185,6 @@ export interface RealtimeSignalsEnvConfig {
     criticalRemainingPct: number;
   };
   credentials: {
-    aisApiKey?: string;
     acledOauthUsername?: string;
     acledOauthPassword?: string;
     acledOauthClientId?: string;
@@ -527,7 +526,8 @@ export class EnvService extends ConfigService<ApiEnv> {
             }) ??
             this.get<boolean | undefined>("REALTIME_SIGNALS_ADSB_ENABLED", {
               infer: true,
-            }) ?? true,
+            }) ??
+            true,
           intervalSec:
             this.get<number | undefined>(
               "REALTIME_SIGNALS_OPENSKY_INTERVAL_SEC",
@@ -537,7 +537,8 @@ export class EnvService extends ConfigService<ApiEnv> {
             ) ??
             this.get<number | undefined>("REALTIME_SIGNALS_ADSB_INTERVAL_SEC", {
               infer: true,
-            }) ?? 900,
+            }) ??
+            900,
         },
         ais: {
           enabled:
@@ -631,17 +632,24 @@ export class EnvService extends ConfigService<ApiEnv> {
             },
           ) ?? 3,
       },
-      relay: {
-        baseUrl: this.get<string | undefined>(
-          "REALTIME_SIGNALS_RELAY_BASE_URL",
-          {
+      ais: {
+        baseUrl:
+          this.get<string | undefined>("REALTIME_SIGNALS_AIS_BASE_URL", {
             infer: true,
-          },
-        ),
-        sharedSecret: this.get<string | undefined>(
-          "REALTIME_SIGNALS_RELAY_SHARED_SECRET",
-          { infer: true },
-        ),
+          }) ??
+          this.get<string | undefined>("REALTIME_SIGNALS_RELAY_BASE_URL", {
+            infer: true,
+          }),
+        sharedSecret:
+          this.get<string | undefined>("REALTIME_SIGNALS_AIS_SHARED_SECRET", {
+            infer: true,
+          }) ??
+          this.get<string | undefined>("AIS_RELAY_SHARED_SECRET", {
+            infer: true,
+          }) ??
+          this.get<string | undefined>("REALTIME_SIGNALS_RELAY_SHARED_SECRET", {
+            infer: true,
+          }),
       },
       opensky: {
         baseUrl:
@@ -699,12 +707,6 @@ export class EnvService extends ConfigService<ApiEnv> {
           }) ?? 10,
       },
       credentials: {
-        aisApiKey: this.get<string | undefined>(
-          "REALTIME_SIGNALS_AIS_API_KEY",
-          {
-            infer: true,
-          },
-        ),
         acledOauthUsername: this.get<string | undefined>(
           "REALTIME_SIGNALS_ACLED_USERNAME",
           { infer: true },

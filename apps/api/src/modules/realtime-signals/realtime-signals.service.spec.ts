@@ -27,7 +27,7 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
     predictionShiftThreshold: 10,
     predictionNewsActivityThreshold: 5,
   },
-  relay: {},
+  aisRelay: {},
   opensky: {
     baseUrl: "https://opensky-network.org/api",
     tokenUrl:
@@ -46,6 +46,33 @@ const runtimeConfig: RealtimeSignalsRuntimeConfig = {
     acledAccessToken: "token",
   },
   polymarket: {},
+};
+
+const envConfig = {
+  enabled: runtimeConfig.enabled,
+  requestTimeoutMs: runtimeConfig.requestTimeoutMs,
+  maxRetries: runtimeConfig.maxRetries,
+  sources: {
+    opensky: runtimeConfig.sources.opensky,
+    ais: runtimeConfig.sources.ais,
+    unrest: runtimeConfig.sources.unrest,
+    outages: runtimeConfig.sources.outages,
+    keywordSpike: runtimeConfig.sources.keyword_spike,
+    pizzint: runtimeConfig.sources.pizzint,
+    gdeltTension: runtimeConfig.sources.gdelt_tension,
+    polymarketLeads: runtimeConfig.sources.polymarket_leads,
+  },
+  thresholds: runtimeConfig.thresholds,
+  ais: runtimeConfig.aisRelay,
+  opensky: runtimeConfig.opensky,
+  credentials: {
+    acledOauthUsername: undefined,
+    acledOauthPassword: undefined,
+    acledOauthClientId: undefined,
+    cloudflareApiToken: runtimeConfig.credentials.cloudflareApiToken,
+    wingbitsApiKey: runtimeConfig.credentials.wingbitsApiKey,
+  },
+  polymarket: runtimeConfig.polymarket,
 };
 
 const createRealtimeSignalsCache = () => {
@@ -86,6 +113,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       {} as any,
       cache as any,
       {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
       store as any,
       {} as any,
     );
@@ -302,7 +330,10 @@ describe("RealtimeSignalsService unrest merge", () => {
         },
       ]);
 
-    const result = await (service as any).fetchAdsbSignal("org-1", runtimeConfig);
+    const result = await (service as any).fetchAdsbSignal(
+      "org-1",
+      runtimeConfig,
+    );
 
     expect(result[0]).toMatchObject({
       context: {
@@ -378,29 +409,28 @@ describe("RealtimeSignalsService unrest merge", () => {
         },
       ]);
 
-    const result = await (service as any).fetchAdsbSignal("org-1", runtimeConfig);
+    const result = await (service as any).fetchAdsbSignal(
+      "org-1",
+      runtimeConfig,
+    );
 
     expect(result[0]?.context?.countryCodes).toEqual([]);
-    expect((result[0]?.context as Record<string, unknown>).latestObservedAt).toBe(
-      "2026-03-02T11:59:55.000Z",
-    );
+    expect(
+      (result[0]?.context as Record<string, unknown>).latestObservedAt,
+    ).toBe("2026-03-02T11:59:55.000Z");
     const storedSnapshot = store.setLatestAdsbSnapshot.mock.calls[0]?.[1] as
       | { aircraft?: Array<Record<string, unknown>> }
       | undefined;
     expect(storedSnapshot?.aircraft?.[0]?.countryCode).toBeUndefined();
   });
 
-  it("fetches AIS snapshots from the bare relay endpoint with compatible auth headers", async () => {
+  it("fetches AIS snapshots from the AIS service with bearer auth", async () => {
     const { service, store } = buildService();
     const runtime = {
       ...runtimeConfig,
-      relay: {
+      aisRelay: {
         baseUrl: "https://relay.example.com/",
         sharedSecret: "relay-secret",
-      },
-      credentials: {
-        ...runtimeConfig.credentials,
-        aisApiKey: "ais-key",
       },
     } satisfies RealtimeSignalsRuntimeConfig;
     const fetchJsonSpy = jest
@@ -458,9 +488,6 @@ describe("RealtimeSignalsService unrest merge", () => {
       {
         headers: {
           Authorization: "Bearer relay-secret",
-          "x-relay-key": "relay-secret",
-          "X-Relay-Secret": "relay-secret",
-          "X-AIS-API-Key": "ais-key",
         },
       },
     );
@@ -537,7 +564,7 @@ describe("RealtimeSignalsService unrest merge", () => {
     const { service } = buildService();
     const runtime = {
       ...runtimeConfig,
-      relay: {
+      aisRelay: {
         baseUrl: "https://relay.example.com",
       },
     } satisfies RealtimeSignalsRuntimeConfig;
@@ -545,7 +572,9 @@ describe("RealtimeSignalsService unrest merge", () => {
       density: [],
     });
 
-    await expect((service as any).fetchAisSignal("org-1", runtime)).rejects.toThrow(
+    await expect(
+      (service as any).fetchAisSignal("org-1", runtime),
+    ).rejects.toThrow(
       "AIS relay returned an invalid snapshot payload. Expected disruptions[] and density[].",
     );
   });
@@ -691,6 +720,7 @@ describe("RealtimeSignalsService unrest merge", () => {
       {} as any,
       cache as any,
       {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
     );
@@ -829,6 +859,7 @@ describe("RealtimeSignalsService insight snapshot freshness", () => {
       prisma as any,
       { ...cache, ...runtimeCache } as any,
       {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
     );
@@ -1056,6 +1087,7 @@ describe("RealtimeSignalsService scheduler lock", () => {
       prisma as any,
       cache as any,
       {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
       {} as any,
       settings as any,
     );
@@ -1101,6 +1133,7 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       prisma as any,
       cache as any,
       {} as any,
+      { realtimeSignalsConfig: envConfig } as any,
       store as any,
       settings as any,
     );
@@ -1224,15 +1257,31 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       recentProcessedItems: 0,
       recentProcessedItemsWithLocation: 0,
     });
-    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "usedCredits", 600);
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "usedCredits",
+      600,
+    );
     await cache.hincrby(
       "realtime-signals:opensky:credits:2026-03-12",
       "militaryCredits",
       480,
     );
-    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "allCredits", 120);
-    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "militaryCalls", 20);
-    await cache.hincrby("realtime-signals:opensky:credits:2026-03-12", "allCalls", 40);
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "allCredits",
+      120,
+    );
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "militaryCalls",
+      20,
+    );
+    await cache.hincrby(
+      "realtime-signals:opensky:credits:2026-03-12",
+      "allCalls",
+      40,
+    );
 
     const result = await service.getRuntimeDiagnostics("org-1");
 

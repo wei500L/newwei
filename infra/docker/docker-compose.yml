@@ -14,7 +14,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD",
         ]
       interval: 10s
       timeout: 5s
@@ -34,7 +34,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mongosh --quiet -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"
+          'mongosh --quiet -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval "db.adminCommand(''ping'').ok" | grep 1',
         ]
       interval: 10s
       timeout: 5s
@@ -73,11 +73,7 @@ services:
     volumes:
       - litellm-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
-        ]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -142,7 +138,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz', timeout=2).read()\""
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8081/healthz'', timeout=2).read()"',
         ]
       interval: 30s
       timeout: 5s
@@ -166,7 +162,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz', timeout=2).read()\""
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8090/healthz'', timeout=2).read()"',
         ]
       interval: 30s
       timeout: 5s
@@ -216,7 +212,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness', timeout=2).read()\""
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:4000/health/liveliness'', timeout=2).read()"',
         ]
       interval: 30s
       timeout: 5s
@@ -254,11 +250,11 @@ services:
           python - <<'PY'
         import pathlib
         import re
-        
+
         version = "unknown"
         try:
             import crawl4ai.__version__ as version_module
-        
+
             version = (
                 getattr(version_module, "__version__", None)
                 or getattr(version_module, "VERSION", None)
@@ -266,7 +262,7 @@ services:
             )
         except Exception:
             version = "unknown"
-        
+
         if isinstance(version, str) and version.strip() and version != "unknown":
             server_path = pathlib.Path("/app/server.py")
             content = server_path.read_text(encoding="utf-8")
@@ -315,30 +311,39 @@ services:
     ports:
       - "8082:11235"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import sys, urllib.request\nurls=['http://localhost:11235/dashboard/','http://localhost:11235/playground/']\nfor url in urls:\n  try:\n    urllib.request.urlopen(url, timeout=2).read();\n    sys.exit(0)\n  except Exception:\n    pass\nsys.exit(1)\n\""]
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request\nurls=['http://localhost:11235/dashboard/','http://localhost:11235/playground/']\nfor url in urls:\n  try:\n    urllib.request.urlopen(url, timeout=2).read();\n    sys.exit(0)\n  except Exception:\n    pass\nsys.exit(1)\n\"",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
 
   ais-relay:
-    image: ${NODE_IMAGE:-node:20}
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20}
     restart: unless-stopped
-    working_dir: /workspace/worldmonitor/scripts
+    working_dir: /workspace
     command: >
       sh -ec "
-      echo '[ais-relay] npm ci...';
-      npm ci --omit=dev;
-      echo '[ais-relay] starting relay...';
-      exec node ais-relay.cjs
+      echo '[ais-relay] pnpm install...';
+      pnpm install --filter @modular/ais-relay --frozen-lockfile;
+      echo '[ais-relay] starting dev server...';
+      pnpm --filter @modular/ais-relay run start:dev
       "
+    env_file:
+      - ./.env
     environment:
       PORT: 3004
-      NODE_ENV: production
-      AISSTREAM_API_KEY: ${AISSTREAM_API_KEY:-}
-      RELAY_SHARED_SECRET: ${REALTIME_SIGNALS_RELAY_SHARED_SECRET:-}
-      RELAY_AUTH_HEADER: x-relay-key
+      HUSKY: "0"
+      COREPACK_NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
       npm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+      pnpm_config_registry: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     dns:
       - ${DOCKER_DNS_1:-223.5.5.5}
       - ${DOCKER_DNS_2:-114.114.114.114}
@@ -346,14 +351,16 @@ services:
       - "${AIS_RELAY_PORT:-3004}:3004"
     volumes:
       - ../..:/workspace
-      - ais-relay-node-modules:/workspace/worldmonitor/scripts/node_modules
+      - ais-relay-node-modules:/workspace/node_modules
+      - ais-relay-app-ais-relay-node-modules:/workspace/apps/ais-relay/node_modules
+      - ais-relay-pnpm-store:/root/.local/share/pnpm/store
     healthcheck:
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3004/health').then((response) => response.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+          "fetch('http://127.0.0.1:3004/health').then((response) => response.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
@@ -611,3 +618,5 @@ volumes:
   web-infra-scripts-node-modules:
   web-next-dist:
   ais-relay-node-modules:
+  ais-relay-app-ais-relay-node-modules:
+  ais-relay-pnpm-store:

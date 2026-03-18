@@ -24,7 +24,7 @@ const baseEnvConfig = {
     predictionShiftThreshold: 5,
     predictionNewsActivityThreshold: 3,
   },
-  relay: {},
+  ais: {},
   opensky: {
     baseUrl: "https://opensky-network.org/api",
     tokenUrl:
@@ -40,7 +40,6 @@ const baseEnvConfig = {
     criticalRemainingPct: 10,
   },
   credentials: {
-    aisApiKey: undefined,
     acledOauthUsername: undefined,
     acledOauthPassword: undefined,
     acledOauthClientId: undefined,
@@ -254,6 +253,79 @@ describe("RealtimeSignalsSettingsService", () => {
       nightStartHourHkt: 22,
       warningRemainingPct: 20,
       criticalRemainingPct: 10,
+    });
+  });
+
+  it("exposes AIS relay settings in public settings using the AIS-specific field names", async () => {
+    store.set(REALTIME_SIGNALS_SETTINGS_KEY, {
+      aisRelayBaseUrl: "https://ais-relay.example.com/",
+      aisRelaySharedSecret: "relay-secret",
+    });
+
+    const response = await service.getPublicSettings();
+
+    expect(response.aisRelayBaseUrl).toBe("https://ais-relay.example.com");
+    expect(response.hasAisRelaySharedSecret).toBe(true);
+    expect(response.aisRelaySharedSecretSource).toBe("stored");
+  });
+
+  it("keeps legacy stored AIS relay config active in runtime settings", async () => {
+    store.set(REALTIME_SIGNALS_SETTINGS_KEY, {
+      relayBaseUrl: "https://legacy-relay.example.com/",
+      relaySharedSecret: "legacy-secret",
+    });
+
+    const runtime = await service.getRuntimeConfig();
+
+    expect(runtime.aisRelay).toEqual({
+      baseUrl: "https://legacy-relay.example.com",
+      sharedSecret: "legacy-secret",
+    });
+  });
+
+  it("migrates legacy stored AIS relay config to AIS-specific field names when updating unrelated settings", async () => {
+    store.set(REALTIME_SIGNALS_SETTINGS_KEY, {
+      relayBaseUrl: "https://legacy-relay.example.com/",
+      relaySharedSecret: "legacy-secret",
+      enabled: true,
+    });
+
+    await service.updateSettings("org-1", "user-1", {
+      keywordSpikeMinCount: 12,
+    });
+
+    expect(store.get(REALTIME_SIGNALS_SETTINGS_KEY)).toMatchObject({
+      aisRelayBaseUrl: "https://legacy-relay.example.com",
+      aisRelaySharedSecret: "legacy-secret",
+      keywordSpikeMinCount: 12,
+    });
+    expect(store.get(REALTIME_SIGNALS_SETTINGS_KEY)).not.toMatchObject({
+      relayBaseUrl: expect.anything(),
+      relaySharedSecret: expect.anything(),
+    });
+  });
+
+  it("stores AIS relay updates under AIS-specific field names", async () => {
+    await service.updateSettings("org-1", "user-1", {
+      aisRelayBaseUrl: "https://ais-relay.example.com/",
+      aisRelaySharedSecret: "next-secret",
+    });
+
+    expect(store.get(REALTIME_SIGNALS_SETTINGS_KEY)).toMatchObject({
+      aisRelayBaseUrl: "https://ais-relay.example.com",
+      aisRelaySharedSecret: "next-secret",
+    });
+  });
+
+  it("accepts legacy relay update aliases while storing AIS-specific field names", async () => {
+    await service.updateSettings("org-1", "user-1", {
+      relayBaseUrl: "https://legacy-input.example.com/",
+      relaySharedSecret: "legacy-input-secret",
+    });
+
+    expect(store.get(REALTIME_SIGNALS_SETTINGS_KEY)).toMatchObject({
+      aisRelayBaseUrl: "https://legacy-input.example.com",
+      aisRelaySharedSecret: "legacy-input-secret",
     });
   });
 

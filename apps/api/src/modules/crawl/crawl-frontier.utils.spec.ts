@@ -244,6 +244,61 @@ describe("crawl-frontier.utils", () => {
     ).toBe("foreign_locale");
   });
 
+  it("normalizes llm assist settings for active and shadow profiles", () => {
+    const normalized = normalizeCrawlSiteProfileConfig({
+      ...config,
+      llmAssist: {
+        enabled: true,
+        recallMode: "high_recall",
+        minJudgeConfidence: 0.82,
+        shadowEvaluationRuns: 4,
+        candidateBudgetByPageType: {
+          home: 20,
+          category: 18,
+          list: 12,
+        },
+        autoPublishThresholds: {
+          minArticleLift: 0.2,
+          minNoiseReduction: 0.3,
+          minJudgeConfidence: 0.8,
+        },
+        shadow: {
+          role: "shadow",
+          shadowOfProfileId: "profile-active",
+          state: "evaluating",
+          evaluationRunsCompleted: 2,
+          consecutivePasses: 1,
+        },
+      },
+    });
+
+    expect(normalized.llmAssist).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        recallMode: "high_recall",
+        minJudgeConfidence: 0.82,
+        shadowEvaluationRuns: 4,
+        candidateBudgetByPageType: expect.objectContaining({
+          home: 20,
+          category: 18,
+          list: 12,
+        }),
+        autoPublishThresholds: expect.objectContaining({
+          minArticleLift: 0.2,
+          minNoiseReduction: 0.3,
+          minJudgeConfidence: 0.8,
+        }),
+        shadow: expect.objectContaining({
+          role: "shadow",
+          shadowOfProfileId: "profile-active",
+          state: "evaluating",
+          evaluationRunsCompleted: 2,
+          consecutivePasses: 1,
+        }),
+      }),
+    );
+  });
+
   it("honors explicit locale deny patterns for multilingual portals", () => {
     expect(
       shouldRejectFrontierUrl({

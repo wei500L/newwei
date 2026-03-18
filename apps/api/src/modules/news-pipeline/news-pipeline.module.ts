@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { LlmRequestLogModel } from "@modular/mongo";
 
 import { CrawlModule } from "../crawl/crawl.module";
@@ -19,7 +19,7 @@ import { NewsPromptConfigService } from "./news-prompt-config.service";
 import { NewsPromptBuilder } from "./news-prompt.builder";
 
 @Module({
-  imports: [CrawlModule],
+  imports: [forwardRef(() => CrawlModule)],
   controllers: [LlmRequestLogController],
   providers: [
     {

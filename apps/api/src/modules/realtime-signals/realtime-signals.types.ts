@@ -253,7 +253,7 @@ export interface RealtimeSignalsRuntimeConfig {
     predictionShiftThreshold: number;
     predictionNewsActivityThreshold: number;
   };
-  relay: {
+  aisRelay: {
     baseUrl?: string;
     sharedSecret?: string;
   };
@@ -271,7 +271,6 @@ export interface RealtimeSignalsRuntimeConfig {
     criticalRemainingPct: number;
   };
   credentials: {
-    aisApiKey?: string;
     acledAccessToken?: string;
     cloudflareApiToken?: string;
     wingbitsApiKey?: string;

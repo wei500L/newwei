@@ -442,6 +442,21 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .nonnegative()
       .default(3),
+    REALTIME_SIGNALS_AIS_BASE_URL: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().url().optional(),
+    ),
+    REALTIME_SIGNALS_AIS_SHARED_SECRET: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
+    AIS_RELAY_SHARED_SECRET: z.preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? undefined : value,
+      z.string().min(1).optional(),
+    ),
     REALTIME_SIGNALS_RELAY_BASE_URL: z.preprocess(
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -481,11 +496,6 @@ export const apiEnvSchema = baseEnvSchema
       (value) =>
         typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().url().optional(),
-    ),
-    REALTIME_SIGNALS_AIS_API_KEY: z.preprocess(
-      (value) =>
-        typeof value === "string" && value.trim() === "" ? undefined : value,
-      z.string().min(1).optional(),
     ),
     REALTIME_SIGNALS_ACLED_USERNAME: z.preprocess(
       (value) =>

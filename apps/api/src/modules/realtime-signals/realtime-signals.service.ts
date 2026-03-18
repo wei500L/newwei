@@ -2288,8 +2288,8 @@ export class RealtimeSignalsService {
     orgId: string,
     runtime: RealtimeSignalsRuntimeConfig,
   ) {
-    const relayBase = this.normalizeUrl(runtime.relay.baseUrl);
-    if (!relayBase) {
+    const aisBase = this.normalizeUrl(runtime.aisRelay.baseUrl);
+    if (!aisBase) {
       await this.store.clearLatestAisSnapshot(orgId);
       return [
         {
@@ -2309,20 +2309,15 @@ export class RealtimeSignalsService {
         },
       ] satisfies RealtimeSignalFetchResult[];
     }
-    const relayHeaders = this.buildRelayHeaders(runtime) ?? {};
-    const aisApiKey = runtime.credentials.aisApiKey?.trim();
-    const headers = {
-      ...relayHeaders,
-      ...(aisApiKey ? { "X-AIS-API-Key": aisApiKey } : {}),
-    };
+    const headers = this.buildAisHeaders(runtime);
     const payload = await this.fetchJsonWithRetry(
-      `${relayBase}/ais/snapshot?candidates=true`,
+      `${aisBase}/ais/snapshot?candidates=true`,
       runtime,
-      Object.keys(headers).length > 0 ? { headers } : undefined,
+      headers ? { headers } : undefined,
     );
     const snapshot = this.buildAisLatestSnapshot(
       payload,
-      `${relayBase}/ais/snapshot`,
+      `${aisBase}/ais/snapshot`,
     );
     await this.store.setLatestAisSnapshot(
       orgId,
@@ -3729,7 +3724,7 @@ export class RealtimeSignalsService {
     if (source === "ais" && context.configured === false) {
       return {
         code: "ais_not_configured",
-        message: "AIS relay base URL is not configured.",
+        message: "AIS base URL is not configured.",
       };
     }
     if (source === "outages" && context.configured === false) {
@@ -3931,10 +3926,9 @@ export class RealtimeSignalsService {
         polymarket_leads: cfg.sources.polymarketLeads,
       },
       thresholds: cfg.thresholds,
-      relay: cfg.relay,
+      aisRelay: cfg.ais,
       opensky: cfg.opensky,
       credentials: {
-        aisApiKey: cfg.credentials.aisApiKey,
         cloudflareApiToken: cfg.credentials.cloudflareApiToken,
         wingbitsApiKey: cfg.credentials.wingbitsApiKey,
       },
@@ -4465,15 +4459,13 @@ export class RealtimeSignalsService {
     return Array.from(terms);
   }
 
-  private buildRelayHeaders(runtime: RealtimeSignalsRuntimeConfig) {
-    const secret = runtime.relay.sharedSecret?.trim();
+  private buildAisHeaders(runtime: RealtimeSignalsRuntimeConfig) {
+    const secret = runtime.aisRelay.sharedSecret?.trim();
     if (!secret) {
       return undefined;
     }
     return {
       Authorization: `Bearer ${secret}`,
-      "x-relay-key": secret,
-      "X-Relay-Secret": secret,
     } satisfies Record<string, string>;
   }
 

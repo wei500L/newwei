@@ -61,11 +61,12 @@ interface StoredRealtimeSignalsSettings {
   openskyBaseUrl?: unknown;
   adsbBaseUrl?: unknown;
   openskyTokenUrl?: unknown;
+  aisRelayBaseUrl?: unknown;
   openskyClientId?: unknown;
   openskyClientSecret?: unknown;
+  aisRelaySharedSecret?: unknown;
   relayBaseUrl?: unknown;
   relaySharedSecret?: unknown;
-  aisApiKey?: unknown;
   acledAccessToken?: unknown;
   acledOauthUsername?: unknown;
   acledOauthPassword?: unknown;
@@ -135,13 +136,12 @@ interface EffectiveRealtimeSignalsSettings {
   predictionNewsActivityThreshold: number;
   openskyBaseUrl?: string;
   openskyTokenUrl?: string;
+  aisRelayBaseUrl?: string;
   openskyClientId?: string;
   openskyClientIdSource: RealtimeSignalsSecretSource;
   openskyClientSecret?: string;
   openskyClientSecretSource: RealtimeSignalsSecretSource;
-  relayBaseUrl?: string;
-  relaySharedSecret?: string;
-  aisApiKey?: string;
+  aisRelaySharedSecret?: string;
   acledOauthUsername?: string;
   acledOauthUsernameSource: RealtimeSignalsSecretSource;
   acledOauthPassword?: string;
@@ -204,16 +204,14 @@ export interface RealtimeSignalsSettingsPublic {
   predictionNewsActivityThreshold: number;
   openskyBaseUrl?: string;
   openskyTokenUrl?: string;
-  relayBaseUrl?: string;
+  aisRelayBaseUrl?: string;
   polymarketProxyUrl?: string;
   openskyClientId?: string;
   openskyClientIdSource: RealtimeSignalsSecretSource;
+  hasAisRelaySharedSecret: boolean;
+  aisRelaySharedSecretSource: RealtimeSignalsSecretSource;
   hasOpenskyClientSecret: boolean;
   openskyClientSecretSource: RealtimeSignalsSecretSource;
-  hasRelaySharedSecret: boolean;
-  relaySharedSecretSource: RealtimeSignalsSecretSource;
-  hasAisApiKey: boolean;
-  aisApiKeySource: RealtimeSignalsSecretSource;
   hasAcledAccessToken: boolean;
   acledAccessTokenSource: RealtimeSignalsSecretSource;
   acledAccessTokenStatus: RealtimeSignalsAcledAccessTokenStatus;
@@ -235,7 +233,7 @@ export interface RealtimeSignalsSettingsPublic {
 
 const SETTINGS_KEY = "realtime_signals_settings";
 const SETTINGS_DESCRIPTION =
-  "Realtime signals settings (source toggles, thresholds, relay URLs, and API credentials).";
+  "Realtime signals settings (source toggles, thresholds, and API credentials).";
 const CACHE_KEY = "realtime-signals:settings";
 const CACHE_TTL_SECONDS = 30;
 
@@ -247,8 +245,7 @@ const ACLED_AUTH_REFRESH_LOCK_KEY = "realtime-signals:acled-auth-refresh";
 const ACLED_OAUTH_URL = "https://acleddata.com/oauth/token";
 const DEFAULT_ACLED_CLIENT_ID = "acled";
 const ACLED_API_ENABLED = false;
-const ACLED_API_DISABLED_REASON =
-  "Open myACLED does not include API access.";
+const ACLED_API_DISABLED_REASON = "Open myACLED does not include API access.";
 const ACLED_TOKEN_REFRESH_WINDOW_MS = 10 * 60 * 1000;
 const ACLED_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const ACLED_REFRESH_LOCK_TTL_MS = 30_000;
@@ -273,17 +270,6 @@ export class RealtimeSignalsSettingsService {
       refreshMode: "none",
     });
 
-    const relaySharedSecretPresence = this.resolveSecretPresence(
-      this.resolveStoredSecret(
-        stored?.relaySharedSecret,
-        "relay shared secret",
-      ),
-      effective.relaySharedSecret,
-    );
-    const aisApiKeyPresence = this.resolveSecretPresence(
-      this.resolveStoredSecret(stored?.aisApiKey, "ais api key"),
-      effective.aisApiKey,
-    );
     const cloudflareTokenPresence = this.resolveSecretPresence(
       this.resolveStoredSecret(
         stored?.cloudflareApiToken,
@@ -294,6 +280,13 @@ export class RealtimeSignalsSettingsService {
     const wingbitsApiKeyPresence = this.resolveSecretPresence(
       this.resolveStoredSecret(stored?.wingbitsApiKey, "wingbits api key"),
       effective.wingbitsApiKey,
+    );
+    const aisRelaySharedSecretPresence = this.resolveSecretPresence(
+      this.resolveStoredSecret(
+        stored?.aisRelaySharedSecret ?? stored?.relaySharedSecret,
+        "ais relay shared secret",
+      ),
+      effective.aisRelaySharedSecret,
     );
     const openskyClientSecretPresence = this.resolveSecretPresence(
       this.resolveStoredSecret(
@@ -340,16 +333,14 @@ export class RealtimeSignalsSettingsService {
         effective.predictionNewsActivityThreshold,
       openskyBaseUrl: effective.openskyBaseUrl,
       openskyTokenUrl: effective.openskyTokenUrl,
-      relayBaseUrl: effective.relayBaseUrl,
+      aisRelayBaseUrl: effective.aisRelayBaseUrl,
       polymarketProxyUrl: effective.polymarketProxyUrl,
       openskyClientId: effective.openskyClientId,
       openskyClientIdSource: effective.openskyClientIdSource,
+      hasAisRelaySharedSecret: aisRelaySharedSecretPresence.has,
+      aisRelaySharedSecretSource: aisRelaySharedSecretPresence.source,
       hasOpenskyClientSecret: openskyClientSecretPresence.has,
       openskyClientSecretSource: openskyClientSecretPresence.source,
-      hasRelaySharedSecret: relaySharedSecretPresence.has,
-      relaySharedSecretSource: relaySharedSecretPresence.source,
-      hasAisApiKey: aisApiKeyPresence.has,
-      aisApiKeySource: aisApiKeyPresence.source,
       hasAcledAccessToken: Boolean(resolvedAcledToken.token),
       acledAccessTokenSource: resolvedAcledToken.source,
       acledAccessTokenStatus: resolvedAcledToken.status,
@@ -433,9 +424,9 @@ export class RealtimeSignalsSettingsService {
         predictionNewsActivityThreshold:
           effective.predictionNewsActivityThreshold,
       },
-      relay: {
-        baseUrl: effective.relayBaseUrl,
-        sharedSecret: effective.relaySharedSecret,
+      aisRelay: {
+        baseUrl: effective.aisRelayBaseUrl,
+        sharedSecret: effective.aisRelaySharedSecret,
       },
       opensky: {
         baseUrl: effective.openskyBaseUrl,
@@ -451,7 +442,6 @@ export class RealtimeSignalsSettingsService {
         criticalRemainingPct: effective.openskyCriticalRemainingPct,
       },
       credentials: {
-        aisApiKey: effective.aisApiKey,
         acledAccessToken: acledApiPolicy.enabled
           ? resolvedAcledToken.token
           : undefined,
@@ -515,11 +505,12 @@ export class RealtimeSignalsSettingsService {
       openskyBaseUrl?: string | null;
       adsbBaseUrl?: string | null;
       openskyTokenUrl?: string | null;
+      aisRelayBaseUrl?: string | null;
+      relayBaseUrl?: string | null;
       openskyClientId?: string | null;
       openskyClientSecret?: string | null;
-      relayBaseUrl?: string | null;
+      aisRelaySharedSecret?: string | null;
       relaySharedSecret?: string | null;
-      aisApiKey?: string | null;
       acledOauthUsername?: string | null;
       acledOauthPassword?: string | null;
       acledOauthClientId?: string | null;
@@ -698,6 +689,11 @@ export class RealtimeSignalsSettingsService {
         input.openskyTokenUrl,
         "openskyTokenUrl",
       ),
+      aisRelayBaseUrl: this.resolveNextUrl(
+        stored?.aisRelayBaseUrl ?? stored?.relayBaseUrl,
+        input.aisRelayBaseUrl ?? input.relayBaseUrl,
+        "aisRelayBaseUrl",
+      ),
       openskyClientId: this.resolveNextString(
         stored?.openskyClientId,
         input.openskyClientId,
@@ -706,19 +702,12 @@ export class RealtimeSignalsSettingsService {
         stored?.openskyClientSecret,
         input.openskyClientSecret,
       ),
-      relayBaseUrl: this.resolveNextUrl(
-        stored?.relayBaseUrl,
-        input.relayBaseUrl,
-        "relayBaseUrl",
+      aisRelaySharedSecret: await this.resolveNextSecret(
+        stored?.aisRelaySharedSecret ?? stored?.relaySharedSecret,
+        input.aisRelaySharedSecret ?? input.relaySharedSecret,
       ),
-      relaySharedSecret: await this.resolveNextSecret(
-        stored?.relaySharedSecret,
-        input.relaySharedSecret,
-      ),
-      aisApiKey: await this.resolveNextSecret(
-        stored?.aisApiKey,
-        input.aisApiKey,
-      ),
+      relayBaseUrl: undefined,
+      relaySharedSecret: undefined,
       acledAccessToken: null,
       acledOauthUsername: this.resolveNextString(
         stored?.acledOauthUsername,
@@ -753,7 +742,8 @@ export class RealtimeSignalsSettingsService {
       openskyNightIntervalSec: nextStored.openskyNightIntervalSec as number,
       openskyDayStartHourHkt: nextStored.openskyDayStartHourHkt as number,
       openskyNightStartHourHkt: nextStored.openskyNightStartHourHkt as number,
-      openskyWarningRemainingPct: nextStored.openskyWarningRemainingPct as number,
+      openskyWarningRemainingPct:
+        nextStored.openskyWarningRemainingPct as number,
       openskyCriticalRemainingPct:
         nextStored.openskyCriticalRemainingPct as number,
     });
@@ -791,9 +781,10 @@ export class RealtimeSignalsSettingsService {
             ok: true,
             updatedFields: Object.keys(input),
             secretsUpdated: {
+              aisRelaySharedSecret:
+                input.aisRelaySharedSecret !== undefined ||
+                input.relaySharedSecret !== undefined,
               openskyClientSecret: input.openskyClientSecret !== undefined,
-              relaySharedSecret: input.relaySharedSecret !== undefined,
-              aisApiKey: input.aisApiKey !== undefined,
               acledOauthPassword: input.acledOauthPassword !== undefined,
               cloudflareApiToken: input.cloudflareApiToken !== undefined,
               wingbitsApiKey: input.wingbitsApiKey !== undefined,
@@ -859,19 +850,19 @@ export class RealtimeSignalsSettingsService {
     stored: StoredRealtimeSignalsSettings | null,
   ): EffectiveRealtimeSignalsSettings {
     const envConfig = this.env.realtimeSignalsConfig;
-
-    const envRelaySharedSecret = this.normalizeString(
-      envConfig.relay.sharedSecret,
+    const envAisRelayBaseUrl = this.normalizeUrl(envConfig.ais.baseUrl);
+    const storedAisRelayBaseUrl = this.normalizeUrl(stored?.aisRelayBaseUrl);
+    const storedLegacyRelayBaseUrl = this.normalizeUrl(stored?.relayBaseUrl);
+    const envAisRelaySharedSecret = this.normalizeString(
+      envConfig.ais.sharedSecret,
     );
-    const storedRelaySharedSecret = this.resolveStoredSecret(
+    const storedAisRelaySharedSecret = this.resolveStoredSecret(
+      stored?.aisRelaySharedSecret,
+      "ais relay shared secret",
+    );
+    const storedLegacyRelaySharedSecret = this.resolveStoredSecret(
       stored?.relaySharedSecret,
-      "relay shared secret",
-    );
-
-    const envAisApiKey = this.normalizeString(envConfig.credentials.aisApiKey);
-    const storedAisApiKey = this.resolveStoredSecret(
-      stored?.aisApiKey,
-      "ais api key",
+      "legacy relay shared secret",
     );
 
     const envOpenskyClientId = this.normalizeString(envConfig.opensky.clientId);
@@ -1098,17 +1089,17 @@ export class RealtimeSignalsSettingsService {
         storedOpenskyClientId,
         envOpenskyClientId,
       ).source,
-      openskyClientSecret:
-        storedOpenskyClientSecret ?? envOpenskyClientSecret,
+      openskyClientSecret: storedOpenskyClientSecret ?? envOpenskyClientSecret,
       openskyClientSecretSource: this.resolveSecretPresence(
         storedOpenskyClientSecret,
         envOpenskyClientSecret,
       ).source,
-      relayBaseUrl:
-        this.normalizeUrl(stored?.relayBaseUrl) ??
-        this.normalizeUrl(envConfig.relay.baseUrl),
-      relaySharedSecret: storedRelaySharedSecret ?? envRelaySharedSecret,
-      aisApiKey: storedAisApiKey ?? envAisApiKey,
+      aisRelayBaseUrl:
+        storedAisRelayBaseUrl ?? storedLegacyRelayBaseUrl ?? envAisRelayBaseUrl,
+      aisRelaySharedSecret:
+        storedAisRelaySharedSecret ??
+        storedLegacyRelaySharedSecret ??
+        envAisRelaySharedSecret,
       acledOauthUsername: storedAcledOauthUsername ?? envAcledOauthUsername,
       acledOauthUsernameSource: this.resolveSecretPresence(
         storedAcledOauthUsername,

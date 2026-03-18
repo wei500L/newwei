@@ -1,7 +1,6 @@
 export const REALTIME_SIGNALS_SECRET_FIELD_NAMES = [
+  "aisRelaySharedSecret",
   "openskyClientSecret",
-  "relaySharedSecret",
-  "aisApiKey",
   "acledOauthPassword",
   "cloudflareApiToken",
   "wingbitsApiKey",

@@ -2,7 +2,7 @@
 import { CrawlFrontierService } from "./crawl-frontier.service";
 
 describe("CrawlFrontierService", () => {
-  const createService = () => {
+  const createService = (frontierLlm?: Record<string, unknown>) => {
     const prisma = {
       crawlFrontierRun: {
         findUnique: jest.fn(),
@@ -22,11 +22,13 @@ describe("CrawlFrontierService", () => {
       {} as any,
       {} as any,
       queueService,
+      frontierLlm as any,
     );
     return {
       service,
       prisma,
       queueService,
+      frontierLlm,
     };
   };
 
@@ -674,5 +676,160 @@ describe("CrawlFrontierService", () => {
         }),
       }),
     });
+  });
+
+  it("uses llm-assisted frontier judgments to drop noisy candidates and retag page types", async () => {
+    const frontierLlm = {
+      judgeCandidates: jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            url: "https://example.com/section/world",
+            pageType: "list",
+            score: 6.1,
+            freshnessScore: 0.3,
+            metadata: {
+              judgeMethod: "llm",
+              judgeConfidence: 0.91,
+              judgeReason: "section landing page",
+            },
+          },
+          {
+            url: "https://example.com/2026/03/18/world/story-a",
+            pageType: "article",
+            score: 6.6,
+            freshnessScore: 1,
+            metadata: {
+              judgeMethod: "llm",
+              judgeConfidence: 0.95,
+              judgeReason: "dated article url",
+            },
+          },
+        ],
+        diagnostics: {
+          llmJudgeAttempted: true,
+          llmJudgeDropped: 1,
+          llmJudgeRetyped: 1,
+        },
+      }),
+    };
+    const { service, prisma, queueService } = createService(frontierLlm);
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        canonicalUrl: "https://example.com/",
+        urlFingerprint: "seed",
+        pageType: "home",
+      },
+    ]);
+    prisma.crawlFrontierNode.create.mockImplementation(async ({ data }: any) => ({
+      id: `node-${data.url}`,
+      ...data,
+    }));
+    jest.spyOn(service as any, "extractCandidates").mockReturnValue({
+      candidates: [
+        {
+          url: "https://example.com/section/world",
+          pageType: "category",
+          score: 5,
+          freshnessScore: 0.2,
+          metadata: {
+            linkText: "World",
+          },
+        },
+        {
+          url: "https://example.com/profile/editorial",
+          pageType: "list",
+          score: 4.8,
+          freshnessScore: 0,
+          metadata: {
+            linkText: "Editorial profile",
+          },
+        },
+        {
+          url: "https://example.com/2026/03/18/world/story-a",
+          pageType: "list",
+          score: 5.8,
+          freshnessScore: 1,
+          metadata: {
+            linkText: "Story A",
+          },
+        },
+      ],
+      diagnostics: {
+        candidateStats: {
+          scanned: 3,
+          unique: 3,
+          accepted: 3,
+          selected: 3,
+          rejected: 0,
+          trimmed: 0,
+        },
+        rejectionCounts: {},
+        acceptedPageTypeCounts: {
+          home: 0,
+          category: 1,
+          list: 2,
+          article: 0,
+        },
+        warningFlags: [],
+        syntheticListActivated: false,
+      },
+    });
+
+    const diagnostics = await (service as any).discoverChildNodes({
+      node: {
+        id: "seed-node",
+        orgId: "org-1",
+        url: "https://example.com/",
+        pageType: "home",
+        depth: 0,
+      },
+      runId: "run-1",
+      taskId: "task-1",
+      maxDepth: 3,
+      maxPages: 8,
+      profile: {
+        id: "profile-1",
+        orgId: "org-1",
+        name: "Example",
+        description: null,
+        matchHost: "example.com",
+        isActive: true,
+        executionMode: "layered",
+        version: 1,
+        createdById: "user-1",
+        updatedById: "user-1",
+        publishedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        config: {
+          llmAssist: {
+            enabled: true,
+          },
+          layeredOptions: {
+            paginationKeepCount: 2,
+          },
+        },
+      },
+      results: [],
+    });
+
+    expect(frontierLlm.judgeCandidates).toHaveBeenCalledTimes(1);
+    expect(prisma.crawlFrontierNode.create).toHaveBeenCalledTimes(2);
+    expect(
+      prisma.crawlFrontierNode.create.mock.calls.map(
+        ([entry]: [Record<string, any>]) => [entry.data.url, entry.data.pageType],
+      ),
+    ).toEqual([
+      ["https://example.com/section/world", "list"],
+      ["https://example.com/2026/03/18/world/story-a", "article"],
+    ]);
+    expect(queueService.enqueueFrontierNode).toHaveBeenCalledTimes(2);
+    expect(diagnostics).toEqual(
+      expect.objectContaining({
+        llmJudgeAttempted: true,
+        llmJudgeDropped: 1,
+        llmJudgeRetyped: 1,
+      }),
+    );
   });
 });

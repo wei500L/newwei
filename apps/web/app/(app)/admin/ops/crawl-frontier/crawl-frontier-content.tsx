@@ -209,6 +209,9 @@ function formatPath(value: unknown) {
 
 function summarizeProfileConfig(config: Record<string, unknown>) {
   const summary: string[] = [];
+  const llmAssist = asRecord(config.llmAssist);
+  const nativeOptions = asRecord(config.nativeOptions);
+  const nativeDeepCrawlStrategy = asRecord(nativeOptions?.deepCrawlStrategy);
   if (typeof config.hostScope === "string") {
     summary.push(config.hostScope);
   }
@@ -232,15 +235,31 @@ function summarizeProfileConfig(config: Record<string, unknown>) {
   if (Array.isArray(config.domLinkScopes)) {
     summary.push(`scopes:${config.domLinkScopes.length}`);
   }
-  if (isRecord(config.nativeOptions) && isRecord(config.nativeOptions.deepCrawlStrategy)) {
+  if (llmAssist) {
+    if (llmAssist.enabled === true) {
+      summary.push(
+        `llm:${typeof llmAssist.recallMode === "string" ? llmAssist.recallMode : "on"}`,
+      );
+    }
+    const shadow = asRecord(llmAssist.shadow);
+    if (shadow) {
+      if (typeof shadow.role === "string") {
+        summary.push(`shadow:${shadow.role}`);
+      }
+      if (typeof shadow.state === "string") {
+        summary.push(`state:${shadow.state}`);
+      }
+    }
+  }
+  if (nativeOptions && nativeDeepCrawlStrategy) {
     if (
-      typeof config.nativeOptions.deepCrawlStrategy.type === "string" &&
-      config.nativeOptions.deepCrawlStrategy.type.trim().toLowerCase() === "auto"
+      typeof nativeDeepCrawlStrategy.type === "string" &&
+      nativeDeepCrawlStrategy.type.trim().toLowerCase() === "auto"
     ) {
       summary.push("strategy:auto");
     }
-    const hasManualFilterChain = isRecord(config.nativeOptions.filterChain);
-    const hasManualUrlScorer = isRecord(config.nativeOptions.urlScorer);
+    const hasManualFilterChain = isRecord(nativeOptions.filterChain);
+    const hasManualUrlScorer = isRecord(nativeOptions.urlScorer);
     summary.push(
       hasManualFilterChain || hasManualUrlScorer ? "native" : "native:auto",
     );
@@ -430,6 +449,27 @@ export function CrawlFrontierContent() {
           fallbackToLayered: true,
           minAcceptedResults: 2,
           minArticleResults: 1,
+        },
+        llmAssist: {
+          enabled: true,
+          recallMode: "high_recall",
+          minJudgeConfidence: 0.75,
+          shadowEvaluationRuns: 3,
+          candidateBudgetByPageType: {
+            home: 24,
+            category: 24,
+            list: 16,
+            article: 0,
+          },
+          autoPublishThresholds: {
+            minArticleLift: 0.15,
+            minNoiseReduction: 0.2,
+            minJudgeConfidence: 0.75,
+          },
+          shadow: {
+            role: "active",
+            state: "candidate",
+          },
         },
         layeredOptions: {
           maxDepth: 3,
@@ -781,9 +821,28 @@ export function CrawlFrontierContent() {
         const warningFlags = asStringArray(metadata?.warningFlags);
         const failureKind =
           typeof metadata?.failureKind === "string" ? metadata.failureKind : null;
+        const judgeSummary = asRecord(metadata?.judgeSummary);
+        const llmLifecycle = asRecord(metadata?.llmLifecycle);
+        const runRole =
+          typeof metadata?.runRole === "string"
+            ? metadata.runRole
+            : typeof llmLifecycle?.role === "string"
+              ? llmLifecycle.role
+              : null;
+        const shadowProfileId =
+          typeof metadata?.shadowProfileId === "string"
+            ? metadata.shadowProfileId
+            : null;
         return (
           <Space wrap size={[4, 4]}>
             {failureKind ? <Tag color="red">{failureKind}</Tag> : null}
+            {runRole ? <Tag color="blue">{runRole}</Tag> : null}
+            {shadowProfileId ? <Tag color="purple">shadow-profile</Tag> : null}
+            {judgeSummary && asNumber(judgeSummary.count) ? (
+              <Tag color="cyan">
+                {`judge:${asNumber(judgeSummary.count) ?? 0}`}
+              </Tag>
+            ) : null}
             {warningFlags.slice(0, 3).map((flag) => (
               <Tag key={`${record.id}-${flag}`} color="gold">
                 {flag}
@@ -876,10 +935,21 @@ export function CrawlFrontierContent() {
         const warningFlags = asStringArray(metadata?.warningFlags);
         const failureKind =
           typeof metadata?.failureKind === "string" ? metadata.failureKind : null;
+        const judgeMethod =
+          typeof metadata?.judgeMethod === "string" ? metadata.judgeMethod : null;
+        const judgeConfidence = asNumber(metadata?.judgeConfidence);
         return (
           <Space wrap size={[4, 4]}>
             {record.metadata?.syntheticList ? <Tag color="purple">synthetic</Tag> : null}
             {failureKind ? <Tag color="red">{failureKind}</Tag> : null}
+            {judgeMethod ? (
+              <Tag color={judgeMethod === "llm" ? "blue" : "geekblue"}>
+                {judgeMethod}
+              </Tag>
+            ) : null}
+            {judgeConfidence !== null ? (
+              <Tag color="cyan">{`conf:${judgeConfidence.toFixed(2)}`}</Tag>
+            ) : null}
             {warningFlags.slice(0, 2).map((flag) => (
               <Tag key={`${record.id}-${flag}`} color="gold">
                 {flag}
@@ -937,6 +1007,20 @@ export function CrawlFrontierContent() {
       : null;
   const selectedRootDiagnosis = asRecord(selectedRunMetadata?.rootDiagnosis);
   const selectedCoverage = asRecord(selectedRunMetadata?.coverage);
+  const selectedJudgeSummary = asRecord(selectedRunMetadata?.judgeSummary);
+  const selectedJudgeAverageConfidence =
+    typeof selectedJudgeSummary?.averageConfidence === "number"
+      ? selectedJudgeSummary.averageConfidence
+      : null;
+  const selectedShadowComparison = asRecord(selectedRunMetadata?.shadowComparison);
+  const selectedShadowProfileId =
+    typeof selectedRunMetadata?.shadowProfileId === "string"
+      ? selectedRunMetadata.shadowProfileId
+      : null;
+  const selectedRunRole =
+    typeof selectedRunMetadata?.runRole === "string"
+      ? selectedRunMetadata.runRole
+      : null;
   const selectedNativeStrategyType =
     typeof selectedRootDiagnosis?.nativeStrategyType === "string"
       ? selectedRootDiagnosis.nativeStrategyType
@@ -1314,8 +1398,17 @@ export function CrawlFrontierContent() {
                 <Tag color={runStatusColors[selectedRun.status]}>
                   {selectedRun.status}
                 </Tag>
+                {selectedRunRole ? <Tag color="blue">{selectedRunRole}</Tag> : null}
                 {selectedRunFailureKind ? (
                   <Tag color="red">{selectedRunFailureKind}</Tag>
+                ) : null}
+                {selectedShadowProfileId ? (
+                  <Tag color="purple">shadow-profile</Tag>
+                ) : null}
+                {selectedJudgeSummary && asNumber(selectedJudgeSummary.count) ? (
+                  <Tag color="cyan">
+                    {`judge:${asNumber(selectedJudgeSummary.count) ?? 0}`}
+                  </Tag>
                 ) : null}
                 {selectedRunWarningFlags.map((flag) => (
                   <Tag key={`run-${selectedRun.id}-${flag}`} color="gold">
@@ -1429,6 +1522,23 @@ export function CrawlFrontierContent() {
                   })}
                   : {formatCountSummary(selectedRunMetadata?.rejectionCounts)}
                 </Typography.Text>
+                <Typography.Text>
+                  {t("crawlFrontier.runs.judgeSummary", {
+                    defaultValue: "Judge summary",
+                  })}
+                  : {formatCountSummary(selectedJudgeSummary?.methods)}
+                  {selectedJudgeAverageConfidence !== null
+                    ? ` · avg:${selectedJudgeAverageConfidence.toFixed(2)}`
+                    : ""}
+                </Typography.Text>
+                {selectedShadowComparison ? (
+                  <Typography.Text>
+                    {t("crawlFrontier.runs.shadowComparison", {
+                      defaultValue: "Shadow comparison",
+                    })}
+                    : {JSON.stringify(selectedShadowComparison)}
+                  </Typography.Text>
+                ) : null}
                 {selectedRootDiagnosis ? (
                   <Typography.Paragraph
                     style={{

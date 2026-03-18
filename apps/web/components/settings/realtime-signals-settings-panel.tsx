@@ -114,16 +114,14 @@ interface RealtimeSignalsSettingsResponse {
   predictionNewsActivityThreshold: number;
   openskyBaseUrl?: string;
   openskyTokenUrl?: string;
-  relayBaseUrl?: string;
+  aisRelayBaseUrl?: string;
   polymarketProxyUrl?: string;
   openskyClientId?: string;
   openskyClientIdSource: RealtimeSignalsSecretSource;
+  hasAisRelaySharedSecret: boolean;
+  aisRelaySharedSecretSource: RealtimeSignalsSecretSource;
   hasOpenskyClientSecret: boolean;
   openskyClientSecretSource: RealtimeSignalsSecretSource;
-  hasRelaySharedSecret: boolean;
-  relaySharedSecretSource: RealtimeSignalsSecretSource;
-  hasAisApiKey: boolean;
-  aisApiKeySource: RealtimeSignalsSecretSource;
   hasAcledAccessToken: boolean;
   acledAccessTokenSource: RealtimeSignalsSecretSource;
   acledAccessTokenStatus: RealtimeSignalsAcledAccessTokenStatus;
@@ -176,12 +174,11 @@ interface RealtimeSignalsSettingsFormValues {
   predictionNewsActivityThreshold: number;
   openskyBaseUrl?: string;
   openskyTokenUrl?: string;
-  relayBaseUrl?: string;
+  aisRelayBaseUrl?: string;
   polymarketProxyUrl?: string;
   openskyClientId?: string;
+  aisRelaySharedSecret?: string;
   openskyClientSecret?: string;
-  relaySharedSecret?: string;
-  aisApiKey?: string;
   acledOauthUsername?: string;
   acledOauthPassword?: string;
   acledOauthClientId?: string;
@@ -359,16 +356,14 @@ const EMPTY_SETTINGS: RealtimeSignalsSettingsResponse = {
   openskyBaseUrl: "https://opensky-network.org/api",
   openskyTokenUrl:
     "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
-  relayBaseUrl: "",
+  aisRelayBaseUrl: "",
   polymarketProxyUrl: "",
   openskyClientId: "",
   openskyClientIdSource: "none",
+  hasAisRelaySharedSecret: false,
+  aisRelaySharedSecretSource: "none",
   hasOpenskyClientSecret: false,
   openskyClientSecretSource: "none",
-  hasRelaySharedSecret: false,
-  relaySharedSecretSource: "none",
-  hasAisApiKey: false,
-  aisApiKeySource: "none",
   hasAcledAccessToken: false,
   acledAccessTokenSource: "none",
   acledAccessTokenStatus: "missing",
@@ -476,12 +471,11 @@ function toFormValues(
     predictionNewsActivityThreshold: settings.predictionNewsActivityThreshold,
     openskyBaseUrl: settings.openskyBaseUrl ?? "",
     openskyTokenUrl: settings.openskyTokenUrl ?? "",
-    relayBaseUrl: settings.relayBaseUrl ?? "",
+    aisRelayBaseUrl: settings.aisRelayBaseUrl ?? "",
     polymarketProxyUrl: settings.polymarketProxyUrl ?? "",
     openskyClientId: settings.openskyClientId ?? "",
+    aisRelaySharedSecret: "",
     openskyClientSecret: "",
-    relaySharedSecret: "",
-    aisApiKey: "",
     acledOauthUsername: settings.acledOauthUsername ?? "",
     acledOauthPassword: "",
     acledOauthClientId: settings.acledOauthClientId || "acled",
@@ -792,8 +786,8 @@ export function RealtimeSignalsSettingsPanel() {
         openskyTokenUrl: values.openskyTokenUrl?.trim()
           ? values.openskyTokenUrl.trim()
           : null,
-        relayBaseUrl: values.relayBaseUrl?.trim()
-          ? values.relayBaseUrl.trim()
+        aisRelayBaseUrl: values.aisRelayBaseUrl?.trim()
+          ? values.aisRelayBaseUrl.trim()
           : null,
         polymarketProxyUrl: values.polymarketProxyUrl?.trim()
           ? values.polymarketProxyUrl.trim()
@@ -958,24 +952,20 @@ export function RealtimeSignalsSettingsPanel() {
 
   const secretStatusRows = [
     {
+      key: "aisRelaySharedSecret",
+      label: t("systemSettings.realtimeSignals.status.aisRelaySharedSecret", {
+        defaultValue: "AIS relay shared secret",
+      }),
+      has: settings.hasAisRelaySharedSecret,
+      source: settings.aisRelaySharedSecretSource,
+    },
+    {
       key: "openskyClientSecret",
       label: t("systemSettings.realtimeSignals.status.openskyClientSecret", {
         defaultValue: "OpenSky client secret",
       }),
       has: settings.hasOpenskyClientSecret,
       source: settings.openskyClientSecretSource,
-    },
-    {
-      key: "relaySharedSecret",
-      label: t("systemSettings.realtimeSignals.status.relaySharedSecret"),
-      has: settings.hasRelaySharedSecret,
-      source: settings.relaySharedSecretSource,
-    },
-    {
-      key: "aisApiKey",
-      label: t("systemSettings.realtimeSignals.status.aisApiKey"),
-      has: settings.hasAisApiKey,
-      source: settings.aisApiKeySource,
     },
     ...(settings.acledApiEnabled
       ? [
@@ -1319,6 +1309,15 @@ export function RealtimeSignalsSettingsPanel() {
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
+            {t("systemSettings.realtimeSignals.status.aisRelayBaseUrl", {
+              defaultValue: "AIS relay root URL",
+            })}
+          </Typography.Text>
+          <Tag color="geekblue">
+            {settings.aisRelayBaseUrl ||
+              t("systemSettings.realtimeSignals.status.notConfigured")}
+          </Tag>
+          <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.openskyClientId", {
               defaultValue: "OpenSky client ID",
             })}
@@ -1329,13 +1328,6 @@ export function RealtimeSignalsSettingsPanel() {
           </Tag>
           <Tag color={settings.openskyClientId ? "blue" : "default"}>
             {secretSourceLabel(settings.openskyClientIdSource)}
-          </Tag>
-          <Typography.Text type="secondary">
-            {t("systemSettings.realtimeSignals.status.relayBaseUrl")}
-          </Typography.Text>
-          <Tag color="geekblue">
-            {settings.relayBaseUrl ||
-              t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.polymarketProxyUrl")}
@@ -2905,14 +2897,22 @@ export function RealtimeSignalsSettingsPanel() {
             />
           </Form.Item>
           <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.relayBaseUrl")}
-            name="relayBaseUrl"
+            label={t("systemSettings.realtimeSignals.fields.aisRelayBaseUrl", {
+              defaultValue: "AIS relay root URL",
+            })}
+            name="aisRelayBaseUrl"
             style={{ minWidth: 280, flex: 1 }}
-            extra={t("systemSettings.realtimeSignals.hints.relayBaseUrl")}
+            extra={t("systemSettings.realtimeSignals.hints.aisRelayBaseUrl", {
+              defaultValue:
+                "Root URL of the AIS aggregation service. For Docker Compose, use `http://ais-relay:3004`.",
+            })}
           >
             <Input
               placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.relayBaseUrl",
+                "systemSettings.realtimeSignals.placeholders.aisRelayBaseUrl",
+                {
+                  defaultValue: "http://ais-relay:3004",
+                },
               )}
             />
           </Form.Item>
@@ -2956,7 +2956,7 @@ export function RealtimeSignalsSettingsPanel() {
             "systemSettings.realtimeSignals.alerts.aisCredentials.body",
             {
               defaultValue:
-                "Set the relay shared secret to match `RELAY_SHARED_SECRET` on the AIS relay. `AIS API key` is optional and mainly for custom relays; the stock bare relay reads `AISSTREAM_API_KEY` from its own environment.",
+                "Set the relay shared secret to match `AIS_RELAY_SHARED_SECRET` on the AIS relay service. The relay reads `AISSTREAM_API_KEY` from its own environment.",
             },
           )}
         />
@@ -2981,6 +2981,29 @@ export function RealtimeSignalsSettingsPanel() {
           />
         ) : null}
         <Space direction="vertical" style={{ width: "100%" }} size={0}>
+          <Form.Item
+            label={t(
+              "systemSettings.realtimeSignals.fields.aisRelaySharedSecret",
+              {
+                defaultValue: "AIS relay shared secret",
+              },
+            )}
+            name="aisRelaySharedSecret"
+            extra={t(
+              "systemSettings.realtimeSignals.hints.aisRelaySharedSecret",
+              {
+                defaultValue:
+                  "Shared auth secret expected by the AIS relay service.",
+              },
+            )}
+          >
+            <Input.Password
+              autoComplete="new-password"
+              placeholder={t(
+                "systemSettings.realtimeSignals.placeholders.secretValue",
+              )}
+            />
+          </Form.Item>
           <Form.Item
             label={t("systemSettings.realtimeSignals.fields.openskyClientId", {
               defaultValue: "OpenSky client ID",
@@ -3008,30 +3031,6 @@ export function RealtimeSignalsSettingsPanel() {
               },
             )}
             name="openskyClientSecret"
-          >
-            <Input.Password
-              autoComplete="new-password"
-              placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.secretValue",
-              )}
-            />
-          </Form.Item>
-          <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.relaySharedSecret")}
-            name="relaySharedSecret"
-            extra={t("systemSettings.realtimeSignals.hints.relaySharedSecret")}
-          >
-            <Input.Password
-              autoComplete="new-password"
-              placeholder={t(
-                "systemSettings.realtimeSignals.placeholders.secretValue",
-              )}
-            />
-          </Form.Item>
-          <Form.Item
-            label={t("systemSettings.realtimeSignals.fields.aisApiKey")}
-            name="aisApiKey"
-            extra={t("systemSettings.realtimeSignals.hints.aisApiKey")}
           >
             <Input.Password
               autoComplete="new-password"

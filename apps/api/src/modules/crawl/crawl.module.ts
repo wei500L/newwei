@@ -1,17 +1,19 @@
 import { HttpModule } from "@nestjs/axios";
 import { getQueueToken } from "@nestjs/bull-shared";
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
 import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 import { StorageModule } from "../storage/storage.module";
 
 import { CrawlAdaptiveConcurrencyService } from "./crawl-adaptive-concurrency.service";
 import { CrawlCleanupOutboxService } from "./crawl-cleanup-outbox.service";
 import { CrawlExecutionService } from "./crawl-execution.service";
 import { CrawlFrontierController } from "./crawl-frontier.controller";
+import { CrawlFrontierLlmService } from "./crawl-frontier-llm.service";
 import { CrawlFrontierService } from "./crawl-frontier.service";
 import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlMediaAssetService } from "./crawl-media-asset.service";
@@ -56,6 +58,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   imports: [
     NotificationsModule,
     StorageModule,
+    forwardRef(() => NewsPipelineModule),
     HttpModule.registerAsync({
       inject: [EnvService],
       useFactory: (env: EnvService) => {
@@ -87,6 +90,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlTaskService,
     CrawlTaskJanitorService,
     CrawlExecutionService,
+    CrawlFrontierLlmService,
     CrawlFrontierService,
     CrawlQueueService,
     CrawlResultService,
@@ -215,6 +219,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlSiteProfileService,
     CrawlTaskService,
     CrawlExecutionService,
+    CrawlFrontierLlmService,
     CrawlQueueService,
     CrawlResultService,
     CrawlMetadataService,
