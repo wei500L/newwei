@@ -78,6 +78,8 @@ interface CrawlFrontierRunRecord {
   articleCount: number;
   failedCount: number;
   duplicateCount: number;
+  lastError?: string | null;
+  metadata?: Record<string, unknown> | null;
   createdAt: string;
   profile?: {
     id: string;
@@ -98,6 +100,7 @@ interface CrawlFrontierNodeRecord {
   freshnessScore?: number | null;
   lastError?: string | null;
   rejectionReason?: string | null;
+  metadata?: Record<string, unknown> | null;
   discoveredAt: string;
   crawledAt?: string | null;
 }
@@ -178,6 +181,81 @@ function extractErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatPath(value: unknown) {
+  const parts = asStringArray(value);
+  return parts.length > 0 ? parts.join(" -> ") : "-";
+}
+
+function summarizeProfileConfig(config: Record<string, unknown>) {
+  const summary: string[] = [];
+  if (typeof config.hostScope === "string") {
+    summary.push(config.hostScope);
+  }
+  if (typeof config.sourceTier === "string") {
+    summary.push(config.sourceTier);
+  }
+  if (isRecord(config.localeScope)) {
+    if (typeof config.localeScope.locale === "string") {
+      summary.push(`locale:${config.localeScope.locale}`);
+    }
+    if (Array.isArray(config.localeScope.acceptLanguages)) {
+      summary.push(`langs:${config.localeScope.acceptLanguages.length}`);
+    }
+  }
+  if (Array.isArray(config.priorityKeywords)) {
+    summary.push(`priority:${config.priorityKeywords.length}`);
+  }
+  if (Array.isArray(config.denyKeywords)) {
+    summary.push(`deny:${config.denyKeywords.length}`);
+  }
+  if (Array.isArray(config.domLinkScopes)) {
+    summary.push(`scopes:${config.domLinkScopes.length}`);
+  }
+  if (isRecord(config.nativeOptions) && isRecord(config.nativeOptions.deepCrawlStrategy)) {
+    if (
+      typeof config.nativeOptions.deepCrawlStrategy.type === "string" &&
+      config.nativeOptions.deepCrawlStrategy.type.trim().toLowerCase() === "auto"
+    ) {
+      summary.push("strategy:auto");
+    }
+    const hasManualFilterChain = isRecord(config.nativeOptions.filterChain);
+    const hasManualUrlScorer = isRecord(config.nativeOptions.urlScorer);
+    summary.push(
+      hasManualFilterChain || hasManualUrlScorer ? "native" : "native:auto",
+    );
+  }
+  return summary;
+}
+
+function formatCountSummary(value: unknown) {
+  const record = asRecord(value);
+  if (!record) {
+    return "-";
+  }
+  return Object.entries(record)
+    .map(([key, entry]) => `${key}:${asNumber(entry) ?? 0}`)
+    .join(" · ");
 }
 
 const runStatusColors: Record<CrawlFrontierRunStatus, string> = {
@@ -298,13 +376,60 @@ export function CrawlFrontierContent() {
       executionMode: "layered",
       configJson: stringifyJson({
         keywords: [],
+        priorityKeywords: ["breaking", "latest", "war", "election", "markets"],
+        denyKeywords: ["newsletter", "podcast", "video", "gallery", "sponsored"],
+        hostScope: "registrable_domain",
+        sourceTier: "tier2",
         blockedDomains: [],
+        allowedHosts: [],
+        allowedDomains: [],
+        domLinkScopes: ["main", "article", "section", "[role='main']"],
+        domLinkExcludeSelectors: [
+          "nav",
+          "header",
+          "footer",
+          "aside",
+          ".sidebar",
+          ".newsletter",
+          ".podcast",
+          ".video",
+          ".gallery",
+          ".sponsored",
+        ],
         urlPatterns: {
           home: [],
           category: [],
           list: [],
           article: [],
           exclude: [],
+        },
+        pageTypeSignals: {
+          deny: {
+            keywords: ["newsletter", "podcast", "video", "gallery"],
+          },
+        },
+        freshnessRules: {
+          recentHours: 24,
+          weekHours: 168,
+          monthHours: 720,
+        },
+        localeScope: {
+          locale: "",
+          acceptLanguages: [],
+          denyUrlPatterns: [],
+          denyHostPatterns: [],
+        },
+        nativeOptions: {
+          deepCrawlStrategy: {
+            type: "auto",
+            params: {
+              max_depth: 3,
+              max_pages: 60,
+            },
+          },
+          fallbackToLayered: true,
+          minAcceptedResults: 2,
+          minArticleResults: 1,
         },
         layeredOptions: {
           maxDepth: 3,
@@ -568,6 +693,19 @@ export function CrawlFrontierContent() {
         ),
     },
     {
+      title: t("crawlFrontier.profile.columns.config", {
+        defaultValue: "Config",
+      }),
+      key: "configSummary",
+      render: (_, record) => (
+        <Space wrap size={[4, 4]}>
+          {summarizeProfileConfig(record.config).map((entry) => (
+            <Tag key={`${record.id}-${entry}`}>{entry}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
       title: t("crawlFrontier.profile.columns.version", {
         defaultValue: "Version",
       }),
@@ -634,6 +772,33 @@ export function CrawlFrontierContent() {
         `${record.pageCount}/${record.nodeCount} pages, ${record.articleCount} articles`,
     },
     {
+      title: t("crawlFrontier.runs.columns.diagnostics", {
+        defaultValue: "Diagnostics",
+      }),
+      key: "diagnostics",
+      render: (_, record) => {
+        const metadata = asRecord(record.metadata);
+        const warningFlags = asStringArray(metadata?.warningFlags);
+        const failureKind =
+          typeof metadata?.failureKind === "string" ? metadata.failureKind : null;
+        return (
+          <Space wrap size={[4, 4]}>
+            {failureKind ? <Tag color="red">{failureKind}</Tag> : null}
+            {warningFlags.slice(0, 3).map((flag) => (
+              <Tag key={`${record.id}-${flag}`} color="gold">
+                {flag}
+              </Tag>
+            ))}
+            {record.lastError ? (
+              <Typography.Text type="danger" ellipsis>
+                {record.lastError}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        );
+      },
+    },
+    {
       title: t("crawlFrontier.runs.columns.actions", {
         defaultValue: "Actions",
       }),
@@ -675,6 +840,13 @@ export function CrawlFrontierContent() {
       width: 80,
     },
     {
+      title: t("crawlFrontier.nodes.columns.path", {
+        defaultValue: "Discovery Path",
+      }),
+      key: "path",
+      render: (_, record) => formatPath(record.metadata?.discoveryPath),
+    },
+    {
       title: t("crawlFrontier.nodes.columns.status", {
         defaultValue: "Status",
       }),
@@ -693,6 +865,29 @@ export function CrawlFrontierContent() {
           : typeof record.freshnessScore === "number"
             ? `fresh ${record.freshnessScore.toFixed(2)}`
             : "-",
+    },
+    {
+      title: t("crawlFrontier.nodes.columns.diagnostics", {
+        defaultValue: "Diagnostics",
+      }),
+      key: "diagnostics",
+      render: (_, record) => {
+        const metadata = asRecord(record.metadata);
+        const warningFlags = asStringArray(metadata?.warningFlags);
+        const failureKind =
+          typeof metadata?.failureKind === "string" ? metadata.failureKind : null;
+        return (
+          <Space wrap size={[4, 4]}>
+            {record.metadata?.syntheticList ? <Tag color="purple">synthetic</Tag> : null}
+            {failureKind ? <Tag color="red">{failureKind}</Tag> : null}
+            {warningFlags.slice(0, 2).map((flag) => (
+              <Tag key={`${record.id}-${flag}`} color="gold">
+                {flag}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
     },
     {
       title: t("crawlFrontier.nodes.columns.error", { defaultValue: "Error" }),
@@ -733,6 +928,79 @@ export function CrawlFrontierContent() {
       </Card>
     );
   }
+
+  const selectedRunMetadata = asRecord(selectedRun?.metadata);
+  const selectedRunWarningFlags = asStringArray(selectedRunMetadata?.warningFlags);
+  const selectedRunFailureKind =
+    typeof selectedRunMetadata?.failureKind === "string"
+      ? selectedRunMetadata.failureKind
+      : null;
+  const selectedRootDiagnosis = asRecord(selectedRunMetadata?.rootDiagnosis);
+  const selectedCoverage = asRecord(selectedRunMetadata?.coverage);
+  const selectedNativeStrategyType =
+    typeof selectedRootDiagnosis?.nativeStrategyType === "string"
+      ? selectedRootDiagnosis.nativeStrategyType
+      : null;
+  const selectedNativeStrategyResolvedFrom =
+    typeof selectedRootDiagnosis?.nativeStrategyResolvedFrom === "string"
+      ? selectedRootDiagnosis.nativeStrategyResolvedFrom
+      : null;
+  const selectedNativeStrategyAutoResolved =
+    typeof selectedRootDiagnosis?.nativeStrategyAutoResolved === "boolean"
+      ? selectedRootDiagnosis.nativeStrategyAutoResolved
+      : null;
+  const selectedNativeFilterChainType =
+    typeof selectedRootDiagnosis?.nativeFilterChainType === "string"
+      ? selectedRootDiagnosis.nativeFilterChainType
+      : null;
+  const selectedNativeUrlScorerType =
+    typeof selectedRootDiagnosis?.nativeUrlScorerType === "string"
+      ? selectedRootDiagnosis.nativeUrlScorerType
+      : null;
+  const selectedNativeAdaptiveType =
+    typeof selectedRootDiagnosis?.nativeAdaptiveType === "string"
+      ? selectedRootDiagnosis.nativeAdaptiveType
+      : null;
+  const selectedNativeFilterChainSynthesized =
+    typeof selectedRootDiagnosis?.nativeFilterChainSynthesized === "boolean"
+      ? selectedRootDiagnosis.nativeFilterChainSynthesized
+      : null;
+  const selectedNativeUrlScorerSynthesized =
+    typeof selectedRootDiagnosis?.nativeUrlScorerSynthesized === "boolean"
+      ? selectedRootDiagnosis.nativeUrlScorerSynthesized
+      : null;
+  const selectedLinkPreviewMode =
+    typeof selectedRootDiagnosis?.linkPreviewMode === "string"
+      ? selectedRootDiagnosis.linkPreviewMode
+      : null;
+  const selectedDomScopeMode =
+    typeof selectedRootDiagnosis?.domScopeMode === "string"
+      ? selectedRootDiagnosis.domScopeMode
+      : null;
+  const selectedWaitForMode =
+    typeof selectedRootDiagnosis?.waitForMode === "string"
+      ? selectedRootDiagnosis.waitForMode
+      : null;
+  const selectedMarkdownFilterMode =
+    typeof selectedRootDiagnosis?.markdownFilterMode === "string"
+      ? selectedRootDiagnosis.markdownFilterMode
+      : null;
+  const selectedMarkdownFilterType =
+    typeof selectedRootDiagnosis?.markdownFilterType === "string"
+      ? selectedRootDiagnosis.markdownFilterType
+      : null;
+  const selectedLocaleMode =
+    typeof selectedRootDiagnosis?.localeMode === "string"
+      ? selectedRootDiagnosis.localeMode
+      : null;
+  const selectedLocaleValue =
+    typeof selectedRootDiagnosis?.localeValue === "string"
+      ? selectedRootDiagnosis.localeValue
+      : null;
+  const selectedAcceptLanguageMode =
+    typeof selectedRootDiagnosis?.acceptLanguageMode === "string"
+      ? selectedRootDiagnosis.acceptLanguageMode
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -1046,6 +1314,75 @@ export function CrawlFrontierContent() {
                 <Tag color={runStatusColors[selectedRun.status]}>
                   {selectedRun.status}
                 </Tag>
+                {selectedRunFailureKind ? (
+                  <Tag color="red">{selectedRunFailureKind}</Tag>
+                ) : null}
+                {selectedRunWarningFlags.map((flag) => (
+                  <Tag key={`run-${selectedRun.id}-${flag}`} color="gold">
+                    {flag}
+                  </Tag>
+                ))}
+                {selectedNativeStrategyType ? (
+                  <Tag color="blue">
+                    {selectedNativeStrategyAutoResolved &&
+                    selectedNativeStrategyResolvedFrom
+                      ? `${selectedNativeStrategyType}<=${selectedNativeStrategyResolvedFrom}`
+                      : selectedNativeStrategyType}
+                  </Tag>
+                ) : null}
+                {selectedNativeFilterChainType ? (
+                  <Tag
+                    color={
+                      selectedNativeFilterChainSynthesized ? "geekblue" : "purple"
+                    }
+                  >
+                    {selectedNativeFilterChainSynthesized
+                      ? `${selectedNativeFilterChainType}:auto`
+                      : selectedNativeFilterChainType}
+                  </Tag>
+                ) : null}
+                {selectedNativeUrlScorerType ? (
+                  <Tag
+                    color={
+                      selectedNativeUrlScorerSynthesized ? "geekblue" : "purple"
+                    }
+                  >
+                    {selectedNativeUrlScorerSynthesized
+                      ? `${selectedNativeUrlScorerType}:auto`
+                      : selectedNativeUrlScorerType}
+                  </Tag>
+                ) : null}
+                {selectedNativeAdaptiveType ? (
+                  <Tag color="cyan">{selectedNativeAdaptiveType}</Tag>
+                ) : null}
+                {selectedLinkPreviewMode ? (
+                  <Tag color="lime">{`link-preview:${selectedLinkPreviewMode}`}</Tag>
+                ) : null}
+                {selectedDomScopeMode ? (
+                  <Tag color="green">{`dom-scope:${selectedDomScopeMode}`}</Tag>
+                ) : null}
+                {selectedWaitForMode ? (
+                  <Tag color="green">{`wait-for:${selectedWaitForMode}`}</Tag>
+                ) : null}
+                {selectedMarkdownFilterType ? (
+                  <Tag color="magenta">
+                    {selectedMarkdownFilterMode
+                      ? `${selectedMarkdownFilterType}:${selectedMarkdownFilterMode}`
+                      : selectedMarkdownFilterType}
+                  </Tag>
+                ) : null}
+                {selectedLocaleValue ? (
+                  <Tag color="volcano">
+                    {selectedLocaleMode
+                      ? `locale:${selectedLocaleValue}:${selectedLocaleMode}`
+                      : `locale:${selectedLocaleValue}`}
+                  </Tag>
+                ) : null}
+                {selectedAcceptLanguageMode ? (
+                  <Tag color="orange">
+                    {`accept-language:${selectedAcceptLanguageMode}`}
+                  </Tag>
+                ) : null}
                 <Typography.Text>{selectedRun.seedUrl}</Typography.Text>
                 <Typography.Text type="secondary">
                   {selectedRun.profile?.name ?? "auto"} / {selectedRun.executionMode}
@@ -1054,6 +1391,55 @@ export function CrawlFrontierContent() {
                   {selectedRun.pageCount} pages, {selectedRun.nodeCount} nodes,{" "}
                   {selectedRun.articleCount} articles
                 </Typography.Text>
+                {selectedRun.lastError ? (
+                  <Typography.Text type="danger">
+                    {selectedRun.lastError}
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            </Card>
+            <Card
+              size="small"
+              title={t("crawlFrontier.runs.diagnosticsTitle", {
+                defaultValue: "Diagnostics",
+              })}
+            >
+              <Space direction="vertical" size="small" style={{ width: "100%" }}>
+                <Typography.Text>
+                  {t("crawlFrontier.runs.coverageByType", {
+                    defaultValue: "Coverage by type",
+                  })}
+                  : {formatCountSummary(asRecord(selectedCoverage?.byPageType))}
+                </Typography.Text>
+                <Typography.Text>
+                  {t("crawlFrontier.runs.coverageByDepth", {
+                    defaultValue: "Coverage by depth",
+                  })}
+                  : {formatCountSummary(asRecord(selectedCoverage?.byDepth))}
+                </Typography.Text>
+                <Typography.Text>
+                  {t("crawlFrontier.runs.candidateStats", {
+                    defaultValue: "Candidate stats",
+                  })}
+                  : {formatCountSummary(selectedRunMetadata?.candidateStats)}
+                </Typography.Text>
+                <Typography.Text>
+                  {t("crawlFrontier.runs.rejectionCounts", {
+                    defaultValue: "Rejection counts",
+                  })}
+                  : {formatCountSummary(selectedRunMetadata?.rejectionCounts)}
+                </Typography.Text>
+                {selectedRootDiagnosis ? (
+                  <Typography.Paragraph
+                    style={{
+                      marginBottom: 0,
+                      whiteSpace: "pre-wrap",
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {JSON.stringify(selectedRootDiagnosis, null, 2)}
+                  </Typography.Paragraph>
+                ) : null}
               </Space>
             </Card>
             <Table

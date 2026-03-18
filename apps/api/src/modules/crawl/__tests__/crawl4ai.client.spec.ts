@@ -350,33 +350,38 @@ describe("Crawl4aiClient", () => {
       params: {
         max_depth: 3,
         max_pages: 60,
-      },
-    });
-    expect(payload.crawler_config.params.filter_chain).toEqual({
-      type: "FilterChain",
-      params: {
-        filters: [
-          {
-            type: "ContentTypeFilter",
-            params: { allowed_types: ["text/html"] },
+        filter_chain: {
+          type: "FilterChain",
+          params: {
+            filters: [
+              {
+                type: "ContentTypeFilter",
+                params: { allowed_types: ["text/html"] },
+              },
+            ],
           },
-        ],
+        },
+        url_scorer: {
+          type: "KeywordRelevanceScorer",
+          params: {
+            keywords: ["latest", "breaking"],
+            weight: 0.7,
+          },
+        },
+        adaptive_crawling: {
+          type: "StatisticalAdaptiveStrategy",
+          params: {
+            confidence_threshold: 0.9,
+            min_pages: 10,
+          },
+        },
       },
     });
-    expect(payload.crawler_config.params.url_scorer).toEqual({
-      type: "KeywordRelevanceScorer",
-      params: {
-        keywords: ["latest", "breaking"],
-        weight: 0.7,
-      },
-    });
-    expect(payload.crawler_config.params.adaptive_crawling).toEqual({
-      type: "StatisticalAdaptiveStrategy",
-      params: {
-        confidence_threshold: 0.9,
-        min_pages: 10,
-      },
-    });
+    expect(payload.crawler_config.params).not.toHaveProperty("filter_chain");
+    expect(payload.crawler_config.params).not.toHaveProperty("url_scorer");
+    expect(payload.crawler_config.params).not.toHaveProperty(
+      "adaptive_crawling",
+    );
   });
 
   it("falls back to bounded virtual scroll when scan_full_page times out", async () => {

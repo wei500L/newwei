@@ -3,6 +3,8 @@ import type { CrawlTaskStatus } from "@prisma/client";
 export type CrawlPriorityClass = "hot" | "normal";
 export type CrawlJobKind = "task" | "frontier_node";
 export type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
+export type CrawlHostScope = "registrable_domain" | "strict_hosts";
+export type CrawlSourceTier = "tier1" | "tier2" | "tier3";
 export type CrawlFrontierRunStatus =
   | "pending"
   | "queued"
@@ -38,11 +40,42 @@ export interface CrawlDeepCrawlComponent {
   params?: Record<string, unknown>;
 }
 
+export interface CrawlPageTypeSignalConfig {
+  patterns?: string[];
+  keywords?: string[];
+}
+
+export interface CrawlFreshnessRules {
+  recentHours?: number;
+  weekHours?: number;
+  monthHours?: number;
+}
+
+export interface CrawlLocaleScopeConfig {
+  locale?: string;
+  acceptLanguages?: string[];
+  denyUrlPatterns?: string[];
+  denyHostPatterns?: string[];
+}
+
 export interface CrawlSiteProfileConfig {
   keywords?: string[];
+  priorityKeywords?: string[];
+  denyKeywords?: string[];
   blockedDomains?: string[];
+  hostScope?: CrawlHostScope;
+  allowedHosts?: string[];
+  allowedDomains?: string[];
+  domLinkScopes?: string[];
+  domLinkExcludeSelectors?: string[];
   urlQueryParamAllowlist?: string[];
   urlPatterns?: Partial<Record<CrawlFrontierPageType | "exclude", string[]>>;
+  pageTypeSignals?: Partial<
+    Record<CrawlFrontierPageType | "deny", CrawlPageTypeSignalConfig>
+  >;
+  freshnessRules?: CrawlFreshnessRules;
+  localeScope?: CrawlLocaleScopeConfig;
+  sourceTier?: CrawlSourceTier;
   pageRules?: Partial<Record<CrawlFrontierPageType, Record<string, unknown>>>;
   layeredOptions?: {
     maxDepth?: number;
@@ -57,6 +90,9 @@ export interface CrawlSiteProfileConfig {
     urlScorer?: CrawlDeepCrawlComponent;
     adaptiveCrawling?: CrawlDeepCrawlComponent;
     stream?: boolean;
+    fallbackToLayered?: boolean;
+    minAcceptedResults?: number;
+    minArticleResults?: number;
   };
   crawlOptions?: Record<string, unknown>;
 }

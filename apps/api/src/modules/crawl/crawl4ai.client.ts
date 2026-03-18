@@ -898,6 +898,7 @@ export class Crawl4aiClient {
         storage_state: this.buildStorageState(options.storageState),
       }),
     };
+    const deepCrawlStrategy = this.buildDeepCrawlStrategyPayload(options);
     const crawlerConfig = {
       type: "CrawlerRunConfig",
       params: this.compact({
@@ -940,14 +941,7 @@ export class Crawl4aiClient {
           options.tableScoreThreshold,
         ),
         table_extraction: this.buildTableExtraction(options.tableExtraction),
-        deep_crawl_strategy: this.buildDeepCrawlComponent(
-          options.deepCrawlStrategy,
-        ),
-        filter_chain: this.buildDeepCrawlComponent(options.filterChain),
-        url_scorer: this.buildDeepCrawlComponent(options.urlScorer),
-        adaptive_crawling: this.buildDeepCrawlComponent(
-          options.adaptiveCrawling,
-        ),
+        deep_crawl_strategy: deepCrawlStrategy,
         word_count_threshold: wordCountThreshold,
         exclude_external_links: excludeExternalLinks,
         exclude_external_images: excludeExternalImages,
@@ -1133,6 +1127,39 @@ export class Crawl4aiClient {
         }
       : {
           type: trimmed,
+        };
+  }
+
+  private buildDeepCrawlStrategyPayload(options: CrawlTaskOptions) {
+    const strategy = this.buildDeepCrawlComponent(options.deepCrawlStrategy);
+    if (!strategy) {
+      return undefined;
+    }
+    const params =
+      strategy.params && typeof strategy.params === "object"
+        ? { ...strategy.params }
+        : {};
+    const filterChain = this.buildDeepCrawlComponent(options.filterChain);
+    const urlScorer = this.buildDeepCrawlComponent(options.urlScorer);
+    const adaptiveCrawling = this.buildDeepCrawlComponent(
+      options.adaptiveCrawling,
+    );
+    if (filterChain && params.filter_chain === undefined) {
+      params.filter_chain = filterChain;
+    }
+    if (urlScorer && params.url_scorer === undefined) {
+      params.url_scorer = urlScorer;
+    }
+    if (adaptiveCrawling && params.adaptive_crawling === undefined) {
+      params.adaptive_crawling = adaptiveCrawling;
+    }
+    return Object.keys(params).length > 0
+      ? {
+          type: strategy.type,
+          params,
+        }
+      : {
+          type: strategy.type,
         };
   }
 

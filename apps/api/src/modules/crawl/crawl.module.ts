@@ -83,6 +83,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   ],
   providers: [
     CrawlSettingsService,
+    CrawlSiteProfileService,
     CrawlTaskService,
     CrawlTaskJanitorService,
     CrawlExecutionService,
