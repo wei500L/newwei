@@ -24,9 +24,10 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import type { Dayjs } from "dayjs";
+import dayjs, { type Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
 import { useSession } from "next-auth/react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -172,6 +173,7 @@ const DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS = [
   "operation",
   "pipeline",
   "profile",
+  "profileid",
   "provider",
   "requestid",
   "retry",
@@ -186,6 +188,10 @@ const DEFAULT_METADATA_ALLOWED_TOP_LEVEL_KEYS = [
   "traceid",
   "userid",
   "version",
+  "nodeid",
+  "frontiernodeid",
+  "frontierrunid",
+  "crawlsiteprofileid",
 ];
 
 const DEFAULT_METADATA_ALLOWED_TOP_LEVEL_PREFIXES = ["x_", "meta_", "ctx_"];
@@ -450,6 +456,9 @@ export function LlmRequestLogsPanel() {
   const { t } = useTranslation();
   const { echartsTheme, colors } = useChartTheme();
   const { data: session } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [messageApi, contextHolder] = message.useMessage();
   const { exporting: exportLogsLoading, exportCsvBlob } = useCsvExport();
   const [settingsForm] = Form.useForm<LlmRequestLogSettingsFormValues>();
@@ -487,6 +496,9 @@ export function LlmRequestLogsPanel() {
 
   const [modelFilter, setModelFilter] = useState("");
   const [featureFilter, setFeatureFilter] = useState("");
+  const [profileFilter, setProfileFilter] = useState("");
+  const [runFilter, setRunFilter] = useState("");
+  const [nodeFilter, setNodeFilter] = useState("");
   const [requestTypeFilter, setRequestTypeFilter] = useState<
     "all" | LlmRequestType
   >("all");
@@ -496,6 +508,9 @@ export function LlmRequestLogsPanel() {
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [appliedModelFilter, setAppliedModelFilter] = useState("");
   const [appliedFeatureFilter, setAppliedFeatureFilter] = useState("");
+  const [appliedProfileFilter, setAppliedProfileFilter] = useState("");
+  const [appliedRunFilter, setAppliedRunFilter] = useState("");
+  const [appliedNodeFilter, setAppliedNodeFilter] = useState("");
   const [appliedRequestTypeFilter, setAppliedRequestTypeFilter] = useState<
     "all" | LlmRequestType
   >("all");
@@ -531,6 +546,18 @@ export function LlmRequestLogsPanel() {
     if (normalizedFeature.length > 0) {
       params.feature = normalizedFeature;
     }
+    const normalizedProfileId = appliedProfileFilter.trim();
+    if (normalizedProfileId.length > 0) {
+      params.profileId = normalizedProfileId;
+    }
+    const normalizedRunId = appliedRunFilter.trim();
+    if (normalizedRunId.length > 0) {
+      params.runId = normalizedRunId;
+    }
+    const normalizedNodeId = appliedNodeFilter.trim();
+    if (normalizedNodeId.length > 0) {
+      params.nodeId = normalizedNodeId;
+    }
     if (appliedRequestTypeFilter !== "all") {
       params.requestType = appliedRequestTypeFilter;
     }
@@ -547,7 +574,10 @@ export function LlmRequestLogsPanel() {
   }, [
     appliedModelFilter,
     appliedFeatureFilter,
+    appliedNodeFilter,
+    appliedProfileFilter,
     appliedRequestTypeFilter,
+    appliedRunFilter,
     appliedStatusFilter,
     sharedDateParams.end,
     sharedDateParams.start,
@@ -559,6 +589,18 @@ export function LlmRequestLogsPanel() {
     if (normalizedFeature.length > 0) {
       params.feature = normalizedFeature;
     }
+    const normalizedProfileId = appliedProfileFilter.trim();
+    if (normalizedProfileId.length > 0) {
+      params.profileId = normalizedProfileId;
+    }
+    const normalizedRunId = appliedRunFilter.trim();
+    if (normalizedRunId.length > 0) {
+      params.runId = normalizedRunId;
+    }
+    const normalizedNodeId = appliedNodeFilter.trim();
+    if (normalizedNodeId.length > 0) {
+      params.nodeId = normalizedNodeId;
+    }
     if (typeof sharedDateParams.start === "string") {
       params.start = sharedDateParams.start;
     }
@@ -566,7 +608,115 @@ export function LlmRequestLogsPanel() {
       params.end = sharedDateParams.end;
     }
     return params;
-  }, [appliedFeatureFilter, sharedDateParams.end, sharedDateParams.start]);
+  }, [
+    appliedFeatureFilter,
+    appliedNodeFilter,
+    appliedProfileFilter,
+    appliedRunFilter,
+    sharedDateParams.end,
+    sharedDateParams.start,
+  ]);
+
+  const syncFilterQuery = useCallback(
+    (next: {
+      model?: string;
+      feature?: string;
+      profileId?: string;
+      runId?: string;
+      nodeId?: string;
+      requestType?: "all" | LlmRequestType;
+      status?: "all" | LlmRequestStatus;
+      dateRange?: [Dayjs, Dayjs] | null;
+    }) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const setOrDelete = (key: string, value?: string | null) => {
+        if (typeof value === "string" && value.trim().length > 0) {
+          params.set(key, value.trim());
+          return;
+        }
+        params.delete(key);
+      };
+
+      setOrDelete("model", next.model);
+      setOrDelete("feature", next.feature?.trim().toLowerCase() ?? "");
+      setOrDelete("profileId", next.profileId);
+      setOrDelete("runId", next.runId);
+      setOrDelete("nodeId", next.nodeId);
+
+      if (next.requestType && next.requestType !== "all") {
+        params.set("requestType", next.requestType);
+      } else {
+        params.delete("requestType");
+      }
+
+      if (next.status && next.status !== "all") {
+        params.set("status", next.status);
+      } else {
+        params.delete("status");
+      }
+
+      if (next.dateRange && next.dateRange[0] && next.dateRange[1]) {
+        params.set("start", next.dateRange[0].startOf("day").toISOString());
+        params.set("end", next.dateRange[1].endOf("day").toISOString());
+      } else {
+        params.delete("start");
+        params.delete("end");
+      }
+
+      router.replace(
+        params.size > 0 ? `${pathname}?${params.toString()}` : pathname,
+        { scroll: false },
+      );
+    },
+    [pathname, router, searchParams],
+  );
+
+  useEffect(() => {
+    const nextModel = searchParams.get("model")?.trim() ?? "";
+    const nextFeature = searchParams.get("feature")?.trim() ?? "";
+    const nextProfileId = searchParams.get("profileId")?.trim() ?? "";
+    const nextRunId = searchParams.get("runId")?.trim() ?? "";
+    const nextNodeId = searchParams.get("nodeId")?.trim() ?? "";
+    const requestTypeCandidate = searchParams.get("requestType")?.trim();
+    const nextRequestType =
+      requestTypeCandidate === "completion" ||
+      requestTypeCandidate === "embedding" ||
+      requestTypeCandidate === "rerank" ||
+      requestTypeCandidate === "stream" ||
+      requestTypeCandidate === "responses"
+        ? requestTypeCandidate
+        : "all";
+    const statusCandidate = searchParams.get("status")?.trim();
+    const nextStatus =
+      statusCandidate === "success" || statusCandidate === "error"
+        ? statusCandidate
+        : "all";
+    const startRaw = searchParams.get("start")?.trim();
+    const endRaw = searchParams.get("end")?.trim();
+    const nextDateRange =
+      startRaw && endRaw && dayjs(startRaw).isValid() && dayjs(endRaw).isValid()
+        ? ([dayjs(startRaw), dayjs(endRaw)] as [Dayjs, Dayjs])
+        : null;
+
+    setModelFilter(nextModel);
+    setFeatureFilter(nextFeature);
+    setProfileFilter(nextProfileId);
+    setRunFilter(nextRunId);
+    setNodeFilter(nextNodeId);
+    setRequestTypeFilter(nextRequestType);
+    setStatusFilter(nextStatus);
+    setDateRange(nextDateRange);
+
+    setAppliedModelFilter(nextModel);
+    setAppliedFeatureFilter(nextFeature);
+    setAppliedProfileFilter(nextProfileId);
+    setAppliedRunFilter(nextRunId);
+    setAppliedNodeFilter(nextNodeId);
+    setAppliedRequestTypeFilter(nextRequestType);
+    setAppliedStatusFilter(nextStatus);
+    setAppliedDateRange(nextDateRange);
+    setPage(1);
+  }, [searchParams]);
 
   const loadSettings = useCallback(async () => {
     setSettingsLoading(true);
@@ -763,26 +913,55 @@ export function LlmRequestLogsPanel() {
     setPage(1);
     setAppliedModelFilter(modelFilter.trim());
     setAppliedFeatureFilter(featureFilter);
+    setAppliedProfileFilter(profileFilter.trim());
+    setAppliedRunFilter(runFilter.trim());
+    setAppliedNodeFilter(nodeFilter.trim());
     setAppliedRequestTypeFilter(requestTypeFilter);
     setAppliedStatusFilter(statusFilter);
     setAppliedDateRange(dateRange);
     setRefreshNonce((value) => value + 1);
+    syncFilterQuery({
+      model: modelFilter,
+      feature: featureFilter,
+      profileId: profileFilter,
+      runId: runFilter,
+      nodeId: nodeFilter,
+      requestType: requestTypeFilter,
+      status: statusFilter,
+      dateRange,
+    });
   };
 
   const handleReset = () => {
     setModelFilter("");
     setFeatureFilter("");
+    setProfileFilter("");
+    setRunFilter("");
+    setNodeFilter("");
     setRequestTypeFilter("all");
     setStatusFilter("all");
     setDateRange(null);
     setAppliedModelFilter("");
     setAppliedFeatureFilter("");
+    setAppliedProfileFilter("");
+    setAppliedRunFilter("");
+    setAppliedNodeFilter("");
     setAppliedRequestTypeFilter("all");
     setAppliedStatusFilter("all");
     setAppliedDateRange(null);
     setPage(1);
     setPageSize(DEFAULT_PAGE_SIZE);
     setRefreshNonce((value) => value + 1);
+    syncFilterQuery({
+      model: "",
+      feature: "",
+      profileId: "",
+      runId: "",
+      nodeId: "",
+      requestType: "all",
+      status: "all",
+      dateRange: null,
+    });
   };
 
   const handleSaveRetentionSettings = async (
@@ -1529,6 +1708,11 @@ export function LlmRequestLogsPanel() {
     effectiveMetadataPolicy.keyCount - metadataPreviewKeys.length,
   );
   const canExportLogs = logs.total > 0;
+  const pinnedContextTags = [
+    appliedProfileFilter ? `profile:${appliedProfileFilter}` : null,
+    appliedRunFilter ? `run:${appliedRunFilter}` : null,
+    appliedNodeFilter ? `node:${appliedNodeFilter}` : null,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <>
@@ -1546,6 +1730,27 @@ export function LlmRequestLogsPanel() {
           showIcon
           message={settingsErrorMessage}
           style={{ marginBottom: "1rem" }}
+        />
+      ) : null}
+
+      {pinnedContextTags.length > 0 ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: "1rem" }}
+          message="Deep-linked crawl frontier context"
+          description={
+            <Space wrap>
+              {pinnedContextTags.map((tag) => (
+                <Tag key={tag} color="blue">
+                  {tag}
+                </Tag>
+              ))}
+              <Button size="small" onClick={handleReset}>
+                Clear context
+              </Button>
+            </Space>
+          }
         />
       ) : null}
 
@@ -2156,6 +2361,27 @@ export function LlmRequestLogsPanel() {
             defaultValue: "Feature",
           })}
           style={{ minWidth: 220 }}
+        />
+        <Input
+          allowClear
+          value={profileFilter}
+          onChange={(event) => setProfileFilter(event.target.value)}
+          placeholder="Profile ID"
+          style={{ minWidth: 180 }}
+        />
+        <Input
+          allowClear
+          value={runFilter}
+          onChange={(event) => setRunFilter(event.target.value)}
+          placeholder="Run ID"
+          style={{ minWidth: 180 }}
+        />
+        <Input
+          allowClear
+          value={nodeFilter}
+          onChange={(event) => setNodeFilter(event.target.value)}
+          placeholder="Node ID"
+          style={{ minWidth: 180 }}
         />
         <Select<"all" | LlmRequestType>
           value={requestTypeFilter}

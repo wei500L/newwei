@@ -241,9 +241,13 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        $or: [
-          { feature: "news_event_brief" },
-          { "metadata.feature": "news_event_brief" },
+        $and: [
+          {
+            $or: [
+              { feature: "news_event_brief" },
+              { "metadata.feature": "news_event_brief" },
+            ],
+          },
         ],
       }),
     );
@@ -265,7 +269,53 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        gatewayProfileId: "profile-1",
+        $and: [
+          {
+            $or: [
+              { gatewayProfileId: "profile-1" },
+              { "metadata.profileid": "profile-1" },
+              { "metadata.crawlsiteprofileid": "profile-1" },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  it("applies run and node metadata filters when querying logs", async () => {
+    modelMock.countDocuments = jest.fn().mockResolvedValue(0);
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const skip = jest.fn().mockReturnValue({ limit });
+    const sort = jest.fn().mockReturnValue({ skip });
+    modelMock.find = jest.fn().mockReturnValue({ sort });
+
+    await service.queryLogs(
+      {
+        orgId: "org-1",
+        runId: "run-1",
+        nodeId: "node-1",
+      },
+      {},
+    );
+
+    expect(modelMock.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1",
+        $and: [
+          {
+            $or: [
+              { "metadata.runid": "run-1" },
+              { "metadata.frontierrunid": "run-1" },
+            ],
+          },
+          {
+            $or: [
+              { "metadata.nodeid": "node-1" },
+              { "metadata.frontiernodeid": "node-1" },
+            ],
+          },
+        ],
       }),
     );
   });
@@ -498,18 +548,26 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        $or: [
-          { feature: "news_event_brief" },
-          { "metadata.feature": "news_event_brief" },
+        $and: [
+          {
+            $or: [
+              { feature: "news_event_brief" },
+              { "metadata.feature": "news_event_brief" },
+            ],
+          },
         ],
       }),
     );
     expect(modelMock.find).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
-        $or: [
-          { feature: "news_event_brief" },
-          { "metadata.feature": "news_event_brief" },
+        $and: [
+          {
+            $or: [
+              { feature: "news_event_brief" },
+              { "metadata.feature": "news_event_brief" },
+            ],
+          },
         ],
       }),
     );
@@ -568,9 +626,13 @@ describe("LlmRequestLogService", () => {
     expect(modelMock.aggregate.mock.calls[0]?.[0]?.[0]).toEqual({
       $match: expect.objectContaining({
         orgId: "org-1",
-        $or: [
-          { feature: "news_event_brief" },
-          { "metadata.feature": "news_event_brief" },
+        $and: [
+          {
+            $or: [
+              { feature: "news_event_brief" },
+              { "metadata.feature": "news_event_brief" },
+            ],
+          },
         ],
       }),
     });

@@ -259,6 +259,7 @@ export class CrawlFrontierLlmService {
     orgId: string;
     runId: string;
     nodeId: string;
+    profileId?: string;
     seedUrl: string;
     parentUrl: string;
     parentPageType: CrawlFrontierPageType;
@@ -309,6 +310,9 @@ export class CrawlFrontierLlmService {
     try {
       reranked = await this.rerankCandidates({
         orgId: options.orgId,
+        runId: options.runId,
+        nodeId: options.nodeId,
+        profileId: options.profileId,
         model: llmAssist?.judgeModel,
         query: this.buildJudgeQuery(options),
         candidates: reranked,
@@ -354,6 +358,9 @@ export class CrawlFrontierLlmService {
         metadata: {
           feature: "crawl_frontier_judge",
           source: "crawl-frontier",
+          runId: options.runId,
+          nodeId: options.nodeId,
+          ...(options.profileId ? { profileId: options.profileId } : {}),
           frontierRunId: options.runId,
           frontierNodeId: options.nodeId,
           frontierParentPageType: options.parentPageType,
@@ -540,6 +547,8 @@ export class CrawlFrontierLlmService {
         metadata: {
           feature: "crawl_frontier_learn",
           source: "crawl-frontier",
+          runId: options.run.id,
+          profileId: options.profile.id,
           frontierRunId: options.run.id,
           crawlSiteProfileId: options.profile.id,
         },
@@ -637,6 +646,9 @@ export class CrawlFrontierLlmService {
 
   private async rerankCandidates(options: {
     orgId: string;
+    runId: string;
+    nodeId: string;
+    profileId?: string;
     model?: string;
     query: string;
     candidates: FrontierLlmCandidate[];
@@ -664,6 +676,9 @@ export class CrawlFrontierLlmService {
       metadata: {
         feature: "crawl_frontier_judge",
         source: "crawl-frontier",
+        runId: options.runId,
+        nodeId: options.nodeId,
+        ...(options.profileId ? { profileId: options.profileId } : {}),
         mode: "rerank",
       },
     });

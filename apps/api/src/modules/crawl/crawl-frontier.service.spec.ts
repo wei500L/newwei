@@ -384,6 +384,76 @@ describe("CrawlFrontierService", () => {
     );
   });
 
+  it("summarizes repair diagnostics with missing fields, errors, and model counts", async () => {
+    const { service, prisma } = createService();
+    prisma.crawlResult = {
+      findMany: jest.fn().mockResolvedValue([
+        { id: "crawl-1", contentHash: "hash-1" },
+        { id: "crawl-2", contentHash: "hash-2" },
+      ]),
+    };
+    prisma.article = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          contentHash: "hash-1",
+          metadata: {
+            llmRepair: {
+              applied: true,
+              model: "gpt-5-mini",
+              repairedFields: ["title", "author"],
+              missingFields: ["title", "author", "published_at"],
+            },
+          },
+        },
+        {
+          contentHash: "hash-2",
+          metadata: {
+            llmRepair: {
+              applied: false,
+              model: "gpt-5-mini",
+              error: "crawl_article_repair_failed",
+              repairedFields: [],
+              missingFields: ["source"],
+            },
+          },
+        },
+      ]),
+    };
+
+    const summary = await (service as any).buildRunRepairSummary("org-1", [
+      {
+        crawlResultId: "crawl-1",
+      },
+      {
+        crawlResultId: "crawl-2",
+      },
+    ]);
+
+    expect(summary).toMatchObject({
+      available: 2,
+      attempted: 2,
+      applied: 1,
+      failed: 1,
+      untouched: 0,
+      repairedFields: {
+        title: 1,
+        author: 1,
+      },
+      missingFields: {
+        title: 1,
+        author: 1,
+        published_at: 1,
+        source: 1,
+      },
+      errors: {
+        crawl_article_repair_failed: 1,
+      },
+      models: {
+        "gpt-5-mini": 2,
+      },
+    });
+  });
+
   it("synthesizes native filter chain and scorer for hybrid deep crawl", () => {
     const { service } = createService();
 

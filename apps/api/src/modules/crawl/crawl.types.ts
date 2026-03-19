@@ -291,6 +291,124 @@ export interface CrawlFrontierNodeRecord {
   updatedAt: Date;
 }
 
+export interface CrawlFrontierTraceStep {
+  key: string;
+  label: string;
+  status: "completed" | "active" | "warning" | "failed" | "skipped";
+  detail?: string | null;
+  tags?: string[];
+}
+
+export interface CrawlFrontierRunSummary {
+  coverageByPageType: Record<string, number>;
+  coverageByDepth: Record<string, number>;
+  candidateStats: Record<string, number>;
+  rejectionCounts: Record<string, number>;
+  judgeSummary: Record<string, unknown>;
+  warningFlags: string[];
+  failureKind?: string | null;
+  pendingLlmJudgeJobs: number;
+  rootDiagnosis?: Record<string, unknown> | null;
+  seedSummary?: Record<string, unknown> | null;
+  llmSummary?: Record<string, unknown> | null;
+  shadowSummary?: Record<string, unknown> | null;
+  repairSummary?: Record<string, unknown> | null;
+  trace: CrawlFrontierTraceStep[];
+}
+
+export interface CrawlFrontierNodeArticleSummary {
+  id: string;
+  url: string;
+  titleGuess?: string | null;
+  sourceLabel?: string | null;
+  language?: string | null;
+  crawlAt: Date;
+  metadata?: Record<string, unknown> | null;
+  llmRepair?: Record<string, unknown> | null;
+}
+
+export interface CrawlFrontierNodeProcessedArticleSummary {
+  id: string;
+  status: CrawlTaskStatus | string;
+  title?: string | null;
+  subtitle?: string | null;
+  author?: string | null;
+  source?: string | null;
+  publishedAt?: Date | null;
+  category?: string | null;
+  qualityScore?: number | null;
+  llmModel?: string | null;
+  llmPromptVersion?: string | null;
+  language?: string | null;
+  location?: string | null;
+  processedAt: Date;
+  removedNoiseTypes?: unknown;
+  topics?: unknown;
+  keyPoints?: unknown;
+  entities?: unknown;
+  kgRelations?: unknown;
+}
+
+export interface CrawlFrontierNodeRepairSummary {
+  available: boolean;
+  attempted: boolean;
+  applied: boolean;
+  source?: string | null;
+  model?: string | null;
+  error?: string | null;
+  missingFields: string[];
+  repairedFields: string[];
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  costUsd?: number | null;
+  latencyMs?: number | null;
+}
+
+export interface CrawlFrontierNodeExtractionSummary {
+  hasArticle: boolean;
+  hasProcessedArticle: boolean;
+  processedStatus?: CrawlTaskStatus | string | null;
+  qualityScore?: number | null;
+  llmModel?: string | null;
+  extractedFields: string[];
+  missingFields: string[];
+  removedNoiseTypes?: string[];
+}
+
+export interface CrawlFrontierNodeDetailRecord extends CrawlFrontierNodeRecord {
+  run: {
+    id: string;
+    seedUrl: string;
+    status: CrawlFrontierRunStatus;
+    executionMode: CrawlSiteExecutionMode;
+    profile?: {
+      id: string;
+      name: string;
+      matchHost: string;
+      executionMode: CrawlSiteExecutionMode;
+      isActive: boolean;
+    } | null;
+  };
+  crawlResult?: {
+    id: string;
+    sourceUrl: string;
+    fetchedAt: Date;
+    markdownRef: string;
+    contentHash: string;
+    metadata?: Record<string, unknown> | null;
+  } | null;
+  article?: CrawlFrontierNodeArticleSummary | null;
+  processedArticle?: CrawlFrontierNodeProcessedArticleSummary | null;
+  repairSummary?: CrawlFrontierNodeRepairSummary | null;
+  extractionSummary?: CrawlFrontierNodeExtractionSummary | null;
+  llmLogFilters?: {
+    judge?: Record<string, string>;
+    learn?: Record<string, string>;
+    repair?: Record<string, string>;
+  } | null;
+}
+
 export interface CrawlExecutionSummary {
   inserted: number;
   skipped: number;

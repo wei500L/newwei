@@ -1785,6 +1785,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           jobId: options.job.jobId,
           source: "news-pipeline",
           feature: "crawl_article_repair",
+          ...(this.resolveFrontierLogMetadata(options.article.metadata) ?? {}),
         },
         messages: [
           {
@@ -1929,6 +1930,32 @@ export class NewsPipelineService implements OnModuleDestroy {
       costUsd: sumOrNull(base.costUsd, extra.costUsd),
       latencyMs: sumOrNull(base.latencyMs, extra.latencyMs),
     };
+  }
+
+  private resolveFrontierLogMetadata(
+    metadata: Record<string, unknown> | null | undefined,
+  ): Record<string, string> | null {
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return null;
+    }
+    const read = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = metadata[key];
+        if (typeof value === "string" && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+      return null;
+    };
+    const runId = read("frontierRunId", "runId");
+    const nodeId = read("frontierNodeId", "nodeId");
+    const profileId = read("crawlSiteProfileId", "profileId");
+    const resolved = {
+      ...(runId ? { runId } : {}),
+      ...(nodeId ? { nodeId } : {}),
+      ...(profileId ? { profileId } : {}),
+    };
+    return Object.keys(resolved).length > 0 ? resolved : null;
   }
 
   private async evaluateSummaryDedupe(options: {

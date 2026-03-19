@@ -1,5 +1,7 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsIn,
@@ -22,6 +24,12 @@ const RUN_STATUSES = [
   "completed",
   "failed",
   "canceled",
+] as const;
+const SEED_STRATEGIES = [
+  "auto",
+  "seed_first",
+  "frontier_first",
+  "frontier_only",
 ] as const;
 
 export class ListCrawlSiteProfileDto {
@@ -102,6 +110,37 @@ export class MatchCrawlSiteProfileDto {
   url!: string;
 }
 
+export class PreviewCrawlSiteProfileDto {
+  @IsUrl({
+    require_tld: false,
+    require_protocol: true,
+  })
+  url!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  matchHost!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(EXECUTION_MODES)
+  executionMode?: (typeof EXECUTION_MODES)[number];
+
+  @IsObject()
+  config!: Record<string, unknown>;
+}
+
 export class ListCrawlFrontierRunDto {
   @IsOptional()
   @IsString()
@@ -117,6 +156,31 @@ export class ListCrawlFrontierRunDto {
   @IsString()
   @IsIn(RUN_STATUSES)
   status?: (typeof RUN_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @IsIn(EXECUTION_MODES)
+  executionMode?: (typeof EXECUTION_MODES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  runRole?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  failureKind?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  warningFlag?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(SEED_STRATEGIES)
+  seedStrategy?: (typeof SEED_STRATEGIES)[number];
 }
 
 export class CreateCrawlFrontierRunDto {
@@ -154,4 +218,13 @@ export class CreateCrawlFrontierRunDto {
   @IsArray()
   @IsString({ each: true })
   keywords?: string[];
+}
+
+export class BulkCrawlFrontierIdsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(191, { each: true })
+  ids!: string[];
 }

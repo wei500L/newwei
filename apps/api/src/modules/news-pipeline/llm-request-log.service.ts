@@ -54,6 +54,8 @@ export interface LlmRequestLogFilter {
   model?: string;
   feature?: string;
   profileId?: string;
+  runId?: string;
+  nodeId?: string;
   requestType?: LlmRequestType;
   status?: LlmRequestStatus;
   start?: Date;
@@ -570,7 +572,14 @@ export class LlmRequestLogService {
 
   async getUsageSummary(
     orgId: string,
-    dateRange?: { start?: Date; end?: Date; feature?: string; profileId?: string },
+    dateRange?: {
+      start?: Date;
+      end?: Date;
+      feature?: string;
+      profileId?: string;
+      runId?: string;
+      nodeId?: string;
+    },
   ): Promise<LlmUsageSummary> {
     const usageWhere = this.buildWhere({
       orgId,
@@ -578,6 +587,8 @@ export class LlmRequestLogService {
       end: dateRange?.end,
       feature: dateRange?.feature,
       profileId: dateRange?.profileId,
+      runId: dateRange?.runId,
+      nodeId: dateRange?.nodeId,
     });
 
     const topErrorWhere: FilterQuery<LlmRequestLog> = {
@@ -1163,6 +1174,7 @@ export class LlmRequestLogService {
     const where: FilterQuery<LlmRequestLog> = {
       orgId: this.normalizeOrgId(filter.orgId),
     };
+    const andFilters: FilterQuery<LlmRequestLog>[] = [];
 
     const model = typeof filter.model === "string" ? filter.model.trim() : "";
     if (model) {
@@ -1179,15 +1191,43 @@ export class LlmRequestLogService {
 
     const feature = this.normalizeFeatureToken(filter.feature);
     if (feature) {
-      where.$or = [
-        { feature },
-        { "metadata.feature": feature },
-      ] as FilterQuery<LlmRequestLog>[];
+      andFilters.push({
+        $or: [
+          { feature },
+          { "metadata.feature": feature },
+        ] as FilterQuery<LlmRequestLog>[],
+      });
     }
 
     const gatewayProfileId = this.normalizeProfileId(filter.profileId);
     if (gatewayProfileId) {
-      where.gatewayProfileId = gatewayProfileId;
+      andFilters.push({
+        $or: [
+          { gatewayProfileId },
+          { "metadata.profileid": gatewayProfileId },
+          { "metadata.crawlsiteprofileid": gatewayProfileId },
+        ] as FilterQuery<LlmRequestLog>[],
+      });
+    }
+
+    const runId = this.normalizeProfileId(filter.runId);
+    if (runId) {
+      andFilters.push({
+        $or: [
+          { "metadata.runid": runId },
+          { "metadata.frontierrunid": runId },
+        ] as FilterQuery<LlmRequestLog>[],
+      });
+    }
+
+    const nodeId = this.normalizeProfileId(filter.nodeId);
+    if (nodeId) {
+      andFilters.push({
+        $or: [
+          { "metadata.nodeid": nodeId },
+          { "metadata.frontiernodeid": nodeId },
+        ] as FilterQuery<LlmRequestLog>[],
+      });
     }
 
     const range: Record<string, Date> = {};
@@ -1199,6 +1239,10 @@ export class LlmRequestLogService {
     }
     if (Object.keys(range).length > 0) {
       where.createdAt = range;
+    }
+
+    if (andFilters.length > 0) {
+      where.$and = andFilters;
     }
 
     return where;

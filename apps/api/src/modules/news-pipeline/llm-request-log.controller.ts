@@ -37,6 +37,8 @@ interface ParsedLogFilter extends ParsedDateRange {
   model?: string;
   feature?: string;
   profileId?: string;
+  runId?: string;
+  nodeId?: string;
   requestType?: LlmRequestType;
   status?: LlmRequestStatus;
 }
@@ -119,6 +121,20 @@ function normalizeProfileId(raw: string | undefined): string | undefined {
   return value;
 }
 
+function normalizeEntityId(
+  raw: string | undefined,
+  name: "runId" | "nodeId",
+): string | undefined {
+  const value = raw?.trim();
+  if (!value) {
+    return undefined;
+  }
+  if (value.length > 128) {
+    throw new BadRequestException(`${name} must be 128 characters or fewer`);
+  }
+  return value;
+}
+
 function parseDateRange(
   startRaw: string | undefined,
   endRaw: string | undefined,
@@ -140,6 +156,8 @@ function parseLogFilter(
   modelRaw: string | undefined,
   featureRaw: string | undefined,
   profileIdRaw: string | undefined,
+  runIdRaw: string | undefined,
+  nodeIdRaw: string | undefined,
   requestTypeRaw: string | undefined,
   statusRaw: string | undefined,
   startRaw: string | undefined,
@@ -150,6 +168,8 @@ function parseLogFilter(
     model: typeof modelRaw === "string" && modelRaw.trim().length > 0 ? modelRaw.trim() : undefined,
     feature: normalizeFeature(featureRaw),
     profileId: normalizeProfileId(profileIdRaw),
+    runId: normalizeEntityId(runIdRaw, "runId"),
+    nodeId: normalizeEntityId(nodeIdRaw, "nodeId"),
     requestType: normalizeRequestType(requestTypeRaw),
     status: normalizeStatus(statusRaw),
     start,
@@ -172,6 +192,8 @@ export class LlmRequestLogController {
     @Query("model") modelRaw?: string,
     @Query("feature") featureRaw?: string,
     @Query("profileId") profileIdRaw?: string,
+    @Query("runId") runIdRaw?: string,
+    @Query("nodeId") nodeIdRaw?: string,
     @Query("requestType") requestTypeRaw?: string,
     @Query("status") statusRaw?: string,
     @Query("start") startRaw?: string,
@@ -183,6 +205,8 @@ export class LlmRequestLogController {
       modelRaw,
       featureRaw,
       profileIdRaw,
+      runIdRaw,
+      nodeIdRaw,
       requestTypeRaw,
       statusRaw,
       startRaw,
@@ -215,6 +239,8 @@ export class LlmRequestLogController {
   @ApiQuery({ name: "model", required: false, type: String })
   @ApiQuery({ name: "feature", required: false, type: String })
   @ApiQuery({ name: "profileId", required: false, type: String })
+  @ApiQuery({ name: "runId", required: false, type: String })
+  @ApiQuery({ name: "nodeId", required: false, type: String })
   @ApiQuery({
     name: "requestType",
     required: false,
@@ -242,6 +268,8 @@ export class LlmRequestLogController {
     @Query("model") modelRaw?: string,
     @Query("feature") featureRaw?: string,
     @Query("profileId") profileIdRaw?: string,
+    @Query("runId") runIdRaw?: string,
+    @Query("nodeId") nodeIdRaw?: string,
     @Query("requestType") requestTypeRaw?: string,
     @Query("status") statusRaw?: string,
     @Query("start") startRaw?: string,
@@ -251,6 +279,8 @@ export class LlmRequestLogController {
       modelRaw,
       featureRaw,
       profileIdRaw,
+      runIdRaw,
+      nodeIdRaw,
       requestTypeRaw,
       statusRaw,
       startRaw,
@@ -277,18 +307,24 @@ export class LlmRequestLogController {
     @CurrentUser() user: AuthenticatedUser,
     @Query("feature") featureRaw?: string,
     @Query("profileId") profileIdRaw?: string,
+    @Query("runId") runIdRaw?: string,
+    @Query("nodeId") nodeIdRaw?: string,
     @Query("start") startRaw?: string,
     @Query("end") endRaw?: string,
   ) {
     const { start, end } = parseDateRange(startRaw, endRaw);
     const feature = normalizeFeature(featureRaw);
     const profileId = normalizeProfileId(profileIdRaw);
+    const runId = normalizeEntityId(runIdRaw, "runId");
+    const nodeId = normalizeEntityId(nodeIdRaw, "nodeId");
 
     return this.llmRequestLogService.getUsageSummary(user.orgId, {
       start,
       end,
       feature,
       profileId,
+      runId,
+      nodeId,
     });
   }
 }

@@ -288,6 +288,9 @@ export class CrawlFrontierService {
     if (query?.status) {
       where.status = query.status;
     }
+    if (query?.executionMode) {
+      where.executionMode = query.executionMode;
+    }
     const runs = await this.prisma.crawlFrontierRun.findMany({
       where,
       orderBy: [{ createdAt: "desc" }],
@@ -303,7 +306,9 @@ export class CrawlFrontierService {
         },
       },
     });
-    return runs.map((run) => this.mapRun(run));
+    return runs
+      .map((run) => this.mapRun(run))
+      .filter((run) => this.matchesRunQueryFilters(run, query));
   }
 
   async getRun(orgId: string, id: string) {
@@ -319,15 +324,155 @@ export class CrawlFrontierService {
     if (!run || run.orgId !== orgId) {
       throw new NotFoundException("Crawl frontier run not found");
     }
+    const mappedRun = this.mapRun(run);
+    const mappedNodes = run.nodes.map((node) => this.mapNode(node));
     return {
-      ...this.mapRun(run),
+      ...mappedRun,
       profile: run.profile
         ? {
             ...run.profile,
             config: normalizeCrawlSiteProfileConfig(run.profile.config),
           }
         : null,
-      nodes: run.nodes.map((node) => this.mapNode(node)),
+      nodes: mappedNodes,
+      summary: await this.buildRunAdminSummary(orgId, mappedRun, mappedNodes),
+    };
+  }
+
+  async getNode(orgId: string, id: string) {
+    const node = await this.prisma.crawlFrontierNode.findUnique({
+      where: { id },
+      include: {
+        run: {
+          include: {
+            profile: true,
+          },
+        },
+      },
+    });
+    if (!node || node.orgId !== orgId) {
+      throw new NotFoundException("Crawl frontier node not found");
+    }
+    const mappedNode = this.mapNode(node);
+    const runProfile = node.run.profile
+      ? {
+          id: node.run.profile.id,
+          name: node.run.profile.name,
+          matchHost: node.run.profile.matchHost,
+          executionMode: node.run.profile.executionMode,
+          isActive: node.run.profile.isActive,
+        }
+      : null;
+
+    const crawlResult =
+      node.crawlResultId && node.crawlResultId.trim().length > 0
+        ? await this.prisma.crawlResult.findUnique({
+            where: { id: node.crawlResultId },
+            select: {
+              id: true,
+              orgId: true,
+              sourceUrl: true,
+              fetchedAt: true,
+              markdownRef: true,
+              contentHash: true,
+              metadata: true,
+            },
+          })
+        : null;
+    const resolvedCrawlResult =
+      crawlResult && crawlResult.orgId === orgId ? crawlResult : null;
+    const article = resolvedCrawlResult
+      ? await this.prisma.article.findFirst({
+          where: {
+            orgId,
+            contentHash: resolvedCrawlResult.contentHash,
+          },
+          include: {
+            processed: true,
+          },
+        })
+      : null;
+    const articleMetadata =
+      article?.metadata && isPlainObject(article.metadata)
+        ? (article.metadata as Record<string, unknown>)
+        : null;
+    const repairSummary = this.buildNodeRepairSummary(articleMetadata);
+    const extractionSummary = this.buildNodeExtractionSummary({
+      article,
+      processedArticle: article?.processed ?? null,
+    });
+
+    return {
+      ...mappedNode,
+      run: {
+        id: node.run.id,
+        seedUrl: node.run.seedUrl,
+        status: node.run.status,
+        executionMode: node.run.executionMode,
+        profile: runProfile,
+      },
+      crawlResult: resolvedCrawlResult
+        ? {
+            id: resolvedCrawlResult.id,
+            sourceUrl: resolvedCrawlResult.sourceUrl,
+            fetchedAt: resolvedCrawlResult.fetchedAt,
+            markdownRef: resolvedCrawlResult.markdownRef,
+            contentHash: resolvedCrawlResult.contentHash,
+            metadata:
+              resolvedCrawlResult.metadata &&
+              isPlainObject(resolvedCrawlResult.metadata)
+                ? (resolvedCrawlResult.metadata as Record<string, unknown>)
+                : null,
+          }
+        : null,
+      article: article
+        ? {
+            id: article.id,
+            url: article.url,
+            titleGuess: article.titleGuess ?? null,
+            sourceLabel: article.sourceLabel ?? null,
+            language: article.language ?? null,
+            crawlAt: article.crawlAt,
+            metadata: articleMetadata,
+            llmRepair:
+              articleMetadata && isPlainObject(articleMetadata.llmRepair)
+                ? (articleMetadata.llmRepair as Record<string, unknown>)
+                : null,
+          }
+        : null,
+      processedArticle: article?.processed
+        ? {
+            id: article.processed.id,
+            status: article.processed.status,
+            title: article.processed.title ?? null,
+            subtitle: article.processed.subtitle ?? null,
+            author: article.processed.author ?? null,
+            source: article.processed.source ?? null,
+            publishedAt: article.processed.publishedAt ?? null,
+            category: article.processed.category ?? null,
+            qualityScore: article.processed.qualityScore ?? null,
+            llmModel: article.processed.llmModel ?? null,
+            llmPromptVersion: article.processed.llmPromptVersion ?? null,
+            language: article.processed.language ?? null,
+            location: article.processed.location ?? null,
+            processedAt: article.processed.processedAt,
+            removedNoiseTypes: article.processed.removedNoiseTypes ?? null,
+            topics: article.processed.topics ?? null,
+            keyPoints: article.processed.keyPoints ?? null,
+            entities: article.processed.entities ?? null,
+            kgRelations: article.processed.kgRelations ?? null,
+          }
+        : null,
+      repairSummary,
+      extractionSummary,
+      llmLogFilters: this.buildLlmLogFilters({
+        runId: node.run.id,
+        nodeId: node.id,
+        profileId: runProfile?.id,
+        includeRepair: Boolean(
+          articleMetadata && isPlainObject(articleMetadata.llmRepair),
+        ),
+      }),
     };
   }
 
@@ -539,6 +684,29 @@ export class CrawlFrontierService {
     return this.getRun(orgId, id);
   }
 
+  async cancelRuns(orgId: string, ids: string[]) {
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException("ids must contain at least one run id");
+    }
+    const runs = await this.prisma.crawlFrontierRun.findMany({
+      where: {
+        orgId,
+        id: {
+          in: uniqueIds,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    await Promise.all(runs.map((run) => this.cancelRun(orgId, run.id)));
+    return {
+      canceledIds: runs.map((run) => run.id),
+      canceledCount: runs.length,
+    };
+  }
+
   async retryNode(orgId: string, nodeId: string) {
     const node = await this.prisma.crawlFrontierNode.findUnique({
       where: { id: nodeId },
@@ -550,42 +718,37 @@ export class CrawlFrontierService {
     if (!node.run.crawlTaskId) {
       throw new BadRequestException("Crawl frontier run is missing crawlTaskId");
     }
-    await this.prisma.crawlFrontierNode.update({
-      where: { id: node.id },
-      data: {
-        status: "queued",
-        lastError: null,
-        rejectionReason: null,
-        queuedAt: new Date(),
-        metadata: toPrismaJsonValue(
-          mergeMetadataRecords(
-            isPlainObject(node.metadata)
-              ? (node.metadata as Record<string, unknown>)
-              : undefined,
-            {
-              failureKind: null,
-              warningFlags: [],
-              retryQueuedAt: new Date().toISOString(),
-            },
-          ),
-        ),
-      },
-    });
-    await this.prisma.crawlFrontierRun.update({
-      where: { id: node.runId },
-      data: {
-        status: "queued",
-        finishedAt: null,
-      },
-    });
-    await this.queueService.enqueueFrontierNode({
-      orgId,
-      taskId: node.run.crawlTaskId,
-      frontierRunId: node.runId,
-      frontierNodeId: node.id,
-      priorityClass: node.queueClass as CrawlPriorityClass,
-    });
+    await this.requeueNodeRecord(node, orgId);
     return this.getRun(orgId, node.runId);
+  }
+
+  async retryNodes(orgId: string, ids: string[]) {
+    const uniqueIds = Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException("ids must contain at least one node id");
+    }
+    const nodes = await this.prisma.crawlFrontierNode.findMany({
+      where: {
+        orgId,
+        id: {
+          in: uniqueIds,
+        },
+      },
+      include: {
+        run: true,
+      },
+    });
+    for (const node of nodes) {
+      if (!node.run.crawlTaskId) {
+        continue;
+      }
+      await this.requeueNodeRecord(node, orgId);
+    }
+    return {
+      retriedIds: nodes.map((node) => node.id),
+      retriedCount: nodes.length,
+      runIds: Array.from(new Set(nodes.map((node) => node.runId))),
+    };
   }
 
   async processQueuedNode(
@@ -2372,6 +2535,7 @@ export class CrawlFrontierService {
         orgId: options.node.orgId,
         runId: options.runId,
         nodeId: options.node.id,
+        profileId: options.profile.id,
         seedUrl: options.node.depth === 0 ? options.node.url : options.node.url,
         parentUrl: options.node.url,
         parentPageType: options.node.pageType,
@@ -4292,6 +4456,549 @@ export class CrawlFrontierService {
         ? "shadow_profile_improved_frontier_quality"
         : "shadow_profile_below_publish_threshold",
       thresholds,
+    };
+  }
+
+  private matchesRunQueryFilters(
+    run: { executionMode: CrawlSiteExecutionMode; metadata?: Record<string, unknown> | null },
+    query?: ListCrawlFrontierRunDto,
+  ) {
+    if (!query) {
+      return true;
+    }
+    if (query.executionMode && run.executionMode !== query.executionMode) {
+      return false;
+    }
+    const metadata = isPlainObject(run.metadata)
+      ? (run.metadata as Record<string, unknown>)
+      : {};
+    const rootDiagnosis = isPlainObject(metadata.rootDiagnosis)
+      ? (metadata.rootDiagnosis as Record<string, unknown>)
+      : {};
+    if (query.runRole) {
+      const runRole =
+        asString(metadata.runRole) ??
+        (isPlainObject(metadata.llmLifecycle)
+          ? asString((metadata.llmLifecycle as Record<string, unknown>).role)
+          : undefined);
+      if (runRole !== query.runRole) {
+        return false;
+      }
+    }
+    if (query.failureKind) {
+      const failureKind =
+        asString(metadata.failureKind) ?? asString(rootDiagnosis.failureKind);
+      if (failureKind !== query.failureKind) {
+        return false;
+      }
+    }
+    if (query.warningFlag) {
+      const warningFlags = collectNodeWarningFlags(metadata, null);
+      if (!warningFlags.includes(query.warningFlag)) {
+        return false;
+      }
+    }
+    if (query.seedStrategy) {
+      const seedStrategy =
+        asString(metadata.seedStrategy) ?? asString(rootDiagnosis.seedStrategy);
+      if (seedStrategy !== query.seedStrategy) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async requeueNodeRecord(
+    node: {
+      id: string;
+      runId: string;
+      queueClass: string;
+      metadata: Prisma.JsonValue;
+      run: {
+        crawlTaskId: string | null;
+      };
+    },
+    orgId: string,
+  ) {
+    if (!node.run.crawlTaskId) {
+      throw new BadRequestException("Crawl frontier run is missing crawlTaskId");
+    }
+    const queuedAt = new Date();
+    await this.prisma.crawlFrontierNode.update({
+      where: { id: node.id },
+      data: {
+        status: "queued",
+        lastError: null,
+        rejectionReason: null,
+        queuedAt,
+        metadata: toPrismaJsonValue(
+          mergeMetadataRecords(
+            isPlainObject(node.metadata)
+              ? (node.metadata as Record<string, unknown>)
+              : undefined,
+            {
+              failureKind: null,
+              warningFlags: [],
+              retryQueuedAt: queuedAt.toISOString(),
+            },
+          ),
+        ),
+      },
+    });
+    await this.prisma.crawlFrontierRun.update({
+      where: { id: node.runId },
+      data: {
+        status: "queued",
+        finishedAt: null,
+      },
+    });
+    await this.queueService.enqueueFrontierNode({
+      orgId,
+      taskId: node.run.crawlTaskId,
+      frontierRunId: node.runId,
+      frontierNodeId: node.id,
+      priorityClass: node.queueClass as CrawlPriorityClass,
+    });
+  }
+
+  private async buildRunAdminSummary(
+    orgId: string,
+    run: {
+      id: string;
+      lastError?: string | null;
+      metadata?: Record<string, unknown> | null;
+    },
+    nodes: CrawlFrontierNodeRecord[],
+  ) {
+    const metadata = isPlainObject(run.metadata)
+      ? (run.metadata as Record<string, unknown>)
+      : {};
+    const coverage = isPlainObject(metadata.coverage)
+      ? (metadata.coverage as Record<string, unknown>)
+      : {};
+    const rootDiagnosis = isPlainObject(metadata.rootDiagnosis)
+      ? (metadata.rootDiagnosis as Record<string, unknown>)
+      : null;
+    const llmLifecycle = isPlainObject(metadata.llmLifecycle)
+      ? (metadata.llmLifecycle as Record<string, unknown>)
+      : null;
+    const shadowComparison = isPlainObject(metadata.shadowComparison)
+      ? (metadata.shadowComparison as Record<string, unknown>)
+      : null;
+    const warningFlags = collectNodeWarningFlags(metadata, run.lastError ?? null);
+    const pendingLlmJudgeJobs =
+      typeof metadata.llmPendingJudgeJobs === "number"
+        ? metadata.llmPendingJudgeJobs
+        : resolvePendingLlmJudgeJobs(metadata);
+    return {
+      coverageByPageType:
+        toNumericRecord(coverage.byPageType) ?? this.createPageTypeCountRecord(),
+      coverageByDepth: toNumericRecord(coverage.byDepth) ?? {},
+      candidateStats: toNumericRecord(metadata.candidateStats) ?? {},
+      rejectionCounts: toNumericRecord(metadata.rejectionCounts) ?? {},
+      judgeSummary: isPlainObject(metadata.judgeSummary)
+        ? (metadata.judgeSummary as Record<string, unknown>)
+        : {},
+      warningFlags,
+      failureKind:
+        asString(metadata.failureKind) ?? asString(rootDiagnosis?.failureKind) ?? null,
+      pendingLlmJudgeJobs,
+      rootDiagnosis,
+      seedSummary: {
+        strategy:
+          asString(metadata.seedStrategy) ?? asString(rootDiagnosis?.seedStrategy) ?? null,
+        origin:
+          asString(metadata.seedOrigin) ?? asString(rootDiagnosis?.seedOrigin) ?? null,
+        method:
+          asString(metadata.seedMethod) ?? asString(rootDiagnosis?.seedMethod) ?? null,
+        discoveryMode:
+          asString(metadata.seedDiscoveryMode) ??
+          asString(rootDiagnosis?.seedDiscoveryMode) ??
+          null,
+        fallbackStage:
+          asString(metadata.fallbackStage) ?? asString(rootDiagnosis?.fallbackStage) ?? null,
+        yield: isPlainObject(metadata.seedYield)
+          ? metadata.seedYield
+          : isPlainObject(rootDiagnosis?.seedYield)
+            ? rootDiagnosis?.seedYield
+            : null,
+        quality: isPlainObject(metadata.seedQuality)
+          ? metadata.seedQuality
+          : isPlainObject(rootDiagnosis?.seedQuality)
+            ? rootDiagnosis?.seedQuality
+            : null,
+        diagnostics: isPlainObject(metadata.seedDiagnostics)
+          ? metadata.seedDiagnostics
+          : isPlainObject(rootDiagnosis?.seedDiagnostics)
+            ? rootDiagnosis?.seedDiagnostics
+            : null,
+      },
+      llmSummary: {
+        pendingJudgeJobs: pendingLlmJudgeJobs,
+        runRole:
+          asString(metadata.runRole) ??
+          (llmLifecycle ? asString(llmLifecycle.role) : null) ??
+          null,
+        llmAssist: isPlainObject(metadata.llmAssist) ? metadata.llmAssist : null,
+        judgeSummary: isPlainObject(metadata.judgeSummary)
+          ? metadata.judgeSummary
+          : null,
+        lifecycle: llmLifecycle,
+      },
+      shadowSummary: {
+        profileId: asString(metadata.shadowProfileId) ?? null,
+        shadowRunId: asString(metadata.shadowRunId) ?? null,
+        comparison: shadowComparison,
+        publishedProfileId: asString(metadata.shadowPublishedProfileId) ?? null,
+      },
+      repairSummary: await this.buildRunRepairSummary(orgId, nodes),
+      trace: this.buildRunTrace(metadata, warningFlags),
+    };
+  }
+
+  private async buildRunRepairSummary(
+    orgId: string,
+    nodes: CrawlFrontierNodeRecord[],
+  ) {
+    const crawlResultIds = Array.from(
+      new Set(
+        nodes
+          .map((node) => node.crawlResultId)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      ),
+    );
+    if (crawlResultIds.length === 0) {
+      return null;
+    }
+    const crawlResults = await this.prisma.crawlResult.findMany({
+      where: {
+        orgId,
+        id: {
+          in: crawlResultIds,
+        },
+      },
+      select: {
+        id: true,
+        contentHash: true,
+      },
+    });
+    const contentHashes = Array.from(
+      new Set(crawlResults.map((result) => result.contentHash).filter(Boolean)),
+    );
+    if (contentHashes.length === 0) {
+      return null;
+    }
+    const articles = await this.prisma.article.findMany({
+      where: {
+        orgId,
+        contentHash: {
+          in: contentHashes,
+        },
+      },
+      select: {
+        contentHash: true,
+        metadata: true,
+      },
+    });
+    const repairedFieldCounts: Record<string, number> = {};
+    const missingFieldCounts: Record<string, number> = {};
+    const errorCounts: Record<string, number> = {};
+    const modelCounts: Record<string, number> = {};
+    let available = articles.length;
+    let attempted = 0;
+    let applied = 0;
+    let failed = 0;
+    for (const article of articles) {
+      const metadata = article.metadata && isPlainObject(article.metadata)
+        ? (article.metadata as Record<string, unknown>)
+        : undefined;
+      const llmRepair = metadata?.llmRepair;
+      if (!isPlainObject(llmRepair)) {
+        continue;
+      }
+      attempted += 1;
+      if (asString(llmRepair.model)) {
+        bumpCount(modelCounts, asString(llmRepair.model)!);
+      }
+      if (asBoolean(llmRepair.applied)) {
+        applied += 1;
+      }
+      if (asString(llmRepair.error)) {
+        failed += 1;
+        bumpCount(errorCounts, asString(llmRepair.error)!);
+      }
+      for (const field of coerceStringArray(llmRepair.missingFields) ?? []) {
+        bumpCount(missingFieldCounts, field);
+      }
+      for (const field of coerceStringArray(llmRepair.repairedFields) ?? []) {
+        bumpCount(repairedFieldCounts, field);
+      }
+    }
+    return {
+      available,
+      attempted,
+      applied,
+      failed,
+      untouched: Math.max(0, available - attempted),
+      missingFields: missingFieldCounts,
+      repairedFields: repairedFieldCounts,
+      errors: errorCounts,
+      models: modelCounts,
+    };
+  }
+
+  private buildNodeRepairSummary(
+    articleMetadata?: Record<string, unknown> | null,
+  ) {
+    const llmRepair =
+      articleMetadata && isPlainObject(articleMetadata.llmRepair)
+        ? (articleMetadata.llmRepair as Record<string, unknown>)
+        : null;
+    if (!llmRepair) {
+      return null;
+    }
+
+    return {
+      available: true,
+      attempted: true,
+      applied: asBoolean(llmRepair.applied) ?? false,
+      source: asString(llmRepair.source) ?? null,
+      model: asString(llmRepair.model) ?? null,
+      error: asString(llmRepair.error) ?? null,
+      missingFields: coerceStringArray(llmRepair.missingFields) ?? [],
+      repairedFields: coerceStringArray(llmRepair.repairedFields) ?? [],
+      promptTokens: toFiniteNumber(llmRepair.promptTokens),
+      completionTokens: toFiniteNumber(llmRepair.completionTokens),
+      totalTokens: toFiniteNumber(llmRepair.totalTokens),
+      costUsd: toFiniteNumber(llmRepair.costUsd),
+      latencyMs: toFiniteNumber(llmRepair.latencyMs),
+    };
+  }
+
+  private buildNodeExtractionSummary(options: {
+    article:
+      | ({
+          metadata?: Prisma.JsonValue | null;
+        } & Record<string, unknown>)
+      | null
+      | undefined;
+    processedArticle:
+      | ({
+          status?: string | null;
+          title?: string | null;
+          subtitle?: string | null;
+          author?: string | null;
+          source?: string | null;
+          publishedAt?: Date | null;
+          category?: string | null;
+          qualityScore?: number | null;
+          llmModel?: string | null;
+          removedNoiseTypes?: unknown;
+        } & Record<string, unknown>)
+      | null
+      | undefined;
+  }) {
+    const extractedFields = new Set<string>();
+    const missingFields = new Set<string>();
+    const processed = options.processedArticle;
+
+    if (processed?.title) extractedFields.add("title");
+    else missingFields.add("title");
+    if (processed?.subtitle) extractedFields.add("subtitle");
+    if (processed?.author) extractedFields.add("author");
+    else missingFields.add("author");
+    if (processed?.source) extractedFields.add("source");
+    else missingFields.add("source");
+    if (processed?.publishedAt) extractedFields.add("published_at");
+    else missingFields.add("published_at");
+    if (processed?.category) extractedFields.add("category");
+
+    return {
+      hasArticle: Boolean(options.article),
+      hasProcessedArticle: Boolean(processed),
+      processedStatus: processed?.status ?? null,
+      qualityScore: processed?.qualityScore ?? null,
+      llmModel: processed?.llmModel ?? null,
+      extractedFields: Array.from(extractedFields),
+      missingFields: Array.from(missingFields),
+      removedNoiseTypes: coerceStringArray(processed?.removedNoiseTypes) ?? [],
+    };
+  }
+
+  private buildRunTrace(
+    metadata: Record<string, unknown>,
+    warningFlags: string[],
+  ) {
+    const rootDiagnosis = isPlainObject(metadata.rootDiagnosis)
+      ? (metadata.rootDiagnosis as Record<string, unknown>)
+      : {};
+    const judgeSummary = isPlainObject(metadata.judgeSummary)
+      ? (metadata.judgeSummary as Record<string, unknown>)
+      : {};
+    const llmLifecycle = isPlainObject(metadata.llmLifecycle)
+      ? (metadata.llmLifecycle as Record<string, unknown>)
+      : {};
+    const judgeCount = toFiniteNumber(judgeSummary.count) ?? 0;
+    const pendingLlmJudgeJobs =
+      typeof metadata.llmPendingJudgeJobs === "number"
+        ? metadata.llmPendingJudgeJobs
+        : resolvePendingLlmJudgeJobs(metadata);
+    const nativeStrategyType =
+      asString(rootDiagnosis.nativeStrategyType) ??
+      asString(metadata.nativeStrategyType);
+    const steps = [
+      {
+        key: "seed",
+        label: "Seed",
+        status: asString(metadata.seedMethod) || asString(rootDiagnosis.seedMethod)
+          ? "completed"
+          : asString(metadata.fallbackStage) === "frontier"
+            ? "warning"
+            : "skipped",
+        detail:
+          asString(metadata.seedMethod) ??
+          asString(rootDiagnosis.seedMethod) ??
+          asString(metadata.seedStrategy) ??
+          "seed_not_used",
+        tags: uniqueStringList(
+          asString(metadata.seedStrategy) ? [`strategy:${metadata.seedStrategy}`] : undefined,
+          asString(metadata.seedMethod) ? [`method:${metadata.seedMethod}`] : undefined,
+          asString(metadata.fallbackStage)
+            ? [`fallback:${metadata.fallbackStage}`]
+            : undefined,
+        ) ?? [],
+      },
+      {
+        key: "topology",
+        label: "Topology",
+        status:
+          asString(rootDiagnosis.linkPreviewMode) ||
+          asString(rootDiagnosis.domScopeMode) ||
+          asString(rootDiagnosis.waitForMode)
+            ? "completed"
+            : "skipped",
+        detail:
+          asString(rootDiagnosis.linkPreviewQuery) ??
+          asString(rootDiagnosis.linkPreviewMode) ??
+          "topology_not_applied",
+        tags: uniqueStringList(
+          asString(rootDiagnosis.linkPreviewMode)
+            ? [`preview:${rootDiagnosis.linkPreviewMode}`]
+            : undefined,
+          asString(rootDiagnosis.domScopeMode)
+            ? [`dom:${rootDiagnosis.domScopeMode}`]
+            : undefined,
+          asString(rootDiagnosis.waitForMode)
+            ? [`wait:${rootDiagnosis.waitForMode}`]
+            : undefined,
+        ) ?? [],
+      },
+      {
+        key: "frontier",
+        label: "Frontier",
+        status:
+          isPlainObject(metadata.candidateStats) ||
+          isPlainObject(metadata.rejectionCounts)
+            ? "completed"
+            : "skipped",
+        detail:
+          asString(metadata.failureKind) ??
+          asString(rootDiagnosis.failureKind) ??
+          "frontier_candidates_processed",
+        tags: warningFlags,
+      },
+      {
+        key: "native",
+        label: "Native / Fallback",
+        status: nativeStrategyType
+          ? warningFlags.includes("native_fallback_layered")
+            ? "warning"
+            : "completed"
+          : "skipped",
+        detail: nativeStrategyType ?? "native_not_used",
+        tags: uniqueStringList(
+          nativeStrategyType ? [`strategy:${nativeStrategyType}`] : undefined,
+          asString(rootDiagnosis.nativeFilterChainType)
+            ? [`filter:${rootDiagnosis.nativeFilterChainType}`]
+            : undefined,
+          asString(rootDiagnosis.nativeUrlScorerType)
+            ? [`scorer:${rootDiagnosis.nativeUrlScorerType}`]
+            : undefined,
+        ) ?? [],
+      },
+      {
+        key: "llm_judge",
+        label: "LLM Judge",
+        status:
+          pendingLlmJudgeJobs > 0
+            ? "active"
+            : warningFlags.some((flag) => flag.startsWith("llm_judge"))
+              ? "warning"
+              : judgeCount > 0
+                ? "completed"
+                : "skipped",
+        detail:
+          pendingLlmJudgeJobs > 0
+            ? `${pendingLlmJudgeJobs} pending`
+            : judgeCount > 0
+              ? `${judgeCount} judged`
+              : "judge_not_used",
+        tags: uniqueStringList(
+          warningFlags.filter((flag) => flag.startsWith("llm_judge")),
+          pendingLlmJudgeJobs > 0 ? [`pending:${pendingLlmJudgeJobs}`] : undefined,
+        ) ?? [],
+      },
+      {
+        key: "shadow_learn",
+        label: "Shadow Learn",
+        status:
+          isPlainObject(metadata.shadowComparison)
+            ? "completed"
+            : asString(llmLifecycle.learnQueuedAt)
+              ? "active"
+              : "skipped",
+        detail:
+          asString((metadata.shadowComparison as Record<string, unknown> | undefined)?.summary) ??
+          asString(llmLifecycle.learnQueuedAt) ??
+          "shadow_learning_not_triggered",
+        tags: uniqueStringList(
+          asString(metadata.shadowProfileId) ? [`shadow:${metadata.shadowProfileId}`] : undefined,
+          asString(metadata.shadowPublishedProfileId)
+            ? [`published:${metadata.shadowPublishedProfileId}`]
+            : undefined,
+        ) ?? [],
+      },
+    ];
+    return steps;
+  }
+
+  private buildLlmLogFilters(options: {
+    runId: string;
+    nodeId?: string;
+    profileId?: string | null;
+    includeRepair?: boolean;
+  }) {
+    const shared = {
+      ...(options.profileId ? { profileId: options.profileId } : {}),
+      runId: options.runId,
+    };
+    return {
+      judge: {
+        ...shared,
+        ...(options.nodeId ? { nodeId: options.nodeId } : {}),
+        feature: "crawl_frontier_judge",
+      },
+      learn: {
+        ...shared,
+        feature: "crawl_frontier_learn",
+      },
+      repair: options.includeRepair
+        ? {
+            ...shared,
+            ...(options.nodeId ? { nodeId: options.nodeId } : {}),
+            feature: "crawl_article_repair",
+          }
+        : undefined,
     };
   }
 

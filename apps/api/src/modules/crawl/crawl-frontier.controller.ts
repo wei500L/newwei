@@ -16,11 +16,13 @@ import type { AuthenticatedUser } from "../auth/auth.service";
 import { CrawlFrontierService } from "./crawl-frontier.service";
 import { CrawlSiteProfileService } from "./crawl-site-profile.service";
 import {
+  BulkCrawlFrontierIdsDto,
   CreateCrawlFrontierRunDto,
   CreateCrawlSiteProfileDto,
   ListCrawlFrontierRunDto,
   ListCrawlSiteProfileDto,
   MatchCrawlSiteProfileDto,
+  PreviewCrawlSiteProfileDto,
   UpdateCrawlSiteProfileDto,
 } from "./dto/crawl-frontier.dto";
 
@@ -49,6 +51,24 @@ export class CrawlFrontierController {
     @Query() query: MatchCrawlSiteProfileDto,
   ) {
     return this.profiles.matchProfileForUrl(user.orgId, query.url);
+  }
+
+  @Post("profiles/preview")
+  @Permissions("crawl.read")
+  async previewProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: PreviewCrawlSiteProfileDto,
+  ) {
+    return this.profiles.previewProfileDraft(user.orgId, body);
+  }
+
+  @Get("profiles/:id")
+  @Permissions("crawl.read")
+  async getProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.profiles.getProfile(user.orgId, id);
   }
 
   @Post("profiles")
@@ -121,6 +141,15 @@ export class CrawlFrontierController {
     return this.frontier.getRun(user.orgId, id);
   }
 
+  @Post("runs/cancel")
+  @Permissions("crawl.write")
+  async cancelRuns(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BulkCrawlFrontierIdsDto,
+  ) {
+    return this.frontier.cancelRuns(user.orgId, body.ids);
+  }
+
   @Post("runs/:id/cancel")
   @Permissions("crawl.write")
   async cancelRun(
@@ -128,6 +157,24 @@ export class CrawlFrontierController {
     @Param("id") id: string,
   ) {
     return this.frontier.cancelRun(user.orgId, id);
+  }
+
+  @Get("nodes/:id")
+  @Permissions("crawl.read")
+  async getNode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.frontier.getNode(user.orgId, id);
+  }
+
+  @Post("nodes/retry")
+  @Permissions("crawl.write")
+  async retryNodes(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: BulkCrawlFrontierIdsDto,
+  ) {
+    return this.frontier.retryNodes(user.orgId, body.ids);
   }
 
   @Post("nodes/:id/retry")

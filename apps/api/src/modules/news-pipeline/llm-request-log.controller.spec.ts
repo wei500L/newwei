@@ -79,6 +79,8 @@ describe("LlmRequestLogController", () => {
       " gpt-4o-mini ",
       " news_event_brief ",
       " profile-1 ",
+      " run-1 ",
+      " node-1 ",
       "responses",
       "success",
       "2026-02-01T00:00:00.000Z",
@@ -91,6 +93,8 @@ describe("LlmRequestLogController", () => {
         model: "gpt-4o-mini",
         feature: "news_event_brief",
         profileId: "profile-1",
+        runId: "run-1",
+        nodeId: "node-1",
         requestType: "responses",
         status: "success",
         start: new Date("2026-02-01T00:00:00.000Z"),
@@ -109,6 +113,8 @@ describe("LlmRequestLogController", () => {
       " gpt-4o-mini ",
       "news_event_brief",
       "profile-1",
+      "run-1",
+      "node-1",
       "responses",
       "error",
       "2026-02-01T00:00:00.000Z",
@@ -122,6 +128,8 @@ describe("LlmRequestLogController", () => {
         model: "gpt-4o-mini",
         feature: "news_event_brief",
         profileId: "profile-1",
+        runId: "run-1",
+        nodeId: "node-1",
         requestType: "responses",
         status: "error",
         start: new Date("2026-02-01T00:00:00.000Z"),
@@ -142,6 +150,8 @@ describe("LlmRequestLogController", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
         "2026-02-10T00:00:00.000Z",
         "2026-02-01T00:00:00.000Z",
       ),
@@ -154,6 +164,8 @@ describe("LlmRequestLogController", () => {
     await expect(
       controller.export(
         user,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -170,6 +182,8 @@ describe("LlmRequestLogController", () => {
     await expect(
       controller.export(
         user,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -191,6 +205,8 @@ describe("LlmRequestLogController", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
         "not-a-date",
         undefined,
       ),
@@ -203,6 +219,8 @@ describe("LlmRequestLogController", () => {
       user,
       "news_event_brief",
       "profile-1",
+      "run-1",
+      "node-1",
       "2026-02-01T00:00:00.000Z",
       "2026-02-28T23:59:59.999Z",
     );
@@ -212,6 +230,8 @@ describe("LlmRequestLogController", () => {
       end: new Date("2026-02-28T23:59:59.999Z"),
       feature: "news_event_brief",
       profileId: "profile-1",
+      runId: "run-1",
+      nodeId: "node-1",
     });
   });
 

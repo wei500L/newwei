@@ -20,6 +20,7 @@ import type {
 import {
   CreateCrawlSiteProfileDto,
   ListCrawlSiteProfileDto,
+  PreviewCrawlSiteProfileDto,
   UpdateCrawlSiteProfileDto,
 } from "./dto/crawl-frontier.dto";
 
@@ -403,6 +404,41 @@ export class CrawlSiteProfileService {
   async findProfileForUrl(orgId: string, url: string) {
     const matched = await this.matchProfileForUrl(orgId, url);
     return matched.match;
+  }
+
+  async previewProfileDraft(orgId: string, input: PreviewCrawlSiteProfileDto) {
+    const parsed = this.parseUrl(input.url);
+    const activeMatch = await this.matchProfileForUrl(orgId, input.url);
+    const draft = {
+      id: "draft",
+      orgId,
+      name: input.name?.trim() || "Draft profile",
+      description: null,
+      matchHost: this.normalizeMatchHost(input.matchHost),
+      isActive: typeof input.isActive === "boolean" ? input.isActive : true,
+      executionMode:
+        (input.executionMode as CrawlSiteExecutionMode | undefined) ?? "layered",
+      version: 0,
+      config: normalizeCrawlSiteProfileConfig(input.config),
+      createdById: "draft",
+      updatedById: null,
+      publishedAt: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    } satisfies CrawlSiteProfileRecord;
+    const draftMatches = matchHostPattern(draft.matchHost, parsed.hostname);
+
+    return {
+      url: input.url,
+      host: parsed.hostname,
+      draft,
+      draftMatches,
+      draftMatchReason: draftMatches
+        ? `draft host pattern ${draft.matchHost} matches ${parsed.hostname}`
+        : `draft host pattern ${draft.matchHost} does not match ${parsed.hostname}`,
+      activeMatch: activeMatch.match,
+      activeCandidates: activeMatch.candidates,
+    };
   }
 
   private async createVersion(
