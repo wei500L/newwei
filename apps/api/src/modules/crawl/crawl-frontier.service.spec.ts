@@ -9,9 +9,18 @@ describe("CrawlFrontierService", () => {
         update: jest.fn(),
       },
       crawlFrontierNode: {
+        findUnique: jest.fn(),
         findMany: jest.fn(),
+        update: jest.fn(),
         create: jest.fn(),
       },
+      crawlTask: {
+        findUnique: jest.fn(),
+      },
+    } as any;
+    const profiles = {
+      getProfile: jest.fn(),
+      findProfileForUrl: jest.fn(),
     } as any;
     const queueService = {
       enqueueFrontierNode: jest.fn().mockResolvedValue(undefined),
@@ -32,7 +41,7 @@ describe("CrawlFrontierService", () => {
     } as any;
     const service = new CrawlFrontierService(
       prisma,
-      {} as any,
+      profiles,
       {} as any,
       {} as any,
       queueService,
@@ -42,6 +51,7 @@ describe("CrawlFrontierService", () => {
     return {
       service,
       prisma,
+      profiles,
       queueService,
       metadataService,
       frontierLlm,
@@ -694,6 +704,162 @@ describe("CrawlFrontierService", () => {
     });
   });
 
+  it("lifts llm parse failures into run-level warning flags and root diagnosis", async () => {
+    const { service, prisma } = createService();
+    prisma.crawlFrontierRun.findUnique.mockResolvedValue({
+      id: "run-llm",
+      status: "running",
+      lastError: null,
+      metadata: {},
+    });
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        status: "completed",
+        pageType: "home",
+        depth: 0,
+        rejectionReason: null,
+        lastError: null,
+        metadata: {
+          llmJudgeEnabled: true,
+          llmJudgeAttempted: true,
+          llmJudgeParsed: false,
+          candidateStats: {
+            scanned: 8,
+            unique: 6,
+            accepted: 4,
+            selected: 3,
+            rejected: 3,
+            trimmed: 1,
+          },
+          warningFlags: [],
+        },
+      },
+    ]);
+
+    await (service as any).refreshRunStatus("run-llm");
+
+    expect(prisma.crawlFrontierRun.update).toHaveBeenCalledWith({
+      where: { id: "run-llm" },
+      data: expect.objectContaining({
+        metadata: expect.objectContaining({
+          warningFlags: ["llm_judge_parse_failed"],
+          rootDiagnosis: expect.objectContaining({
+            llmJudgeAttempted: true,
+            llmJudgeParsed: false,
+            warningFlags: ["llm_judge_parse_failed"],
+          }),
+        }),
+      }),
+    });
+  });
+
+  it("demotes hot timeout frontier retries to the normal queue instead of failing immediately", async () => {
+    const { service, prisma, queueService, profiles } = createService();
+    const nodeRecord = {
+      id: "node-timeout",
+      runId: "run-timeout",
+      parentNodeId: null,
+      orgId: "org-1",
+      url: "https://www.reuters.com/world/example",
+      canonicalUrl: null,
+      urlFingerprint: null,
+      pageType: "list",
+      depth: 1,
+      queueClass: "hot",
+      status: "queued",
+      score: null,
+      freshnessScore: null,
+      attempts: 0,
+      queuedAt: new Date(),
+      crawledAt: null,
+      crawlResultId: null,
+      rejectionReason: null,
+      lastError: null,
+      metadata: {},
+      discoveredAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      run: {
+        id: "run-timeout",
+        orgId: "org-1",
+        seedUrl: "https://www.reuters.com/",
+        crawlTaskId: "task-1",
+        profileId: "profile-1",
+        executionMode: "layered",
+        status: "queued",
+        maxDepth: 3,
+        maxPages: 12,
+        startedAt: null,
+      },
+    };
+    prisma.crawlFrontierNode.findUnique.mockResolvedValue(nodeRecord);
+    prisma.crawlTask.findUnique.mockResolvedValue({
+      id: "task-1",
+      orgId: "org-1",
+    });
+    profiles.getProfile.mockResolvedValue({
+      id: "profile-1",
+      orgId: "org-1",
+      name: "Reuters",
+      description: null,
+      matchHost: "www.reuters.com",
+      isActive: true,
+      executionMode: "layered",
+      version: 1,
+      createdById: "user-1",
+      updatedById: "user-1",
+      publishedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      config: {},
+    });
+    prisma.crawlFrontierRun.findUnique.mockResolvedValue({
+      id: "run-timeout",
+      status: "running",
+      lastError: null,
+      metadata: {},
+    });
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        status: "queued",
+        pageType: "list",
+        depth: 1,
+        rejectionReason: null,
+        lastError: null,
+        metadata: {
+          warningFlags: ["retry_demoted_to_normal"],
+        },
+      },
+    ]);
+    jest
+      .spyOn(service as any, "executeNode")
+      .mockRejectedValue(new Error("crawl4ai request timed out after 60000ms"));
+
+    await expect(
+      service.processQueuedNode("node-timeout", "org-1", 60_000),
+    ).resolves.toEqual({
+      inserted: 0,
+      skipped: 0,
+    });
+
+    expect(prisma.crawlFrontierNode.update).toHaveBeenCalledWith({
+      where: { id: "node-timeout" },
+      data: expect.objectContaining({
+        status: "queued",
+        queueClass: "normal",
+        lastError: null,
+        metadata: expect.anything(),
+      }),
+    });
+    expect(queueService.enqueueFrontierNode).toHaveBeenCalledWith({
+      orgId: "org-1",
+      taskId: "task-1",
+      frontierRunId: "run-timeout",
+      frontierNodeId: "node-timeout",
+      priorityClass: "normal",
+    });
+  });
+
   it("uses llm-assisted frontier judgments to drop noisy candidates and retag page types", async () => {
     const frontierLlm = {
       judgeCandidates: jest.fn().mockResolvedValue({
@@ -847,6 +1013,128 @@ describe("CrawlFrontierService", () => {
         llmJudgeRetyped: 1,
       }),
     );
+  });
+
+  it("uses synthesized llm-assisted frontier defaults when profile omits llmAssist", async () => {
+    const frontierLlm = {
+      judgeCandidates: jest.fn().mockResolvedValue({
+        candidates: [
+          {
+            url: "https://example.com/2026/03/18/world/story-a",
+            pageType: "article",
+            score: 3.2,
+            freshnessScore: 0.9,
+            metadata: {
+              judgeMethod: "llm",
+              judgeConfidence: 0.81,
+            },
+          },
+        ],
+        diagnostics: {
+          llmJudgeEnabled: true,
+          llmJudgeAttempted: true,
+          llmJudgeJudged: 1,
+          warningFlags: [],
+        },
+      }),
+    };
+    const { service, prisma, queueService } = createService(frontierLlm);
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        canonicalUrl: "https://example.com/",
+        urlFingerprint: "seed",
+        pageType: "home",
+      },
+    ]);
+    prisma.crawlFrontierNode.create.mockImplementation(async ({ data }: any) => ({
+      id: `node-${data.url}`,
+      ...data,
+    }));
+    jest.spyOn(service as any, "extractCandidates").mockReturnValue({
+      candidates: [
+        {
+          url: "https://example.com/world/story-a-2026-03-19/",
+          pageType: "category",
+          score: 2.4,
+          freshnessScore: 0.9,
+          metadata: {},
+        },
+      ],
+      diagnostics: {
+        candidateStats: {
+          scanned: 1,
+          unique: 1,
+          accepted: 1,
+          selected: 1,
+          rejected: 0,
+          trimmed: 0,
+        },
+        rejectionCounts: {},
+        acceptedPageTypeCounts: {
+          home: 0,
+          category: 1,
+          list: 0,
+          article: 0,
+        },
+        warningFlags: [],
+        syntheticListActivated: false,
+      },
+    });
+
+    await (service as any).discoverChildNodes({
+      node: {
+        id: "seed-node",
+        orgId: "org-1",
+        url: "https://example.com/",
+        pageType: "home",
+        depth: 0,
+      },
+      runId: "run-1",
+      taskId: "task-1",
+      maxDepth: 3,
+      maxPages: 8,
+      profile: {
+        id: "profile-1",
+        orgId: "org-1",
+        name: "Example",
+        description: null,
+        matchHost: "example.com",
+        isActive: true,
+        executionMode: "layered",
+        version: 1,
+        createdById: "user-1",
+        updatedById: "user-1",
+        publishedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        config: {
+          layeredOptions: {
+            paginationKeepCount: 2,
+          },
+        },
+      },
+      results: [],
+    });
+
+    expect(frontierLlm.judgeCandidates).toHaveBeenCalledTimes(1);
+    expect(frontierLlm.judgeCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          llmAssist: expect.objectContaining({
+            enabled: true,
+            recallMode: "high_recall",
+          }),
+        }),
+      }),
+    );
+    expect(prisma.crawlFrontierNode.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          pageType: "article",
+        }),
+      }),
+    );
+    expect(queueService.enqueueFrontierNode).toHaveBeenCalledTimes(1);
   });
 
   it("discovers sitemap seed candidates via metadata service and queues article nodes", async () => {

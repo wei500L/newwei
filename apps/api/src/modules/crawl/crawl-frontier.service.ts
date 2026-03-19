@@ -17,6 +17,7 @@ import {
   isUtilityFrontierLinkText,
   normalizeCrawlSiteProfileConfig,
   prioritizeFrontierCandidates,
+  resolveEffectiveLlmAssistConfig,
   resolveFreshnessBucket,
   resolveLocaleScopeLanguage,
   resolveNodeQueueClass,
@@ -139,6 +140,10 @@ function asString(value: unknown): string | undefined {
     : undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function bumpCount(counts: Record<string, number>, key: string) {
   counts[key] = (counts[key] ?? 0) + 1;
 }
@@ -185,6 +190,32 @@ function uniqueStringList(...lists: Array<string[] | undefined>): string[] | und
     ),
   );
   return merged.length > 0 ? merged : undefined;
+}
+
+function collectNodeWarningFlags(
+  metadata: Record<string, unknown> | null | undefined,
+  lastError?: string | null,
+): string[] {
+  const failureKind =
+    typeof metadata?.failureKind === "string" && metadata.failureKind.trim().length > 0
+      ? metadata.failureKind.trim()
+      : classifyFrontierFailureKind(lastError);
+  return (
+    uniqueStringList(
+      coerceStringArray(metadata?.warningFlags),
+      asBoolean(metadata?.llmJudgeEnabled) &&
+        asBoolean(metadata?.llmJudgeAttempted) &&
+        asBoolean(metadata?.llmJudgeParsed) === false
+        ? ["llm_judge_parse_failed"]
+        : undefined,
+      asBoolean(metadata?.llmJudgeEnabled) &&
+        asBoolean(metadata?.llmJudgeAttempted) &&
+        Boolean(asString(metadata?.llmJudgeError))
+        ? ["llm_judge_failed"]
+        : undefined,
+      failureKind ? [failureKind] : undefined,
+    ) ?? []
+  );
 }
 
 function normalizeHeaderName(value: string): string {
@@ -329,13 +360,19 @@ export class CrawlFrontierService {
       runMetadata: {
         runRole:
           profile.config.llmAssist?.shadow?.role === "shadow" ? "shadow" : "active",
-        llmAssist:
-          profile.config.llmAssist?.enabled === true
+        llmAssist: (() => {
+          const llmAssist = resolveEffectiveLlmAssistConfig(
+            profile.config,
+            "judge",
+          );
+          return llmAssist
             ? {
                 enabled: true,
-                recallMode: profile.config.llmAssist.recallMode ?? "high_recall",
+                recallMode: llmAssist.recallMode ?? "high_recall",
+                synthesized: profile.config.llmAssist?.enabled !== true,
               }
-            : null,
+            : null;
+        })(),
       },
     });
 
@@ -603,6 +640,47 @@ export class CrawlFrontierService {
       const message =
         error instanceof Error ? error.message : "crawl frontier node failed";
       const failureKind = classifyFrontierFailureKind(message);
+      const mappedNode = this.mapNode(node);
+      if (
+        this.shouldDemoteHotRetryToNormal({
+          node: mappedNode,
+          failureKind,
+        })
+      ) {
+        const queuedAt = new Date();
+        await this.prisma.crawlFrontierNode.update({
+          where: { id: node.id },
+          data: {
+            status: "queued",
+            queueClass: "normal",
+            queuedAt,
+            lastError: null,
+            metadata: toPrismaJsonValue(
+              mergeMetadataRecords(mappedNode.metadata, {
+                retryDemotedToNormal: true,
+                retryDemotedFromQueue: mappedNode.queueClass,
+                retryDemotedAt: queuedAt.toISOString(),
+                retryDemotedFailureKind: failureKind,
+                retryDemotedLastError: message,
+                warningFlags: uniqueStringList(
+                  collectNodeWarningFlags(mappedNode.metadata, mappedNode.lastError),
+                  failureKind ? [failureKind] : undefined,
+                  ["retry_demoted_to_normal"],
+                ) ?? [],
+              }),
+            ),
+          },
+        });
+        await this.queueService.enqueueFrontierNode({
+          orgId,
+          taskId: node.run.crawlTaskId,
+          frontierRunId: node.runId,
+          frontierNodeId: node.id,
+          priorityClass: "normal",
+        });
+        await this.refreshRunStatus(node.runId);
+        return { inserted: 0, skipped: 0 };
+      }
       await this.prisma.crawlFrontierNode.update({
         where: { id: node.id },
         data: {
@@ -610,15 +688,11 @@ export class CrawlFrontierService {
           lastError: message,
           metadata: toPrismaJsonValue(
             mergeMetadataRecords(
-              this.mapNode(node).metadata,
+              mappedNode.metadata,
               {
                 failureKind,
                 warningFlags: uniqueStringList(
-                  coerceStringArray(
-                    isPlainObject(node.metadata)
-                      ? (node.metadata as Record<string, unknown>).warningFlags
-                      : undefined,
-                  ),
+                  collectNodeWarningFlags(mappedNode.metadata, mappedNode.lastError),
                   failureKind ? [failureKind] : undefined,
                 ) ?? [],
               },
@@ -635,6 +709,21 @@ export class CrawlFrontierService {
       await this.refreshRunStatus(node.runId);
       throw error;
     }
+  }
+
+  private shouldDemoteHotRetryToNormal(options: {
+    node: CrawlFrontierNodeRecord;
+    failureKind: string | null;
+  }) {
+    if (options.node.queueClass !== "hot") {
+      return false;
+    }
+    if (options.failureKind !== "network_tunnel_error") {
+      return false;
+    }
+    return (
+      asBoolean(options.node.metadata?.retryDemotedToNormal) !== true
+    );
   }
 
   private async executeNode(options: {
@@ -760,6 +849,13 @@ export class CrawlFrontierService {
       taskId: options.task.id,
       requestTimeoutMs: options.requestTimeoutMs,
     });
+    const combinedWarningFlags =
+      uniqueStringList(
+        collectNodeWarningFlags(options.node.metadata, options.node.lastError),
+        coerceStringArray(runtimeMetadata.warningFlags),
+        coerceStringArray(discoveryMetadata?.warningFlags),
+        coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
+      ) ?? [];
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -786,6 +882,7 @@ export class CrawlFrontierService {
             discoveryMetadata,
             seedDiscovery?.diagnostics,
             {
+              warningFlags: combinedWarningFlags,
               seedStrategy,
               topologyBudgetPages: useLightweightTopologyBudget
                 ? seedConfig.topologyBudgetPages
@@ -1150,12 +1247,6 @@ export class CrawlFrontierService {
       combinedRejectionCounts[key] =
         (combinedRejectionCounts[key] ?? 0) + value;
     }
-    const combinedWarningFlags =
-      uniqueStringList(
-        coerceStringArray(runtimeMetadata.warningFlags),
-        Array.from(nativeWarningFlags),
-        coerceStringArray(fallbackDiscoveryMetadata?.warningFlags),
-      ) ?? [];
     const nativeDiagnostics = {
       candidateStats: combinedCandidateStats,
       rejectionCounts: combinedRejectionCounts,
@@ -1196,6 +1287,14 @@ export class CrawlFrontierService {
       taskId: options.task.id,
       requestTimeoutMs: options.requestTimeoutMs,
     });
+    const combinedWarningFlags =
+      uniqueStringList(
+        collectNodeWarningFlags(options.node.metadata, options.node.lastError),
+        coerceStringArray(runtimeMetadata.warningFlags),
+        Array.from(nativeWarningFlags),
+        coerceStringArray(fallbackDiscoveryMetadata?.warningFlags),
+        coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
+      ) ?? [];
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -1984,9 +2083,13 @@ export class CrawlFrontierService {
     profile: CrawlSiteProfileRecord;
     candidates: FrontierCandidate[];
   }) {
+    const llmAssist = resolveEffectiveLlmAssistConfig(
+      options.profile.config,
+      "judge",
+    );
     if (
       !this.frontierLlm ||
-      options.profile.config.llmAssist?.enabled !== true ||
+      !llmAssist ||
       options.node.pageType === "article"
     ) {
       return {
@@ -2002,7 +2105,10 @@ export class CrawlFrontierService {
         seedUrl: options.node.depth === 0 ? options.node.url : options.node.url,
         parentUrl: options.node.url,
         parentPageType: options.node.pageType,
-        config: options.profile.config,
+        config: {
+          ...options.profile.config,
+          llmAssist,
+        },
         candidates: options.candidates as FrontierLlmCandidate[],
       });
       const withPaths = this.applyCandidateDiscoveryMetadata({
@@ -2507,6 +2613,7 @@ export class CrawlFrontierService {
           url: candidate.url,
           parentPageType: "home",
           config: options.profile.config,
+          publishedAtTs: candidate.publishedAtTs,
         });
         const freshnessScore = this.estimateSeedCandidateFreshnessScore(
           candidate,
@@ -3016,7 +3123,8 @@ export class CrawlFrontierService {
         for (const [key, value] of Object.entries(nodeRejectionCounts ?? {})) {
           rejectionCounts[key] = (rejectionCounts[key] ?? 0) + value;
         }
-        for (const flag of coerceStringArray(metadata.warningFlags) ?? []) {
+        const nodeWarningFlags = collectNodeWarningFlags(metadata, node.lastError);
+        for (const flag of nodeWarningFlags) {
           warningFlags.add(flag);
         }
         const failureKind =
@@ -3045,10 +3153,42 @@ export class CrawlFrontierService {
         if (node.depth === 0) {
           rootDiagnosis = {
             failureKind: failureKind ?? null,
-            warningFlags: coerceStringArray(metadata.warningFlags) ?? [],
+            warningFlags: nodeWarningFlags,
             candidateStats: nodeCandidateStats ?? null,
             rejectionCounts: nodeRejectionCounts ?? null,
             lastError: node.lastError ?? null,
+            llmJudgeEnabled:
+              typeof metadata.llmJudgeEnabled === "boolean"
+                ? metadata.llmJudgeEnabled
+                : null,
+            llmJudgeAttempted:
+              typeof metadata.llmJudgeAttempted === "boolean"
+                ? metadata.llmJudgeAttempted
+                : null,
+            llmJudgeParsed:
+              typeof metadata.llmJudgeParsed === "boolean"
+                ? metadata.llmJudgeParsed
+                : null,
+            llmJudgeError:
+              typeof metadata.llmJudgeError === "string"
+                ? metadata.llmJudgeError
+                : null,
+            llmJudgeBudget:
+              typeof metadata.llmJudgeBudget === "number"
+                ? metadata.llmJudgeBudget
+                : null,
+            retryDemotedToNormal:
+              typeof metadata.retryDemotedToNormal === "boolean"
+                ? metadata.retryDemotedToNormal
+                : null,
+            retryDemotedFromQueue:
+              typeof metadata.retryDemotedFromQueue === "string"
+                ? metadata.retryDemotedFromQueue
+                : null,
+            retryDemotedAt:
+              typeof metadata.retryDemotedAt === "string"
+                ? metadata.retryDemotedAt
+                : null,
             seedStrategy:
               typeof metadata.seedStrategy === "string"
                 ? metadata.seedStrategy
@@ -3346,7 +3486,11 @@ export class CrawlFrontierService {
       return;
     }
     const profile = lifecycleRun.profile;
-    if (profile.config.llmAssist?.enabled !== true) {
+    const learningLlmAssist = resolveEffectiveLlmAssistConfig(
+      profile.config,
+      "learn",
+    );
+    if (!learningLlmAssist) {
       await this.updateRunMetadata(runId, {
         llmLifecycle: {
           handledAt: new Date().toISOString(),

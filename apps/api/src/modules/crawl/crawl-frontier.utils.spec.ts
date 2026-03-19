@@ -6,6 +6,8 @@ import {
   isUtilityFrontierLinkText,
   normalizeCrawlSiteProfileConfig,
   prioritizeFrontierCandidates,
+  resolveEffectiveLlmAssistConfig,
+  resolveNodeQueueClass,
   scoreFrontierCandidate,
   shouldRejectFrontierUrl,
 } from "./crawl-frontier.utils";
@@ -72,6 +74,53 @@ describe("crawl-frontier.utils", () => {
         config,
       }),
     ).toBe("article");
+  });
+
+  it("treats sitemap candidates with published timestamps as articles even when category patterns are broad", () => {
+    expect(
+      inferFrontierPageType({
+        url: "https://www.reuters.com/business/eu-lawmakers-vote-progress-us-trade-deal-legislation-2026-03-19/",
+        parentPageType: "home",
+        config: {
+          urlPatterns: {
+            category: ["https://www.reuters.com/business/*"],
+          },
+        },
+        publishedAtTs: Date.parse("2026-03-19T09:58:37.331Z"),
+      }),
+    ).toBe("article");
+  });
+
+  it("enables effective llm judge defaults when profile does not define llmAssist", () => {
+    expect(resolveEffectiveLlmAssistConfig(config, "judge")).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        recallMode: "high_recall",
+        minJudgeConfidence: 0.72,
+        candidateBudgetByPageType: expect.objectContaining({
+          home: 24,
+          category: 24,
+          list: 16,
+          article: 0,
+        }),
+      }),
+    );
+    expect(resolveEffectiveLlmAssistConfig(config, "learn")).toBeUndefined();
+  });
+
+  it("keeps article detail fetches on the normal queue even when fresh", () => {
+    expect(
+      resolveNodeQueueClass({
+        pageType: "article",
+        freshnessScore: 1,
+      }),
+    ).toBe("normal");
+    expect(
+      resolveNodeQueueClass({
+        pageType: "list",
+        freshnessScore: 0.2,
+      }),
+    ).toBe("hot");
   });
 
   it("allows same registrable-domain subdomains while rejecting external hosts", () => {

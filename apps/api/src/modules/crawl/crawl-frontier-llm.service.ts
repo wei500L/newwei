@@ -12,6 +12,7 @@ import type {
   CrawlSiteProfileConfig,
   CrawlSiteProfileRecord,
 } from "./crawl.types";
+import { resolveEffectiveLlmAssistConfig } from "./crawl-frontier.utils";
 
 export interface FrontierLlmCandidate {
   url: string;
@@ -229,8 +230,11 @@ export class CrawlFrontierLlmService {
 
   constructor(private readonly liteLlm: LiteLlmService) {}
 
-  isEnabled(config: CrawlSiteProfileConfig): boolean {
-    return config.llmAssist?.enabled === true;
+  isEnabled(
+    config: CrawlSiteProfileConfig,
+    purpose: "judge" | "learn" = "judge",
+  ): boolean {
+    return Boolean(resolveEffectiveLlmAssistConfig(config, purpose));
   }
 
   async judgeCandidates(options: {
@@ -243,7 +247,8 @@ export class CrawlFrontierLlmService {
     config: CrawlSiteProfileConfig;
     candidates: FrontierLlmCandidate[];
   }): Promise<FrontierLlmJudgeResult> {
-    if (!this.isEnabled(options.config) || options.candidates.length === 0) {
+    const llmAssist = resolveEffectiveLlmAssistConfig(options.config, "judge");
+    if (!llmAssist || options.candidates.length === 0) {
       return {
         candidates: options.candidates,
         diagnostics: {
@@ -254,7 +259,6 @@ export class CrawlFrontierLlmService {
       };
     }
 
-    const llmAssist = options.config.llmAssist;
     const candidateBudget = this.resolveCandidateBudget(
       llmAssist,
       options.parentPageType,
@@ -477,13 +481,17 @@ export class CrawlFrontierLlmService {
       metadata?: Record<string, unknown> | null;
     }>;
   }): Promise<FrontierProfileLearningSuggestion | null> {
-    if (!this.isEnabled(options.profile.config)) {
+    const llmAssist = resolveEffectiveLlmAssistConfig(
+      options.profile.config,
+      "learn",
+    );
+    if (!llmAssist) {
       return null;
     }
     const snapshot = this.buildLearningSnapshot(options);
     const response = await this.liteLlm.acompletion({
       orgId: options.orgId,
-      model: options.profile.config.llmAssist?.siteLearnerModel,
+      model: llmAssist.siteLearnerModel,
       temperature: 0.15,
       max_tokens: 1800,
       response_format: FRONTIER_LEARN_RESPONSE_FORMAT,

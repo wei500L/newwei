@@ -22,6 +22,8 @@ import { assertNoCrawl4aiLlmOptions } from "./crawl4ai-llm.guard";
 
 const ARTICLE_SIGNAL_PATTERN =
   /\/(20\d{2}\/\d{1,2}\/\d{1,2}\/|article\/|articles\/|story\/|stories\/|content\/)/i;
+const DATED_ARTICLE_SLUG_PATTERN =
+  /(?:^|\/)[^/?#]+-\d{4}-\d{1,2}-\d{1,2}\/?$/i;
 const LIST_SIGNAL_PATTERN =
   /(?:[?&](?:page|p)=\d+\b|\/page\/\d+(?:\/|$)|\/(?:latest|archive|archives|index)(?:\/|$))/i;
 const CATEGORY_SIGNAL_PATTERN =
@@ -103,6 +105,19 @@ const DEFAULT_DENY_KEYWORDS = [
   "download app",
   "rss",
 ];
+const DEFAULT_LLM_ASSIST_BUDGETS: Partial<
+  Record<CrawlFrontierPageType, number>
+> = {
+  home: 24,
+  category: 24,
+  list: 16,
+  article: 0,
+};
+const DEFAULT_LLM_ASSIST_AUTO_PUBLISH: CrawlLlmAssistAutoPublishThresholds = {
+  minArticleLift: 0.15,
+  minNoiseReduction: 0.2,
+  minJudgeConfidence: 0.75,
+};
 const LOCALE_ALIAS_LANGUAGE_MAP: Record<string, string> = {
   zhongwen: "zh",
   chinese: "zh",
@@ -735,6 +750,32 @@ export function normalizeCrawlSiteProfileConfig(
   };
 }
 
+export function resolveEffectiveLlmAssistConfig(
+  config: CrawlSiteProfileConfig,
+  purpose: "judge" | "learn" = "judge",
+): CrawlLlmAssistConfig | undefined {
+  const configured = config.llmAssist;
+  if (configured?.enabled === false) {
+    return undefined;
+  }
+  if (purpose === "learn" && (!configured || configured.enabled !== true)) {
+    return undefined;
+  }
+  return {
+    enabled: true,
+    recallMode: configured?.recallMode ?? "high_recall",
+    judgeModel: configured?.judgeModel,
+    siteLearnerModel: configured?.siteLearnerModel,
+    candidateBudgetByPageType:
+      configured?.candidateBudgetByPageType ?? DEFAULT_LLM_ASSIST_BUDGETS,
+    minJudgeConfidence: configured?.minJudgeConfidence ?? 0.72,
+    shadowEvaluationRuns: configured?.shadowEvaluationRuns ?? 3,
+    autoPublishThresholds:
+      configured?.autoPublishThresholds ?? DEFAULT_LLM_ASSIST_AUTO_PUBLISH,
+    shadow: configured?.shadow,
+  };
+}
+
 export function matchHostPattern(pattern: string, host: string): boolean {
   const normalizedPattern = pattern.trim().toLowerCase();
   const normalizedHost = host.trim().toLowerCase();
@@ -930,18 +971,23 @@ export function inferFrontierPageType(options: {
   parentPageType: CrawlFrontierPageType;
   config: CrawlSiteProfileConfig;
   linkText?: string;
+  publishedAtTs?: number | null;
 }): CrawlFrontierPageType {
   const url = options.url;
   const patterns = options.config.urlPatterns;
   const signals = options.config.pageTypeSignals;
+  const hasPublishedTimestamp =
+    typeof options.publishedAtTs === "number" &&
+    Number.isFinite(options.publishedAtTs);
+  const matchesNonArticleSignal = NON_ARTICLE_SIGNAL_PATTERN.test(url);
+  const matchesArticleHeuristic =
+    !matchesNonArticleSignal &&
+    (ARTICLE_SIGNAL_PATTERN.test(url) || DATED_ARTICLE_SLUG_PATTERN.test(url));
   if (matchesSignalConfig(signals?.article, url, options.linkText)) {
     return "article";
   }
   if (matchesSignalConfig(signals?.list, url, options.linkText)) {
     return "list";
-  }
-  if (matchesSignalConfig(signals?.category, url, options.linkText)) {
-    return "category";
   }
   if (matchesSignalConfig(signals?.home, url, options.linkText)) {
     return "home";
@@ -952,19 +998,30 @@ export function inferFrontierPageType(options: {
   if (matchesAnyPattern(patterns?.list, url)) {
     return "list";
   }
-  if (matchesAnyPattern(patterns?.category, url)) {
-    return "category";
-  }
   if (matchesAnyPattern(patterns?.home, url)) {
     return "home";
   }
-  if (ARTICLE_SIGNAL_PATTERN.test(url) && !NON_ARTICLE_SIGNAL_PATTERN.test(url)) {
+  if (
+    hasPublishedTimestamp &&
+    !matchesNonArticleSignal &&
+    !matchesAnyPattern(patterns?.exclude, url) &&
+    !matchesSignalConfig(signals?.deny, url, options.linkText)
+  ) {
     return "article";
+  }
+  if (matchesArticleHeuristic) {
+    return "article";
+  }
+  if (matchesSignalConfig(signals?.category, url, options.linkText)) {
+    return "category";
+  }
+  if (matchesAnyPattern(patterns?.category, url)) {
+    return "category";
   }
   if (LIST_SIGNAL_PATTERN.test(url)) {
     return inferNonArticleHubPageType(options.parentPageType);
   }
-  if (CATEGORY_SIGNAL_PATTERN.test(url) || NON_ARTICLE_SIGNAL_PATTERN.test(url)) {
+  if (CATEGORY_SIGNAL_PATTERN.test(url) || matchesNonArticleSignal) {
     return inferNonArticleHubPageType(options.parentPageType);
   }
   if (options.parentPageType === "home") {
@@ -1174,9 +1231,6 @@ export function resolveNodeQueueClass(options: {
     return "hot";
   }
   if (options.pageType === "list") {
-    return "hot";
-  }
-  if ((options.freshnessScore ?? 0) >= 0.7) {
     return "hot";
   }
   return "normal";
