@@ -6,10 +6,19 @@ import { CrawlSettingsService } from "./crawl-settings.service";
 import {
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LLM_JUDGE,
+  CRAWL_QUEUE_LLM_JUDGE_NAME,
+  CRAWL_QUEUE_LLM_LEARN,
+  CRAWL_QUEUE_LLM_LEARN_NAME,
   CRAWL_QUEUE_NORMAL,
   CRAWL_QUEUE_NORMAL_NAME
 } from "./crawl.constants";
-import type { CrawlJobData, CrawlPriorityClass } from "./crawl.types";
+import type {
+  CrawlFrontierLlmJudgeJobPayload,
+  CrawlFrontierLlmLearnJobPayload,
+  CrawlJobData,
+  CrawlPriorityClass
+} from "./crawl.types";
 
 const logger = createLogger({ name: "crawl-queue-service" });
 const GLOBAL_CONCURRENCY_FALLBACK = 1;
@@ -32,6 +41,21 @@ export interface EnqueueFrontierNodeOptions {
   frontierNodeId: string;
   priorityClass?: CrawlQueueClass;
   sourcePriority?: number;
+}
+
+export interface EnqueueFrontierLlmJudgeOptions {
+  taskId: string;
+  orgId: string;
+  runId: string;
+  nodeId: string;
+  payload: CrawlFrontierLlmJudgeJobPayload;
+}
+
+export interface EnqueueFrontierLlmLearnOptions {
+  taskId: string;
+  orgId: string;
+  runId: string;
+  payload: CrawlFrontierLlmLearnJobPayload;
 }
 
 export interface CrawlQueueClassRuntimeStats {
@@ -87,6 +111,10 @@ export class CrawlQueueService {
   constructor(
     @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_NORMAL) private readonly normalQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_LLM_JUDGE)
+    private readonly llmJudgeQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_LLM_LEARN)
+    private readonly llmLearnQueue: Queue<CrawlJobData>,
     private readonly crawlSettings: CrawlSettingsService
   ) {}
 
@@ -195,6 +223,71 @@ export class CrawlQueueService {
             }
           : undefined,
         priority: jobPriority,
+      },
+    );
+  }
+
+  async enqueueFrontierLlmJudge(options: EnqueueFrontierLlmJudgeOptions) {
+    const settings = await this.crawlSettings.getSettings();
+    const traceId = ensureTraceId(getCurrentTraceId());
+
+    await this.llmJudgeQueue.add(
+      "crawl-frontier-llm-judge",
+      {
+        taskId: options.taskId,
+        orgId: options.orgId,
+        traceId,
+        jobKind: "frontier_llm_judge",
+        frontierRunId: options.runId,
+        frontierNodeId: options.nodeId,
+        frontierLlmJudge: options.payload,
+      },
+      {
+        jobId: `llm-judge:${options.nodeId}:${options.payload.mode}:${Date.now()}`,
+        deduplication: {
+          id: `crawl-frontier-llm-judge:${options.nodeId}:${options.payload.mode}`,
+        },
+        removeOnComplete: true,
+        removeOnFail: false,
+        attempts: 1,
+        backoff: settings.retryBackoffMs
+          ? {
+              type: "exponential",
+              delay: settings.retryBackoffMs,
+            }
+          : undefined,
+      },
+    );
+  }
+
+  async enqueueFrontierLlmLearn(options: EnqueueFrontierLlmLearnOptions) {
+    const settings = await this.crawlSettings.getSettings();
+    const traceId = ensureTraceId(getCurrentTraceId());
+
+    await this.llmLearnQueue.add(
+      "crawl-frontier-llm-learn",
+      {
+        taskId: options.taskId,
+        orgId: options.orgId,
+        traceId,
+        jobKind: "frontier_llm_learn",
+        frontierRunId: options.runId,
+        frontierLlmLearn: options.payload,
+      },
+      {
+        jobId: `llm-learn:${options.runId}:${Date.now()}`,
+        deduplication: {
+          id: `crawl-frontier-llm-learn:${options.runId}`,
+        },
+        removeOnComplete: true,
+        removeOnFail: false,
+        attempts: 1,
+        backoff: settings.retryBackoffMs
+          ? {
+              type: "exponential",
+              delay: settings.retryBackoffMs,
+            }
+          : undefined,
       },
     );
   }

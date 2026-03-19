@@ -38,6 +38,10 @@ import {
   CRAWL_QUEUE_EVENTS_NORMAL,
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LLM_JUDGE,
+  CRAWL_QUEUE_LLM_JUDGE_NAME,
+  CRAWL_QUEUE_LLM_LEARN,
+  CRAWL_QUEUE_LLM_LEARN_NAME,
   CRAWL_QUEUE_LEGACY,
   CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
@@ -169,6 +173,46 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
       }
     },
     {
+      provide: CRAWL_QUEUE_LLM_JUDGE,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_LLM_JUDGE_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+          defaultJobOptions: {
+            attempts: 1,
+            removeOnComplete: true,
+            removeOnFail: false,
+            backoff: {
+              type: "exponential",
+              delay: env.crawl4aiConfig.retryBackoffMs
+            }
+          }
+        });
+        cleanup.track(queue);
+        return queue;
+      }
+    },
+    {
+      provide: CRAWL_QUEUE_LLM_LEARN,
+      inject: [EnvService, CrawlQueueCleanupService],
+      useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
+        const queue = new Queue<CrawlJobData>(CRAWL_QUEUE_LLM_LEARN_NAME, {
+          connection: toBullmqConnection(env.redisConfig),
+          defaultJobOptions: {
+            attempts: 1,
+            removeOnComplete: true,
+            removeOnFail: false,
+            backoff: {
+              type: "exponential",
+              delay: env.crawl4aiConfig.retryBackoffMs
+            }
+          }
+        });
+        cleanup.track(queue);
+        return queue;
+      }
+    },
+    {
       provide: CRAWL_QUEUE_EVENTS_HOT,
       inject: [EnvService, CrawlQueueCleanupService],
       useFactory: (env: EnvService, cleanup: CrawlQueueCleanupService) => {
@@ -212,6 +256,14 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     {
       provide: getQueueToken(CRAWL_QUEUE_NAME),
       useExisting: CRAWL_QUEUE_LEGACY
+    },
+    {
+      provide: getQueueToken(CRAWL_QUEUE_LLM_JUDGE_NAME),
+      useExisting: CRAWL_QUEUE_LLM_JUDGE
+    },
+    {
+      provide: getQueueToken(CRAWL_QUEUE_LLM_LEARN_NAME),
+      useExisting: CRAWL_QUEUE_LLM_LEARN
     }
   ],
   exports: [
@@ -232,11 +284,15 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CRAWL_QUEUE_EVENTS_LEGACY,
     CRAWL_QUEUE_HOT,
     CRAWL_QUEUE_NORMAL,
+    CRAWL_QUEUE_LLM_JUDGE,
+    CRAWL_QUEUE_LLM_LEARN,
     CRAWL_QUEUE_EVENTS_HOT,
     CRAWL_QUEUE_EVENTS_NORMAL,
     getQueueToken(CRAWL_QUEUE_HOT_NAME),
     getQueueToken(CRAWL_QUEUE_NORMAL_NAME),
-    getQueueToken(CRAWL_QUEUE_NAME)
+    getQueueToken(CRAWL_QUEUE_NAME),
+    getQueueToken(CRAWL_QUEUE_LLM_JUDGE_NAME),
+    getQueueToken(CRAWL_QUEUE_LLM_LEARN_NAME)
   ]
 })
 export class CrawlModule {}

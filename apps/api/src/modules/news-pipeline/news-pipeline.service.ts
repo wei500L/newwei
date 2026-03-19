@@ -70,6 +70,19 @@ interface LlmCallMetadata {
   latencyMs: number | null;
 }
 
+interface ArticleRepairMetadata {
+  applied: boolean;
+  missingFields: string[];
+  repairedFields: string[];
+  model: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  costUsd: number | null;
+  latencyMs: number | null;
+  error?: string | null;
+}
+
 interface SummaryDedupeResult {
   summaryEmbedding?: number[] | null;
   summaryEmbeddingModel?: string | null;
@@ -146,6 +159,15 @@ const ProcessedItemOutboxPayloadSchema: z.ZodType<
     duplicateSimilarity: NullableFiniteNumberSchema.optional(),
     error: z.unknown().optional(),
   }),
+});
+
+const ArticleRepairSchema = z.object({
+  title: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
+  author: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  published_at: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
 });
 
 interface CrawledArticle {
@@ -603,6 +625,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       contentHash,
       processedArticleId,
       contentDuplicateOf,
+      articleMetadataPatch,
     } = await this.runStage(
       job,
       "llm",
@@ -706,6 +729,7 @@ export class NewsPipelineService implements OnModuleDestroy {
           llm,
           contentHash,
           processedArticleId,
+          articleMetadataPatch,
           processedItemId: job.processedItemId,
           summaryEmbedding: dedupe.summaryEmbedding ?? undefined,
           summaryEmbeddingModel: dedupe.summaryEmbeddingModel ?? undefined,
@@ -744,6 +768,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     llm: LlmCallMetadata;
     contentHash: string;
     processedArticleId?: string | null;
+    articleMetadataPatch?: Record<string, unknown>;
     processedItemId?: string;
     summaryEmbedding?: number[] | null;
     summaryEmbeddingModel?: string | null;
@@ -781,6 +806,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       article: options.article,
       cleaned,
       llm: options.llm,
+      articleMetadataPatch: options.articleMetadataPatch,
       processedArticleId: options.processedArticleId,
       normalizedPayload: options.payload,
       pipelineJobId: options.job.pipelineJobId,
@@ -1593,6 +1619,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     contentHash: string;
     processedArticleId?: string | null;
     contentDuplicateOf?: string | null;
+    articleMetadataPatch?: Record<string, unknown>;
   }> {
     const contentHash = article.contentHash ?? this.hashContent(article.markdown);
     const existing = await this.findProcessedArticle(contentHash);
@@ -1611,6 +1638,20 @@ export class NewsPipelineService implements OnModuleDestroy {
           contentHash,
           processedArticleId: existing.id,
           contentDuplicateOf,
+          articleMetadataPatch: {
+            llmRepair: {
+              applied: false,
+              missingFields: [],
+              repairedFields: [],
+              model: null,
+              promptTokens: null,
+              completionTokens: null,
+              totalTokens: null,
+              costUsd: null,
+              latencyMs: null,
+              source: "processed_cache",
+            },
+          },
         };
       }
     }
@@ -1682,7 +1723,212 @@ export class NewsPipelineService implements OnModuleDestroy {
       costUsd: response.costUsd ?? null,
       latencyMs: response.latencyMs ?? null,
     };
-    return { cleaned, llm, contentHash };
+    const repaired = await this.maybeRepairCleanedArticle({
+      job,
+      payload,
+      article,
+      cleaned,
+    });
+    return {
+      cleaned: repaired.cleaned,
+      llm: this.mergeLlmMetadata(llm, repaired.llmDelta),
+      contentHash,
+      articleMetadataPatch: {
+        llmRepair: repaired.metadata,
+      },
+    };
+  }
+
+  private async maybeRepairCleanedArticle(options: {
+    job: PipelineJobContext;
+    payload: NormalizedNewsPayload;
+    article: CrawledArticle;
+    cleaned: CleanedNews;
+  }): Promise<{
+    cleaned: CleanedNews;
+    llmDelta?: LlmCallMetadata;
+    metadata: ArticleRepairMetadata;
+  }> {
+    const missingFields = [
+      options.cleaned.title ? null : "title",
+      options.cleaned.source || options.payload.sourceName ? null : "source",
+      options.cleaned.published_at || options.article.publishedAt ? null : "published_at",
+      options.cleaned.author ? null : "author",
+    ].filter((value): value is string => typeof value === "string");
+    if (missingFields.length === 0) {
+      return {
+        cleaned: options.cleaned,
+        metadata: {
+          applied: false,
+          missingFields: [],
+          repairedFields: [],
+          model: null,
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          latencyMs: null,
+        },
+      };
+    }
+
+    const markdownForPrompt = this.buildMarkdownForLlm(
+      options.article,
+      Math.min(this.configService.config.pipeline.maxInputChars, 12_000),
+    );
+    try {
+      const response = await this.liteLlm.acompletion({
+        orgId: options.job.orgId,
+        temperature: 0.05,
+        max_tokens: 600,
+        metadata: {
+          jobId: options.job.jobId,
+          source: "news-pipeline",
+          feature: "crawl_article_repair",
+        },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You repair missing structured news fields from cleaned markdown. " +
+              "Only fill missing fields when the evidence is explicit. " +
+              "Return strict JSON only and never rewrite existing non-empty fields.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(
+              {
+                url: options.article.sourceUrl,
+                missingFields,
+                existing: {
+                  title: options.cleaned.title ?? null,
+                  subtitle: options.cleaned.subtitle ?? null,
+                  author: options.cleaned.author ?? null,
+                  source:
+                    options.cleaned.source ?? options.payload.sourceName ?? null,
+                  published_at:
+                    options.cleaned.published_at ?? options.article.publishedAt ?? null,
+                  category: options.cleaned.category ?? null,
+                },
+                metadata: {
+                  sourceName: options.payload.sourceName ?? null,
+                  language: options.payload.language ?? null,
+                  publishedAt: options.article.publishedAt,
+                },
+                markdown: markdownForPrompt.markdown,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      });
+      const content = response.choices[0]?.message?.content;
+      const jsonText = content ? extractFirstJson(content) : null;
+      if (!jsonText) {
+        throw new Error("crawl_article_repair returned invalid JSON");
+      }
+      const parsed = ArticleRepairSchema.parse(JSON.parse(jsonText));
+      const repairedFields: string[] = [];
+      const cleaned: CleanedNews = {
+        ...options.cleaned,
+        title:
+          options.cleaned.title ??
+          (parsed.title?.trim().length ? (repairedFields.push("title"), parsed.title.trim()) : null),
+        subtitle:
+          options.cleaned.subtitle ??
+          (parsed.subtitle?.trim().length
+            ? (repairedFields.push("subtitle"), parsed.subtitle.trim())
+            : null),
+        author:
+          options.cleaned.author ??
+          (parsed.author?.trim().length ? (repairedFields.push("author"), parsed.author.trim()) : null),
+        source:
+          options.cleaned.source ??
+          options.payload.sourceName ??
+          (parsed.source?.trim().length ? (repairedFields.push("source"), parsed.source.trim()) : null),
+        published_at:
+          options.cleaned.published_at ??
+          (typeof parsed.published_at === "string" && parsed.published_at.trim().length > 0
+            ? (this.parseDate(parsed.published_at)?.toISOString() ?? null)
+            : options.article.publishedAt ?? null),
+        category:
+          options.cleaned.category ??
+          (parsed.category?.trim().length
+            ? (repairedFields.push("category"), parsed.category.trim())
+            : null),
+      };
+      if (
+        !options.cleaned.published_at &&
+        typeof parsed.published_at === "string" &&
+        parsed.published_at.trim().length > 0 &&
+        this.parseDate(parsed.published_at)
+      ) {
+        repairedFields.push("published_at");
+      }
+
+      return {
+        cleaned,
+        llmDelta: {
+          model: response.model,
+          promptVersion: options.cleaned.llm_prompt_version ?? null,
+          promptTokens: response.usage?.prompt_tokens ?? null,
+          completionTokens: response.usage?.completion_tokens ?? null,
+          totalTokens: response.usage?.total_tokens ?? null,
+          costUsd: response.costUsd ?? null,
+          latencyMs: response.latencyMs ?? null,
+        },
+        metadata: {
+          applied: repairedFields.length > 0,
+          missingFields,
+          repairedFields,
+          model: response.model,
+          promptTokens: response.usage?.prompt_tokens ?? null,
+          completionTokens: response.usage?.completion_tokens ?? null,
+          totalTokens: response.usage?.total_tokens ?? null,
+          costUsd: response.costUsd ?? null,
+          latencyMs: response.latencyMs ?? null,
+        },
+      };
+    } catch (error) {
+      return {
+        cleaned: options.cleaned,
+        metadata: {
+          applied: false,
+          missingFields,
+          repairedFields: [],
+          model: null,
+          promptTokens: null,
+          completionTokens: null,
+          totalTokens: null,
+          costUsd: null,
+          latencyMs: null,
+          error: error instanceof Error ? error.message : "crawl_article_repair_failed",
+        },
+      };
+    }
+  }
+
+  private mergeLlmMetadata(
+    base: LlmCallMetadata,
+    extra?: LlmCallMetadata,
+  ): LlmCallMetadata {
+    if (!extra) {
+      return base;
+    }
+    const sumOrNull = (left: number | null, right: number | null) =>
+      left === null && right === null
+        ? null
+        : Number(((left ?? 0) + (right ?? 0)).toFixed(6));
+    return {
+      model: base.model ?? extra.model,
+      promptVersion: base.promptVersion ?? extra.promptVersion,
+      promptTokens: sumOrNull(base.promptTokens, extra.promptTokens),
+      completionTokens: sumOrNull(base.completionTokens, extra.completionTokens),
+      totalTokens: sumOrNull(base.totalTokens, extra.totalTokens),
+      costUsd: sumOrNull(base.costUsd, extra.costUsd),
+      latencyMs: sumOrNull(base.latencyMs, extra.latencyMs),
+    };
   }
 
   private async evaluateSummaryDedupe(options: {
@@ -2480,6 +2726,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     article: CrawledArticle;
     cleaned: CleanedNews;
     llm: LlmCallMetadata;
+    articleMetadataPatch?: Record<string, unknown>;
     processedArticleId?: string | null;
     normalizedPayload: NormalizedNewsPayload;
     pipelineJobId?: string;
@@ -2505,6 +2752,7 @@ export class NewsPipelineService implements OnModuleDestroy {
             article: options.article,
             cleaned: options.cleaned,
             llm: options.llm,
+            articleMetadataPatch: options.articleMetadataPatch,
             processedItemId: options.processedItemId,
             payload: options.normalizedPayload,
             pipelineJobId: resolvedPipelineJobId,
@@ -2699,6 +2947,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       article: CrawledArticle;
       cleaned: CleanedNews;
       llm: LlmCallMetadata;
+      articleMetadataPatch?: Record<string, unknown>;
       processedItemId: string;
       payload: NormalizedNewsPayload;
       pipelineJobId?: string;
@@ -2722,6 +2971,7 @@ export class NewsPipelineService implements OnModuleDestroy {
       const persistedUrl = this.toArticleUrl(canonical?.canonicalUrl ?? sourceUrl);
       const persistedMetadata: Record<string, unknown> = {
         ...(options.article.metadata ?? {}),
+        ...(options.articleMetadataPatch ?? {}),
         ...(sourceUrl && sourceUrl !== persistedUrl
           ? { originalUrl: sourceUrl }
           : {}),

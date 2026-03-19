@@ -111,6 +111,22 @@ describe("CrawlQueueProcessor", () => {
       ...(options.normalQueueOverrides ?? {})
     } as any;
 
+    const llmJudgeQueue = {
+      opts: {
+        connection: { host: "localhost", port: 6379 }
+      },
+      getJob: jest.fn(),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
+    const llmLearnQueue = {
+      opts: {
+        connection: { host: "localhost", port: 6379 }
+      },
+      getJob: jest.fn(),
+      setGlobalConcurrency: jest.fn().mockResolvedValue(undefined)
+    } as any;
+
     const legacyEvents = {
       on: jest.fn(),
       off: jest.fn()
@@ -135,6 +151,8 @@ describe("CrawlQueueProcessor", () => {
       legacyQueue,
       hotQueue,
       normalQueue,
+      llmJudgeQueue,
+      llmLearnQueue,
       legacyEvents,
       hotEvents,
       normalEvents
@@ -147,6 +165,8 @@ describe("CrawlQueueProcessor", () => {
       legacyQueue,
       hotQueue,
       normalQueue,
+      llmJudgeQueue,
+      llmLearnQueue,
       legacyEvents,
       hotEvents,
       normalEvents
@@ -170,6 +190,8 @@ describe("CrawlQueueProcessor", () => {
     expect((Worker as jest.Mock).mock.calls[0][0]).toBe("crawl4ai-hot");
     expect((Worker as jest.Mock).mock.calls[1][0]).toBe("crawl4ai");
     expect((Worker as jest.Mock).mock.calls[2][0]).toBe("crawl4ai-normal");
+    expect((Worker as jest.Mock).mock.calls[3][0]).toBe("frontier-llm-judge");
+    expect((Worker as jest.Mock).mock.calls[4][0]).toBe("frontier-llm-learn");
 
     const hotCallback = (Worker as jest.Mock).mock.calls[0][1] as (job: any) => Promise<unknown>;
     const legacyCallback = (Worker as jest.Mock).mock.calls[1][1] as (job: any) => Promise<unknown>;
@@ -214,6 +236,67 @@ describe("CrawlQueueProcessor", () => {
       "org-1",
       "user-1",
       expect.objectContaining({ priorityClass: "normal", requestTimeoutMs: 120_000 })
+    );
+  });
+
+  it("routes dedicated frontier LLM jobs to frontier service handlers", async () => {
+    const { processor, crawlFrontierService } = createContext();
+    crawlFrontierService.processQueuedLlmJudge = jest
+      .fn()
+      .mockResolvedValue({ inserted: 0, skipped: 0 });
+    crawlFrontierService.processQueuedLlmLearn = jest
+      .fn()
+      .mockResolvedValue({ inserted: 0, skipped: 0 });
+
+    await processor.onModuleInit();
+
+    const llmJudgeCallback = (Worker as jest.Mock).mock.calls[3][1] as (
+      job: any,
+    ) => Promise<unknown>;
+    const llmLearnCallback = (Worker as jest.Mock).mock.calls[4][1] as (
+      job: any,
+    ) => Promise<unknown>;
+
+    await llmJudgeCallback({
+      id: "llm-judge-1",
+      data: {
+        taskId: "task-1",
+        orgId: "org-1",
+        traceId: "trace-1",
+        jobKind: "frontier_llm_judge",
+        frontierLlmJudge: {
+          mode: "discovery",
+          runId: "run-1",
+          nodeId: "node-1",
+          taskId: "task-1",
+          maxDepth: 3,
+          maxPages: 10,
+          candidates: [],
+        },
+      },
+      opts: {},
+    });
+    await llmLearnCallback({
+      id: "llm-learn-1",
+      data: {
+        taskId: "task-1",
+        orgId: "org-1",
+        traceId: "trace-1",
+        jobKind: "frontier_llm_learn",
+        frontierLlmLearn: {
+          runId: "run-1",
+        },
+      },
+      opts: {},
+    });
+
+    expect(crawlFrontierService.processQueuedLlmJudge).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ runId: "run-1", nodeId: "node-1" }),
+    );
+    expect(crawlFrontierService.processQueuedLlmLearn).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ runId: "run-1" }),
     );
   });
 

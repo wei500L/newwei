@@ -1,7 +1,11 @@
 import type { CrawlTaskStatus } from "@prisma/client";
 
 export type CrawlPriorityClass = "hot" | "normal";
-export type CrawlJobKind = "task" | "frontier_node";
+export type CrawlJobKind =
+  | "task"
+  | "frontier_node"
+  | "frontier_llm_judge"
+  | "frontier_llm_learn";
 export type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 export type CrawlHostScope = "registrable_domain" | "strict_hosts";
 export type CrawlSourceTier = "tier1" | "tier2" | "tier3";
@@ -52,6 +56,41 @@ export interface CrawlJobData {
   jobKind?: CrawlJobKind;
   frontierRunId?: string;
   frontierNodeId?: string;
+  frontierLlmJudge?: CrawlFrontierLlmJudgeJobPayload;
+  frontierLlmLearn?: CrawlFrontierLlmLearnJobPayload;
+}
+
+export interface CrawlFrontierCandidatePayload {
+  url: string;
+  pageType: CrawlFrontierPageType;
+  score: number;
+  freshnessScore: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface CrawlFrontierLlmJudgeJobPayload {
+  mode: "discovery" | "seed";
+  runId: string;
+  nodeId: string;
+  taskId: string;
+  maxDepth: number;
+  maxPages: number;
+  candidates: CrawlFrontierCandidatePayload[];
+  diagnostics?: Record<string, unknown>;
+  maxDepthOverride?: number;
+  maxNewNodes?: number;
+  metadataPatch?: Record<string, unknown>;
+  seedContext?: {
+    seedMethod?: string | null;
+    seedDiscoveryMode?: string | null;
+    diagnostics?: Record<string, unknown>;
+    discoveredCount: number;
+    qualityThresholds?: CrawlSeedQualityThresholds;
+  };
+}
+
+export interface CrawlFrontierLlmLearnJobPayload {
+  runId: string;
 }
 
 export interface CrawlDeepCrawlComponent {

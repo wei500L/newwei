@@ -14,6 +14,10 @@ import {
   CRAWL_QUEUE_EVENTS_NORMAL,
   CRAWL_QUEUE_HOT,
   CRAWL_QUEUE_HOT_NAME,
+  CRAWL_QUEUE_LLM_JUDGE,
+  CRAWL_QUEUE_LLM_JUDGE_NAME,
+  CRAWL_QUEUE_LLM_LEARN,
+  CRAWL_QUEUE_LLM_LEARN_NAME,
   CRAWL_QUEUE_LEGACY,
   CRAWL_QUEUE_NAME,
   CRAWL_QUEUE_NORMAL,
@@ -382,6 +386,7 @@ interface QueueWithGlobalConcurrencyApi {
 @Injectable()
 export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly workers: WorkerRuntimeContext[] = [];
+  private readonly llmWorkers: Worker<CrawlJobData>[] = [];
   private readonly queueEventBindings: QueueEventBinding[] = [];
   private readonly globalConcurrencyLimiter = new SharedGlobalConcurrencyLimiter(1);
 
@@ -394,6 +399,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     @Inject(CRAWL_QUEUE_LEGACY) private readonly legacyQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_HOT) private readonly hotQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_NORMAL) private readonly normalQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_LLM_JUDGE)
+    private readonly llmJudgeQueue: Queue<CrawlJobData>,
+    @Inject(CRAWL_QUEUE_LLM_LEARN)
+    private readonly llmLearnQueue: Queue<CrawlJobData>,
     @Inject(CRAWL_QUEUE_EVENTS_LEGACY) private readonly legacyEvents: QueueEvents,
     @Inject(CRAWL_QUEUE_EVENTS_HOT) private readonly hotEvents: QueueEvents,
     @Inject(CRAWL_QUEUE_EVENTS_NORMAL) private readonly normalEvents: QueueEvents
@@ -450,6 +459,11 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       });
       this.registerQueueEvents(context);
     }
+
+    this.llmWorkers.push(
+      this.createLlmWorker(CRAWL_QUEUE_LLM_JUDGE_NAME, this.llmJudgeQueue),
+      this.createLlmWorker(CRAWL_QUEUE_LLM_LEARN_NAME, this.llmLearnQueue)
+    );
   }
 
   private createWorker(context: QueueRuntimeContext, concurrency: number): Worker<CrawlJobData> {
@@ -632,6 +646,64 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
     return worker;
   }
 
+  private createLlmWorker(queueName: string, queue: Queue<CrawlJobData>): Worker<CrawlJobData> {
+    const worker = new Worker<CrawlJobData>(
+      queueName,
+      async (job) => {
+        const traceId = ensureTraceId(job.data.traceId);
+        return runWithTraceId(traceId, async () => {
+          logger.info(
+            { queue: queueName, jobId: job.id, jobKind: job.data.jobKind },
+            "Processing frontier LLM job"
+          );
+
+          if (
+            job.data.jobKind === "frontier_llm_judge" &&
+            job.data.frontierLlmJudge
+          ) {
+            return this.crawlFrontierService.processQueuedLlmJudge(
+              job.data.orgId,
+              job.data.frontierLlmJudge
+            );
+          }
+
+          if (
+            job.data.jobKind === "frontier_llm_learn" &&
+            job.data.frontierLlmLearn
+          ) {
+            return this.crawlFrontierService.processQueuedLlmLearn(
+              job.data.orgId,
+              job.data.frontierLlmLearn
+            );
+          }
+
+          return { inserted: 0, skipped: 0 };
+        });
+      },
+      {
+        connection: queue.opts.connection,
+        concurrency: 1,
+        limiter: {
+          max: 1,
+          duration: 1000
+        }
+      }
+    );
+
+    worker.on("failed", (job, error) => {
+      const traceId = job?.data?.traceId;
+      if (traceId) {
+        runWithTraceId(traceId, () =>
+          logger.error({ queue: queueName, jobId: job?.id, error }, "Frontier LLM worker error")
+        );
+      } else {
+        logger.error({ queue: queueName, jobId: job?.id, error }, "Frontier LLM worker error");
+      }
+    });
+
+    return worker;
+  }
+
   private async rateLimitAllWorkers(cooldownMs: number, currentWorker?: WorkerRuntimeContext) {
     const runtimeWorkers = [...this.workers];
     if (currentWorker && !runtimeWorkers.some((entry) => entry.worker === currentWorker.worker)) {
@@ -761,6 +833,10 @@ export class CrawlQueueProcessor implements OnModuleInit, OnModuleDestroy {
       await worker.close();
     }
     this.workers.length = 0;
+    for (const worker of this.llmWorkers) {
+      await worker.close();
+    }
+    this.llmWorkers.length = 0;
     this.globalConcurrencyLimiter.close();
 
     for (const binding of this.queueEventBindings) {

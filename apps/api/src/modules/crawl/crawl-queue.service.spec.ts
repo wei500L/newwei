@@ -39,6 +39,8 @@ describe("CrawlQueueService", () => {
   it("routes enqueueTask to hot queue with source priority", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         maxRetries: 2,
@@ -46,7 +48,13 @@ describe("CrawlQueueService", () => {
         maxConcurrency: 3
       })
     } as any;
-    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
 
     await service.enqueueTask("task-1", "org-1", "user-1", {
       priorityClass: "hot",
@@ -73,6 +81,8 @@ describe("CrawlQueueService", () => {
   it("routes enqueueTask to normal queue by default", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({
         maxRetries: 2,
@@ -80,7 +90,13 @@ describe("CrawlQueueService", () => {
         maxConcurrency: 3
       })
     } as any;
-    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
 
     await service.enqueueTask("task-2", "org-1", "user-1");
 
@@ -96,8 +112,16 @@ describe("CrawlQueueService", () => {
   it("removes matching jobs from both queues and ignores lock errors", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
     const settings = { getSettings: jest.fn() } as any;
-    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
 
     const lockedJob = {
       id: "locked",
@@ -133,10 +157,18 @@ describe("CrawlQueueService", () => {
   it("aggregates job counts and pending from both queues", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
     } as any;
-    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
 
     hotQueue.getJobCounts.mockResolvedValue({ waiting: 2, active: 1, delayed: 0, failed: 1, paused: 0 });
     normalQueue.getJobCounts.mockResolvedValue({ waiting: 3, active: 0, delayed: 1, failed: 0, paused: 0 });
@@ -151,13 +183,21 @@ describe("CrawlQueueService", () => {
   it("applies pause/resume and global concurrency to both queues", async () => {
     const hotQueue = createQueueMock();
     const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
     hotQueue.getGlobalConcurrency.mockResolvedValue(4);
     normalQueue.getGlobalConcurrency.mockResolvedValue(2);
 
     const settings = {
       getSettings: jest.fn().mockResolvedValue({ maxConcurrency: 3 })
     } as any;
-    const service = new CrawlQueueService(hotQueue as any, normalQueue as any, settings);
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
 
     await service.pauseQueue();
     await service.resumeQueue();
@@ -176,5 +216,63 @@ describe("CrawlQueueService", () => {
     expect(effective).toEqual({ hot: 4, normal: 2 });
     expect(paused).toEqual({ hot: false, normal: false });
     expect(settings.getSettings).toHaveBeenCalled();
+  });
+
+  it("enqueues dedicated frontier LLM judge and learn jobs", async () => {
+    const hotQueue = createQueueMock();
+    const normalQueue = createQueueMock();
+    const llmJudgeQueue = createQueueMock();
+    const llmLearnQueue = createQueueMock();
+    const settings = {
+      getSettings: jest.fn().mockResolvedValue({
+        maxRetries: 2,
+        retryBackoffMs: 1_000,
+        maxConcurrency: 3,
+      }),
+    } as any;
+    const service = new CrawlQueueService(
+      hotQueue as any,
+      normalQueue as any,
+      llmJudgeQueue as any,
+      llmLearnQueue as any,
+      settings,
+    );
+
+    await service.enqueueFrontierLlmJudge({
+      taskId: "task-1",
+      orgId: "org-1",
+      runId: "run-1",
+      nodeId: "node-1",
+      payload: {
+        mode: "discovery",
+        runId: "run-1",
+        nodeId: "node-1",
+        taskId: "task-1",
+        maxDepth: 3,
+        maxPages: 10,
+        candidates: [],
+      },
+    });
+    await service.enqueueFrontierLlmLearn({
+      taskId: "task-1",
+      orgId: "org-1",
+      runId: "run-1",
+      payload: {
+        runId: "run-1",
+      },
+    });
+
+    expect(llmJudgeQueue.add).toHaveBeenCalledTimes(1);
+    expect(llmLearnQueue.add).toHaveBeenCalledTimes(1);
+    expect(llmJudgeQueue.add.mock.calls[0][1]).toMatchObject({
+      orgId: "org-1",
+      taskId: "task-1",
+      jobKind: "frontier_llm_judge",
+    });
+    expect(llmLearnQueue.add.mock.calls[0][1]).toMatchObject({
+      orgId: "org-1",
+      taskId: "task-1",
+      jobKind: "frontier_llm_learn",
+    });
   });
 });

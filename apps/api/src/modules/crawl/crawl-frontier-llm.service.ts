@@ -167,6 +167,14 @@ const FRONTIER_LEARN_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
   },
 };
 
+const LLM_CIRCUIT_FAILURE_THRESHOLD = 3;
+const LLM_CIRCUIT_COOLDOWN_MS = 5 * 60 * 1000;
+
+interface LlmCircuitState {
+  consecutiveFailures: number;
+  openUntilTs: number;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -227,6 +235,16 @@ function parseCompletionJson<T>(
 @Injectable()
 export class CrawlFrontierLlmService {
   private readonly logger = createLogger({ name: "crawl-frontier-llm" });
+  private readonly circuits: Record<"judge" | "learn", LlmCircuitState> = {
+    judge: {
+      consecutiveFailures: 0,
+      openUntilTs: 0,
+    },
+    learn: {
+      consecutiveFailures: 0,
+      openUntilTs: 0,
+    },
+  };
 
   constructor(private readonly liteLlm: LiteLlmService) {}
 
@@ -255,6 +273,17 @@ export class CrawlFrontierLlmService {
           llmJudgeEnabled: false,
           llmJudgeAttempted: false,
           warningFlags: [],
+        },
+      };
+    }
+    if (this.isCircuitOpen("judge")) {
+      return {
+        candidates: options.candidates,
+        diagnostics: {
+          llmJudgeEnabled: true,
+          llmJudgeAttempted: false,
+          llmJudgeCircuitOpen: true,
+          warningFlags: ["llm_judge_circuit_open"],
         },
       };
     }
@@ -314,59 +343,66 @@ export class CrawlFrontierLlmService {
       };
     }
 
-    const response = await this.liteLlm.acompletion({
-      orgId: options.orgId,
-      model: llmAssist?.judgeModel,
-      temperature: 0.1,
-      max_tokens: 1600,
-      response_format: FRONTIER_JUDGE_RESPONSE_FORMAT,
-      metadata: {
-        feature: "crawl_frontier_judge",
-        source: "crawl-frontier",
-        frontierRunId: options.runId,
-        frontierNodeId: options.nodeId,
-        frontierParentPageType: options.parentPageType,
-      },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are helping a news intelligence crawler choose frontier links. " +
-            "Use only the provided URL, anchor text, page type hints, freshness, and scores. " +
-            "Prefer real news section pages, latest/list pages, and current article pages. " +
-            "Drop utility/legal/account/newsletter/podcast/video/gallery/profile/author/tag/search links unless the evidence strongly shows a news landing page. " +
-            "Return strict JSON only.",
+    let response;
+    try {
+      response = await this.liteLlm.acompletion({
+        orgId: options.orgId,
+        model: llmAssist?.judgeModel,
+        temperature: 0.1,
+        max_tokens: 1600,
+        response_format: FRONTIER_JUDGE_RESPONSE_FORMAT,
+        metadata: {
+          feature: "crawl_frontier_judge",
+          source: "crawl-frontier",
+          frontierRunId: options.runId,
+          frontierNodeId: options.nodeId,
+          frontierParentPageType: options.parentPageType,
         },
-        {
-          role: "user",
-          content: JSON.stringify(
-            {
-              seedUrl: options.seedUrl,
-              parentUrl: options.parentUrl,
-              parentPageType: options.parentPageType,
-              preferredLocale: options.config.localeScope?.locale ?? null,
-              priorityKeywords: options.config.priorityKeywords ?? [],
-              denyKeywords: options.config.denyKeywords ?? [],
-              urlPatterns: options.config.urlPatterns ?? {},
-              pageTypeSignals: options.config.pageTypeSignals ?? {},
-              candidates: candidatesForJudge.map((candidate) => ({
-                url: candidate.url,
-                pageType: candidate.pageType,
-                score: candidate.score,
-                freshnessScore: candidate.freshnessScore,
-                linkText: asString(candidate.metadata.linkText) ?? null,
-                discoveryPath: candidate.metadata.discoveryPath ?? null,
-              })),
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    });
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are helping a news intelligence crawler choose frontier links. " +
+              "Use only the provided URL, anchor text, page type hints, freshness, and scores. " +
+              "Prefer real news section pages, latest/list pages, and current article pages. " +
+              "Drop utility/legal/account/newsletter/podcast/video/gallery/profile/author/tag/search links unless the evidence strongly shows a news landing page. " +
+              "Return strict JSON only.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(
+              {
+                seedUrl: options.seedUrl,
+                parentUrl: options.parentUrl,
+                parentPageType: options.parentPageType,
+                preferredLocale: options.config.localeScope?.locale ?? null,
+                priorityKeywords: options.config.priorityKeywords ?? [],
+                denyKeywords: options.config.denyKeywords ?? [],
+                urlPatterns: options.config.urlPatterns ?? {},
+                pageTypeSignals: options.config.pageTypeSignals ?? {},
+                candidates: candidatesForJudge.map((candidate) => ({
+                  url: candidate.url,
+                  pageType: candidate.pageType,
+                  score: candidate.score,
+                  freshnessScore: candidate.freshnessScore,
+                  linkText: asString(candidate.metadata.linkText) ?? null,
+                  discoveryPath: candidate.metadata.discoveryPath ?? null,
+                })),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      });
+    } catch (error) {
+      this.recordCircuitFailure("judge");
+      throw error;
+    }
 
     const parsed = parseCompletionJson(response, FrontierJudgeResponseSchema);
     if (!parsed) {
+      this.recordCircuitFailure("judge");
       return {
         candidates: reranked,
         diagnostics: {
@@ -379,6 +415,7 @@ export class CrawlFrontierLlmService {
         },
       };
     }
+    this.recordCircuitSuccess("judge");
 
     const minJudgeConfidence = clamp01(
       llmAssist?.minJudgeConfidence ?? 0.72,
@@ -488,39 +525,50 @@ export class CrawlFrontierLlmService {
     if (!llmAssist) {
       return null;
     }
+    if (this.isCircuitOpen("learn")) {
+      throw new Error("llm_learn_circuit_open");
+    }
     const snapshot = this.buildLearningSnapshot(options);
-    const response = await this.liteLlm.acompletion({
-      orgId: options.orgId,
-      model: llmAssist.siteLearnerModel,
-      temperature: 0.15,
-      max_tokens: 1800,
-      response_format: FRONTIER_LEARN_RESPONSE_FORMAT,
-      metadata: {
-        feature: "crawl_frontier_learn",
-        source: "crawl-frontier",
-        frontierRunId: options.run.id,
-        crawlSiteProfileId: options.profile.id,
-      },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are improving a reusable news crawl site profile. " +
-            "Only suggest constrained config fields that improve article discovery and reduce navigation noise. " +
-            "Do not output arbitrary crawl payloads, JavaScript, extraction strategies, auth, or bypass logic. " +
-            "Return strict JSON only.",
+    let response;
+    try {
+      response = await this.liteLlm.acompletion({
+        orgId: options.orgId,
+        model: llmAssist.siteLearnerModel,
+        temperature: 0.15,
+        max_tokens: 1800,
+        response_format: FRONTIER_LEARN_RESPONSE_FORMAT,
+        metadata: {
+          feature: "crawl_frontier_learn",
+          source: "crawl-frontier",
+          frontierRunId: options.run.id,
+          crawlSiteProfileId: options.profile.id,
         },
-        {
-          role: "user",
-          content: JSON.stringify(snapshot, null, 2),
-        },
-      ],
-    });
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are improving a reusable news crawl site profile. " +
+              "Only suggest constrained config fields that improve article discovery and reduce navigation noise. " +
+              "Do not output arbitrary crawl payloads, JavaScript, extraction strategies, auth, or bypass logic. " +
+              "Return strict JSON only.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(snapshot, null, 2),
+          },
+        ],
+      });
+    } catch (error) {
+      this.recordCircuitFailure("learn");
+      throw error;
+    }
 
     const parsed = parseCompletionJson(response, FrontierLearnResponseSchema);
     if (!parsed) {
-      return null;
+      this.recordCircuitFailure("learn");
+      throw new Error("llm_learn_parse_failed");
     }
+    this.recordCircuitSuccess("learn");
 
     return {
       confidence: clamp01(parsed.confidence, 0.5),
@@ -529,6 +577,30 @@ export class CrawlFrontierLlmService {
         ? (parsed.profilePatch as Partial<CrawlSiteProfileConfig>)
         : undefined,
       snapshot,
+    };
+  }
+
+  private isCircuitOpen(purpose: "judge" | "learn"): boolean {
+    const state = this.circuits[purpose];
+    return state.openUntilTs > Date.now();
+  }
+
+  private recordCircuitSuccess(purpose: "judge" | "learn") {
+    this.circuits[purpose] = {
+      consecutiveFailures: 0,
+      openUntilTs: 0,
+    };
+  }
+
+  private recordCircuitFailure(purpose: "judge" | "learn") {
+    const state = this.circuits[purpose];
+    const nextFailures = state.consecutiveFailures + 1;
+    this.circuits[purpose] = {
+      consecutiveFailures: nextFailures,
+      openUntilTs:
+        nextFailures >= LLM_CIRCUIT_FAILURE_THRESHOLD
+          ? Date.now() + LLM_CIRCUIT_COOLDOWN_MS
+          : 0,
     };
   }
 

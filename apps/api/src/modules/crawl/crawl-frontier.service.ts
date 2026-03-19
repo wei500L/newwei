@@ -40,6 +40,9 @@ import type {
   CrawlBrowserHeader,
   CrawlDeepCrawlComponent,
   CrawlExecutionSummary,
+  CrawlFrontierCandidatePayload,
+  CrawlFrontierLlmJudgeJobPayload,
+  CrawlFrontierLlmLearnJobPayload,
   CrawlFrontierNodeRecord,
   CrawlFrontierPageType,
   CrawlPriorityClass,
@@ -148,6 +151,14 @@ function bumpCount(counts: Record<string, number>, key: string) {
   counts[key] = (counts[key] ?? 0) + 1;
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function mergeMetadataRecords(
   ...records: Array<Record<string, unknown> | null | undefined>
 ): Record<string, unknown> | undefined {
@@ -216,6 +227,16 @@ function collectNodeWarningFlags(
       failureKind ? [failureKind] : undefined,
     ) ?? []
   );
+}
+
+function resolvePendingLlmJudgeJobs(
+  metadata: Record<string, unknown> | null | undefined,
+): number {
+  const count = toFiniteNumber(metadata?.pendingLlmJudgeJobs);
+  if (count === null) {
+    return 0;
+  }
+  return Math.max(0, Math.round(count));
 }
 
 function normalizeHeaderName(value: string): string {
@@ -711,6 +732,229 @@ export class CrawlFrontierService {
     }
   }
 
+  async processQueuedLlmJudge(
+    orgId: string,
+    payload: CrawlFrontierLlmJudgeJobPayload,
+  ): Promise<CrawlExecutionSummary> {
+    const node = await this.prisma.crawlFrontierNode.findUnique({
+      where: { id: payload.nodeId },
+      include: { run: true },
+    });
+    if (!node || node.orgId !== orgId) {
+      throw new NotFoundException("Crawl frontier node not found for LLM judge");
+    }
+
+    const mappedNode = this.mapNode(node);
+    const profile = node.run.profileId
+      ? await this.profiles.getProfile(orgId, node.run.profileId)
+      : await this.profiles.findProfileForUrl(orgId, node.run.seedUrl);
+    if (!profile) {
+      throw new BadRequestException("Crawl frontier run cannot resolve site profile");
+    }
+
+    const candidates = payload.candidates.map((candidate) => ({
+      ...candidate,
+      metadata: isPlainObject(candidate.metadata)
+        ? (candidate.metadata as Record<string, unknown>)
+        : {},
+    }));
+    let llmDiagnostics: Record<string, unknown> | undefined;
+    let judgedCandidates = candidates;
+
+    try {
+      const assisted = await this.applyLlmCandidateAssistance({
+        node: mappedNode,
+        runId: payload.runId,
+        profile,
+        candidates: candidates as FrontierCandidate[],
+      });
+      judgedCandidates = assisted.candidates;
+      llmDiagnostics =
+        assisted.diagnostics && isPlainObject(assisted.diagnostics)
+          ? (assisted.diagnostics as Record<string, unknown>)
+          : undefined;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "llm frontier judge failed";
+      llmDiagnostics = {
+        llmJudgeEnabled: true,
+        llmJudgeAttempted: true,
+        llmJudgeParsed: false,
+        llmJudgeError: message,
+        warningFlags: ["llm_judge_failed"],
+      };
+    }
+
+    const result =
+      payload.mode === "seed"
+        ? await this.materializeSeedCandidates({
+            node: mappedNode,
+            run: {
+              id: payload.runId,
+              seedUrl: node.run.seedUrl,
+              maxDepth: payload.maxDepth,
+              maxPages: payload.maxPages,
+            },
+            taskId: payload.taskId,
+            profile,
+            candidates: judgedCandidates,
+            sitemapDiagnostics:
+              payload.seedContext?.diagnostics && isPlainObject(payload.seedContext.diagnostics)
+                ? (payload.seedContext.diagnostics as Record<string, unknown>)
+                : {},
+            qualityThresholds: payload.seedContext?.qualityThresholds,
+            discoveredCount: Math.max(
+              candidates.length,
+              payload.seedContext?.discoveredCount ?? candidates.length,
+            ),
+            llmDiagnostics,
+          })
+        : await this.materializeDiscoveredCandidates({
+            node: mappedNode,
+            runId: payload.runId,
+            taskId: payload.taskId,
+            maxDepth: payload.maxDepth,
+            maxPages: payload.maxPages,
+            profile,
+            candidates: judgedCandidates,
+            extractionDiagnostics:
+              payload.diagnostics && isPlainObject(payload.diagnostics)
+                ? (payload.diagnostics as Record<string, unknown>)
+                : {},
+            llmDiagnostics,
+            maxDepthOverride: payload.maxDepthOverride,
+            maxNewNodes: payload.maxNewNodes,
+            metadataPatch:
+              payload.metadataPatch && isPlainObject(payload.metadataPatch)
+                ? (payload.metadataPatch as Record<string, unknown>)
+                : undefined,
+          });
+
+    const resultMetadata =
+      payload.mode === "seed"
+        ? ((result as SeedDiscoveryOutcome).diagnostics ?? {})
+        : (result as Record<string, unknown>);
+
+    await this.updateNodeMetadata(node.id, (existing) => {
+      const nextPending = Math.max(0, resolvePendingLlmJudgeJobs(existing) - 1);
+      return mergeMetadataRecords(existing, resultMetadata, {
+        pendingLlmJudgeJobs: nextPending,
+        llmJudgeDeferredResolvedAt: new Date().toISOString(),
+        warningFlags: uniqueStringList(
+          collectNodeWarningFlags(existing, node.lastError),
+          coerceStringArray(resultMetadata.warningFlags),
+          coerceStringArray(llmDiagnostics?.warningFlags),
+        ) ?? [],
+      });
+    });
+    await this.refreshRunStatus(payload.runId);
+    return { inserted: 0, skipped: 0 };
+  }
+
+  async processQueuedLlmLearn(
+    orgId: string,
+    payload: CrawlFrontierLlmLearnJobPayload,
+  ): Promise<CrawlExecutionSummary> {
+    const run = await this.prisma.crawlFrontierRun.findUnique({
+      where: { id: payload.runId },
+      include: {
+        profile: true,
+        nodes: {
+          orderBy: [{ depth: "asc" }, { discoveredAt: "asc" }],
+          select: {
+            id: true,
+            url: true,
+            pageType: true,
+            status: true,
+            score: true,
+            freshnessScore: true,
+            metadata: true,
+          },
+        },
+      },
+    });
+    if (!run || run.orgId !== orgId || !run.profile) {
+      throw new NotFoundException("Crawl frontier run not found for LLM learning");
+    }
+
+    const metadata = run.metadata && isPlainObject(run.metadata)
+      ? (run.metadata as Record<string, unknown>)
+      : {};
+    const profile: CrawlSiteProfileRecord = {
+      ...run.profile,
+      config: normalizeCrawlSiteProfileConfig(run.profile.config),
+    };
+    const finalSummary = {
+      status: run.status,
+      metadata,
+      articleCount: run.articleCount,
+      pageCount: run.pageCount,
+      failedCount: run.failedCount,
+      duplicateCount: run.duplicateCount,
+    };
+    const lifecycleRun: FrontierLifecycleRun = {
+      id: run.id,
+      orgId: run.orgId,
+      seedUrl: run.seedUrl,
+      maxDepth: run.maxDepth,
+      maxPages: run.maxPages,
+      nodeCount: run.nodeCount,
+      keywords: run.keywords,
+      metadata,
+      createdById: run.createdById,
+      profile,
+      nodes: run.nodes.map((nodeItem) => ({
+        id: nodeItem.id,
+        url: nodeItem.url,
+        pageType: nodeItem.pageType as CrawlFrontierPageType,
+        status: nodeItem.status,
+        score: nodeItem.score,
+        freshnessScore: nodeItem.freshnessScore,
+        metadata:
+          nodeItem.metadata && isPlainObject(nodeItem.metadata)
+            ? (nodeItem.metadata as Record<string, unknown>)
+            : null,
+      })),
+    };
+
+    try {
+      await this.handleActiveRunCompletion(lifecycleRun, profile, finalSummary);
+      await this.updateRunMetadata(run.id, {
+        llmLifecycle: {
+          ...(isPlainObject(metadata.llmLifecycle)
+            ? (metadata.llmLifecycle as Record<string, unknown>)
+            : {}),
+          learnHandledAt: new Date().toISOString(),
+          learnHandledKey: [
+            finalSummary.status,
+            finalSummary.articleCount,
+            finalSummary.pageCount,
+            finalSummary.failedCount,
+            finalSummary.duplicateCount,
+          ].join(":"),
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "frontier llm learn failed";
+      await this.updateRunMetadata(run.id, {
+        warningFlags: uniqueStringList(
+          coerceStringArray(metadata.warningFlags),
+          ["llm_learn_failed"],
+        ) ?? ["llm_learn_failed"],
+        llmLifecycle: {
+          ...(isPlainObject(metadata.llmLifecycle)
+            ? (metadata.llmLifecycle as Record<string, unknown>)
+            : {}),
+          learnHandledAt: new Date().toISOString(),
+          learnError: message,
+        },
+      });
+    }
+
+    return { inserted: 0, skipped: 0 };
+  }
+
   private shouldDemoteHotRetryToNormal(options: {
     node: CrawlFrontierNodeRecord;
     failureKind: string | null;
@@ -856,6 +1100,17 @@ export class CrawlFrontierService {
         coerceStringArray(discoveryMetadata?.warningFlags),
         coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
       ) ?? [];
+    const pendingLlmJudgeJobs =
+      this.clampInt(discoveryMetadata?.llmJudgeDeferredCount, 0, 10, 0) +
+      this.clampInt(seedDiscovery?.diagnostics?.llmJudgeDeferredCount, 0, 10, 0);
+    const llmJudgeDeferredModes = uniqueStringList(
+      typeof discoveryMetadata?.llmJudgeDeferredMode === "string"
+        ? [discoveryMetadata.llmJudgeDeferredMode]
+        : undefined,
+      typeof seedDiscovery?.diagnostics?.llmJudgeDeferredMode === "string"
+        ? [seedDiscovery.diagnostics.llmJudgeDeferredMode as string]
+        : undefined,
+    );
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -883,6 +1138,8 @@ export class CrawlFrontierService {
             seedDiscovery?.diagnostics,
             {
               warningFlags: combinedWarningFlags,
+              pendingLlmJudgeJobs,
+              llmJudgeDeferredModes,
               seedStrategy,
               topologyBudgetPages: useLightweightTopologyBudget
                 ? seedConfig.topologyBudgetPages
@@ -1295,6 +1552,17 @@ export class CrawlFrontierService {
         coerceStringArray(fallbackDiscoveryMetadata?.warningFlags),
         coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
       ) ?? [];
+    const pendingLlmJudgeJobs =
+      this.clampInt(fallbackDiscoveryMetadata?.llmJudgeDeferredCount, 0, 10, 0) +
+      this.clampInt(seedDiscovery?.diagnostics?.llmJudgeDeferredCount, 0, 10, 0);
+    const llmJudgeDeferredModes = uniqueStringList(
+      typeof fallbackDiscoveryMetadata?.llmJudgeDeferredMode === "string"
+        ? [fallbackDiscoveryMetadata.llmJudgeDeferredMode]
+        : undefined,
+      typeof seedDiscovery?.diagnostics?.llmJudgeDeferredMode === "string"
+        ? [seedDiscovery.diagnostics.llmJudgeDeferredMode as string]
+        : undefined,
+    );
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -1315,6 +1583,8 @@ export class CrawlFrontierService {
               discoveryPath: ["home"],
               frontierPath: ["home"],
               warningFlags: combinedWarningFlags,
+              pendingLlmJudgeJobs,
+              llmJudgeDeferredModes,
               seedStrategy,
               topologyBudgetPages:
                 seedStrategy !== "frontier_only" &&
@@ -2373,204 +2643,35 @@ export class CrawlFrontierService {
       options.profile.config,
       options.results,
     );
-    const llmAssistance = await this.applyLlmCandidateAssistance({
+    if (this.shouldQueueLlmJudge(options.node, options.profile, extraction.candidates)) {
+      return this.deferLlmJudgeForDiscovery({
+        node: options.node,
+        runId: options.runId,
+        taskId: options.taskId,
+        maxDepth: options.maxDepth,
+        maxPages: options.maxPages,
+        profile: options.profile,
+        candidates: extraction.candidates,
+        extractionDiagnostics: extraction.diagnostics,
+        maxDepthOverride: options.maxDepthOverride,
+        maxNewNodes: options.maxNewNodes,
+        metadataPatch: options.metadataPatch,
+      });
+    }
+
+    return this.materializeDiscoveredCandidates({
       node: options.node,
       runId: options.runId,
+      taskId: options.taskId,
+      maxDepth: options.maxDepth,
+      maxPages: options.maxPages,
       profile: options.profile,
       candidates: extraction.candidates,
+      extractionDiagnostics: extraction.diagnostics,
+      maxDepthOverride: options.maxDepthOverride,
+      maxNewNodes: options.maxNewNodes,
+      metadataPatch: options.metadataPatch,
     });
-    const llmDiagnostics =
-      llmAssistance.diagnostics && isPlainObject(llmAssistance.diagnostics)
-        ? (llmAssistance.diagnostics as Record<string, unknown>)
-        : undefined;
-    const extractedCandidates = llmAssistance.candidates;
-    const effectiveMaxDepth = Math.min(
-      options.maxDepth,
-      options.maxDepthOverride ?? options.maxDepth,
-    );
-    const childDepth = options.node.depth + 1;
-    if (childDepth > effectiveMaxDepth) {
-      return {
-        ...extraction.diagnostics,
-        ...(llmDiagnostics ?? {}),
-        warningFlags: uniqueStringList(
-          extraction.diagnostics.warningFlags,
-          coerceStringArray(llmDiagnostics?.warningFlags),
-          ["depth_exhausted"],
-        ) ?? [],
-      };
-    }
-    if (extractedCandidates.length === 0) {
-      return {
-        ...extraction.diagnostics,
-        ...(llmDiagnostics ?? {}),
-        warningFlags: uniqueStringList(
-          extraction.diagnostics.warningFlags,
-          coerceStringArray(llmDiagnostics?.warningFlags),
-          ["llm_dropped_all_candidates"],
-        ) ?? [],
-      };
-    }
-
-    const pageTypeBudgets = computeFrontierPageTypeBudgets({
-      maxDepth: effectiveMaxDepth,
-      maxPages: options.maxPages,
-    });
-    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
-      where: { runId: options.runId },
-      select: {
-        canonicalUrl: true,
-        urlFingerprint: true,
-        pageType: true,
-      },
-    });
-    const existingCount = existingNodesForRun.length;
-    const remainingBudget = Math.max(0, options.maxPages - existingCount);
-    const creationBudget =
-      typeof options.maxNewNodes === "number" && Number.isFinite(options.maxNewNodes)
-        ? Math.max(0, Math.min(remainingBudget, Math.round(options.maxNewNodes)))
-        : remainingBudget;
-    const rejectionCounts = {
-      ...extraction.diagnostics.rejectionCounts,
-    };
-    if (creationBudget === 0) {
-      bumpCount(rejectionCounts, "run_budget_exhausted");
-      return {
-        ...extraction.diagnostics,
-        rejectionCounts,
-        candidateStats: {
-          ...extraction.diagnostics.candidateStats,
-          selected: 0,
-          rejected: Object.values(rejectionCounts).reduce(
-            (sum, value) => sum + value,
-            0,
-          ),
-        },
-      };
-    }
-
-    const seenFingerprints = new Set(
-      existingNodesForRun
-        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
-        .filter((entry) => entry.length > 0),
-    );
-    const countsByPageType: Record<CrawlFrontierPageType, number> = {
-      home: 0,
-      category: 0,
-      list: 0,
-      article: 0,
-    };
-    for (const entry of existingNodesForRun) {
-      countsByPageType[entry.pageType] += 1;
-    }
-
-    const paginationKeepCount = this.clampInt(
-      options.profile.config.layeredOptions?.paginationKeepCount,
-      1,
-      10,
-      3,
-    );
-    let created = 0;
-    let listPagesCreated = 0;
-    const selectedPageTypeCounts = this.createPageTypeCountRecord();
-    const prioritizedCandidates = prioritizeFrontierCandidates({
-      parentPageType: options.node.pageType,
-      candidates: extractedCandidates,
-    });
-    for (const candidate of prioritizedCandidates) {
-      if (created >= creationBudget) {
-        bumpCount(rejectionCounts, "run_budget_exhausted");
-        break;
-      }
-      if (countsByPageType[candidate.pageType] >= pageTypeBudgets[candidate.pageType]) {
-        bumpCount(rejectionCounts, "page_type_budget");
-        continue;
-      }
-      const canonical = buildCanonicalUrlFingerprint(
-        candidate.url,
-        options.profile.config.urlQueryParamAllowlist,
-      );
-      const dedupeKey = canonical?.fingerprint ?? canonical?.canonicalUrl ?? candidate.url;
-      if (seenFingerprints.has(dedupeKey)) {
-        bumpCount(rejectionCounts, "duplicate");
-        continue;
-      }
-      if (
-        candidate.pageType === "list" &&
-        listPagesCreated >= paginationKeepCount
-      ) {
-        bumpCount(rejectionCounts, "pagination_limit");
-        continue;
-      }
-      const queueClass = resolveNodeQueueClass({
-        pageType: candidate.pageType,
-        freshnessScore: candidate.freshnessScore,
-      });
-      const node = await this.prisma.crawlFrontierNode.create({
-        data: {
-          runId: options.runId,
-          parentNodeId: options.node.id,
-          orgId: options.node.orgId,
-          url: candidate.url,
-          canonicalUrl: canonical?.canonicalUrl,
-          urlFingerprint: canonical?.fingerprint,
-          pageType: candidate.pageType,
-          depth: childDepth,
-          queueClass,
-          status: "queued",
-          score: candidate.score,
-          freshnessScore: candidate.freshnessScore,
-          queuedAt: new Date(),
-          metadata: toPrismaJsonValue(
-            mergeMetadataRecords(
-              candidate.metadata,
-              {
-                sourceTier: options.profile.config.sourceTier ?? "tier2",
-              },
-              options.metadataPatch,
-            ),
-          ),
-        },
-      });
-      seenFingerprints.add(dedupeKey);
-      countsByPageType[candidate.pageType] += 1;
-      selectedPageTypeCounts[candidate.pageType] += 1;
-      created += 1;
-      if (candidate.pageType === "list") {
-        listPagesCreated += 1;
-      }
-      await this.queueService.enqueueFrontierNode({
-        orgId: options.node.orgId,
-        taskId: options.taskId,
-        frontierRunId: options.runId,
-        frontierNodeId: node.id,
-        priorityClass: queueClass,
-      });
-    }
-    return {
-      ...extraction.diagnostics,
-      ...(llmDiagnostics ?? {}),
-      rejectionCounts,
-      selectedPageTypeCounts,
-      candidateStats: {
-        ...extraction.diagnostics.candidateStats,
-        llmJudgeDropped:
-          typeof llmDiagnostics?.llmJudgeDropped === "number"
-            ? llmDiagnostics.llmJudgeDropped
-            : undefined,
-        budgeted: creationBudget,
-        selected: created,
-        rejected: Object.values(rejectionCounts).reduce(
-          (sum, value) => sum + value,
-          0,
-        ),
-      },
-      warningFlags: uniqueStringList(
-        extraction.diagnostics.warningFlags,
-        coerceStringArray(llmDiagnostics?.warningFlags),
-        created === 0 ? ["no_child_nodes_created"] : undefined,
-      ) ?? [],
-    };
   }
 
   private async discoverSeedNodes(options: {
@@ -2650,17 +2751,395 @@ export class CrawlFrontierService {
       })
       .filter((candidate) => candidate.pageType !== "home");
 
-    const llmAssistance = await this.applyLlmCandidateAssistance({
+    if (this.shouldQueueLlmJudge(options.node, options.profile, seedCandidates)) {
+      return this.deferLlmJudgeForSeed({
+        node: options.node,
+        run: options.run,
+        taskId: options.taskId,
+        profile: options.profile,
+        candidates: seedCandidates,
+        discoveredCount: sitemap.candidates.length,
+        seedConfig,
+        sitemapDiagnostics:
+          sitemap.diagnostics && isPlainObject(sitemap.diagnostics)
+            ? (sitemap.diagnostics as Record<string, unknown>)
+            : {},
+      });
+    }
+
+    return this.materializeSeedCandidates({
       node: options.node,
-      runId: options.run.id,
+      run: options.run,
+      taskId: options.taskId,
       profile: options.profile,
       candidates: seedCandidates,
+      sitemapDiagnostics:
+        sitemap.diagnostics && isPlainObject(sitemap.diagnostics)
+          ? (sitemap.diagnostics as Record<string, unknown>)
+          : {},
+      qualityThresholds: seedConfig.qualityThresholds,
+      discoveredCount: sitemap.candidates.length,
     });
-    const llmDiagnostics =
-      llmAssistance.diagnostics && isPlainObject(llmAssistance.diagnostics)
-        ? (llmAssistance.diagnostics as Record<string, unknown>)
-        : undefined;
-    const normalizedCandidates = llmAssistance.candidates.map((candidate) => {
+  }
+
+  private shouldQueueLlmJudge(
+    node: CrawlFrontierNodeRecord,
+    profile: CrawlSiteProfileRecord,
+    candidates: FrontierCandidate[],
+  ) {
+    return Boolean(
+      this.frontierLlm &&
+        resolveEffectiveLlmAssistConfig(profile.config, "judge") &&
+        node.pageType !== "article" &&
+        candidates.length > 0,
+    );
+  }
+
+  private async deferLlmJudgeForDiscovery(options: {
+    node: CrawlFrontierNodeRecord;
+    runId: string;
+    taskId: string;
+    maxDepth: number;
+    maxPages: number;
+    profile: CrawlSiteProfileRecord;
+    candidates: FrontierCandidate[];
+    extractionDiagnostics: FrontierCandidateExtraction["diagnostics"];
+    maxDepthOverride?: number;
+    maxNewNodes?: number;
+    metadataPatch?: Record<string, unknown>;
+  }) {
+    const queuedAt = new Date().toISOString();
+    await this.queueService.enqueueFrontierLlmJudge({
+      orgId: options.node.orgId,
+      taskId: options.taskId,
+      runId: options.runId,
+      nodeId: options.node.id,
+      payload: {
+        mode: "discovery",
+        runId: options.runId,
+        nodeId: options.node.id,
+        taskId: options.taskId,
+        maxDepth: options.maxDepth,
+        maxPages: options.maxPages,
+        candidates: options.candidates as CrawlFrontierCandidatePayload[],
+        diagnostics: options.extractionDiagnostics,
+        maxDepthOverride: options.maxDepthOverride,
+        maxNewNodes: options.maxNewNodes,
+        metadataPatch: options.metadataPatch,
+      },
+    });
+    return {
+      ...options.extractionDiagnostics,
+      llmJudgeEnabled: true,
+      llmJudgeAttempted: false,
+      llmJudgeDeferred: true,
+      llmJudgeDeferredMode: "discovery",
+      llmJudgeQueuedAt: queuedAt,
+      llmJudgeQueuedCandidateCount: options.candidates.length,
+      llmJudgeDeferredCount: 1,
+      warningFlags: uniqueStringList(
+        options.extractionDiagnostics.warningFlags,
+        ["llm_judge_deferred"],
+      ) ?? ["llm_judge_deferred"],
+    };
+  }
+
+  private async deferLlmJudgeForSeed(options: {
+    node: CrawlFrontierNodeRecord;
+    run: {
+      id: string;
+      seedUrl: string;
+      maxDepth: number;
+      maxPages: number;
+    };
+    taskId: string;
+    profile: CrawlSiteProfileRecord;
+    candidates: FrontierCandidate[];
+    discoveredCount: number;
+    seedConfig: CrawlSeedDiscoveryConfig;
+    sitemapDiagnostics: Record<string, unknown>;
+  }): Promise<SeedDiscoveryOutcome> {
+    const queuedAt = new Date().toISOString();
+    await this.queueService.enqueueFrontierLlmJudge({
+      orgId: options.node.orgId,
+      taskId: options.taskId,
+      runId: options.run.id,
+      nodeId: options.node.id,
+      payload: {
+        mode: "seed",
+        runId: options.run.id,
+        nodeId: options.node.id,
+        taskId: options.taskId,
+        maxDepth: options.run.maxDepth,
+        maxPages: options.run.maxPages,
+        candidates: options.candidates as CrawlFrontierCandidatePayload[],
+        seedContext: {
+          seedMethod:
+            typeof options.sitemapDiagnostics.seedMethod === "string"
+              ? options.sitemapDiagnostics.seedMethod
+              : null,
+          seedDiscoveryMode:
+            typeof options.sitemapDiagnostics.discoveryMode === "string"
+              ? options.sitemapDiagnostics.discoveryMode
+              : null,
+          diagnostics: options.sitemapDiagnostics,
+          discoveredCount: options.discoveredCount,
+          qualityThresholds: options.seedConfig.qualityThresholds,
+        },
+      },
+    });
+
+    return {
+      created: 0,
+      selectedPageTypeCounts: this.createPageTypeCountRecord(),
+      diagnostics: {
+        seedOrigin: "sitemap",
+        seedMethod:
+          typeof options.sitemapDiagnostics.seedMethod === "string"
+            ? options.sitemapDiagnostics.seedMethod
+            : null,
+        seedDiscoveryMode:
+          typeof options.sitemapDiagnostics.discoveryMode === "string"
+            ? options.sitemapDiagnostics.discoveryMode
+            : null,
+        seedDiagnostics: options.sitemapDiagnostics,
+        seedYield: {
+          discovered: options.discoveredCount,
+          selected: options.candidates.length,
+          created: 0,
+          fresh: options.candidates.filter((candidate) => candidate.freshnessScore >= 0.75)
+            .length,
+        },
+        fallbackStage: "llm_judge_pending",
+        llmJudgeEnabled: true,
+        llmJudgeAttempted: false,
+        llmJudgeDeferred: true,
+        llmJudgeDeferredMode: "seed",
+        llmJudgeQueuedAt: queuedAt,
+        llmJudgeQueuedCandidateCount: options.candidates.length,
+        llmJudgeDeferredCount: 1,
+        warningFlags: ["llm_judge_deferred"],
+      },
+    };
+  }
+
+  private async materializeDiscoveredCandidates(options: {
+    node: CrawlFrontierNodeRecord;
+    runId: string;
+    taskId: string;
+    maxDepth: number;
+    maxPages: number;
+    profile: CrawlSiteProfileRecord;
+    candidates: FrontierCandidate[];
+    extractionDiagnostics: Record<string, unknown>;
+    llmDiagnostics?: Record<string, unknown>;
+    maxDepthOverride?: number;
+    maxNewNodes?: number;
+    metadataPatch?: Record<string, unknown>;
+  }): Promise<Record<string, unknown>> {
+    const effectiveMaxDepth = Math.min(
+      options.maxDepth,
+      options.maxDepthOverride ?? options.maxDepth,
+    );
+    const childDepth = options.node.depth + 1;
+    if (childDepth > effectiveMaxDepth) {
+      return {
+        ...options.extractionDiagnostics,
+        ...(options.llmDiagnostics ?? {}),
+        warningFlags: uniqueStringList(
+          coerceStringArray(options.extractionDiagnostics.warningFlags),
+          coerceStringArray(options.llmDiagnostics?.warningFlags),
+          ["depth_exhausted"],
+        ) ?? ["depth_exhausted"],
+      };
+    }
+    if (options.candidates.length === 0) {
+      return {
+        ...options.extractionDiagnostics,
+        ...(options.llmDiagnostics ?? {}),
+        warningFlags: uniqueStringList(
+          coerceStringArray(options.extractionDiagnostics.warningFlags),
+          coerceStringArray(options.llmDiagnostics?.warningFlags),
+          ["llm_dropped_all_candidates"],
+        ) ?? ["llm_dropped_all_candidates"],
+      };
+    }
+
+    const pageTypeBudgets = computeFrontierPageTypeBudgets({
+      maxDepth: effectiveMaxDepth,
+      maxPages: options.maxPages,
+    });
+    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
+      where: { runId: options.runId },
+      select: {
+        canonicalUrl: true,
+        urlFingerprint: true,
+        pageType: true,
+      },
+    });
+    const existingCount = existingNodesForRun.length;
+    const remainingBudget = Math.max(0, options.maxPages - existingCount);
+    const creationBudget =
+      typeof options.maxNewNodes === "number" && Number.isFinite(options.maxNewNodes)
+        ? Math.max(0, Math.min(remainingBudget, Math.round(options.maxNewNodes)))
+        : remainingBudget;
+    const rejectionCounts = {
+      ...(toNumericRecord(options.extractionDiagnostics.rejectionCounts) ?? {}),
+    };
+    const baseCandidateStats =
+      toNumericRecord(options.extractionDiagnostics.candidateStats) ?? {
+        scanned: 0,
+        unique: 0,
+        accepted: options.candidates.length,
+        selected: options.candidates.length,
+        rejected: 0,
+        trimmed: 0,
+      };
+    if (creationBudget === 0) {
+      bumpCount(rejectionCounts, "run_budget_exhausted");
+      return {
+        ...options.extractionDiagnostics,
+        ...(options.llmDiagnostics ?? {}),
+        rejectionCounts,
+        candidateStats: {
+          ...baseCandidateStats,
+          selected: 0,
+          rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
+        },
+      };
+    }
+
+    const seenFingerprints = new Set(
+      existingNodesForRun
+        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
+        .filter((entry) => entry.length > 0),
+    );
+    const countsByPageType = this.createPageTypeCountRecord();
+    for (const entry of existingNodesForRun) {
+      countsByPageType[entry.pageType] += 1;
+    }
+
+    const paginationKeepCount = this.clampInt(
+      options.profile.config.layeredOptions?.paginationKeepCount,
+      1,
+      10,
+      3,
+    );
+    let created = 0;
+    let listPagesCreated = 0;
+    const selectedPageTypeCounts = this.createPageTypeCountRecord();
+    const prioritizedCandidates = prioritizeFrontierCandidates({
+      parentPageType: options.node.pageType,
+      candidates: options.candidates,
+    });
+    for (const candidate of prioritizedCandidates) {
+      if (created >= creationBudget) {
+        bumpCount(rejectionCounts, "run_budget_exhausted");
+        break;
+      }
+      if (countsByPageType[candidate.pageType] >= pageTypeBudgets[candidate.pageType]) {
+        bumpCount(rejectionCounts, "page_type_budget");
+        continue;
+      }
+      const canonical = buildCanonicalUrlFingerprint(
+        candidate.url,
+        options.profile.config.urlQueryParamAllowlist,
+      );
+      const dedupeKey = canonical?.fingerprint ?? canonical?.canonicalUrl ?? candidate.url;
+      if (seenFingerprints.has(dedupeKey)) {
+        bumpCount(rejectionCounts, "duplicate");
+        continue;
+      }
+      if (candidate.pageType === "list" && listPagesCreated >= paginationKeepCount) {
+        bumpCount(rejectionCounts, "pagination_limit");
+        continue;
+      }
+      const queueClass = resolveNodeQueueClass({
+        pageType: candidate.pageType,
+        freshnessScore: candidate.freshnessScore,
+      });
+      const node = await this.prisma.crawlFrontierNode.create({
+        data: {
+          runId: options.runId,
+          parentNodeId: options.node.id,
+          orgId: options.node.orgId,
+          url: candidate.url,
+          canonicalUrl: canonical?.canonicalUrl,
+          urlFingerprint: canonical?.fingerprint,
+          pageType: candidate.pageType,
+          depth: childDepth,
+          queueClass,
+          status: "queued",
+          score: candidate.score,
+          freshnessScore: candidate.freshnessScore,
+          queuedAt: new Date(),
+          metadata: toPrismaJsonValue(
+            mergeMetadataRecords(
+              candidate.metadata,
+              {
+                sourceTier: options.profile.config.sourceTier ?? "tier2",
+              },
+              options.metadataPatch,
+            ),
+          ),
+        },
+      });
+      seenFingerprints.add(dedupeKey);
+      countsByPageType[candidate.pageType] += 1;
+      selectedPageTypeCounts[candidate.pageType] += 1;
+      created += 1;
+      if (candidate.pageType === "list") {
+        listPagesCreated += 1;
+      }
+      await this.queueService.enqueueFrontierNode({
+        orgId: options.node.orgId,
+        taskId: options.taskId,
+        frontierRunId: options.runId,
+        frontierNodeId: node.id,
+        priorityClass: queueClass,
+      });
+    }
+
+    return {
+      ...options.extractionDiagnostics,
+      ...(options.llmDiagnostics ?? {}),
+      rejectionCounts,
+      selectedPageTypeCounts,
+      candidateStats: {
+        ...baseCandidateStats,
+        llmJudgeDropped:
+          typeof options.llmDiagnostics?.llmJudgeDropped === "number"
+            ? options.llmDiagnostics.llmJudgeDropped
+            : undefined,
+        budgeted: creationBudget,
+        selected: created,
+        rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
+      },
+      warningFlags: uniqueStringList(
+        coerceStringArray(options.extractionDiagnostics.warningFlags),
+        coerceStringArray(options.llmDiagnostics?.warningFlags),
+        created === 0 ? ["no_child_nodes_created"] : undefined,
+      ) ?? [],
+    };
+  }
+
+  private async materializeSeedCandidates(options: {
+    node: CrawlFrontierNodeRecord;
+    run: {
+      id: string;
+      seedUrl: string;
+      maxDepth: number;
+      maxPages: number;
+    };
+    taskId: string;
+    profile: CrawlSiteProfileRecord;
+    candidates: FrontierCandidate[];
+    sitemapDiagnostics: Record<string, unknown>;
+    qualityThresholds?: CrawlSeedDiscoveryConfig["qualityThresholds"];
+    discoveredCount: number;
+    llmDiagnostics?: Record<string, unknown>;
+  }): Promise<SeedDiscoveryOutcome> {
+    const normalizedCandidates = options.candidates.map((candidate) => {
       const synthetic =
         candidate.metadata &&
         isPlainObject(candidate.metadata) &&
@@ -2674,7 +3153,10 @@ export class CrawlFrontierService {
         metadata: mergeMetadataRecords(candidate.metadata, {
           seedCandidate: true,
           seedOrigin: "sitemap",
-          seedMethod: sitemap.diagnostics.seedMethod,
+          seedMethod:
+            typeof options.sitemapDiagnostics.seedMethod === "string"
+              ? options.sitemapDiagnostics.seedMethod
+              : null,
           discoveryPath,
           frontierPath: discoveryPath,
         }) ?? {},
@@ -2689,7 +3171,7 @@ export class CrawlFrontierService {
     const freshCount = normalizedCandidates.filter(
       (candidate) => candidate.freshnessScore >= 0.75,
     ).length;
-    const candidateCount = sitemap.candidates.length;
+    const candidateCount = Math.max(options.discoveredCount, normalizedCandidates.length);
     const selectedCount = normalizedCandidates.length;
     const articleRatio =
       selectedCount > 0 ? Number((articleCount / selectedCount).toFixed(4)) : 0;
@@ -2701,12 +3183,18 @@ export class CrawlFrontierService {
         : 1;
     const freshRatio =
       selectedCount > 0 ? Number((freshCount / selectedCount).toFixed(4)) : 0;
-    const qualityThresholds = seedConfig.qualityThresholds;
+    const qualityThresholds =
+      options.qualityThresholds ??
+      this.resolveSeedDiscoveryConfig(
+        options.profile.config,
+        options.run.maxPages,
+        options.run.maxDepth,
+      ).qualityThresholds;
     const qualityPassed =
-      selectedCount >= qualityThresholds.minCandidates &&
-      articleRatio >= qualityThresholds.minArticleRatio &&
-      noiseRatio <= qualityThresholds.maxNoiseRatio &&
-      freshRatio >= qualityThresholds.minFreshRatio;
+      selectedCount >= (qualityThresholds?.minCandidates ?? 1) &&
+      articleRatio >= (qualityThresholds?.minArticleRatio ?? 0) &&
+      noiseRatio <= (qualityThresholds?.maxNoiseRatio ?? 1) &&
+      freshRatio >= (qualityThresholds?.minFreshRatio ?? 0);
 
     const rejectionCounts: Record<string, number> = {};
     if (!qualityPassed && selectedCount > 0) {
@@ -2768,10 +3256,7 @@ export class CrawlFrontierService {
           bumpCount(rejectionCounts, "duplicate");
           continue;
         }
-        if (
-          candidate.pageType === "list" &&
-          listPagesCreated >= paginationKeepCount
-        ) {
+        if (candidate.pageType === "list" && listPagesCreated >= paginationKeepCount) {
           bumpCount(rejectionCounts, "pagination_limit");
           continue;
         }
@@ -2819,9 +3304,15 @@ export class CrawlFrontierService {
 
     const diagnostics: Record<string, unknown> = {
       seedOrigin: "sitemap",
-      seedMethod: sitemap.diagnostics.seedMethod,
-      seedDiscoveryMode: sitemap.diagnostics.discoveryMode,
-      seedDiagnostics: sitemap.diagnostics,
+      seedMethod:
+        typeof options.sitemapDiagnostics.seedMethod === "string"
+          ? options.sitemapDiagnostics.seedMethod
+          : null,
+      seedDiscoveryMode:
+        typeof options.sitemapDiagnostics.discoveryMode === "string"
+          ? options.sitemapDiagnostics.discoveryMode
+          : null,
+      seedDiagnostics: options.sitemapDiagnostics,
       seedYield: {
         discovered: candidateCount,
         selected: selectedCount,
@@ -2837,22 +3328,18 @@ export class CrawlFrontierService {
       },
       seedSelectedPageTypeCounts: selectedPageTypeCounts,
       seedRejectionCounts: rejectionCounts,
-      fallbackStage:
-        qualityPassed && created > 0 ? "seed" : "frontier",
+      fallbackStage: qualityPassed && created > 0 ? "seed" : "frontier",
       warningFlags: uniqueStringList(
         !qualityPassed ? ["seed_low_quality"] : undefined,
         created === 0 ? ["seed_no_nodes_created"] : undefined,
-        coerceStringArray(llmDiagnostics?.warningFlags),
+        coerceStringArray(options.llmDiagnostics?.warningFlags),
       ) ?? [],
       candidateStats: {
         scanned: candidateCount,
         unique: candidateCount,
         accepted: selectedCount,
         selected: created,
-        rejected: Object.values(rejectionCounts).reduce(
-          (sum, value) => sum + value,
-          0,
-        ),
+        rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
         trimmed: Math.max(0, selectedCount - created),
       },
       rejectionCounts,
@@ -2861,7 +3348,7 @@ export class CrawlFrontierService {
     return {
       created,
       selectedPageTypeCounts,
-      diagnostics: mergeMetadataRecords(diagnostics, llmDiagnostics) ?? diagnostics,
+      diagnostics: mergeMetadataRecords(diagnostics, options.llmDiagnostics) ?? diagnostics,
     };
   }
 
@@ -3073,11 +3560,18 @@ export class CrawlFrontierService {
     const duplicateCount = nodes.filter(
       (node) => node.rejectionReason === "duplicate",
     ).length;
-    const activeCount = nodes.filter((node) =>
+    const activeNodeCount = nodes.filter((node) =>
       node.status === "pending" ||
       node.status === "queued" ||
       node.status === "running"
     ).length;
+    const pendingLlmJudgeJobs = nodes.reduce((sum, node) => {
+      const metadata = isPlainObject(node.metadata)
+        ? (node.metadata as Record<string, unknown>)
+        : undefined;
+      return sum + resolvePendingLlmJudgeJobs(metadata);
+    }, 0);
+    const activeCount = activeNodeCount + pendingLlmJudgeJobs;
     const rootOnlyNoExpansion =
       activeCount === 0 &&
       nodeCount <= 1 &&
@@ -3177,6 +3671,7 @@ export class CrawlFrontierService {
               typeof metadata.llmJudgeBudget === "number"
                 ? metadata.llmJudgeBudget
                 : null,
+            pendingLlmJudgeJobs: resolvePendingLlmJudgeJobs(metadata),
             retryDemotedToNormal:
               typeof metadata.retryDemotedToNormal === "boolean"
                 ? metadata.retryDemotedToNormal
@@ -3326,7 +3821,12 @@ export class CrawlFrontierService {
       {
         candidateStats,
         rejectionCounts,
-        warningFlags: Array.from(warningFlags),
+        warningFlags: uniqueStringList(
+          isPlainObject(run.metadata)
+            ? coerceStringArray((run.metadata as Record<string, unknown>).warningFlags)
+            : undefined,
+          Array.from(warningFlags),
+        ) ?? [],
         failureKind,
         seedStrategy:
           typeof rootDiagnosis?.seedStrategy === "string"
@@ -3369,6 +3869,7 @@ export class CrawlFrontierService {
           byPageType: coverageByPageType,
           byDepth: coverageByDepth,
         },
+        llmPendingJudgeJobs: pendingLlmJudgeJobs,
         rootDiagnosis: rootDiagnosis ?? null,
       },
     );
@@ -3490,20 +3991,6 @@ export class CrawlFrontierService {
       profile.config,
       "learn",
     );
-    if (!learningLlmAssist) {
-      await this.updateRunMetadata(runId, {
-        llmLifecycle: {
-          handledAt: new Date().toISOString(),
-          handledKey,
-          role:
-            profile.config.llmAssist?.shadow?.role === "shadow"
-              ? "shadow"
-              : "active",
-        },
-      });
-      return;
-    }
-
     const runRole =
       typeof runMetadata.runRole === "string" &&
       runMetadata.runRole.trim().length > 0
@@ -3511,17 +3998,49 @@ export class CrawlFrontierService {
         : profile.config.llmAssist?.shadow?.role === "shadow"
           ? "shadow"
           : "active";
+    if (!learningLlmAssist) {
+      await this.updateRunMetadata(runId, {
+        llmLifecycle: {
+          handledAt: new Date().toISOString(),
+          handledKey,
+          role: runRole,
+        },
+      });
+      return;
+    }
 
     if (runRole === "shadow") {
       await this.handleShadowRunCompletion(lifecycleRun, profile, finalSummary);
-    } else {
-      await this.handleActiveRunCompletion(lifecycleRun, profile, finalSummary);
+      await this.updateRunMetadata(runId, {
+        llmLifecycle: {
+          handledAt: new Date().toISOString(),
+          handledKey,
+          role: runRole,
+        },
+      });
+      return;
     }
 
+    if (
+      typeof lifecycle.learnQueuedKey === "string" &&
+      lifecycle.learnQueuedKey === handledKey
+    ) {
+      return;
+    }
+
+    await this.queueService.enqueueFrontierLlmLearn({
+      orgId: lifecycleRun.orgId,
+      taskId: (run.crawlTaskId as string | null | undefined) ?? run.id,
+      runId,
+      payload: {
+        runId,
+      },
+    });
     await this.updateRunMetadata(runId, {
       llmLifecycle: {
-        handledAt: new Date().toISOString(),
-        handledKey,
+        ...lifecycle,
+        learnQueuedAt: new Date().toISOString(),
+        learnQueuedKey: handledKey,
         role: runRole,
       },
     });
@@ -3788,6 +4307,31 @@ export class CrawlFrontierService {
       where: { id: runId },
       data: {
         metadata: toPrismaJsonValue(mergeMetadataRecords(existing, patch)),
+      },
+    });
+  }
+
+  private async updateNodeMetadata(
+    nodeId: string,
+    patch:
+      | Record<string, unknown>
+      | ((
+          existing: Record<string, unknown> | undefined,
+        ) => Record<string, unknown> | undefined),
+  ) {
+    const node = await this.prisma.crawlFrontierNode.findUnique({
+      where: { id: nodeId },
+      select: { metadata: true },
+    });
+    const existing = node?.metadata && isPlainObject(node.metadata)
+      ? (node.metadata as Record<string, unknown>)
+      : undefined;
+    const resolvedPatch =
+      typeof patch === "function" ? patch(existing) : patch;
+    await this.prisma.crawlFrontierNode.update({
+      where: { id: nodeId },
+      data: {
+        metadata: toPrismaJsonValue(mergeMetadataRecords(existing, resolvedPatch)),
       },
     });
   }
