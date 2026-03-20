@@ -1079,6 +1079,18 @@ export class EnvService extends ConfigService<ApiEnv> {
           infer: true,
         },
       ),
+      promptGeoTransportSystem: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_GEO_TRANSPORT_SYSTEM",
+        {
+          infer: true,
+        },
+      ),
+      promptGeoTransportUser: this.get<string | undefined>(
+        "ANALYSIS_PROMPT_GEO_TRANSPORT_USER",
+        {
+          infer: true,
+        },
+      ),
       llmTimeoutMs:
         this.get<number>("ANALYSIS_LLM_TIMEOUT_MS", { infer: true }) ?? 300_000,
       streamFlushChars:

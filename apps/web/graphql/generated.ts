@@ -15,7 +15,9 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean; }
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
+  /** A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format. */
   DateTime: { input: any; output: any; }
+  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf). */
   JSON: { input: any; output: any; }
 };
 
@@ -209,7 +211,8 @@ export enum AnalysisStatus {
 
 export enum AnalysisType {
   Anomaly = 'anomaly',
-  Correlation = 'correlation'
+  Correlation = 'correlation',
+  GeoTransport = 'geo_transport'
 }
 
 export type AnomalyAnalysisInput = {
@@ -1298,6 +1301,19 @@ export type ExecutiveChangeImpactInput = {
   maxCandidates?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type GeoTransportAnalysisInput = {
+  bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
+  endDate: Scalars['String']['input'];
+  objectKeys?: InputMaybe<Array<Scalars['String']['input']>>;
+  startDate: Scalars['String']['input'];
+  transportKinds: Array<GeoTransportKind>;
+};
+
+export enum GeoTransportKind {
+  Aircraft = 'aircraft',
+  Vessel = 'vessel'
+}
+
 export type ItemConnection = {
   __typename?: 'ItemConnection';
   edges: Array<ItemEdge>;
@@ -1536,6 +1552,7 @@ export type Mutation = {
   requestAssistantQuery: AssistantRunModel;
   requestAssistantReport: AssistantRunModel;
   requestCorrelationAnalysis: AnalysisResultModel;
+  requestGeoTransportAnalysis: AnalysisResultModel;
   resetNewsEventSourcePolicy: NewsEventSourcePolicySettingsModel;
   retryCrawlTask: CrawlTaskModel;
   reviewKnowledgeGraphEvidence?: Maybe<KnowledgeGraphEvidenceReviewItemModel>;
@@ -1668,6 +1685,11 @@ export type MutationRequestAssistantReportArgs = {
 
 export type MutationRequestCorrelationAnalysisArgs = {
   input: CorrelationAnalysisInput;
+};
+
+
+export type MutationRequestGeoTransportAnalysisArgs = {
+  input: GeoTransportAnalysisInput;
 };
 
 
@@ -3447,6 +3469,13 @@ export type RequestAnomalyMutationVariables = Exact<{
 
 export type RequestAnomalyMutation = { __typename?: 'Mutation', requestAnomalyExplanation: { __typename?: 'AnalysisResultModel', id: string, status: AnalysisStatus, type: AnalysisType } };
 
+export type RequestGeoTransportMutationVariables = Exact<{
+  input: GeoTransportAnalysisInput;
+}>;
+
+
+export type RequestGeoTransportMutation = { __typename?: 'Mutation', requestGeoTransportAnalysis: { __typename?: 'AnalysisResultModel', id: string, status: AnalysisStatus, type: AnalysisType } };
+
 export type CrawlTasksQueryVariables = Exact<{
   first: Scalars['Int']['input'];
   after?: InputMaybe<Scalars['String']['input']>;
@@ -4555,6 +4584,41 @@ export function useRequestAnomalyMutation(baseOptions?: Apollo.MutationHookOptio
 export type RequestAnomalyMutationHookResult = ReturnType<typeof useRequestAnomalyMutation>;
 export type RequestAnomalyMutationResult = Apollo.MutationResult<RequestAnomalyMutation>;
 export type RequestAnomalyMutationOptions = Apollo.BaseMutationOptions<RequestAnomalyMutation, RequestAnomalyMutationVariables>;
+export const RequestGeoTransportDocument = gql`
+    mutation RequestGeoTransport($input: GeoTransportAnalysisInput!) {
+  requestGeoTransportAnalysis(input: $input) {
+    id
+    status
+    type
+  }
+}
+    `;
+export type RequestGeoTransportMutationFn = Apollo.MutationFunction<RequestGeoTransportMutation, RequestGeoTransportMutationVariables>;
+
+/**
+ * __useRequestGeoTransportMutation__
+ *
+ * To run a mutation, you first call `useRequestGeoTransportMutation` within a React component and pass it any options that fit your needs.
+ * When your component renders, `useRequestGeoTransportMutation` returns a tuple that includes:
+ * - A mutate function that you can call at any time to execute the mutation
+ * - An object with fields that represent the current status of the mutation's execution
+ *
+ * @param baseOptions options that will be passed into the mutation, supported options are listed on: https://www.apollographql.com/docs/react/api/react-hooks/#options-2;
+ *
+ * @example
+ * const [requestGeoTransportMutation, { data, loading, error }] = useRequestGeoTransportMutation({
+ *   variables: {
+ *      input: // value for 'input'
+ *   },
+ * });
+ */
+export function useRequestGeoTransportMutation(baseOptions?: Apollo.MutationHookOptions<RequestGeoTransportMutation, RequestGeoTransportMutationVariables>) {
+        const options = {...defaultOptions, ...baseOptions}
+        return Apollo.useMutation<RequestGeoTransportMutation, RequestGeoTransportMutationVariables>(RequestGeoTransportDocument, options);
+      }
+export type RequestGeoTransportMutationHookResult = ReturnType<typeof useRequestGeoTransportMutation>;
+export type RequestGeoTransportMutationResult = Apollo.MutationResult<RequestGeoTransportMutation>;
+export type RequestGeoTransportMutationOptions = Apollo.BaseMutationOptions<RequestGeoTransportMutation, RequestGeoTransportMutationVariables>;
 export const CrawlTasksDocument = gql`
     query CrawlTasks($first: Int!, $after: String, $search: String, $status: CrawlTaskStatus) {
   crawlTasks(first: $first, after: $after, search: $search, status: $status) {

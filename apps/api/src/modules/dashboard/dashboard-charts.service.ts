@@ -1,4 +1,9 @@
-import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
+import {
+  MapTransportObjectStateModel,
+  MapTransportTrackPointModel,
+  ProcessedItemModel,
+  RawItemModel,
+} from "@modular/mongo";
 import {
   createLogger,
   extractCountryCodeFromText,
@@ -17,6 +22,9 @@ import {
   type WarMapNewsGeoSource,
   type WarMapNewsMarker,
   type WarMapNewsMarkersResponse,
+  type WarMapTransportDetailResponse,
+  type WarMapTransportKind,
+  type WarMapTransportTrackPoint,
   WAR_MAP_LAYER_IDS,
   normalizeCountryCode,
 } from "@modular/utils";
@@ -42,6 +50,10 @@ import { SituationMonitorTranslationService } from "../situation-monitor/situati
 
 import worldGeoJson from "./assets/world.geo.json";
 import type { DashboardTimeRangeQueryDto } from "./dto/dashboard-charts.dto";
+import {
+  classifyAircraftTransport,
+  classifyAisShipType,
+} from "../realtime-signals/transport-classification";
 import {
   buildWarMapLayersResponse,
   type WarMapLayersResponse as WarMapStaticLayersResponse,
@@ -411,6 +423,14 @@ interface WarMapEventsOptions {
   bbox?: [number, number, number, number];
   zoom?: number;
   cluster?: boolean;
+}
+
+interface WarMapTransportDetailOptions {
+  orgId: string;
+  kind: WarMapTransportKind;
+  objectKey: string;
+  range: DateRange;
+  limit: number;
 }
 
 interface WarMapCleanedEntity {
@@ -2023,7 +2043,12 @@ export class DashboardChartsService {
   private buildWarMapAisVesselFeature(
     vessel: RealtimeAisVesselSnapshot,
     mode: "all" | "military",
+    sourceUpdatedAt: string,
   ): WarMapLayerFeature {
+    const classification = classifyAisShipType(
+      vessel.shipType,
+      mode === "military",
+    );
     const properties: WarMapAisVesselProperties & {
       name: string;
       description: string;
@@ -2035,12 +2060,18 @@ export class DashboardChartsService {
       ...(typeof vessel.shipType === "number"
         ? { shipType: vessel.shipType }
         : {}),
+      shipTypeLabel: classification.shipTypeLabel,
+      shipTypeLabelZh: classification.shipTypeLabelZh,
+      vesselRole: classification.vesselRole,
+      vesselRoleZh: classification.vesselRoleZh,
+      isMilitaryCandidate: classification.isMilitaryCandidate,
       ...(typeof vessel.heading === "number"
         ? { heading: vessel.heading }
         : {}),
       ...(typeof vessel.speed === "number" ? { speed: vessel.speed } : {}),
       ...(typeof vessel.course === "number" ? { course: vessel.course } : {}),
       observedAt: vessel.observedAt,
+      sourceUpdatedAt,
       name: vessel.name ?? vessel.mmsi,
       description:
         mode === "military"
@@ -2272,6 +2303,7 @@ export class DashboardChartsService {
       this.buildWarMapAisVesselFeature(
         vessel,
         aisMode === "all" ? "all" : "military",
+        snapshot.updatedAt,
       ),
     );
 
@@ -2515,6 +2547,11 @@ export class DashboardChartsService {
     sourceUpdatedAt: string,
     flightMode: "military" | "all",
   ): WarMapLayerFeature {
+    const classification = classifyAircraftTransport({
+      callsign: aircraft.callsign,
+      icao24: aircraft.icao24,
+      sourceScope: flightMode,
+    });
     const properties: WarMapFlightProperties & {
       name: string;
       description: string;
@@ -2537,6 +2574,10 @@ export class DashboardChartsService {
       ...(typeof aircraft.groundSpeedKt === "number"
         ? { groundSpeedKt: aircraft.groundSpeedKt }
         : {}),
+      displayCategory: classification.displayCategory,
+      displayCategoryZh: classification.displayCategoryZh,
+      role: classification.role,
+      roleZh: classification.roleZh,
       observedAt: aircraft.observedAt,
       name:
         aircraft.callsign ??
@@ -2596,6 +2637,91 @@ export class DashboardChartsService {
       geoJson: worldGeoJson,
       center: [0, 20],
       zoom: 1.1,
+    };
+  }
+
+  async getWarMapTransportDetail(
+    options: WarMapTransportDetailOptions,
+  ): Promise<WarMapTransportDetailResponse> {
+    const objectKey = options.objectKey.trim();
+    if (!objectKey) {
+      throw new BadRequestException("Transport objectKey is required");
+    }
+
+    const state = await MapTransportObjectStateModel.findOne({
+      orgId: options.orgId,
+      entityKind: options.kind,
+      objectKey,
+    }).lean();
+    if (!state) {
+      return { detail: null };
+    }
+
+    const rangeTrackPoints = await MapTransportTrackPointModel.find({
+      orgId: options.orgId,
+      entityKind: options.kind,
+      objectKey,
+      observedAt: {
+        $gte: options.range.start,
+        $lte: options.range.end,
+      },
+    })
+      .sort({ observedAt: -1 })
+      .limit(options.limit)
+      .lean();
+
+    const trackPointDocs =
+      rangeTrackPoints.length > 0
+        ? rangeTrackPoints
+        : await MapTransportTrackPointModel.find({
+            orgId: options.orgId,
+            entityKind: options.kind,
+            objectKey,
+          })
+            .sort({ observedAt: -1 })
+            .limit(options.limit)
+            .lean();
+
+    const trackPoints = trackPointDocs.map((point) =>
+      this.toWarMapTransportTrackPoint(point),
+    );
+    const title =
+      options.kind === "aircraft"
+        ? this.normalizeString(state.callsign) ??
+          this.normalizeString(state.registration) ??
+          this.normalizeString(state.icao24)?.toUpperCase() ??
+          objectKey
+        : this.normalizeString(state.name) ??
+          (this.normalizeString(state.mmsi)
+            ? `MMSI ${state.mmsi}`
+            : objectKey);
+    const subtitleParts =
+      options.kind === "aircraft"
+        ? [
+            this.normalizeString(state.displayCategoryZh) ??
+              this.normalizeString(state.displayCategory),
+            this.normalizeString(state.roleZh) ?? this.normalizeString(state.role),
+          ]
+        : [
+            this.normalizeString(state.shipTypeLabelZh) ??
+              this.normalizeString(state.shipTypeLabel),
+            this.normalizeString(state.roleZh) ?? this.normalizeString(state.role),
+          ];
+
+    return {
+      detail: {
+        kind: options.kind,
+        objectKey,
+        title,
+        subtitle: subtitleParts.filter(Boolean).join(" · ") || undefined,
+        latestState: {
+          ...state,
+          observedAt: this.toIsoString(state.observedAt),
+          sourceUpdatedAt: this.toIsoString(state.sourceUpdatedAt),
+        },
+        trackPoints,
+        summary: this.buildWarMapTransportSummary(trackPointDocs),
+      },
     };
   }
 
@@ -2712,6 +2838,149 @@ export class DashboardChartsService {
     }
 
     return response;
+  }
+
+  private toWarMapTransportTrackPoint(
+    point: Record<string, unknown>,
+  ): WarMapTransportTrackPoint {
+    return {
+      id:
+        this.normalizeString(point._id?.toString?.()) ??
+        this.normalizeString(point.id) ??
+        `${point.objectKey ?? "transport"}:${point.observedAt ?? ""}`,
+      lat: Number(point.lat),
+      lng: Number(point.lng),
+      observedAt: this.toIsoString(point.observedAt) ?? new Date().toISOString(),
+      ...(this.toIsoString(point.sourceUpdatedAt)
+        ? { sourceUpdatedAt: this.toIsoString(point.sourceUpdatedAt) }
+        : {}),
+      ...(typeof point.heading === "number" ? { heading: point.heading } : {}),
+      ...(typeof point.course === "number" ? { course: point.course } : {}),
+      ...(typeof point.speed === "number" ? { speed: point.speed } : {}),
+      ...(typeof point.altitudeFt === "number"
+        ? { altitudeFt: point.altitudeFt }
+        : {}),
+      ...(this.normalizeString(point.geoCell)
+        ? { geoCell: this.normalizeString(point.geoCell) }
+        : {}),
+    };
+  }
+
+  private buildWarMapTransportSummary(trackPoints: Record<string, unknown>[]) {
+    const chronological = [...trackPoints].sort(
+      (left, right) =>
+        (this.toDateMs(left.observedAt) ?? 0) - (this.toDateMs(right.observedAt) ?? 0),
+    );
+    let totalDistanceKm = 0;
+    let maxSpeed = 0;
+    let maxAltitudeFt = 0;
+    const geoCellCounts = new Map<string, number>();
+
+    for (let index = 0; index < chronological.length; index += 1) {
+      const point = chronological[index]!;
+      if (typeof point.speed === "number" && Number.isFinite(point.speed)) {
+        maxSpeed = Math.max(maxSpeed, point.speed);
+      }
+      if (
+        typeof point.altitudeFt === "number" &&
+        Number.isFinite(point.altitudeFt)
+      ) {
+        maxAltitudeFt = Math.max(maxAltitudeFt, point.altitudeFt);
+      }
+      const geoCell = this.normalizeString(point.geoCell);
+      if (geoCell) {
+        geoCellCounts.set(geoCell, (geoCellCounts.get(geoCell) ?? 0) + 1);
+      }
+
+      if (index === 0) {
+        continue;
+      }
+      const previous = chronological[index - 1]!;
+      const distanceKm = this.computeTrackDistanceKm(previous, point);
+      if (typeof distanceKm === "number") {
+        totalDistanceKm += distanceKm;
+      }
+    }
+
+    return {
+      pointCount: chronological.length,
+      earliestObservedAt: this.toIsoString(chronological[0]?.observedAt),
+      latestObservedAt: this.toIsoString(
+        chronological[chronological.length - 1]?.observedAt,
+      ),
+      ...(totalDistanceKm > 0
+        ? { totalDistanceKm: Number(totalDistanceKm.toFixed(1)) }
+        : {}),
+      ...(maxSpeed > 0 ? { maxSpeed: Math.round(maxSpeed) } : {}),
+      ...(maxAltitudeFt > 0 ? { maxAltitudeFt: Math.round(maxAltitudeFt) } : {}),
+      geoCells: Array.from(geoCellCounts.entries())
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 10)
+        .map(([geoCell]) => geoCell),
+    };
+  }
+
+  private computeTrackDistanceKm(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+  ) {
+    const leftLat = typeof left.lat === "number" ? left.lat : null;
+    const leftLng = typeof left.lng === "number" ? left.lng : null;
+    const rightLat = typeof right.lat === "number" ? right.lat : null;
+    const rightLng = typeof right.lng === "number" ? right.lng : null;
+    if (
+      leftLat === null ||
+      leftLng === null ||
+      rightLat === null ||
+      rightLng === null
+    ) {
+      return null;
+    }
+
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusKm = 6_371;
+    const dLat = toRadians(rightLat - leftLat);
+    const dLng = toRadians(rightLng - leftLng);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(leftLat)) *
+        Math.cos(toRadians(rightLat)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  private normalizeString(value: unknown) {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private toIsoString(value: unknown) {
+    if (value instanceof Date) {
+      const timestamp = value.getTime();
+      return Number.isFinite(timestamp) ? value.toISOString() : undefined;
+    }
+    if (typeof value === "string") {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
+    }
+    return undefined;
+  }
+
+  private toDateMs(value: unknown) {
+    if (value instanceof Date) {
+      const timestamp = value.getTime();
+      return Number.isFinite(timestamp) ? timestamp : null;
+    }
+    if (typeof value === "string") {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 
   async getWarMapEvents(

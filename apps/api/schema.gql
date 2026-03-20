@@ -195,6 +195,7 @@ enum AnalysisStatus {
 enum AnalysisType {
   anomaly
   correlation
+  geo_transport
 }
 
 input AnomalyAnalysisInput {
@@ -1260,6 +1261,19 @@ input ExecutiveChangeImpactInput {
   maxCandidates: Int
 }
 
+input GeoTransportAnalysisInput {
+  bbox: [Float!]
+  endDate: String!
+  objectKeys: [String!]
+  startDate: String!
+  transportKinds: [GeoTransportKind!]!
+}
+
+enum GeoTransportKind {
+  aircraft
+  vessel
+}
+
 type ItemConnection {
   edges: [ItemEdge!]!
   pageInfo: PageInfo!
@@ -1491,6 +1505,7 @@ type Mutation {
   requestAssistantQuery(input: AssistantQueryInput!): AssistantRunModel!
   requestAssistantReport(input: AssistantReportInput!): AssistantRunModel!
   requestCorrelationAnalysis(input: CorrelationAnalysisInput!): AnalysisResultModel!
+  requestGeoTransportAnalysis(input: GeoTransportAnalysisInput!): AnalysisResultModel!
   resetNewsEventSourcePolicy(input: ResetNewsEventSourcePolicyInput!): NewsEventSourcePolicySettingsModel!
   retryCrawlTask(id: String!): CrawlTaskModel!
   reviewKnowledgeGraphEvidence(input: ReviewKnowledgeGraphEvidenceInput!): KnowledgeGraphEvidenceReviewItemModel

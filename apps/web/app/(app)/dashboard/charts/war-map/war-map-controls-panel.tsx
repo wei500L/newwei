@@ -66,6 +66,9 @@ interface WarMapControlsPanelTransportProps {
   aisPrimaryCountValue?: number;
   aisPrimaryCountLabel: string;
   aisDisruptionsCount?: number;
+  canAnalyzeCurrentView: boolean;
+  analyzingCurrentView: boolean;
+  onAnalyzeCurrentView: () => void;
   onOpenLegend: () => void;
 }
 
@@ -763,6 +766,17 @@ function TransportSection({
         )}
         <AisReferenceSection onOpenLegend={transport.onOpenLegend} t={t} />
       </div>
+      <Button
+        type="primary"
+        size="small"
+        loading={transport.analyzingCurrentView}
+        disabled={!transport.canAnalyzeCurrentView}
+        onClick={transport.onAnalyzeCurrentView}
+      >
+        {t("dashboard.charts.warMap.actions.analyzeCurrentView", {
+          defaultValue: "Analyze current view",
+        })}
+      </Button>
     </Space>
   );
 }

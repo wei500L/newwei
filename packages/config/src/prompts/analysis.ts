@@ -32,6 +32,34 @@ export const analysisPromptTemplates = {
       "2. 每条原因需引用具体新闻或政策依据",
       "3. 总结（50字以内）"
     ].join("\n")
+  },
+  geoTransport: {
+    system: [
+      "你是地理运输态势分析师。",
+      "只能基于提供的观测事实作答，不得虚构缺失数据。",
+      "必须明确区分观察事实与推断判断。",
+      "引用证据时优先写 objectKey、UTC 时间、坐标、速度、航向、高度或船型。",
+      "如果数据不足，直接指出数据缺口与置信度限制。"
+    ].join("\n"),
+    user: [
+      "任务：分析下列飞机与船舶观测轨迹。",
+      "运输类型：{{transportKinds}}",
+      "时间范围：{{startDate}} 至 {{endDate}}",
+      "视图边界：{{bbox}}",
+      "重点对象：{{objectKeys}}",
+      "",
+      "结构化上下文：",
+      "{{contextJson}}",
+      "",
+      "输出要求：",
+      "1. 总体态势",
+      "2. 重点飞机",
+      "3. 重点船舶",
+      "4. 航线与咽喉点",
+      "5. 异常行为",
+      "6. 置信度与数据缺口",
+      "7. 下一步观察点"
+    ].join("\n")
   }
 } as const;
 
@@ -49,4 +77,3 @@ export function renderPromptTemplate(
     return String(value);
   });
 }
-

@@ -121,6 +121,7 @@ export const WAR_MAP_PRESETS = [
 export type WarMapPreset = (typeof WAR_MAP_PRESETS)[number];
 export type WarMapFlightMode = "military" | "all";
 export type WarMapAisMode = "all" | "military" | "density";
+export type WarMapTransportKind = "aircraft" | "vessel";
 
 export const WAR_MAP_TIME_RANGE_PRESETS = [
   "1h",
@@ -185,6 +186,10 @@ export interface WarMapFlightProperties {
   heading?: number;
   altitudeFt?: number;
   groundSpeedKt?: number;
+  displayCategory?: string;
+  displayCategoryZh?: string;
+  role?: string;
+  roleZh?: string;
   observedAt?: string;
   sourceUpdatedAt?: string;
 }
@@ -197,10 +202,16 @@ export interface WarMapAisVesselProperties {
   mmsi: string;
   name?: string;
   shipType?: number;
+  shipTypeLabel?: string;
+  shipTypeLabelZh?: string;
+  vesselRole?: string;
+  vesselRoleZh?: string;
+  isMilitaryCandidate?: boolean;
   heading?: number;
   speed?: number;
   course?: number;
   observedAt?: string;
+  sourceUpdatedAt?: string;
 }
 
 export interface WarMapAisDensityProperties {
@@ -294,6 +305,43 @@ export interface WarMapLayersResponse {
 }
 
 export type WarMapLayersResponseV2 = WarMapLayersResponse;
+
+export interface WarMapTransportTrackPoint {
+  id: string;
+  lat: number;
+  lng: number;
+  observedAt: string;
+  sourceUpdatedAt?: string;
+  heading?: number;
+  course?: number;
+  speed?: number;
+  altitudeFt?: number;
+  geoCell?: string;
+}
+
+export interface WarMapTransportDetailSummary {
+  pointCount: number;
+  earliestObservedAt?: string;
+  latestObservedAt?: string;
+  totalDistanceKm?: number;
+  maxSpeed?: number;
+  maxAltitudeFt?: number;
+  geoCells: string[];
+}
+
+export interface WarMapTransportDetail {
+  kind: WarMapTransportKind;
+  objectKey: string;
+  title: string;
+  subtitle?: string;
+  latestState: Record<string, unknown>;
+  trackPoints: WarMapTransportTrackPoint[];
+  summary: WarMapTransportDetailSummary;
+}
+
+export interface WarMapTransportDetailResponse {
+  detail: WarMapTransportDetail | null;
+}
 
 export interface WarMapRequestParams {
   start?: string;

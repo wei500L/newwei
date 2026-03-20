@@ -1,6 +1,12 @@
 "use client";
 
-import { PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { useQuery } from "@tanstack/react-query";
+import {
+  IconLayer,
+  PathLayer,
+  PolygonLayer,
+  ScatterplotLayer,
+} from "@deck.gl/layers";
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
   type WarMapEventSeverity,
@@ -8,6 +14,7 @@ import {
   type WarMapLayerId,
   type WarMapNewsGeoSource,
   type WarMapPreset,
+  type WarMapTransportDetailResponse,
   type WarMapTimeRangePreset,
   type WarMapTranslateTarget,
   WAR_MAP_LAYER_IDS,
@@ -24,6 +31,10 @@ import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
+import {
+  GeoTransportKind,
+  useRequestGeoTransportMutation,
+} from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import {
@@ -79,6 +90,7 @@ import {
   type OverlayPanelKey,
   type RenderableWarMapEvent,
   type RenderableWarMapNewsMarker,
+  type RenderableWarMapTransportSelection,
   type SelectedInspector,
   type WarMapSelectableOption,
 } from "./war-map-overlay-model";
@@ -120,6 +132,10 @@ interface DeckPoint {
   shipType?: number;
   registration?: string;
   aircraftType?: string;
+  displayCategory?: string;
+  displayCategoryZh?: string;
+  role?: string;
+  roleZh?: string;
   countryCode?: string;
   countryName?: string;
   heading?: number;
@@ -127,6 +143,11 @@ interface DeckPoint {
   groundSpeedKt?: number;
   speed?: number;
   course?: number;
+  shipTypeLabel?: string;
+  shipTypeLabelZh?: string;
+  vesselRole?: string;
+  vesselRoleZh?: string;
+  isMilitaryCandidate?: boolean;
   intensity?: number;
   deltaPct?: number;
   shipsPerDay?: number;
@@ -203,6 +224,37 @@ const DISPLAYABLE_WAR_MAP_LAYER_IDS = WAR_MAP_LAYER_IDS.filter(
 );
 const STREAM_MESSAGE_STALE_MS = 45_000;
 const DATA_REFRESH_STALE_MS = 150_000;
+const TRANSPORT_ICON_SIZE = 128;
+
+function toSvgDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+const AIRCRAFT_ICON = {
+  url: toSvgDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+      <path fill="#0f172a" d="M64 6c4 0 7 3 7 7v24l33 16c5 3 7 10 4 15l-3 5-34-8v23l13 10v10l-20-5-20 5V98l13-10V65L23 73l-3-5c-3-5-1-12 4-15l33-16V13c0-4 3-7 7-7Z"/>
+    </svg>
+  `),
+  width: TRANSPORT_ICON_SIZE,
+  height: TRANSPORT_ICON_SIZE,
+  anchorX: TRANSPORT_ICON_SIZE / 2,
+  anchorY: TRANSPORT_ICON_SIZE / 2,
+  mask: true,
+} as const;
+
+const VESSEL_ICON = {
+  url: toSvgDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+      <path fill="#0f172a" d="M64 10 83 34h-9v22h20l18 34-17 18H33L16 90l18-34h20V34h-9L64 10Zm-18 58-8 15h52l-8-15H46Zm-1 25 5 7h28l5-7H45Z"/>
+    </svg>
+  `),
+  width: TRANSPORT_ICON_SIZE,
+  height: TRANSPORT_ICON_SIZE,
+  anchorX: TRANSPORT_ICON_SIZE / 2,
+  anchorY: TRANSPORT_ICON_SIZE / 2,
+  mask: true,
+} as const;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -215,6 +267,21 @@ function isValidLatLng(lat: number, lng: number): boolean {
     Math.abs(lat) <= 90 &&
     Math.abs(lng) <= 180
   );
+}
+
+function hasFiniteAngle(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function resolveAircraftIconAngle(point: DeckPoint): number | null {
+  return hasFiniteAngle(point.heading) ? point.heading : null;
+}
+
+function resolveVesselIconAngle(point: DeckPoint): number | null {
+  if (hasFiniteAngle(point.course)) {
+    return point.course;
+  }
+  return hasFiniteAngle(point.heading) ? point.heading : null;
 }
 
 function toLayerLabel(layerId: WarMapLayerId): string {
@@ -501,6 +568,13 @@ function toSingleSelectionKey(kind: "event" | "news", id: string): string {
   return `${kind}:${id}`;
 }
 
+function toTransportSelectionKey(
+  kind: "aircraft" | "vessel",
+  objectKey: string,
+): string {
+  return `transport:${kind}:${objectKey}`;
+}
+
 function formatWarMapRelativeTimestamp(
   value: string | number | Date | undefined,
   locale: ReturnType<typeof resolveLocale>,
@@ -528,6 +602,10 @@ export function WarMap({
   const locale = resolveLocale(i18n.language);
   const screens = Grid.useBreakpoint();
   const { data: session } = useSession();
+  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
+  const canRunAnalysis = permissions.includes("analysis.run");
+  const [requestGeoTransport, { loading: submittingGeoTransport }] =
+    useRequestGeoTransportMutation();
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1013,6 +1091,132 @@ export function WarMap({
     [localClusterBbox, queryZoom, rawNewsMarkers],
   );
 
+  const transportSelections = useMemo<
+    Array<
+      RenderableWarMapTransportSelection & {
+        lat: number;
+        lng: number;
+        selectionKey: string;
+      }
+    >
+  >(() => {
+    const selections: Array<
+      RenderableWarMapTransportSelection & {
+        lat: number;
+        lng: number;
+        selectionKey: string;
+      }
+    > = [];
+    const layers = layersQuery.data?.layers ?? {};
+
+    const flightsDataset = layers.flights;
+    if (flightsDataset?.geometryType === "point") {
+      for (const feature of flightsDataset.features) {
+        if (
+          typeof feature.lat !== "number" ||
+          typeof feature.lng !== "number" ||
+          !isValidLatLng(feature.lat, feature.lng)
+        ) {
+          continue;
+        }
+        const properties =
+          feature.properties &&
+          typeof feature.properties === "object" &&
+          !Array.isArray(feature.properties)
+            ? (feature.properties as Record<string, unknown>)
+            : undefined;
+        const flight = readWarMapFlightProperties(properties);
+        if (!flight) {
+          continue;
+        }
+        const objectKey = `opensky:${flight.icao24}`;
+        selections.push({
+          objectKey,
+          transportKind: "aircraft",
+          label: getWarMapFlightLabel(
+            flight,
+            flight.icao24.toUpperCase(),
+          ),
+          subtitle:
+            flight.displayCategoryZh ??
+            flight.displayCategory ??
+            flight.roleZh ??
+            flight.role,
+          latestAt: flight.observedAt,
+          sourceUpdatedAt: flight.sourceUpdatedAt,
+          callsign: flight.callsign,
+          icao24: flight.icao24,
+          registration: flight.registration,
+          aircraftType: flight.aircraftType,
+          displayCategory: flight.displayCategory,
+          displayCategoryZh: flight.displayCategoryZh,
+          role: flight.role,
+          roleZh: flight.roleZh,
+          countryCode: flight.countryCode,
+          countryName: flight.countryName,
+          heading: flight.heading,
+          altitudeFt: flight.altitudeFt,
+          groundSpeedKt: flight.groundSpeedKt,
+          lat: feature.lat,
+          lng: feature.lng,
+          selectionKey: toTransportSelectionKey("aircraft", objectKey),
+        });
+      }
+    }
+
+    const aisDataset = layers.ais;
+    if (aisDataset?.geometryType === "point") {
+      for (const feature of aisDataset.features) {
+        if (
+          typeof feature.lat !== "number" ||
+          typeof feature.lng !== "number" ||
+          !isValidLatLng(feature.lat, feature.lng)
+        ) {
+          continue;
+        }
+        const properties =
+          feature.properties &&
+          typeof feature.properties === "object" &&
+          !Array.isArray(feature.properties)
+            ? (feature.properties as Record<string, unknown>)
+            : undefined;
+        const ais = readWarMapAisProperties(properties);
+        if (!ais || ais.featureKind !== "vessel") {
+          continue;
+        }
+        const objectKey = `ais:${ais.mmsi}`;
+        selections.push({
+          objectKey,
+          transportKind: "vessel",
+          label: getWarMapAisLabel(ais, `MMSI ${ais.mmsi}`),
+          subtitle:
+            ais.vesselRoleZh ??
+            ais.vesselRole ??
+            ais.shipTypeLabelZh ??
+            ais.shipTypeLabel,
+          latestAt: ais.observedAt,
+          sourceUpdatedAt: ais.sourceUpdatedAt,
+          name: ais.name,
+          mmsi: ais.mmsi,
+          shipType: ais.shipType,
+          shipTypeLabel: ais.shipTypeLabel,
+          shipTypeLabelZh: ais.shipTypeLabelZh,
+          vesselRole: ais.vesselRole,
+          vesselRoleZh: ais.vesselRoleZh,
+          heading: ais.heading,
+          speed: ais.speed,
+          course: ais.course,
+          isMilitaryCandidate: ais.isMilitaryCandidate,
+          lat: feature.lat,
+          lng: feature.lng,
+          selectionKey: toTransportSelectionKey("vessel", objectKey),
+        });
+      }
+    }
+
+    return selections;
+  }, [layersQuery.data?.layers]);
+
   const selectedInspector = useMemo<SelectedInspector | null>(() => {
     if (!selectedInspectorKey) {
       return null;
@@ -1082,12 +1286,27 @@ export function WarMap({
       };
     }
 
+    const transport = transportSelections.find(
+      (entry) => entry.selectionKey === selectedInspectorKey,
+    );
+    if (transport) {
+      return {
+        key: selectedInspectorKey,
+        kind: transport.transportKind === "aircraft" ? "flight" : "vessel",
+        lat: transport.lat,
+        lng: transport.lng,
+        zoomTarget: 8,
+        item: transport,
+      };
+    }
+
     return null;
   }, [
     clusteredEvents.clusters,
     clusteredNews.clusters,
     rawEvents,
     rawNewsMarkers,
+    transportSelections,
     selectedInspectorKey,
   ]);
 
@@ -1096,6 +1315,121 @@ export function WarMap({
       setSelectedInspectorKey(null);
     }
   }, [selectedInspector, selectedInspectorKey]);
+
+  const selectedTransport = useMemo(() => {
+    if (
+      !selectedInspector ||
+      (selectedInspector.kind !== "flight" && selectedInspector.kind !== "vessel")
+    ) {
+      return null;
+    }
+    return {
+      kind:
+        selectedInspector.kind === "flight"
+          ? ("aircraft" as const)
+          : ("vessel" as const),
+      objectKey: selectedInspector.item.objectKey,
+    };
+  }, [selectedInspector]);
+
+  const transportDetailQuery = useQuery({
+    queryKey: [
+      "dashboard",
+      "war-map",
+      "transport-detail",
+      selectedTransport?.kind ?? null,
+      selectedTransport?.objectKey ?? null,
+      effectiveRange.start.toISOString(),
+      effectiveRange.end.toISOString(),
+    ],
+    queryFn: async () => {
+      if (!selectedTransport) {
+        return { detail: null } satisfies WarMapTransportDetailResponse;
+      }
+      const response = await apiClient.get<WarMapTransportDetailResponse>(
+        "dashboard/war-map/transport-detail",
+        {
+          params: {
+            kind: selectedTransport.kind,
+            objectKey: selectedTransport.objectKey,
+            start: effectiveRange.start.toISOString(),
+            end: effectiveRange.end.toISOString(),
+            limit: "20",
+          },
+        },
+      );
+      return response.data;
+    },
+    enabled: Boolean(selectedTransport),
+    staleTime: 15_000,
+  });
+
+  const handleAnalyzeCurrentView = useCallback(async () => {
+    if (!canRunAnalysis) {
+      toast.warning(
+        t("analysis.runPermissionRequired", {
+          defaultValue: "You do not have permission to run analyses.",
+        }),
+      );
+      return;
+    }
+
+    const transportKinds: GeoTransportKind[] = [
+      ...(layerVisibility.flights ? [GeoTransportKind.Aircraft] : []),
+      ...(layerVisibility.ais ? [GeoTransportKind.Vessel] : []),
+    ];
+    if (transportKinds.length === 0) {
+      toast.warning(
+        t("dashboard.charts.warMap.actions.enableTransportLayers", {
+          defaultValue:
+            "Enable the flight or AIS layer before requesting transport analysis.",
+        }),
+      );
+      return;
+    }
+
+    try {
+      await requestGeoTransport({
+        variables: {
+          input: {
+            transportKinds,
+            startDate: effectiveRange.start.toISOString(),
+            endDate: effectiveRange.end.toISOString(),
+            ...(queryViewport.bbox ? { bbox: queryViewport.bbox } : {}),
+          },
+        },
+      });
+      toast.success(
+        t("dashboard.charts.warMap.actions.analyzeCurrentViewSubmitted", {
+          defaultValue: "Transport analysis submitted for the current view.",
+        }),
+      );
+    } catch (error) {
+      toast.error(
+        t("dashboard.charts.warMap.actions.analyzeCurrentViewFailed", {
+          defaultValue: "Failed to submit transport analysis.",
+        }),
+      );
+      captureClientError(
+        "Failed to submit transport analysis.",
+        error,
+        {
+          tags: {
+            context: "war-map-geo-transport-analysis",
+          },
+        },
+      );
+    }
+  }, [
+    canRunAnalysis,
+    effectiveRange.end,
+    effectiveRange.start,
+    layerVisibility.ais,
+    layerVisibility.flights,
+    queryViewport.bbox,
+    requestGeoTransport,
+    t,
+  ]);
 
   const closeSelectedInspector = useCallback(() => {
     setDesktopInspectorMinimized(false);
@@ -1513,11 +1847,19 @@ export function WarMap({
             layerId,
             ...(flight
               ? {
+                  selectionKey: toTransportSelectionKey(
+                    "aircraft",
+                    `opensky:${flight.icao24}`,
+                  ),
                   sourceType: flight.sourceType,
                   callsign: flight.callsign,
                   icao24: flight.icao24,
                   registration: flight.registration,
                   aircraftType: flight.aircraftType,
+                  displayCategory: flight.displayCategory,
+                  displayCategoryZh: flight.displayCategoryZh,
+                  role: flight.role,
+                  roleZh: flight.roleZh,
                   countryCode: flight.countryCode,
                   countryName: flight.countryName,
                   heading: flight.heading,
@@ -1590,7 +1932,64 @@ export function WarMap({
         );
       }
 
-      if (pointSingles.length > 0) {
+      if (pointSingles.length > 0 && layerId === "flights") {
+        const orientedFlightPoints = pointSingles.filter(
+          (point) => resolveAircraftIconAngle(point) !== null,
+        );
+        const fallbackFlightPoints = pointSingles.filter(
+          (point) => resolveAircraftIconAngle(point) === null,
+        );
+
+        if (orientedFlightPoints.length > 0) {
+          staticLayers.push(
+            new IconLayer({
+              id: `wm-point-${layerId}-icons`,
+              data: orientedFlightPoints,
+              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              billboard: true,
+              sizeUnits: "pixels",
+              getIcon: () => AIRCRAFT_ICON,
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              getColor: (point: DeckPoint) => point.color,
+              getAngle: (point: DeckPoint) =>
+                resolveAircraftIconAngle(point) ?? 0,
+              getSize: (point: DeckPoint) => Math.max(20, point.radius * 3.4),
+              sizeMinPixels: 18,
+              sizeMaxPixels: 42,
+              onClick: (info: { object?: DeckPoint }) => {
+                const object = info.object;
+                if (!object?.selectionKey) {
+                  return;
+                }
+                setSelectedInspectorKey(object.selectionKey);
+              },
+            }),
+          );
+        }
+
+        if (fallbackFlightPoints.length > 0) {
+          staticLayers.push(
+            new ScatterplotLayer({
+              id: `wm-point-${layerId}-fallback`,
+              data: fallbackFlightPoints,
+              pickable: Boolean(dataset.renderHints?.pickable ?? true),
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              getFillColor: (point: DeckPoint) => point.color,
+              getRadius: (point: DeckPoint) => point.radius,
+              radiusMinPixels: 3,
+              radiusMaxPixels: 30,
+              stroked: false,
+              onClick: (info: { object?: DeckPoint }) => {
+                const object = info.object;
+                if (!object?.selectionKey) {
+                  return;
+                }
+                setSelectedInspectorKey(object.selectionKey);
+              },
+            }),
+          );
+        }
+      } else if (pointSingles.length > 0) {
         staticLayers.push(
           new ScatterplotLayer({
             id: `wm-point-${layerId}`,
@@ -1602,6 +2001,13 @@ export function WarMap({
             radiusMinPixels: 3,
             radiusMaxPixels: 30,
             stroked: false,
+            onClick: (info: { object?: DeckPoint }) => {
+              const object = info.object;
+              if (!object?.selectionKey) {
+                return;
+              }
+              setSelectedInspectorKey(object.selectionKey);
+            },
           }),
         );
       }
@@ -1644,6 +2050,7 @@ export function WarMap({
         );
 
         if (aisProperties.featureKind === "vessel") {
+          const objectKey = `ais:${aisProperties.mmsi}`;
           aisVessels.push({
             id: `ais-vessel-${feature.id}`,
             lat: feature.lat,
@@ -1655,13 +2062,19 @@ export function WarMap({
             layerId: "ais",
             sourceType: "ais",
             aisFeatureKind: "vessel",
+            selectionKey: toTransportSelectionKey("vessel", objectKey),
             mmsi: aisProperties.mmsi,
             shipType: aisProperties.shipType,
+            shipTypeLabel: aisProperties.shipTypeLabel,
+            shipTypeLabelZh: aisProperties.shipTypeLabelZh,
+            vesselRole: aisProperties.vesselRole,
+            vesselRoleZh: aisProperties.vesselRoleZh,
+            isMilitaryCandidate: aisProperties.isMilitaryCandidate,
             heading: aisProperties.heading,
             speed: aisProperties.speed,
             course: aisProperties.course,
             latestAt: aisProperties.observedAt,
-            sourceUpdatedAt: aisDataset.updatedAt,
+            sourceUpdatedAt: aisProperties.sourceUpdatedAt ?? aisDataset.updatedAt,
             description:
               aisMode === "military"
                 ? t("dashboard.charts.warMap.stats.aisMilitaryCandidates", {
@@ -1819,21 +2232,63 @@ export function WarMap({
       }
 
       if (aisVessels.length > 0) {
-        aisLayers.push(
-          new ScatterplotLayer({
-            id: "wm-ais-vessels",
-            data: aisVessels,
-            pickable: true,
-            stroked: true,
-            getLineColor: [15, 23, 42, 180],
-            lineWidthMinPixels: 1,
-            getFillColor: (point: DeckPoint) => point.color,
-            getRadius: (point: DeckPoint) => point.radius,
-            radiusMinPixels: 3,
-            radiusMaxPixels: 14,
-            getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          }),
+        const orientedAisVessels = aisVessels.filter(
+          (point) => resolveVesselIconAngle(point) !== null,
         );
+        const fallbackAisVessels = aisVessels.filter(
+          (point) => resolveVesselIconAngle(point) === null,
+        );
+
+        if (orientedAisVessels.length > 0) {
+          aisLayers.push(
+            new IconLayer({
+              id: "wm-ais-vessels-icons",
+              data: orientedAisVessels,
+              pickable: true,
+              billboard: true,
+              sizeUnits: "pixels",
+              getIcon: () => VESSEL_ICON,
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              getColor: (point: DeckPoint) => point.color,
+              getAngle: (point: DeckPoint) => resolveVesselIconAngle(point) ?? 0,
+              getSize: (point: DeckPoint) => Math.max(18, point.radius * 3.1),
+              sizeMinPixels: 16,
+              sizeMaxPixels: 34,
+              onClick: (info: { object?: DeckPoint }) => {
+                const object = info.object;
+                if (!object?.selectionKey) {
+                  return;
+                }
+                setSelectedInspectorKey(object.selectionKey);
+              },
+            }),
+          );
+        }
+
+        if (fallbackAisVessels.length > 0) {
+          aisLayers.push(
+            new ScatterplotLayer({
+              id: "wm-ais-vessels-fallback",
+              data: fallbackAisVessels,
+              pickable: true,
+              stroked: true,
+              getLineColor: [15, 23, 42, 180],
+              lineWidthMinPixels: 1,
+              getFillColor: (point: DeckPoint) => point.color,
+              getRadius: (point: DeckPoint) => point.radius,
+              radiusMinPixels: 3,
+              radiusMaxPixels: 14,
+              getPosition: (point: DeckPoint) => [point.lng, point.lat],
+              onClick: (info: { object?: DeckPoint }) => {
+                const object = info.object;
+                if (!object?.selectionKey) {
+                  return;
+                }
+                setSelectedInspectorKey(object.selectionKey);
+              },
+            }),
+          );
+        }
       }
     }
 
@@ -2206,11 +2661,24 @@ export function WarMap({
             if (object.mmsi) {
               lines.push(`MMSI: ${object.mmsi}`);
             }
-            if (typeof object.shipType === "number") {
+            if (object.shipTypeLabelZh || object.shipTypeLabel) {
+              lines.push(
+                `${t("dashboard.charts.warMap.tooltip.shipType", {
+                  defaultValue: "Ship type",
+                })}: ${object.shipTypeLabelZh ?? object.shipTypeLabel}`,
+              );
+            } else if (typeof object.shipType === "number") {
               lines.push(
                 `${t("dashboard.charts.warMap.tooltip.shipType", {
                   defaultValue: "Ship type",
                 })}: ${formatAisShipTypeLabel(object.shipType)}`,
+              );
+            }
+            if (object.vesselRoleZh || object.vesselRole) {
+              lines.push(
+                `${t("dashboard.charts.warMap.tooltip.type", {
+                  defaultValue: "Type",
+                })}: ${object.vesselRoleZh ?? object.vesselRole}`,
               );
             }
             if (typeof object.heading === "number") {
@@ -2313,6 +2781,20 @@ export function WarMap({
         if (object.kind === "layer" && object.layerId === "flights") {
           if (object.icao24) {
             lines.push(`ICAO24: ${object.icao24.toUpperCase()}`);
+          }
+          if (object.displayCategoryZh || object.displayCategory) {
+            lines.push(
+              `${t("dashboard.charts.warMap.tooltip.type", {
+                defaultValue: "Type",
+              })}: ${object.displayCategoryZh ?? object.displayCategory}`,
+            );
+          }
+          if (object.roleZh || object.role) {
+            lines.push(
+              `${t("dashboard.charts.warMap.tooltip.role", {
+                defaultValue: "Role",
+              })}: ${object.roleZh ?? object.role}`,
+            );
           }
           if (object.registration) {
             lines.push(
@@ -3173,6 +3655,12 @@ export function WarMap({
         aisPrimaryCountValue,
         aisPrimaryCountLabel,
         aisDisruptionsCount,
+        canAnalyzeCurrentView:
+          canRunAnalysis && (layerVisibility.flights || layerVisibility.ais),
+        analyzingCurrentView: submittingGeoTransport,
+        onAnalyzeCurrentView: () => {
+          void handleAnalyzeCurrentView();
+        },
         onOpenLegend: () => setControlsSection("legend"),
       }}
       onControlsSectionChange={setControlsSection}
@@ -3268,6 +3756,8 @@ export function WarMap({
         <>
           <WarMapInspectorPanel
             selectedInspector={selectedInspector}
+            transportDetail={transportDetailQuery.data?.detail ?? null}
+            transportDetailLoading={transportDetailQuery.isLoading}
             useDesktopInspector={useDesktopInspector}
             desktopInspectorMinimized={desktopInspectorMinimized}
             inspectorPanelWidth={overlayLayout.inspectorPanelWidth}

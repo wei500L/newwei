@@ -3,7 +3,11 @@ import { Schema, model, models, type HydratedDocument, type InferSchemaType, typ
 const AnalysisResultSchema = new Schema(
   {
     orgId: { type: String, required: true, index: true },
-    type: { type: String, enum: ["correlation", "anomaly"], required: true },
+    type: {
+      type: String,
+      enum: ["correlation", "anomaly", "geo_transport"],
+      required: true,
+    },
     status: { type: String, enum: ["pending", "running", "completed", "failed"], default: "pending" },
     input: Schema.Types.Mixed,
     output: Schema.Types.Mixed,

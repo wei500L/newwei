@@ -574,6 +574,7 @@ export class ArchiveService {
         article: {
           select: {
             id: true,
+            orgId: true,
             url: true,
             sourceLabel: true,
             crawlAt: true,

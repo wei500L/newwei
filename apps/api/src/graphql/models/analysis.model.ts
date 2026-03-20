@@ -3,7 +3,13 @@ import GraphQLJSONScalar from "graphql-type-json";
 
 export enum AnalysisType {
   correlation = "correlation",
-  anomaly = "anomaly"
+  anomaly = "anomaly",
+  geo_transport = "geo_transport"
+}
+
+export enum GeoTransportKind {
+  aircraft = "aircraft",
+  vessel = "vessel"
 }
 
 export enum AnalysisStatus {
@@ -15,6 +21,7 @@ export enum AnalysisStatus {
 
 registerEnumType(AnalysisType, { name: "AnalysisType" });
 registerEnumType(AnalysisStatus, { name: "AnalysisStatus" });
+registerEnumType(GeoTransportKind, { name: "GeoTransportKind" });
 
 @ObjectType()
 export class AnalysisResultModel {

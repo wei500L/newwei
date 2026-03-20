@@ -4,7 +4,11 @@ import { Injectable } from "@nestjs/common";
 import { EnvService } from "../config/config.service";
 import type { LiteLlmMessage } from "../news-pipeline/litellm.service";
 
-import type { AnomalyInput, CorrelationInput } from "./analysis.types";
+import type {
+  AnomalyInput,
+  CorrelationInput,
+  GeoTransportInput,
+} from "./analysis.types";
 import type { AnomalyDetectionResult, SeriesPoint } from "./anomaly-detector";
 import {
   detectRollingSpike,
@@ -78,6 +82,43 @@ export class AnalysisPromptService {
       ],
       statisticalFindings,
       statsSummary
+    };
+  }
+
+  buildGeoTransportMessages(input: GeoTransportInput, context: unknown): {
+    promptVersion: string;
+    messages: LiteLlmMessage[];
+  } {
+    const system =
+      this.env.analysisConfig.promptGeoTransportSystem ??
+      analysisPromptTemplates.geoTransport.system;
+    const userTemplate =
+      this.env.analysisConfig.promptGeoTransportUser ??
+      analysisPromptTemplates.geoTransport.user;
+    const bbox = Array.isArray(input.bbox)
+      ? input.bbox.join(", ")
+      : "未指定";
+    const objectKeys =
+      input.objectKeys && input.objectKeys.length > 0
+        ? input.objectKeys.join(", ")
+        : "自动选择";
+    const user = renderPromptTemplate(userTemplate, {
+      transportKinds:
+        input.transportKinds.length > 0
+          ? input.transportKinds.join(", ")
+          : "aircraft, vessel",
+      startDate: input.startDate,
+      endDate: input.endDate,
+      bbox,
+      objectKeys,
+      contextJson: JSON.stringify(context, null, 2),
+    });
+    return {
+      promptVersion: "geo-transport-v1",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
     };
   }
 

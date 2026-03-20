@@ -33,3 +33,11 @@ mutation RequestAnomaly($input: AnomalyAnalysisInput!) {
     type
   }
 }
+
+mutation RequestGeoTransport($input: GeoTransportAnalysisInput!) {
+  requestGeoTransportAnalysis(input: $input) {
+    id
+    status
+    type
+  }
+}

@@ -43,6 +43,10 @@ export function readWarMapFlightProperties(
     heading: normalizeNumber(properties.heading),
     altitudeFt: normalizeNumber(properties.altitudeFt),
     groundSpeedKt: normalizeNumber(properties.groundSpeedKt),
+    displayCategory: normalizeString(properties.displayCategory),
+    displayCategoryZh: normalizeString(properties.displayCategoryZh),
+    role: normalizeString(properties.role),
+    roleZh: normalizeString(properties.roleZh),
     observedAt: normalizeString(properties.observedAt),
     sourceUpdatedAt: normalizeString(properties.sourceUpdatedAt),
   };

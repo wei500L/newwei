@@ -1,7 +1,12 @@
 "use client";
 
 import { CloseOutlined, ExpandOutlined } from "@ant-design/icons";
-import { Button, Drawer, List, Space, Tag, Typography } from "antd";
+import { Button, Drawer, List, Space, Spin, Tag, Typography } from "antd";
+
+import type {
+  WarMapTransportDetail,
+  WarMapTransportTrackPoint,
+} from "@modular/utils";
 
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 
@@ -17,6 +22,8 @@ import {
 
 export interface WarMapInspectorPanelProps {
   selectedInspector: SelectedInspector | null;
+  transportDetail?: WarMapTransportDetail | null;
+  transportDetailLoading?: boolean;
   useDesktopInspector: boolean;
   desktopInspectorMinimized: boolean;
   inspectorPanelWidth: number;
@@ -51,6 +58,8 @@ function getSelectedInspectorTitle(
 
 export function WarMapInspectorPanel({
   selectedInspector,
+  transportDetail,
+  transportDetailLoading,
   useDesktopInspector,
   desktopInspectorMinimized,
   inspectorPanelWidth,
@@ -72,6 +81,10 @@ export function WarMapInspectorPanel({
     selectedInspector.kind === "event" ||
     selectedInspector.kind === "event-cluster"
       ? "from-amber-50 via-white to-white dark:from-amber-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
+      : selectedInspector.kind === "flight"
+        ? "from-sky-50 via-white to-white dark:from-sky-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
+        : selectedInspector.kind === "vessel"
+          ? "from-cyan-50 via-white to-white dark:from-cyan-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]"
       : "from-emerald-50 via-white to-white dark:from-emerald-500/10 dark:via-slate-950/95 dark:to-slate-950/[0.92]";
 
   const inspectorPanelContent = (
@@ -90,6 +103,14 @@ export function WarMapInspectorPanel({
                 ? t("dashboard.charts.warMap.overlay.signalLegend", {
                     defaultValue: "Signals",
                   })
+                : selectedInspector.kind === "flight"
+                  ? t("dashboard.charts.warMap.overlay.flights", {
+                      defaultValue: "Flights",
+                    })
+                  : selectedInspector.kind === "vessel"
+                    ? t("dashboard.charts.warMap.layerNames.ais", {
+                        defaultValue: "AIS traffic",
+                      })
                 : t("dashboard.charts.warMap.overlay.newsLegend", {
                     defaultValue: "News & monitors",
                   })}
@@ -109,6 +130,14 @@ export function WarMapInspectorPanel({
                   ? t("dashboard.charts.warMap.panel.signalsTitle", {
                       defaultValue: "Nearby signals",
                     })
+                  : selectedInspector.kind === "flight"
+                    ? t("dashboard.charts.warMap.overlay.flights", {
+                        defaultValue: "Flights",
+                      })
+                    : selectedInspector.kind === "vessel"
+                      ? t("dashboard.charts.warMap.layerNames.ais", {
+                          defaultValue: "AIS traffic",
+                        })
                   : t("dashboard.charts.warMap.panel.newsTitle", {
                       defaultValue: "Nearby news",
                     })}
@@ -139,6 +168,16 @@ export function WarMapInspectorPanel({
                   ? t("dashboard.charts.warMap.panel.signalDetailSummary", {
                       defaultValue: "Signal details for the selected location.",
                     })
+                  : selectedInspector.kind === "flight"
+                    ? t("dashboard.charts.warMap.panel.flightDetailSummary", {
+                        defaultValue:
+                          "Latest aircraft state plus recent persisted change points.",
+                      })
+                    : selectedInspector.kind === "vessel"
+                      ? t("dashboard.charts.warMap.panel.vesselDetailSummary", {
+                          defaultValue:
+                            "Latest vessel state plus recent persisted change points.",
+                        })
                   : t("dashboard.charts.warMap.panel.newsDetailSummary", {
                       defaultValue: "News details for the selected marker.",
                     })
@@ -374,6 +413,211 @@ export function WarMapInspectorPanel({
             </Typography.Text>
           ) : null}
         </div>
+      ) : selectedInspector.kind === "flight" ||
+        selectedInspector.kind === "vessel" ? (
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
+          <Space size={[6, 6]} wrap>
+            <Tag color="blue" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+              {selectedInspector.kind === "flight"
+                ? (selectedInspector.item.displayCategoryZh ??
+                  selectedInspector.item.displayCategory ??
+                  t("dashboard.charts.warMap.overlay.flights", {
+                    defaultValue: "Flights",
+                  }))
+                : (selectedInspector.item.shipTypeLabelZh ??
+                  selectedInspector.item.shipTypeLabel ??
+                  t("dashboard.charts.warMap.stats.aisVessels", {
+                    defaultValue: "Vessels",
+                  }))}
+            </Tag>
+            {selectedInspector.kind === "flight" ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                {selectedInspector.item.roleZh ?? selectedInspector.item.role}
+              </Tag>
+            ) : selectedInspector.item.vesselRoleZh ||
+              selectedInspector.item.vesselRole ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                {selectedInspector.item.vesselRoleZh ??
+                  selectedInspector.item.vesselRole}
+              </Tag>
+            ) : null}
+            {selectedInspector.kind === "vessel" &&
+            selectedInspector.item.isMilitaryCandidate ? (
+              <Tag color="red" className={OVERLAY_STATUS_TAG_CLASS_NAME}>
+                {t("dashboard.charts.warMap.legend.aisMilitary", {
+                  defaultValue: "Military / government",
+                })}
+              </Tag>
+            ) : null}
+          </Space>
+          <Space size={[6, 6]} wrap>
+            {selectedInspector.item.callsign ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                {selectedInspector.item.callsign}
+              </Tag>
+            ) : null}
+            {selectedInspector.item.registration ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                {selectedInspector.item.registration}
+              </Tag>
+            ) : null}
+            {selectedInspector.item.icao24 ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                ICAO24 {selectedInspector.item.icao24.toUpperCase()}
+              </Tag>
+            ) : null}
+            {selectedInspector.item.mmsi ? (
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                MMSI {selectedInspector.item.mmsi}
+              </Tag>
+            ) : null}
+          </Space>
+          {selectedInspector.item.latestAt ? (
+            <Typography.Text type="secondary">
+              {t("dashboard.charts.warMap.tooltip.observed", {
+                defaultValue: "Observed",
+              })}
+              :{" "}
+              {formatDateTime(selectedInspector.item.latestAt, locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </Typography.Text>
+          ) : null}
+          {selectedInspector.item.sourceUpdatedAt ? (
+            <Typography.Text type="secondary">
+              {t("dashboard.charts.warMap.tooltip.updated", {
+                defaultValue: "Updated",
+              })}
+              :{" "}
+              {formatDateTime(selectedInspector.item.sourceUpdatedAt, locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </Typography.Text>
+          ) : null}
+          {selectedInspector.kind === "flight" ? (
+            <Space size={[6, 6]} wrap>
+              {selectedInspector.item.countryName ||
+              selectedInspector.item.countryCode ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {selectedInspector.item.countryName ??
+                    selectedInspector.item.countryCode}
+                </Tag>
+              ) : null}
+              {typeof selectedInspector.item.altitudeFt === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {Math.round(selectedInspector.item.altitudeFt)} ft
+                </Tag>
+              ) : null}
+              {typeof selectedInspector.item.groundSpeedKt === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {Math.round(selectedInspector.item.groundSpeedKt)} kt
+                </Tag>
+              ) : null}
+              {typeof selectedInspector.item.heading === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {Math.round(selectedInspector.item.heading)}°
+                </Tag>
+              ) : null}
+            </Space>
+          ) : (
+            <Space size={[6, 6]} wrap>
+              {typeof selectedInspector.item.speed === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {Math.round(selectedInspector.item.speed)} kn
+                </Tag>
+              ) : null}
+              {typeof selectedInspector.item.heading === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {t("dashboard.charts.warMap.tooltip.heading", {
+                    defaultValue: "Heading",
+                  })}
+                  : {Math.round(selectedInspector.item.heading)}°
+                </Tag>
+              ) : null}
+              {typeof selectedInspector.item.course === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {t("dashboard.charts.warMap.tooltip.course", {
+                    defaultValue: "Course",
+                  })}
+                  : {Math.round(selectedInspector.item.course)}°
+                </Tag>
+              ) : null}
+            </Space>
+          )}
+
+          <div className="rounded-xl border border-[var(--border)] bg-white/70 px-3 py-3 dark:bg-slate-950/55">
+            <Typography.Text strong className="block text-xs text-slate-700 dark:text-slate-200">
+              {t("dashboard.charts.warMap.panel.recentTrackPoints", {
+                defaultValue: "Recent change points",
+              })}
+            </Typography.Text>
+            {transportDetailLoading ? (
+              <div className="py-4 text-center">
+                <Spin size="small" />
+              </div>
+            ) : transportDetail?.trackPoints?.length ? (
+              <List<WarMapTransportTrackPoint>
+                className="mt-2 [&_.ant-list-item]:!border-[var(--border)] [&_.ant-list-item]:!px-0 [&_.ant-list-item]:!py-2"
+                dataSource={transportDetail.trackPoints.slice(0, 20)}
+                renderItem={(point) => (
+                  <List.Item key={point.id}>
+                    <div className="flex w-full flex-col gap-1 text-xs">
+                      <Typography.Text>
+                        {formatDateTime(point.observedAt, locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {point.lat.toFixed(3)}, {point.lng.toFixed(3)}
+                        {typeof point.speed === "number"
+                          ? ` · ${Math.round(point.speed)} ${selectedInspector.kind === "flight" ? "kt" : "kn"}`
+                          : ""}
+                        {typeof point.heading === "number"
+                          ? ` · ${Math.round(point.heading)}°`
+                          : ""}
+                      </Typography.Text>
+                    </div>
+                  </List.Item>
+                )}
+              />
+            ) : (
+              <Typography.Text type="secondary" className="mt-2 block text-xs">
+                {t("dashboard.charts.warMap.panel.noTrackPoints", {
+                  defaultValue: "No persisted track points in the current range.",
+                })}
+              </Typography.Text>
+            )}
+          </div>
+          {transportDetail?.summary ? (
+            <Space size={[6, 6]} wrap>
+              <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                {t("dashboard.charts.warMap.panel.trackPointCount", {
+                  defaultValue: "Points",
+                })}
+                : {transportDetail.summary.pointCount}
+              </Tag>
+              {typeof transportDetail.summary.totalDistanceKm === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {t("dashboard.charts.warMap.panel.trackDistance", {
+                    defaultValue: "Distance",
+                  })}
+                  : {transportDetail.summary.totalDistanceKm} km
+                </Tag>
+              ) : null}
+              {typeof transportDetail.summary.maxSpeed === "number" ? (
+                <Tag className={OVERLAY_NEUTRAL_TAG_CLASS_NAME}>
+                  {t("dashboard.charts.warMap.tooltip.speed", {
+                    defaultValue: "Speed",
+                  })}
+                  : {transportDetail.summary.maxSpeed}
+                </Tag>
+              ) : null}
+            </Space>
+          ) : null}
+        </div>
       ) : (
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
           <Space size={[6, 6]} wrap>
@@ -466,6 +710,14 @@ export function WarMapInspectorPanel({
                 ? t("dashboard.charts.warMap.panel.signalsTitle", {
                     defaultValue: "Nearby signals",
                   })
+                : selectedInspector.kind === "flight"
+                  ? t("dashboard.charts.warMap.overlay.flights", {
+                      defaultValue: "Flights",
+                    })
+                  : selectedInspector.kind === "vessel"
+                    ? t("dashboard.charts.warMap.layerNames.ais", {
+                        defaultValue: "AIS traffic",
+                      })
                 : t("dashboard.charts.warMap.panel.newsTitle", {
                     defaultValue: "Nearby news",
                   })}

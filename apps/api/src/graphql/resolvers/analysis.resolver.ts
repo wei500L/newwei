@@ -8,7 +8,11 @@ import { ANALYSIS_PUBSUB } from "../../modules/analysis/analysis.pubsub";
 import { AnalysisService } from "../../modules/analysis/analysis.service";
 import { AuthenticatedUser } from "../../modules/auth/auth.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { AnomalyAnalysisInput, CorrelationAnalysisInput } from "../dto/analysis.input";
+import {
+  AnomalyAnalysisInput,
+  CorrelationAnalysisInput,
+  GeoTransportAnalysisInput,
+} from "../dto/analysis.input";
 import type { GqlRequest } from "../graphql.types";
 import { AnalysisResultModel, AnalysisStatus, AnalysisType } from "../models/analysis.model";
 
@@ -86,6 +90,39 @@ export class AnalysisResolver {
     };
   }
 
+  @HasPermission("analysis.run")
+  @Mutation(() => AnalysisResultModel)
+  async requestGeoTransportAnalysis(
+    @Context("req") req: GqlRequest,
+    @Args("input") input: GeoTransportAnalysisInput
+  ): Promise<AnalysisResultModel> {
+    const requester = req?.user as AuthenticatedUser | undefined;
+    if (!requester) {
+      throw new ForbiddenException("Unauthenticated");
+    }
+    const record = await this.analysisService.submitGeoTransport(
+      requester.orgId,
+      {
+        transportKinds: input.transportKinds,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        ...(input.bbox?.length === 4
+          ? { bbox: input.bbox as [number, number, number, number] }
+          : {}),
+        ...(input.objectKeys?.length ? { objectKeys: input.objectKeys } : {}),
+      },
+      requester.id,
+    );
+    return {
+      id: record.id,
+      type: AnalysisType.geo_transport,
+      status: AnalysisStatus.pending,
+      createdAt: record.createdAt ?? new Date(),
+      summary: record.summary ?? undefined,
+      input: (record.input as Record<string, unknown> | null | undefined) ?? null
+    };
+  }
+
   @HasPermission("analysis.read")
   @Subscription(() => AnalysisResultModel, {
     name: "analysisEvents",
@@ -121,6 +158,9 @@ export class AnalysisResolver {
   }
 
   private static toAnalysisType(value: unknown): AnalysisType {
+    if (value === AnalysisType.geo_transport || value === "geo_transport") {
+      return AnalysisType.geo_transport;
+    }
     if (value === AnalysisType.anomaly || value === "anomaly") {
       return AnalysisType.anomaly;
     }

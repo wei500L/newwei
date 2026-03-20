@@ -35,8 +35,9 @@ function parseWarMapAisMode(value?: string): "all" | "military" | "density" {
   return "military";
 }
 import {
-  DashboardWarMapQueryDto,
   DashboardWarMapNewsMarkersQueryDto,
+  DashboardWarMapQueryDto,
+  DashboardWarMapTransportDetailQueryDto,
   DashboardSpacetimeGeoHeatmapArticlesQueryDto,
   DashboardSpacetimeGeoHeatmapQueryDto,
   DashboardSpacetimePropagationArticlesQueryDto,
@@ -137,6 +138,34 @@ function parseWarMapCluster(value: unknown): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function parseWarMapTransportKind(
+  value: unknown,
+): "aircraft" | "vessel" | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "aircraft" || normalized === "vessel") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function parseOptionalPositiveInt(
+  value: unknown,
+  min: number,
+  max: number,
+): number | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return clampInt(parsed, min, max);
+}
+
 @ApiTags("dashboard")
 @ApiBearerAuth()
 @Controller("dashboard")
@@ -220,6 +249,35 @@ export class DashboardController {
       bbox: parseWarMapBbox(query.bbox),
       zoom: parseWarMapZoom(query.zoom),
       cluster: parseWarMapCluster(query.cluster),
+    });
+  }
+
+  @Permissions("dashboards.read")
+  @Get("war-map/transport-detail")
+  async warMapTransportDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DashboardWarMapTransportDetailQueryDto,
+  ) {
+    const kind = parseWarMapTransportKind(query.kind);
+    if (!kind) {
+      throw new HttpException(
+        {
+          code: "INVALID_TRANSPORT_KIND",
+          message: "Transport kind must be aircraft or vessel.",
+        },
+        400,
+      );
+    }
+
+    const range = this.chartsService.resolveRange(query, {
+      alignToUtcDay: false,
+    });
+    return this.chartsService.getWarMapTransportDetail({
+      orgId: user.orgId,
+      kind,
+      objectKey: query.objectKey,
+      range,
+      limit: parseOptionalPositiveInt(query.limit, 5, 50) ?? 20,
     });
   }
 

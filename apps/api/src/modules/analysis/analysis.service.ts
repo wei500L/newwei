@@ -1,4 +1,6 @@
 import {
+  MapTransportObjectStateModel,
+  MapTransportTrackPointModel,
   AnalysisResultModel,
   type AnalysisResultDocument,
 } from "@modular/mongo";
@@ -28,6 +30,7 @@ import type {
   AnalysisJobPayload,
   AnomalyInput,
   CorrelationInput,
+  GeoTransportInput,
 } from "./analysis.types";
 
 const logger = createLogger({ name: "analysis-service" });
@@ -93,6 +96,31 @@ export class AnalysisService {
     return record;
   }
 
+  async submitGeoTransport(
+    orgId: string,
+    input: GeoTransportInput,
+    triggeredById?: string,
+  ) {
+    const record = await AnalysisResultModel.create({
+      orgId,
+      type: "geo_transport",
+      status: "pending",
+      input,
+      triggeredById,
+    });
+    const traceId = ensureTraceId(getCurrentTraceId());
+    await this.queue.add(
+      "geo_transport",
+      { type: "geo_transport", analysisId: record.id, orgId, traceId },
+      {
+        jobId: `geo-transport-${record.id}`,
+        removeOnComplete: true,
+        attempts: this.env.analysisConfig.maxRetries,
+      },
+    );
+    return record;
+  }
+
   async listResults(orgId: string, limit = 50) {
     return AnalysisResultModel.find({ orgId })
       .sort({ createdAt: -1 })
@@ -130,12 +158,21 @@ export class AnalysisService {
         );
         record.output = output;
         record.summary = output.summary;
-      } else {
+      } else if (job.type === "anomaly") {
         const output = await this.runAnomaly(
           record.orgId,
           record.id,
           createdAt,
           record.input as AnomalyInput,
+        );
+        record.output = output;
+        record.summary = output.summary;
+      } else {
+        const output = await this.runGeoTransport(
+          record.orgId,
+          record.id,
+          createdAt,
+          record.input as GeoTransportInput,
         );
         record.output = output;
         record.summary = output.summary;
@@ -258,6 +295,166 @@ export class AnalysisService {
       prefix,
     );
     return { summary: content, raw, statisticalFindings };
+  }
+
+  private async runGeoTransport(
+    orgId: string,
+    analysisId: string,
+    createdAt: Date,
+    input: GeoTransportInput,
+  ) {
+    const context = await this.buildGeoTransportContext(orgId, input);
+    const { promptVersion, messages } = this.prompts.buildGeoTransportMessages(
+      input,
+      context,
+    );
+    const { summary, raw } = await this.streamMessages(
+      orgId,
+      analysisId,
+      "geo_transport",
+      createdAt,
+      messages,
+    );
+    return {
+      summary,
+      raw,
+      promptVersion,
+      context,
+    };
+  }
+
+  private async buildGeoTransportContext(
+    orgId: string,
+    input: GeoTransportInput,
+  ) {
+    const entityKinds = input.transportKinds.length > 0
+      ? input.transportKinds
+      : (["aircraft", "vessel"] as const);
+    const bbox =
+      Array.isArray(input.bbox) && input.bbox.length === 4
+        ? input.bbox
+        : undefined;
+    const startDate = new Date(input.startDate);
+    const endDate = new Date(input.endDate);
+    const stateFilter: Record<string, unknown> = {
+      orgId,
+      entityKind: { $in: entityKinds },
+    };
+    if (bbox) {
+      const [minLng, minLat, maxLng, maxLat] = bbox;
+      stateFilter.lng = { $gte: minLng, $lte: maxLng };
+      stateFilter.lat = { $gte: minLat, $lte: maxLat };
+    }
+    if (input.objectKeys && input.objectKeys.length > 0) {
+      stateFilter.objectKey = { $in: input.objectKeys.slice(0, 20) };
+    }
+
+    const states = await MapTransportObjectStateModel.find(stateFilter)
+      .sort({ observedAt: -1 })
+      .limit(20)
+      .lean();
+    const objects = await Promise.all(
+      states.map(async (state) => {
+        const trackPoints = await MapTransportTrackPointModel.find({
+          orgId,
+          objectKey: state.objectKey,
+          observedAt: {
+            $gte: startDate,
+            $lte: endDate,
+          },
+        })
+          .sort({ observedAt: -1 })
+          .limit(30)
+          .lean();
+        const points =
+          trackPoints.length > 0
+            ? trackPoints
+            : await MapTransportTrackPointModel.find({
+                orgId,
+                objectKey: state.objectKey,
+              })
+                .sort({ observedAt: -1 })
+                .limit(30)
+                .lean();
+
+        return {
+          objectKey: state.objectKey,
+          entityKind: state.entityKind,
+          sourceScope: state.sourceScope,
+          name:
+            state.entityKind === "aircraft"
+              ? state.callsign ?? state.registration ?? state.icao24 ?? state.objectKey
+              : state.name ?? state.mmsi ?? state.objectKey,
+          displayCategory: state.displayCategory ?? null,
+          displayCategoryZh: state.displayCategoryZh ?? null,
+          role: state.role ?? null,
+          roleZh: state.roleZh ?? null,
+          shipTypeLabel: state.shipTypeLabel ?? null,
+          shipTypeLabelZh: state.shipTypeLabelZh ?? null,
+          countryCode: state.countryCode ?? null,
+          countryName: state.countryName ?? null,
+          latestObservedAt:
+            state.observedAt instanceof Date
+              ? state.observedAt.toISOString()
+              : new Date(state.observedAt).toISOString(),
+          latestPosition: {
+            lat: state.lat,
+            lng: state.lng,
+            heading: state.heading ?? null,
+            course: state.course ?? null,
+            speed: state.speed ?? null,
+            altitudeFt: state.altitudeFt ?? null,
+          },
+          trackPoints: points.map((point) => ({
+            trackPointId: point._id?.toString?.() ?? "",
+            observedAt:
+              point.observedAt instanceof Date
+                ? point.observedAt.toISOString()
+                : new Date(point.observedAt).toISOString(),
+            lat: point.lat,
+            lng: point.lng,
+            heading: point.heading ?? null,
+            course: point.course ?? null,
+            speed: point.speed ?? null,
+            altitudeFt: point.altitudeFt ?? null,
+            geoCell: point.geoCell ?? null,
+          })),
+        };
+      }),
+    );
+
+    const geoCellCounts = new Map<string, number>();
+    const trackPointIds: string[] = [];
+    for (const object of objects) {
+      for (const point of object.trackPoints) {
+        if (point.trackPointId) {
+          trackPointIds.push(point.trackPointId);
+        }
+        if (point.geoCell) {
+          geoCellCounts.set(
+            point.geoCell,
+            (geoCellCounts.get(point.geoCell) ?? 0) + 1,
+          );
+        }
+      }
+    }
+
+    return {
+      filters: {
+        transportKinds: entityKinds,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        ...(bbox ? { bbox } : {}),
+        ...(input.objectKeys?.length ? { requestedObjectKeys: input.objectKeys } : {}),
+      },
+      objectKeys: objects.map((object) => object.objectKey),
+      trackPointIds,
+      hotspots: Array.from(geoCellCounts.entries())
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 10)
+        .map(([geoCell, count]) => ({ geoCell, count })),
+      objects,
+    };
   }
 
   private async streamMessages(

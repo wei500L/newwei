@@ -65,6 +65,30 @@ export class DashboardWarMapQueryDto extends DashboardTimeRangeQueryDto {
 
 export class DashboardWarMapNewsMarkersQueryDto extends DashboardWarMapQueryDto {}
 
+export class DashboardWarMapTransportDetailQueryDto extends DashboardTimeRangeQueryDto {
+  @ApiPropertyOptional({
+    description: "Transport kind. Supported: aircraft, vessel",
+    example: "aircraft",
+  })
+  @IsString()
+  kind!: string;
+
+  @ApiPropertyOptional({
+    description: "Unified transport object key such as opensky:abc123 or ais:123456789",
+    example: "opensky:abc123",
+  })
+  @IsString()
+  objectKey!: string;
+
+  @ApiPropertyOptional({
+    description: "Maximum number of recent track points to return.",
+    example: "20",
+  })
+  @IsOptional()
+  @IsString()
+  limit?: string;
+}
+
 export class DashboardSpacetimeGeoHeatmapQueryDto extends DashboardTimeRangeQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

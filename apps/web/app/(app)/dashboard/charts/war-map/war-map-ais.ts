@@ -184,6 +184,18 @@ export function readWarMapAisProperties(
         "label",
       ]),
       shipType: readFirstNumber(properties, ["shipType"]),
+      shipTypeLabel: readTranslatedString(
+        properties,
+        ["shipTypeLabelZh"],
+        ["shipTypeLabel"],
+      ),
+      shipTypeLabelZh: readFirstString(properties, ["shipTypeLabelZh"]),
+      vesselRole: readTranslatedString(properties, ["vesselRoleZh", "roleZh"], [
+        "vesselRole",
+        "role",
+      ]),
+      vesselRoleZh: readFirstString(properties, ["vesselRoleZh", "roleZh"]),
+      isMilitaryCandidate: properties.isMilitaryCandidate === true,
       heading: readFirstNumber(properties, ["heading"]),
       speed: readFirstNumber(properties, ["speed"]),
       course: readFirstNumber(properties, ["course"]),
@@ -192,6 +204,7 @@ export function readWarMapAisProperties(
         "timestamp",
         "sourceUpdatedAt",
       ]),
+      sourceUpdatedAt: readFirstString(properties, ["sourceUpdatedAt"]),
       description: readTranslatedString(properties, ["descriptionZh"], [
         "description",
       ]),

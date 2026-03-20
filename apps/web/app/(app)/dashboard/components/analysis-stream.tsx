@@ -21,6 +21,30 @@ const LIVE_UPDATES_LIMIT = 50;
 const LIVE_SUMMARY_LIMIT = 4000;
 const CONNECTION_TOAST_ID = "analysis-stream-connection";
 
+function getAnalysisTypeLabel(type: AnalysisType): string {
+  switch (type) {
+    case AnalysisType.Anomaly:
+      return "anomaly";
+    case AnalysisType.GeoTransport:
+      return "geo transport";
+    case AnalysisType.Correlation:
+    default:
+      return "correlation";
+  }
+}
+
+function getAnalysisTypeClassName(type: AnalysisType): string {
+  switch (type) {
+    case AnalysisType.Anomaly:
+      return "text-[var(--bearish)]";
+    case AnalysisType.GeoTransport:
+      return "text-sky-600";
+    case AnalysisType.Correlation:
+    default:
+      return "text-[var(--bullish)]";
+  }
+}
+
 export function AnalysisStream() {
   const { t } = useTranslation();
   const { data: session, status } = useSession();
@@ -295,8 +319,8 @@ export function AnalysisStream() {
               <span className="text-slate-500">
                 [{dayjs(item.createdAt).format("HH:mm:ss")}]
               </span>
-              <span className={item.type === AnalysisType.Anomaly ? "text-[var(--bearish)]" : "text-[var(--bullish)]"}>
-                {item.type}
+              <span className={getAnalysisTypeClassName(item.type)}>
+                {getAnalysisTypeLabel(item.type)}
               </span>
               <span>:: {item.status}</span>
             </div>

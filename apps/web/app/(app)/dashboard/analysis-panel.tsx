@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
+  AnalysisType,
   type AnomalyAnalysisInput,
   type CorrelationAnalysisInput,
   useAnalysisResultsQuery,
@@ -43,6 +44,18 @@ const MAX_SERIES_POINTS = 200;
 const LIVE_UPDATES_LIMIT = 50;
 const LIVE_SUMMARY_LIMIT = 4000;
 const STREAM_ERROR_TOAST_WINDOW_MS = 30_000;
+
+function getAnalysisTypeLabel(type: AnalysisType): string {
+  switch (type) {
+    case AnalysisType.Anomaly:
+      return "Anomaly";
+    case AnalysisType.GeoTransport:
+      return "Geo Transport";
+    case AnalysisType.Correlation:
+    default:
+      return "Correlation";
+  }
+}
 
 function normalizeTags(values?: string[]): string[] {
   return Array.from(
@@ -282,7 +295,8 @@ export function AnalysisPanel() {
             className="h-auto py-6"
             title={t("analysis.results.emptyTitle", { defaultValue: "No analysis yet" })}
             description={t("analysis.results.emptyDescription", {
-              defaultValue: "Run a correlation or anomaly analysis to generate results.",
+              defaultValue:
+                "Run a correlation, anomaly, or geo transport analysis to generate results.",
             })}
           />
         ) : (
@@ -295,7 +309,9 @@ export function AnalysisPanel() {
                 <List.Item.Meta
                   title={
                     <Space>
-                      <Typography.Text strong>{result.type}</Typography.Text>
+                      <Typography.Text strong>
+                        {getAnalysisTypeLabel(result.type)}
+                      </Typography.Text>
                       <Typography.Text type="secondary">
                         {formatDateTime(result.createdAt, locale, {
                           year: "numeric",

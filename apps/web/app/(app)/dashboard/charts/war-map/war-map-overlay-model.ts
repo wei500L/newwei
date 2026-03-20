@@ -4,6 +4,7 @@ import type {
   WarMapEvent,
   WarMapEventSeverity,
   WarMapNewsMarker,
+  WarMapTransportKind,
 } from "@modular/utils";
 
 export const OVERLAY_SURFACE_CLASS_NAME =
@@ -63,6 +64,38 @@ export interface RenderableWarMapNewsMarker extends WarMapNewsMarker {
   latestAt?: string;
 }
 
+export interface RenderableWarMapTransportSelection {
+  objectKey: string;
+  transportKind: WarMapTransportKind;
+  label: string;
+  subtitle?: string;
+  latestAt?: string;
+  sourceUpdatedAt?: string;
+  callsign?: string;
+  icao24?: string;
+  registration?: string;
+  aircraftType?: string;
+  displayCategory?: string;
+  displayCategoryZh?: string;
+  role?: string;
+  roleZh?: string;
+  countryCode?: string;
+  countryName?: string;
+  heading?: number;
+  altitudeFt?: number;
+  groundSpeedKt?: number;
+  name?: string;
+  mmsi?: string;
+  shipType?: number;
+  shipTypeLabel?: string;
+  shipTypeLabelZh?: string;
+  vesselRole?: string;
+  vesselRoleZh?: string;
+  speed?: number;
+  course?: number;
+  isMilitaryCandidate?: boolean;
+}
+
 export type SelectedCluster =
   | {
       key: string;
@@ -100,6 +133,22 @@ export type SelectedInspector =
       lng: number;
       zoomTarget: number;
       item: RenderableWarMapNewsMarker;
+    }
+  | {
+      key: string;
+      kind: "flight";
+      lat: number;
+      lng: number;
+      zoomTarget: number;
+      item: RenderableWarMapTransportSelection;
+    }
+  | {
+      key: string;
+      kind: "vessel";
+      lat: number;
+      lng: number;
+      zoomTarget: number;
+      item: RenderableWarMapTransportSelection;
     };
 
 export type OverlayDensity = "expanded" | "compact" | "minimal";

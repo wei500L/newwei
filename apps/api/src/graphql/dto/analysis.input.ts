@@ -1,5 +1,7 @@
 import { Field, Float, InputType, Int } from "@nestjs/graphql";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsEnum,
   IsInt,
@@ -9,7 +11,7 @@ import {
   Min
 } from "class-validator";
 
-import { AnalysisType } from "../models/analysis.model";
+import { AnalysisType, GeoTransportKind } from "../models/analysis.model";
 
 @InputType()
 export class CorrelationAnalysisInput {
@@ -82,6 +84,38 @@ export class AnomalyAnalysisInput {
   @IsOptional()
   @IsArray()
   series?: SeriesPointInput[];
+}
+
+@InputType()
+export class GeoTransportAnalysisInput {
+  @Field(() => [GeoTransportKind])
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2)
+  @IsEnum(GeoTransportKind, { each: true })
+  transportKinds!: GeoTransportKind[];
+
+  @Field()
+  @IsString()
+  startDate!: string;
+
+  @Field()
+  @IsString()
+  endDate!: string;
+
+  @Field(() => [Float], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(4)
+  @ArrayMaxSize(4)
+  @IsNumber({}, { each: true })
+  bbox?: number[];
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  objectKeys?: string[];
 }
 
 @InputType()

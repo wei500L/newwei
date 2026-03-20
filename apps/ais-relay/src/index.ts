@@ -105,6 +105,7 @@ type AisSnapshot = {
   disruptions: Array<Record<string, unknown>>;
   density: Array<Record<string, unknown>>;
   candidateReports: CandidateReport[];
+  vessels: CandidateReport[];
 };
 
 const CHOKEPOINTS = [
@@ -626,6 +627,23 @@ function getCandidateReportsSnapshot() {
     .slice(0, MAX_CANDIDATE_REPORTS);
 }
 
+function getVesselsSnapshot() {
+  return [...vessels.values()]
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .map((vessel) => ({
+      mmsi: vessel.mmsi,
+      ...(vessel.name ? { name: vessel.name } : {}),
+      lat: vessel.lat,
+      lon: vessel.lon,
+      ...(typeof vessel.shipType === "number" ? { shipType: vessel.shipType } : {}),
+      ...(typeof vessel.heading === "number" ? { heading: vessel.heading } : {}),
+      ...(typeof vessel.speed === "number" ? { speed: vessel.speed } : {}),
+      ...(typeof vessel.course === "number" ? { course: vessel.course } : {}),
+      timestamp: vessel.timestamp,
+    }))
+    .slice(0, MAX_VESSELS);
+}
+
 function refreshDensityBaselines() {
   for (const cell of densityGrid.values()) {
     cell.previousCount = cell.vesselIds.size;
@@ -644,6 +662,7 @@ function buildSnapshot() {
   cleanupAggregates();
   snapshotSequence += 1;
   const candidateSnapshot = getCandidateReportsSnapshot();
+  const vesselsSnapshot = getVesselsSnapshot();
   lastSnapshot = {
     sequence: snapshotSequence,
     timestamp: new Date(now).toISOString(),
@@ -657,6 +676,7 @@ function buildSnapshot() {
     disruptions: detectDisruptions(),
     density: calculateDensityZones(),
     candidateReports: candidateSnapshot,
+    vessels: vesselsSnapshot,
   };
   lastSnapshotAt = now;
   lastSnapshotJsonWithoutCandidates = JSON.stringify({
