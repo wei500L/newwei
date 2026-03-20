@@ -1,15 +1,30 @@
-import { createHash } from "node:crypto";
+import { ProcessedItemModel } from "@modular/mongo";
 import { createLogger } from "@modular/utils";
 import {
   BadRequestException,
   Injectable,
+  Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ProcessedArticleStatus } from "@prisma/client";
+import { createHash } from "node:crypto";
 
 import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import {
+  classifySourceByLabelAndUrl,
+  getDefaultNewsEventSourcePolicy,
+  type ClassifiedSourceType,
+  type NewsEventSourcePolicy,
+} from "../news-events/news-event-source-classifier";
+import { NewsEventSourcePolicyService } from "../news-events/news-event-source-policy.service";
 import { LiteLlmService } from "../news-pipeline/litellm.service";
+import {
+  NewsContentType,
+  inferNewsContentType,
+  normalizeNewsContentType,
+} from "../news-pipeline/news-content-type";
+import { NewsPipelineService } from "../news-pipeline/news-pipeline.service";
 import { VectorClientService } from "../vector/vector-client.service";
 
 import {
@@ -17,8 +32,8 @@ import {
   type ArchiveClassificationRuntimeOptions,
   type ArchiveHybridClassificationResult,
 } from "./archive-classification.service";
-import { ArchiveClassifier } from "./archive.classifier";
 import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
+import { ArchiveClassifier } from "./archive.classifier";
 import {
   ARCHIVE_CLASSIFICATION_DECISION_I18N_KEY,
   ARCHIVE_CLASSIFICATION_STALE_REASON_I18N_KEY,
@@ -34,7 +49,6 @@ import {
   type ArchiveDigestItem,
   type ArchiveDigestQueryInput,
   type ArchiveDigestResult,
-  ArchiveRegion,
   ArchiveVertical,
   ArchiveWeight,
   type ArchiveWeightValue,
@@ -54,6 +68,7 @@ const SEARCH_CACHE_MAX_ENTRIES = 200;
 const EMBEDDING_CACHE_TTL_MS = 5 * 60 * 1000;
 const VECTOR_RECALL_CACHE_TTL_MS = 60 * 1000;
 const RERANK_CACHE_TTL_MS = 90 * 1000;
+const PROCESSED_ITEM_DISPLAY_SIGNAL_CACHE_TTL_MS = 5 * 60 * 1000;
 const ARCHIVE_CACHE_KEY_PREFIX = "archive:search";
 const ARCHIVE_METRIC_KEY_PREFIX = "archive:metrics";
 const ARCHIVE_METRIC_RETENTION_SECONDS = 30 * 24 * 60 * 60;
@@ -69,6 +84,18 @@ interface SharedEmbeddingCachePayload {
 interface SharedVectorRecallPayload {
   processedItemId: string;
   score: number;
+}
+
+interface ProcessedItemDisplaySignals {
+  exists: boolean;
+  contentType: NewsContentType | null;
+  categoryPath: string | null;
+  categoryMethod: string | null;
+}
+
+interface ArchiveDisplayEligibility {
+  shouldDisplay: boolean;
+  needsProcessedItemBackfill: boolean;
 }
 
 export interface ArchiveProcessedRow {
@@ -90,9 +117,9 @@ export interface ArchiveProcessedRow {
     sourceLabel: string | null;
     crawlAt: Date;
   };
-  newsEventItems: Array<{
+  newsEventItems: {
     eventId: string;
-  }>;
+  }[];
 }
 
 interface TimedCacheEntry<T> {
@@ -109,11 +136,15 @@ export class ArchiveService {
   >();
   private readonly vectorRecallCache = new Map<
     string,
-    TimedCacheEntry<Array<{ processedItemId: string; score: number }>>
+    TimedCacheEntry<{ processedItemId: string; score: number }[]>
   >();
   private readonly rerankCache = new Map<
     string,
     TimedCacheEntry<Map<string, number>>
+  >();
+  private readonly processedItemDisplaySignalCache = new Map<
+    string,
+    TimedCacheEntry<ProcessedItemDisplaySignals>
   >();
 
   constructor(
@@ -124,6 +155,10 @@ export class ArchiveService {
     private readonly classifier: ArchiveClassifier,
     private readonly archiveClassification: ArchiveClassificationService,
     private readonly archivePreparationQueue: ArchivePreparationQueueService,
+    @Optional()
+    private readonly sourcePolicyService?: NewsEventSourcePolicyService,
+    @Optional()
+    private readonly newsPipelineService?: NewsPipelineService,
   ) {}
 
   async getDigest(
@@ -180,8 +215,21 @@ export class ArchiveService {
       orgId,
       searchResult.rows,
     );
-    const readyCount = classificationById.size;
-    const missingCount = Math.max(0, searchResult.rows.length - readyCount);
+    const displayEligibilityById = await this.resolveDisplayEligibilityBatch(
+      orgId,
+      searchResult.rows,
+    );
+    const pendingPreparationIds = new Set<string>();
+    for (const row of searchResult.rows) {
+      if (!classificationById.has(row.id)) {
+        pendingPreparationIds.add(row.id);
+      }
+      if (displayEligibilityById.get(row.id)?.needsProcessedItemBackfill) {
+        pendingPreparationIds.add(row.id);
+      }
+    }
+    const missingCount = pendingPreparationIds.size;
+    const readyCount = Math.max(0, searchResult.rows.length - missingCount);
     let enqueueErrorMessage: string | null = null;
     if (missingCount > 0) {
       try {
@@ -202,6 +250,10 @@ export class ArchiveService {
     for (const row of searchResult.rows) {
       const classification = classificationById.get(row.id);
       if (!classification) {
+        continue;
+      }
+      const displayEligibility = displayEligibilityById.get(row.id);
+      if (displayEligibility && !displayEligibility.shouldDisplay) {
         continue;
       }
       const sortAt = this.resolveSortAt(row);
@@ -321,10 +373,20 @@ export class ArchiveService {
       }
 
       const classificationById = await this.getCachedClassifications(orgId, rows);
+      const displayEligibilityById = await this.resolveDisplayEligibilityBatch(
+        orgId,
+        rows,
+      );
       for (const row of rows) {
         const classification = classificationById.get(row.id);
         if (!classification) {
           hasMissing = true;
+          continue;
+        }
+        if (displayEligibilityById.get(row.id)?.needsProcessedItemBackfill) {
+          hasMissing = true;
+        }
+        if (displayEligibilityById.get(row.id)?.shouldDisplay === false) {
           continue;
         }
 
@@ -387,6 +449,7 @@ export class ArchiveService {
       this.buildClassificationInputs(rows),
       options,
     );
+    await this.backfillMissingProcessedItemDisplaySignals(orgId, rows);
 
     return new Map(results.map((result) => [result.processedArticleId, result]));
   }
@@ -414,8 +477,16 @@ export class ArchiveService {
       }
 
       const cached = await this.getCachedClassifications(orgId, batch);
+      const displaySignalsByProcessedItemId =
+        await this.loadRowProcessedItemDisplaySignals(orgId, batch);
       for (const row of batch) {
-        if (!cached.has(row.id)) {
+        if (
+          !cached.has(row.id) ||
+          this.rowNeedsProcessedItemDisplayBackfill(
+            row,
+            displaySignalsByProcessedItemId,
+          )
+        ) {
           missingRows.push(row);
           if (missingRows.length > limit) {
             return { rows: missingRows.slice(0, limit), hasMoreMissing: true };
@@ -459,8 +530,16 @@ export class ArchiveService {
       }
 
       const cached = await this.getCachedClassifications(orgId, batch);
+      const displaySignalsByProcessedItemId =
+        await this.loadRowProcessedItemDisplaySignals(orgId, batch);
       for (const row of batch) {
-        if (!cached.has(row.id)) {
+        if (
+          !cached.has(row.id) ||
+          this.rowNeedsProcessedItemDisplayBackfill(
+            row,
+            displaySignalsByProcessedItemId,
+          )
+        ) {
           missingRows.push(row);
           if (missingRows.length > limit) {
             return { rows: missingRows.slice(0, limit), hasMoreMissing: true };
@@ -509,6 +588,13 @@ export class ArchiveService {
     });
 
     if (!article) {
+      return null;
+    }
+
+    const displayEligibility = (
+      await this.resolveDisplayEligibilityBatch(orgId, [article as ArchiveProcessedRow])
+    ).get(article.id);
+    if (displayEligibility?.shouldDisplay === false) {
       return null;
     }
 
@@ -827,8 +913,7 @@ export class ArchiveService {
       this.vectorRecallCache,
       vectorRecallCacheKey,
     );
-    let matches: Array<{ processedItemId: string; score: number }> | null =
-      null;
+    let matches: { processedItemId: string; score: number }[] | null = null;
     if (cachedVectorRecall) {
       vectorRecallMemoryCacheHit = true;
       matches = cachedVectorRecall.map((entry) => ({
@@ -1249,8 +1334,9 @@ export class ArchiveService {
   private async loadRangeCandidates(orgId: string, start: Date, end: Date) {
     const rows: ArchiveProcessedRow[] = [];
     let cursor: { processedAt: Date; id: string } | null = null;
+    let shouldContinue = true;
 
-    while (true) {
+    while (shouldContinue) {
       const batch = (await this.prisma.processedArticle.findMany({
         where: this.buildRangeCandidatesWhere(orgId, start, end, cursor),
         include: this.buildArchiveRowInclude(orgId),
@@ -1276,10 +1362,7 @@ export class ArchiveService {
         break;
       }
       cursor = nextCursor;
-
-      if (batch.length < CALENDAR_SCAN_BATCH) {
-        break;
-      }
+      shouldContinue = batch.length === CALENDAR_SCAN_BATCH;
     }
 
     return rows;
@@ -1332,6 +1415,346 @@ export class ArchiveService {
       orgId,
       this.buildClassificationInputs(rows),
     );
+  }
+
+  private async resolveDisplayEligibilityBatch(
+    orgId: string,
+    rows: ArchiveProcessedRow[],
+  ): Promise<Map<string, ArchiveDisplayEligibility>> {
+    const eligibilityById = new Map<string, ArchiveDisplayEligibility>();
+    if (rows.length === 0) {
+      return eligibilityById;
+    }
+
+    const [policy, displaySignalsByProcessedItemId] = await Promise.all([
+      this.resolveNewsSourcePolicy(orgId),
+      this.loadRowProcessedItemDisplaySignals(orgId, rows),
+    ]);
+
+    for (const row of rows) {
+      const sourceLabel =
+        this.normalizeOptionalString(row.source) ??
+        this.normalizeOptionalString(row.article.sourceLabel);
+      const sourceUrl = this.normalizeOptionalString(row.article.url);
+      const sourceType = classifySourceByLabelAndUrl(
+        sourceLabel ?? "",
+        sourceUrl ?? "",
+        policy,
+      );
+      const processedItemId = this.normalizeOptionalString(row.cleanedMarkdownRef);
+      const displaySignals = processedItemId
+        ? displaySignalsByProcessedItemId.get(processedItemId) ?? null
+        : null;
+      const contentType = this.resolveArchiveContentType(row, displaySignals);
+      const categoryPath = displaySignals?.categoryPath ?? null;
+
+      eligibilityById.set(row.id, {
+        shouldDisplay: this.shouldDisplayArchiveRow(
+          sourceType,
+          contentType,
+          categoryPath,
+        ),
+        needsProcessedItemBackfill: this.needsProcessedItemDisplayBackfill(
+          displaySignals,
+        ),
+      });
+    }
+
+    return eligibilityById;
+  }
+
+  private async backfillMissingProcessedItemDisplaySignals(
+    orgId: string,
+    rows: ArchiveProcessedRow[],
+  ): Promise<void> {
+    if (!this.newsPipelineService || rows.length === 0) {
+      return;
+    }
+
+    const displaySignalsByProcessedItemId =
+      await this.loadRowProcessedItemDisplaySignals(orgId, rows);
+    const targetByProcessedItemId = new Map<
+      string,
+      {
+        processedItemId: string;
+        sourceUrl: string | null;
+        sourceLabel: string | null;
+      }
+    >();
+
+    for (const row of rows) {
+      const processedItemId = this.normalizeOptionalString(row.cleanedMarkdownRef);
+      if (!processedItemId) {
+        continue;
+      }
+      const displaySignals = displaySignalsByProcessedItemId.get(processedItemId);
+      if (!this.needsProcessedItemDisplayBackfill(displaySignals)) {
+        continue;
+      }
+      targetByProcessedItemId.set(processedItemId, {
+        processedItemId,
+        sourceUrl: this.normalizeOptionalString(row.article.url),
+        sourceLabel:
+          this.normalizeOptionalString(row.source) ??
+          this.normalizeOptionalString(row.article.sourceLabel),
+      });
+    }
+
+    if (targetByProcessedItemId.size === 0) {
+      return;
+    }
+
+    await this.newsPipelineService.backfillProcessedItemClassificationSignals(
+      orgId,
+      Array.from(targetByProcessedItemId.values()),
+    );
+
+    for (const processedItemId of targetByProcessedItemId.keys()) {
+      this.processedItemDisplaySignalCache.delete(processedItemId);
+    }
+  }
+
+  private async loadRowProcessedItemDisplaySignals(
+    orgId: string,
+    rows: ArchiveProcessedRow[],
+  ): Promise<Map<string, ProcessedItemDisplaySignals>> {
+    const processedItemIds = Array.from(
+      new Set(
+        rows
+          .map((row) => this.normalizeOptionalString(row.cleanedMarkdownRef))
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    return this.loadProcessedItemDisplaySignals(orgId, processedItemIds);
+  }
+
+  private async loadProcessedItemDisplaySignals(
+    orgId: string,
+    processedItemIds: string[],
+  ): Promise<Map<string, ProcessedItemDisplaySignals>> {
+    const signalsById = new Map<string, ProcessedItemDisplaySignals>();
+    if (processedItemIds.length === 0) {
+      return signalsById;
+    }
+
+    const pendingIds: string[] = [];
+    for (const processedItemId of processedItemIds) {
+      const cached = this.getCacheValue(
+        this.processedItemDisplaySignalCache,
+        processedItemId,
+      );
+      if (cached) {
+        signalsById.set(processedItemId, cached);
+      } else {
+        pendingIds.push(processedItemId);
+      }
+    }
+
+    if (pendingIds.length === 0) {
+      return signalsById;
+    }
+
+    try {
+      const docs = await ProcessedItemModel.find({
+        _id: { $in: pendingIds },
+        orgId,
+        status: "completed",
+      })
+        .select({ _id: 1, result: 1 })
+        .lean()
+        .exec();
+      const foundIds = new Set<string>();
+
+      for (const doc of docs) {
+        const processedItemId = String((doc as { _id?: unknown })._id ?? "").trim();
+        if (!processedItemId) {
+          continue;
+        }
+        foundIds.add(processedItemId);
+        const displaySignals = this.extractProcessedItemDisplaySignals(
+          (doc as { result?: unknown }).result,
+        );
+        signalsById.set(processedItemId, displaySignals);
+        this.setCacheValue(
+          this.processedItemDisplaySignalCache,
+          processedItemId,
+          displaySignals,
+          PROCESSED_ITEM_DISPLAY_SIGNAL_CACHE_TTL_MS,
+        );
+      }
+
+      for (const processedItemId of pendingIds) {
+        if (foundIds.has(processedItemId)) {
+          continue;
+        }
+        const missingSignals: ProcessedItemDisplaySignals = {
+          exists: false,
+          contentType: null,
+          categoryPath: null,
+          categoryMethod: null,
+        };
+        signalsById.set(processedItemId, missingSignals);
+        this.setCacheValue(
+          this.processedItemDisplaySignalCache,
+          processedItemId,
+          missingSignals,
+          PROCESSED_ITEM_DISPLAY_SIGNAL_CACHE_TTL_MS,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        { orgId, count: pendingIds.length, error },
+        "Failed to load processed-item display signals for archive filtering.",
+      );
+      for (const processedItemId of pendingIds) {
+        signalsById.set(processedItemId, {
+          exists: false,
+          contentType: null,
+          categoryPath: null,
+          categoryMethod: null,
+        });
+      }
+    }
+
+    return signalsById;
+  }
+
+  private extractProcessedItemDisplaySignals(
+    value: unknown,
+  ): ProcessedItemDisplaySignals {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        exists: true,
+        contentType: null,
+        categoryPath: null,
+        categoryMethod: null,
+      };
+    }
+
+    const record = value as Record<string, unknown>;
+    return {
+      exists: true,
+      contentType: normalizeNewsContentType(
+        record.content_type ?? record.contentType,
+      ),
+      categoryPath:
+        this.normalizeCategoryPath(record.category_path) ??
+        this.normalizeCategoryPath(record.categoryPath),
+      categoryMethod:
+        this.normalizeCategoryMethod(record.category_method) ??
+        this.normalizeCategoryMethod(record.categoryMethod),
+    };
+  }
+
+  private needsProcessedItemDisplayBackfill(
+    displaySignals: ProcessedItemDisplaySignals | null | undefined,
+  ) {
+    if (!displaySignals?.exists) {
+      return false;
+    }
+    return (
+      !displaySignals.contentType ||
+      (!displaySignals.categoryPath && !displaySignals.categoryMethod)
+    );
+  }
+
+  private rowNeedsProcessedItemDisplayBackfill(
+    row: ArchiveProcessedRow,
+    displaySignalsByProcessedItemId: Map<string, ProcessedItemDisplaySignals>,
+  ) {
+    const processedItemId = this.normalizeOptionalString(row.cleanedMarkdownRef);
+    if (!processedItemId) {
+      return false;
+    }
+    return this.needsProcessedItemDisplayBackfill(
+      displaySignalsByProcessedItemId.get(processedItemId),
+    );
+  }
+
+  private async resolveNewsSourcePolicy(
+    orgId: string,
+  ): Promise<NewsEventSourcePolicy> {
+    if (!this.sourcePolicyService) {
+      return getDefaultNewsEventSourcePolicy();
+    }
+
+    try {
+      return await this.sourcePolicyService.getPolicy(orgId);
+    } catch (error) {
+      this.logger.warn(
+        { orgId, error },
+        "Failed to resolve news source policy for archive filtering.",
+      );
+      return getDefaultNewsEventSourcePolicy();
+    }
+  }
+
+  private resolveArchiveContentType(
+    row: ArchiveProcessedRow,
+    displaySignals: ProcessedItemDisplaySignals | null,
+  ): NewsContentType {
+    if (displaySignals?.contentType) {
+      return displaySignals.contentType;
+    }
+
+    return inferNewsContentType({
+      title: row.title,
+      summary: row.summary,
+      source:
+        this.normalizeOptionalString(row.source) ??
+        this.normalizeOptionalString(row.article.sourceLabel),
+      url: this.normalizeOptionalString(row.article.url),
+      topics: this.extractStringArray(row.topics),
+      tags: [],
+    });
+  }
+
+  private shouldDisplayArchiveRow(
+    sourceType: ClassifiedSourceType,
+    contentType: NewsContentType,
+    categoryPath: string | null,
+  ) {
+    if (sourceType === "blog") {
+      return false;
+    }
+    if (contentType === NewsContentType.opinion) {
+      return false;
+    }
+    if (this.isIntelligenceCategoryPath(categoryPath)) {
+      return true;
+    }
+    return (
+      contentType === NewsContentType.news_fact ||
+      contentType === NewsContentType.mixed
+    );
+  }
+
+  private isIntelligenceCategoryPath(categoryPath: string | null) {
+    if (!categoryPath) {
+      return false;
+    }
+    return (
+      categoryPath === "intel" ||
+      categoryPath.startsWith("intel/") ||
+      categoryPath === "politics/geopolitics" ||
+      categoryPath.startsWith("politics/geopolitics/")
+    );
+  }
+
+  private normalizeCategoryPath(value: unknown) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\/+/g, "/")
+      .replace(/^\/+|\/+$/g, "");
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizeCategoryMethod(value: unknown) {
+    return this.normalizeOptionalString(value);
   }
 
   private async buildDigestPreparationStatus(
@@ -1868,6 +2291,19 @@ export class ArchiveService {
     return Array.from(new Set(names));
   }
 
+  private extractStringArray(value: unknown) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return Array.from(
+      new Set(
+        value
+          .map((entry) => this.normalizeOptionalString(entry))
+          .filter((entry): entry is string => Boolean(entry)),
+      ),
+    );
+  }
+
   private extractKeywordHighlights(
     search: string | null,
     row: ArchiveProcessedRow,
@@ -2062,7 +2498,7 @@ export class ArchiveService {
     },
   ) {
     const metricKey = this.buildArchiveMetricKey(orgId);
-    const fields: Array<[string, number]> = [
+    const fields: [string, number][] = [
       ["requests.total", 1],
       ["rows.semantic_total", payload.semanticRowCount],
       ["rows.lexical_total", payload.lexicalRowCount],

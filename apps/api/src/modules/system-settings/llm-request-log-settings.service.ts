@@ -53,6 +53,15 @@ export const DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS = [
   "version",
 ] as const;
 
+export const REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS = [
+  "runid",
+  "nodeid",
+  "profileid",
+  "frontierrunid",
+  "frontiernodeid",
+  "crawlsiteprofileid",
+] as const;
+
 export const DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES = [
   "x_",
   "meta_",
@@ -112,6 +121,17 @@ const DEFAULT_BRIEF_INVALID_JSON_RATIO_THRESHOLD = 0.3;
 const DEFAULT_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 3;
 const MIN_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 1;
 const MAX_BRIEF_CONSECUTIVE_DAYS_THRESHOLD = 30;
+
+export function mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+  keys: readonly string[],
+): string[] {
+  return Array.from(
+    new Set([
+      ...keys,
+      ...REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+    ]),
+  );
+}
 
 @Injectable()
 export class LlmRequestLogSettingsService implements OnModuleInit {
@@ -777,12 +797,16 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
   private normalizeMetadataAllowedTopLevelKeysStrict(
     value: unknown,
   ): string[] | null {
-    return this.normalizeMetadataTokenList(
+    const normalized = this.normalizeMetadataTokenList(
       value,
       MAX_METADATA_ALLOWED_TOP_LEVEL_KEYS,
       MAX_METADATA_KEY_LENGTH,
       true,
     );
+    if (normalized === null) {
+      return null;
+    }
+    return mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(normalized);
   }
 
   private normalizeMetadataAllowedTopLevelPrefixesStrict(
@@ -804,9 +828,11 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
       false,
     );
     if (normalized === null) {
-      return [...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS];
+      return mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+        DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+      );
     }
-    return normalized;
+    return mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(normalized);
   }
 
   private normalizeMetadataAllowedTopLevelPrefixesLenient(value: unknown): string[] {
@@ -877,7 +903,10 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     return {
       source: settings.source,
       retentionDays: settings.retentionDays,
-      metadataAllowedTopLevelKeys: [...settings.metadataAllowedTopLevelKeys],
+      metadataAllowedTopLevelKeys:
+        mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+          settings.metadataAllowedTopLevelKeys,
+        ),
       metadataAllowedTopLevelPrefixes: [
         ...settings.metadataAllowedTopLevelPrefixes,
       ],
@@ -891,9 +920,10 @@ export class LlmRequestLogSettingsService implements OnModuleInit {
     return {
       source: "default",
       retentionDays: DEFAULT_LLM_REQUEST_LOG_RETENTION_DAYS,
-      metadataAllowedTopLevelKeys: [
-        ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
-      ],
+      metadataAllowedTopLevelKeys:
+        mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+          DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+        ),
       metadataAllowedTopLevelPrefixes: [
         ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
       ],

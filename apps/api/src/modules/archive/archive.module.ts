@@ -1,12 +1,15 @@
 import { Module } from "@nestjs/common";
 import { Queue, QueueEvents } from "bullmq";
 
-import { EnvService } from "../config/config.service";
 import { CacheModule } from "../cache/cache.module";
+import { EnvService } from "../config/config.service";
 import { toBullmqConnection } from "../config/redis-connection";
-
+import { NewsEventsModule } from "../news-events/news-events.module";
 import { NewsPipelineModule } from "../news-pipeline/news-pipeline.module";
 
+import { ArchiveClassificationService } from "./archive-classification.service";
+import { ArchivePreparationQueueCleanupService } from "./archive-preparation-queue-cleanup.service";
+import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
 import {
   ARCHIVE_PREPARATION_QUEUE,
   ARCHIVE_PREPARATION_QUEUE_EVENTS,
@@ -14,14 +17,11 @@ import {
 } from "./archive-preparation.constants";
 import { ArchivePreparationController } from "./archive-preparation.controller";
 import { ArchivePreparationProcessor } from "./archive-preparation.processor";
-import { ArchivePreparationQueueCleanupService } from "./archive-preparation-queue-cleanup.service";
-import { ArchivePreparationQueueService } from "./archive-preparation-queue.service";
-import { ArchiveClassificationService } from "./archive-classification.service";
 import { ArchiveClassifier } from "./archive.classifier";
 import { ArchiveService } from "./archive.service";
 
 @Module({
-  imports: [NewsPipelineModule, CacheModule],
+  imports: [NewsPipelineModule, NewsEventsModule, CacheModule],
   controllers: [ArchivePreparationController],
   providers: [
     ArchiveClassifier,

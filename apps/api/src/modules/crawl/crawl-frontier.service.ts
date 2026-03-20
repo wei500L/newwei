@@ -660,27 +660,15 @@ export class CrawlFrontierService {
   async cancelRun(orgId: string, id: string) {
     const run = await this.prisma.crawlFrontierRun.findUnique({
       where: { id },
+      select: {
+        id: true,
+        orgId: true,
+      },
     });
     if (!run || run.orgId !== orgId) {
       throw new NotFoundException("Crawl frontier run not found");
     }
-    await this.prisma.crawlFrontierRun.update({
-      where: { id },
-      data: {
-        status: "canceled",
-        finishedAt: new Date(),
-      },
-    });
-    await this.prisma.crawlFrontierNode.updateMany({
-      where: {
-        runId: id,
-        status: { in: ["pending", "queued", "running"] },
-      },
-      data: {
-        status: "canceled",
-        updatedAt: new Date(),
-      },
-    });
+    await this.cancelRunRecords([id]);
     return this.getRun(orgId, id);
   }
 
@@ -700,10 +688,13 @@ export class CrawlFrontierService {
         id: true,
       },
     });
-    await Promise.all(runs.map((run) => this.cancelRun(orgId, run.id)));
+    const canceledIds = runs.map((run) => run.id);
+    if (canceledIds.length > 0) {
+      await this.cancelRunRecords(canceledIds);
+    }
     return {
-      canceledIds: runs.map((run) => run.id),
-      canceledCount: runs.length,
+      canceledIds,
+      canceledCount: canceledIds.length,
     };
   }
 
@@ -738,17 +729,54 @@ export class CrawlFrontierService {
         run: true,
       },
     });
+    const retriedIds: string[] = [];
+    const skippedIds: string[] = [];
+    const runIds = new Set<string>();
     for (const node of nodes) {
       if (!node.run.crawlTaskId) {
+        skippedIds.push(node.id);
         continue;
       }
       await this.requeueNodeRecord(node, orgId);
+      retriedIds.push(node.id);
+      runIds.add(node.runId);
     }
     return {
-      retriedIds: nodes.map((node) => node.id),
-      retriedCount: nodes.length,
-      runIds: Array.from(new Set(nodes.map((node) => node.runId))),
+      retriedIds,
+      retriedCount: retriedIds.length,
+      skippedIds,
+      skippedCount: skippedIds.length,
+      runIds: Array.from(runIds),
     };
+  }
+
+  private async cancelRunRecords(runIds: string[]): Promise<void> {
+    const finishedAt = new Date();
+    await Promise.all([
+      this.prisma.crawlFrontierRun.updateMany({
+        where: {
+          id: {
+            in: runIds,
+          },
+        },
+        data: {
+          status: "canceled",
+          finishedAt,
+        },
+      }),
+      this.prisma.crawlFrontierNode.updateMany({
+        where: {
+          runId: {
+            in: runIds,
+          },
+          status: { in: ["pending", "queued", "running"] },
+        },
+        data: {
+          status: "canceled",
+          updatedAt: finishedAt,
+        },
+      }),
+    ]);
   }
 
   async processQueuedNode(

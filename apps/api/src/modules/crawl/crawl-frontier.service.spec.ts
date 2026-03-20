@@ -5,13 +5,16 @@ describe("CrawlFrontierService", () => {
   const createService = (frontierLlm?: Record<string, unknown>) => {
     const prisma = {
       crawlFrontierRun: {
+        findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       crawlFrontierNode: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         create: jest.fn(),
       },
       crawlTask: {
@@ -59,6 +62,101 @@ describe("CrawlFrontierService", () => {
       frontierLlm,
     };
   };
+
+  it("cancels selected runs in bulk without hydrating each run detail", async () => {
+    const { service, prisma } = createService();
+    const getRunSpy = jest.spyOn(service, "getRun");
+    prisma.crawlFrontierRun.findMany.mockResolvedValue([
+      { id: "run-1" },
+      { id: "run-2" },
+    ]);
+    prisma.crawlFrontierRun.updateMany.mockResolvedValue({ count: 2 });
+    prisma.crawlFrontierNode.updateMany.mockResolvedValue({ count: 3 });
+
+    const result = await service.cancelRuns("org-1", ["run-1", "run-2"]);
+
+    expect(prisma.crawlFrontierRun.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        id: {
+          in: ["run-1", "run-2"],
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    expect(prisma.crawlFrontierRun.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: {
+          in: ["run-1", "run-2"],
+        },
+      },
+      data: {
+        status: "canceled",
+        finishedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.crawlFrontierNode.updateMany).toHaveBeenCalledWith({
+      where: {
+        runId: {
+          in: ["run-1", "run-2"],
+        },
+        status: { in: ["pending", "queued", "running"] },
+      },
+      data: {
+        status: "canceled",
+        updatedAt: expect.any(Date),
+      },
+    });
+    expect(getRunSpy).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      canceledIds: ["run-1", "run-2"],
+      canceledCount: 2,
+    });
+  });
+
+  it("reports skipped bulk retries separately from successful requeues", async () => {
+    const { service, prisma } = createService();
+    const requeueNodeRecordSpy = jest
+      .spyOn(service as any, "requeueNodeRecord")
+      .mockResolvedValue(undefined);
+    prisma.crawlFrontierNode.findMany.mockResolvedValue([
+      {
+        id: "node-1",
+        runId: "run-1",
+        queueClass: "hot",
+        metadata: {},
+        run: {
+          crawlTaskId: "task-1",
+        },
+      },
+      {
+        id: "node-2",
+        runId: "run-2",
+        queueClass: "warm",
+        metadata: {},
+        run: {
+          crawlTaskId: null,
+        },
+      },
+    ]);
+
+    const result = await service.retryNodes("org-1", ["node-1", "node-2"]);
+
+    expect(requeueNodeRecordSpy).toHaveBeenCalledTimes(1);
+    expect(requeueNodeRecordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "node-1" }),
+      "org-1",
+    );
+    expect(result).toEqual({
+      retriedIds: ["node-1"],
+      retriedCount: 1,
+      skippedIds: ["node-2"],
+      skippedCount: 1,
+      runIds: ["run-1"],
+    });
+  });
 
   it("caps shallow category expansion so article budget remains available", async () => {
     const { service, prisma, queueService } = createService();

@@ -16,6 +16,7 @@ import {
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
   LlmRequestLogSettingsService,
+  mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys,
   type LlmRequestLogSettingsSource,
   type LlmRequestLogMetadataPolicy,
   type LlmRequestLogMetadataPolicySummarySnapshot,
@@ -987,8 +988,12 @@ export class LlmRequestLogService {
             ...DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
           ],
         };
+    const allowedTopLevelKeys =
+      mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+        snapshot.allowedTopLevelKeys,
+      );
     const resolved: ResolvedMetadataPolicy = {
-      allowedTopLevelKeys: new Set(snapshot.allowedTopLevelKeys),
+      allowedTopLevelKeys: new Set(allowedTopLevelKeys),
       allowedTopLevelPrefixes: snapshot.allowedTopLevelPrefixes,
     };
     this.cachedResolvedMetadataPolicy = {
@@ -1014,11 +1019,16 @@ export class LlmRequestLogService {
       };
     }
 
+    const allowedTopLevelKeys =
+      mergeRequiredLlmRequestLogMetadataAllowedTopLevelKeys(
+        snapshot.allowedTopLevelKeys,
+      );
+
     return {
       source: snapshot.source,
-      allowedTopLevelKeys: snapshot.allowedTopLevelKeys,
+      allowedTopLevelKeys,
       allowedTopLevelPrefixes: snapshot.allowedTopLevelPrefixes,
-      keyCount: snapshot.allowedTopLevelKeys.length,
+      keyCount: allowedTopLevelKeys.length,
       prefixCount: snapshot.allowedTopLevelPrefixes.length,
     };
   }

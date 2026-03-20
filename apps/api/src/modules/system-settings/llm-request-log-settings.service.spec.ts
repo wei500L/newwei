@@ -41,6 +41,7 @@ import {
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
   DEFAULT_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_PREFIXES,
   LlmRequestLogSettingsService,
+  REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
 } from "./llm-request-log-settings.service";
 
 describe("LlmRequestLogSettingsService", () => {
@@ -337,18 +338,56 @@ describe("LlmRequestLogSettingsService", () => {
     expect(result).toMatchObject({
       source: "db",
       retentionDays: 30,
-      metadataAllowedTopLevelKeys: ["traceid", "custom_key"],
+      metadataAllowedTopLevelKeys: [
+        "traceid",
+        "custom_key",
+        ...REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS.filter(
+          (key) => key !== "traceid",
+        ),
+      ],
       metadataAllowedTopLevelPrefixes: ["x_", "allow_"],
     });
     expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: expect.objectContaining({
           value: expect.objectContaining({
-            metadataAllowedTopLevelKeys: ["traceid", "custom_key"],
+            metadataAllowedTopLevelKeys: [
+              "traceid",
+              "custom_key",
+              ...REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS.filter(
+                (key) => key !== "traceid",
+              ),
+            ],
             metadataAllowedTopLevelPrefixes: ["x_", "allow_"],
           }),
         }),
       }),
+    );
+  });
+
+  it("merges required frontier correlation keys into saved custom allowlists", async () => {
+    prismaMock.systemSetting.findUnique = jest.fn().mockResolvedValue({
+      value: {
+        retentionDays: 45,
+        metadataAllowedTopLevelKeys: ["custom_key"],
+        metadataAllowedTopLevelPrefixes: ["allow_"],
+      },
+    });
+    await service.onModuleInit();
+    (service as unknown as { cacheExpiresAt: number }).cacheExpiresAt = 0;
+
+    const settings = await service.getSettings();
+
+    expect(settings).toMatchObject({
+      source: "db",
+      retentionDays: 45,
+      metadataAllowedTopLevelPrefixes: ["allow_"],
+    });
+    expect(settings.metadataAllowedTopLevelKeys).toEqual(
+      expect.arrayContaining([
+        "custom_key",
+        ...REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+      ]),
     );
   });
 

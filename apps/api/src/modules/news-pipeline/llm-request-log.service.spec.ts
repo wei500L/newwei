@@ -17,6 +17,7 @@ jest.mock("../audit/audit-log.writer", () => ({
 }));
 
 import { LlmRequestLogService } from "./llm-request-log.service";
+import { REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS } from "../system-settings/llm-request-log-settings.service";
 
 async function readStream(stream: AsyncIterable<unknown>): Promise<string> {
   const chunks: string[] = [];
@@ -155,6 +156,49 @@ describe("LlmRequestLogService", () => {
     });
   });
 
+  it("retains required frontier correlation keys even when custom settings omit them", () => {
+    settingsServiceMock.getMetadataPolicySnapshot.mockReturnValue({
+      allowedTopLevelKeys: ["customkey"],
+      allowedTopLevelPrefixes: [],
+    });
+    settingsServiceMock.getMetadataPolicySummarySnapshot.mockReturnValue({
+      source: "db",
+      allowedTopLevelKeys: ["customkey"],
+      allowedTopLevelPrefixes: [],
+    });
+
+    service.logRequest({
+      orgId: "org-1",
+      requestType: "completion",
+      model: "gpt-4o-mini",
+      status: "success",
+      latencyMs: 60,
+      metadata: {
+        customKey: "keep-by-key",
+        runId: "run-1",
+        nodeId: "node-1",
+        profileId: "profile-1",
+        frontierRunId: "run-1",
+        frontierNodeId: "node-1",
+        crawlSiteProfileId: "profile-1",
+      },
+    });
+
+    const payload = modelMock.create.mock.calls[0]?.[0] as {
+      metadata?: Record<string, unknown> | null;
+    };
+
+    expect(payload.metadata).toEqual({
+      customkey: "keep-by-key",
+      runid: "run-1",
+      nodeid: "node-1",
+      profileid: "profile-1",
+      frontierrunid: "run-1",
+      frontiernodeid: "node-1",
+      crawlsiteprofileid: "profile-1",
+    });
+  });
+
   it("truncates oversized metadata payloads", () => {
     const oversizedMetadata: Record<string, unknown> = {};
     for (let index = 0; index < 60; index += 1) {
@@ -216,13 +260,23 @@ describe("LlmRequestLogService", () => {
 
     const result = await service.queryLogs({ orgId: "org-1" }, {});
 
-    expect(result.metadataPolicy).toEqual({
-      source: "db",
-      allowedTopLevelKeys: ["traceid", "requestid"],
-      allowedTopLevelPrefixes: ["x_", "meta_", "ctx_"],
-      keyCount: 2,
-      prefixCount: 3,
-    });
+    expect(result.metadataPolicy.source).toBe("db");
+    expect(result.metadataPolicy.allowedTopLevelPrefixes).toEqual([
+      "x_",
+      "meta_",
+      "ctx_",
+    ]);
+    expect(result.metadataPolicy.allowedTopLevelKeys).toEqual(
+      expect.arrayContaining([
+        "traceid",
+        "requestid",
+        ...REQUIRED_LLM_REQUEST_LOG_METADATA_ALLOWED_TOP_LEVEL_KEYS,
+      ]),
+    );
+    expect(result.metadataPolicy.keyCount).toBe(
+      result.metadataPolicy.allowedTopLevelKeys.length,
+    );
+    expect(result.metadataPolicy.prefixCount).toBe(3);
   });
 
   it("filters feature against top-level feature and legacy metadata.feature", async () => {

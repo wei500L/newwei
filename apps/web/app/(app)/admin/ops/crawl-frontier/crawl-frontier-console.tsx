@@ -35,6 +35,8 @@ import { useTranslation } from "react-i18next";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
+import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
+
 type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 type CrawlFrontierRunStatus =
   | "pending"
@@ -265,6 +267,19 @@ interface RunFormValues {
 
 interface NodeTreeRow extends CrawlFrontierNodeRecord {
   children?: NodeTreeRow[];
+}
+
+interface BulkCancelRunsResponse {
+  canceledIds: string[];
+  canceledCount: number;
+}
+
+interface BulkRetryNodesResponse {
+  retriedIds: string[];
+  retriedCount: number;
+  runIds: string[];
+  skippedIds?: string[];
+  skippedCount?: number;
 }
 
 const DEFAULT_PROFILE_CONFIG: AnyRecord = {
@@ -635,6 +650,7 @@ export function CrawlFrontierConsole() {
   const permissions = session?.permissions ?? session?.user?.permissions ?? [];
   const canView = permissions.includes("crawl.read") || permissions.includes("crawl.write");
   const canManage = permissions.includes("crawl.write");
+  const canViewLogLinks = canViewCrawlFrontierLlmLogs(permissions);
   const [messageApi, contextHolder] = message.useMessage();
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -998,8 +1014,22 @@ export function CrawlFrontierConsole() {
       onOk: async () => {
         setSaving(true);
         try {
-          await apiClient.post("admin/crawl-frontier/runs/cancel", { ids });
-          messageApi.success(`${ids.length} runs canceled.`);
+          const response = await apiClient.post<BulkCancelRunsResponse>(
+            "admin/crawl-frontier/runs/cancel",
+            { ids },
+          );
+          const canceledCount =
+            typeof response.data.canceledCount === "number"
+              ? response.data.canceledCount
+              : response.data.canceledIds.length;
+          const skippedCount = Math.max(0, ids.length - canceledCount);
+          if (canceledCount === 0) {
+            messageApi.warning("No crawl frontier runs were canceled.");
+          } else if (skippedCount > 0) {
+            messageApi.warning(`${canceledCount} runs canceled, ${skippedCount} skipped.`);
+          } else {
+            messageApi.success(`${canceledCount} runs canceled.`);
+          }
           if (selectedRun && ids.includes(selectedRun.id)) await reloadSelectedRun();
           await loadRuns();
         } catch (error) {
@@ -1035,8 +1065,28 @@ export function CrawlFrontierConsole() {
       onOk: async () => {
         setSaving(true);
         try {
-          await apiClient.post("admin/crawl-frontier/nodes/retry", { ids });
-          messageApi.success(`${ids.length} nodes re-queued.`);
+          const response = await apiClient.post<BulkRetryNodesResponse>(
+            "admin/crawl-frontier/nodes/retry",
+            { ids },
+          );
+          const retriedCount =
+            typeof response.data.retriedCount === "number"
+              ? response.data.retriedCount
+              : response.data.retriedIds.length;
+          const skippedCount = response.data.skippedCount ?? response.data.skippedIds?.length ?? 0;
+          if (retriedCount > 0 && skippedCount > 0) {
+            messageApi.warning(
+              `${retriedCount} nodes re-queued, ${skippedCount} skipped because their runs are missing crawlTaskId.`,
+            );
+          } else if (retriedCount > 0) {
+            messageApi.success(`${retriedCount} nodes re-queued.`);
+          } else if (skippedCount > 0) {
+            messageApi.warning(
+              `No nodes were re-queued. ${skippedCount} selected nodes belong to runs missing crawlTaskId.`,
+            );
+          } else {
+            messageApi.warning("No crawl frontier nodes were re-queued.");
+          }
           await loadRuns();
           await reloadSelectedRun();
         } catch (error) {
@@ -1746,7 +1796,12 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Avg confidence">{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}</Descriptions.Item>
                       </Descriptions>
                       <Space wrap size={[4, 4]} style={{ marginTop: 12 }}>{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="gold">{flag}</Tag>)}</Space>
-                      <Space style={{ marginTop: 12 }}><Button href={buildLlmLogsHref({ feature: "crawl_frontier_judge", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View judge logs</Button><Button href={buildLlmLogsHref({ feature: "crawl_frontier_learn", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View learn logs</Button></Space>
+                      {canViewLogLinks ? (
+                        <Space style={{ marginTop: 12 }}>
+                          <Button href={buildLlmLogsHref({ feature: "crawl_frontier_judge", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View judge logs</Button>
+                          <Button href={buildLlmLogsHref({ feature: "crawl_frontier_learn", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View learn logs</Button>
+                        </Space>
+                      ) : null}
                     </Card>
                     <Card size="small" title="Shadow profile">
                       <Descriptions size="small" column={2} bordered>
@@ -1910,13 +1965,18 @@ export function CrawlFrontierConsole() {
                 </Space>
               ) : <Empty description="No article or processed article linked to this node." />}
             </Card>
-            <Card size="small" title="Related LLM logs">
-              <Space wrap>
-                {selectedNode.llmLogFilters?.judge ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.judge)}>Judge logs</Button> : null}
-                {selectedNode.llmLogFilters?.learn ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.learn)}>Learn logs</Button> : null}
-                {selectedNode.llmLogFilters?.repair ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.repair)}>Repair logs</Button> : null}
-              </Space>
-            </Card>
+            {canViewLogLinks &&
+            (selectedNode.llmLogFilters?.judge ||
+              selectedNode.llmLogFilters?.learn ||
+              selectedNode.llmLogFilters?.repair) ? (
+              <Card size="small" title="Related LLM logs">
+                <Space wrap>
+                  {selectedNode.llmLogFilters?.judge ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.judge)}>Judge logs</Button> : null}
+                  {selectedNode.llmLogFilters?.learn ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.learn)}>Learn logs</Button> : null}
+                  {selectedNode.llmLogFilters?.repair ? <Button href={buildLlmLogsHref(selectedNode.llmLogFilters.repair)}>Repair logs</Button> : null}
+                </Space>
+              </Card>
+            ) : null}
             <Card size="small" title="Metadata">
               <Collapse items={[
                 { key: "nodeMetadata", label: "Node metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.metadata)}</Typography.Paragraph> },

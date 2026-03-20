@@ -36,16 +36,16 @@ import { VectorClientService } from "../vector/vector-client.service";
 import { LiteLlmService } from "./litellm.service";
 import { NewsClassifierService } from "./news-classifier.service";
 import {
+  inferNewsContentType,
+  normalizeNewsContentType,
+} from "./news-content-type";
+import {
   buildNewsDedupeSystemPrompt,
   buildNewsDedupeUserPrompt,
   NEWS_DEDUPE_RESPONSE_FORMAT,
   NewsDedupeJudgeSchema,
 } from "./news-dedupe-llm";
 import { NewsDedupeSettingsService } from "./news-dedupe-settings.service";
-import {
-  inferNewsContentType,
-  normalizeNewsContentType,
-} from "./news-content-type";
 import { NewsPipelineConfigService } from "./news-pipeline.config";
 import {
   CleanedNewsSchema,
@@ -233,6 +233,136 @@ export class NewsPipelineService implements OnModuleDestroy {
         this.enqueueOutboxDelivery(event);
       },
     );
+  }
+
+  async backfillProcessedItemClassificationSignals(
+    orgId: string,
+    inputs: {
+      processedItemId: string;
+      sourceUrl?: string | null;
+      sourceLabel?: string | null;
+      sourceId?: string | null;
+    }[],
+  ): Promise<{ updatedCount: number; skippedCount: number }> {
+    if (!this.classifier || inputs.length === 0) {
+      return { updatedCount: 0, skippedCount: inputs.length };
+    }
+
+    const contextByProcessedItemId = new Map<
+      string,
+      {
+        processedItemId: string;
+        sourceUrl: string | null;
+        sourceLabel: string | null;
+        sourceId: string | null;
+      }
+    >();
+    for (const input of inputs) {
+      const processedItemId = this.normalizeProcessedItemRef(input.processedItemId);
+      if (!processedItemId || contextByProcessedItemId.has(processedItemId)) {
+        continue;
+      }
+      contextByProcessedItemId.set(processedItemId, {
+        processedItemId,
+        sourceUrl:
+          typeof input.sourceUrl === "string" && input.sourceUrl.trim().length > 0
+            ? input.sourceUrl.trim()
+            : null,
+        sourceLabel:
+          typeof input.sourceLabel === "string" && input.sourceLabel.trim().length > 0
+            ? input.sourceLabel.trim()
+            : null,
+        sourceId:
+          typeof input.sourceId === "string" && input.sourceId.trim().length > 0
+            ? input.sourceId.trim()
+            : null,
+      });
+    }
+
+    if (contextByProcessedItemId.size === 0) {
+      return { updatedCount: 0, skippedCount: inputs.length };
+    }
+
+    const docs = await ProcessedItemModel.find({
+      _id: { $in: Array.from(contextByProcessedItemId.keys()) },
+      orgId,
+      status: "completed",
+    })
+      .select({ _id: 1, result: 1 })
+      .lean()
+      .exec();
+
+    let updatedCount = 0;
+    let skippedCount =
+      inputs.length -
+      contextByProcessedItemId.size +
+      Math.max(0, contextByProcessedItemId.size - docs.length);
+
+    for (const doc of docs) {
+      const processedItemId = this.normalizeProcessedItemRef(
+        (() => {
+          const rawId = (doc as { _id?: unknown })._id;
+          if (typeof rawId === "string") {
+            return rawId;
+          }
+          if (rawId && typeof rawId === "object" && "toString" in rawId) {
+            return String((rawId as { toString: () => string }).toString());
+          }
+          return null;
+        })(),
+      );
+      if (!processedItemId) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const cleaned = this.parseStoredCleanedNewsResult(
+        (doc as { result?: unknown }).result,
+      );
+      if (!cleaned) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const hasContentType = Boolean(normalizeNewsContentType(cleaned.content_type));
+      const hasCategoryPath = this.normalizeStoredCategoryPath(cleaned.category_path);
+      const hasCategoryMethod = this.normalizeStoredCategoryMethod(
+        cleaned.category_method,
+      );
+      if (hasContentType && (hasCategoryPath || hasCategoryMethod)) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const context = contextByProcessedItemId.get(processedItemId);
+      const sourceLabel =
+        context?.sourceLabel ??
+        (typeof cleaned.source === "string" && cleaned.source.trim().length > 0
+          ? cleaned.source.trim()
+          : null);
+      const resolvedCleaned = this.resolveStoredContentTypeForBackfill(
+        cleaned,
+        context?.sourceUrl ?? null,
+        sourceLabel,
+      );
+      const classification = await this.classifier.classify(orgId, resolvedCleaned, {
+        sourceId: context?.sourceId ?? null,
+        sourceUrl: context?.sourceUrl ?? null,
+        sourceLabel,
+      });
+      const updated = this.classifier.applyToCleanedNews(
+        resolvedCleaned,
+        classification,
+      );
+
+      await ProcessedItemModel.updateOne(
+        { _id: processedItemId, orgId },
+        { $set: { result: updated } },
+      );
+      updatedCount += 1;
+    }
+
+    return { updatedCount, skippedCount };
   }
 
   private buildCrawlTaskOptions(payload: NormalizedNewsPayload): Record<string, unknown> {
@@ -1403,7 +1533,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     const raw = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["rawMarkdown", "raw_markdown"]));
     const fit = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["fitMarkdown", "fit_markdown"]));
 
-    let current = primary ?? citations ?? raw ?? fit;
+    const current = primary ?? citations ?? raw ?? fit;
     if (!current) {
       return undefined;
     }
@@ -2743,6 +2873,53 @@ export class NewsPipelineService implements OnModuleDestroy {
       ...cleaned,
       content_type: resolved,
     };
+  }
+
+  private resolveStoredContentTypeForBackfill(
+    cleaned: CleanedNews,
+    sourceUrl: string | null,
+    sourceLabel: string | null,
+  ): CleanedNews {
+    const normalized = normalizeNewsContentType(cleaned.content_type);
+    const resolved =
+      normalized ??
+      inferNewsContentType({
+        title: cleaned.title,
+        summary: cleaned.summary,
+        source: cleaned.source ?? sourceLabel,
+        url: sourceUrl,
+        topics: cleaned.topics,
+        tags: [],
+      });
+    return {
+      ...cleaned,
+      content_type: resolved,
+    };
+  }
+
+  private parseStoredCleanedNewsResult(value: unknown): CleanedNews | null {
+    const parsed = CleanedNewsSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
+  }
+
+  private normalizeStoredCategoryPath(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/\/+/g, "/")
+      .replace(/^\/+|\/+$/g, "");
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizeStoredCategoryMethod(value: unknown): string | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
   }
 
   private async createOutboxEntry(options: {

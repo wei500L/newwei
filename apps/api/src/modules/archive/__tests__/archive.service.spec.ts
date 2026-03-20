@@ -7,6 +7,13 @@ jest.mock("@modular/utils", () => ({
   }),
 }));
 
+jest.mock("@modular/mongo", () => ({
+  ProcessedItemModel: {
+    find: jest.fn(),
+  },
+}));
+
+import { ProcessedItemModel } from "@modular/mongo";
 import type { ProcessedArticleStatus } from "@prisma/client";
 
 import { ArchiveService } from "../archive.service";
@@ -39,9 +46,9 @@ interface ArchiveRowFixture {
     sourceLabel: string | null;
     crawlAt: Date;
   };
-  newsEventItems: Array<{
+  newsEventItems: {
     eventId: string;
-  }>;
+  }[];
   status?: ProcessedArticleStatus;
 }
 
@@ -78,6 +85,12 @@ const makeArchivePreparationQueueServiceMock = () => ({
   ensureDigestCoverage: jest.fn().mockResolvedValue(undefined),
   ensureCalendarCoverage: jest.fn().mockResolvedValue(undefined),
   getDigestStatus: jest.fn().mockResolvedValue(null),
+});
+
+const makeMongoFindQuery = (docs: unknown[]) => ({
+  select: jest.fn().mockReturnThis(),
+  lean: jest.fn().mockReturnThis(),
+  exec: jest.fn().mockResolvedValue(docs),
 });
 
 describe("ArchiveService", () => {
@@ -242,6 +255,11 @@ describe("ArchiveService", () => {
         rerankModel: "rerank-model",
       })),
     ),
+  });
+
+  beforeEach(() => {
+    (ProcessedItemModel.find as jest.Mock).mockReset();
+    (ProcessedItemModel.find as jest.Mock).mockReturnValue(makeMongoFindQuery([]));
   });
 
   it("throws when embedding model is unavailable", async () => {
@@ -912,6 +930,122 @@ describe("ArchiveService", () => {
     ).toHaveLength(1);
   });
 
+  it("filters blog and opinion items while keeping news and intelligence items", async () => {
+    const blogRow = makeRow("row-blog", "2025-05-28T08:00:00.000Z");
+    blogRow.article.url = "https://medium.com/@example/archive-blog";
+    blogRow.source = "Newsletter Desk";
+    blogRow.cleanedMarkdownRef = "processed-blog";
+
+    const opinionRow = makeRow("row-opinion", "2025-05-28T07:00:00.000Z");
+    opinionRow.cleanedMarkdownRef = "processed-opinion";
+
+    const newsRow = makeRow("row-news", "2025-05-28T06:00:00.000Z");
+    newsRow.cleanedMarkdownRef = "processed-news";
+
+    const intelRow = makeRow("row-intel", "2025-05-28T05:00:00.000Z");
+    intelRow.cleanedMarkdownRef = "processed-intel";
+
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(
+      makeMongoFindQuery([
+        {
+          _id: "processed-blog",
+          result: {
+            cleaned_markdown: "blog",
+            content_type: "news_fact",
+            category_method: "hybrid",
+          },
+        },
+        {
+          _id: "processed-opinion",
+          result: {
+            cleaned_markdown: "opinion",
+            content_type: "opinion",
+            category_method: "hybrid",
+          },
+        },
+        {
+          _id: "processed-news",
+          result: {
+            cleaned_markdown: "news",
+            content_type: "news_fact",
+            category_path: "tech/ai/model-release",
+            category_method: "hybrid",
+          },
+        },
+        {
+          _id: "processed-intel",
+          result: {
+            cleaned_markdown: "intel",
+            content_type: "analysis",
+            category_path: "politics/geopolitics/conflict",
+            category_method: "hybrid",
+          },
+        },
+      ]),
+    );
+
+    const prisma = {
+      processedArticle: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([blogRow, opinionRow, newsRow, intelRow])
+          .mockResolvedValueOnce([]),
+      },
+      newsEvent: { findFirst: jest.fn() },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = makeArchiveClassificationServiceMock();
+    const sourcePolicyService = {
+      getPolicy: jest.fn().mockResolvedValue({
+        authoritativeDomains: [],
+        authoritativeLabels: [],
+        blogDomains: ["medium.com"],
+        blogLabels: ["newsletter"],
+      }),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
+      sourcePolicyService as any,
+    );
+
+    const result = await service.getDigest("org-1", {
+      anchorDate: new Date("2025-05-29T00:00:00.000Z"),
+      region: ArchiveRegion.APAC,
+      weights: [
+        ArchiveWeight.ONE,
+        ArchiveWeight.TWO,
+        ArchiveWeight.THREE,
+        ArchiveWeight.FOUR,
+        ArchiveWeight.FIVE,
+      ],
+      limitPerVertical: 20,
+    });
+
+    const eastSeaItems =
+      result.groups.find((group) => group.vertical === ArchiveVertical.EAST_SEA)
+        ?.items ?? [];
+
+    expect(result.totalCount).toBe(2);
+    expect(eastSeaItems.map((item) => item.processedArticleId)).toEqual([
+      "row-news",
+      "row-intel",
+    ]);
+    expect(result.preparation.state).toBe(ArchivePreparationState.READY);
+  });
+
   it("surfaces failed preparation when digest enqueue does not succeed", async () => {
     const row = makeRow("row-missing", "2025-05-28T08:00:00.000Z");
     const prisma = {
@@ -968,6 +1102,67 @@ describe("ArchiveService", () => {
     );
     expect(result.preparation.state).toBe(ArchivePreparationState.FAILED);
     expect(result.preparation.errorMessage).toBe("BullMQ unavailable");
+  });
+
+  it("returns null for archive detail when the item is filtered from archive display", async () => {
+    const row = makeRow("row-hidden", "2025-05-28T08:00:00.000Z");
+    row.cleanedMarkdownRef = "processed-hidden";
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(
+      makeMongoFindQuery([
+        {
+          _id: "processed-hidden",
+          result: {
+            cleaned_markdown: "opinion",
+            content_type: "opinion",
+            category_method: "hybrid",
+          },
+        },
+      ]),
+    );
+
+    const prisma = {
+      processedArticle: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...row,
+          article: {
+            id: row.article.id,
+            url: row.article.url,
+            sourceLabel: row.article.sourceLabel,
+            crawlAt: row.article.crawlAt,
+          },
+        }),
+      },
+      newsEvent: {
+        findFirst: jest.fn(),
+      },
+    };
+    const cache = makeCacheMock();
+    const liteLlm = {
+      getEmbeddingModel: jest.fn(),
+      embedding: jest.fn(),
+      rerank: jest.fn(),
+    };
+    const vectorClient = { searchBestEffort: jest.fn() };
+    const classifier = makeClassifierMock();
+    const archiveClassification = {
+      getCachedHybridBatchWithStaleFallback: jest.fn(),
+    };
+    const service = new ArchiveService(
+      prisma as any,
+      cache as any,
+      liteLlm as any,
+      vectorClient as any,
+      classifier as any,
+      archiveClassification as any,
+      makeArchivePreparationQueueServiceMock() as any,
+    );
+
+    const result = await service.getDetail("org-1", row.id);
+
+    expect(result).toBeNull();
+    expect(
+      archiveClassification.getCachedHybridBatchWithStaleFallback,
+    ).not.toHaveBeenCalled();
   });
 
   it("returns classification detail in archive detail when cached classification exists", async () => {
