@@ -244,6 +244,9 @@ export class CrawlSiteProfileService {
         matchHost: payload.matchHost,
         isActive: payload.isActive,
         executionMode: payload.executionMode,
+        workflowId: payload.workflowId,
+        workflowVersionId: payload.workflowVersionId,
+        workflowBindingMode: payload.workflowBindingMode,
         config: toPrismaJsonValue(payload.config),
         createdById: actorId,
         updatedById: actorId,
@@ -257,6 +260,9 @@ export class CrawlSiteProfileService {
       matchHost: created.matchHost,
       isActive: created.isActive,
       executionMode: created.executionMode,
+      workflowId: created.workflowId,
+      workflowVersionId: created.workflowVersionId,
+      workflowBindingMode: created.workflowBindingMode,
       config: payload.config,
     });
     return this.mapProfile(created);
@@ -297,6 +303,19 @@ export class CrawlSiteProfileService {
     if (input.executionMode !== undefined) {
       data.executionMode = input.executionMode;
     }
+    if (input.workflowId !== undefined) {
+      data.workflow = input.workflowId
+        ? { connect: { id: input.workflowId.trim() } }
+        : { disconnect: true };
+    }
+    if (input.workflowVersionId !== undefined) {
+      data.workflowVersion = input.workflowVersionId
+        ? { connect: { id: input.workflowVersionId.trim() } }
+        : { disconnect: true };
+    }
+    if (input.workflowBindingMode !== undefined) {
+      data.workflowBindingMode = input.workflowBindingMode;
+    }
     if (input.config !== undefined) {
       const config = normalizeCrawlSiteProfileConfig(input.config);
       data.config = toPrismaJsonValue(config);
@@ -318,6 +337,9 @@ export class CrawlSiteProfileService {
       matchHost: updated.matchHost,
       isActive: updated.isActive,
       executionMode: updated.executionMode,
+      workflowId: updated.workflowId,
+      workflowVersionId: updated.workflowVersionId,
+      workflowBindingMode: updated.workflowBindingMode,
       config:
         input.config !== undefined
           ? normalizeCrawlSiteProfileConfig(input.config)
@@ -362,6 +384,9 @@ export class CrawlSiteProfileService {
         matchHost: snapshot.matchHost,
         isActive: snapshot.isActive,
         executionMode: snapshot.executionMode,
+        workflowId: snapshot.workflowId,
+        workflowVersionId: snapshot.workflowVersionId,
+        workflowBindingMode: snapshot.workflowBindingMode,
         config: toPrismaJsonValue(normalizeCrawlSiteProfileConfig(snapshot.config)),
         version: { increment: 1 },
         updatedById: actorId,
@@ -376,6 +401,9 @@ export class CrawlSiteProfileService {
       matchHost: updated.matchHost,
       isActive: updated.isActive,
       executionMode: updated.executionMode,
+      workflowId: updated.workflowId,
+      workflowVersionId: updated.workflowVersionId,
+      workflowBindingMode: updated.workflowBindingMode,
       config: normalizeCrawlSiteProfileConfig(snapshot.config),
     });
 
@@ -418,6 +446,9 @@ export class CrawlSiteProfileService {
       isActive: typeof input.isActive === "boolean" ? input.isActive : true,
       executionMode:
         (input.executionMode as CrawlSiteExecutionMode | undefined) ?? "layered",
+      workflowId: input.workflowId?.trim() || null,
+      workflowVersionId: input.workflowVersionId?.trim() || null,
+      workflowBindingMode: input.workflowBindingMode ?? "published",
       version: 0,
       config: normalizeCrawlSiteProfileConfig(input.config),
       createdById: "draft",
@@ -452,6 +483,9 @@ export class CrawlSiteProfileService {
       matchHost: string;
       isActive: boolean;
       executionMode: CrawlSiteExecutionMode;
+      workflowId?: string | null;
+      workflowVersionId?: string | null;
+      workflowBindingMode?: "published" | "pinned";
       config: CrawlSiteProfileConfig;
     },
   ) {
@@ -465,6 +499,9 @@ export class CrawlSiteProfileService {
         matchHost: input.matchHost,
         isActive: input.isActive,
         executionMode: input.executionMode,
+        workflowId: input.workflowId,
+        workflowVersionId: input.workflowVersionId,
+        workflowBindingMode: input.workflowBindingMode ?? "published",
         config: toPrismaJsonValue(input.config),
         createdById: actorId,
       },
@@ -492,6 +529,18 @@ export class CrawlSiteProfileService {
       executionMode:
         (input.executionMode as CrawlSiteExecutionMode | undefined) ??
         "layered",
+      workflowId:
+        "workflowId" in input && input.workflowId !== undefined
+          ? input.workflowId?.trim() || null
+          : undefined,
+      workflowVersionId:
+        "workflowVersionId" in input && input.workflowVersionId !== undefined
+          ? input.workflowVersionId?.trim() || null
+          : undefined,
+      workflowBindingMode:
+        "workflowBindingMode" in input && input.workflowBindingMode !== undefined
+          ? input.workflowBindingMode
+          : "published",
       config: normalizeCrawlSiteProfileConfig(input.config ?? {}),
     };
   }
@@ -612,6 +661,9 @@ export class CrawlSiteProfileService {
       matchHost: string;
       isActive: boolean;
       executionMode: CrawlSiteExecutionMode;
+      workflowId?: string | null;
+      workflowVersionId?: string | null;
+      workflowBindingMode?: "published" | "pinned";
       version: number;
       config: Prisma.JsonValue;
       createdById: string;

@@ -77,6 +77,9 @@ interface NewsSourceRecord {
   siteType: string;
   language?: string | null;
   crawlTemplateId?: string | null;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  workflowBindingMode?: "published" | "pinned";
   group?: string | null;
   frequencySeconds: number;
   priority: number;
@@ -361,6 +364,9 @@ interface NewsSourceFormValues {
   language?: string;
   group?: string[] | null;
   crawlTemplateId?: string;
+  workflowId?: string;
+  workflowVersionId?: string;
+  workflowBindingMode?: "published" | "pinned";
   frequencySeconds: number;
   priority: number;
   isActive: boolean;
@@ -438,6 +444,7 @@ interface NewsSourceFormValues {
 
 const NEWS_SOURCE_CREATE_INITIAL_VALUES: Partial<NewsSourceFormValues> = {
   siteType: "general",
+  workflowBindingMode: "published",
   frequencySeconds: 3600,
   priority: 0,
   isActive: true,
@@ -948,6 +955,9 @@ export function NewsSourcesContent() {
   const [creatingFromTaskDrawer, setCreatingFromTaskDrawer] = useState(false);
   const [sources, setSources] = useState<NewsSourceRecord[]>([]);
   const [templates, setTemplates] = useState<CrawlTemplateRecord[]>([]);
+  const [workflowOptions, setWorkflowOptions] = useState<
+    Array<{ label: string; value: string }>
+  >([]);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
@@ -1313,6 +1323,22 @@ export function NewsSourcesContent() {
     }
   }, [apiClient]);
 
+  const loadWorkflowOptions = useCallback(async () => {
+    try {
+      const response = await apiClient.get<Array<{ id: string; name: string }>>(
+        "admin/crawl-frontier/workflows",
+      );
+      setWorkflowOptions(
+        (response.data ?? []).map((workflow) => ({
+          label: workflow.name,
+          value: workflow.id,
+        })),
+      );
+    } catch (error) {
+      captureClientError("Failed to load crawl strategy workflows", error);
+    }
+  }, [apiClient]);
+
   const loadGroups = useCallback(async () => {
     try {
       const response = await apiClient.get<string[]>(
@@ -1471,6 +1497,7 @@ export function NewsSourcesContent() {
     if (canView) {
       void refreshAll();
       void loadTemplates();
+      void loadWorkflowOptions();
       void loadGroups();
       if (canManage) {
         void loadSeedSchedulerSettings();
@@ -1480,6 +1507,7 @@ export function NewsSourcesContent() {
     canManage,
     canView,
     loadTemplates,
+    loadWorkflowOptions,
     loadGroups,
     loadSeedSchedulerSettings,
     refreshAll,
@@ -2172,6 +2200,9 @@ export function NewsSourcesContent() {
       language: source.language ?? "",
       group: source.group ? [source.group] : null,
       crawlTemplateId: source.crawlTemplateId ?? undefined,
+      workflowId: source.workflowId ?? undefined,
+      workflowVersionId: source.workflowVersionId ?? undefined,
+      workflowBindingMode: source.workflowBindingMode ?? "published",
       frequencySeconds: source.frequencySeconds,
       priority: source.priority,
       isActive: source.isActive,
@@ -2790,6 +2821,11 @@ export function NewsSourcesContent() {
         crawlTemplateId: values.crawlTemplateId?.trim()
           ? values.crawlTemplateId.trim()
           : null,
+        workflowId: values.workflowId?.trim() ? values.workflowId.trim() : null,
+        workflowVersionId: values.workflowVersionId?.trim()
+          ? values.workflowVersionId.trim()
+          : null,
+        workflowBindingMode: values.workflowBindingMode ?? "published",
         frequencySeconds: values.frequencySeconds,
         priority: values.priority,
         isActive: values.isActive,
@@ -5649,6 +5685,40 @@ export function NewsSourcesContent() {
               />
             </Form.Item>
           ) : null}
+          <Form.Item
+            name="workflowId"
+            label={t("newsSources.fields.workflow", {
+              defaultValue: "Workflow",
+            })}
+          >
+            <Select
+              showSearch
+              allowClear
+              options={workflowOptions}
+              placeholder={t("common.none", { defaultValue: "None" })}
+            />
+          </Form.Item>
+          <Form.Item
+            name="workflowBindingMode"
+            label={t("newsSources.fields.workflowMode", {
+              defaultValue: "Workflow version mode",
+            })}
+          >
+            <Select
+              options={[
+                { label: "published", value: "published" },
+                { label: "pinned", value: "pinned" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="workflowVersionId"
+            label={t("newsSources.fields.workflowVersion", {
+              defaultValue: "Pinned workflow version",
+            })}
+          >
+            <Input placeholder="workflow-version-id" />
+          </Form.Item>
           <Form.Item
             name="group"
             label={t("newsSources.fields.group", { defaultValue: "Group" })}

@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsObject,
@@ -14,6 +15,8 @@ import {
   MaxLength,
   Min
 } from "class-validator";
+
+const WORKFLOW_BINDING_MODES = ["published", "pinned"] as const;
 
 export class ListNewsSourceDto {
   @IsOptional()
@@ -50,6 +53,21 @@ export class CreateNewsSourceDto {
   @IsString()
   @MaxLength(191)
   crawlTemplateId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowVersionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(WORKFLOW_BINDING_MODES)
+  workflowBindingMode?: (typeof WORKFLOW_BINDING_MODES)[number];
 
   @IsOptional()
   @Type(() => Number)
@@ -104,6 +122,21 @@ export class UpdateNewsSourceDto {
   @IsString()
   @MaxLength(191)
   crawlTemplateId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowVersionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(WORKFLOW_BINDING_MODES)
+  workflowBindingMode?: (typeof WORKFLOW_BINDING_MODES)[number];
 
   @IsOptional()
   @Type(() => Number)

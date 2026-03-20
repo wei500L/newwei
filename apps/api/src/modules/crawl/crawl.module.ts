@@ -26,6 +26,10 @@ import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSettingsService } from "./crawl-settings.service";
 import { CrawlSiteProfileService } from "./crawl-site-profile.service";
+import { CrawlStrategyController } from "./crawl-strategy.controller";
+import { CrawlStrategyLegacyBridgeService } from "./crawl-strategy-legacy-bridge.service";
+import { CrawlStrategyRuntimeService } from "./crawl-strategy-runtime.service";
+import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
 import { CrawlTaskJanitorService } from "./crawl-task-janitor.service";
 import { CrawlTaskService } from "./crawl-task.service";
 import { CrawlTemplateController } from "./crawl-template.controller";
@@ -85,12 +89,16 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     NewsSourceController,
     CrawlTemplateController,
     CrawlFrontierController,
+    CrawlStrategyController,
     Crawl4aiQueueController,
     Crawl4aiQualityController
   ],
   providers: [
     CrawlSettingsService,
     CrawlSiteProfileService,
+    CrawlStrategyLegacyBridgeService,
+    CrawlStrategyWorkflowService,
+    CrawlStrategyRuntimeService,
     CrawlTaskService,
     CrawlTaskJanitorService,
     CrawlExecutionService,
@@ -269,6 +277,9 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
   exports: [
     CrawlSettingsService,
     CrawlSiteProfileService,
+    CrawlStrategyLegacyBridgeService,
+    CrawlStrategyWorkflowService,
+    CrawlStrategyRuntimeService,
     CrawlTaskService,
     CrawlExecutionService,
     CrawlFrontierLlmService,

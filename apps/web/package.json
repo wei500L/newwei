@@ -29,6 +29,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@modular/utils": "workspace:*",
     "@tanstack/react-query": "^5.51.0",
+    "@xyflow/react": "^12.10.1",
     "antd": "^5.19.0",
     "axios": "^1.6.8",
     "dayjs": "^1.11.13",

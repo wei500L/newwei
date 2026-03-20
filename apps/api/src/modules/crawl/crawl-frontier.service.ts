@@ -32,6 +32,7 @@ import {
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSiteProfileService } from "./crawl-site-profile.service";
+import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
 import {
   CrawlFrontierLlmService,
   type FrontierLlmCandidate,
@@ -265,6 +266,7 @@ export class CrawlFrontierService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly profiles: CrawlSiteProfileService,
+    private readonly strategyWorkflows: CrawlStrategyWorkflowService,
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
     private readonly queueService: CrawlQueueService,
@@ -482,9 +484,11 @@ export class CrawlFrontierService {
     input: CreateCrawlFrontierRunDto,
   ) {
     const seedUrl = this.normalizeUrl(input.seedUrl);
-    const profile = input.profileId
-      ? await this.profiles.getProfile(orgId, input.profileId)
-      : await this.profiles.findProfileForUrl(orgId, seedUrl);
+    const profile = await this.resolveEffectiveProfileForUrl({
+      orgId,
+      profileId: input.profileId,
+      seedUrl,
+    });
     if (!profile) {
       throw new BadRequestException(
         "No active crawl site profile matches the provided seed URL",
@@ -545,6 +549,31 @@ export class CrawlFrontierService {
     return this.getRun(orgId, runId);
   }
 
+  private async resolveEffectiveProfileForUrl(options: {
+    orgId: string;
+    profileId?: string | null;
+    seedUrl: string;
+  }) {
+    const baseProfile = options.profileId
+      ? await this.profiles.getProfile(options.orgId, options.profileId)
+      : await this.profiles.findProfileForUrl(options.orgId, options.seedUrl);
+    if (!baseProfile) {
+      return null;
+    }
+    const overlay = await this.strategyWorkflows.compileProfileOverlay({
+      orgId: options.orgId,
+      baseExecutionMode: baseProfile.executionMode,
+      baseConfig: baseProfile.config,
+      workflowId: baseProfile.workflowId,
+      workflowVersionId: baseProfile.workflowVersionId,
+      workflowBindingMode: baseProfile.workflowBindingMode,
+    });
+    return this.strategyWorkflows.applyProfileOverlay({
+      profile: baseProfile,
+      overlay,
+    });
+  }
+
   private async createRunFromProfile(options: {
     orgId: string;
     actorId: string;
@@ -571,6 +600,9 @@ export class CrawlFrontierService {
           frontier: true,
           frontierProfileId: options.profile.id,
           executionMode: options.executionMode,
+          workflowId: options.profile.workflowId ?? null,
+          workflowVersionId: options.profile.workflowVersionId ?? null,
+          workflowBindingMode: options.profile.workflowBindingMode ?? "published",
           urlQueryParamAllowlist: resolveQueryParamAllowlist(
             options.profile.config.urlQueryParamAllowlist,
           ),
@@ -615,6 +647,9 @@ export class CrawlFrontierService {
             (options.profile.config.allowedDomains?.length ?? 0) === 0
               ? "strict_hosts"
               : "registrable_domain"),
+          workflowId: options.profile.workflowId ?? null,
+          workflowVersionId: options.profile.workflowVersionId ?? null,
+          workflowBindingMode: options.profile.workflowBindingMode ?? "published",
           ...(options.runMetadata ?? {}),
         }),
       },
@@ -804,9 +839,11 @@ export class CrawlFrontierService {
       return { inserted: 0, skipped: 0 };
     }
 
-    const profile = node.run.profileId
-      ? await this.profiles.getProfile(orgId, node.run.profileId)
-      : await this.profiles.findProfileForUrl(orgId, node.run.seedUrl);
+    const profile = await this.resolveEffectiveProfileForUrl({
+      orgId,
+      profileId: node.run.profileId,
+      seedUrl: node.run.seedUrl,
+    });
     if (!profile) {
       throw new BadRequestException("Crawl frontier run cannot resolve site profile");
     }
@@ -936,9 +973,11 @@ export class CrawlFrontierService {
     }
 
     const mappedNode = this.mapNode(node);
-    const profile = node.run.profileId
-      ? await this.profiles.getProfile(orgId, node.run.profileId)
-      : await this.profiles.findProfileForUrl(orgId, node.run.seedUrl);
+    const profile = await this.resolveEffectiveProfileForUrl({
+      orgId,
+      profileId: node.run.profileId,
+      seedUrl: node.run.seedUrl,
+    });
     if (!profile) {
       throw new BadRequestException("Crawl frontier run cannot resolve site profile");
     }

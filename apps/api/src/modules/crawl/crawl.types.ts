@@ -215,6 +215,9 @@ export interface CrawlSiteProfileRecord {
   matchHost: string;
   isActive: boolean;
   executionMode: CrawlSiteExecutionMode;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  workflowBindingMode?: "published" | "pinned";
   version: number;
   config: CrawlSiteProfileConfig;
   createdById: string;
@@ -234,6 +237,9 @@ export interface CrawlSiteProfileVersionRecord {
   matchHost: string;
   isActive: boolean;
   executionMode: CrawlSiteExecutionMode;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  workflowBindingMode?: "published" | "pinned";
   config: CrawlSiteProfileConfig;
   createdById: string;
   createdAt: Date;

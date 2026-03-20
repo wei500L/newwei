@@ -31,6 +31,7 @@ const SEED_STRATEGIES = [
   "frontier_first",
   "frontier_only",
 ] as const;
+const WORKFLOW_BINDING_MODES = ["published", "pinned"] as const;
 
 export class ListCrawlSiteProfileDto {
   @IsOptional()
@@ -65,6 +66,21 @@ export class CreateCrawlSiteProfileDto {
   @IsIn(EXECUTION_MODES)
   executionMode?: (typeof EXECUTION_MODES)[number];
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowVersionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(WORKFLOW_BINDING_MODES)
+  workflowBindingMode?: (typeof WORKFLOW_BINDING_MODES)[number];
+
   @IsObject()
   config!: Record<string, unknown>;
 }
@@ -96,6 +112,21 @@ export class UpdateCrawlSiteProfileDto {
   @IsString()
   @IsIn(EXECUTION_MODES)
   executionMode?: (typeof EXECUTION_MODES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowVersionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(WORKFLOW_BINDING_MODES)
+  workflowBindingMode?: (typeof WORKFLOW_BINDING_MODES)[number];
 
   @IsOptional()
   @IsObject()
@@ -136,6 +167,21 @@ export class PreviewCrawlSiteProfileDto {
   @IsString()
   @IsIn(EXECUTION_MODES)
   executionMode?: (typeof EXECUTION_MODES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  workflowVersionId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(WORKFLOW_BINDING_MODES)
+  workflowBindingMode?: (typeof WORKFLOW_BINDING_MODES)[number];
 
   @IsObject()
   config!: Record<string, unknown>;

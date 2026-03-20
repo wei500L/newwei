@@ -36,6 +36,7 @@ import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 
 import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
+import { CrawlWorkflowStudio } from "./crawl-workflow-studio";
 
 type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 type CrawlFrontierRunStatus =
@@ -63,6 +64,9 @@ interface CrawlSiteProfileRecord {
   matchHost: string;
   isActive: boolean;
   executionMode: CrawlSiteExecutionMode;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  workflowBindingMode?: "published" | "pinned";
   version: number;
   config: AnyRecord;
   updatedAt: string;
@@ -251,6 +255,9 @@ interface ProfileFormValues {
   matchHost: string;
   isActive: boolean;
   executionMode: CrawlSiteExecutionMode;
+  workflowId?: string;
+  workflowVersionId?: string;
+  workflowBindingMode?: "published" | "pinned";
   config: Record<string, any>;
   configJson: string;
   previewUrl?: string;
@@ -657,6 +664,7 @@ export function CrawlFrontierConsole() {
   const [loadingNodeDetail, setLoadingNodeDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profiles, setProfiles] = useState<CrawlSiteProfileRecord[]>([]);
+  const [workflowOptions, setWorkflowOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [runs, setRuns] = useState<CrawlFrontierRunRecord[]>([]);
   const [selectedRun, setSelectedRun] = useState<CrawlFrontierRunDetail | null>(null);
   const [selectedNode, setSelectedNode] = useState<CrawlFrontierNodeDetail | null>(null);
@@ -738,6 +746,23 @@ export function CrawlFrontierConsole() {
     }
   }, [apiClient, canView, messageApi, t]);
 
+  const loadWorkflowOptions = useCallback(async () => {
+    if (!canView) return;
+    try {
+      const response = await apiClient.get<Array<{ id: string; name: string }>>(
+        "admin/crawl-frontier/workflows",
+      );
+      setWorkflowOptions(
+        (response.data ?? []).map((workflow) => ({
+          label: workflow.name,
+          value: workflow.id,
+        })),
+      );
+    } catch (error) {
+      captureClientError("Failed to load crawl strategy workflows", error);
+    }
+  }, [apiClient, canView]);
+
   const loadRuns = useCallback(async () => {
     if (!canView) return;
     setLoadingRuns(true);
@@ -778,6 +803,11 @@ export function CrawlFrontierConsole() {
 
   useEffect(() => {
     if (!canView) return;
+    void loadWorkflowOptions();
+  }, [canView, loadWorkflowOptions]);
+
+  useEffect(() => {
+    if (!canView) return;
     void loadRuns();
   }, [canView, loadRuns]);
 
@@ -790,6 +820,9 @@ export function CrawlFrontierConsole() {
         matchHost: profile?.matchHost ?? "",
         isActive: profile?.isActive ?? true,
         executionMode: profile?.executionMode ?? "layered",
+        workflowId: profile?.workflowId ?? undefined,
+        workflowVersionId: profile?.workflowVersionId ?? undefined,
+        workflowBindingMode: profile?.workflowBindingMode ?? "published",
         config,
         configJson: stringifyJson(config),
         previewUrl: "",
@@ -864,6 +897,9 @@ export function CrawlFrontierConsole() {
         matchHost,
         isActive: Boolean(profileForm.getFieldValue("isActive")),
         executionMode: profileForm.getFieldValue("executionMode") ?? "layered",
+        workflowId: profileForm.getFieldValue("workflowId") ?? undefined,
+        workflowVersionId: profileForm.getFieldValue("workflowVersionId") ?? undefined,
+        workflowBindingMode: profileForm.getFieldValue("workflowBindingMode") ?? "published",
         config: resolvedProfileConfig.config,
       });
       setProfileMatchPreview(response.data ?? null);
@@ -883,6 +919,9 @@ export function CrawlFrontierConsole() {
         matchHost: values.matchHost.trim(),
         isActive: values.isActive,
         executionMode: values.executionMode,
+        workflowId: values.workflowId || undefined,
+        workflowVersionId: values.workflowVersionId || undefined,
+        workflowBindingMode: values.workflowBindingMode ?? "published",
         config: profileRawMode
           ? parseJsonObject(values.configJson, "config")
           : mergeProfileConfigDefaults(asRecord(values.config)),
@@ -1403,6 +1442,11 @@ export function CrawlFrontierConsole() {
             ),
           },
           {
+            key: "workflow",
+            label: "Workflow",
+            children: <CrawlWorkflowStudio canManage={canManage} />,
+          },
+          {
             key: "runs",
             label: "Runs",
             children: (
@@ -1476,6 +1520,15 @@ export function CrawlFrontierConsole() {
                       <Card size="small" title="Status">
                         <Form.Item name="executionMode" label="Execution mode"><Select disabled={profileRawMode} options={["layered", "native", "hybrid"].map((value) => ({ label: value, value }))} /></Form.Item>
                         <Form.Item name="isActive" valuePropName="checked" label="Active"><Switch disabled={profileRawMode} /></Form.Item>
+                        <Form.Item name="workflowId" label="Workflow binding">
+                          <Select allowClear disabled={profileRawMode} options={workflowOptions} placeholder="Optional workflow" />
+                        </Form.Item>
+                        <Form.Item name="workflowBindingMode" label="Workflow version mode">
+                          <Select disabled={profileRawMode} options={[{ label: "published", value: "published" }, { label: "pinned", value: "pinned" }]} />
+                        </Form.Item>
+                        <Form.Item name="workflowVersionId" label="Pinned workflow version">
+                          <Input disabled={profileRawMode} placeholder="workflow-version-id" />
+                        </Form.Item>
                         <Form.Item name={["config", "sourceTier"]} label="Source tier"><Select disabled={profileRawMode} options={["tier1", "tier2", "tier3"].map((value) => ({ label: value, value }))} /></Form.Item>
                       </Card>
                     </Col>

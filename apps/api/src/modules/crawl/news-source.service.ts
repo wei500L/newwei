@@ -20,6 +20,7 @@ import {
   type CrawlDiscoveryRssNoBodyPolicy,
   type CrawlDiscoveryTimestampSource,
 } from "./crawl-metadata.service";
+import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
 import {
   deepDiscoveryFailureStateCacheKey,
   deepDiscoveryFailureStatsCacheKey,
@@ -132,6 +133,7 @@ export class NewsSourceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
+    private readonly workflows: CrawlStrategyWorkflowService,
     private readonly env: EnvService,
     private readonly cache: CacheService,
   ) {}
@@ -439,6 +441,16 @@ export class NewsSourceService {
     if (crawlTemplateId) {
       await this.assertTemplateInOrg(orgId, crawlTemplateId);
     }
+    const workflowId = this.normalizeOptionalNullableString(input.workflowId);
+    const workflowVersionId = this.normalizeOptionalNullableString(
+      input.workflowVersionId,
+    );
+    if (workflowId) {
+      await this.assertWorkflowInOrg(orgId, workflowId);
+    }
+    if (workflowVersionId) {
+      await this.assertWorkflowVersionInOrg(orgId, workflowVersionId);
+    }
     const config = this.normalizeConfig(input.config);
     const isActive = input.isActive ?? true;
     const nextRunAt = isActive ? new Date() : null;
@@ -452,6 +464,9 @@ export class NewsSourceService {
           siteType: input.siteType ?? NewsSourceType.general,
           language,
           crawlTemplateId,
+          workflowId,
+          workflowVersionId,
+          workflowBindingMode: input.workflowBindingMode ?? "published",
           frequencySeconds: input.frequencySeconds,
           priority: input.priority,
           isActive,
@@ -506,6 +521,29 @@ export class NewsSourceService {
       data.crawlTemplate = crawlTemplateId
         ? { connect: { id: crawlTemplateId } }
         : { disconnect: true };
+    }
+    if (input.workflowId !== undefined) {
+      const workflowId = this.normalizeOptionalNullableString(input.workflowId);
+      if (workflowId) {
+        await this.assertWorkflowInOrg(orgId, workflowId);
+      }
+      data.workflow = workflowId
+        ? { connect: { id: workflowId } }
+        : { disconnect: true };
+    }
+    if (input.workflowVersionId !== undefined) {
+      const workflowVersionId = this.normalizeOptionalNullableString(
+        input.workflowVersionId,
+      );
+      if (workflowVersionId) {
+        await this.assertWorkflowVersionInOrg(orgId, workflowVersionId);
+      }
+      data.workflowVersion = workflowVersionId
+        ? { connect: { id: workflowVersionId } }
+        : { disconnect: true };
+    }
+    if (input.workflowBindingMode !== undefined) {
+      data.workflowBindingMode = input.workflowBindingMode;
     }
     if (input.frequencySeconds !== undefined) {
       data.frequencySeconds = input.frequencySeconds;
@@ -644,10 +682,20 @@ export class NewsSourceService {
       !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
         : null;
+    const workflowOverlay = await this.workflows.compileNewsSourceOverlay({
+      orgId,
+      workflowId: source.workflowId,
+      workflowVersionId: source.workflowVersionId,
+      workflowBindingMode: source.workflowBindingMode,
+    });
+    const effectiveConfig = this.mergeWorkflowSourceConfig(
+      config,
+      workflowOverlay,
+    );
     const isPlainObject = (value: unknown): value is Record<string, unknown> =>
       Boolean(value) && typeof value === "object" && !Array.isArray(value);
-    const sourceCrawlOptions = isPlainObject(config?.crawlOptions)
-      ? (config!.crawlOptions as Record<string, unknown>)
+    const sourceCrawlOptions = isPlainObject(effectiveConfig?.crawlOptions)
+      ? (effectiveConfig!.crawlOptions as Record<string, unknown>)
       : undefined;
     const template = source.crawlTemplateId
       ? await this.prisma.crawlTemplate.findUnique({
@@ -664,7 +712,7 @@ export class NewsSourceService {
         ? { ...(templateCrawlOptions ?? {}), ...(sourceCrawlOptions ?? {}) }
         : undefined;
 
-    const seedConfig = this.normalizeSeedConfig(config, source.url);
+    const seedConfig = this.normalizeSeedConfig(effectiveConfig, source.url);
     const inFlightLimit = seedConfig?.enabled ? seedConfig.maxNewUrlsPerRun : 1;
     const inFlightCount = await this.countActivePipelineJobs(
       source.id,
@@ -698,6 +746,7 @@ export class NewsSourceService {
         scheduleCount: capacity > 0 ? 1 : 0,
         skippedCount: capacity > 0 ? 0 : 1,
         seed: seedConfig,
+        workflow: workflowOverlay?.workflowSummary ?? null,
       };
     }
 
@@ -865,6 +914,7 @@ export class NewsSourceService {
       skippedCount,
       deepPreviewError,
       deepFailureStats,
+      workflow: workflowOverlay?.workflowSummary ?? null,
     };
   }
 
@@ -1113,6 +1163,66 @@ export class NewsSourceService {
     if (!template || template.orgId !== orgId) {
       throw new BadRequestException("Invalid crawlTemplateId");
     }
+  }
+
+  private async assertWorkflowInOrg(orgId: string, workflowId: string) {
+    const workflow = await this.prisma.crawlStrategyWorkflow.findUnique({
+      where: { id: workflowId },
+      select: { orgId: true },
+    });
+    if (!workflow || workflow.orgId !== orgId) {
+      throw new BadRequestException("Invalid workflowId");
+    }
+  }
+
+  private async assertWorkflowVersionInOrg(
+    orgId: string,
+    workflowVersionId: string,
+  ) {
+    const version = await this.prisma.crawlStrategyWorkflowVersion.findUnique({
+      where: { id: workflowVersionId },
+      select: { orgId: true },
+    });
+    if (!version || version.orgId !== orgId) {
+      throw new BadRequestException("Invalid workflowVersionId");
+    }
+  }
+
+  private mergeWorkflowSourceConfig(
+    config: Record<string, unknown> | null,
+    overlay:
+      | {
+          crawlOptions?: Record<string, unknown>;
+          seed?: Record<string, unknown>;
+          keywords?: string[];
+        }
+      | null,
+  ) {
+    if (!overlay) {
+      return config;
+    }
+    return {
+      ...(config ?? {}),
+      ...(overlay.keywords && overlay.keywords.length > 0
+        ? { keywords: overlay.keywords }
+        : {}),
+      crawlOptions: {
+        ...((config?.crawlOptions &&
+          typeof config.crawlOptions === "object" &&
+          !Array.isArray(config.crawlOptions)
+          ? (config.crawlOptions as Record<string, unknown>)
+          : {}) ?? {}),
+        ...(overlay.crawlOptions ?? {}),
+      },
+      seed: {
+        ...((config?.seed &&
+          typeof config.seed === "object" &&
+          !Array.isArray(config.seed)
+          ? (config.seed as Record<string, unknown>)
+          : {}) ?? {}),
+        ...(overlay.seed ?? {}),
+      },
+    };
   }
 
   private normalizeConfig(config?: Record<string, unknown> | null) {

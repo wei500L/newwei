@@ -29,6 +29,7 @@ import {
   type CrawlDiscoveryTimestampSource,
 } from "../crawl/crawl-metadata.service";
 import { CrawlQueueService } from "../crawl/crawl-queue.service";
+import { CrawlStrategyWorkflowService } from "../crawl/crawl-strategy-workflow.service";
 import { CrawlTaskService } from "../crawl/crawl-task.service";
 import { CRAWL_HOT_PRIORITY_THRESHOLD } from "../crawl/crawl.constants";
 import type { CrawlPriorityClass } from "../crawl/crawl.types";
@@ -221,6 +222,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly metadataService: CrawlMetadataService,
     private readonly crawlQueue: CrawlQueueService,
+    private readonly workflows: CrawlStrategyWorkflowService,
     private readonly queueService: QueueService,
     private readonly cache: CacheService,
     private readonly env: EnvService,
@@ -326,13 +328,20 @@ export class NewsSourceSchedulerService implements OnModuleInit {
           const activeCutoff = new Date(
             now.getTime() - schedulerConfig.inFlightLookbackMs,
           );
-          seedConfig = this.normalizeSeedConfig(source);
+          const workflowOverlay = await this.workflows.compileNewsSourceOverlay({
+            orgId: source.orgId,
+            workflowId: source.workflowId,
+            workflowVersionId: source.workflowVersionId,
+            workflowBindingMode: source.workflowBindingMode,
+          });
+          seedConfig = this.normalizeSeedConfig(source, undefined, workflowOverlay);
           let runtimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS;
           if (seedConfig) {
             runtimeSettings = await this.resolveSeedRuntimeSettings();
             const normalizedSeedConfig = this.normalizeSeedConfig(
               source,
               runtimeSettings,
+              workflowOverlay,
             );
             seedConfig = normalizedSeedConfig;
             if (normalizedSeedConfig) {
@@ -413,6 +422,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
                 source,
                 seedConfig,
                 seedFreshnessWindowDays,
+                workflowOverlay,
               )
             : [{ url: source.url, relevanceScore: undefined }];
           if (seedConfig?.mode === "deep") {
@@ -2284,13 +2294,20 @@ export class NewsSourceSchedulerService implements OnModuleInit {
   private normalizeSeedConfig(
     source: NewsSourceWithTemplate,
     runtimeSettings: SeedRuntimeSettings = DEFAULT_SEED_RUNTIME_SETTINGS,
+    workflowOverlay?: {
+      crawlOptions?: Record<string, unknown>;
+      seed?: Record<string, unknown>;
+      keywords?: string[];
+    } | null,
   ) {
-    const config =
+    const config = this.mergeWorkflowSourceConfig(
       source.config &&
-      typeof source.config === "object" &&
-      !Array.isArray(source.config)
+        typeof source.config === "object" &&
+        !Array.isArray(source.config)
         ? (source.config as Record<string, unknown>)
-        : null;
+        : null,
+      workflowOverlay,
+    );
     const seed =
       config?.seed &&
       typeof config.seed === "object" &&
@@ -2441,6 +2458,43 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     } satisfies SeedConfig;
   }
 
+  private mergeWorkflowSourceConfig(
+    config: Record<string, unknown> | null,
+    overlay?:
+      | {
+          crawlOptions?: Record<string, unknown>;
+          seed?: Record<string, unknown>;
+          keywords?: string[];
+        }
+      | null,
+  ) {
+    if (!overlay) {
+      return config;
+    }
+    return {
+      ...(config ?? {}),
+      ...(overlay.keywords && overlay.keywords.length > 0
+        ? { keywords: overlay.keywords }
+        : {}),
+      crawlOptions: {
+        ...((config?.crawlOptions &&
+          typeof config.crawlOptions === "object" &&
+          !Array.isArray(config.crawlOptions)
+          ? (config.crawlOptions as Record<string, unknown>)
+          : {}) ?? {}),
+        ...(overlay.crawlOptions ?? {}),
+      },
+      seed: {
+        ...((config?.seed &&
+          typeof config.seed === "object" &&
+          !Array.isArray(config.seed)
+          ? (config.seed as Record<string, unknown>)
+          : {}) ?? {}),
+        ...(overlay.seed ?? {}),
+      },
+    };
+  }
+
   private normalizeSeedQueryParamAllowlist(value: unknown): string[] {
     return resolveQueryParamAllowlist(value, []);
   }
@@ -2531,6 +2585,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     source: NewsSourceWithTemplate,
     seed: SeedConfig,
     seedFreshnessWindowDays: number,
+    workflowOverlay?: {
+      crawlOptions?: Record<string, unknown>;
+      seed?: Record<string, unknown>;
+      keywords?: string[];
+    } | null,
     options?: { cacheTtlSecondsOverride?: number },
   ) {
     if (seed.mode === "sitemap" && !seed.domain) {
@@ -2558,7 +2617,13 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     const discovered = await this.cache.wrap<unknown[]>(
       cacheKey,
       cacheTtlSeconds,
-      async () => this.discoverSeedCandidates(source, seed, freshnessCutoffTs),
+      async () =>
+        this.discoverSeedCandidates(
+          source,
+          seed,
+          freshnessCutoffTs,
+          workflowOverlay,
+        ),
       { lockTtlMs: 15_000, maxWaitMs: 15_000, retryDelayMs: 100 },
     );
 
@@ -2680,6 +2745,11 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     source: NewsSourceWithTemplate,
     seed: SeedConfig,
     freshnessCutoffTs: number,
+    workflowOverlay?: {
+      crawlOptions?: Record<string, unknown>;
+      seed?: Record<string, unknown>;
+      keywords?: string[];
+    } | null,
   ): Promise<CrawlDiscoveryCandidate[]> {
     const metadataService = this.metadataService as CrawlMetadataService & {
       discoverRssCandidates?: (input: {
@@ -2740,11 +2810,14 @@ export class NewsSourceSchedulerService implements OnModuleInit {
     }
 
     const config =
-      source.config &&
-      typeof source.config === "object" &&
-      !Array.isArray(source.config)
-        ? (source.config as Record<string, unknown>)
-        : {};
+      this.mergeWorkflowSourceConfig(
+        source.config &&
+          typeof source.config === "object" &&
+          !Array.isArray(source.config)
+          ? (source.config as Record<string, unknown>)
+          : {},
+        workflowOverlay,
+      ) ?? {};
     const crawlOptions = this.mergeOptions(
       source.crawlTemplate?.isActive
         ? this.normalizeOptions(source.crawlTemplate.crawlOptions)
@@ -4000,7 +4073,17 @@ export class NewsSourceSchedulerService implements OnModuleInit {
       const activeCutoff = new Date(
         now.getTime() - schedulerConfig.inFlightLookbackMs,
       );
-      const seedConfig = this.normalizeSeedConfig(source, runtimeSettings);
+      const workflowOverlay = await this.workflows.compileNewsSourceOverlay({
+        orgId: source.orgId,
+        workflowId: source.workflowId,
+        workflowVersionId: source.workflowVersionId,
+        workflowBindingMode: source.workflowBindingMode,
+      });
+      const seedConfig = this.normalizeSeedConfig(
+        source,
+        runtimeSettings,
+        workflowOverlay,
+      );
       const inFlightLimit = seedConfig ? seedConfig.maxNewUrlsPerRun : 1;
       const inFlightJobs = await this.prisma.pipelineJob.findMany({
         where: {
@@ -4109,6 +4192,7 @@ export class NewsSourceSchedulerService implements OnModuleInit {
               source,
               seedConfig,
               seedFreshnessWindowDays,
+              workflowOverlay,
               {
                 cacheTtlSecondsOverride: rssAdaptiveDiscoveryCacheTtlSeconds,
               },

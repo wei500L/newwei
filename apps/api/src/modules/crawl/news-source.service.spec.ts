@@ -21,9 +21,16 @@ describe("NewsSourceService.createSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.createSource("org-1", {
@@ -43,9 +50,16 @@ describe("NewsSourceService.createSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.createSource("org-1", {
@@ -72,9 +86,16 @@ describe("NewsSourceService.createSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await service.createSource("org-1", {
       name: "RSS Source",
@@ -109,9 +130,16 @@ describe("NewsSourceService.createSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await service.createSource("org-1", {
       name: "List Source",
@@ -158,9 +186,16 @@ describe("NewsSourceService.updateSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.updateSource("org-1", "source-1", { name: "Duplicate" }),
@@ -180,9 +215,16 @@ describe("NewsSourceService.updateSource", () => {
       },
     } as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await service.updateSource("org-1", "source-1", {
       config: {
@@ -209,9 +251,16 @@ describe("NewsSourceService seed normalization", () => {
   it("accepts deep mode and forces deep.ignoreRobotsTxt=true", () => {
     const prisma = {} as any;
     const metadataService = {} as any;
+    const workflows = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     const seedConfig = (service as any).normalizeSeedConfig(
       {
@@ -343,7 +392,16 @@ describe("NewsSourceService.preview", () => {
         }),
     } as any;
 
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
     const result = await service.preview("org-1", "source-1");
 
     expect(result.deepPreviewError).toEqual(
@@ -433,7 +491,16 @@ describe("NewsSourceService.preview", () => {
       get: jest.fn().mockResolvedValue(null),
     } as any;
 
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
     const result = await service.preview("org-1", "source-1");
 
     expect(result.candidates).toEqual(
@@ -533,7 +600,16 @@ describe("NewsSourceService.preview", () => {
       get: jest.fn().mockResolvedValue(null),
     } as any;
 
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
     const result = await service.preview("org-1", "source-rss-1");
 
     expect(metadataService.discoverRssCandidates).toHaveBeenCalledWith(
@@ -583,7 +659,16 @@ describe("NewsSourceService.updateFrequencyForAll", () => {
     const metadataService = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     const result = await service.updateFrequencyForAll("org-1", 3600);
 
@@ -620,7 +705,16 @@ describe("NewsSourceService.schedule", () => {
     const metadataService = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.schedule("org-1", "source-1", {
@@ -641,7 +735,16 @@ describe("NewsSourceService.schedule", () => {
     const metadataService = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.schedule("org-1", "source-1", {
@@ -662,7 +765,16 @@ describe("NewsSourceService.schedule", () => {
     const metadataService = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     await expect(
       service.schedule("org-1", "source-1", { nextRunAt: "not-a-date" }),
@@ -682,7 +794,16 @@ describe("NewsSourceService.schedule", () => {
     const metadataService = {} as any;
     const env = {} as any;
     const cache = {} as any;
-    const service = new NewsSourceService(prisma, metadataService, env, cache);
+    const workflows = {
+      compileNewsSourceOverlay: jest.fn().mockResolvedValue(null),
+    } as any;
+    const service = new NewsSourceService(
+      prisma,
+      metadataService,
+      workflows,
+      env,
+      cache,
+    );
 
     const nextRunAt = "2026-01-31T12:34:56.000Z";
     await service.schedule("org-1", "source-1", { nextRunAt });

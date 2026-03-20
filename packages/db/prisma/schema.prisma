@@ -33,6 +33,8 @@ model Org {
   crawlSiteProfiles CrawlSiteProfile[]
   crawlFrontierRuns CrawlFrontierRun[]
   crawlFrontierNodes CrawlFrontierNode[]
+  crawlStrategyWorkflows CrawlStrategyWorkflow[]
+  crawlStrategyWorkflowRuns CrawlStrategyWorkflowRun[]
   newsSources NewsSource[]
   pipelineJobs PipelineJob[]
   articles    Article[]
@@ -271,6 +273,11 @@ model CrawlSiteProfile {
   matchHost     String
   isActive      Boolean                @default(true)
   executionMode CrawlSiteExecutionMode @default(layered)
+  workflow      CrawlStrategyWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId    String?
+  workflowVersion CrawlStrategyWorkflowVersion? @relation("CrawlSiteProfileWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersionId String?
+  workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
   version       Int                    @default(1)
   config        Json
   createdById   String
@@ -281,10 +288,12 @@ model CrawlSiteProfile {
 
   versions      CrawlSiteProfileVersion[]
   runs          CrawlFrontierRun[]
+  workflowRuns  CrawlStrategyWorkflowRun[]
 
   @@unique([orgId, name])
   @@index([orgId, isActive, updatedAt])
   @@index([orgId, matchHost, isActive])
+  @@index([orgId, workflowId, updatedAt])
 }
 
 model CrawlSiteProfileVersion {
@@ -298,6 +307,9 @@ model CrawlSiteProfileVersion {
   matchHost     String
   isActive      Boolean
   executionMode CrawlSiteExecutionMode
+  workflowId    String?
+  workflowVersionId String?
+  workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
   config        Json
   createdById   String
   createdAt     DateTime               @default(now())
@@ -337,6 +349,87 @@ model CrawlFrontierRun {
 
   @@index([orgId, status, createdAt])
   @@index([orgId, profileId, createdAt])
+}
+
+model CrawlStrategyWorkflow {
+  id                 String                        @id @default(cuid())
+  org                Org                           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId              String
+  name               String
+  description        String?
+  draftDefinition    Json
+  publishedVersion   CrawlStrategyWorkflowVersion? @relation("CrawlStrategyWorkflowPublishedVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+  publishedVersionId String?
+  createdById        String
+  updatedById        String?
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  versions           CrawlStrategyWorkflowVersion[] @relation("CrawlStrategyWorkflowVersions")
+  runs               CrawlStrategyWorkflowRun[]
+  profiles           CrawlSiteProfile[]
+  newsSources        NewsSource[]
+
+  @@unique([orgId, name])
+  @@index([orgId, updatedAt])
+}
+
+model CrawlStrategyWorkflowVersion {
+  id                String                        @id @default(cuid())
+  workflow          CrawlStrategyWorkflow         @relation("CrawlStrategyWorkflowVersions", fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId        String
+  orgId             String
+  version           Int
+  name              String
+  description       String?
+  definition        Json
+  createdById       String
+  createdAt         DateTime                      @default(now())
+
+  publishedBy       CrawlStrategyWorkflow[]       @relation("CrawlStrategyWorkflowPublishedVersion")
+  runs              CrawlStrategyWorkflowRun[]
+  boundProfiles     CrawlSiteProfile[]            @relation("CrawlSiteProfileWorkflowVersion")
+  boundNewsSources  NewsSource[]                  @relation("NewsSourceWorkflowVersion")
+
+  @@unique([workflowId, version])
+  @@index([orgId, createdAt])
+}
+
+model CrawlStrategyWorkflowRun {
+  id                String                        @id @default(cuid())
+  org               Org                           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orgId             String
+  workflow          CrawlStrategyWorkflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowId        String
+  workflowVersion   CrawlStrategyWorkflowVersion  @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  workflowVersionId String
+  profile           CrawlSiteProfile?             @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  profileId         String?
+  newsSource        NewsSource?                   @relation(fields: [newsSourceId], references: [id], onDelete: SetNull)
+  newsSourceId      String?
+  status            CrawlStrategyWorkflowRunStatus @default(pending)
+  runKind           String                        @default("trial")
+  input             Json?
+  output            Json?
+  graphSnapshot     Json?
+  stepResults       Json?
+  candidates        Json?
+  parameterSources  Json?
+  error             String?                       @db.Text
+  stepCount         Int                           @default(0)
+  candidateCount    Int                           @default(0)
+  selectedCount     Int                           @default(0)
+  createdById       String
+  startedAt         DateTime?
+  finishedAt        DateTime?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  @@index([orgId, createdAt])
+  @@index([workflowId, createdAt])
+  @@index([workflowVersionId, createdAt])
+  @@index([profileId, createdAt])
+  @@index([newsSourceId, createdAt])
 }
 
 model CrawlFrontierNode {
@@ -576,6 +669,18 @@ enum CrawlFrontierNodeStatus {
   canceled
 }
 
+enum CrawlStrategyWorkflowBindingMode {
+  published
+  pinned
+}
+
+enum CrawlStrategyWorkflowRunStatus {
+  pending
+  running
+  completed
+  failed
+}
+
 enum CrawlQueueClass {
   hot
   normal
@@ -613,6 +718,11 @@ model NewsSource {
   language         String?
   crawlTemplate    CrawlTemplate?  @relation(fields: [crawlTemplateId], references: [id], onDelete: SetNull)
   crawlTemplateId  String?
+  workflow         CrawlStrategyWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId       String?
+  workflowVersion  CrawlStrategyWorkflowVersion? @relation("NewsSourceWorkflowVersion", fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersionId String?
+  workflowBindingMode CrawlStrategyWorkflowBindingMode @default(published)
   frequencySeconds Int             @default(3600)
   priority         Int             @default(0)
   isActive         Boolean         @default(true)
@@ -629,10 +739,12 @@ model NewsSource {
 
   jobs     PipelineJob[]
   articles Article[]
+  workflowRuns CrawlStrategyWorkflowRun[]
 
   @@index([isActive, nextRunAt])
   @@unique([orgId, url])
   @@index([orgId, group])
+  @@index([orgId, workflowId, updatedAt])
 }
 
 model PipelineJob {
