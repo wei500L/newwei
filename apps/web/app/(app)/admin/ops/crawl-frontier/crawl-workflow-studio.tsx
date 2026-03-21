@@ -5,6 +5,8 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
+  Descriptions,
   Drawer,
   Empty,
   Form,
@@ -39,22 +41,19 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
+import {
+  buildWorkflowCandidateTraceChain,
+  buildWorkflowCandidateTraceSummary,
+  buildWorkflowTraceEntryDiffRows,
+  buildWorkflowCompareSummary,
+  formatWorkflowStepSummary,
+  type WorkflowRunEvent,
+  type WorkflowVersionCompareResult,
+} from "./crawl-workflow-view-model";
 
 type AnyRecord = Record<string, unknown>;
 
-type WorkflowNodeType =
-  | "seed-discovery"
-  | "list-discovery"
-  | "deep-discovery"
-  | "url-filter"
-  | "content-filter"
-  | "page-type-classifier"
-  | "url-scorer"
-  | "freshness-scorer"
-  | "branch"
-  | "budget-control"
-  | "fallback-strategy"
-  | "persist-result";
+type WorkflowNodeType = string;
 
 interface WorkflowSettings {
   executionMode: "layered" | "native" | "hybrid";
@@ -142,11 +141,15 @@ interface WorkflowRunTraceEntry {
   ruleHits?: string[];
   scoreDelta?: number;
   freshnessDelta?: number;
+  rejectedReason?: string | null;
+  beforeSnapshot?: AnyRecord;
+  afterSnapshot?: AnyRecord;
   details?: AnyRecord;
 }
 
 interface WorkflowCandidate {
   id: string;
+  sourceNodeId: string;
   url: string;
   title?: string;
   description?: string;
@@ -156,6 +159,7 @@ interface WorkflowCandidate {
   relevanceScore?: number;
   status: "active" | "selected" | "rejected";
   rejectedReason?: string | null;
+  metadata?: AnyRecord;
   trace: WorkflowRunTraceEntry[];
 }
 
@@ -187,8 +191,15 @@ interface WorkflowTrialResult {
     value: unknown;
   }>;
   systemEvents: Array<{
-    level: "info" | "warn" | "error";
+    level: WorkflowRunEvent["level"];
+    eventType: string;
     message: string;
+    nodeId?: string | null;
+    nodeType?: WorkflowNodeType | null;
+    triggerReason?: string | null;
+    beforeCount?: number | null;
+    afterCount?: number | null;
+    rescuedCount?: number | null;
     details?: AnyRecord;
     timestamp: string;
   }>;
@@ -197,6 +208,15 @@ interface WorkflowTrialResult {
 interface WorkflowBindingOption {
   label: string;
   value: string;
+}
+
+interface LinkedFrontierRunRecord {
+  id: string;
+  workflowRunId?: string | null;
+  seedUrl: string;
+  status: string;
+  createdAt: string;
+  metadata?: AnyRecord | null;
 }
 
 function stringify(value: unknown) {
@@ -281,7 +301,13 @@ function buildNodeConfigDefaults(schema?: WorkflowNodeSchema | null) {
   return { ...(schema?.defaults ?? {}) };
 }
 
-function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
+function WorkflowStudioInner({
+  canManage,
+  selectedWorkflowIdHint,
+}: {
+  canManage: boolean;
+  selectedWorkflowIdHint?: string | null;
+}) {
   const { data: session } = useSession();
   const token = session?.accessToken;
   const apiClient = useMemo(
@@ -300,12 +326,19 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
   const [newsSourceOptions, setNewsSourceOptions] = useState<WorkflowBindingOption[]>(
     [],
   );
+  const [frontierRuns, setFrontierRuns] = useState<LinkedFrontierRunRecord[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [trialResult, setTrialResult] = useState<WorkflowTrialResult | null>(null);
   const [candidateDrawer, setCandidateDrawer] = useState<WorkflowCandidate | null>(
     null,
   );
+  const [compareLeftVersionId, setCompareLeftVersionId] = useState<string>();
+  const [compareRightVersionId, setCompareRightVersionId] = useState<string>();
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareResult, setCompareResult] =
+    useState<WorkflowVersionCompareResult | null>(null);
+  const [replayingRunId, setReplayingRunId] = useState<string | null>(null);
   const [workflowMeta, setWorkflowMeta] = useState({
     name: "",
     description: "",
@@ -323,6 +356,17 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
     () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null,
     [selectedWorkflowId, workflows],
   );
+  const linkedFrontierRuns = useMemo(
+    () =>
+      frontierRuns.filter((run) => {
+        const metadata =
+          run.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata)
+            ? (run.metadata as AnyRecord)
+            : null;
+        return metadata?.workflowId === selectedWorkflowId;
+      }),
+    [frontierRuns, selectedWorkflowId],
+  );
   const selectedNodeDefinition = useMemo(
     () => definition?.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [definition, selectedNodeId],
@@ -333,12 +377,36 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
       null,
     [nodeSchemas, selectedNodeDefinition?.type],
   );
+  const compareSummary = useMemo(
+    () => (compareResult ? buildWorkflowCompareSummary(compareResult) : null),
+    [compareResult],
+  );
+  const compareLeftVersion = useMemo(
+    () =>
+      (selectedWorkflow?.versions ?? []).find(
+        (version) => version.id === compareLeftVersionId,
+      ) ?? null,
+    [compareLeftVersionId, selectedWorkflow?.versions],
+  );
+  const compareRightVersion = useMemo(
+    () =>
+      (selectedWorkflow?.versions ?? []).find(
+        (version) => version.id === compareRightVersionId,
+      ) ?? null,
+    [compareRightVersionId, selectedWorkflow?.versions],
+  );
 
   const loadData = useCallback(async () => {
     if (!apiClient) return;
     setLoading(true);
     try {
-      const [workflowResponse, schemaResponse, profileResponse, sourceResponse] =
+      const [
+        workflowResponse,
+        schemaResponse,
+        profileResponse,
+        sourceResponse,
+        frontierRunResponse,
+      ] =
         await Promise.all([
           apiClient.get<WorkflowRecord[]>("admin/crawl-frontier/workflows"),
           apiClient.get<WorkflowNodeSchema[]>(
@@ -350,6 +418,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
           apiClient.get<Array<{ id: string; name: string; url: string }>>(
             "admin/news-sources",
           ),
+          apiClient.get<LinkedFrontierRunRecord[]>("admin/crawl-frontier/runs"),
         ]);
       const workflowItems = workflowResponse.data ?? [];
       setWorkflows(workflowItems);
@@ -366,6 +435,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
           value: source.id,
         })),
       );
+      setFrontierRuns(frontierRunResponse.data ?? []);
       if (!selectedWorkflowId && workflowItems[0]) {
         setSelectedWorkflowId(workflowItems[0].id);
       }
@@ -400,6 +470,22 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
     setSelectedNodeId(selectedWorkflow.draftDefinition.nodes[0]?.id);
     setTrialResult(null);
   }, [selectedWorkflow, setEdges, setNodes]);
+
+  useEffect(() => {
+    const versions = [...(selectedWorkflow?.versions ?? [])].sort(
+      (left, right) => right.version - left.version,
+    );
+    setCompareRightVersionId(versions[0]?.id);
+    setCompareLeftVersionId(versions[1]?.id ?? versions[0]?.id);
+    setCompareResult(null);
+  }, [selectedWorkflow]);
+
+  useEffect(() => {
+    if (!selectedWorkflowIdHint) {
+      return;
+    }
+    setSelectedWorkflowId(selectedWorkflowIdHint);
+  }, [selectedWorkflowIdHint]);
 
   const syncDefinition = useCallback(
     (nextDefinition?: WorkflowDefinition | null) => {
@@ -538,7 +624,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
     }
   }, [apiClient, loadData, messageApi]);
 
-  const runTrial = useCallback(async () => {
+  const runTrial = useCallback(async (workflowVersionId?: string, successLabel?: string) => {
     if (!apiClient || !selectedWorkflow) return;
     setTrialLoading(true);
     try {
@@ -546,6 +632,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
       const response = await apiClient.post<WorkflowTrialResult>(
         `admin/crawl-frontier/workflows/${selectedWorkflow.id}/trial-run`,
         {
+          workflowVersionId: workflowVersionId || undefined,
           seedUrl: trialSeedUrl.trim() || undefined,
           profileId: trialProfileId || undefined,
           newsSourceId: trialNewsSourceId || undefined,
@@ -553,7 +640,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
         },
       );
       setTrialResult(response.data ?? null);
-      messageApi.success("Workflow trial run completed");
+      messageApi.success(successLabel ?? "Workflow trial run completed");
     } catch (error) {
       console.warn("Failed to trial run crawl workflow", error);
       messageApi.error("Failed to trial run workflow");
@@ -570,6 +657,50 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
     trialProfileId,
     trialSeedUrl,
   ]);
+
+  const loadCompare = useCallback(async () => {
+    if (!apiClient || !compareLeftVersionId || !compareRightVersionId) return;
+    setCompareLoading(true);
+    try {
+      const response = await apiClient.post<WorkflowVersionCompareResult>(
+        "admin/crawl-frontier/workflows/compare",
+        {
+          leftVersionId: compareLeftVersionId,
+          rightVersionId: compareRightVersionId,
+        },
+      );
+      setCompareResult(response.data ?? null);
+    } catch (error) {
+      console.warn("Failed to compare crawl workflow versions", error);
+      messageApi.error("Failed to compare workflow versions");
+    } finally {
+      setCompareLoading(false);
+    }
+  }, [apiClient, compareLeftVersionId, compareRightVersionId, messageApi]);
+
+  const replayWorkflowRun = useCallback(
+    async (runId: string) => {
+      if (!apiClient) return;
+      setReplayingRunId(runId);
+      try {
+        const response = await apiClient.post<{ runId: string }>(
+          `admin/crawl-frontier/workflow-runs/${runId}/replay`,
+          {},
+        );
+        messageApi.success(
+          response.data?.runId
+            ? `Replay created: ${response.data.runId}`
+            : "Workflow replay completed",
+        );
+      } catch (error) {
+        console.warn("Failed to replay crawl workflow run", error);
+        messageApi.error("Failed to replay workflow run");
+      } finally {
+        setReplayingRunId(null);
+      }
+    },
+    [apiClient, messageApi],
+  );
 
   const candidateColumns = useMemo<ColumnsType<WorkflowCandidate>>(
     () => [
@@ -664,6 +795,14 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
             <Button type="primary" ghost onClick={() => void runTrial()} loading={trialLoading} disabled={!selectedWorkflow}>
               Trial Run
             </Button>
+            {trialResult ? (
+              <Button
+                onClick={() => void replayWorkflowRun(trialResult.runId)}
+                loading={replayingRunId === trialResult.runId}
+              >
+                Replay Last Run
+              </Button>
+            ) : null}
           </Space>
         }
       >
@@ -726,6 +865,223 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                     )}
                   </Space>
                 </Card>
+                <Card size="small" title="Version Compare" bodyStyle={{ padding: 12 }}>
+                  <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                    <Select
+                      allowClear
+                      placeholder="Left version"
+                      value={compareLeftVersionId}
+                      onChange={setCompareLeftVersionId}
+                      options={(selectedWorkflow?.versions ?? []).map((version) => ({
+                        label: `v${version.version} · ${version.name}`,
+                        value: version.id,
+                      }))}
+                    />
+                    <Select
+                      allowClear
+                      placeholder="Right version"
+                      value={compareRightVersionId}
+                      onChange={setCompareRightVersionId}
+                      options={(selectedWorkflow?.versions ?? []).map((version) => ({
+                        label: `v${version.version} · ${version.name}`,
+                        value: version.id,
+                      }))}
+                    />
+                    <Space wrap>
+                      <Button
+                        onClick={() => void loadCompare()}
+                        loading={compareLoading}
+                        disabled={!compareLeftVersionId || !compareRightVersionId}
+                      >
+                        Compare Versions
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          void runTrial(
+                            compareLeftVersionId,
+                            compareLeftVersion
+                              ? `Trial run started from v${compareLeftVersion.version}`
+                              : "Workflow trial run completed",
+                          )
+                        }
+                        disabled={!compareLeftVersionId}
+                      >
+                        Run Left
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          void runTrial(
+                            compareRightVersionId,
+                            compareRightVersion
+                              ? `Trial run started from v${compareRightVersion.version}`
+                              : "Workflow trial run completed",
+                          )
+                        }
+                        disabled={!compareRightVersionId}
+                      >
+                        Run Right
+                      </Button>
+                    </Space>
+                    {compareSummary ? (
+                      <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                        <Descriptions size="small" column={1} bordered>
+                          <Descriptions.Item label="Node delta">
+                            {compareSummary.nodeCountDelta}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Edge delta">
+                            {compareSummary.edgeCountDelta}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Changed settings">
+                            {compareSummary.changedSettings.length > 0
+                              ? compareSummary.changedSettings.join(", ")
+                              : "-"}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Changed nodes">
+                            {compareSummary.changedNodeIds.length > 0
+                              ? compareSummary.changedNodeIds.join(", ")
+                              : "-"}
+                          </Descriptions.Item>
+                          <Descriptions.Item label="Binding impact">
+                            {`${compareSummary.profileImpactCount} profiles / ${compareSummary.newsSourceImpactCount} news sources`}
+                          </Descriptions.Item>
+                        </Descriptions>
+                        {(compareResult!.definitionDiff.settings ?? []).length > 0 ? (
+                          <Card size="small" title="Settings Diff">
+                            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                              {(compareResult!.definitionDiff.settings ?? []).map((entry) => (
+                                <Card key={entry.key} size="small">
+                                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                    <Typography.Text strong>{entry.key}</Typography.Text>
+                                    <Typography.Text type="secondary">
+                                      {`${JSON.stringify(entry.left)} -> ${JSON.stringify(entry.right)}`}
+                                    </Typography.Text>
+                                  </Space>
+                                </Card>
+                              ))}
+                            </Space>
+                          </Card>
+                        ) : null}
+                        <Card size="small" title="Node Diff">
+                          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                            {(compareResult!.definitionDiff.nodes?.added ?? []).map((node) => (
+                              <Card key={`added-${node.id}`} size="small">
+                                <Space wrap size={[6, 6]}>
+                                  <Tag color="green">added</Tag>
+                                  <Tag>{node.type}</Tag>
+                                  <Typography.Text strong>{node.label}</Typography.Text>
+                                </Space>
+                              </Card>
+                            ))}
+                            {(compareResult!.definitionDiff.nodes?.removed ?? []).map((node) => (
+                              <Card key={`removed-${node.id}`} size="small">
+                                <Space wrap size={[6, 6]}>
+                                  <Tag color="red">removed</Tag>
+                                  <Tag>{node.type}</Tag>
+                                  <Typography.Text strong>{node.label}</Typography.Text>
+                                </Space>
+                              </Card>
+                            ))}
+                            {(compareResult!.definitionDiff.nodes?.changed ?? []).map((node) => (
+                              <Card key={`changed-${node.id}`} size="small">
+                                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                  <Space wrap size={[6, 6]}>
+                                    <Tag color="gold">changed</Tag>
+                                    <Tag>{node.right.type}</Tag>
+                                    <Typography.Text strong>{node.right.label}</Typography.Text>
+                                  </Space>
+                                  <Typography.Text type="secondary">
+                                    {`fields: ${node.changedFields.join(", ")}`}
+                                  </Typography.Text>
+                                </Space>
+                              </Card>
+                            ))}
+                            {(compareResult!.definitionDiff.nodes?.added.length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.nodes?.removed.length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.nodes?.changed.length ?? 0) === 0 ? (
+                              <Typography.Text type="secondary">
+                                No node-level differences detected.
+                              </Typography.Text>
+                            ) : null}
+                          </Space>
+                        </Card>
+                        <Card size="small" title="Edge Diff">
+                          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                            {(compareResult!.definitionDiff.edges?.added ?? []).map((edge) => (
+                              <Typography.Text key={`edge-added-${edge.id}`}>
+                                {`+ ${edge.source} -> ${edge.target}`}
+                              </Typography.Text>
+                            ))}
+                            {(compareResult!.definitionDiff.edges?.removed ?? []).map((edge) => (
+                              <Typography.Text key={`edge-removed-${edge.id}`} type="secondary">
+                                {`- ${edge.source} -> ${edge.target}`}
+                              </Typography.Text>
+                            ))}
+                            {(compareResult!.definitionDiff.edges?.added.length ?? 0) === 0 &&
+                            (compareResult!.definitionDiff.edges?.removed.length ?? 0) === 0 ? (
+                              <Typography.Text type="secondary">
+                                No edge-level differences detected.
+                              </Typography.Text>
+                            ) : null}
+                          </Space>
+                        </Card>
+                        {compareResult!.bindingImpact ? (
+                          <Card size="small" title="Binding Impact">
+                            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                              <Descriptions size="small" column={1} bordered>
+                                <Descriptions.Item label="Profiles">
+                                  {`${compareResult!.bindingImpact.profiles.total} total · ${compareResult!.bindingImpact.profiles.followingPublishedCount} following published`}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="News sources">
+                                  {`${compareResult!.bindingImpact.newsSources.total} total · ${compareResult!.bindingImpact.newsSources.followingPublishedCount} following published`}
+                                </Descriptions.Item>
+                              </Descriptions>
+                              <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                                {compareResult!.bindingImpact.profiles.items.slice(0, 4).map((entry) => (
+                                  <Card key={`profile-impact-${entry.id}`} size="small">
+                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                      <Space wrap size={[6, 6]}>
+                                        <Tag color="geekblue">profile</Tag>
+                                        <Tag>{entry.workflowBindingMode}</Tag>
+                                        <Tag color="cyan">{entry.appliesTo}</Tag>
+                                      </Space>
+                                      <Typography.Text strong>{entry.name}</Typography.Text>
+                                      {entry.matchHost ? (
+                                        <Typography.Text type="secondary">
+                                          {entry.matchHost}
+                                        </Typography.Text>
+                                      ) : null}
+                                    </Space>
+                                  </Card>
+                                ))}
+                                {compareResult!.bindingImpact.newsSources.items.slice(0, 4).map((entry) => (
+                                  <Card key={`news-impact-${entry.id}`} size="small">
+                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                      <Space wrap size={[6, 6]}>
+                                        <Tag color="purple">news source</Tag>
+                                        <Tag>{entry.workflowBindingMode}</Tag>
+                                        <Tag color="cyan">{entry.appliesTo}</Tag>
+                                      </Space>
+                                      <Typography.Text strong>{entry.name}</Typography.Text>
+                                      {entry.url ? (
+                                        <Typography.Text type="secondary" ellipsis={{ tooltip: entry.url }}>
+                                          {entry.url}
+                                        </Typography.Text>
+                                      ) : null}
+                                    </Space>
+                                  </Card>
+                                ))}
+                              </Space>
+                            </Space>
+                          </Card>
+                        ) : null}
+                      </Space>
+                    ) : (
+                      <Typography.Text type="secondary">
+                        Select two versions to inspect workflow drift.
+                      </Typography.Text>
+                    )}
+                  </Space>
+                </Card>
                 <Card size="small" title="Node Palette" bodyStyle={{ padding: 12 }}>
                   <Space wrap size={[8, 8]}>
                     {nodeSchemas.map((schema) => (
@@ -772,6 +1128,38 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                       showIcon
                       message="Trial run uses the same workflow engine as the backend strategy runtime."
                     />
+                  </Space>
+                </Card>
+                <Card size="small" title="Linked Frontier Runs" bodyStyle={{ padding: 12 }}>
+                  <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                    {linkedFrontierRuns.length === 0 ? (
+                      <Typography.Text type="secondary">
+                        No production frontier runs are currently linked to this workflow.
+                      </Typography.Text>
+                    ) : (
+                      linkedFrontierRuns.slice(0, 6).map((run) => (
+                        <Card key={run.id} size="small">
+                          <Space
+                            direction="vertical"
+                            size={4}
+                            style={{ width: "100%" }}
+                          >
+                            <Typography.Text ellipsis={{ tooltip: run.seedUrl }}>
+                              {run.seedUrl}
+                            </Typography.Text>
+                            <Space wrap size={[6, 6]}>
+                              <Tag color={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "blue"}>
+                                {run.status}
+                              </Tag>
+                              {run.workflowRunId ? <Tag color="geekblue">trace</Tag> : null}
+                            </Space>
+                            <Typography.Text type="secondary">
+                              {new Date(run.createdAt).toLocaleString()}
+                            </Typography.Text>
+                          </Space>
+                        </Card>
+                      ))
+                    )}
                   </Space>
                 </Card>
               </Space>
@@ -1115,7 +1503,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                           </Space>
                           <Typography.Text strong>{step.label}</Typography.Text>
                           <Typography.Text type="secondary">
-                            {`in ${step.inputCount} / out ${step.outputCount} / rejected ${step.rejectedCount}`}
+                            {formatWorkflowStepSummary(step)}
                           </Typography.Text>
                           {step.error ? <Alert type="error" showIcon message={step.error} /> : null}
                         </Space>
@@ -1125,15 +1513,75 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                 </Card>
               </Col>
               <Col xs={24} xl={15}>
-                <Card size="small" title="Candidate Flow">
-                  <Table
-                    rowKey="id"
-                    columns={candidateColumns}
-                    dataSource={trialResult.candidates}
-                    pagination={{ pageSize: 8 }}
-                    size="small"
-                  />
-                </Card>
+                <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                  <Card size="small" title="Candidate Flow">
+                    <Table
+                      rowKey="id"
+                      columns={candidateColumns}
+                      dataSource={trialResult.candidates}
+                      pagination={{ pageSize: 8 }}
+                      size="small"
+                    />
+                  </Card>
+                  <Card size="small" title="System Events">
+                    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                      {trialResult.systemEvents.length === 0 ? (
+                        <Typography.Text type="secondary">
+                          No system events were recorded during this run.
+                        </Typography.Text>
+                      ) : (
+                        trialResult.systemEvents.map((event, index) => (
+                          <Card key={`${event.eventType}-${index}`} size="small">
+                            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                              <Space wrap size={[6, 6]}>
+                                <Tag
+                                  color={
+                                    event.level === "error"
+                                      ? "red"
+                                      : event.level === "warn"
+                                        ? "gold"
+                                        : "blue"
+                                  }
+                                >
+                                  {event.level}
+                                </Tag>
+                                <Tag>{event.eventType}</Tag>
+                                {event.nodeType ? <Tag>{event.nodeType}</Tag> : null}
+                                {event.nodeId ? <Tag>{`node:${event.nodeId}`}</Tag> : null}
+                                {event.triggerReason ? (
+                                  <Tag color="purple">{event.triggerReason}</Tag>
+                                ) : null}
+                              </Space>
+                              <Typography.Text>{event.message}</Typography.Text>
+                              <Typography.Text type="secondary">
+                                {new Date(event.timestamp).toLocaleString()}
+                              </Typography.Text>
+                              {(event.beforeCount !== null && event.beforeCount !== undefined) ||
+                              (event.afterCount !== null && event.afterCount !== undefined) ? (
+                                <Space wrap size={[4, 4]}>
+                                  <Tag color="blue">{`before:${event.beforeCount ?? 0}`}</Tag>
+                                  <Tag color="geekblue">{`after:${event.afterCount ?? 0}`}</Tag>
+                                  <Tag color="green">{`rescued:${event.rescuedCount ?? 0}`}</Tag>
+                                </Space>
+                              ) : null}
+                              {event.details ? (
+                                <Typography.Paragraph
+                                  style={{
+                                    marginBottom: 0,
+                                    whiteSpace: "pre-wrap",
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  {stringify(event.details)}
+                                </Typography.Paragraph>
+                              ) : null}
+                            </Space>
+                          </Card>
+                        ))
+                      )}
+                    </Space>
+                  </Card>
+                </Space>
               </Col>
             </Row>
             <Card size="small" title="Parameter Sources">
@@ -1171,26 +1619,123 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                   <Tag color={candidateDrawer.status === "selected" ? "green" : candidateDrawer.status === "rejected" ? "red" : "blue"}>
                     {candidateDrawer.status}
                   </Tag>
+                  <Tag>{`source:${candidateDrawer.sourceNodeId}`}</Tag>
                   {candidateDrawer.pageType ? <Tag>{candidateDrawer.pageType}</Tag> : null}
                   {candidateDrawer.rejectedReason ? <Tag color="red">{candidateDrawer.rejectedReason}</Tag> : null}
                 </Space>
               </Space>
             </Card>
+            <Card size="small" title="Trace Summary">
+              {(() => {
+                const summary = buildWorkflowCandidateTraceSummary(candidateDrawer);
+                const traceChain = buildWorkflowCandidateTraceChain(candidateDrawer);
+                return (
+                  <Descriptions size="small" column={2} bordered>
+                    <Descriptions.Item label="Total score delta">
+                      {summary.totalScoreDelta.toFixed(2)}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Total freshness delta">
+                      {summary.totalFreshnessDelta.toFixed(2)}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Changed fields" span={2}>
+                      <Space wrap>
+                        {summary.changedFields.map((field) => (
+                          <Tag key={`field-${field}`}>{field}</Tag>
+                        ))}
+                        {summary.changedFields.length === 0 ? "-" : null}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Rule hits" span={2}>
+                      <Space wrap>
+                        {summary.ruleHits.map((rule) => (
+                          <Tag key={`rule-${rule}`} color="orange">
+                            {rule}
+                          </Tag>
+                        ))}
+                        {summary.ruleHits.length === 0 ? "-" : null}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Step chain" span={2}>
+                      <Space wrap size={[4, 4]}>
+                        {traceChain.map((step) => (
+                          <Tag
+                            key={step.key}
+                            color={
+                              step.status === "selected"
+                                ? "green"
+                                : step.status === "rejected"
+                                  ? "red"
+                                  : "blue"
+                            }
+                          >
+                            {`${step.index}. ${step.label}`}
+                          </Tag>
+                        ))}
+                      </Space>
+                    </Descriptions.Item>
+                  </Descriptions>
+                );
+              })()}
+            </Card>
             <Card size="small" title="Trace">
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-                {candidateDrawer.trace.map((entry, index) => (
-                  <Card key={`${entry.nodeId}-${index}`} size="small">
+                {buildWorkflowCandidateTraceChain(candidateDrawer).map((step) => {
+                  const entry = step.entry;
+                  const diffRows = buildWorkflowTraceEntryDiffRows(entry);
+                  return (
+                  <Card key={step.key} size="small">
                     <Space direction="vertical" size={4} style={{ width: "100%" }}>
                       <Space wrap size={[6, 6]}>
                         <Tag>{entry.nodeType}</Tag>
-                        <Tag color={entry.accepted === false ? "red" : "green"}>
+                        <Tag
+                          color={
+                            step.status === "selected"
+                              ? "green"
+                              : step.status === "rejected"
+                                ? "red"
+                                : "blue"
+                          }
+                        >
                           {entry.action}
                         </Tag>
+                        {step.rejectedReason ? (
+                          <Tag color="red">{step.rejectedReason}</Tag>
+                        ) : null}
                         <Typography.Text type="secondary">
                           {new Date(entry.timestamp).toLocaleString()}
                         </Typography.Text>
                       </Space>
                       <Typography.Text>{entry.message}</Typography.Text>
+                      {step.deltaSummary.length > 0 ? (
+                        <Space wrap size={[4, 4]}>
+                          {step.deltaSummary.map((delta) => (
+                            <Tag key={`${step.key}-${delta}`} color="cyan">
+                              {delta}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {step.changedFields.length > 0 ? (
+                        <Space wrap size={[4, 4]}>
+                          {step.changedFields.map((field) => (
+                            <Tag key={`${step.key}-${field}`}>{field}</Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {diffRows.length > 0 ? (
+                        <Descriptions size="small" column={1} bordered>
+                          {diffRows.map((diff) => (
+                            <Descriptions.Item key={`${step.key}-${diff.field}`} label={diff.field}>
+                              <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                                <Typography.Text type="secondary">
+                                  {`before: ${diff.beforeValue}`}
+                                </Typography.Text>
+                                <Typography.Text>{`after: ${diff.afterValue}`}</Typography.Text>
+                              </Space>
+                            </Descriptions.Item>
+                          ))}
+                        </Descriptions>
+                      ) : null}
                       {entry.ruleHits?.length ? (
                         <Space wrap size={[4, 4]}>
                           {entry.ruleHits.map((rule) => (
@@ -1200,6 +1745,46 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                           ))}
                         </Space>
                       ) : null}
+                      <Collapse
+                        size="small"
+                        ghost
+                        items={[
+                          {
+                            key: `${step.key}-snapshots`,
+                            label: "Raw snapshots",
+                            children: (
+                              <Row gutter={[12, 12]}>
+                                <Col xs={24} md={12}>
+                                  <Card size="small" title="Before">
+                                    <Typography.Paragraph
+                                      style={{
+                                        marginBottom: 0,
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: "monospace",
+                                      }}
+                                    >
+                                      {stringify(entry.beforeSnapshot ?? {})}
+                                    </Typography.Paragraph>
+                                  </Card>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Card size="small" title="After">
+                                    <Typography.Paragraph
+                                      style={{
+                                        marginBottom: 0,
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: "monospace",
+                                      }}
+                                    >
+                                      {stringify(entry.afterSnapshot ?? {})}
+                                    </Typography.Paragraph>
+                                  </Card>
+                                </Col>
+                              </Row>
+                            ),
+                          },
+                        ]}
+                      />
                       {entry.details ? (
                         <Typography.Paragraph
                           style={{
@@ -1213,7 +1798,7 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
                       ) : null}
                     </Space>
                   </Card>
-                ))}
+                )})}
               </Space>
             </Card>
           </Space>
@@ -1223,10 +1808,19 @@ function WorkflowStudioInner({ canManage }: { canManage: boolean }) {
   );
 }
 
-export function CrawlWorkflowStudio({ canManage }: { canManage: boolean }) {
+export function CrawlWorkflowStudio({
+  canManage,
+  selectedWorkflowIdHint,
+}: {
+  canManage: boolean;
+  selectedWorkflowIdHint?: string | null;
+}) {
   return (
     <ReactFlowProvider>
-      <WorkflowStudioInner canManage={canManage} />
+      <WorkflowStudioInner
+        canManage={canManage}
+        selectedWorkflowIdHint={selectedWorkflowIdHint}
+      />
     </ReactFlowProvider>
   );
 }

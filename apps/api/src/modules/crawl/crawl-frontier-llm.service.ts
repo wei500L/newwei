@@ -498,6 +498,18 @@ export class CrawlFrontierLlmService {
         llmJudgeRetyped: retyped,
         llmJudgeRationale: parsed.rationale ?? null,
         llmRerankApplied: rerankApplied,
+        llmJudgeDecisions: (parsed.decisions ?? []).map((entry) => ({
+          url: entry.url,
+          action: entry.action,
+          pageType: entry.pageType,
+          confidence: clamp01(entry.confidence, 0.5),
+          reason: entry.reason ?? null,
+          clusterLabel: entry.clusterLabel ?? null,
+          localeHint: entry.localeHint ?? null,
+          selectorHints: entry.selectorHints ?? [],
+          appliedDrop:
+            entry.action === "drop" && entry.confidence >= minJudgeConfidence,
+        })),
         warningFlags: [],
       },
     };

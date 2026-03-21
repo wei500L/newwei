@@ -249,6 +249,18 @@ export class CrawlStrategyWorkflowService {
       this.getVersion(orgId, input.leftVersionId),
       this.getVersion(orgId, input.rightVersionId),
     ]);
+    const settingsDiff = this.buildSettingsDiff(
+      left.definition.settings as unknown as Record<string, unknown>,
+      right.definition.settings as unknown as Record<string, unknown>,
+    );
+    const nodesDiff = this.buildNodeDiff(left.definition.nodes, right.definition.nodes);
+    const edgesDiff = this.buildEdgeDiff(left.definition.edges, right.definition.edges);
+    const bindingImpact = await this.buildBindingImpact(orgId, {
+      leftWorkflowId: left.workflowId,
+      rightWorkflowId: right.workflowId,
+      leftVersionId: left.id,
+      rightVersionId: right.id,
+    });
     return {
       left,
       right,
@@ -257,13 +269,23 @@ export class CrawlStrategyWorkflowService {
           right.definition.nodes.length - left.definition.nodes.length,
         edgeCountDelta:
           right.definition.edges.length - left.definition.edges.length,
+        changedSettingsCount: settingsDiff.length,
+        addedNodeCount: nodesDiff.added.length,
+        removedNodeCount: nodesDiff.removed.length,
+        changedNodeCount: nodesDiff.changed.length,
+        addedEdgeCount: edgesDiff.added.length,
+        removedEdgeCount: edgesDiff.removed.length,
       },
       definitionDiff: {
         leftSettings: left.definition.settings,
         rightSettings: right.definition.settings,
         leftNodeIds: left.definition.nodes.map((node) => node.id),
         rightNodeIds: right.definition.nodes.map((node) => node.id),
+        settings: settingsDiff,
+        nodes: nodesDiff,
+        edges: edgesDiff,
       },
+      bindingImpact,
     };
   }
 
@@ -281,6 +303,16 @@ export class CrawlStrategyWorkflowService {
       } as CrawlSiteProfileRecord,
       seedUrl,
     );
+  }
+
+  buildLegacyProfileDefinition(
+    profile: Pick<
+      CrawlSiteProfileRecord,
+      'name' | 'description' | 'executionMode' | 'config'
+    >,
+    seedUrl?: string,
+  ) {
+    return this.legacyBridge.buildWorkflowFromProfile(profile, seedUrl);
   }
 
   async buildLegacyNewsSourceBridge(orgId: string, sourceId: string) {
@@ -303,6 +335,14 @@ export class CrawlStrategyWorkflowService {
           ? source.crawlTemplate.crawlOptions
           : null,
     });
+  }
+
+  buildLegacyNewsSourceDefinition(input: {
+    url: string;
+    config?: Record<string, unknown> | null;
+    crawlOptions?: Record<string, unknown> | null;
+  }) {
+    return this.legacyBridge.buildWorkflowFromNewsSource(input);
   }
 
   async resolveBoundWorkflowVersion(options: {
@@ -813,5 +853,247 @@ export class CrawlStrategyWorkflowService {
       .filter((entry): entry is string => typeof entry === 'string')
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
+  }
+
+  private buildSettingsDiff(
+    left: Record<string, unknown>,
+    right: Record<string, unknown>,
+  ) {
+    return Array.from(new Set([...Object.keys(left), ...Object.keys(right)]))
+      .sort()
+      .filter((key) => JSON.stringify(left[key]) !== JSON.stringify(right[key]))
+      .map((key) => ({
+        key,
+        left: left[key] ?? null,
+        right: right[key] ?? null,
+      }));
+  }
+
+  private buildNodeDiff(
+    leftNodes: CrawlStrategyWorkflowDefinition['nodes'],
+    rightNodes: CrawlStrategyWorkflowDefinition['nodes'],
+  ) {
+    const leftById = new Map(leftNodes.map((node) => [node.id, node]));
+    const rightById = new Map(rightNodes.map((node) => [node.id, node]));
+    const added = rightNodes.filter((node) => !leftById.has(node.id));
+    const removed = leftNodes.filter((node) => !rightById.has(node.id));
+    const changed = leftNodes
+      .filter((node) => rightById.has(node.id))
+      .map((node) => {
+        const next = rightById.get(node.id)!;
+        const changedFields = [
+          JSON.stringify(node.type) !== JSON.stringify(next.type) ? 'type' : null,
+          JSON.stringify(node.label) !== JSON.stringify(next.label) ? 'label' : null,
+          JSON.stringify(node.position) !== JSON.stringify(next.position)
+            ? 'position'
+            : null,
+          JSON.stringify(node.config) !== JSON.stringify(next.config) ? 'config' : null,
+          JSON.stringify(node.uiState ?? null) !== JSON.stringify(next.uiState ?? null)
+            ? 'uiState'
+            : null,
+        ].filter((field): field is string => Boolean(field));
+        if (changedFields.length === 0) {
+          return null;
+        }
+        return {
+          id: node.id,
+          left: node,
+          right: next,
+          changedFields,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    return {
+      added,
+      removed,
+      changed,
+    };
+  }
+
+  private buildEdgeDiff(
+    leftEdges: CrawlStrategyWorkflowDefinition['edges'],
+    rightEdges: CrawlStrategyWorkflowDefinition['edges'],
+  ) {
+    const leftBySignature = new Map(
+      leftEdges.map((edge) => [this.buildEdgeSignature(edge), edge]),
+    );
+    const rightBySignature = new Map(
+      rightEdges.map((edge) => [this.buildEdgeSignature(edge), edge]),
+    );
+    const added = rightEdges.filter(
+      (edge) => !leftBySignature.has(this.buildEdgeSignature(edge)),
+    );
+    const removed = leftEdges.filter(
+      (edge) => !rightBySignature.has(this.buildEdgeSignature(edge)),
+    );
+    return {
+      added,
+      removed,
+    };
+  }
+
+  private buildEdgeSignature(
+    edge: CrawlStrategyWorkflowDefinition['edges'][number],
+  ) {
+    return JSON.stringify({
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+      condition: edge.condition ?? null,
+      priority: edge.priority ?? null,
+    });
+  }
+
+  private async buildBindingImpact(
+    orgId: string,
+    options: {
+      leftWorkflowId: string;
+      rightWorkflowId: string;
+      leftVersionId: string;
+      rightVersionId: string;
+    },
+  ) {
+    const workflowIds = Array.from(
+      new Set([options.leftWorkflowId, options.rightWorkflowId].filter(Boolean)),
+    );
+    const versionIds = Array.from(
+      new Set([options.leftVersionId, options.rightVersionId].filter(Boolean)),
+    );
+    const [workflows, profiles, newsSources] = await Promise.all([
+      this.prisma.crawlStrategyWorkflow.findMany({
+        where: {
+          orgId,
+          id: { in: workflowIds },
+        },
+        select: {
+          id: true,
+          name: true,
+          publishedVersionId: true,
+        },
+      }),
+      this.prisma.crawlSiteProfile.findMany({
+        where: {
+          orgId,
+          OR: [
+            { workflowId: { in: workflowIds } },
+            { workflowVersionId: { in: versionIds } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          matchHost: true,
+          workflowId: true,
+          workflowVersionId: true,
+          workflowBindingMode: true,
+          updatedAt: true,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.newsSource.findMany({
+        where: {
+          orgId,
+          OR: [
+            { workflowId: { in: workflowIds } },
+            { workflowVersionId: { in: versionIds } },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          url: true,
+          workflowId: true,
+          workflowVersionId: true,
+          workflowBindingMode: true,
+          updatedAt: true,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+    const workflowById = new Map(workflows.map((workflow) => [workflow.id, workflow]));
+    const classifyUsage = (
+      workflowId?: string | null,
+      workflowVersionId?: string | null,
+    ) => {
+      if (workflowVersionId === options.leftVersionId) {
+        return 'left_version';
+      }
+      if (workflowVersionId === options.rightVersionId) {
+        return 'right_version';
+      }
+      if (workflowId) {
+        const workflow = workflowById.get(workflowId);
+        if (workflow?.publishedVersionId === options.leftVersionId) {
+          return 'published_left';
+        }
+        if (workflow?.publishedVersionId === options.rightVersionId) {
+          return 'published_right';
+        }
+      }
+      return 'other';
+    };
+    const mapBindingRecord = <
+      T extends {
+        id: string;
+        name: string;
+        workflowId: string | null;
+        workflowVersionId: string | null;
+        workflowBindingMode: string;
+        updatedAt: Date;
+      },
+    >(
+      entry: T,
+      extra?: Record<string, unknown>,
+    ) => ({
+      id: entry.id,
+      name: entry.name,
+      workflowId: entry.workflowId,
+      workflowVersionId: entry.workflowVersionId,
+      workflowBindingMode: entry.workflowBindingMode,
+      appliesTo: classifyUsage(entry.workflowId, entry.workflowVersionId),
+      updatedAt: entry.updatedAt,
+      ...extra,
+    });
+    const mappedProfiles = profiles.map((profile) =>
+      mapBindingRecord(profile, { matchHost: profile.matchHost }),
+    );
+    const mappedNewsSources = newsSources.map((source) =>
+      mapBindingRecord(source, { url: source.url }),
+    );
+
+    return {
+      workflows: workflows.map((workflow) => ({
+        id: workflow.id,
+        name: workflow.name,
+        publishedVersionId: workflow.publishedVersionId,
+      })),
+      profiles: {
+        total: mappedProfiles.length,
+        followingPublishedCount: mappedProfiles.filter(
+          (entry) => entry.workflowBindingMode === 'published',
+        ).length,
+        leftVersionCount: mappedProfiles.filter(
+          (entry) => entry.workflowVersionId === options.leftVersionId,
+        ).length,
+        rightVersionCount: mappedProfiles.filter(
+          (entry) => entry.workflowVersionId === options.rightVersionId,
+        ).length,
+        items: mappedProfiles,
+      },
+      newsSources: {
+        total: mappedNewsSources.length,
+        followingPublishedCount: mappedNewsSources.filter(
+          (entry) => entry.workflowBindingMode === 'published',
+        ).length,
+        leftVersionCount: mappedNewsSources.filter(
+          (entry) => entry.workflowVersionId === options.leftVersionId,
+        ).length,
+        rightVersionCount: mappedNewsSources.filter(
+          (entry) => entry.workflowVersionId === options.rightVersionId,
+        ).length,
+        items: mappedNewsSources,
+      },
+    };
   }
 }

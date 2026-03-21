@@ -83,6 +83,17 @@ export interface Crawl4aiResponse {
   runId?: string | null;
   nextCursor?: string | null;
   warnings?: string[];
+  systemEvents?: Array<{
+    level: "info" | "warn" | "error";
+    eventType: string;
+    message: string;
+    triggerReason?: string | null;
+    beforeCount?: number | null;
+    afterCount?: number | null;
+    rescuedCount?: number | null;
+    details?: Record<string, unknown>;
+    timestamp: string;
+  }>;
   results: Crawl4aiArticle[];
   serverMemoryMb?: number;
   peakMemoryMb?: number;
@@ -139,9 +150,11 @@ export class Crawl4aiClient {
     await this.ensureHealthy(settings);
     await this.validateRequestUrls(request);
     const payload = this.toHttpPayload(request);
+    const systemEvents: NonNullable<Crawl4aiResponse["systemEvents"]> = [];
 
     try {
-      return await this.sendCrawlRequest(payload, requestTimeoutMs);
+      const response = await this.sendCrawlRequest(payload, requestTimeoutMs);
+      return systemEvents.length > 0 ? { ...response, systemEvents } : response;
     } catch (error) {
       let resolvedError: unknown = error;
       let resolvedPayload: Crawl4aiHttpPayload = payload;
@@ -152,10 +165,28 @@ export class Crawl4aiClient {
           "crawl4ai server rejected prefetch; retrying without prefetch for compatibility",
         );
         try {
-          return await this.sendCrawlRequest(
+          const response = await this.sendCrawlRequest(
             compatibilityPayload,
             requestTimeoutMs,
           );
+          systemEvents.push({
+            level: "warn",
+            eventType: "prefetch_compatibility_fallback",
+            message: "crawl4ai server rejected prefetch; retried without prefetch",
+            triggerReason: "prefetch_incompatible",
+            beforeCount: 1,
+            afterCount: 1,
+            rescuedCount: 1,
+            details: {
+              requestUrl: request.urls?.[0] ?? request.url ?? null,
+              fallbackMode: "disable_prefetch",
+            },
+            timestamp: new Date().toISOString(),
+          });
+          return {
+            ...response,
+            systemEvents,
+          };
         } catch (retryError) {
           resolvedError = retryError;
           resolvedPayload = compatibilityPayload;
@@ -172,10 +203,32 @@ export class Crawl4aiClient {
           "scanFullPage failed or timed out; retrying crawl4ai with bounded virtualScroll fallback",
         );
         try {
-          return await this.sendCrawlRequest(
+          const response = await this.sendCrawlRequest(
             scanFallbackPayload,
             requestTimeoutMs,
           );
+          systemEvents.push({
+            level: "warn",
+            eventType: "scan_full_page_virtual_scroll_fallback",
+            message:
+              "scanFullPage failed or timed out; retried with bounded virtualScroll",
+            triggerReason:
+              resolvedError instanceof TimeoutError
+                ? "scan_full_page_timeout"
+                : "scan_full_page_failure",
+            beforeCount: 1,
+            afterCount: 1,
+            rescuedCount: 1,
+            details: {
+              requestUrl: request.urls?.[0] ?? request.url ?? null,
+              fallbackMode: "bounded_virtual_scroll",
+            },
+            timestamp: new Date().toISOString(),
+          });
+          return {
+            ...response,
+            systemEvents,
+          };
         } catch (fallbackError) {
           resolvedError = fallbackError;
         }

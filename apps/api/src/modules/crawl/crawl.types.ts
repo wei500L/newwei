@@ -249,6 +249,7 @@ export interface CrawlFrontierRunRecord {
   id: string;
   orgId: string;
   profileId?: string | null;
+  workflowRunId?: string | null;
   seedUrl: string;
   crawlTaskId?: string | null;
   executionMode: CrawlSiteExecutionMode;

@@ -24,7 +24,10 @@ export enum CrawlStrategyWorkflowRunKind {
   ProfilePreview = 'profile_preview',
   NewsSourcePreview = 'news_source_preview',
   FrontierCompile = 'frontier_compile',
+  FrontierRun = 'frontier_run',
 }
+
+export type CrawlStrategyWorkflowOrigin = 'bound' | 'legacy_bridge';
 
 export interface CrawlStrategyWorkflowNodePosition {
   x: number;
@@ -87,7 +90,7 @@ export interface CrawlStrategyParameterSource {
 
 export interface CrawlStrategyCandidateTraceEntry {
   nodeId: string;
-  nodeType: CrawlStrategyWorkflowNodeType;
+  nodeType: CrawlStrategyWorkflowNodeType | string;
   action:
     | 'discovered'
     | 'classified'
@@ -102,6 +105,9 @@ export interface CrawlStrategyCandidateTraceEntry {
   scoreDelta?: number;
   freshnessDelta?: number;
   ruleHits?: string[];
+  rejectedReason?: string | null;
+  beforeSnapshot?: Record<string, unknown>;
+  afterSnapshot?: Record<string, unknown>;
   details?: Record<string, unknown>;
   timestamp: string;
 }
@@ -129,10 +135,11 @@ export interface CrawlStrategyWorkflowCandidate {
 }
 
 export interface CrawlStrategyWorkflowStepResult {
+  stepKey?: string;
   nodeId: string;
-  nodeType: CrawlStrategyWorkflowNodeType;
+  nodeType: CrawlStrategyWorkflowNodeType | string;
   label: string;
-  status: 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'skipped';
   durationMs: number;
   inputCount: number;
   outputCount: number;
@@ -142,18 +149,29 @@ export interface CrawlStrategyWorkflowStepResult {
   error?: string | null;
 }
 
+export interface CrawlStrategyWorkflowRunEvent {
+  id?: string;
+  sequence?: number;
+  level: 'info' | 'warn' | 'error';
+  eventType: string;
+  nodeId?: string | null;
+  nodeType?: CrawlStrategyWorkflowNodeType | string | null;
+  message: string;
+  triggerReason?: string | null;
+  beforeCount?: number | null;
+  afterCount?: number | null;
+  rescuedCount?: number | null;
+  details?: Record<string, unknown>;
+  timestamp: string;
+}
+
 export interface CrawlStrategyWorkflowRunResult {
   definition: CrawlStrategyWorkflowDefinition;
   steps: CrawlStrategyWorkflowStepResult[];
   candidates: CrawlStrategyWorkflowCandidate[];
   selectedCandidates: CrawlStrategyWorkflowCandidate[];
   parameterSources: CrawlStrategyParameterSource[];
-  systemEvents: Array<{
-    level: 'info' | 'warn' | 'error';
-    message: string;
-    details?: Record<string, unknown>;
-    timestamp: string;
-  }>;
+  systemEvents: CrawlStrategyWorkflowRunEvent[];
 }
 
 export interface CrawlStrategyWorkflowNodeSchema {

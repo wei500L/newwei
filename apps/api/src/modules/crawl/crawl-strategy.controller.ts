@@ -20,6 +20,7 @@ import {
   CreateCrawlStrategyWorkflowDto,
   ListCrawlStrategyWorkflowDto,
   PublishCrawlStrategyWorkflowDto,
+  ReplayCrawlStrategyWorkflowRunDto,
   TrialRunCrawlStrategyWorkflowDto,
   UpdateCrawlStrategyWorkflowDraftDto,
 } from './dto/crawl-strategy.dto';
@@ -149,6 +150,16 @@ export class CrawlStrategyController {
     @Param('candidateId') candidateId: string,
   ) {
     return this.runtime.getCandidateExplanation(user.orgId, runId, candidateId);
+  }
+
+  @Post('workflow-runs/:runId/replay')
+  @Permissions('crawl.read')
+  async replayRun(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('runId') runId: string,
+    @Body() body: ReplayCrawlStrategyWorkflowRunDto,
+  ) {
+    return this.runtime.replayRun(user.orgId, user.id, runId, body);
   }
 
   @Get('profiles/:id/workflow-bridge')

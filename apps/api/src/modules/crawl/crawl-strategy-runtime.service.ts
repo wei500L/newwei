@@ -14,8 +14,10 @@ import {
   CrawlMetadataService,
   type CrawlDiscoveryCandidate,
 } from './crawl-metadata.service';
+import { CrawlStrategyRunRecorderService } from './crawl-strategy-run-recorder.service';
 import { CrawlStrategyWorkflowService } from './crawl-strategy-workflow.service';
 import {
+  CrawlStrategyWorkflowRunKind,
   CrawlStrategyWorkflowNodeType,
   isRecord,
   type CrawlStrategyCandidateTraceEntry,
@@ -57,6 +59,7 @@ export class CrawlStrategyRuntimeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metadata: CrawlMetadataService,
+    private readonly recorder: CrawlStrategyRunRecorderService,
     private readonly workflows: CrawlStrategyWorkflowService,
   ) {}
 
@@ -115,26 +118,26 @@ export class CrawlStrategyRuntimeService {
           updatedAt: new Date(),
         } satisfies CrawlSiteProfileRecord);
 
-    const run = await this.prisma.crawlStrategyWorkflowRun.create({
-      data: {
-        orgId,
-        workflowId: resolved.workflow.id,
-        workflowVersionId: resolved.version.id,
+    const run = await this.recorder.createRun({
+      orgId,
+      createdById: actorId,
+      workflowId: resolved.workflow.id,
+      workflowVersionId: resolved.version.id,
+      workflowOrigin: 'bound',
+      profileId: profile?.id,
+      newsSourceId: newsSource?.id,
+      status: 'running',
+      runKind: input.runKind ?? CrawlStrategyWorkflowRunKind.Trial,
+      input: {
+        seedUrl: input.seedUrl,
         profileId: profile?.id,
         newsSourceId: newsSource?.id,
-        status: 'running',
-        runKind: input.runKind ?? 'trial',
-        input: toPrismaJsonValue({
-          seedUrl: input.seedUrl,
-          profileId: profile?.id,
-          newsSourceId: newsSource?.id,
-          maxCandidates: input.maxCandidates,
-          runtimeOverrides: input.runtimeOverrides ?? {},
-        }),
-        graphSnapshot: toPrismaJsonValue(resolved.definition),
-        createdById: actorId,
-        startedAt: new Date(),
+        maxCandidates: input.maxCandidates,
+        runtimeOverrides: input.runtimeOverrides ?? {},
       },
+      graphSnapshot: resolved.definition,
+      parameterSources: profileOverlay?.parameterSources ?? [],
+      startedAt: new Date(),
     });
 
     try {
@@ -152,22 +155,17 @@ export class CrawlStrategyRuntimeService {
         maxCandidates: this.toNumber(input.maxCandidates, 100),
       });
 
-      await this.prisma.crawlStrategyWorkflowRun.update({
-        where: { id: run.id },
-        data: {
-          status: 'completed',
-          output: toPrismaJsonValue({
-            selectedCount: result.selectedCandidates.length,
-            candidateCount: result.candidates.length,
-          }),
-          stepResults: toPrismaJsonValue(result.steps),
-          candidates: toPrismaJsonValue(result.candidates),
-          parameterSources: toPrismaJsonValue(result.parameterSources),
-          candidateCount: result.candidates.length,
+      await this.recorder.finalizeRun(run.id, {
+        status: 'completed',
+        output: {
           selectedCount: result.selectedCandidates.length,
-          stepCount: result.steps.length,
-          finishedAt: new Date(),
+          candidateCount: result.candidates.length,
         },
+        steps: result.steps,
+        candidates: result.candidates,
+        parameterSources: result.parameterSources,
+        events: result.systemEvents,
+        finishedAt: new Date(),
       });
 
       return {
@@ -182,79 +180,83 @@ export class CrawlStrategyRuntimeService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.prisma.crawlStrategyWorkflowRun.update({
-        where: { id: run.id },
-        data: {
-          status: 'failed',
-          error: message,
-          finishedAt: new Date(),
-        },
+      await this.recorder.finalizeRun(run.id, {
+        status: 'failed',
+        error: message,
+        finishedAt: new Date(),
       });
       throw error;
     }
   }
 
   async getRun(orgId: string, runId: string) {
-    const run = await this.prisma.crawlStrategyWorkflowRun.findUnique({
-      where: { id: runId },
-      include: {
-        workflow: true,
-        workflowVersion: true,
-      },
-    });
-    if (!run || run.orgId !== orgId) {
-      throw new NotFoundException('Workflow run not found');
-    }
-    return {
-      id: run.id,
-      orgId: run.orgId,
-      workflow: {
-        id: run.workflow.id,
-        name: run.workflow.name,
-      },
-      workflowVersion: {
-        id: run.workflowVersion.id,
-        version: run.workflowVersion.version,
-        name: run.workflowVersion.name,
-      },
-      status: run.status,
-      runKind: run.runKind,
-      input: isRecord(run.input) ? run.input : null,
-      output: isRecord(run.output) ? run.output : null,
-      graphSnapshot: isRecord(run.graphSnapshot) ? run.graphSnapshot : null,
-      stepResults: Array.isArray(run.stepResults) ? run.stepResults : [],
-      candidates: Array.isArray(run.candidates) ? run.candidates : [],
-      parameterSources: Array.isArray(run.parameterSources)
-        ? run.parameterSources
-        : [],
-      stepCount: run.stepCount,
-      candidateCount: run.candidateCount,
-      selectedCount: run.selectedCount,
-      error: run.error,
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      createdAt: run.createdAt,
-      updatedAt: run.updatedAt,
-    };
+    return this.recorder.getRun(orgId, runId);
   }
 
   async listRunCandidates(orgId: string, runId: string) {
-    const run = await this.getRun(orgId, runId);
-    return Array.isArray(run.candidates) ? run.candidates : [];
+    return this.recorder.listRunCandidates(orgId, runId);
   }
 
   async getCandidateExplanation(orgId: string, runId: string, candidateId: string) {
-    const candidates = await this.listRunCandidates(orgId, runId);
-    const candidate = candidates.find(
-      (entry) =>
-        isRecord(entry) &&
-        typeof entry.id === 'string' &&
-        entry.id === candidateId,
-    );
-    if (!candidate) {
-      throw new NotFoundException('Workflow candidate not found');
+    return this.recorder.getCandidateExplanation(orgId, runId, candidateId);
+  }
+
+  async replayRun(
+    orgId: string,
+    actorId: string,
+    runId: string,
+    overrides?: {
+      seedUrl?: string;
+      profileId?: string;
+      newsSourceId?: string;
+      maxCandidates?: number;
+    },
+  ) {
+    const existing = await this.recorder.getRun(orgId, runId);
+    const workflowId =
+      existing.workflow?.id ??
+      (isRecord(existing.graphSnapshot) ? 'legacy-replay' : '');
+    if (
+      existing.workflowOrigin === 'legacy_bridge' ||
+      !workflowId ||
+      workflowId === 'legacy-replay'
+    ) {
+      throw new NotFoundException(
+        'Legacy bridge workflow runs are observable but cannot be replayed until they are bound to a published workflow version',
+      );
     }
-    return candidate;
+    const workflowVersionId =
+      existing.workflowVersion?.id ??
+      (isRecord(existing.input) && typeof existing.input.workflowVersionId === 'string'
+        ? existing.input.workflowVersionId
+        : undefined);
+    if (!workflowVersionId) {
+      throw new NotFoundException('Workflow run version not found');
+    }
+    return this.trialRunWorkflow(orgId, actorId, workflowId, {
+      workflowVersionId,
+      seedUrl:
+        overrides?.seedUrl ??
+        (isRecord(existing.input) && typeof existing.input.seedUrl === 'string'
+          ? existing.input.seedUrl
+          : undefined),
+      profileId:
+        overrides?.profileId ??
+        (isRecord(existing.input) && typeof existing.input.profileId === 'string'
+          ? existing.input.profileId
+          : undefined),
+      newsSourceId:
+        overrides?.newsSourceId ??
+        (isRecord(existing.input) && typeof existing.input.newsSourceId === 'string'
+          ? existing.input.newsSourceId
+          : undefined),
+      maxCandidates:
+        overrides?.maxCandidates ??
+        (isRecord(existing.input) && typeof existing.input.maxCandidates === 'number'
+          ? existing.input.maxCandidates
+          : undefined),
+      runKind: CrawlStrategyWorkflowRunKind.Trial,
+    });
   }
 
   private async execute(context: RuntimeContext): Promise<CrawlStrategyWorkflowRunResult> {
@@ -506,6 +508,7 @@ export class CrawlStrategyRuntimeService {
     const rejected: CrawlStrategyWorkflowCandidate[] = [];
 
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const reason = this.resolveUrlFilterReason(candidate.url, {
         includePatterns,
         excludePatterns,
@@ -524,6 +527,9 @@ export class CrawlStrategyRuntimeService {
           message: `Rejected by URL filter: ${reason}`,
           accepted: false,
           ruleHits: [reason],
+          rejectedReason: reason,
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
         });
         rejected.push(candidate);
       } else {
@@ -533,6 +539,8 @@ export class CrawlStrategyRuntimeService {
           action: 'filtered',
           message: 'Accepted by URL filter',
           accepted: true,
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
         });
         accepted.push(candidate);
       }
@@ -577,6 +585,7 @@ export class CrawlStrategyRuntimeService {
     const rejected: CrawlStrategyWorkflowCandidate[] = [];
 
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const extracted = resultByUrl.get(candidate.url);
       if (extracted) {
         this.applyMetadataResult(candidate, extracted);
@@ -593,6 +602,9 @@ export class CrawlStrategyRuntimeService {
           message: `Rejected by content filter: ${reason}`,
           accepted: false,
           ruleHits: [reason],
+          rejectedReason: reason,
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
         });
         rejected.push(candidate);
       } else {
@@ -602,6 +614,8 @@ export class CrawlStrategyRuntimeService {
           action: 'filtered',
           message: 'Accepted by content filter',
           accepted: true,
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
           details: extracted ? { status: extracted.status } : undefined,
         });
         accepted.push(candidate);
@@ -637,6 +651,7 @@ export class CrawlStrategyRuntimeService {
     } as CrawlSiteProfileConfig;
 
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const nextPageType = inferFrontierPageType({
         url: candidate.url,
         parentPageType: 'home',
@@ -650,6 +665,8 @@ export class CrawlStrategyRuntimeService {
         action: 'classified',
         message: `Classified as ${nextPageType}`,
         accepted: true,
+        beforeSnapshot,
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
         details: { pageType: nextPageType },
       });
     }
@@ -673,6 +690,7 @@ export class CrawlStrategyRuntimeService {
     };
 
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const previousScore = candidate.score ?? 0;
       const nextScore = scoreFrontierCandidate({
         url: candidate.url,
@@ -689,6 +707,9 @@ export class CrawlStrategyRuntimeService {
         message: `URL score ${previousScore.toFixed(3)} -> ${nextScore.toFixed(3)}`,
         accepted: true,
         scoreDelta: Number((nextScore - previousScore).toFixed(4)),
+        ruleHits: ['url_scored'],
+        beforeSnapshot,
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
       });
     }
 
@@ -713,6 +734,7 @@ export class CrawlStrategyRuntimeService {
       },
     };
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const previous = candidate.freshnessScore ?? 0;
       const next = estimateFreshnessScore(candidate.url, scoringConfig);
       candidate.freshnessScore = next;
@@ -723,6 +745,9 @@ export class CrawlStrategyRuntimeService {
         message: `Freshness ${previous.toFixed(3)} -> ${next.toFixed(3)}`,
         accepted: true,
         freshnessDelta: Number((next - previous).toFixed(4)),
+        ruleHits: ['freshness_scored'],
+        beforeSnapshot,
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
       });
     }
     return {
@@ -743,6 +768,7 @@ export class CrawlStrategyRuntimeService {
     const fail: CrawlStrategyWorkflowCandidate[] = [];
 
     for (const candidate of inputCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       const targetValue = (candidate as unknown as Record<string, unknown>)[field];
       const matched = this.evaluateBranch(targetValue, operator, value);
       this.pushTrace(candidate, {
@@ -751,6 +777,9 @@ export class CrawlStrategyRuntimeService {
         action: 'branched',
         message: matched ? 'Matched branch condition' : 'Missed branch condition',
         accepted: matched,
+        ruleHits: [matched ? 'branch_match' : 'branch_miss'],
+        beforeSnapshot,
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
         details: { field, operator, value },
       });
       if (matched) {
@@ -789,6 +818,11 @@ export class CrawlStrategyRuntimeService {
     const rejected: CrawlStrategyWorkflowCandidate[] = [];
 
     for (const [index, candidate] of sorted.entries()) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
+      const compositeScore =
+        (candidate.score ?? 0) +
+        (candidate.freshnessScore ?? 0) +
+        (candidate.relevanceScore ?? 0);
       const belowThreshold = (candidate.score ?? 0) < minScore;
       const beyondBudget = index >= keepTopK;
       if (belowThreshold || beyondBudget) {
@@ -804,6 +838,15 @@ export class CrawlStrategyRuntimeService {
             : 'Rejected by budget trim',
           accepted: false,
           ruleHits: [candidate.rejectedReason],
+          rejectedReason: candidate.rejectedReason,
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
+          details: {
+            compositeScore,
+            minScore,
+            keepTopK,
+            rank: index + 1,
+          },
         });
         rejected.push(candidate);
       } else {
@@ -813,6 +856,15 @@ export class CrawlStrategyRuntimeService {
           action: 'budgeted',
           message: 'Kept by budget control',
           accepted: true,
+          ruleHits: ['kept_by_budget'],
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
+          details: {
+            compositeScore,
+            minScore,
+            keepTopK,
+            rank: index + 1,
+          },
         });
         accepted.push(candidate);
       }
@@ -846,12 +898,6 @@ export class CrawlStrategyRuntimeService {
         },
       };
     }
-    context.systemEvents.push({
-      level: 'info',
-      message: 'Fallback strategy activated',
-      details: { nodeId: node.id, activateWhen },
-      timestamp: new Date().toISOString(),
-    });
     const mode = this.toString(node.config.mode) ?? 'list';
     const discoveryNode = {
       ...node,
@@ -877,13 +923,32 @@ export class CrawlStrategyRuntimeService {
       },
     };
     const result = await this.executeNode(context, discoveryNode, [], registry);
-    for (const candidate of this.flattenOutputs(result.outputs)) {
+    const fallbackCandidates = this.flattenOutputs(result.outputs);
+    context.systemEvents.push({
+      level: 'info',
+      eventType: 'fallback_strategy_activated',
+      nodeId: node.id,
+      nodeType: node.type,
+      message: 'Fallback strategy activated',
+      triggerReason: activateWhen === 'always' ? 'fallback_always' : 'empty_input',
+      beforeCount: inputCandidates.length,
+      afterCount: fallbackCandidates.length,
+      rescuedCount: fallbackCandidates.length,
+      details: { mode, activateWhen },
+      timestamp: new Date().toISOString(),
+    });
+    for (const candidate of fallbackCandidates) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
       this.pushTrace(candidate, {
         nodeId: node.id,
         nodeType: node.type,
         action: 'fallback',
         message: `Fallback produced candidate via ${mode}`,
         accepted: true,
+        ruleHits: ['fallback_activated'],
+        beforeSnapshot,
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
+        details: { activateWhen, mode },
       });
     }
     return result;
@@ -904,6 +969,11 @@ export class CrawlStrategyRuntimeService {
     const selected: CrawlStrategyWorkflowCandidate[] = [];
     const rejected: CrawlStrategyWorkflowCandidate[] = [];
     for (const [index, candidate] of sorted.entries()) {
+      const beforeSnapshot = this.buildCandidateSnapshot(candidate);
+      const compositeScore =
+        (candidate.score ?? 0) +
+        (candidate.freshnessScore ?? 0) +
+        (candidate.relevanceScore ?? 0);
       if (index < selectTopK) {
         candidate.status = 'selected';
         this.pushTrace(candidate, {
@@ -912,6 +982,14 @@ export class CrawlStrategyRuntimeService {
           action: 'persisted',
           message: 'Selected for persistence',
           accepted: true,
+          ruleHits: ['selected_for_persistence'],
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
+          details: {
+            selectTopK,
+            rank: index + 1,
+            compositeScore,
+          },
         });
         selected.push(candidate);
       } else {
@@ -925,6 +1003,14 @@ export class CrawlStrategyRuntimeService {
           message: 'Dropped by persistence limit',
           accepted: false,
           ruleHits: ['persist_trim'],
+          rejectedReason: 'persist_trim',
+          beforeSnapshot,
+          afterSnapshot: this.buildCandidateSnapshot(candidate),
+          details: {
+            selectTopK,
+            rank: index + 1,
+            compositeScore,
+          },
         });
         rejected.push(candidate);
       }
@@ -1017,6 +1103,12 @@ export class CrawlStrategyRuntimeService {
         action: 'discovered',
         message: 'Candidate discovered',
         accepted: true,
+        beforeSnapshot: this.buildCandidateSnapshot({
+          url: entry.url,
+          status: 'active',
+          rejectedReason: null,
+        }),
+        afterSnapshot: this.buildCandidateSnapshot(candidate),
         details: {
           relevanceScore: entry.relevanceScore,
         },
@@ -1249,6 +1341,37 @@ export class CrawlStrategyRuntimeService {
       ...entry,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private buildCandidateSnapshot(candidate: {
+    url: string;
+    pageType?: string | null;
+    score?: number | null;
+    freshnessScore?: number | null;
+    relevanceScore?: number | null;
+    status?: string | null;
+    rejectedReason?: string | null;
+  }) {
+    return {
+      url: candidate.url,
+      pageType: candidate.pageType ?? null,
+      score:
+        typeof candidate.score === 'number' && Number.isFinite(candidate.score)
+          ? candidate.score
+          : null,
+      freshnessScore:
+        typeof candidate.freshnessScore === 'number' &&
+        Number.isFinite(candidate.freshnessScore)
+          ? candidate.freshnessScore
+          : null,
+      relevanceScore:
+        typeof candidate.relevanceScore === 'number' &&
+        Number.isFinite(candidate.relevanceScore)
+          ? candidate.relevanceScore
+          : null,
+      status: candidate.status ?? null,
+      rejectedReason: candidate.rejectedReason ?? null,
+    };
   }
 
   private toString(value: unknown) {

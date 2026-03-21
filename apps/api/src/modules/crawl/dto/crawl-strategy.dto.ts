@@ -124,6 +124,32 @@ export class CompareCrawlStrategyWorkflowVersionsDto {
   rightVersionId!: string;
 }
 
+export class ReplayCrawlStrategyWorkflowRunDto {
+  @IsOptional()
+  @IsUrl({
+    require_tld: false,
+    require_protocol: true,
+  })
+  seedUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  profileId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  newsSourceId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  maxCandidates?: number;
+}
+
 export class UpdateWorkflowBindingDto {
   @IsOptional()
   @IsString()

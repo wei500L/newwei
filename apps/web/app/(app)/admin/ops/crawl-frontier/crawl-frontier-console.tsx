@@ -37,6 +37,15 @@ import { captureClientError } from "@/lib/client-telemetry";
 
 import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
 import { CrawlWorkflowStudio } from "./crawl-workflow-studio";
+import {
+  buildWorkflowCandidateTraceChain,
+  buildWorkflowCandidateTraceSummary,
+  buildWorkflowTraceEntryDiffRows,
+  formatWorkflowStepSummary,
+  type WorkflowCandidateRecord,
+  type WorkflowRunEvent,
+  type WorkflowRunStep,
+} from "./crawl-workflow-view-model";
 
 type CrawlSiteExecutionMode = "layered" | "native" | "hybrid";
 type CrawlFrontierRunStatus =
@@ -84,6 +93,7 @@ interface CrawlSiteProfileVersionRecord {
 
 interface CrawlFrontierRunRecord {
   id: string;
+  workflowRunId?: string | null;
   seedUrl: string;
   executionMode: CrawlSiteExecutionMode;
   status: CrawlFrontierRunStatus;
@@ -152,6 +162,40 @@ interface CrawlFrontierNodeRecord {
 interface CrawlFrontierRunDetail extends CrawlFrontierRunRecord {
   profile?: CrawlSiteProfileRecord | null;
   nodes: CrawlFrontierNodeRecord[];
+}
+
+interface WorkflowRunDetail {
+  id: string;
+  workflowOrigin: "bound" | "legacy_bridge";
+  workflow?: {
+    id: string;
+    name: string;
+  } | null;
+  workflowVersion?: {
+    id: string;
+    version: number;
+    name: string;
+  } | null;
+  frontierRunId?: string | null;
+  status: string;
+  runKind: string;
+  input?: AnyRecord | null;
+  output?: AnyRecord | null;
+  graphSnapshot?: AnyRecord | null;
+  stepResults: WorkflowRunStep[];
+  candidates: WorkflowCandidateRecord[];
+  parameterSources: Array<{
+    key: string;
+    source: string;
+    value: unknown;
+  }>;
+  systemEvents: WorkflowRunEvent[];
+  stepCount: number;
+  candidateCount: number;
+  selectedCount: number;
+  error?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 }
 
 interface CrawlFrontierNodeDetail extends CrawlFrontierNodeRecord {
@@ -488,6 +532,20 @@ function formatCountSummary(value: unknown) {
     .join(" · ");
 }
 
+function workflowEventColor(level: WorkflowRunEvent["level"]) {
+  if (level === "error") return "red";
+  if (level === "warn") return "gold";
+  return "blue";
+}
+
+function workflowStepColor(status: WorkflowRunStep["status"]) {
+  if (status === "completed") return "green";
+  if (status === "failed") return "red";
+  if (status === "running") return "blue";
+  if (status === "queued" || status === "pending") return "cyan";
+  return "default";
+}
+
 function uniqueStringList(...lists: Array<string[] | undefined>) {
   return Array.from(
     new Set(
@@ -667,7 +725,16 @@ export function CrawlFrontierConsole() {
   const [workflowOptions, setWorkflowOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [runs, setRuns] = useState<CrawlFrontierRunRecord[]>([]);
   const [selectedRun, setSelectedRun] = useState<CrawlFrontierRunDetail | null>(null);
+  const [selectedWorkflowRun, setSelectedWorkflowRun] = useState<WorkflowRunDetail | null>(null);
+  const [selectedWorkflowCandidate, setSelectedWorkflowCandidate] =
+    useState<WorkflowCandidateRecord | null>(null);
+  const [loadingWorkflowRun, setLoadingWorkflowRun] = useState(false);
+  const [replayingWorkflowRun, setReplayingWorkflowRun] = useState(false);
   const [selectedNode, setSelectedNode] = useState<CrawlFrontierNodeDetail | null>(null);
+  const [activeConsoleTab, setActiveConsoleTab] = useState("profiles");
+  const [workflowStudioSelection, setWorkflowStudioSelection] = useState<string | null>(
+    null,
+  );
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
   const [nodeDrawerOpen, setNodeDrawerOpen] = useState(false);
   const [runDrawerTab, setRunDrawerTab] = useState("overview");
@@ -1002,15 +1069,24 @@ export function CrawlFrontierConsole() {
 
   const openRun = async (runId: string) => {
     setSaving(true);
+    setLoadingWorkflowRun(true);
     try {
-      const response = await apiClient.get<CrawlFrontierRunDetail>(`admin/crawl-frontier/runs/${runId}`);
-      setSelectedRun(response.data);
+      const [runResponse, workflowResponse] = await Promise.all([
+        apiClient.get<CrawlFrontierRunDetail>(`admin/crawl-frontier/runs/${runId}`),
+        apiClient
+          .get<WorkflowRunDetail>(`admin/crawl-frontier/runs/${runId}/workflow-run`)
+          .catch(() => null),
+      ]);
+      setSelectedRun(runResponse.data);
+      setSelectedWorkflowRun(workflowResponse?.data ?? null);
       setRunDrawerOpen(true);
       setRunDrawerTab("overview");
       setSelectedNodeIds([]);
+      setSelectedWorkflowCandidate(null);
     } catch (error) {
       messageApi.error(extractErrorMessage(error, "Failed to load crawl frontier run."));
     } finally {
+      setLoadingWorkflowRun(false);
       setSaving(false);
     }
   };
@@ -1018,6 +1094,25 @@ export function CrawlFrontierConsole() {
   const reloadSelectedRun = async () => {
     if (!selectedRun) return;
     await openRun(selectedRun.id);
+  };
+
+  const replayWorkflowRun = async (workflowRunId: string) => {
+    setReplayingWorkflowRun(true);
+    try {
+      const response = await apiClient.post<{ runId: string; workflow?: { name: string; version: number } }>(
+        `admin/crawl-frontier/workflow-runs/${workflowRunId}/replay`,
+        {},
+      );
+      messageApi.success(
+        response.data?.workflow
+          ? `Replayed ${response.data.workflow.name} v${response.data.workflow.version}.`
+          : "Workflow replay started.",
+      );
+    } catch (error) {
+      messageApi.error(extractErrorMessage(error, "Failed to replay workflow run."));
+    } finally {
+      setReplayingWorkflowRun(false);
+    }
   };
 
   const cancelRun = async (runId: string) => {
@@ -1295,6 +1390,7 @@ export function CrawlFrontierConsole() {
           <Space wrap size={[4, 4]}>
             {diagnostics.failureKind ? <Tag color="red">{diagnostics.failureKind}</Tag> : null}
             {diagnostics.runRole ? <Tag color="blue">{diagnostics.runRole}</Tag> : null}
+            {record.workflowRunId ? <Tag color="geekblue">workflow</Tag> : null}
             {diagnostics.seedStrategy ? <Tag color="green">{`seed:${diagnostics.seedStrategy}`}</Tag> : null}
             {diagnostics.seedMethod ? <Tag color="lime">{diagnostics.seedMethod}</Tag> : null}
             {diagnostics.fallbackStage ? <Tag color="gold">{diagnostics.fallbackStage}</Tag> : null}
@@ -1389,6 +1485,85 @@ export function CrawlFrontierConsole() {
     },
   ];
 
+  const workflowCandidateColumns: ColumnsType<WorkflowCandidateRecord> = useMemo(
+    () => [
+      {
+        title: "Candidate",
+        key: "url",
+        render: (_, record) => (
+          <Space direction="vertical" size={0}>
+            <Typography.Text strong ellipsis={{ tooltip: record.url }}>
+              {record.title || record.url}
+            </Typography.Text>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: record.url }}>
+              {record.url}
+            </Typography.Text>
+          </Space>
+        ),
+      },
+      {
+        title: "Status",
+        key: "status",
+        width: 120,
+        render: (_, record) => (
+          <Tag
+            color={
+              record.status === "selected"
+                ? "green"
+                : record.status === "rejected"
+                  ? "red"
+                  : "blue"
+            }
+          >
+            {record.status}
+          </Tag>
+        ),
+      },
+      {
+        title: "Signals",
+        key: "signals",
+        width: 260,
+        render: (_, record) => {
+          const traceSummary = buildWorkflowCandidateTraceSummary(record);
+          return (
+            <Space wrap size={[4, 4]}>
+              {record.pageType ? <Tag>{record.pageType}</Tag> : null}
+              {typeof record.score === "number" ? (
+                <Tag color="blue">{`score:${record.score.toFixed(2)}`}</Tag>
+              ) : null}
+              {typeof record.freshnessScore === "number" ? (
+                <Tag color="gold">{`fresh:${record.freshnessScore.toFixed(2)}`}</Tag>
+              ) : null}
+              {traceSummary.ruleHits.slice(0, 2).map((rule) => (
+                <Tag key={`${record.id}-${rule}`} color="purple">
+                  {rule}
+                </Tag>
+              ))}
+            </Space>
+          );
+        },
+      },
+      {
+        title: "Reason",
+        dataIndex: "rejectedReason",
+        key: "rejectedReason",
+        width: 180,
+        render: (value: string | null | undefined) => value ?? "-",
+      },
+      {
+        title: "Actions",
+        key: "actions",
+        width: 120,
+        render: (_, record) => (
+          <Button size="small" onClick={() => setSelectedWorkflowCandidate(record)}>
+            Explain
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
   if (status === "loading") {
     return (
       <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
@@ -1421,6 +1596,8 @@ export function CrawlFrontierConsole() {
       </Space>
 
       <Tabs
+        activeKey={activeConsoleTab}
+        onChange={setActiveConsoleTab}
         items={[
           {
             key: "profiles",
@@ -1444,7 +1621,12 @@ export function CrawlFrontierConsole() {
           {
             key: "workflow",
             label: "Workflow",
-            children: <CrawlWorkflowStudio canManage={canManage} />,
+            children: (
+              <CrawlWorkflowStudio
+                canManage={canManage}
+                selectedWorkflowIdHint={workflowStudioSelection}
+              />
+            ),
           },
           {
             key: "runs",
@@ -1748,7 +1930,18 @@ export function CrawlFrontierConsole() {
         </Form>
       </Modal>
 
-      <Drawer title="Crawl Frontier Run Detail" open={runDrawerOpen} onClose={() => { setRunDrawerOpen(false); setSelectedRun(null); setSelectedNodeIds([]); }} width={1320}>
+      <Drawer
+        title="Crawl Frontier Run Detail"
+        open={runDrawerOpen}
+        onClose={() => {
+          setRunDrawerOpen(false);
+          setSelectedRun(null);
+          setSelectedWorkflowRun(null);
+          setSelectedWorkflowCandidate(null);
+          setSelectedNodeIds([]);
+        }}
+        width={1320}
+      >
         {selectedRun ? (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Card size="small">
@@ -1761,6 +1954,14 @@ export function CrawlFrontierConsole() {
                   {selectedRunDiagnostics?.seedMethod ? <Tag color="lime">{selectedRunDiagnostics.seedMethod}</Tag> : null}
                   {selectedRunDiagnostics?.fallbackStage ? <Tag color="gold">{selectedRunDiagnostics.fallbackStage}</Tag> : null}
                   {selectedRunDiagnostics?.pendingLlmJobs ? <Tag color="magenta">{`pending:${selectedRunDiagnostics.pendingLlmJobs}`}</Tag> : null}
+                  {selectedWorkflowRun?.workflowOrigin ? (
+                    <Tag color={selectedWorkflowRun.workflowOrigin === "bound" ? "geekblue" : "default"}>
+                      {selectedWorkflowRun.workflowOrigin}
+                    </Tag>
+                  ) : null}
+                  {selectedWorkflowRun?.workflowVersion ? (
+                    <Tag color="cyan">{`workflow:v${selectedWorkflowRun.workflowVersion.version}`}</Tag>
+                  ) : null}
                   {selectedRunDiagnostics?.warningFlags.map((flag) => <Tag key={`run-${flag}`} color="gold">{flag}</Tag>)}
                 </Space>
                 <Typography.Text>{selectedRun.seedUrl}</Typography.Text>
@@ -1816,6 +2017,209 @@ export function CrawlFrontierConsole() {
                       }))}
                     />
                   </Card>
+                ),
+              },
+              {
+                key: "workflow",
+                label: "Workflow Trace",
+                children: !selectedWorkflowRun ? (
+                  loadingWorkflowRun ? (
+                    <div style={{ display: "flex", justifyContent: "center", padding: "4rem 0" }}>
+                      <Spin />
+                    </div>
+                  ) : (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="This run does not have a linked workflow trace record."
+                    />
+                  )
+                ) : (
+                  <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                    <Card
+                      size="small"
+                      title="Workflow Run"
+                      extra={
+                        <Space wrap>
+                          <Button onClick={() => void reloadSelectedRun()} loading={saving}>
+                            Refresh
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              if (!selectedWorkflowRun.workflow?.id) {
+                                return;
+                              }
+                              setWorkflowStudioSelection(selectedWorkflowRun.workflow.id);
+                              setActiveConsoleTab("workflow");
+                              setRunDrawerOpen(false);
+                            }}
+                            disabled={!selectedWorkflowRun.workflow?.id}
+                          >
+                            Open in Studio
+                          </Button>
+                          <Tooltip
+                            title={
+                              selectedWorkflowRun.workflow?.id
+                                ? undefined
+                                : "Legacy bridge runs are observable but cannot be replayed until the profile or news source is bound to a published workflow version."
+                            }
+                          >
+                          <Button
+                            type="primary"
+                            ghost
+                            onClick={() => void replayWorkflowRun(selectedWorkflowRun.id)}
+                            loading={replayingWorkflowRun}
+                            disabled={!selectedWorkflowRun.workflow?.id}
+                          >
+                            Replay
+                          </Button>
+                          </Tooltip>
+                        </Space>
+                      }
+                    >
+                      {selectedWorkflowRun.workflowOrigin === "legacy_bridge" ? (
+                        <Alert
+                          type="info"
+                          showIcon
+                          style={{ marginBottom: 16 }}
+                          message="This production run is backed by a legacy bridge snapshot. It is fully explorable, but replay is disabled until the source is bound to a published workflow version."
+                        />
+                      ) : null}
+                      <Row gutter={[16, 16]}>
+                        <Col xs={24} md={6}>
+                          <Statistic title="Workflow steps" value={selectedWorkflowRun.stepCount} />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Statistic title="Candidates" value={selectedWorkflowRun.candidateCount} />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Statistic title="Selected" value={selectedWorkflowRun.selectedCount} />
+                        </Col>
+                        <Col xs={24} md={6}>
+                          <Statistic
+                            title="System events"
+                            value={selectedWorkflowRun.systemEvents.length}
+                          />
+                        </Col>
+                      </Row>
+                      <Descriptions
+                        size="small"
+                        column={2}
+                        bordered
+                        style={{ marginTop: 16 }}
+                      >
+                        <Descriptions.Item label="Workflow">
+                          {selectedWorkflowRun.workflow?.name ?? "Legacy bridge"}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Version">
+                          {selectedWorkflowRun.workflowVersion
+                            ? `v${selectedWorkflowRun.workflowVersion.version}`
+                            : "-"}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Origin">
+                          {selectedWorkflowRun.workflowOrigin}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="Run kind">
+                          {selectedWorkflowRun.runKind}
+                        </Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+                    <Row gutter={[16, 16]}>
+                      <Col xs={24} xl={10}>
+                        <Card size="small" title="Step Timeline">
+                          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                            {selectedWorkflowRun.stepResults.map((step) => (
+                              <Card key={step.stepKey ?? step.nodeId} size="small">
+                                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                  <Space wrap size={[6, 6]}>
+                                    <Tag color={workflowStepColor(step.status)}>
+                                      {step.status}
+                                    </Tag>
+                                    <Tag>{step.nodeType}</Tag>
+                                    <Tag color="blue">{`${step.durationMs}ms`}</Tag>
+                                  </Space>
+                                  <Typography.Text strong>{step.label}</Typography.Text>
+                                  <Typography.Text type="secondary">
+                                    {formatWorkflowStepSummary(step)}
+                                  </Typography.Text>
+                                  {step.sampleUrls.length > 0 ? (
+                                    <Space wrap size={[4, 4]}>
+                                      {step.sampleUrls.slice(0, 3).map((sampleUrl) => (
+                                        <Tag key={`${step.nodeId}-${sampleUrl}`}>{sampleUrl}</Tag>
+                                      ))}
+                                    </Space>
+                                  ) : null}
+                                  {step.error ? (
+                                    <Alert type="error" showIcon message={step.error} />
+                                  ) : null}
+                                </Space>
+                              </Card>
+                            ))}
+                          </Space>
+                        </Card>
+                      </Col>
+                      <Col xs={24} xl={14}>
+                        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                          <Card size="small" title="Candidates">
+                            <Table
+                              rowKey="id"
+                              columns={workflowCandidateColumns}
+                              dataSource={selectedWorkflowRun.candidates}
+                              pagination={{ pageSize: 8 }}
+                              size="small"
+                            />
+                          </Card>
+                          <Card size="small" title="System Events">
+                            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                              {selectedWorkflowRun.systemEvents.length === 0 ? (
+                                <Typography.Text type="secondary">
+                                  No workflow system events were recorded.
+                                </Typography.Text>
+                              ) : (
+                                selectedWorkflowRun.systemEvents.map((event) => (
+                                  <Card key={event.id ?? `${event.eventType}-${event.timestamp}`} size="small">
+                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                      <Space wrap size={[6, 6]}>
+                                        <Tag color={workflowEventColor(event.level)}>{event.level}</Tag>
+                                        <Tag>{event.eventType}</Tag>
+                                        {event.nodeType ? <Tag>{event.nodeType}</Tag> : null}
+                                        {event.triggerReason ? (
+                                          <Tag color="purple">{event.triggerReason}</Tag>
+                                        ) : null}
+                                      </Space>
+                                      <Typography.Text>{event.message}</Typography.Text>
+                                      <Typography.Text type="secondary">
+                                        {formatDateTime(event.timestamp)}
+                                      </Typography.Text>
+                                      {(event.beforeCount !== null && event.beforeCount !== undefined) ||
+                                      (event.afterCount !== null && event.afterCount !== undefined) ? (
+                                        <Space wrap size={[4, 4]}>
+                                          <Tag color="blue">{`before:${event.beforeCount ?? 0}`}</Tag>
+                                          <Tag color="geekblue">{`after:${event.afterCount ?? 0}`}</Tag>
+                                          <Tag color="green">{`rescued:${event.rescuedCount ?? 0}`}</Tag>
+                                        </Space>
+                                      ) : null}
+                                      {event.details ? (
+                                        <Typography.Paragraph
+                                          style={{
+                                            marginBottom: 0,
+                                            whiteSpace: "pre-wrap",
+                                            fontFamily: "monospace",
+                                          }}
+                                        >
+                                          {stringifyJson(event.details)}
+                                        </Typography.Paragraph>
+                                      ) : null}
+                                    </Space>
+                                  </Card>
+                                ))
+                              )}
+                            </Space>
+                          </Card>
+                        </Space>
+                      </Col>
+                    </Row>
+                  </Space>
                 ),
               },
               {
@@ -1925,6 +2329,228 @@ export function CrawlFrontierConsole() {
                 ),
               },
             ]} />
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <Drawer
+        title="Workflow Candidate Explanation"
+        open={Boolean(selectedWorkflowCandidate)}
+        onClose={() => setSelectedWorkflowCandidate(null)}
+        width={760}
+      >
+        {selectedWorkflowCandidate ? (
+          <Space direction="vertical" size="large" style={{ width: "100%" }}>
+            <Card size="small">
+              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                <Typography.Text strong>
+                  {selectedWorkflowCandidate.title || selectedWorkflowCandidate.url}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {selectedWorkflowCandidate.url}
+                </Typography.Text>
+                <Space wrap size={[4, 4]}>
+                  <Tag
+                    color={
+                      selectedWorkflowCandidate.status === "selected"
+                        ? "green"
+                        : selectedWorkflowCandidate.status === "rejected"
+                          ? "red"
+                          : "blue"
+                    }
+                  >
+                    {selectedWorkflowCandidate.status}
+                  </Tag>
+                  <Tag>{`source:${selectedWorkflowCandidate.sourceNodeId}`}</Tag>
+                  {selectedWorkflowCandidate.pageType ? (
+                    <Tag>{selectedWorkflowCandidate.pageType}</Tag>
+                  ) : null}
+                  {selectedWorkflowCandidate.rejectedReason ? (
+                    <Tag color="red">{selectedWorkflowCandidate.rejectedReason}</Tag>
+                  ) : null}
+                </Space>
+              </Space>
+            </Card>
+            <Card size="small" title="Summary">
+              {(() => {
+                const traceSummary = buildWorkflowCandidateTraceSummary(
+                  selectedWorkflowCandidate,
+                );
+                const traceChain = buildWorkflowCandidateTraceChain(
+                  selectedWorkflowCandidate,
+                );
+                return (
+                  <Descriptions size="small" column={2} bordered>
+                    <Descriptions.Item label="Total score delta">
+                      {formatNumber(traceSummary.totalScoreDelta)}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Total freshness delta">
+                      {formatNumber(traceSummary.totalFreshnessDelta)}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Changed fields" span={2}>
+                      <Space wrap>
+                        {traceSummary.changedFields.map((field) => (
+                          <Tag key={`changed-${field}`}>{field}</Tag>
+                        ))}
+                        {traceSummary.changedFields.length === 0 ? "-" : null}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Rule hits" span={2}>
+                      <Space wrap>
+                        {traceSummary.ruleHits.map((rule) => (
+                          <Tag key={`rule-${rule}`} color="purple">
+                            {rule}
+                          </Tag>
+                        ))}
+                        {traceSummary.ruleHits.length === 0 ? "-" : null}
+                      </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Step chain" span={2}>
+                      <Space wrap size={[4, 4]}>
+                        {traceChain.map((step) => (
+                          <Tag
+                            key={step.key}
+                            color={
+                              step.status === "selected"
+                                ? "green"
+                                : step.status === "rejected"
+                                  ? "red"
+                                  : "blue"
+                            }
+                          >
+                            {`${step.index}. ${step.label}`}
+                          </Tag>
+                        ))}
+                      </Space>
+                    </Descriptions.Item>
+                  </Descriptions>
+                );
+              })()}
+            </Card>
+            <Card size="small" title="Trace">
+              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                {buildWorkflowCandidateTraceChain(selectedWorkflowCandidate).map((step) => {
+                  const entry = step.entry;
+                  const diffRows = buildWorkflowTraceEntryDiffRows(entry);
+                  return (
+                  <Card key={step.key} size="small">
+                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                      <Space wrap size={[6, 6]}>
+                        <Tag>{entry.nodeType}</Tag>
+                        <Tag
+                          color={
+                            step.status === "selected"
+                              ? "green"
+                              : step.status === "rejected"
+                                ? "red"
+                                : "blue"
+                          }
+                        >
+                          {entry.action}
+                        </Tag>
+                        {step.rejectedReason ? (
+                          <Tag color="red">{step.rejectedReason}</Tag>
+                        ) : null}
+                        <Typography.Text type="secondary">
+                          {formatDateTime(entry.timestamp)}
+                        </Typography.Text>
+                      </Space>
+                      <Typography.Text>{entry.message}</Typography.Text>
+                      {step.deltaSummary.length > 0 ? (
+                        <Space wrap size={[4, 4]}>
+                          {step.deltaSummary.map((delta) => (
+                            <Tag key={`${step.key}-${delta}`} color="cyan">
+                              {delta}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {step.changedFields.length > 0 ? (
+                        <Space wrap size={[4, 4]}>
+                          {step.changedFields.map((field) => (
+                            <Tag key={`${step.key}-${field}`}>{field}</Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      {diffRows.length > 0 ? (
+                        <Descriptions size="small" column={1} bordered>
+                          {diffRows.map((diff) => (
+                            <Descriptions.Item key={`${step.key}-${diff.field}`} label={diff.field}>
+                              <Space direction="vertical" size={2} style={{ width: "100%" }}>
+                                <Typography.Text type="secondary">
+                                  {`before: ${diff.beforeValue}`}
+                                </Typography.Text>
+                                <Typography.Text>{`after: ${diff.afterValue}`}</Typography.Text>
+                              </Space>
+                            </Descriptions.Item>
+                          ))}
+                        </Descriptions>
+                      ) : null}
+                      {entry.ruleHits?.length ? (
+                        <Space wrap size={[4, 4]}>
+                          {entry.ruleHits.map((rule) => (
+                            <Tag key={`${entry.nodeId}-${rule}`} color="orange">
+                              {rule}
+                            </Tag>
+                          ))}
+                        </Space>
+                      ) : null}
+                      <Collapse
+                        size="small"
+                        ghost
+                        items={[
+                          {
+                            key: `${step.key}-snapshots`,
+                            label: "Raw snapshots",
+                            children: (
+                              <Row gutter={[12, 12]}>
+                                <Col xs={24} md={12}>
+                                  <Card size="small" title="Before">
+                                    <Typography.Paragraph
+                                      style={{
+                                        marginBottom: 0,
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: "monospace",
+                                      }}
+                                    >
+                                      {stringifyJson(entry.beforeSnapshot ?? {})}
+                                    </Typography.Paragraph>
+                                  </Card>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                  <Card size="small" title="After">
+                                    <Typography.Paragraph
+                                      style={{
+                                        marginBottom: 0,
+                                        whiteSpace: "pre-wrap",
+                                        fontFamily: "monospace",
+                                      }}
+                                    >
+                                      {stringifyJson(entry.afterSnapshot ?? {})}
+                                    </Typography.Paragraph>
+                                  </Card>
+                                </Col>
+                              </Row>
+                            ),
+                          },
+                        ]}
+                      />
+                      {entry.details ? (
+                        <Typography.Paragraph
+                          style={{
+                            marginBottom: 0,
+                            whiteSpace: "pre-wrap",
+                            fontFamily: "monospace",
+                          }}
+                            >
+                              {stringifyJson(entry.details)}
+                            </Typography.Paragraph>
+                          ) : null}
+                        </Space>
+                      </Card>
+                )})}
+              </Space>
+            </Card>
           </Space>
         ) : null}
       </Drawer>

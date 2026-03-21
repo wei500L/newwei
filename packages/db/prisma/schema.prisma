@@ -324,6 +324,8 @@ model CrawlFrontierRun {
   orgId          String
   profile        CrawlSiteProfile?      @relation(fields: [profileId], references: [id], onDelete: SetNull)
   profileId      String?
+  workflowRun    CrawlStrategyWorkflowRun? @relation("CrawlFrontierRunWorkflowRun", fields: [workflowRunId], references: [id], onDelete: SetNull)
+  workflowRunId  String?                @unique
   seedUrl        String
   crawlTaskId    String?
   executionMode  CrawlSiteExecutionMode @default(layered)
@@ -399,10 +401,11 @@ model CrawlStrategyWorkflowRun {
   id                String                        @id @default(cuid())
   org               Org                           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   orgId             String
-  workflow          CrawlStrategyWorkflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  workflowId        String
-  workflowVersion   CrawlStrategyWorkflowVersion  @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
-  workflowVersionId String
+  workflow          CrawlStrategyWorkflow?        @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowId        String?
+  workflowVersion   CrawlStrategyWorkflowVersion? @relation(fields: [workflowVersionId], references: [id], onDelete: SetNull)
+  workflowVersionId String?
+  workflowOrigin    String                        @default("bound")
   profile           CrawlSiteProfile?             @relation(fields: [profileId], references: [id], onDelete: SetNull)
   profileId         String?
   newsSource        NewsSource?                   @relation(fields: [newsSourceId], references: [id], onDelete: SetNull)
@@ -425,11 +428,121 @@ model CrawlStrategyWorkflowRun {
   createdAt         DateTime                      @default(now())
   updatedAt         DateTime                      @updatedAt
 
+  frontierRun       CrawlFrontierRun?             @relation("CrawlFrontierRunWorkflowRun")
+  steps             CrawlStrategyWorkflowRunStep[]
+  candidatesDetail  CrawlStrategyWorkflowRunCandidate[]
+  events            CrawlStrategyWorkflowRunEvent[]
+
   @@index([orgId, createdAt])
   @@index([workflowId, createdAt])
   @@index([workflowVersionId, createdAt])
   @@index([profileId, createdAt])
   @@index([newsSourceId, createdAt])
+}
+
+model CrawlStrategyWorkflowRunStep {
+  id            String                     @id @default(cuid())
+  run           CrawlStrategyWorkflowRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId         String
+  stepKey       String
+  sequence      Int                        @default(0)
+  workflowNodeId String?
+  nodeType      String
+  label         String
+  status        String
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  durationMs    Int?
+  inputCount    Int                        @default(0)
+  outputCount   Int                        @default(0)
+  rejectedCount Int                        @default(0)
+  sampleUrls    Json?
+  metrics       Json?
+  error         String?                    @db.Text
+  metadata      Json?
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+
+  @@unique([runId, stepKey])
+  @@index([runId, sequence])
+}
+
+model CrawlStrategyWorkflowRunCandidate {
+  id               String                           @id @default(cuid())
+  run              CrawlStrategyWorkflowRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId            String
+  candidateKey     String
+  externalId       String?
+  sourceNodeId     String?
+  sourceNodeType   String?
+  url              String                           @db.Text
+  title            String?
+  description      String?                          @db.Text
+  author           String?
+  pageType         String?
+  relevanceScore   Float?
+  score            Float?
+  freshnessScore   Float?
+  qualityScore     Float?
+  publishedAt      DateTime?
+  crawledAt        DateTime?
+  effectiveAt      DateTime?
+  status           String
+  rejectedByNodeId String?
+  rejectedReason   String?
+  metadata         Json?
+  traceCount       Int                              @default(0)
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
+
+  traces           CrawlStrategyWorkflowRunCandidateTrace[]
+
+  @@unique([runId, candidateKey])
+  @@index([runId, status, updatedAt])
+  @@index([runId, sourceNodeId, updatedAt])
+}
+
+model CrawlStrategyWorkflowRunCandidateTrace {
+  id             String                           @id @default(cuid())
+  candidate      CrawlStrategyWorkflowRunCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidateId    String
+  sequence       Int                              @default(0)
+  timestamp      DateTime                         @default(now())
+  nodeId         String
+  nodeType       String
+  action         String
+  message        String                           @db.Text
+  accepted       Boolean?
+  scoreDelta     Float?
+  freshnessDelta Float?
+  ruleHits       Json?
+  beforeSnapshot Json?
+  afterSnapshot  Json?
+  details        Json?
+
+  @@index([candidateId, sequence])
+  @@index([candidateId, timestamp])
+}
+
+model CrawlStrategyWorkflowRunEvent {
+  id            String                     @id @default(cuid())
+  run           CrawlStrategyWorkflowRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  runId         String
+  sequence      Int                        @default(0)
+  level         String
+  eventType     String
+  nodeId        String?
+  nodeType      String?
+  message       String                     @db.Text
+  triggerReason String?
+  beforeCount   Int?
+  afterCount    Int?
+  rescuedCount  Int?
+  details       Json?
+  createdAt     DateTime                   @default(now())
+
+  @@index([runId, sequence])
+  @@index([runId, createdAt])
 }
 
 model CrawlFrontierNode {
@@ -676,9 +789,11 @@ enum CrawlStrategyWorkflowBindingMode {
 
 enum CrawlStrategyWorkflowRunStatus {
   pending
+  queued
   running
   completed
   failed
+  canceled
 }
 
 enum CrawlQueueClass {

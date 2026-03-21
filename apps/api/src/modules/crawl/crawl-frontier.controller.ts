@@ -141,6 +141,38 @@ export class CrawlFrontierController {
     return this.frontier.getRun(user.orgId, id);
   }
 
+  @Get("runs/:id/workflow-run")
+  @Permissions("crawl.read")
+  async getRunWorkflowRun(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.frontier.getRunWorkflowRun(user.orgId, id);
+  }
+
+  @Get("runs/:id/workflow-candidates")
+  @Permissions("crawl.read")
+  async listRunWorkflowCandidates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.frontier.listRunWorkflowCandidates(user.orgId, id);
+  }
+
+  @Get("runs/:id/workflow-candidates/:candidateId")
+  @Permissions("crawl.read")
+  async getRunWorkflowCandidateExplanation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+    @Param("candidateId") candidateId: string,
+  ) {
+    return this.frontier.getRunWorkflowCandidateExplanation(
+      user.orgId,
+      id,
+      candidateId,
+    );
+  }
+
   @Post("runs/cancel")
   @Permissions("crawl.write")
   async cancelRuns(

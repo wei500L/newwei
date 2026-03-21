@@ -32,6 +32,18 @@ import {
 import { CrawlQueueService } from "./crawl-queue.service";
 import { CrawlResultService } from "./crawl-result.service";
 import { CrawlSiteProfileService } from "./crawl-site-profile.service";
+import {
+  CrawlStrategyLayeredExecutorService,
+  type CrawlStrategyLayeredCandidate as FrontierCandidate,
+  type CrawlStrategyLayeredCandidateDecision as FrontierCandidateDecision,
+  type CrawlStrategyLayeredCandidateExtraction as FrontierCandidateExtraction,
+  type CrawlStrategyLayeredTraceCandidate as FrontierTraceCandidate,
+} from "./crawl-strategy-layered-executor.service";
+import {
+  CrawlStrategyRootExecutorService,
+  type CrawlStrategyRootSeedDiscoveryOutcome as SeedDiscoveryOutcome,
+} from "./crawl-strategy-root-executor.service";
+import { CrawlStrategyRunRecorderService } from "./crawl-strategy-run-recorder.service";
 import { CrawlStrategyWorkflowService } from "./crawl-strategy-workflow.service";
 import {
   CrawlFrontierLlmService,
@@ -59,46 +71,17 @@ import {
   type Crawl4aiArticle,
   type Crawl4aiResponse,
 } from "./crawl4ai.client";
+import { CrawlStrategyWorkflowRunKind } from "./crawl-strategy.types";
+import type {
+  CrawlStrategyParameterSource,
+  CrawlStrategyWorkflowDefinition,
+  CrawlStrategyWorkflowOrigin,
+} from "./crawl-strategy.types";
 import {
   CreateCrawlFrontierRunDto,
   ListCrawlFrontierRunDto,
 } from "./dto/crawl-frontier.dto";
-import {
-  buildCanonicalUrlFingerprint,
-  resolveQueryParamAllowlist,
-} from "./url-fingerprint";
-
-interface FrontierCandidate {
-  url: string;
-  pageType: CrawlFrontierPageType;
-  score: number;
-  freshnessScore: number;
-  metadata: Record<string, unknown>;
-}
-
-interface FrontierCandidateExtraction {
-  candidates: FrontierCandidate[];
-  diagnostics: {
-    candidateStats: {
-      scanned: number;
-      unique: number;
-      accepted: number;
-      selected: number;
-      rejected: number;
-      trimmed: number;
-    };
-    rejectionCounts: Record<string, number>;
-    acceptedPageTypeCounts: Record<CrawlFrontierPageType, number>;
-    warningFlags: string[];
-    syntheticListActivated: boolean;
-  };
-}
-
-interface SeedDiscoveryOutcome {
-  created: number;
-  selectedPageTypeCounts: Record<CrawlFrontierPageType, number>;
-  diagnostics: Record<string, unknown>;
-}
+import { buildCanonicalUrlFingerprint, resolveQueryParamAllowlist } from "./url-fingerprint";
 
 interface FrontierLifecycleNode {
   id: string;
@@ -267,6 +250,9 @@ export class CrawlFrontierService {
     private readonly prisma: PrismaService,
     private readonly profiles: CrawlSiteProfileService,
     private readonly strategyWorkflows: CrawlStrategyWorkflowService,
+    private readonly layeredExecutor: CrawlStrategyLayeredExecutorService,
+    private readonly rootExecutor: CrawlStrategyRootExecutorService,
+    private readonly strategyRecorder: CrawlStrategyRunRecorderService,
     private readonly crawlClient: Crawl4aiClient,
     private readonly resultService: CrawlResultService,
     private readonly queueService: CrawlQueueService,
@@ -478,6 +464,41 @@ export class CrawlFrontierService {
     };
   }
 
+  async getRunWorkflowRun(orgId: string, runId: string) {
+    const run = await this.prisma.crawlFrontierRun.findUnique({
+      where: { id: runId },
+      select: {
+        orgId: true,
+        workflowRunId: true,
+      },
+    });
+    if (!run || run.orgId !== orgId) {
+      throw new NotFoundException("Crawl frontier run not found");
+    }
+    if (!run.workflowRunId) {
+      throw new NotFoundException("Crawl frontier workflow run not found");
+    }
+    return this.strategyRecorder.getRun(orgId, run.workflowRunId);
+  }
+
+  async listRunWorkflowCandidates(orgId: string, runId: string) {
+    const workflowRun = await this.getRunWorkflowRun(orgId, runId);
+    return workflowRun.candidates;
+  }
+
+  async getRunWorkflowCandidateExplanation(
+    orgId: string,
+    runId: string,
+    candidateId: string,
+  ) {
+    const workflowRun = await this.getRunWorkflowRun(orgId, runId);
+    const candidate = workflowRun.candidates.find((entry) => entry.id === candidateId);
+    if (!candidate) {
+      throw new NotFoundException("Workflow candidate not found");
+    }
+    return candidate;
+  }
+
   async createRun(
     orgId: string,
     actorId: string,
@@ -655,6 +676,25 @@ export class CrawlFrontierService {
       },
     });
 
+    const workflowRun = await this.createWorkflowRunForFrontier({
+      orgId: options.orgId,
+      actorId: options.actorId,
+      frontierRunId: run.id,
+      seedUrl,
+      profile: options.profile,
+      executionMode: options.executionMode,
+      maxDepth: options.maxDepth,
+      maxPages: options.maxPages,
+      keywords: options.keywords,
+    });
+
+    await this.updateRunMetadata(run.id, {
+      workflowRunId: workflowRun.id,
+      workflowOrigin: workflowRun.workflowOrigin,
+      workflowGraphNodeCount: workflowRun.definition.nodes.length,
+      workflowGraphEdgeCount: workflowRun.definition.edges.length,
+    });
+
     const rootNode = await this.prisma.crawlFrontierNode.create({
       data: {
         runId: run.id,
@@ -673,6 +713,8 @@ export class CrawlFrontierService {
           sourceTier: options.profile.config.sourceTier ?? "tier2",
           discoveryPath: ["home"],
           frontierPath: ["home"],
+          workflowRunId: workflowRun.id,
+          workflowOrigin: workflowRun.workflowOrigin,
           runRole:
             typeof options.runMetadata?.runRole === "string"
               ? options.runMetadata.runRole
@@ -787,6 +829,17 @@ export class CrawlFrontierService {
 
   private async cancelRunRecords(runIds: string[]): Promise<void> {
     const finishedAt = new Date();
+    const runs = await this.prisma.crawlFrontierRun.findMany({
+      where: {
+        id: {
+          in: runIds,
+        },
+      },
+      select: {
+        id: true,
+        workflowRunId: true,
+      },
+    });
     await Promise.all([
       this.prisma.crawlFrontierRun.updateMany({
         where: {
@@ -812,6 +865,26 @@ export class CrawlFrontierService {
         },
       }),
     ]);
+    await Promise.all(
+      runs
+        .filter((run) => typeof run.workflowRunId === "string" && run.workflowRunId.length > 0)
+        .map(async (run) => {
+          await this.strategyRecorder.appendEvent(run.workflowRunId!, {
+            level: "warn",
+            eventType: "frontier_run_canceled",
+            nodeType: "legacy.frontier_run",
+            message: "Frontier run was canceled",
+            details: {
+              frontierRunId: run.id,
+            },
+            timestamp: finishedAt.toISOString(),
+          });
+          await this.strategyRecorder.markRunStatus(run.workflowRunId!, {
+            status: "canceled",
+            finishedAt,
+          });
+        }),
+    );
   }
 
   async processQueuedNode(
@@ -864,6 +937,25 @@ export class CrawlFrontierService {
         startedAt: node.run.startedAt ?? new Date(),
       },
     });
+    if (node.run.workflowRunId) {
+      await this.strategyRecorder.markRunStatus(node.run.workflowRunId, {
+        status: "running",
+      });
+      await this.strategyRecorder.appendEvent(node.run.workflowRunId, {
+        level: "info",
+        eventType: "frontier_node_started",
+        nodeId: node.id,
+        nodeType: "legacy.frontier_node",
+        message: "Frontier node execution started",
+        details: {
+          url: node.url,
+          pageType: node.pageType,
+          depth: node.depth,
+          queueClass: node.queueClass,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
     await this.prisma.crawlFrontierNode.update({
       where: { id: node.id },
       data: {
@@ -878,6 +970,7 @@ export class CrawlFrontierService {
         run: {
           ...node.run,
           keywords: coerceStringArray(node.run.keywords),
+          workflowRunId: node.run.workflowRunId,
         },
         profile,
         task,
@@ -927,6 +1020,29 @@ export class CrawlFrontierService {
           frontierNodeId: node.id,
           priorityClass: "normal",
         });
+        if (node.run.workflowRunId) {
+          await this.strategyRecorder.appendEvent(node.run.workflowRunId, {
+            level: "warn",
+            eventType: "retry_demoted_to_normal",
+            nodeId: node.id,
+            nodeType: "budget-control",
+            message: "Frontier node retry was demoted from hot to normal queue",
+            triggerReason: failureKind,
+            beforeCount: 1,
+            afterCount: 1,
+            rescuedCount: 1,
+            details: {
+              url: node.url,
+              previousQueueClass: node.queueClass,
+              nextQueueClass: "normal",
+            },
+            timestamp: queuedAt.toISOString(),
+          });
+          await this.strategyRecorder.markRunStatus(node.run.workflowRunId, {
+            status: "queued",
+            finishedAt: null,
+          });
+        }
         await this.refreshRunStatus(node.runId);
         return { inserted: 0, skipped: 0 };
       }
@@ -955,6 +1071,22 @@ export class CrawlFrontierService {
           lastError: message,
         },
       });
+      if (node.run.workflowRunId) {
+        await this.strategyRecorder.appendEvent(node.run.workflowRunId, {
+          level: "error",
+          eventType: "frontier_node_failed",
+          nodeId: node.id,
+          nodeType: "legacy.frontier_node",
+          message,
+          triggerReason: failureKind,
+          details: {
+            url: node.url,
+            pageType: node.pageType,
+            depth: node.depth,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
       await this.refreshRunStatus(node.runId);
       throw error;
     }
@@ -964,6 +1096,7 @@ export class CrawlFrontierService {
     orgId: string,
     payload: CrawlFrontierLlmJudgeJobPayload,
   ): Promise<CrawlExecutionSummary> {
+    const startedMs = Date.now();
     const node = await this.prisma.crawlFrontierNode.findUnique({
       where: { id: payload.nodeId },
       include: { run: true },
@@ -980,6 +1113,20 @@ export class CrawlFrontierService {
     });
     if (!profile) {
       throw new BadRequestException("Crawl frontier run cannot resolve site profile");
+    }
+    if (node.run.workflowRunId) {
+      await this.strategyRecorder.appendEvent(node.run.workflowRunId, {
+        level: "info",
+        eventType: "llm_judge_started",
+        nodeId: node.id,
+        nodeType: "branch",
+        message: "Deferred LLM judge started",
+        details: {
+          mode: payload.mode,
+          candidateCount: payload.candidates.length,
+        },
+        timestamp: new Date().toISOString(),
+      });
     }
 
     const candidates = payload.candidates.map((candidate) => ({
@@ -1013,6 +1160,16 @@ export class CrawlFrontierService {
         llmJudgeError: message,
         warningFlags: ["llm_judge_failed"],
       };
+    }
+    if (node.run.workflowRunId) {
+      await this.recordResolvedLlmCandidateDecisions({
+        workflowRunId: node.run.workflowRunId,
+        node: mappedNode,
+        mode: payload.mode,
+        inputCandidates: candidates as FrontierCandidate[],
+        resolvedCandidates: judgedCandidates as FrontierCandidate[],
+        llmDiagnostics,
+      });
     }
 
     const result =
@@ -1077,6 +1234,63 @@ export class CrawlFrontierService {
         ) ?? [],
       });
     });
+    if (node.run.workflowRunId) {
+      const resultStats = toNumericRecord(resultMetadata.candidateStats);
+      await this.strategyRecorder.upsertStep(node.run.workflowRunId, {
+        stepKey: `frontier:${node.id}:llm-judge:${payload.mode}`,
+        nodeId: `legacy::llm-judge:${node.id}:${payload.mode}`,
+        nodeType: "branch",
+        label:
+          payload.mode === "seed"
+            ? "Deferred seed LLM judge"
+            : "Deferred discovery LLM judge",
+        status: llmDiagnostics?.llmJudgeError ? "failed" : "completed",
+        durationMs: Date.now() - startedMs,
+        inputCount: candidates.length,
+        outputCount:
+          payload.mode === "seed"
+            ? (result as SeedDiscoveryOutcome).created
+            : resultStats?.selected ?? 0,
+        rejectedCount: resultStats?.rejected ?? 0,
+        sampleUrls: candidates.slice(0, 5).map((candidate) => candidate.url),
+        metrics: {
+          mode: payload.mode,
+          llmDiagnostics: llmDiagnostics ?? null,
+          resultMetadata,
+        },
+        error:
+          typeof llmDiagnostics?.llmJudgeError === "string"
+            ? llmDiagnostics.llmJudgeError
+            : null,
+      });
+      await this.strategyRecorder.appendEvent(node.run.workflowRunId, {
+        level: llmDiagnostics?.llmJudgeError ? "warn" : "info",
+        eventType: "llm_judge_resolved",
+        nodeId: node.id,
+        nodeType: "branch",
+        message: llmDiagnostics?.llmJudgeError
+          ? "Deferred LLM judge completed with fallback diagnostics"
+          : "Deferred LLM judge completed",
+        triggerReason:
+          typeof llmDiagnostics?.llmJudgeError === "string"
+            ? "llm_judge_failed"
+            : null,
+        beforeCount: candidates.length,
+        afterCount:
+          payload.mode === "seed"
+            ? (result as SeedDiscoveryOutcome).created
+            : resultStats?.selected ?? 0,
+        rescuedCount:
+          payload.mode === "seed"
+            ? (result as SeedDiscoveryOutcome).created
+            : resultStats?.selected ?? 0,
+        details: {
+          mode: payload.mode,
+          llmDiagnostics: llmDiagnostics ?? null,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
     await this.refreshRunStatus(payload.runId);
     return { inserted: 0, skipped: 0 };
   }
@@ -1211,6 +1425,7 @@ export class CrawlFrontierService {
       crawlTaskId: string | null;
       keywords?: string[];
       nativeRunId?: string | null;
+      workflowRunId?: string | null;
     };
     profile: CrawlSiteProfileRecord;
     task: CrawlTask;
@@ -1238,11 +1453,13 @@ export class CrawlFrontierService {
       executionMode: CrawlSiteExecutionMode;
       crawlTaskId: string | null;
       keywords?: string[];
+      workflowRunId?: string | null;
     };
     profile: CrawlSiteProfileRecord;
     task: CrawlTask;
     requestTimeoutMs?: number | null;
   }) {
+    const startedMs = Date.now();
     const crawlOptions = this.buildLayeredCrawlOptions(
       options.profile.config,
       options.node.pageType,
@@ -1256,6 +1473,11 @@ export class CrawlFrontierService {
           ? options.requestTimeoutMs
           : undefined,
     });
+    await this.recordCrawl4aiSystemEvents(
+      options.run.workflowRunId,
+      options.node,
+      response.systemEvents,
+    );
 
     const persisted = await this.persistFrontierResponse({
       response,
@@ -1276,16 +1498,12 @@ export class CrawlFrontierService {
       selfMetadata,
       crawlOptions,
     });
-    const seedStrategy = this.resolveSeedStrategy(options.profile.config);
-    const seedConfig = this.resolveSeedDiscoveryConfig(
-      options.profile.config,
-      options.run.maxPages,
-      options.run.maxDepth,
-    );
-    const useLightweightTopologyBudget =
-      options.node.depth === 0 &&
-      seedStrategy !== "frontier_only" &&
-      seedStrategy !== "frontier_first";
+    const rootSeedPlan = this.resolveRootSeedPlan({
+      nodeDepth: options.node.depth,
+      profile: options.profile,
+      maxPages: options.run.maxPages,
+      maxDepth: options.run.maxDepth,
+    });
     const discoveryMetadata =
       options.node.pageType !== "article" &&
       options.node.depth < options.run.maxDepth
@@ -1297,21 +1515,13 @@ export class CrawlFrontierService {
             maxPages: options.run.maxPages,
             profile: options.profile,
             results: response.results,
-            maxDepthOverride: useLightweightTopologyBudget
-              ? seedConfig.topologyBudgetDepth
-              : undefined,
-            maxNewNodes: useLightweightTopologyBudget
-              ? seedConfig.topologyBudgetPages
-              : undefined,
-            metadataPatch: useLightweightTopologyBudget
-              ? {
-                  topologyChannel: true,
-                  topologyDepthLimit: seedConfig.topologyBudgetDepth,
-                }
-              : undefined,
+            maxDepthOverride: rootSeedPlan.topologyBudgetDepth,
+            maxNewNodes: rootSeedPlan.topologyBudgetPages,
+            metadataPatch: rootSeedPlan.topologyMetadataPatch,
           })
         : undefined;
-    const seedDiscovery = await this.discoverSeedNodes({
+    const seedDiscovery = await this.executeRootSeedBranch({
+      workflowRunId: options.run.workflowRunId,
       node: options.node,
       run: {
         id: options.run.id,
@@ -1322,25 +1532,16 @@ export class CrawlFrontierService {
       profile: options.profile,
       taskId: options.task.id,
       requestTimeoutMs: options.requestTimeoutMs,
+      seedStrategy: rootSeedPlan.seedStrategy,
     });
-    const combinedWarningFlags =
-      uniqueStringList(
-        collectNodeWarningFlags(options.node.metadata, options.node.lastError),
-        coerceStringArray(runtimeMetadata.warningFlags),
-        coerceStringArray(discoveryMetadata?.warningFlags),
-        coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
-      ) ?? [];
-    const pendingLlmJudgeJobs =
-      this.clampInt(discoveryMetadata?.llmJudgeDeferredCount, 0, 10, 0) +
-      this.clampInt(seedDiscovery?.diagnostics?.llmJudgeDeferredCount, 0, 10, 0);
-    const llmJudgeDeferredModes = uniqueStringList(
-      typeof discoveryMetadata?.llmJudgeDeferredMode === "string"
-        ? [discoveryMetadata.llmJudgeDeferredMode]
-        : undefined,
-      typeof seedDiscovery?.diagnostics?.llmJudgeDeferredMode === "string"
-        ? [seedDiscovery.diagnostics.llmJudgeDeferredMode as string]
-        : undefined,
-    );
+    const branchSummary = this.rootExecutor.buildRootBranchSummary({
+      nodeMetadata: options.node.metadata,
+      lastError: options.node.lastError,
+      runtimeMetadata,
+      branchMetadata: discoveryMetadata,
+      seedDiscovery,
+      seedPlan: rootSeedPlan,
+    });
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -1366,20 +1567,29 @@ export class CrawlFrontierService {
             runtimeMetadata,
             discoveryMetadata,
             seedDiscovery?.diagnostics,
-            {
-              warningFlags: combinedWarningFlags,
-              pendingLlmJudgeJobs,
-              llmJudgeDeferredModes,
-              seedStrategy,
-              topologyBudgetPages: useLightweightTopologyBudget
-                ? seedConfig.topologyBudgetPages
-                : null,
-              topologyBudgetDepth: useLightweightTopologyBudget
-                ? seedConfig.topologyBudgetDepth
-                : null,
-            },
+            branchSummary.metadataPatch,
           ),
         ),
+      },
+    });
+    await this.recordNodeCompletion({
+      workflowRunId: options.run.workflowRunId,
+      node: options.node,
+      stepKey: `frontier:${options.node.id}:crawl`,
+      workflowNodeId: `legacy::crawl:${options.node.id}`,
+      workflowNodeType: "legacy.crawl_fetch",
+      label: `Fetch ${options.node.pageType} node`,
+      durationMs: Date.now() - startedMs,
+      outputUrls: response.results
+        .map((entry) => entry.url)
+        .filter((entry): entry is string => typeof entry === "string"),
+      outputCount: response.results.length,
+      rejectedCount: 0,
+      metrics: {
+        pageType: options.node.pageType,
+        hasDiscoveryBranch: Boolean(discoveryMetadata),
+        hasSeedBranch: Boolean(seedDiscovery),
+        warningFlags: branchSummary.combinedWarningFlags,
       },
     });
 
@@ -1396,11 +1606,13 @@ export class CrawlFrontierService {
       executionMode: CrawlSiteExecutionMode;
       crawlTaskId: string | null;
       keywords?: string[];
+      workflowRunId?: string | null;
     };
     profile: CrawlSiteProfileRecord;
     task: CrawlTask;
     requestTimeoutMs?: number | null;
   }) {
+    const startedMs = Date.now();
     const baseOptions = this.buildLayeredCrawlOptions(
       options.profile.config,
       options.node.pageType,
@@ -1424,6 +1636,11 @@ export class CrawlFrontierService {
           ? options.requestTimeoutMs
           : undefined,
     });
+    await this.recordCrawl4aiSystemEvents(
+      options.run.workflowRunId,
+      options.node,
+      response.systemEvents,
+    );
 
     const persisted = await this.persistFrontierResponse({
       response,
@@ -1444,6 +1661,12 @@ export class CrawlFrontierService {
       selfMetadata,
       crawlOptions: baseOptions,
     });
+    const rootSeedPlan = this.resolveRootSeedPlan({
+      nodeDepth: options.node.depth,
+      profile: options.profile,
+      maxPages: options.run.maxPages,
+      maxDepth: options.run.maxDepth,
+    });
 
     await this.prisma.crawlFrontierRun.update({
       where: { id: options.run.id },
@@ -1452,194 +1675,35 @@ export class CrawlFrontierService {
       },
     });
 
-    const sameDomainHost = new URL(options.node.url).hostname;
-    const pageTypeBudgets = computeFrontierPageTypeBudgets({
-      maxDepth: options.run.maxDepth,
-      maxPages: options.run.maxPages,
-    });
-    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
-      where: { runId: options.run.id },
-      select: {
-        canonicalUrl: true,
-        urlFingerprint: true,
-        pageType: true,
-      },
-    });
-    const seenFingerprints = new Set(
-      existingNodesForRun
-        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
-        .filter((entry) => entry.length > 0),
-    );
-    const countsByPageType = this.createPageTypeCountRecord();
-    for (const entry of existingNodesForRun) {
-      countsByPageType[entry.pageType] += 1;
-    }
-
-    const scannedSourceUrls = new Set<string>();
-    const rejectionCounts: Record<string, number> = {};
-    const acceptedPageTypeCounts = this.createPageTypeCountRecord();
-    const selectedPageTypeCounts = this.createPageTypeCountRecord();
-    const nativeWarningFlags = new Set<string>();
-    const rootSelfCanonical = buildCanonicalUrlFingerprint(
-      options.node.url,
-      options.profile.config.urlQueryParamAllowlist,
-    );
-    const rootSelfKey =
-      rootSelfCanonical?.fingerprint ??
-      rootSelfCanonical?.canonicalUrl ??
-      options.node.url;
-    const remainingBudget = Math.max(
-      0,
-      options.run.maxPages - existingNodesForRun.length,
-    );
     const rawResultByUrl = new Map<string, Crawl4aiArticle>();
     for (const entry of response.results) {
       if (typeof entry.url === "string" && entry.url.trim().length > 0) {
         rawResultByUrl.set(entry.url.trim(), entry);
       }
     }
-    let acceptedCount = 0;
-    let createdCount = 0;
-
-    for (const result of persisted.results) {
-      const sourceUrl =
-        typeof result.sourceUrl === "string" && result.sourceUrl.length > 0
-          ? result.sourceUrl
-          : "";
-      if (!sourceUrl) {
-        bumpCount(rejectionCounts, "invalid_source_url");
-        continue;
-      }
-      if (scannedSourceUrls.has(sourceUrl)) {
-        bumpCount(rejectionCounts, "duplicate_source_url");
-        continue;
-      }
-      scannedSourceUrls.add(sourceUrl);
-      if (sourceUrl === options.node.url) {
-        bumpCount(rejectionCounts, "self_url");
-        continue;
-      }
-      const rejectionReason = shouldRejectFrontierUrl({
-        url: sourceUrl,
-        config: options.profile.config,
-        requireSameDomainHost: sameDomainHost,
-      });
-      if (rejectionReason) {
-        bumpCount(rejectionCounts, rejectionReason);
-        continue;
-      }
-
-      const canonical = buildCanonicalUrlFingerprint(
-        sourceUrl,
-        options.profile.config.urlQueryParamAllowlist,
-      );
-      const dedupeKey =
-        canonical?.fingerprint ?? canonical?.canonicalUrl ?? sourceUrl;
-      if (dedupeKey === rootSelfKey) {
-        bumpCount(rejectionCounts, "self_canonical");
-        continue;
-      }
-      if (seenFingerprints.has(dedupeKey)) {
-        bumpCount(rejectionCounts, "duplicate");
-        continue;
-      }
-
-      const pageType = inferFrontierPageType({
-        url: sourceUrl,
-        parentPageType: options.node.pageType,
-        config: options.profile.config,
-      });
-      acceptedPageTypeCounts[pageType] += 1;
-      acceptedCount += 1;
-      if (createdCount >= remainingBudget) {
-        bumpCount(rejectionCounts, "run_budget_exhausted");
-        break;
-      }
-      if (countsByPageType[pageType] >= pageTypeBudgets[pageType]) {
-        bumpCount(rejectionCounts, "page_type_budget");
-        continue;
-      }
-
-      const freshnessScore = estimateFreshnessScore(
-        sourceUrl,
-        options.profile.config,
-      );
-      const score = scoreFrontierCandidate({
-        url: sourceUrl,
-        pageType,
-        parentPageType: options.node.pageType,
-        config: options.profile.config,
-        rawScore: 1,
-        freshnessScore,
-      });
-      const rawResult = rawResultByUrl.get(sourceUrl);
-      const statusCode =
-        typeof rawResult?.statusCode === "number"
-          ? rawResult.statusCode
-          : typeof rawResult?.status_code === "number"
-            ? rawResult.status_code
-            : null;
-      const crawlError =
-        typeof rawResult?.error === "string"
-          ? rawResult.error
-          : typeof rawResult?.errorMessage === "string"
-            ? rawResult.errorMessage
-            : typeof rawResult?.error_message === "string"
-              ? rawResult.error_message
-              : null;
-      let failureKind = classifyFrontierFailureKind(crawlError);
-      if (
-        !failureKind &&
-        typeof statusCode === "number" &&
-        [401, 403, 429].includes(statusCode)
-      ) {
-        failureKind = "challenge_detected";
-      }
-      const warningFlags = uniqueStringList(
-        failureKind ? [failureKind] : undefined,
-        typeof statusCode === "number" && statusCode >= 400
-          ? [`http_${statusCode}`]
-          : undefined,
-      ) ?? [];
-      for (const flag of warningFlags) {
-        nativeWarningFlags.add(flag);
-      }
-
-      await this.prisma.crawlFrontierNode.create({
-        data: {
-          runId: options.run.id,
-          parentNodeId: options.node.id,
-          orgId: options.node.orgId,
-          url: sourceUrl,
-          canonicalUrl: canonical?.canonicalUrl,
-          urlFingerprint: canonical?.fingerprint,
-          pageType,
-          depth: Math.min(options.run.maxDepth, pageType === "article" ? 3 : 1),
-          queueClass: resolveNodeQueueClass({
-            pageType,
-            freshnessScore,
-          }),
-          status: "completed",
-          crawledAt: new Date(),
-          crawlResultId: result.id,
-          score,
-          freshnessScore,
-          metadata: toPrismaJsonValue({
-            nativeDiscovered: true,
-            sourceTier: options.profile.config.sourceTier ?? "tier2",
-            discoveryPath: ["home", pageType],
-            frontierPath: ["home", pageType],
-            failureKind,
-            warningFlags,
-            freshnessBucket: resolveFreshnessBucket(freshnessScore),
-          }),
+    const nativeMaterialization =
+      await this.layeredExecutor.materializeNativeDiscoveryCandidates({
+        workflowRunId: options.run.workflowRunId,
+        node: options.node,
+        run: {
+          id: options.run.id,
+          maxDepth: options.run.maxDepth,
+          maxPages: options.run.maxPages,
         },
+        profile: options.profile,
+        persistedResults: persisted.results.map((result) => ({
+          id: result.id,
+          sourceUrl: result.sourceUrl,
+        })),
+        rawResultsByUrl: rawResultByUrl,
       });
-      seenFingerprints.add(dedupeKey);
-      countsByPageType[pageType] += 1;
-      selectedPageTypeCounts[pageType] += 1;
-      createdCount += 1;
-    }
+    const acceptedCount = nativeMaterialization.acceptedCount;
+    const createdCount = nativeMaterialization.createdCount;
+    const scannedSourceUrls = new Set(nativeMaterialization.scannedSourceUrls);
+    const rejectionCounts = nativeMaterialization.rejectionCounts;
+    const acceptedPageTypeCounts = nativeMaterialization.acceptedPageTypeCounts;
+    const selectedPageTypeCounts = nativeMaterialization.selectedPageTypeCounts;
+    const nativeWarningFlags = new Set(nativeMaterialization.nativeWarningFlags);
 
     const minAcceptedResults =
       options.profile.config.nativeOptions?.minAcceptedResults ?? 0;
@@ -1673,38 +1737,26 @@ export class CrawlFrontierService {
           maxPages: options.run.maxPages,
           profile: options.profile,
           results: rootResults.length > 0 ? rootResults : response.results.slice(0, 1),
-          maxDepthOverride:
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
-              ? this.resolveSeedDiscoveryConfig(
-                  options.profile.config,
-                  options.run.maxPages,
-                  options.run.maxDepth,
-                ).topologyBudgetDepth
-              : undefined,
-          maxNewNodes:
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
-              ? this.resolveSeedDiscoveryConfig(
-                  options.profile.config,
-                  options.run.maxPages,
-                  options.run.maxDepth,
-                ).topologyBudgetPages
-              : undefined,
-          metadataPatch:
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_first" &&
-            this.resolveSeedStrategy(options.profile.config) !== "frontier_only"
-              ? {
-                  topologyChannel: true,
-                  topologyDepthLimit: this.resolveSeedDiscoveryConfig(
-                    options.profile.config,
-                    options.run.maxPages,
-                    options.run.maxDepth,
-                  ).topologyBudgetDepth,
-                }
-              : undefined,
+          maxDepthOverride: rootSeedPlan.topologyBudgetDepth,
+          maxNewNodes: rootSeedPlan.topologyBudgetPages,
+          metadataPatch: rootSeedPlan.topologyMetadataPatch,
         })
       : undefined;
+    await this.recordNativeFallbackExecution({
+      workflowRunId: options.run.workflowRunId,
+      node: options.node,
+      createdCount,
+      minAcceptedResults,
+      minArticleResults,
+      nativeAcceptedArticles: selectedPageTypeCounts.article,
+      fallbackDiscoveryMetadata,
+      triggerReason:
+        createdCount === 0
+          ? "native_zero_accepted"
+          : selectedPageTypeCounts.article < minArticleResults
+            ? "native_article_below_threshold"
+            : "native_accepted_below_threshold",
+    });
     const fallbackCandidateStats = toNumericRecord(
       fallbackDiscoveryMetadata?.candidateStats,
     );
@@ -1756,13 +1808,8 @@ export class CrawlFrontierService {
       nativeAcceptedArticles: selectedPageTypeCounts.article,
       nativeFallbackActivated: shouldFallbackToLayered,
     };
-    const seedStrategy = this.resolveSeedStrategy(options.profile.config);
-    const seedConfig = this.resolveSeedDiscoveryConfig(
-      options.profile.config,
-      options.run.maxPages,
-      options.run.maxDepth,
-    );
-    const seedDiscovery = await this.discoverSeedNodes({
+    const seedDiscovery = await this.executeRootSeedBranch({
+      workflowRunId: options.run.workflowRunId,
       node: options.node,
       run: {
         id: options.run.id,
@@ -1773,26 +1820,17 @@ export class CrawlFrontierService {
       profile: options.profile,
       taskId: options.task.id,
       requestTimeoutMs: options.requestTimeoutMs,
+      seedStrategy: rootSeedPlan.seedStrategy,
     });
-    const combinedWarningFlags =
-      uniqueStringList(
-        collectNodeWarningFlags(options.node.metadata, options.node.lastError),
-        coerceStringArray(runtimeMetadata.warningFlags),
-        Array.from(nativeWarningFlags),
-        coerceStringArray(fallbackDiscoveryMetadata?.warningFlags),
-        coerceStringArray(seedDiscovery?.diagnostics?.warningFlags),
-      ) ?? [];
-    const pendingLlmJudgeJobs =
-      this.clampInt(fallbackDiscoveryMetadata?.llmJudgeDeferredCount, 0, 10, 0) +
-      this.clampInt(seedDiscovery?.diagnostics?.llmJudgeDeferredCount, 0, 10, 0);
-    const llmJudgeDeferredModes = uniqueStringList(
-      typeof fallbackDiscoveryMetadata?.llmJudgeDeferredMode === "string"
-        ? [fallbackDiscoveryMetadata.llmJudgeDeferredMode]
-        : undefined,
-      typeof seedDiscovery?.diagnostics?.llmJudgeDeferredMode === "string"
-        ? [seedDiscovery.diagnostics.llmJudgeDeferredMode as string]
-        : undefined,
-    );
+    const branchSummary = this.rootExecutor.buildRootBranchSummary({
+      nodeMetadata: options.node.metadata,
+      lastError: options.node.lastError,
+      runtimeMetadata,
+      branchMetadata: fallbackDiscoveryMetadata,
+      seedDiscovery,
+      extraWarningFlags: Array.from(nativeWarningFlags),
+      seedPlan: rootSeedPlan,
+    });
 
     await this.prisma.crawlFrontierNode.update({
       where: { id: options.node.id },
@@ -1807,25 +1845,12 @@ export class CrawlFrontierService {
             runtimeMetadata,
             fallbackDiscoveryMetadata,
             seedDiscovery?.diagnostics,
+            branchSummary.metadataPatch,
             {
               nativeDiscovered: true,
               sourceTier: options.profile.config.sourceTier ?? "tier2",
               discoveryPath: ["home"],
               frontierPath: ["home"],
-              warningFlags: combinedWarningFlags,
-              pendingLlmJudgeJobs,
-              llmJudgeDeferredModes,
-              seedStrategy,
-              topologyBudgetPages:
-                seedStrategy !== "frontier_only" &&
-                seedStrategy !== "frontier_first"
-                  ? seedConfig.topologyBudgetPages
-                  : null,
-              topologyBudgetDepth:
-                seedStrategy !== "frontier_only" &&
-                seedStrategy !== "frontier_first"
-                  ? seedConfig.topologyBudgetDepth
-                  : null,
               nativeStrategyType:
                 nativeComponents.deepCrawlStrategy?.type ?? null,
               nativeStrategyResolvedFrom:
@@ -1846,6 +1871,29 @@ export class CrawlFrontierService {
             nativeDiagnostics,
           ),
         ),
+      },
+    });
+    await this.recordNodeCompletion({
+      workflowRunId: options.run.workflowRunId,
+      node: options.node,
+      stepKey: `frontier:${options.node.id}:native-root`,
+      workflowNodeId: `legacy::native-root:${options.node.id}`,
+      workflowNodeType: "deep-discovery",
+      label: "Native root discovery",
+      durationMs: Date.now() - startedMs,
+      outputUrls: Array.from(scannedSourceUrls),
+      outputCount: createdCount,
+      rejectedCount: Object.values(rejectionCounts).reduce(
+        (sum, value) => sum + value,
+        0,
+      ),
+      metrics: {
+        acceptedCount,
+        createdCount,
+        selectedPageTypeCounts,
+        rejectionCounts,
+        nativeWarningFlags: branchSummary.combinedWarningFlags,
+        nativeStrategyType: nativeComponents.deepCrawlStrategy?.type ?? null,
       },
     });
 
@@ -2452,7 +2500,7 @@ export class CrawlFrontierService {
   }
 
   private resolveSeedStrategy(config: CrawlSiteProfileConfig): CrawlSeedStrategy {
-    return config.seedDiscovery?.strategy ?? "auto";
+    return this.rootExecutor.resolveSeedStrategy(config);
   }
 
   private resolveSeedDiscoveryConfig(
@@ -2473,35 +2521,11 @@ export class CrawlFrontierService {
       NonNullable<CrawlSeedDiscoveryConfig["qualityThresholds"]>
     >;
   } {
-    return {
-      mode: config.seedDiscovery?.mode ?? "robots",
-      freshnessWindowHours: Math.max(
-        1,
-        config.seedDiscovery?.freshnessWindowHours ?? 24 * 7,
-      ),
-      maxSeedUrls: Math.max(
-        1,
-        config.seedDiscovery?.maxSeedUrls ?? Math.min(120, maxPages),
-      ),
-      topologyBudgetPages: Math.max(
-        1,
-        config.seedDiscovery?.topologyBudgetPages ?? Math.min(12, maxPages),
-      ),
-      topologyBudgetDepth: Math.max(
-        1,
-        config.seedDiscovery?.topologyBudgetDepth ?? Math.min(2, maxDepth),
-      ),
-      qualityThresholds: {
-        minCandidates:
-          config.seedDiscovery?.qualityThresholds?.minCandidates ?? 3,
-        minArticleRatio:
-          config.seedDiscovery?.qualityThresholds?.minArticleRatio ?? 0.4,
-        maxNoiseRatio:
-          config.seedDiscovery?.qualityThresholds?.maxNoiseRatio ?? 0.45,
-        minFreshRatio:
-          config.seedDiscovery?.qualityThresholds?.minFreshRatio ?? 0.2,
-      },
-    };
+    return this.rootExecutor.resolveSeedDiscoveryConfig(
+      config,
+      maxPages,
+      maxDepth,
+    );
   }
 
   private estimateSeedCandidateFreshnessScore(
@@ -2869,11 +2893,17 @@ export class CrawlFrontierService {
     maxNewNodes?: number;
     metadataPatch?: Record<string, unknown>;
   }): Promise<Record<string, unknown> | undefined> {
+    const workflowRunId = await this.resolveWorkflowRunId(options.runId);
     const extraction = this.extractCandidates(
       options.node,
       options.profile.config,
       options.results,
     );
+    await this.recordExtractionCandidateDecisions({
+      workflowRunId,
+      sourceNodeId: options.node.id,
+      decisions: extraction.decisions,
+    });
     if (this.shouldQueueLlmJudge(options.node, options.profile, extraction.candidates)) {
       return this.deferLlmJudgeForDiscovery({
         node: options.node,
@@ -2884,6 +2914,7 @@ export class CrawlFrontierService {
         profile: options.profile,
         candidates: extraction.candidates,
         extractionDiagnostics: extraction.diagnostics,
+        workflowRunId,
         maxDepthOverride: options.maxDepthOverride,
         maxNewNodes: options.maxNewNodes,
         metadataPatch: options.metadataPatch,
@@ -2899,6 +2930,7 @@ export class CrawlFrontierService {
       profile: options.profile,
       candidates: extraction.candidates,
       extractionDiagnostics: extraction.diagnostics,
+      workflowRunId,
       maxDepthOverride: options.maxDepthOverride,
       maxNewNodes: options.maxNewNodes,
       metadataPatch: options.metadataPatch,
@@ -3035,11 +3067,14 @@ export class CrawlFrontierService {
     profile: CrawlSiteProfileRecord;
     candidates: FrontierCandidate[];
     extractionDiagnostics: FrontierCandidateExtraction["diagnostics"];
+    workflowRunId?: string | null;
     maxDepthOverride?: number;
     maxNewNodes?: number;
     metadataPatch?: Record<string, unknown>;
   }) {
     const queuedAt = new Date().toISOString();
+    const workflowRunId =
+      options.workflowRunId ?? (await this.resolveWorkflowRunId(options.runId));
     await this.queueService.enqueueFrontierLlmJudge({
       orgId: options.node.orgId,
       taskId: options.taskId,
@@ -3059,6 +3094,48 @@ export class CrawlFrontierService {
         metadataPatch: options.metadataPatch,
       },
     });
+    if (workflowRunId) {
+      await this.recordQueuedLlmCandidateDecisions({
+        workflowRunId,
+        node: options.node,
+        mode: "discovery",
+        candidates: options.candidates,
+        queuedAt,
+      });
+      await this.strategyRecorder.upsertStep(workflowRunId, {
+        stepKey: `frontier:${options.node.id}:llm-judge:discovery`,
+        nodeId: `legacy::llm-judge:${options.node.id}:discovery`,
+        nodeType: "branch",
+        label: "Deferred discovery LLM judge",
+        status: "queued",
+        durationMs: 0,
+        inputCount: options.candidates.length,
+        outputCount: 0,
+        rejectedCount: 0,
+        sampleUrls: options.candidates.slice(0, 5).map((candidate) => candidate.url),
+        metrics: {
+          mode: "discovery",
+          extractionDiagnostics: options.extractionDiagnostics,
+        },
+      });
+      await this.strategyRecorder.appendEvent(workflowRunId, {
+        level: "info",
+        eventType: "llm_judge_deferred",
+        nodeId: options.node.id,
+        nodeType: "branch",
+        message: "Discovery candidates deferred to the LLM judge queue",
+        triggerReason: "llm_judge_enabled",
+        beforeCount: options.candidates.length,
+        afterCount: options.candidates.length,
+        rescuedCount: 0,
+        details: {
+          mode: "discovery",
+          queuedAt,
+          candidateCount: options.candidates.length,
+        },
+        timestamp: queuedAt,
+      });
+    }
     return {
       ...options.extractionDiagnostics,
       llmJudgeEnabled: true,
@@ -3091,6 +3168,7 @@ export class CrawlFrontierService {
     sitemapDiagnostics: Record<string, unknown>;
   }): Promise<SeedDiscoveryOutcome> {
     const queuedAt = new Date().toISOString();
+    const workflowRunId = await this.resolveWorkflowRunId(options.run.id);
     await this.queueService.enqueueFrontierLlmJudge({
       orgId: options.node.orgId,
       taskId: options.taskId,
@@ -3119,6 +3197,50 @@ export class CrawlFrontierService {
         },
       },
     });
+    if (workflowRunId) {
+      await this.recordQueuedLlmCandidateDecisions({
+        workflowRunId,
+        node: options.node,
+        mode: "seed",
+        candidates: options.candidates,
+        queuedAt,
+      });
+      await this.strategyRecorder.upsertStep(workflowRunId, {
+        stepKey: `frontier:${options.node.id}:llm-judge:seed`,
+        nodeId: `legacy::llm-judge:${options.node.id}:seed`,
+        nodeType: "branch",
+        label: "Deferred seed LLM judge",
+        status: "queued",
+        durationMs: 0,
+        inputCount: options.candidates.length,
+        outputCount: 0,
+        rejectedCount: 0,
+        sampleUrls: options.candidates.slice(0, 5).map((candidate) => candidate.url),
+        metrics: {
+          mode: "seed",
+          discoveredCount: options.discoveredCount,
+          seedDiagnostics: options.sitemapDiagnostics,
+        },
+      });
+      await this.strategyRecorder.appendEvent(workflowRunId, {
+        level: "info",
+        eventType: "llm_judge_deferred",
+        nodeId: options.node.id,
+        nodeType: "branch",
+        message: "Seed candidates deferred to the LLM judge queue",
+        triggerReason: "llm_judge_enabled",
+        beforeCount: options.candidates.length,
+        afterCount: options.candidates.length,
+        rescuedCount: 0,
+        details: {
+          mode: "seed",
+          queuedAt,
+          candidateCount: options.candidates.length,
+          discoveredCount: options.discoveredCount,
+        },
+        timestamp: queuedAt,
+      });
+    }
 
     return {
       created: 0,
@@ -3164,194 +3286,16 @@ export class CrawlFrontierService {
     candidates: FrontierCandidate[];
     extractionDiagnostics: Record<string, unknown>;
     llmDiagnostics?: Record<string, unknown>;
+    workflowRunId?: string | null;
     maxDepthOverride?: number;
     maxNewNodes?: number;
     metadataPatch?: Record<string, unknown>;
   }): Promise<Record<string, unknown>> {
-    const effectiveMaxDepth = Math.min(
-      options.maxDepth,
-      options.maxDepthOverride ?? options.maxDepth,
-    );
-    const childDepth = options.node.depth + 1;
-    if (childDepth > effectiveMaxDepth) {
-      return {
-        ...options.extractionDiagnostics,
-        ...(options.llmDiagnostics ?? {}),
-        warningFlags: uniqueStringList(
-          coerceStringArray(options.extractionDiagnostics.warningFlags),
-          coerceStringArray(options.llmDiagnostics?.warningFlags),
-          ["depth_exhausted"],
-        ) ?? ["depth_exhausted"],
-      };
-    }
-    if (options.candidates.length === 0) {
-      return {
-        ...options.extractionDiagnostics,
-        ...(options.llmDiagnostics ?? {}),
-        warningFlags: uniqueStringList(
-          coerceStringArray(options.extractionDiagnostics.warningFlags),
-          coerceStringArray(options.llmDiagnostics?.warningFlags),
-          ["llm_dropped_all_candidates"],
-        ) ?? ["llm_dropped_all_candidates"],
-      };
-    }
-
-    const pageTypeBudgets = computeFrontierPageTypeBudgets({
-      maxDepth: effectiveMaxDepth,
-      maxPages: options.maxPages,
+    return this.layeredExecutor.materializeDiscoveredCandidates({
+      ...options,
+      workflowRunId:
+        options.workflowRunId ?? (await this.resolveWorkflowRunId(options.runId)),
     });
-    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
-      where: { runId: options.runId },
-      select: {
-        canonicalUrl: true,
-        urlFingerprint: true,
-        pageType: true,
-      },
-    });
-    const existingCount = existingNodesForRun.length;
-    const remainingBudget = Math.max(0, options.maxPages - existingCount);
-    const creationBudget =
-      typeof options.maxNewNodes === "number" && Number.isFinite(options.maxNewNodes)
-        ? Math.max(0, Math.min(remainingBudget, Math.round(options.maxNewNodes)))
-        : remainingBudget;
-    const rejectionCounts = {
-      ...(toNumericRecord(options.extractionDiagnostics.rejectionCounts) ?? {}),
-    };
-    const baseCandidateStats =
-      toNumericRecord(options.extractionDiagnostics.candidateStats) ?? {
-        scanned: 0,
-        unique: 0,
-        accepted: options.candidates.length,
-        selected: options.candidates.length,
-        rejected: 0,
-        trimmed: 0,
-      };
-    if (creationBudget === 0) {
-      bumpCount(rejectionCounts, "run_budget_exhausted");
-      return {
-        ...options.extractionDiagnostics,
-        ...(options.llmDiagnostics ?? {}),
-        rejectionCounts,
-        candidateStats: {
-          ...baseCandidateStats,
-          selected: 0,
-          rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
-        },
-      };
-    }
-
-    const seenFingerprints = new Set(
-      existingNodesForRun
-        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
-        .filter((entry) => entry.length > 0),
-    );
-    const countsByPageType = this.createPageTypeCountRecord();
-    for (const entry of existingNodesForRun) {
-      countsByPageType[entry.pageType] += 1;
-    }
-
-    const paginationKeepCount = this.clampInt(
-      options.profile.config.layeredOptions?.paginationKeepCount,
-      1,
-      10,
-      3,
-    );
-    let created = 0;
-    let listPagesCreated = 0;
-    const selectedPageTypeCounts = this.createPageTypeCountRecord();
-    const prioritizedCandidates = prioritizeFrontierCandidates({
-      parentPageType: options.node.pageType,
-      candidates: options.candidates,
-    });
-    for (const candidate of prioritizedCandidates) {
-      if (created >= creationBudget) {
-        bumpCount(rejectionCounts, "run_budget_exhausted");
-        break;
-      }
-      if (countsByPageType[candidate.pageType] >= pageTypeBudgets[candidate.pageType]) {
-        bumpCount(rejectionCounts, "page_type_budget");
-        continue;
-      }
-      const canonical = buildCanonicalUrlFingerprint(
-        candidate.url,
-        options.profile.config.urlQueryParamAllowlist,
-      );
-      const dedupeKey = canonical?.fingerprint ?? canonical?.canonicalUrl ?? candidate.url;
-      if (seenFingerprints.has(dedupeKey)) {
-        bumpCount(rejectionCounts, "duplicate");
-        continue;
-      }
-      if (candidate.pageType === "list" && listPagesCreated >= paginationKeepCount) {
-        bumpCount(rejectionCounts, "pagination_limit");
-        continue;
-      }
-      const queueClass = resolveNodeQueueClass({
-        pageType: candidate.pageType,
-        freshnessScore: candidate.freshnessScore,
-      });
-      const node = await this.prisma.crawlFrontierNode.create({
-        data: {
-          runId: options.runId,
-          parentNodeId: options.node.id,
-          orgId: options.node.orgId,
-          url: candidate.url,
-          canonicalUrl: canonical?.canonicalUrl,
-          urlFingerprint: canonical?.fingerprint,
-          pageType: candidate.pageType,
-          depth: childDepth,
-          queueClass,
-          status: "queued",
-          score: candidate.score,
-          freshnessScore: candidate.freshnessScore,
-          queuedAt: new Date(),
-          metadata: toPrismaJsonValue(
-            mergeMetadataRecords(
-              candidate.metadata,
-              {
-                sourceTier: options.profile.config.sourceTier ?? "tier2",
-              },
-              options.metadataPatch,
-            ),
-          ),
-        },
-      });
-      seenFingerprints.add(dedupeKey);
-      countsByPageType[candidate.pageType] += 1;
-      selectedPageTypeCounts[candidate.pageType] += 1;
-      created += 1;
-      if (candidate.pageType === "list") {
-        listPagesCreated += 1;
-      }
-      await this.queueService.enqueueFrontierNode({
-        orgId: options.node.orgId,
-        taskId: options.taskId,
-        frontierRunId: options.runId,
-        frontierNodeId: node.id,
-        priorityClass: queueClass,
-      });
-    }
-
-    return {
-      ...options.extractionDiagnostics,
-      ...(options.llmDiagnostics ?? {}),
-      rejectionCounts,
-      selectedPageTypeCounts,
-      candidateStats: {
-        ...baseCandidateStats,
-        llmJudgeDropped:
-          typeof options.llmDiagnostics?.llmJudgeDropped === "number"
-            ? options.llmDiagnostics.llmJudgeDropped
-            : undefined,
-        budgeted: creationBudget,
-        selected: created,
-        rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
-      },
-      warningFlags: uniqueStringList(
-        coerceStringArray(options.extractionDiagnostics.warningFlags),
-        coerceStringArray(options.llmDiagnostics?.warningFlags),
-        created === 0 ? ["no_child_nodes_created"] : undefined,
-      ) ?? [],
-    };
   }
 
   private async materializeSeedCandidates(options: {
@@ -3370,217 +3314,98 @@ export class CrawlFrontierService {
     discoveredCount: number;
     llmDiagnostics?: Record<string, unknown>;
   }): Promise<SeedDiscoveryOutcome> {
-    const normalizedCandidates = options.candidates.map((candidate) => {
-      const synthetic =
-        candidate.metadata &&
-        isPlainObject(candidate.metadata) &&
-        candidate.metadata.syntheticList === true &&
-        candidate.pageType === "article";
-      const discoveryPath = synthetic
-        ? ["seed", "synthetic_list", "article"]
-        : ["seed", candidate.pageType];
-      return {
-        ...candidate,
-        metadata: mergeMetadataRecords(candidate.metadata, {
-          seedCandidate: true,
-          seedOrigin: "sitemap",
-          seedMethod:
-            typeof options.sitemapDiagnostics.seedMethod === "string"
-              ? options.sitemapDiagnostics.seedMethod
-              : null,
-          discoveryPath,
-          frontierPath: discoveryPath,
-        }) ?? {},
-      };
+    return this.layeredExecutor.materializeSeedCandidates({
+      ...options,
+      workflowRunId: await this.resolveWorkflowRunId(options.run.id),
     });
+  }
 
-    const selectedPageTypeCounts = this.createPageTypeCountRecord();
-    for (const candidate of normalizedCandidates) {
-      selectedPageTypeCounts[candidate.pageType] += 1;
-    }
-    const articleCount = selectedPageTypeCounts.article;
-    const freshCount = normalizedCandidates.filter(
-      (candidate) => candidate.freshnessScore >= 0.75,
-    ).length;
-    const candidateCount = Math.max(options.discoveredCount, normalizedCandidates.length);
-    const selectedCount = normalizedCandidates.length;
-    const articleRatio =
-      selectedCount > 0 ? Number((articleCount / selectedCount).toFixed(4)) : 0;
-    const noiseRatio =
-      candidateCount > 0
-        ? Number(
-            Math.max(0, (candidateCount - selectedCount) / candidateCount).toFixed(4),
-          )
-        : 1;
-    const freshRatio =
-      selectedCount > 0 ? Number((freshCount / selectedCount).toFixed(4)) : 0;
-    const qualityThresholds =
-      options.qualityThresholds ??
-      this.resolveSeedDiscoveryConfig(
-        options.profile.config,
-        options.run.maxPages,
-        options.run.maxDepth,
-      ).qualityThresholds;
-    const qualityPassed =
-      selectedCount >= (qualityThresholds?.minCandidates ?? 1) &&
-      articleRatio >= (qualityThresholds?.minArticleRatio ?? 0) &&
-      noiseRatio <= (qualityThresholds?.maxNoiseRatio ?? 1) &&
-      freshRatio >= (qualityThresholds?.minFreshRatio ?? 0);
+  private buildCandidateTraceSnapshot(options: FrontierTraceCandidate & {
+    status?: string | null;
+    rejectedReason?: string | null;
+  }) {
+    return this.rootExecutor.buildCandidateTraceSnapshot(options);
+  }
 
-    const rejectionCounts: Record<string, number> = {};
-    if (!qualityPassed && selectedCount > 0) {
-      bumpCount(rejectionCounts, "seed_low_quality");
-    }
+  private async recordQueuedLlmCandidateDecisions(options: {
+    workflowRunId: string;
+    node: Pick<CrawlFrontierNodeRecord, "id">;
+    mode: "discovery" | "seed";
+    candidates: FrontierCandidate[];
+    queuedAt: string;
+  }) {
+    await this.rootExecutor.recordQueuedLlmCandidateDecisions(options);
+  }
 
-    const existingNodesForRun = await this.prisma.crawlFrontierNode.findMany({
-      where: { runId: options.run.id },
-      select: {
-        canonicalUrl: true,
-        urlFingerprint: true,
-        pageType: true,
-      },
-    });
-    const seenFingerprints = new Set(
-      existingNodesForRun
-        .map((entry) => entry.urlFingerprint ?? entry.canonicalUrl ?? "")
-        .filter((entry) => entry.length > 0),
-    );
-    const countsByPageType = this.createPageTypeCountRecord();
-    for (const entry of existingNodesForRun) {
-      countsByPageType[entry.pageType] += 1;
-    }
-    const pageTypeBudgets = computeFrontierPageTypeBudgets({
-      maxDepth: options.run.maxDepth,
-      maxPages: options.run.maxPages,
-    });
-    const remainingBudget = Math.max(0, options.run.maxPages - existingNodesForRun.length);
-    const paginationKeepCount = this.clampInt(
-      options.profile.config.layeredOptions?.paginationKeepCount,
-      1,
-      10,
-      3,
-    );
-    let listPagesCreated = 0;
-    let created = 0;
+  private async recordResolvedLlmCandidateDecisions(options: {
+    workflowRunId: string;
+    node: Pick<CrawlFrontierNodeRecord, "id">;
+    mode: "discovery" | "seed";
+    inputCandidates: FrontierCandidate[];
+    resolvedCandidates: FrontierCandidate[];
+    llmDiagnostics?: Record<string, unknown>;
+  }) {
+    await this.rootExecutor.recordResolvedLlmCandidateDecisions(options);
+  }
 
-    if (qualityPassed) {
-      const prioritizedCandidates = prioritizeFrontierCandidates({
-        parentPageType: "home",
-        candidates: normalizedCandidates,
-      });
-      for (const candidate of prioritizedCandidates) {
-        if (created >= remainingBudget) {
-          bumpCount(rejectionCounts, "run_budget_exhausted");
-          break;
-        }
-        if (countsByPageType[candidate.pageType] >= pageTypeBudgets[candidate.pageType]) {
-          bumpCount(rejectionCounts, "page_type_budget");
-          continue;
-        }
-        const canonical = buildCanonicalUrlFingerprint(
-          candidate.url,
-          options.profile.config.urlQueryParamAllowlist,
-        );
-        const dedupeKey =
-          canonical?.fingerprint ?? canonical?.canonicalUrl ?? candidate.url;
-        if (seenFingerprints.has(dedupeKey)) {
-          bumpCount(rejectionCounts, "duplicate");
-          continue;
-        }
-        if (candidate.pageType === "list" && listPagesCreated >= paginationKeepCount) {
-          bumpCount(rejectionCounts, "pagination_limit");
-          continue;
-        }
-        const queueClass = resolveNodeQueueClass({
-          pageType: candidate.pageType,
-          freshnessScore: candidate.freshnessScore,
-        });
-        const node = await this.prisma.crawlFrontierNode.create({
-          data: {
-            runId: options.run.id,
-            parentNodeId: options.node.id,
-            orgId: options.node.orgId,
-            url: candidate.url,
-            canonicalUrl: canonical?.canonicalUrl,
-            urlFingerprint: canonical?.fingerprint,
-            pageType: candidate.pageType,
-            depth: candidate.pageType === "article" ? Math.min(options.run.maxDepth, 3) : 1,
-            queueClass,
-            status: "queued",
-            score: candidate.score,
-            freshnessScore: candidate.freshnessScore,
-            queuedAt: new Date(),
-            metadata: toPrismaJsonValue(
-              mergeMetadataRecords(candidate.metadata, {
-                sourceTier: options.profile.config.sourceTier ?? "tier2",
-              }),
-            ),
-          },
-        });
-        seenFingerprints.add(dedupeKey);
-        countsByPageType[candidate.pageType] += 1;
-        created += 1;
-        if (candidate.pageType === "list") {
-          listPagesCreated += 1;
-        }
-        await this.queueService.enqueueFrontierNode({
-          orgId: options.node.orgId,
+  private resolveRootSeedPlan(options: {
+    nodeDepth: number;
+    profile: CrawlSiteProfileRecord;
+    maxPages: number;
+    maxDepth: number;
+  }) {
+    return this.rootExecutor.resolveRootSeedPlan(options);
+  }
+
+  private async executeRootSeedBranch(options: {
+    workflowRunId?: string | null;
+    node: CrawlFrontierNodeRecord;
+    run: {
+      id: string;
+      seedUrl: string;
+      maxDepth: number;
+      maxPages: number;
+    };
+    profile: CrawlSiteProfileRecord;
+    taskId: string;
+    requestTimeoutMs?: number | null;
+    seedStrategy: CrawlSeedStrategy;
+  }): Promise<SeedDiscoveryOutcome | undefined> {
+    return this.rootExecutor.executeRootSeedBranch({
+      workflowRunId: options.workflowRunId,
+      node: options.node,
+      seedStrategy: options.seedStrategy,
+      discoverSeedBranch: () =>
+        this.discoverSeedNodes({
+          node: options.node,
+          run: options.run,
+          profile: options.profile,
           taskId: options.taskId,
-          frontierRunId: options.run.id,
-          frontierNodeId: node.id,
-          priorityClass: queueClass,
-        });
-      }
-    }
+          requestTimeoutMs: options.requestTimeoutMs,
+        }),
+    });
+  }
 
-    const diagnostics: Record<string, unknown> = {
-      seedOrigin: "sitemap",
-      seedMethod:
-        typeof options.sitemapDiagnostics.seedMethod === "string"
-          ? options.sitemapDiagnostics.seedMethod
-          : null,
-      seedDiscoveryMode:
-        typeof options.sitemapDiagnostics.discoveryMode === "string"
-          ? options.sitemapDiagnostics.discoveryMode
-          : null,
-      seedDiagnostics: options.sitemapDiagnostics,
-      seedYield: {
-        discovered: candidateCount,
-        selected: selectedCount,
-        created,
-        fresh: freshCount,
-      },
-      seedQuality: {
-        passed: qualityPassed,
-        articleRatio,
-        noiseRatio,
-        freshRatio,
-        thresholds: qualityThresholds,
-      },
-      seedSelectedPageTypeCounts: selectedPageTypeCounts,
-      seedRejectionCounts: rejectionCounts,
-      fallbackStage: qualityPassed && created > 0 ? "seed" : "frontier",
-      warningFlags: uniqueStringList(
-        !qualityPassed ? ["seed_low_quality"] : undefined,
-        created === 0 ? ["seed_no_nodes_created"] : undefined,
-        coerceStringArray(options.llmDiagnostics?.warningFlags),
-      ) ?? [],
-      candidateStats: {
-        scanned: candidateCount,
-        unique: candidateCount,
-        accepted: selectedCount,
-        selected: created,
-        rejected: Object.values(rejectionCounts).reduce((sum, value) => sum + value, 0),
-        trimmed: Math.max(0, selectedCount - created),
-      },
-      rejectionCounts,
-    };
+  private async recordNativeFallbackExecution(options: {
+    workflowRunId?: string | null;
+    node: Pick<CrawlFrontierNodeRecord, "id">;
+    createdCount: number;
+    minAcceptedResults: number;
+    minArticleResults: number;
+    nativeAcceptedArticles: number;
+    fallbackDiscoveryMetadata?: Record<string, unknown>;
+    triggerReason: string;
+  }) {
+    await this.rootExecutor.recordNativeFallbackExecution(options);
+  }
 
-    return {
-      created,
-      selectedPageTypeCounts,
-      diagnostics: mergeMetadataRecords(diagnostics, options.llmDiagnostics) ?? diagnostics,
-    };
+  private async recordRootSeedBranchEvent(options: {
+    workflowRunId?: string | null;
+    node: Pick<CrawlFrontierNodeRecord, "id" | "depth" | "pageType">;
+    seedStrategy: CrawlSeedStrategy;
+    seedDiscovery?: SeedDiscoveryOutcome;
+  }) {
+    await this.rootExecutor.recordRootSeedBranchEvent(options);
   }
 
   private extractCandidates(
@@ -3588,177 +3413,38 @@ export class CrawlFrontierService {
     config: CrawlSiteProfileConfig,
     results: Crawl4aiArticle[],
   ): FrontierCandidateExtraction {
-    const byUrl = new Map<string, FrontierCandidate>();
-    const rejectionCounts: Record<string, number> = {};
-    const sameDomainHost = new URL(node.url).hostname;
-    const selfCanonical = buildCanonicalUrlFingerprint(
-      node.url,
-      config.urlQueryParamAllowlist,
-    );
-    const selfKey =
-      selfCanonical?.fingerprint ?? selfCanonical?.canonicalUrl ?? node.url;
-    let scannedLinks = 0;
-    for (const result of results) {
-      const baseUrl =
-        typeof result.url === "string" && result.url.trim().length > 0
-          ? result.url.trim()
-          : node.url;
-      for (const links of Object.values(result.links ?? {})) {
-        if (!Array.isArray(links)) {
-          continue;
-        }
-        for (const link of links) {
-          const href =
-            typeof link.href === "string"
-              ? link.href.trim()
-              : typeof link.url === "string"
-                ? link.url.trim()
-                : "";
-          if (!href) {
-            continue;
-          }
-          scannedLinks += 1;
-          let resolvedUrl = href;
-          try {
-            resolvedUrl = new URL(href, baseUrl).toString();
-          } catch {
-            bumpCount(rejectionCounts, "invalid_url");
-            continue;
-          }
-          if (resolvedUrl === node.url) {
-            bumpCount(rejectionCounts, "self_url");
-            continue;
-          }
-          const linkText =
-            typeof link.text === "string"
-              ? link.text
-              : typeof link.title === "string"
-                ? link.title
-                : undefined;
-          if (isUtilityFrontierLinkText(linkText)) {
-            bumpCount(rejectionCounts, "utility_link_text");
-            continue;
-          }
-          const rejectionReason = shouldRejectFrontierUrl({
-            url: resolvedUrl,
-            config,
-            requireSameDomainHost: sameDomainHost,
-            linkText,
-          });
-          if (rejectionReason) {
-            bumpCount(rejectionCounts, rejectionReason);
-            continue;
-          }
-          const candidateCanonical = buildCanonicalUrlFingerprint(
-            resolvedUrl,
-            config.urlQueryParamAllowlist,
-          );
-          const candidateKey =
-            candidateCanonical?.fingerprint ??
-            candidateCanonical?.canonicalUrl ??
-            resolvedUrl;
-          if (candidateKey === selfKey) {
-            bumpCount(rejectionCounts, "self_canonical");
-            continue;
-          }
-          const pageType = inferFrontierPageType({
-            url: resolvedUrl,
-            parentPageType: node.pageType,
-            config,
-            linkText,
-          });
-          const freshnessScore = estimateFreshnessScore(resolvedUrl, config);
-          const rawScore =
-            typeof link.totalScore === "number"
-              ? link.totalScore
-              : typeof link.total_score === "number"
-                ? link.total_score
-                : typeof link.contextualScore === "number"
-                  ? link.contextualScore
-                  : typeof link.contextual_score === "number"
-                    ? link.contextual_score
-                    : typeof link.intrinsicScore === "number"
-                      ? link.intrinsicScore
-                      : typeof link.intrinsic_score === "number"
-                        ? link.intrinsic_score
-                        : 0;
-          const score = scoreFrontierCandidate({
-            url: resolvedUrl,
-            pageType,
-            parentPageType: node.pageType,
-            parentUrl: node.url,
-            config,
-            rawScore,
-            linkText,
-            freshnessScore,
-          });
-          const existing = byUrl.get(resolvedUrl);
-          if (!existing || score > existing.score) {
-            byUrl.set(resolvedUrl, {
-              url: resolvedUrl,
-              pageType,
-              score,
-              freshnessScore,
-              metadata: {
-                discoveredFromNodeId: node.id,
-                discoveredFromPageType: node.pageType,
-                linkText: linkText ?? null,
-                frontierScore: score,
-                frontierFreshnessScore: freshnessScore,
-              },
-            });
-          }
-        }
-      }
-    }
-
-    const threshold = config.layeredOptions?.scoreThreshold ?? 0.35;
-    const accepted = Array.from(byUrl.values()).filter(
-      (entry) => entry.score >= threshold,
-    );
-    const lowScoreCount = Math.max(0, byUrl.size - accepted.length);
-    if (lowScoreCount > 0) {
-      rejectionCounts.low_score = lowScoreCount;
-    }
-    const acceptedPageTypeCounts = this.createPageTypeCountRecord();
-    for (const candidate of accepted) {
-      acceptedPageTypeCounts[candidate.pageType] += 1;
-    }
-    const prioritized = prioritizeFrontierCandidates({
-      parentPageType: node.pageType,
-      candidates: accepted,
+    const extraction = this.layeredExecutor.extractCandidates({
+      node,
+      config,
+      results,
     });
-    const maxChildren = config.layeredOptions?.maxChildrenPerNode ?? 24;
-    const trimmed = Math.max(0, prioritized.length - maxChildren);
-    if (trimmed > 0) {
-      rejectionCounts.max_children_trimmed = trimmed;
-    }
-    const selected = prioritized.slice(0, maxChildren);
     const withDiscoveryMetadata = this.applyCandidateDiscoveryMetadata({
       node,
       config,
-      candidates: selected,
+      candidates: extraction.candidates,
     });
-    const candidates = withDiscoveryMetadata.candidates;
+    const candidateByUrl = new Map(
+      withDiscoveryMetadata.candidates.map((candidate) => [candidate.url, candidate] as const),
+    );
     return {
-      candidates,
+      candidates: withDiscoveryMetadata.candidates,
+      decisions: extraction.decisions.map((decision) => ({
+        ...decision,
+        candidate: candidateByUrl.get(decision.candidate.url) ?? decision.candidate,
+      })),
       diagnostics: {
+        ...extraction.diagnostics,
         candidateStats: {
-          scanned: scannedLinks,
-          unique: byUrl.size,
-          accepted: accepted.length,
-          selected: candidates.length,
-          rejected: Object.values(rejectionCounts).reduce(
-            (sum, value) => sum + value,
-            0,
-          ),
-          trimmed,
+          ...extraction.diagnostics.candidateStats,
+          selected: withDiscoveryMetadata.candidates.length,
         },
-        rejectionCounts,
-        acceptedPageTypeCounts,
-        warningFlags: withDiscoveryMetadata.syntheticListActivated
-          ? ["synthetic_list_activated"]
-          : [],
+        warningFlags:
+          uniqueStringList(
+            extraction.diagnostics.warningFlags,
+            withDiscoveryMetadata.syntheticListActivated
+              ? ["synthetic_list_activated"]
+              : undefined,
+          ) ?? [],
         syntheticListActivated: withDiscoveryMetadata.syntheticListActivated,
       },
     };
@@ -4122,6 +3808,65 @@ export class CrawlFrontierService {
             : null,
       },
     });
+    if (run.workflowRunId) {
+      const finishedAt =
+        activeCount === 0 && status !== "running" && status !== "queued"
+          ? new Date()
+          : null;
+      await this.strategyRecorder.updateRunCounts(run.workflowRunId, {
+        frontierRunId: runId,
+        frontierStatus: status,
+        nodeCount,
+        pageCount,
+        articleCount,
+        failedCount,
+        duplicateCount,
+        activeCount,
+        pendingLlmJudgeJobs,
+        candidateStats,
+        rejectionCounts,
+        warningFlags: Array.from(warningFlags),
+        failureKind,
+      });
+      await this.strategyRecorder.markRunStatus(run.workflowRunId, {
+        status:
+          status === "completed" ||
+          status === "failed" ||
+          status === "canceled"
+            ? status
+            : activeCount > 0
+              ? "running"
+              : "queued",
+        error: lastError,
+        finishedAt,
+      });
+      if (
+        status !== run.status &&
+        (status === "completed" || status === "failed" || status === "canceled")
+      ) {
+        await this.strategyRecorder.appendEvent(run.workflowRunId, {
+          level:
+            status === "completed"
+              ? "info"
+              : status === "canceled"
+                ? "warn"
+                : "error",
+          eventType: "frontier_run_terminal",
+          nodeType: "legacy.frontier_run",
+          message: `Frontier run ${status}`,
+          triggerReason: failureKind,
+          beforeCount: nodeCount,
+          afterCount: pageCount,
+          rescuedCount: articleCount,
+          details: {
+            frontierRunId: runId,
+            candidateStats,
+            rejectionCounts,
+          },
+          timestamp: (finishedAt ?? new Date()).toISOString(),
+        });
+      }
+    }
 
     if (activeCount === 0 && status !== "running" && status !== "queued") {
       await this.handleTerminalRunLifecycle(runId, {
@@ -4591,6 +4336,7 @@ export class CrawlFrontierService {
       throw new BadRequestException("Crawl frontier run is missing crawlTaskId");
     }
     const queuedAt = new Date();
+    const workflowRunId = await this.resolveWorkflowRunId(node.runId);
     await this.prisma.crawlFrontierNode.update({
       where: { id: node.id },
       data: {
@@ -4626,6 +4372,27 @@ export class CrawlFrontierService {
       frontierNodeId: node.id,
       priorityClass: node.queueClass as CrawlPriorityClass,
     });
+    if (workflowRunId) {
+      await this.strategyRecorder.appendEvent(workflowRunId, {
+        level: "info",
+        eventType: "frontier_node_requeued",
+        nodeId: node.id,
+        nodeType: "legacy.frontier_node",
+        message: "Frontier node was requeued for another execution attempt",
+        triggerReason: "manual_retry",
+        beforeCount: 1,
+        afterCount: 1,
+        rescuedCount: 1,
+        details: {
+          queueClass: node.queueClass,
+        },
+        timestamp: queuedAt.toISOString(),
+      });
+      await this.strategyRecorder.markRunStatus(workflowRunId, {
+        status: "queued",
+        finishedAt: null,
+      });
+    }
   }
 
   private async buildRunAdminSummary(
@@ -5069,6 +4836,160 @@ export class CrawlFrontierService {
     };
   }
 
+  private async createWorkflowRunForFrontier(options: {
+    orgId: string;
+    actorId: string;
+    frontierRunId: string;
+    seedUrl: string;
+    profile: CrawlSiteProfileRecord;
+    executionMode: CrawlSiteExecutionMode;
+    maxDepth: number;
+    maxPages: number;
+    keywords?: string[];
+  }) {
+    let workflowId = options.profile.workflowId ?? null;
+    let workflowVersionId = options.profile.workflowVersionId ?? null;
+    let workflowOrigin: CrawlStrategyWorkflowOrigin = "bound";
+    let definition: CrawlStrategyWorkflowDefinition;
+    let parameterSources: CrawlStrategyParameterSource[] = [];
+
+    const resolved =
+      workflowId || workflowVersionId
+        ? await this.strategyWorkflows.resolveBoundWorkflowVersion({
+            orgId: options.orgId,
+            workflowId,
+            workflowVersionId,
+            workflowBindingMode: options.profile.workflowBindingMode,
+          })
+        : null;
+    if (resolved) {
+      workflowId = resolved.workflow.id;
+      workflowVersionId = resolved.version.id;
+      definition = resolved.definition;
+      const overlay = await this.strategyWorkflows.compileProfileOverlay({
+        orgId: options.orgId,
+        baseExecutionMode: options.profile.executionMode,
+        baseConfig: options.profile.config,
+        workflowId,
+        workflowVersionId,
+        workflowBindingMode: options.profile.workflowBindingMode,
+      });
+      parameterSources = overlay?.parameterSources ?? [];
+    } else {
+      workflowOrigin = "legacy_bridge";
+      definition = this.strategyWorkflows.buildLegacyProfileDefinition(
+        options.profile,
+        options.seedUrl,
+      );
+      parameterSources = [
+        {
+          key: "legacy_profile_bridge",
+          value: {
+            profileId: options.profile.id,
+            profileVersion: options.profile.version,
+          },
+          source: "legacy_profile",
+        },
+      ];
+    }
+
+    const workflowRun = await this.strategyRecorder.createRun({
+      orgId: options.orgId,
+      createdById: options.actorId,
+      workflowId,
+      workflowVersionId,
+      workflowOrigin,
+      profileId: options.profile.id,
+      frontierRunId: options.frontierRunId,
+      status: "queued",
+      runKind: CrawlStrategyWorkflowRunKind.FrontierRun,
+      input: {
+        frontierRunId: options.frontierRunId,
+        seedUrl: options.seedUrl,
+        profileId: options.profile.id,
+        executionMode: options.executionMode,
+        maxDepth: options.maxDepth,
+        maxPages: options.maxPages,
+        keywords: options.keywords ?? [],
+      },
+      graphSnapshot: definition,
+      parameterSources,
+    });
+
+    return {
+      id: workflowRun.id,
+      workflowOrigin,
+      definition,
+    };
+  }
+
+  private async recordCrawl4aiSystemEvents(
+    workflowRunId: string | null | undefined,
+    node: Pick<CrawlFrontierNodeRecord, "id" | "url" | "pageType">,
+    events: Crawl4aiResponse["systemEvents"],
+  ) {
+    if (!workflowRunId || !events || events.length === 0) {
+      return;
+    }
+    for (const event of events) {
+      await this.strategyRecorder.appendEvent(workflowRunId, {
+        level: event.level,
+        eventType: event.eventType,
+        nodeId: node.id,
+        nodeType: "legacy.crawl4ai",
+        message: event.message,
+        triggerReason: event.triggerReason ?? null,
+        beforeCount: event.beforeCount ?? null,
+        afterCount: event.afterCount ?? null,
+        rescuedCount: event.rescuedCount ?? null,
+        details: {
+          url: node.url,
+          pageType: node.pageType,
+          ...(event.details ?? {}),
+        },
+        timestamp: event.timestamp,
+      });
+    }
+  }
+
+  private async resolveWorkflowRunId(runId: string): Promise<string | null> {
+    const run = await this.prisma.crawlFrontierRun.findUnique({
+      where: { id: runId },
+      select: {
+        workflowRunId: true,
+      },
+    });
+    return run?.workflowRunId ?? null;
+  }
+
+  private async recordCandidateDecision(options: {
+    workflowRunId?: string | null;
+    sourceNodeId: string;
+    candidate: FrontierTraceCandidate;
+    nodeId: string;
+    nodeType: string;
+    action:
+      | "discovered"
+      | "filtered"
+      | "scored"
+      | "branched"
+      | "budgeted"
+      | "fallback"
+      | "persisted";
+    message: string;
+    status: "active" | "selected" | "rejected";
+    accepted?: boolean;
+    rejectedReason?: string | null;
+    ruleHits?: string[];
+    beforeSnapshot?: Record<string, unknown>;
+    afterSnapshot?: Record<string, unknown>;
+    scoreDelta?: number;
+    freshnessDelta?: number;
+    details?: Record<string, unknown>;
+  }) {
+    await this.layeredExecutor.recordCandidateDecision(options);
+  }
+
   private async updateRunMetadata(runId: string, patch: Record<string, unknown>) {
     const run = await this.prisma.crawlFrontierRun.findUnique({
       where: { id: runId },
@@ -5082,7 +5003,31 @@ export class CrawlFrontierService {
       data: {
         metadata: toPrismaJsonValue(mergeMetadataRecords(existing, patch)),
       },
-    });
+      });
+  }
+
+  private async recordExtractionCandidateDecisions(options: {
+    workflowRunId?: string | null;
+    sourceNodeId: string;
+    decisions: FrontierCandidateDecision[];
+  }) {
+    await this.layeredExecutor.recordExtractionCandidateDecisions(options);
+  }
+
+  private async recordNodeCompletion(options: {
+    workflowRunId?: string | null;
+    node: Pick<CrawlFrontierNodeRecord, "id" | "url" | "pageType">;
+    stepKey: string;
+    workflowNodeId: string;
+    workflowNodeType: string;
+    label: string;
+    durationMs: number;
+    outputUrls: string[];
+    outputCount?: number;
+    rejectedCount: number;
+    metrics: Record<string, unknown>;
+  }) {
+    await this.rootExecutor.recordNodeCompletion(options);
   }
 
   private async updateNodeMetadata(
