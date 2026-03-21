@@ -67,7 +67,9 @@ import type { SituationMonitorMatchResult } from "./types/situation-monitor-moni
 import type {
   SituationOrefAlertsResponse,
   SituationOrefHistoryResponse,
+  SituationOrefRealtimePayload,
   SituationTelegramFeedResponse,
+  SituationTelegramRealtimePayload,
 } from "./types/situation-monitor-signals";
 import {
   buildMonitorMatchKey,
@@ -90,6 +92,12 @@ import {
   parseOrefTimestamp,
   translateOrefTextForLocale,
 } from "./utils/oref-display";
+import {
+  DEFAULT_SITUATION_MONITOR_TELEGRAM_FEED_LIMIT,
+  mergeOrefAlertsRealtime,
+  mergeOrefHistoryRealtime,
+  mergeTelegramFeedRealtime,
+} from "./utils/realtime-signals";
 import { buildTelegramFeedQueryParams } from "./utils/telegram-feed";
 
 type GridLayoutComponent = ComponentType<Record<string, unknown>>;
@@ -860,13 +868,11 @@ export function SituationMonitorContent() {
       channel: telegramChannelFilter,
     }),
   );
-  const telegramRealtimeRefreshTimerRef = useRef<number | null>(null);
   const orefSignalsLoadingRef = useRef(false);
   const pendingOrefSignalsLoadRef = useRef<{ silent: boolean } | null>(null);
   const loadOrefSignalsRef = useRef<
     (options?: { silent?: boolean }) => Promise<void>
   >(async () => undefined);
-  const orefRealtimeRefreshTimerRef = useRef<number | null>(null);
   const loading = refreshStage !== "idle";
 
   const telegramPanelVisible = useSituationMonitorLayoutStore(
@@ -955,7 +961,7 @@ export function SituationMonitorContent() {
                 topic: telegramTopicFilter,
                 channel: telegramChannelFilter,
               },
-              { limit: 80 },
+              { limit: DEFAULT_SITUATION_MONITOR_TELEGRAM_FEED_LIMIT },
             ),
           },
         );
@@ -1248,6 +1254,50 @@ export function SituationMonitorContent() {
     [apiClient, load, session?.accessToken, t],
   );
 
+  const handleRealtimeTelegramUpdate = useCallback(
+    (payload: SituationTelegramRealtimePayload) => {
+      if (!telegramSignalActive) {
+        return;
+      }
+      setSignalErrors((prev) =>
+        prev.telegram ? { ...prev, telegram: null } : prev,
+      );
+      setTelegramFeed((prev) =>
+        mergeTelegramFeedRealtime(
+          prev,
+          payload,
+          {
+            topic: telegramTopicFilter,
+            channel: telegramChannelFilter,
+          },
+          { limit: DEFAULT_SITUATION_MONITOR_TELEGRAM_FEED_LIMIT },
+        ),
+      );
+    },
+    [telegramChannelFilter, telegramSignalActive, telegramTopicFilter],
+  );
+
+  const handleRealtimeOrefUpdate = useCallback(
+    (payload: SituationOrefRealtimePayload) => {
+      if (!orefSignalActive) {
+        return;
+      }
+      setSignalErrors((prev) => (prev.oref ? { ...prev, oref: null } : prev));
+      setOrefAlerts((prev) => mergeOrefAlertsRealtime(prev, payload));
+      setOrefHistory((prev) => mergeOrefHistoryRealtime(prev, payload));
+    },
+    [orefSignalActive],
+  );
+
+  const realtimeState = useSituationMonitorStream({
+    enabled: telegramSignalActive || orefSignalActive,
+    onTelegramUpdate: handleRealtimeTelegramUpdate,
+    onOrefUpdate: handleRealtimeOrefUpdate,
+  });
+
+  const telegramPollingActive = telegramSignalActive && !realtimeState.connected;
+  const orefPollingActive = orefSignalActive && !realtimeState.connected;
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -1280,79 +1330,39 @@ export function SituationMonitorContent() {
   }, [loadOrefSignals, orefSignalActive]);
 
   useEffect(() => {
-    if (!autoRefresh) {
+    if (!autoRefresh || !pageVisible) {
       return;
     }
     const timer = setInterval(() => void load(), 5 * 60 * 1000);
     return () => clearInterval(timer);
-  }, [autoRefresh, load]);
+  }, [autoRefresh, load, pageVisible]);
 
   useEffect(() => {
-    if (!telegramSignalActive) {
+    if (!telegramPollingActive) {
       return;
     }
     const timer = setInterval(() => {
       void loadTelegramFeed({ silent: true });
     }, 60_000);
     return () => clearInterval(timer);
-  }, [loadTelegramFeed, telegramSignalActive]);
+  }, [loadTelegramFeed, telegramPollingActive]);
 
   useEffect(() => {
-    if (!orefSignalActive) {
+    if (!orefPollingActive) {
       return;
     }
     const timer = setInterval(() => {
       void loadOrefSignals({ silent: true });
     }, 120_000);
     return () => clearInterval(timer);
-  }, [loadOrefSignals, orefSignalActive]);
-
-  const handleRealtimeTelegramUpdate = useCallback(() => {
-    if (!telegramSignalActive) {
-      return;
-    }
-    if (telegramRealtimeRefreshTimerRef.current) {
-      return;
-    }
-    telegramRealtimeRefreshTimerRef.current = window.setTimeout(() => {
-      telegramRealtimeRefreshTimerRef.current = null;
-      void loadTelegramFeedRef.current({ silent: true });
-    }, 800);
-  }, [telegramSignalActive]);
-
-  const handleRealtimeOrefUpdate = useCallback(() => {
-    if (!orefSignalActive) {
-      return;
-    }
-    if (orefRealtimeRefreshTimerRef.current) {
-      return;
-    }
-    orefRealtimeRefreshTimerRef.current = window.setTimeout(() => {
-      orefRealtimeRefreshTimerRef.current = null;
-      void loadOrefSignalsRef.current({ silent: true });
-    }, 800);
-  }, [orefSignalActive]);
+  }, [loadOrefSignals, orefPollingActive]);
 
   useEffect(() => {
     return () => {
-      if (telegramRealtimeRefreshTimerRef.current) {
-        window.clearTimeout(telegramRealtimeRefreshTimerRef.current);
-        telegramRealtimeRefreshTimerRef.current = null;
-      }
-      if (orefRealtimeRefreshTimerRef.current) {
-        window.clearTimeout(orefRealtimeRefreshTimerRef.current);
-        orefRealtimeRefreshTimerRef.current = null;
-      }
       pendingTelegramFeedLoadRef.current = null;
       pendingOrefSignalsLoadRef.current = null;
     };
   }, []);
-
-  const realtimeState = useSituationMonitorStream({
-    enabled: telegramSignalActive || orefSignalActive,
-    onTelegramUpdate: handleRealtimeTelegramUpdate,
-    onOrefUpdate: handleRealtimeOrefUpdate,
-  });
 
   const feedbackCandidateHeadlines = useMemo(() => {
     const headlinesByCategory = data?.headlines;

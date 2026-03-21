@@ -11,10 +11,10 @@ import { NewsnowColumn } from "../components/newsnow-column";
 import { NewsnowHottestCandidates } from "../components/newsnow-hottest-candidates";
 import { NewsnowHeader } from "../components/newsnow-header";
 import {
-  useBatchPrefetch,
   useDomesticOpinionIndex,
   useHottestAnalysis,
   useNewsMetadata,
+  usePrimeNewsSources,
 } from "../hooks/use-news-sources";
 import { shouldSyncDomesticOpinionWithHottestAnalysis } from "../lib/newsnow-domestic-opinion";
 import { useNewsnowStream } from "../hooks/use-newsnow-stream";
@@ -49,6 +49,23 @@ function NewsnowAttribution() {
   );
 }
 
+function NewsnowSourcesSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8 relative z-10">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7">
+        {[...Array(10)].map((_, i) => (
+          <div
+            key={i}
+            className="h-[430px] rounded-[24px] sm:h-[470px] lg:h-[500px] glass-panel p-5"
+          >
+            <Skeleton active paragraph={{ rows: 10 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function NewsnowColumnPage() {
   const { isDark } = useTheme();
   useNewsnowUiSync();
@@ -62,6 +79,7 @@ export default function NewsnowColumnPage() {
   const { data: metadata, isLoading, isError, refetch } = useNewsMetadata();
   const {
     focusSources,
+    visibleSourceIds,
     liveUnreadBySource,
     realtimeHighlights,
     realtimeConnected,
@@ -69,7 +87,6 @@ export default function NewsnowColumnPage() {
     clearLiveUnread,
     clearAllLiveUnread,
   } = useNewsnowStore();
-  const batchPrefetch = useBatchPrefetch();
   const resolvedColumnKey = metadata?.columns[normalizedColumnKey]
     ? normalizedColumnKey
     : "hottest";
@@ -81,22 +98,26 @@ export default function NewsnowColumnPage() {
         : metadata?.columns[resolvedColumnKey]?.sources || [],
     [focusSources, metadata?.columns, resolvedColumnKey],
   );
+  const visibleSourceIdsInColumn = useMemo(
+    () => {
+      if (visibleSourceIds.length === 0 || sourceIds.length === 0) {
+        return [];
+      }
+      const visibleSet = new Set(visibleSourceIds);
+      return sourceIds.filter((sourceId) => visibleSet.has(sourceId));
+    },
+    [sourceIds, visibleSourceIds],
+  );
   const hottestAnalysis = useHottestAnalysis(
     resolvedColumnKey === "hottest",
   );
   const domesticOpinionIndex = useDomesticOpinionIndex(
     resolvedColumnKey === "hottest",
   );
+  const { primeSources } = usePrimeNewsSources(visibleSourceIdsInColumn);
   const hottestAnalysisGeneratedAt = hottestAnalysis.data?.generatedAt;
   const refetchDomesticOpinion = domesticOpinionIndex.refetch;
   const lastSyncedDomesticOpinionAnalysisRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (sourceIds.length > 0) {
-      batchPrefetch(sourceIds);
-    }
-  }, [sourceIds, batchPrefetch]);
-
   useEffect(() => {
     if (
       !shouldSyncDomesticOpinionWithHottestAnalysis({
@@ -143,18 +164,7 @@ export default function NewsnowColumnPage() {
     return (
       <div className={frameClass} style={frameStyle}>
         <NewsnowHeader />
-        <div className="mx-auto w-full max-w-[1760px] px-4 py-6 md:px-6 md:py-7 xl:px-8 relative z-10">
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7">
-            {[...Array(10)].map((_, i) => (
-              <div
-                key={i}
-                className="h-[430px] rounded-[24px] sm:h-[470px] lg:h-[500px] glass-panel p-5"
-              >
-                <Skeleton active paragraph={{ rows: 10 }} />
-              </div>
-            ))}
-          </div>
-        </div>
+        <NewsnowSourcesSkeleton />
         <NewsnowAttribution />
       </div>
     );
@@ -247,7 +257,7 @@ export default function NewsnowColumnPage() {
                     size="small"
                     className="font-medium bg-[var(--primary)] text-white border-none shadow-md hover:brightness-110 active:scale-95 transition-all"
                     onClick={() => {
-                      void batchPrefetch(sourceIds);
+                      void primeSources(sourceIds, { force: true });
                       sourceIds.forEach((sourceId) => clearLiveUnread(sourceId));
                     }}
                   >

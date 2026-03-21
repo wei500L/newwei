@@ -9,7 +9,9 @@ import {
 } from "@deck.gl/layers";
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import {
+  type WarMapAisMode,
   type WarMapEventSeverity,
+  type WarMapFlightMode,
   type WarMapLayerFeature,
   type WarMapLayerId,
   type WarMapNewsGeoSource,
@@ -177,6 +179,15 @@ export interface WarMapProps {
   translateTarget?: WarMapTranslateTarget;
   streamState?: DashboardStreamState;
   onEffectiveRangeChange?: (range: { start: Date; end: Date }) => void;
+  onRealtimeQueryChange?: (query: {
+    start: Date;
+    end: Date;
+    bbox?: string;
+    zoom?: number;
+    translateTarget?: WarMapTranslateTarget;
+    flightMode?: WarMapFlightMode;
+    aisMode?: WarMapAisMode;
+  }) => void;
 }
 
 const PRESET_LABELS: Record<WarMapPreset, string> = {
@@ -597,6 +608,7 @@ export function WarMap({
   translateTarget,
   streamState,
   onEffectiveRangeChange,
+  onRealtimeQueryChange,
 }: WarMapProps = {}) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -621,6 +633,7 @@ export function WarMap({
     useState<MapLoadErrorPresentation | null>(null);
   const [mapMountNonce, setMapMountNonce] = useState(0);
   const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now());
+  const hasActivatedRangeAnchorRef = useRef(false);
   const [wrapperSize, setWrapperSize] = useState({ width: 0, height: 0 });
   const [openOverlayPanel, setOpenOverlayPanel] =
     useState<OverlayPanelKey | null>(null);
@@ -631,14 +644,13 @@ export function WarMap({
   const [selectedInspectorKey, setSelectedInspectorKey] = useState<
     string | null
   >(null);
+  const [urlHydrated, setUrlHydrated] = useState(
+    () => typeof window === "undefined",
+  );
   const hasRenderableMapContainer = useRenderableContainer(
     mapContainerRef,
     inView,
   );
-  const [queryViewport, setQueryViewport] = useState<{
-    bbox?: [number, number, number, number];
-    zoom: number;
-  }>({ zoom: 2 });
   const overlayDensity = useMemo(
     () => resolveOverlayDensity(wrapperSize.width, wrapperSize.height),
     [wrapperSize.height, wrapperSize.width],
@@ -675,10 +687,38 @@ export function WarMap({
   const setAisMode = useWarMapSettingsStore((state) => state.setAisMode);
   const resetLayers = useWarMapSettingsStore((state) => state.resetLayers);
   const viewStateRef = useRef(viewState);
+  const initialUrlState = useMemo(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return readWarMapUrlState(new URLSearchParams(window.location.search));
+  }, []);
+  const effectiveViewState = useMemo(
+    () =>
+      !urlHydrated && initialUrlState?.viewState
+        ? {
+            ...viewState,
+            ...initialUrlState.viewState,
+            bearing: 0,
+            pitch: 0,
+          }
+        : viewState,
+    [initialUrlState?.viewState, urlHydrated, viewState],
+  );
+  const effectiveTimeRangePreset =
+    !urlHydrated && initialUrlState?.timeRangePreset
+      ? initialUrlState.timeRangePreset
+      : timeRangePreset;
+  const [queryViewport, setQueryViewport] = useState<{
+    bbox?: [number, number, number, number];
+    zoom: number;
+  }>(() => ({
+    zoom: Number(effectiveViewState.zoom.toFixed(2)),
+  }));
 
   useEffect(() => {
-    viewStateRef.current = viewState;
-  }, [viewState]);
+    viewStateRef.current = effectiveViewState;
+  }, [effectiveViewState]);
 
   useEffect(() => {
     const root = wrapperRef.current;
@@ -731,7 +771,7 @@ export function WarMap({
     return () => observer.disconnect();
   }, []);
 
-  const dataEnabled = Boolean(session?.accessToken && inView);
+  const dataEnabled = Boolean(session?.accessToken && inView && urlHydrated);
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
@@ -750,8 +790,14 @@ export function WarMap({
     if (!inView) {
       return;
     }
+
+    if (!hasActivatedRangeAnchorRef.current) {
+      hasActivatedRangeAnchorRef.current = true;
+      return;
+    }
+
     refreshRangeAnchor();
-  }, [inView, refreshRangeAnchor, timeRangePreset]);
+  }, [effectiveTimeRangePreset, inView, refreshRangeAnchor]);
 
   useEffect(() => {
     if (!inView || typeof window === "undefined") {
@@ -765,15 +811,15 @@ export function WarMap({
 
   const effectiveRange = useMemo(() => {
     const end = new Date(rangeAnchorMs);
-    if (timeRangePreset === "all") {
+    if (effectiveTimeRangePreset === "all") {
       return { start: ALL_TIME_START, end };
     }
-    const duration = TIME_RANGE_MS[timeRangePreset];
+    const duration = TIME_RANGE_MS[effectiveTimeRangePreset];
     return {
       end,
       start: new Date(end.getTime() - duration),
     };
-  }, [rangeAnchorMs, timeRangePreset]);
+  }, [effectiveTimeRangePreset, rangeAnchorMs]);
 
   useEffect(() => {
     if (!onEffectiveRangeChange) {
@@ -797,6 +843,31 @@ export function WarMap({
     () => (queryZoom >= BBOX_QUERY_MIN_ZOOM ? queryViewport.bbox : undefined),
     [queryViewport.bbox, queryZoom],
   );
+
+  useEffect(() => {
+    if (!onRealtimeQueryChange) {
+      return;
+    }
+    onRealtimeQueryChange({
+      start: effectiveRange.start,
+      end: effectiveRange.end,
+      bbox: queryBbox,
+      zoom: queryZoom,
+      translateTarget,
+      flightMode,
+      aisMode,
+    });
+  }, [
+    aisMode,
+    effectiveRange.end,
+    effectiveRange.start,
+    flightMode,
+    onRealtimeQueryChange,
+    queryBbox,
+    queryZoom,
+    translateTarget,
+  ]);
+
   const { eventsQuery, newsQuery, layersQuery, monitorsQuery } = useWarMapData({
     apiClient,
     enabled: dataEnabled,
@@ -813,7 +884,14 @@ export function WarMap({
     accessToken: session?.accessToken,
     start: effectiveRange.start,
     end: effectiveRange.end,
-    enabled: !streamState && Boolean(session?.accessToken) && inView,
+    warMapStart: effectiveRange.start,
+    warMapEnd: effectiveRange.end,
+    warMapBBox: queryBbox,
+    warMapZoom: queryZoom,
+    warMapTranslateTarget: translateTarget,
+    warMapFlightMode: flightMode,
+    warMapAisMode: aisMode,
+    enabled: !streamState && dataEnabled,
   });
   const resolvedStreamState = streamState ?? internalStreamState;
 
@@ -892,25 +970,25 @@ export function WarMap({
 
     const center = map.getCenter();
     const changed =
-      Math.abs(center.lat - viewState.lat) > 0.0005 ||
-      Math.abs(center.lng - viewState.lon) > 0.0005 ||
-      Math.abs(map.getZoom() - viewState.zoom) > 0.02 ||
-      Math.abs(map.getBearing() - viewState.bearing) > 0.1 ||
-      Math.abs(map.getPitch() - viewState.pitch) > 0.1;
+      Math.abs(center.lat - effectiveViewState.lat) > 0.0005 ||
+      Math.abs(center.lng - effectiveViewState.lon) > 0.0005 ||
+      Math.abs(map.getZoom() - effectiveViewState.zoom) > 0.02 ||
+      Math.abs(map.getBearing() - effectiveViewState.bearing) > 0.1 ||
+      Math.abs(map.getPitch() - effectiveViewState.pitch) > 0.1;
 
     if (!changed) {
       return;
     }
 
     map.easeTo({
-      center: [viewState.lon, viewState.lat],
-      zoom: viewState.zoom,
-      bearing: viewState.bearing,
-      pitch: viewState.pitch,
+      center: [effectiveViewState.lon, effectiveViewState.lat],
+      zoom: effectiveViewState.zoom,
+      bearing: effectiveViewState.bearing,
+      pitch: effectiveViewState.pitch,
       duration: 450,
       essential: true,
     });
-  }, [mapReady, viewState]);
+  }, [effectiveViewState, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -925,9 +1003,9 @@ export function WarMap({
       return;
     }
 
-    const parsed = readWarMapUrlState(
-      new URLSearchParams(window.location.search),
-    );
+    const parsed =
+      initialUrlState ??
+      readWarMapUrlState(new URLSearchParams(window.location.search));
     if (parsed.layerVisibility) {
       setLayerVisibility(parsed.layerVisibility);
     }
@@ -948,7 +1026,9 @@ export function WarMap({
     }
 
     hasHydratedUrlRef.current = true;
+    setUrlHydrated(true);
   }, [
+    initialUrlState,
     setActivePreset,
     setAisMode,
     setFlightMode,

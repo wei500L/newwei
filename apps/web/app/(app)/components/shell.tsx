@@ -163,6 +163,7 @@ export function ShellLayout({ children }: PropsWithChildren) {
   );
   const systemHealthEnabled =
     pathname?.startsWith("/dashboard") || viewportWidth >= NAV_FULL_MIN_WIDTH;
+  const systemHealthRealtimeEnabled = pathname?.startsWith("/dashboard");
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -172,7 +173,10 @@ export function ShellLayout({ children }: PropsWithChildren) {
 
       <UserUiSettingsSync />
 
-      <SystemHealthProvider enabled={systemHealthEnabled}>
+      <SystemHealthProvider
+        enabled={systemHealthEnabled}
+        realtimeEnabled={systemHealthRealtimeEnabled}
+      >
         <TopNav showDesktopMenuButton={navMode === "drawer"} />
 
         <div

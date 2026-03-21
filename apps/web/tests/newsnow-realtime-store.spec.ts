@@ -5,6 +5,7 @@ import { useNewsnowStore } from '../app/(app)/newsnow/store/newsnow-store';
 describe('newsnow realtime store', () => {
   beforeEach(() => {
     useNewsnowStore.setState({
+      visibleSourceIds: [],
       liveUnreadBySource: {},
       realtimeHighlights: [],
       lastRealtimeEventAt: undefined,
@@ -55,5 +56,24 @@ describe('newsnow realtime store', () => {
     const state = useNewsnowStore.getState();
     expect(state.liveUnreadBySource).toEqual({});
     expect(state.realtimeHighlights).toEqual([]);
+  });
+
+  it('tracks visible sources without duplicates and clears them on hide', () => {
+    const store = useNewsnowStore.getState();
+
+    store.setSourceVisibility('weibo', true);
+    store.setSourceVisibility('weibo', true);
+    store.setSourceVisibility('hackernews', true);
+
+    expect(useNewsnowStore.getState().visibleSourceIds).toEqual([
+      'weibo',
+      'hackernews',
+    ]);
+
+    useNewsnowStore.getState().setSourceVisibility('weibo', false);
+
+    expect(useNewsnowStore.getState().visibleSourceIds).toEqual([
+      'hackernews',
+    ]);
   });
 });

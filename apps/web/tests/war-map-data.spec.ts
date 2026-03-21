@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { normalizeStoredSituationMonitors } from "../app/(app)/situation-monitor/monitors-query";
 
 import {
   WAR_MAP_QUERY_KEYS,
@@ -11,7 +12,6 @@ import {
   buildWarMapLayerRequestParams,
   buildWarMapLayersQueryKey,
   buildWarMapNewsMarkersQueryKey,
-  normalizeStoredSituationMonitors,
   normalizeWarMapEventsResponse,
   normalizeWarMapLayersResponse,
   normalizeWarMapNewsMarkersResponse,
@@ -219,8 +219,12 @@ describe("war-map page wiring", () => {
 
     expect(source).toContain("DASHBOARD_STREAM_EVENT_TYPES.warMapNewsMarkers");
     expect(source).toContain("DASHBOARD_STREAM_EVENT_TYPES.warMapLayers");
-    expect(source).toContain("WAR_MAP_QUERY_KEYS.newsMarkersPrefix");
-    expect(source).toContain("WAR_MAP_QUERY_KEYS.layersPrefix");
+    expect(source).toContain("buildWarMapNewsMarkersQueryKey");
+    expect(source).toContain("buildWarMapLayersQueryKey");
+    expect(source).toContain("queryClient.setQueryData(warMapNewsMarkersKey, payload)");
+    expect(source).toContain("queryClient.setQueryData(warMapLayersKey, payload)");
+    expect(source).not.toContain("invalidateWarMapNewsMarkerQueries");
+    expect(source).not.toContain("invalidateWarMapLayerQueries");
   });
 
   it("routes layer-only params exclusively to the layers chain", () => {
@@ -270,8 +274,9 @@ describe("war-map page wiring", () => {
     expect(source).toContain(
       "const resolvedStreamState = streamState ?? internalStreamState;",
     );
+    expect(source).toContain("onRealtimeQueryChange");
     expect(source).toContain(
-      "const dataEnabled = Boolean(session?.accessToken && inView);",
+      "const dataEnabled = Boolean(session?.accessToken && inView && urlHydrated);",
     );
     expect(source).toContain("enabled: dataEnabled,");
     expect(source).toContain("WAR_MAP_UNSUPPORTED_LAYER_IDS.has(layerId)");
@@ -280,6 +285,9 @@ describe("war-map page wiring", () => {
       "const [rangeAnchorMs, setRangeAnchorMs] = useState(() => Date.now())",
     );
     expect(source).toContain("onEffectiveRangeChange");
+    expect(source).toContain("warMapBBox: queryBbox");
+    expect(source).toContain("warMapFlightMode: flightMode");
+    expect(source).toContain("warMapAisMode: aisMode");
     expect(source).toContain(
       'const flightsSource = readSummaryString(flightsSummary, "source");',
     );
@@ -438,11 +446,13 @@ describe("war-map page wiring", () => {
       "const dashboardStreamState = useDashboardStream({",
     );
     expect(source).toContain(
-      "const [warMapStreamRange, setWarMapStreamRange] = useState",
+      "const [warMapRealtimeQuery, setWarMapRealtimeQuery] = useState",
     );
+    expect(source).toContain("warMapStart: warMapRealtimeQuery?.start");
+    expect(source).toContain("warMapBBox: warMapRealtimeQuery?.bbox");
     expect(source).toContain("streamState={dashboardStreamState}");
     expect(source).toContain(
-      "onEffectiveRangeChange={handleWarMapRangeChange}",
+      "onRealtimeQueryChange={handleWarMapRealtimeQueryChange}",
     );
     expect(source).toContain(
       'className="xl:col-span-2 h-[500px] glass-panel border border-[var(--border)] overflow-hidden flex flex-col"',

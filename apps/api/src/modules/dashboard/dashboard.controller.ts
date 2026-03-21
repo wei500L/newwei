@@ -35,6 +35,7 @@ function parseWarMapAisMode(value?: string): "all" | "military" | "density" {
   return "military";
 }
 import {
+  DashboardStreamQueryDto,
   DashboardWarMapNewsMarkersQueryDto,
   DashboardWarMapQueryDto,
   DashboardWarMapTransportDetailQueryDto,
@@ -370,9 +371,33 @@ export class DashboardController {
   @Sse("stream")
   dashboardStream(
     @CurrentUser() user: AuthenticatedUser,
-    @Query() query: DashboardTimeRangeQueryDto,
+    @Query() query: DashboardStreamQueryDto,
   ): Observable<MessageEvent> {
     const range = this.chartsService.resolveRange(query);
+    const warMapRange = this.chartsService.resolveRange(
+      {
+        start: query.warMapStart ?? query.start,
+        end: query.warMapEnd ?? query.end,
+      },
+      {
+        alignToUtcDay: false,
+      },
+    );
+    const warMapEventsOptions = {
+      translateTarget: parseTranslateTarget(query.warMapTranslate),
+      bbox: parseWarMapBbox(query.warMapBbox),
+      zoom: parseWarMapZoom(query.warMapZoom),
+      cluster: false,
+    } as const;
+    const warMapLayersOptions = {
+      translateTarget: parseTranslateTarget(query.warMapTranslate),
+      orgId: user.orgId,
+      range: warMapRange,
+      bbox: parseWarMapBbox(query.warMapBbox),
+      zoom: parseWarMapZoom(query.warMapZoom),
+      flightMode: parseWarMapFlightMode(query.warMapFlightMode),
+      aisMode: parseWarMapAisMode(query.warMapAisMode),
+    } as const;
     const defaultIntervalMs =
       process.env.NODE_ENV === "development" ? 2_000 : 10_000;
     const intervalMs = clampInt(
@@ -404,12 +429,17 @@ export class DashboardController {
             .catch(() => null);
 
           const [warEvents, warNewsMarkers, warLayers, candlestick] = await Promise.all([
-            this.chartsService.getWarMapEvents(range, user.orgId),
-            this.chartsService.getWarMapNewsMarkers(range, user.orgId),
-            this.chartsService.getWarMapLayers({
-              orgId: user.orgId,
-              range,
-            }),
+            this.chartsService.getWarMapEvents(
+              warMapRange,
+              user.orgId,
+              warMapEventsOptions,
+            ),
+            this.chartsService.getWarMapNewsMarkers(
+              warMapRange,
+              user.orgId,
+              warMapEventsOptions,
+            ),
+            this.chartsService.getWarMapLayers(warMapLayersOptions),
             this.chartsService.getFinancialCandlestick(range),
           ]);
           const geoHeatmap = await geoHeatmapPromise;

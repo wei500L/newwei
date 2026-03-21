@@ -3,6 +3,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
+import {
+  SITUATION_MONITOR_QUERY_KEYS,
+  fetchSituationMonitorMonitors,
+} from '@/app/(app)/situation-monitor/monitors-query';
 import { SITUATION_MONITOR_MONITORS_UPDATED_EVENT } from '@/app/(app)/situation-monitor/utils/monitor-events';
 import { createApiClient } from '@/lib/api-client';
 
@@ -13,7 +17,6 @@ import {
   buildWarMapLayerRequestParams,
   buildWarMapLayersQueryKey,
   buildWarMapNewsMarkersQueryKey,
-  normalizeStoredSituationMonitors,
   normalizeWarMapEventsResponse,
   normalizeWarMapLayersResponse,
   normalizeWarMapNewsMarkersResponse,
@@ -68,11 +71,8 @@ export function useWarMapData(options: UseWarMapDataOptions) {
   });
 
   const monitorsQuery = useQuery({
-    queryKey: WAR_MAP_QUERY_KEYS.monitors,
-    queryFn: async () => {
-      const response = await apiClient.get('situation-monitor/monitors');
-      return normalizeStoredSituationMonitors(response.data);
-    },
+    queryKey: SITUATION_MONITOR_QUERY_KEYS.monitors,
+    queryFn: () => fetchSituationMonitorMonitors(apiClient),
     staleTime: 30_000,
     enabled,
     placeholderData: (previous) => previous,
@@ -85,7 +85,7 @@ export function useWarMapData(options: UseWarMapDataOptions) {
 
     const handleMonitorsUpdated = () => {
       void queryClient.invalidateQueries({
-        queryKey: WAR_MAP_QUERY_KEYS.monitors,
+        queryKey: SITUATION_MONITOR_QUERY_KEYS.monitors,
         exact: true,
         refetchType: 'active',
       });

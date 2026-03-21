@@ -196,7 +196,8 @@ function createApolloClient() {
     cache: new InMemoryCache(),
     defaultOptions: {
       watchQuery: {
-        fetchPolicy: "cache-and-network"
+        // Modules that need background refresh should opt in explicitly.
+        fetchPolicy: "cache-first"
       }
     }
   });

@@ -67,6 +67,7 @@ export interface SituationTelegramRealtimePayload {
   count: number;
   updatedAt: string;
   items: TelegramSignalItem[];
+  monitorMatches?: SituationMonitorMatchResult[];
 }
 
 export interface SituationOrefRealtimePayload {
@@ -74,4 +75,7 @@ export interface SituationOrefRealtimePayload {
   historyCount24h: number;
   totalHistoryCount: number;
   updatedAt: string;
+  historyEntry?: OrefHistoryEntry | null;
+  alertMonitorMatches?: SituationMonitorMatchResult[];
+  historyMonitorMatches?: SituationMonitorMatchResult[];
 }

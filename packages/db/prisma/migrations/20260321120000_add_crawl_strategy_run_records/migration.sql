@@ -66,7 +66,7 @@ CREATE TABLE `CrawlStrategyWorkflowRunCandidate` (
 
   UNIQUE INDEX `CrawlStrategyWorkflowRunCandidate_runId_candidateKey_key`(`runId`, `candidateKey`),
   INDEX `CrawlStrategyWorkflowRunCandidate_runId_status_updatedAt_idx`(`runId`, `status`, `updatedAt`),
-  INDEX `CrawlStrategyWorkflowRunCandidate_runId_sourceNodeId_updatedAt_idx`(`runId`, `sourceNodeId`, `updatedAt`),
+  INDEX `CrawlStratRunCand_run_source_updated_idx`(`runId`, `sourceNodeId`, `updatedAt`),
   PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

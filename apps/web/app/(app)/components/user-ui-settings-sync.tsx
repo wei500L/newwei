@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,6 +14,11 @@ import {
   fingerprintSituationMonitorLayout,
   type SituationMonitorLayoutPayload,
 } from "@/lib/situation-monitor-layout-serialization";
+import {
+  SITUATION_MONITOR_QUERY_KEYS,
+  fetchSituationMonitorMonitors,
+  invalidateSituationMonitorMonitors,
+} from "@/app/(app)/situation-monitor/monitors-query";
 import { useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
@@ -368,6 +374,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export function UserUiSettingsSync() {
   const { data: session } = useSession();
+  const queryClient = useQueryClient();
   const [ready, setReady] = useState({
     situationMonitor: false,
     warMap: false,
@@ -827,14 +834,16 @@ export function UserUiSettingsSync() {
 
     void (async () => {
       try {
-        const response = await apiClient.get<StoredSituationMonitor[]>(
-          "situation-monitor/monitors",
-        );
+        const response = await queryClient.fetchQuery({
+          queryKey: SITUATION_MONITOR_QUERY_KEYS.monitors,
+          queryFn: () => fetchSituationMonitorMonitors(apiClient),
+          staleTime: 30_000,
+        });
         if (cancelled) {
           return;
         }
         const existing = new Set(
-          (response.data ?? [])
+          response
             .filter((monitor) => monitor.kind === "manual")
             .map((monitor) => buildSituationMonitorSignature(monitor)),
         );
@@ -858,6 +867,7 @@ export function UserUiSettingsSync() {
         }
         removeStorageKey(LEGACY_STORAGE_KEY_SITUATION_MONITOR_MONITORS);
         if (createdCount > 0) {
+          await invalidateSituationMonitorMonitors(queryClient);
           emitSituationMonitorMonitorsUpdated("legacy-import");
         }
       } catch (error) {
@@ -876,7 +886,7 @@ export function UserUiSettingsSync() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, apiClient, orgId, userId]);
+  }, [accessToken, apiClient, orgId, queryClient, userId]);
 
   useEffect(() => {
     if (

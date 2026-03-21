@@ -52,6 +52,7 @@ interface NewsnowState {
   sortMode: NewsnowSortMode;
   densityMode: NewsnowDensityMode;
   sourceAffinity: Record<string, NewsnowSourceAffinity>;
+  visibleSourceIds: string[];
   sourceSnapshots: Record<string, NewsnowSourceSnapshot>;
   liveUnreadBySource: Record<string, number>;
   realtimeHighlights: NewsnowRealtimeHighlight[];
@@ -66,6 +67,7 @@ interface NewsnowState {
   setDensityMode: (mode: NewsnowDensityMode) => void;
   resetSourceAffinity: () => void;
   replacePreferences: (settings: Partial<NewsnowPreferenceSettings>) => void;
+  setSourceVisibility: (sourceId: string, visible: boolean) => void;
   incrementLiveUnread: (sourceId: string, count?: number) => void;
   recordRealtimeArrival: (payload: {
     sourceId: string;
@@ -233,6 +235,7 @@ export const useNewsnowStore = create<NewsnowState>()(
       sortMode: "manual",
       densityMode: "compact",
       sourceAffinity: {},
+      visibleSourceIds: [],
       sourceSnapshots: {},
       liveUnreadBySource: {},
       realtimeHighlights: [],
@@ -288,6 +291,32 @@ export const useNewsnowStore = create<NewsnowState>()(
                 ? state.densityMode
                 : normalized.densityMode,
             sourceAffinity: normalized.sourceAffinity,
+          };
+        }),
+      setSourceVisibility: (sourceId, visible) =>
+        set((state) => {
+          const normalizedSourceId = toSourceId(sourceId);
+          if (!normalizedSourceId) {
+            return state;
+          }
+
+          if (visible) {
+            if (state.visibleSourceIds.includes(normalizedSourceId)) {
+              return state;
+            }
+            return {
+              visibleSourceIds: [...state.visibleSourceIds, normalizedSourceId],
+            };
+          }
+
+          if (!state.visibleSourceIds.includes(normalizedSourceId)) {
+            return state;
+          }
+
+          return {
+            visibleSourceIds: state.visibleSourceIds.filter(
+              (entry) => entry !== normalizedSourceId,
+            ),
           };
         }),
       incrementLiveUnread: (sourceId, count = 1) =>

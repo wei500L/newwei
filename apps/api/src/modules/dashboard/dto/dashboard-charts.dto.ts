@@ -65,6 +65,64 @@ export class DashboardWarMapQueryDto extends DashboardTimeRangeQueryDto {
 
 export class DashboardWarMapNewsMarkersQueryDto extends DashboardWarMapQueryDto {}
 
+export class DashboardStreamQueryDto extends DashboardTimeRangeQueryDto {
+  @ApiPropertyOptional({
+    description: "Optional dedicated war-map stream range start.",
+    example: "2026-03-01T00:00:00.000Z",
+  })
+  @IsOptional()
+  @IsISO8601()
+  warMapStart?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional dedicated war-map stream range end.",
+    example: "2026-03-02T00:00:00.000Z",
+  })
+  @IsOptional()
+  @IsISO8601()
+  warMapEnd?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional war-map translation target. Supported: zh-CN",
+    example: "zh-CN",
+  })
+  @IsOptional()
+  @IsString()
+  warMapTranslate?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional war-map bounding box in minLng,minLat,maxLng,maxLat format.",
+    example: "-130,20,-60,55",
+  })
+  @IsOptional()
+  @IsString()
+  warMapBbox?: string;
+
+  @ApiPropertyOptional({
+    description: "Optional war-map zoom level for detail shaping.",
+    example: "3.5",
+  })
+  @IsOptional()
+  @IsString()
+  warMapZoom?: string;
+
+  @ApiPropertyOptional({
+    description: "War-map flight layer mode. Supported: military, all",
+    example: "military",
+  })
+  @IsOptional()
+  @IsString()
+  warMapFlightMode?: string;
+
+  @ApiPropertyOptional({
+    description: "War-map AIS layer mode. Supported: military, density, all",
+    example: "military",
+  })
+  @IsOptional()
+  @IsString()
+  warMapAisMode?: string;
+}
+
 export class DashboardWarMapTransportDetailQueryDto extends DashboardTimeRangeQueryDto {
   @ApiPropertyOptional({
     description: "Transport kind. Supported: aircraft, vessel",

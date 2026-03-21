@@ -46,6 +46,7 @@ import {
   formatShortDuration,
   resolveNewsFreshnessState,
 } from "../lib/newsnow-freshness";
+import { resolveNewsSourceRefetchInterval } from "../lib/newsnow-fetching";
 import { getNewsItemStableKey } from "../lib/newsnow-items";
 import {
   RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
@@ -206,10 +207,6 @@ export function NewsnowCard({
 }: NewsnowCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
-  const { data, error, isLoading, isError, isFetching, refresh } = useNewsSource(
-    id,
-    source.interval,
-  );
   const resolveNewsUrl = useResolveNewsUrl();
   const {
     focusSources,
@@ -221,7 +218,28 @@ export function NewsnowCard({
     densityMode,
     sourceAffinity,
     clearLiveUnread,
+    realtimeConnected,
+    setSourceVisibility,
   } = useNewsnowStore();
+  const isSourceVisible = useNewsnowStore((state) =>
+    state.visibleSourceIds.includes(id),
+  );
+  const sourceRefetchInterval = useMemo(
+    () =>
+      resolveNewsSourceRefetchInterval({
+        enabled: isSourceVisible,
+        interval: source.interval,
+        realtimeConnected,
+      }),
+    [isSourceVisible, realtimeConnected, source.interval],
+  );
+  const { data, error, isLoading, isError, isFetching, refresh } = useNewsSource(
+    id,
+    {
+      enabled: isSourceVisible,
+      interval: sourceRefetchInterval,
+    },
+  );
   const { getRelativeTime } = useRelativeTime();
   const isFocused = focusSources.includes(id);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -273,6 +291,37 @@ export function NewsnowCard({
     },
     [],
   );
+
+  useEffect(() => {
+    const node = articleRef.current;
+    if (!node) {
+      return;
+    }
+
+    if (
+      typeof window === "undefined" ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      setSourceVisibility(id, true);
+      return () => {
+        setSourceVisibility(id, false);
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setSourceVisibility(id, Boolean(entry?.isIntersecting));
+      },
+      { threshold: [0, 0.01, VIEW_EXPOSURE_THRESHOLD] },
+    );
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+      setSourceVisibility(id, false);
+    };
+  }, [id, setSourceVisibility]);
 
   const {
     attributes,
@@ -744,6 +793,8 @@ export function NewsnowCard({
   }, []);
 
   const unreadCount = newItemIds.length;
+  const isDormant =
+    !isSourceVisible && !data && !isError && !isLoading && !isFetching;
 
   const handleOpenEventsHub = useCallback(() => {
     clearLiveUnread(id);
@@ -923,7 +974,9 @@ export function NewsnowCard({
     ? `${getRelativeTime(data.updatedTime)}更新`
     : isError
       ? "获取失败"
-      : "加载中...";
+      : isDormant
+        ? "进入视口时加载"
+        : "加载中...";
   const freshness = useMemo(
     () =>
       resolveNewsFreshnessState({
@@ -936,7 +989,9 @@ export function NewsnowCard({
   const freshnessDelayLabel =
     freshness.delayMs > 0 ? formatShortDuration(freshness.delayMs) : null;
   const nextRefreshLabel =
-    source.interval && source.interval > 0
+    sourceRefetchInterval &&
+    typeof sourceRefetchInterval === "number" &&
+    sourceRefetchInterval > 0
       ? formatShortDuration(freshness.nextRefreshInMs)
       : null;
   const actionAvailabilityByItemId = useMemo(() => {
@@ -966,6 +1021,19 @@ export function NewsnowCard({
       return (
         <div className="space-y-3 p-3 opacity-60">
           <Skeleton active paragraph={{ rows: 8 }} />
+        </div>
+      );
+    }
+
+    if (isDormant) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+          <p className="text-sm font-medium text-[var(--foreground)]">
+            可见时自动加载
+          </p>
+          <p className="max-w-[18rem] text-xs text-[var(--secondary-foreground)]">
+            只会预取首屏和当前进入视口的新闻源，减少后台与首屏请求放大。
+          </p>
         </div>
       );
     }
@@ -1056,6 +1124,7 @@ export function NewsnowCard({
     handleOpenItem,
     handleRefresh,
     isDragging,
+    isDormant,
     isError,
     isLoading,
     needsRuntimeSecret,
@@ -1204,17 +1273,17 @@ export function NewsnowCard({
                   下次刷新 {nextRefreshLabel}
                 </span>
               ) : null}
-              {freshness.level === "fresh" ? (
+              {data?.updatedTime && freshness.level === "fresh" ? (
                 <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                   {t("common.freshnessFresh", { defaultValue: "Fresh" })}
                 </span>
               ) : null}
-              {freshness.level === "aging" ? (
+              {data?.updatedTime && freshness.level === "aging" ? (
                 <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
                   {t("common.freshnessWarm", { defaultValue: "Warm" })} {freshnessDelayLabel}
                 </span>
               ) : null}
-              {freshness.level === "stale" ? (
+              {data?.updatedTime && freshness.level === "stale" ? (
                 <span className="rounded-full bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
                   {t("common.freshnessStale", { defaultValue: "Stale" })} {freshnessDelayLabel}
                 </span>

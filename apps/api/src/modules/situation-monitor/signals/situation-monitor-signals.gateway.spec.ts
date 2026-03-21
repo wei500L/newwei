@@ -33,9 +33,19 @@ describe("SituationMonitorSignalsGateway", () => {
     registerListener: jest.fn(() => jest.fn()),
   } as any;
 
+  const monitorsMock = {
+    augmentTelegramRealtimePayload: jest.fn(),
+    augmentOrefRealtimePayload: jest.fn(),
+  } as any;
+
   const sessionsMock = {
     register: jest.fn(),
+    emitToUser: jest.fn(),
     unregister: jest.fn(),
+  } as any;
+
+  const moduleRefMock = {
+    get: jest.fn(),
   } as any;
 
   let gateway: SituationMonitorSignalsGateway;
@@ -43,15 +53,19 @@ describe("SituationMonitorSignalsGateway", () => {
   beforeEach(() => {
     jest.resetAllMocks();
     dispatcherMock.registerListener.mockImplementation(() => jest.fn());
+    moduleRefMock.get.mockReturnValue(monitorsMock);
     gateway = new SituationMonitorSignalsGateway(
       envMock,
       authServiceMock,
       accessTokenBlacklistMock,
       dispatcherMock,
       sessionsMock,
+      moduleRefMock,
     );
     gateway.server = {
-      to: jest.fn(() => ({ emit: jest.fn() })),
+      sockets: {
+        sockets: new Map(),
+      },
     } as any;
   });
 
@@ -150,5 +164,93 @@ describe("SituationMonitorSignalsGateway", () => {
       message: "Too many connection attempts",
     });
     expect(secondClient.disconnect).toHaveBeenCalledWith(true);
+  });
+
+  it("broadcasts per-user monitor-augmented realtime payloads", async () => {
+    gateway.onModuleInit();
+    const listener = dispatcherMock.registerListener.mock.calls[0]?.[0];
+    expect(typeof listener).toBe("function");
+
+    const socketA = createClient(createToken(), "socket-a");
+    socketA.data.user = {
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    };
+    const socketB = createClient(createToken(), "socket-b");
+    socketB.data.user = {
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    };
+    const socketC = createClient(
+      createToken({ sub: "user-2", orgId: "org-2" }),
+      "socket-c",
+    );
+    socketC.data.user = {
+      id: "user-2",
+      orgId: "org-2",
+      permissions: ["items.read"],
+    };
+    gateway.server.sockets.sockets = new Map([
+      [socketA.id, socketA],
+      [socketB.id, socketB],
+      [socketC.id, socketC],
+    ]);
+
+    monitorsMock.augmentTelegramRealtimePayload
+      .mockResolvedValueOnce({
+        count: 1,
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        items: [],
+        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-1" }],
+      })
+      .mockResolvedValueOnce({
+        count: 1,
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        items: [],
+        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-2" }],
+      });
+
+    await listener({
+      type: "situation:telegram.update",
+      timestamp: "2026-03-22T00:00:00.000Z",
+      payload: {
+        count: 1,
+        updatedAt: "2026-03-22T00:00:00.000Z",
+        items: [],
+      },
+    });
+
+    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenCalledTimes(2);
+    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenNthCalledWith(
+      1,
+      "org-1",
+      "user-1",
+      expect.objectContaining({ count: 1 }),
+    );
+    expect(monitorsMock.augmentTelegramRealtimePayload).toHaveBeenNthCalledWith(
+      2,
+      "org-2",
+      "user-2",
+      expect.objectContaining({ count: 1 }),
+    );
+    expect(sessionsMock.emitToUser).toHaveBeenCalledTimes(2);
+    expect(sessionsMock.emitToUser).toHaveBeenCalledWith(
+      gateway.server,
+      "user-1",
+      "situation:telegram.update",
+      expect.objectContaining({
+        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-1" }],
+      }),
+    );
+    expect(sessionsMock.emitToUser).toHaveBeenCalledWith(
+      gateway.server,
+      "user-2",
+      "situation:telegram.update",
+      expect.objectContaining({
+        monitorMatches: [{ itemKey: "telegram:item-1", monitorId: "m-2" }],
+      }),
+    );
   });
 });

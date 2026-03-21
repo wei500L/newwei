@@ -4,6 +4,7 @@ import {
   type RealtimeSocketErrorPayload,
 } from "@modular/utils";
 import { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { ModuleRef } from "@nestjs/core";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -20,14 +21,24 @@ import {
   type JwtPayload,
 } from "../../auth/auth.service";
 import { EnvService } from "../../config/config.service";
+import { SituationMonitorMonitorsService } from "../situation-monitor-monitors.service";
 import { UserSessionManager } from "../../websocket/user-session-manager.service";
 import { SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM } from "./situation-monitor-signals.constants";
 import { SituationMonitorSignalsDispatcher } from "./situation-monitor-signals.dispatcher";
+import type {
+  SituationMonitorRealtimeEvent,
+  SituationOrefRealtimePayload,
+  SituationTelegramRealtimePayload,
+} from "./situation-monitor-signals.types";
 
 interface RateLimitState {
   windowStartMs: number;
   count: number;
 }
+
+type SupportedSituationMonitorRealtimeEvent =
+  | SituationMonitorRealtimeEvent<SituationTelegramRealtimePayload>
+  | SituationMonitorRealtimeEvent<SituationOrefRealtimePayload>;
 
 @WebSocketGateway({
   namespace: "situation-monitor",
@@ -52,6 +63,7 @@ export class SituationMonitorSignalsGateway
   private unsubscribe?: () => void;
   private readonly connectAttemptsByIp = new Map<string, RateLimitState>();
   private readonly connectAttemptsByUserId = new Map<string, RateLimitState>();
+  private monitors?: SituationMonitorMonitorsService;
 
   constructor(
     private readonly env: EnvService,
@@ -59,14 +71,23 @@ export class SituationMonitorSignalsGateway
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly dispatcher: SituationMonitorSignalsDispatcher,
     private readonly sessions: UserSessionManager,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   onModuleInit() {
-    this.unsubscribe = this.dispatcher.registerListener(async (event) => {
-      this.server
-        .to(SITUATION_MONITOR_GLOBAL_SIGNALS_ROOM)
-        .emit(event.type, event.payload);
-    });
+    try {
+      this.monitors = this.moduleRef.get(SituationMonitorMonitorsService, {
+        strict: false,
+      });
+    } catch (error) {
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        "Situation monitor monitor matcher unavailable for realtime payload augmentation",
+      );
+    }
+    this.unsubscribe = this.dispatcher.registerListener(async (event) =>
+      this.broadcast(event as SupportedSituationMonitorRealtimeEvent),
+    );
   }
 
   async onModuleDestroy() {
@@ -170,6 +191,65 @@ export class SituationMonitorSignalsGateway
       },
       "Situation monitor socket disconnected",
     );
+  }
+
+  private async broadcast(
+    event: SupportedSituationMonitorRealtimeEvent,
+  ) {
+    if (!this.server) {
+      return;
+    }
+
+    const users = this.getConnectedUsers();
+    if (users.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(
+      users.map(async ({ orgId, userId }) => {
+        const payload = await this.augmentPayloadForUser(event, orgId, userId);
+        this.sessions.emitToUser(this.server, userId, event.type, payload);
+      }),
+    );
+  }
+
+  private async augmentPayloadForUser(
+    event: SupportedSituationMonitorRealtimeEvent,
+    orgId: string,
+    userId: string,
+  ) {
+    if (!this.monitors) {
+      return event.payload;
+    }
+
+    try {
+      if (event.type === "situation:telegram.update") {
+        const payload = event.payload as SituationTelegramRealtimePayload;
+        return await this.monitors.augmentTelegramRealtimePayload(
+          orgId,
+          userId,
+          payload,
+        );
+      }
+
+      const payload = event.payload as SituationOrefRealtimePayload;
+      return await this.monitors.augmentOrefRealtimePayload(
+        orgId,
+        userId,
+        payload,
+      );
+    } catch (error) {
+      this.logger.warn(
+        {
+          eventType: event.type,
+          orgId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to augment situation monitor realtime payload",
+      );
+      return event.payload;
+    }
   }
 
   private verifyToken(token: string): JwtPayload {
@@ -360,5 +440,25 @@ export class SituationMonitorSignalsGateway
     }
 
     return allowlist.includes(normalizedOrigin);
+  }
+
+  private getConnectedUsers() {
+    const sockets = this.server?.sockets?.sockets;
+    if (!sockets) {
+      return [] as Array<{ orgId: string; userId: string }>;
+    }
+
+    const users = new Map<string, { orgId: string; userId: string }>();
+    for (const socket of sockets.values()) {
+      const profile = socket.data?.user as AuthenticatedUser | undefined;
+      if (!profile?.id || !profile.orgId) {
+        continue;
+      }
+      users.set(`${profile.orgId}:${profile.id}`, {
+        orgId: profile.orgId,
+        userId: profile.id,
+      });
+    }
+    return Array.from(users.values());
   }
 }

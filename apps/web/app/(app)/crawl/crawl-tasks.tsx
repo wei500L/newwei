@@ -58,6 +58,7 @@ import {
   useUpdateCrawlClientSettingsMutation,
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
+import { getCrawlTasksOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
 import { env } from "@/lib/env";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -228,22 +229,6 @@ interface BatchUpdateFrequencyResponse {
   nextRunAt: string;
 }
 
-type OpsLiveEventSource =
-  | "pipeline"
-  | "crawl"
-  | "analysis"
-  | "assistant"
-  | "alerts";
-
-interface OpsLiveEventPayload {
-  source: OpsLiveEventSource;
-  event: string;
-  jobId: string;
-  timestamp: string;
-  taskId?: string;
-  pipelineJobId?: string;
-}
-
 function parseCrawlTaskConfigSummary(
   rawConfig?: string | null,
 ): CrawlTaskConfigSummary | null {
@@ -351,7 +336,7 @@ export function CrawlTasksView() {
   type CrawlTaskNode = CrawlTaskEdge["node"];
 
   const [fetchTasks] = useCrawlTasksLazyQuery({
-    fetchPolicy: "network-only",
+    fetchPolicy: "no-cache",
   });
 
   const [taskEdges, setTaskEdges] = useState<CrawlTaskEdge[]>([]);
@@ -370,6 +355,7 @@ export function CrawlTasksView() {
   const [tasksError, setTasksError] = useState<string | null>(null);
   const ensureLoadingRef = useRef(false);
   const opsSocketRef = useRef<Socket | null>(null);
+  const opsSocketBootstrappingRef = useRef(false);
   const opsRefreshTimerRef = useRef<number | null>(null);
   const pendingOpsRefreshRef = useRef({ tasks: false, queue: false });
   const [opsLiveStatus, setOpsLiveStatus] = useState<
@@ -384,7 +370,7 @@ export function CrawlTasksView() {
     loading: crawlClientSettingsLoading,
     refetch: refetchCrawlClientSettings,
   } = useCrawlClientSettingsQuery({
-    fetchPolicy: "network-only",
+    fetchPolicy: "no-cache",
     skip: !canManageSettings,
   });
   const [updateCrawlClientSettings, { loading: crawlClientSettingsSaving }] =
@@ -398,7 +384,9 @@ export function CrawlTasksView() {
     crawlClientSettingsData?.crawlClientSettings?.adaptiveConcurrencyEnabled ??
     false;
   const [fetchMetadata, { loading: metadataLoading, data: metadataData }] =
-    useCrawlMetadataLazyQuery();
+    useCrawlMetadataLazyQuery({
+      fetchPolicy: "no-cache",
+    });
   const metadataResults = metadataData?.crawlMetadata ?? [];
 
   const tableData = useMemo(() => {
@@ -694,11 +682,14 @@ export function CrawlTasksView() {
 
   useEffect(() => {
     if (!canView || !session?.accessToken) {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
       return;
     }
 
+    opsSocketBootstrappingRef.current = true;
     setOpsLiveStatus("connecting");
+    let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
@@ -706,27 +697,28 @@ export function CrawlTasksView() {
     opsSocketRef.current = socket;
 
     const handleConnect = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("connected");
-      scheduleOpsRefresh();
+      if (hasConnectedOnce) {
+        scheduleOpsRefresh();
+        return;
+      }
+      hasConnectedOnce = true;
     };
     const handleDisconnect = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
     };
     const handleConnectError = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
     };
     const handleEvent = (payload: unknown) => {
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      const refreshDecision = getCrawlTasksOpsRefreshDecision(payload);
+      if (!refreshDecision) {
         return;
       }
-      const record = payload as Partial<OpsLiveEventPayload>;
-      if (record.source !== "pipeline" && record.source !== "crawl") {
-        return;
-      }
-      if (record.event === "PROGRESS") {
-        return;
-      }
-      scheduleOpsRefresh();
+      scheduleOpsRefresh(refreshDecision);
     };
 
     socket.on("connect", handleConnect);
@@ -743,16 +735,23 @@ export function CrawlTasksView() {
       if (opsSocketRef.current === socket) {
         opsSocketRef.current = null;
       }
+      opsSocketBootstrappingRef.current = false;
     };
   }, [canView, scheduleOpsRefresh, session?.accessToken]);
 
   useEffect(() => {
-    if (!canView || status !== "authenticated" || opsLiveStatus === "connected") {
+    if (
+      !canView ||
+      status !== "authenticated" ||
+      opsSocketBootstrappingRef.current ||
+      opsLiveStatus === "connected" ||
+      opsLiveStatus === "connecting"
+    ) {
       return;
     }
-    scheduleOpsRefresh();
+    scheduleOpsRefresh({ tasks: true, queue: true });
     const id = window.setInterval(() => {
-      scheduleOpsRefresh();
+      scheduleOpsRefresh({ tasks: true, queue: true });
     }, 30_000);
     return () => window.clearInterval(id);
   }, [canView, opsLiveStatus, scheduleOpsRefresh, status]);

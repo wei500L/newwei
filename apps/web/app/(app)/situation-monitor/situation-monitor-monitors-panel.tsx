@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DeleteOutlined,
   EditOutlined,
@@ -39,6 +40,11 @@ import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 
+import {
+  SITUATION_MONITOR_QUERY_KEYS,
+  fetchSituationMonitorMonitors,
+  invalidateSituationMonitorMonitors,
+} from "./monitors-query";
 import type {
   SituationMonitorMatchResult,
   SituationMonitorPreviewResponse,
@@ -332,14 +338,13 @@ export function SituationMonitorMonitorsPanel({
   const { message } = App.useApp();
   const locale = resolveLocale(i18n.language);
   const { data: session } = useSession();
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const translateToZh = useSituationMonitorSettingsStore(
     (state) => state.translateToZh,
   );
   const [form] = Form.useForm<MonitorFormValues>();
 
-  const [monitors, setMonitors] = useState<StoredSituationMonitor[]>([]);
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -356,11 +361,25 @@ export function SituationMonitorMonitorsPanel({
     useState<SituationMonitorRejectedSuggestions>(EMPTY_REJECTED_SUGGESTIONS);
 
   const autoOpenedMonitorIdRef = useRef<string | null>(null);
+  const lastMonitorsErrorRef = useRef<string | null>(null);
 
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
     [session?.accessToken],
   );
+  const {
+    data: monitors = [],
+    error: monitorsError,
+    isLoading: monitorsLoading,
+    isFetching: monitorsFetching,
+    refetch: refetchMonitors,
+  } = useQuery({
+    queryKey: SITUATION_MONITOR_QUERY_KEYS.monitors,
+    queryFn: () => fetchSituationMonitorMonitors(apiClient),
+    enabled: Boolean(session?.accessToken),
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
 
   const editingMonitor = useMemo(
     () => monitors.find((monitor) => monitor.id === editingId) ?? null,
@@ -395,31 +414,20 @@ export function SituationMonitorMonitorsPanel({
     return counts;
   }, [matches]);
 
-  const loadMonitors = useCallback(async () => {
-    if (!session?.accessToken) {
-      setMonitors([]);
+  useEffect(() => {
+    if (!monitorsError) {
+      lastMonitorsErrorRef.current = null;
       return;
     }
-    setLoading(true);
-    try {
-      const response = await apiClient.get<StoredSituationMonitor[]>(
-        "situation-monitor/monitors",
-      );
-      setMonitors(response.data ?? []);
-    } catch {
-      message.error(
-        t("situationMonitor.monitors.loadFailed", {
-          defaultValue: "Failed to load monitors.",
-        }),
-      );
-    } finally {
-      setLoading(false);
+    const nextMessage = t("situationMonitor.monitors.loadFailed", {
+      defaultValue: "Failed to load monitors.",
+    });
+    if (lastMonitorsErrorRef.current === nextMessage) {
+      return;
     }
-  }, [apiClient, message, session?.accessToken, t]);
-
-  useEffect(() => {
-    void loadMonitors();
-  }, [loadMonitors]);
+    lastMonitorsErrorRef.current = nextMessage;
+    message.error(nextMessage);
+  }, [message, monitorsError, t]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -431,7 +439,7 @@ export function SituationMonitorMonitorsPanel({
       ) {
         return;
       }
-      void loadMonitors();
+      void invalidateSituationMonitorMonitors(queryClient);
     };
     window.addEventListener(
       SITUATION_MONITOR_MONITORS_UPDATED_EVENT,
@@ -443,7 +451,7 @@ export function SituationMonitorMonitorsPanel({
         onMonitorsUpdated,
       );
     };
-  }, [loadMonitors]);
+  }, [queryClient]);
 
   useEffect(() => {
     const requestedMonitorId = searchParams.get("monitorId");
@@ -464,12 +472,12 @@ export function SituationMonitorMonitorsPanel({
   }, [monitors, searchParams]);
 
   const refreshAfterMutation = useCallback(async () => {
-    await loadMonitors();
+    await invalidateSituationMonitorMonitors(queryClient);
     emitSituationMonitorMonitorsUpdated("monitors-panel");
     if (onChanged) {
       await onChanged();
     }
-  }, [loadMonitors, onChanged]);
+  }, [onChanged, queryClient]);
 
   function openCreate() {
     setEditingId(null);
@@ -815,7 +823,11 @@ export function SituationMonitorMonitorsPanel({
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
       extra={
         <Space size="small">
-          <Button size="small" onClick={() => void loadMonitors()}>
+          <Button
+            size="small"
+            loading={monitorsFetching}
+            onClick={() => void refetchMonitors()}
+          >
             {t("common.refresh", { defaultValue: "Refresh" })}
           </Button>
           <Button size="small" icon={<PlusOutlined />} onClick={openCreate}>
@@ -832,6 +844,16 @@ export function SituationMonitorMonitorsPanel({
       </Typography.Text>
 
       <div className="mt-3">
+        {monitorsError ? (
+          <Alert
+            showIcon
+            type="error"
+            className="mb-3"
+            message={t("situationMonitor.monitors.loadFailed", {
+              defaultValue: "Failed to load monitors.",
+            })}
+          />
+        ) : null}
         <Tabs
           items={[
             {
@@ -842,7 +864,7 @@ export function SituationMonitorMonitorsPanel({
                 }),
                 monitors.length,
               ),
-              children: loading ? (
+              children: monitorsLoading && monitors.length === 0 ? (
                 <div className="py-6 text-center">
                   <Spin />
                 </div>

@@ -1,6 +1,10 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createApiClient } from "@/lib/api-client";
 import type { NewsSourceRuntimeSecretsConfig } from '@/lib/news-source-runtime-secrets';
@@ -13,6 +17,7 @@ import {
   getNewsnowAnalysisAccessState,
   getNewsnowAnalysisPermissions,
 } from "../lib/newsnow-analysis-access";
+import { normalizeNewsnowSourceIds } from "../lib/newsnow-fetching";
 import { getNewsItemStableKey, sanitizeNewsItems } from "../lib/newsnow-items";
 
 export interface NewsItem {
@@ -220,6 +225,45 @@ export interface Column {
 }
 
 const api = createApiClient();
+const NEWS_SOURCE_QUERY_STALE_TIME_MS = 1000 * 30;
+const newsSourcePrimeInFlight = new Map<string, Promise<string[]>>();
+const KNOWN_BATCH_UNSUPPORTED_NEWS_SOURCE_IDS = new Set<string>([
+  // `/news-aggregator/sources/batch` currently omits this source, so keep it
+  // on the per-card owner path and skip the redundant batch request upfront.
+  "producthunt",
+]);
+const newsSourceBatchUnsupported = new Set<string>(
+  KNOWN_BATCH_UNSUPPORTED_NEWS_SOURCE_IDS,
+);
+
+function getNewsSourceQueryKey(id: string) {
+  return ["news-source", id] as const;
+}
+
+function normalizeSourceIds(sourceIds: string[]) {
+  return normalizeNewsnowSourceIds(sourceIds);
+}
+
+function hasFreshNewsSourceCache(queryClient: QueryClient, id: string) {
+  const queryKey = getNewsSourceQueryKey(id);
+  const cachedData = queryClient.getQueryData<SourceResponse>(queryKey);
+  const updatedAt =
+    queryClient.getQueryState<SourceResponse>(queryKey)?.dataUpdatedAt ?? 0;
+
+  return Boolean(cachedData) && Date.now() - updatedAt < NEWS_SOURCE_QUERY_STALE_TIME_MS;
+}
+
+function getStaleNewsSourceIds(queryClient: QueryClient, sourceIds: string[]) {
+  return normalizeSourceIds(sourceIds).filter(
+    (sourceId) => !hasFreshNewsSourceCache(queryClient, sourceId),
+  );
+}
+
+function getBatchPrimeTargetIds(queryClient: QueryClient, sourceIds: string[]) {
+  return getStaleNewsSourceIds(queryClient, sourceIds).filter(
+    (sourceId) => !newsSourceBatchUnsupported.has(sourceId),
+  );
+}
 
 function coerceSourceResponse(data: SourceResponse): SourceResponse {
   return {
@@ -293,6 +337,70 @@ async function fetchDomesticOpinionIndex(
   return data as NewsnowDomesticOpinionIndexResponse;
 }
 
+async function batchFillNewsSourceCache(
+  queryClient: QueryClient,
+  sourceIds: string[],
+) {
+  const normalizedSourceIds = normalizeSourceIds(sourceIds);
+  if (normalizedSourceIds.length === 0) {
+    return [];
+  }
+
+  const { data } = await api.post<{ results: SourceResponse[] }>(
+    "/news-aggregator/sources/batch",
+    {
+      sources: normalizedSourceIds,
+    },
+  );
+  const resolvedSourceIds = new Set<string>();
+
+  for (const source of data.results ?? []) {
+    const normalizedSource = coerceSourceResponse(source);
+    resolvedSourceIds.add(normalizedSource.id);
+    newsSourceBatchUnsupported.delete(normalizedSource.id);
+    const queryKey = getNewsSourceQueryKey(normalizedSource.id);
+    const previous = queryClient.getQueryData<SourceResponse>(queryKey);
+    queryClient.setQueryData(
+      queryKey,
+      normalizeSourceResponse(normalizedSource, previous),
+    );
+  }
+
+  const missingSourceIds = normalizedSourceIds.filter(
+    (sourceId) => !resolvedSourceIds.has(sourceId),
+  );
+  for (const sourceId of missingSourceIds) {
+    newsSourceBatchUnsupported.add(sourceId);
+  }
+  return missingSourceIds;
+}
+
+async function primeNewsSourceCache(
+  queryClient: QueryClient,
+  sourceIds: string[],
+) {
+  const batchTargetIds = getBatchPrimeTargetIds(queryClient, sourceIds);
+  if (batchTargetIds.length === 0) {
+    return;
+  }
+
+  const fingerprint = batchTargetIds.join("|");
+  const inFlight = newsSourcePrimeInFlight.get(fingerprint);
+  if (inFlight) {
+    await inFlight;
+    return;
+  }
+
+  const nextPromise = batchFillNewsSourceCache(queryClient, batchTargetIds)
+    .finally(() => {
+      if (newsSourcePrimeInFlight.get(fingerprint) === nextPromise) {
+        newsSourcePrimeInFlight.delete(fingerprint);
+      }
+    });
+  newsSourcePrimeInFlight.set(fingerprint, nextPromise);
+  await nextPromise;
+}
+
 export function useNewsMetadata() {
   return useQuery<MetadataResponse>({
     queryKey: ["news-metadata"],
@@ -304,53 +412,157 @@ export function useNewsMetadata() {
   });
 }
 
-export function useNewsSource(id: string, interval?: number) {
+export interface UseNewsSourceOptions {
+  enabled?: boolean;
+  interval?: number | false;
+}
+
+export function useNewsSource(id: string, options?: UseNewsSourceOptions) {
   const queryClient = useQueryClient();
+  const queryKey = getNewsSourceQueryKey(id);
+  const queryEnabled = options?.enabled ?? true;
 
   const sourceQuery = useQuery<SourceResponse>({
-    queryKey: ["news-source", id],
+    queryKey,
+    enabled: queryEnabled,
     queryFn: async () => {
-      const previous = queryClient.getQueryData<SourceResponse>(["news-source", id]);
+      const cached = queryClient.getQueryData<SourceResponse>(queryKey);
+      if (hasFreshNewsSourceCache(queryClient, id) && cached) {
+        return cached;
+      }
+
+      await primeNewsSourceCache(queryClient, [id]);
+      const primed = queryClient.getQueryData<SourceResponse>(queryKey);
+      if (primed) {
+        return primed;
+      }
+
+      const previous = queryClient.getQueryData<SourceResponse>(queryKey);
       const incoming = await fetchSourceById(id);
       return normalizeSourceResponse(incoming, previous);
     },
-    refetchInterval: interval || false,
-    staleTime: 1000 * 30, // 30 seconds
+    refetchInterval: options?.interval || false,
+    staleTime: NEWS_SOURCE_QUERY_STALE_TIME_MS,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const cachedData = queryClient.getQueryData<SourceResponse>(queryKey);
 
   return {
     ...sourceQuery,
+    data: sourceQuery.data ?? cachedData,
     refresh: async () => {
-      const previous = queryClient.getQueryData<SourceResponse>(["news-source", id]);
+      const previous = queryClient.getQueryData<SourceResponse>(queryKey);
       const latestData = normalizeSourceResponse(await fetchSourceById(id, true), previous);
-      queryClient.setQueryData(["news-source", id], latestData);
+      queryClient.setQueryData(queryKey, latestData);
       return latestData;
     },
   };
 }
 
-export function useBatchPrefetch() {
+export function usePrimeNewsSources(sourceIds: string[]) {
   const queryClient = useQueryClient();
+  const normalizedSourceIds = useMemo(
+    () => normalizeSourceIds(sourceIds),
+    [sourceIds],
+  );
+  const sourcesFingerprint = useMemo(
+    () => normalizedSourceIds.join("|"),
+    [normalizedSourceIds],
+  );
+  const hasFreshSourceData =
+    normalizedSourceIds.length === 0 ||
+    normalizedSourceIds.every((sourceId) =>
+      hasFreshNewsSourceCache(queryClient, sourceId),
+    );
+  const [activePrimeFingerprint, setActivePrimeFingerprint] = useState<
+    string | null
+  >(null);
+  const [completedPrimeFingerprint, setCompletedPrimeFingerprint] = useState<
+    string | null
+  >(null);
 
-  return async (sourceIds: string[]) => {
-    if (sourceIds.length === 0) return;
-
-    try {
-      const { data } = await api.post<{ results: SourceResponse[] }>("/news-aggregator/sources/batch", {
-        sources: sourceIds,
-      });
-
-      data.results.forEach((source) => {
-        const normalizedSource = coerceSourceResponse(source);
-        const previous = queryClient.getQueryData<SourceResponse>(["news-source", normalizedSource.id]);
-        queryClient.setQueryData(["news-source", normalizedSource.id], normalizeSourceResponse(normalizedSource, previous));
-      });
-    } catch (error) {
-      console.error("Batch prefetch failed:", error);
+  useEffect(() => {
+    if (normalizedSourceIds.length === 0) {
+      setActivePrimeFingerprint(null);
+      setCompletedPrimeFingerprint(null);
+      return;
     }
+    const staleSourceIds = getStaleNewsSourceIds(queryClient, normalizedSourceIds);
+    if (staleSourceIds.length === 0) {
+      setCompletedPrimeFingerprint(sourcesFingerprint);
+      setActivePrimeFingerprint((current) =>
+        current === sourcesFingerprint ? null : current,
+      );
+      return;
+    }
+
+    let cancelled = false;
+    setActivePrimeFingerprint(sourcesFingerprint);
+    void primeNewsSourceCache(queryClient, staleSourceIds)
+      .catch((error) => {
+        console.error("NewsNow source priming failed:", error);
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+        setCompletedPrimeFingerprint(sourcesFingerprint);
+        setActivePrimeFingerprint((current) =>
+          current === sourcesFingerprint ? null : current,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasFreshSourceData,
+    normalizedSourceIds,
+    queryClient,
+    sourcesFingerprint,
+  ]);
+
+  const primeSources = useCallback(
+    async (ids: string[], options?: { force?: boolean }) => {
+      const normalizedIds = normalizeSourceIds(ids);
+      const targetIds = options?.force
+        ? normalizedIds.filter(
+            (sourceId) => !newsSourceBatchUnsupported.has(sourceId),
+          )
+        : getBatchPrimeTargetIds(queryClient, normalizedIds);
+      if (targetIds.length === 0) {
+        return false;
+      }
+
+      const nextFingerprint = normalizedIds.join("|");
+      setActivePrimeFingerprint(nextFingerprint);
+      try {
+        await primeNewsSourceCache(queryClient, targetIds);
+        return true;
+      } catch (error) {
+        console.error("NewsNow source priming failed:", error);
+        return false;
+      } finally {
+        setActivePrimeFingerprint((current) =>
+          current === nextFingerprint ? null : current,
+        );
+      }
+    },
+    [queryClient],
+  );
+
+  return {
+    hasFreshSourceData,
+    isPrimingSources:
+      normalizedSourceIds.length > 0 &&
+      activePrimeFingerprint === sourcesFingerprint,
+    shouldShowSourceSkeleton:
+      normalizedSourceIds.length > 0 &&
+      !hasFreshSourceData &&
+      completedPrimeFingerprint !== sourcesFingerprint,
+    primeSources,
   };
 }
 
@@ -406,7 +618,7 @@ export function useHottestAnalysis(enabled: boolean) {
     ],
     queryFn: () => fetchHottestAnalysis(apiClient),
     enabled: queryEnabled,
-    staleTime: 1000 * 60,
+    staleTime: 1000 * 60 * 5,
     refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
     refetchOnWindowFocus: false,
   });
@@ -440,8 +652,8 @@ export function useDomesticOpinionIndex(enabled: boolean) {
     ],
     queryFn: () => fetchDomesticOpinionIndex(apiClient),
     enabled: queryEnabled,
-    staleTime: 1000 * 60,
-    refetchInterval: queryEnabled ? 1000 * 60 * 2 : false,
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: false,
     refetchOnWindowFocus: false,
   });
 

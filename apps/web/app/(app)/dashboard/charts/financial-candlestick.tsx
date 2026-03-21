@@ -133,7 +133,7 @@ export function FinancialCandlestick() {
       );
       return response.data;
     },
-    staleTime: 10_000,
+    staleTime: 30_000,
     enabled: Boolean(session?.accessToken),
   });
   const { pending: refreshingCandles, run: refreshCandles } = usePendingAction(

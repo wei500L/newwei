@@ -498,11 +498,13 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       this.orefState.lastPollAt = Date.now();
       this.orefState.lastError = null;
 
+      let historyEntry: OrefHistoryEntry | null = null;
       if (changed && alerts.length > 0) {
-        this.orefState.history.push({
+        historyEntry = {
           alerts,
           timestamp: new Date().toISOString(),
-        });
+        };
+        this.orefState.history.push(historyEntry);
         this.orefState.persistVersion += 1;
       }
 
@@ -521,6 +523,7 @@ export class SituationMonitorSignalsService implements OnModuleInit {
           historyCount24h: this.orefState.historyCount24h,
           totalHistoryCount: this.orefState.totalHistoryCount,
           updatedAt: new Date(this.orefState.lastPollAt).toISOString(),
+          historyEntry,
         });
       }
 

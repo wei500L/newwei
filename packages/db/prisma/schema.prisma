@@ -499,7 +499,7 @@ model CrawlStrategyWorkflowRunCandidate {
 
   @@unique([runId, candidateKey])
   @@index([runId, status, updatedAt])
-  @@index([runId, sourceNodeId, updatedAt])
+  @@index([runId, sourceNodeId, updatedAt], map: "CrawlStratRunCand_run_source_updated_idx")
 }
 
 model CrawlStrategyWorkflowRunCandidateTrace {

@@ -16,8 +16,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { useSession } from "next-auth/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -25,25 +24,22 @@ import {
   AnalysisType,
   type AnomalyAnalysisInput,
   type CorrelationAnalysisInput,
-  useAnalysisResultsQuery,
   useRequestAnomalyMutation,
   useRequestCorrelationMutation,
-  useAnalysisEventsSubscription,
-  type AnalysisResultsQuery,
-  type AnalysisEventsSubscription,
 } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { dashboardNow } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
+
+import {
+  useDashboardAnalysisFeed,
+  type DashboardAnalysisResult,
+} from "./analysis-feed-context";
 
 const { RangePicker } = DatePicker;
 const MAX_TAG_ITEMS = 50;
 const MAX_SERIES_POINTS = 200;
-const LIVE_UPDATES_LIMIT = 50;
-const LIVE_SUMMARY_LIMIT = 4000;
-const STREAM_ERROR_TOAST_WINDOW_MS = 30_000;
 
 function getAnalysisTypeLabel(type: AnalysisType): string {
   switch (type) {
@@ -79,21 +75,17 @@ function normalizeSeries(values?: SeriesRowForm[]): SeriesRowForm[] {
 export function AnalysisPanel() {
   const { t, i18n } = useTranslation();
   const { message } = App.useApp();
-  const { data: session, status } = useSession();
-  const authenticated = status === "authenticated";
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadAnalysis = permissions.includes("analysis.read");
-  const canRunAnalysis = permissions.includes("analysis.run");
+  const {
+    status,
+    authenticated,
+    canReadAnalysis,
+    canRunAnalysis,
+    loading,
+    error,
+    results,
+    refetch,
+  } = useDashboardAnalysisFeed();
   const locale = resolveLocale(i18n.language);
-  const { data, loading, error, refetch } = useAnalysisResultsQuery({
-    variables: { limit: 10 },
-    notifyOnNetworkStatusChange: true,
-    skip: !authenticated || !canReadAnalysis,
-  });
-  const [liveUpdates, setLiveUpdates] = useState<
-    Record<string, AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }>
-  >({});
-  const shouldShowStreamError = useTimedValueDeduper(STREAM_ERROR_TOAST_WINDOW_MS);
   const [requestCorrelation, { loading: savingCorr }] =
     useRequestCorrelationMutation();
   const [requestAnomaly, { loading: savingAnomaly }] =
@@ -101,95 +93,7 @@ export function AnalysisPanel() {
   const { pending: refreshingResults, run: refreshResults } = usePendingAction(
     () => refetch(),
   );
-  useAnalysisEventsSubscription({
-    skip: !authenticated || !canReadAnalysis,
-    onData: ({ data }) => {
-      const event = data.data?.analysisEvents;
-      if (!event) return;
-      setLiveUpdates((prev) => {
-        const existing = prev[event.id];
-        const previousText = existing?.summaryText ?? "";
-        const delta = typeof event.summary === "string" ? event.summary : "";
-        const summaryTextRaw =
-          event.status === "running" ? previousText + delta : delta || previousText;
-        const summaryText =
-          summaryTextRaw.length > LIVE_SUMMARY_LIMIT
-            ? summaryTextRaw.slice(-LIVE_SUMMARY_LIMIT)
-            : summaryTextRaw;
-        const nextRecord = {
-          ...event,
-          summaryText,
-        };
-        if (
-          existing &&
-          existing.status === nextRecord.status &&
-          existing.type === nextRecord.type &&
-          existing.summaryText === nextRecord.summaryText &&
-          existing.createdAt === nextRecord.createdAt
-        ) {
-          return prev;
-        }
-        const next = {
-          ...prev,
-          [event.id]: nextRecord,
-        };
-        const ids = Object.keys(next);
-        if (ids.length <= LIVE_UPDATES_LIMIT) {
-          return next;
-        }
-        const keptIds = ids
-          .map((id) => ({
-            id,
-            sortAt: dayjs(next[id]?.createdAt).valueOf() || 0,
-          }))
-          .sort((a, b) => b.sortAt - a.sortAt)
-          .slice(0, LIVE_UPDATES_LIMIT)
-          .map((entry) => entry.id);
-        return keptIds.reduce<typeof next>((acc, id) => {
-          const value = next[id];
-          if (value) {
-            acc[id] = value;
-          }
-          return acc;
-        }, {});
-      });
-    },
-    onError: (error) => {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const toastMessage = t("analysis.streamError", { error: errorMessage });
-      if (!shouldShowStreamError(toastMessage)) {
-        return;
-      }
-      message.error(toastMessage);
-    },
-  });
-
-  const results = useMemo(() => {
-    const base = data?.analysisResults ?? [];
-    const merged = base.map((result) => {
-      const live = liveUpdates[result.id];
-      if (!live) return result;
-      return {
-        ...result,
-        status: live.status,
-        type: live.type,
-        createdAt: live.createdAt,
-        summary: live.summaryText,
-      };
-    });
-    const missing = Object.values(liveUpdates)
-      .filter((live) => !base.some((result) => result.id === live.id))
-      .map((live) => ({
-        id: live.id,
-        type: live.type,
-        status: live.status,
-        createdAt: live.createdAt,
-        summary: live.summaryText,
-      }));
-    return [...missing, ...merged].sort(
-      (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-    );
-  }, [data?.analysisResults, liveUpdates]);
+  const visibleResults = useMemo(() => results.slice(0, 10), [results]);
 
   if (status === "loading") {
     return <Skeleton active paragraph={{ rows: 4 }} />;
@@ -288,9 +192,9 @@ export function AnalysisPanel() {
           />
         ) : null}
 
-        {loading && results.length === 0 ? (
+        {loading && visibleResults.length === 0 ? (
           <Skeleton active paragraph={{ rows: 4 }} />
-        ) : results.length === 0 ? (
+        ) : visibleResults.length === 0 ? (
           <ChartEmptyState
             className="h-auto py-6"
             title={t("analysis.results.emptyTitle", { defaultValue: "No analysis yet" })}
@@ -300,10 +204,10 @@ export function AnalysisPanel() {
             })}
           />
         ) : (
-          <List<AnalysisResultsQuery["analysisResults"][number]>
+          <List<DashboardAnalysisResult>
             rowKey="id"
             loading={loading}
-            dataSource={results}
+            dataSource={visibleResults}
             renderItem={(result) => (
               <List.Item>
                 <List.Item.Meta

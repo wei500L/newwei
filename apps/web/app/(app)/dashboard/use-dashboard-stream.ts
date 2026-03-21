@@ -2,16 +2,23 @@
 
 import {
   DASHBOARD_STREAM_EVENT_TYPES,
+  type WarMapAisMode,
   type WarMapEventsResponse,
+  type WarMapFlightMode,
   type WarMapLayersResponse,
   type WarMapNewsMarkersResponse,
+  type WarMapTranslateTarget,
 } from '@modular/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { emitUnauthorized } from '@/lib/auth-events';
 import { env } from '@/lib/env';
-import { WAR_MAP_QUERY_KEYS } from './charts/war-map/war-map-data';
+import {
+  buildWarMapEventsQueryKey,
+  buildWarMapLayersQueryKey,
+  buildWarMapNewsMarkersQueryKey,
+} from './charts/war-map/war-map-data';
 
 interface FinancialCandlePoint {
   timestamp: string;
@@ -70,6 +77,13 @@ export interface DashboardStreamOptions {
   end: Date;
   queryStart?: Date;
   queryEnd?: Date;
+  warMapStart?: Date;
+  warMapEnd?: Date;
+  warMapBBox?: string;
+  warMapZoom?: number;
+  warMapTranslateTarget?: WarMapTranslateTarget;
+  warMapFlightMode?: WarMapFlightMode;
+  warMapAisMode?: WarMapAisMode;
   queueStatus?: string | null;
   selectedSector?: string | null;
   enabled?: boolean;
@@ -120,11 +134,50 @@ const parseStreamData = (payload: string): unknown => {
   }
 };
 
-const buildStreamUrl = (startIso: string, endIso: string) => {
+interface BuildStreamUrlOptions {
+  dashboardStartIso: string;
+  dashboardEndIso: string;
+  warMapStartIso: string;
+  warMapEndIso: string;
+  warMapBBox?: string;
+  warMapZoom?: number;
+  warMapTranslateTarget?: WarMapTranslateTarget;
+  warMapFlightMode?: WarMapFlightMode;
+  warMapAisMode?: WarMapAisMode;
+}
+
+const buildStreamUrl = ({
+  dashboardStartIso,
+  dashboardEndIso,
+  warMapStartIso,
+  warMapEndIso,
+  warMapBBox,
+  warMapZoom,
+  warMapTranslateTarget,
+  warMapFlightMode,
+  warMapAisMode,
+}: BuildStreamUrlOptions) => {
   const base = env.apiBaseUrl.endsWith('/') ? env.apiBaseUrl : `${env.apiBaseUrl}/`;
   const url = new URL('dashboard/stream', base);
-  url.searchParams.set('start', startIso);
-  url.searchParams.set('end', endIso);
+  url.searchParams.set('start', dashboardStartIso);
+  url.searchParams.set('end', dashboardEndIso);
+  url.searchParams.set('warMapStart', warMapStartIso);
+  url.searchParams.set('warMapEnd', warMapEndIso);
+  if (warMapBBox) {
+    url.searchParams.set('warMapBbox', warMapBBox);
+  }
+  if (typeof warMapZoom === 'number' && Number.isFinite(warMapZoom)) {
+    url.searchParams.set('warMapZoom', warMapZoom.toFixed(2));
+  }
+  if (warMapTranslateTarget) {
+    url.searchParams.set('warMapTranslate', warMapTranslateTarget);
+  }
+  if (warMapFlightMode) {
+    url.searchParams.set('warMapFlightMode', warMapFlightMode);
+  }
+  if (warMapAisMode) {
+    url.searchParams.set('warMapAisMode', warMapAisMode);
+  }
   return url.toString();
 };
 
@@ -142,6 +195,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     end,
     queryStart = start,
     queryEnd = end,
+    warMapStart = start,
+    warMapEnd = end,
+    warMapBBox,
+    warMapZoom,
+    warMapTranslateTarget,
+    warMapFlightMode,
+    warMapAisMode,
     enabled = true,
     queueStatus,
     selectedSector,
@@ -162,6 +222,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
   const endIso = end.toISOString();
   const queryStartIso = queryStart.toISOString();
   const queryEndIso = queryEnd.toISOString();
+  const warMapStartIso = warMapStart.toISOString();
+  const warMapEndIso = warMapEnd.toISOString();
 
   useEffect(() => {
     if (!enabled || !accessToken) {
@@ -203,9 +265,22 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     retryRef.current = 0;
     statusRef.current = 'offline';
     hasLiveRef.current = false;
-    const warEventsPrefixKey = WAR_MAP_QUERY_KEYS.eventsPrefix;
-    const warNewsMarkersPrefixKey = WAR_MAP_QUERY_KEYS.newsMarkersPrefix;
-    const warLayersPrefixKey = WAR_MAP_QUERY_KEYS.layersPrefix;
+    const warMapQueryInput = {
+      start: warMapStartIso,
+      end: warMapEndIso,
+      bbox: warMapBBox,
+      zoom: warMapZoom,
+      translateTarget: warMapTranslateTarget,
+    };
+    const warMapEventKey = buildWarMapEventsQueryKey(warMapQueryInput);
+    const warMapNewsMarkersKey = buildWarMapNewsMarkersQueryKey(
+      warMapQueryInput,
+    );
+    const warMapLayersKey = buildWarMapLayersQueryKey({
+      ...warMapQueryInput,
+      flightMode: warMapFlightMode,
+      aisMode: warMapAisMode,
+    });
     const candlestickKey = [
       'dashboard',
       'financial-candlestick',
@@ -246,30 +321,6 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         return true;
       }
       return false;
-    };
-
-    const invalidateWarMapEventQueries = () => {
-      void queryClient.invalidateQueries({
-        queryKey: warEventsPrefixKey,
-        exact: false,
-        refetchType: 'active',
-      });
-    };
-
-    const invalidateWarMapNewsMarkerQueries = () => {
-      void queryClient.invalidateQueries({
-        queryKey: warNewsMarkersPrefixKey,
-        exact: false,
-        refetchType: 'active',
-      });
-    };
-
-    const invalidateWarMapLayerQueries = () => {
-      void queryClient.invalidateQueries({
-        queryKey: warLayersPrefixKey,
-        exact: false,
-        refetchType: 'active',
-      });
     };
 
     const isGeoHeatmapBaseQueryKey = (queryKey: readonly unknown[]) =>
@@ -346,17 +397,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         reconnectRef.current = null;
       }
       retryRef.current = 0;
-      const wasLive = statusRef.current === 'live';
       statusRef.current = 'live';
-      if (!wasLive && hasLiveRef.current) {
-        invalidateWarMapEventQueries();
-        void queryClient.invalidateQueries({
-          queryKey: candlestickKey,
-          exact: true,
-          refetchType: 'active'
-        });
-        invalidateGeoHeatmapQueries(true);
-      }
       hasLiveRef.current = true;
       setState((prev) =>
         prev.connected &&
@@ -443,8 +484,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapEvents &&
         isWarMapEventsResponse(payload)
       ) {
-        // War-map queries include bbox/zoom/cluster dimensions; refetch active ones instead of writing mismatched payload.
-        invalidateWarMapEventQueries();
+        queryClient.setQueryData(warMapEventKey, payload);
         markHealthy();
         return;
       }
@@ -452,7 +492,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapNewsMarkers &&
         isWarMapNewsMarkersResponse(payload)
       ) {
-        invalidateWarMapNewsMarkerQueries();
+        queryClient.setQueryData(warMapNewsMarkersKey, payload);
         markHealthy();
         return;
       }
@@ -460,7 +500,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapLayers &&
         isWarMapLayersResponse(payload)
       ) {
-        invalidateWarMapLayerQueries();
+        queryClient.setQueryData(warMapLayersKey, payload);
         markHealthy();
         return;
       }
@@ -530,7 +570,19 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       abortRef.current = controller;
 
       try {
-        const response = await fetch(buildStreamUrl(startIso, endIso), {
+        const response = await fetch(
+          buildStreamUrl({
+            dashboardStartIso: startIso,
+            dashboardEndIso: endIso,
+            warMapStartIso,
+            warMapEndIso,
+            warMapBBox,
+            warMapZoom,
+            warMapTranslateTarget,
+            warMapFlightMode,
+            warMapAisMode,
+          }),
+          {
           method: 'GET',
           headers: {
             Accept: 'text/event-stream',
@@ -539,7 +591,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
           credentials: 'include',
           cache: 'no-store',
           signal: controller.signal,
-        });
+          },
+        );
 
         if (!response.ok || !response.body) {
           if (response.status === 401) {
@@ -691,6 +744,13 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     queueStatus,
     selectedSector,
     startIso,
+    warMapAisMode,
+    warMapBBox,
+    warMapEndIso,
+    warMapFlightMode,
+    warMapStartIso,
+    warMapTranslateTarget,
+    warMapZoom,
   ]);
 
   return state;

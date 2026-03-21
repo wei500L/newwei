@@ -45,6 +45,7 @@ import {
 } from "@/graphql/generated";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
+import { getCrawlTaskDetailOpsRefreshDecision } from "@/lib/crawl-ops-refresh";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
   parseExpansionHeadSignalSummary,
@@ -86,14 +87,6 @@ interface TaskLogRecord {
   error?: unknown;
   createdAt: string;
   updatedAt: string;
-}
-
-interface OpsLiveEventPayload {
-  source?: "pipeline" | "crawl" | "analysis" | "assistant" | "alerts";
-  event?: string;
-  jobId?: string;
-  taskId?: string;
-  pipelineJobId?: string;
 }
 
 interface ExpansionQualitySummary {
@@ -795,8 +788,9 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const [taskLogsLoading, setTaskLogsLoading] = useState(false);
   const [taskLogsError, setTaskLogsError] = useState<string | null>(null);
   const opsSocketRef = useRef<Socket | null>(null);
+  const opsSocketBootstrappingRef = useRef(false);
   const opsRefreshTimerRef = useRef<number | null>(null);
-  const pendingOpsRefreshRef = useRef({ task: false, logs: false });
+  const pendingOpsRefreshRef = useRef({ task: false });
   const [opsLiveStatus, setOpsLiveStatus] = useState<
     "disconnected" | "connecting" | "connected"
   >("disconnected");
@@ -808,7 +802,8 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         resultLimit,
         resultSearch: resultSearch ?? null,
       },
-      fetchPolicy: "network-only",
+      fetchPolicy: "cache-and-network",
+      nextFetchPolicy: "cache-first",
       skip: !canView,
     });
 
@@ -878,7 +873,11 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       stopPolling();
       return;
     }
-    if (opsLiveStatus === "connected") {
+    if (
+      opsSocketBootstrappingRef.current ||
+      opsLiveStatus === "connected" ||
+      opsLiveStatus === "connecting"
+    ) {
       stopPolling();
       return;
     }
@@ -895,26 +894,6 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     }
     void loadTaskLogs();
   }, [canView, canViewTaskLogs, loadTaskLogs, status]);
-
-  useEffect(() => {
-    if (!canViewTaskLogs || !canView || status !== "authenticated") {
-      return;
-    }
-    if (opsLiveStatus === "connected" || !shouldTrackInFlightTask) {
-      return;
-    }
-    const id = window.setInterval(() => {
-      void loadTaskLogs({ silent: true });
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [
-    canView,
-    canViewTaskLogs,
-    loadTaskLogs,
-    opsLiveStatus,
-    shouldTrackInFlightTask,
-    status,
-  ]);
 
   const task = data?.crawlTask ?? null;
   const config = useMemo(() => {
@@ -943,39 +922,37 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   }, [config]);
 
   const scheduleOpsRefresh = useCallback(
-    (options?: { task?: boolean; logs?: boolean }) => {
+    (options?: { task?: boolean }) => {
       if (!canView) {
         return;
       }
       pendingOpsRefreshRef.current.task =
         pendingOpsRefreshRef.current.task || options?.task !== false;
-      pendingOpsRefreshRef.current.logs =
-        pendingOpsRefreshRef.current.logs || options?.logs === true;
       if (opsRefreshTimerRef.current) {
         return;
       }
       opsRefreshTimerRef.current = window.setTimeout(() => {
         opsRefreshTimerRef.current = null;
         const pending = pendingOpsRefreshRef.current;
-        pendingOpsRefreshRef.current = { task: false, logs: false };
+        pendingOpsRefreshRef.current = { task: false };
         if (pending.task) {
           void refetch();
         }
-        if (pending.logs && canViewTaskLogs) {
-          void loadTaskLogs({ silent: true });
-        }
       }, 700);
     },
-    [canView, canViewTaskLogs, loadTaskLogs, refetch],
+    [canView, refetch],
   );
 
   useEffect(() => {
     if (!canView || !session?.accessToken) {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
       return;
     }
 
+    opsSocketBootstrappingRef.current = true;
     setOpsLiveStatus("connecting");
+    let hasConnectedOnce = false;
     const socket = io(`${env.apiRoot}/ops`, {
       auth: { token: session.accessToken },
       transports: ["websocket"],
@@ -983,50 +960,31 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
     opsSocketRef.current = socket;
 
     const handleConnect = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("connected");
-      scheduleOpsRefresh({ task: true, logs: canViewTaskLogs });
+      if (hasConnectedOnce) {
+        scheduleOpsRefresh({ task: true });
+        return;
+      }
+      hasConnectedOnce = true;
     };
     const handleDisconnect = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
     };
     const handleConnectError = () => {
+      opsSocketBootstrappingRef.current = false;
       setOpsLiveStatus("disconnected");
     };
     const handleEvent = (payload: unknown) => {
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      const refreshDecision = getCrawlTaskDetailOpsRefreshDecision(payload, {
+        taskId,
+        pipelineJobId,
+      });
+      if (!refreshDecision) {
         return;
       }
-      const record = payload as OpsLiveEventPayload;
-      if (record.source !== "crawl" && record.source !== "pipeline") {
-        return;
-      }
-
-      let relevant = false;
-      if (record.source === "crawl") {
-        const eventTaskId =
-          typeof record.taskId === "string" ? record.taskId : undefined;
-        const eventJobId =
-          typeof record.jobId === "string" ? record.jobId : undefined;
-        relevant =
-          eventTaskId === taskId ||
-          eventJobId === taskId ||
-          (typeof eventJobId === "string" &&
-            eventJobId.startsWith(`${taskId}-`));
-      } else if (record.source === "pipeline") {
-        relevant =
-          Boolean(pipelineJobId) &&
-          typeof record.pipelineJobId === "string" &&
-          record.pipelineJobId === pipelineJobId;
-      }
-
-      if (!relevant) {
-        return;
-      }
-      if (record.event === "PROGRESS") {
-        scheduleOpsRefresh({ task: false, logs: canViewTaskLogs });
-        return;
-      }
-      scheduleOpsRefresh({ task: true, logs: canViewTaskLogs });
+      scheduleOpsRefresh(refreshDecision);
     };
 
     socket.on("connect", handleConnect);
@@ -1043,10 +1001,10 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
       if (opsSocketRef.current === socket) {
         opsSocketRef.current = null;
       }
+      opsSocketBootstrappingRef.current = false;
     };
   }, [
     canView,
-    canViewTaskLogs,
     pipelineJobId,
     scheduleOpsRefresh,
     session?.accessToken,
@@ -1059,7 +1017,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
         window.clearTimeout(opsRefreshTimerRef.current);
         opsRefreshTimerRef.current = null;
       }
-      pendingOpsRefreshRef.current = { task: false, logs: false };
+      pendingOpsRefreshRef.current = { task: false };
     };
   }, []);
 

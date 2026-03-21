@@ -1,6 +1,6 @@
 "use client";
 
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching } from "@tanstack/react-query";
 import {
   App,
   Button,
@@ -28,14 +28,12 @@ import { formatDashboardDate } from "@/lib/dashboard-time";
 import dayjs from "@/lib/dayjs";
 import { useHeroMetrics } from "@/lib/hero-metrics";
 import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
-import {
-  useScheduledAction,
-  useTimedValueDeduper,
-} from "@/lib/use-realtime-helpers";
+import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
 import { useSystemHealthContext } from "@/app/(app)/components/system-health-context";
 
+import { DashboardAnalysisFeedProvider } from "./analysis-feed-context";
 import { LiveAlertsToasts } from "./live-alerts";
 import { SystemHealthSummaryCard } from "./components/system-health-summary-card";
 import {
@@ -44,7 +42,6 @@ import {
   type DashboardStreamStatus,
 } from "./use-dashboard-stream";
 import { useDashboardUrlSync } from "./use-dashboard-url-sync";
-import { useQueueEvents } from "./use-queue-events";
 
 interface DashboardSkeletonProps {
   className: string;
@@ -87,8 +84,6 @@ function SpacetimeVizSkeleton() {
 const QUEUE_STATS_CARD_MIN_HEIGHT = 360;
 const QUEUE_STATS_CHART_HEIGHT = 260;
 const DASHBOARD_STREAM_TOAST_ID = "dashboard-stream-connection";
-const DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS = 1_200;
-
 const AlertPanel = dynamic(
   () => import("./alert-panel").then((mod) => mod.AlertPanel),
   {
@@ -328,7 +323,6 @@ export function DashboardContent() {
   const canManageSettings = permissions.includes("settings.manage");
   const canViewCrawlTasks =
     permissions.includes("crawl.read") || permissions.includes("crawl.write");
-  const queryClient = useQueryClient();
   const dashboardFetchingCount = useIsFetching({ queryKey: ["dashboard"] });
   const searchParams = useSearchParams();
   const isAnalysisFocused = searchParams.get("panel") === "analysis";
@@ -336,7 +330,10 @@ export function DashboardContent() {
   const {
     assessment: systemHealthAssessment,
     error,
+    lastQueueEvent,
     loading,
+    queueConnectionError,
+    queueLive,
     queueStats,
     refetchQueueStats,
   } = useSystemHealthContext();
@@ -360,66 +357,68 @@ export function DashboardContent() {
     usePendingAction(() => refetchQueueStats());
   const isDashboardUpdating = dashboardFetchingCount > 0 || heroUpdating;
 
-  const { lastEvent, connected: queueLive, connectionError } = useQueueEvents();
   const { queueStatus, selectedSector, setQueueStatus } =
     useDashboardFiltersStore();
-  const queueFilterMounted = useRef(false);
   const lastHandledQueueEventKeyRef = useRef<string | null>(null);
   const shouldShowQueueConnectionError = useTimedValueDeduper(30_000);
-  const { schedule: scheduleQueueRefetch } = useScheduledAction(() => {
-    void refetchQueueStats();
-  }, DASHBOARD_QUEUE_REFETCH_DEBOUNCE_MS);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(
     null,
   );
   const [showSystemStats, setShowSystemStats] = useState(false);
-  const [warMapStreamRange, setWarMapStreamRange] = useState<{
+  const [warMapRealtimeQuery, setWarMapRealtimeQuery] = useState<{
     start: Date;
     end: Date;
+    bbox?: string;
+    zoom?: number;
+    translateTarget?: "zh-CN";
+    flightMode?: "military" | "all";
+    aisMode?: "military" | "density" | "all";
   } | null>(null);
   const analysisPanelRef = useRef<HTMLDivElement | null>(null);
   const rangeFingerprint = useMemo(
     () => `${start.toISOString()}_${end.toISOString()}`,
     [end, start],
   );
-  const sharedStreamWindow = useMemo(() => {
-    if (!warMapStreamRange) {
-      return { start, end };
-    }
-    return {
-      start:
-        warMapStreamRange.start.getTime() < start.getTime()
-          ? warMapStreamRange.start
-          : start,
-      end:
-        warMapStreamRange.end.getTime() > end.getTime()
-          ? warMapStreamRange.end
-          : end,
-    };
-  }, [end, start, warMapStreamRange]);
   const dashboardStreamState = useDashboardStream({
     accessToken: session?.accessToken,
-    start: sharedStreamWindow.start,
-    end: sharedStreamWindow.end,
+    start,
+    end,
     queryStart: start,
     queryEnd: end,
+    warMapStart: warMapRealtimeQuery?.start,
+    warMapEnd: warMapRealtimeQuery?.end,
+    warMapBBox: warMapRealtimeQuery?.bbox,
+    warMapZoom: warMapRealtimeQuery?.zoom,
+    warMapTranslateTarget: warMapRealtimeQuery?.translateTarget,
+    warMapFlightMode: warMapRealtimeQuery?.flightMode,
+    warMapAisMode: warMapRealtimeQuery?.aisMode,
     queueStatus,
     selectedSector,
     enabled: Boolean(session?.accessToken),
   });
-  const handleWarMapRangeChange = useCallback((nextRange: {
+  const handleWarMapRealtimeQueryChange = useCallback((nextQuery: {
     start: Date;
     end: Date;
+    bbox?: string;
+    zoom?: number;
+    translateTarget?: "zh-CN";
+    flightMode?: "military" | "all";
+    aisMode?: "military" | "density" | "all";
   }) => {
-    setWarMapStreamRange((previous) => {
+    setWarMapRealtimeQuery((previous) => {
       if (
         previous &&
-        previous.start.getTime() === nextRange.start.getTime() &&
-        previous.end.getTime() === nextRange.end.getTime()
+        previous.start.getTime() === nextQuery.start.getTime() &&
+        previous.end.getTime() === nextQuery.end.getTime() &&
+        previous.bbox === nextQuery.bbox &&
+        previous.zoom === nextQuery.zoom &&
+        previous.translateTarget === nextQuery.translateTarget &&
+        previous.flightMode === nextQuery.flightMode &&
+        previous.aisMode === nextQuery.aisMode
       ) {
         return previous;
       }
-      return nextRange;
+      return nextQuery;
     });
   }, []);
 
@@ -443,17 +442,17 @@ export function DashboardContent() {
   }, [isDashboardUpdating, isRangeUpdating]);
 
   useEffect(() => {
-    if (!connectionError) {
+    if (!queueConnectionError) {
       return;
     }
     const nextMessage = t("dashboard.queue.connectionFailed", {
-      error: connectionError,
+      error: queueConnectionError,
     });
     if (!shouldShowQueueConnectionError(nextMessage)) {
       return;
     }
     message.error(nextMessage);
-  }, [connectionError, message, shouldShowQueueConnectionError, t]);
+  }, [message, queueConnectionError, shouldShowQueueConnectionError, t]);
 
   useEffect(() => {
     if (searchParams.get("panel") === "analysis" && analysisPanelRef.current) {
@@ -465,36 +464,29 @@ export function DashboardContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!lastEvent) return;
+    if (!lastQueueEvent) return;
     if (!canManageQueue) return;
-    if (lastEvent.event === "PROGRESS") return;
-    const eventKey = `${lastEvent.event}:${lastEvent.jobId}:${lastEvent.timestamp}`;
+    if (lastQueueEvent.event === "PROGRESS") return;
+    const eventKey = `${lastQueueEvent.event}:${lastQueueEvent.jobId}:${lastQueueEvent.timestamp}`;
     if (lastHandledQueueEventKeyRef.current === eventKey) {
       return;
     }
     lastHandledQueueEventKeyRef.current = eventKey;
-    scheduleQueueRefetch();
-    if (lastEvent.event === "FAILED") {
-      message.error(t("dashboard.queue.jobFailed", { jobId: lastEvent.jobId }));
-    } else if (lastEvent.event === "COMPLETED") {
-      message.success(
-        t("dashboard.queue.jobCompleted", { jobId: lastEvent.jobId }),
+    if (lastQueueEvent.event === "FAILED") {
+      message.error(
+        t("dashboard.queue.jobFailed", { jobId: lastQueueEvent.jobId }),
       );
-    } else if (lastEvent.event === "ACTIVE") {
-      message.info(t("dashboard.queue.jobStarted", { jobId: lastEvent.jobId }));
+    } else if (lastQueueEvent.event === "COMPLETED") {
+      message.success(
+        t("dashboard.queue.jobCompleted", { jobId: lastQueueEvent.jobId }),
+      );
+    } else if (lastQueueEvent.event === "ACTIVE") {
+      message.info(
+        t("dashboard.queue.jobStarted", { jobId: lastQueueEvent.jobId }),
+      );
     }
-  }, [canManageQueue, lastEvent, message, scheduleQueueRefetch, t]);
+  }, [canManageQueue, lastQueueEvent, message, t]);
 
-  useEffect(() => {
-    if (!queueFilterMounted.current) {
-      queueFilterMounted.current = true;
-      return;
-    }
-    if (canManageQueue) {
-      void refetchQueueStats();
-    }
-    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-  }, [canManageQueue, queueStatus, queryClient, refetchQueueStats]);
   const queueStatsInitialLoading = loading && !queueStats;
   const queueStatsBlockingErrorState =
     error && !queueStats
@@ -659,7 +651,8 @@ export function DashboardContent() {
               <WarMap
                 className="h-full"
                 streamState={dashboardStreamState}
-                onEffectiveRangeChange={handleWarMapRangeChange}
+                onEffectiveRangeChange={handleWarMapRealtimeQueryChange}
+                onRealtimeQueryChange={handleWarMapRealtimeQueryChange}
               />
             </div>
           </div>
@@ -891,22 +884,24 @@ export function DashboardContent() {
 
       {/* Right Column: Data Board & Intelligence */}
       <div className="w-[400px] flex-shrink-0 flex flex-col gap-6 hidden 2xl:flex sticky top-0 h-fit">
-        {/* Live News Feed */}
-        <div className="h-[600px]">
-          <AnalysisStream />
-        </div>
+        <DashboardAnalysisFeedProvider>
+          {/* Live News Feed */}
+          <div className="h-[600px]">
+            <AnalysisStream />
+          </div>
 
-        {/* AI Analysis */}
-        <div ref={analysisPanelRef}>
-          <Card
-            title={t("dashboard.panels.aiAnalysis")}
-            className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
-              isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
-            }`}
-          >
-            <AnalysisPanel />
-          </Card>
-        </div>
+          {/* AI Analysis */}
+          <div ref={analysisPanelRef}>
+            <Card
+              title={t("dashboard.panels.aiAnalysis")}
+              className={`content-card flex-1 border-none shadow-sm min-h-[300px]${
+                isAnalysisFocused ? " ring-1 ring-[var(--primary)]" : ""
+              }`}
+            >
+              <AnalysisPanel />
+            </Card>
+          </div>
+        </DashboardAnalysisFeedProvider>
 
         {/* Alerts */}
         <Card

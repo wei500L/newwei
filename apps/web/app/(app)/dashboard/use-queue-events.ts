@@ -22,7 +22,14 @@ interface QueueEventState {
   connectionError?: string;
 }
 
-export function useQueueEvents(): QueueEventState {
+interface UseQueueEventsOptions {
+  enabled?: boolean;
+}
+
+export function useQueueEvents(
+  options: UseQueueEventsOptions = {},
+): QueueEventState {
+  const { enabled = true } = options;
   const { data: session, status } = useSession();
   const { t } = useTranslation();
   const [state, setState] = useState<QueueEventState>({ connected: false });
@@ -37,7 +44,7 @@ export function useQueueEvents(): QueueEventState {
   }, [t]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !token || !canManageQueue) {
+    if (!enabled || status !== "authenticated" || !token || !canManageQueue) {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -133,7 +140,7 @@ export function useQueueEvents(): QueueEventState {
       socketRef.current = null;
       setState({ connected: false });
     };
-  }, [canManageQueue, status, token]);
+  }, [canManageQueue, enabled, status, token]);
 
   return state;
 }

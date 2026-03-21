@@ -2,23 +2,17 @@
 
 import { LoadingOutlined } from "@ant-design/icons";
 import { Button } from "antd";
-import { useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
-import {
-  AnalysisType,
-  useAnalysisEventsSubscription,
-  useAnalysisResultsQuery,
-  type AnalysisEventsSubscription,
-} from "@/graphql/generated";
+import { AnalysisType } from "@/graphql/generated";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import dayjs from "@/lib/dayjs";
 
-const LIVE_UPDATES_LIMIT = 50;
-const LIVE_SUMMARY_LIMIT = 4000;
+import { useDashboardAnalysisFeed } from "../analysis-feed-context";
+
 const CONNECTION_TOAST_ID = "analysis-stream-connection";
 
 function getAnalysisTypeLabel(type: AnalysisType): string {
@@ -47,121 +41,21 @@ function getAnalysisTypeClassName(type: AnalysisType): string {
 
 export function AnalysisStream() {
   const { t } = useTranslation();
-  const { data: session, status } = useSession();
-  const authenticated = status === "authenticated";
-  const permissions = session?.permissions ?? session?.user?.permissions ?? [];
-  const canReadAnalysis = permissions.includes("analysis.read");
+  const {
+    status,
+    authenticated,
+    canReadAnalysis,
+    loading,
+    error,
+    results,
+    refetch,
+    subscriptionError,
+    retrySubscription,
+  } = useDashboardAnalysisFeed();
   const canStream = authenticated && canReadAnalysis;
-  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
-  const [subscriptionEnabled, setSubscriptionEnabled] = useState(true);
-
-  useEffect(() => {
-    if (subscriptionEnabled) {
-      return;
-    }
-    const timer = window.setTimeout(() => setSubscriptionEnabled(true), 50);
-    return () => window.clearTimeout(timer);
-  }, [subscriptionEnabled]);
-
-  const retrySubscription = () => {
-    setSubscriptionError(null);
-    setSubscriptionEnabled(false);
-  };
-
-  const { data, loading, error, refetch } = useAnalysisResultsQuery({
-    variables: { limit: 20 },
-    skip: !authenticated || !canReadAnalysis,
-  });
   const { pending: refreshingResults, run: refreshResults } = usePendingAction(
     () => refetch(),
   );
-
-  const [liveUpdates, setLiveUpdates] = useState<
-    Record<
-      string,
-      AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }
-    >
-  >({});
-
-  useAnalysisEventsSubscription({
-    skip: !authenticated || !subscriptionEnabled || !canReadAnalysis,
-    onData: ({ data: subscription }) => {
-      const event = subscription.data?.analysisEvents;
-      if (!event) return;
-      setLiveUpdates((prev) => {
-        const existing = prev[event.id];
-        const previousText = existing?.summaryText ?? "";
-        const delta = typeof event.summary === "string" ? event.summary : "";
-        const summaryTextRaw =
-          event.status === "running" ? previousText + delta : delta || previousText;
-        const summaryText =
-          summaryTextRaw.length > LIVE_SUMMARY_LIMIT
-            ? summaryTextRaw.slice(-LIVE_SUMMARY_LIMIT)
-            : summaryTextRaw;
-        const next: Record<
-          string,
-          AnalysisEventsSubscription["analysisEvents"] & { summaryText: string }
-        > = {
-          ...prev,
-          [event.id]: {
-            ...event,
-            summaryText,
-          },
-        };
-        const ids = Object.keys(next);
-        if (ids.length <= LIVE_UPDATES_LIMIT) {
-          return next;
-        }
-        const sorted = ids
-          .map((id) => ({
-            id,
-            sortAt: dayjs(next[id]?.createdAt).valueOf() || 0
-          }))
-          .sort((a, b) => b.sortAt - a.sortAt)
-          .slice(0, LIVE_UPDATES_LIMIT)
-          .map((entry) => entry.id);
-        return sorted.reduce<typeof next>((acc, id) => {
-          const value = next[id];
-          if (value) {
-            acc[id] = value;
-          }
-          return acc;
-        }, {});
-      });
-      setSubscriptionError(null);
-    },
-    onError: (error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      setSubscriptionError(message);
-    }
-  });
-
-  const results = useMemo(() => {
-    const base = data?.analysisResults ?? [];
-    const merged = base.map((result) => {
-      const live = liveUpdates[result.id];
-      if (!live) return result;
-      return {
-        ...result,
-        status: live.status,
-        type: live.type,
-        createdAt: live.createdAt,
-        summary: live.summaryText,
-      };
-    });
-    const missing = Object.values(liveUpdates)
-      .filter((live) => !base.some((result) => result.id === live.id))
-      .map((live) => ({
-        id: live.id,
-        type: live.type,
-        status: live.status,
-        createdAt: live.createdAt,
-        summary: live.summaryText,
-      }));
-    return [...missing, ...merged].sort(
-      (a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf(),
-    );
-  }, [data?.analysisResults, liveUpdates]);
 
   const title = t("dashboard.analysisStream.title", {
     defaultValue: "Analysis Stream",

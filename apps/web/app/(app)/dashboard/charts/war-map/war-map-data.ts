@@ -16,8 +16,6 @@ import {
   WAR_MAP_LAYER_IDS,
 } from '@modular/utils';
 
-import type { StoredSituationMonitor } from '@/app/(app)/situation-monitor/types/situation-monitor-monitors';
-
 const VALID_GEOMETRY_TYPES = new Set(['point', 'path', 'polygon', 'raster']);
 const VALID_LAYER_IDS = new Set<string>(WAR_MAP_LAYER_IDS);
 const UNSUPPORTED_LAYER_IDS = ['dayNight'] as const satisfies readonly WarMapLayerId[];
@@ -27,7 +25,6 @@ export const WAR_MAP_QUERY_KEYS = {
   eventsPrefix: ['dashboard', 'war-map', 'events'] as const,
   newsMarkersPrefix: ['dashboard', 'war-map', 'news-markers'] as const,
   layersPrefix: ['dashboard', 'war-map', 'layers'] as const,
-  monitors: ['situation-monitor', 'monitors', 'war-map'] as const,
 };
 
 export interface WarMapQueryInput {
@@ -372,11 +369,4 @@ export function normalizeWarMapLayersResponse(payload: unknown): WarMapLayersRes
     updatedAt: asString(record.updatedAt) ?? new Date(0).toISOString(),
     layers,
   };
-}
-
-export function normalizeStoredSituationMonitors(payload: unknown): StoredSituationMonitor[] {
-  if (!Array.isArray(payload)) {
-    return [];
-  }
-  return payload.filter((item): item is StoredSituationMonitor => isRecord(item) && typeof item.id === 'string');
 }

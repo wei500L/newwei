@@ -22,6 +22,8 @@ import {
 import { EnvService } from "../config/config.service";
 import { UserSessionManager } from "../websocket/user-session-manager.service";
 
+import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service";
+import { NewsnowActiveSourceRegistryService } from "./newsnow-active-source-registry.service";
 import {
   NewsnowRealtimeDispatcher,
   NewsnowRealtimeEvent,
@@ -31,6 +33,14 @@ interface RateLimitState {
   windowStartMs: number;
   count: number;
 }
+
+interface NewsnowSetActiveSourcesPayload {
+  sourceIds?: unknown;
+}
+
+const ACTIVE_SOURCE_EVENT = "newsnow:set-active-sources";
+const ACTIVE_SOURCE_ID_PATTERN = /^[a-z0-9_-]+$/i;
+const MAX_ACTIVE_SOURCE_IDS = 60;
 
 @WebSocketGateway({
   namespace: "newsnow",
@@ -60,6 +70,8 @@ export class NewsnowGateway
     private readonly accessTokenBlacklist: AccessTokenBlacklistService,
     private readonly dispatcher: NewsnowRealtimeDispatcher,
     private readonly sessions: UserSessionManager,
+    private readonly registryService: NewsAggregatorRegistryService,
+    private readonly activeSources: NewsnowActiveSourceRegistryService,
   ) {}
 
   onModuleInit() {
@@ -122,6 +134,9 @@ export class NewsnowGateway
         orgId: profile.orgId,
         userId: profile.id,
       });
+      client.on(ACTIVE_SOURCE_EVENT, (payload: NewsnowSetActiveSourcesPayload) => {
+        this.handleSetActiveSources(client, payload);
+      });
       this.logger.info(
         {
           socketId: client.id,
@@ -152,6 +167,7 @@ export class NewsnowGateway
 
   handleDisconnect(client: Socket) {
     const profile = client.data?.user as AuthenticatedUser | undefined;
+    this.activeSources.removeSocket(client.id);
     this.sessions.unregister(client);
     this.logger.info(
       {
@@ -220,6 +236,22 @@ export class NewsnowGateway
     }
   }
 
+  private handleSetActiveSources(
+    client: Socket,
+    payload: NewsnowSetActiveSourcesPayload | undefined,
+  ) {
+    const profile = client.data?.user as AuthenticatedUser | undefined;
+    if (!profile) {
+      return;
+    }
+
+    this.activeSources.setActiveSources({
+      socketId: client.id,
+      orgId: profile.orgId,
+      sourceIds: this.normalizeActiveSourceIds(payload?.sourceIds),
+    });
+  }
+
   private extractToken(client: Socket): string {
     const headerAuth = client.handshake.headers.authorization;
     const tokenFromHeader = this.parseAuthorizationHeader(headerAuth);
@@ -257,6 +289,40 @@ export class NewsnowGateway
       return trimmed.slice(7);
     }
     return undefined;
+  }
+
+  private normalizeActiveSourceIds(value: unknown) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const knownSourceIds = new Set(
+      Object.keys(this.registryService.getMetadata().sources),
+    );
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+
+    for (const entry of value) {
+      if (typeof entry !== "string") {
+        continue;
+      }
+      const sourceId = entry.trim();
+      if (
+        !sourceId ||
+        !ACTIVE_SOURCE_ID_PATTERN.test(sourceId) ||
+        seen.has(sourceId) ||
+        !knownSourceIds.has(sourceId)
+      ) {
+        continue;
+      }
+      seen.add(sourceId);
+      normalized.push(sourceId);
+      if (normalized.length >= MAX_ACTIVE_SOURCE_IDS) {
+        break;
+      }
+    }
+
+    return normalized;
   }
 
   private enforceConnectRateLimit(

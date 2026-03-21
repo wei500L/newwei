@@ -37,8 +37,10 @@ import type {
 import type {
   OrefAlert,
   OrefHistoryEntry,
+  SituationOrefRealtimePayload,
   SituationOrefAlertsResponse,
   SituationOrefHistoryResponse,
+  SituationTelegramRealtimePayload,
   SituationTelegramFeedResponse,
   TelegramSignalItem,
 } from "./signals/situation-monitor-signals.types";
@@ -603,6 +605,20 @@ export class SituationMonitorMonitorsService {
     };
   }
 
+  async augmentTelegramRealtimePayload(
+    orgId: string,
+    userId: string,
+    payload: SituationTelegramRealtimePayload,
+  ): Promise<SituationTelegramRealtimePayload> {
+    const candidates = (payload.items ?? []).map((item) =>
+      this.telegramCandidate(item),
+    );
+    return {
+      ...payload,
+      monitorMatches: await this.matchCandidates(orgId, userId, candidates),
+    };
+  }
+
   async augmentOrefAlerts(
     orgId: string,
     userId: string,
@@ -614,6 +630,33 @@ export class SituationMonitorMonitorsService {
     return {
       ...response,
       monitorMatches: await this.matchCandidates(orgId, userId, candidates),
+    };
+  }
+
+  async augmentOrefRealtimePayload(
+    orgId: string,
+    userId: string,
+    payload: SituationOrefRealtimePayload,
+  ): Promise<SituationOrefRealtimePayload> {
+    const historyEntry = payload.historyEntry ?? undefined;
+    const alertCandidates = (payload.alerts ?? []).map((alert) =>
+      this.orefAlertCandidate(alert, "oref_alert"),
+    );
+    const historyCandidates = historyEntry
+      ? historyEntry.alerts.map((alert) =>
+          this.orefHistoryCandidate(alert, historyEntry),
+        )
+      : [];
+    const [alertMonitorMatches, historyMonitorMatches] = await Promise.all([
+      this.matchCandidates(orgId, userId, alertCandidates),
+      historyCandidates.length > 0
+        ? this.matchCandidates(orgId, userId, historyCandidates)
+        : Promise.resolve([] as SituationMonitorMatchResult[]),
+    ]);
+    return {
+      ...payload,
+      alertMonitorMatches,
+      ...(historyEntry ? { historyMonitorMatches } : {}),
     };
   }
 

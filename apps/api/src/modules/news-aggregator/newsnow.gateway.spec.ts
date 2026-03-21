@@ -43,6 +43,21 @@ describe("NewsnowGateway", () => {
     unregister: jest.fn(),
   } as any;
 
+  const registryServiceMock = {
+    getMetadata: jest.fn().mockReturnValue({
+      sources: {
+        weibo: { name: "微博" },
+        hackernews: { name: "Hacker News" },
+      },
+      columns: {},
+    }),
+  } as any;
+
+  const activeSourcesMock = {
+    setActiveSources: jest.fn(),
+    removeSocket: jest.fn(),
+  } as any;
+
   const serverMock = {
     emit: jest.fn(),
   } as any;
@@ -60,17 +75,27 @@ describe("NewsnowGateway", () => {
         };
       },
     );
+    registryServiceMock.getMetadata.mockReturnValue({
+      sources: {
+        weibo: { name: "微博" },
+        hackernews: { name: "Hacker News" },
+      },
+      columns: {},
+    });
     gateway = new NewsnowGateway(
       envMock,
       authServiceMock,
       accessTokenBlacklistMock,
       dispatcherMock,
       sessionsMock,
+      registryServiceMock,
+      activeSourcesMock,
     );
     gateway.server = serverMock;
   });
 
   function createClient(token: string) {
+    const handlers: Record<string, (payload: any) => void> = {};
     return {
       id: "socket-1",
       handshake: {
@@ -82,7 +107,11 @@ describe("NewsnowGateway", () => {
         address: "::ffff:127.0.0.1",
       },
       data: {},
+      handlers,
       emit: jest.fn(),
+      on: jest.fn((event: string, handler: (payload: any) => void) => {
+        handlers[event] = handler;
+      }),
       disconnect: jest.fn(),
     } as any;
   }
@@ -125,6 +154,10 @@ describe("NewsnowGateway", () => {
       orgId: "org-1",
       userId: "user-1",
     });
+    expect(client.on).toHaveBeenCalledWith(
+      "newsnow:set-active-sources",
+      expect.any(Function),
+    );
     expect(client.disconnect).not.toHaveBeenCalled();
   });
 
@@ -185,5 +218,41 @@ describe("NewsnowGateway", () => {
       "newsnow:update",
       expect.objectContaining({ sourceId: "weibo", newItemsCount: 2 }),
     );
+  });
+
+  it("normalizes active source payloads from the socket", async () => {
+    authServiceMock.getUserProfile.mockResolvedValue({
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    });
+    sessionsMock.register.mockResolvedValue({ userConnections: 1 });
+
+    const client = createClient(createToken());
+
+    await gateway.handleConnection(client);
+    client.handlers["newsnow:set-active-sources"]?.({
+      sourceIds: [" weibo ", "bad id", "missing", "hackernews", "weibo"],
+    });
+
+    expect(activeSourcesMock.setActiveSources).toHaveBeenCalledWith({
+      socketId: "socket-1",
+      orgId: "org-1",
+      sourceIds: ["weibo", "hackernews"],
+    });
+  });
+
+  it("clears active sources when sockets disconnect", () => {
+    const client = createClient(createToken());
+    client.data.user = {
+      id: "user-1",
+      orgId: "org-1",
+      permissions: ["items.read"],
+    };
+
+    gateway.handleDisconnect(client);
+
+    expect(activeSourcesMock.removeSocket).toHaveBeenCalledWith("socket-1");
+    expect(sessionsMock.unregister).toHaveBeenCalledWith(client);
   });
 });

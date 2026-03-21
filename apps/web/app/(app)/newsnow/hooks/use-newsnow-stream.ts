@@ -9,6 +9,10 @@ import { io, type Socket } from "socket.io-client";
 import { env } from "@/lib/env";
 import { formatRealtimeSocketError } from "@/lib/realtime-socket-errors";
 
+import {
+  normalizeNewsnowSourceIds,
+  shouldRefetchNewsSourceFromRealtimeEvent,
+} from "../lib/newsnow-fetching";
 import { useNewsnowStore } from "../store/newsnow-store";
 
 export interface NewsnowRealtimeMessage {
@@ -29,6 +33,10 @@ export function useNewsnowStream() {
     permissions.includes("items.read") || permissions.includes("items.write");
   const socketRef = useRef<Socket | null>(null);
   const tRef = useRef(t);
+  const visibleSourceIdsRef = useRef<string[]>([]);
+  const activeSourcesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const queryClient = useQueryClient();
 
   const recordRealtimeArrival = useNewsnowStore(
@@ -37,10 +45,39 @@ export function useNewsnowStream() {
   const setRealtimeConnectionState = useNewsnowStore(
     (state) => state.setRealtimeConnectionState,
   );
+  const visibleSourceIds = useNewsnowStore((state) => state.visibleSourceIds);
 
   useEffect(() => {
     tRef.current = t;
   }, [t]);
+
+  useEffect(() => {
+    visibleSourceIdsRef.current = normalizeNewsnowSourceIds(visibleSourceIds);
+  }, [visibleSourceIds]);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) {
+      return;
+    }
+
+    if (activeSourcesSyncTimerRef.current) {
+      clearTimeout(activeSourcesSyncTimerRef.current);
+    }
+    activeSourcesSyncTimerRef.current = setTimeout(() => {
+      activeSourcesSyncTimerRef.current = null;
+      socket.emit("newsnow:set-active-sources", {
+        sourceIds: visibleSourceIdsRef.current,
+      });
+    }, 150);
+
+    return () => {
+      if (activeSourcesSyncTimerRef.current) {
+        clearTimeout(activeSourcesSyncTimerRef.current);
+        activeSourcesSyncTimerRef.current = null;
+      }
+    };
+  }, [visibleSourceIds]);
 
   useEffect(() => {
     if (status !== "authenticated" || !token || !canReadItems) {
@@ -66,6 +103,12 @@ export function useNewsnowStream() {
     const pendingSourceIds = new Set<string>();
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const emitActiveSources = () => {
+      socket.emit("newsnow:set-active-sources", {
+        sourceIds: visibleSourceIdsRef.current,
+      });
+    };
+
     const flushPendingRefetches = () => {
       if (flushTimer) {
         clearTimeout(flushTimer);
@@ -76,6 +119,23 @@ export function useNewsnowStream() {
       if (sourceIds.length === 0) {
         return;
       }
+      void Promise.all(
+        sourceIds.map((sourceId) =>
+          queryClient.refetchQueries({
+            queryKey: ["news-source", sourceId],
+            exact: true,
+            type: "active",
+          }),
+        ),
+      );
+    };
+
+    const refetchVisibleSources = () => {
+      const sourceIds = visibleSourceIdsRef.current;
+      if (sourceIds.length === 0) {
+        return;
+      }
+
       void Promise.all(
         sourceIds.map((sourceId) =>
           queryClient.refetchQueries({
@@ -125,11 +185,20 @@ export function useNewsnowStream() {
             ? payload.updatedTime
             : undefined,
       });
-      scheduleSourceRefetch(sourceId);
+      if (
+        shouldRefetchNewsSourceFromRealtimeEvent({
+          sourceId,
+          visibleSourceIds: visibleSourceIdsRef.current,
+        })
+      ) {
+        scheduleSourceRefetch(sourceId);
+      }
     };
 
     const handleConnect = () => {
       setRealtimeConnectionState({ connected: true });
+      emitActiveSources();
+      refetchVisibleSources();
     };
     const handleDisconnect = () => {
       setRealtimeConnectionState({ connected: false });
@@ -193,6 +262,10 @@ export function useNewsnowStream() {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = null;
+      }
+      if (activeSourcesSyncTimerRef.current) {
+        clearTimeout(activeSourcesSyncTimerRef.current);
+        activeSourcesSyncTimerRef.current = null;
       }
       pendingSourceIds.clear();
       socket.off("connect", handleConnect);

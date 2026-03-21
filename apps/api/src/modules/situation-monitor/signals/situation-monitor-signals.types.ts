@@ -73,6 +73,23 @@ export interface SituationOrefHistoryResponse {
   error?: string;
 }
 
+export interface SituationTelegramRealtimePayload {
+  count: number;
+  updatedAt: string;
+  items: TelegramSignalItem[];
+  monitorMatches?: SituationMonitorMatchResult[];
+}
+
+export interface SituationOrefRealtimePayload {
+  alerts: OrefAlert[];
+  historyCount24h: number;
+  totalHistoryCount: number;
+  updatedAt: string;
+  historyEntry?: OrefHistoryEntry | null;
+  alertMonitorMatches?: SituationMonitorMatchResult[];
+  historyMonitorMatches?: SituationMonitorMatchResult[];
+}
+
 export type SituationMonitorRealtimeEventType =
   | 'situation:telegram.update'
   | 'situation:oref.update';
