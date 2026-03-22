@@ -46,6 +46,7 @@ export type AdminSettingsPanelId =
   | "realtime-signals"
   | "rss-translation-metrics"
   | "rss-diagnostics"
+  | "task-logs"
   | "geo-nominatim"
   | "email"
   | "akshare";
@@ -400,6 +401,14 @@ export const ADMIN_SETTINGS_PAGE_DEFINITIONS: readonly AdminSettingsPageDefiniti
           defaultTitle: "RSS diagnostics",
           defaultDescription:
             "Inspect feed diagnostics and ingest pipeline health.",
+          requiredPermission: MANAGE_PERMISSION,
+        },
+        {
+          id: "task-logs",
+          titleKey: "settings.tabs.taskLogs",
+          defaultTitle: "Task logs",
+          defaultDescription:
+            "Manage task-log retention and summary-first observability.",
           requiredPermission: MANAGE_PERMISSION,
         },
       ],

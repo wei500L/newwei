@@ -360,6 +360,10 @@ export class EnvService extends ConfigService<ApiEnv> {
     return this.get<number>("AUDIT_LOG_RETENTION_DAYS", { infer: true }) ?? 90;
   }
 
+  get taskLogRetentionDays() {
+    return this.get<number>("TASK_LOG_RETENTION_DAYS", { infer: true }) ?? 14;
+  }
+
   get graphqlConfig() {
     return {
       playground:
@@ -871,6 +875,14 @@ export class EnvService extends ConfigService<ApiEnv> {
           infer: true,
         }) ?? 48,
     };
+  }
+
+  get itemsReadModelEnabled(): boolean {
+    return this.get<boolean>("ITEMS_READ_MODEL_ENABLED", { infer: true }) ?? false;
+  }
+
+  get itemsVectorHardFailEnabled(): boolean {
+    return this.get<boolean>("ITEMS_VECTOR_HARD_FAIL_ENABLED", { infer: true }) ?? false;
   }
 
   get liteLlmConfigInternalToken(): string | undefined {

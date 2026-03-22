@@ -81,6 +81,7 @@ import {
   NewsPromptSettingsPanel,
   RateLimitSettingsPanel,
   StorageSettingsContent,
+  TaskLogSettingsPanel,
 } from '@/components/settings/workspace-shared-settings-panels';
 
 import type { AdminSettingsPanelId } from './settings-navigation';
@@ -120,6 +121,7 @@ const PANEL_COMPONENTS: Record<WorkspacePanelId, ComponentType> = {
   'realtime-signals': RealtimeSignalsSettingsPanel,
   'rss-translation-metrics': RssTranslationMetricsPanel,
   'rss-diagnostics': RssDiagnosticsPanel,
+  'task-logs': TaskLogSettingsPanel,
   'geo-nominatim': GeoNominatimSettingsPanel,
   email: EmailSettingsPanel,
   akshare: AkshareGatewaySettingsPanel,

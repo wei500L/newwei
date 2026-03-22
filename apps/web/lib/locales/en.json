@@ -5132,6 +5132,7 @@
       "assistantSafety": "Assistant safety",
       "rssTranslationMetrics": "RSS translation metrics",
       "rssDiagnostics": "RSS diagnostics",
+      "taskLogs": "Task logs",
       "roles": "Roles",
       "permissions": "Permissions",
       "members": "Users"
@@ -5515,6 +5516,42 @@
     }
   },
   "systemSettings": {
+    "taskLogs": {
+      "description": "Control how long task logs remain in MongoDB. Summary and terminal events are retained while dense process noise is collapsed at write time.",
+      "errors": {
+        "loadFailed": "Failed to load task log settings.",
+        "saveFailed": "Failed to save task log settings.",
+        "resetFailed": "Failed to reset task log settings."
+      },
+      "messages": {
+        "saved": "Task log retention settings saved.",
+        "reset": "Task log retention settings reset."
+      },
+      "notice": {
+        "title": "Summary-first retention",
+        "body": "Retention is enforced by a MongoDB TTL index. Crawl task detail, queue recovery, and admin logs keep terminal and summary records; transient retry and batch noise is not retained as separate writes."
+      },
+      "status": {
+        "label": "Current source",
+        "default": "Environment default",
+        "db": "Database override",
+        "currentDays": "Current retention: {{days}} days"
+      },
+      "fields": {
+        "retentionDays": "Retention days"
+      },
+      "validation": {
+        "retentionRequired": "Retention days is required.",
+        "retentionRange": "Retention must be between 1 and 3650 days."
+      },
+      "hints": {
+        "retentionDays": "Applied to the MongoDB TTL index immediately after save and on server startup."
+      },
+      "modal": {
+        "resetTitle": "Reset task log retention?",
+        "resetBody": "This restores the default task-log retention window and reapplies the MongoDB TTL index."
+      }
+    },
     "llmRequestLogs": {
       "description": "View centralized LLM gateway request logs for cost tracking, debugging, and usage analysis.",
       "errors": {

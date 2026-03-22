@@ -1,4 +1,4 @@
-import { ProcessedItemModel, RawItemModel, TaskLogModel } from "@modular/mongo";
+import { ProcessedItemModel, RawItemModel } from "@modular/mongo";
 import {
   createLogger,
   ensureTraceId,
@@ -11,6 +11,7 @@ import {
   Injectable,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from "@nestjs/common";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { Worker, UnrecoverableError, type Queue } from "bullmq";
@@ -26,6 +27,8 @@ import type {
   RawPipelineItem,
 } from "../news-pipeline/news-pipeline.types";
 import { NotificationsService } from "../notifications/notifications.service";
+import { writeTaskLogBestEffort } from "../observability/task-log.writer";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 
 import {
   ITEM_PIPELINE_QUEUE_NAME,
@@ -78,6 +81,8 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly pipeline: NewsPipelineService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Optional()
+    private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
 
   async onModuleInit() {
@@ -147,9 +152,9 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
             const rawItem = await RawItemModel.findById(rawItemId);
             if (!rawItem) {
-              await TaskLogModel.create({
+              await writeTaskLogBestEffort({
                 queue: ITEM_PIPELINE_QUEUE_NAME,
-                jobId: job.id,
+                jobId: job.id ?? "",
                 orgId,
                 stage: "dedupe",
                 status: "failed",
@@ -184,13 +189,14 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
             await this.markSuccessState({
               itemMetaId,
+              orgId,
               pipelineJobId,
               sourceId,
             });
 
-            await TaskLogModel.create({
+            await writeTaskLogBestEffort({
               queue: ITEM_PIPELINE_QUEUE_NAME,
-              jobId: job.id,
+              jobId: job.id ?? "",
               orgId,
               stage: "complete",
               status: "completed",
@@ -257,9 +263,9 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
                 ? rawItemId
                 : undefined;
 
-          await TaskLogModel.create({
+          await writeTaskLogBestEffort({
             queue: ITEM_PIPELINE_QUEUE_NAME,
-            jobId: job.id,
+            jobId: job?.id ?? "",
             orgId: jobOrgId,
             stage: "worker",
             status: "failed",
@@ -475,6 +481,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     try {
       await Promise.all(actions);
+      if (options.sourceId && this.newsSourceOpsSnapshots) {
+        await this.newsSourceOpsSnapshots.refreshSnapshotForSource(
+          options.orgId,
+          options.sourceId,
+        );
+      }
     } catch (error) {
       logger.warn(
         { error, itemMetaId: options.itemMetaId },
@@ -485,6 +497,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async markSuccessState(options: {
     itemMetaId: string;
+    orgId: string;
     pipelineJobId?: string;
     sourceId?: string;
   }) {
@@ -519,6 +532,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     try {
       await Promise.all(actions);
+      if (options.sourceId && this.newsSourceOpsSnapshots) {
+        await this.newsSourceOpsSnapshots.refreshSnapshotForSource(
+          options.orgId,
+          options.sourceId,
+        );
+      }
     } catch (error) {
       logger.warn(
         { error, itemMetaId: options.itemMetaId },
@@ -764,6 +783,12 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
 
     try {
       await Promise.all(actions);
+      if (options.sourceId && this.newsSourceOpsSnapshots) {
+        await this.newsSourceOpsSnapshots.refreshSnapshotForSource(
+          options.orgId,
+          options.sourceId,
+        );
+      }
     } catch (error) {
       logger.warn(
         { error, itemMetaId: options.itemMetaId },

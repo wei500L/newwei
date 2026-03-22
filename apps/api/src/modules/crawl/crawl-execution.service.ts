@@ -1,11 +1,10 @@
-import { TaskLogModel } from "@modular/mongo";
 import {
   createLogger,
   NotificationPresentationKind,
   normalizeBrowserHeaders as normalizeSharedBrowserHeaders,
   sanitizeError,
 } from "@modular/utils";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import type { CrawlTask, Prisma } from "@prisma/client";
 import { NotificationType, PipelineJobStatus } from "@prisma/client";
 import { load } from "cheerio";
@@ -14,6 +13,7 @@ import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 import {
   CrawlQualityStrategyService,
   type CrawlArticleSignal,
@@ -62,6 +62,7 @@ import {
   Crawl4aiResponse,
 } from "./crawl4ai.client";
 import { Crawl4aiRequestException } from "./crawl4ai.exception";
+import { NewsSourceOpsSnapshotService } from "./news-source-ops-snapshot.service";
 
 const logger = createLogger({ name: "crawl-execution-service" });
 
@@ -247,6 +248,8 @@ export class CrawlExecutionService {
     private readonly qualityStrategy: CrawlQualityStrategyService,
     private readonly crawlSettings: CrawlSettingsService,
     private readonly notifications: NotificationsService,
+    @Optional()
+    private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
   ) {}
 
   async runTask(
@@ -267,7 +270,8 @@ export class CrawlExecutionService {
     }
 
     const pipelineJobId = this.extractPipelineJobId(task.config);
-    const sourceId = this.extractPipelineSourceId(task.config);
+    const sourceId =
+      task.newsSourceId ?? this.extractPipelineSourceId(task.config);
 
     await this.prisma.crawlTask.update({
       where: { id: task.id },
@@ -276,21 +280,7 @@ export class CrawlExecutionService {
         lastRunAt: new Date(),
       },
     });
-
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: taskId,
-      orgId,
-      stage: "start",
-      status: "processing",
-      message: "crawl task started",
-      data: {
-        taskId,
-        triggeredById,
-        attempt: retryContext?.attempt ?? null,
-        maxAttempts: retryContext?.maxAttempts ?? null,
-      },
-    });
+    await this.syncSourceQueueCounts(orgId, sourceId);
 
     try {
       const configRecord =
@@ -343,7 +333,7 @@ export class CrawlExecutionService {
         : null;
       if (preflightResult) {
         if (preflightResult.status === "completed") {
-          await TaskLogModel.create({
+          await this.safeCreateTaskLog({
             queue: CRAWL_QUEUE_NAME,
             jobId: taskId,
             orgId,
@@ -363,7 +353,7 @@ export class CrawlExecutionService {
             },
           });
         } else {
-          await TaskLogModel.create({
+          await this.safeCreateTaskLog({
             queue: CRAWL_QUEUE_NAME,
             jobId: taskId,
             orgId,
@@ -393,7 +383,7 @@ export class CrawlExecutionService {
           lastFetchedAt: latestHttpValidationState.fetchedAt,
         };
 
-        await TaskLogModel.create({
+        await this.safeCreateTaskLog({
           queue: CRAWL_QUEUE_NAME,
           jobId: taskId,
           orgId,
@@ -424,8 +414,9 @@ export class CrawlExecutionService {
             lastError: null,
           },
         });
+        await this.syncSourceQueueCounts(orgId, sourceId);
 
-        await TaskLogModel.create({
+        await this.safeCreateTaskLog({
           queue: CRAWL_QUEUE_NAME,
           jobId: taskId,
           orgId,
@@ -443,34 +434,6 @@ export class CrawlExecutionService {
       const preflightMetadata = this.buildHttpValidationMetadata(
         preflightResult?.status === "completed" ? preflightResult.result : null,
       );
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: taskId,
-        orgId,
-        stage: "crawler",
-        status: "processing",
-        message: "crawl4ai request started",
-        data: {
-          urls: payloadUrls.length,
-          scanFullPage: effectiveOptions.scanFullPage ?? false,
-          scrollDelayMs: effectiveOptions.scrollDelayMs ?? null,
-          virtualScroll: effectiveOptions.virtualScroll
-            ? {
-                containerSelector:
-                  effectiveOptions.virtualScroll.containerSelector ?? "body",
-                scrollCount: effectiveOptions.virtualScroll.scrollCount ?? null,
-                scrollBy: effectiveOptions.virtualScroll.scrollBy ?? null,
-                waitAfterScrollMs:
-                  effectiveOptions.virtualScroll.waitAfterScrollMs ?? null,
-              }
-            : null,
-          onlyMainContent: effectiveOptions.onlyMainContent ?? null,
-          wordCountThreshold: effectiveOptions.wordCountThreshold ?? null,
-          includeImages: effectiveOptions.includeImages ?? null,
-          storeMedia: effectiveOptions.storeMedia ?? null,
-          waitForImages: effectiveOptions.waitForImages ?? null,
-        },
-      });
       const initialRun = await this.runCrawlWithHeadedFallback({
         request: payload,
         options: effectiveOptions,
@@ -510,6 +473,7 @@ export class CrawlExecutionService {
       if (this.shouldAttemptEmptyMarkdownFallback(successes, failures)) {
         const fallbackProfiles =
           this.buildEmptyMarkdownFallbackProfiles(effectiveOptions);
+        const fallbackAttempts: Array<Record<string, unknown>> = [];
         const fallbackCandidates: {
           label: string;
           options: CrawlTaskOptions;
@@ -521,19 +485,6 @@ export class CrawlExecutionService {
         }[] = [];
 
         for (const profile of fallbackProfiles) {
-          await TaskLogModel.create({
-            queue: CRAWL_QUEUE_NAME,
-            jobId: taskId,
-            orgId,
-            stage: "fallback",
-            status: "processing",
-            message: `Retrying crawl4ai with markdown fallback profile: ${profile.label}`,
-            data: {
-              profile: profile.label,
-              fallback: profile.summary,
-            },
-          });
-
           try {
             const fallbackPayload = this.buildRequestPayload(
               task,
@@ -573,39 +524,22 @@ export class CrawlExecutionService {
               lowSignalCandidates = fallbackPartition.lowSignalCandidates;
               effectiveOptions = fallbackOptions;
             }
-
-            await TaskLogModel.create({
-              queue: CRAWL_QUEUE_NAME,
-              jobId: taskId,
-              orgId,
-              stage: "fallback",
-              status: "completed",
-              message:
-                fallbackPartition.successes.length > 0
-                  ? `Fallback profile ${profile.label} produced crawl results`
-                  : `Fallback profile ${profile.label} did not produce markdown`,
-              data: {
-                profile: profile.label,
-                successes: fallbackPartition.successes.length,
-                failures: fallbackPartition.failures.length,
-                qualityScore,
-                failureSamples: fallbackPartition.failures.slice(0, 5),
-              },
+            fallbackAttempts.push({
+              profile: profile.label,
+              result: "completed",
+              fallback: profile.summary,
+              successes: fallbackPartition.successes.length,
+              failures: fallbackPartition.failures.length,
+              qualityScore,
+              lowSignalCandidates: fallbackPartition.lowSignalCandidates.length,
+              failureSamples: fallbackPartition.failures.slice(0, 5),
             });
           } catch (fallbackError) {
-            await TaskLogModel.create({
-              queue: CRAWL_QUEUE_NAME,
-              jobId: taskId,
-              orgId,
-              stage: "fallback",
-              status: "failed",
-              message: `Fallback profile ${profile.label} failed`,
-              error: sanitizeError(fallbackError, {
-                redactSensitive: true,
-              }),
-              data: {
-                profile: profile.label,
-              },
+            fallbackAttempts.push({
+              profile: profile.label,
+              result: "failed",
+              fallback: profile.summary,
+              error: this.extractCrawlErrorMessage(fallbackError) ?? null,
             });
           }
         }
@@ -619,19 +553,35 @@ export class CrawlExecutionService {
           failures = bestFallback.failures;
           lowSignalCandidates = bestFallback.lowSignalCandidates;
           effectiveOptions = bestFallback.options;
+        }
 
-          await TaskLogModel.create({
+        if (fallbackAttempts.length > 0) {
+          const completedFallbackAttempts = fallbackAttempts.filter(
+            (entry) => entry.result === "completed",
+          );
+          const fallbackStatus =
+            completedFallbackAttempts.length > 0 ? "completed" : "failed";
+          await this.safeCreateTaskLog({
             queue: CRAWL_QUEUE_NAME,
             jobId: taskId,
             orgId,
             stage: "fallback",
-            status: "completed",
-            message: `Selected markdown fallback profile: ${bestFallback.label}`,
+            status: fallbackStatus,
+            message: bestFallback
+              ? `Selected markdown fallback profile: ${bestFallback.label}`
+              : completedFallbackAttempts.length > 0
+                ? "Markdown fallback completed without selecting an improved profile"
+                : "Markdown fallback failed for all profiles",
             data: {
-              profile: bestFallback.label,
-              qualityScore: bestFallback.qualityScore,
-              successes: bestFallback.successes.length,
-              failures: bestFallback.failures.length,
+              selectedProfile: bestFallback?.label ?? null,
+              selectedQualityScore: bestFallback?.qualityScore ?? null,
+              selectedSuccesses: bestFallback?.successes.length ?? 0,
+              selectedFailures: bestFallback?.failures.length ?? 0,
+              attempts: fallbackAttempts.length,
+              completedAttempts: completedFallbackAttempts.length,
+              failedAttempts:
+                fallbackAttempts.length - completedFallbackAttempts.length,
+              profiles: fallbackAttempts,
             },
           });
         }
@@ -670,53 +620,59 @@ export class CrawlExecutionService {
         preflightMetadata,
       );
 
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: taskId,
-        orgId,
-        stage: "crawler",
-        status: "completed",
-        data: {
-          runId: response.runId ?? null,
-          nextCursor: response.nextCursor ?? null,
-          totalResults: response.results?.length ?? 0,
-          successes: persistedSuccesses.length,
-          failures: failures.length,
-        },
-      });
-
       let failureRetryableCount = 0;
-
-      if (response.warnings && response.warnings.length > 0) {
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: taskId,
-          orgId,
-          stage: "crawler",
-          status: "completed",
-          message: "crawl4ai warnings",
-          data: { warnings: response.warnings },
-        });
-      }
 
       if (failures.length > 0) {
         failureRetryableCount = failures.filter(
           (failure) => failure.retryable,
         ).length;
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: taskId,
-          orgId,
-          stage: "crawler",
-          status: "completed",
-          message: "crawl4ai partial failures",
-          data: {
-            totalFailures: failures.length,
-            retryableFailures: failureRetryableCount,
-            samples: failures.slice(0, 10),
-          },
-        });
       }
+
+      await this.safeCreateTaskLog({
+        queue: CRAWL_QUEUE_NAME,
+        jobId: taskId,
+        orgId,
+        stage: "crawler",
+        status: "completed",
+        message:
+          failures.length > 0
+            ? "crawl4ai completed with partial failures"
+            : response.warnings && response.warnings.length > 0
+              ? "crawl4ai completed with warnings"
+              : "crawl4ai request completed",
+        data: {
+          request: {
+            urls: payloadUrls.length,
+            scanFullPage: effectiveOptions.scanFullPage ?? false,
+            scrollDelayMs: effectiveOptions.scrollDelayMs ?? null,
+            virtualScroll: effectiveOptions.virtualScroll
+              ? {
+                  containerSelector:
+                    effectiveOptions.virtualScroll.containerSelector ?? "body",
+                  scrollCount:
+                    effectiveOptions.virtualScroll.scrollCount ?? null,
+                  scrollBy: effectiveOptions.virtualScroll.scrollBy ?? null,
+                  waitAfterScrollMs:
+                    effectiveOptions.virtualScroll.waitAfterScrollMs ?? null,
+                }
+              : null,
+            onlyMainContent: effectiveOptions.onlyMainContent ?? null,
+            wordCountThreshold: effectiveOptions.wordCountThreshold ?? null,
+            includeImages: effectiveOptions.includeImages ?? null,
+            storeMedia: effectiveOptions.storeMedia ?? null,
+            waitForImages: effectiveOptions.waitForImages ?? null,
+          },
+          runId: response.runId ?? null,
+          nextCursor: response.nextCursor ?? null,
+          totalResults: response.results?.length ?? 0,
+          successes: persistedSuccesses.length,
+          failures: failures.length,
+          retryableFailures: failureRetryableCount,
+          warnings: response.warnings ?? [],
+          warningCount: response.warnings?.length ?? 0,
+          failureSamples: failures.slice(0, 10),
+        },
+      });
 
       const summary = await this.resultService.persistResults(
         task,
@@ -773,8 +729,9 @@ export class CrawlExecutionService {
             summary.memory?.efficiencyPercent ?? task.lastMemoryEfficiency,
         },
       });
+      await this.syncSourceQueueCounts(orgId, sourceId);
 
-      await TaskLogModel.create({
+      await this.safeCreateTaskLog({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
         orgId,
@@ -860,7 +817,8 @@ export class CrawlExecutionService {
             );
           });
       }
-      await TaskLogModel.create({
+      await this.syncSourceQueueCounts(orgId, sourceId);
+      await this.safeCreateTaskLog({
         queue: CRAWL_QUEUE_NAME,
         jobId: taskId,
         orgId,
@@ -1299,54 +1257,11 @@ export class CrawlExecutionService {
         ...requestWithTimeout,
         options: fallbackOptions,
       };
-      const originalErrorMessage = this.extractCrawlErrorMessage(error);
-
-      await this.safeCreateTaskLog({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: options.taskId,
-        orgId: options.orgId,
-        stage: options.stage,
-        status: "processing",
-        message:
-          "Headed crawl failed with display dependency; retrying with headless=true",
-        data: {
-          reason: options.reason,
-          fallback: "display_to_headless",
-          originalError: originalErrorMessage ?? null,
-        },
-      });
 
       try {
         const response = await this.crawlClient.crawl(fallbackRequest);
-        await this.safeCreateTaskLog({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: options.stage,
-          status: "completed",
-          message: "Display fallback succeeded with headless=true",
-          data: {
-            reason: options.reason,
-            fallback: "display_to_headless",
-          },
-        });
         return { response, options: fallbackOptions };
       } catch (fallbackError) {
-        await this.safeCreateTaskLog({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: options.stage,
-          status: "failed",
-          message: "Display fallback retry with headless=true failed",
-          error: sanitizeError(fallbackError, {
-            redactSensitive: true,
-          }),
-          data: {
-            reason: options.reason,
-            fallback: "display_to_headless",
-          },
-        });
         throw fallbackError;
       }
     }
@@ -1443,13 +1358,9 @@ export class CrawlExecutionService {
   }
 
   private async safeCreateTaskLog(
-    payload: Record<string, unknown>,
+    payload: Parameters<typeof writeTaskLogBestEffort>[0],
   ): Promise<void> {
-    try {
-      await TaskLogModel.create(payload);
-    } catch (error) {
-      logger.warn({ error, payload }, "Failed to persist task log");
-    }
+    await writeTaskLogBestEffort(payload);
   }
 
   private isEmptyMarkdownFailure(failure: CrawlFailureDetail): boolean {
@@ -1519,33 +1430,18 @@ export class CrawlExecutionService {
       options.options,
       options.task.targetUrl,
     );
-    const warmedRetryOptions = await this.runAntiBotWarmupIfNeeded({
-      task: options.task,
-      taskId: options.taskId,
-      orgId: options.orgId,
-      options: baseRetryOptions,
-      requestTimeoutMs: options.requestTimeoutMs,
-    });
+    const { options: warmedRetryOptions, summary: warmupSummary } =
+      await this.runAntiBotWarmupIfNeeded({
+        task: options.task,
+        taskId: options.taskId,
+        orgId: options.orgId,
+        options: baseRetryOptions,
+        requestTimeoutMs: options.requestTimeoutMs,
+      });
 
     const retryCandidates: CrawlRetryCandidate[] = [];
+    const retryAttempts: Array<Record<string, unknown>> = [];
     const maxAttempts = this.antiBotRetryAttempts;
-
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: options.taskId,
-      orgId: options.orgId,
-      stage: "anti_bot_retry",
-      status: "processing",
-      message: retryStartMessage,
-      data: {
-        phase: "retry_start",
-        reason: retryStartReason,
-        initialFailures: options.failures.length,
-        initialChallengeFailures: initialChallengeFailureCount,
-        attempts: maxAttempts,
-        ...this.summarizeAntiBotOptions(warmedRetryOptions),
-      },
-    });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const attemptOptions = this.buildAntiBotAttemptOptions(
@@ -1553,21 +1449,6 @@ export class CrawlExecutionService {
         options.task.targetUrl,
         attempt,
       );
-
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: options.taskId,
-        orgId: options.orgId,
-        stage: "anti_bot_retry",
-        status: "processing",
-        message: `Anti-bot retry attempt ${attempt}/${maxAttempts}`,
-        data: {
-          phase: "retry",
-          attempt,
-          maxAttempts,
-          ...this.summarizeAntiBotOptions(attemptOptions),
-        },
-      });
 
       try {
         const retryPayload = this.buildRequestPayload(
@@ -1600,25 +1481,17 @@ export class CrawlExecutionService {
           challengeFailureCount,
         };
         retryCandidates.push(candidate);
-
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: "anti_bot_retry",
-          status: "completed",
-          message: `Anti-bot retry attempt ${attempt}/${maxAttempts} completed`,
-          data: {
-            phase: "retry",
-            attempt,
-            maxAttempts,
-            successes: partition.successes.length,
-            failures: partition.failures.length,
-            lowSignalCandidates: partition.lowSignalCandidates.length,
-            challengeFailures: challengeFailureCount,
-            qualityScore: Number(candidate.qualityScore.toFixed(3)),
-            runId: retryResponse.runId ?? null,
-          },
+        retryAttempts.push({
+          attempt,
+          result: "completed",
+          maxAttempts,
+          successes: partition.successes.length,
+          failures: partition.failures.length,
+          lowSignalCandidates: partition.lowSignalCandidates.length,
+          challengeFailures: challengeFailureCount,
+          qualityScore: Number(candidate.qualityScore.toFixed(3)),
+          runId: retryResponse.runId ?? null,
+          options: this.summarizeAntiBotOptions(attemptOptions),
         });
 
         if (partition.successes.length > 0 && challengeFailureCount === 0) {
@@ -1626,35 +1499,15 @@ export class CrawlExecutionService {
         }
 
         if (attempt < maxAttempts && challengeFailureCount > 0) {
-          const delayMs = this.resolveAntiBotAttemptDelayMs(attempt);
-          await TaskLogModel.create({
-            queue: CRAWL_QUEUE_NAME,
-            jobId: options.taskId,
-            orgId: options.orgId,
-            stage: "anti_bot_retry",
-            status: "processing",
-            message: `Anti-bot challenge persisted; backing off before retry ${attempt + 1}/${maxAttempts}`,
-            data: {
-              phase: "retry_backoff",
-              attempt,
-              nextAttempt: attempt + 1,
-              maxAttempts,
-              delayMs,
-            },
-          });
-          await this.sleep(delayMs);
+          await this.sleep(this.resolveAntiBotAttemptDelayMs(attempt));
         }
       } catch (error) {
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: "anti_bot_retry",
-          status: "failed",
-          message: `Anti-bot retry attempt ${attempt}/${maxAttempts} failed`,
-          error: sanitizeError(error, {
-            redactSensitive: true,
-          }),
+        retryAttempts.push({
+          attempt,
+          result: "failed",
+          maxAttempts,
+          error: this.extractCrawlErrorMessage(error) ?? null,
+          options: this.summarizeAntiBotOptions(attemptOptions),
         });
         if (attempt < maxAttempts) {
           await this.sleep(this.resolveAntiBotAttemptDelayMs(attempt));
@@ -1676,31 +1529,46 @@ export class CrawlExecutionService {
       baselineCandidate,
       ...retryCandidates,
     ]);
-    if (!selected || !selected.fromRetry) {
-      return null;
-    }
-
-    await TaskLogModel.create({
+    const hasCompletedRetryAttempt = retryAttempts.some(
+      (entry) => entry.result === "completed",
+    );
+    await this.safeCreateTaskLog({
       queue: CRAWL_QUEUE_NAME,
       jobId: options.taskId,
       orgId: options.orgId,
       stage: "anti_bot_retry",
-      status: "completed",
-      message: "Selected anti-bot retry candidate",
+      status: hasCompletedRetryAttempt ? "completed" : "failed",
+      message:
+        selected?.fromRetry === true
+          ? "Selected anti-bot retry candidate"
+          : hasCompletedRetryAttempt
+            ? "Anti-bot retry completed; kept baseline crawl response"
+            : retryStartMessage,
       data: {
-        phase: "selection",
-        selectedFromRetry: selected.fromRetry,
-        selectedSuccesses: selected.successes.length,
-        selectedFailures: selected.failures.length,
-        selectedChallengeFailures: selected.challengeFailureCount,
-        selectedQualityScore: Number(selected.qualityScore.toFixed(3)),
+        reason: retryStartReason,
+        initialFailures: options.failures.length,
+        initialChallengeFailures: initialChallengeFailureCount,
+        attempts: maxAttempts,
+        warmup: warmupSummary,
+        selectedFromRetry: selected?.fromRetry === true,
+        selectedSuccesses: selected?.successes.length ?? 0,
+        selectedFailures: selected?.failures.length ?? 0,
+        selectedChallengeFailures: selected?.challengeFailureCount ?? 0,
+        selectedQualityScore: selected
+          ? Number(selected.qualityScore.toFixed(3))
+          : null,
         baselineSuccesses: baselineCandidate.successes.length,
         baselineFailures: baselineCandidate.failures.length,
         baselineChallengeFailures: baselineCandidate.challengeFailureCount,
         baselineQualityScore: Number(baselineCandidate.qualityScore.toFixed(3)),
         retryCandidates: retryCandidates.length,
+        attemptSummaries: retryAttempts,
       },
     });
+
+    if (!selected || !selected.fromRetry) {
+      return null;
+    }
 
     return {
       response: selected.response,
@@ -1801,10 +1669,13 @@ export class CrawlExecutionService {
     orgId: string;
     options: CrawlTaskOptions;
     requestTimeoutMs?: number;
-  }): Promise<CrawlTaskOptions> {
+  }): Promise<{
+    options: CrawlTaskOptions;
+    summary: Record<string, unknown> | null;
+  }> {
     const warmupUrls = this.buildAntiBotWarmupUrls(options.task.targetUrl);
     if (warmupUrls.length === 0) {
-      return options.options;
+      return { options: options.options, summary: null };
     }
 
     const warmupOptions = this.normalizeOptions({
@@ -1813,21 +1684,6 @@ export class CrawlExecutionService {
       waitForScript: undefined,
       waitForSelector: "main",
       pageTypeHint: "list",
-    });
-
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: options.taskId,
-      orgId: options.orgId,
-      stage: "anti_bot_retry",
-      status: "processing",
-      message: "Priming anti-bot session with warmup URLs",
-      data: {
-        phase: "warmup",
-        warmupUrls,
-        count: warmupUrls.length,
-        sessionId: warmupOptions.sessionId ?? null,
-      },
     });
 
     try {
@@ -1850,37 +1706,31 @@ export class CrawlExecutionService {
       const challengeFailures = this.countBotChallengeFailures(
         partition.failures,
       );
-
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: options.taskId,
-        orgId: options.orgId,
-        stage: "anti_bot_retry",
-        status: "completed",
-        message: "Anti-bot warmup completed",
-        data: {
-          phase: "warmup",
+      return {
+        options: options.options,
+        summary: {
+          result: "completed",
+          warmupUrls,
+          count: warmupUrls.length,
+          sessionId: warmupOptions.sessionId ?? null,
           runId: warmupResponse.runId ?? null,
           successes: partition.successes.length,
           failures: partition.failures.length,
           challengeFailures,
         },
-      });
+      };
     } catch (error) {
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: options.taskId,
-        orgId: options.orgId,
-        stage: "anti_bot_retry",
-        status: "failed",
-        message: "Anti-bot warmup failed; continuing with hardened retry",
-        error: sanitizeError(error, {
-          redactSensitive: true,
-        }),
-      });
+      return {
+        options: options.options,
+        summary: {
+          result: "failed",
+          warmupUrls,
+          count: warmupUrls.length,
+          sessionId: warmupOptions.sessionId ?? null,
+          error: this.extractCrawlErrorMessage(error) ?? null,
+        },
+      };
     }
-
-    return options.options;
   }
 
   private resolveAntiBotAttemptDelayMs(attempt: number): number {
@@ -2309,66 +2159,6 @@ export class CrawlExecutionService {
       effectiveLowSignalAssessments.length > 0 &&
       effectiveLowSignalAssessments.length === assessments.length;
 
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: options.taskId,
-      orgId: options.orgId,
-      stage: "expansion",
-      status: "processing",
-      message:
-        "Detected low-signal crawl markdown; evaluating detail expansion candidates",
-      data: {
-        qualityProfile,
-        pageTypeHint,
-        pageKind,
-        forcedByLowSignalSeed: shouldForceExpandFromLowSignalSeed,
-        totalSuccesses: assessments.length,
-        lowSignalResults: effectiveLowSignalAssessments.length,
-        allLowSignal: effectiveAllLowSignal,
-        lowSignalWords: {
-          min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
-          max: maxLowSignalWords,
-          avg: Number.isFinite(meanLowSignalWords)
-            ? Number(meanLowSignalWords.toFixed(1))
-            : 0,
-        },
-        lowSignalLinkDensity: {
-          max: Number(maxLowSignalLinkDensity.toFixed(3)),
-          avg: Number(meanLowSignalLinkDensity.toFixed(3)),
-        },
-        qualitySamples: effectiveLowSignalAssessments
-          .slice(0, 5)
-          .map((entry) => ({
-            url: entry.article.url ?? null,
-            wordCount: entry.quality.wordCount,
-            linkCount: entry.quality.linkCount,
-            linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
-            publishTimeConfidence: Number(
-              (typeof entry.quality.publishTimeConfidence === "number"
-                ? entry.quality.publishTimeConfidence
-                : 0
-              ).toFixed(3),
-            ),
-            publishTimeSource: entry.quality.publishTimeSource ?? "none",
-            mediaDensity: Number(
-              (typeof entry.quality.mediaDensity === "number"
-                ? entry.quality.mediaDensity
-                : 0
-              ).toFixed(4),
-            ),
-            domListRisk: Number(
-              (typeof entry.quality.domListRisk === "number"
-                ? entry.quality.domListRisk
-                : 0
-              ).toFixed(3),
-            ),
-            bulletLines: entry.quality.bulletLines,
-            score: Number(entry.quality.score.toFixed(2)),
-            linkInventory: entry.linkInventory,
-          })),
-      },
-    });
-
     const existingUrls = new Set(
       options.successes
         .map((entry) => this.normalizeComparableUrl(entry.url))
@@ -2558,49 +2348,6 @@ export class CrawlExecutionService {
       sortedPublishSignalPool.map((entry) => entry[0]),
     );
 
-    await TaskLogModel.create({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: options.taskId,
-      orgId: options.orgId,
-      stage: "expansion",
-      status: "processing",
-      message: "Resolved detail expansion policy",
-      data: {
-        qualityProfile,
-        detailExpansion,
-        pageTypeHint,
-        pageKind,
-        primaryCandidatePool: candidateEntriesRaw.length,
-        fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
-        existingUrlSkipped,
-        candidateRejects: candidateDiagnostics,
-        publishConfidenceThreshold: minPublishTimeConfidenceThreshold ?? null,
-        fallbackPublishConfidenceThreshold:
-          fallbackPublishTimeConfidenceThreshold ?? null,
-        publishConfidenceBuckets,
-        headSignalEnrichment: {
-          attempted: publishSignalEnrichment.attempted,
-          succeeded: publishSignalEnrichment.succeeded,
-          failed: publishSignalEnrichment.failed,
-          topK: publishSignalTopK,
-          skipped: publishSignalEnrichment.skipped,
-          configuredTimeoutMs: publishSignalSettings.timeoutMs,
-          configuredConcurrency: publishSignalSettings.concurrency,
-          configuredMaxReadBytes: publishSignalSettings.maxReadBytes,
-          effectiveTimeoutMs: publishSignalEnrichment.effectiveTimeoutMs,
-          effectiveConcurrency: publishSignalEnrichment.effectiveConcurrency,
-          maxReadBytes: publishSignalEnrichment.maxReadBytes,
-          truncatedResponses: publishSignalEnrichment.truncatedResponses,
-          earlyStoppedResponses: publishSignalEnrichment.earlyStoppedResponses,
-          softFailures: publishSignalEnrichment.softFailures,
-          softFailureCount: publishSignalEnrichment.softFailureCount,
-          urlPathFallbackCount,
-          totalSignalCandidates,
-          urlPathFallbackRatio,
-        },
-      },
-    });
-
     const minimumCandidateCount = this.resolveMinimumDetailExpansionCandidates(
       detailExpansion.maxDetailUrls,
       candidateLimit,
@@ -2673,7 +2420,7 @@ export class CrawlExecutionService {
     );
 
     if (candidateUrls.length === 0) {
-      await TaskLogModel.create({
+      await this.safeCreateTaskLog({
         queue: CRAWL_QUEUE_NAME,
         jobId: options.taskId,
         orgId: options.orgId,
@@ -2687,6 +2434,8 @@ export class CrawlExecutionService {
           pageKind,
           detailExpansion,
           allLowSignal: effectiveAllLowSignal,
+          forcedByLowSignalSeed: shouldForceExpandFromLowSignalSeed,
+          totalSuccesses: assessments.length,
           minimumCandidateCount,
           primaryCandidatePool: candidateEntriesRaw.length,
           fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
@@ -2731,7 +2480,40 @@ export class CrawlExecutionService {
               ? Number(meanLowSignalWords.toFixed(1))
               : 0,
           },
-          maxLowSignalLinkDensity: Number(maxLowSignalLinkDensity.toFixed(3)),
+          lowSignalLinkDensity: {
+            max: Number(maxLowSignalLinkDensity.toFixed(3)),
+            avg: Number(meanLowSignalLinkDensity.toFixed(3)),
+          },
+          qualitySamples: effectiveLowSignalAssessments
+            .slice(0, 5)
+            .map((entry) => ({
+              url: entry.article.url ?? null,
+              wordCount: entry.quality.wordCount,
+              linkCount: entry.quality.linkCount,
+              linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+              publishTimeConfidence: Number(
+                (typeof entry.quality.publishTimeConfidence === "number"
+                  ? entry.quality.publishTimeConfidence
+                  : 0
+                ).toFixed(3),
+              ),
+              publishTimeSource: entry.quality.publishTimeSource ?? "none",
+              mediaDensity: Number(
+                (typeof entry.quality.mediaDensity === "number"
+                  ? entry.quality.mediaDensity
+                  : 0
+                ).toFixed(4),
+              ),
+              domListRisk: Number(
+                (typeof entry.quality.domListRisk === "number"
+                  ? entry.quality.domListRisk
+                  : 0
+                ).toFixed(3),
+              ),
+              bulletLines: entry.quality.bulletLines,
+              score: Number(entry.quality.score.toFixed(2)),
+              linkInventory: entry.linkInventory,
+            })),
         },
       });
 
@@ -2772,20 +2554,6 @@ export class CrawlExecutionService {
         continue;
       }
 
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: options.taskId,
-        orgId: options.orgId,
-        stage: "expansion",
-        status: "processing",
-        message: `Detail expansion batch ${index + 1}/${candidateBatches.length} started`,
-        data: {
-          batchIndex: index + 1,
-          batchCount: candidateBatches.length,
-          urls: batchUrls,
-        },
-      });
-
       try {
         const batchRequest: Crawl4aiRequest = {
           url: options.task.targetUrl,
@@ -2809,23 +2577,6 @@ export class CrawlExecutionService {
         if (partition.failures.length > 0) {
           expansionFailures.push(...partition.failures);
         }
-
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: "expansion",
-          status: "completed",
-          message: `Detail expansion batch ${index + 1}/${candidateBatches.length} finished`,
-          data: {
-            batchIndex: index + 1,
-            batchCount: candidateBatches.length,
-            urls: batchUrls,
-            successes: partition.successes.length,
-            failures: partition.failures.length,
-            failureSamples: partition.failures.slice(0, 3),
-          },
-        });
       } catch (error) {
         const errorMessage =
           error instanceof Error && error.message.trim().length > 0
@@ -2838,23 +2589,6 @@ export class CrawlExecutionService {
             retryable: this.isRetryableStatus(undefined, errorMessage),
           });
         }
-
-        await TaskLogModel.create({
-          queue: CRAWL_QUEUE_NAME,
-          jobId: options.taskId,
-          orgId: options.orgId,
-          stage: "expansion",
-          status: "failed",
-          message: `Detail expansion batch ${index + 1}/${candidateBatches.length} failed`,
-          error: sanitizeError(error, {
-            redactSensitive: true,
-          }),
-          data: {
-            batchIndex: index + 1,
-            batchCount: candidateBatches.length,
-            urls: batchUrls,
-          },
-        });
       }
     }
 
@@ -2977,7 +2711,7 @@ export class CrawlExecutionService {
       .slice(0, maxImprovedResults)
       .map((entry) => entry.article);
 
-    await TaskLogModel.create({
+    await this.safeCreateTaskLog({
       queue: CRAWL_QUEUE_NAME,
       jobId: options.taskId,
       orgId: options.orgId,
@@ -2993,6 +2727,50 @@ export class CrawlExecutionService {
         pageKind,
         detailExpansion,
         allLowSignal: effectiveAllLowSignal,
+        forcedByLowSignalSeed: shouldForceExpandFromLowSignalSeed,
+        totalSuccesses: assessments.length,
+        lowSignalResults: effectiveLowSignalAssessments.length,
+        lowSignalWords: {
+          min: Number.isFinite(minLowSignalWords) ? minLowSignalWords : 0,
+          max: maxLowSignalWords,
+          avg: Number.isFinite(meanLowSignalWords)
+            ? Number(meanLowSignalWords.toFixed(1))
+            : 0,
+        },
+        lowSignalLinkDensity: {
+          max: Number(maxLowSignalLinkDensity.toFixed(3)),
+          avg: Number(meanLowSignalLinkDensity.toFixed(3)),
+        },
+        qualitySamples: effectiveLowSignalAssessments
+          .slice(0, 5)
+          .map((entry) => ({
+            url: entry.article.url ?? null,
+            wordCount: entry.quality.wordCount,
+            linkCount: entry.quality.linkCount,
+            linkDensity: Number(entry.quality.linkDensity.toFixed(3)),
+            publishTimeConfidence: Number(
+              (typeof entry.quality.publishTimeConfidence === "number"
+                ? entry.quality.publishTimeConfidence
+                : 0
+              ).toFixed(3),
+            ),
+            publishTimeSource: entry.quality.publishTimeSource ?? "none",
+            mediaDensity: Number(
+              (typeof entry.quality.mediaDensity === "number"
+                ? entry.quality.mediaDensity
+                : 0
+              ).toFixed(4),
+            ),
+            domListRisk: Number(
+              (typeof entry.quality.domListRisk === "number"
+                ? entry.quality.domListRisk
+                : 0
+              ).toFixed(3),
+            ),
+            bulletLines: entry.quality.bulletLines,
+            score: Number(entry.quality.score.toFixed(2)),
+            linkInventory: entry.linkInventory,
+          })),
         minimumCandidateCount,
         primaryCandidatePool: candidateEntriesRaw.length,
         fallbackCandidatePool: fallbackCandidateEntriesRaw.length,
@@ -3030,6 +2808,7 @@ export class CrawlExecutionService {
         },
         candidateCount: candidateUrls.length,
         batchCount: candidateBatches.length,
+        runId: expansionRunId,
         expansionSuccesses: expansionSuccesses.length,
         expansionFailures: expansionFailures.length,
         improvedSuccesses: improvedSuccesses.length,
@@ -4963,30 +4742,23 @@ export class CrawlExecutionService {
       "Failed to send crawl notification after retries",
     );
 
-    try {
-      await TaskLogModel.create({
-        queue: CRAWL_QUEUE_NAME,
-        jobId: task.id,
-        orgId: task.orgId,
-        stage: "notify",
-        status: "failed",
-        message: "crawl notification delivery failed",
-        data: {
-          taskId: task.id,
-          status,
-          notificationType: payload.type,
-        },
-        error: {
-          message:
-            lastError instanceof Error ? lastError.message : String(lastError),
-        },
-      });
-    } catch (error) {
-      logger.error(
-        { taskId: task.id, error },
-        "Failed to persist crawl notification failure log",
-      );
-    }
+    await this.safeCreateTaskLog({
+      queue: CRAWL_QUEUE_NAME,
+      jobId: task.id,
+      orgId: task.orgId,
+      stage: "notify",
+      status: "failed",
+      message: "crawl notification delivery failed",
+      data: {
+        taskId: task.id,
+        status,
+        notificationType: payload.type,
+      },
+      error: {
+        message:
+          lastError instanceof Error ? lastError.message : String(lastError),
+      },
+    });
   }
 
   private fromJsonArray(value: Prisma.JsonValue | null): string[] {
@@ -7462,6 +7234,20 @@ export class CrawlExecutionService {
       }
     }
     return undefined;
+  }
+
+  private async syncSourceQueueCounts(orgId: string, sourceId?: string | null) {
+    if (!sourceId || !this.newsSourceOpsSnapshots) {
+      return;
+    }
+    try {
+      await this.newsSourceOpsSnapshots.syncQueueCounts(orgId, sourceId);
+    } catch (error) {
+      logger.warn(
+        { error, orgId, sourceId },
+        "Failed to sync news source queue counts",
+      );
+    }
   }
 
   private pickString(

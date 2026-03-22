@@ -1,8 +1,8 @@
 import {
   CrawlResultContentModel,
+  ItemReadModelModel,
   ProcessedItemModel,
   RawItemModel,
-  TaskLogModel,
   type ProcessedItemDocument,
 } from "@modular/mongo";
 import { createLogger, parseDateTime } from "@modular/utils";
@@ -26,12 +26,15 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";
 import {
   buildCanonicalUrlFingerprint,
   resolveQueryParamAllowlist,
 } from "../crawl/url-fingerprint";
+import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 import { VectorClientService } from "../vector/vector-client.service";
+import { buildItemReadModelPatch } from "../items/item-read-model.utils";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsClassifierService } from "./news-classifier.service";
@@ -53,10 +56,7 @@ import {
   NormalizedNewsPayload,
   NormalizedNewsPayloadSchema,
 } from "./news-pipeline.schema";
-import {
-  PipelineJobContext,
-  RawPipelineItem,
-} from "./news-pipeline.types";
+import { PipelineJobContext, RawPipelineItem } from "./news-pipeline.types";
 import { NewsPromptConfigService } from "./news-prompt-config.service";
 import { NewsPromptBuilder } from "./news-prompt.builder";
 
@@ -122,20 +122,23 @@ const NullableFiniteNumberSchema = z.preprocess(
   z.number().finite().nullable(),
 );
 
-const OptionalNumberArraySchema = z.preprocess(
-  (value) => (Array.isArray(value) ? value : undefined),
-  z.array(z.number().finite()),
-).optional();
+const OptionalNumberArraySchema = z
+  .preprocess(
+    (value) => (Array.isArray(value) ? value : undefined),
+    z.array(z.number().finite()),
+  )
+  .optional();
 
-const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata, z.ZodTypeDef, unknown> = z.object({
-  model: NullableStringSchema,
-  promptVersion: NullableStringSchema,
-  promptTokens: NullableFiniteNumberSchema,
-  completionTokens: NullableFiniteNumberSchema,
-  totalTokens: NullableFiniteNumberSchema,
-  costUsd: NullableFiniteNumberSchema,
-  latencyMs: NullableFiniteNumberSchema,
-});
+const LlmCallMetadataSchema: z.ZodType<LlmCallMetadata, z.ZodTypeDef, unknown> =
+  z.object({
+    model: NullableStringSchema,
+    promptVersion: NullableStringSchema,
+    promptTokens: NullableFiniteNumberSchema,
+    completionTokens: NullableFiniteNumberSchema,
+    totalTokens: NullableFiniteNumberSchema,
+    costUsd: NullableFiniteNumberSchema,
+    latencyMs: NullableFiniteNumberSchema,
+  });
 
 const ProcessedItemOutboxPayloadSchema: z.ZodType<
   ProcessedItemOutboxPayload,
@@ -210,10 +213,16 @@ export class NewsPipelineService implements OnModuleDestroy {
   private readonly outboxStaleLockMs = 5 * 60_000;
   private readonly outboxBatchSize = 10;
   private readonly outboxEventEmitter = new EventEmitter();
-  private outboxDeliveryQueue = new Map<string, ProcessedItemOutboxPayload | null>();
+  private outboxDeliveryQueue = new Map<
+    string,
+    ProcessedItemOutboxPayload | null
+  >();
   private outboxDeliveryScheduled = false;
   private outboxDeliveryInFlight = false;
-  private readonly outboxRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly outboxRetryTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly crawlActorByOrgId = new Map<string, string>();
 
   constructor(
@@ -224,6 +233,8 @@ export class NewsPipelineService implements OnModuleDestroy {
     private readonly dedupeSettings: NewsDedupeSettingsService,
     private readonly prisma: PrismaService,
     private readonly crawlExecution: CrawlExecutionService,
+    @Optional()
+    private readonly newsSourceOpsSnapshots?: NewsSourceOpsSnapshotService,
     @Optional() private readonly vectorClient?: VectorClientService,
     @Optional() private readonly classifier?: NewsClassifierService,
   ) {
@@ -258,18 +269,22 @@ export class NewsPipelineService implements OnModuleDestroy {
       }
     >();
     for (const input of inputs) {
-      const processedItemId = this.normalizeProcessedItemRef(input.processedItemId);
+      const processedItemId = this.normalizeProcessedItemRef(
+        input.processedItemId,
+      );
       if (!processedItemId || contextByProcessedItemId.has(processedItemId)) {
         continue;
       }
       contextByProcessedItemId.set(processedItemId, {
         processedItemId,
         sourceUrl:
-          typeof input.sourceUrl === "string" && input.sourceUrl.trim().length > 0
+          typeof input.sourceUrl === "string" &&
+          input.sourceUrl.trim().length > 0
             ? input.sourceUrl.trim()
             : null,
         sourceLabel:
-          typeof input.sourceLabel === "string" && input.sourceLabel.trim().length > 0
+          typeof input.sourceLabel === "string" &&
+          input.sourceLabel.trim().length > 0
             ? input.sourceLabel.trim()
             : null,
         sourceId:
@@ -324,8 +339,12 @@ export class NewsPipelineService implements OnModuleDestroy {
         continue;
       }
 
-      const hasContentType = Boolean(normalizeNewsContentType(cleaned.content_type));
-      const hasCategoryPath = this.normalizeStoredCategoryPath(cleaned.category_path);
+      const hasContentType = Boolean(
+        normalizeNewsContentType(cleaned.content_type),
+      );
+      const hasCategoryPath = this.normalizeStoredCategoryPath(
+        cleaned.category_path,
+      );
       const hasCategoryMethod = this.normalizeStoredCategoryMethod(
         cleaned.category_method,
       );
@@ -345,11 +364,15 @@ export class NewsPipelineService implements OnModuleDestroy {
         context?.sourceUrl ?? null,
         sourceLabel,
       );
-      const classification = await this.classifier.classify(orgId, resolvedCleaned, {
-        sourceId: context?.sourceId ?? null,
-        sourceUrl: context?.sourceUrl ?? null,
-        sourceLabel,
-      });
+      const classification = await this.classifier.classify(
+        orgId,
+        resolvedCleaned,
+        {
+          sourceId: context?.sourceId ?? null,
+          sourceUrl: context?.sourceUrl ?? null,
+          sourceLabel,
+        },
+      );
       const updated = this.classifier.applyToCleanedNews(
         resolvedCleaned,
         classification,
@@ -365,14 +388,19 @@ export class NewsPipelineService implements OnModuleDestroy {
     return { updatedCount, skippedCount };
   }
 
-  private buildCrawlTaskOptions(payload: NormalizedNewsPayload): Record<string, unknown> {
+  private buildCrawlTaskOptions(
+    payload: NormalizedNewsPayload,
+  ): Record<string, unknown> {
     const cfg = this.configService.config.crawl4ai;
     const options = {
       ...cfg.crawlerDefaults,
       cleanMarkdown: cfg.cleanMarkdown ?? cfg.crawlerDefaults.cleanMarkdown,
       markdownOptions: cfg.markdown ?? cfg.crawlerDefaults.markdownOptions,
       ...payload.crawlOptions,
-      userAgent: payload.crawlOptions?.userAgent ?? cfg.crawlerDefaults.userAgent ?? cfg.userAgent,
+      userAgent:
+        payload.crawlOptions?.userAgent ??
+        cfg.crawlerDefaults.userAgent ??
+        cfg.userAgent,
     };
     assertNoCrawl4aiLlmOptions(options, "newsPipeline.crawlOptions");
     return options;
@@ -390,7 +418,8 @@ export class NewsPipelineService implements OnModuleDestroy {
       orderBy: { createdAt: "asc" },
     });
 
-    const userId = typeof membership?.userId === "string" ? membership.userId : "";
+    const userId =
+      typeof membership?.userId === "string" ? membership.userId : "";
     if (!userId) {
       return null;
     }
@@ -451,9 +480,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     );
     const crawlTaskConfig: Record<string, unknown> = {
       ...crawlOptions,
-      ...(urlQueryParamAllowlist.length > 0
-        ? { urlQueryParamAllowlist }
-        : {}),
+      ...(urlQueryParamAllowlist.length > 0 ? { urlQueryParamAllowlist } : {}),
       ...(typeof orgContentDedupeWindowHours === "number"
         ? { orgContentDedupeWindowHours }
         : {}),
@@ -567,7 +594,11 @@ export class NewsPipelineService implements OnModuleDestroy {
     preferredResultId: string;
     preferredSourceUrl: string;
   }): Promise<string> {
-    const findMany = (this.prisma.crawlResult as { findMany?: (args: unknown) => Promise<unknown> }).findMany;
+    const findMany = (
+      this.prisma.crawlResult as {
+        findMany?: (args: unknown) => Promise<unknown>;
+      }
+    ).findMany;
     if (typeof findMany !== "function") {
       return options.preferredResultId;
     }
@@ -582,19 +613,24 @@ export class NewsPipelineService implements OnModuleDestroy {
       select: {
         id: true,
         sourceUrl: true,
-        markdownRef: true,
       },
     })) as
       | {
           id?: unknown;
           sourceUrl?: unknown;
-          markdownRef?: unknown;
         }[]
       | null;
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return options.preferredResultId;
     }
+
+    const contentByResultId =
+      await this.loadPipelineCrawlResultCandidateContent(
+        rows
+          .map((row) => (typeof row.id === "string" ? row.id : ""))
+          .filter((candidateId) => candidateId.length > 0),
+      );
 
     let bestId = options.preferredResultId;
     let bestScore = Number.NEGATIVE_INFINITY;
@@ -604,15 +640,12 @@ export class NewsPipelineService implements OnModuleDestroy {
       if (!candidateId) {
         continue;
       }
-      const candidateSourceUrl = typeof row.sourceUrl === "string" ? row.sourceUrl : "";
-      const candidateMarkdownRef =
-        typeof row.markdownRef === "string" && row.markdownRef.trim().length > 0
-          ? row.markdownRef.trim()
-          : "";
+      const candidateSourceUrl =
+        typeof row.sourceUrl === "string" ? row.sourceUrl : "";
 
       const score = await this.scorePipelineCrawlResultCandidate({
         sourceUrl: candidateSourceUrl,
-        markdownRef: candidateMarkdownRef,
+        contentDoc: contentByResultId.get(candidateId),
         preferredSourceUrl: options.preferredSourceUrl,
       });
 
@@ -623,7 +656,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     if (bestId !== options.preferredResultId) {
-      await TaskLogModel.create({
+      await writeTaskLogBestEffort({
         queue: "news_pipeline",
         jobId: options.crawlTaskId,
         orgId: options.orgId,
@@ -641,21 +674,58 @@ export class NewsPipelineService implements OnModuleDestroy {
     return bestId;
   }
 
+  private async loadPipelineCrawlResultCandidateContent(resultIds: string[]) {
+    const normalizedIds = [
+      ...new Set(resultIds.map((resultId) => resultId.trim()).filter(Boolean)),
+    ];
+    if (normalizedIds.length === 0) {
+      return new Map<string, Record<string, unknown>>();
+    }
+
+    const docs = await CrawlResultContentModel.find(
+      { resultId: { $in: normalizedIds } },
+      {
+        resultId: 1,
+        markdown: 1,
+        markdownWithCitations: 1,
+        rawMarkdown: 1,
+        fitMarkdown: 1,
+      },
+    ).lean();
+
+    const byResultId = new Map<string, Record<string, unknown>>();
+    if (!Array.isArray(docs)) {
+      return byResultId;
+    }
+
+    for (const doc of docs) {
+      if (!doc || typeof doc !== "object") {
+        continue;
+      }
+      const record = doc as Record<string, unknown>;
+      const resultId =
+        typeof record.resultId === "string" ? record.resultId.trim() : "";
+      if (!resultId) {
+        continue;
+      }
+      byResultId.set(resultId, record);
+    }
+
+    return byResultId;
+  }
+
   private async scorePipelineCrawlResultCandidate(options: {
     sourceUrl: string;
-    markdownRef: string;
+    contentDoc?: Record<string, unknown>;
     preferredSourceUrl: string;
   }): Promise<number> {
-    if (!options.markdownRef) {
+    if (!options.contentDoc) {
       return Number.NEGATIVE_INFINITY;
     }
 
-    const doc = await CrawlResultContentModel.findById(options.markdownRef).lean();
-    if (!doc || typeof doc !== "object") {
-      return Number.NEGATIVE_INFINITY;
-    }
-
-    const selectedMarkdown = this.selectBestMarkdownFromContentDoc(doc as Record<string, unknown>);
+    const selectedMarkdown = this.selectBestMarkdownFromContentDoc(
+      options.contentDoc,
+    );
     if (!selectedMarkdown) {
       return Number.NEGATIVE_INFINITY;
     }
@@ -665,7 +735,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       return Number.NEGATIVE_INFINITY;
     }
 
-    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const words = normalized
+      .split(/\s+/)
+      .filter((entry) => entry.length > 0).length;
     const paragraphs = normalized
       .split(/\n\s*\n/g)
       .map((entry) => entry.trim())
@@ -716,13 +788,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       "normalize",
       async () => this.normalizePayload(raw.payload),
       {
-        onProcessingData: () => ({
-          rawItemId: raw.id,
-        }),
-        onSuccessData: (normalized) => ({
-          url: normalized.url,
-          forceRefresh: normalized.forceRefresh,
-        }),
         onErrorData: () => ({
           rawItemId: raw.id,
         }),
@@ -734,15 +799,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       "crawl",
       async () => this.fetchArticle(job, payload),
       {
-        onProcessingData: () => ({
-          url: payload.url,
-          forceRefresh: payload.forceRefresh,
-        }),
-        onSuccessData: (fetched) => ({
-          url: fetched.sourceUrl,
-          fromCache: fetched.fromCache,
-          runId: fetched.runId,
-        }),
         onErrorData: () => ({
           url: payload.url,
         }),
@@ -761,16 +817,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       "llm",
       async () => this.cleanArticle(payload, article, job),
       {
-        onProcessingData: () => ({
-          url: payload.url,
-          runId: article.runId,
-        }),
-        onSuccessData: ({ llm }) => ({
-          model: llm.model,
-          totalTokens: llm.totalTokens,
-          costUsd: llm.costUsd,
-          latencyMs: llm.latencyMs,
-        }),
         onErrorData: () => ({
           url: payload.url,
           runId: article.runId,
@@ -793,27 +839,9 @@ export class NewsPipelineService implements OnModuleDestroy {
                   article.sourceUrl.trim().length > 0
                     ? article.sourceUrl.trim()
                     : payload.url) ?? null,
-                sourceLabel:
-                  cleaned.source ??
-                  payload.sourceName ??
-                  null,
+                sourceLabel: cleaned.source ?? payload.sourceName ?? null,
               }),
             {
-              onProcessingData: () => ({
-                itemMetaId: job.itemMetaId,
-                taxonomyEnabled: true,
-              }),
-              onSuccessData: (result) => ({
-                category: result.legacyCategory ?? undefined,
-                categoryPath: result.categoryPath ?? undefined,
-                confidence: result.confidence ?? undefined,
-                method: result.method,
-                taxonomyVersion: result.metrics.taxonomyVersion,
-                llmLatencyMs: result.metrics.llmLatencyMs ?? undefined,
-                embeddingLatencyMs: result.metrics.embeddingLatencyMs ?? undefined,
-                rerankLatencyMs: result.metrics.rerankLatencyMs ?? undefined,
-                candidateCount: result.metrics.candidateCount,
-              }),
               onErrorData: () => ({
                 itemMetaId: job.itemMetaId,
               }),
@@ -822,28 +850,13 @@ export class NewsPipelineService implements OnModuleDestroy {
         )
       : cleaned;
 
-    const dedupe = await this.runStage(
-      job,
-      "dedupe",
-      async () =>
-        this.evaluateSummaryDedupe({
-          job,
-          payload,
-          cleaned: cleanedWithClassification,
-          contentDuplicateOf,
-        }),
-      {
-        onProcessingData: () => ({
-          itemMetaId: job.itemMetaId,
-          summaryLength: cleanedWithClassification.summary?.length ?? 0,
-        }),
-        onSuccessData: (result) => ({
-          duplicateOf: result.duplicateOf ?? undefined,
-          similarity: result.duplicateSimilarity ?? undefined,
-          embeddingModel: result.summaryEmbeddingModel ?? undefined,
-          threshold: result.thresholdUsed ?? undefined,
-        }),
-      },
+    const dedupe = await this.runStage(job, "dedupe", async () =>
+      this.evaluateSummaryDedupe({
+        job,
+        payload,
+        cleaned: cleanedWithClassification,
+        contentDuplicateOf,
+      }),
     );
 
     const persistResult = await this.runStage(
@@ -867,14 +880,6 @@ export class NewsPipelineService implements OnModuleDestroy {
           duplicateSimilarity: dedupe.duplicateSimilarity ?? undefined,
         }),
       {
-        onProcessingData: () => ({
-          rawItemId: raw.id,
-          itemMetaId: job.itemMetaId,
-        }),
-        onSuccessData: (result) => ({
-          processedId: result.processedItem._id.toString(),
-          outboxId: result.outboxId,
-        }),
         onErrorData: () => ({
           rawItemId: raw.id,
           itemMetaId: job.itemMetaId,
@@ -909,10 +914,11 @@ export class NewsPipelineService implements OnModuleDestroy {
       options.processedItemId && Types.ObjectId.isValid(options.processedItemId)
         ? options.processedItemId
         : new Types.ObjectId().toHexString();
-    const crawlPublishedAt = this.parseDate(options.article.publishedAt)?.toISOString() ?? null;
+    const crawlPublishedAt =
+      this.parseDate(options.article.publishedAt)?.toISOString() ?? null;
     const cleaned: CleanedNews = {
       ...options.cleaned,
-      published_at: options.cleaned.published_at ?? crawlPublishedAt
+      published_at: options.cleaned.published_at ?? crawlPublishedAt,
     };
     const outboxPayload = this.buildProcessedItemOutboxPayload({
       processedItemId,
@@ -951,7 +957,7 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   private async fetchArticle(
     job: PipelineJobContext,
-    payload: NormalizedNewsPayload
+    payload: NormalizedNewsPayload,
   ): Promise<CrawledArticle & { fromCache: boolean }> {
     const prefetchedMarkdown = payload.prefetchedArticle?.markdown?.trim();
     if (prefetchedMarkdown) {
@@ -999,7 +1005,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       const crawlResultId = this.extractCrawlResultId(payload);
       if (crawlResultId) {
         try {
-          const stored = await this.fetchStoredCrawlResult(job.orgId, crawlResultId);
+          const stored = await this.fetchStoredCrawlResult(
+            job.orgId,
+            crawlResultId,
+          );
           return this.expandListLikeArticleIfNeeded({
             job,
             payload,
@@ -1014,7 +1023,8 @@ export class NewsPipelineService implements OnModuleDestroy {
         }
       }
 
-      const cacheTtlSeconds = this.configService.config.pipeline.cacheTtlSeconds;
+      const cacheTtlSeconds =
+        this.configService.config.pipeline.cacheTtlSeconds;
       const since = new Date(Date.now() - cacheTtlSeconds * 1000);
       try {
         const recentResultId = await this.findRecentStoredCrawlResultId({
@@ -1024,7 +1034,10 @@ export class NewsPipelineService implements OnModuleDestroy {
           queryParamAllowlist,
         });
         if (recentResultId) {
-          const stored = await this.fetchStoredCrawlResult(job.orgId, recentResultId);
+          const stored = await this.fetchStoredCrawlResult(
+            job.orgId,
+            recentResultId,
+          );
           payload.metadata.crawlResultId = recentResultId;
           return this.expandListLikeArticleIfNeeded({
             job,
@@ -1047,7 +1060,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       payload,
     });
 
-    const stored = await this.fetchStoredCrawlResult(job.orgId, created.crawlResultId);
+    const stored = await this.fetchStoredCrawlResult(
+      job.orgId,
+      created.crawlResultId,
+    );
     payload.metadata.crawlResultId = created.crawlResultId;
     payload.metadata.crawlTaskId = created.crawlTaskId;
     return this.expandListLikeArticleIfNeeded({
@@ -1057,7 +1073,6 @@ export class NewsPipelineService implements OnModuleDestroy {
       fromCache: false,
     });
   }
-
 
   private async expandListLikeArticleIfNeeded(options: {
     job: PipelineJobContext;
@@ -1092,11 +1107,18 @@ export class NewsPipelineService implements OnModuleDestroy {
     job: PipelineJobContext;
     payload: NormalizedNewsPayload;
     article: CrawledArticle;
-  }): Promise<{ article: CrawledArticle; crawlResultId: string; crawlTaskId: string } | null> {
-    const baseQuality = this.assessPipelineMarkdownQuality(this.buildPipelineQualityMarkdown(options.article));
+  }): Promise<{
+    article: CrawledArticle;
+    crawlResultId: string;
+    crawlTaskId: string;
+  } | null> {
+    const baseQuality = this.assessPipelineMarkdownQuality(
+      this.buildPipelineQualityMarkdown(options.article),
+    );
     const shouldExpand =
       !baseQuality.isChallenge &&
-      (baseQuality.isListLike || (baseQuality.linkCount >= 12 && baseQuality.words < 360));
+      (baseQuality.isListLike ||
+        (baseQuality.linkCount >= 12 && baseQuality.words < 360));
 
     if (!shouldExpand) {
       return null;
@@ -1106,7 +1128,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     if (candidates.length === 0) {
       if (baseQuality.isListLike && baseQuality.words < 260) {
         throw new Error(
-          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and no detail candidate URLs were extracted`
+          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and no detail candidate URLs were extracted`,
         );
       }
       return null;
@@ -1129,13 +1151,17 @@ export class NewsPipelineService implements OnModuleDestroy {
           url: candidateUrl,
           payload: options.payload,
         });
-        const stored = await this.fetchStoredCrawlResult(options.job.orgId, created.crawlResultId);
+        const stored = await this.fetchStoredCrawlResult(
+          options.job.orgId,
+          created.crawlResultId,
+        );
         const quality = this.assessPipelineMarkdownQuality(stored.markdown);
         if (quality.isChallenge) {
           continue;
         }
 
-        const passesMinimum = quality.words >= Math.max(baseQuality.words + 80, 160);
+        const passesMinimum =
+          quality.words >= Math.max(baseQuality.words + 80, 160);
         if (!passesMinimum) {
           continue;
         }
@@ -1160,14 +1186,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     if (!best) {
       if (baseQuality.isListLike && baseQuality.words < 260) {
         throw new Error(
-          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and detail crawling failed for all candidates`
+          `crawl markdown is list-like and low-signal (words=${baseQuality.words}, links=${baseQuality.linkCount}), and detail crawling failed for all candidates`,
         );
       }
       return null;
     }
 
     const significantImprovement =
-      best.score >= baseQuality.score + 220 || best.words >= baseQuality.words + 120;
+      best.score >= baseQuality.score + 220 ||
+      best.words >= baseQuality.words + 120;
 
     if (!significantImprovement) {
       return null;
@@ -1187,7 +1214,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       article.rawMarkdown,
       article.fitMarkdown,
     ]
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      )
       .map((entry) => entry.trim());
 
     if (candidates.length === 0) {
@@ -1225,7 +1255,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       };
     }
 
-    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const words = normalized
+      .split(/\s+/)
+      .filter((entry) => entry.length > 0).length;
     const paragraphs = normalized
       .split(/\n\s*\n/g)
       .map((entry) => entry.trim())
@@ -1235,7 +1267,12 @@ export class NewsPipelineService implements OnModuleDestroy {
     const bulletLines = normalized
       .split(/\n/g)
       .map((entry) => entry.trim())
-      .filter((entry) => entry.startsWith('- ') || entry.startsWith('* ') || entry.startsWith('• ')).length;
+      .filter(
+        (entry) =>
+          entry.startsWith("- ") ||
+          entry.startsWith("* ") ||
+          entry.startsWith("• "),
+      ).length;
 
     const isChallenge = this.isLikelyBotChallengeMarkdown(normalized);
     const linkDensity = words > 0 ? linkCount / words : linkCount;
@@ -1271,7 +1308,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       article.markdown,
       article.fitMarkdown,
     ]
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      )
       .join("\n");
 
     if (!fragments) {
@@ -1284,17 +1324,23 @@ export class NewsPipelineService implements OnModuleDestroy {
     seedUrls.push(...absoluteMatches);
 
     const inlineMarkdownLinks = Array.from(
-      fragments.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)
+      fragments.matchAll(/\[[^\]]+\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g),
     )
       .map((match) => match[1])
-      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+      .filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      );
     seedUrls.push(...inlineMarkdownLinks);
 
     const referenceDefinitions = Array.from(
-      fragments.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm)
+      fragments.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm),
     )
       .map((match) => match[1])
-      .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+      .filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      );
     seedUrls.push(...referenceDefinitions);
 
     const baseUrl = article.sourceUrl;
@@ -1354,7 +1400,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       }
 
       const normalizedPath = parsed.pathname.replace(/\/+$/, "");
-      const segments = normalizedPath.split("/").filter((entry) => entry.length > 0);
+      const segments = normalizedPath
+        .split("/")
+        .filter((entry) => entry.length > 0);
       if (segments.length < 2) {
         return false;
       }
@@ -1369,11 +1417,19 @@ export class NewsPipelineService implements OnModuleDestroy {
         return true;
       }
 
-      if (segments.some((segment) => segment === "article" || segment === "articles")) {
+      if (
+        segments.some(
+          (segment) => segment === "article" || segment === "articles",
+        )
+      ) {
         return true;
       }
 
-      if (lastSegment.length >= 24 && lastSegment.includes("-") && segments.length >= 3) {
+      if (
+        lastSegment.length >= 24 &&
+        lastSegment.includes("-") &&
+        segments.length >= 3
+      ) {
         return true;
       }
 
@@ -1388,11 +1444,18 @@ export class NewsPipelineService implements OnModuleDestroy {
         "sports",
         "news",
       ]);
-      if (segments.length <= 2 && likelySectionTail.has(lastSegment.toLowerCase())) {
+      if (
+        segments.length <= 2 &&
+        likelySectionTail.has(lastSegment.toLowerCase())
+      ) {
         return false;
       }
 
-      if (segments.length >= 4 && lastSegment.length >= 14 && /[a-z0-9]-[a-z0-9]/i.test(lastSegment)) {
+      if (
+        segments.length >= 4 &&
+        lastSegment.length >= 14 &&
+        /[a-z0-9]-[a-z0-9]/i.test(lastSegment)
+      ) {
         return true;
       }
 
@@ -1404,15 +1467,23 @@ export class NewsPipelineService implements OnModuleDestroy {
 
   private extractCrawlResultId(payload: NormalizedNewsPayload): string | null {
     const metadata =
-      payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata)
+      payload.metadata &&
+      typeof payload.metadata === "object" &&
+      !Array.isArray(payload.metadata)
         ? (payload.metadata as Record<string, unknown>)
         : null;
-    const raw = metadata && typeof metadata.crawlResultId === "string" ? metadata.crawlResultId : "";
+    const raw =
+      metadata && typeof metadata.crawlResultId === "string"
+        ? metadata.crawlResultId
+        : "";
     const trimmed = raw.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private async fetchStoredCrawlResult(orgId: string, crawlResultId: string): Promise<CrawledArticle> {
+  private async fetchStoredCrawlResult(
+    orgId: string,
+    crawlResultId: string,
+  ): Promise<CrawledArticle> {
     const crawlResult = await this.prisma.crawlResult.findFirst({
       where: {
         id: crawlResultId,
@@ -1433,7 +1504,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const markdownRef =
-      typeof crawlResult.markdownRef === "string" ? crawlResult.markdownRef.trim() : "";
+      typeof crawlResult.markdownRef === "string"
+        ? crawlResult.markdownRef.trim()
+        : "";
     if (!markdownRef) {
       throw new Error("crawl result content reference missing");
     }
@@ -1450,11 +1523,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const mysqlMetadata =
-      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
+      crawlResult.metadata &&
+      typeof crawlResult.metadata === "object" &&
+      !Array.isArray(crawlResult.metadata)
         ? (crawlResult.metadata as Record<string, unknown>)
         : {};
     const mongoMetadata =
-      docRecord.metadata && typeof docRecord.metadata === "object" && !Array.isArray(docRecord.metadata)
+      docRecord.metadata &&
+      typeof docRecord.metadata === "object" &&
+      !Array.isArray(docRecord.metadata)
         ? ((docRecord.metadata as Record<string, unknown>) ?? {})
         : {};
 
@@ -1465,24 +1542,31 @@ export class NewsPipelineService implements OnModuleDestroy {
     };
 
     const contentHash =
-      typeof crawlResult.contentHash === "string" && crawlResult.contentHash.length > 0
+      typeof crawlResult.contentHash === "string" &&
+      crawlResult.contentHash.length > 0
         ? crawlResult.contentHash
         : this.hashContent(markdown);
 
     const markdownWithCitations = this.normalizeMarkdownCandidate(
-      this.readMarkdownField(docRecord, ["markdownWithCitations", "markdown_with_citations"])
+      this.readMarkdownField(docRecord, [
+        "markdownWithCitations",
+        "markdown_with_citations",
+      ]),
     );
 
     const rawMarkdown = this.normalizeMarkdownCandidate(
-      this.readMarkdownField(docRecord, ["rawMarkdown", "raw_markdown"])
+      this.readMarkdownField(docRecord, ["rawMarkdown", "raw_markdown"]),
     );
 
     const fitMarkdown = this.normalizeMarkdownCandidate(
-      this.readMarkdownField(docRecord, ["fitMarkdown", "fit_markdown"])
+      this.readMarkdownField(docRecord, ["fitMarkdown", "fit_markdown"]),
     );
 
     const referencesMarkdown = this.normalizeMarkdownCandidate(
-      this.readMarkdownField(docRecord, ["referencesMarkdown", "references_markdown"])
+      this.readMarkdownField(docRecord, [
+        "referencesMarkdown",
+        "references_markdown",
+      ]),
     );
 
     const crawlRunId =
@@ -1490,7 +1574,9 @@ export class NewsPipelineService implements OnModuleDestroy {
         ? (docRecord.crawlRunId as string)
         : null;
 
-    const fetchedAt = crawlResult.fetchedAt ? crawlResult.fetchedAt.toISOString() : new Date().toISOString();
+    const fetchedAt = crawlResult.fetchedAt
+      ? crawlResult.fetchedAt.toISOString()
+      : new Date().toISOString();
 
     return {
       sourceUrl: crawlResult.sourceUrl,
@@ -1507,7 +1593,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     };
   }
 
-  private readMarkdownField(record: Record<string, unknown>, keys: string[]): string | undefined {
+  private readMarkdownField(
+    record: Record<string, unknown>,
+    keys: string[],
+  ): string | undefined {
     for (const key of keys) {
       const value = record[key];
       if (typeof value === "string") {
@@ -1517,7 +1606,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     return undefined;
   }
 
-  private normalizeMarkdownCandidate(value: string | undefined): string | undefined {
+  private normalizeMarkdownCandidate(
+    value: string | undefined,
+  ): string | undefined {
     if (typeof value !== "string") {
       return undefined;
     }
@@ -1525,13 +1616,24 @@ export class NewsPipelineService implements OnModuleDestroy {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
-  private selectBestMarkdownFromContentDoc(record: Record<string, unknown>): string | undefined {
-    const primary = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["markdown"]));
-    const citations = this.normalizeMarkdownCandidate(
-      this.readMarkdownField(record, ["markdownWithCitations", "markdown_with_citations"])
+  private selectBestMarkdownFromContentDoc(
+    record: Record<string, unknown>,
+  ): string | undefined {
+    const primary = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(record, ["markdown"]),
     );
-    const raw = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["rawMarkdown", "raw_markdown"]));
-    const fit = this.normalizeMarkdownCandidate(this.readMarkdownField(record, ["fitMarkdown", "fit_markdown"]));
+    const citations = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(record, [
+        "markdownWithCitations",
+        "markdown_with_citations",
+      ]),
+    );
+    const raw = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(record, ["rawMarkdown", "raw_markdown"]),
+    );
+    const fit = this.normalizeMarkdownCandidate(
+      this.readMarkdownField(record, ["fitMarkdown", "fit_markdown"]),
+    );
 
     const current = primary ?? citations ?? raw ?? fit;
     if (!current) {
@@ -1604,7 +1706,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     return weakHits >= 2 && normalized.length < 12000;
   }
 
-  private buildMarkdownForLlm(article: CrawledArticle, maxInputChars: number): {
+  private buildMarkdownForLlm(
+    article: CrawledArticle,
+    maxInputChars: number,
+  ): {
     markdown: string;
     source: "primary" | "citations";
     variant: "primary" | "citations" | "raw" | "fit";
@@ -1656,13 +1761,19 @@ export class NewsPipelineService implements OnModuleDestroy {
     let selected = scored[0] ?? { source: "primary" as const, value: fallback };
 
     if (this.isLikelyBotChallengeMarkdown(selected.value)) {
-      const nonChallenge = scored.find((candidate) => !this.isLikelyBotChallengeMarkdown(candidate.value));
+      const nonChallenge = scored.find(
+        (candidate) => !this.isLikelyBotChallengeMarkdown(candidate.value),
+      );
       if (nonChallenge) {
         selected = nonChallenge;
       }
     }
 
-    if (selected.source === "fit" && raw && !this.isLikelyBotChallengeMarkdown(raw)) {
+    if (
+      selected.source === "fit" &&
+      raw &&
+      !this.isLikelyBotChallengeMarkdown(raw)
+    ) {
       if (raw.length >= 1600 && selected.value.length < raw.length * 0.45) {
         selected = { source: "raw", value: raw };
       }
@@ -1702,7 +1813,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       return -5000;
     }
 
-    const words = trimmed.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const words = trimmed
+      .split(/\s+/)
+      .filter((entry) => entry.length > 0).length;
     const headings = (trimmed.match(/^#{1,6}\s+/gm) ?? []).length;
     const paragraphs = trimmed
       .split(/\n\s*\n/g)
@@ -1751,7 +1864,8 @@ export class NewsPipelineService implements OnModuleDestroy {
     contentDuplicateOf?: string | null;
     articleMetadataPatch?: Record<string, unknown>;
   }> {
-    const contentHash = article.contentHash ?? this.hashContent(article.markdown);
+    const contentHash =
+      article.contentHash ?? this.hashContent(article.markdown);
     const existing = await this.findProcessedArticle(contentHash);
     if (existing) {
       const cleanedFromExisting = await this.resolveCleanedNews(existing);
@@ -1787,12 +1901,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const pipelineCfg = this.configService.config.pipeline;
-    const markdownForPrompt = this.buildMarkdownForLlm(article, pipelineCfg.maxInputChars);
+    const markdownForPrompt = this.buildMarkdownForLlm(
+      article,
+      pipelineCfg.maxInputChars,
+    );
     const truncated = markdownForPrompt.markdown;
     const promptConfig = await this.promptConfig.getConfig();
     const completionTimeoutMs = Math.max(
       await this.liteLlm.getCompletionTimeoutMs(),
-      180_000
+      180_000,
     );
     const response = await this.liteLlm.acompletion({
       orgId: job.orgId,
@@ -1882,7 +1999,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     const missingFields = [
       options.cleaned.title ? null : "title",
       options.cleaned.source || options.payload.sourceName ? null : "source",
-      options.cleaned.published_at || options.article.publishedAt ? null : "published_at",
+      options.cleaned.published_at || options.article.publishedAt
+        ? null
+        : "published_at",
       options.cleaned.author ? null : "author",
     ].filter((value): value is string => typeof value === "string");
     if (missingFields.length === 0) {
@@ -1936,9 +2055,13 @@ export class NewsPipelineService implements OnModuleDestroy {
                   subtitle: options.cleaned.subtitle ?? null,
                   author: options.cleaned.author ?? null,
                   source:
-                    options.cleaned.source ?? options.payload.sourceName ?? null,
+                    options.cleaned.source ??
+                    options.payload.sourceName ??
+                    null,
                   published_at:
-                    options.cleaned.published_at ?? options.article.publishedAt ?? null,
+                    options.cleaned.published_at ??
+                    options.article.publishedAt ??
+                    null,
                   category: options.cleaned.category ?? null,
                 },
                 metadata: {
@@ -1965,7 +2088,9 @@ export class NewsPipelineService implements OnModuleDestroy {
         ...options.cleaned,
         title:
           options.cleaned.title ??
-          (parsed.title?.trim().length ? (repairedFields.push("title"), parsed.title.trim()) : null),
+          (parsed.title?.trim().length
+            ? (repairedFields.push("title"), parsed.title.trim())
+            : null),
         subtitle:
           options.cleaned.subtitle ??
           (parsed.subtitle?.trim().length
@@ -1973,16 +2098,21 @@ export class NewsPipelineService implements OnModuleDestroy {
             : null),
         author:
           options.cleaned.author ??
-          (parsed.author?.trim().length ? (repairedFields.push("author"), parsed.author.trim()) : null),
+          (parsed.author?.trim().length
+            ? (repairedFields.push("author"), parsed.author.trim())
+            : null),
         source:
           options.cleaned.source ??
           options.payload.sourceName ??
-          (parsed.source?.trim().length ? (repairedFields.push("source"), parsed.source.trim()) : null),
+          (parsed.source?.trim().length
+            ? (repairedFields.push("source"), parsed.source.trim())
+            : null),
         published_at:
           options.cleaned.published_at ??
-          (typeof parsed.published_at === "string" && parsed.published_at.trim().length > 0
+          (typeof parsed.published_at === "string" &&
+          parsed.published_at.trim().length > 0
             ? (this.parseDate(parsed.published_at)?.toISOString() ?? null)
-            : options.article.publishedAt ?? null),
+            : (options.article.publishedAt ?? null)),
         category:
           options.cleaned.category ??
           (parsed.category?.trim().length
@@ -2034,7 +2164,10 @@ export class NewsPipelineService implements OnModuleDestroy {
           totalTokens: null,
           costUsd: null,
           latencyMs: null,
-          error: error instanceof Error ? error.message : "crawl_article_repair_failed",
+          error:
+            error instanceof Error
+              ? error.message
+              : "crawl_article_repair_failed",
         },
       };
     }
@@ -2055,7 +2188,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       model: base.model ?? extra.model,
       promptVersion: base.promptVersion ?? extra.promptVersion,
       promptTokens: sumOrNull(base.promptTokens, extra.promptTokens),
-      completionTokens: sumOrNull(base.completionTokens, extra.completionTokens),
+      completionTokens: sumOrNull(
+        base.completionTokens,
+        extra.completionTokens,
+      ),
       totalTokens: sumOrNull(base.totalTokens, extra.totalTokens),
       costUsd: sumOrNull(base.costUsd, extra.costUsd),
       latencyMs: sumOrNull(base.latencyMs, extra.latencyMs),
@@ -2117,13 +2253,17 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
 
     const settings = await this.dedupeSettings.getSettings(options.job.orgId);
-    const sourceId = options.job.sourceId ?? this.extractSourceId(options.payload);
+    const sourceId =
+      options.job.sourceId ?? this.extractSourceId(options.payload);
     const thresholdBase = this.dedupeSettings.resolveBaseThreshold(settings, {
       sourceId,
       language: options.cleaned.language ?? options.payload.language,
       categoryPath: options.cleaned.category_path,
     }).threshold;
-    const threshold = this.resolveSummaryDedupThreshold(summary.length, thresholdBase);
+    const threshold = this.resolveSummaryDedupThreshold(
+      summary.length,
+      thresholdBase,
+    );
     const baseResult: SummaryDedupeResult = { thresholdUsed: threshold };
 
     if (!settings.useEmbeddings) {
@@ -2145,7 +2285,11 @@ export class NewsPipelineService implements OnModuleDestroy {
         return baseResult;
       }
 
-      await this.markItemMetaDuplicate(options.job, duplicate.id, duplicate.similarity);
+      await this.markItemMetaDuplicate(
+        options.job,
+        duplicate.id,
+        duplicate.similarity,
+      );
       return {
         ...baseResult,
         duplicateOf: duplicate.id,
@@ -2153,7 +2297,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       };
     }
 
-    const embeddingData = await this.buildSummaryEmbedding(summary, options.job);
+    const embeddingData = await this.buildSummaryEmbedding(
+      summary,
+      options.job,
+    );
     if (!embeddingData) {
       return baseResult;
     }
@@ -2205,11 +2352,13 @@ export class NewsPipelineService implements OnModuleDestroy {
     const lookbackMs = cfg.summaryDedupLookbackHours * 60 * 60 * 1000;
     const cutoff = new Date(Date.now() - lookbackMs);
     const maxComparisons =
-      typeof options.llmJudgeMaxComparisons === "number" && Number.isFinite(options.llmJudgeMaxComparisons)
+      typeof options.llmJudgeMaxComparisons === "number" &&
+      Number.isFinite(options.llmJudgeMaxComparisons)
         ? Math.max(1, Math.round(options.llmJudgeMaxComparisons))
         : MAX_LLM_DEDUPE_COMPARISONS;
     const candidateChars =
-      typeof options.llmJudgeCandidateChars === "number" && Number.isFinite(options.llmJudgeCandidateChars)
+      typeof options.llmJudgeCandidateChars === "number" &&
+      Number.isFinite(options.llmJudgeCandidateChars)
         ? Math.max(1, Math.round(options.llmJudgeCandidateChars))
         : MAX_LLM_DEDUPE_CANDIDATE_CHARS;
 
@@ -2232,7 +2381,10 @@ export class NewsPipelineService implements OnModuleDestroy {
         const title = this.extractCandidateTitle(candidate);
         const quick =
           summary && normalizedQuery
-            ? this.quickSimilarity(normalizedQuery, this.normalizeForQuickSimilarity(summary))
+            ? this.quickSimilarity(
+                normalizedQuery,
+                this.normalizeForQuickSimilarity(summary),
+              )
             : 0;
         const id = (candidate as { _id?: unknown })._id?.toString?.() ?? "";
         return { id, summary, title, quick };
@@ -2350,7 +2502,8 @@ export class NewsPipelineService implements OnModuleDestroy {
       }
 
       const similarity = Math.min(1, Math.max(0, parsed.data.similarity));
-      const isDuplicate = parsed.data.is_duplicate || similarity >= options.threshold;
+      const isDuplicate =
+        parsed.data.is_duplicate || similarity >= options.threshold;
       return { similarity, isDuplicate };
     } catch (error) {
       this.logger.warn(
@@ -2371,7 +2524,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       return null;
     }
     const summary = (result as Record<string, unknown>).summary;
-    return typeof summary === "string" && summary.trim() ? summary.trim() : null;
+    return typeof summary === "string" && summary.trim()
+      ? summary.trim()
+      : null;
   }
 
   private extractCandidateTitle(candidate: unknown): string | null {
@@ -2401,7 +2556,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     if (a === b) {
       return 1;
     }
-    const n = Math.min(3, Math.max(2, Math.min(a.length, b.length) >= 64 ? 3 : 2));
+    const n = Math.min(
+      3,
+      Math.max(2, Math.min(a.length, b.length) >= 64 ? 3 : 2),
+    );
     const aSet = this.toNgrams(a, n);
     const bSet = this.toNgrams(b, n);
     if (aSet.size === 0 || bSet.size === 0) {
@@ -2491,7 +2649,10 @@ export class NewsPipelineService implements OnModuleDestroy {
         lookbackMs,
       });
       if (matches) {
-        if (matches.length === 0 && !(await vectorClient.fallbackToMongoEnabled())) {
+        if (
+          matches.length === 0 &&
+          !(await vectorClient.fallbackToMongoEnabled())
+        ) {
           return null;
         }
         if (matches.length > 0) {
@@ -2514,7 +2675,9 @@ export class NewsPipelineService implements OnModuleDestroy {
             const allowedSet = new Set(
               allowed
                 .map((doc) => (doc as { _id?: unknown })._id)
-                .map((id) => (typeof id === "string" ? id : id?.toString?.() ?? ""))
+                .map((id) =>
+                  typeof id === "string" ? id : (id?.toString?.() ?? ""),
+                )
                 .filter(Boolean),
             );
 
@@ -2577,7 +2740,11 @@ export class NewsPipelineService implements OnModuleDestroy {
         // NP-PERF-003: Early termination for high-confidence matches
         if (similarity > HIGH_CONFIDENCE_THRESHOLD) {
           this.logger.debug(
-            { similarity, candidatesChecked, totalCandidates: candidates.length },
+            {
+              similarity,
+              candidatesChecked,
+              totalCandidates: candidates.length,
+            },
             "Early termination on high-confidence match",
           );
           break;
@@ -2598,7 +2765,10 @@ export class NewsPipelineService implements OnModuleDestroy {
     return best;
   }
 
-  private resolveSummaryDedupThreshold(summaryLength: number, baseThreshold?: number) {
+  private resolveSummaryDedupThreshold(
+    summaryLength: number,
+    baseThreshold?: number,
+  ) {
     const base =
       typeof baseThreshold === "number" && Number.isFinite(baseThreshold)
         ? baseThreshold
@@ -2658,7 +2828,12 @@ export class NewsPipelineService implements OnModuleDestroy {
     for (let i = 0; i < a.length; i += 1) {
       const ai = a[i];
       const bi = b[i];
-      if (ai === undefined || bi === undefined || !Number.isFinite(ai) || !Number.isFinite(bi)) {
+      if (
+        ai === undefined ||
+        bi === undefined ||
+        !Number.isFinite(ai) ||
+        !Number.isFinite(bi)
+      ) {
         return 0;
       }
       dot += ai * bi;
@@ -2742,7 +2917,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       cleanedMarkdown = `${cleanedMarkdown}${processed.summary}`;
     }
     cleanedMarkdown =
-      cleanedMarkdown.trim() || processed.article.url || processed.article.contentHash;
+      cleanedMarkdown.trim() ||
+      processed.article.url ||
+      processed.article.contentHash;
 
     return CleanedNewsSchema.parse({
       title: processed.title ?? null,
@@ -2767,7 +2944,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     });
   }
 
-  private buildLlmMetadataFromProcessed(processed: ProcessedArticle): LlmCallMetadata {
+  private buildLlmMetadataFromProcessed(
+    processed: ProcessedArticle,
+  ): LlmCallMetadata {
     return {
       model: processed.llmModel ?? null,
       promptVersion: processed.llmPromptVersion ?? null,
@@ -2799,7 +2978,10 @@ export class NewsPipelineService implements OnModuleDestroy {
       throw new Error("LiteLLM return was not valid JSON");
     }
     if (options?.fallbackCleanedMarkdown) {
-      parsed = this.applyCleanedMarkdownFallback(parsed, options.fallbackCleanedMarkdown);
+      parsed = this.applyCleanedMarkdownFallback(
+        parsed,
+        options.fallbackCleanedMarkdown,
+      );
     }
     return CleanedNewsSchema.parse(parsed);
   }
@@ -2942,10 +3124,15 @@ export class NewsPipelineService implements OnModuleDestroy {
         const resolvedSourceId =
           options.sourceId ??
           (payloadSourceId
-            ? await this.resolveSourceIdForOrg(tx, options.orgId, payloadSourceId)
+            ? await this.resolveSourceIdForOrg(
+                tx,
+                options.orgId,
+                payloadSourceId,
+              )
             : undefined);
         const resolvedPipelineJobId =
-          typeof options.pipelineJobId === "string" && options.pipelineJobId.length > 0
+          typeof options.pipelineJobId === "string" &&
+          options.pipelineJobId.length > 0
             ? options.pipelineJobId
             : undefined;
 
@@ -2989,21 +3176,26 @@ export class NewsPipelineService implements OnModuleDestroy {
           }
         }
 
-	        return tx.mongoOutbox.create({
-	          data: {
-	            orgId: options.orgId,
-	            type: MongoOutboxType.processed_item,
-	            payload: toPrismaJsonValue(options.payload),
-	            status: MongoOutboxStatus.pending,
-	            availableAt: new Date(),
-	          },
-	        });
-	      });
+        return tx.mongoOutbox.create({
+          data: {
+            orgId: options.orgId,
+            type: MongoOutboxType.processed_item,
+            payload: toPrismaJsonValue(options.payload),
+            status: MongoOutboxStatus.pending,
+            availableAt: new Date(),
+          },
+        });
+      });
 
       this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, {
         outboxId: outboxEntry.id,
         payload: options.payload,
       } satisfies OutboxDeliveryRequestedEvent);
+      if (options.sourceId) {
+        void this.newsSourceOpsSnapshots
+          ?.refreshSnapshotForSource(options.orgId, options.sourceId)
+          .catch(() => undefined);
+      }
 
       return outboxEntry;
     } catch (error) {
@@ -3057,7 +3249,8 @@ export class NewsPipelineService implements OnModuleDestroy {
         totalProcessed += batch.length;
 
         // NP-PERF-002: Parallelize outbox delivery with concurrency limit
-        const concurrency = this.configService.config.pipeline.outboxDeliveryConcurrency ?? 10;
+        const concurrency =
+          this.configService.config.pipeline.outboxDeliveryConcurrency ?? 10;
         const results = await this.executeWithConcurrencyLimit(
           batch,
           async ([outboxId, payload]) => {
@@ -3081,7 +3274,12 @@ export class NewsPipelineService implements OnModuleDestroy {
       this.outboxDeliveryInFlight = false;
       if (totalProcessed > 0) {
         this.logger.info(
-          { duration: Date.now() - startTime, total: totalProcessed, succeeded, failed },
+          {
+            duration: Date.now() - startTime,
+            total: totalProcessed,
+            succeeded,
+            failed,
+          },
           "Outbox delivery flush completed",
         );
       }
@@ -3125,7 +3323,9 @@ export class NewsPipelineService implements OnModuleDestroy {
       return;
     }
 
-    const entry = await this.prisma.mongoOutbox.findUnique({ where: { id: outboxId } });
+    const entry = await this.prisma.mongoOutbox.findUnique({
+      where: { id: outboxId },
+    });
     if (!entry) {
       return;
     }
@@ -3172,7 +3372,9 @@ export class NewsPipelineService implements OnModuleDestroy {
         sourceUrl,
         queryParamAllowlist,
       );
-      const persistedUrl = this.toArticleUrl(canonical?.canonicalUrl ?? sourceUrl);
+      const persistedUrl = this.toArticleUrl(
+        canonical?.canonicalUrl ?? sourceUrl,
+      );
       const persistedMetadata: Record<string, unknown> = {
         ...(options.article.metadata ?? {}),
         ...(options.articleMetadataPatch ?? {}),
@@ -3194,7 +3396,8 @@ export class NewsPipelineService implements OnModuleDestroy {
           url: persistedUrl,
           urlFingerprint: canonical?.fingerprint ?? null,
           sourceLabel: options.payload.sourceName ?? null,
-          language: options.cleaned.language ?? options.payload.language ?? null,
+          language:
+            options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
           metadata: toPrismaJsonValue(persistedMetadata),
           crawlAt,
@@ -3205,7 +3408,8 @@ export class NewsPipelineService implements OnModuleDestroy {
           url: persistedUrl,
           urlFingerprint: canonical?.fingerprint ?? null,
           sourceLabel: options.payload.sourceName ?? null,
-          language: options.cleaned.language ?? options.payload.language ?? null,
+          language:
+            options.cleaned.language ?? options.payload.language ?? null,
           titleGuess: options.cleaned.title ?? undefined,
           crawlAt,
           contentHash: options.contentHash,
@@ -3255,7 +3459,8 @@ export class NewsPipelineService implements OnModuleDestroy {
             options.cleaned.llm_prompt_version ??
             options.llm.promptVersion ??
             null,
-          language: options.cleaned.language ?? options.payload.language ?? null,
+          language:
+            options.cleaned.language ?? options.payload.language ?? null,
           location: options.cleaned.location ?? null,
           promptTokens: options.llm.promptTokens ?? null,
           completionTokens: options.llm.completionTokens ?? null,
@@ -3287,7 +3492,8 @@ export class NewsPipelineService implements OnModuleDestroy {
             options.cleaned.llm_prompt_version ??
             options.llm.promptVersion ??
             null,
-          language: options.cleaned.language ?? options.payload.language ?? null,
+          language:
+            options.cleaned.language ?? options.payload.language ?? null,
           location: options.cleaned.location ?? null,
           promptTokens: options.llm.promptTokens ?? null,
           completionTokens: options.llm.completionTokens ?? null,
@@ -3305,7 +3511,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
   }
 
-  private extractUrlQueryParamAllowlist(payload: NormalizedNewsPayload): string[] {
+  private extractUrlQueryParamAllowlist(
+    payload: NormalizedNewsPayload,
+  ): string[] {
     const metadata =
       payload.metadata &&
       typeof payload.metadata === "object" &&
@@ -3341,8 +3549,11 @@ export class NewsPipelineService implements OnModuleDestroy {
   }
 
   private extractSourceId(payload: NormalizedNewsPayload) {
-    const raw = payload?.metadata ? (payload.metadata as Record<string, unknown>) : undefined;
-    const sourceId = raw && typeof raw.sourceId === "string" ? raw.sourceId.trim() : "";
+    const raw = payload?.metadata
+      ? (payload.metadata as Record<string, unknown>)
+      : undefined;
+    const sourceId =
+      raw && typeof raw.sourceId === "string" ? raw.sourceId.trim() : "";
     if (sourceId.length > 0) {
       return sourceId;
     }
@@ -3359,7 +3570,11 @@ export class NewsPipelineService implements OnModuleDestroy {
     return newsnowSourceId.length > 0 ? newsnowSourceId : undefined;
   }
 
-  private async resolveSourceIdForOrg(tx: Prisma.TransactionClient, orgId: string, sourceId: string) {
+  private async resolveSourceIdForOrg(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    sourceId: string,
+  ) {
     const trimmed = sourceId.trim();
     if (!trimmed) {
       return undefined;
@@ -3408,7 +3623,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     };
   }
 
-  private buildPendingProcessedItem(processedItemId: string): PersistedProcessedItem {
+  private buildPendingProcessedItem(
+    processedItemId: string,
+  ): PersistedProcessedItem {
     return {
       _id: processedItemId,
       toJSON: () => ({ id: processedItemId }),
@@ -3427,31 +3644,65 @@ export class NewsPipelineService implements OnModuleDestroy {
     try {
       const itemMeta = await this.prisma.itemMeta.findUnique({
         where: { id: payload.document.itemMetaId },
-        select: { id: true, orgId: true, name: true, createdAt: true, publishedAt: true }
+        select: {
+          id: true,
+          orgId: true,
+          externalId: true,
+          name: true,
+          status: true,
+          mongoRef: true,
+          version: true,
+          createdAt: true,
+          updatedAt: true,
+          publishedAt: true,
+          sortAt: true,
+        },
       });
       const ingestedAt = itemMeta?.createdAt ?? new Date();
-      let publishedAt = this.parseDate(payload.document.result?.published_at ?? null);
+      const rawDoc = await RawItemModel.findById(payload.document.rawItemId, {
+        itemMetaId: 1,
+        source: 1,
+        payload: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      }).lean();
+      const rawPayload =
+        rawDoc?.payload &&
+        typeof rawDoc.payload === "object" &&
+        !Array.isArray(rawDoc.payload)
+          ? (rawDoc.payload as Record<string, unknown>)
+          : null;
+      const rawMetadata =
+        rawPayload?.metadata &&
+        typeof rawPayload.metadata === "object" &&
+        !Array.isArray(rawPayload.metadata)
+          ? (rawPayload.metadata as Record<string, unknown>)
+          : null;
+      let publishedAt = this.parseDate(
+        payload.document.result?.published_at ?? null,
+      );
       if (!publishedAt && itemMeta?.publishedAt) {
         publishedAt = itemMeta.publishedAt;
       }
       if (!publishedAt) {
-        const raw = await RawItemModel.findById(payload.document.rawItemId, { payload: 1 }).lean();
-        const rawPayload =
-          raw?.payload && typeof raw.payload === "object" && !Array.isArray(raw.payload)
-            ? (raw.payload as Record<string, unknown>)
-            : null;
         const rawCandidate = rawPayload
           ? ((rawPayload as { publishedAt?: unknown }).publishedAt ??
-              (rawPayload as { published_at?: unknown }).published_at)
+            (rawPayload as { published_at?: unknown }).published_at)
           : null;
         publishedAt = this.parseDate(
-          typeof rawCandidate === "string" || rawCandidate instanceof Date ? rawCandidate : null
+          typeof rawCandidate === "string" || rawCandidate instanceof Date
+            ? rawCandidate
+            : null,
         );
       }
 
       const cleanedTitleRaw =
-        typeof payload.document.result?.title === "string" ? payload.document.result.title.trim() : "";
-      const cleanedTitle = cleanedTitleRaw ? this.toItemMetaName(cleanedTitleRaw) : null;
+        typeof payload.document.result?.title === "string"
+          ? payload.document.result.title.trim()
+          : "";
+      const cleanedTitle = cleanedTitleRaw
+        ? this.toItemMetaName(cleanedTitleRaw)
+        : null;
       const shouldUpdateName =
         Boolean(cleanedTitle) &&
         Boolean(
@@ -3462,7 +3713,10 @@ export class NewsPipelineService implements OnModuleDestroy {
         );
 
       const sortAt = publishedAt ?? ingestedAt;
-      const created = await this.writeProcessedItemFromPayload(payload.document, { ingestedAt, sortAt });
+      const created = await this.writeProcessedItemFromPayload(
+        payload.document,
+        { ingestedAt, sortAt },
+      );
 
       const vectorClient = this.vectorClient;
       const embedding = payload.document.summaryEmbedding;
@@ -3478,7 +3732,8 @@ export class NewsPipelineService implements OnModuleDestroy {
         embeddingModel
       ) {
         const createdAtMs =
-          created?.createdAt instanceof Date && Number.isFinite(created.createdAt.getTime())
+          created?.createdAt instanceof Date &&
+          Number.isFinite(created.createdAt.getTime())
             ? created.createdAt.getTime()
             : Date.now();
         await vectorClient.upsertOrThrow({
@@ -3503,9 +3758,124 @@ export class NewsPipelineService implements OnModuleDestroy {
         data: {
           status: ItemStatus.Completed,
           ...(shouldUpdateName && cleanedTitle ? { name: cleanedTitle } : {}),
-          ...(publishedAt ? { publishedAt, sortAt: publishedAt } : {})
+          ...(publishedAt ? { publishedAt, sortAt: publishedAt } : {}),
         },
       });
+      if (itemMeta) {
+        const nextName =
+          shouldUpdateName && cleanedTitle ? cleanedTitle : itemMeta.name;
+        const nextPublishedAt = publishedAt ?? itemMeta.publishedAt ?? null;
+        const nextSortAt = nextPublishedAt ?? itemMeta.sortAt ?? ingestedAt;
+        const sourceIdFromRaw =
+          typeof rawMetadata?.sourceId === "string" &&
+          rawMetadata.sourceId.trim().length > 0
+            ? rawMetadata.sourceId.trim()
+            : null;
+        const sourceId =
+          typeof payload.document.sourceId === "string" &&
+          payload.document.sourceId.trim().length > 0
+            ? payload.document.sourceId.trim()
+            : sourceIdFromRaw;
+        const processedCreatedAt =
+          created?.createdAt instanceof Date &&
+          Number.isFinite(created.createdAt.getTime())
+            ? created.createdAt
+            : new Date();
+        const processedUpdatedAt =
+          created?.updatedAt instanceof Date &&
+          Number.isFinite(created.updatedAt.getTime())
+            ? created.updatedAt
+            : processedCreatedAt;
+        const errorValue =
+          payload.document.error &&
+          typeof payload.document.error === "object" &&
+          !Array.isArray(payload.document.error)
+            ? (payload.document.error as { message?: unknown; name?: unknown })
+            : null;
+        const readModelPatch = buildItemReadModelPatch({
+          meta: {
+            id: itemMeta.id,
+            orgId: itemMeta.orgId,
+            externalId: itemMeta.externalId,
+            name: nextName,
+            status: ItemStatus.Completed,
+            mongoRef: itemMeta.mongoRef?.trim() || payload.document.rawItemId,
+            version: itemMeta.version,
+            publishedAt: nextPublishedAt,
+            sortAt: nextSortAt,
+            createdAt: itemMeta.createdAt,
+            updatedAt: new Date(),
+          },
+          raw: rawDoc
+            ? {
+                id:
+                  typeof rawDoc.id === "string"
+                    ? rawDoc.id
+                    : typeof rawDoc._id?.toString === "function"
+                      ? rawDoc._id.toString()
+                      : payload.document.rawItemId,
+                itemMetaId:
+                  typeof rawDoc.itemMetaId === "string"
+                    ? rawDoc.itemMetaId
+                    : payload.document.itemMetaId,
+                source:
+                  typeof rawDoc.source === "string" ? rawDoc.source : null,
+                payload: rawPayload ?? {},
+                createdAt:
+                  rawDoc.createdAt instanceof Date
+                    ? rawDoc.createdAt
+                    : itemMeta.createdAt,
+                updatedAt:
+                  rawDoc.updatedAt instanceof Date
+                    ? rawDoc.updatedAt
+                    : itemMeta.updatedAt,
+              }
+            : undefined,
+          processed: {
+            id: payload.document._id,
+            itemMetaId: payload.document.itemMetaId,
+            rawItemId: payload.document.rawItemId,
+            sourceId,
+            status: payload.document.status,
+            error: errorValue
+              ? {
+                  message:
+                    typeof errorValue.message === "string" &&
+                    errorValue.message.trim().length > 0
+                      ? errorValue.message
+                      : "Unknown error",
+                  name:
+                    typeof errorValue.name === "string"
+                      ? errorValue.name
+                      : null,
+                }
+              : null,
+            tags: payload.document.tags,
+            result: payload.document.result as Record<string, unknown>,
+            duplicateOf: payload.document.duplicateOf ?? null,
+            duplicateSimilarity: payload.document.duplicateSimilarity ?? null,
+            summaryEmbeddingModel:
+              payload.document.summaryEmbeddingModel ?? null,
+            summaryEmbeddingDimensions: Array.isArray(
+              payload.document.summaryEmbedding,
+            )
+              ? payload.document.summaryEmbedding.length
+              : null,
+            llm: payload.document.llm,
+            createdAt: processedCreatedAt,
+            updatedAt: processedUpdatedAt,
+          },
+          sourceId,
+        });
+        await ItemReadModelModel.updateOne(
+          {
+            orgId: payload.document.orgId,
+            itemMetaId: payload.document.itemMetaId,
+          },
+          { $set: readModelPatch },
+          { upsert: true },
+        );
+      }
       await this.prisma.mongoOutbox.delete({ where: { id: outboxId } });
       this.clearOutboxRetry(outboxId);
       return created;
@@ -3531,7 +3901,10 @@ export class NewsPipelineService implements OnModuleDestroy {
           OR: [
             { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
             { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } },
+            {
+              status: MongoOutboxStatus.processing,
+              lockedAt: { lt: staleLockCutoff },
+            },
           ],
         },
         data: {
@@ -3550,8 +3923,16 @@ export class NewsPipelineService implements OnModuleDestroy {
     });
   }
 
-  private async markOutboxFailure(outboxId: string, attempts: number, error: unknown) {
-    const nextDelay = this.computeBackoffDelay(this.outboxRetryBaseDelayMs, attempts, 5);
+  private async markOutboxFailure(
+    outboxId: string,
+    attempts: number,
+    error: unknown,
+  ) {
+    const nextDelay = this.computeBackoffDelay(
+      this.outboxRetryBaseDelayMs,
+      attempts,
+      5,
+    );
     const availableAt = new Date(Date.now() + nextDelay);
     const message = error instanceof Error ? error.message : String(error);
 
@@ -3578,7 +3959,9 @@ export class NewsPipelineService implements OnModuleDestroy {
   private scheduleOutboxRetry(outboxId: string, availableAt: Date) {
     const delayMs = availableAt.getTime() - Date.now();
     if (delayMs <= 0) {
-      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, { outboxId });
+      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, {
+        outboxId,
+      });
       return;
     }
 
@@ -3590,7 +3973,9 @@ export class NewsPipelineService implements OnModuleDestroy {
 
     const timer = setTimeout(() => {
       this.outboxRetryTimers.delete(outboxId);
-      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, { outboxId });
+      this.outboxEventEmitter.emit(OUTBOX_DELIVERY_REQUESTED_EVENT, {
+        outboxId,
+      });
     }, cappedDelayMs);
     if (typeof (timer as { unref?: () => void }).unref === "function") {
       (timer as { unref: () => void }).unref();
@@ -3613,7 +3998,9 @@ export class NewsPipelineService implements OnModuleDestroy {
   ): Promise<ProcessedItemDocument> {
     try {
       const duplicateRef = this.normalizeProcessedItemRef(document.duplicateOf);
-      const duplicateOf = duplicateRef ? new Types.ObjectId(duplicateRef) : undefined;
+      const duplicateOf = duplicateRef
+        ? new Types.ObjectId(duplicateRef)
+        : undefined;
       const processedId = new Types.ObjectId(document._id);
       const rawItemId = new Types.ObjectId(document.rawItemId);
       const update: Record<string, unknown> = {
@@ -3680,7 +4067,10 @@ export class NewsPipelineService implements OnModuleDestroy {
           OR: [
             { status: MongoOutboxStatus.pending, availableAt: { lte: now } },
             { status: MongoOutboxStatus.failed, availableAt: { lte: now } },
-            { status: MongoOutboxStatus.processing, lockedAt: { lt: staleLockCutoff } },
+            {
+              status: MongoOutboxStatus.processing,
+              lockedAt: { lt: staleLockCutoff },
+            },
           ],
         },
         orderBy: { createdAt: "asc" },
@@ -3701,10 +4091,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         await this.deliverOutboxPayload(entry.id, payload);
       }
     } catch (error) {
-      this.logger.warn(
-        { error },
-        "Failed to process Mongo outbox batch",
-      );
+      this.logger.warn({ error }, "Failed to process Mongo outbox batch");
     }
   }
 
@@ -3767,8 +4154,8 @@ export class NewsPipelineService implements OnModuleDestroy {
             : 0;
         return { name, type, confidence: numericConfidence };
       })
-      .filter(
-        (entity): entity is CleanedNews["entities"][number] => Boolean(entity),
+      .filter((entity): entity is CleanedNews["entities"][number] =>
+        Boolean(entity),
       );
   }
 
@@ -3824,30 +4211,15 @@ export class NewsPipelineService implements OnModuleDestroy {
     stage: string,
     action: () => Promise<T>,
     options?: {
-      onProcessingData?: () => Record<string, unknown>;
-      onSuccessData?: (result: T) => Record<string, unknown>;
       onErrorData?: () => Record<string, unknown>;
     },
   ): Promise<T> {
-    await this.logStage(
-      job,
-      stage,
-      "processing",
-      options?.onProcessingData ? options.onProcessingData() : undefined,
-    );
     try {
-      const result = await action();
-      if (options?.onSuccessData) {
-        await this.logStage(job, stage, "completed", options.onSuccessData(result));
-      } else {
-        await this.logStage(job, stage, "completed");
-      }
-      return result;
+      return await action();
     } catch (error) {
-      await this.logStage(
+      await this.logStageFailure(
         job,
         stage,
-        "failed",
         options?.onErrorData ? options.onErrorData() : undefined,
         error,
       );
@@ -3855,10 +4227,9 @@ export class NewsPipelineService implements OnModuleDestroy {
     }
   }
 
-  private async logStage(
+  private async logStageFailure(
     job: PipelineJobContext,
     stage: string,
-    status: "pending" | "processing" | "completed" | "failed",
     data?: Record<string, unknown>,
     error?: unknown,
   ) {
@@ -3870,21 +4241,14 @@ export class NewsPipelineService implements OnModuleDestroy {
         }
       : undefined;
 
-    try {
-      await TaskLogModel.create({
-        queue: job.queue,
-        jobId: job.jobId,
-        orgId: job.orgId,
-        stage,
-        status,
-        data,
-        error: errorDetails,
-      });
-    } catch (logError) {
-      this.logger.warn(
-        { logError, stage, status, jobId: job.jobId, orgId: job.orgId },
-        "Failed to persist task log",
-      );
-    }
+    await writeTaskLogBestEffort({
+      queue: job.queue,
+      jobId: job.jobId,
+      orgId: job.orgId,
+      stage,
+      status: "failed",
+      data,
+      error: errorDetails,
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
+import { ItemReadModelModel, RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
 import { createHash } from "crypto";
 
 import type { NewsPipelineConfig } from "../news-pipeline.config";
@@ -11,11 +11,28 @@ import type {
 import { DEFAULT_NEWS_PROMPT_CONFIG } from "../news-prompt-config.service";
 import { NewsPromptBuilder } from "../news-prompt.builder";
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
+
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
     create: jest.fn().mockResolvedValue(undefined),
   },
   CrawlResultContentModel: {
+    find: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    }),
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
     }),
@@ -24,6 +41,9 @@ jest.mock("@modular/mongo", () => ({
     findById: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
     }),
+  },
+  ItemReadModelModel: {
+    updateOne: jest.fn().mockResolvedValue(undefined),
   },
   ProcessedItemModel: {
     findOneAndUpdate: jest.fn().mockResolvedValue({
@@ -217,9 +237,15 @@ describe("NewsPipelineService", () => {
       findUnique: jest.fn().mockResolvedValue({
         id: "meta-1",
         orgId: "org-1",
+        externalId: "crawlResult:crawl-result-1",
         name: "Example: https://example.com/story",
+        status: "pending",
+        mongoRef: "507f1f77bcf86cd799439011",
+        version: 1,
         createdAt: new Date("2024-01-01T00:00:00Z"),
+        updatedAt: new Date("2024-01-01T00:00:00Z"),
         publishedAt: null,
+        sortAt: new Date("2024-01-01T00:00:00Z"),
       }),
       update: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -292,9 +318,10 @@ describe("NewsPipelineService", () => {
     (RawItemModel.findById as jest.Mock).mockReturnValue({
       lean: jest.fn().mockResolvedValue(null),
     });
+    (ItemReadModelModel.updateOne as jest.Mock).mockResolvedValue(undefined);
 
     const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
-      CrawlResultContentModel: { findById: jest.Mock };
+      CrawlResultContentModel: { find: jest.Mock; findById: jest.Mock };
     };
 
     const defaultContentHash = createHash("sha256")
@@ -328,6 +355,9 @@ describe("NewsPipelineService", () => {
         metadata: { title: "Headline" },
       }),
     });
+    CrawlResultContentModel.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    });
     const findChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
@@ -360,11 +390,20 @@ describe("NewsPipelineService", () => {
 
     expect(prisma.crawlTask.create).toHaveBeenCalledTimes(1);
     expect(crawlExecution.runTask).toHaveBeenCalledTimes(1);
-    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
     expect(promptConfigService.getConfig).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.create).toHaveBeenCalledTimes(1);
     expect(prisma.mongoOutbox.delete).toHaveBeenCalledTimes(1);
     expect(prisma.runInTransaction).toHaveBeenCalledTimes(2);
+    expect(ItemReadModelModel.updateOne).toHaveBeenCalledTimes(1);
+
+    const stageCalls = (TaskLogModel.create as jest.Mock).mock.calls.filter(
+      ([entry]) =>
+        ["normalize", "crawl", "llm", "dedupe", "persist"].includes(
+          String(entry.stage ?? ""),
+        ),
+    );
+    expect(stageCalls).toHaveLength(0);
   });
 
   it("rejects llm extraction settings inside crawl options", () => {
@@ -546,36 +585,35 @@ describe("NewsPipelineService", () => {
 
   it("selects non-challenge crawl result when preferred source is blocked", async () => {
     const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
-      CrawlResultContentModel: { findById: jest.Mock };
+      CrawlResultContentModel: { find: jest.Mock; findById: jest.Mock };
     };
 
     prisma.crawlResult.findMany = jest.fn().mockResolvedValue([
       {
         id: "preferred",
         sourceUrl: "https://www.reuters.com/world/",
-        markdownRef: "md-blocked",
       },
       {
         id: "alt",
         sourceUrl: "https://jp.reuters.com/world/",
-        markdownRef: "md-usable",
       },
     ]);
 
-    CrawlResultContentModel.findById.mockImplementation((id: string) => ({
-      lean: jest.fn().mockResolvedValue(
-        id === "md-blocked"
-          ? {
-              markdown:
-                "Verification Required\nPlease enable JS and disable any ad blocker",
-            }
-          : {
-              markdown:
-                "# Usable story\n\n" +
-                "Paragraph with meaningful context and facts.\n".repeat(80),
-            },
-      ),
-    }));
+    CrawlResultContentModel.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          resultId: "preferred",
+          markdown:
+            "Verification Required\nPlease enable JS and disable any ad blocker",
+        },
+        {
+          resultId: "alt",
+          markdown:
+            "# Usable story\n\n" +
+            "Paragraph with meaningful context and facts.\n".repeat(80),
+        },
+      ]),
+    });
 
     const selected = await (service as any).selectBestPipelineCrawlResultId({
       orgId: "org-1",
@@ -585,6 +623,32 @@ describe("NewsPipelineService", () => {
     });
 
     expect(selected).toBe("alt");
+    expect(CrawlResultContentModel.find).toHaveBeenCalledTimes(1);
+    expect(CrawlResultContentModel.find).toHaveBeenCalledWith(
+      { resultId: { $in: ["preferred", "alt"] } },
+      {
+        resultId: 1,
+        markdown: 1,
+        markdownWithCitations: 1,
+        rawMarkdown: 1,
+        fitMarkdown: 1,
+      },
+    );
+    expect(CrawlResultContentModel.findById).not.toHaveBeenCalled();
+    expect(TaskLogModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queue: "news_pipeline",
+        jobId: "crawl-task-1",
+        orgId: "org-1",
+        stage: "crawl",
+        status: "completed",
+        message: "Selected alternative crawl result for higher content quality",
+        data: expect.objectContaining({
+          preferredResultId: "preferred",
+          selectedResultId: "alt",
+        }),
+      }),
+    );
   });
 
   it("falls back to crawled markdown when LLM omits cleaned_markdown", async () => {
@@ -638,7 +702,7 @@ describe("NewsPipelineService", () => {
 
   it("uses stored crawl results when crawlResultId is provided", async () => {
     const { CrawlResultContentModel } = jest.requireMock("@modular/mongo") as {
-      CrawlResultContentModel: { findById: jest.Mock };
+      CrawlResultContentModel: { find: jest.Mock; findById: jest.Mock };
     };
 
     prisma.crawlResult.findFirst.mockResolvedValueOnce({
@@ -676,7 +740,7 @@ describe("NewsPipelineService", () => {
     expect(prisma.membership.findFirst).not.toHaveBeenCalled();
     expect(prisma.crawlTask.create).not.toHaveBeenCalled();
     expect(crawlExecution.runTask).not.toHaveBeenCalled();
-    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
     expect(prisma.crawlResult.findFirst).toHaveBeenCalledTimes(1);
     expect(CrawlResultContentModel.findById).toHaveBeenCalledTimes(1);
   });
@@ -702,7 +766,7 @@ describe("NewsPipelineService", () => {
     expect(prisma.crawlResult.findFirst).not.toHaveBeenCalled();
     expect(prisma.crawlTask.create).not.toHaveBeenCalled();
     expect(crawlExecution.runTask).not.toHaveBeenCalled();
-    expect(liteLlm.acompletion).toHaveBeenCalledTimes(1);
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to crawling when stored crawl result is missing", async () => {
@@ -940,6 +1004,7 @@ describe("NewsPipelineService", () => {
 
     (liteLlm.acompletion as jest.Mock)
       .mockResolvedValueOnce(originalCompletion)
+      .mockResolvedValueOnce(originalCompletion)
       .mockResolvedValueOnce({
         id: "judge",
         model: "openai/gpt-4o-mini",
@@ -964,7 +1029,7 @@ describe("NewsPipelineService", () => {
     await flushOutbox();
 
     expect(liteLlm.embedding).not.toHaveBeenCalled();
-    expect(liteLlm.acompletion).toHaveBeenCalledTimes(2);
+    expect(liteLlm.acompletion).toHaveBeenCalledTimes(3);
     expect(prisma.itemMeta.update).toHaveBeenCalledWith({
       where: { id: job.itemMetaId },
       data: { status: "duplicate" },
@@ -1085,18 +1150,6 @@ describe("NewsPipelineService", () => {
 
     await expect(service.process(job, raw)).rejects.toThrow("LLM unavailable");
 
-    const llmProcessingCall = (
-      TaskLogModel.create as jest.Mock
-    ).mock.calls.find(
-      ([entry]) => entry.stage === "llm" && entry.status === "processing",
-    );
-
-    expect(llmProcessingCall?.[0]).toMatchObject({
-      stage: "llm",
-      status: "processing",
-      data: { url: "https://example.com/story", runId: null },
-    });
-
     const llmFailureCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
       ([entry]) => entry.stage === "llm" && entry.status === "failed",
     );
@@ -1107,6 +1160,16 @@ describe("NewsPipelineService", () => {
       data: { url: "https://example.com/story", runId: null },
       error: { message: "LLM unavailable" },
     });
+
+    const llmProcessingCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "processing",
+    );
+    expect(llmProcessingCall).toBeUndefined();
+
+    const llmCompletedCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+      ([entry]) => entry.stage === "llm" && entry.status === "completed",
+    );
+    expect(llmCompletedCall).toBeUndefined();
   });
 
   it("marks invalid outbox payloads as failed without writing Mongo", async () => {
@@ -1345,6 +1408,7 @@ describe("NewsPipelineService", () => {
       dedupeSettingsService as any,
       prisma as any,
       crawlExecution as any,
+      undefined,
       vectorClient as any,
     );
 

@@ -48,6 +48,20 @@ jest.mock("@modular/mongo", () => ({
   },
 }));
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
+
 import { TaskLogModel } from "@modular/mongo";
 import { NotificationPresentationKind } from "@modular/utils";
 import { NotificationType } from "@prisma/client";
@@ -328,8 +342,15 @@ describe("CrawlExecutionService", () => {
           data: expect.objectContaining({ status: "running" }),
         }),
       );
+      const hasStartLog = (TaskLogModel.create as jest.Mock).mock.calls.some(
+        ([entry]) =>
+          Boolean(entry) &&
+          (entry as { stage?: string }).stage === "start" &&
+          (entry as { status?: string }).status === "processing",
+      );
+      expect(hasStartLog).toBe(false);
       expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "start", status: "processing" }),
+        expect.objectContaining({ stage: "complete", status: "completed" }),
       );
       expect(mockCrawlClient.crawl).toHaveBeenCalled();
       expect(mockResultService.persistResults).toHaveBeenCalled();
@@ -700,7 +721,14 @@ describe("CrawlExecutionService", () => {
         }),
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "fallback", status: "processing" }),
+        expect.objectContaining({
+          stage: "fallback",
+          status: "completed",
+          data: expect.objectContaining({
+            selectedProfile: expect.any(String),
+            attempts: expect.any(Number),
+          }),
+        }),
       );
       expect(mockResultService.persistResults).toHaveBeenCalledWith(
         task,
@@ -763,7 +791,11 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "fallback",
-          status: "processing",
+          status: "completed",
+          data: expect.objectContaining({
+            completedAttempts: expect.any(Number),
+            profiles: expect.any(Array),
+          }),
         }),
       );
     });
@@ -1006,7 +1038,26 @@ describe("CrawlExecutionService", () => {
         undefined,
       );
       expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ stage: "expansion", status: "processing" }),
+        expect.objectContaining({
+          stage: "expansion",
+          status: "completed",
+          data: expect.objectContaining({
+            runId: "run-expansion",
+            candidateRejects: expect.objectContaining({
+              publishConfidenceRejected: expect.any(Number),
+            }),
+            publishConfidenceBuckets: expect.objectContaining({
+              lt04: expect.any(Number),
+              from04To06: expect.any(Number),
+              from06To08: expect.any(Number),
+              gte08: expect.any(Number),
+            }),
+            headSignalEnrichment: expect.objectContaining({
+              attempted: expect.any(Number),
+              totalSignalCandidates: expect.any(Number),
+            }),
+          }),
+        }),
       );
       expect(
         mockCrawlSettings.getSettings.mock.calls.length,
@@ -2785,9 +2836,10 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
-          message: "crawl4ai partial failures",
+          status: "completed",
+          message: "crawl4ai completed with partial failures",
           data: expect.objectContaining({
-            totalFailures: 1,
+            failures: 1,
             retryableFailures: 0,
           }),
         }),
@@ -2958,9 +3010,8 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "anti_bot_retry",
-          status: "processing",
-          message:
-            "Anti-bot mode enabled; retrying with hardened stealth profile",
+          status: "completed",
+          message: "Selected anti-bot retry candidate",
           data: expect.objectContaining({ reason: "anti_bot_mode_enabled" }),
         }),
       );
@@ -3081,16 +3132,21 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "anti_bot_retry",
-          status: "processing",
-          message:
-            "Detected anti-bot challenge; retrying with hardened stealth profile",
-        }),
-      );
-      expect(TaskLogModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          stage: "anti_bot_retry",
-          status: "processing",
-          message: "Priming anti-bot session with warmup URLs",
+          status: "completed",
+          message: "Selected anti-bot retry candidate",
+          data: expect.objectContaining({
+            reason: "challenge_detected",
+            warmup: expect.objectContaining({
+              result: "completed",
+              runId: "run-warmup",
+            }),
+            attemptSummaries: expect.arrayContaining([
+              expect.objectContaining({
+                attempt: 1,
+                result: "completed",
+              }),
+            ]),
+          }),
         }),
       );
       const hasPartialFailureLog = (
@@ -3214,13 +3270,25 @@ describe("CrawlExecutionService", () => {
             "backing off before retry 2/3",
           ),
       );
-      expect(hasBackoffLog).toBe(true);
+      expect(hasBackoffLog).toBe(false);
 
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "anti_bot_retry",
           status: "completed",
           message: "Selected anti-bot retry candidate",
+          data: expect.objectContaining({
+            attemptSummaries: expect.arrayContaining([
+              expect.objectContaining({
+                attempt: 1,
+                result: "completed",
+              }),
+              expect.objectContaining({
+                attempt: 2,
+                result: "completed",
+              }),
+            ]),
+          }),
         }),
       );
 
@@ -3251,9 +3319,11 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
-          message: "crawl4ai warnings",
+          status: "completed",
+          message: "crawl4ai completed with warnings",
           data: expect.objectContaining({
             warnings: ["Warning 1", "Warning 2"],
+            warningCount: 2,
           }),
         }),
       );
@@ -3288,7 +3358,11 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
-          message: "crawl4ai partial failures",
+          status: "completed",
+          message: "crawl4ai completed with partial failures",
+          data: expect.objectContaining({
+            failureSamples: expect.any(Array),
+          }),
         }),
       );
     });
@@ -3335,9 +3409,10 @@ describe("CrawlExecutionService", () => {
       expect(TaskLogModel.create).toHaveBeenCalledWith(
         expect.objectContaining({
           stage: "crawler",
-          message: "crawl4ai partial failures",
+          status: "completed",
+          message: "crawl4ai completed with partial failures",
           data: expect.objectContaining({
-            totalFailures: 3,
+            failures: 3,
             retryableFailures: 2,
           }),
         }),

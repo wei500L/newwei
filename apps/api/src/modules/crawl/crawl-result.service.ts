@@ -10,6 +10,7 @@ import { EnvService } from "../config/config.service";
 import { MONGO_CONNECTION } from "../config/mongo.provider";
 import { PrismaService } from "../config/prisma.service";
 import { ItemsService } from "../items/items.service";
+import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 
 import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { CRAWL_QUEUE_NAME } from "./crawl.constants";
@@ -295,7 +296,7 @@ export class CrawlResultService {
       "persistResults hash classification complete"
     );
     if (process.env.NODE_ENV !== "test") {
-      void TaskLogModel.create({
+      void writeTaskLogBestEffort({
         queue: CRAWL_QUEUE_NAME,
         jobId: task.id,
         orgId: task.orgId,
@@ -311,11 +312,6 @@ export class CrawlResultService {
           orgContentDedupeWindowHours,
           hasOrgContentDedupeWindow: Boolean(orgContentDedupeSince),
         },
-      }).catch((error) => {
-        logger.warn(
-          { err: error, taskId: task.id, orgId: task.orgId },
-          "Failed to persist dedupe task log",
-        );
       });
     }
 

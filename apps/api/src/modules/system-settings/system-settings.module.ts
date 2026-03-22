@@ -55,9 +55,12 @@ import { SituationMonitorSettingsService } from "./situation-monitor-settings.se
 import { SituationMonitorTelegramAuthService } from "./situation-monitor-telegram-auth.service";
 import { SystemSecuritySettingsController } from "./system-security-settings.controller";
 import { SystemSecuritySettingsService } from "./system-security-settings.service";
+import { TaskLogSettingsController } from "./task-log-settings.controller";
+import { TaskLogSettingsService } from "./task-log-settings.service";
 import { VectorServiceSettingsController } from "./vector-service-settings.controller";
 import { VectorServiceSettingsService } from "./vector-service-settings.service";
 import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service";
+import { ObservabilitySnapshotService } from "../observability/observability-snapshot.service";
 
 @Global()
 @Module({
@@ -73,6 +76,7 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     RateLimitPolicyController,
     ArchivePreparationSettingsController,
     AuditLogSettingsController,
+    TaskLogSettingsController,
     AuthCacheSettingsController,
     EmailSettingsController,
     GeoNominatimSettingsController,
@@ -98,6 +102,7 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     RateLimitPolicyService,
     ArchivePreparationSettingsService,
     AuditLogSettingsService,
+    TaskLogSettingsService,
     GeoNominatimSettingsService,
     FinancialDataProviderSettingsService,
     {
@@ -123,6 +128,7 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     AssistantSafetyDiagnosticsService,
     AssistantSafetyMetricsService,
     OpenAiKeysSettingsService,
+    ObservabilitySnapshotService,
     RssTranslationMetricsService,
     RssDiagnosticsService,
   ],
@@ -131,6 +137,7 @@ import { LLM_REQUEST_LOG_MODEL } from "../news-pipeline/llm-request-log.service"
     RateLimitPolicyService,
     ArchivePreparationSettingsService,
     AuditLogSettingsService,
+    TaskLogSettingsService,
     GeoNominatimSettingsService,
     FinancialDataProviderSettingsService,
     LlmGatewaySettingsService,

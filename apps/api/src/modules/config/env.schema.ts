@@ -114,6 +114,7 @@ export const apiEnvSchema = baseEnvSchema
       .default(90),
     AUTH_EMAIL_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
     AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+    TASK_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(14),
     GRAPHQL_PLAYGROUND: envBoolean.default(
       process.env.NODE_ENV === "production" ? false : true,
     ),
@@ -255,6 +256,8 @@ export const apiEnvSchema = baseEnvSchema
       .int()
       .positive()
       .default(300),
+    ITEMS_READ_MODEL_ENABLED: envBoolean.default(false),
+    ITEMS_VECTOR_HARD_FAIL_ENABLED: envBoolean.default(false),
     ITEMS_SEARCH_RECENCY_HALFLIFE_HOURS: z.coerce
       .number()
       .positive()

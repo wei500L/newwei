@@ -5132,6 +5132,7 @@
       "assistantSafety": "助手安全",
       "rssTranslationMetrics": "RSS 翻译指标",
       "rssDiagnostics": "RSS 诊断",
+      "taskLogs": "任务日志",
       "roles": "角色",
       "permissions": "权限",
       "members": "用户"
@@ -5515,6 +5516,42 @@
     }
   },
   "systemSettings": {
+    "taskLogs": {
+      "description": "控制任务日志在 MongoDB 中保留多久。摘要和终态事件会保留，密集的过程噪音会在写入时折叠。",
+      "errors": {
+        "loadFailed": "加载任务日志设置失败。",
+        "saveFailed": "保存任务日志设置失败。",
+        "resetFailed": "重置任务日志设置失败。"
+      },
+      "messages": {
+        "saved": "任务日志保留设置已保存。",
+        "reset": "任务日志保留设置已重置。"
+      },
+      "notice": {
+        "title": "摘要优先保留",
+        "body": "保留期由 MongoDB TTL 索引强制执行。抓取详情、队列恢复和管理端日志会保留终态与摘要记录；瞬时重试和批次噪音不会再单独写入。"
+      },
+      "status": {
+        "label": "当前来源",
+        "default": "环境默认值",
+        "db": "数据库覆盖值",
+        "currentDays": "当前保留：{{days}} 天"
+      },
+      "fields": {
+        "retentionDays": "保留天数"
+      },
+      "validation": {
+        "retentionRequired": "请输入保留天数。",
+        "retentionRange": "保留天数必须在 1 到 3650 天之间。"
+      },
+      "hints": {
+        "retentionDays": "保存后和服务启动时会立即同步到 MongoDB TTL 索引。"
+      },
+      "modal": {
+        "resetTitle": "重置任务日志保留期？",
+        "resetBody": "这会恢复默认的任务日志保留窗口，并重新应用 MongoDB TTL 索引。"
+      }
+    },
     "llmRequestLogs": {
       "description": "查看集中式 LLM 网关请求日志，用于成本追踪、调试排查和用量分析。",
       "errors": {
