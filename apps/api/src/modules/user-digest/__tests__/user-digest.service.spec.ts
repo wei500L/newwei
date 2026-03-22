@@ -227,4 +227,85 @@ describe("UserDigestService", () => {
     expect(digest.events[0]?.indicatorAssociations).toHaveLength(2);
     expect(digest.events[1]?.indicatorAssociations).toHaveLength(2);
   });
+
+  it("loads indicator associations without a global take so later scopes are not dropped", async () => {
+    const rows = [
+      {
+        id: "assoc-1",
+        scopeType: "topic",
+        scopeKey: "macro",
+        featureMetric: "volume",
+        lagDays: 1,
+        correlation: 0.9,
+        pValue: 0.01,
+        lastEvaluatedAt: new Date("2026-01-03T00:00:00.000Z"),
+        indicatorItem: {
+          slug: "gdp",
+          displayName: "GDP",
+        },
+        backtests: [],
+      },
+      {
+        id: "assoc-2",
+        scopeType: "topic",
+        scopeKey: "policy",
+        featureMetric: "volume",
+        lagDays: 2,
+        correlation: -0.85,
+        pValue: 0.02,
+        lastEvaluatedAt: new Date("2026-01-03T00:00:00.000Z"),
+        indicatorItem: {
+          slug: "cpi",
+          displayName: "CPI",
+        },
+        backtests: [],
+      },
+    ];
+    const prisma = {
+      newsIndicatorAssociation: {
+        findMany: jest.fn().mockImplementation(async (args: any) =>
+          args.take ? rows.slice(0, 1) : rows
+        ),
+      },
+    };
+
+    const service = new UserDigestService(prisma as any, {} as any);
+    const loadIndicatorAssociationsByScope = (
+      service as unknown as {
+        loadIndicatorAssociationsByScope: (
+          orgId: string,
+          events: Array<{ primaryTopic: string | null; primaryEntity: string | null }>,
+          limit: number
+        ) => Promise<Map<string, Array<{ indicatorSlug: string }>>>;
+      }
+    ).loadIndicatorAssociationsByScope.bind(service);
+
+    const grouped = await loadIndicatorAssociationsByScope(
+      "org-1",
+      [
+        { primaryTopic: "macro", primaryEntity: null },
+        { primaryTopic: "policy", primaryEntity: null },
+      ],
+      1
+    );
+
+    expect(prisma.newsIndicatorAssociation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { scopeType: "asc" },
+          { scopeKey: "asc" },
+          { lastEvaluatedAt: "desc" },
+          { correlation: "desc" },
+          { lagDays: "asc" },
+          { id: "asc" },
+        ],
+      })
+    );
+    expect(prisma.newsIndicatorAssociation.findMany.mock.calls[0]?.[0]?.take).toBeUndefined();
+    expect(grouped.get("topic:macro")).toHaveLength(1);
+    expect(grouped.get("topic:policy")).toHaveLength(1);
+    expect(grouped.get("topic:policy")?.[0]).toMatchObject({
+      indicatorSlug: "cpi",
+    });
+  });
 });

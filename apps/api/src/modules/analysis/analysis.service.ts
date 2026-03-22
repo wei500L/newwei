@@ -12,6 +12,7 @@ import { NotificationType } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { EnvService } from "../config/config.service";
 import {
   LiteLlmService,
@@ -34,6 +35,8 @@ import type {
 } from "./analysis.types";
 
 const logger = createLogger({ name: "analysis-service" });
+const MAX_TRACK_POINTS_PER_OBJECT = 30;
+const TRACK_POINT_QUERY_CONCURRENCY = 4;
 
 @Injectable()
 export class AnalysisService {
@@ -375,10 +378,11 @@ export class AnalysisService {
         : new Map<string, Array<Record<string, unknown>>>();
 
     const objects = states.map((state) => {
+      const primaryPoints = trackPointsByObjectKey.get(state.objectKey);
       const points =
-        trackPointsByObjectKey.get(state.objectKey) ??
-        fallbackTrackPointsByObjectKey.get(state.objectKey) ??
-        [];
+        primaryPoints && primaryPoints.length > 0
+          ? primaryPoints
+          : (fallbackTrackPointsByObjectKey.get(state.objectKey) ?? []);
 
       return {
         objectKey: state.objectKey,
@@ -494,28 +498,31 @@ export class AnalysisService {
       };
     }
 
-    const rows = await MapTransportTrackPointModel.aggregate<{
-      _id: string;
-      points?: Array<Record<string, unknown>>;
-    }>([
-      { $match: match },
-      { $sort: { objectKey: 1, observedAt: -1 } },
-      {
-        $group: {
-          _id: "$objectKey",
-          points: { $push: "$$ROOT" },
-        },
-      },
-      {
-        $project: {
-          points: { $slice: ["$points", 30] },
-        },
-      },
-    ]);
+    const results = await settleWithConcurrency(
+      objectKeys,
+      TRACK_POINT_QUERY_CONCURRENCY,
+      async (objectKey) => {
+        const points = await MapTransportTrackPointModel.find({
+          ...match,
+          objectKey,
+        })
+          .sort({ observedAt: -1 })
+          .limit(MAX_TRACK_POINTS_PER_OBJECT)
+          .lean();
 
-    return new Map(
-      rows.map((row) => [row._id, Array.isArray(row.points) ? row.points : []]),
+        return Array.isArray(points) ? points : [];
+      },
     );
+
+    const pointsByObjectKey = new Map<string, Array<Record<string, unknown>>>();
+    for (const result of results) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      pointsByObjectKey.set(result.item, result.value);
+    }
+
+    return pointsByObjectKey;
   }
 
   private async streamMessages(

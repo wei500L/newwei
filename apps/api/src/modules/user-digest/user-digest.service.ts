@@ -455,7 +455,14 @@ export class UserDigestService {
           take: 1
         }
       },
-      take: Math.min(perEventLimit * uniqueScopes.length * 3, 5000)
+      orderBy: [
+        { scopeType: "asc" },
+        { scopeKey: "asc" },
+        { lastEvaluatedAt: "desc" },
+        { correlation: "desc" },
+        { lagDays: "asc" },
+        { id: "asc" }
+      ]
     });
 
     const grouped = new Map<string, NonNullable<UserDigestEventV1["indicatorAssociations"]>>();

@@ -492,6 +492,7 @@ export class CrawlTaskService {
             where: {
               orgId,
               externalId: { in: externalIds },
+              mongoRef: { not: "" },
             },
             select: { externalId: true },
           })

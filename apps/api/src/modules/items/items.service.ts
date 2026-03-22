@@ -1319,6 +1319,9 @@ export class ItemsService {
       .map((result) => result.value);
     for (const result of rawValidationResults) {
       if (result.status === "rejected") {
+        if (result.item.createdByThisProcess) {
+          await this.cleanupEmptyCrawlResultItemMeta(result.item.meta.id);
+        }
         resultsById.set(result.item.prepared.crawlResult.id, {
           crawlResultId: result.item.prepared.crawlResult.id,
           reason: result.reason,
@@ -1410,6 +1413,9 @@ export class ItemsService {
             status: "fulfilled"
           });
         } else {
+          if (result.item.createdByThisProcess) {
+            await this.cleanupEmptyCrawlResultItemMeta(result.item.meta.id);
+          }
           resultsById.set(crawlResultId, {
             crawlResultId,
             reason: result.reason,
@@ -1426,6 +1432,25 @@ export class ItemsService {
         status: "rejected"
       }
     ));
+  }
+
+  private async cleanupEmptyCrawlResultItemMeta(itemMetaId: string) {
+    try {
+      await this.prisma.itemMeta.deleteMany({
+        where: {
+          id: itemMetaId,
+          mongoRef: ""
+        }
+      });
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          itemMetaId
+        },
+        "Failed to cleanup empty crawl-result item meta after rejected ingest"
+      );
+    }
   }
 
   private prepareCrawlResultItemIngestInput(

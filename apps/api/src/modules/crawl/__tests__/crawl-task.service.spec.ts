@@ -108,6 +108,99 @@ describe("CrawlTaskService", () => {
     });
   });
 
+  it("does not treat empty mongoRef item metas as already ingested", async () => {
+    const itemsServiceMock = {
+      createFromCrawlResultsBatch: jest.fn().mockResolvedValue([
+        {
+          crawlResultId: "result-1",
+          itemMeta: { id: "item-1" },
+          status: "fulfilled",
+        },
+      ]),
+    } as any;
+
+    const resultPage = [
+      {
+        id: "result-1",
+        taskId: "task-1",
+        sourceUrl: "https://example.com/1",
+        fetchedAt: new Date("2024-01-02T00:00:00.000Z"),
+        contentHash: "hash-1",
+        metadata: {},
+        task: {
+          id: "task-1",
+          displayName: "Example",
+          targetUrl: "https://example.com",
+          keywords: ["markets"],
+          config: null,
+        },
+      },
+    ];
+
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue({ id: "task-1" }),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue(resultPage),
+      },
+      itemMeta: {
+        findMany: jest.fn().mockImplementation(async (args: any) => {
+          const row = {
+            externalId: "crawlResult:result-1",
+            mongoRef: "",
+          };
+          const mongoRefFilter = args?.where?.mongoRef;
+          const matchesMongoRef =
+            !mongoRefFilter || row.mongoRef !== mongoRefFilter.not;
+          return matchesMongoRef ? [{ externalId: row.externalId }] : [];
+        }),
+      },
+    } as any;
+
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(itemsServiceMock),
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      moduleRef,
+    );
+
+    const summary = await service.ingestResultsToItems("org-1", "user-1", "task-1");
+
+    expect(prismaMock.itemMeta.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        externalId: { in: ["crawlResult:result-1"] },
+        mongoRef: { not: "" },
+      },
+      select: { externalId: true },
+    });
+    expect(itemsServiceMock.createFromCrawlResultsBatch).toHaveBeenCalledWith(
+      "org-1",
+      "user-1",
+      {
+        crawlResults: resultPage,
+      },
+    );
+    expect(summary).toEqual({
+      taskId: "task-1",
+      scanned: 1,
+      attempted: 1,
+      ingested: 1,
+      skippedExisting: 0,
+      failed: 0,
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
   it("records a cleanup intent in MongoOutbox when deleting a task", async () => {
     const tx = {
       crawlResult: { deleteMany: jest.fn().mockResolvedValue(undefined) },

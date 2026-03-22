@@ -769,7 +769,8 @@ describe("ItemsService.createFromCrawlResult", () => {
             }
           ]),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 })
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 })
       },
       auditLog: {
         create: jest.fn().mockResolvedValue(undefined)
@@ -836,6 +837,155 @@ describe("ItemsService.createFromCrawlResult", () => {
     );
     expect(created.id).toBe("meta-1");
     expect(created.mongoRef).toEqual(expect.any(String));
+  });
+
+  it("cleans up a newly created item meta when raw validation fails", async () => {
+    const itemMetaFindMany = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async () => [
+        {
+          id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+          orgId: "org-1",
+          externalId: "crawlResult:crawl-result-1",
+          name: "Example: https://example.com/story",
+          status: ItemStatus.Pending,
+          mongoRef: "",
+          createdAt: new Date("2024-01-02T00:00:00.000Z"),
+          updatedAt: new Date("2024-01-02T00:00:00.000Z")
+        }
+      ]);
+    const prisma = {
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "crawl-result-1",
+            taskId: "crawl-task-1",
+            sourceUrl: "https://example.com/story",
+            fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+            contentHash: "hash-1",
+            metadata: {},
+            task: {
+              id: "crawl-task-1",
+              displayName: "Example",
+              targetUrl: "https://example.com",
+              keywords: ["markets"],
+              config: null
+            }
+          }
+        ])
+      },
+      itemMeta: {
+        findMany: itemMetaFindMany,
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 })
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue(undefined)
+      }
+    };
+
+    mockRawItemValidate.mockRejectedValue(new Error("invalid raw crawl item"));
+
+    const service = new ItemsService(
+      prisma as any,
+      { enqueueItem: jest.fn().mockResolvedValue(null) } as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    await expect(
+      service.createFromCrawlResult("org-1", "user-1", "crawl-result-1")
+    ).rejects.toThrow("invalid raw crawl item");
+
+    expect(prisma.itemMeta.createMany).toHaveBeenCalledTimes(1);
+    expect(prisma.itemMeta.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+        mongoRef: ""
+      }
+    });
+    expect(mockRawItemInsertMany).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a newly created item meta when raw insertion does not persist", async () => {
+    const itemMetaFindMany = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async () => [
+        {
+          id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+          orgId: "org-1",
+          externalId: "crawlResult:crawl-result-1",
+          name: "Example: https://example.com/story",
+          status: ItemStatus.Pending,
+          mongoRef: "",
+          createdAt: new Date("2024-01-02T00:00:00.000Z"),
+          updatedAt: new Date("2024-01-02T00:00:00.000Z")
+        }
+      ]);
+    const prisma = {
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "crawl-result-1",
+            taskId: "crawl-task-1",
+            sourceUrl: "https://example.com/story",
+            fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+            contentHash: "hash-1",
+            metadata: {},
+            task: {
+              id: "crawl-task-1",
+              displayName: "Example",
+              targetUrl: "https://example.com",
+              keywords: ["markets"],
+              config: null
+            }
+          }
+        ])
+      },
+      itemMeta: {
+        findMany: itemMetaFindMany,
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(null)
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue(undefined)
+      }
+    };
+
+    mockRawItemValidate.mockResolvedValue(undefined);
+    mockRawItemInsertMany.mockRejectedValue(new Error("insert failed"));
+    mockRawItemFind.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([])
+    });
+
+    const service = new ItemsService(
+      prisma as any,
+      { enqueueItem: jest.fn().mockResolvedValue(null) } as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    await expect(
+      service.createFromCrawlResult("org-1", "user-1", "crawl-result-1")
+    ).rejects.toThrow("Failed to persist raw crawl result item");
+
+    expect(mockRawItemInsertMany).toHaveBeenCalledTimes(1);
+    expect(prisma.itemMeta.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+        mongoRef: ""
+      }
+    });
   });
 });
 
