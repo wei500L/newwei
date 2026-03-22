@@ -435,37 +435,40 @@ export function CrawlTasksView() {
     );
   }, [clientSettingsForm, crawlClientSettingsData?.crawlClientSettings]);
 
-  const loadQueueStats = useCallback(async (options?: { silent?: boolean }) => {
-    if (!canView) {
-      return;
-    }
-    if (!options?.silent) {
-      setQueueStatsLoading(true);
-    }
-    try {
-      const response = await apiClient.get<CrawlQueueOpsStats>(
-        "admin/crawl4ai/queue",
-      );
-      setQueueStats(response.data);
-      if (
-        typeof response.data.maxConcurrency === "number" &&
-        Number.isFinite(response.data.maxConcurrency)
-      ) {
-        setMaxConcurrencyInput(response.data.maxConcurrency);
+  const loadQueueStats = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!canView) {
+        return;
       }
-    } catch (error: unknown) {
       if (!options?.silent) {
-        message.error(
-          (error as Error).message ??
-            t("common.failed", { defaultValue: "Failed" }),
+        setQueueStatsLoading(true);
+      }
+      try {
+        const response = await apiClient.get<CrawlQueueOpsStats>(
+          "admin/crawl4ai/queue",
         );
+        setQueueStats(response.data);
+        if (
+          typeof response.data.maxConcurrency === "number" &&
+          Number.isFinite(response.data.maxConcurrency)
+        ) {
+          setMaxConcurrencyInput(response.data.maxConcurrency);
+        }
+      } catch (error: unknown) {
+        if (!options?.silent) {
+          message.error(
+            (error as Error).message ??
+              t("common.failed", { defaultValue: "Failed" }),
+          );
+        }
+      } finally {
+        if (!options?.silent) {
+          setQueueStatsLoading(false);
+        }
       }
-    } finally {
-      if (!options?.silent) {
-        setQueueStatsLoading(false);
-      }
-    }
-  }, [apiClient, canView, message, t]);
+    },
+    [apiClient, canView, message, t],
+  );
 
   useEffect(() => {
     void loadQueueStats();
@@ -644,7 +647,10 @@ export function CrawlTasksView() {
         silent: options?.silent,
       });
       if (options?.preservePage) {
-        const maxPage = Math.max(1, Math.ceil(totalCountRef.current / pageSize));
+        const maxPage = Math.max(
+          1,
+          Math.ceil(totalCountRef.current / pageSize),
+        );
         if (currentPageRef.current > maxPage) {
           setPagination((prev) => ({ ...prev, current: maxPage }));
         }
@@ -1525,6 +1531,12 @@ export function CrawlTasksView() {
                     {t("common.saveChanges", { defaultValue: "Save Changes" })}
                   </Button>
                 </Space.Compact>
+                <Typography.Text type="secondary" style={{ display: "block" }}>
+                  {t("crawl.ops.maxConcurrencyHelp", {
+                    defaultValue:
+                      "Controls crawl queue workers only. Crawl-result to item ingest uses a fixed internal concurrency of 8 and is not affected here.",
+                  })}
+                </Typography.Text>
                 <Typography.Text type="secondary">
                   {t("crawl.ops.effectiveConcurrency", {
                     defaultValue: "Effective",
@@ -1618,7 +1630,8 @@ export function CrawlTasksView() {
                             (queueStats?.adaptive?.metrics?.errorRate ?? 0) *
                             100
                           ).toFixed(1)}%`
-                        : "-"}/
+                        : "-"}
+                      /
                       {typeof queueStats?.adaptive?.metrics?.memoryHeadroom ===
                       "number"
                         ? `${(
@@ -1753,9 +1766,12 @@ export function CrawlTasksView() {
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.requestTimeoutHot", {
-                          defaultValue: "Please enter hot request timeout.",
-                        }),
+                        message: t(
+                          "settings.crawlClient.validation.requestTimeoutHot",
+                          {
+                            defaultValue: "Please enter hot request timeout.",
+                          },
+                        ),
                       },
                       {
                         type: "number",
@@ -1778,16 +1794,23 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.requestTimeoutNormal", {
-                      defaultValue: "Normal request timeout",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.requestTimeoutNormal",
+                      {
+                        defaultValue: "Normal request timeout",
+                      },
+                    )}
                     name="requestTimeoutNormalMs"
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.requestTimeoutNormal", {
-                          defaultValue: "Please enter normal request timeout.",
-                        }),
+                        message: t(
+                          "settings.crawlClient.validation.requestTimeoutNormal",
+                          {
+                            defaultValue:
+                              "Please enter normal request timeout.",
+                          },
+                        ),
                       },
                       {
                         type: "number",
@@ -1810,9 +1833,12 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.conditionalRequestEnabled", {
-                      defaultValue: "Enable HTTP conditional requests",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.conditionalRequestEnabled",
+                      {
+                        defaultValue: "Enable HTTP conditional requests",
+                      },
+                    )}
                     name="conditionalRequestEnabled"
                     valuePropName="checked"
                   >
@@ -1821,17 +1847,23 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.conditionalRequestTimeoutMs", {
-                      defaultValue: "Conditional request timeout",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.conditionalRequestTimeoutMs",
+                      {
+                        defaultValue: "Conditional request timeout",
+                      },
+                    )}
                     name="conditionalRequestTimeoutMs"
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.conditionalRequestTimeoutMs", {
-                          defaultValue:
-                            "Please enter conditional request timeout.",
-                        }),
+                        message: t(
+                          "settings.crawlClient.validation.conditionalRequestTimeoutMs",
+                          {
+                            defaultValue:
+                              "Please enter conditional request timeout.",
+                          },
+                        ),
                       },
                       {
                         type: "number",
@@ -1855,17 +1887,23 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.conditionalRequestMaxRetries", {
-                      defaultValue: "Conditional request retries",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.conditionalRequestMaxRetries",
+                      {
+                        defaultValue: "Conditional request retries",
+                      },
+                    )}
                     name="conditionalRequestMaxRetries"
                     rules={[
                       {
                         required: true,
-                        message: t("settings.crawlClient.validation.conditionalRequestMaxRetries", {
-                          defaultValue:
-                            "Please enter conditional request retries.",
-                        }),
+                        message: t(
+                          "settings.crawlClient.validation.conditionalRequestMaxRetries",
+                          {
+                            defaultValue:
+                              "Please enter conditional request retries.",
+                          },
+                        ),
                       },
                       {
                         type: "number",
@@ -1990,15 +2028,11 @@ export function CrawlTasksView() {
                       },
                       {
                         type: "number",
-                        min:
-                          MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
-                        max:
-                          MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                        min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                        max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
                         message: t("common.validation.numberRange", {
-                          min:
-                            MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
-                          max:
-                            MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                          min: MIN_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
+                          max: MAX_DETAIL_PUBLISH_SIGNAL_HEAD_FETCH_MAX_READ_BYTES,
                         }),
                       },
                     ]}
@@ -2112,9 +2146,12 @@ export function CrawlTasksView() {
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item
-                    label={t("settings.crawlClient.fields.adaptiveConcurrency", {
-                      defaultValue: "Adaptive concurrency",
-                    })}
+                    label={t(
+                      "settings.crawlClient.fields.adaptiveConcurrency",
+                      {
+                        defaultValue: "Adaptive concurrency",
+                      },
+                    )}
                     name="adaptiveConcurrencyEnabled"
                     valuePropName="checked"
                   >
@@ -2141,9 +2178,12 @@ export function CrawlTasksView() {
                   <>
                     <Col xs={24} md={12}>
                       <Form.Item
-                        label={t("settings.crawlClient.fields.adaptiveWindowMinutes", {
-                          defaultValue: "Adaptive window",
-                        })}
+                        label={t(
+                          "settings.crawlClient.fields.adaptiveWindowMinutes",
+                          {
+                            defaultValue: "Adaptive window",
+                          },
+                        )}
                         name="adaptiveWindowMinutes"
                         rules={[
                           {
@@ -2177,9 +2217,12 @@ export function CrawlTasksView() {
                     </Col>
                     <Col xs={24} md={12}>
                       <Form.Item
-                        label={t("settings.crawlClient.fields.adaptiveCooldownMinutes", {
-                          defaultValue: "Adaptive cooldown",
-                        })}
+                        label={t(
+                          "settings.crawlClient.fields.adaptiveCooldownMinutes",
+                          {
+                            defaultValue: "Adaptive cooldown",
+                          },
+                        )}
                         name="adaptiveCooldownMinutes"
                         rules={[
                           {
@@ -2253,9 +2296,12 @@ export function CrawlTasksView() {
                     </Col>
                     <Col xs={24} md={12}>
                       <Form.Item
-                        label={t("settings.crawlClient.fields.adaptiveErrorRateThreshold", {
-                          defaultValue: "Adaptive error-rate threshold",
-                        })}
+                        label={t(
+                          "settings.crawlClient.fields.adaptiveErrorRateThreshold",
+                          {
+                            defaultValue: "Adaptive error-rate threshold",
+                          },
+                        )}
                         name="adaptiveErrorRateThreshold"
                         rules={[
                           {

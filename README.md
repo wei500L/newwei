@@ -18,6 +18,7 @@
 - [常用命令](#常用命令)
 - [项目结构](#项目结构)
 - [配置指南](#配置指南)
+- [并发控制说明](#并发控制说明)
 - [API 文档入口](#api-文档入口)
 - [开发规范](#开发规范)
 - [部署与运维](#部署与运维)
@@ -331,6 +332,10 @@ pnpm --filter infra-scripts run env:check
 - 对象存储：`S3_*`（Docker 默认用 MinIO）
 - 经济数据：`AKSHARE_ENABLED`、`AKSHARE_HTTP_BASE_URL`、`AKSHARE_ADMIN_TOKEN`
 - 模型服务：`MODEL_SERVICE_ENABLED`、`MODEL_SERVICE_BASE_URL`、`MODEL_SERVICE_INTERNAL_TOKEN`
+
+## 并发控制说明
+
+- 用户可调并发、环境上限和固定内部并发的作用范围对照，见 [docs/concurrency-controls.md](docs/concurrency-controls.md)。
 
 ### OpenSky 飞行数据源
 

@@ -501,7 +501,14 @@ function CrawlSettingsForm({
           disabledDate={(date) => date && date > dayjs()}
         />
       </Form.Item>
-      <Form.Item label={t("crawl.settings.concurrency")} name="concurrency">
+      <Form.Item
+        label={t("crawl.settings.concurrency")}
+        name="concurrency"
+        extra={t("crawl.settings.concurrencyHint", {
+          defaultValue:
+            "Per-task crawl request fan-out. Separate from admin queue max concurrency, and the server clamps it to the service crawl concurrency cap.",
+        })}
+      >
         <InputNumber
           min={1}
           max={10}
@@ -2163,8 +2170,7 @@ function CrawlSettingsForm({
                           label={t(
                             "crawl.detailExpansion.preferFitMarkdownForQuality",
                             {
-                              defaultValue:
-                                "Prefer fit markdown for quality",
+                              defaultValue: "Prefer fit markdown for quality",
                             },
                           )}
                           name={[

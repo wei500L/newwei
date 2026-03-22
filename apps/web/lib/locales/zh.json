@@ -4790,6 +4790,9 @@
           "monthlyBudgetUsd": "30d budget (USD)",
           "maxParallelRequests": "Max parallel requests"
         },
+        "hints": {
+          "maxParallelRequests": "仅在启用治理时作用于 LiteLLM 托管 runtime key，不会改变应用侧 worker 并发，也不会影响代理压测/测试并发。"
+        },
         "validation": {
           "targetProfileRequired": "Select the LiteLLM gateway profile that governance should manage"
         },
@@ -7498,6 +7501,7 @@
       "pauseQueue": "暂停队列",
       "resumeQueue": "恢复队列",
       "maxConcurrency": "全局最大并发数",
+      "maxConcurrencyHelp": "仅控制 crawl 队列 worker。抓取结果导入 Items 使用固定的内部并发 8，不受这里影响。",
       "effectiveConcurrency": "生效并发",
       "batchFrequency": "批量调度间隔（秒）",
       "applyAll": "应用到全部",
@@ -7849,6 +7853,7 @@
       "keywords": "关键词",
       "timeRange": "时间范围",
       "concurrency": "并发",
+      "concurrencyHint": "这是单个任务内部的抓取请求并发，和管理页里的队列全局并发不是一回事；后端还会按服务侧抓取并发上限进行截断。",
       "includeImages": "包含图片",
       "storeMedia": "存储媒体",
       "storeMediaHint": "存储媒体提示",

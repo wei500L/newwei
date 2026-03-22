@@ -4790,6 +4790,9 @@
           "monthlyBudgetUsd": "30d budget (USD)",
           "maxParallelRequests": "Max parallel requests"
         },
+        "hints": {
+          "maxParallelRequests": "Applies only to the managed LiteLLM runtime key when governance is enabled. It does not change app-side worker concurrency or proxy test concurrency."
+        },
         "validation": {
           "targetProfileRequired": "Select the LiteLLM gateway profile that governance should manage"
         },
@@ -7498,6 +7501,7 @@
       "pauseQueue": "Pause queue",
       "resumeQueue": "Resume queue",
       "maxConcurrency": "Global max concurrency",
+      "maxConcurrencyHelp": "Controls crawl queue workers only. Crawl-result to item ingest uses a fixed internal concurrency of 8 and is not affected here.",
       "effectiveConcurrency": "Effective",
       "batchFrequency": "Batch schedule interval (seconds)",
       "applyAll": "Apply to all",
@@ -7849,6 +7853,7 @@
       "keywords": "Keywords",
       "timeRange": "Time range",
       "concurrency": "Concurrency",
+      "concurrencyHint": "Per-task crawl request fan-out. Separate from admin queue max concurrency, and the server clamps it to the service crawl concurrency cap.",
       "includeImages": "Include images",
       "storeMedia": "Store media",
       "storeMediaHint": "Store media hint",
