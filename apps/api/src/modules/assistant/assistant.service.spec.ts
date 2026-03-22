@@ -1,6 +1,39 @@
 import type { PubSubEngine } from "graphql-subscriptions";
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
-import { AssistantRunModel } from "@modular/mongo";
+
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {}
+  }),
+  { virtual: true }
+);
+
+jest.mock("@modular/mongo", () => ({
+  AssistantRunModel: {
+    create: jest.fn(),
+    find: jest.fn(),
+    findById: jest.fn(),
+  },
+  RawItemModel: {
+    find: jest.fn(),
+  },
+  ProcessedItemModel: {
+    aggregate: jest.fn(),
+  },
+}));
+
+import {
+  AssistantRunModel,
+  ProcessedItemModel,
+  RawItemModel,
+} from "@modular/mongo";
 
 import type { EnvService } from "../config/config.service";
 import type { PrismaService } from "../config/prisma.service";
@@ -25,6 +58,9 @@ jest.mock("@modular/utils", () => ({
   ensureTraceId: () => "test-trace-id",
   getCurrentTraceId: () => undefined
 }));
+
+const mockRawItemFind = RawItemModel.find as jest.Mock;
+const mockProcessedItemAggregate = ProcessedItemModel.aggregate as jest.Mock;
 
 function createService(overrides?: { stream?: LiteLlmService["stream"] }) {
   async function* failingStream(): AsyncGenerator<LiteLlmStreamChunk> {
@@ -657,5 +693,109 @@ describe("AssistantService.runQuery", () => {
     );
     expect(result.summary).toBe("web-ok");
     expect(result.knowledgeSource).toBe("web_search");
+  });
+});
+
+describe("AssistantService.renderNewsItems", () => {
+  beforeEach(() => {
+    mockRawItemFind.mockReset();
+    mockProcessedItemAggregate.mockReset();
+  });
+
+  it("loads minimal raw payload fields and only keeps the latest processed result per itemMetaId", async () => {
+    mockRawItemFind.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: { toString: () => "raw-1" },
+          itemMetaId: "meta-1",
+          payload: {
+            url: "https://example.com/story",
+            sourceName: "Example Source",
+            ignored: "large-payload",
+          },
+        },
+      ]),
+    });
+    mockProcessedItemAggregate.mockResolvedValue([
+      {
+        itemMetaId: "meta-1",
+        result: {
+          title: "Latest title",
+          summary: "Latest summary",
+          sentiment_label: "positive",
+          published_at: "2026-01-02T00:00:00.000Z",
+        },
+      },
+    ]);
+
+    const { service } = createService();
+    const renderNewsItems = (
+      service as unknown as {
+        renderNewsItems: (
+          orgId: string,
+          items: Array<{ id: string; mongoRef?: string | null; name?: string | null; publishedAt?: Date | null }>
+        ) => Promise<Array<{ itemMetaId: string; title?: string | null; source?: string | null; url?: string | null }>>;
+      }
+    ).renderNewsItems.bind(service);
+
+    const rendered = await renderNewsItems("org-1", [
+      {
+        id: "meta-1",
+        mongoRef: "raw-1",
+        name: "Fallback title",
+        publishedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+
+    expect(mockRawItemFind).toHaveBeenCalledWith(
+      { _id: { $in: ["raw-1"] } },
+      { itemMetaId: 1, "payload.url": 1, "payload.sourceName": 1 }
+    );
+    expect(mockProcessedItemAggregate).toHaveBeenCalledWith([
+      {
+        $match: {
+          orgId: "org-1",
+          itemMetaId: { $in: ["meta-1"] },
+          status: "completed",
+          duplicateOf: null,
+        },
+      },
+      {
+        $sort: {
+          itemMetaId: 1,
+          createdAt: -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$itemMetaId",
+          result: { $first: "$result" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          itemMetaId: "$_id",
+          result: {
+            title: "$result.title",
+            summary: "$result.summary",
+            sentiment_label: "$result.sentiment_label",
+            sentiment: "$result.sentiment",
+            published_at: "$result.published_at",
+          },
+        },
+      },
+    ]);
+    expect(rendered).toEqual([
+      {
+        itemMetaId: "meta-1",
+        title: "Latest title",
+        summary: "Latest summary",
+        source: "Example Source",
+        publishedAt: "2026-01-02T00:00:00.000Z",
+        url: "https://example.com/story",
+        sentiment: "positive",
+      },
+    ]);
   });
 });

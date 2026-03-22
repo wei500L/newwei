@@ -7,6 +7,10 @@ import { ItemsService } from "./items.service";
 const mockRawItemCreate = jest.fn();
 const mockRawItemFind = jest.fn();
 const mockRawItemAggregate = jest.fn();
+const mockRawItemValidate = jest.fn();
+const mockRawItemInsertMany = jest.fn();
+const mockRawItemDeleteOne = jest.fn();
+const mockRawItemFindById = jest.fn();
 const mockProcessedItemAggregate = jest.fn();
 const mockProcessedItemFind = jest.fn();
 const mockItemReadModelFind = jest.fn();
@@ -28,28 +32,72 @@ jest.mock(
   { virtual: true }
 );
 
-jest.mock("@modular/mongo", () => ({
-  RawItemModel: {
-    create: (...args: unknown[]) => mockRawItemCreate(...args),
-    find: (...args: unknown[]) => mockRawItemFind(...args),
-    aggregate: (...args: unknown[]) => mockRawItemAggregate(...args)
-  },
-  ProcessedItemModel: {
-    aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args),
-    find: (...args: unknown[]) => mockProcessedItemFind(...args)
-  },
-  ItemReadModelModel: {
-    find: (...args: unknown[]) => mockItemReadModelFind(...args),
-    findOne: (...args: unknown[]) => mockItemReadModelFindOne(...args),
-    updateOne: (...args: unknown[]) => mockItemReadModelUpdateOne(...args),
-    bulkWrite: (...args: unknown[]) => mockItemReadModelBulkWrite(...args)
+jest.mock("@modular/mongo", () => {
+  class RawItemModelMock {
+    _id: unknown;
+    itemMetaId: string;
+    payload: unknown;
+    source: string;
+
+    constructor(input: { _id: unknown; itemMetaId: string; payload: unknown; source: string }) {
+      this._id = input._id;
+      this.itemMetaId = input.itemMetaId;
+      this.payload = input.payload;
+      this.source = input.source;
+    }
+
+    validate(...args: unknown[]) {
+      return mockRawItemValidate(...args);
+    }
+
+    static create(...args: unknown[]) {
+      return mockRawItemCreate(...args);
+    }
+
+    static find(...args: unknown[]) {
+      return mockRawItemFind(...args);
+    }
+
+    static aggregate(...args: unknown[]) {
+      return mockRawItemAggregate(...args);
+    }
+
+    static insertMany(...args: unknown[]) {
+      return mockRawItemInsertMany(...args);
+    }
+
+    static deleteOne(...args: unknown[]) {
+      return mockRawItemDeleteOne(...args);
+    }
+
+    static findById(...args: unknown[]) {
+      return mockRawItemFindById(...args);
+    }
   }
-}));
+
+  return {
+    RawItemModel: RawItemModelMock,
+    ProcessedItemModel: {
+      aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args),
+      find: (...args: unknown[]) => mockProcessedItemFind(...args)
+    },
+    ItemReadModelModel: {
+      find: (...args: unknown[]) => mockItemReadModelFind(...args),
+      findOne: (...args: unknown[]) => mockItemReadModelFindOne(...args),
+      updateOne: (...args: unknown[]) => mockItemReadModelUpdateOne(...args),
+      bulkWrite: (...args: unknown[]) => mockItemReadModelBulkWrite(...args)
+    }
+  };
+});
 
 beforeEach(() => {
   mockRawItemCreate.mockReset();
   mockRawItemFind.mockReset();
   mockRawItemAggregate.mockReset();
+  mockRawItemValidate.mockReset();
+  mockRawItemInsertMany.mockReset();
+  mockRawItemDeleteOne.mockReset();
+  mockRawItemFindById.mockReset();
   mockProcessedItemAggregate.mockReset();
   mockProcessedItemFind.mockReset();
   mockItemReadModelFind.mockReset();
@@ -686,34 +734,54 @@ describe("ItemsService.createFromCrawlResult", () => {
   it("creates an item meta + raw item and enqueues the pipeline job", async () => {
     const prisma = {
       crawlResult: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: "crawl-result-1",
-          taskId: "crawl-task-1",
-          sourceUrl: "https://example.com/story",
-          fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
-          contentHash: "hash-1",
-          metadata: { thumbnail: "https://example.com/thumb.jpg" },
-          task: { id: "crawl-task-1", displayName: "Example", targetUrl: "https://example.com" }
-        })
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "crawl-result-1",
+            taskId: "crawl-task-1",
+            sourceUrl: "https://example.com/story",
+            fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+            contentHash: "hash-1",
+            metadata: { thumbnail: "https://example.com/thumb.jpg" },
+            task: {
+              id: "crawl-task-1",
+              displayName: "Example",
+              targetUrl: "https://example.com",
+              keywords: ["markets"],
+              config: null
+            }
+          }
+        ])
       },
       itemMeta: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({
-          id: "meta-1",
-          orgId: "org-1",
-          externalId: "crawlResult:crawl-result-1",
-          name: "Example: https://example.com/story",
-          status: ItemStatus.Pending,
-          mongoRef: "",
-          createdAt: new Date("2024-01-02T00:00:00.000Z"),
-          updatedAt: new Date("2024-01-02T00:00:00.000Z")
-        }),
-        update: jest.fn().mockResolvedValue(null)
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "meta-1",
+              orgId: "org-1",
+              externalId: "crawlResult:crawl-result-1",
+              name: "Example: https://example.com/story",
+              status: ItemStatus.Pending,
+              mongoRef: "",
+              createdAt: new Date("2024-01-02T00:00:00.000Z"),
+              updatedAt: new Date("2024-01-02T00:00:00.000Z")
+            }
+          ]),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 })
       },
-      $transaction: jest.fn(async (cb: any) => cb(prisma))
+      auditLog: {
+        create: jest.fn().mockResolvedValue(undefined)
+      }
     };
 
-    mockRawItemCreate.mockResolvedValue({ id: "raw-1" });
+    mockRawItemValidate.mockResolvedValue(undefined);
+    mockRawItemInsertMany.mockResolvedValue(undefined);
+    mockRawItemFind.mockImplementation((query: { _id: { $in: unknown[] } }) => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(query._id.$in.map((_id) => ({ _id })))
+    }));
 
     const queueService = { enqueueItem: jest.fn().mockResolvedValue(null) };
 
@@ -729,37 +797,45 @@ describe("ItemsService.createFromCrawlResult", () => {
 
     const created = await service.createFromCrawlResult("org-1", "user-1", "crawl-result-1");
 
-    expect(prisma.crawlResult.findFirst).toHaveBeenCalledWith(
+    expect(prisma.crawlResult.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          id: "crawl-result-1",
+          id: { in: ["crawl-result-1"] },
           task: { orgId: "org-1" }
         }
       })
     );
-    expect(prisma.itemMeta.create).toHaveBeenCalledTimes(1);
-    expect(mockRawItemCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        itemMetaId: "meta-1",
-        source: "crawl-task",
-        payload: expect.objectContaining({
-          url: "https://example.com/story",
-          sourceName: "Example",
-          metadata: expect.objectContaining({
-            crawlResultId: "crawl-result-1",
-            crawlTaskId: "crawl-task-1"
-          })
+    expect(prisma.itemMeta.createMany).toHaveBeenCalledTimes(1);
+    expect(mockRawItemInsertMany).toHaveBeenCalledTimes(1);
+    const insertedRawDoc = mockRawItemInsertMany.mock.calls[0]?.[0]?.[0];
+    expect(insertedRawDoc).toMatchObject({
+      itemMetaId: "meta-1",
+      source: "crawl-task",
+      payload: expect.objectContaining({
+        url: "https://example.com/story",
+        sourceName: "Example",
+        keywords: ["markets"],
+        metadata: expect.objectContaining({
+          crawlResultId: "crawl-result-1",
+          crawlTaskId: "crawl-task-1"
         })
+      })
+    });
+    expect(prisma.itemMeta.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "meta-1", mongoRef: "" },
+        data: { mongoRef: expect.any(String) }
       })
     );
     expect(queueService.enqueueItem).toHaveBeenCalledWith(
       "org-1",
       "meta-1",
-      "raw-1",
+      expect.any(String),
       {},
       { pipelineJobId: undefined, sourceId: undefined }
     );
     expect(created.id).toBe("meta-1");
+    expect(created.mongoRef).toEqual(expect.any(String));
   });
 });
 

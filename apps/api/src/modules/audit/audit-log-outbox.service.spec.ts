@@ -15,6 +15,10 @@ describe("AuditLogOutboxService", () => {
     process.env.NODE_ENV = "production";
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it("marks invalid payloads as dead", async () => {
     const prisma = {
       auditLogOutbox: {
@@ -83,5 +87,91 @@ describe("AuditLogOutboxService", () => {
     );
 
     randomSpy.mockRestore();
+  });
+
+  it("processes multiple outbox entries without serial blocking", async () => {
+    const nowIso = new Date().toISOString();
+    let resolveSlowStarted: (() => void) | null = null;
+    let resolveFastStarted: (() => void) | null = null;
+    const slowStarted = new Promise<void>((resolve) => {
+      resolveSlowStarted = resolve;
+    });
+    const fastStarted = new Promise<void>((resolve) => {
+      resolveFastStarted = resolve;
+    });
+    let releaseSlowWrite: (() => void) | null = null;
+    const slowWrite = new Promise<void>((resolve) => {
+      releaseSlowWrite = resolve;
+    });
+
+    const prisma = {
+      runInTransaction: jest.fn().mockImplementation(async (fn: any) => {
+        const tx = {
+          auditLogOutbox: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue({ attempts: 1 })
+          }
+        };
+        return fn(tx);
+      }),
+      auditLog: {
+        create: jest.fn().mockImplementation(async ({ data }: { data: { resource: string } }) => {
+          if (data.resource === "slow-resource") {
+            resolveSlowStarted?.();
+            await slowWrite;
+            return;
+          }
+          resolveFastStarted?.();
+        })
+      },
+      auditLogOutbox: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "outbox-slow",
+            orgId: "org-1",
+            payload: {
+              orgId: "org-1",
+              resource: "slow-resource",
+              action: "create",
+              createdAt: nowIso
+            },
+            attempts: 0
+          },
+          {
+            id: "outbox-fast",
+            orgId: "org-1",
+            payload: {
+              orgId: "org-1",
+              resource: "fast-resource",
+              action: "create",
+              createdAt: nowIso
+            },
+            attempts: 0
+          }
+        ]),
+        delete: jest.fn().mockResolvedValue(undefined),
+        update: jest.fn().mockResolvedValue(undefined)
+      }
+    } as any;
+
+    const service = new AuditLogOutboxService(prisma);
+    const retryPromise = service.retryPendingAuditLogOutbox();
+
+    await Promise.all([slowStarted, fastStarted]);
+
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(2);
+    expect(prisma.auditLog.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ data: expect.objectContaining({ resource: "slow-resource" }) })
+    );
+    expect(prisma.auditLog.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ data: expect.objectContaining({ resource: "fast-resource" }) })
+    );
+
+    releaseSlowWrite?.();
+    await retryPromise;
+
+    expect(prisma.auditLogOutbox.delete).toHaveBeenCalledTimes(2);
   });
 });

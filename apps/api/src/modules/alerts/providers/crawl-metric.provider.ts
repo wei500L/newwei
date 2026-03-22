@@ -178,57 +178,85 @@ export class CrawlMetricProvider implements MetricProvider {
   }
 
   private async collectPreflightCounts(orgId: string, from: Date, to?: Date) {
-    const logs = await TaskLogModel.find({
-      orgId,
-      queue: CRAWL_QUEUE_NAME,
-      stage: "preflight",
-      createdAt: to ? { $gte: from, $lt: to } : { $gte: from }
-    })
-      .select({ status: 1, data: 1 })
-      .lean();
-
-    let runs = 0;
-    let failures = 0;
-    let http304Hits = 0;
-    for (const log of logs) {
-      runs += 1;
-      if (log.status === "failed") {
-        failures += 1;
+    const [row] = await TaskLogModel.aggregate<{
+      runs?: unknown;
+      failures?: unknown;
+      http304Hits?: unknown;
+    }>([
+      {
+        $match: {
+          orgId,
+          queue: CRAWL_QUEUE_NAME,
+          stage: "preflight",
+          createdAt: this.buildCreatedAtWindow(from, to)
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          runs: { $sum: 1 },
+          failures: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "failed"] }, 1, 0]
+            }
+          },
+          http304Hits: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $isNumber: "$data.status" },
+                    { $eq: [{ $round: ["$data.status", 0] }, 304] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          }
+        }
       }
-      const data =
-        log.data && typeof log.data === "object" && !Array.isArray(log.data)
-          ? (log.data as Record<string, unknown>)
-          : undefined;
-      if (this.toSafeNonNegativeInt(data?.status) === 304) {
-        http304Hits += 1;
-      }
-    }
+    ]);
 
-    return { runs, failures, http304Hits };
+    return {
+      runs: this.toSafeNonNegativeInt(row?.runs),
+      failures: this.toSafeNonNegativeInt(row?.failures),
+      http304Hits: this.toSafeNonNegativeInt(row?.http304Hits)
+    };
   }
 
   private async collectDedupeCounts(orgId: string, from: Date, to?: Date) {
-    const logs = await TaskLogModel.find({
-      orgId,
-      queue: CRAWL_QUEUE_NAME,
-      stage: "dedupe",
-      createdAt: to ? { $gte: from, $lt: to } : { $gte: from }
-    })
-      .select({ data: 1 })
-      .lean();
+    const [row] = await TaskLogModel.aggregate<{
+      evaluatedCount?: unknown;
+      orgReuseCount?: unknown;
+    }>([
+      {
+        $match: {
+          orgId,
+          queue: CRAWL_QUEUE_NAME,
+          stage: "dedupe",
+          createdAt: this.buildCreatedAtWindow(from, to)
+        }
+      },
+      {
+        $project: {
+          evaluatedCount: this.toRoundedNonNegativeNumberExpr("$data.evaluatedCount"),
+          orgReuseCount: this.toRoundedNonNegativeNumberExpr("$data.orgReuseCount")
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          evaluatedCount: { $sum: "$evaluatedCount" },
+          orgReuseCount: { $sum: "$orgReuseCount" }
+        }
+      }
+    ]);
 
-    let evaluatedCount = 0;
-    let orgReuseCount = 0;
-    for (const log of logs) {
-      const data =
-        log.data && typeof log.data === "object" && !Array.isArray(log.data)
-          ? (log.data as Record<string, unknown>)
-          : undefined;
-      evaluatedCount += this.toSafeNonNegativeInt(data?.evaluatedCount);
-      orgReuseCount += this.toSafeNonNegativeInt(data?.orgReuseCount);
-    }
-
-    return { evaluatedCount, orgReuseCount };
+    return {
+      evaluatedCount: this.toSafeNonNegativeInt(row?.evaluatedCount),
+      orgReuseCount: this.toSafeNonNegativeInt(row?.orgReuseCount)
+    };
   }
 
   private safeRate(numerator: number, denominator: number): number | null {
@@ -250,5 +278,19 @@ export class CrawlMetricProvider implements MetricProvider {
       return 0;
     }
     return Math.max(0, Math.round(value));
+  }
+
+  private buildCreatedAtWindow(from: Date, to?: Date) {
+    return to ? { $gte: from, $lt: to } : { $gte: from };
+  }
+
+  private toRoundedNonNegativeNumberExpr(path: string) {
+    return {
+      $cond: [
+        { $isNumber: path },
+        { $max: [{ $round: [path, 0] }, 0] },
+        0
+      ]
+    };
   }
 }

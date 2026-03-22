@@ -212,7 +212,36 @@ export class UserDigestService {
     const windowStart = new Date(windowEnd.getTime() - preference.windowDays * DAY_MS);
 
     const events = await this.loadEvents(orgId, preference, windowStart);
-    const enriched = await Promise.all(events.map((event) => this.enrichEvent(orgId, event, preference)));
+    const uniqueTopics = Array.from(
+      new Set(
+        events
+          .map((event) => (typeof event.primaryTopic === "string" ? event.primaryTopic.trim() : ""))
+          .filter((topic) => topic.length > 0)
+      )
+    );
+    const uniqueEntities = Array.from(
+      new Set(
+        events
+          .map((event) => (typeof event.primaryEntity === "string" ? event.primaryEntity.trim() : ""))
+          .filter((entity) => entity.length > 0)
+      )
+    );
+    const [topicSentimentByTopic, entitySentimentByEntity, indicatorAssociationsByScope] = await Promise.all([
+      this.loadLatestTopicSentiments(orgId, uniqueTopics),
+      this.loadLatestEntitySentiments(orgId, uniqueEntities),
+      preference.includeIndicators && preference.maxIndicatorsPerEvent > 0
+        ? this.loadIndicatorAssociationsByScope(orgId, events, preference.maxIndicatorsPerEvent)
+        : Promise.resolve(new Map<string, NonNullable<UserDigestEventV1["indicatorAssociations"]>>())
+    ]);
+    const enriched = events.map((event) =>
+      this.enrichEvent(
+        event,
+        preference,
+        topicSentimentByTopic,
+        entitySentimentByEntity,
+        indicatorAssociationsByScope
+      )
+    );
 
     return {
       version: 1,
@@ -283,8 +312,7 @@ export class UserDigestService {
     return [...primary, ...fallback];
   }
 
-  private async enrichEvent(
-    orgId: string,
+  private enrichEvent(
     event: {
       id: string;
       title: string | null;
@@ -296,15 +324,24 @@ export class UserDigestService {
       _count?: { items: number };
       representativeProcessedArticle?: { article?: { url: string } | null } | null;
     },
-    preference: UserDigestPreferenceV1
-  ): Promise<UserDigestEventV1> {
-    const [topicSentiment, entitySentiment, indicatorAssociations] = await Promise.all([
-      event.primaryTopic ? this.loadLatestTopicSentiment(orgId, event.primaryTopic) : Promise.resolve(null),
-      event.primaryEntity ? this.loadLatestEntitySentiment(orgId, event.primaryEntity) : Promise.resolve(null),
-      preference.includeIndicators && preference.maxIndicatorsPerEvent > 0
-        ? this.loadIndicatorAssociations(orgId, event, preference.maxIndicatorsPerEvent)
-        : Promise.resolve([])
-    ]);
+    preference: UserDigestPreferenceV1,
+    topicSentimentByTopic: Map<string, NonNullable<UserDigestEventV1["topicSentiment"]>>,
+    entitySentimentByEntity: Map<string, NonNullable<UserDigestEventV1["entitySentiment"]>>,
+    indicatorAssociationsByScope: Map<string, NonNullable<UserDigestEventV1["indicatorAssociations"]>>
+  ): UserDigestEventV1 {
+    const indicatorLimit = Math.min(Math.max(preference.maxIndicatorsPerEvent, 1), 50);
+    const indicatorAssociations = preference.includeIndicators
+      ? [
+          ...(event.primaryTopic
+            ? (indicatorAssociationsByScope.get(`topic:${event.primaryTopic}`) ?? [])
+            : []),
+          ...(event.primaryEntity
+            ? (indicatorAssociationsByScope.get(`entity:${event.primaryEntity}`) ?? [])
+            : [])
+        ]
+          .sort((left, right) => Math.abs(right.correlation) - Math.abs(left.correlation))
+          .slice(0, indicatorLimit)
+      : [];
 
     return {
       eventId: event.id,
@@ -316,76 +353,101 @@ export class UserDigestService {
       lastAt: event.lastAt.toISOString(),
       itemCount: event._count?.items ?? 0,
       representativeUrl: event.representativeProcessedArticle?.article?.url ?? null,
-      topicSentiment,
-      entitySentiment,
+      topicSentiment: event.primaryTopic ? (topicSentimentByTopic.get(event.primaryTopic) ?? null) : null,
+      entitySentiment: event.primaryEntity ? (entitySentimentByEntity.get(event.primaryEntity) ?? null) : null,
       ...(indicatorAssociations.length > 0 ? { indicatorAssociations } : {})
     };
   }
 
-  private async loadLatestTopicSentiment(orgId: string, topic: string) {
-    const row = await this.prisma.topicSentimentSnapshot.findFirst({
-      where: { orgId, topic },
-      orderBy: { bucketStart: "desc" },
-      select: { bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true }
-    });
-    if (!row) {
-      return null;
+  private async loadLatestTopicSentiments(orgId: string, topics: string[]) {
+    if (topics.length === 0) {
+      return new Map<string, NonNullable<UserDigestEventV1["topicSentiment"]>>();
     }
-    return {
-      bucketStart: row.bucketStart.toISOString(),
-      totalDocs: row.totalDocs,
-      avgScore: row.avgScore,
-      negativeRatio: row.negativeRatio
-    };
+
+    const rows = await this.prisma.topicSentimentSnapshot.findMany({
+      where: { orgId, topic: { in: topics } },
+      orderBy: [{ topic: "asc" }, { bucketStart: "desc" }],
+      select: { topic: true, bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true }
+    });
+
+    const topicSentimentByTopic = new Map<string, NonNullable<UserDigestEventV1["topicSentiment"]>>();
+    for (const row of rows) {
+      if (topicSentimentByTopic.has(row.topic)) {
+        continue;
+      }
+      topicSentimentByTopic.set(row.topic, {
+        bucketStart: row.bucketStart.toISOString(),
+        totalDocs: row.totalDocs,
+        avgScore: row.avgScore,
+        negativeRatio: row.negativeRatio
+      });
+    }
+
+    return topicSentimentByTopic;
   }
 
-  private async loadLatestEntitySentiment(orgId: string, entityName: string) {
+  private async loadLatestEntitySentiments(orgId: string, entityNames: string[]) {
+    if (entityNames.length === 0) {
+      return new Map<string, NonNullable<UserDigestEventV1["entitySentiment"]>>();
+    }
+
     const rows = await this.prisma.entitySentimentSnapshot.findMany({
-      where: { orgId, entityName },
-      orderBy: [{ bucketStart: "desc" }, { entityType: "asc" }],
-      take: 3,
-      select: { bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true }
+      where: { orgId, entityName: { in: entityNames } },
+      orderBy: [{ entityName: "asc" }, { bucketStart: "desc" }, { entityType: "asc" }],
+      select: { entityName: true, bucketStart: true, totalDocs: true, avgScore: true, negativeRatio: true }
     });
-    const row = rows[0];
-    if (!row) {
-      return null;
+
+    const entitySentimentByEntity = new Map<string, NonNullable<UserDigestEventV1["entitySentiment"]>>();
+    for (const row of rows) {
+      if (entitySentimentByEntity.has(row.entityName)) {
+        continue;
+      }
+      entitySentimentByEntity.set(row.entityName, {
+        bucketStart: row.bucketStart.toISOString(),
+        totalDocs: row.totalDocs,
+        avgScore: row.avgScore,
+        negativeRatio: row.negativeRatio
+      });
     }
-    return {
-      bucketStart: row.bucketStart.toISOString(),
-      totalDocs: row.totalDocs,
-      avgScore: row.avgScore,
-      negativeRatio: row.negativeRatio
-    };
+
+    return entitySentimentByEntity;
   }
 
-  private async loadIndicatorAssociations(
+  private async loadIndicatorAssociationsByScope(
     orgId: string,
-    event: { primaryTopic: string | null; primaryEntity: string | null },
+    events: Array<{ primaryTopic: string | null; primaryEntity: string | null }>,
     limit: number
   ) {
-    const clauses: Prisma.NewsIndicatorAssociationWhereInput[] = [];
-
-    if (event.primaryTopic) {
-      clauses.push({
-        scopeType: NewsIndicatorScopeType.topic,
-        scopeKey: event.primaryTopic,
-        featureMetric: NewsIndicatorFeatureMetric.volume
-      });
+    const scopeKeys = new Map<string, { scopeType: NewsIndicatorScopeType; scopeKey: string }>();
+    for (const event of events) {
+      if (event.primaryTopic) {
+        scopeKeys.set(`topic:${event.primaryTopic}`, {
+          scopeType: NewsIndicatorScopeType.topic,
+          scopeKey: event.primaryTopic
+        });
+      }
+      if (event.primaryEntity) {
+        scopeKeys.set(`entity:${event.primaryEntity}`, {
+          scopeType: NewsIndicatorScopeType.entity,
+          scopeKey: event.primaryEntity
+        });
+      }
     }
-    if (event.primaryEntity) {
-      clauses.push({
-        scopeType: NewsIndicatorScopeType.entity,
-        scopeKey: event.primaryEntity,
-        featureMetric: NewsIndicatorFeatureMetric.volume
-      });
+    const uniqueScopes = Array.from(scopeKeys.values());
+    if (uniqueScopes.length === 0) {
+      return new Map<string, NonNullable<UserDigestEventV1["indicatorAssociations"]>>();
     }
-
-    if (clauses.length === 0) {
-      return [];
-    }
+    const perEventLimit = Math.min(Math.max(limit, 1), 50);
 
     const rows = await this.prisma.newsIndicatorAssociation.findMany({
-      where: { orgId, OR: clauses },
+      where: {
+        orgId,
+        featureMetric: NewsIndicatorFeatureMetric.volume,
+        OR: uniqueScopes.map((scope) => ({
+          scopeType: scope.scopeType,
+          scopeKey: scope.scopeKey
+        }))
+      },
       include: {
         indicatorItem: true,
         backtests: {
@@ -393,27 +455,41 @@ export class UserDigestService {
           take: 1
         }
       },
-      take: Math.min(Math.max(limit, 1), 50) * 3
+      take: Math.min(perEventLimit * uniqueScopes.length * 3, 5000)
     });
 
-    rows.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
-    const selected = rows.slice(0, Math.min(Math.max(limit, 1), 50));
+    const grouped = new Map<string, NonNullable<UserDigestEventV1["indicatorAssociations"]>>();
+    for (const row of rows) {
+      const key = `${row.scopeType}:${row.scopeKey}`;
+      const existing = grouped.get(key) ?? [];
+      existing.push({
+        scopeType: row.scopeType,
+        featureMetric: row.featureMetric,
+        indicatorSlug: row.indicatorItem.slug,
+        indicatorDisplayName: row.indicatorItem.displayName ?? row.indicatorItem.slug,
+        lagDays: row.lagDays,
+        correlation: row.correlation,
+        pValue: row.pValue ?? null,
+        latestBacktest:
+          row.backtests.length > 0
+            ? {
+                createdAt: row.backtests[0]!.createdAt.toISOString(),
+                metrics: row.backtests[0]!.metrics ?? null
+              }
+            : null
+      });
+      grouped.set(key, existing);
+    }
 
-    return selected.map((row) => ({
-      scopeType: row.scopeType,
-      featureMetric: row.featureMetric,
-      indicatorSlug: row.indicatorItem.slug,
-      indicatorDisplayName: row.indicatorItem.displayName ?? row.indicatorItem.slug,
-      lagDays: row.lagDays,
-      correlation: row.correlation,
-      pValue: row.pValue ?? null,
-      latestBacktest:
-        row.backtests.length > 0
-          ? {
-              createdAt: row.backtests[0]!.createdAt.toISOString(),
-              metrics: row.backtests[0]!.metrics ?? null
-            }
-          : null
-    }));
+    for (const [key, entries] of grouped) {
+      grouped.set(
+        key,
+        entries
+          .sort((left, right) => Math.abs(right.correlation) - Math.abs(left.correlation))
+          .slice(0, perEventLimit)
+      );
+    }
+
+    return grouped;
   }
 }

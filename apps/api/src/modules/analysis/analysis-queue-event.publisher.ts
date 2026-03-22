@@ -26,6 +26,8 @@ export class AnalysisQueueEventPublisher implements OnModuleDestroy {
   private readonly logger = createLogger({ name: "analysis-queue-events" });
   private readonly orgCache = new Map<string, OrgCacheEntry>();
   private readonly orgCacheTtlMs = 10 * 60_000;
+  private readonly orgCachePruneIntervalMs = 60_000;
+  private lastPruneAt = 0;
 
   private readonly handleCompleted = async ({
     jobId,
@@ -174,19 +176,36 @@ export class AnalysisQueueEventPublisher implements OnModuleDestroy {
   }
 
   private setCachedOrgId(jobId: string, orgId: string) {
-    this.orgCache.set(jobId, { orgId, expiresAt: Date.now() + this.orgCacheTtlMs });
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
+    this.orgCache.set(jobId, { orgId, expiresAt: now + this.orgCacheTtlMs });
   }
 
   private getCachedOrgId(jobId: string): string | null {
+    const now = Date.now();
+    this.pruneExpiredOrgCacheIfDue(now);
     const cached = this.orgCache.get(jobId);
     if (!cached) {
       return null;
     }
-    if (Date.now() >= cached.expiresAt) {
+    if (now >= cached.expiresAt) {
       this.orgCache.delete(jobId);
       return null;
     }
     return cached.orgId;
+  }
+
+  private pruneExpiredOrgCacheIfDue(now: number) {
+    if (now - this.lastPruneAt < this.orgCachePruneIntervalMs) {
+      return;
+    }
+
+    for (const [jobId, entry] of this.orgCache) {
+      if (entry.expiresAt <= now) {
+        this.orgCache.delete(jobId);
+      }
+    }
+    this.lastPruneAt = now;
   }
 
   private async dispatchToListeners(orgId: string, payload: AnalysisQueueEventPayload) {
@@ -208,4 +227,3 @@ export class AnalysisQueueEventPublisher implements OnModuleDestroy {
     this.orgCache.clear();
   }
 }
-

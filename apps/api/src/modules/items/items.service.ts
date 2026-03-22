@@ -14,10 +14,11 @@ import {
   Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ItemMeta } from "@prisma/client";
 import { Types, type PipelineStage } from "mongoose";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { ItemStatus, PipelineStageStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { writeAuditLogBestEffort } from "../audit/audit-log.writer";
@@ -82,6 +83,7 @@ const DEFAULT_WEIGHT_RECENCY = 0.25;
 const DEFAULT_WEIGHT_SOURCE_TRUST = 0.15;
 const DEFAULT_WEIGHT_QUALITY = 0.05;
 const DEFAULT_SOURCE_TRUST_SCORE = 0.6;
+const CRAWL_RESULT_INGEST_CONCURRENCY = 8;
 const SOURCE_TRUST_SCORE_MAP: Record<string, number> = {
   reuters: 0.96,
   bloomberg: 0.95,
@@ -191,6 +193,50 @@ interface ItemReadModelSourceResolutionRecord {
   itemMetaId: string;
   pipelineJobIds: string[];
   crawlResultIds: string[];
+}
+
+const CRAWL_RESULT_ITEM_INGEST_SELECT = {
+  id: true,
+  taskId: true,
+  sourceUrl: true,
+  fetchedAt: true,
+  contentHash: true,
+  metadata: true,
+  task: {
+    select: {
+      id: true,
+      displayName: true,
+      targetUrl: true,
+      keywords: true,
+      config: true,
+    },
+  },
+} satisfies Prisma.CrawlResultSelect;
+
+type CrawlResultItemIngestRow = Prisma.CrawlResultGetPayload<{
+  select: typeof CRAWL_RESULT_ITEM_INGEST_SELECT;
+}>;
+
+interface CreateFromCrawlResultsBatchInput {
+  crawlResultIds?: string[];
+  crawlResults?: CrawlResultItemIngestRow[];
+}
+
+interface CreateFromCrawlResultsBatchResult {
+  crawlResultId: string;
+  itemMeta?: ItemMeta;
+  reason?: unknown;
+  status: "fulfilled" | "rejected";
+}
+
+interface PreparedCrawlResultItemIngestInput {
+  crawlResult: CrawlResultItemIngestRow;
+  externalId: string;
+  itemMetaName: string;
+  payload: NormalizedNewsPayload;
+  pipelineJobId?: string;
+  pipelinePriority?: number;
+  sourceId?: string;
 }
 
 interface TopicGroupItem {
@@ -1061,58 +1107,352 @@ export class ItemsService {
       throw new BadRequestException("crawlResultId is required");
     }
 
-    const externalId = `crawlResult:${normalizedId}`;
-    const crawlResult = await this.prisma.crawlResult.findFirst({
-      where: {
-        id: normalizedId,
-        task: { orgId }
-      },
-      select: {
-        id: true,
-        taskId: true,
-        sourceUrl: true,
-        fetchedAt: true,
-        contentHash: true,
-        metadata: true,
-        task: {
-          select: {
-            id: true,
-            displayName: true,
-            targetUrl: true,
-            keywords: true,
-            config: true
-          }
+    const [result] = await this.createFromCrawlResultsBatch(orgId, userId, {
+      crawlResultIds: [normalizedId]
+    });
+
+    if (!result || result.status === "rejected" || !result.itemMeta) {
+      throw (result?.reason ?? new NotFoundException("Crawl result not found"));
+    }
+
+    return result.itemMeta;
+  }
+
+  async createFromCrawlResultsBatch(
+    orgId: string,
+    userId: string,
+    input: CreateFromCrawlResultsBatchInput
+  ): Promise<CreateFromCrawlResultsBatchResult[]> {
+    const preloadedResults = Array.isArray(input.crawlResults) ? input.crawlResults : [];
+    const requestedIds =
+      preloadedResults.length > 0
+        ? Array.from(
+            new Set(
+              preloadedResults
+                .map((crawlResult) => (typeof crawlResult.id === "string" ? crawlResult.id.trim() : ""))
+                .filter((crawlResultId) => crawlResultId.length > 0)
+            )
+          )
+        : Array.from(
+            new Set(
+              (Array.isArray(input.crawlResultIds) ? input.crawlResultIds : [])
+                .map((crawlResultId) => (typeof crawlResultId === "string" ? crawlResultId.trim() : ""))
+                .filter((crawlResultId) => crawlResultId.length > 0)
+            )
+          );
+
+    if (requestedIds.length === 0) {
+      return [];
+    }
+
+    const resultsById = new Map<string, CreateFromCrawlResultsBatchResult>();
+    const crawlResultById = new Map<string, CrawlResultItemIngestRow>();
+
+    if (preloadedResults.length > 0) {
+      for (const crawlResult of preloadedResults) {
+        if (requestedIds.includes(crawlResult.id)) {
+          crawlResultById.set(crawlResult.id, crawlResult);
         }
       }
-    });
-
-    if (!crawlResult) {
-      throw new NotFoundException("Crawl result not found");
+    } else {
+      const crawlResults = await this.prisma.crawlResult.findMany({
+        where: {
+          id: { in: requestedIds },
+          task: { orgId }
+        },
+        select: CRAWL_RESULT_ITEM_INGEST_SELECT
+      });
+      for (const crawlResult of crawlResults) {
+        crawlResultById.set(crawlResult.id, crawlResult);
+      }
+      for (const crawlResultId of requestedIds) {
+        if (!crawlResultById.has(crawlResultId)) {
+          resultsById.set(crawlResultId, {
+            crawlResultId,
+            reason: new NotFoundException("Crawl result not found"),
+            status: "rejected"
+          });
+        }
+      }
     }
 
-    const resolvedExternalId = `crawlResult:${crawlResult.id}`;
-    const existing = await this.prisma.itemMeta.findFirst({
-      where: { orgId, externalId: resolvedExternalId }
-    });
+    const crawlResults = requestedIds
+      .map((crawlResultId) => crawlResultById.get(crawlResultId))
+      .filter((crawlResult): crawlResult is CrawlResultItemIngestRow => Boolean(crawlResult));
 
-    if (!existing && resolvedExternalId !== externalId) {
-      throw new BadRequestException("crawlResultId mismatch");
+    if (crawlResults.length === 0) {
+      return requestedIds.map((crawlResultId) => (
+        resultsById.get(crawlResultId) ?? {
+          crawlResultId,
+          reason: new NotFoundException("Crawl result not found"),
+          status: "rejected"
+        }
+      ));
     }
 
+    const preparedInputs = crawlResults.map((crawlResult) =>
+      this.prepareCrawlResultItemIngestInput(crawlResult)
+    );
+    const externalIds = preparedInputs.map((entry) => entry.externalId);
+    const existingMetas = await this.prisma.itemMeta.findMany({
+      where: {
+        orgId,
+        externalId: { in: externalIds }
+      }
+    });
+    const existingMetaByExternalId = new Map(existingMetas.map((meta) => [meta.externalId, meta]));
+    const plannedMetaIdByExternalId = new Map<string, string>();
+    const missingMetaRows = preparedInputs
+      .filter((entry) => !existingMetaByExternalId.has(entry.externalId))
+      .map((entry) => {
+        const id = randomUUID();
+        plannedMetaIdByExternalId.set(entry.externalId, id);
+        return {
+          id,
+          orgId,
+          externalId: entry.externalId,
+          name: entry.itemMetaName,
+          status: ItemStatus.Pending,
+          mongoRef: ""
+        };
+      });
+
+    if (missingMetaRows.length > 0) {
+      await this.prisma.itemMeta.createMany({
+        data: missingMetaRows,
+        skipDuplicates: true
+      });
+    }
+
+    const resolvedMetas =
+      missingMetaRows.length > 0
+        ? await this.prisma.itemMeta.findMany({
+            where: {
+              orgId,
+              externalId: { in: externalIds }
+            }
+          })
+        : existingMetas;
+    const metaByExternalId = new Map(resolvedMetas.map((meta) => [meta.externalId, meta]));
+
+    const metasWithMongoRef: Array<{ prepared: PreparedCrawlResultItemIngestInput; meta: ItemMeta }> = [];
+    const metasMissingMongoRef: Array<{
+      createdByThisProcess: boolean;
+      meta: ItemMeta;
+      prepared: PreparedCrawlResultItemIngestInput;
+    }> = [];
+
+    for (const prepared of preparedInputs) {
+      const meta = metaByExternalId.get(prepared.externalId);
+      if (!meta) {
+        resultsById.set(prepared.crawlResult.id, {
+          crawlResultId: prepared.crawlResult.id,
+          reason: new ServiceUnavailableException("Failed to resolve item meta for crawl result"),
+          status: "rejected"
+        });
+        continue;
+      }
+
+      if (meta.mongoRef.trim().length > 0) {
+        metasWithMongoRef.push({ prepared, meta });
+        continue;
+      }
+
+      metasMissingMongoRef.push({
+        createdByThisProcess: plannedMetaIdByExternalId.get(prepared.externalId) === meta.id,
+        meta,
+        prepared
+      });
+    }
+
+    const existingRefResults = await settleWithConcurrency(
+      metasWithMongoRef,
+      CRAWL_RESULT_INGEST_CONCURRENCY,
+      async ({ prepared, meta }) => {
+        await this.enqueueCrawlResultItem(orgId, meta, prepared);
+        return meta;
+      }
+    );
+    for (const result of existingRefResults) {
+      const crawlResultId = result.item.prepared.crawlResult.id;
+      if (result.status === "fulfilled") {
+        resultsById.set(crawlResultId, {
+          crawlResultId,
+          itemMeta: result.value,
+          status: "fulfilled"
+        });
+      } else {
+        resultsById.set(crawlResultId, {
+          crawlResultId,
+          reason: result.reason,
+          status: "rejected"
+        });
+      }
+    }
+
+    const rawValidationResults = await settleWithConcurrency(
+      metasMissingMongoRef,
+      CRAWL_RESULT_INGEST_CONCURRENCY,
+      async ({ createdByThisProcess, meta, prepared }) => {
+        const rawId = new Types.ObjectId();
+        const rawDoc = new RawItemModel({
+          _id: rawId,
+          itemMetaId: meta.id,
+          payload: prepared.payload,
+          source: "crawl-task"
+        });
+        await rawDoc.validate();
+        return {
+          createdByThisProcess,
+          meta,
+          prepared,
+          rawDoc,
+          rawId: rawId.toHexString()
+        };
+      }
+    );
+
+    const validatedRawPlans = rawValidationResults
+      .filter((result): result is Extract<(typeof rawValidationResults)[number], { status: "fulfilled" }> =>
+        result.status === "fulfilled"
+      )
+      .map((result) => result.value);
+    for (const result of rawValidationResults) {
+      if (result.status === "rejected") {
+        resultsById.set(result.item.prepared.crawlResult.id, {
+          crawlResultId: result.item.prepared.crawlResult.id,
+          reason: result.reason,
+          status: "rejected"
+        });
+      }
+    }
+
+    if (validatedRawPlans.length > 0) {
+      try {
+        await RawItemModel.insertMany(
+          validatedRawPlans.map((plan) => plan.rawDoc),
+          { ordered: false }
+        );
+      } catch (error) {
+        this.logger.warn(
+          {
+            err: error,
+            crawlResultIds: validatedRawPlans.map((plan) => plan.prepared.crawlResult.id),
+            orgId
+          },
+          "Failed to batch insert raw items for crawl results"
+        );
+      }
+
+      const insertedRawDocs = await RawItemModel.find({
+        _id: {
+          $in: validatedRawPlans.map((plan) => plan.rawDoc._id)
+        }
+      })
+        .select({ _id: 1 })
+        .lean();
+      const insertedRawIdSet = new Set(
+        insertedRawDocs.map((doc) => {
+          const id = doc?._id;
+          if (typeof id === "string") {
+            return id;
+          }
+          return id && typeof (id as { toString?: unknown }).toString === "function"
+            ? (id as { toString: () => string }).toString()
+            : "";
+        })
+      );
+
+      const missingMongoRefResults = await settleWithConcurrency(
+        validatedRawPlans,
+        CRAWL_RESULT_INGEST_CONCURRENCY,
+        async (plan) => {
+          if (!insertedRawIdSet.has(plan.rawId)) {
+            throw new ServiceUnavailableException("Failed to persist raw crawl result item");
+          }
+
+          const updated = await this.prisma.itemMeta.updateMany({
+            where: {
+              id: plan.meta.id,
+              mongoRef: ""
+            },
+            data: { mongoRef: plan.rawId }
+          });
+          if (updated.count === 0) {
+            await RawItemModel.deleteOne({ _id: plan.rawDoc._id }).catch(() => undefined);
+            const latest = await this.prisma.itemMeta.findUnique({
+              where: { id: plan.meta.id }
+            });
+            return latest ?? plan.meta;
+          }
+
+          const itemMeta: ItemMeta = {
+            ...plan.meta,
+            mongoRef: plan.rawId
+          };
+
+          if (plan.createdByThisProcess) {
+            this.writeCreateFromCrawlResultAuditLog(orgId, userId, plan.prepared.crawlResult);
+          }
+
+          await this.enqueueCrawlResultItem(orgId, itemMeta, plan.prepared);
+          await this.hydrateItemReadModel(orgId, itemMeta.id);
+          return itemMeta;
+        }
+      );
+
+      for (const result of missingMongoRefResults) {
+        const crawlResultId = result.item.prepared.crawlResult.id;
+        if (result.status === "fulfilled") {
+          resultsById.set(crawlResultId, {
+            crawlResultId,
+            itemMeta: result.value,
+            status: "fulfilled"
+          });
+        } else {
+          resultsById.set(crawlResultId, {
+            crawlResultId,
+            reason: result.reason,
+            status: "rejected"
+          });
+        }
+      }
+    }
+
+    return requestedIds.map((crawlResultId) => (
+      resultsById.get(crawlResultId) ?? {
+        crawlResultId,
+        reason: new ServiceUnavailableException("Failed to ingest crawl result"),
+        status: "rejected"
+      }
+    ));
+  }
+
+  private prepareCrawlResultItemIngestInput(
+    crawlResult: CrawlResultItemIngestRow
+  ): PreparedCrawlResultItemIngestInput {
     const crawlTaskConfig =
-      crawlResult.task.config && typeof crawlResult.task.config === "object" && !Array.isArray(crawlResult.task.config)
+      crawlResult.task.config &&
+      typeof crawlResult.task.config === "object" &&
+      !Array.isArray(crawlResult.task.config)
         ? (crawlResult.task.config as Record<string, unknown>)
         : null;
     const itemPayloadConfig =
-      crawlTaskConfig?.itemPayload && typeof crawlTaskConfig.itemPayload === "object" && !Array.isArray(crawlTaskConfig.itemPayload)
+      crawlTaskConfig?.itemPayload &&
+      typeof crawlTaskConfig.itemPayload === "object" &&
+      !Array.isArray(crawlTaskConfig.itemPayload)
         ? (crawlTaskConfig.itemPayload as Record<string, unknown>)
         : null;
     const itemPayloadMetadata =
-      itemPayloadConfig?.metadata && typeof itemPayloadConfig.metadata === "object" && !Array.isArray(itemPayloadConfig.metadata)
+      itemPayloadConfig?.metadata &&
+      typeof itemPayloadConfig.metadata === "object" &&
+      !Array.isArray(itemPayloadConfig.metadata)
         ? (itemPayloadConfig.metadata as Record<string, unknown>)
         : {};
     const crawlResultMetadata =
-      crawlResult.metadata && typeof crawlResult.metadata === "object" && !Array.isArray(crawlResult.metadata)
+      crawlResult.metadata &&
+      typeof crawlResult.metadata === "object" &&
+      !Array.isArray(crawlResult.metadata)
         ? (crawlResult.metadata as Record<string, unknown>)
         : {};
 
@@ -1133,8 +1473,6 @@ export class ItemsService {
     const language = languageFromPayload ?? languageFromMetadata;
     const tags = this.toStringArray(itemPayloadConfig?.tags);
     const summaryHints = this.toStringArray(itemPayloadConfig?.summaryHints);
-    const forceRefresh = false;
-
     const pipelineJobIdRaw = crawlTaskConfig?.pipelineJobId;
     const pipelineJobId =
       typeof pipelineJobIdRaw === "string" && pipelineJobIdRaw.trim().length > 0
@@ -1146,9 +1484,8 @@ export class ItemsService {
     const priorityRaw = crawlTaskConfig?.pipelinePriority;
     const pipelinePriority =
       typeof priorityRaw === "number" && Number.isFinite(priorityRaw) ? Math.round(priorityRaw) : undefined;
-
     const crawlKeywords = this.toStringArray(crawlResult.task.keywords);
-    const payload: Record<string, unknown> = {
+    const payload = this.parsePayload({
       url: crawlResult.sourceUrl,
       ...(sourceName ? { sourceName } : {}),
       ...(language ? { language } : {}),
@@ -1165,139 +1502,81 @@ export class ItemsService {
         crawlFetchedAt: crawlResult.fetchedAt.toISOString(),
         crawlContentHash: crawlResult.contentHash
       },
-      forceRefresh
+      forceRefresh: false
+    });
+    const itemMetaName = this.toItemMetaName(
+      sourceName ? `${sourceName}: ${crawlResult.sourceUrl}` : crawlResult.sourceUrl
+    );
+
+    return {
+      crawlResult,
+      externalId: `crawlResult:${crawlResult.id}`,
+      itemMetaName,
+      payload,
+      ...(pipelineJobId ? { pipelineJobId } : {}),
+      ...(pipelinePriority !== undefined ? { pipelinePriority } : {}),
+      ...(sourceId ? { sourceId } : {})
     };
+  }
 
-    const existingMongoRef = existing?.mongoRef ? existing.mongoRef.trim() : "";
-    if (existing && existingMongoRef) {
-      const shouldEnqueue =
-        existing.status === ItemStatus.Pending ||
-        existing.status === ItemStatus.Processing ||
-        existing.status === ItemStatus.Failed;
-      if (shouldEnqueue) {
-        try {
-          await this.queueService.enqueueItem(
-            orgId,
-            existing.id,
-            existingMongoRef,
-            pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
-            { pipelineJobId, sourceId }
-          );
-        } catch (error) {
-          if (!(error instanceof Error && error.message.includes("already exists"))) {
-            throw error;
-          }
-        }
-      }
-      return existing;
-    }
-
-    if (existing) {
-      const rawItem = await RawItemModel.create({
-        itemMetaId: existing.id,
-        payload: this.parsePayload(payload),
-        source: "crawl-task"
-      });
-      const updated = await this.prisma.itemMeta.updateMany({
-        where: { id: existing.id, mongoRef: "" },
-        data: { mongoRef: rawItem.id }
-      });
-      if (updated.count === 0) {
-        await RawItemModel.deleteOne({ _id: rawItem.id }).catch(() => undefined);
-        return existing;
-      }
-      try {
-        await this.queueService.enqueueItem(
-          orgId,
-          existing.id,
-          rawItem.id,
-          pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
-          { pipelineJobId, sourceId }
-        );
-      } catch (error) {
-        if (!(error instanceof Error && error.message.includes("already exists"))) {
-          throw error;
-        }
-      }
-      await this.hydrateItemReadModel(orgId, existing.id);
-      return existing;
+  private async enqueueCrawlResultItem(
+    orgId: string,
+    itemMeta: Pick<ItemMeta, "id" | "mongoRef" | "status">,
+    prepared: Pick<
+      PreparedCrawlResultItemIngestInput,
+      "pipelineJobId" | "pipelinePriority" | "sourceId"
+    >
+  ) {
+    const mongoRef = itemMeta.mongoRef.trim();
+    const shouldEnqueue =
+      mongoRef.length > 0 &&
+      (itemMeta.status === ItemStatus.Pending ||
+        itemMeta.status === ItemStatus.Processing ||
+        itemMeta.status === ItemStatus.Failed);
+    if (!shouldEnqueue) {
+      return;
     }
 
     try {
-      const created = await this.prisma.$transaction(async (tx) => {
-        const baseName = sourceName
-          ? `${sourceName}: ${crawlResult.sourceUrl}`
-          : crawlResult.sourceUrl;
-
-        const itemMeta = await tx.itemMeta.create({
-          data: {
-            orgId,
-            externalId: resolvedExternalId,
-            name: this.toItemMetaName(baseName),
-            status: ItemStatus.Pending,
-            mongoRef: ""
-          }
-        });
-
-        const rawItem = await RawItemModel.create({
-          itemMetaId: itemMeta.id,
-          payload: this.parsePayload(payload),
-          source: "crawl-task"
-        });
-
-        await tx.itemMeta.update({
-          where: { id: itemMeta.id },
-          data: { mongoRef: rawItem.id }
-        });
-
-        return { itemMeta, rawItem };
-      });
-
-      void writeAuditLogBestEffort(
-        this.prisma,
+      await this.queueService.enqueueItem(
+        orgId,
+        itemMeta.id,
+        mongoRef,
+        prepared.pipelinePriority !== undefined ? { priority: prepared.pipelinePriority } : {},
         {
-          data: {
-            orgId,
-            actorId: userId,
-            resource: "item",
-            action: "createFromCrawlResult",
-            metadata: toPrismaJsonValue({
-              crawlTaskId: crawlResult.taskId,
-              crawlResultId: crawlResult.id,
-              sourceUrl: crawlResult.sourceUrl
-            })
-          }
-        },
-        { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
-      ).catch(() => undefined);
-
-      try {
-        await this.queueService.enqueueItem(
-          orgId,
-          created.itemMeta.id,
-          created.rawItem.id,
-          pipelinePriority !== undefined ? { priority: pipelinePriority } : {},
-          { pipelineJobId, sourceId }
-        );
-      } catch (error) {
-        if (!(error instanceof Error && error.message.includes("already exists"))) {
-          throw error;
+          pipelineJobId: prepared.pipelineJobId,
+          sourceId: prepared.sourceId
         }
-      }
-      await this.hydrateItemReadModel(orgId, created.itemMeta.id);
-
-      return created.itemMeta;
+      );
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        const raced = await this.prisma.itemMeta.findFirst({
-          where: { orgId, externalId }
-        });
-        if (raced) {
-          return raced;
-        }
+      if (!(error instanceof Error && error.message.includes("already exists"))) {
+        throw error;
       }
-      throw error;
     }
+  }
+
+  private writeCreateFromCrawlResultAuditLog(
+    orgId: string,
+    userId: string,
+    crawlResult: Pick<CrawlResultItemIngestRow, "id" | "sourceUrl" | "taskId">
+  ) {
+    void writeAuditLogBestEffort(
+      this.prisma,
+      {
+        data: {
+          orgId,
+          actorId: userId,
+          resource: "item",
+          action: "createFromCrawlResult",
+          metadata: toPrismaJsonValue({
+            crawlTaskId: crawlResult.taskId,
+            crawlResultId: crawlResult.id,
+            sourceUrl: crawlResult.sourceUrl
+          })
+        }
+      },
+      { orgId, actorId: userId, resource: "item", action: "createFromCrawlResult" }
+    ).catch(() => undefined);
   }
 
   async list(

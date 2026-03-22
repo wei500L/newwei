@@ -567,7 +567,7 @@ export class NewsAggregatorService {
 
   private async resolveByUrlUncached(rawUrl: string, input: ComparableUrlVariants): Promise<NewsResolveResponse> {
     const projection = { itemMetaId: 1, "payload.url": 1, createdAt: 1 }
-    const exactComparableMatch = await RawItemModel.findOne(
+    const exactComparableHashMatch = await RawItemModel.findOne(
       {
         urlComparableFullHash: input.fullHash,
         urlComparableFull: input.full,
@@ -576,6 +576,15 @@ export class NewsAggregatorService {
     )
       .sort({ createdAt: -1 })
       .lean()
+
+    const exactComparableLegacyMatch = exactComparableHashMatch
+      ? null
+      : await RawItemModel.findOne(
+          { urlComparableFull: input.full },
+          projection,
+        )
+          .sort({ createdAt: -1 })
+          .lean()
 
     const exactPayloadUrlCandidates = [...new Set([rawUrl, input.full].filter((value) => value.length > 0))]
     const exactPayloadUrlFilter =
@@ -586,7 +595,7 @@ export class NewsAggregatorService {
           : { $in: exactPayloadUrlCandidates }
 
     // Keep the legacy payload.url exact-match path ahead of base matching until older rows are backfilled.
-    const exactPayloadMatch = exactComparableMatch || !exactPayloadUrlFilter
+    const exactPayloadMatch = exactComparableHashMatch || exactComparableLegacyMatch || !exactPayloadUrlFilter
       ? null
       : await RawItemModel.findOne(
           { "payload.url": exactPayloadUrlFilter },
@@ -595,7 +604,7 @@ export class NewsAggregatorService {
           .sort({ createdAt: -1 })
           .lean()
 
-    const baseMatch = exactComparableMatch || exactPayloadMatch
+    const baseMatch = exactComparableHashMatch || exactComparableLegacyMatch || exactPayloadMatch
       ? null
       : await RawItemModel.findOne(
           { urlComparableBase: input.base },
@@ -605,7 +614,7 @@ export class NewsAggregatorService {
           .lean()
 
     const fallbackPattern = `^${this.escapeRegex(input.base)}(?:/)?(?:[?#].*)?$`
-    const fallbackMatch = exactComparableMatch || exactPayloadMatch || baseMatch
+    const fallbackMatch = exactComparableHashMatch || exactComparableLegacyMatch || exactPayloadMatch || baseMatch
       ? null
       : await RawItemModel.findOne(
           { "payload.url": { $regex: fallbackPattern, $options: "i" } },
@@ -614,7 +623,12 @@ export class NewsAggregatorService {
           .sort({ createdAt: -1 })
           .lean()
 
-    const resolvedRaw = exactComparableMatch ?? exactPayloadMatch ?? baseMatch ?? fallbackMatch
+    const resolvedRaw =
+      exactComparableHashMatch
+      ?? exactComparableLegacyMatch
+      ?? exactPayloadMatch
+      ?? baseMatch
+      ?? fallbackMatch
     const itemMetaId =
       resolvedRaw && typeof resolvedRaw.itemMetaId === "string"
         ? resolvedRaw.itemMetaId.trim()
@@ -653,7 +667,12 @@ export class NewsAggregatorService {
       typeof (resolvedRaw as { payload?: { url?: unknown } }).payload?.url === "string"
         ? ((resolvedRaw as { payload: { url: string } }).payload.url)
         : undefined
-    const confidence = exactComparableMatch || exactPayloadMatch ? 1 : baseMatch ? 0.93 : 0.86
+    const confidence =
+      exactComparableHashMatch || exactComparableLegacyMatch || exactPayloadMatch
+        ? 1
+        : baseMatch
+          ? 0.93
+          : 0.86
 
     return {
       matched: true,

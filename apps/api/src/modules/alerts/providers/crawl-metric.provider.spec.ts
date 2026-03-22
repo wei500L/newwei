@@ -1,6 +1,6 @@
 jest.mock("@modular/mongo", () => ({
   TaskLogModel: {
-    find: jest.fn(),
+    aggregate: jest.fn(),
   },
 }));
 
@@ -9,13 +9,7 @@ import { AlertMetricProvider } from "@prisma/client";
 
 import { CrawlMetricProvider } from "./crawl-metric.provider";
 
-const mockedTaskLogFind = TaskLogModel.find as jest.Mock;
-
-const mockFindChain = (docs: unknown[]) => ({
-  select: jest.fn().mockReturnValue({
-    lean: jest.fn().mockResolvedValue(docs),
-  }),
-});
+const mockedTaskLogAggregate = TaskLogModel.aggregate as jest.Mock;
 
 describe("CrawlMetricProvider", () => {
   beforeEach(() => {
@@ -49,21 +43,15 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("computes preflight failure rate from preflight task logs", async () => {
-    mockedTaskLogFind.mockImplementation((query?: { stage?: string; createdAt?: { $lt?: Date } }) => {
-      if (query?.stage !== "preflight") {
-        return mockFindChain([]);
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+      const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
+      if (match?.stage !== "preflight") {
+        return [];
       }
-      if (query?.createdAt?.$lt) {
-        return mockFindChain([
-          { status: "completed", data: { status: 304 } },
-          { status: "completed", data: { status: 200 } },
-        ]);
+      if (match?.createdAt?.$lt) {
+        return [{ runs: 2, failures: 0, http304Hits: 1 }];
       }
-      return mockFindChain([
-        { status: "completed", data: { status: 304 } },
-        { status: "failed", data: {} },
-        { status: "completed", data: { status: 200 } },
-      ]);
+      return [{ runs: 3, failures: 1, http304Hits: 1 }];
     });
     const provider = new CrawlMetricProvider({} as any);
 
@@ -83,24 +71,19 @@ describe("CrawlMetricProvider", () => {
       latestCounts: { runs: 3, failures: 1, http304Hits: 1 },
       previousCounts: { runs: 2, failures: 0, http304Hits: 1 },
     });
+    expect(mockedTaskLogAggregate).toHaveBeenCalledTimes(2);
   });
 
   it("computes http 304 hit rate and change percent", async () => {
-    mockedTaskLogFind.mockImplementation((query?: { stage?: string; createdAt?: { $lt?: Date } }) => {
-      if (query?.stage !== "preflight") {
-        return mockFindChain([]);
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+      const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
+      if (match?.stage !== "preflight") {
+        return [];
       }
-      if (query?.createdAt?.$lt) {
-        return mockFindChain([
-          { status: "completed", data: { status: 304 } },
-          { status: "completed", data: { status: 200 } },
-        ]);
+      if (match?.createdAt?.$lt) {
+        return [{ runs: 2, failures: 0, http304Hits: 1 }];
       }
-      return mockFindChain([
-        { status: "completed", data: { status: 304 } },
-        { status: "failed", data: {} },
-        { status: "completed", data: { status: 200 } },
-      ]);
+      return [{ runs: 3, failures: 1, http304Hits: 1 }];
     });
     const provider = new CrawlMetricProvider({} as any);
 
@@ -119,19 +102,15 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("computes org hash dedupe hit rate from dedupe logs", async () => {
-    mockedTaskLogFind.mockImplementation((query?: { stage?: string; createdAt?: { $lt?: Date } }) => {
-      if (query?.stage !== "dedupe") {
-        return mockFindChain([]);
+    mockedTaskLogAggregate.mockImplementation((pipeline?: Array<Record<string, unknown>>) => {
+      const match = pipeline?.[0]?.$match as { stage?: string; createdAt?: { $lt?: Date } } | undefined;
+      if (match?.stage !== "dedupe") {
+        return [];
       }
-      if (query?.createdAt?.$lt) {
-        return mockFindChain([
-          { data: { evaluatedCount: 8, orgReuseCount: 4 } },
-        ]);
+      if (match?.createdAt?.$lt) {
+        return [{ evaluatedCount: 8, orgReuseCount: 4 }];
       }
-      return mockFindChain([
-        { data: { evaluatedCount: 10, orgReuseCount: 4 } },
-        { data: { evaluatedCount: 10, orgReuseCount: 1 } },
-      ]);
+      return [{ evaluatedCount: 20, orgReuseCount: 5 }];
     });
     const provider = new CrawlMetricProvider({} as any);
 
@@ -150,7 +129,7 @@ describe("CrawlMetricProvider", () => {
   });
 
   it("returns null when rate denominator is zero", async () => {
-    mockedTaskLogFind.mockReturnValue(mockFindChain([]));
+    mockedTaskLogAggregate.mockReturnValue([]);
     const provider = new CrawlMetricProvider({} as any);
 
     const result = await provider.fetch({

@@ -68,7 +68,6 @@ describe("CrawlMediaAssetService", () => {
         sourceUrl: "https://example.com/a.png",
         bytes: payload.length,
         contentType: "image/png",
-        blobData: payload,
         storageKey: null,
         width: null,
         height: null,
@@ -89,6 +88,7 @@ describe("CrawlMediaAssetService", () => {
       orgId: "org-1",
       userId: "user-1"
     });
+    expect(prisma.crawlMediaAsset.findMany.mock.calls[0]?.[0]?.select?.blobData).toBeUndefined();
     const first = grouped.get("result-1")?.[0];
     expect(first?.storageProvider).toBe("mysql");
     expect(first?.previewUrl).toMatch(
@@ -276,7 +276,6 @@ describe("CrawlMediaAssetService", () => {
         sourceUrl: "https://example.com/a.svg",
         bytes: payload.length,
         contentType: "image/svg+xml",
-        blobData: payload,
         storageKey: null,
         width: null,
         height: null,

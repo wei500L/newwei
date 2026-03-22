@@ -3,9 +3,11 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { AuditLogOutboxStatus, Prisma } from "@prisma/client";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { PrismaService } from "../config/prisma.service";
 
 const logger = createLogger({ name: "audit-log-outbox" });
+const AUDIT_LOG_OUTBOX_DELIVERY_CONCURRENCY = 8;
 
 interface AuditLogOutboxPayload {
   orgId: string;
@@ -54,18 +56,32 @@ export class AuditLogOutboxService {
         take: this.outboxBatchSize
       });
 
-      for (const entry of entries) {
-        const payload = this.parseOutboxPayload(entry.payload);
-        if (!payload || payload.orgId !== entry.orgId) {
-          await this.markOutboxDead(
-            entry.id,
-            (entry.attempts ?? 0) + 1,
-            new Error("Invalid outbox payload")
-          );
+      const results = await settleWithConcurrency(
+        entries,
+        AUDIT_LOG_OUTBOX_DELIVERY_CONCURRENCY,
+        async (entry) => {
+          const payload = this.parseOutboxPayload(entry.payload);
+          if (!payload || payload.orgId !== entry.orgId) {
+            await this.markOutboxDead(
+              entry.id,
+              (entry.attempts ?? 0) + 1,
+              new Error("Invalid outbox payload")
+            );
+            return;
+          }
+
+          await this.deliverOutboxPayload(entry.id, payload);
+        }
+      );
+
+      for (const result of results) {
+        if (result.status === "fulfilled") {
           continue;
         }
-
-        await this.deliverOutboxPayload(entry.id, payload);
+        logger.warn(
+          { err: result.reason, outboxId: result.item.id, orgId: result.item.orgId },
+          "Failed to process audit log outbox entry"
+        );
       }
     } catch (error) {
       logger.warn({ err: error }, "Failed to process audit log outbox batch");
@@ -225,4 +241,3 @@ export class AuditLogOutboxService {
     return Math.round(exponentialDelay * jitterFactor);
   }
 }
-

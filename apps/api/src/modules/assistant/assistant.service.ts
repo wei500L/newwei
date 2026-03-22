@@ -1385,14 +1385,55 @@ export class AssistantService {
       .filter((value): value is string => typeof value === "string" && value.length > 0);
 
     const [rawItems, processedItems] = await Promise.all([
-      mongoRefs.length ? RawItemModel.find({ _id: { $in: mongoRefs } }, { itemMetaId: 1, payload: 1 }).lean() : Promise.resolve([]),
+      mongoRefs.length
+        ? RawItemModel.find(
+            { _id: { $in: mongoRefs } },
+            {
+              itemMetaId: 1,
+              "payload.url": 1,
+              "payload.sourceName": 1
+            }
+          ).lean()
+        : Promise.resolve([]),
       itemMetaIds.length
-        ? ProcessedItemModel.find(
-            { orgId, itemMetaId: { $in: itemMetaIds }, status: "completed", duplicateOf: null },
-            { itemMetaId: 1, result: 1, createdAt: 1 }
-          )
-            .sort({ createdAt: -1 })
-            .lean()
+        ? ProcessedItemModel.aggregate<{
+            itemMetaId: string;
+            result?: Record<string, unknown>;
+          }>([
+            {
+              $match: {
+                orgId,
+                itemMetaId: { $in: itemMetaIds },
+                status: "completed",
+                duplicateOf: null
+              }
+            },
+            {
+              $sort: {
+                itemMetaId: 1,
+                createdAt: -1
+              }
+            },
+            {
+              $group: {
+                _id: "$itemMetaId",
+                result: { $first: "$result" }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                itemMetaId: "$_id",
+                result: {
+                  title: "$result.title",
+                  summary: "$result.summary",
+                  sentiment_label: "$result.sentiment_label",
+                  sentiment: "$result.sentiment",
+                  published_at: "$result.published_at"
+                }
+              }
+            }
+          ])
         : Promise.resolve([]),
     ]);
 

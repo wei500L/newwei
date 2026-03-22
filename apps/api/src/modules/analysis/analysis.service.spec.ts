@@ -2,6 +2,21 @@ import { NotificationPresentationKind } from "@modular/utils";
 import { NotificationType } from "@prisma/client";
 import type { PubSubEngine } from "graphql-subscriptions";
 
+jest.mock("@modular/mongo", () => ({
+  MapTransportObjectStateModel: {
+    find: jest.fn(),
+  },
+  MapTransportTrackPointModel: {
+    aggregate: jest.fn(),
+  },
+  AnalysisResultModel: {},
+}));
+
+import {
+  AnalysisResultDocument,
+  MapTransportObjectStateModel,
+  MapTransportTrackPointModel,
+} from "@modular/mongo";
 import type { EnvService } from "../config/config.service";
 import type {
   LiteLlmMessage,
@@ -28,6 +43,11 @@ jest.mock("@modular/utils", () => {
     getCurrentTraceId: () => undefined,
   };
 });
+
+const mockMapTransportObjectStateFind =
+  MapTransportObjectStateModel.find as jest.Mock;
+const mockMapTransportTrackPointAggregate =
+  MapTransportTrackPointModel.aggregate as jest.Mock;
 
 function createService(overrides?: {
   stream?: LiteLlmService["stream"];
@@ -158,5 +178,137 @@ describe("AnalysisService.notifyResult", () => {
         }),
       }),
     );
+  });
+});
+
+describe("AnalysisService.buildGeoTransportContext", () => {
+  beforeEach(() => {
+    mockMapTransportObjectStateFind.mockReset();
+    mockMapTransportTrackPointAggregate.mockReset();
+  });
+
+  it("loads windowed and fallback track points in batched aggregate queries", async () => {
+    const states = [
+      {
+        objectKey: "air-1",
+        entityKind: "aircraft",
+        sourceScope: "all",
+        callsign: "ALPHA1",
+        registration: null,
+        icao24: "abc123",
+        observedAt: new Date("2026-01-02T00:00:00.000Z"),
+        lat: 10,
+        lng: 20,
+        heading: 90,
+        course: 91,
+        speed: 500,
+        altitudeFt: 30000,
+      },
+      {
+        objectKey: "ship-1",
+        entityKind: "vessel",
+        sourceScope: "all",
+        name: "Poseidon",
+        mmsi: "123456789",
+        observedAt: new Date("2026-01-02T01:00:00.000Z"),
+        lat: 30,
+        lng: 40,
+        heading: null,
+        course: 270,
+        speed: 12,
+        altitudeFt: null,
+      },
+    ];
+    mockMapTransportObjectStateFind.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        limit: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(states),
+        }),
+      }),
+    });
+    mockMapTransportTrackPointAggregate
+      .mockResolvedValueOnce([
+        {
+          _id: "air-1",
+          points: [
+            {
+              _id: { toString: () => "tp-window-1" },
+              observedAt: new Date("2026-01-01T10:00:00.000Z"),
+              lat: 11,
+              lng: 21,
+              heading: 100,
+              course: 101,
+              speed: 510,
+              altitudeFt: 30500,
+              geoCell: "cell-window",
+            },
+          ],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          _id: "ship-1",
+          points: [
+            {
+              _id: { toString: () => "tp-fallback-1" },
+              observedAt: new Date("2025-12-31T23:00:00.000Z"),
+              lat: 31,
+              lng: 41,
+              heading: null,
+              course: 271,
+              speed: 13,
+              altitudeFt: null,
+              geoCell: "cell-fallback",
+            },
+          ],
+        },
+      ]);
+
+    const { service } = createService();
+    const buildGeoTransportContext = (
+      service as unknown as {
+        buildGeoTransportContext: (orgId: string, input: {
+          transportKinds: Array<"aircraft" | "vessel">;
+          startDate: string;
+          endDate: string;
+          bbox?: [number, number, number, number];
+          objectKeys?: string[];
+        }) => Promise<{
+          objectKeys: string[];
+          objects: Array<{ objectKey: string; trackPoints: Array<{ trackPointId: string }> }>;
+        }>;
+      }
+    ).buildGeoTransportContext.bind(service);
+
+    const context = await buildGeoTransportContext("org-1", {
+      transportKinds: [],
+      startDate: "2026-01-01T00:00:00.000Z",
+      endDate: "2026-01-02T23:59:59.999Z",
+    });
+
+    expect(mockMapTransportTrackPointAggregate).toHaveBeenCalledTimes(2);
+    expect(mockMapTransportTrackPointAggregate.mock.calls[0]?.[0]?.[0]).toMatchObject({
+      $match: {
+        orgId: "org-1",
+        objectKey: { $in: ["air-1", "ship-1"] },
+        observedAt: {
+          $gte: new Date("2026-01-01T00:00:00.000Z"),
+          $lte: new Date("2026-01-02T23:59:59.999Z"),
+        },
+      },
+    });
+    expect(mockMapTransportTrackPointAggregate.mock.calls[1]?.[0]?.[0]).toMatchObject({
+      $match: {
+        orgId: "org-1",
+        objectKey: { $in: ["ship-1"] },
+      },
+    });
+    expect(context.objectKeys).toEqual(["air-1", "ship-1"]);
+    expect(context.objects.map((object) => object.objectKey)).toEqual([
+      "air-1",
+      "ship-1",
+    ]);
+    expect(context.objects[0]?.trackPoints[0]?.trackPointId).toBe("tp-window-1");
+    expect(context.objects[1]?.trackPoints[0]?.trackPointId).toBe("tp-fallback-1");
   });
 });

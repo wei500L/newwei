@@ -2,11 +2,11 @@ import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
 import type {
   CrawlImageStorageProvider as PrismaCrawlImageStorageProvider,
-  CrawlMediaAsset,
   Prisma
 } from "@prisma/client";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { EnvService } from "../config/config.service";
 import { PrismaService } from "../config/prisma.service";
@@ -21,6 +21,7 @@ const MIN_SIGNED_URL_TTL_SECONDS = 30;
 const MAX_SIGNED_URL_TTL_SECONDS = 86_400;
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 300;
 const DEFAULT_BINARY_CONTENT_TYPE = "application/octet-stream";
+const CRAWL_MEDIA_ASSET_SIGN_CONCURRENCY = 8;
 const CONTENT_TYPE_PATTERN = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/;
 const CONTENT_TYPE_ALIASES = new Map<string, string>([
   ["image/jpg", "image/jpeg"],
@@ -116,7 +117,32 @@ export interface CrawlMediaDeliveryPayload {
   data?: Buffer;
 }
 
-type CrawlMediaAssetRecord = CrawlMediaAsset;
+const CRAWL_MEDIA_ASSET_LIST_SELECT = {
+  id: true,
+  resultId: true,
+  provider: true,
+  kind: true,
+  sourceUrl: true,
+  bytes: true,
+  contentType: true,
+  storageKey: true,
+  width: true,
+  height: true,
+  alt: true,
+  title: true,
+  desc: true,
+  poster: true,
+  format: true,
+  metadata: true,
+  createdAt: true,
+  updatedAt: true,
+  orgId: true,
+  taskId: true
+} satisfies Prisma.CrawlMediaAssetSelect;
+
+type CrawlMediaAssetRecord = Prisma.CrawlMediaAssetGetPayload<{
+  select: typeof CRAWL_MEDIA_ASSET_LIST_SELECT;
+}>;
 
 @Injectable()
 export class CrawlMediaAssetService {
@@ -219,7 +245,8 @@ export class CrawlMediaAssetService {
 
     const records = await this.prisma.crawlMediaAsset.findMany({
       where: { resultId: { in: resultIds } },
-      orderBy: { createdAt: "asc" }
+      orderBy: { createdAt: "asc" },
+      select: CRAWL_MEDIA_ASSET_LIST_SELECT
     });
 
     if (records.length === 0) {
@@ -227,15 +254,25 @@ export class CrawlMediaAssetService {
     }
 
     const ttlSeconds = await this.getSignedUrlTtlSeconds();
-    const entries = await Promise.all(
-      records.map(async (record) => ({
+    const entries = await settleWithConcurrency(
+      records,
+      CRAWL_MEDIA_ASSET_SIGN_CONCURRENCY,
+      async (record) => ({
         resultId: record.resultId,
         asset: await this.toCrawlStoredAsset(record, ttlSeconds, accessScope)
-      }))
+      })
     );
+    for (const result of entries) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+    const fulfilledEntries = entries
+      .filter((result): result is Extract<(typeof entries)[number], { status: "fulfilled" }> => result.status === "fulfilled")
+      .map((result) => result.value);
 
     const grouped = new Map<string, CrawlStoredMediaAsset[]>();
-    for (const entry of entries) {
+    for (const entry of fulfilledEntries) {
       const existing = grouped.get(entry.resultId);
       if (existing) {
         existing.push(entry.asset);

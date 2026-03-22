@@ -50,6 +50,23 @@ type CrawlTaskRecord = Prisma.CrawlTaskGetPayload<{
 type CrawlTaskOptionsInput = NonNullable<CreateCrawlTaskDto["options"]>;
 
 const logger = createLogger({ name: "crawl-task-service" });
+const CRAWL_RESULT_ITEM_INGEST_SELECT = {
+  id: true,
+  taskId: true,
+  sourceUrl: true,
+  fetchedAt: true,
+  contentHash: true,
+  metadata: true,
+  task: {
+    select: {
+      id: true,
+      displayName: true,
+      targetUrl: true,
+      keywords: true,
+      config: true,
+    },
+  },
+} satisfies Prisma.CrawlResultSelect;
 
 @Injectable()
 export class CrawlTaskService {
@@ -456,6 +473,7 @@ export class CrawlTaskService {
       where: { taskId },
       orderBy: [{ fetchedAt: "desc" }, { id: "desc" }],
       take: take + 1,
+      select: CRAWL_RESULT_ITEM_INGEST_SELECT,
       ...(normalizedAfter
         ? {
             skip: 1,
@@ -480,29 +498,37 @@ export class CrawlTaskService {
         : [];
     const existingSet = new Set(existing.map((meta) => meta.externalId));
 
-    let attempted = 0;
-    let ingested = 0;
     let skippedExisting = 0;
-    let failed = 0;
-
-    for (const result of page) {
+    const candidates = page.filter((result) => {
       const externalId = `crawlResult:${result.id}`;
       if (onlyMissing && existingSet.has(externalId)) {
         skippedExisting += 1;
+        return false;
+      }
+      return true;
+    });
+
+    let attempted = candidates.length;
+    let ingested = 0;
+    let failed = 0;
+
+    const ingestResults =
+      candidates.length > 0
+        ? await itemsService.createFromCrawlResultsBatch(orgId, userId, {
+            crawlResults: candidates,
+          })
+        : [];
+
+    for (const result of ingestResults) {
+      if (result.status === "fulfilled") {
+        ingested += 1;
         continue;
       }
-
-      attempted += 1;
-      try {
-        await itemsService.createFromCrawlResult(orgId, userId, result.id);
-        ingested += 1;
-      } catch (error) {
-        failed += 1;
-        logger.warn(
-          { err: error, orgId, taskId, crawlResultId: result.id },
-          "Failed to ingest crawl result into Items",
-        );
-      }
+      failed += 1;
+      logger.warn(
+        { err: result.reason, orgId, taskId, crawlResultId: result.crawlResultId },
+        "Failed to ingest crawl result into Items",
+      );
     }
 
     return {

@@ -31,6 +31,9 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
       findMany: jest.fn(),
     },
   };
+  const cache = {
+    withLock: jest.fn(),
+  };
   const schedulerSettings = {
     getRuntimeSettings: jest.fn(),
   };
@@ -63,6 +66,9 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
       { id: 'org-1' },
       { id: 'org-2' },
     ]);
+    cache.withLock.mockImplementation(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) => await runner(),
+    );
     schedulerSettings.getRuntimeSettings.mockResolvedValue({
       newsnowHottestAnalysisOrgConcurrency: 2,
     });
@@ -70,18 +76,24 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
     hottestAnalysis.refreshProjectionForOrg.mockResolvedValue(undefined);
     service = new NewsnowHottestAnalysisSchedulerService(
       prisma as never,
+      cache as never,
       schedulerSettings as never,
       hottestAnalysis as never,
     );
   });
 
-  it('builds one global snapshot and refreshes each org projection without an outer scheduler lock', async () => {
+  it('builds one global snapshot and refreshes each org projection inside a scheduler lock', async () => {
     await service.refreshScheduled();
 
     expect(prisma.org.findMany).toHaveBeenCalledWith({
       where: { isActive: true },
       select: { id: true },
     });
+    expect(cache.withLock).toHaveBeenCalledWith(
+      'cron:newsnow-hottest-analysis',
+      expect.any(Number),
+      expect.any(Function),
+    );
     expect(schedulerSettings.getRuntimeSettings).toHaveBeenCalledTimes(1);
     expect(hottestAnalysis.ensureGlobalSnapshot).toHaveBeenCalledTimes(1);
     expect(hottestAnalysis.refreshProjectionForOrg).toHaveBeenCalledTimes(2);
@@ -141,6 +153,22 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
     await runPromise;
   });
 
+  it('skips snapshot building when another scheduler runner already holds the outer lock', async () => {
+    cache.withLock.mockResolvedValue(null);
+
+    await service.refreshScheduled();
+
+    expect(prisma.org.findMany).toHaveBeenCalledTimes(1);
+    expect(cache.withLock).toHaveBeenCalledWith(
+      'cron:newsnow-hottest-analysis',
+      expect.any(Number),
+      expect.any(Function),
+    );
+    expect(schedulerSettings.getRuntimeSettings).not.toHaveBeenCalled();
+    expect(hottestAnalysis.ensureGlobalSnapshot).not.toHaveBeenCalled();
+    expect(hottestAnalysis.refreshProjectionForOrg).not.toHaveBeenCalled();
+  });
+
   it('continues refreshing remaining orgs when one org fails', async () => {
     hottestAnalysis.refreshProjectionForOrg
       .mockRejectedValueOnce(new Error('boom'))
@@ -156,6 +184,7 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
 
     await service.refreshScheduled();
 
+    expect(cache.withLock).not.toHaveBeenCalled();
     expect(schedulerSettings.getRuntimeSettings).not.toHaveBeenCalled();
     expect(hottestAnalysis.ensureGlobalSnapshot).not.toHaveBeenCalled();
     expect(hottestAnalysis.refreshProjectionForOrg).not.toHaveBeenCalled();

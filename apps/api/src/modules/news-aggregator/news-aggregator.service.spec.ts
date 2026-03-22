@@ -438,6 +438,7 @@ describe('NewsAggregatorService personalization order', () => {
   it('falls back to the comparable base URL when the full URL does not match', async () => {
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
     mockRawItemFindOneResult({
       itemMetaId: 'item-meta-2',
       payload: { url: 'https://example.com/story' },
@@ -454,7 +455,7 @@ describe('NewsAggregatorService personalization order', () => {
       confidence: 0.93,
       matchedUrl: 'https://example.com/story',
     });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(4);
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
       1,
       {
@@ -465,17 +466,57 @@ describe('NewsAggregatorService personalization order', () => {
     );
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
       2,
-      { 'payload.url': 'https://example.com/story?ref=homepage' },
+      { urlComparableFull: comparable?.full },
       { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
     );
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
       3,
+      { 'payload.url': 'https://example.com/story?ref=homepage' },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      4,
       { urlComparableBase: 'https://example.com/story' },
       { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
     );
   });
 
+  it('falls back to legacy comparable full matching when the hash backfill has not reached the row yet', async () => {
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult({
+      itemMetaId: 'item-meta-legacy-comparable',
+      payload: { url: 'https://Example.com/story?id=123#top' },
+      createdAt: new Date('2026-03-22T00:00:00.000Z'),
+    });
+    mockProcessedItemFindResult([]);
+
+    const result = await service.resolveByUrl('https://example.com/story?id=123');
+    const comparable = buildComparableUrlVariants('https://example.com/story?id=123');
+
+    expect(result).toEqual({
+      matched: true,
+      itemId: 'item-meta-legacy-comparable',
+      confidence: 1,
+      matchedUrl: 'https://Example.com/story?id=123#top',
+    });
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(2);
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      1,
+      {
+        urlComparableFullHash: comparable?.fullHash,
+        urlComparableFull: comparable?.full,
+      },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      2,
+      { urlComparableFull: comparable?.full },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+  });
+
   it('preserves the legacy exact payload.url fallback before comparable base matching', async () => {
+    mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult({
       itemMetaId: 'item-meta-legacy',
@@ -492,9 +533,9 @@ describe('NewsAggregatorService personalization order', () => {
       confidence: 1,
       matchedUrl: 'https://example.com/story?id=123',
     });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(2);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
-      2,
+      3,
       {
         'payload.url': {
           $in: [
@@ -518,13 +559,14 @@ describe('NewsAggregatorService personalization order', () => {
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
 
     const first = await service.resolveByUrl('https://example.com/missing');
     const second = await service.resolveByUrl('https://example.com/missing');
 
     expect(first).toEqual({ matched: false });
     expect(second).toEqual({ matched: false });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(4);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(5);
     expect(mockProcessedItemFind).not.toHaveBeenCalled();
     expect(prismaMock.newsEventItem.findFirst).not.toHaveBeenCalled();
     expect(cacheServiceMock.set).toHaveBeenCalledWith(
@@ -535,6 +577,7 @@ describe('NewsAggregatorService personalization order', () => {
   });
 
   it('falls back to the legacy payload.url regex when comparable fields do not match', async () => {
+    mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
@@ -553,8 +596,8 @@ describe('NewsAggregatorService personalization order', () => {
       confidence: 0.86,
       matchedUrl: 'https://example.com/Story/?utm_source=legacy',
     });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(4);
-    expect(mockRawItemFindOne.mock.calls[3]?.[0]).toMatchObject({
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(5);
+    expect(mockRawItemFindOne.mock.calls[4]?.[0]).toMatchObject({
       'payload.url': {
         $regex: expect.stringContaining('^https://example\\.com/Story'),
         $options: 'i',

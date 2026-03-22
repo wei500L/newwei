@@ -2248,8 +2248,9 @@ export class AlertsService {
       options: Parameters<LookupFunction>[1],
       callback: Parameters<LookupFunction>[2],
     ) => {
+      const invokeCallback = callback as (...args: unknown[]) => void;
       if (hostname.toLowerCase() !== normalizedExpectedHostname) {
-        callback(
+        invokeCallback(
           new Error(`Pinned lookup rejected unexpected hostname: ${hostname}`),
         );
         return;
@@ -2268,14 +2269,14 @@ export class AlertsService {
 
       if (typeof options === "object" && options?.all === true) {
         if (filtered.length === 0) {
-          callback(
+          invokeCallback(
             new Error(
               `Pinned lookup has no ${requestedFamily || "usable"} addresses for ${hostname}`,
             ),
           );
           return;
         }
-        callback(
+        invokeCallback(
           null,
           filtered.map((entry) => ({
             address: entry.address,
@@ -2287,12 +2288,12 @@ export class AlertsService {
 
       const selected = filtered[0] ?? addresses[0];
       if (!selected) {
-        callback(
+        invokeCallback(
           new Error(`Pinned lookup has no usable addresses for ${hostname}`),
         );
         return;
       }
-      callback(null, selected.address, selected.family);
+      invokeCallback(null, selected.address, selected.family);
     }) as LookupFunction;
   }
 

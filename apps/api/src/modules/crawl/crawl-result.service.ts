@@ -401,30 +401,26 @@ export class CrawlResultService {
           ...createdResultIds,
         ]),
       ];
-      const CONCURRENCY_LIMIT = 10;
-      for (let i = 0; i < uniqueResultIds.length; i += CONCURRENCY_LIMIT) {
-        const batch = uniqueResultIds.slice(i, i + CONCURRENCY_LIMIT);
-        const results = await Promise.allSettled(
-          batch.map((id) =>
-            itemsService.createFromCrawlResult(
-              ingestToItems.orgId,
-              ingestToItems.userId,
-              id,
-            ),
-          ),
-        );
-
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            itemsQueued += 1;
-          } else {
-            itemsQueueFailed += 1;
-            logger.warn(
-              { err: result.reason, taskId: task.id, orgId: task.orgId },
-              "Failed to ingest crawl result into Items",
-            );
-          }
+      const ingestResults = await itemsService.createFromCrawlResultsBatch(
+        ingestToItems.orgId,
+        ingestToItems.userId,
+        { crawlResultIds: uniqueResultIds },
+      );
+      for (const result of ingestResults) {
+        if (result.status === "fulfilled") {
+          itemsQueued += 1;
+          continue;
         }
+        itemsQueueFailed += 1;
+        logger.warn(
+          {
+            err: result.reason,
+            taskId: task.id,
+            orgId: task.orgId,
+            crawlResultId: result.crawlResultId,
+          },
+          "Failed to ingest crawl result into Items",
+        );
       }
     }
 

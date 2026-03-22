@@ -17,6 +17,97 @@ jest.mock(
 import { CrawlTaskService } from "../crawl-task.service";
 
 describe("CrawlTaskService", () => {
+  it("reuses the loaded crawl result page when ingesting items", async () => {
+    const itemsServiceMock = {
+      createFromCrawlResultsBatch: jest.fn().mockResolvedValue([
+        {
+          crawlResultId: "result-2",
+          itemMeta: { id: "item-2" },
+          status: "fulfilled",
+        },
+      ]),
+    } as any;
+
+    const resultPage = [
+      {
+        id: "result-1",
+        taskId: "task-1",
+        sourceUrl: "https://example.com/1",
+        fetchedAt: new Date("2024-01-02T00:00:00.000Z"),
+        contentHash: "hash-1",
+        metadata: {},
+        task: {
+          id: "task-1",
+          displayName: "Example",
+          targetUrl: "https://example.com",
+          keywords: ["markets"],
+          config: null,
+        },
+      },
+      {
+        id: "result-2",
+        taskId: "task-1",
+        sourceUrl: "https://example.com/2",
+        fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+        contentHash: "hash-2",
+        metadata: {},
+        task: {
+          id: "task-1",
+          displayName: "Example",
+          targetUrl: "https://example.com",
+          keywords: ["markets"],
+          config: null,
+        },
+      },
+    ];
+
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue({ id: "task-1" }),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue(resultPage),
+      },
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([{ externalId: "crawlResult:result-1" }]),
+      },
+    } as any;
+
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(itemsServiceMock),
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      moduleRef,
+    );
+
+    const summary = await service.ingestResultsToItems("org-1", "user-1", "task-1");
+
+    expect(itemsServiceMock.createFromCrawlResultsBatch).toHaveBeenCalledWith(
+      "org-1",
+      "user-1",
+      {
+        crawlResults: [resultPage[1]],
+      },
+    );
+    expect(summary).toEqual({
+      taskId: "task-1",
+      scanned: 2,
+      attempted: 1,
+      ingested: 1,
+      skippedExisting: 1,
+      failed: 0,
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
   it("records a cleanup intent in MongoOutbox when deleting a task", async () => {
     const tx = {
       crawlResult: { deleteMany: jest.fn().mockResolvedValue(undefined) },
