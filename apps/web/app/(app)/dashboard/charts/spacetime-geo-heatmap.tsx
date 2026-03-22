@@ -1,7 +1,7 @@
 "use client";
 
 import { GeoJsonLayer, ScatterplotLayer } from "@deck.gl/layers";
-import { MapboxOverlay } from "@deck.gl/mapbox";
+import type { MapboxOverlay } from "@deck.gl/mapbox";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Drawer, List, Skeleton, Space, Tag, Typography } from "antd";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -260,6 +260,7 @@ export interface SpacetimeGeoHeatmapProps {
   cursorBucketStartIso?: string | null;
   cursorBucketEndIso?: string | null;
   cursorBucketGranularity?: CursorBucketGranularity | null;
+  liveStreamActive?: boolean;
 }
 
 export function SpacetimeGeoHeatmap({
@@ -268,6 +269,7 @@ export function SpacetimeGeoHeatmap({
   cursorBucketStartIso,
   cursorBucketEndIso,
   cursorBucketGranularity,
+  liveStreamActive = false,
 }: SpacetimeGeoHeatmapProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
@@ -390,7 +392,8 @@ export function SpacetimeGeoHeatmap({
       return response.data;
     },
     staleTime: 30_000,
-    refetchInterval: eventId || includeBuckets ? 20_000 : false,
+    refetchInterval:
+      liveStreamActive || !(eventId || includeBuckets) ? false : 20_000,
     enabled,
     placeholderData: (previous) => previous,
   });
@@ -570,7 +573,10 @@ export function SpacetimeGeoHeatmap({
     map.resize();
   }, [hasRenderableMapContainer, inView, mapReady]);
 
-  const rawPoints = heatmapQuery.data?.points ?? [];
+  const rawPoints = useMemo(
+    () => heatmapQuery.data?.points ?? [],
+    [heatmapQuery.data?.points],
+  );
   const effectiveBucketGranularity = useMemo<
     Exclude<CursorBucketGranularity, "auto">
   >(() => {
@@ -640,76 +646,78 @@ export function SpacetimeGeoHeatmap({
     [visiblePoints],
   );
 
-  const deckLayers = useMemo<any[]>(() => {
-    const layers: any[] = [];
-
-    if (geoQuery.data?.geoJson) {
-      layers.push(
-        new GeoJsonLayer({
-          id: "spacetime-geo-boundaries",
-          data: geoQuery.data.geoJson as any,
-          pickable: false,
-          stroked: true,
-          filled: true,
-          lineWidthMinPixels: 1,
-          getLineColor: [148, 163, 184, 170],
-          getFillColor: [148, 163, 184, 45],
-        }),
-      );
+  const boundaryLayers = useMemo<any[]>(
+    () =>
+      geoQuery.data?.geoJson
+        ? [
+            new GeoJsonLayer({
+              id: "spacetime-geo-boundaries",
+              data: geoQuery.data.geoJson as any,
+              pickable: false,
+              stroked: true,
+              filled: true,
+              lineWidthMinPixels: 1,
+              getLineColor: [148, 163, 184, 170],
+              getFillColor: [148, 163, 184, 45],
+            }),
+          ]
+        : [],
+    [geoQuery.data?.geoJson],
+  );
+  const pointLayers = useMemo<any[]>(() => {
+    if (visiblePoints.length === 0) {
+      return [];
     }
 
-    if (visiblePoints.length > 0) {
-      layers.push(
-        new ScatterplotLayer<SpacetimeDeckPoint>({
-          id: "spacetime-geo-heat",
-          data: visiblePoints,
-          pickable: false,
-          radiusUnits: "meters",
-          getPosition: (point) => [point.lng, point.lat],
-          getRadius: (point) =>
-            Math.max(
-              30_000,
-              Math.min(220_000, 30_000 + Math.sqrt(Math.max(1, point.viewHeat)) * 18_000),
-            ),
-          getFillColor: (point) => resolveHeatColor(point.viewHeat, maxHeat),
-          stroked: false,
-        }),
-      );
-
-      layers.push(
-        new ScatterplotLayer<SpacetimeDeckPoint>({
-          id: "spacetime-geo-points",
-          data: visiblePoints,
-          pickable: true,
-          autoHighlight: true,
-          getPosition: (point) => [point.lng, point.lat],
-          getFillColor: (point) => resolveSentimentColor(point.dominant, colors),
-          getRadius: (point) =>
-            Math.max(6, Math.min(26, 6 + Math.sqrt(Math.max(1, point.viewTotal)) * 4)),
-          radiusMinPixels: 6,
-          radiusMaxPixels: 26,
-          stroked: true,
-          lineWidthMinPixels: 1,
-          getLineColor: [255, 255, 255, 180],
-          onClick: (info) => {
-            const point = info.object as SpacetimeDeckPoint | undefined;
-            if (!point) {
-              return;
-            }
-            setSelectedPoint({
-              id: point.id,
-              name: point.name,
-              snapshotId: heatmapQuery.data?.snapshotId ?? null,
-            });
-            setArticlePageState({ scopeKey: "", page: 1 });
-            setDrawerOpen(true);
-          },
-        }),
-      );
-    }
-
-    return layers;
-  }, [colors, geoQuery.data?.geoJson, heatmapQuery.data?.snapshotId, maxHeat, visiblePoints]);
+    return [
+      new ScatterplotLayer<SpacetimeDeckPoint>({
+        id: "spacetime-geo-heat",
+        data: visiblePoints,
+        pickable: false,
+        radiusUnits: "meters",
+        getPosition: (point) => [point.lng, point.lat],
+        getRadius: (point) =>
+          Math.max(
+            30_000,
+            Math.min(220_000, 30_000 + Math.sqrt(Math.max(1, point.viewHeat)) * 18_000),
+          ),
+        getFillColor: (point) => resolveHeatColor(point.viewHeat, maxHeat),
+        stroked: false,
+      }),
+      new ScatterplotLayer<SpacetimeDeckPoint>({
+        id: "spacetime-geo-points",
+        data: visiblePoints,
+        pickable: true,
+        autoHighlight: true,
+        getPosition: (point) => [point.lng, point.lat],
+        getFillColor: (point) => resolveSentimentColor(point.dominant, colors),
+        getRadius: (point) =>
+          Math.max(6, Math.min(26, 6 + Math.sqrt(Math.max(1, point.viewTotal)) * 4)),
+        radiusMinPixels: 6,
+        radiusMaxPixels: 26,
+        stroked: true,
+        lineWidthMinPixels: 1,
+        getLineColor: [255, 255, 255, 180],
+        onClick: (info) => {
+          const point = info.object as SpacetimeDeckPoint | undefined;
+          if (!point) {
+            return;
+          }
+          setSelectedPoint({
+            id: point.id,
+            name: point.name,
+            snapshotId: heatmapQuery.data?.snapshotId ?? null,
+          });
+          setArticlePageState({ scopeKey: "", page: 1 });
+          setDrawerOpen(true);
+        },
+      }),
+    ];
+  }, [colors, heatmapQuery.data?.snapshotId, maxHeat, visiblePoints]);
+  const deckLayers = useMemo<any[]>(
+    () => [...boundaryLayers, ...pointLayers],
+    [boundaryLayers, pointLayers],
+  );
 
   const tooltipGetter = useMemo(
     () =>

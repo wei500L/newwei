@@ -79,4 +79,29 @@ describe('map runtime deck helpers', () => {
 
     warnSpy.mockRestore();
   });
+
+  it('reuses cloned layers and skips overlay updates when layers and tooltip are unchanged', () => {
+    const clonedLayer = { id: 'layer-a', cloned: true };
+    const layer = {
+      id: 'layer-a',
+      clone: vi.fn(() => clonedLayer),
+    };
+    const setProps = vi.fn();
+    const tooltip = vi.fn();
+    const overlay = {
+      setProps,
+    } as never;
+
+    setDeckOverlayProps(
+      overlay,
+      { layers: [layer] as never[], getTooltip: tooltip as never },
+    );
+    setDeckOverlayProps(
+      overlay,
+      { layers: [layer] as never[], getTooltip: tooltip as never },
+    );
+
+    expect(layer.clone).toHaveBeenCalledTimes(1);
+    expect(setProps).toHaveBeenCalledTimes(1);
+  });
 });

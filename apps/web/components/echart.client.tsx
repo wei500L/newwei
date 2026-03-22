@@ -684,9 +684,14 @@ export function DashboardChart({
       await ensureOptionModules(option);
       if (cancelled) return;
       const hasGraphSeries = inferSeriesTypes(option).has("graph");
-      const applyOption = () => {
-        chart.clear();
-        chart.setOption(option, { notMerge: true, lazyUpdate: false });
+      const applyOption = (hardReset = false) => {
+        if (hardReset) {
+          chart.clear();
+        }
+        chart.setOption(option, {
+          lazyUpdate: !hardReset,
+          notMerge: hardReset,
+        });
       };
       try {
         applyOption();
@@ -699,7 +704,7 @@ export function DashboardChart({
             if (cancelled) return;
             chart.clear();
             chart.setOption({}, { notMerge: true, lazyUpdate: false });
-            applyOption();
+            applyOption(true);
             setReady(true);
             return;
           } catch {

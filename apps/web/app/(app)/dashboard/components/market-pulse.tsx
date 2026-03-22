@@ -3,8 +3,8 @@
 import { ArrowDownOutlined, ArrowUpOutlined, MinusOutlined } from "@ant-design/icons";
 import { Card, Col, Row, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import type { EChartsOption } from "echarts";
-import { useMemo, useState, useEffect, useRef } from "react";
-import type { MouseEvent } from "react";
+import { memo, useMemo, useState, useEffect, useRef } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
@@ -22,36 +22,52 @@ import {
 } from "@/lib/time-granularity";
 import { useDashboardRangeStore } from "@/store/time-range";
 
-const Sparkline = ({ data, color }: { data: number[]; color: string }) => {
-  const option: EChartsOption = {
-    grid: { left: 0, right: 0, top: 5, bottom: 5 },
-    xAxis: { type: "category", show: false },
-    yAxis: { type: "value", show: false, min: (value) => value.min - (value.max - value.min) * 0.1 },
-    series: [
-      {
-        data,
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { width: 2, color, shadowBlur: 8, shadowColor: color + "66" },
-        areaStyle: {
-          color: {
-            type: "linear",
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: color + "33" }, 
-              { offset: 1, color: "transparent" }
-            ]
-          }
-        }
+const Sparkline = memo(function Sparkline({
+  data,
+  color,
+}: {
+  data: number[];
+  color: string;
+}) {
+  const option = useMemo<EChartsOption>(
+    () => ({
+      grid: { left: 0, right: 0, top: 5, bottom: 5 },
+      xAxis: { type: "category", show: false },
+      yAxis: {
+        type: "value",
+        show: false,
+        min: (value) => value.min - (value.max - value.min) * 0.1,
       },
-    ],
-    animation: false,
-    tooltip: { show: false },
-  };
+      series: [
+        {
+          data,
+          type: "line",
+          smooth: true,
+          showSymbol: false,
+          lineStyle: { width: 2, color, shadowBlur: 8, shadowColor: `${color}66` },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: `${color}33` },
+                { offset: 1, color: "transparent" },
+              ],
+            },
+          },
+        },
+      ],
+      animation: false,
+      tooltip: { show: false },
+    }),
+    [color, data],
+  );
 
   return <DashboardChart option={option} height={40} />;
-};
+});
 
 const MetricValue = ({ value, suffix, hasData }: { value: number | string, suffix?: string, hasData: boolean }) => {
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
@@ -92,15 +108,18 @@ const AuraMetricCard = ({
   children: React.ReactNode 
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const handleMouseMove = (e: MouseEvent) => {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
-    setMousePos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
+    cardRef.current.style.setProperty(
+      "--market-pulse-x",
+      `${Math.round(e.clientX - rect.left)}px`,
+    );
+    cardRef.current.style.setProperty(
+      "--market-pulse-y",
+      `${Math.round(e.clientY - rect.top)}px`,
+    );
   };
 
   return (
@@ -109,12 +128,18 @@ const AuraMetricCard = ({
       onMouseMove={handleMouseMove}
       onClick={onClick}
       className="relative group overflow-hidden flex flex-col h-full px-5 py-4 transition-all duration-500 cursor-pointer active:scale-[0.98] active:brightness-105 rounded-2xl border-l border-white/10 first:border-l-0"
+      style={
+        {
+          "--market-pulse-x": "50%",
+          "--market-pulse-y": "120px",
+        } as CSSProperties
+      }
     >
       {/* Hover Glow Effect */}
       <div 
         className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
         style={{
-          background: `radial-gradient(400px circle at ${mousePos.x}px ${mousePos.y}px, ${metric.color}0D, transparent 80%)`,
+          background: `radial-gradient(400px circle at var(--market-pulse-x) var(--market-pulse-y), ${metric.color}0D, transparent 80%)`,
         }}
       />
       

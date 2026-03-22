@@ -67,7 +67,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
   const [seedDraft, setSeedDraft] = useState("");
   const [seedName, setSeedName] = useState<string>("");
   const [maxDepth, setMaxDepth] = useState<number>(2);
-  const [maxNodes, setMaxNodes] = useState<number>(160);
+  const [maxNodes, setMaxNodes] = useState<number>(120);
   const [selectedNode, setSelectedNode] = useState<NodeMeta | null>(null);
   const [layoutNonce, setLayoutNonce] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -326,6 +326,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         forces[ix + 2] = forces[ix + 2]! - positions[ix + 2]! * centerK;
       }
 
+      let maxVelocity = 0;
       for (let i = 0; i < count; i += 1) {
         const ix = i * 3;
         velocities[ix] = (velocities[ix]! + forces[ix]! * dt) * damping;
@@ -347,6 +348,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         positions[ix] = positions[ix]! + velocities[ix]! * dt;
         positions[ix + 1] = positions[ix + 1]! + velocities[ix + 1]! * dt;
         positions[ix + 2] = positions[ix + 2]! + velocities[ix + 2]! * dt;
+        maxVelocity = Math.max(maxVelocity, Math.sqrt(speedSq));
 
         nodeObjects[i]!.mesh.position.set(positions[ix]!, positions[ix + 1]!, positions[ix + 2]!);
       }
@@ -363,6 +365,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
         edgePositions[offset++] = positions[bx + 2]!;
       }
       (edgeGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+      return maxVelocity;
     };
 
     const raycaster = new THREE.Raycaster();
@@ -391,6 +394,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
           resetEmissive(lastSelected);
           lastSelected = null;
           setSelectedNode(null);
+          requestRender(180);
         }
         return;
       }
@@ -406,6 +410,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       picked.mesh.material.emissiveIntensity = 0.55;
       lastSelected = picked.mesh;
       setSelectedNode(picked.meta);
+      requestRender(180);
     };
 
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
@@ -416,6 +421,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(nextWidth, nextHeight);
+      requestRender(120);
     });
     resizeObserver.observe(dom);
 
@@ -423,24 +429,77 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
     let lastTs = performance.now();
     let running = true;
     const simulationUntilMs = lastTs + 3000;
+    let stableFrames = 0;
+    let simulationActive = true;
+    let interactiveUntilMs = lastTs + 180;
+    let renderRequested = true;
+
+    const renderScene = () => {
+      renderer.render(scene, camera);
+      renderRequested = false;
+    };
+
+    const requestFrame = () => {
+      if (!running || rafId !== null) {
+        return;
+      }
+      rafId = window.requestAnimationFrame(animate);
+    };
+
+    function requestRender(interactionWindowMs = 0) {
+      const now = performance.now();
+      interactiveUntilMs = Math.max(interactiveUntilMs, now + interactionWindowMs);
+      renderRequested = true;
+      requestFrame();
+    }
+
+    const handleControlsActivity = () => {
+      requestRender(220);
+    };
+
+    controls.addEventListener("start", handleControlsActivity);
+    controls.addEventListener("change", handleControlsActivity);
+    controls.addEventListener("end", handleControlsActivity);
 
     const animate = () => {
+      rafId = null;
       if (!running) {
         return;
       }
+
       const now = performance.now();
       const dt = clamp((now - lastTs) / 1000, 0.006, 0.032);
       lastTs = now;
 
-      if (now <= simulationUntilMs) {
-        applyForces(dt);
+      if (simulationActive) {
+        const maxVelocity = applyForces(dt);
+        renderRequested = true;
+        if (maxVelocity < 0.12) {
+          stableFrames += 1;
+        } else {
+          stableFrames = 0;
+        }
+        if (now >= simulationUntilMs || stableFrames >= 18) {
+          simulationActive = false;
+        }
       }
-      controls.update();
-      renderer.render(scene, camera);
-      rafId = window.requestAnimationFrame(animate);
+
+      const interactionActive = now < interactiveUntilMs;
+      if (interactionActive) {
+        controls.update();
+        renderRequested = true;
+      }
+
+      if (renderRequested || simulationActive || interactionActive) {
+        renderScene();
+      }
+
+      if (simulationActive || interactionActive) {
+        requestFrame();
+      }
     };
 
-    rafId = window.requestAnimationFrame(animate);
+    requestRender(220);
 
     return () => {
       running = false;
@@ -449,6 +508,9 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
       }
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      controls.removeEventListener("start", handleControlsActivity);
+      controls.removeEventListener("change", handleControlsActivity);
+      controls.removeEventListener("end", handleControlsActivity);
       controls.dispose();
       edgeGeometry.dispose();
       edgeMaterial.dispose();
@@ -565,7 +627,7 @@ export function KnowledgeGraph3D({ defaultSeed }: KnowledgeGraph3DProps) {
             <Text type="secondary">
               {t("dashboard.charts.knowledgeGraphMaxNodes", { defaultValue: "Max nodes" })}: {maxNodes}
             </Text>
-            <Slider min={50} max={260} step={10} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
+            <Slider min={50} max={180} step={10} value={maxNodes} onChange={(value) => setMaxNodes(value)} style={{ width: 160 }} />
           </div>
         </Space>
       </div>

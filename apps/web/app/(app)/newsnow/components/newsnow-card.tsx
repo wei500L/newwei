@@ -42,11 +42,11 @@ import {
 import type { PersonalizedSourceScoreDetail } from "../hooks/use-newsnow-personalized-order";
 import { useRelativeTime } from "../hooks/use-relative-time";
 import type { CrossSourceItemMeta } from "../lib/newsnow-dnd";
+import { resolveNewsSourceRefetchInterval } from "../lib/newsnow-fetching";
 import {
   formatShortDuration,
   resolveNewsFreshnessState,
 } from "../lib/newsnow-freshness";
-import { resolveNewsSourceRefetchInterval } from "../lib/newsnow-fetching";
 import { getNewsItemStableKey } from "../lib/newsnow-items";
 import {
   RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
@@ -69,9 +69,9 @@ interface NewsnowCardProps {
   crossSourceMetaByItemId?: Record<string, CrossSourceItemMeta>;
   duplicateItemsCount?: number;
   visibleItemsCount?: number;
-  realtimeUnreadCount?: number;
   personalizedScoreDetail?: PersonalizedSourceScoreDetail;
   analysisByItemId?: Record<string, NewsnowAnalyzedItem>;
+  nowMs: number;
 }
 
 const colorMap: Record<string, string> = {
@@ -201,28 +201,43 @@ export function NewsnowCard({
   crossSourceMetaByItemId,
   duplicateItemsCount = 0,
   visibleItemsCount = 0,
-  realtimeUnreadCount = 0,
   personalizedScoreDetail,
   analysisByItemId,
+  nowMs,
 }: NewsnowCardProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const resolveNewsUrl = useResolveNewsUrl();
-  const {
-    focusSources,
-    toggleFocus,
-    trackSourceInteraction,
-    upsertSourceSnapshot,
-    removeSourceSnapshot,
-    sortMode,
-    densityMode,
-    sourceAffinity,
-    clearLiveUnread,
-    realtimeConnected,
-    setSourceVisibility,
-  } = useNewsnowStore();
+  const toggleFocus = useNewsnowStore((state) => state.toggleFocus);
+  const trackSourceInteraction = useNewsnowStore(
+    (state) => state.trackSourceInteraction,
+  );
+  const upsertSourceSnapshot = useNewsnowStore(
+    (state) => state.upsertSourceSnapshot,
+  );
+  const removeSourceSnapshot = useNewsnowStore(
+    (state) => state.removeSourceSnapshot,
+  );
+  const sortMode = useNewsnowStore((state) => state.sortMode);
+  const densityMode = useNewsnowStore((state) => state.densityMode);
+  const clearLiveUnread = useNewsnowStore((state) => state.clearLiveUnread);
+  const realtimeConnected = useNewsnowStore(
+    (state) => state.realtimeConnected,
+  );
+  const setSourceVisibility = useNewsnowStore(
+    (state) => state.setSourceVisibility,
+  );
   const isSourceVisible = useNewsnowStore((state) =>
     state.visibleSourceIds.includes(id),
+  );
+  const isFocused = useNewsnowStore((state) =>
+    state.focusSources.includes(id),
+  );
+  const affinityScore = useNewsnowStore(
+    (state) => state.sourceAffinity[id]?.score ?? 0,
+  );
+  const realtimeUnreadCount = useNewsnowStore(
+    (state) => state.liveUnreadBySource[id] ?? 0,
   );
   const sourceRefetchInterval = useMemo(
     () =>
@@ -241,7 +256,6 @@ export function NewsnowCard({
     },
   );
   const { getRelativeTime } = useRelativeTime();
-  const isFocused = focusSources.includes(id);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [iconLoadError, setIconLoadError] = useState(false);
   const [newItemIds, setNewItemIds] = useState<string[]>([]);
@@ -250,7 +264,6 @@ export function NewsnowCard({
     Record<string, { eventId?: string; itemId?: string }>
   >({});
   const [prefetchedEventIds, setPrefetchedEventIds] = useState<string[]>([]);
-  const [clockMs, setClockMs] = useState(() => Date.now());
   const previousIdsRef = useRef<string[]>([]);
   const openStartedAtRef = useRef<number | null>(null);
   const highlightTimersRef = useRef<Record<string, number>>({});
@@ -259,10 +272,6 @@ export function NewsnowCard({
   const hasTrackedExposureRef = useRef(false);
   const exposureKeyRef = useRef("");
   const lastResolvedPrefetchRef = useRef<ResolvePrefetchAttemptState | null>(null);
-  const mouseMoveRafRef = useRef<number | null>(null);
-  const pendingMousePosRef = useRef({ x: 0, y: 0 });
-
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
   const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
     if (isDragging || activeDragId) {
@@ -270,27 +279,15 @@ export function NewsnowCard({
     }
     if (!articleRef.current) return;
     const rect = articleRef.current.getBoundingClientRect();
-    pendingMousePosRef.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-    if (mouseMoveRafRef.current !== null) {
-      return;
-    }
-    mouseMoveRafRef.current = window.requestAnimationFrame(() => {
-      mouseMoveRafRef.current = null;
-      setMousePos(pendingMousePosRef.current);
-    });
+    articleRef.current.style.setProperty(
+      "--newsnow-hover-x",
+      `${Math.round(e.clientX - rect.left)}px`,
+    );
+    articleRef.current.style.setProperty(
+      "--newsnow-hover-y",
+      `${Math.round(e.clientY - rect.top)}px`,
+    );
   };
-
-  useEffect(
-    () => () => {
-      if (mouseMoveRafRef.current !== null) {
-        window.cancelAnimationFrame(mouseMoveRafRef.current);
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     const node = articleRef.current;
@@ -375,6 +372,8 @@ export function NewsnowCard({
     ...style,
     height: "clamp(380px, 56vh, 620px)",
     ["--newsnow-card-accent-rgb" as string]: accentRgb,
+    ["--newsnow-hover-x" as string]: "50%",
+    ["--newsnow-hover-y" as string]: "120px",
     ["contentVisibility" as string]: "auto",
     ["containIntrinsicSize" as string]: "440px",
     backfaceVisibility: "hidden",
@@ -477,20 +476,10 @@ export function NewsnowCard({
 
   const dedupMetaMap =
     crossSourceMetaByItemId ?? EMPTY_CROSS_SOURCE_META_BY_ITEM_ID;
-  const affinityScore = sourceAffinity[id]?.score ?? 0;
   const personalizedCombinedScore =
     personalizedScoreDetail && Number.isFinite(personalizedScoreDetail.combinedScore)
       ? personalizedScoreDetail.combinedScore
       : 0;
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setClockMs(Date.now());
-    }, 15_000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, []);
 
   const displayItems = useMemo(() => {
     const sourceItems = data?.items ?? [];
@@ -678,7 +667,7 @@ export function NewsnowCard({
     const prefetchKey = candidates
       .map((item) => `${getNewsItemStableKey(item)}::${item.url}`)
       .join("|");
-    const nowMs = Date.now();
+    const attemptedAtMs = Date.now();
     const previousPrefetch = lastResolvedPrefetchRef.current;
     const shouldForceRefresh =
       previousPrefetch?.key === prefetchKey &&
@@ -687,7 +676,7 @@ export function NewsnowCard({
       shouldSkipResolvePrefetch({
         prefetchKey,
         previous: previousPrefetch,
-        nowMs,
+        nowMs: attemptedAtMs,
         retryIntervalMs: RESOLVE_PREFETCH_RETRY_INTERVAL_MS,
       })
     ) {
@@ -702,7 +691,7 @@ export function NewsnowCard({
         prefetchKey,
         candidateCount: 0,
         matchedCount: 0,
-        attemptedAtMs: nowMs,
+        attemptedAtMs,
       });
       return;
     }
@@ -761,6 +750,7 @@ export function NewsnowCard({
         prefetchKey,
         candidateCount: candidates.length,
         matchedCount,
+        attemptedAtMs,
       });
     };
 
@@ -982,9 +972,9 @@ export function NewsnowCard({
       resolveNewsFreshnessState({
         updatedTime: data?.updatedTime,
         intervalMs: source.interval,
-        nowMs: clockMs,
+        nowMs,
       }),
-    [clockMs, data?.updatedTime, source.interval],
+    [data?.updatedTime, nowMs, source.interval],
   );
   const freshnessDelayLabel =
     freshness.delayMs > 0 ? formatShortDuration(freshness.delayMs) : null;
@@ -1153,7 +1143,7 @@ export function NewsnowCard({
           isAnyCardDragging ? "opacity-0" : "opacity-0 group-hover:opacity-100"
         }`}
         style={{
-          background: `radial-gradient(600px circle at ${mousePos.x}px ${mousePos.y}px, ${glowColor}, transparent 40%)`,
+          background: `radial-gradient(600px circle at var(--newsnow-hover-x) var(--newsnow-hover-y), ${glowColor}, transparent 40%)`,
           zIndex: 0,
         }}
       />

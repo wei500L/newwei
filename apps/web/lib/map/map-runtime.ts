@@ -4,8 +4,8 @@ import maplibregl, {
   type StyleSpecification,
 } from "maplibre-gl";
 
-import { DEFAULT_WORLD_BBOX, MAP_STYLE_URL } from "./map-style";
 import type { MapLoadErrorDetail } from "./map-load-error";
+import { DEFAULT_WORLD_BBOX, MAP_STYLE_URL } from "./map-style";
 import { hasRenderableContainerSize } from "./renderable-container";
 
 export interface DeckMapInitialViewState {
@@ -32,10 +32,10 @@ export interface DeckMapRuntime {
   destroy: () => void;
 }
 
-type DeckLayerCandidate = {
+interface DeckLayerCandidate {
   id?: unknown;
   clone?: (() => unknown) | undefined;
-};
+}
 
 interface DroppedDeckLayerSummary {
   droppedCount: number;
@@ -46,6 +46,14 @@ interface DroppedDeckLayerSummary {
 }
 
 const deckLayerWarningSignatures = new Map<string, string>();
+const overlayLayerCloneCache = new WeakMap<
+  Pick<MapboxOverlay, 'setProps'>,
+  {
+    rawLayers: unknown[];
+    clonedLayers: unknown[];
+    tooltip?: unknown;
+  }
+>();
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -70,6 +78,21 @@ export function sanitizeDeckLayers<T>(layers: readonly T[] | null | undefined): 
 
 function cloneDeckLayer<T>(layer: T): T {
   return (layer as DeckLayerCandidate).clone!.call(layer) as T;
+}
+
+function areLayerArraysEqual(
+  current: readonly unknown[] | undefined,
+  next: readonly unknown[],
+): boolean {
+  if (!current || current.length !== next.length) {
+    return false;
+  }
+  for (let index = 0; index < next.length; index += 1) {
+    if (current[index] !== next[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function normalizeDeckLayers<T>(
@@ -134,21 +157,42 @@ export function setDeckOverlayProps(
   overlay: Pick<MapboxOverlay, 'setProps'>,
   props: Partial<MapboxOverlayProps>,
 ): void {
+  const cached = overlayLayerCloneCache.get(overlay);
   const normalizedLayers =
     props.layers === undefined ? null : normalizeDeckLayers(props.layers as unknown[]);
   if (normalizedLayers?.droppedSummary) {
     warnDroppedDeckLayers(normalizedLayers.droppedSummary);
+  }
+  const rawLayers = normalizedLayers?.layers ?? [];
+  const canReuseClonedLayers =
+    props.layers !== undefined &&
+    areLayerArraysEqual(cached?.rawLayers, rawLayers);
+  if (
+    props.layers !== undefined &&
+    canReuseClonedLayers &&
+    cached?.tooltip === props.getTooltip
+  ) {
+    return;
   }
   const nextProps =
     props.layers === undefined
       ? props
       : {
           ...props,
-          // deck.gl layers are one-shot instances. Re-clone them before every overlay update
-          // so a recreated overlay never reuses a finalized layer from a previous Deck instance.
-          layers: normalizedLayers!.layers.map((layer) => cloneDeckLayer(layer)),
+          // deck.gl layers are one-shot instances across overlay lifetimes.
+          // Cache clones per overlay so unchanged layers do not get re-cloned on every update.
+          layers: canReuseClonedLayers
+            ? cached!.clonedLayers
+            : rawLayers.map((layer) => cloneDeckLayer(layer)),
         };
 
+  if (props.layers !== undefined) {
+    overlayLayerCloneCache.set(overlay, {
+      rawLayers,
+      clonedLayers: nextProps.layers as unknown[],
+      tooltip: props.getTooltip,
+    });
+  }
   overlay.setProps(nextProps as MapboxOverlayProps);
 }
 

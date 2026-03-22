@@ -18,25 +18,24 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
-import { usePendingAction } from "@/hooks/use-pending-action";
 import {
   formatGranularityLabel,
   inferGranularityFromTimestampsMs,
 } from "@/lib/time-granularity";
 import { safeHttpUrl } from "@/lib/url";
 
-import { KnowledgeGraph3D } from "./charts/knowledge-graph-3d";
-import { SpacetimeGeoHeatmap } from "./charts/spacetime-geo-heatmap";
-import { SpacetimePropagation } from "./charts/spacetime-propagation";
+import type { DashboardStreamState } from "./use-dashboard-stream";
 
 type NewsEventSourceType =
   | "all"
@@ -161,6 +160,34 @@ interface NewsEventSourcePolicySyncStatus {
   warningCodes: string[];
 }
 
+const SpacetimeGeoHeatmap = dynamic(
+  () =>
+    import("./charts/spacetime-geo-heatmap").then(
+      (mod) => mod.SpacetimeGeoHeatmap,
+    ),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 8 }} />,
+  },
+);
+
+const SpacetimePropagation = dynamic(
+  () =>
+    import("./charts/spacetime-propagation").then(
+      (mod) => mod.SpacetimePropagation,
+    ),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />,
+  },
+);
+
+const KnowledgeGraph3D = dynamic(
+  () =>
+    import("./charts/knowledge-graph-3d").then((mod) => mod.KnowledgeGraph3D),
+  {
+    loading: () => <Skeleton active paragraph={{ rows: 6 }} />,
+  },
+);
+
 const NEWS_EVENTS_QUERY = gql`
   query SpacetimeNewsEvents(
     $limit: Int
@@ -261,6 +288,54 @@ const NEWS_EVENT_QUERY = gql`
     }
   }
 `;
+
+interface DeferredChartMountProps {
+  className?: string;
+  minHeight?: number | string;
+  children: React.ReactNode;
+}
+
+function DeferredChartMount({
+  className,
+  minHeight,
+  children,
+}: DeferredChartMountProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} className={className} style={{ minHeight }}>
+      {visible ? children : <Skeleton active paragraph={{ rows: 6 }} />}
+    </div>
+  );
+}
 
 const NEWS_EVENT_REFERENCED_ARTICLES_QUERY = gql`
   query SpacetimeNewsEventReferencedArticles(
@@ -496,7 +571,11 @@ const buildTimelineNodes = (
   );
 };
 
-export function SpacetimeViz() {
+export interface SpacetimeVizProps {
+  streamState?: DashboardStreamState;
+}
+
+export function SpacetimeViz({ streamState }: SpacetimeVizProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language);
   const { data: session, status: sessionStatus } = useSession();
@@ -780,7 +859,7 @@ export function SpacetimeViz() {
     }
   }, [sourcePolicySyncLoading, sourcePolicySyncStatus]);
 
-  const events = eventsData?.newsEvents ?? [];
+  const events = useMemo(() => eventsData?.newsEvents ?? [], [eventsData?.newsEvents]);
 
   useEffect(() => {
     if (events.length === 0) {
@@ -935,18 +1014,16 @@ export function SpacetimeViz() {
 
   const { data: referencedArticlesData, loading: referencedArticlesLoading } =
     useQuery<{
-      newsEventReferencedArticles: Array<
-        Pick<
-          ReferencedArticleView,
-          | "id"
-          | "url"
-          | "sourceLabel"
-          | "title"
-          | "publishedAt"
-          | "crawlAt"
-          | "processedAt"
-        >
-      >;
+      newsEventReferencedArticles: Pick<
+        ReferencedArticleView,
+        | "id"
+        | "url"
+        | "sourceLabel"
+        | "title"
+        | "publishedAt"
+        | "crawlAt"
+        | "processedAt"
+      >[];
     }>(NEWS_EVENT_REFERENCED_ARTICLES_QUERY, {
       variables: {
         eventId: event?.id ?? "",
@@ -1267,19 +1344,22 @@ export function SpacetimeViz() {
               </Space>
 
               <div className="flex-1 min-h-0">
-                <SpacetimeGeoHeatmap
-                  eventId={geoScope === "event" ? selectedEventId : null}
-                  followCursor={geoScope === "event" && geoFollowCursor}
-                  cursorBucketStartIso={
-                    geoScope === "event" ? cursorStartIso : null
-                  }
-                  cursorBucketEndIso={
-                    geoScope === "event" ? cursorEndIso : null
-                  }
-                  cursorBucketGranularity={
-                    geoScope === "event" ? timelineGranularity : null
-                  }
-                />
+                <DeferredChartMount className="h-full" minHeight={420}>
+                  <SpacetimeGeoHeatmap
+                    eventId={geoScope === "event" ? selectedEventId : null}
+                    followCursor={geoScope === "event" && geoFollowCursor}
+                    cursorBucketStartIso={
+                      geoScope === "event" ? cursorStartIso : null
+                    }
+                    cursorBucketEndIso={
+                      geoScope === "event" ? cursorEndIso : null
+                    }
+                    cursorBucketGranularity={
+                      geoScope === "event" ? timelineGranularity : null
+                    }
+                    liveStreamActive={streamState?.status === "live"}
+                  />
+                </DeferredChartMount>
               </div>
             </div>
           </Card>
@@ -1872,13 +1952,15 @@ export function SpacetimeViz() {
             className="glass-card"
             variant="borderless"
           >
-            <SpacetimePropagation
-              eventId={selectedEventId}
-              cursorStartIso={cursorStartIso}
-              cursorEndIso={cursorEndIso}
-              linkedSources={cursorLinkedSources}
-              loading={eventLoading}
-            />
+            <DeferredChartMount minHeight={320}>
+              <SpacetimePropagation
+                eventId={selectedEventId}
+                cursorStartIso={cursorStartIso}
+                cursorEndIso={cursorEndIso}
+                linkedSources={cursorLinkedSources}
+                loading={eventLoading}
+              />
+            </DeferredChartMount>
           </Card>
         </div>
 
@@ -1890,7 +1972,9 @@ export function SpacetimeViz() {
             className="glass-card"
             variant="borderless"
           >
-            <KnowledgeGraph3D defaultSeed={suggestedSeed} />
+            <DeferredChartMount minHeight={380}>
+              <KnowledgeGraph3D defaultSeed={suggestedSeed} />
+            </DeferredChartMount>
           </Card>
         </div>
       </div>

@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 
-import type { NewsnowSnapshotItem } from "../lib/newsnow-dnd";
+import {
+  buildNewsnowSnapshotHash,
+  type NewsnowSnapshotItem,
+} from "../lib/newsnow-dnd";
 
 export type NewsnowSortMode = "manual" | "personalized" | "smart";
 export type NewsnowDensityMode = "compact" | "comfortable";
@@ -54,6 +57,7 @@ interface NewsnowState {
   sourceAffinity: Record<string, NewsnowSourceAffinity>;
   visibleSourceIds: string[];
   sourceSnapshots: Record<string, NewsnowSourceSnapshot>;
+  sourceSnapshotHashes: Record<string, string>;
   liveUnreadBySource: Record<string, number>;
   realtimeHighlights: NewsnowRealtimeHighlight[];
   lastRealtimeEventAt?: number;
@@ -237,6 +241,7 @@ export const useNewsnowStore = create<NewsnowState>()(
       sourceAffinity: {},
       visibleSourceIds: [],
       sourceSnapshots: {},
+      sourceSnapshotHashes: {},
       liveUnreadBySource: {},
       realtimeHighlights: [],
       lastRealtimeEventAt: undefined,
@@ -447,20 +452,42 @@ export const useNewsnowStore = create<NewsnowState>()(
           };
         }),
       upsertSourceSnapshot: (sourceId, snapshot) =>
-        set((state) => ({
-          sourceSnapshots: {
-            ...state.sourceSnapshots,
-            [sourceId]: snapshot,
-          },
-        })),
-      removeSourceSnapshot: (sourceId) =>
         set((state) => {
-          if (!state.sourceSnapshots[sourceId]) {
+          const normalizedSourceId = toSourceId(sourceId);
+          if (!normalizedSourceId) {
             return state;
           }
-          const next = { ...state.sourceSnapshots };
-          delete next[sourceId];
-          return { sourceSnapshots: next };
+
+          const nextHash = buildNewsnowSnapshotHash(snapshot.items);
+          if (state.sourceSnapshotHashes[normalizedSourceId] === nextHash) {
+            return state;
+          }
+
+          return {
+            sourceSnapshots: {
+              ...state.sourceSnapshots,
+              [normalizedSourceId]: snapshot,
+            },
+            sourceSnapshotHashes: {
+              ...state.sourceSnapshotHashes,
+              [normalizedSourceId]: nextHash,
+            },
+          };
+        }),
+      removeSourceSnapshot: (sourceId) =>
+        set((state) => {
+          const normalizedSourceId = toSourceId(sourceId);
+          if (!normalizedSourceId || !state.sourceSnapshots[normalizedSourceId]) {
+            return state;
+          }
+          const nextSnapshots = { ...state.sourceSnapshots };
+          const nextHashes = { ...state.sourceSnapshotHashes };
+          delete nextSnapshots[normalizedSourceId];
+          delete nextHashes[normalizedSourceId];
+          return {
+            sourceSnapshots: nextSnapshots,
+            sourceSnapshotHashes: nextHashes,
+          };
         }),
     }),
     {

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { useSystemHealthContext } from "@/app/(app)/components/system-health-context";
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { TimeRangeControls } from "@/components/time-range-controls";
@@ -31,11 +32,10 @@ import { buildRequestErrorEmptyState } from "@/lib/request-error-empty-state";
 import { useTimedValueDeduper } from "@/lib/use-realtime-helpers";
 import { useDashboardFiltersStore } from "@/store/dashboard-filters";
 import { useDashboardRangeStore } from "@/store/time-range";
-import { useSystemHealthContext } from "@/app/(app)/components/system-health-context";
 
 import { DashboardAnalysisFeedProvider } from "./analysis-feed-context";
-import { LiveAlertsToasts } from "./live-alerts";
 import { SystemHealthSummaryCard } from "./components/system-health-summary-card";
+import { LiveAlertsToasts } from "./live-alerts";
 import {
   useDashboardStream,
   type DashboardStreamState,
@@ -209,6 +209,13 @@ function DashboardStreamStatusLine({
         pulse: true,
       };
     }
+    if (status === "paused") {
+      return {
+        label: t("dashboard.stream.status.paused", { defaultValue: "Paused" }),
+        dotClass: "bg-amber-500",
+        pulse: false,
+      };
+    }
     return {
       label: t("dashboard.stream.status.offline", { defaultValue: "Offline" }),
       dotClass: "bg-red-500",
@@ -229,6 +236,9 @@ function DashboardStreamStatusLine({
         }),
         { id: DASHBOARD_STREAM_TOAST_ID },
       );
+      return;
+    }
+    if (streamState.status === "paused") {
       return;
     }
     if (prevStatus === "offline" && streamState.status === "live") {
@@ -361,6 +371,7 @@ export function DashboardContent() {
     useDashboardFiltersStore();
   const lastHandledQueueEventKeyRef = useRef<string | null>(null);
   const shouldShowQueueConnectionError = useTimedValueDeduper(30_000);
+  const [streamPaused, setStreamPaused] = useState(false);
   const [activeDrillDownKey, setActiveDrillDownKey] = useState<string | null>(
     null,
   );
@@ -379,6 +390,23 @@ export function DashboardContent() {
     () => `${start.toISOString()}_${end.toISOString()}`,
     [end, start],
   );
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      setStreamPaused(document.visibilityState === "hidden");
+    };
+
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   const dashboardStreamState = useDashboardStream({
     accessToken: session?.accessToken,
     start,
@@ -395,6 +423,7 @@ export function DashboardContent() {
     queueStatus,
     selectedSector,
     enabled: Boolean(session?.accessToken),
+    paused: streamPaused,
   });
   const handleWarMapRealtimeQueryChange = useCallback((nextQuery: {
     start: Date;
@@ -715,7 +744,7 @@ export function DashboardContent() {
         </div>
 
         {/* Spacetime Visualization */}
-        <SpacetimeViz />
+        <SpacetimeViz streamState={dashboardStreamState} />
 
         {/* System Stats (Hidden by default) */}
         {showSystemStats && (

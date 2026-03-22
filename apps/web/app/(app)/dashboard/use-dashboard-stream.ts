@@ -1,5 +1,6 @@
 'use client';
 
+/* eslint-disable import/no-unresolved */
 import {
   DASHBOARD_STREAM_EVENT_TYPES,
   type WarMapAisMode,
@@ -9,11 +10,13 @@ import {
   type WarMapNewsMarkersResponse,
   type WarMapTranslateTarget,
 } from '@modular/utils';
+/* eslint-enable import/no-unresolved */
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { emitUnauthorized } from '@/lib/auth-events';
 import { env } from '@/lib/env';
+
 import {
   buildWarMapEventsQueryKey,
   buildWarMapLayersQueryKey,
@@ -59,7 +62,7 @@ interface DashboardStreamErrorPayload {
   detail?: string;
 }
 
-export type DashboardStreamStatus = 'live' | 'offline';
+export type DashboardStreamStatus = 'live' | 'offline' | 'paused';
 
 export interface DashboardStreamState {
   connected: boolean;
@@ -87,6 +90,7 @@ export interface DashboardStreamOptions {
   queueStatus?: string | null;
   selectedSector?: string | null;
   enabled?: boolean;
+  paused?: boolean;
 }
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -203,6 +207,7 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     warMapFlightMode,
     warMapAisMode,
     enabled = true,
+    paused = false,
     queueStatus,
     selectedSector,
   } = options;
@@ -261,6 +266,40 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       });
       return;
     }
+    if (paused) {
+      abortRef.current?.abort();
+      if (readerRef.current) {
+        void readerRef.current.cancel().catch(() => null);
+        readerRef.current = null;
+      }
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+      }
+      retryRef.current = 0;
+      statusRef.current = 'paused';
+      hasLiveRef.current = false;
+      setState((prev) => {
+        if (
+          !prev.connected &&
+          prev.status === 'paused' &&
+          !prev.error &&
+          prev.retryCount === 0 &&
+          prev.nextRetryAt === undefined
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          connected: false,
+          status: 'paused',
+          error: undefined,
+          retryCount: 0,
+          nextRetryAt: undefined,
+        };
+      });
+      return;
+    }
 
     retryRef.current = 0;
     statusRef.current = 'offline';
@@ -299,6 +338,16 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
     let connecting = false;
     let authBlocked = false;
     const unknownEventTypes = new Set<string>();
+    const pendingStreamUpdates = new Map<
+      string,
+      { queryKey: readonly unknown[]; payload: unknown }
+    >();
+    let pendingLastMessageAt: number | undefined;
+    let pendingLastUpdateAt: number | undefined;
+    let shouldInvalidateGeoHeatmap = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let flushFrame: number | null = null;
+    let stateCommitTimer: ReturnType<typeof setTimeout> | null = null;
 
     const isStreamDataQueryKey = (queryKey: unknown) => {
       if (!Array.isArray(queryKey)) return false;
@@ -354,11 +403,55 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       });
     };
 
+    const flushStateMeta = () => {
+      stateCommitTimer = null;
+      if (!active) {
+        pendingLastMessageAt = undefined;
+        pendingLastUpdateAt = undefined;
+        return;
+      }
+      if (
+        pendingLastMessageAt === undefined &&
+        pendingLastUpdateAt === undefined
+      ) {
+        return;
+      }
+      const nextLastMessageAt = pendingLastMessageAt;
+      const nextLastUpdateAt = pendingLastUpdateAt;
+      pendingLastMessageAt = undefined;
+      pendingLastUpdateAt = undefined;
+      setState((prev) => {
+        const lastMessageAt =
+          nextLastMessageAt === undefined ? prev.lastMessageAt : nextLastMessageAt;
+        const lastUpdateAt =
+          nextLastUpdateAt === undefined ? prev.lastUpdateAt : nextLastUpdateAt;
+        if (
+          prev.lastMessageAt === lastMessageAt &&
+          prev.lastUpdateAt === lastUpdateAt
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          lastMessageAt,
+          lastUpdateAt,
+        };
+      });
+    };
+
+    const scheduleStateMetaFlush = () => {
+      if (!active || stateCommitTimer) {
+        return;
+      }
+      stateCommitTimer = setTimeout(() => {
+        flushStateMeta();
+      }, 16);
+    };
+
     const recordMessage = (timestamp = Date.now()) => {
       if (!active) return;
-      setState((prev) =>
-        prev.lastMessageAt === timestamp ? prev : { ...prev, lastMessageAt: timestamp },
-      );
+      pendingLastMessageAt = timestamp;
+      scheduleStateMetaFlush();
     };
 
     const isOnline = () => {
@@ -415,6 +508,63 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
               nextRetryAt: undefined,
             },
       );
+    };
+
+    const flushPendingStreamUpdates = () => {
+      if (flushFrame !== null) {
+        window.cancelAnimationFrame(flushFrame);
+        flushFrame = null;
+      }
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (!active || pendingStreamUpdates.size === 0) {
+        shouldInvalidateGeoHeatmap = false;
+        return;
+      }
+
+      for (const { queryKey, payload } of pendingStreamUpdates.values()) {
+        queryClient.setQueryData(queryKey, payload);
+      }
+      pendingStreamUpdates.clear();
+
+      if (shouldInvalidateGeoHeatmap) {
+        invalidateGeoHeatmapQueries(false);
+        shouldInvalidateGeoHeatmap = false;
+      }
+      markHealthy();
+    };
+
+    const scheduleStreamFlush = () => {
+      if (!active || flushFrame !== null || flushTimer) {
+        return;
+      }
+      if (
+        typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden'
+      ) {
+        flushTimer = setTimeout(() => {
+          flushPendingStreamUpdates();
+        }, 500);
+        return;
+      }
+      flushFrame = window.requestAnimationFrame(() => {
+        flushPendingStreamUpdates();
+      });
+    };
+
+    const queueStreamUpdate = (
+      key: string,
+      queryKey: readonly unknown[],
+      payload: unknown,
+      options?: { invalidateGeoHeatmap?: boolean },
+    ) => {
+      pendingStreamUpdates.set(key, { queryKey, payload });
+      if (options?.invalidateGeoHeatmap) {
+        shouldInvalidateGeoHeatmap = true;
+      }
+      scheduleStreamFlush();
     };
 
     const handleError = (message: string, forceOffline?: boolean) => {
@@ -484,41 +634,37 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapEvents &&
         isWarMapEventsResponse(payload)
       ) {
-        queryClient.setQueryData(warMapEventKey, payload);
-        markHealthy();
+        queueStreamUpdate('war-map-events', warMapEventKey, payload);
         return;
       }
       if (
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapNewsMarkers &&
         isWarMapNewsMarkersResponse(payload)
       ) {
-        queryClient.setQueryData(warMapNewsMarkersKey, payload);
-        markHealthy();
+        queueStreamUpdate('war-map-news-markers', warMapNewsMarkersKey, payload);
         return;
       }
       if (
         eventType === DASHBOARD_STREAM_EVENT_TYPES.warMapLayers &&
         isWarMapLayersResponse(payload)
       ) {
-        queryClient.setQueryData(warMapLayersKey, payload);
-        markHealthy();
+        queueStreamUpdate('war-map-layers', warMapLayersKey, payload);
         return;
       }
       if (
         eventType === DASHBOARD_STREAM_EVENT_TYPES.financialCandlestick &&
         isFinancialCandlestickResponse(payload)
       ) {
-        queryClient.setQueryData(candlestickKey, payload);
-        markHealthy();
+        queueStreamUpdate('financial-candlestick', candlestickKey, payload);
         return;
       }
       if (
         eventType === DASHBOARD_STREAM_EVENT_TYPES.spacetimeGeoHeatmap &&
         isSpacetimeGeoHeatmapResponse(payload)
       ) {
-        queryClient.setQueryData(geoHeatmapKey, payload);
-        invalidateGeoHeatmapQueries(false);
-        markHealthy();
+        queueStreamUpdate('spacetime-geo-heatmap', geoHeatmapKey, payload, {
+          invalidateGeoHeatmap: true,
+        });
         return;
       }
       if (eventType === DASHBOARD_STREAM_EVENT_TYPES.streamError) {
@@ -709,9 +855,8 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
       if (!isStreamDataQueryKey(event.query.queryKey)) return;
       const updatedAt = event.query.state.dataUpdatedAt;
       if (!updatedAt) return;
-      setState((prev) =>
-        prev.lastUpdateAt === updatedAt ? prev : { ...prev, lastUpdateAt: updatedAt },
-      );
+      pendingLastUpdateAt = updatedAt;
+      scheduleStateMetaFlush();
     });
 
     window.addEventListener('online', handleBrowserOnline);
@@ -721,6 +866,11 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
 
     return () => {
       active = false;
+      flushPendingStreamUpdates();
+      if (stateCommitTimer) {
+        clearTimeout(stateCommitTimer);
+        stateCommitTimer = null;
+      }
       unsubscribeQueryCache();
       window.removeEventListener('online', handleBrowserOnline);
       window.removeEventListener('offline', handleBrowserOffline);
@@ -733,11 +883,20 @@ export function useDashboardStream(options: DashboardStreamOptions): DashboardSt
         clearTimeout(reconnectRef.current);
         reconnectRef.current = null;
       }
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+      if (flushFrame !== null) {
+        window.cancelAnimationFrame(flushFrame);
+        flushFrame = null;
+      }
     };
   }, [
     accessToken,
     enabled,
     endIso,
+    paused,
     queryEndIso,
     queryClient,
     queryStartIso,

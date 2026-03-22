@@ -18,8 +18,10 @@ import {
   rectSortingStrategy,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { shallow } from "zustand/shallow";
 
 import { useIsMobile } from "../hooks/use-is-mobile";
 import { type NewsnowAnalyzedItem, type Source } from "../hooks/use-news-sources";
@@ -27,6 +29,7 @@ import {
   type PersonalizedSourceScoreDetail,
   useNewsnowPersonalizedOrder,
 } from "../hooks/use-newsnow-personalized-order";
+import { useSharedNowTick } from "../hooks/use-shared-now-tick";
 import {
   buildCrossSourceDedupResult,
   reorderNewsnowItems,
@@ -42,38 +45,90 @@ interface NewsnowDndGridProps {
   analysisBySource?: Record<string, Record<string, NewsnowAnalyzedItem>>;
 }
 
+const DESKTOP_MIN_CARD_WIDTH = 340;
+const DESKTOP_GRID_GAP_PX = 24;
+const MOBILE_GRID_GAP_PX = 16;
+const VIRTUAL_ROW_ESTIMATE_PX = 520;
+const EMPTY_SOURCE_IDS: string[] = [];
+
 function NewsnowDndGridContent({
   columnKey,
   sourceIds,
   sourcesMap,
   analysisBySource,
 }: NewsnowDndGridProps) {
-  const {
-    columnOrders,
-    setColumnOrder,
-    sourceAffinity,
-    sourceSnapshots,
-    focusSources,
-    sortMode,
-    hideCrossSourceDuplicates,
-    liveUnreadBySource,
-  } = useNewsnowStore();
+  const columnOrder = useNewsnowStore(
+    (state) => state.columnOrders[columnKey] ?? EMPTY_SOURCE_IDS,
+  );
+  const setColumnOrder = useNewsnowStore((state) => state.setColumnOrder);
+  const focusSources = useNewsnowStore((state) => state.focusSources);
+  const sortMode = useNewsnowStore((state) => state.sortMode);
+  const hideCrossSourceDuplicates = useNewsnowStore(
+    (state) => state.hideCrossSourceDuplicates,
+  );
   const [items, setItems] = useState<string[]>([]);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  const [scrollMargin, setScrollMargin] = useState(0);
   const isMobile = useIsMobile();
+  const nowMs = useSharedNowTick();
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const savedOrder = columnOrders[columnKey];
-    if (savedOrder && savedOrder.length > 0) {
+    if (columnOrder.length > 0) {
       // Filter out deleted sources or sources not in current list
-      const filteredOrder = savedOrder.filter((id) => sourceIds.includes(id));
+      const filteredOrder = columnOrder.filter((id) => sourceIds.includes(id));
       // Add new sources to the end
-      const newSources = sourceIds.filter((id) => !savedOrder.includes(id));
+      const newSources = sourceIds.filter((id) => !columnOrder.includes(id));
       setItems([...filteredOrder, ...newSources]);
     } else {
       setItems(sourceIds);
     }
-  }, [columnKey, sourceIds, columnOrders]);
+  }, [columnOrder, sourceIds]);
+  const scopedSourceAffinity = useNewsnowStore(
+    (state) => {
+      const next: typeof state.sourceAffinity = {};
+      for (const sourceId of items) {
+        const affinity = state.sourceAffinity[sourceId];
+        if (affinity) {
+          next[sourceId] = affinity;
+        }
+      }
+      return next;
+    },
+    shallow,
+  );
+
+  useEffect(() => {
+    const node = gridRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateMetrics = () => {
+      setGridWidth(node.clientWidth);
+      setScrollMargin(node.getBoundingClientRect().top + window.scrollY);
+    };
+
+    updateMetrics();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateMetrics);
+      return () => {
+        window.removeEventListener("resize", updateMetrics);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateMetrics();
+    });
+    observer.observe(node);
+    window.addEventListener("resize", updateMetrics);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateMetrics);
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -123,24 +178,15 @@ function NewsnowDndGridContent({
     if (sortMode !== "personalized" && sortMode !== "smart") {
       return undefined;
     }
-    const scopedSourceAffinity = items.reduce(
-      (acc, sourceId) => {
-        if (sourceAffinity[sourceId]) {
-          acc[sourceId] = sourceAffinity[sourceId];
-        }
-        return acc;
-      },
-      {} as typeof sourceAffinity,
-    );
     return {
       sortMode,
       focusSources,
       columnOrders: {
-        [columnKey]: columnOrders[columnKey] ?? [],
+        [columnKey]: columnOrder,
       },
       sourceAffinity: scopedSourceAffinity,
     } as const;
-  }, [columnKey, columnOrders, focusSources, items, sortMode, sourceAffinity]);
+  }, [columnKey, columnOrder, focusSources, scopedSourceAffinity, sortMode]);
 
   const { data: personalizedOrder } = useNewsnowPersonalizedOrder({
     columnKey,
@@ -150,7 +196,7 @@ function NewsnowDndGridContent({
   });
 
   const effectiveDisplayItems = useMemo(() => {
-    const hasManualOrder = (columnOrders[columnKey]?.length ?? 0) > 0;
+    const hasManualOrder = columnOrder.length > 0;
     if (sortMode !== "personalized" && sortMode !== "smart") {
       return items;
     }
@@ -162,7 +208,7 @@ function NewsnowDndGridContent({
       return personalizedOrder.sourceIds;
     }
     return items;
-  }, [columnKey, columnOrders, items, personalizedOrder?.sourceIds, sortMode]);
+  }, [columnOrder.length, items, personalizedOrder?.sourceIds, sortMode]);
   const personalizedScoreDetailsBySourceId = useMemo(
     () =>
       (personalizedOrder?.sourceScoreDetails ?? {}) as Record<
@@ -171,15 +217,94 @@ function NewsnowDndGridContent({
       >,
     [personalizedOrder?.sourceScoreDetails],
   );
+  const scopedSourceSnapshots = useNewsnowStore(
+    (state) => {
+      const next: typeof state.sourceSnapshots = {};
+      for (const sourceId of effectiveDisplayItems) {
+        const snapshot = state.sourceSnapshots[sourceId];
+        if (snapshot) {
+          next[sourceId] = snapshot;
+        }
+      }
+      return next;
+    },
+    shallow,
+  );
 
   const dedupeResult = useMemo(
     () =>
       buildCrossSourceDedupResult({
         sourceOrder: effectiveDisplayItems,
-        snapshots: sourceSnapshots,
+        snapshots: scopedSourceSnapshots,
       }),
-    [effectiveDisplayItems, sourceSnapshots],
+    [effectiveDisplayItems, scopedSourceSnapshots],
   );
+  const columnCount = useMemo(() => {
+    if (isMobile) {
+      return 1;
+    }
+    const safeWidth = Math.max(1, gridWidth);
+    return Math.max(
+      1,
+      Math.floor(
+        (safeWidth + DESKTOP_GRID_GAP_PX) /
+          (DESKTOP_MIN_CARD_WIDTH + DESKTOP_GRID_GAP_PX),
+      ),
+    );
+  }, [gridWidth, isMobile]);
+  const rowGap = isMobile ? MOBILE_GRID_GAP_PX : DESKTOP_GRID_GAP_PX;
+  const rowGroups = useMemo(() => {
+    const groups: string[][] = [];
+    for (let index = 0; index < effectiveDisplayItems.length; index += columnCount) {
+      groups.push(effectiveDisplayItems.slice(index, index + columnCount));
+    }
+    return groups;
+  }, [columnCount, effectiveDisplayItems]);
+  const shouldVirtualize = !activeDragId && rowGroups.length > 4;
+  const rowVirtualizer = useWindowVirtualizer({
+    count: rowGroups.length,
+    estimateSize: () => VIRTUAL_ROW_ESTIMATE_PX,
+    overscan: 2,
+    scrollMargin,
+  });
+  const virtualRows = shouldVirtualize
+    ? rowVirtualizer.getVirtualItems()
+    : rowGroups.map((row, index) => ({
+        index,
+        key: row.join("|") || `row-${index}`,
+        size: VIRTUAL_ROW_ESTIMATE_PX,
+        start: index * VIRTUAL_ROW_ESTIMATE_PX,
+      }));
+
+  const renderCard = (id: string) => (
+    <div key={id}>
+      {sourcesMap[id] ? (
+        <NewsnowCard
+          id={id}
+          source={sourcesMap[id]}
+          dragDisabled={
+            sortMode === "personalized" || sortMode === "smart" || isMobile
+          }
+          mobileMode={isMobile}
+          hideCrossSourceDuplicates={hideCrossSourceDuplicates}
+          crossSourceMetaByItemId={dedupeResult.bySource[id]}
+          duplicateItemsCount={dedupeResult.duplicateItemsBySource[id] ?? 0}
+          visibleItemsCount={dedupeResult.visibleItemsBySource[id] ?? 0}
+          personalizedScoreDetail={personalizedScoreDetailsBySourceId[id]}
+          analysisByItemId={analysisBySource?.[id]}
+          activeDragId={activeDragId}
+          nowMs={nowMs}
+        />
+      ) : null}
+    </div>
+  );
+  const rowGridClassName = isMobile ? "flex flex-col gap-4" : "grid";
+  const rowGridStyle = isMobile
+    ? undefined
+    : {
+        gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+        gap: `${rowGap}px`,
+      };
 
   return (
     <DndContext
@@ -189,39 +314,46 @@ function NewsnowDndGridContent({
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
-      <div
-        className={
-          isMobile
-            ? "flex flex-col gap-4"
-            : "grid grid-cols-1 gap-5 md:grid-cols-[repeat(auto-fill,minmax(min(100%,340px),1fr))] md:gap-6 xl:gap-7"
-        }
-      >
+      <div ref={gridRef}>
         <SortableContext
           items={effectiveDisplayItems}
           strategy={isMobile ? verticalListSortingStrategy : rectSortingStrategy}
         >
-          {effectiveDisplayItems.map((id) => (
-            <div key={id}>
-              {sourcesMap[id] ? (
-                <NewsnowCard
-                  id={id}
-                  source={sourcesMap[id]}
-                  dragDisabled={
-                    sortMode === "personalized" || sortMode === "smart" || isMobile
-                  }
-                  mobileMode={isMobile}
-                  hideCrossSourceDuplicates={hideCrossSourceDuplicates}
-                  crossSourceMetaByItemId={dedupeResult.bySource[id]}
-                  duplicateItemsCount={dedupeResult.duplicateItemsBySource[id] ?? 0}
-                  visibleItemsCount={dedupeResult.visibleItemsBySource[id] ?? 0}
-                  realtimeUnreadCount={liveUnreadBySource[id] ?? 0}
-                  personalizedScoreDetail={personalizedScoreDetailsBySourceId[id]}
-                  analysisByItemId={analysisBySource?.[id]}
-                  activeDragId={activeDragId}
-                />
-              ) : null}
+          {shouldVirtualize ? (
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                position: "relative",
+                width: "100%",
+              }}
+            >
+              {virtualRows.map((virtualRow) => {
+                const rowSourceIds = rowGroups[virtualRow.index] ?? [];
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      left: 0,
+                      position: "absolute",
+                      top: 0,
+                      transform: `translateY(${virtualRow.start - scrollMargin}px)`,
+                      width: "100%",
+                    }}
+                  >
+                    <div className={rowGridClassName} style={rowGridStyle}>
+                      {rowSourceIds.map(renderCard)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          ) : (
+            <div className={rowGridClassName} style={rowGridStyle}>
+              {effectiveDisplayItems.map(renderCard)}
+            </div>
+          )}
         </SortableContext>
       </div>
     </DndContext>

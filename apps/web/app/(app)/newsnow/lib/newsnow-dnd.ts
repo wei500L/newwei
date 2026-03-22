@@ -22,6 +22,23 @@ export interface NewsnowSnapshotItem {
   url?: string;
 }
 
+export function buildNewsnowSnapshotHash(items: readonly NewsnowSnapshotItem[]): string {
+  if (items.length === 0) {
+    return "0";
+  }
+
+  return items
+    .map((item) =>
+      [
+        String(item.id),
+        item.title.trim(),
+        item.pubDate === undefined ? "" : String(item.pubDate),
+        item.url?.trim() ?? "",
+      ].join("::"),
+    )
+    .join("||");
+}
+
 export interface NewsnowSourceSnapshot {
   updatedAt: number;
   items: NewsnowSnapshotItem[];
@@ -49,8 +66,8 @@ export interface SourceAffinitySignal {
 
 const NEWS_TITLE_MIN_LENGTH = 8;
 const SYMBOL_NOISE_PATTERN =
-  /[~`!@#$%^&*()_+\-=\[\]{};:'"\\|,.<>/?，。！？、；：“”‘’（）【】《》〈〉·…\s]+/g;
-const BRACKET_PREFIX_PATTERN = /^[\[\(（【].{1,16}[\]\)）】]\s*/;
+  /[~`!@#$%^&*()_+\-=[\]{};:'"\\|,.<>/?，。！？、；：“”‘’（）【】《》〈〉·…\s]+/g;
+const BRACKET_PREFIX_PATTERN = /^[[(（【].{1,16}[\])）】]\s*/;
 const MAX_SOURCE_SCORE_AGE_DAYS = 14;
 
 function clamp(value: number, min: number, max: number): number {

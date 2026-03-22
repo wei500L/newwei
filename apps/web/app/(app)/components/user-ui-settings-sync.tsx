@@ -3,22 +3,24 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { shallow } from "zustand/shallow";
 
-import { createApiClient } from "@/lib/api-client";
-import { captureClientError } from "@/lib/client-telemetry";
 import {
   mergeWarMapSettingsWithUrlState,
 } from "@/app/(app)/dashboard/charts/war-map/url-state";
-import {
-  buildDefaultSituationMonitorLayoutPayload,
-  fingerprintSituationMonitorLayout,
-  type SituationMonitorLayoutPayload,
-} from "@/lib/situation-monitor-layout-serialization";
 import {
   SITUATION_MONITOR_QUERY_KEYS,
   fetchSituationMonitorMonitors,
   invalidateSituationMonitorMonitors,
 } from "@/app/(app)/situation-monitor/monitors-query";
+import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
+import { createApiClient } from "@/lib/api-client";
+import { captureClientError } from "@/lib/client-telemetry";
+import {
+  buildDefaultSituationMonitorLayoutPayload,
+  fingerprintSituationMonitorLayout,
+  type SituationMonitorLayoutPayload,
+} from "@/lib/situation-monitor-layout-serialization";
 import { useSituationMonitorLayoutStore } from "@/store/situation-monitor-layout";
 import { useSituationMonitorSettingsStore } from "@/store/situation-monitor-settings";
 import { useUserUiSyncStatusStore } from "@/store/user-ui-sync-status";
@@ -28,8 +30,6 @@ import {
   normalizeWarMapSettingsSafe,
   useWarMapSettingsStore,
 } from "@/store/war-map-settings";
-import type { StoredSituationMonitor } from "@/app/(app)/situation-monitor/types/situation-monitor-monitors";
-import { emitSituationMonitorMonitorsUpdated } from "@/app/(app)/situation-monitor/utils/monitor-events";
 
 const LEGACY_STORAGE_KEY_SITUATION_MONITOR_LAYOUT =
   "situation-monitor:layout:v1";
@@ -390,21 +390,27 @@ export function UserUiSettingsSync() {
   const visibility = useSituationMonitorLayoutStore(
     (state) => state.visibility,
   );
-  const settings = useSituationMonitorSettingsStore((state) => ({
-    windowHours: state.windowHours,
-    scope: state.scope,
-    autoRefresh: state.autoRefresh,
-    resetLayoutOnPreset: state.resetLayoutOnPreset,
-    translateToZh: state.translateToZh,
-  }));
-  const warMapSettings = useWarMapSettingsStore((state) => ({
-    layerVisibility: state.layerVisibility,
-    viewState: state.viewState,
-    activePreset: state.activePreset,
-    timeRangePreset: state.timeRangePreset,
-    flightMode: state.flightMode,
-    aisMode: state.aisMode,
-  }));
+  const settings = useSituationMonitorSettingsStore(
+    (state) => ({
+      windowHours: state.windowHours,
+      scope: state.scope,
+      autoRefresh: state.autoRefresh,
+      resetLayoutOnPreset: state.resetLayoutOnPreset,
+      translateToZh: state.translateToZh,
+    }),
+    shallow,
+  );
+  const warMapSettings = useWarMapSettingsStore(
+    (state) => ({
+      layerVisibility: state.layerVisibility,
+      viewState: state.viewState,
+      activePreset: state.activePreset,
+      timeRangePreset: state.timeRangePreset,
+      flightMode: state.flightMode,
+      aisMode: state.aisMode,
+    }),
+    shallow,
+  );
 
   const hydratingRef = useRef(false);
   const lastContextRef = useRef<{ orgId: string; userId: string } | null>(null);
