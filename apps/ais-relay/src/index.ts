@@ -4,8 +4,12 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import path from "node:path";
 
+import { config as loadEnv } from "dotenv";
 import { WebSocket, type RawData } from "ws";
+
+loadEnv({ path: path.resolve(process.cwd(), "../../.env") });
 
 const AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream";
 const GRID_SIZE_DEG = 2;
