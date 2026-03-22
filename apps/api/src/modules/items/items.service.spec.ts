@@ -4,8 +4,15 @@ import { ItemStatus } from "../../common/pipeline-status";
 
 import { ItemsService } from "./items.service";
 
+const mockRawItemCreate = jest.fn();
+const mockRawItemFind = jest.fn();
+const mockRawItemAggregate = jest.fn();
 const mockProcessedItemAggregate = jest.fn();
 const mockProcessedItemFind = jest.fn();
+const mockItemReadModelFind = jest.fn();
+const mockItemReadModelFindOne = jest.fn();
+const mockItemReadModelUpdateOne = jest.fn();
+const mockItemReadModelBulkWrite = jest.fn();
 
 jest.mock(
   "@modular/vector-client",
@@ -23,17 +30,32 @@ jest.mock(
 
 jest.mock("@modular/mongo", () => ({
   RawItemModel: {
-    create: jest.fn()
+    create: (...args: unknown[]) => mockRawItemCreate(...args),
+    find: (...args: unknown[]) => mockRawItemFind(...args),
+    aggregate: (...args: unknown[]) => mockRawItemAggregate(...args)
   },
   ProcessedItemModel: {
     aggregate: (...args: unknown[]) => mockProcessedItemAggregate(...args),
     find: (...args: unknown[]) => mockProcessedItemFind(...args)
+  },
+  ItemReadModelModel: {
+    find: (...args: unknown[]) => mockItemReadModelFind(...args),
+    findOne: (...args: unknown[]) => mockItemReadModelFindOne(...args),
+    updateOne: (...args: unknown[]) => mockItemReadModelUpdateOne(...args),
+    bulkWrite: (...args: unknown[]) => mockItemReadModelBulkWrite(...args)
   }
 }));
 
 beforeEach(() => {
+  mockRawItemCreate.mockReset();
+  mockRawItemFind.mockReset();
+  mockRawItemAggregate.mockReset();
   mockProcessedItemAggregate.mockReset();
   mockProcessedItemFind.mockReset();
+  mockItemReadModelFind.mockReset();
+  mockItemReadModelFindOne.mockReset();
+  mockItemReadModelUpdateOne.mockReset();
+  mockItemReadModelBulkWrite.mockReset();
 });
 
 describe("ItemsService.list", () => {
@@ -438,7 +460,7 @@ describe("ItemsService personalized pagination cap", () => {
     });
     (service as any).rankPersonalizedCandidates = jest
       .fn()
-      .mockImplementation(async (input: { candidates: Array<{ id: string }> }) =>
+      .mockImplementation(async (input: { candidates: { id: string }[] }) =>
         input.candidates.map((candidate, index) => ({
           id: candidate.id,
           score: 1,
@@ -488,10 +510,6 @@ describe("ItemsService personalized pagination cap", () => {
 
 describe("ItemsService.createFromCrawlResult", () => {
   it("creates an item meta + raw item and enqueues the pipeline job", async () => {
-    const { RawItemModel } = jest.requireMock("@modular/mongo") as {
-      RawItemModel: { create: jest.Mock };
-    };
-
     const prisma = {
       crawlResult: {
         findFirst: jest.fn().mockResolvedValue({
@@ -521,7 +539,7 @@ describe("ItemsService.createFromCrawlResult", () => {
       $transaction: jest.fn(async (cb: any) => cb(prisma))
     };
 
-    RawItemModel.create.mockResolvedValue({ id: "raw-1" });
+    mockRawItemCreate.mockResolvedValue({ id: "raw-1" });
 
     const queueService = { enqueueItem: jest.fn().mockResolvedValue(null) };
 
@@ -533,6 +551,7 @@ describe("ItemsService.createFromCrawlResult", () => {
       {} as any,
       {} as any
     );
+    (service as any).hydrateItemReadModel = jest.fn().mockResolvedValue(null);
 
     const created = await service.createFromCrawlResult("org-1", "user-1", "crawl-result-1");
 
@@ -545,7 +564,7 @@ describe("ItemsService.createFromCrawlResult", () => {
       })
     );
     expect(prisma.itemMeta.create).toHaveBeenCalledTimes(1);
-    expect(RawItemModel.create).toHaveBeenCalledWith(
+    expect(mockRawItemCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         itemMetaId: "meta-1",
         source: "crawl-task",
@@ -1019,5 +1038,410 @@ describe("ItemsService.searchSuggestions", () => {
     const suggestions = await service.searchSuggestions("org-1", "re", 3);
 
     expect(suggestions).toEqual([{ type: "SOURCE", value: "Reuters", origin: "LEXICAL" }]);
+  });
+});
+
+describe("ItemsService read model hydration", () => {
+  const asLeanResult = <T>(value: T) => ({
+    lean: jest.fn().mockResolvedValue(value),
+  });
+
+  const buildMetaRow = (
+    id: string,
+    overrides: Partial<{
+      externalId: string;
+      name: string;
+      status: string;
+      mongoRef: string;
+      version: number;
+      publishedAt: Date | null;
+      sortAt: Date;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = {},
+  ) => ({
+    id,
+    orgId: "org-1",
+    externalId: overrides.externalId ?? `external-${id}`,
+    name: overrides.name ?? `Item ${id}`,
+    status: overrides.status ?? ItemStatus.Pending,
+    mongoRef: overrides.mongoRef ?? "",
+    version: overrides.version ?? 1,
+    publishedAt: overrides.publishedAt ?? null,
+    sortAt: overrides.sortAt ?? new Date("2024-01-02T00:00:00.000Z"),
+    createdAt: overrides.createdAt ?? new Date("2024-01-01T00:00:00.000Z"),
+    updatedAt: overrides.updatedAt ?? new Date("2024-01-03T00:00:00.000Z"),
+  });
+
+  const buildRawDoc = (
+    id: string,
+    itemMetaId: string,
+    overrides: Partial<{
+      source: string;
+      payload: Record<string, unknown>;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = {},
+  ) => ({
+    id,
+    itemMetaId,
+    source: overrides.source ?? "manual",
+    payload: overrides.payload ?? { url: `https://example.com/${itemMetaId}` },
+    createdAt: overrides.createdAt ?? new Date("2024-01-01T01:00:00.000Z"),
+    updatedAt: overrides.updatedAt ?? new Date("2024-01-01T02:00:00.000Z"),
+  });
+
+  const buildProcessedDoc = (
+    id: string,
+    itemMetaId: string,
+    overrides: Partial<{
+      rawItemId: string | null;
+      pipelineJobId: string | null;
+      sourceId: string | null;
+      status: string;
+      tags: string[];
+      result: Record<string, unknown> | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = {},
+  ) => ({
+    id,
+    itemMetaId,
+    rawItemId: overrides.rawItemId ?? `raw-${itemMetaId}`,
+    pipelineJobId: overrides.pipelineJobId ?? null,
+    sourceId: overrides.sourceId ?? null,
+    status: overrides.status ?? "completed",
+    tags: overrides.tags ?? [],
+    result:
+      overrides.result ??
+      {
+        title: `Processed ${itemMetaId}`,
+        summary: `Summary ${itemMetaId}`,
+      },
+    createdAt: overrides.createdAt ?? new Date("2024-01-02T01:00:00.000Z"),
+    updatedAt: overrides.updatedAt ?? new Date("2024-01-02T02:00:00.000Z"),
+  });
+
+  it("hydrates missing read models in batch with shared queries and one bulk write", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([
+          buildMetaRow("meta-1", { mongoRef: "507f1f77bcf86cd799439011" }),
+          buildMetaRow("meta-2"),
+        ]),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    mockItemReadModelFind.mockReturnValue(asLeanResult([]));
+    mockRawItemFind.mockReturnValue(
+      asLeanResult([
+        buildRawDoc("raw-1", "meta-1", {
+          payload: {
+            url: "https://example.com/meta-1",
+            metadata: { sourceId: "raw-source-1" },
+          },
+        }),
+      ]),
+    );
+    mockRawItemAggregate.mockResolvedValue([
+      buildRawDoc("raw-2", "meta-2", {
+        payload: {
+          url: "https://example.com/meta-2",
+          metadata: { sourceId: "raw-source-2" },
+        },
+      }),
+    ]);
+    mockProcessedItemAggregate.mockResolvedValue([
+      buildProcessedDoc("processed-1", "meta-1", {
+        sourceId: "processed-source-1",
+        result: { title: "Title 1", summary: "Summary 1" },
+      }),
+      buildProcessedDoc("processed-2", "meta-2", {
+        result: { title: "Title 2", summary: "Summary 2" },
+      }),
+    ]);
+    mockItemReadModelBulkWrite.mockResolvedValue({ modifiedCount: 0 });
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const docsById = await (service as any).loadItemReadModelsByIds("org-1", ["meta-1", "meta-2"]);
+
+    expect(prisma.itemMeta.findMany).toHaveBeenCalledTimes(1);
+    expect(mockItemReadModelFind).toHaveBeenCalledTimes(1);
+    expect(mockRawItemFind).toHaveBeenCalledTimes(1);
+    expect(mockRawItemAggregate).toHaveBeenCalledTimes(1);
+    expect(mockProcessedItemAggregate).toHaveBeenCalledTimes(1);
+    expect(mockItemReadModelBulkWrite).toHaveBeenCalledTimes(1);
+    expect(prisma.pipelineJob.findMany).not.toHaveBeenCalled();
+    expect(prisma.crawlResult.findMany).not.toHaveBeenCalled();
+    expect(docsById.get("meta-1")).toMatchObject({
+      itemMetaId: "meta-1",
+      sourceId: "processed-source-1",
+      title: "Title 1",
+    });
+    expect(docsById.get("meta-2")).toMatchObject({
+      itemMetaId: "meta-2",
+      sourceId: "raw-source-2",
+      title: "Title 2",
+    });
+    expect(mockItemReadModelBulkWrite).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          updateOne: expect.objectContaining({
+            filter: { orgId: "org-1", itemMetaId: "meta-1" },
+            upsert: true,
+          }),
+        }),
+        expect.objectContaining({
+          updateOne: expect.objectContaining({
+            filter: { orgId: "org-1", itemMetaId: "meta-2" },
+            upsert: true,
+          }),
+        }),
+      ]),
+      { ordered: false },
+    );
+  });
+
+  it("resolves source ids by processed, raw metadata, pipeline job, then crawl result config", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([
+          buildMetaRow("meta-processed"),
+          buildMetaRow("meta-raw"),
+          buildMetaRow("meta-pipeline"),
+          buildMetaRow("meta-crawl", { externalId: "crawlResult:crawl-1" }),
+        ]),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([{ id: "job-1", sourceId: "pipeline-source" }]),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "crawl-1",
+            task: {
+              config: {
+                sourceId: "crawl-source",
+              },
+            },
+          },
+        ]),
+      },
+    };
+
+    mockItemReadModelFind.mockReturnValue(asLeanResult([]));
+    mockRawItemFind.mockReturnValue(asLeanResult([]));
+    mockRawItemAggregate.mockResolvedValue([
+      buildRawDoc("raw-processed", "meta-processed", {
+        payload: { url: "https://example.com/processed", metadata: {} },
+      }),
+      buildRawDoc("raw-raw", "meta-raw", {
+        payload: {
+          url: "https://example.com/raw",
+          metadata: { sourceId: "raw-source" },
+        },
+      }),
+      buildRawDoc("raw-pipeline", "meta-pipeline", {
+        payload: {
+          url: "https://example.com/pipeline",
+          metadata: { pipelineJobId: "job-1" },
+        },
+      }),
+      buildRawDoc("raw-crawl", "meta-crawl", {
+        payload: { url: "https://example.com/crawl", metadata: {} },
+      }),
+    ]);
+    mockProcessedItemAggregate.mockResolvedValue([
+      buildProcessedDoc("processed-processed", "meta-processed", {
+        sourceId: "processed-source",
+      }),
+      buildProcessedDoc("processed-raw", "meta-raw", {
+        pipelineJobId: "job-ignored",
+      }),
+      buildProcessedDoc("processed-pipeline", "meta-pipeline", {
+        pipelineJobId: "job-1",
+      }),
+      buildProcessedDoc("processed-crawl", "meta-crawl"),
+    ]);
+    mockItemReadModelBulkWrite.mockResolvedValue({ modifiedCount: 0 });
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const docsById = await (service as any).loadItemReadModelsByIds("org-1", [
+      "meta-processed",
+      "meta-raw",
+      "meta-pipeline",
+      "meta-crawl",
+    ]);
+
+    expect(docsById.get("meta-processed")?.sourceId).toBe("processed-source");
+    expect(docsById.get("meta-raw")?.sourceId).toBe("raw-source");
+    expect(docsById.get("meta-pipeline")?.sourceId).toBe("pipeline-source");
+    expect(docsById.get("meta-crawl")?.sourceId).toBe("crawl-source");
+    expect(prisma.pipelineJob.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        id: { in: ["job-1"] },
+        sourceId: { not: null },
+      },
+      select: {
+        id: true,
+        sourceId: true,
+      },
+    });
+    expect(prisma.crawlResult.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["crawl-1"] },
+        task: { orgId: "org-1" },
+      },
+      select: {
+        id: true,
+        task: {
+          select: {
+            config: true,
+          },
+        },
+      },
+    });
+  });
+
+  it("dedupes ids and does not fall back to latest raw when mongoRef is present but missing", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest.fn().mockResolvedValue([
+          buildMetaRow("meta-1", { mongoRef: "507f1f77bcf86cd799439099" }),
+          buildMetaRow("meta-2"),
+        ]),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    mockItemReadModelFind.mockReturnValue(asLeanResult([]));
+    mockRawItemFind.mockReturnValue(asLeanResult([]));
+    mockRawItemAggregate.mockResolvedValue([
+      buildRawDoc("raw-2", "meta-2", {
+        payload: { url: "https://example.com/meta-2", metadata: {} },
+      }),
+    ]);
+    mockProcessedItemAggregate.mockResolvedValue([]);
+    mockItemReadModelBulkWrite.mockResolvedValue({ modifiedCount: 0 });
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const docsById = await (service as any).loadItemReadModelsByIds("org-1", [
+      "meta-1",
+      "meta-1",
+      "meta-2",
+      "meta-missing",
+    ]);
+
+    expect(prisma.itemMeta.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        id: { in: ["meta-1", "meta-2", "meta-missing"] },
+      },
+      select: {
+        id: true,
+        orgId: true,
+        externalId: true,
+        name: true,
+        status: true,
+        mongoRef: true,
+        version: true,
+        publishedAt: true,
+        sortAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    expect(mockRawItemAggregate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $match: {
+            itemMetaId: { $in: ["meta-2"] },
+          },
+        }),
+      ]),
+    );
+    expect(docsById.has("meta-missing")).toBe(false);
+    expect(docsById.get("meta-1")).toMatchObject({
+      itemMetaId: "meta-1",
+      raw: null,
+    });
+    expect(docsById.get("meta-2")).toMatchObject({
+      itemMetaId: "meta-2",
+      raw: expect.objectContaining({ itemMetaId: "meta-2" }),
+    });
+  });
+
+  it("backfills a page through the batch hydration path", async () => {
+    const prisma = {
+      itemMeta: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([{ id: "meta-1" }, { id: "meta-2" }])
+          .mockResolvedValueOnce([buildMetaRow("meta-1"), buildMetaRow("meta-2")]),
+      },
+      pipelineJob: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    mockRawItemFind.mockReturnValue(asLeanResult([]));
+    mockRawItemAggregate.mockResolvedValue([]);
+    mockProcessedItemAggregate.mockResolvedValue([]);
+    mockItemReadModelBulkWrite.mockResolvedValue({ modifiedCount: 0 });
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await service.backfillReadModels("org-1", { take: 2 });
+
+    expect(result).toEqual({ processed: 2, nextAfterId: "meta-2" });
+    expect(prisma.itemMeta.findMany).toHaveBeenCalledTimes(2);
+    expect(mockItemReadModelBulkWrite).toHaveBeenCalledTimes(1);
+    expect(mockItemReadModelFindOne).not.toHaveBeenCalled();
   });
 });

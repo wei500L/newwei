@@ -11,13 +11,13 @@ import { PrismaService } from "../config/prisma.service";
 import type { NewsSignal, NewsSignalEntity } from "../news-signals/news-signal";
 import { VectorClientService } from "../vector/vector-client.service";
 
-import { NewsEventSourcePolicyService } from "./news-event-source-policy.service";
 import {
   classifySourceByLabelAndUrl,
   createSourcePolicyMatcher,
   getDefaultNewsEventSourcePolicy,
   resolveSourceKey,
 } from "./news-event-source-classifier";
+import { NewsEventSourcePolicyService } from "./news-event-source-policy.service";
 import {
   NewsEventsSettingsService,
   type NewsEventSettings,
@@ -32,6 +32,7 @@ const DEFAULT_CATEGORY_DISTRIBUTION_WINDOW_DAYS = 90;
 const MAX_CATEGORY_DISTRIBUTION_WINDOW_DAYS = 365;
 const CATEGORY_DISTRIBUTION_CACHE_TTL_MS = 2 * 60 * 1000;
 const PROCESSED_ITEM_CLASSIFICATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROCESSED_ITEM_CATEGORY_CACHE_MAX_ENTRIES = 20_000;
 const CACHE_PRUNE_INTERVAL_MS = 60 * 1000;
 const MAX_CATEGORY_DISTRIBUTION_ITEMS = 16;
 
@@ -88,6 +89,7 @@ export class NewsEventsService {
     { expiresAt: number; value: ProcessedItemCategoryClassification | null }
   >();
   private eventCategoryDistributionCacheLastPruneAt = 0;
+  private processedItemCategoryCacheLastPruneAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1279,6 +1281,42 @@ export class NewsEventsService {
     this.eventCategoryDistributionCacheLastPruneAt = now;
   }
 
+  private pruneExpiredProcessedItemCategoryCache(now: number): void {
+    if (now - this.processedItemCategoryCacheLastPruneAt < CACHE_PRUNE_INTERVAL_MS) {
+      return;
+    }
+    for (const [key, entry] of this.processedItemCategoryCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.processedItemCategoryCache.delete(key);
+      }
+    }
+    this.processedItemCategoryCacheLastPruneAt = now;
+  }
+
+  private trimProcessedItemCategoryCache(now: number): void {
+    for (const [key, entry] of this.processedItemCategoryCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.processedItemCategoryCache.delete(key);
+      }
+    }
+    if (this.processedItemCategoryCache.size <= PROCESSED_ITEM_CATEGORY_CACHE_MAX_ENTRIES) {
+      return;
+    }
+    const entries = Array.from(this.processedItemCategoryCache.entries()).sort(
+      (a, b) => a[1].expiresAt - b[1].expiresAt,
+    );
+    const removeCount =
+      this.processedItemCategoryCache.size -
+      PROCESSED_ITEM_CATEGORY_CACHE_MAX_ENTRIES;
+    for (let index = 0; index < removeCount; index += 1) {
+      const candidate = entries[index];
+      if (!candidate) {
+        break;
+      }
+      this.processedItemCategoryCache.delete(candidate[0]);
+    }
+  }
+
   private async loadProcessedItemCategoryClassification(
     processedItemIds: string[],
   ): Promise<Map<string, ProcessedItemCategoryClassification | null>> {
@@ -1288,6 +1326,7 @@ export class NewsEventsService {
     }
 
     const now = Date.now();
+    this.pruneExpiredProcessedItemCategoryCache(now);
     const pendingIds: string[] = [];
     for (const id of processedItemIds) {
       const cached = this.processedItemCategoryCache.get(id);
@@ -1339,6 +1378,7 @@ export class NewsEventsService {
           value: null,
         });
       }
+      this.trimProcessedItemCategoryCache(now);
     } catch (error) {
       logger.warn(
         { err: error, ids: pendingIds.length },

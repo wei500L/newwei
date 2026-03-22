@@ -50,6 +50,12 @@ export interface PolicyEventImpactInput {
   includeLprSnapshot?: boolean;
 }
 
+interface NormalizedIndustryMembership {
+  edge: KnowledgeEdge;
+  industryId: string;
+  companyId: string;
+}
+
 @Injectable()
 export class KnowledgeGraphImpactService {
   constructor(
@@ -102,6 +108,7 @@ export class KnowledgeGraphImpactService {
     const industryIds = Array.from(industries.nodesById.values())
       .filter((node) => node.type === KnowledgeEntityType.industry)
       .map((node) => node.id);
+    const industryIdSet = new Set(industryIds);
 
     const directCompetitors = await this.findRelatedEntities({
       orgId: input.orgId,
@@ -137,12 +144,13 @@ export class KnowledgeGraphImpactService {
         orderBy: [{ weight: "desc" }, { confidence: "desc" }, { updatedAt: "desc" }],
         take: Math.max(200, maxCandidates * 10)
       });
+      const normalizedMemberships = this.normalizeIndustryMemberships(membership, industryIdSet);
+      const seedIndustryEdgesByIndustryId = this.indexSeedIndustryEdges(seed.id, industries.edges);
 
       const companyIds = new Set<string>();
-      for (const edge of membership) {
-        const otherId = industryIds.includes(edge.fromEntityId) ? edge.toEntityId : edge.fromEntityId;
-        if (otherId !== seed.id) {
-          companyIds.add(otherId);
+      for (const membershipInfo of normalizedMemberships) {
+        if (membershipInfo.companyId !== seed.id) {
+          companyIds.add(membershipInfo.companyId);
         }
       }
 
@@ -153,9 +161,8 @@ export class KnowledgeGraphImpactService {
       const companiesById = new Map(companies.map((company) => [company.id, company]));
       const industriesById = industries.nodesById;
 
-      for (const edge of membership) {
-        const industryId = industryIds.includes(edge.fromEntityId) ? edge.fromEntityId : edge.toEntityId;
-        const companyId = industryId === edge.fromEntityId ? edge.toEntityId : edge.fromEntityId;
+      for (const membershipInfo of normalizedMemberships) {
+        const { edge, industryId, companyId } = membershipInfo;
         const company = companiesById.get(companyId);
         const industry = industriesById.get(industryId);
         if (!company || company.type !== KnowledgeEntityType.company || company.id === seed.id) {
@@ -165,9 +172,7 @@ export class KnowledgeGraphImpactService {
           continue;
         }
 
-        const seedIndustryEdge = industries.edges.find((e) =>
-          this.edgeTouchesEntityPair(e, seed.id, industry.id)
-        );
+        const seedIndustryEdge = seedIndustryEdgesByIndustryId.get(industry.id);
         if (!seedIndustryEdge) {
           continue;
         }
@@ -258,11 +263,12 @@ export class KnowledgeGraphImpactService {
         orderBy: [{ weight: "desc" }, { confidence: "desc" }, { updatedAt: "desc" }],
         take: Math.max(500, maxCandidates * 10)
       });
+      const normalizedMemberships = this.normalizeIndustryMemberships(membership, industryIdsSet);
+      const seedIndustryEdgesByIndustryId = this.indexSeedIndustryEdges(seed.id, impact.edges);
 
       const companyIds = new Set<string>();
-      for (const edge of membership) {
-        const otherId = industryIds.includes(edge.fromEntityId) ? edge.toEntityId : edge.fromEntityId;
-        companyIds.add(otherId);
+      for (const membershipInfo of normalizedMemberships) {
+        companyIds.add(membershipInfo.companyId);
       }
 
       const companies = await this.prisma.knowledgeEntity.findMany({
@@ -270,9 +276,8 @@ export class KnowledgeGraphImpactService {
       });
       const companiesById = new Map(companies.map((company) => [company.id, company]));
 
-      for (const edge of membership) {
-        const industryId = industryIds.includes(edge.fromEntityId) ? edge.fromEntityId : edge.toEntityId;
-        const companyId = industryId === edge.fromEntityId ? edge.toEntityId : edge.fromEntityId;
+      for (const membershipInfo of normalizedMemberships) {
+        const { edge, industryId, companyId } = membershipInfo;
         const company = companiesById.get(companyId);
         const industry = impact.nodesById.get(industryId);
         if (!company || company.type !== KnowledgeEntityType.company) {
@@ -282,7 +287,7 @@ export class KnowledgeGraphImpactService {
           continue;
         }
 
-        const seedIndustryEdge = impact.edges.find((e) => this.edgeTouchesEntityPair(e, seed.id, industry.id));
+        const seedIndustryEdge = seedIndustryEdgesByIndustryId.get(industry.id);
         if (!seedIndustryEdge) {
           continue;
         }
@@ -369,11 +374,12 @@ export class KnowledgeGraphImpactService {
         orderBy: [{ weight: "desc" }, { confidence: "desc" }, { updatedAt: "desc" }],
         take: Math.max(500, maxCandidates * 10)
       });
+      const normalizedMemberships = this.normalizeIndustryMemberships(membership, industryIdsSet);
+      const seedIndustryEdgesByIndustryId = this.indexSeedIndustryEdges(seed.id, impact.edges);
 
       const companyIds = new Set<string>();
-      for (const edge of membership) {
-        const otherId = industryIds.includes(edge.fromEntityId) ? edge.toEntityId : edge.fromEntityId;
-        companyIds.add(otherId);
+      for (const membershipInfo of normalizedMemberships) {
+        companyIds.add(membershipInfo.companyId);
       }
 
       const companies = await this.prisma.knowledgeEntity.findMany({
@@ -381,9 +387,8 @@ export class KnowledgeGraphImpactService {
       });
       const companiesById = new Map(companies.map((company) => [company.id, company]));
 
-      for (const edge of membership) {
-        const industryId = industryIds.includes(edge.fromEntityId) ? edge.fromEntityId : edge.toEntityId;
-        const companyId = industryId === edge.fromEntityId ? edge.toEntityId : edge.fromEntityId;
+      for (const membershipInfo of normalizedMemberships) {
+        const { edge, industryId, companyId } = membershipInfo;
         const company = companiesById.get(companyId);
         const industry = impact.nodesById.get(industryId);
         if (!company || company.type !== KnowledgeEntityType.company) {
@@ -393,7 +398,7 @@ export class KnowledgeGraphImpactService {
           continue;
         }
 
-        const seedIndustryEdge = impact.edges.find((e) => this.edgeTouchesEntityPair(e, seed.id, industry.id));
+        const seedIndustryEdge = seedIndustryEdgesByIndustryId.get(industry.id);
         if (!seedIndustryEdge) {
           continue;
         }
@@ -465,8 +470,48 @@ export class KnowledgeGraphImpactService {
     });
   }
 
-  private edgeTouchesEntityPair(edge: KnowledgeEdge, a: string, b: string) {
-    return (edge.fromEntityId === a && edge.toEntityId === b) || (edge.fromEntityId === b && edge.toEntityId === a);
+  private indexSeedIndustryEdges(seedId: string, edges: KnowledgeEdge[]): Map<string, KnowledgeEdge> {
+    const index = new Map<string, KnowledgeEdge>();
+
+    for (const edge of edges) {
+      let industryId: string | null = null;
+      if (edge.fromEntityId === seedId) {
+        industryId = edge.toEntityId;
+      } else if (edge.toEntityId === seedId) {
+        industryId = edge.fromEntityId;
+      }
+
+      if (!industryId || index.has(industryId)) {
+        continue;
+      }
+
+      index.set(industryId, edge);
+    }
+
+    return index;
+  }
+
+  private normalizeIndustryMemberships(
+    membership: KnowledgeEdge[],
+    industryIdSet: Set<string>
+  ): NormalizedIndustryMembership[] {
+    const normalized: NormalizedIndustryMembership[] = [];
+
+    for (const edge of membership) {
+      const fromIsIndustry = industryIdSet.has(edge.fromEntityId);
+      const toIsIndustry = industryIdSet.has(edge.toEntityId);
+      if (fromIsIndustry === toIsIndustry) {
+        continue;
+      }
+
+      normalized.push({
+        edge,
+        industryId: fromIsIndustry ? edge.fromEntityId : edge.toEntityId,
+        companyId: fromIsIndustry ? edge.toEntityId : edge.fromEntityId
+      });
+    }
+
+    return normalized;
   }
 
   private async resolveCompanySeed(orgId: string, companyName: string): Promise<KnowledgeEntity | null> {

@@ -770,6 +770,9 @@ export class SituationMonitorMonitorsService {
         .sort((a, b) => b.score - a.score)
         .filter((entry) => entry.score >= SEMANTIC_SHORTLIST_THRESHOLD)
         .slice(0, RERANK_SHORTLIST_LIMIT);
+      const semanticScoreByIndex = new Map(
+        semanticCandidates.map((entry) => [entry.index, entry.score] as const),
+      );
 
       const rerankScores = await this.tryRerankCandidates(
         orgId,
@@ -783,9 +786,7 @@ export class SituationMonitorMonitorsService {
           continue;
         }
 
-        const semanticScore =
-          semanticCandidates.find((entry) => entry.index === index)?.score ??
-          null;
+        const semanticScore = semanticScoreByIndex.get(index) ?? null;
         const rerankScore = rerankScores.get(candidate.itemKey) ?? null;
         const include =
           explicit.reasons.length > 0 ||
@@ -947,10 +948,20 @@ export class SituationMonitorMonitorsService {
             stage: "candidate-embedding",
           },
         });
+        const vectorByIndex = new Map<number, number[]>();
+        for (const entry of response.data ?? []) {
+          if (
+            !entry ||
+            typeof entry.index !== "number" ||
+            !Array.isArray(entry.embedding) ||
+            entry.embedding.length === 0
+          ) {
+            continue;
+          }
+          vectorByIndex.set(entry.index, entry.embedding);
+        }
         for (const [index, candidate] of chunk.entries()) {
-          const vector = response.data?.find(
-            (entry) => entry.index === index,
-          )?.embedding;
+          const vector = vectorByIndex.get(index);
           if (!Array.isArray(vector) || vector.length === 0) {
             continue;
           }

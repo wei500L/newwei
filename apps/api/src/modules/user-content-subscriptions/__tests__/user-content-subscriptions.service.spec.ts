@@ -1,5 +1,5 @@
 import { ProcessedItemModel } from '@modular/mongo';
-import { ContentSubscriptionKind } from '@prisma/client';
+import { ContentSubscriptionKind, Prisma } from '@prisma/client';
 
 import { UserContentSubscriptionsService } from '../user-content-subscriptions.service';
 
@@ -246,5 +246,326 @@ describe('UserContentSubscriptionsService', () => {
       displayValue: 'NVIDIA',
       count: 2,
     });
+  });
+
+  it('maps embedding rows by index when catalog classification responses are out of order', async () => {
+    const liteLlm = {
+      embedding: jest
+        .fn()
+        .mockResolvedValueOnce({
+          model: 'taxonomy-embedding-model',
+          data: [
+            { index: 1, embedding: [0, 6] },
+            { index: 0, embedding: [4, 0] },
+          ],
+        })
+        .mockResolvedValueOnce({
+          model: 'catalog-embedding-model',
+          data: [{ index: 1, embedding: [0, 9] }],
+        }),
+    };
+    const service = new UserContentSubscriptionsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      liteLlm as any,
+      {} as any,
+      monitors as any,
+    );
+
+    const results = await (service as any).classifyCatalogCandidates(
+      'org-1',
+      [
+        {
+          kind: ContentSubscriptionKind.topic,
+          normalizedValue: 'ai chips',
+          displayValue: 'AI chips',
+          count: 8,
+          lastSeenAt: new Date('2026-03-05T00:00:00.000Z'),
+        },
+        {
+          kind: ContentSubscriptionKind.entity,
+          normalizedValue: 'nvidia',
+          displayValue: 'NVIDIA',
+          count: 6,
+          lastSeenAt: new Date('2026-03-06T00:00:00.000Z'),
+          metadata: { entityType: 'company' },
+        },
+      ],
+      {
+        settingsVersion: 'news-taxonomy-v1',
+        nodes: [
+          {
+            path: 'tech/ai/model-release',
+            displayName: 'AI Model Release',
+            description: 'AI launches and updates',
+            legacyCategory: 'ai',
+            keywords: ['ai'],
+            synonyms: ['llm'],
+          },
+          {
+            path: 'tech/semiconductor/supply-chain',
+            displayName: 'Semiconductor Supply Chain',
+            description: 'Chip manufacturing and supply chain',
+            legacyCategory: 'tech',
+            keywords: ['chip'],
+            synonyms: ['semiconductor'],
+          },
+        ],
+        byPath: new Map(),
+        documents: [
+          {
+            path: 'tech/ai/model-release',
+            text: 'taxonomy: ai model release',
+          },
+          {
+            path: 'tech/semiconductor/supply-chain',
+            text: 'taxonomy: semiconductor supply chain',
+          },
+        ],
+      },
+    );
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        kind: ContentSubscriptionKind.topic,
+        normalizedValue: 'ai chips',
+        taxonomyPath: 'tech/ai/model-release',
+        embeddingModel: 'catalog-embedding-model',
+        embeddingVector: null,
+      }),
+      expect.objectContaining({
+        kind: ContentSubscriptionKind.entity,
+        normalizedValue: 'nvidia',
+        taxonomyPath: 'tech/semiconductor/supply-chain',
+        embeddingModel: 'catalog-embedding-model',
+        embeddingVector: [0, 1],
+        metadata: { entityType: 'company' },
+      }),
+    ]);
+  });
+
+  it('replaces the catalog snapshot in a transaction without per-row upserts', async () => {
+    const tx = {
+      contentSubscriptionCatalog: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 4 }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(tx)),
+      contentSubscriptionCatalog: {
+        upsert: jest.fn(),
+      },
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+    const topicLastSeenAt = new Date('2026-03-06T00:00:00.000Z');
+    const entityLastSeenAt = new Date('2026-03-07T00:00:00.000Z');
+
+    jest.spyOn(service as any, 'loadTopicCandidates').mockResolvedValue([
+      {
+        kind: ContentSubscriptionKind.topic,
+        normalizedValue: 'ai chips',
+        displayValue: 'AI chips',
+        count: 18,
+        lastSeenAt: topicLastSeenAt,
+      },
+    ]);
+    jest.spyOn(service as any, 'loadEntityCandidates').mockResolvedValue([
+      {
+        kind: ContentSubscriptionKind.entity,
+        normalizedValue: 'nvidia',
+        displayValue: 'NVIDIA',
+        count: 25,
+        lastSeenAt: entityLastSeenAt,
+        metadata: { entityType: 'company' },
+      },
+    ]);
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+    jest.spyOn(service as any, 'classifyCatalogCandidates').mockResolvedValue([
+      {
+        kind: ContentSubscriptionKind.topic,
+        normalizedValue: 'ai chips',
+        displayValue: 'AI chips',
+        taxonomyPath: 'tech/ai/model-release',
+        taxonomyVersion: 'news-taxonomy-v1',
+        embeddingModel: 'text-embedding-3-small',
+        embeddingVector: [0.1, 0.2],
+        metadata: { source: 'taxonomy' },
+      },
+      {
+        kind: ContentSubscriptionKind.entity,
+        normalizedValue: 'nvidia',
+        displayValue: 'NVIDIA',
+        taxonomyPath: 'tech/semiconductor/supply-chain',
+        taxonomyVersion: 'news-taxonomy-v1',
+        embeddingModel: null,
+        embeddingVector: null,
+        metadata: { source: 'classifier' },
+      },
+    ]);
+
+    await (service as any).syncCatalog('org-1');
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.contentSubscriptionCatalog.deleteMany).toHaveBeenCalledWith({
+      where: {
+        orgId: 'org-1',
+        kind: {
+          in: [ContentSubscriptionKind.topic, ContentSubscriptionKind.entity],
+        },
+      },
+    });
+    expect(tx.contentSubscriptionCatalog.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.contentSubscriptionCatalog.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          orgId: 'org-1',
+          kind: ContentSubscriptionKind.entity,
+          normalizedValue: 'nvidia',
+          displayValue: 'NVIDIA',
+          count: 25,
+          lastSeenAt: entityLastSeenAt,
+          taxonomyPath: 'tech/semiconductor/supply-chain',
+          taxonomyVersion: 'news-taxonomy-v1',
+          embeddingModel: null,
+          embeddingVector: Prisma.JsonNull,
+          metadata: { entityType: 'company' },
+        },
+        {
+          orgId: 'org-1',
+          kind: ContentSubscriptionKind.topic,
+          normalizedValue: 'ai chips',
+          displayValue: 'AI chips',
+          count: 18,
+          lastSeenAt: topicLastSeenAt,
+          taxonomyPath: 'tech/ai/model-release',
+          taxonomyVersion: 'news-taxonomy-v1',
+          embeddingModel: 'text-embedding-3-small',
+          embeddingVector: [0.1, 0.2],
+          metadata: { source: 'taxonomy' },
+        },
+      ],
+    });
+    expect(prisma.contentSubscriptionCatalog.upsert).not.toHaveBeenCalled();
+  });
+
+  it('chunks snapshot persistence across multiple createMany calls', async () => {
+    const tx = {
+      contentSubscriptionCatalog: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 64 }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(tx)),
+      contentSubscriptionCatalog: {
+        upsert: jest.fn(),
+      },
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+    const candidates = Array.from({ length: 65 }, (_, index) => ({
+      kind: ContentSubscriptionKind.topic,
+      normalizedValue: `topic-${index}`,
+      displayValue: `Topic ${index}`,
+      count: 65 - index,
+      lastSeenAt: new Date(`2026-03-${String((index % 9) + 1).padStart(2, '0')}T00:00:00.000Z`),
+    }));
+
+    jest.spyOn(service as any, 'loadTopicCandidates').mockResolvedValue(candidates);
+    jest.spyOn(service as any, 'loadEntityCandidates').mockResolvedValue([]);
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+    jest.spyOn(service as any, 'classifyCatalogCandidates').mockImplementation(
+      async (_orgId: string, rows: typeof candidates) =>
+        rows.map((row) => ({
+          kind: row.kind,
+          normalizedValue: row.normalizedValue,
+          displayValue: row.displayValue,
+          taxonomyPath: null,
+          taxonomyVersion: 'news-taxonomy-v1',
+          embeddingModel: null,
+          embeddingVector: null,
+          metadata: null,
+        })),
+    );
+
+    await (service as any).syncCatalog('org-1');
+
+    expect(tx.contentSubscriptionCatalog.createMany).toHaveBeenCalledTimes(2);
+    expect(tx.contentSubscriptionCatalog.createMany.mock.calls[0][0].data).toHaveLength(64);
+    expect(tx.contentSubscriptionCatalog.createMany.mock.calls[1][0].data).toHaveLength(1);
+    expect(prisma.contentSubscriptionCatalog.upsert).not.toHaveBeenCalled();
+  });
+
+  it('removes only managed catalog kinds when there are no candidates to persist', async () => {
+    const tx = {
+      contentSubscriptionCatalog: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 3 }),
+        createMany: jest.fn(),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback) => callback(tx)),
+      contentSubscriptionCatalog: {
+        upsert: jest.fn(),
+      },
+    };
+    const service = new UserContentSubscriptionsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      monitors as any,
+    );
+    const classifySpy = jest.spyOn(service as any, 'classifyCatalogCandidates');
+
+    jest.spyOn(service as any, 'loadTopicCandidates').mockResolvedValue([]);
+    jest.spyOn(service as any, 'loadEntityCandidates').mockResolvedValue([]);
+    jest.spyOn(service as any, 'getTaxonomyDescriptor').mockResolvedValue({
+      settingsVersion: 'news-taxonomy-v1',
+      nodes: [],
+      byPath: new Map(),
+      documents: [],
+    });
+
+    await (service as any).syncCatalog('org-1');
+
+    expect(classifySpy).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.contentSubscriptionCatalog.deleteMany).toHaveBeenCalledWith({
+      where: {
+        orgId: 'org-1',
+        kind: {
+          in: [ContentSubscriptionKind.topic, ContentSubscriptionKind.entity],
+        },
+      },
+    });
+    expect(tx.contentSubscriptionCatalog.createMany).not.toHaveBeenCalled();
+    expect(prisma.contentSubscriptionCatalog.upsert).not.toHaveBeenCalled();
   });
 });

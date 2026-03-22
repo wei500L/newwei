@@ -1088,6 +1088,7 @@ model NewsEventItem {
   @@unique([orgId, processedArticleId])
   @@index([orgId, eventId, createdAt])
   @@index([orgId, processedItemId])
+  @@index([processedItemId, createdAt])
   @@index([eventId, createdAt])
 }
 

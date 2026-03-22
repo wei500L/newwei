@@ -26,15 +26,15 @@ import { ItemStatus } from "../../common/pipeline-status";
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
 import { CrawlExecutionService } from "../crawl/crawl-execution.service";
-import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import { assertNoCrawl4aiLlmOptions } from "../crawl/crawl4ai-llm.guard";
+import { NewsSourceOpsSnapshotService } from "../crawl/news-source-ops-snapshot.service";
 import {
   buildCanonicalUrlFingerprint,
   resolveQueryParamAllowlist,
 } from "../crawl/url-fingerprint";
+import { buildItemReadModelPatch } from "../items/item-read-model.utils";
 import { writeTaskLogBestEffort } from "../observability/task-log.writer";
 import { VectorClientService } from "../vector/vector-client.service";
-import { buildItemReadModelPatch } from "../items/item-read-model.utils";
 
 import { LiteLlmService } from "./litellm.service";
 import { NewsClassifierService } from "./news-classifier.service";
@@ -89,6 +89,19 @@ interface SummaryDedupeResult {
   duplicateOf?: string | null;
   duplicateSimilarity?: number | null;
   thresholdUsed?: number | null;
+}
+
+interface RankedLlmDedupeCandidate {
+  id: string;
+  summary: string;
+  title: string | null;
+  quick: number;
+}
+
+interface PreparedLlmDedupeCandidate {
+  id: string;
+  title: string | null;
+  text: string;
 }
 
 interface ProcessedItemOutboxPayload {
@@ -203,8 +216,10 @@ interface OutboxDeliveryRequestedEvent {
 
 const OUTBOX_DELIVERY_REQUESTED_EVENT = "newsPipeline.outbox.deliveryRequested";
 const MAX_TIMEOUT_MS = 2_147_483_647;
+const DEFAULT_LLM_DEDUPE_CONCURRENCY = 4;
 const MAX_LLM_DEDUPE_COMPARISONS = 12;
 const MAX_LLM_DEDUPE_CANDIDATE_CHARS = 1_200;
+const LLM_DEDUPE_EARLY_EXIT_SIMILARITY = 0.98;
 
 @Injectable()
 export class NewsPipelineService implements OnModuleDestroy {
@@ -2275,6 +2290,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         cleaned: options.cleaned,
         llmJudgeInstructions: settings.llmJudgeInstructions,
         llmJudgeModel: settings.llmJudgeModel,
+        llmJudgeConcurrency: settings.llmJudgeConcurrency,
         llmJudgeMaxComparisons: settings.llmJudgeMaxComparisons,
         llmJudgeCandidateChars: settings.llmJudgeCandidateChars,
         llmJudgePromptVersion: settings.llmJudgePromptVersion,
@@ -2342,6 +2358,7 @@ export class NewsPipelineService implements OnModuleDestroy {
     cleaned: CleanedNews;
     llmJudgeInstructions?: string | null;
     llmJudgeModel?: string | null;
+    llmJudgeConcurrency?: number;
     llmJudgeMaxComparisons?: number;
     llmJudgeCandidateChars?: number;
     llmJudgePromptVersion?: string;
@@ -2356,6 +2373,11 @@ export class NewsPipelineService implements OnModuleDestroy {
       Number.isFinite(options.llmJudgeMaxComparisons)
         ? Math.max(1, Math.round(options.llmJudgeMaxComparisons))
         : MAX_LLM_DEDUPE_COMPARISONS;
+    const concurrency =
+      typeof options.llmJudgeConcurrency === "number" &&
+      Number.isFinite(options.llmJudgeConcurrency)
+        ? Math.max(1, Math.round(options.llmJudgeConcurrency))
+        : DEFAULT_LLM_DEDUPE_CONCURRENCY;
     const candidateChars =
       typeof options.llmJudgeCandidateChars === "number" &&
       Number.isFinite(options.llmJudgeCandidateChars)
@@ -2387,35 +2409,99 @@ export class NewsPipelineService implements OnModuleDestroy {
               )
             : 0;
         const id = (candidate as { _id?: unknown })._id?.toString?.() ?? "";
-        return { id, summary, title, quick };
+        return {
+          id,
+          summary,
+          title,
+          quick,
+        };
       })
-      .filter((entry) => entry.id && entry.summary)
+      .filter(
+        (entry): entry is RankedLlmDedupeCandidate =>
+          Boolean(entry.id) && typeof entry.summary === "string",
+      )
       .sort((a, b) => b.quick - a.quick)
       .slice(0, Math.min(cfg.summaryDedupMaxCandidates, maxComparisons * 3));
 
     const queryText = options.summary.slice(0, candidateChars);
-    let best: { id: string; similarity: number } | null = null;
-    for (const candidate of ranked.slice(0, maxComparisons)) {
-      const candidateText = candidate.summary!.slice(0, candidateChars);
+    const rankedCandidates = ranked
+      .slice(0, maxComparisons)
+      .map((candidate) => ({
+        id: candidate.id,
+        title: candidate.title,
+        text: candidate.summary.slice(0, candidateChars),
+      })) satisfies PreparedLlmDedupeCandidate[];
+
+    for (const candidate of rankedCandidates) {
+      const candidateText = candidate.text;
       if (this.normalizeForQuickSimilarity(candidateText) === normalizedQuery) {
         return { id: candidate.id, similarity: 1 };
       }
+    }
 
-      const score = await this.scoreSummaryDuplicateWithLlm({
-        job: options.job,
-        threshold: options.threshold,
-        summaryA: queryText,
-        summaryB: candidateText,
-        titleA: options.cleaned.title,
-        titleB: candidate.title,
-        language: options.cleaned.language,
-        instructions: options.llmJudgeInstructions,
-        model: options.llmJudgeModel,
-        promptVersion: options.llmJudgePromptVersion,
-        systemPromptTemplate: options.llmJudgeSystemPromptTemplate,
-        userPromptTemplate: options.llmJudgeUserPromptTemplate,
-      });
-      if (!score || !score.isDuplicate) {
+    const scores = new Array<{
+      similarity: number;
+      isDuplicate: boolean;
+    } | null>(rankedCandidates.length).fill(null);
+    let shouldStop = false;
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (!shouldStop) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= rankedCandidates.length) {
+          return;
+        }
+
+        const candidate = rankedCandidates[currentIndex]!;
+        const candidateText = candidate.text;
+
+        const score = await this.scoreSummaryDuplicateWithLlm({
+          job: options.job,
+          threshold: options.threshold,
+          summaryA: queryText,
+          summaryB: candidateText,
+          titleA: options.cleaned.title,
+          titleB: candidate.title,
+          language: options.cleaned.language,
+          instructions: options.llmJudgeInstructions,
+          model: options.llmJudgeModel,
+          promptVersion: options.llmJudgePromptVersion,
+          systemPromptTemplate: options.llmJudgeSystemPromptTemplate,
+          userPromptTemplate: options.llmJudgeUserPromptTemplate,
+        });
+        if (!score) {
+          continue;
+        }
+
+        scores[currentIndex] = score;
+        if (
+          score.isDuplicate &&
+          score.similarity >= LLM_DEDUPE_EARLY_EXIT_SIMILARITY
+        ) {
+          shouldStop = true;
+        }
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        {
+          length: Math.min(concurrency, rankedCandidates.length),
+        },
+        () => worker(),
+      ),
+    );
+
+    let best: { id: string; similarity: number } | null = null;
+    for (let index = 0; index < scores.length; index += 1) {
+      const score = scores[index];
+      if (!score?.isDuplicate) {
+        continue;
+      }
+
+      const candidate = rankedCandidates[index];
+      if (!candidate) {
         continue;
       }
 
@@ -2423,7 +2509,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         best = { id: candidate.id, similarity: score.similarity };
       }
 
-      if (score.similarity >= 0.98) {
+      if (score.similarity >= LLM_DEDUPE_EARLY_EXIT_SIMILARITY) {
         break;
       }
     }

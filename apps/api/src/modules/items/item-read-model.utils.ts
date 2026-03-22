@@ -380,6 +380,10 @@ export function extractProcessedResultFields(result?: unknown): {
 }
 
 export function buildItemReadModelPatch(input: ItemReadModelProjectionInput): Record<string, unknown> {
+  return { ...buildItemReadModelDocument(input) };
+}
+
+export function buildItemReadModelDocument(input: ItemReadModelProjectionInput): ItemReadModel {
   const rawPayload =
     input.raw?.payload && typeof input.raw.payload === "object" && !Array.isArray(input.raw.payload)
       ? input.raw.payload
@@ -530,7 +534,7 @@ export function buildItemReadModelPatch(input: ItemReadModelProjectionInput): Re
     searchText: searchParts.join("\n"),
     searchTerms,
     projectionUpdatedAt: new Date(),
-  };
+  } as ItemReadModel;
 }
 
 function normalizeUrlDomain(value: string | null): string | null {

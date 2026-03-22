@@ -1920,6 +1920,7 @@ export type NewsDedupeSettingsModel = {
   __typename?: 'NewsDedupeSettingsModel';
   defaultThreshold: Scalars['Float']['output'];
   llmJudgeCandidateChars: Scalars['Int']['output'];
+  llmJudgeConcurrency: Scalars['Int']['output'];
   llmJudgeInstructions?: Maybe<Scalars['String']['output']>;
   llmJudgeMaxComparisons: Scalars['Int']['output'];
   llmJudgeModel?: Maybe<Scalars['String']['output']>;
@@ -3206,6 +3207,7 @@ export type UpdateNewsClassificationSettingsInput = {
 export type UpdateNewsDedupeSettingsInput = {
   defaultThreshold: Scalars['Float']['input'];
   llmJudgeCandidateChars?: InputMaybe<Scalars['Int']['input']>;
+  llmJudgeConcurrency?: InputMaybe<Scalars['Int']['input']>;
   llmJudgeInstructions?: InputMaybe<Scalars['String']['input']>;
   llmJudgeMaxComparisons?: InputMaybe<Scalars['Int']['input']>;
   llmJudgeModel?: InputMaybe<Scalars['String']['input']>;

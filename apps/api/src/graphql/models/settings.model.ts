@@ -494,6 +494,9 @@ export class NewsDedupeSettingsModel {
   llmJudgeModel!: string | null;
 
   @Field(() => Int)
+  llmJudgeConcurrency!: number;
+
+  @Field(() => Int)
   llmJudgeMaxComparisons!: number;
 
   @Field(() => Int)

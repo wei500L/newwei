@@ -3,6 +3,22 @@ import { BadRequestException, HttpException } from '@nestjs/common';
 import { NewsSourceRuntimeSecretRequiredError } from './news-aggregator.errors';
 import { NewsAggregatorService } from './news-aggregator.service';
 
+const mockRawItemFindOne = jest.fn();
+const mockProcessedItemFind = jest.fn();
+
+jest.mock('@modular/mongo', () => {
+  const actual = jest.requireActual('@modular/mongo');
+  return {
+    ...actual,
+    RawItemModel: {
+      findOne: (...args: unknown[]) => mockRawItemFindOne(...args),
+    },
+    ProcessedItemModel: {
+      find: (...args: unknown[]) => mockProcessedItemFind(...args),
+    },
+  };
+});
+
 const metadataFixture = {
   sources: {
     weibo: {
@@ -29,6 +45,19 @@ const metadataFixture = {
   },
 };
 
+const mockRawItemFindOneResult = (result: unknown) => {
+  const lean = jest.fn().mockResolvedValue(result);
+  const sort = jest.fn().mockReturnValue({ lean });
+  mockRawItemFindOne.mockReturnValueOnce({ sort });
+};
+
+const mockProcessedItemFindResult = (rows: { _id: string }[]) => {
+  const lean = jest.fn().mockResolvedValue(rows);
+  const limit = jest.fn().mockReturnValue({ lean });
+  const sort = jest.fn().mockReturnValue({ limit });
+  mockProcessedItemFind.mockReturnValueOnce({ sort });
+};
+
 describe('NewsAggregatorService personalization order', () => {
   const cacheServiceMock = {
     get: jest.fn(),
@@ -46,7 +75,11 @@ describe('NewsAggregatorService personalization order', () => {
     consume: jest.fn(),
   } as any;
 
-  const prismaMock = {} as any;
+  const prismaMock = {
+    newsEventItem: {
+      findFirst: jest.fn(),
+    },
+  } as any;
 
   const registryServiceMock = {
     getMetadata: jest.fn(() => metadataFixture),
@@ -88,6 +121,8 @@ describe('NewsAggregatorService personalization order', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    mockRawItemFindOne.mockReset();
+    mockProcessedItemFind.mockReset();
     registryServiceMock.getMetadata.mockReturnValue(metadataFixture);
     registryServiceMock.getSource.mockReturnValue({
       name: '微博',
@@ -113,6 +148,7 @@ describe('NewsAggregatorService personalization order', () => {
     rateLimiterServiceMock.consume.mockResolvedValue(true);
     runtimeSecretsServiceMock.getSecretsForSource.mockResolvedValue({});
     realtimeDispatcherMock.publish.mockResolvedValue(undefined);
+    prismaMock.newsEventItem.findFirst.mockResolvedValue(null);
     personalizationSettingsServiceMock.getRuntimeSettings.mockResolvedValue({
       source: 'default',
       cacheTtlMs: 20_000,
@@ -351,6 +387,125 @@ describe('NewsAggregatorService personalization order', () => {
       }),
     ).rejects.toMatchObject({
       status: 429,
+    });
+  });
+
+  it('resolves exact comparable URL matches and reuses the cached result', async () => {
+    const cacheStore = new Map<string, unknown>();
+    cacheServiceMock.get.mockImplementation(async (key: string) => cacheStore.get(key) ?? null);
+    cacheServiceMock.set.mockImplementation(async (key: string, value: unknown) => {
+      cacheStore.set(key, value);
+    });
+
+    mockRawItemFindOneResult({
+      itemMetaId: 'item-meta-1',
+      payload: { url: 'https://example.com/news?id=1' },
+      createdAt: new Date('2026-03-22T00:00:00.000Z'),
+    });
+    mockProcessedItemFindResult([{ _id: 'processed-1' }]);
+    prismaMock.newsEventItem.findFirst.mockResolvedValue({ eventId: 'event-1' });
+
+    const first = await service.resolveByUrl('https://Example.com/news?id=1#section');
+    const second = await service.resolveByUrl('https://example.com/news?id=1');
+
+    expect(first).toEqual({
+      matched: true,
+      itemId: 'item-meta-1',
+      eventId: 'event-1',
+      confidence: 1,
+      matchedUrl: 'https://example.com/news?id=1',
+    });
+    expect(second).toEqual(first);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(1);
+    expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
+    expect(prismaMock.newsEventItem.findFirst).toHaveBeenCalledTimes(1);
+    expect(cacheServiceMock.set).toHaveBeenCalledWith(
+      expect.stringContaining('news-aggregator:resolve:v1:'),
+      first,
+      300,
+    );
+  });
+
+  it('falls back to the comparable base URL when the full URL does not match', async () => {
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult({
+      itemMetaId: 'item-meta-2',
+      payload: { url: 'https://example.com/story' },
+      createdAt: new Date('2026-03-22T00:00:00.000Z'),
+    });
+    mockProcessedItemFindResult([]);
+
+    const result = await service.resolveByUrl('https://example.com/story?ref=homepage');
+
+    expect(result).toEqual({
+      matched: true,
+      itemId: 'item-meta-2',
+      confidence: 0.93,
+      matchedUrl: 'https://example.com/story',
+    });
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(2);
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      1,
+      { urlComparableFull: 'https://example.com/story?ref=homepage' },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      2,
+      { urlComparableBase: 'https://example.com/story' },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+  });
+
+  it('caches unmatched resolve results to avoid repeated database lookups', async () => {
+    const cacheStore = new Map<string, unknown>();
+    cacheServiceMock.get.mockImplementation(async (key: string) => cacheStore.get(key) ?? null);
+    cacheServiceMock.set.mockImplementation(async (key: string, value: unknown) => {
+      cacheStore.set(key, value);
+    });
+
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
+
+    const first = await service.resolveByUrl('https://example.com/missing');
+    const second = await service.resolveByUrl('https://example.com/missing');
+
+    expect(first).toEqual({ matched: false });
+    expect(second).toEqual({ matched: false });
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
+    expect(mockProcessedItemFind).not.toHaveBeenCalled();
+    expect(prismaMock.newsEventItem.findFirst).not.toHaveBeenCalled();
+    expect(cacheServiceMock.set).toHaveBeenCalledWith(
+      expect.stringContaining('news-aggregator:resolve:v1:'),
+      { matched: false },
+      30,
+    );
+  });
+
+  it('falls back to the legacy payload.url regex when comparable fields do not match', async () => {
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult({
+      itemMetaId: 'item-meta-3',
+      payload: { url: 'https://example.com/Story/?utm_source=legacy' },
+      createdAt: new Date('2026-03-22T00:00:00.000Z'),
+    });
+    mockProcessedItemFindResult([]);
+
+    const result = await service.resolveByUrl('https://example.com/Story/?utm_source=homepage#top');
+
+    expect(result).toEqual({
+      matched: true,
+      itemId: 'item-meta-3',
+      confidence: 0.86,
+      matchedUrl: 'https://example.com/Story/?utm_source=legacy',
+    });
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
+    expect(mockRawItemFindOne.mock.calls[2]?.[0]).toMatchObject({
+      'payload.url': {
+        $regex: expect.stringContaining('^https://example\\.com/Story'),
+        $options: 'i',
+      },
     });
   });
 

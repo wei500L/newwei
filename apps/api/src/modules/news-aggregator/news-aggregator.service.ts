@@ -1,3 +1,4 @@
+import { ProcessedItemModel, RawItemModel, buildComparableUrlVariants, type ComparableUrlVariants } from "@modular/mongo"
 import {
   BadRequestException,
   HttpException,
@@ -6,28 +7,21 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common"
-import { ProcessedItemModel, RawItemModel } from "@modular/mongo"
 import { createHash } from "node:crypto"
 
 import { CacheService } from "../cache/cache.service"
 import { RateLimiterService } from "../cache/rate-limiter.service"
 import { PrismaService } from "../config/prisma.service"
-import { NewsnowPersonalizationSettingsService } from "../system-settings/newsnow-personalization-settings.service";
 import { NewsSourceRuntimeSecretsService } from "../system-settings/news-source-runtime-secrets.service"
+import { NewsnowPersonalizationSettingsService } from "../system-settings/newsnow-personalization-settings.service"
 import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-behavior.constants"
 import {
   createDefaultNewsnowUiSettings,
   normalizeNewsnowUiSettings,
   UserSettingsService,
-} from "../user-settings/user-settings.service";
-import {
-  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
-  NewsSourceRuntimeSecretRequiredError,
-} from "./news-aggregator.errors"
-import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
-import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher";
-import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
+} from "../user-settings/user-settings.service"
 
+import { NewsAggregatorRegistryService } from "./news-aggregator-registry.service"
 import {
   BATCH_CONCURRENCY,
   BATCH_LIMIT,
@@ -37,6 +31,12 @@ import {
   STALE_TTL,
   Time,
 } from "./news-aggregator.constants"
+import {
+  NEWS_SOURCE_RUNTIME_SECRET_REQUIRED_CODE,
+  NewsSourceRuntimeSecretRequiredError,
+} from "./news-aggregator.errors"
+import type { NewsItem, NewsResolveResponse, SourceID, SourceResponse } from "./news-aggregator.types"
+import { NewsnowRealtimeDispatcher } from "./newsnow-realtime.dispatcher"
 
 const LOCK_WAIT_INTERVAL_MS = 200
 const LOCK_MAX_WAIT_MS = REFRESH_LOCK_TTL_MS
@@ -48,8 +48,11 @@ const NEWSNOW_PERSONALIZATION_CACHE_INDEX_KEY = `${NEWSNOW_PERSONALIZATION_CACHE
 const NEWSNOW_PERSONALIZATION_RATE_LIMIT_PREFIX = `${CACHE_PREFIX}:personalization:throttle`
 const NEWSNOW_PERSONALIZATION_CACHE_INDEX_TTL_SECONDS = 60 * 30
 const NEWSNOW_PERSONALIZATION_MAX_CACHE_TRIM_BATCH = 200
+const NEWSNOW_RESOLVE_URL_CACHE_KEY_PREFIX = `${CACHE_PREFIX}:resolve:v1`
+const NEWSNOW_RESOLVE_URL_MATCH_TTL_SECONDS = 60 * 5
+const NEWSNOW_RESOLVE_URL_MISS_TTL_SECONDS = 30
 
-type NewsnowPersonalizationOrderPayload = {
+interface NewsnowPersonalizationOrderPayload {
   columnKey: string
   sortMode: "manual" | "personalized"
   sourceIds: string[]
@@ -78,6 +81,7 @@ type NewsnowPersonalizationOrderPayload = {
 @Injectable()
 export class NewsAggregatorService {
   private readonly logger = new Logger(NewsAggregatorService.name)
+  private readonly inflightResolveByUrl = new Map<string, Promise<NewsResolveResponse>>()
 
   constructor(
     private readonly cacheService: CacheService,
@@ -242,7 +246,7 @@ export class NewsAggregatorService {
 
     const uniqueIds = [...new Set(ids.filter(Boolean))]
     const batchIds = uniqueIds.slice(0, BATCH_LIMIT)
-    const settledResults: Array<PromiseSettledResult<SourceResponse>> = []
+    const settledResults: PromiseSettledResult<SourceResponse>[] = []
 
     for (let index = 0; index < batchIds.length; index += BATCH_CONCURRENCY) {
       const chunk = batchIds.slice(index, index + BATCH_CONCURRENCY)
@@ -251,7 +255,7 @@ export class NewsAggregatorService {
     }
 
     const results: SourceResponse[] = []
-    const errors: Array<{ id: string, message: string }> = []
+    const errors: { id: string, message: string }[] = []
 
     settledResults.forEach((result, index) => {
       const sourceId = batchIds[index]!
@@ -294,7 +298,7 @@ export class NewsAggregatorService {
     const availableSourceIds = new Set<string>(Object.keys(metadata.sources))
     const columnsRecord = metadata.columns as Record<
       string,
-      { sources?: Array<string | SourceID> } | undefined
+      { sources?: (string | SourceID)[] } | undefined
     >
     const fallbackSourceIds = this.normalizePersonalizationSourceIds(
       columnsRecord[input.columnKey]?.sources ?? [],
@@ -527,31 +531,68 @@ export class NewsAggregatorService {
   }
 
   async resolveByUrl(url: string): Promise<NewsResolveResponse> {
-    const normalizedFull = this.normalizeComparableUrl(url, { keepSearch: true })
-    const normalizedBase = this.normalizeComparableUrl(url, { keepSearch: false })
-    if (!normalizedFull || !normalizedBase) {
+    const comparable = buildComparableUrlVariants(url)
+    if (!comparable) {
       return { matched: false }
     }
 
-    const exactCandidates = Array.from(new Set([normalizedFull, normalizedBase]))
+    const cacheKey = this.buildResolveByUrlCacheKey(comparable)
+    const cached = await this.safeGetCache<NewsResolveResponse>(cacheKey)
+    if (cached) {
+      return cached
+    }
+
+    const inflight = this.inflightResolveByUrl.get(cacheKey)
+    if (inflight) {
+      return await inflight
+    }
+
+    const resolvePromise = this.resolveByUrlUncached(comparable)
+      .then(async (resolved) => {
+        await this.safeSetResolveByUrlCache(cacheKey, resolved)
+        return resolved
+      })
+
+    this.inflightResolveByUrl.set(cacheKey, resolvePromise)
+
+    try {
+      return await resolvePromise
+    } finally {
+      if (this.inflightResolveByUrl.get(cacheKey) === resolvePromise) {
+        this.inflightResolveByUrl.delete(cacheKey)
+      }
+    }
+  }
+
+  private async resolveByUrlUncached(input: ComparableUrlVariants): Promise<NewsResolveResponse> {
+    const projection = { itemMetaId: 1, "payload.url": 1, createdAt: 1 }
     const exactMatch = await RawItemModel.findOne(
-      { "payload.url": { $in: exactCandidates } },
-      { itemMetaId: 1, "payload.url": 1, createdAt: 1 },
+      { urlComparableFull: input.full },
+      projection,
     )
       .sort({ createdAt: -1 })
       .lean()
 
-    const fallbackPattern = `^${this.escapeRegex(normalizedBase)}(?:/)?(?:[?#].*)?$`
-    const fallbackMatch = exactMatch
+    const baseMatch = exactMatch
       ? null
       : await RawItemModel.findOne(
-          { "payload.url": { $regex: fallbackPattern, $options: "i" } },
-          { itemMetaId: 1, "payload.url": 1, createdAt: 1 },
+          { urlComparableBase: input.base },
+          projection,
         )
           .sort({ createdAt: -1 })
           .lean()
 
-    const resolvedRaw = exactMatch ?? fallbackMatch
+    const fallbackPattern = `^${this.escapeRegex(input.base)}(?:/)?(?:[?#].*)?$`
+    const fallbackMatch = exactMatch || baseMatch
+      ? null
+      : await RawItemModel.findOne(
+          { "payload.url": { $regex: fallbackPattern, $options: "i" } },
+          projection,
+        )
+          .sort({ createdAt: -1 })
+          .lean()
+
+    const resolvedRaw = exactMatch ?? baseMatch ?? fallbackMatch
     const itemMetaId =
       resolvedRaw && typeof resolvedRaw.itemMetaId === "string"
         ? resolvedRaw.itemMetaId.trim()
@@ -590,7 +631,7 @@ export class NewsAggregatorService {
       typeof (resolvedRaw as { payload?: { url?: unknown } }).payload?.url === "string"
         ? ((resolvedRaw as { payload: { url: string } }).payload.url)
         : undefined
-    const confidence = exactMatch ? 1 : 0.86
+    const confidence = exactMatch ? 1 : baseMatch ? 0.93 : 0.86
 
     return {
       matched: true,
@@ -605,7 +646,7 @@ export class NewsAggregatorService {
     const visited = new Set<SourceID>()
     let current = sourceId
 
-    while (true) {
+    for (;;) {
       if (visited.has(current)) {
         this.logger.warn(`redirect cycle detected for "${sourceId}": ${[...visited].join(" -> ")} -> ${current}`)
         return sourceId
@@ -665,29 +706,22 @@ export class NewsAggregatorService {
     return `${CACHE_PREFIX}:source:${sourceId}:stale`
   }
 
-  private normalizeComparableUrl(
-    value: string,
-    options: { keepSearch: boolean },
-  ): string | null {
+  private buildResolveByUrlCacheKey(input: ComparableUrlVariants): string {
+    const token = createHash("sha1")
+      .update(`${input.full}|${input.base}`)
+      .digest("hex")
+    return `${NEWSNOW_RESOLVE_URL_CACHE_KEY_PREFIX}:${token}`
+  }
+
+  private async safeSetResolveByUrlCache(key: string, value: NewsResolveResponse) {
     try {
-      const parsed = new URL(value)
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return null
-      }
-      parsed.hash = ""
-      parsed.hostname = parsed.hostname.toLowerCase()
-      if (!options.keepSearch) {
-        parsed.search = ""
-      }
-      if (parsed.pathname !== "/") {
-        parsed.pathname = parsed.pathname.replace(/\/+$/, "")
-      }
-      const normalized = parsed.toString()
-      return normalized.endsWith("/") && parsed.pathname === "/"
-        ? normalized.slice(0, -1)
-        : normalized
-    } catch {
-      return null
+      await this.cacheService.set(
+        key,
+        value,
+        value.matched ? NEWSNOW_RESOLVE_URL_MATCH_TTL_SECONDS : NEWSNOW_RESOLVE_URL_MISS_TTL_SECONDS,
+      )
+    } catch (error) {
+      this.logger.warn(`cache write failed for "${key}": ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -891,7 +925,7 @@ export class NewsAggregatorService {
   }
 
   private normalizePersonalizationSourceIds(
-    sourceIds: Array<string | SourceID>,
+    sourceIds: (string | SourceID)[],
     availableSourceIds: Set<string>,
   ): string[] {
     const out: string[] = []

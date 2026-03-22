@@ -36,6 +36,7 @@ interface NewsDedupeSettingsModel {
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
+  llmJudgeConcurrency: number;
   llmJudgeMaxComparisons: number;
   llmJudgeCandidateChars: number;
   llmJudgePromptVersion: string;
@@ -57,6 +58,7 @@ interface FormValues {
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
+  llmJudgeConcurrency: number | null;
   llmJudgeMaxComparisons: number | null;
   llmJudgeCandidateChars: number | null;
   llmJudgePromptVersion: string | null;
@@ -71,6 +73,7 @@ interface UpdateNewsDedupeSettingsInput {
   scopedThresholds: NewsDedupeScopedThresholdModel[];
   llmJudgeInstructions?: string | null;
   llmJudgeModel?: string | null;
+  llmJudgeConcurrency?: number | null;
   llmJudgeMaxComparisons?: number | null;
   llmJudgeCandidateChars?: number | null;
   llmJudgePromptVersion?: string | null;
@@ -85,6 +88,7 @@ const NEWS_DEDUPE_SETTINGS_QUERY = gql`
       useEmbeddings
       llmJudgeInstructions
       llmJudgeModel
+      llmJudgeConcurrency
       llmJudgeMaxComparisons
       llmJudgeCandidateChars
       llmJudgePromptVersion
@@ -107,6 +111,7 @@ const UPDATE_NEWS_DEDUPE_SETTINGS_MUTATION = gql`
       useEmbeddings
       llmJudgeInstructions
       llmJudgeModel
+      llmJudgeConcurrency
       llmJudgeMaxComparisons
       llmJudgeCandidateChars
       llmJudgePromptVersion
@@ -198,11 +203,11 @@ function resolveBaseThreshold(
   const sourceId = normalizeScopeToken(options.sourceId ?? null, 191, false);
   const language = normalizeScopeToken(options.language ?? null, 32, true);
   const categoryPath = normalizeScopeToken(options.categoryPath ?? null, 240, false);
-  const candidates: Array<{
+  const candidates: {
     sourceId: string | null;
     language: string | null;
     categoryPath: string | null;
-  }> = [
+  }[] = [
     { sourceId, language, categoryPath },
     { sourceId, language, categoryPath: null },
     { sourceId, language: null, categoryPath: null },
@@ -277,6 +282,7 @@ export function NewsDedupeSettingsPanel() {
         useEmbeddings: data.newsDedupeSettings.useEmbeddings,
         llmJudgeInstructions: data.newsDedupeSettings.llmJudgeInstructions,
         llmJudgeModel: data.newsDedupeSettings.llmJudgeModel,
+        llmJudgeConcurrency: data.newsDedupeSettings.llmJudgeConcurrency,
         llmJudgeMaxComparisons: data.newsDedupeSettings.llmJudgeMaxComparisons,
         llmJudgeCandidateChars: data.newsDedupeSettings.llmJudgeCandidateChars,
         llmJudgePromptVersion: data.newsDedupeSettings.llmJudgePromptVersion,
@@ -350,6 +356,10 @@ export function NewsDedupeSettingsPanel() {
           ? values.llmJudgeInstructions.trim()
           : null;
         payload.llmJudgeModel = values.llmJudgeModel?.trim() ? values.llmJudgeModel.trim() : null;
+        payload.llmJudgeConcurrency =
+          typeof values.llmJudgeConcurrency === "number" && Number.isFinite(values.llmJudgeConcurrency)
+            ? values.llmJudgeConcurrency
+            : null;
         payload.llmJudgeMaxComparisons =
           typeof values.llmJudgeMaxComparisons === "number" && Number.isFinite(values.llmJudgeMaxComparisons)
             ? values.llmJudgeMaxComparisons
@@ -473,6 +483,20 @@ export function NewsDedupeSettingsPanel() {
                   </Form.Item>
 
                   <Space wrap style={{ display: "flex" }}>
+                    <Form.Item
+                      label={t("settings.newsDedupe.fields.llmJudgeConcurrency", {
+                        defaultValue: "Judge concurrency"
+                      })}
+                      name="llmJudgeConcurrency"
+                      extra={t("settings.newsDedupe.hints.llmJudgeConcurrency", {
+                        defaultValue:
+                          "How many LLM dedupe comparisons can run in parallel for each item."
+                      })}
+                      style={{ flex: 1, minWidth: 240 }}
+                    >
+                      <InputNumber min={1} max={8} step={1} style={{ width: "100%" }} />
+                    </Form.Item>
+
                     <Form.Item
                       label={t("settings.newsDedupe.fields.llmJudgeMaxComparisons", {
                         defaultValue: "Max comparisons"

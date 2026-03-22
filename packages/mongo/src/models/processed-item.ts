@@ -105,6 +105,7 @@ const ProcessedItemSchema = new Schema(
 ProcessedItemSchema.index({ orgId: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, itemMetaId: 1, createdAt: -1 });
+ProcessedItemSchema.index({ itemMetaId: 1, status: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, sortAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, duplicateOf: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, summaryEmbeddingModel: 1, duplicateOf: 1, createdAt: -1 });

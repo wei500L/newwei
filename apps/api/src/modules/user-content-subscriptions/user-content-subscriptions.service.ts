@@ -1,11 +1,11 @@
 import { ProcessedItemModel } from '@modular/mongo';
 import { createLogger } from '@modular/utils';
+import { Injectable } from '@nestjs/common';
 import {
   ContentSubscriptionKind,
   ContentSubscriptionSource,
   Prisma,
 } from '@prisma/client';
-import { Injectable } from '@nestjs/common';
 
 import { toPrismaJsonValue } from '../../common/prisma-json';
 import { CacheService } from '../cache/cache.service';
@@ -16,8 +16,8 @@ import {
   type NewsClassificationTaxonomyNode,
 } from '../news-pipeline/news-classification-settings.service';
 import { SituationMonitorMonitorsService } from '../situation-monitor/situation-monitor-monitors.service';
-import { UserNewsBehaviorService } from '../user-news-behavior/user-news-behavior.service';
 import { USER_DIGEST_PREFERENCE_KEY } from '../user-digest/user-digest.constants';
+import { UserNewsBehaviorService } from '../user-news-behavior/user-news-behavior.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CATALOG_WINDOW_DAYS = 90;
@@ -25,6 +25,7 @@ const CATALOG_MIN_COUNT = 2;
 const CATALOG_SYNC_TTL_SECONDS = 6 * 60 * 60;
 const CATALOG_SYNC_LOCK_TTL_MS = 15 * 60 * 1000;
 const CATALOG_MAX_CANDIDATES_PER_KIND = 240;
+const CATALOG_PERSIST_BATCH_SIZE = 64;
 const CATALOG_LIST_LIMIT = 200;
 const UNCATEGORIZED_TAXONOMY_FILTER = '__uncategorized__';
 const EMBEDDING_BATCH_SIZE = 64;
@@ -769,7 +770,7 @@ export class UserContentSubscriptionsService {
       .sort((a, b) => b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime())
       .slice(0, CATALOG_MAX_CANDIDATES_PER_KIND * 2);
     if (merged.length === 0) {
-      await this.prisma.contentSubscriptionCatalog.deleteMany({ where: { orgId } });
+      await this.persistCatalogSnapshot(orgId, []);
       return;
     }
 
@@ -777,86 +778,55 @@ export class UserContentSubscriptionsService {
     const classifiedByKey = new Map(
       classified.map((entry) => [this.subscriptionKey(entry.kind, entry.normalizedValue), entry]),
     );
-    const topicValues = merged
-      .filter((candidate) => candidate.kind === ContentSubscriptionKind.topic)
-      .map((candidate) => candidate.normalizedValue);
-    const entityValues = merged
-      .filter((candidate) => candidate.kind === ContentSubscriptionKind.entity)
-      .map((candidate) => candidate.normalizedValue);
-
-    for (const candidate of merged) {
+    const nextRows: Prisma.ContentSubscriptionCatalogCreateManyInput[] = merged.map((candidate) => {
       const key = this.subscriptionKey(candidate.kind, candidate.normalizedValue);
       const resolved = classifiedByKey.get(key) ?? this.toAdHocResolution(candidate, taxonomy.settingsVersion);
-      await this.prisma.contentSubscriptionCatalog.upsert({
-        where: {
-          orgId_kind_normalizedValue: {
-            orgId,
-            kind: candidate.kind,
-            normalizedValue: candidate.normalizedValue,
-          },
-        },
-        update: {
-          displayValue: candidate.displayValue,
-          count: candidate.count,
-          lastSeenAt: candidate.lastSeenAt,
-          taxonomyPath: resolved.taxonomyPath,
-          taxonomyVersion: resolved.taxonomyVersion,
-          embeddingModel: resolved.embeddingModel,
-          embeddingVector: resolved.embeddingVector ? toPrismaJsonValue(resolved.embeddingVector) : Prisma.JsonNull,
-          metadata: toPrismaJsonValue(candidate.metadata ?? resolved.metadata ?? {}),
-        },
-        create: {
-          orgId,
-          kind: candidate.kind,
-          normalizedValue: candidate.normalizedValue,
-          displayValue: candidate.displayValue,
-          count: candidate.count,
-          lastSeenAt: candidate.lastSeenAt,
-          taxonomyPath: resolved.taxonomyPath,
-          taxonomyVersion: resolved.taxonomyVersion,
-          embeddingModel: resolved.embeddingModel,
-          embeddingVector: resolved.embeddingVector ? toPrismaJsonValue(resolved.embeddingVector) : Prisma.JsonNull,
-          metadata: toPrismaJsonValue(candidate.metadata ?? resolved.metadata ?? {}),
-        },
-      });
-    }
-
-    const staleFilters: Prisma.ContentSubscriptionCatalogWhereInput[] = [
-      { lastSeenAt: { lt: new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS) } },
-    ];
-    if (topicValues.length > 0) {
-      staleFilters.push({
-        kind: ContentSubscriptionKind.topic,
-        normalizedValue: { notIn: topicValues },
-      });
-    } else {
-      staleFilters.push({ kind: ContentSubscriptionKind.topic });
-    }
-    if (entityValues.length > 0) {
-      staleFilters.push({
-        kind: ContentSubscriptionKind.entity,
-        normalizedValue: { notIn: entityValues },
-      });
-    } else {
-      staleFilters.push({ kind: ContentSubscriptionKind.entity });
-    }
-
-    await this.prisma.contentSubscriptionCatalog.deleteMany({
-      where: {
+      return {
         orgId,
-        OR: staleFilters,
-      },
+        kind: candidate.kind,
+        normalizedValue: candidate.normalizedValue,
+        displayValue: candidate.displayValue,
+        count: candidate.count,
+        lastSeenAt: candidate.lastSeenAt,
+        taxonomyPath: resolved.taxonomyPath,
+        taxonomyVersion: resolved.taxonomyVersion,
+        embeddingModel: resolved.embeddingModel,
+        embeddingVector: resolved.embeddingVector
+          ? toPrismaJsonValue(resolved.embeddingVector)
+          : Prisma.JsonNull,
+        metadata: toPrismaJsonValue(candidate.metadata ?? resolved.metadata ?? {}),
+      };
+    });
+
+    await this.persistCatalogSnapshot(orgId, nextRows);
+  }
+
+  private async persistCatalogSnapshot(
+    orgId: string,
+    rows: Prisma.ContentSubscriptionCatalogCreateManyInput[],
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contentSubscriptionCatalog.deleteMany({
+        where: {
+          orgId,
+          kind: { in: [...CONTENT_SUBSCRIPTION_KINDS] },
+        },
+      });
+
+      for (const chunk of this.chunkArray(rows, CATALOG_PERSIST_BATCH_SIZE)) {
+        await tx.contentSubscriptionCatalog.createMany({ data: chunk });
+      }
     });
   }
 
   private async resolveCatalogEntries(
     orgId: string,
-    entries: Array<{
+    entries: {
       kind: ContentSubscriptionKind;
       normalizedValue: string;
       displayValue: string;
       source?: ContentSubscriptionSource;
-    }>,
+    }[],
   ) {
     const normalized = this.normalizeInputEntries(entries);
     if (normalized.length === 0) {
@@ -939,9 +909,21 @@ export class UserContentSubscriptionsService {
         },
       });
       embeddingModel = taxonomyResponse.model ?? null;
+      const taxonomyVectorByIndex = new Map<number, number[]>();
+      for (const row of taxonomyResponse.data ?? []) {
+        if (
+          !row ||
+          typeof row.index !== 'number' ||
+          !Array.isArray(row.embedding) ||
+          row.embedding.length === 0
+        ) {
+          continue;
+        }
+        taxonomyVectorByIndex.set(row.index, row.embedding);
+      }
       taxonomyEmbeddings = taxonomy.documents
         .map((entry, index) => {
-          const vector = taxonomyResponse.data?.find((row) => row.index === index)?.embedding;
+          const vector = taxonomyVectorByIndex.get(index);
           if (!Array.isArray(vector) || vector.length === 0) {
             return null;
           }
@@ -969,8 +951,20 @@ export class UserContentSubscriptionsService {
           },
         });
         const model = response.model ?? embeddingModel;
+        const vectorByIndex = new Map<number, number[]>();
+        for (const row of response.data ?? []) {
+          if (
+            !row ||
+            typeof row.index !== 'number' ||
+            !Array.isArray(row.embedding) ||
+            row.embedding.length === 0
+          ) {
+            continue;
+          }
+          vectorByIndex.set(row.index, row.embedding);
+        }
         for (const [index, candidate] of chunk.entries()) {
-          const vector = response.data?.find((row) => row.index === index)?.embedding;
+          const vector = vectorByIndex.get(index);
           const normalizedVector = Array.isArray(vector) ? this.normalizeVector(vector) : [];
           const bestPath =
             normalizedVector.length > 0
@@ -1099,12 +1093,12 @@ export class UserContentSubscriptionsService {
   private async loadEntityCandidates(orgId: string): Promise<CatalogCandidate[]> {
     const since = new Date(Date.now() - CATALOG_WINDOW_DAYS * DAY_MS);
     const kgRows = await this.prisma.$queryRaw<
-      Array<{
+      {
         displayValue: string;
         entityType: string | null;
         count: bigint | number;
         lastSeenAt: Date | null;
-      }>
+      }[]
     >(Prisma.sql`
       SELECT
         e.canonicalName AS displayValue,
@@ -1449,7 +1443,7 @@ export class UserContentSubscriptionsService {
   private async rankCatalogRowsByEmbedding(
     orgId: string,
     queryText: string,
-    rows: Array<{
+    rows: {
       kind: ContentSubscriptionKind;
       normalizedValue: string;
       displayValue: string;
@@ -1458,7 +1452,7 @@ export class UserContentSubscriptionsService {
       taxonomyPath: string | null;
       metadata: Prisma.JsonValue | null;
       embeddingVector: Prisma.JsonValue | null;
-    }>,
+    }[],
   ) {
     try {
       const response = await this.liteLlm.embedding({
@@ -1472,7 +1466,7 @@ export class UserContentSubscriptionsService {
       const vector = response.data?.[0]?.embedding;
       const normalized = Array.isArray(vector) ? this.normalizeVector(vector) : [];
       if (normalized.length === 0) {
-        return [] as Array<{ row: (typeof rows)[number]; score: number }>;
+        return [] as { row: (typeof rows)[number]; score: number }[];
       }
       return this.rankCatalogRowsByVector(normalized, rows, RECOMMENDATION_CANDIDATE_LIMIT);
     } catch (error) {
@@ -1484,7 +1478,7 @@ export class UserContentSubscriptionsService {
   private async tryRerankCatalogRows(
     orgId: string,
     queryText: string,
-    rows: Array<{
+    rows: {
       row: {
         kind: ContentSubscriptionKind;
         normalizedValue: string;
@@ -1495,7 +1489,7 @@ export class UserContentSubscriptionsService {
         metadata: Prisma.JsonValue | null;
       };
       score: number;
-    }>,
+    }[],
   ) {
     if (rows.length === 0) {
       return [] as typeof rows;
@@ -1546,7 +1540,7 @@ export class UserContentSubscriptionsService {
     limit: number,
   ) {
     if (!Array.isArray(vector) || vector.length === 0) {
-      return [] as Array<{ row: TRow; score: number }>;
+      return [] as { row: TRow; score: number }[];
     }
     return rows
       .map((row) => {
@@ -1597,7 +1591,7 @@ export class UserContentSubscriptionsService {
 
   private pickBestTaxonomyPath(
     vector: number[],
-    taxonomyEmbeddings: Array<{ path: string; vector: number[] }>,
+    taxonomyEmbeddings: { path: string; vector: number[] }[],
   ) {
     let bestPath: string | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
@@ -1642,21 +1636,21 @@ export class UserContentSubscriptionsService {
   }
 
   private normalizeInputEntries(
-    entries: Array<{
+    entries: {
       kind: ContentSubscriptionKind;
       value?: string;
       displayValue?: string;
       normalizedValue?: string;
       source?: ContentSubscriptionSource;
-    }>,
+    }[],
   ) {
     const seen = new Set<string>();
-    const normalized: Array<{
+    const normalized: {
       kind: ContentSubscriptionKind;
       normalizedValue: string;
       displayValue: string;
       source?: ContentSubscriptionSource;
-    }> = [];
+    }[] = [];
     for (const entry of entries) {
       if (!CONTENT_SUBSCRIPTION_KINDS.includes(entry.kind)) {
         continue;

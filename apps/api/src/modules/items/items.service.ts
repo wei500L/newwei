@@ -1,11 +1,11 @@
-import { createLogger } from "@modular/utils";
 import {
   RawItemModel,
   ProcessedItemModel,
   ItemReadModelModel,
   type ItemReadModel,
+  type MongoConnection,
 } from "@modular/mongo";
-import type { MongoConnection } from "@modular/mongo";
+import { createLogger } from "@modular/utils";
 import {
   BadRequestException,
   Inject,
@@ -35,13 +35,12 @@ import { buildUserNewsBehaviorHashKey } from "../user-news-behavior/user-news-be
 import { VectorClientService } from "../vector/vector-client.service";
 
 import { CreateItemDto } from "./dto/create-item.dto";
+import { UpdateItemDto } from "./dto/update-item.dto";
 import {
   type ItemReadModelProcessedSnapshotInput,
   type ItemReadModelRawSnapshotInput,
-  buildItemReadModelPatch,
+  buildItemReadModelDocument,
 } from "./item-read-model.utils";
-import { UpdateItemDto } from "./dto/update-item.dto";
-
 
 const MAX_CURSOR_PAGE_SIZE = 50;
 const FULLTEXT_MIN_TOKEN_LENGTH = 3;
@@ -55,6 +54,7 @@ const MAX_EVENT_GROUPS = 50;
 const MAX_EVENT_ITEMS = 8;
 const DEFAULT_EVENT_WINDOW_DAYS = 30;
 const DEFAULT_EVENT_MIN_GROUP_SIZE = 2;
+const ITEM_READ_MODEL_HYDRATE_BATCH_SIZE = 500;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ITEMS_FILTERS_SEARCH_PREFIX = "__items_filters__:";
 const MAX_FACET_OPTIONS = 50;
@@ -174,6 +174,18 @@ interface ItemCandidateFeatures {
   topics: string[];
   entities: string[];
   eventIds: string[];
+}
+
+interface ItemReadModelHydrationRecord {
+  meta: ItemMetaRow;
+  raw: ItemReadModelRawSnapshotInput | null;
+  processed: ItemReadModelProcessedSnapshotInput | null;
+}
+
+interface ItemReadModelSourceResolutionRecord {
+  itemMetaId: string;
+  pipelineJobIds: string[];
+  crawlResultIds: string[];
 }
 
 interface TopicGroupItem {
@@ -512,149 +524,86 @@ export class ItemsService {
     return metadata;
   }
 
-  private async resolveReadModelSourceId(input: {
+  private normalizeReadModelItemMetaIds(ids: string[]) {
+    const unique: string[] = [];
+    const seen = new Set<string>();
+    for (const value of ids) {
+      if (typeof value !== "string") {
+        continue;
+      }
+      const normalized = value.trim();
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      unique.push(normalized);
+    }
+    return unique;
+  }
+
+  private toItemMetaRow(record: {
+    id: string;
     orgId: string;
-    meta: ItemMetaRow;
-    raw?: ItemReadModelRawSnapshotInput | null;
-    processed?: ItemReadModelProcessedSnapshotInput | null;
-  }) {
-    const directProcessed =
-      typeof input.processed?.sourceId === "string" && input.processed.sourceId.trim().length > 0
-        ? input.processed.sourceId.trim()
-        : undefined;
-    if (directProcessed) {
-      return directProcessed;
-    }
-
-    const rawMetadata = this.extractRawMetadata(input.raw?.payload ?? null);
-    const rawSourceId =
-      typeof rawMetadata?.sourceId === "string" && rawMetadata.sourceId.trim().length > 0
-        ? rawMetadata.sourceId.trim()
-        : undefined;
-    if (rawSourceId) {
-      return rawSourceId;
-    }
-
-    const pipelineJobIdCandidates = [
-      input.processed?.pipelineJobId,
-      typeof rawMetadata?.pipelineJobId === "string" ? rawMetadata.pipelineJobId.trim() : undefined,
-    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
-    if (pipelineJobIdCandidates.length > 0) {
-      const pipelineJob = await this.prisma.pipelineJob.findFirst({
-        where: {
-          orgId: input.orgId,
-          id: { in: pipelineJobIdCandidates },
-          sourceId: { not: null },
-        },
-        select: { sourceId: true },
-      });
-      if (typeof pipelineJob?.sourceId === "string" && pipelineJob.sourceId.trim().length > 0) {
-        return pipelineJob.sourceId.trim();
-      }
-    }
-
-    const crawlResultCandidates = [
-      typeof rawMetadata?.crawlResultId === "string" ? rawMetadata.crawlResultId.trim() : undefined,
-      this.extractCrawlResultIdFromExternalId(input.meta.externalId),
-    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
-    if (crawlResultCandidates.length > 0) {
-      const crawlResult = await this.prisma.crawlResult.findFirst({
-        where: {
-          id: { in: crawlResultCandidates },
-          task: { orgId: input.orgId },
-        },
-        select: {
-          task: {
-            select: {
-              config: true,
-            },
-          },
-        },
-      });
-      const sourceId = this.extractSourceIdFromTaskConfig(crawlResult?.task.config);
-      if (sourceId) {
-        return sourceId;
-      }
-    }
-
-    return undefined;
-  }
-
-  private async upsertItemReadModel(input: {
-    meta: ItemMetaRow;
-    raw?: ItemReadModelRawSnapshotInput | null;
-    processed?: ItemReadModelProcessedSnapshotInput | null;
-    sourceId?: string | null;
-  }) {
-    const patch = buildItemReadModelPatch({
-      meta: input.meta,
-      raw: input.raw ?? undefined,
-      processed: input.processed ?? undefined,
-      sourceId: input.sourceId ?? undefined,
-    });
-    await ItemReadModelModel.updateOne(
-      { orgId: input.meta.orgId, itemMetaId: input.meta.id },
-      { $set: patch },
-      { upsert: true },
-    );
-  }
-
-  private async loadItemReadModel(orgId: string, itemMetaId: string, hydrateMissing = true) {
-    let doc = (await ItemReadModelModel.findOne({ orgId, itemMetaId }).lean()) as ItemReadModel | null;
-    if (doc || !hydrateMissing) {
-      return doc;
-    }
-    await this.hydrateItemReadModel(orgId, itemMetaId);
-    doc = (await ItemReadModelModel.findOne({ orgId, itemMetaId }).lean()) as ItemReadModel | null;
-    return doc;
-  }
-
-  private async hydrateItemReadModel(orgId: string, itemMetaId: string) {
-    const metaRow = await this.prisma.itemMeta.findFirst({
-      where: { id: itemMetaId, orgId },
-    });
-    if (!metaRow) {
-      return null;
-    }
-    const meta: ItemMetaRow = {
-      id: metaRow.id,
-      orgId: metaRow.orgId,
-      externalId: metaRow.externalId,
-      name: metaRow.name,
-      status: metaRow.status,
-      mongoRef: metaRow.mongoRef,
-      version: metaRow.version,
-      publishedAt: metaRow.publishedAt ?? null,
-      sortAt: metaRow.sortAt ?? metaRow.createdAt,
-      createdAt: metaRow.createdAt,
-      updatedAt: metaRow.updatedAt,
+    externalId: string;
+    name: string;
+    status: string;
+    mongoRef: string;
+    version: number;
+    publishedAt: Date | null;
+    sortAt: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  }): ItemMetaRow {
+    return {
+      id: record.id,
+      orgId: record.orgId,
+      externalId: record.externalId,
+      name: record.name,
+      status: record.status,
+      mongoRef: record.mongoRef,
+      version: record.version,
+      publishedAt: record.publishedAt ?? null,
+      sortAt: record.sortAt ?? record.createdAt,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
     };
-
-    const [rawDoc, processedDoc] = await Promise.all([
-      meta.mongoRef
-        ? RawItemModel.findById(meta.mongoRef).lean()
-        : RawItemModel.findOne({ itemMetaId }).sort({ createdAt: -1 }).lean(),
-      ProcessedItemModel.findOne({ itemMetaId }).sort({ createdAt: -1 }).lean(),
-    ]);
-    const raw = this.toRawReadModelSnapshot(rawDoc);
-    const processed = this.toProcessedReadModelSnapshot(processedDoc);
-    const sourceId = await this.resolveReadModelSourceId({
-      orgId,
-      meta,
-      raw,
-      processed,
-    });
-    await this.upsertItemReadModel({ meta, raw, processed, sourceId });
-    return this.loadItemReadModel(orgId, itemMetaId, false);
   }
 
-  private async loadItemReadModelsByIds(orgId: string, ids: string[]) {
-    if (ids.length === 0) {
+  private buildLatestItemSnapshotPipeline(itemMetaIds: string[]): PipelineStage[] {
+    return [
+      {
+        $match: {
+          itemMetaId: { $in: itemMetaIds },
+        },
+      },
+      {
+        $sort: {
+          itemMetaId: 1,
+          createdAt: -1,
+          _id: -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$itemMetaId",
+          doc: { $first: "$$ROOT" },
+        },
+      },
+      {
+        $replaceRoot: {
+          newRoot: "$doc",
+        },
+      },
+    ];
+  }
+
+  private async findItemReadModelsByIds(orgId: string, itemMetaIds: string[]) {
+    if (itemMetaIds.length === 0) {
       return new Map<string, ItemReadModel>();
     }
     const docs = (await ItemReadModelModel.find({
       orgId,
-      itemMetaId: { $in: ids },
+      itemMetaId: { $in: itemMetaIds },
     }).lean()) as ItemReadModel[];
     const byId = new Map<string, ItemReadModel>();
     for (const doc of docs) {
@@ -663,13 +612,311 @@ export class ItemsService {
       }
       byId.set(doc.itemMetaId, doc);
     }
-    const missing = ids.filter((id) => !byId.has(id));
-    for (const id of missing) {
-      const hydrated = await this.hydrateItemReadModel(orgId, id);
-      if (hydrated?.itemMetaId) {
-        byId.set(hydrated.itemMetaId, hydrated);
+    return byId;
+  }
+
+  private async loadRawReadModelSnapshots(metas: ItemMetaRow[]) {
+    const rawByItemMetaId = new Map<string, ItemReadModelRawSnapshotInput>();
+    const referencedMongoRefs = Array.from(
+      new Set(
+        metas
+          .map((meta) => meta.mongoRef.trim())
+          .filter((mongoRef) => mongoRef.length > 0),
+      ),
+    );
+    const latestRawIds = metas
+      .filter((meta) => meta.mongoRef.trim().length === 0)
+      .map((meta) => meta.id);
+
+    const [referencedRawDocs, latestRawDocs] = await Promise.all([
+      referencedMongoRefs.length > 0
+        ? RawItemModel.find({
+            _id: { $in: referencedMongoRefs },
+          }).lean()
+        : Promise.resolve([]),
+      latestRawIds.length > 0
+        ? RawItemModel.aggregate(this.buildLatestItemSnapshotPipeline(latestRawIds))
+        : Promise.resolve([]),
+    ]);
+
+    for (const rawDoc of [...referencedRawDocs, ...latestRawDocs]) {
+      const snapshot = this.toRawReadModelSnapshot(rawDoc);
+      if (!snapshot || rawByItemMetaId.has(snapshot.itemMetaId)) {
+        continue;
+      }
+      rawByItemMetaId.set(snapshot.itemMetaId, snapshot);
+    }
+
+    return rawByItemMetaId;
+  }
+
+  private async loadProcessedReadModelSnapshots(itemMetaIds: string[]) {
+    if (itemMetaIds.length === 0) {
+      return new Map<string, ItemReadModelProcessedSnapshotInput>();
+    }
+
+    const docs = await ProcessedItemModel.aggregate(this.buildLatestItemSnapshotPipeline(itemMetaIds));
+    const processedByItemMetaId = new Map<string, ItemReadModelProcessedSnapshotInput>();
+    for (const processedDoc of docs) {
+      const snapshot = this.toProcessedReadModelSnapshot(processedDoc);
+      if (!snapshot || processedByItemMetaId.has(snapshot.itemMetaId)) {
+        continue;
+      }
+      processedByItemMetaId.set(snapshot.itemMetaId, snapshot);
+    }
+
+    return processedByItemMetaId;
+  }
+
+  private async resolveReadModelSourceIds(
+    orgId: string,
+    records: ItemReadModelHydrationRecord[],
+  ) {
+    const sourceIdByItemMetaId = new Map<string, string>();
+    const pipelineJobIds = new Set<string>();
+    const crawlResultIds = new Set<string>();
+    const unresolved: ItemReadModelSourceResolutionRecord[] = [];
+
+    for (const record of records) {
+      const directProcessed =
+        typeof record.processed?.sourceId === "string" && record.processed.sourceId.trim().length > 0
+          ? record.processed.sourceId.trim()
+          : undefined;
+      if (directProcessed) {
+        sourceIdByItemMetaId.set(record.meta.id, directProcessed);
+        continue;
+      }
+
+      const rawMetadata = this.extractRawMetadata(record.raw?.payload ?? null);
+      const rawSourceId =
+        typeof rawMetadata?.sourceId === "string" && rawMetadata.sourceId.trim().length > 0
+          ? rawMetadata.sourceId.trim()
+          : undefined;
+      if (rawSourceId) {
+        sourceIdByItemMetaId.set(record.meta.id, rawSourceId);
+        continue;
+      }
+
+      const pipelineJobCandidates = Array.from(
+        new Set(
+          [
+            record.processed?.pipelineJobId,
+            typeof rawMetadata?.pipelineJobId === "string" ? rawMetadata.pipelineJobId.trim() : undefined,
+          ].filter((value): value is string => Boolean(value && value.trim().length > 0)),
+        ),
+      );
+      const crawlResultCandidates = Array.from(
+        new Set(
+          [
+            typeof rawMetadata?.crawlResultId === "string" ? rawMetadata.crawlResultId.trim() : undefined,
+            this.extractCrawlResultIdFromExternalId(record.meta.externalId),
+          ].filter((value): value is string => Boolean(value && value.trim().length > 0)),
+        ),
+      );
+
+      if (pipelineJobCandidates.length === 0 && crawlResultCandidates.length === 0) {
+        continue;
+      }
+
+      unresolved.push({
+        itemMetaId: record.meta.id,
+        pipelineJobIds: pipelineJobCandidates,
+        crawlResultIds: crawlResultCandidates,
+      });
+      for (const pipelineJobId of pipelineJobCandidates) {
+        pipelineJobIds.add(pipelineJobId);
+      }
+      for (const crawlResultId of crawlResultCandidates) {
+        crawlResultIds.add(crawlResultId);
       }
     }
+
+    const [pipelineJobs, crawlResults] = await Promise.all([
+      pipelineJobIds.size > 0
+        ? this.prisma.pipelineJob.findMany({
+            where: {
+              orgId,
+              id: { in: Array.from(pipelineJobIds) },
+              sourceId: { not: null },
+            },
+            select: {
+              id: true,
+              sourceId: true,
+            },
+          })
+        : Promise.resolve([]),
+      crawlResultIds.size > 0
+        ? this.prisma.crawlResult.findMany({
+            where: {
+              id: { in: Array.from(crawlResultIds) },
+              task: { orgId },
+            },
+            select: {
+              id: true,
+              task: {
+                select: {
+                  config: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const sourceIdByPipelineJobId = new Map<string, string>();
+    for (const pipelineJob of pipelineJobs) {
+      const sourceId =
+        typeof pipelineJob.sourceId === "string" && pipelineJob.sourceId.trim().length > 0
+          ? pipelineJob.sourceId.trim()
+          : "";
+      if (!sourceId || sourceIdByPipelineJobId.has(pipelineJob.id)) {
+        continue;
+      }
+      sourceIdByPipelineJobId.set(pipelineJob.id, sourceId);
+    }
+
+    const sourceIdByCrawlResultId = new Map<string, string>();
+    for (const crawlResult of crawlResults) {
+      const sourceId = this.extractSourceIdFromTaskConfig(crawlResult.task.config);
+      if (!sourceId || sourceIdByCrawlResultId.has(crawlResult.id)) {
+        continue;
+      }
+      sourceIdByCrawlResultId.set(crawlResult.id, sourceId);
+    }
+
+    for (const record of unresolved) {
+      const pipelineSourceId = record.pipelineJobIds
+        .map((pipelineJobId) => sourceIdByPipelineJobId.get(pipelineJobId))
+        .find((value): value is string => Boolean(value));
+      if (pipelineSourceId) {
+        sourceIdByItemMetaId.set(record.itemMetaId, pipelineSourceId);
+        continue;
+      }
+
+      const crawlSourceId = record.crawlResultIds
+        .map((crawlResultId) => sourceIdByCrawlResultId.get(crawlResultId))
+        .find((value): value is string => Boolean(value));
+      if (crawlSourceId) {
+        sourceIdByItemMetaId.set(record.itemMetaId, crawlSourceId);
+      }
+    }
+
+    return sourceIdByItemMetaId;
+  }
+
+  private async hydrateItemReadModelsBatch(orgId: string, itemMetaIds: string[]) {
+    const uniqueIds = this.normalizeReadModelItemMetaIds(itemMetaIds);
+    const hydratedById = new Map<string, ItemReadModel>();
+
+    for (let index = 0; index < uniqueIds.length; index += ITEM_READ_MODEL_HYDRATE_BATCH_SIZE) {
+      const batchIds = uniqueIds.slice(index, index + ITEM_READ_MODEL_HYDRATE_BATCH_SIZE);
+      const metaRows = await this.prisma.itemMeta.findMany({
+        where: {
+          orgId,
+          id: { in: batchIds },
+        },
+        select: {
+          id: true,
+          orgId: true,
+          externalId: true,
+          name: true,
+          status: true,
+          mongoRef: true,
+          version: true,
+          publishedAt: true,
+          sortAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+      const metaById = new Map<string, ItemMetaRow>(
+        metaRows.map((row) => [row.id, this.toItemMetaRow(row)]),
+      );
+      const metas = batchIds
+        .map((itemMetaId) => metaById.get(itemMetaId))
+        .filter((meta): meta is ItemMetaRow => Boolean(meta));
+      if (metas.length === 0) {
+        continue;
+      }
+
+      const [rawByItemMetaId, processedByItemMetaId] = await Promise.all([
+        this.loadRawReadModelSnapshots(metas),
+        this.loadProcessedReadModelSnapshots(metas.map((meta) => meta.id)),
+      ]);
+      const records: ItemReadModelHydrationRecord[] = metas.map((meta) => ({
+        meta,
+        raw: rawByItemMetaId.get(meta.id) ?? null,
+        processed: processedByItemMetaId.get(meta.id) ?? null,
+      }));
+      const sourceIdByItemMetaId = await this.resolveReadModelSourceIds(orgId, records);
+      const docs = records.map((record) =>
+        buildItemReadModelDocument({
+          meta: record.meta,
+          raw: record.raw ?? undefined,
+          processed: record.processed ?? undefined,
+          sourceId: sourceIdByItemMetaId.get(record.meta.id),
+        }),
+      );
+
+      await ItemReadModelModel.bulkWrite(
+        docs.map((doc) => ({
+          updateOne: {
+            filter: {
+              orgId: doc.orgId,
+              itemMetaId: doc.itemMetaId,
+            },
+            update: {
+              $set: doc,
+            },
+            upsert: true,
+          },
+        })),
+        { ordered: false },
+      );
+
+      for (const doc of docs) {
+        hydratedById.set(doc.itemMetaId, doc);
+      }
+    }
+
+    return hydratedById;
+  }
+
+  private async loadItemReadModel(orgId: string, itemMetaId: string, hydrateMissing = true) {
+    const normalizedItemMetaId = itemMetaId.trim();
+    const doc = (await ItemReadModelModel.findOne({
+      orgId,
+      itemMetaId: normalizedItemMetaId,
+    }).lean()) as ItemReadModel | null;
+    if (doc || !hydrateMissing) {
+      return doc;
+    }
+    return (await this.hydrateItemReadModelsBatch(orgId, [normalizedItemMetaId])).get(normalizedItemMetaId) ?? null;
+  }
+
+  private async hydrateItemReadModel(orgId: string, itemMetaId: string) {
+    const normalizedItemMetaId = itemMetaId.trim();
+    return (await this.hydrateItemReadModelsBatch(orgId, [normalizedItemMetaId])).get(normalizedItemMetaId) ?? null;
+  }
+
+  private async loadItemReadModelsByIds(orgId: string, ids: string[]) {
+    const uniqueIds = this.normalizeReadModelItemMetaIds(ids);
+    if (uniqueIds.length === 0) {
+      return new Map<string, ItemReadModel>();
+    }
+
+    const byId = await this.findItemReadModelsByIds(orgId, uniqueIds);
+    const missing = uniqueIds.filter((id) => !byId.has(id));
+    if (missing.length > 0) {
+      const hydratedById = await this.hydrateItemReadModelsBatch(orgId, missing);
+      for (const itemMetaId of missing) {
+        const hydrated = hydratedById.get(itemMetaId);
+        if (hydrated) {
+          byId.set(itemMetaId, hydrated);
+        }
+      }
+    }
+
     return byId;
   }
 
@@ -689,8 +936,11 @@ export class ItemsService {
       take,
     });
 
-    for (const row of rows) {
-      await this.hydrateItemReadModel(orgId, row.id);
+    if (rows.length > 0) {
+      await this.hydrateItemReadModelsBatch(
+        orgId,
+        rows.map((row) => row.id),
+      );
     }
 
     return {

@@ -27,13 +27,13 @@ import {
   type NewsIndicatorAssociationSettingsInput,
 } from "../../modules/news-indicator/news-indicator-settings.service";
 import {
-  NewsClassificationSettingsService,
-  type NewsClassificationSettingsInput,
-} from "../../modules/news-pipeline/news-classification-settings.service";
-import {
   NewsClassificationQualitySettingsService,
   type ClassificationQualitySettingsInput,
 } from "../../modules/news-pipeline/news-classification-quality-settings.service";
+import {
+  NewsClassificationSettingsService,
+  type NewsClassificationSettingsInput,
+} from "../../modules/news-pipeline/news-classification-settings.service";
 import {
   NewsDedupeSettingsService,
   type NewsDedupeSettingsInput,
@@ -46,7 +46,6 @@ import {
 } from "../../modules/system-settings/entity-impact-graph-settings.service";
 import { RateLimitConfigService } from "../../modules/system-settings/rate-limit-config.service";
 import { HasPermission } from "../decorators/has-permission.decorator";
-import { toNewsEventSourcePolicyInput } from "./settings.resolver.helpers";
 import {
   UpdateAuditLogRetentionInput,
   UpdateCrawlClientSettingsInput,
@@ -84,6 +83,8 @@ import {
   AuthCacheSettingsModel,
   RateLimitSettingsModel,
 } from "../models/settings.model";
+
+import { toNewsEventSourcePolicyInput } from "./settings.resolver.helpers";
 
 @Resolver()
 @UseGuards(GqlAuthGuard, GqlPermissionsGuard)
@@ -562,6 +563,10 @@ export class SettingsResolver {
         input.llmJudgeModel === undefined
           ? current.llmJudgeModel
           : input.llmJudgeModel,
+      llmJudgeConcurrency:
+        input.llmJudgeConcurrency === undefined
+          ? current.llmJudgeConcurrency
+          : input.llmJudgeConcurrency,
       llmJudgeMaxComparisons:
         input.llmJudgeMaxComparisons === undefined
           ? current.llmJudgeMaxComparisons

@@ -116,6 +116,76 @@ const baseConfig: NewsPipelineConfig = {
 
 describe("NewsPipelineService", () => {
   const promptBuilder = new NewsPromptBuilder();
+  const createDeferred = <T,>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+  const buildCleanCompletion = () => ({
+    id: "cmpl",
+    model: "openai/gpt-4o-mini",
+    created: Date.now(),
+    usage: {
+      prompt_tokens: 100,
+      completion_tokens: 80,
+      total_tokens: 180,
+    },
+    choices: [
+      {
+        index: 0,
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: JSON.stringify({
+            title: "Clean Headline",
+            subtitle: null,
+            author: null,
+            source: "Example",
+            published_at: "2024-01-01T00:00:00Z",
+            language: "en",
+            location: null,
+            category: null,
+            topics: ["news"],
+            summary: "Clean body",
+            key_points: ["Clean body"],
+            entities: [],
+            cleaned_markdown: "Clean body",
+            removed_noise_types: [],
+            quality_score: 0.9,
+            llm_model: "openai/gpt-4o-mini",
+            llm_prompt_version: "v1",
+          }),
+        },
+      },
+    ],
+  });
+  const buildJudgeCompletion = (similarity: number, isDuplicate: boolean) => ({
+    id: "judge",
+    model: "openai/gpt-4o-mini",
+    created: Date.now(),
+    choices: [
+      {
+        index: 0,
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: JSON.stringify({
+            similarity,
+            is_duplicate: isDuplicate,
+            rationale: isDuplicate ? "same event" : "different event",
+          }),
+        },
+      },
+    ],
+  });
+  const buildEmbeddingResponse = () => ({
+    model: "openai/text-embedding-3-small",
+    data: [{ index: 0, embedding: [1, 0, 0] }],
+  });
 
   const flushOutbox = async () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -133,48 +203,8 @@ describe("NewsPipelineService", () => {
   const liteLlm = {
     getEmbeddingModel: jest.fn(async () => "openai/text-embedding-3-small"),
     getCompletionTimeoutMs: jest.fn(async () => 60_000),
-    acompletion: jest.fn(async () => ({
-      id: "cmpl",
-      model: "openai/gpt-4o-mini",
-      created: Date.now(),
-      usage: {
-        prompt_tokens: 100,
-        completion_tokens: 80,
-        total_tokens: 180,
-      },
-      choices: [
-        {
-          index: 0,
-          finish_reason: "stop",
-          message: {
-            role: "assistant",
-            content: JSON.stringify({
-              title: "Clean Headline",
-              subtitle: null,
-              author: null,
-              source: "Example",
-              published_at: "2024-01-01T00:00:00Z",
-              language: "en",
-              location: null,
-              category: null,
-              topics: ["news"],
-              summary: "Clean body",
-              key_points: ["Clean body"],
-              entities: [],
-              cleaned_markdown: "Clean body",
-              removed_noise_types: [],
-              quality_score: 0.9,
-              llm_model: "openai/gpt-4o-mini",
-              llm_prompt_version: "v1",
-            }),
-          },
-        },
-      ],
-    })),
-    embedding: jest.fn(async () => ({
-      model: "openai/text-embedding-3-small",
-      data: [{ index: 0, embedding: [1, 0, 0] }],
-    })),
+    acompletion: jest.fn(async () => buildCleanCompletion()),
+    embedding: jest.fn(async () => buildEmbeddingResponse()),
   };
 
   const promptConfigService = {
@@ -188,6 +218,7 @@ describe("NewsPipelineService", () => {
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
+      llmJudgeConcurrency: 4,
       llmJudgeMaxComparisons: 12,
       llmJudgeCandidateChars: 1200,
       llmJudgePromptVersion: "news-dedupe-judge-v1",
@@ -296,6 +327,12 @@ describe("NewsPipelineService", () => {
     jest.clearAllMocks();
     baseConfig.pipeline.summaryDedupMinChars = 40;
     baseConfig.pipeline.summaryDedupThreshold = 0.9;
+    liteLlm.getEmbeddingModel.mockImplementation(
+      async () => "openai/text-embedding-3-small",
+    );
+    liteLlm.getCompletionTimeoutMs.mockImplementation(async () => 60_000);
+    liteLlm.acompletion.mockImplementation(async () => buildCleanCompletion());
+    liteLlm.embedding.mockImplementation(async () => buildEmbeddingResponse());
     (prisma.processedArticle.findFirst as jest.Mock).mockResolvedValue(null);
     (prisma.article.upsert as jest.Mock).mockResolvedValue({ id: "article-1" });
     (prisma.processedArticle.upsert as jest.Mock).mockResolvedValue(null);
@@ -974,6 +1011,7 @@ describe("NewsPipelineService", () => {
       useEmbeddings: false,
       llmJudgeInstructions: null,
       llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeConcurrency: 4,
       llmJudgeMaxComparisons: 5,
       llmJudgeCandidateChars: 1200,
       llmJudgePromptVersion: "news-dedupe-judge-v1",
@@ -1034,6 +1072,287 @@ describe("NewsPipelineService", () => {
       where: { id: job.itemMetaId },
       data: { status: "duplicate" },
     });
+  });
+
+  it("caps concurrent LLM dedupe judge calls", async () => {
+    baseConfig.pipeline.summaryDedupMinChars = 1;
+    baseConfig.pipeline.summaryDedupThreshold = 0.8;
+
+    dedupeSettingsService.getSettings.mockResolvedValueOnce({
+      defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
+      scopedThresholds: [],
+      useEmbeddings: false,
+      llmJudgeInstructions: null,
+      llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeConcurrency: 2,
+      llmJudgeMaxComparisons: 4,
+      llmJudgeCandidateChars: 1200,
+      llmJudgePromptVersion: "news-dedupe-judge-v1",
+      llmJudgeSystemPromptTemplate: "system prompt",
+      llmJudgeUserPromptTemplate: "user prompt",
+    });
+
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: "candidate-1",
+          result: { summary: "Alpha event update", title: "Alpha" },
+        },
+        {
+          _id: "candidate-2",
+          result: { summary: "Beta event update", title: "Beta" },
+        },
+        {
+          _id: "candidate-3",
+          result: { summary: "Gamma event update", title: "Gamma" },
+        },
+        {
+          _id: "candidate-4",
+          result: { summary: "Delta event update", title: "Delta" },
+        },
+      ]),
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let judgeStarted = 0;
+    const startedTwo = createDeferred<void>();
+    const startedFour = createDeferred<void>();
+    const judgeDeferreds: {
+      promise: Promise<ReturnType<typeof buildJudgeCompletion>>;
+      resolve: (value: ReturnType<typeof buildJudgeCompletion>) => void;
+      reject: (reason?: unknown) => void;
+    }[] = [];
+
+    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
+      if (args?.metadata?.stage !== "dedupe") {
+        return buildCleanCompletion();
+      }
+
+      judgeStarted += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      if (judgeStarted === 2) {
+        startedTwo.resolve();
+      }
+      if (judgeStarted === 4) {
+        startedFour.resolve();
+      }
+
+      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+      judgeDeferreds.push(deferred);
+      return deferred.promise.finally(() => {
+        inFlight -= 1;
+      });
+    });
+
+    const processPromise = service.process(job, raw);
+
+    await startedTwo.promise;
+    await flushOutbox();
+
+    expect(judgeStarted).toBe(2);
+    expect(maxInFlight).toBe(2);
+
+    judgeDeferreds[0]!.resolve(buildJudgeCompletion(0.4, false));
+    judgeDeferreds[1]!.resolve(buildJudgeCompletion(0.5, false));
+
+    await startedFour.promise;
+
+    judgeDeferreds[2]!.resolve(buildJudgeCompletion(0.6, false));
+    judgeDeferreds[3]!.resolve(buildJudgeCompletion(0.7, false));
+
+    await processPromise;
+    await flushOutbox();
+
+    expect(judgeStarted).toBe(4);
+    expect(maxInFlight).toBe(2);
+  });
+
+  it("stops scheduling new LLM dedupe judge calls after a high-confidence match", async () => {
+    baseConfig.pipeline.summaryDedupMinChars = 1;
+    baseConfig.pipeline.summaryDedupThreshold = 0.8;
+
+    dedupeSettingsService.getSettings.mockResolvedValueOnce({
+      defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
+      scopedThresholds: [],
+      useEmbeddings: false,
+      llmJudgeInstructions: null,
+      llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeConcurrency: 2,
+      llmJudgeMaxComparisons: 4,
+      llmJudgeCandidateChars: 1200,
+      llmJudgePromptVersion: "news-dedupe-judge-v1",
+      llmJudgeSystemPromptTemplate: "system prompt",
+      llmJudgeUserPromptTemplate: "user prompt",
+    });
+
+    const duplicateId = "candidate-1";
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: duplicateId,
+          result: { summary: "Alpha event update", title: "Alpha" },
+        },
+        {
+          _id: "candidate-2",
+          result: { summary: "Beta event update", title: "Beta" },
+        },
+        {
+          _id: "candidate-3",
+          result: { summary: "Gamma event update", title: "Gamma" },
+        },
+        {
+          _id: "candidate-4",
+          result: { summary: "Delta event update", title: "Delta" },
+        },
+      ]),
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
+
+    let judgeStarted = 0;
+    const startedTwo = createDeferred<void>();
+    const judgeDeferreds: {
+      promise: Promise<ReturnType<typeof buildJudgeCompletion>>;
+      resolve: (value: ReturnType<typeof buildJudgeCompletion>) => void;
+      reject: (reason?: unknown) => void;
+    }[] = [];
+
+    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
+      if (args?.metadata?.stage !== "dedupe") {
+        return buildCleanCompletion();
+      }
+
+      judgeStarted += 1;
+      if (judgeStarted === 2) {
+        startedTwo.resolve();
+      }
+
+      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+      judgeDeferreds.push(deferred);
+      return deferred.promise;
+    });
+
+    const processPromise = service.process(job, raw);
+
+    await startedTwo.promise;
+    await flushOutbox();
+    expect(judgeStarted).toBe(2);
+
+    judgeDeferreds[0]!.resolve(buildJudgeCompletion(0.99, true));
+    await flushOutbox();
+
+    expect(judgeStarted).toBe(2);
+
+    judgeDeferreds[1]!.resolve(buildJudgeCompletion(0.3, false));
+
+    await processPromise;
+    await flushOutbox();
+
+    expect(judgeStarted).toBe(2);
+    expect(prisma.itemMeta.update).toHaveBeenCalledWith({
+      where: { id: job.itemMetaId },
+      data: { status: "duplicate" },
+    });
+    expect(mongoOutbox.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({
+            document: expect.objectContaining({
+              duplicateOf: duplicateId,
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("keeps ranked candidate order when equal LLM dedupe scores resolve out of order", async () => {
+    baseConfig.pipeline.summaryDedupMinChars = 1;
+    baseConfig.pipeline.summaryDedupThreshold = 0.8;
+
+    dedupeSettingsService.getSettings.mockResolvedValueOnce({
+      defaultThreshold: baseConfig.pipeline.summaryDedupThreshold,
+      scopedThresholds: [],
+      useEmbeddings: false,
+      llmJudgeInstructions: null,
+      llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeConcurrency: 2,
+      llmJudgeMaxComparisons: 2,
+      llmJudgeCandidateChars: 1200,
+      llmJudgePromptVersion: "news-dedupe-judge-v1",
+      llmJudgeSystemPromptTemplate: "system prompt",
+      llmJudgeUserPromptTemplate: "user prompt",
+    });
+
+    const firstCandidateId = "candidate-1";
+    const secondCandidateId = "candidate-2";
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: firstCandidateId,
+          result: { summary: "Alpha event update", title: "Alpha" },
+        },
+        {
+          _id: secondCandidateId,
+          result: { summary: "Beta event update", title: "Beta" },
+        },
+      ]),
+    };
+    (ProcessedItemModel.find as jest.Mock).mockReturnValueOnce(findChain);
+
+    const startedTwo = createDeferred<void>();
+    const judgeDeferreds: {
+      promise: Promise<ReturnType<typeof buildJudgeCompletion>>;
+      resolve: (value: ReturnType<typeof buildJudgeCompletion>) => void;
+      reject: (reason?: unknown) => void;
+    }[] = [];
+
+    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
+      if (args?.metadata?.stage !== "dedupe") {
+        return buildCleanCompletion();
+      }
+
+      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+      judgeDeferreds.push(deferred);
+      if (judgeDeferreds.length === 2) {
+        startedTwo.resolve();
+      }
+      return deferred.promise;
+    });
+
+    const processPromise = service.process(job, raw);
+
+    await startedTwo.promise;
+    judgeDeferreds[1]!.resolve(buildJudgeCompletion(0.95, true));
+    await flushOutbox();
+    judgeDeferreds[0]!.resolve(buildJudgeCompletion(0.95, true));
+
+    await processPromise;
+    await flushOutbox();
+
+    expect(mongoOutbox.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          payload: expect.objectContaining({
+            document: expect.objectContaining({
+              duplicateOf: firstCandidateId,
+              duplicateSimilarity: 0.95,
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it("fails fast when existing processed article cannot be mapped", async () => {

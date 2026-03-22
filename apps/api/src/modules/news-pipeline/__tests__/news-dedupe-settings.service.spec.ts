@@ -53,6 +53,7 @@ describe("NewsDedupeSettingsService", () => {
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
+      llmJudgeConcurrency: 4,
       llmJudgeMaxComparisons: 12,
       llmJudgeCandidateChars: 1200,
       llmJudgePromptVersion: expect.any(String),
@@ -79,6 +80,7 @@ describe("NewsDedupeSettingsService", () => {
       useEmbeddings: false,
       llmJudgeInstructions: "Be extra strict.",
       llmJudgeModel: "openai/gpt-4o-mini",
+      llmJudgeConcurrency: 99,
       llmJudgeMaxComparisons: 5,
       llmJudgeCandidateChars: 1500,
       llmJudgePromptVersion: "news-dedupe-judge-v2",
@@ -129,6 +131,7 @@ describe("NewsDedupeSettingsService", () => {
     );
     expect(result.scopedThresholds).toHaveLength(3);
     expect(result.useEmbeddings).toBe(false);
+    expect(result.llmJudgeConcurrency).toBe(8);
 
     expect(prismaMock.systemSetting.upsert).toHaveBeenCalledWith({
       where: { key: "news_dedupe_settings:org-1" },
@@ -197,6 +200,7 @@ describe("NewsDedupeSettingsService", () => {
         useEmbeddings: true,
         llmJudgeInstructions: null,
         llmJudgeModel: null,
+        llmJudgeConcurrency: 4,
         llmJudgeMaxComparisons: 12,
         llmJudgeCandidateChars: 1200,
         llmJudgePromptVersion: "news-dedupe-judge-v1",

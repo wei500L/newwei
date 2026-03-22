@@ -5,10 +5,25 @@ jest.mock("@modular/utils", () => ({
     info: jest.fn(),
     debug: jest.fn(),
   }),
+  getCurrentTraceId: jest.fn(),
 }));
 
 const mockProcessedItemFindById = jest.fn();
 const mockProcessedItemFind = jest.fn();
+
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
 
 jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: {
@@ -700,6 +715,56 @@ describe("NewsEventsService", () => {
         "stale-entry",
       ),
     ).toBe(false);
+  });
+
+  it("prunes expired processed-item category cache entries proactively", async () => {
+    mockProcessedItemFind.mockReturnValueOnce(makeFindQuery([]));
+
+    const service = new NewsEventsService({} as any, {} as any);
+
+    (
+      (service as any).processedItemCategoryCache as Map<
+        string,
+        { expiresAt: number; value: unknown }
+      >
+    ).set("stale-id", {
+      expiresAt: Date.now() - 10_000,
+      value: null,
+    });
+
+    await (service as any).loadProcessedItemCategoryClassification(["pi-new"]);
+
+    expect(
+      ((service as any).processedItemCategoryCache as Map<string, unknown>).has(
+        "stale-id",
+      ),
+    ).toBe(false);
+    expect(mockProcessedItemFind).toHaveBeenCalledWith({
+      _id: { $in: ["pi-new"] },
+    });
+  });
+
+  it("trims processed-item category cache back to the max entry cap", async () => {
+    mockProcessedItemFind.mockReturnValueOnce(makeFindQuery([]));
+
+    const service = new NewsEventsService({} as any, {} as any);
+    const cache = (service as any).processedItemCategoryCache as Map<
+      string,
+      { expiresAt: number; value: unknown }
+    >;
+    const existingExpiresAt = Date.now() + 60_000;
+
+    for (let index = 0; index < 20_000; index += 1) {
+      cache.set(`existing-${index}`, {
+        expiresAt: existingExpiresAt,
+        value: null,
+      });
+    }
+
+    await (service as any).loadProcessedItemCategoryClassification(["pi-new"]);
+
+    expect(cache.size).toBe(20_000);
+    expect(cache.has("pi-new")).toBe(true);
   });
 
   it("calculates authority profile and credibility for events", async () => {

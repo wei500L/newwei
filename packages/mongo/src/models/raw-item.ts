@@ -1,5 +1,7 @@
 import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
 
+import { buildComparableUrlVariants } from "../url-comparison";
+
 const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -92,12 +94,30 @@ const RawItemSchema = new Schema(
   {
     itemMetaId: { type: String, index: true, required: true, trim: true },
     payload: { type: RawItemPayloadSchema, required: true },
-    source: { type: String, default: "manual" }
+    source: { type: String, default: "manual" },
+    urlComparableFull: { type: String, default: null, trim: true },
+    urlComparableBase: { type: String, default: null, trim: true }
   },
   {
     timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" }
   }
 );
+
+RawItemSchema.pre("validate", function (next) {
+  const doc = this as unknown as {
+    payload?: { url?: unknown };
+    urlComparableFull?: string | null;
+    urlComparableBase?: string | null;
+  };
+  const url = typeof doc.payload?.url === "string" ? doc.payload.url : "";
+  const comparable = buildComparableUrlVariants(url);
+  doc.urlComparableFull = comparable?.full ?? null;
+  doc.urlComparableBase = comparable?.base ?? null;
+  next();
+});
+
+RawItemSchema.index({ urlComparableFull: 1, createdAt: -1 });
+RawItemSchema.index({ urlComparableBase: 1, createdAt: -1 });
 
 export type RawItem = InferSchemaType<typeof RawItemSchema>;
 

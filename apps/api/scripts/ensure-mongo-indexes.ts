@@ -1,4 +1,5 @@
 import {
+  RawItemModel,
   ProcessedItemModel,
   connectMongo,
   disconnectMongo,
@@ -9,6 +10,10 @@ async function main() {
 
   try {
     const models = [
+      {
+        label: "RawItem",
+        model: RawItemModel,
+      },
       {
         label: "ProcessedItem",
         model: ProcessedItemModel,

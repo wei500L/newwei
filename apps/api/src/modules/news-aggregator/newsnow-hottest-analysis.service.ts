@@ -1,7 +1,8 @@
+import { buildComparableUrlVariants } from '@modular/mongo';
 import { createLogger } from '@modular/utils';
 import { Injectable } from '@nestjs/common';
-import { zodToJsonSchema, type JsonSchema7Type } from 'zod-to-json-schema';
 import { z } from 'zod';
+import { zodToJsonSchema, type JsonSchema7Type } from 'zod-to-json-schema';
 
 import { safeJsonParseFromText } from '../../common/llm-json';
 import { CacheService } from '../cache/cache.service';
@@ -992,23 +993,38 @@ export class NewsnowHottestAnalysisService {
   private async resolveMatches(
     signals: NewsnowHotSignal[],
   ): Promise<Map<string, { itemId?: string; eventId?: string }>> {
-    const results = await this.mapWithConcurrency(signals, 6, async (signal) => {
+    const buildResolveKey = (url: string) => buildComparableUrlVariants(url)?.full ?? url.trim();
+    const uniqueSignals = new Map<string, NewsnowHotSignal>();
+
+    for (const signal of signals) {
+      const resolveKey = buildResolveKey(signal.url);
+      if (!uniqueSignals.has(resolveKey)) {
+        uniqueSignals.set(resolveKey, signal);
+      }
+    }
+
+    const results = await this.mapWithConcurrency(Array.from(uniqueSignals.values()), 6, async (signal) => {
       try {
         const resolved = await this.aggregator.resolveByUrl(signal.url);
-        return [signal.signalKey, resolved] as const;
+        return [buildResolveKey(signal.url), resolved] as const;
       } catch {
-        return [signal.signalKey, { matched: false }] as const;
+        return [buildResolveKey(signal.url), { matched: false }] as const;
       }
     });
 
+    const resolvedByKey = new Map(results);
     return new Map(
-      results.map(([signalKey, resolved]) => [
-        signalKey,
-        {
-          ...(resolved.matched && resolved.itemId ? { itemId: resolved.itemId } : {}),
-          ...(resolved.matched && resolved.eventId ? { eventId: resolved.eventId } : {}),
-        },
-      ]),
+      signals.map((signal) => {
+        const resolveKey = buildResolveKey(signal.url);
+        const resolved = resolvedByKey.get(resolveKey) ?? { matched: false };
+        return [
+          signal.signalKey,
+          {
+            ...(resolved.matched && resolved.itemId ? { itemId: resolved.itemId } : {}),
+            ...(resolved.matched && resolved.eventId ? { eventId: resolved.eventId } : {}),
+          },
+        ] as const;
+      }),
     );
   }
 

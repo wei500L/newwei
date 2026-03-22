@@ -1,6 +1,20 @@
-import { NewsnowHottestAnalysisService } from './newsnow-hottest-analysis.service';
 import { NewsnowDataState } from './news-aggregator.types';
+import { NewsnowHottestAnalysisService } from './newsnow-hottest-analysis.service';
 import { NewsnowHottestAnalysisEmptyReason } from './newsnow-hottest-analysis.types';
+
+jest.mock(
+  '@modular/vector-client',
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -19,7 +33,7 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 function createSourceResponse(
-  items: Array<{ id: string; title: string; url: string; info?: string }>,
+  items: { id: string; title: string; url: string; info?: string }[],
   options?: { updatedTime?: string },
 ) {
   return {
@@ -129,6 +143,68 @@ describe('NewsnowHottestAnalysisService', () => {
     expect(itemsService.create).not.toHaveBeenCalled();
     expect(result.bySource.thepaper?.['1']?.bridgeEligible).toBe(true);
     expect(result.bySource.thepaper?.['1']?.bridgeStatus).toBe('eligible');
+  });
+
+  it('deduplicates resolveByUrl calls for repeated normalized URLs', async () => {
+    const cache = cacheFactory();
+    cache.get.mockResolvedValue(null);
+    cache.getMany.mockResolvedValue([]);
+    cache.set.mockResolvedValue(undefined);
+    cache.withLock.mockImplementation(
+      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) => await runner(),
+    );
+
+    const aggregator = aggregatorFactory();
+    aggregator.getMetadata.mockReturnValue({
+      columns: { hottest: { sources: ['source-a', 'source-b'] } },
+      sources: {
+        'source-a': { name: 'source-a', home: 'https://source-a.example.com' },
+        'source-b': { name: 'source-b', home: 'https://source-b.example.com' },
+      },
+    });
+    aggregator.fetchSource.mockImplementation(async (sourceId: string) => {
+      if (sourceId === 'source-a') {
+        return createSourceResponse([
+          {
+            id: 'a-1',
+            title: 'Shared story A',
+            url: 'https://example.com/shared-story/',
+            info: '1000',
+          },
+        ]);
+      }
+      return createSourceResponse([
+        {
+          id: 'b-1',
+          title: 'Shared story B',
+          url: 'https://example.com/shared-story#section',
+          info: '900',
+        },
+      ]);
+    });
+    aggregator.resolveByUrl.mockResolvedValue({ matched: false });
+
+    const liteLlm = liteLlmFactory();
+    liteLlm.acompletion.mockRejectedValue(new Error('llm disabled'));
+
+    const itemsService = itemsServiceFactory();
+    const domesticOpinionIndex = domesticOpinionIndexFactory();
+
+    const service = new NewsnowHottestAnalysisService(
+      cache as never,
+      aggregator as never,
+      liteLlm as never,
+      itemsService as never,
+      domesticOpinionIndex as never,
+    );
+
+    await service.getHottestAnalysis({
+      orgId: 'org-1',
+      forceRefresh: true,
+    });
+
+    expect(aggregator.resolveByUrl).toHaveBeenCalledTimes(1);
+    expect(aggregator.resolveByUrl).toHaveBeenCalledWith('https://example.com/shared-story/');
   });
 
   it('waits for another in-flight refresh to populate cache instead of rebuilding in parallel', async () => {

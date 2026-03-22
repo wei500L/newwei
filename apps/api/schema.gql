@@ -1592,6 +1592,7 @@ type NewsDedupeScopedThresholdModel {
 type NewsDedupeSettingsModel {
   defaultThreshold: Float!
   llmJudgeCandidateChars: Int!
+  llmJudgeConcurrency: Int!
   llmJudgeInstructions: String
   llmJudgeMaxComparisons: Int!
   llmJudgeModel: String
@@ -2551,6 +2552,7 @@ input UpdateNewsClassificationSettingsInput {
 input UpdateNewsDedupeSettingsInput {
   defaultThreshold: Float!
   llmJudgeCandidateChars: Int
+  llmJudgeConcurrency: Int
   llmJudgeInstructions: String
   llmJudgeMaxComparisons: Int
   llmJudgeModel: String

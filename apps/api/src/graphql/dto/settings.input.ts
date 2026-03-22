@@ -706,6 +706,12 @@ export class UpdateNewsDedupeSettingsInput {
   @Field(() => Int, { nullable: true })
   @IsOptional()
   @Min(1)
+  @Max(8)
+  llmJudgeConcurrency?: number | null;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @Min(1)
   @Max(30)
   llmJudgeMaxComparisons?: number | null;
 

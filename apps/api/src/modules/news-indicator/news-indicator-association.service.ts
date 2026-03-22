@@ -1,6 +1,11 @@
 import { createLogger } from "@modular/utils";
 import { Injectable } from "@nestjs/common";
-import { NewsIndicatorFeatureMetric, NewsIndicatorScopeType } from "@prisma/client";
+import {
+  NewsIndicatorBacktestStatus,
+  NewsIndicatorFeatureMetric,
+  NewsIndicatorScopeType,
+  Prisma
+} from "@prisma/client";
 
 import { toPrismaJsonValue } from "../../common/prisma-json";
 import { PrismaService } from "../config/prisma.service";
@@ -22,6 +27,12 @@ const logger = createLogger({ name: "news-indicator-association" });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_POINTS_PER_INDICATOR = 50_000;
+const ASSOCIATION_WRITE_CHUNK_SIZE = 100;
+
+interface PendingAssociationWrite {
+  upsertArgs: Prisma.NewsIndicatorAssociationUpsertArgs;
+  backtestData: Omit<Prisma.NewsIndicatorAssociationBacktestRunCreateManyInput, "associationId">;
+}
 
 function resolveFeatureValue(
   row: { totalDocs: number; avgScore: number; negativeRatio: number },
@@ -36,6 +47,14 @@ function resolveFeatureValue(
     default:
       return row.totalDocs;
   }
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 @Injectable()
@@ -134,13 +153,18 @@ export class NewsIndicatorAssociationService {
       this.loadTopTopicKeys(orgId, analyzedStartAt, settings.topTopics)
     ]);
 
-    const [entitySeries, topicSeries] = await Promise.all([
+    const [entitySeries, topicSeries, indicatorPointsByItem] = await Promise.all([
       topEntities.length > 0
         ? this.loadEntityFeatureSeries(orgId, analyzedStartAt, topEntities)
         : Promise.resolve(new Map<string, Map<NewsIndicatorFeatureMetric, DailySeries>>()),
       topTopics.length > 0
         ? this.loadTopicFeatureSeries(orgId, analyzedStartAt, topTopics)
-        : Promise.resolve(new Map<string, Map<NewsIndicatorFeatureMetric, DailySeries>>())
+        : Promise.resolve(new Map<string, Map<NewsIndicatorFeatureMetric, DailySeries>>()),
+      this.loadIndicatorPointsByItem(
+        indicators.map((indicator) => indicator.id),
+        analyzedStartAt,
+        analyzedEndAt
+      )
     ]);
 
     const metricsToEvaluate: NewsIndicatorFeatureMetric[] = [
@@ -151,23 +175,12 @@ export class NewsIndicatorAssociationService {
 
     let associationsUpserted = 0;
     let backtestsCreated = 0;
+    const evaluatedAt = new Date();
+    const backtestWindowStart = new Date(holdoutStartDayMs);
+    const pendingWrites: PendingAssociationWrite[] = [];
 
     for (const indicator of indicators) {
-      const rawPoints = await this.prisma.economicDataPoint.findMany({
-        where: {
-          itemId: indicator.id,
-          recordedAt: { gte: analyzedStartAt, lte: analyzedEndAt }
-        },
-        select: { id: true, recordedAt: true, value: true },
-        orderBy: [{ recordedAt: "asc" }, { id: "asc" }],
-        take: MAX_POINTS_PER_INDICATOR
-      });
-
-      const points: NumericSeriesPoint[] = rawPoints.map((point) => ({
-        id: point.id,
-        recordedAt: point.recordedAt,
-        value: Number(point.value)
-      }));
+      const points = indicatorPointsByItem.get(indicator.id) ?? [];
 
       const dailyValues = buildDailyEconomicValues(points);
       const targetReturns = buildDailyReturns(dailyValues);
@@ -253,48 +266,6 @@ export class NewsIndicatorAssociationService {
           holdoutDays
         };
 
-        const association = await this.prisma.newsIndicatorAssociation.upsert({
-          where: {
-            orgId_scopeType_scopeKey_scopeKeyType_featureMetric_indicatorItemId: {
-              orgId,
-              scopeType: candidate.scopeType,
-              scopeKey: candidate.scopeKey,
-              scopeKeyType: candidate.scopeKeyType,
-              featureMetric: candidate.metric,
-              indicatorItemId: indicator.id
-            }
-          },
-          update: {
-            windowDays: settings.windowDays,
-            lagDays: best.lagDays,
-            correlation: best.correlation,
-            pValue: best.pValue,
-            sampleSize: best.sampleSize,
-            analyzedStartAt,
-            analyzedEndAt,
-            lastEvaluatedAt: new Date(),
-            metadata: toPrismaJsonValue(metadata)
-          },
-          create: {
-            orgId,
-            scopeType: candidate.scopeType,
-            scopeKey: candidate.scopeKey,
-            scopeKeyType: candidate.scopeKeyType,
-            featureMetric: candidate.metric,
-            indicatorItemId: indicator.id,
-            windowDays: settings.windowDays,
-            lagDays: best.lagDays,
-            correlation: best.correlation,
-            pValue: best.pValue,
-            sampleSize: best.sampleSize,
-            analyzedStartAt,
-            analyzedEndAt,
-            lastEvaluatedAt: new Date(),
-            metadata: toPrismaJsonValue(metadata)
-          },
-          select: { id: true }
-        });
-        associationsUpserted += 1;
         const backtestConfig: BacktestConfig = {
           triggerZScore: settings.backtestTriggerZScore,
           baselineDays: settings.backtestBaselineDays,
@@ -304,19 +275,76 @@ export class NewsIndicatorAssociationService {
         };
         const metrics = runBacktest(candidate.series, targetReturns, best, backtestConfig);
 
-        await this.prisma.newsIndicatorAssociationBacktestRun.create({
-          data: {
+        pendingWrites.push({
+          upsertArgs: {
+            where: {
+              orgId_scopeType_scopeKey_scopeKeyType_featureMetric_indicatorItemId: {
+                orgId,
+                scopeType: candidate.scopeType,
+                scopeKey: candidate.scopeKey,
+                scopeKeyType: candidate.scopeKeyType,
+                featureMetric: candidate.metric,
+                indicatorItemId: indicator.id
+              }
+            },
+            update: {
+              windowDays: settings.windowDays,
+              lagDays: best.lagDays,
+              correlation: best.correlation,
+              pValue: best.pValue,
+              sampleSize: best.sampleSize,
+              analyzedStartAt,
+              analyzedEndAt,
+              lastEvaluatedAt: evaluatedAt,
+              metadata: toPrismaJsonValue(metadata)
+            },
+            create: {
+              orgId,
+              scopeType: candidate.scopeType,
+              scopeKey: candidate.scopeKey,
+              scopeKeyType: candidate.scopeKeyType,
+              featureMetric: candidate.metric,
+              indicatorItemId: indicator.id,
+              windowDays: settings.windowDays,
+              lagDays: best.lagDays,
+              correlation: best.correlation,
+              pValue: best.pValue,
+              sampleSize: best.sampleSize,
+              analyzedStartAt,
+              analyzedEndAt,
+              lastEvaluatedAt: evaluatedAt,
+              metadata: toPrismaJsonValue(metadata)
+            },
+            select: { id: true }
+          },
+          backtestData: {
             orgId,
-            associationId: association.id,
-            status: "completed",
-            windowStart: new Date(holdoutStartDayMs),
+            status: NewsIndicatorBacktestStatus.completed,
+            windowStart: backtestWindowStart,
             windowEnd: analyzedEndAt,
             config: toPrismaJsonValue(backtestConfig),
             metrics: toPrismaJsonValue(metrics)
           }
         });
-        backtestsCreated += 1;
       }
+    }
+
+    for (const chunk of chunkArray(pendingWrites, ASSOCIATION_WRITE_CHUNK_SIZE)) {
+      const associations = await this.prisma.$transaction(
+        chunk.map((write) => this.prisma.newsIndicatorAssociation.upsert(write.upsertArgs))
+      );
+      if (associations.length === 0) {
+        continue;
+      }
+
+      associationsUpserted += associations.length;
+      await this.prisma.newsIndicatorAssociationBacktestRun.createMany({
+        data: associations.map((association, index) => ({
+          associationId: association.id,
+          ...chunk[index]!.backtestData
+        }))
+      });
+      backtestsCreated += associations.length;
     }
 
     logger.info(
@@ -459,5 +487,46 @@ export class NewsIndicatorAssociationService {
     }
 
     return series;
+  }
+
+  private async loadIndicatorPointsByItem(itemIds: string[], startAt: Date, endAt: Date) {
+    const pointsByItem = new Map<string, NumericSeriesPoint[]>();
+    if (itemIds.length === 0) {
+      return pointsByItem;
+    }
+
+    const rows = await this.prisma.economicDataPoint.findMany({
+      where: {
+        itemId: { in: itemIds },
+        recordedAt: { gte: startAt, lte: endAt }
+      },
+      select: { id: true, itemId: true, recordedAt: true, value: true },
+      orderBy: [{ itemId: "asc" }, { recordedAt: "asc" }, { id: "asc" }]
+    });
+
+    for (const row of rows) {
+      const existing = pointsByItem.get(row.itemId);
+      if (existing) {
+        if (existing.length >= MAX_POINTS_PER_INDICATOR) {
+          continue;
+        }
+        existing.push({
+          id: row.id,
+          recordedAt: row.recordedAt,
+          value: Number(row.value)
+        });
+        continue;
+      }
+
+      pointsByItem.set(row.itemId, [
+        {
+          id: row.id,
+          recordedAt: row.recordedAt,
+          value: Number(row.value)
+        }
+      ]);
+    }
+
+    return pointsByItem;
   }
 }

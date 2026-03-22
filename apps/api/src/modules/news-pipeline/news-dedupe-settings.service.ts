@@ -26,6 +26,7 @@ export interface NewsDedupeSettings {
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
+  llmJudgeConcurrency: number;
   llmJudgeMaxComparisons: number;
   llmJudgeCandidateChars: number;
   llmJudgePromptVersion: string;
@@ -39,6 +40,7 @@ export interface NewsDedupeSettingsInput {
   useEmbeddings: boolean;
   llmJudgeInstructions: string | null;
   llmJudgeModel: string | null;
+  llmJudgeConcurrency: number | null;
   llmJudgeMaxComparisons: number | null;
   llmJudgeCandidateChars: number | null;
   llmJudgePromptVersion: string | null;
@@ -58,6 +60,9 @@ const MIN_THRESHOLD = 0;
 const MAX_THRESHOLD = 1;
 const MAX_LLM_JUDGE_INSTRUCTIONS_LENGTH = 2_000;
 const MAX_LLM_JUDGE_MODEL_LENGTH = 120;
+const DEFAULT_LLM_JUDGE_CONCURRENCY = 4;
+const MIN_LLM_JUDGE_CONCURRENCY = 1;
+const MAX_LLM_JUDGE_CONCURRENCY = 8;
 const DEFAULT_LLM_JUDGE_MAX_COMPARISONS = 12;
 const MIN_LLM_JUDGE_MAX_COMPARISONS = 1;
 const MAX_LLM_JUDGE_MAX_COMPARISONS = 30;
@@ -147,6 +152,7 @@ export class NewsDedupeSettingsService {
             useEmbeddings: normalized.useEmbeddings,
             llmJudgeInstructionsConfigured: Boolean(normalized.llmJudgeInstructions),
             llmJudgeModelConfigured: Boolean(normalized.llmJudgeModel),
+            llmJudgeConcurrency: normalized.llmJudgeConcurrency,
             llmJudgeMaxComparisons: normalized.llmJudgeMaxComparisons,
             llmJudgeCandidateChars: normalized.llmJudgeCandidateChars,
             llmJudgePromptVersion: normalized.llmJudgePromptVersion,
@@ -234,6 +240,7 @@ export class NewsDedupeSettingsService {
       useEmbeddings: true,
       llmJudgeInstructions: null,
       llmJudgeModel: null,
+      llmJudgeConcurrency: DEFAULT_LLM_JUDGE_CONCURRENCY,
       llmJudgeMaxComparisons: DEFAULT_LLM_JUDGE_MAX_COMPARISONS,
       llmJudgeCandidateChars: DEFAULT_LLM_JUDGE_CANDIDATE_CHARS,
       llmJudgePromptVersion: DEFAULT_NEWS_DEDUPE_PROMPT_VERSION,
@@ -262,6 +269,12 @@ export class NewsDedupeSettingsService {
     );
     const llmJudgeModel = this.cleanLlmJudgeModel(
       (value as { llmJudgeModel?: unknown }).llmJudgeModel,
+    );
+    const llmJudgeConcurrency = this.clampInt(
+      (value as { llmJudgeConcurrency?: unknown }).llmJudgeConcurrency,
+      MIN_LLM_JUDGE_CONCURRENCY,
+      MAX_LLM_JUDGE_CONCURRENCY,
+      defaults.llmJudgeConcurrency,
     );
     const llmJudgeMaxComparisons = this.clampInt(
       (value as { llmJudgeMaxComparisons?: unknown }).llmJudgeMaxComparisons,
@@ -370,6 +383,7 @@ export class NewsDedupeSettingsService {
       useEmbeddings,
       llmJudgeInstructions,
       llmJudgeModel,
+      llmJudgeConcurrency,
       llmJudgeMaxComparisons,
       llmJudgeCandidateChars,
       llmJudgePromptVersion,
