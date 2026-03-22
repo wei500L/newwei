@@ -31,6 +31,7 @@ import {
 } from "../hooks/use-newsnow-personalized-order";
 import { useSharedNowTick } from "../hooks/use-shared-now-tick";
 import {
+  type CrossSourceDedupCache,
   buildCrossSourceDedupResult,
   reorderNewsnowItems,
 } from "../lib/newsnow-dnd";
@@ -72,6 +73,7 @@ function NewsnowDndGridContent({
   const [scrollMargin, setScrollMargin] = useState(0);
   const isMobile = useIsMobile();
   const nowMs = useSharedNowTick();
+  const dedupeCacheRef = useRef<CrossSourceDedupCache | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -230,14 +232,32 @@ function NewsnowDndGridContent({
     },
     shallow,
   );
+  const scopedSourceSnapshotHashes = useNewsnowStore(
+    (state) => {
+      const next: Record<string, string> = {};
+      for (const sourceId of effectiveDisplayItems) {
+        const hash = state.sourceSnapshotHashes[sourceId];
+        if (hash) {
+          next[sourceId] = hash;
+        }
+      }
+      return next;
+    },
+    shallow,
+  );
 
   const dedupeResult = useMemo(
-    () =>
-      buildCrossSourceDedupResult({
+    () => {
+      const nextCache = buildCrossSourceDedupResult({
         sourceOrder: effectiveDisplayItems,
         snapshots: scopedSourceSnapshots,
-      }),
-    [effectiveDisplayItems, scopedSourceSnapshots],
+        snapshotHashes: scopedSourceSnapshotHashes,
+        previousCache: dedupeCacheRef.current,
+      });
+      dedupeCacheRef.current = nextCache;
+      return nextCache;
+    },
+    [effectiveDisplayItems, scopedSourceSnapshotHashes, scopedSourceSnapshots],
   );
   const columnCount = useMemo(() => {
     if (isMobile) {

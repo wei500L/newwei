@@ -904,11 +904,104 @@ describe("ItemsService.createFromCrawlResult", () => {
     expect(prisma.itemMeta.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.itemMeta.deleteMany).toHaveBeenCalledWith({
       where: {
-        id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+        id: { in: [prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id] },
         mongoRef: ""
       }
     });
     expect(mockRawItemInsertMany).not.toHaveBeenCalled();
+  });
+
+  it("batches cleanup of newly created item metas when multiple raw validations fail", async () => {
+    const itemMetaFindMany = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async () => {
+        const createdRows = prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data ?? [];
+        return createdRows.map((row: { id: string; externalId: string; name: string }) => ({
+          id: row.id,
+          orgId: "org-1",
+          externalId: row.externalId,
+          name: row.name,
+          status: ItemStatus.Pending,
+          mongoRef: "",
+          createdAt: new Date("2024-01-02T00:00:00.000Z"),
+          updatedAt: new Date("2024-01-02T00:00:00.000Z")
+        }));
+      });
+    const prisma = {
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "crawl-result-1",
+            taskId: "crawl-task-1",
+            sourceUrl: "https://example.com/story-1",
+            fetchedAt: new Date("2024-01-01T00:00:00.000Z"),
+            contentHash: "hash-1",
+            metadata: {},
+            task: {
+              id: "crawl-task-1",
+              displayName: "Example",
+              targetUrl: "https://example.com",
+              keywords: ["markets"],
+              config: null
+            }
+          },
+          {
+            id: "crawl-result-2",
+            taskId: "crawl-task-1",
+            sourceUrl: "https://example.com/story-2",
+            fetchedAt: new Date("2024-01-01T01:00:00.000Z"),
+            contentHash: "hash-2",
+            metadata: {},
+            task: {
+              id: "crawl-task-1",
+              displayName: "Example",
+              targetUrl: "https://example.com",
+              keywords: ["markets"],
+              config: null
+            }
+          }
+        ])
+      },
+      itemMeta: {
+        findMany: itemMetaFindMany,
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 })
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue(undefined)
+      }
+    };
+
+    mockRawItemValidate.mockRejectedValue(new Error("invalid raw crawl item"));
+
+    const service = new ItemsService(
+      prisma as any,
+      { enqueueItem: jest.fn().mockResolvedValue(null) } as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const results = await service.createFromCrawlResultsBatch("org-1", "user-1", {
+      crawlResultIds: ["crawl-result-1", "crawl-result-2"]
+    });
+
+    expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    expect(prisma.itemMeta.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.itemMeta.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: {
+          in: expect.arrayContaining([
+            prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+            prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[1]?.id
+          ])
+        },
+        mongoRef: ""
+      }
+    });
   });
 
   it("cleans up a newly created item meta when raw insertion does not persist", async () => {
@@ -982,7 +1075,7 @@ describe("ItemsService.createFromCrawlResult", () => {
     expect(mockRawItemInsertMany).toHaveBeenCalledTimes(1);
     expect(prisma.itemMeta.deleteMany).toHaveBeenCalledWith({
       where: {
-        id: prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id,
+        id: { in: [prisma.itemMeta.createMany.mock.calls[0]?.[0]?.data?.[0]?.id] },
         mongoRef: ""
       }
     });

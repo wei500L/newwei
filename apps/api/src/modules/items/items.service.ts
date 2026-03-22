@@ -1235,12 +1235,12 @@ export class ItemsService {
         : existingMetas;
     const metaByExternalId = new Map(resolvedMetas.map((meta) => [meta.externalId, meta]));
 
-    const metasWithMongoRef: Array<{ prepared: PreparedCrawlResultItemIngestInput; meta: ItemMeta }> = [];
-    const metasMissingMongoRef: Array<{
+    const metasWithMongoRef: { prepared: PreparedCrawlResultItemIngestInput; meta: ItemMeta }[] = [];
+    const metasMissingMongoRef: {
       createdByThisProcess: boolean;
       meta: ItemMeta;
       prepared: PreparedCrawlResultItemIngestInput;
-    }> = [];
+    }[] = [];
 
     for (const prepared of preparedInputs) {
       const meta = metaByExternalId.get(prepared.externalId);
@@ -1317,10 +1317,11 @@ export class ItemsService {
         result.status === "fulfilled"
       )
       .map((result) => result.value);
+    const cleanupItemMetaIds = new Set<string>();
     for (const result of rawValidationResults) {
       if (result.status === "rejected") {
         if (result.item.createdByThisProcess) {
-          await this.cleanupEmptyCrawlResultItemMeta(result.item.meta.id);
+          cleanupItemMetaIds.add(result.item.meta.id);
         }
         resultsById.set(result.item.prepared.crawlResult.id, {
           crawlResultId: result.item.prepared.crawlResult.id,
@@ -1414,7 +1415,7 @@ export class ItemsService {
           });
         } else {
           if (result.item.createdByThisProcess) {
-            await this.cleanupEmptyCrawlResultItemMeta(result.item.meta.id);
+            cleanupItemMetaIds.add(result.item.meta.id);
           }
           resultsById.set(crawlResultId, {
             crawlResultId,
@@ -1425,6 +1426,8 @@ export class ItemsService {
       }
     }
 
+    await this.cleanupEmptyCrawlResultItemMetas(Array.from(cleanupItemMetaIds));
+
     return requestedIds.map((crawlResultId) => (
       resultsById.get(crawlResultId) ?? {
         crawlResultId,
@@ -1434,11 +1437,22 @@ export class ItemsService {
     ));
   }
 
-  private async cleanupEmptyCrawlResultItemMeta(itemMetaId: string) {
+  private async cleanupEmptyCrawlResultItemMetas(itemMetaIds: string[]) {
+    const uniqueIds = Array.from(
+      new Set(
+        itemMetaIds.filter((itemMetaId): itemMetaId is string => (
+          typeof itemMetaId === "string" && itemMetaId.trim().length > 0
+        ))
+      )
+    );
+    if (uniqueIds.length === 0) {
+      return;
+    }
+
     try {
       await this.prisma.itemMeta.deleteMany({
         where: {
-          id: itemMetaId,
+          id: { in: uniqueIds },
           mongoRef: ""
         }
       });
@@ -1446,9 +1460,9 @@ export class ItemsService {
       this.logger.warn(
         {
           err: error,
-          itemMetaId
+          itemMetaIds: uniqueIds
         },
-        "Failed to cleanup empty crawl-result item meta after rejected ingest"
+        "Failed to cleanup empty crawl-result item metas after rejected ingest"
       );
     }
   }

@@ -1610,10 +1610,8 @@ export function WarMap({
     [queryZoom],
   );
 
-  const deckData = useMemo(() => {
+  const staticDeckData = useMemo(() => {
     const layersData = layersQuery.data?.layers ?? {};
-    const events = clusteredEvents.singles;
-    const newsMarkers = clusteredNews.singles;
 
     const staticLayers: any[] = [];
 
@@ -2372,13 +2370,70 @@ export function WarMap({
       }
     }
 
+    return {
+      deckLayers: [...staticLayers, ...aisLayers],
+      staticVisibleCount: staticLayers.length + aisLayers.length,
+      aisFeatureCount,
+    };
+  }, [
+    layerVisibility,
+    layersQuery.data?.layers,
+    localClusterBbox,
+    queryZoom,
+    t,
+    aisMode,
+    flightMode,
+    translateTarget,
+    zoomToLayerCluster,
+  ]);
+
+  const monitorDeckLayers = useMemo(() => {
+    if (!layerVisibility.monitors || monitorPoints.length === 0) {
+      return [];
+    }
+
+    return [
+      new ScatterplotLayer({
+        id: "wm-monitors",
+        data: monitorPoints,
+        pickable: true,
+        getPosition: (point: DeckPoint) => [point.lng, point.lat],
+        getFillColor: (point: DeckPoint) => point.color,
+        getRadius: (point: DeckPoint) => point.radius,
+        radiusMinPixels: 5,
+        radiusMaxPixels: 24,
+        onClick: (info: { object?: DeckPoint }) => {
+          const object = info.object;
+          if (!object) {
+            return;
+          }
+          const query = (object.query ?? object.label).trim();
+          if (!query) {
+            toast.warning(
+              t("dashboard.charts.warMap.missingMonitorQuery", {
+                defaultValue: "No keywords available for this monitor.",
+              }),
+            );
+            return;
+          }
+          window.open(
+            `/search?q=${encodeURIComponent(query)}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
+        },
+      }),
+    ];
+  }, [layerVisibility.monitors, monitorPoints, t]);
+
+  const eventDeckData = useMemo(() => {
     const eventPoints: DeckPoint[] = [];
-    for (const event of events) {
+    for (const event of clusteredEvents.singles) {
       const score =
         typeof event.derivedScore === "number"
           ? event.derivedScore
           : (event.value ?? 0);
-      const point: DeckPoint = {
+      eventPoints.push({
         id: event.id,
         lat: event.lat,
         lng: event.lng,
@@ -2391,8 +2446,7 @@ export function WarMap({
         alertCount: event.alertCount,
         newsCount: event.newsCount,
         latestAt: event.latestAt,
-      };
-      eventPoints.push(point);
+      });
     }
 
     const eventClusters: DeckPoint[] = [];
@@ -2418,93 +2472,7 @@ export function WarMap({
       });
     }
 
-    const newsPoints: DeckPoint[] = [];
-    for (const marker of newsMarkers) {
-      const baseColor =
-        marker.geoSource === "fallback-country" ? [8, 145, 178] : [5, 150, 105];
-      const [baseR = 8, baseG = 145, baseB = 178] = baseColor;
-      const point: DeckPoint = {
-        id: marker.id,
-        lat: marker.lat,
-        lng: marker.lng,
-        label: marker.label,
-        kind: "news",
-        selectionKey: toSingleSelectionKey("news", marker.id),
-        color: [
-          baseR,
-          baseG,
-          baseB,
-          marker.geoSource === "fallback-country" ? 110 : 200,
-        ],
-        radius: 5,
-        url: marker.url ?? null,
-        publishedAt: marker.publishedAt,
-        ingestedAt: marker.ingestedAt,
-        locationLabel: marker.locationLabel,
-        geoSource: marker.geoSource,
-      };
-      newsPoints.push(point);
-    }
-
-    const newsClusters: DeckPoint[] = [];
-    for (const cluster of clusteredNews.clusters) {
-      const selectionKey = toClusterSelectionKey("news", cluster.memberKey);
-      newsClusters.push({
-        id: selectionKey,
-        lat: cluster.lat,
-        lng: cluster.lng,
-        label: t("dashboard.charts.warMap.panel.newsTitle", {
-          defaultValue: "Nearby news",
-        }),
-        kind: "news-cluster",
-        color: [21, 128, 61, 176],
-        radius: clusterRadius(cluster.count),
-        isCluster: true,
-        clusterCount: cluster.count,
-        selectionKey,
-        description: t("dashboard.charts.warMap.tooltip.clusterNews", {
-          defaultValue: "{{count}} nearby news items. Click to inspect.",
-          count: cluster.count,
-        }),
-      });
-    }
-
-    const deckLayers: any[] = [...staticLayers, ...aisLayers];
-
-    if (layerVisibility.monitors && monitorPoints.length > 0) {
-      deckLayers.push(
-        new ScatterplotLayer({
-          id: "wm-monitors",
-          data: monitorPoints,
-          pickable: true,
-          getPosition: (point: DeckPoint) => [point.lng, point.lat],
-          getFillColor: (point: DeckPoint) => point.color,
-          getRadius: (point: DeckPoint) => point.radius,
-          radiusMinPixels: 5,
-          radiusMaxPixels: 24,
-          onClick: (info: { object?: DeckPoint }) => {
-            const object = info.object;
-            if (!object) {
-              return;
-            }
-            const query = (object.query ?? object.label).trim();
-            if (!query) {
-              toast.warning(
-                t("dashboard.charts.warMap.missingMonitorQuery", {
-                  defaultValue: "No keywords available for this monitor.",
-                }),
-              );
-              return;
-            }
-            window.open(
-              `/search?q=${encodeURIComponent(query)}`,
-              "_blank",
-              "noopener,noreferrer",
-            );
-          },
-        }),
-      );
-    }
+    const deckLayers: any[] = [];
 
     if (eventClusters.length > 0) {
       deckLayers.push(
@@ -2550,6 +2518,66 @@ export function WarMap({
       );
     }
 
+    return {
+      deckLayers,
+      eventsCount: rawEvents.length,
+      eventClustersCount: eventClusters.length,
+    };
+  }, [clusteredEvents.clusters, clusteredEvents.singles, rawEvents.length, t]);
+
+  const newsDeckData = useMemo(() => {
+    const newsPoints: DeckPoint[] = [];
+    for (const marker of clusteredNews.singles) {
+      const baseColor =
+        marker.geoSource === "fallback-country" ? [8, 145, 178] : [5, 150, 105];
+      const [baseR = 8, baseG = 145, baseB = 178] = baseColor;
+      newsPoints.push({
+        id: marker.id,
+        lat: marker.lat,
+        lng: marker.lng,
+        label: marker.label,
+        kind: "news",
+        selectionKey: toSingleSelectionKey("news", marker.id),
+        color: [
+          baseR,
+          baseG,
+          baseB,
+          marker.geoSource === "fallback-country" ? 110 : 200,
+        ],
+        radius: 5,
+        url: marker.url ?? null,
+        publishedAt: marker.publishedAt,
+        ingestedAt: marker.ingestedAt,
+        locationLabel: marker.locationLabel,
+        geoSource: marker.geoSource,
+      });
+    }
+
+    const newsClusters: DeckPoint[] = [];
+    for (const cluster of clusteredNews.clusters) {
+      const selectionKey = toClusterSelectionKey("news", cluster.memberKey);
+      newsClusters.push({
+        id: selectionKey,
+        lat: cluster.lat,
+        lng: cluster.lng,
+        label: t("dashboard.charts.warMap.panel.newsTitle", {
+          defaultValue: "Nearby news",
+        }),
+        kind: "news-cluster",
+        color: [21, 128, 61, 176],
+        radius: clusterRadius(cluster.count),
+        isCluster: true,
+        clusterCount: cluster.count,
+        selectionKey,
+        description: t("dashboard.charts.warMap.tooltip.clusterNews", {
+          defaultValue: "{{count}} nearby news items. Click to inspect.",
+          count: cluster.count,
+        }),
+      });
+    }
+
+    const deckLayers: any[] = [];
+
     if (newsClusters.length > 0) {
       deckLayers.push(
         new ScatterplotLayer({
@@ -2585,10 +2613,7 @@ export function WarMap({
           radiusMaxPixels: 18,
           onClick: (info: { object?: DeckPoint }) => {
             const object = info.object;
-            if (!object || object.isCluster) {
-              return;
-            }
-            if (!object.selectionKey) {
+            if (!object || object.isCluster || !object.selectionKey) {
               return;
             }
             setSelectedInspectorKey(object.selectionKey);
@@ -2599,31 +2624,28 @@ export function WarMap({
 
     return {
       deckLayers,
-      eventsCount: rawEvents.length,
-      eventClustersCount: eventClusters.length,
       newsCount: rawNewsMarkers.length,
       newsClustersCount: newsClusters.length,
-      staticVisibleCount: staticLayers.length + aisLayers.length,
-      aisFeatureCount,
     };
-  }, [
-    clusteredEvents.clusters,
-    clusteredEvents.singles,
-    layerVisibility,
-    layersQuery.data?.layers,
-    localClusterBbox,
-    monitorPoints,
-    clusteredNews.clusters,
-    clusteredNews.singles,
-    rawEvents.length,
-    rawNewsMarkers.length,
-    queryZoom,
-    t,
-    aisMode,
-    flightMode,
-    translateTarget,
-    zoomToLayerCluster,
-  ]);
+  }, [clusteredNews.clusters, clusteredNews.singles, rawNewsMarkers.length, t]);
+
+  const deckData = useMemo(
+    () => ({
+      deckLayers: [
+        ...staticDeckData.deckLayers,
+        ...monitorDeckLayers,
+        ...eventDeckData.deckLayers,
+        ...newsDeckData.deckLayers,
+      ],
+      eventsCount: eventDeckData.eventsCount,
+      eventClustersCount: eventDeckData.eventClustersCount,
+      newsCount: newsDeckData.newsCount,
+      newsClustersCount: newsDeckData.newsClustersCount,
+      staticVisibleCount: staticDeckData.staticVisibleCount,
+      aisFeatureCount: staticDeckData.aisFeatureCount,
+    }),
+    [eventDeckData, monitorDeckLayers, newsDeckData, staticDeckData],
+  );
 
   const tooltipGetter = useMemo(
     () =>

@@ -1,13 +1,9 @@
-import { NotificationPresentationKind } from "@modular/utils";
-import { NotificationType } from "@prisma/client";
-import type { PubSubEngine } from "graphql-subscriptions";
-
 jest.mock("@modular/mongo", () => ({
   MapTransportObjectStateModel: {
     find: jest.fn(),
   },
   MapTransportTrackPointModel: {
-    find: jest.fn(),
+    aggregate: jest.fn(),
   },
   AnalysisResultModel: {},
 }));
@@ -17,6 +13,9 @@ import {
   MapTransportObjectStateModel,
   MapTransportTrackPointModel,
 } from "@modular/mongo";
+import { NotificationPresentationKind } from "@modular/utils";
+import { NotificationType } from "@prisma/client";
+import type { PubSubEngine } from "graphql-subscriptions";
 import type { EnvService } from "../config/config.service";
 import type {
   LiteLlmMessage,
@@ -46,8 +45,8 @@ jest.mock("@modular/utils", () => {
 
 const mockMapTransportObjectStateFind =
   MapTransportObjectStateModel.find as jest.Mock;
-const mockMapTransportTrackPointFind =
-  MapTransportTrackPointModel.find as jest.Mock;
+const mockMapTransportTrackPointAggregate =
+  MapTransportTrackPointModel.aggregate as jest.Mock;
 
 function createService(overrides?: {
   stream?: LiteLlmService["stream"];
@@ -184,10 +183,10 @@ describe("AnalysisService.notifyResult", () => {
 describe("AnalysisService.buildGeoTransportContext", () => {
   beforeEach(() => {
     mockMapTransportObjectStateFind.mockReset();
-    mockMapTransportTrackPointFind.mockReset();
+    mockMapTransportTrackPointAggregate.mockReset();
   });
 
-  it("loads windowed and fallback track points with per-object capped queries", async () => {
+  it("loads windowed and fallback track points with aggregated per-object batches", async () => {
     const states = [
       {
         objectKey: "air-1",
@@ -226,70 +225,56 @@ describe("AnalysisService.buildGeoTransportContext", () => {
         }),
       }),
     });
-    const sortArgs: Array<Record<string, number>> = [];
-    const limitArgs: number[] = [];
-    mockMapTransportTrackPointFind.mockImplementation((query: {
-      objectKey: string;
-      observedAt?: {
-        $gte: Date;
-        $lte: Date;
-      };
-    }) => ({
-      sort: jest.fn().mockImplementation((sortArg: Record<string, number>) => {
-        sortArgs.push(sortArg);
-        return {
-          limit: jest.fn().mockImplementation((limitArg: number) => {
-            limitArgs.push(limitArg);
-            const points =
-              query.objectKey === "air-1"
-                ? [
-                    {
-                      _id: { toString: () => "tp-window-1" },
-                      observedAt: new Date("2026-01-01T10:00:00.000Z"),
-                      lat: 11,
-                      lng: 21,
-                      heading: 100,
-                      course: 101,
-                      speed: 510,
-                      altitudeFt: 30500,
-                      geoCell: "cell-window",
-                    },
-                  ]
-                : query.observedAt
-                  ? []
-                  : [
-                      {
-                        _id: { toString: () => "tp-fallback-1" },
-                        observedAt: new Date("2025-12-31T23:00:00.000Z"),
-                        lat: 31,
-                        lng: 41,
-                        heading: null,
-                        course: 271,
-                        speed: 13,
-                        altitudeFt: null,
-                        geoCell: "cell-fallback",
-                      },
-                    ];
-            return {
-              lean: jest.fn().mockResolvedValue(points),
-            };
-          }),
-        };
-      }),
-    }));
+    mockMapTransportTrackPointAggregate
+      .mockResolvedValueOnce([
+        {
+          _id: "air-1",
+          points: [
+            {
+              _id: { toString: () => "tp-window-1" },
+              observedAt: new Date("2026-01-01T10:00:00.000Z"),
+              lat: 11,
+              lng: 21,
+              heading: 100,
+              course: 101,
+              speed: 510,
+              altitudeFt: 30500,
+              geoCell: "cell-window",
+            },
+          ],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          _id: "ship-1",
+          points: [
+            {
+              _id: { toString: () => "tp-fallback-1" },
+              observedAt: new Date("2025-12-31T23:00:00.000Z"),
+              lat: 31,
+              lng: 41,
+              heading: null,
+              course: 271,
+              speed: 13,
+              altitudeFt: null,
+              geoCell: "cell-fallback",
+            },
+          ],
+        },
+      ]);
 
     const { service } = createService();
     const buildGeoTransportContext = (
       service as unknown as {
         buildGeoTransportContext: (orgId: string, input: {
-          transportKinds: Array<"aircraft" | "vessel">;
+          transportKinds: ("aircraft" | "vessel")[];
           startDate: string;
           endDate: string;
           bbox?: [number, number, number, number];
           objectKeys?: string[];
         }) => Promise<{
           objectKeys: string[];
-          objects: Array<{ objectKey: string; trackPoints: Array<{ trackPointId: string }> }>;
+          objects: { objectKey: string; trackPoints: { trackPointId: string }[] }[];
         }>;
       }
     ).buildGeoTransportContext.bind(service);
@@ -300,35 +285,79 @@ describe("AnalysisService.buildGeoTransportContext", () => {
       endDate: "2026-01-02T23:59:59.999Z",
     });
 
-    expect(mockMapTransportTrackPointFind).toHaveBeenCalledTimes(3);
-    expect(mockMapTransportTrackPointFind.mock.calls.map((call) => call[0])).toEqual([
+    expect(mockMapTransportTrackPointAggregate).toHaveBeenCalledTimes(2);
+    expect(mockMapTransportTrackPointAggregate).toHaveBeenNthCalledWith(1, [
       {
-        orgId: "org-1",
-        objectKey: "air-1",
-        observedAt: {
-          $gte: new Date("2026-01-01T00:00:00.000Z"),
-          $lte: new Date("2026-01-02T23:59:59.999Z"),
+        $match: {
+          orgId: "org-1",
+          objectKey: { $in: ["air-1", "ship-1"] },
+          observedAt: {
+            $gte: new Date("2026-01-01T00:00:00.000Z"),
+            $lte: new Date("2026-01-02T23:59:59.999Z"),
+          },
         },
       },
       {
-        orgId: "org-1",
-        objectKey: "ship-1",
-        observedAt: {
-          $gte: new Date("2026-01-01T00:00:00.000Z"),
-          $lte: new Date("2026-01-02T23:59:59.999Z"),
+        $project: {
+          _id: 1,
+          objectKey: 1,
+          observedAt: 1,
+          lat: 1,
+          lng: 1,
+          heading: 1,
+          course: 1,
+          speed: 1,
+          altitudeFt: 1,
+          geoCell: 1,
+        },
+      },
+      { $sort: { objectKey: 1, observedAt: -1 } },
+      {
+        $group: {
+          _id: "$objectKey",
+          points: { $push: "$$ROOT" },
         },
       },
       {
-        orgId: "org-1",
-        objectKey: "ship-1",
+        $project: {
+          points: { $slice: ["$points", 30] },
+        },
       },
     ]);
-    expect(sortArgs).toEqual([
-      { observedAt: -1 },
-      { observedAt: -1 },
-      { observedAt: -1 },
+    expect(mockMapTransportTrackPointAggregate).toHaveBeenNthCalledWith(2, [
+      {
+        $match: {
+          orgId: "org-1",
+          objectKey: { $in: ["ship-1"] },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          objectKey: 1,
+          observedAt: 1,
+          lat: 1,
+          lng: 1,
+          heading: 1,
+          course: 1,
+          speed: 1,
+          altitudeFt: 1,
+          geoCell: 1,
+        },
+      },
+      { $sort: { objectKey: 1, observedAt: -1 } },
+      {
+        $group: {
+          _id: "$objectKey",
+          points: { $push: "$$ROOT" },
+        },
+      },
+      {
+        $project: {
+          points: { $slice: ["$points", 30] },
+        },
+      },
     ]);
-    expect(limitArgs).toEqual([30, 30, 30]);
     expect(context.objectKeys).toEqual(["air-1", "ship-1"]);
     expect(context.objects.map((object) => object.objectKey)).toEqual([
       "air-1",

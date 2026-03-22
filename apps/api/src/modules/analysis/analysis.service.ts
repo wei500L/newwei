@@ -12,7 +12,6 @@ import { NotificationType } from "@prisma/client";
 import type { Queue } from "bullmq";
 import type { PubSubEngine } from "graphql-subscriptions";
 
-import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
 import { EnvService } from "../config/config.service";
 import {
   LiteLlmService,
@@ -36,7 +35,6 @@ import type {
 
 const logger = createLogger({ name: "analysis-service" });
 const MAX_TRACK_POINTS_PER_OBJECT = 30;
-const TRACK_POINT_QUERY_CONCURRENCY = 4;
 
 @Injectable()
 export class AnalysisService {
@@ -375,7 +373,7 @@ export class AnalysisService {
     const fallbackTrackPointsByObjectKey =
       missingObjectKeys.length > 0
         ? await this.loadTrackPointsByObjectKeys(orgId, missingObjectKeys)
-        : new Map<string, Array<Record<string, unknown>>>();
+        : new Map<string, Record<string, unknown>[]>();
 
     const objects = states.map((state) => {
       const primaryPoints = trackPointsByObjectKey.get(state.objectKey);
@@ -484,7 +482,7 @@ export class AnalysisService {
     },
   ) {
     if (objectKeys.length === 0) {
-      return new Map<string, Array<Record<string, unknown>>>();
+      return new Map<string, Record<string, unknown>[]>();
     }
 
     const match: Record<string, unknown> = {
@@ -498,31 +496,42 @@ export class AnalysisService {
       };
     }
 
-    const results = await settleWithConcurrency(
-      objectKeys,
-      TRACK_POINT_QUERY_CONCURRENCY,
-      async (objectKey) => {
-        const points = await MapTransportTrackPointModel.find({
-          ...match,
-          objectKey,
-        })
-          .sort({ observedAt: -1 })
-          .limit(MAX_TRACK_POINTS_PER_OBJECT)
-          .lean();
-
-        return Array.isArray(points) ? points : [];
+    const rows = await MapTransportTrackPointModel.aggregate<{
+      _id: string;
+      points?: Record<string, unknown>[];
+    }>([
+      { $match: match },
+      {
+        $project: {
+          _id: 1,
+          objectKey: 1,
+          observedAt: 1,
+          lat: 1,
+          lng: 1,
+          heading: 1,
+          course: 1,
+          speed: 1,
+          altitudeFt: 1,
+          geoCell: 1,
+        },
       },
+      { $sort: { objectKey: 1, observedAt: -1 } },
+      {
+        $group: {
+          _id: "$objectKey",
+          points: { $push: "$$ROOT" },
+        },
+      },
+      {
+        $project: {
+          points: { $slice: ["$points", MAX_TRACK_POINTS_PER_OBJECT] },
+        },
+      },
+    ]);
+
+    return new Map(
+      rows.map((row) => [row._id, Array.isArray(row.points) ? row.points : []]),
     );
-
-    const pointsByObjectKey = new Map<string, Array<Record<string, unknown>>>();
-    for (const result of results) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
-      pointsByObjectKey.set(result.item, result.value);
-    }
-
-    return pointsByObjectKey;
   }
 
   private async streamMessages(

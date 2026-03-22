@@ -11,6 +11,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Button, Skeleton, Tooltip, message } from "antd";
 import { useRouter } from "next/navigation";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -192,7 +193,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export function NewsnowCard({
+export const NewsnowCard = memo(function NewsnowCard({
   id,
   source,
   dragDisabled = false,
@@ -1367,4 +1368,4 @@ export function NewsnowCard({
       </div>
     </article>
   );
-}
+});

@@ -415,7 +415,7 @@ export class UserDigestService {
 
   private async loadIndicatorAssociationsByScope(
     orgId: string,
-    events: Array<{ primaryTopic: string | null; primaryEntity: string | null }>,
+    events: { primaryTopic: string | null; primaryEntity: string | null }[],
     limit: number
   ) {
     const scopeKeys = new Map<string, { scopeType: NewsIndicatorScopeType; scopeKey: string }>();
@@ -448,13 +448,29 @@ export class UserDigestService {
           scopeKey: scope.scopeKey
         }))
       },
-      include: {
-        indicatorItem: true,
+      select: {
+        scopeType: true,
+        scopeKey: true,
+        featureMetric: true,
+        lagDays: true,
+        correlation: true,
+        pValue: true,
+        indicatorItem: {
+          select: {
+            slug: true,
+            displayName: true
+          }
+        },
         backtests: {
+          select: {
+            createdAt: true,
+            metrics: true
+          },
           orderBy: { createdAt: "desc" },
           take: 1
         }
       },
+      take: Math.min(perEventLimit * uniqueScopes.length * 3, 5000),
       orderBy: [
         { scopeType: "asc" },
         { scopeKey: "asc" },

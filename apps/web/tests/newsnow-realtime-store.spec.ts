@@ -6,6 +6,8 @@ describe('newsnow realtime store', () => {
   beforeEach(() => {
     useNewsnowStore.setState({
       visibleSourceIds: [],
+      sourceSnapshots: {},
+      sourceSnapshotHashes: {},
       liveUnreadBySource: {},
       realtimeHighlights: [],
       lastRealtimeEventAt: undefined,
@@ -75,5 +77,33 @@ describe('newsnow realtime store', () => {
     expect(useNewsnowStore.getState().visibleSourceIds).toEqual([
       'hackernews',
     ]);
+  });
+
+  it('skips source snapshot writes when the incoming items are unchanged', () => {
+    const store = useNewsnowStore.getState();
+    const snapshot = {
+      updatedAt: 1,
+      items: [
+        {
+          id: 'item-1',
+          title: 'Alpha',
+          pubDate: '2026-03-22T00:00:00.000Z',
+          url: 'https://example.com/a',
+        },
+      ],
+    };
+
+    store.upsertSourceSnapshot('weibo', snapshot);
+    const firstState = useNewsnowStore.getState();
+    const firstSnapshots = firstState.sourceSnapshots;
+
+    store.upsertSourceSnapshot('weibo', {
+      updatedAt: 2,
+      items: snapshot.items.map((item) => ({ ...item })),
+    });
+
+    const secondState = useNewsnowStore.getState();
+    expect(secondState.sourceSnapshots).toBe(firstSnapshots);
+    expect(secondState.sourceSnapshotHashes.weibo).toBeDefined();
   });
 });

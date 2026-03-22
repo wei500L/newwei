@@ -228,7 +228,7 @@ describe("UserDigestService", () => {
     expect(digest.events[1]?.indicatorAssociations).toHaveLength(2);
   });
 
-  it("loads indicator associations without a global take so later scopes are not dropped", async () => {
+  it("loads indicator associations with bounded take and narrow field selection", async () => {
     const rows = [
       {
         id: "assoc-1",
@@ -263,9 +263,7 @@ describe("UserDigestService", () => {
     ];
     const prisma = {
       newsIndicatorAssociation: {
-        findMany: jest.fn().mockImplementation(async (args: any) =>
-          args.take ? rows.slice(0, 1) : rows
-        ),
+        findMany: jest.fn().mockResolvedValue(rows),
       },
     };
 
@@ -274,9 +272,9 @@ describe("UserDigestService", () => {
       service as unknown as {
         loadIndicatorAssociationsByScope: (
           orgId: string,
-          events: Array<{ primaryTopic: string | null; primaryEntity: string | null }>,
+          events: { primaryTopic: string | null; primaryEntity: string | null }[],
           limit: number
-        ) => Promise<Map<string, Array<{ indicatorSlug: string }>>>;
+        ) => Promise<Map<string, { indicatorSlug: string }[]>>;
       }
     ).loadIndicatorAssociationsByScope.bind(service);
 
@@ -291,6 +289,29 @@ describe("UserDigestService", () => {
 
     expect(prisma.newsIndicatorAssociation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        take: 6,
+        select: {
+          scopeType: true,
+          scopeKey: true,
+          featureMetric: true,
+          lagDays: true,
+          correlation: true,
+          pValue: true,
+          indicatorItem: {
+            select: {
+              slug: true,
+              displayName: true,
+            },
+          },
+          backtests: {
+            select: {
+              createdAt: true,
+              metrics: true,
+            },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
         orderBy: [
           { scopeType: "asc" },
           { scopeKey: "asc" },
@@ -301,7 +322,6 @@ describe("UserDigestService", () => {
         ],
       })
     );
-    expect(prisma.newsIndicatorAssociation.findMany.mock.calls[0]?.[0]?.take).toBeUndefined();
     expect(grouped.get("topic:macro")).toHaveLength(1);
     expect(grouped.get("topic:policy")).toHaveLength(1);
     expect(grouped.get("topic:policy")?.[0]).toMatchObject({
