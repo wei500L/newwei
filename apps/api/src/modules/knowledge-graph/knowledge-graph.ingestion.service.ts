@@ -3,7 +3,10 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import type { Prisma } from "@prisma/client";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import { KnowledgeGraphQualityService } from "./knowledge-graph-quality.service";
 import { KnowledgeGraphSettingsService } from "./knowledge-graph-settings.service";
@@ -13,11 +16,16 @@ const logger = createLogger({ name: "knowledge-graph-ingestion" });
 const DEFAULT_BACKFILL_DAYS = 30;
 const DEFAULT_MAX_ENTITIES_PER_ARTICLE = 20;
 const DEFAULT_MIN_ENTITY_CONFIDENCE = 0.5;
+const KNOWLEDGE_GRAPH_INGESTION_ORG_LOCK_TTL_MS = 60_000;
+
+type KnowledgeGraphSchedulerOrgRunStatus = "completed" | "skipped";
 
 @Injectable()
 export class KnowledgeGraphIngestionService {
   constructor(
+    private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: KnowledgeGraphSettingsService,
     private readonly quality: KnowledgeGraphQualityService,
     private readonly graph: KnowledgeGraphService
@@ -30,13 +38,65 @@ export class KnowledgeGraphIngestionService {
       select: { id: true }
     });
 
-    for (const org of orgs) {
-      try {
-        await this.ingestOrg(org.id);
-      } catch (error) {
-        logger.warn({ err: error, orgId: org.id }, "Knowledge graph ingestion failed");
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.knowledgeGraphIngestionOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "Knowledge graph ingestion scheduler tick started",
+    );
+
+    const results = await settleWithConcurrency(orgs, concurrency, async (org) =>
+      await this.ingestOrgWithLock(org.id),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { err: result.reason, orgId: result.item.id },
+          "Knowledge graph ingestion failed",
+        );
+        continue;
+      }
+
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
       }
     }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "Knowledge graph ingestion scheduler tick completed",
+    );
+  }
+
+  private async ingestOrgWithLock(
+    orgId: string,
+  ): Promise<KnowledgeGraphSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:knowledge-graph-ingestion:org:${orgId}`,
+      KNOWLEDGE_GRAPH_INGESTION_ORG_LOCK_TTL_MS,
+      async () => {
+        await this.ingestOrg(orgId);
+        return "completed" as const;
+      },
+    );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped knowledge graph ingestion because previous org run is still in progress",
+    );
+    return "skipped";
   }
 
   private async ingestOrg(orgId: string) {

@@ -1,21 +1,26 @@
 import { ProcessedItemModel } from "@modular/mongo";
 
-import { RssTranslationField, RssTranslationProvider } from "../../graphql/dto/item.input";
+import {
+  RssTranslationField,
+  RssTranslationProvider,
+} from "../../graphql/dto/item.input";
 
 import { ItemsRssTranslationService } from "./items-rss-translation.service";
 
 jest.mock("@modular/mongo", () => ({
   ProcessedItemModel: {
-    find: jest.fn()
-  }
+    find: jest.fn(),
+  },
 }));
 
-function mockProcessedRecords(records: Array<{ itemMetaId: string; result: unknown }>) {
+function mockProcessedRecords(
+  records: Array<{ itemMetaId: string; result: unknown }>,
+) {
   const lean = jest.fn().mockResolvedValue(
     records.map((record) => ({
       ...record,
-      createdAt: new Date("2024-01-01T00:00:00.000Z")
-    }))
+      createdAt: new Date("2024-01-01T00:00:00.000Z"),
+    })),
   );
   const sort = jest.fn().mockReturnValue({ lean });
   (ProcessedItemModel.find as jest.Mock).mockReturnValue({ sort });
@@ -24,11 +29,13 @@ function mockProcessedRecords(records: Array<{ itemMetaId: string; result: unkno
 function createMemoryCache() {
   const store = new Map<string, unknown>();
   return {
-    getMany: jest.fn(async (keys: string[]) => keys.map((key) => store.get(key) ?? null)),
+    getMany: jest.fn(async (keys: string[]) =>
+      keys.map((key) => store.get(key) ?? null),
+    ),
     set: jest.fn(async (key: string, value: unknown) => {
       store.set(key, value);
     }),
-    __store: store
+    __store: store,
   };
 }
 
@@ -47,19 +54,23 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }) } as any,
-      { acompletion: jest.fn() } as any
+      {
+        getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }),
+      } as any,
+      { acompletion: jest.fn() } as any,
     );
 
     const statuses = await service.getProviderStatuses("en");
-    const deepLx = statuses.find((status) => status.provider === RssTranslationProvider.deeplx);
+    const deepLx = statuses.find(
+      (status) => status.provider === RssTranslationProvider.deeplx,
+    );
 
     expect(deepLx).toMatchObject({
       available: false,
-      targetLanguageSupported: false
+      targetLanguageSupported: false,
     });
     expect(deepLx?.message).toContain("supports Chinese");
   });
@@ -69,14 +80,14 @@ describe("ItemsRssTranslationService", () => {
       {
         itemMetaId: "item-1",
         result: {
-          title: "Hello world"
-        }
-      }
+          title: "Hello world",
+        },
+      },
     ]);
 
     const cache = createMemoryCache();
     const acompletion = jest.fn().mockResolvedValue({
-      choices: [{ message: { content: "你好，世界" } }]
+      choices: [{ message: { content: "你好，世界" } }],
     });
 
     const service = new ItemsRssTranslationService(
@@ -87,24 +98,28 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "test-model", enabled: true }) } as any,
-      { acompletion } as any
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
     );
 
     const first = await service.translate("org-1", {
       itemIds: ["item-1"],
       provider: RssTranslationProvider.llm,
       targetLanguage: "zh-CN",
-      fields: [RssTranslationField.title]
+      fields: [RssTranslationField.title],
     });
     const second = await service.translate("org-1", {
       itemIds: ["item-1"],
       provider: RssTranslationProvider.llm,
       targetLanguage: "zh-CN",
-      fields: [RssTranslationField.title]
+      fields: [RssTranslationField.title],
     });
 
     expect(first.translations[0]?.title).toBe("你好，世界");
@@ -118,9 +133,9 @@ describe("ItemsRssTranslationService", () => {
       {
         itemMetaId: "item-2",
         result: {
-          cleaned_markdown: `${longParagraph}\n\nSecond paragraph`
-        }
-      }
+          cleaned_markdown: `${longParagraph}\n\nSecond paragraph`,
+        },
+      },
     ]);
 
     const cache = createMemoryCache();
@@ -138,18 +153,22 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "test-model", enabled: true }) } as any,
-      { acompletion } as any
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
     );
 
     const result = await service.translate("org-1", {
       itemIds: ["item-2"],
       provider: RssTranslationProvider.llm,
       targetLanguage: "zh-CN",
-      fields: [RssTranslationField.cleaned_markdown]
+      fields: [RssTranslationField.cleaned_markdown],
     });
 
     expect(result.translations[0]?.cleanedMarkdown).toContain("段落1翻译");
@@ -166,11 +185,11 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: false,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
       { getActiveConfig: jest.fn().mockResolvedValue(null) } as any,
-      { acompletion: jest.fn() } as any
+      { acompletion: jest.fn() } as any,
     );
 
     await expect(
@@ -178,8 +197,8 @@ describe("ItemsRssTranslationService", () => {
         itemIds: ["item-3"],
         provider: RssTranslationProvider.deeplx,
         targetLanguage: "zh-CN",
-        fields: [RssTranslationField.title]
-      })
+        fields: [RssTranslationField.title],
+      }),
     ).rejects.toThrow("DeepLX translation API is disabled");
   });
 
@@ -188,9 +207,9 @@ describe("ItemsRssTranslationService", () => {
       {
         itemMetaId: "item-4",
         result: {
-          key_points: ["one", "two", "three", "four", "five", "six"]
-        }
-      }
+          key_points: ["one", "two", "three", "four", "five", "six"],
+        },
+      },
     ]);
 
     const cache = createMemoryCache();
@@ -212,21 +231,165 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "test-model", enabled: true }) } as any,
-      { acompletion } as any
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
     );
 
     await service.translate("org-1", {
       itemIds: ["item-4"],
       provider: RssTranslationProvider.llm,
       targetLanguage: "zh-CN",
-      fields: [RssTranslationField.key_points]
+      fields: [RssTranslationField.key_points],
     });
 
     expect(maxActive).toBe(1);
+    expect(acompletion).toHaveBeenCalledTimes(6);
+  });
+
+  it("translates multiple items concurrently while preserving input order", async () => {
+    mockProcessedRecords([
+      {
+        itemMetaId: "item-6",
+        result: {
+          title: "first",
+        },
+      },
+      {
+        itemMetaId: "item-7",
+        result: {
+          title: "third",
+        },
+      },
+    ]);
+
+    const cache = createMemoryCache();
+    let active = 0;
+    let maxActive = 0;
+    const acompletion = jest
+      .fn()
+      .mockImplementation(
+        async (input: { messages: Array<{ content: string }> }) => {
+          const text = input.messages[1]?.content.split("\n").at(-1) ?? "";
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) =>
+            setTimeout(resolve, text === "first" ? 30 : 10),
+          );
+          active -= 1;
+          return { choices: [{ message: { content: `translated:${text}` } }] };
+        },
+      );
+
+    const service = new ItemsRssTranslationService(
+      cache as any,
+      { translateTextsToZhBestEffort: jest.fn() } as any,
+      {
+        getTranslationMaxConcurrency: jest.fn().mockResolvedValue(2),
+        getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
+          enabled: true,
+          baseUrl: "https://api.deeplx.org",
+          apiKey: "secret",
+        }),
+      } as any,
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
+    );
+
+    const result = await service.translate("org-1", {
+      itemIds: ["item-6", "item-missing", "item-7"],
+      provider: RssTranslationProvider.llm,
+      targetLanguage: "zh-CN",
+      fields: [RssTranslationField.title],
+    });
+
+    expect(maxActive).toBe(2);
+    expect(result.translations).toEqual([
+      { itemId: "item-6", title: "translated:first" },
+      { itemId: "item-missing" },
+      { itemId: "item-7", title: "translated:third" },
+    ]);
+  });
+
+  it("shares the LLM concurrency cap across multiple items and text lists", async () => {
+    mockProcessedRecords([
+      {
+        itemMetaId: "item-8",
+        result: {
+          key_points: ["a-1", "a-2", "a-3"],
+        },
+      },
+      {
+        itemMetaId: "item-9",
+        result: {
+          key_points: ["b-1", "b-2", "b-3"],
+        },
+      },
+    ]);
+
+    const cache = createMemoryCache();
+    let active = 0;
+    let maxActive = 0;
+    const acompletion = jest
+      .fn()
+      .mockImplementation(
+        async (input: { messages: Array<{ content: string }> }) => {
+          const text = input.messages[1]?.content.split("\n").at(-1) ?? "";
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          active -= 1;
+          return { choices: [{ message: { content: `translated:${text}` } }] };
+        },
+      );
+
+    const service = new ItemsRssTranslationService(
+      cache as any,
+      { translateTextsToZhBestEffort: jest.fn() } as any,
+      {
+        getTranslationMaxConcurrency: jest.fn().mockResolvedValue(2),
+        getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
+          enabled: true,
+          baseUrl: "https://api.deeplx.org",
+          apiKey: "secret",
+        }),
+      } as any,
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
+    );
+
+    const result = await service.translate("org-1", {
+      itemIds: ["item-8", "item-9"],
+      provider: RssTranslationProvider.llm,
+      targetLanguage: "zh-CN",
+      fields: [RssTranslationField.key_points],
+    });
+
+    expect(maxActive).toBe(2);
+    expect(result.translations[0]?.keyPoints).toEqual([
+      "translated:a-1",
+      "translated:a-2",
+      "translated:a-3",
+    ]);
+    expect(result.translations[1]?.keyPoints).toEqual([
+      "translated:b-1",
+      "translated:b-2",
+      "translated:b-3",
+    ]);
     expect(acompletion).toHaveBeenCalledTimes(6);
   });
 
@@ -236,9 +399,9 @@ describe("ItemsRssTranslationService", () => {
       {
         itemMetaId: "item-5",
         result: {
-          key_points: points
-        }
-      }
+          key_points: points,
+        },
+      },
     ]);
 
     const cache = createMemoryCache();
@@ -260,18 +423,22 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "test-model", enabled: true }) } as any,
-      { acompletion } as any
+      {
+        getActiveConfig: jest
+          .fn()
+          .mockResolvedValue({ model: "test-model", enabled: true }),
+      } as any,
+      { acompletion } as any,
     );
 
     await service.translate("org-1", {
       itemIds: ["item-5"],
       provider: RssTranslationProvider.llm,
       targetLanguage: "zh-CN",
-      fields: [RssTranslationField.key_points]
+      fields: [RssTranslationField.key_points],
     });
 
     expect(maxActive).toBeLessThanOrEqual(20);
@@ -289,18 +456,22 @@ describe("ItemsRssTranslationService", () => {
           baseUrl: "",
           apiKey: "",
           fallbackEnabled: true,
-          fallbackBaseUrl: "https://fallback.example/v1"
-        })
+          fallbackBaseUrl: "https://fallback.example/v1",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }) } as any,
-      { acompletion: jest.fn() } as any
+      {
+        getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }),
+      } as any,
+      { acompletion: jest.fn() } as any,
     );
 
     const statuses = await service.getProviderStatuses("zh-CN");
-    const deepLx = statuses.find((status) => status.provider === RssTranslationProvider.deeplx);
+    const deepLx = statuses.find(
+      (status) => status.provider === RssTranslationProvider.deeplx,
+    );
     expect(deepLx).toMatchObject({
       available: true,
-      targetLanguageSupported: true
+      targetLanguageSupported: true,
     });
   });
 
@@ -314,11 +485,13 @@ describe("ItemsRssTranslationService", () => {
         getTranslationRuntimeConfig: jest.fn().mockResolvedValue({
           enabled: true,
           baseUrl: "https://api.deeplx.org",
-          apiKey: "secret"
-        })
+          apiKey: "secret",
+        }),
       } as any,
-      { getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }) } as any,
-      { acompletion: jest.fn() } as any
+      {
+        getActiveConfig: jest.fn().mockResolvedValue({ model: "model-a" }),
+      } as any,
+      { acompletion: jest.fn() } as any,
     );
 
     const ids = Array.from({ length: 51 }).map((_, idx) => `item-${idx}`);
@@ -327,8 +500,8 @@ describe("ItemsRssTranslationService", () => {
         itemIds: ids,
         provider: RssTranslationProvider.deeplx,
         targetLanguage: "zh-CN",
-        fields: [RssTranslationField.title]
-      })
+        fields: [RssTranslationField.title],
+      }),
     ).rejects.toThrow("at most 50 itemIds");
   });
 });

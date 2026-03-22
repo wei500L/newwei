@@ -26,7 +26,7 @@ import type {
   CrawlStoredMediaAsset,
   CrawlTableCell,
   CrawlTaskOptions,
-  CrawlTaskResult
+  CrawlTaskResult,
 } from "./crawl.types";
 import { coerceDate, hashMarkdown } from "./crawl.utils";
 import type { Crawl4aiArticle } from "./crawl4ai.client";
@@ -38,6 +38,18 @@ import {
 } from "./url-fingerprint";
 const logger = createLogger({ name: "crawl-result-service" });
 const RESULT_PERSIST_CONCURRENCY_LIMIT = 6;
+const LATEST_CRAWL_COMPLETE_LOG_PROJECTION = {
+  _id: 0,
+  "data.inserted": 1,
+  "data.itemsQueued": 1,
+  "data.itemsQueueFailed": 1,
+  "data.lastFetchedAt": 1,
+  "data.memory": 1,
+  "data.retryableFailures": 1,
+  "data.reusedResultId": 1,
+  "data.runId": 1,
+  "data.skipped": 1,
+} as const;
 
 interface CrawlMediaConfig {
   fetchTimeoutMs: number;
@@ -71,6 +83,22 @@ interface HashedCrawlResultItem {
   sourceUrlFingerprint: string | null;
 }
 
+interface LatestCrawlCompleteLogData {
+  inserted?: unknown;
+  itemsQueued?: unknown;
+  itemsQueueFailed?: unknown;
+  lastFetchedAt?: unknown;
+  memory?: unknown;
+  retryableFailures?: unknown;
+  reusedResultId?: unknown;
+  runId?: unknown;
+  skipped?: unknown;
+}
+
+interface LatestCrawlCompleteLog {
+  data?: LatestCrawlCompleteLogData;
+}
+
 @Injectable()
 export class CrawlResultService {
   private readonly mediaReservedKeys = new Set([
@@ -100,7 +128,7 @@ export class CrawlResultService {
     "picture_sources",
     "pictureSources",
     "responsive_images",
-    "responsiveImages"
+    "responsiveImages",
   ]);
   private readonly mediaConfig: CrawlMediaConfig;
   private itemsService?: ItemsService | null;
@@ -110,7 +138,7 @@ export class CrawlResultService {
     private readonly prisma: PrismaService,
     private readonly env: EnvService,
     @Inject(MONGO_CONNECTION) private readonly mongo: MongoConnection,
-    private readonly moduleRef: ModuleRef
+    private readonly moduleRef: ModuleRef,
   ) {
     void this.mongo;
     this.mediaConfig = env.crawl4aiConfig.media;
@@ -123,7 +151,10 @@ export class CrawlResultService {
     try {
       this.itemsService = this.moduleRef.get(ItemsService, { strict: false });
     } catch (error) {
-      logger.warn({ err: error }, "ItemsService unavailable; skipping crawl ingestion");
+      logger.warn(
+        { err: error },
+        "ItemsService unavailable; skipping crawl ingestion",
+      );
       this.itemsService = null;
     }
     return this.itemsService;
@@ -134,9 +165,14 @@ export class CrawlResultService {
       return this.crawlMediaAssetService;
     }
     try {
-      this.crawlMediaAssetService = this.moduleRef.get(CrawlMediaAssetService, { strict: false });
+      this.crawlMediaAssetService = this.moduleRef.get(CrawlMediaAssetService, {
+        strict: false,
+      });
     } catch (error) {
-      logger.warn({ err: error }, "CrawlMediaAssetService unavailable; media persistence disabled");
+      logger.warn(
+        { err: error },
+        "CrawlMediaAssetService unavailable; media persistence disabled",
+      );
       this.crawlMediaAssetService = null;
     }
     return this.crawlMediaAssetService;
@@ -148,7 +184,7 @@ export class CrawlResultService {
     options: CrawlTaskOptions,
     runId?: string,
     memory?: CrawlMemoryStats,
-    ingestToItems?: { orgId: string; userId: string }
+    ingestToItems?: { orgId: string; userId: string },
   ): Promise<CrawlExecutionSummary> {
     const startTime = Date.now();
 
@@ -156,7 +192,7 @@ export class CrawlResultService {
       return {
         inserted: 0,
         skipped: 0,
-        runId
+        runId,
       };
     }
 
@@ -212,11 +248,14 @@ export class CrawlResultService {
     }
 
     if (itemsWithHash.length === 0) {
-      logger.debug({ duration: Date.now() - startTime, skipped }, "persistResults completed (all items skipped)");
+      logger.debug(
+        { duration: Date.now() - startTime, skipped },
+        "persistResults completed (all items skipped)",
+      );
       return {
         inserted: 0,
         skipped,
-        runId
+        runId,
       };
     }
 
@@ -224,8 +263,8 @@ export class CrawlResultService {
     const existingTaskRecords = await this.prisma.crawlResult.findMany({
       where: {
         taskId: task.id,
-        contentHash: { in: allHashes }
-      }
+        contentHash: { in: allHashes },
+      },
     });
     const existingTaskMap = new Map(
       existingTaskRecords.map((record) => [record.contentHash, record]),
@@ -248,7 +287,8 @@ export class CrawlResultService {
     }
 
     const newItems: HashedCrawlResultItem[] = [];
-    const existingItems: { item: Crawl4aiArticle; existing: CrawlResult }[] = [];
+    const existingItems: { item: Crawl4aiArticle; existing: CrawlResult }[] =
+      [];
     const seenNewHashes = new Set<string>();
     const registerReusedResult = (existing: CrawlResult) => {
       if (
@@ -291,9 +331,9 @@ export class CrawlResultService {
         hashCount: allHashes.length,
         existingTaskCount: existingTaskRecords.length,
         existingOrgCount: existingOrgRecords.length,
-        newCount: newItems.length
+        newCount: newItems.length,
       },
-      "persistResults hash classification complete"
+      "persistResults hash classification complete",
     );
     if (process.env.NODE_ENV !== "test") {
       void writeTaskLogBestEffort({
@@ -316,7 +356,11 @@ export class CrawlResultService {
     }
 
     const createdResultIds: string[] = [];
-    for (let i = 0; i < newItems.length; i += RESULT_PERSIST_CONCURRENCY_LIMIT) {
+    for (
+      let i = 0;
+      i < newItems.length;
+      i += RESULT_PERSIST_CONCURRENCY_LIMIT
+    ) {
       const batch = newItems.slice(i, i + RESULT_PERSIST_CONCURRENCY_LIMIT);
       const batchResults = await Promise.allSettled(
         batch.map((entry) =>
@@ -354,16 +398,20 @@ export class CrawlResultService {
       const uniqueResultIds = [
         ...new Set([
           ...existingItems.map((entry) => entry.existing.id),
-          ...createdResultIds
-        ])
+          ...createdResultIds,
+        ]),
       ];
       const CONCURRENCY_LIMIT = 10;
       for (let i = 0; i < uniqueResultIds.length; i += CONCURRENCY_LIMIT) {
         const batch = uniqueResultIds.slice(i, i + CONCURRENCY_LIMIT);
         const results = await Promise.allSettled(
           batch.map((id) =>
-            itemsService.createFromCrawlResult(ingestToItems.orgId, ingestToItems.userId, id)
-          )
+            itemsService.createFromCrawlResult(
+              ingestToItems.orgId,
+              ingestToItems.userId,
+              id,
+            ),
+          ),
         );
 
         for (const result of results) {
@@ -373,7 +421,7 @@ export class CrawlResultService {
             itemsQueueFailed += 1;
             logger.warn(
               { err: result.reason, taskId: task.id, orgId: task.orgId },
-              "Failed to ingest crawl result into Items"
+              "Failed to ingest crawl result into Items",
             );
           }
         }
@@ -383,7 +431,7 @@ export class CrawlResultService {
     const duration = Date.now() - startTime;
     logger.info(
       { duration, inserted, skipped, itemsQueued, itemsQueueFailed },
-      "persistResults completed"
+      "persistResults completed",
     );
 
     return {
@@ -393,7 +441,7 @@ export class CrawlResultService {
       ...(ingestToItems ? { itemsQueued, itemsQueueFailed } : {}),
       lastFetchedAt: latestResultAt ?? reusedResultFetchedAt,
       runId,
-      memory
+      memory,
     };
   }
 
@@ -416,8 +464,7 @@ export class CrawlResultService {
       ...(entry.sourceUrlFingerprint
         ? { urlFingerprint: entry.sourceUrlFingerprint }
         : {}),
-      ...(entry.canonicalSourceUrl &&
-      entry.canonicalSourceUrl !== sourceUrl
+      ...(entry.canonicalSourceUrl && entry.canonicalSourceUrl !== sourceUrl
         ? { originalUrl: sourceUrl }
         : {}),
       ...(options?.urlQueryParamAllowlist &&
@@ -444,8 +491,8 @@ export class CrawlResultService {
             fetchedAt,
             markdownRef: "",
             contentHash: entry.hash,
-            metadata
-          }
+            metadata,
+          },
         });
       } catch (error) {
         if (this.isUniqueConstraintConflict(error)) {
@@ -453,9 +500,9 @@ export class CrawlResultService {
             where: {
               taskId_contentHash: {
                 taskId: task.id,
-                contentHash: entry.hash
-              }
-            }
+                contentHash: entry.hash,
+              },
+            },
           });
           if (existing) {
             logger.warn(
@@ -464,14 +511,14 @@ export class CrawlResultService {
                 orgId: task.orgId,
                 resultId: existing.id,
                 sourceUrl,
-                contentHash: entry.hash
+                contentHash: entry.hash,
               },
-              "Detected duplicate crawl result insert race; skipping entry"
+              "Detected duplicate crawl result insert race; skipping entry",
             );
             return {
               resultId: existing.id,
               fetchedAt: existing.fetchedAt,
-              inserted: false
+              inserted: false,
             };
           }
         }
@@ -523,7 +570,9 @@ export class CrawlResultService {
       }
 
       const linkAnalysis = this.extractLinkAnalysisFromResult(entry.item);
-      const media = shouldStoreMedia ? this.normalizeMediaCollection(entry.item.media) : undefined;
+      const media = shouldStoreMedia
+        ? this.normalizeMediaCollection(entry.item.media)
+        : undefined;
       const tables = this.normalizeTablesFromResult(entry.item);
 
       stage = "store_media";
@@ -550,17 +599,17 @@ export class CrawlResultService {
             tables: tables ?? null,
             ...(shouldStoreMedia
               ? {
-                  media: media ?? null
+                  media: media ?? null,
                 }
-              : {})
-          }
+              : {}),
+          },
         },
-        { upsert: true }
+        { upsert: true },
       ).exec();
 
       const persistedDoc = await CrawlResultContentModel.findOne(
         { resultId: created.id },
-        { _id: 1 }
+        { _id: 1 },
       )
         .lean()
         .exec();
@@ -572,7 +621,7 @@ export class CrawlResultService {
       stage = "update_markdown_ref";
       await this.prisma.crawlResult.update({
         where: { id: created.id },
-        data: { markdownRef }
+        data: { markdownRef },
       });
 
       return { resultId: created.id, fetchedAt, inserted: true };
@@ -585,9 +634,9 @@ export class CrawlResultService {
           sourceUrl,
           contentHash: entry.hash,
           resultId,
-          stage
+          stage,
         },
-        "Failed to persist crawl result entry"
+        "Failed to persist crawl result entry",
       );
       if (resultId) {
         await this.rollbackPersistedResult(task, resultId);
@@ -596,7 +645,10 @@ export class CrawlResultService {
     }
   }
 
-  private async rollbackPersistedResult(task: CrawlTask, resultId: string): Promise<void> {
+  private async rollbackPersistedResult(
+    task: CrawlTask,
+    resultId: string,
+  ): Promise<void> {
     const mediaAssetService = this.resolveCrawlMediaAssetService();
     if (mediaAssetService) {
       try {
@@ -607,9 +659,9 @@ export class CrawlResultService {
             err: error,
             taskId: task.id,
             orgId: task.orgId,
-            resultId
+            resultId,
           },
-          "Failed to cleanup crawl media assets during rollback"
+          "Failed to cleanup crawl media assets during rollback",
         );
       }
     }
@@ -622,15 +674,15 @@ export class CrawlResultService {
           err: error,
           taskId: task.id,
           orgId: task.orgId,
-          resultId
+          resultId,
         },
-        "Failed to cleanup crawl result content document during rollback"
+        "Failed to cleanup crawl result content document during rollback",
       );
     }
 
     try {
       await this.prisma.crawlResult.delete({
-        where: { id: resultId }
+        where: { id: resultId },
       });
     } catch (error) {
       logger.error(
@@ -638,9 +690,9 @@ export class CrawlResultService {
           err: error,
           taskId: task.id,
           orgId: task.orgId,
-          resultId
+          resultId,
         },
-        "Failed to cleanup crawl result row during rollback"
+        "Failed to cleanup crawl result row during rollback",
       );
     }
   }
@@ -669,7 +721,11 @@ export class CrawlResultService {
     if (!error || typeof error !== "object") {
       return false;
     }
-    const record = error as { code?: unknown; meta?: unknown; message?: unknown };
+    const record = error as {
+      code?: unknown;
+      meta?: unknown;
+      message?: unknown;
+    };
     if (record.code === "P2002") {
       return true;
     }
@@ -679,7 +735,7 @@ export class CrawlResultService {
 
   async attachResultContent(
     results: CrawlResult[],
-    accessScope?: { orgId: string; userId: string }
+    accessScope?: { orgId: string; userId: string },
   ): Promise<CrawlTaskResult[]> {
     if (results.length === 0) {
       return [];
@@ -699,68 +755,127 @@ export class CrawlResultService {
     return results.map((result) => {
       const doc = docMap.get(result.id);
       const storedAssets = mediaAssetsByResultId.get(result.id);
-      const legacyAssets = (doc?.mediaAssets as CrawlStoredMediaAsset[] | undefined) ?? null;
+      const legacyAssets =
+        (doc?.mediaAssets as CrawlStoredMediaAsset[] | undefined) ?? null;
       return {
         id: result.id,
         sourceUrl: result.sourceUrl,
         fetchedAt: result.fetchedAt,
         markdown: (doc?.markdown as string) ?? "",
-        metadata: (result.metadata as Record<string, unknown> | null) ?? doc?.metadata ?? null,
+        metadata:
+          (result.metadata as Record<string, unknown> | null) ??
+          doc?.metadata ??
+          null,
         markdownWithCitations: this.ensureString(doc?.markdownWithCitations),
         referencesMarkdown: this.ensureString(doc?.referencesMarkdown),
         fitMarkdown: this.ensureString(doc?.fitMarkdown),
-        linkAnalysis: (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
+        linkAnalysis:
+          (doc?.linkAnalysis as CrawlLinkAnalysis | undefined) ?? null,
         media: (doc?.media as CrawlMediaCollection | undefined) ?? null,
         mediaAssets: storedAssets ?? legacyAssets,
-        tables: (doc?.tables as CrawlResultTable[] | undefined) ?? null
+        tables: (doc?.tables as CrawlResultTable[] | undefined) ?? null,
       };
     });
   }
 
-  async getLatestMemoryStats(orgId: string, taskId: string): Promise<CrawlMemoryStats | null> {
-    const log = await TaskLogModel.findOne({
-      queue: CRAWL_QUEUE_NAME,
-      jobId: taskId,
-      orgId,
-      stage: "complete"
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const stats = log?.data?.memory as CrawlMemoryStats | undefined;
-    return stats ?? null;
+  async getLatestRunDetails(
+    orgId: string,
+    taskId: string,
+  ): Promise<{
+    memoryStats: CrawlMemoryStats | null;
+    lastRunSummary: CrawlExecutionSummary | null;
+  }> {
+    const data = await this.getLatestCompleteLogData(orgId, taskId);
+    return {
+      memoryStats: this.toLatestMemoryStats(data),
+      lastRunSummary: this.toLatestExecutionSummary(data),
+    };
   }
 
-  async getLatestExecutionSummary(orgId: string, taskId: string): Promise<CrawlExecutionSummary | null> {
-    const log = await TaskLogModel.findOne({
+  async getLatestMemoryStats(
+    orgId: string,
+    taskId: string,
+  ): Promise<CrawlMemoryStats | null> {
+    const details = await this.getLatestRunDetails(orgId, taskId);
+    return details.memoryStats;
+  }
+
+  async getLatestExecutionSummary(
+    orgId: string,
+    taskId: string,
+  ): Promise<CrawlExecutionSummary | null> {
+    const details = await this.getLatestRunDetails(orgId, taskId);
+    return details.lastRunSummary;
+  }
+
+  private async getLatestCompleteLogData(
+    orgId: string,
+    taskId: string,
+  ): Promise<LatestCrawlCompleteLogData | null> {
+    const log = (await TaskLogModel.findOne({
       queue: CRAWL_QUEUE_NAME,
       jobId: taskId,
       orgId,
-      stage: "complete"
+      stage: "complete",
     })
+      .select(LATEST_CRAWL_COMPLETE_LOG_PROJECTION)
       .sort({ createdAt: -1 })
-      .lean();
+      .lean()) as LatestCrawlCompleteLog | null;
 
-    const data = log?.data && typeof log.data === "object" && !Array.isArray(log.data) ? (log.data as any) : null;
+    const data = log?.data;
+    return data && typeof data === "object" && !Array.isArray(data)
+      ? data
+      : null;
+  }
+
+  private toLatestMemoryStats(
+    data: LatestCrawlCompleteLogData | null,
+  ): CrawlMemoryStats | null {
+    if (
+      !data?.memory ||
+      typeof data.memory !== "object" ||
+      Array.isArray(data.memory)
+    ) {
+      return null;
+    }
+
+    return data.memory as CrawlMemoryStats;
+  }
+
+  private toLatestExecutionSummary(
+    data: LatestCrawlCompleteLogData | null,
+  ): CrawlExecutionSummary | null {
     if (!data) {
       return null;
     }
 
-    const inserted = typeof data.inserted === "number" && Number.isFinite(data.inserted) ? data.inserted : null;
-    const skipped = typeof data.skipped === "number" && Number.isFinite(data.skipped) ? data.skipped : null;
+    const inserted =
+      typeof data.inserted === "number" && Number.isFinite(data.inserted)
+        ? data.inserted
+        : null;
+    const skipped =
+      typeof data.skipped === "number" && Number.isFinite(data.skipped)
+        ? data.skipped
+        : null;
     if (inserted === null || skipped === null) {
       return null;
     }
 
     const summary: CrawlExecutionSummary = {
       inserted,
-      skipped
+      skipped,
     };
 
-    if (typeof data.itemsQueued === "number" && Number.isFinite(data.itemsQueued)) {
+    if (
+      typeof data.itemsQueued === "number" &&
+      Number.isFinite(data.itemsQueued)
+    ) {
       summary.itemsQueued = data.itemsQueued;
     }
-    if (typeof data.itemsQueueFailed === "number" && Number.isFinite(data.itemsQueueFailed)) {
+    if (
+      typeof data.itemsQueueFailed === "number" &&
+      Number.isFinite(data.itemsQueueFailed)
+    ) {
       summary.itemsQueueFailed = data.itemsQueueFailed;
     }
     if (data.lastFetchedAt instanceof Date) {
@@ -780,7 +895,10 @@ export class CrawlResultService {
     ) {
       summary.reusedResultId = data.reusedResultId.trim();
     }
-    if (typeof data.retryableFailures === "number" && Number.isFinite(data.retryableFailures)) {
+    if (
+      typeof data.retryableFailures === "number" &&
+      Number.isFinite(data.retryableFailures)
+    ) {
       summary.retryableFailures = data.retryableFailures;
     }
 
@@ -790,7 +908,10 @@ export class CrawlResultService {
   async deleteTaskResults(taskId: string, orgId: string) {
     await Promise.all([
       CrawlResultContentModel.deleteMany({ taskId }).exec(),
-      TaskLogModel.deleteMany({ orgId, jobId: { $regex: `^${taskId}` } }).exec()
+      TaskLogModel.deleteMany({
+        orgId,
+        jobId: { $regex: `^${taskId}` },
+      }).exec(),
     ]);
   }
 
@@ -802,7 +923,7 @@ export class CrawlResultService {
       const normalized = this.normalizeMarkdownCandidate(markdown);
       return {
         primary: normalized,
-        raw: normalized
+        raw: normalized,
       } as const;
     }
     if (typeof markdown !== "object") {
@@ -813,19 +934,26 @@ export class CrawlResultService {
     const raw = this.normalizeMarkdownCandidate(
       this.ensureString(record.raw_markdown) ??
         this.ensureString(record.rawMarkdown) ??
-        this.ensureString(record.markdown)
+        this.ensureString(record.markdown),
     );
     const citations = this.normalizeMarkdownCandidate(
-      this.ensureString(record.markdown_with_citations) ?? this.ensureString(record.markdownWithCitations)
+      this.ensureString(record.markdown_with_citations) ??
+        this.ensureString(record.markdownWithCitations),
     );
-    const citationsBody = citations ? this.stripCitationReferenceSection(citations) : undefined;
+    const citationsBody = citations
+      ? this.stripCitationReferenceSection(citations)
+      : undefined;
     const references = this.normalizeMarkdownCandidate(
-      this.ensureString(record.references_markdown) ?? this.ensureString(record.referencesMarkdown)
+      this.ensureString(record.references_markdown) ??
+        this.ensureString(record.referencesMarkdown),
     );
     const fit = this.normalizeMarkdownCandidate(
-      this.ensureString(record.fit_markdown) ?? this.ensureString(record.fitMarkdown)
+      this.ensureString(record.fit_markdown) ??
+        this.ensureString(record.fitMarkdown),
     );
-    const textFallback = this.normalizeMarkdownCandidate(this.ensureString(record.text));
+    const textFallback = this.normalizeMarkdownCandidate(
+      this.ensureString(record.text),
+    );
 
     const candidates: {
       source: "raw" | "citations" | "fit" | "references" | "text";
@@ -850,38 +978,58 @@ export class CrawlResultService {
 
     const maxNonReferenceLength = candidates
       .filter((candidate) => candidate.source !== "references")
-      .reduce((maxLength, candidate) => Math.max(maxLength, candidate.value.length), 0);
+      .reduce(
+        (maxLength, candidate) => Math.max(maxLength, candidate.value.length),
+        0,
+      );
 
     const scoredCandidates = candidates
       .map((candidate) => {
         return {
           ...candidate,
-          score: this.scoreMarkdownCandidate(candidate.value, candidate.source, maxNonReferenceLength)
+          score: this.scoreMarkdownCandidate(
+            candidate.value,
+            candidate.source,
+            maxNonReferenceLength,
+          ),
         };
       })
-      .sort((left, right) => right.score - left.score || right.value.length - left.value.length);
+      .sort(
+        (left, right) =>
+          right.score - left.score || right.value.length - left.value.length,
+      );
 
     let bestCandidate = scoredCandidates[0];
     const richerCandidate = this.selectRicherPrimaryCandidate(scoredCandidates);
-    if (bestCandidate && richerCandidate && this.shouldPreferRicherCandidate(bestCandidate, richerCandidate)) {
+    if (
+      bestCandidate &&
+      richerCandidate &&
+      this.shouldPreferRicherCandidate(bestCandidate, richerCandidate)
+    ) {
       bestCandidate = richerCandidate;
     }
 
-    const fallback = bestCandidate?.value ?? citationsBody ?? raw ?? fit ?? references ?? textFallback;
+    const fallback =
+      bestCandidate?.value ??
+      citationsBody ??
+      raw ??
+      fit ??
+      references ??
+      textFallback;
 
     return {
       primary: fallback,
       raw: raw ?? fallback,
       citations,
       references,
-      fit
+      fit,
     } as const;
   }
 
   private scoreMarkdownCandidate(
     markdown: string,
     source: "raw" | "citations" | "fit" | "references" | "text",
-    maxCandidateLength: number
+    maxCandidateLength: number,
   ): number {
     const trimmed = markdown.trim();
     if (!trimmed) {
@@ -929,7 +1077,9 @@ export class CrawlResultService {
     score -= this.estimateNavigationNoisePenalty(trimmed);
 
     const coverageRatio =
-      maxCandidateLength > 0 ? Math.min(2, trimmed.length / maxCandidateLength) : 1;
+      maxCandidateLength > 0
+        ? Math.min(2, trimmed.length / maxCandidateLength)
+        : 1;
 
     if (source === "citations") {
       score += 30;
@@ -958,19 +1108,22 @@ export class CrawlResultService {
       source: "raw" | "citations" | "fit" | "references" | "text";
       value: string;
       score: number;
-    }[]
+    }[],
   ) {
     const richerCandidates = candidates.filter(
       (candidate) =>
         (candidate.source === "citations" || candidate.source === "raw") &&
-        !this.isLikelyBotChallengeMarkdown(candidate.value)
+        !this.isLikelyBotChallengeMarkdown(candidate.value),
     );
 
     if (richerCandidates.length === 0) {
       return undefined;
     }
 
-    return richerCandidates.sort((left, right) => right.value.length - left.value.length || right.score - left.score)[0];
+    return richerCandidates.sort(
+      (left, right) =>
+        right.value.length - left.value.length || right.score - left.score,
+    )[0];
   }
 
   private shouldPreferRicherCandidate(
@@ -983,7 +1136,7 @@ export class CrawlResultService {
       source: "raw" | "citations" | "fit" | "references" | "text";
       value: string;
       score: number;
-    }
+    },
   ) {
     const currentTrimmed = current.value.trim();
     const richerTrimmed = richer.value.trim();
@@ -991,7 +1144,8 @@ export class CrawlResultService {
       return false;
     }
 
-    const currentIsChallenge = this.isLikelyBotChallengeMarkdown(currentTrimmed);
+    const currentIsChallenge =
+      this.isLikelyBotChallengeMarkdown(currentTrimmed);
     const richerIsChallenge = this.isLikelyBotChallengeMarkdown(richerTrimmed);
     if (currentIsChallenge && !richerIsChallenge) {
       return true;
@@ -1000,11 +1154,19 @@ export class CrawlResultService {
     const currentLength = currentTrimmed.length;
     const richerLength = richerTrimmed.length;
 
-    if (current.source === "fit" && richerLength >= 1600 && currentLength <= 800) {
+    if (
+      current.source === "fit" &&
+      richerLength >= 1600 &&
+      currentLength <= 800
+    ) {
       return true;
     }
 
-    if (richerLength >= 1200 && currentLength < richerLength * 0.33 && current.score - richer.score <= 420) {
+    if (
+      richerLength >= 1200 &&
+      currentLength < richerLength * 0.33 &&
+      current.score - richer.score <= 420
+    ) {
       return true;
     }
 
@@ -1014,7 +1176,9 @@ export class CrawlResultService {
   private stripCitationReferenceSection(markdown: string): string {
     const newLine = String.fromCharCode(10);
     const lines = markdown.split(newLine);
-    const referenceStartIndex = lines.findIndex((line) => /^\[\^[^\]]+\]:/.test(line.trim()));
+    const referenceStartIndex = lines.findIndex((line) =>
+      /^\[\^[^\]]+\]:/.test(line.trim()),
+    );
     if (referenceStartIndex <= 0) {
       return markdown;
     }
@@ -1037,7 +1201,9 @@ export class CrawlResultService {
       if (line.length > 80) {
         return false;
       }
-      const hasSentencePunctuation = [".", "!", "?", "。", "！", "？"].some((token) => line.includes(token));
+      const hasSentencePunctuation = [".", "!", "?", "。", "！", "？"].some(
+        (token) => line.includes(token),
+      );
       if (hasSentencePunctuation) {
         return false;
       }
@@ -1087,7 +1253,7 @@ export class CrawlResultService {
       "please enable js and disable any ad blocker",
       "please enable javascript",
       "checking your browser before accessing",
-      "you are being rate limited"
+      "you are being rate limited",
     ];
 
     if (strongIndicators.some((indicator) => normalized.includes(indicator))) {
@@ -1102,12 +1268,12 @@ export class CrawlResultService {
       "access denied",
       "security check",
       "automated requests",
-      "bot detection"
+      "bot detection",
     ];
 
     const weakHits = weakIndicators.reduce(
       (total, indicator) => total + (normalized.includes(indicator) ? 1 : 0),
-      0
+      0,
     );
 
     return weakHits >= 2 && normalized.length < 12000;
@@ -1123,19 +1289,27 @@ export class CrawlResultService {
       return true;
     }
 
-    const words = normalized.split(/\s+/).filter((entry) => entry.length > 0).length;
+    const words = normalized
+      .split(/\s+/)
+      .filter((entry) => entry.length > 0).length;
     const lines = normalized
       .split(/\n/g)
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
     const meaningfulLines = lines.filter((line) => !this.isReferenceLine(line));
-    const sentenceLikeLines = meaningfulLines.filter((line) => /[.!?。！？]/.test(line));
+    const sentenceLikeLines = meaningfulLines.filter((line) =>
+      /[.!?。！？]/.test(line),
+    );
 
     if (words <= 8 && meaningfulLines.length <= 2) {
       return true;
     }
 
-    if (words <= 16 && sentenceLikeLines.length === 0 && meaningfulLines.length <= 3) {
+    if (
+      words <= 16 &&
+      sentenceLikeLines.length === 0 &&
+      meaningfulLines.length <= 3
+    ) {
       return true;
     }
 
@@ -1156,7 +1330,10 @@ export class CrawlResultService {
       return false;
     }
 
-    return lines.some((line) => /^#{1,6}\s*references\b/i.test(line) || /^references\b/i.test(line));
+    return lines.some(
+      (line) =>
+        /^#{1,6}\s*references\b/i.test(line) || /^references\b/i.test(line),
+    );
   }
 
   private isReferenceLine(line: string): boolean {
@@ -1182,7 +1359,9 @@ export class CrawlResultService {
     return false;
   }
 
-  private normalizeMarkdownCandidate(value: string | undefined): string | undefined {
+  private normalizeMarkdownCandidate(
+    value: string | undefined,
+  ): string | undefined {
     if (typeof value !== "string") {
       return undefined;
     }
@@ -1192,14 +1371,20 @@ export class CrawlResultService {
       .replaceAll("\u0000", "")
       .replace(/[\u200B-\u200D\uFEFF]/g, "");
 
-    const lines = withoutControlChars.split("\n").map((line) => line.replace(/[ \t]+$/g, ""));
+    const lines = withoutControlChars
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+$/g, ""));
     const dedupedLines: string[] = [];
     let previousCompact = "";
     let repeatedCount = 0;
 
     for (const line of lines) {
       const compact = line.trim();
-      if (compact.length > 0 && compact === previousCompact && compact.length <= 80) {
+      if (
+        compact.length > 0 &&
+        compact === previousCompact &&
+        compact.length <= 80
+      ) {
         repeatedCount += 1;
         if (repeatedCount >= 2) {
           continue;
@@ -1213,7 +1398,10 @@ export class CrawlResultService {
 
     const cleanedLines = this.dropLowValueNoiseLines(dedupedLines);
 
-    const normalized = cleanedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    const normalized = cleanedLines
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
     return normalized.length > 0 ? normalized : undefined;
   }
 
@@ -1224,7 +1412,9 @@ export class CrawlResultService {
 
     const kept: string[] = [];
     let removedCount = 0;
-    const firstHeadingIndex = lines.findIndex((line) => /^#{1,6}\s+/.test(line.trim()));
+    const firstHeadingIndex = lines.findIndex((line) =>
+      /^#{1,6}\s+/.test(line.trim()),
+    );
 
     for (const [index, line] of lines.entries()) {
       const compact = line.trim();
@@ -1233,7 +1423,11 @@ export class CrawlResultService {
         continue;
       }
 
-      if (firstHeadingIndex >= 0 && index < firstHeadingIndex && this.isLikelyPreambleNoiseLine(compact)) {
+      if (
+        firstHeadingIndex >= 0 &&
+        index < firstHeadingIndex &&
+        this.isLikelyPreambleNoiseLine(compact)
+      ) {
         removedCount += 1;
         continue;
       }
@@ -1280,7 +1474,10 @@ export class CrawlResultService {
       return true;
     }
 
-    if (normalized === "politico pro" || /^politico pro\s*[⟨<]\d+[⟩>]$/i.test(compact)) {
+    if (
+      normalized === "politico pro" ||
+      /^politico pro\s*[⟨<]\d+[⟩>]$/i.test(compact)
+    ) {
       return true;
     }
 
@@ -1307,7 +1504,7 @@ export class CrawlResultService {
     }
 
     return /(skip to (main )?content|menu|log in|sign in|subscribe|politico pro|my account|account|home|search)/.test(
-      visible
+      visible,
     );
   }
 
@@ -1323,7 +1520,10 @@ export class CrawlResultService {
       return true;
     }
 
-    if (/^\s*politico pro\s*(?:[⟨<]\d+[⟩>])?\s*$/i.test(compact) && lower !== "politico pro") {
+    if (
+      /^\s*politico pro\s*(?:[⟨<]\d+[⟩>])?\s*$/i.test(compact) &&
+      lower !== "politico pro"
+    ) {
       return true;
     }
 
@@ -1331,7 +1531,10 @@ export class CrawlResultService {
       return true;
     }
 
-    if (/^\s*\[\s*\]\(https?:\/\/[^)]+\)\s*$/.test(compact) || this.isLikelyNavigationLinkLine(compact)) {
+    if (
+      /^\s*\[\s*\]\(https?:\/\/[^)]+\)\s*$/.test(compact) ||
+      this.isLikelyNavigationLinkLine(compact)
+    ) {
       return true;
     }
 
@@ -1339,7 +1542,9 @@ export class CrawlResultService {
       return true;
     }
 
-    if (normalized.startsWith("free article usually reserved for subscribers")) {
+    if (
+      normalized.startsWith("free article usually reserved for subscribers")
+    ) {
       return true;
     }
 
@@ -1353,7 +1558,9 @@ export class CrawlResultService {
 
     if (
       compact.length <= 80 &&
-      /^(subscribe|sign in|log in|get unlimited access|already a subscriber|create an account)/i.test(compact)
+      /^(subscribe|sign in|log in|get unlimited access|already a subscriber|create an account)/i.test(
+        compact,
+      )
     ) {
       return true;
     }
@@ -1367,7 +1574,9 @@ export class CrawlResultService {
 
     if (
       compact.length <= 140 &&
-      /^(privacy policy|cookie policy|terms of service|terms & conditions|all rights reserved)$/i.test(compact)
+      /^(privacy policy|cookie policy|terms of service|terms & conditions|all rights reserved)$/i.test(
+        compact,
+      )
     ) {
       return true;
     }
@@ -1375,8 +1584,9 @@ export class CrawlResultService {
     return false;
   }
 
-  extractLinkAnalysisFromResult(item: Crawl4aiArticle): CrawlLinkAnalysis | undefined {
-
+  extractLinkAnalysisFromResult(
+    item: Crawl4aiArticle,
+  ): CrawlLinkAnalysis | undefined {
     const direct = buildLinkAnalysis(item.links);
     if (direct) {
       return direct;
@@ -1385,7 +1595,12 @@ export class CrawlResultService {
       return undefined;
     }
     const metadata = item.metadata as Record<string, unknown>;
-    const candidateKeys = ["links", "link_summary", "linkSummary", "linkAnalysis"];
+    const candidateKeys = [
+      "links",
+      "link_summary",
+      "linkSummary",
+      "linkAnalysis",
+    ];
     for (const key of candidateKeys) {
       const entry = metadata[key];
       const analysis = buildLinkAnalysis(entry);
@@ -1396,12 +1611,16 @@ export class CrawlResultService {
     return undefined;
   }
 
-  private normalizeMediaCollection(media: unknown): CrawlMediaCollection | undefined {
+  private normalizeMediaCollection(
+    media: unknown,
+  ): CrawlMediaCollection | undefined {
     if (!media || typeof media !== "object" || Array.isArray(media)) {
       return undefined;
     }
     const normalized: CrawlMediaCollection = {};
-    for (const [kind, value] of Object.entries(media as Record<string, unknown>)) {
+    for (const [kind, value] of Object.entries(
+      media as Record<string, unknown>,
+    )) {
       if (!Array.isArray(value)) {
         continue;
       }
@@ -1470,13 +1689,13 @@ export class CrawlResultService {
       item.srcset = srcset;
     }
     const pictureSources = this.normalizeMediaSources(
-      record.sources ?? record.picture_sources ?? record.pictureSources
+      record.sources ?? record.picture_sources ?? record.pictureSources,
     );
     if (pictureSources) {
       item.pictureSources = pictureSources;
     }
     const responsiveSources = this.normalizeMediaSources(
-      record.responsive_images ?? record.responsiveImages
+      record.responsive_images ?? record.responsiveImages,
     );
     if (responsiveSources) {
       item.responsiveSources = responsiveSources;
@@ -1488,7 +1707,9 @@ export class CrawlResultService {
     return Object.keys(item).length > 0 ? item : undefined;
   }
 
-  private normalizeMediaSources(value: unknown): CrawlMediaSource[] | undefined {
+  private normalizeMediaSources(
+    value: unknown,
+  ): CrawlMediaSource[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
     }
@@ -1558,14 +1779,17 @@ export class CrawlResultService {
   private async collectMediaAssets(
     task: CrawlTask,
     resultId: string,
-    media?: CrawlMediaCollection
+    media?: CrawlMediaCollection,
   ): Promise<void> {
     if (!media || this.mediaConfig.maxPerResult <= 0) {
       return;
     }
     const mediaAssetService = this.resolveCrawlMediaAssetService();
     if (!mediaAssetService) {
-      logger.warn({ taskId: task.id, orgId: task.orgId, resultId }, "CrawlMediaAssetService is unavailable");
+      logger.warn(
+        { taskId: task.id, orgId: task.orgId, resultId },
+        "CrawlMediaAssetService is unavailable",
+      );
       return;
     }
     const entries = this.flattenMediaEntries(media);
@@ -1614,7 +1838,7 @@ export class CrawlResultService {
           desc: downloaded.desc,
           poster: downloaded.poster,
           format: downloaded.format,
-          metadata: downloaded.metadata
+          metadata: downloaded.metadata,
         });
       } catch (error) {
         failedCount += 1;
@@ -1625,9 +1849,9 @@ export class CrawlResultService {
             orgId: task.orgId,
             resultId,
             kind: downloaded.kind,
-            sourceUrl: downloaded.sourceUrl
+            sourceUrl: downloaded.sourceUrl,
           },
-          "Failed to store crawl media asset"
+          "Failed to store crawl media asset",
         );
         continue;
       }
@@ -1640,9 +1864,9 @@ export class CrawlResultService {
           orgId: task.orgId,
           resultId,
           storedCount,
-          failedCount
+          failedCount,
         },
-        "Stored crawl media with partial failures"
+        "Stored crawl media with partial failures",
       );
     }
   }
@@ -1675,7 +1899,7 @@ export class CrawlResultService {
   private buildInlineMediaAsset(
     dataUri: string,
     kind: string,
-    item: CrawlMediaItem
+    item: CrawlMediaItem,
   ): DownloadedMediaAsset | undefined {
     const maxBytes = this.mediaConfig.maxBytes;
     if (maxBytes <= 0) {
@@ -1686,7 +1910,7 @@ export class CrawlResultService {
     if (dataUri.length > maxDataUriChars) {
       logger.debug(
         { kind, length: dataUri.length, max: maxDataUriChars },
-        "Skipped inline media asset exceeding max length"
+        "Skipped inline media asset exceeding max length",
       );
       return undefined;
     }
@@ -1699,7 +1923,9 @@ export class CrawlResultService {
     const meta = dataUri.slice("data:".length, commaIndex);
     const payload = dataUri.slice(commaIndex + 1);
     const metaParts = meta.split(";");
-    const isBase64 = metaParts.some((part) => part.trim().toLowerCase() === "base64");
+    const isBase64 = metaParts.some(
+      (part) => part.trim().toLowerCase() === "base64",
+    );
     if (!isBase64) {
       return undefined;
     }
@@ -1712,7 +1938,7 @@ export class CrawlResultService {
     if (estimatedBytes > maxBytes) {
       logger.debug(
         { kind, estimatedBytes, maxBytes },
-        "Skipped inline media asset exceeding max bytes"
+        "Skipped inline media asset exceeding max bytes",
       );
       return undefined;
     }
@@ -1722,7 +1948,7 @@ export class CrawlResultService {
       if (buffer.length > maxBytes) {
         logger.debug(
           { kind, size: buffer.length, maxBytes },
-          "Skipped inline media asset exceeding max bytes"
+          "Skipped inline media asset exceeding max bytes",
         );
         return undefined;
       }
@@ -1739,7 +1965,7 @@ export class CrawlResultService {
         desc: item.desc,
         poster: item.poster,
         format: item.format,
-        metadata: item.raw
+        metadata: item.raw,
       };
     } catch (error) {
       logger.warn({ error }, "Failed to parse inline media asset");
@@ -1803,33 +2029,49 @@ export class CrawlResultService {
   private async fetchMediaAsset(
     url: string,
     kind: string,
-    item: CrawlMediaItem
+    item: CrawlMediaItem,
   ): Promise<DownloadedMediaAsset | undefined> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.mediaConfig.fetchTimeoutMs);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.mediaConfig.fetchTimeoutMs,
+    );
     try {
       const response = await fetch(url, {
-        signal: controller.signal
+        signal: controller.signal,
       });
       if (!response.ok) {
-        logger.debug({ url, status: response.status }, "Failed to download media asset");
+        logger.debug(
+          { url, status: response.status },
+          "Failed to download media asset",
+        );
         return undefined;
       }
       const contentLengthHeader = response.headers.get("content-length");
       if (contentLengthHeader) {
         const contentLength = Number(contentLengthHeader);
-        if (!Number.isNaN(contentLength) && contentLength > this.mediaConfig.maxBytes) {
-          logger.debug({ url, contentLength }, "Skipped media asset exceeding max bytes");
+        if (
+          !Number.isNaN(contentLength) &&
+          contentLength > this.mediaConfig.maxBytes
+        ) {
+          logger.debug(
+            { url, contentLength },
+            "Skipped media asset exceeding max bytes",
+          );
           return undefined;
         }
       }
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       if (buffer.byteLength > this.mediaConfig.maxBytes) {
-        logger.debug({ url, size: buffer.byteLength }, "Skipped media asset exceeding max bytes");
+        logger.debug(
+          { url, size: buffer.byteLength },
+          "Skipped media asset exceeding max bytes",
+        );
         return undefined;
       }
-      const contentType = response.headers.get("content-type") ?? item.format ?? undefined;
+      const contentType =
+        response.headers.get("content-type") ?? item.format ?? undefined;
       return {
         kind,
         sourceUrl: url,
@@ -1843,7 +2085,7 @@ export class CrawlResultService {
         desc: item.desc,
         poster: item.poster,
         format: item.format,
-        metadata: item.raw
+        metadata: item.raw,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown";
@@ -1863,7 +2105,10 @@ export class CrawlResultService {
     }
   }
 
-  private pickNumber(source: Record<string, unknown> | undefined, keys: string[]): number | undefined {
+  private pickNumber(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): number | undefined {
     if (!source) {
       return undefined;
     }
@@ -1876,7 +2121,10 @@ export class CrawlResultService {
     return undefined;
   }
 
-  private pickString(source: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+  private pickString(
+    source: Record<string, unknown> | undefined,
+    keys: string[],
+  ): string | undefined {
     if (!source) {
       return undefined;
     }
@@ -1893,7 +2141,9 @@ export class CrawlResultService {
     return typeof value === "string" && value.length > 0 ? value : undefined;
   }
 
-  private normalizeTablesFromResult(item: Crawl4aiArticle): CrawlResultTable[] | undefined {
+  private normalizeTablesFromResult(
+    item: Crawl4aiArticle,
+  ): CrawlResultTable[] | undefined {
     const sources = this.extractTablePayloads(item);
     if (sources.length === 0) {
       return undefined;
@@ -1908,7 +2158,9 @@ export class CrawlResultService {
     const payloads: Crawl4aiTablePayload[] = [];
     if (Array.isArray(item.tables)) {
       payloads.push(
-        ...item.tables.filter((entry): entry is Crawl4aiTablePayload => Boolean(entry && typeof entry === "object"))
+        ...item.tables.filter((entry): entry is Crawl4aiTablePayload =>
+          Boolean(entry && typeof entry === "object"),
+        ),
       );
     }
     if (item.media && typeof item.media === "object") {
@@ -1916,15 +2168,18 @@ export class CrawlResultService {
       if (Array.isArray(tables)) {
         payloads.push(
           ...tables.filter((entry: unknown): entry is Crawl4aiTablePayload =>
-            Boolean(entry && typeof entry === "object")
-          )
+            Boolean(entry && typeof entry === "object"),
+          ),
         );
       }
     }
     return payloads;
   }
 
-  private normalizeTablePayload(table: Crawl4aiTablePayload, index: number): CrawlResultTable | undefined {
+  private normalizeTablePayload(
+    table: Crawl4aiTablePayload,
+    index: number,
+  ): CrawlResultTable | undefined {
     if (!table || typeof table !== "object") {
       return undefined;
     }
@@ -1932,9 +2187,17 @@ export class CrawlResultService {
     if (rowsResult.rows.length === 0) {
       return undefined;
     }
-    const headers = this.normalizeTableHeaders(table.headers, rowsResult.inferredHeaders, rowsResult.rows[0]?.length ?? 0);
-    const normalizedRows = rowsResult.rows.map((row) => this.alignTableRow(row, headers.length));
-    const records = normalizedRows.map((row) => this.buildTableRecord(headers, row));
+    const headers = this.normalizeTableHeaders(
+      table.headers,
+      rowsResult.inferredHeaders,
+      rowsResult.rows[0]?.length ?? 0,
+    );
+    const normalizedRows = rowsResult.rows.map((row) =>
+      this.alignTableRow(row, headers.length),
+    );
+    const records = normalizedRows.map((row) =>
+      this.buildTableRecord(headers, row),
+    );
     const metadata = this.normalizeTableMetadata(table.metadata);
     return {
       id: table.id?.toString() ?? `table-${index + 1}`,
@@ -1943,22 +2206,29 @@ export class CrawlResultService {
       rows: normalizedRows,
       rowCount: normalizedRows.length,
       columnCount: headers.length,
-      source: this.ensureString(table.source_xpath ?? table.sourceXPath ?? (metadata?.source_xpath as string | undefined)),
+      source: this.ensureString(
+        table.source_xpath ??
+          table.sourceXPath ??
+          (metadata?.source_xpath as string | undefined),
+      ),
       metadata: metadata ?? undefined,
       dataFrame: {
         columns: headers,
-        rows: records
-      }
+        rows: records,
+      },
     };
   }
 
-  private extractTableRows(
-    table: Crawl4aiTablePayload
-  ): { rows: CrawlTableCell[][]; inferredHeaders?: string[] } {
+  private extractTableRows(table: Crawl4aiTablePayload): {
+    rows: CrawlTableCell[][];
+    inferredHeaders?: string[];
+  } {
     if (Array.isArray(table.rows)) {
       const normalized = table.rows
         .map((row: unknown) => this.normalizeTableRow(row))
-        .filter((row: CrawlTableCell[]): row is CrawlTableCell[] => row.length > 0);
+        .filter(
+          (row: CrawlTableCell[]): row is CrawlTableCell[] => row.length > 0,
+        );
       return { rows: normalized };
     }
     if (Array.isArray(table.data)) {
@@ -1967,7 +2237,11 @@ export class CrawlResultService {
         return { rows: [] };
       }
       const rows = table.data.map((record: unknown) =>
-        columns.map((column) => this.normalizeTableCell(record ? (record as Record<string, unknown>)[column] : undefined))
+        columns.map((column) =>
+          this.normalizeTableCell(
+            record ? (record as Record<string, unknown>)[column] : undefined,
+          ),
+        ),
       );
       return { rows, inferredHeaders: columns };
     }
@@ -1981,7 +2255,9 @@ export class CrawlResultService {
     return row.map((cell) => this.normalizeTableCell(cell));
   }
 
-  private collectColumnsFromRecords(records: Record<string, CrawlTableCell>[] | undefined) {
+  private collectColumnsFromRecords(
+    records: Record<string, CrawlTableCell>[] | undefined,
+  ) {
     if (!records) {
       return [] as string[];
     }
@@ -2009,7 +2285,7 @@ export class CrawlResultService {
   private normalizeTableHeaders(
     headers?: unknown,
     inferred?: string[],
-    fallbackSize?: number
+    fallbackSize?: number,
   ): string[] {
     const fromHeaders = Array.isArray(headers)
       ? headers
@@ -2022,7 +2298,10 @@ export class CrawlResultService {
       base = inferred;
     }
     if (base.length === 0 && fallbackSize && fallbackSize > 0) {
-      base = Array.from({ length: fallbackSize }, (_, idx) => `column_${idx + 1}`);
+      base = Array.from(
+        { length: fallbackSize },
+        (_, idx) => `column_${idx + 1}`,
+      );
     }
     if (base.length === 0) {
       base = ["column_1"];
@@ -2052,10 +2331,13 @@ export class CrawlResultService {
   }
 
   private buildTableRecord(headers: string[], row: CrawlTableCell[]) {
-    return headers.reduce<Record<string, CrawlTableCell>>((acc, header, index) => {
-      acc[header] = row[index] ?? null;
-      return acc;
-    }, {});
+    return headers.reduce<Record<string, CrawlTableCell>>(
+      (acc, header, index) => {
+        acc[header] = row[index] ?? null;
+        return acc;
+      },
+      {},
+    );
   }
 
   private normalizeTableMetadata(metadata?: Record<string, unknown>) {
@@ -2073,7 +2355,11 @@ export class CrawlResultService {
     if (value === null || value === undefined) {
       return null;
     }
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
       return value;
     }
     if (value instanceof Date) {

@@ -71,6 +71,14 @@ describe("admin settings navigation", () => {
     );
   });
 
+  it("exposes the multi-tenant scheduler panel on the ingestion workspace page", () => {
+    expect(
+      getVisibleAdminSettingsPanels("ingestion", ["settings.manage"]).map(
+        (panel) => panel.id,
+      ),
+    ).toContain("multi-tenant-schedulers");
+  });
+
   it("exposes stable description keys for pages and panels", () => {
     expect(getAdminSettingsPageDescriptionKey("security")).toBe(
       "adminSettings.pages.security.description",

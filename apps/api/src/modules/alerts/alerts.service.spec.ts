@@ -19,12 +19,34 @@ import {
   AlertMetricProvider,
   AlertOperator,
   AlertStatus,
+  Prisma,
 } from "@prisma/client";
 import { of } from "rxjs";
 
 import * as ssrfValidator from "../../common/validators/ssrf-url.validator";
 
 import { AlertsService } from "./alerts.service";
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+}
 
 describe("AlertsService.updateEventStatus", () => {
   const buildService = () => {
@@ -620,26 +642,68 @@ describe("AlertsService in-app recipients", () => {
   });
 });
 
-describe("AlertsService.listRules default crawl quality rules", () => {
-  const buildService = () => {
-    const createdRules: Array<{ id: string; orgId: string }> = [];
+describe("AlertsService default rule maintenance", () => {
+  const buildService = (options?: {
+    existingCrawlSlugs?: string[];
+    existingRealtimeSlugs?: string[];
+    listedRules?: unknown[];
+    activeRules?: {
+      id: string;
+      orgId: string;
+      checkIntervalSec?: number;
+    }[];
+    createImpl?: (input: { data: any }) => Promise<any>;
+  }) => {
+    const createdRules: {
+      id: string;
+      orgId: string;
+      metricProvider: AlertMetricProvider;
+      metricSlug: string;
+      checkIntervalSec: number;
+      status: AlertStatus;
+    }[] = [];
+    const existingCrawlSlugs = options?.existingCrawlSlugs ?? [];
+    const existingRealtimeSlugs = options?.existingRealtimeSlugs ?? [];
+    const listedRules = options?.listedRules ?? [];
+    const activeRules = options?.activeRules ?? [];
     const prisma = {
       org: {
-        findMany: jest.fn().mockResolvedValue([{ id: "org-1" }]),
+        findMany: jest.fn().mockResolvedValue([{ id: "org-1" }, { id: "org-2" }]),
       },
       alertRule: {
-        findMany: jest
-          .fn()
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([]),
+        findMany: jest.fn(async (args: any) => {
+          if (
+            args?.where?.orgId &&
+            args?.where?.metricProvider === AlertMetricProvider.crawl_task &&
+            args?.select?.metricSlug
+          ) {
+            return existingCrawlSlugs.map((metricSlug) => ({ metricSlug }));
+          }
+          if (
+            args?.where?.orgId &&
+            args?.where?.metricProvider === AlertMetricProvider.realtime_signal &&
+            args?.select?.metricSlug
+          ) {
+            return existingRealtimeSlugs.map((metricSlug) => ({ metricSlug }));
+          }
+          if (args?.where?.status === AlertStatus.active) {
+            return activeRules;
+          }
+          if (args?.where?.orgId && !args?.where?.metricProvider) {
+            return listedRules;
+          }
+          return [];
+        }),
         create: jest.fn(async ({ data }: any) => {
-          const created = {
-            id: data.id,
-            orgId: data.orgId,
-            checkIntervalSec: data.checkIntervalSec,
-            status: data.status,
-          };
+          const created =
+            (await options?.createImpl?.({ data })) ?? {
+              id: data.id,
+              orgId: data.orgId,
+              metricProvider: data.metricProvider,
+              metricSlug: data.metricSlug,
+              checkIntervalSec: data.checkIntervalSec,
+              status: data.status,
+            };
           createdRules.push(created);
           return created;
         }),
@@ -674,26 +738,158 @@ describe("AlertsService.listRules default crawl quality rules", () => {
 
     await service.listRules("org-1");
 
-    expect(createdRules.length).toBeGreaterThanOrEqual(3);
+    expect(
+      createdRules.some(
+        (entry) => entry.metricProvider === AlertMetricProvider.crawl_task,
+      ),
+    ).toBe(true);
     expect(prisma.alertRule.create).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalled();
   });
 
   it("does not recreate crawl defaults when existing slug has surrounding whitespace", async () => {
-    const { service, prisma, createdRules } = buildService();
-    prisma.alertRule.findMany = jest
-      .fn()
-      .mockResolvedValueOnce([
-        { metricSlug: "  crawl_quality.preflight_failure_rate  " },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+    const { service, createdRules } = buildService({
+      existingCrawlSlugs: ["  crawl_quality.preflight_failure_rate  "],
+    });
 
     await service.listRules("org-1");
 
     expect(
       createdRules.some((entry) => entry.id.includes("preflight_failure_rate")),
     ).toBe(false);
+  });
+
+  it("creates missing realtime signal rules and schedules them", async () => {
+    const { service, queue, createdRules } = buildService();
+
+    await (service as any).ensureDefaultRealtimeSignalRules("org-1");
+
+    expect(
+      createdRules.some(
+        (entry) =>
+          entry.metricProvider === AlertMetricProvider.realtime_signal,
+      ),
+    ).toBe(true);
+    expect(queue.add).toHaveBeenCalled();
+  });
+
+  it("continues default realtime maintenance when a deterministic create hits P2002", async () => {
+    const duplicateId = "default-realtime-signal-opensky-org-1";
+    const { service, prisma, createdRules } = buildService({
+      createImpl: async ({ data }) => {
+        if (data.id === duplicateId) {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+            code: "P2002",
+            clientVersion: "0",
+            meta: { target: ["PRIMARY"] },
+          });
+        }
+        return {
+          id: data.id,
+          orgId: data.orgId,
+          metricProvider: data.metricProvider,
+          metricSlug: data.metricSlug,
+          checkIntervalSec: data.checkIntervalSec,
+          status: data.status,
+        };
+      },
+    });
+
+    await expect(
+      (service as any).ensureDefaultRealtimeSignalRules("org-1"),
+    ).resolves.toBeUndefined();
+
+    expect(prisma.alertRule.create).toHaveBeenCalled();
+    expect(createdRules.some((entry) => entry.id === duplicateId)).toBe(false);
+    expect(createdRules.length).toBeGreaterThan(0);
+  });
+
+  it("enqueues active rule checks concurrently with a narrow rule query", async () => {
+    const { service, prisma } = buildService({
+      activeRules: [
+        { id: "rule-1", orgId: "org-1" },
+        { id: "rule-2", orgId: "org-2" },
+      ],
+    });
+    jest
+      .spyOn(service as any, "ensureDefaultRulesForAllOrgs")
+      .mockResolvedValue(undefined);
+
+    const startedTwo = createDeferred<void>();
+    const releases = [createDeferred<void>(), createDeferred<void>()];
+    let started = 0;
+    const enqueueSpy = jest
+      .spyOn(service, "enqueueRuleCheck")
+      .mockImplementation(async () => {
+        const current = started++;
+        if (started === 2) {
+          startedTwo.resolve();
+        }
+        await releases[current]!.promise;
+      });
+
+    const runPromise = service.enqueueActiveRuleChecks();
+
+    await startedTwo.promise;
+    expect(enqueueSpy).toHaveBeenCalledTimes(2);
+    expect(prisma.alertRule.findMany).toHaveBeenCalledWith({
+      where: { status: AlertStatus.active },
+      select: { id: true, orgId: true },
+    });
+
+    releases[0]!.resolve();
+    releases[1]!.resolve();
+    await runPromise;
+  });
+
+  it("ensures schedules concurrently with a narrow rule query", async () => {
+    const { service, prisma } = buildService({
+      activeRules: [
+        { id: "rule-1", orgId: "org-1", checkIntervalSec: 60 },
+        { id: "rule-2", orgId: "org-2", checkIntervalSec: 120 },
+      ],
+    });
+    jest
+      .spyOn(service as any, "ensureDefaultRulesForAllOrgs")
+      .mockResolvedValue(undefined);
+
+    const startedTwo = createDeferred<void>();
+    const releases = [createDeferred<void>(), createDeferred<void>()];
+    let started = 0;
+    const ensureScheduleSpy = jest
+      .spyOn(service as any, "ensureRuleSchedule")
+      .mockImplementation(async () => {
+        const current = started++;
+        if (started === 2) {
+          startedTwo.resolve();
+        }
+        await releases[current]!.promise;
+      });
+
+    const runPromise = service.ensureAllSchedules();
+
+    await startedTwo.promise;
+    expect(ensureScheduleSpy).toHaveBeenCalledTimes(2);
+    expect(prisma.alertRule.findMany).toHaveBeenCalledWith({
+      where: { status: AlertStatus.active },
+      select: { id: true, orgId: true, checkIntervalSec: true },
+    });
+
+    releases[0]!.resolve();
+    releases[1]!.resolve();
+    await runPromise;
+    expect(ensureScheduleSpy).toHaveBeenNthCalledWith(1, {
+      id: "rule-1",
+      orgId: "org-1",
+      checkIntervalSec: 60,
+      status: AlertStatus.active,
+    });
+    expect(ensureScheduleSpy).toHaveBeenNthCalledWith(2, {
+      id: "rule-2",
+      orgId: "org-2",
+      checkIntervalSec: 120,
+      status: AlertStatus.active,
+    });
   });
 });
 

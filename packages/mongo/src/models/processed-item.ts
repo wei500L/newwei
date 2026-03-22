@@ -1,21 +1,67 @@
-import { Schema, model, models, type HydratedDocument, type InferSchemaType, type Model } from "mongoose";
+import {
+  Schema,
+  model,
+  models,
+  type HydratedDocument,
+  type InferSchemaType,
+  type Model,
+} from "mongoose";
+
+interface ProcessedItemLocationCarrier {
+  location?: unknown;
+}
+
+export function processedItemHasLocation(result: unknown): boolean {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return false;
+  }
+  const location = (result as ProcessedItemLocationCarrier).location;
+  return typeof location === "string" && location.trim().length > 0;
+}
+
+export function buildProcessedItemLocationExpression(
+  locationFieldPath = "$result.location",
+): Record<string, unknown> {
+  return {
+    $cond: [
+      { $eq: [{ $type: locationFieldPath }, "string"] },
+      {
+        $gt: [{ $strLenCP: { $trim: { input: locationFieldPath } } }, 0],
+      },
+      false,
+    ],
+  };
+}
+
+export function buildProcessedItemHasLocationExpression(
+  hasLocationFieldPath = "$hasLocation",
+  locationFieldPath = "$result.location",
+): Record<string, unknown> {
+  return {
+    $cond: [
+      { $eq: [{ $type: hasLocationFieldPath }, "bool"] },
+      hasLocationFieldPath,
+      buildProcessedItemLocationExpression(locationFieldPath),
+    ],
+  };
+}
 
 const ProcessedItemErrorSchema = new Schema(
   {
     message: { type: String, required: true },
     name: { type: String },
-    stack: { type: String }
+    stack: { type: String },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const ProcessedItemEntitySchema = new Schema(
   {
     name: { type: String, required: true },
     type: { type: String, required: true },
-    confidence: { type: Number, required: true, min: 0, max: 1 }
+    confidence: { type: Number, required: true, min: 0, max: 1 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const ProcessedItemResultSchema = new Schema(
@@ -60,9 +106,9 @@ const ProcessedItemResultSchema = new Schema(
     removed_noise_types: { type: [String], default: [] },
     quality_score: { type: Number, min: 0, max: 1, default: null },
     llm_model: { type: String, default: null },
-    llm_prompt_version: { type: String, default: null }
+    llm_prompt_version: { type: String, default: null },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const ProcessedItemSchema = new Schema(
@@ -80,6 +126,7 @@ const ProcessedItemSchema = new Schema(
       enum: ["pending", "processing", "completed", "failed"],
       default: "pending",
     },
+    hasLocation: { type: Boolean, default: false },
     tags: { type: [String], default: [] },
     result: { type: ProcessedItemResultSchema, default: undefined },
     error: { type: ProcessedItemErrorSchema, default: undefined },
@@ -94,7 +141,11 @@ const ProcessedItemSchema = new Schema(
     },
     summaryEmbedding: { type: [Number], default: undefined },
     summaryEmbeddingModel: { type: String, default: null },
-    duplicateOf: { type: Schema.Types.ObjectId, ref: "ProcessedItem", default: null },
+    duplicateOf: {
+      type: Schema.Types.ObjectId,
+      ref: "ProcessedItem",
+      default: null,
+    },
     duplicateSimilarity: { type: Number, min: 0, max: 1, default: null },
   },
   {
@@ -104,11 +155,30 @@ const ProcessedItemSchema = new Schema(
 
 ProcessedItemSchema.index({ orgId: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, createdAt: -1 });
-ProcessedItemSchema.index({ orgId: 1, status: 1, itemMetaId: 1, createdAt: -1 });
+ProcessedItemSchema.index({
+  orgId: 1,
+  status: 1,
+  itemMetaId: 1,
+  createdAt: -1,
+});
 ProcessedItemSchema.index({ itemMetaId: 1, status: 1, createdAt: -1 });
 ProcessedItemSchema.index({ orgId: 1, status: 1, sortAt: -1 });
+ProcessedItemSchema.index({
+  orgId: 1,
+  status: 1,
+  duplicateOf: 1,
+  sortAt: -1,
+  ingestedAt: -1,
+  createdAt: -1,
+});
 ProcessedItemSchema.index({ orgId: 1, duplicateOf: 1, createdAt: -1 });
-ProcessedItemSchema.index({ orgId: 1, status: 1, summaryEmbeddingModel: 1, duplicateOf: 1, createdAt: -1 });
+ProcessedItemSchema.index({
+  orgId: 1,
+  status: 1,
+  summaryEmbeddingModel: 1,
+  duplicateOf: 1,
+  createdAt: -1,
+});
 ProcessedItemSchema.index({ orgId: 1, status: 1, sourceId: 1, createdAt: -1 });
 ProcessedItemSchema.index({
   orgId: 1,
@@ -136,9 +206,15 @@ ProcessedItemSchema.index({
 });
 
 ProcessedItemSchema.pre("validate", function (next) {
-  const doc = this as unknown as { status?: string; result?: unknown; error?: unknown };
+  const doc = this as unknown as {
+    status?: string;
+    result?: unknown;
+    error?: unknown;
+  };
   if (doc.status === "completed" && !doc.result) {
-    next(new Error("ProcessedItem.result is required when status is completed"));
+    next(
+      new Error("ProcessedItem.result is required when status is completed"),
+    );
     return;
   }
   if (doc.status === "failed" && !doc.error) {

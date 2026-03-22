@@ -54,6 +54,7 @@ const TELEGRAM_CACHE_TTL_SECONDS = 24 * 60 * 60;
 const OREF_ALERTS_CACHE_TTL_SECONDS = 60 * 60;
 const OREF_HISTORY_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const OREF_PERSIST_MAX_WAVES_DEFAULT = 200;
+const OREF_DEFAULT_RULE_CONCURRENCY = 16;
 
 interface TelegramState {
   client: unknown | null;
@@ -1147,49 +1148,122 @@ export class SituationMonitorSignalsService implements OnModuleInit {
       select: { id: true },
     });
 
-    for (const org of orgs) {
-      for (const definition of SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES) {
-        const existing = await this.prisma.alertRule.findFirst({
-          where: {
-            orgId: org.id,
-            metricProvider: AlertMetricProvider.system_metric,
-            metricSlug: definition.slug,
-          },
-          select: { id: true },
-        });
-
-        if (existing) {
-          continue;
-        }
-
-        await this.prisma.alertRule.create({
-          data: {
-            orgId: org.id,
-            name: definition.name,
-            description: definition.description,
-            severity:
-              definition.slug === SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG
-                ? AlertSeverity.medium
-                : AlertSeverity.high,
-            status: AlertStatus.active,
-            metricProvider: AlertMetricProvider.system_metric,
-            metricSlug: definition.slug,
-            operator: AlertOperator.gte,
-            thresholdValue: new Prisma.Decimal(definition.thresholdValue),
-            thresholdLower: null,
-            thresholdUpper: null,
-            changeWindowMin: 60,
-            cooldownSeconds: 300,
-            checkIntervalSec: 300,
-            metadata: {
-              source: "situation-monitor-signals",
-              systemDefault: true,
-            },
-            dataItemId: null,
-          },
-        });
-      }
+    if (orgs.length === 0) {
+      return;
     }
+
+    const orgIds = orgs.map((org) => org.id);
+    const orefMetricSlugs = SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.map(
+      (rule) => rule.slug,
+    );
+    const existingRules = await this.prisma.alertRule.findMany({
+      where: {
+        orgId: { in: orgIds },
+        metricProvider: AlertMetricProvider.system_metric,
+        metricSlug: { in: orefMetricSlugs },
+      },
+      select: {
+        orgId: true,
+        metricSlug: true,
+      },
+    });
+    const existingRuleKeys = new Set(
+      existingRules.map(
+        (rule) => `${rule.orgId}:${String(rule.metricSlug).trim()}`,
+      ),
+    );
+    const missingRules = orgs.flatMap((org) =>
+      SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.filter(
+        (definition) => !existingRuleKeys.has(`${org.id}:${definition.slug}`),
+      ).map((definition) => ({
+        orgId: org.id,
+        definition,
+      })),
+    );
+
+    await this.executeWithConcurrencyLimit(
+      missingRules,
+      async ({ orgId, definition }) => {
+        try {
+          await this.prisma.alertRule.create({
+            data: {
+              id: this.buildDefaultOrefRuleId(orgId, definition.slug),
+              orgId,
+              name: definition.name,
+              description: definition.description,
+              severity:
+                definition.slug === SITUATION_MONITOR_OREF_HISTORY_24H_METRIC_SLUG
+                  ? AlertSeverity.medium
+                  : AlertSeverity.high,
+              status: AlertStatus.active,
+              metricProvider: AlertMetricProvider.system_metric,
+              metricSlug: definition.slug,
+              operator: AlertOperator.gte,
+              thresholdValue: new Prisma.Decimal(definition.thresholdValue),
+              thresholdLower: null,
+              thresholdUpper: null,
+              changeWindowMin: 60,
+              cooldownSeconds: 300,
+              checkIntervalSec: 300,
+              metadata: {
+                source: "situation-monitor-signals",
+                systemDefault: true,
+              },
+              dataItemId: null,
+            },
+          });
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            logger.debug(
+              { orgId, metricSlug: definition.slug },
+              "Default OREF alert rule already exists",
+            );
+            return;
+          }
+          throw error;
+        }
+      },
+      OREF_DEFAULT_RULE_CONCURRENCY,
+    );
+  }
+
+  private buildDefaultOrefRuleId(orgId: string, metricSlug: string) {
+    const key = createHash("sha1")
+      .update(`${orgId}:${metricSlug}`)
+      .digest("hex")
+      .slice(0, 40);
+    return `default-oref-alert-${key}`;
+  }
+
+  private async executeWithConcurrencyLimit<T, R>(
+    items: T[],
+    fn: (item: T, index: number) => Promise<R>,
+    concurrency: number,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const results: R[] = new Array(items.length);
+    let index = 0;
+
+    const worker = async () => {
+      while (index < items.length) {
+        const currentIndex = index++;
+        results[currentIndex] = await fn(items[currentIndex]!, currentIndex);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }, () =>
+        worker(),
+      ),
+    );
+
+    return results;
   }
 
   private async orefCurlFetch(

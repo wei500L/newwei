@@ -4,18 +4,26 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { ProcessedArticleStatus, Prisma } from "@prisma/client";
 import { ProcessedItemModel } from "@modular/mongo";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
 import { buildNewsSignalFromProcessedArticle } from "../news-signals/news-signal";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 import { NewsEventsSettingsService } from "./news-events-settings.service";
 import { NewsEventsService } from "./news-events.service";
 
 const logger = createLogger({ name: "news-events-ingestion" });
+const NEWS_EVENTS_INGESTION_ORG_LOCK_TTL_MS = 60_000;
+
+type NewsEventsSchedulerOrgRunStatus = "completed" | "skipped";
 
 @Injectable()
 export class NewsEventsIngestionService {
   constructor(
+    private readonly cache: CacheService,
     private readonly prisma: PrismaService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
     private readonly settings: NewsEventsSettingsService,
     private readonly events: NewsEventsService,
   ) {}
@@ -27,13 +35,65 @@ export class NewsEventsIngestionService {
       select: { id: true }
     });
 
-    for (const org of orgs) {
-      try {
-        await this.ingestOrg(org.id);
-      } catch (error) {
-        logger.warn({ err: error, orgId: org.id }, "News event ingestion failed");
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.newsEventsIngestionOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "News event ingestion scheduler tick started",
+    );
+
+    const results = await settleWithConcurrency(orgs, concurrency, async (org) =>
+      await this.ingestOrgWithLock(org.id),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { err: result.reason, orgId: result.item.id },
+          "News event ingestion failed",
+        );
+        continue;
+      }
+
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
       }
     }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "News event ingestion scheduler tick completed",
+    );
+  }
+
+  private async ingestOrgWithLock(
+    orgId: string,
+  ): Promise<NewsEventsSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:news-events-ingestion:org:${orgId}`,
+      NEWS_EVENTS_INGESTION_ORG_LOCK_TTL_MS,
+      async () => {
+        await this.ingestOrg(orgId);
+        return "completed" as const;
+      },
+    );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped news event ingestion because previous org run is still in progress",
+    );
+    return "skipped";
   }
 
   private async ingestOrg(orgId: string) {

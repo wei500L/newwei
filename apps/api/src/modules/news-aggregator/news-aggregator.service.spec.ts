@@ -1,3 +1,4 @@
+import { buildComparableUrlVariants } from '@modular/mongo';
 import { BadRequestException, HttpException } from '@nestjs/common';
 
 import { NewsSourceRuntimeSecretRequiredError } from './news-aggregator.errors';
@@ -407,6 +408,7 @@ describe('NewsAggregatorService personalization order', () => {
 
     const first = await service.resolveByUrl('https://Example.com/news?id=1#section');
     const second = await service.resolveByUrl('https://example.com/news?id=1');
+    const comparable = buildComparableUrlVariants('https://example.com/news?id=1');
 
     expect(first).toEqual({
       matched: true,
@@ -417,6 +419,13 @@ describe('NewsAggregatorService personalization order', () => {
     });
     expect(second).toEqual(first);
     expect(mockRawItemFindOne).toHaveBeenCalledTimes(1);
+    expect(mockRawItemFindOne).toHaveBeenCalledWith(
+      {
+        urlComparableFullHash: comparable?.fullHash,
+        urlComparableFull: comparable?.full,
+      },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
     expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
     expect(prismaMock.newsEventItem.findFirst).toHaveBeenCalledTimes(1);
     expect(cacheServiceMock.set).toHaveBeenCalledWith(
@@ -428,6 +437,7 @@ describe('NewsAggregatorService personalization order', () => {
 
   it('falls back to the comparable base URL when the full URL does not match', async () => {
     mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
     mockRawItemFindOneResult({
       itemMetaId: 'item-meta-2',
       payload: { url: 'https://example.com/story' },
@@ -436,6 +446,7 @@ describe('NewsAggregatorService personalization order', () => {
     mockProcessedItemFindResult([]);
 
     const result = await service.resolveByUrl('https://example.com/story?ref=homepage');
+    const comparable = buildComparableUrlVariants('https://example.com/story?ref=homepage');
 
     expect(result).toEqual({
       matched: true,
@@ -443,15 +454,55 @@ describe('NewsAggregatorService personalization order', () => {
       confidence: 0.93,
       matchedUrl: 'https://example.com/story',
     });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(2);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
       1,
-      { urlComparableFull: 'https://example.com/story?ref=homepage' },
+      {
+        urlComparableFullHash: comparable?.fullHash,
+        urlComparableFull: comparable?.full,
+      },
       { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
     );
     expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
       2,
+      { 'payload.url': 'https://example.com/story?ref=homepage' },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      3,
       { urlComparableBase: 'https://example.com/story' },
+      { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
+    );
+  });
+
+  it('preserves the legacy exact payload.url fallback before comparable base matching', async () => {
+    mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult({
+      itemMetaId: 'item-meta-legacy',
+      payload: { url: 'https://example.com/story?id=123' },
+      createdAt: new Date('2026-03-22T00:00:00.000Z'),
+    });
+    mockProcessedItemFindResult([]);
+
+    const result = await service.resolveByUrl('https://example.com/story?id=123#top');
+
+    expect(result).toEqual({
+      matched: true,
+      itemId: 'item-meta-legacy',
+      confidence: 1,
+      matchedUrl: 'https://example.com/story?id=123',
+    });
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(2);
+    expect(mockRawItemFindOne).toHaveBeenNthCalledWith(
+      2,
+      {
+        'payload.url': {
+          $in: [
+            'https://example.com/story?id=123#top',
+            'https://example.com/story?id=123',
+          ],
+        },
+      },
       { itemMetaId: 1, 'payload.url': 1, createdAt: 1 },
     );
   });
@@ -466,13 +517,14 @@ describe('NewsAggregatorService personalization order', () => {
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
+    mockRawItemFindOneResult(null);
 
     const first = await service.resolveByUrl('https://example.com/missing');
     const second = await service.resolveByUrl('https://example.com/missing');
 
     expect(first).toEqual({ matched: false });
     expect(second).toEqual({ matched: false });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(4);
     expect(mockProcessedItemFind).not.toHaveBeenCalled();
     expect(prismaMock.newsEventItem.findFirst).not.toHaveBeenCalled();
     expect(cacheServiceMock.set).toHaveBeenCalledWith(
@@ -483,6 +535,7 @@ describe('NewsAggregatorService personalization order', () => {
   });
 
   it('falls back to the legacy payload.url regex when comparable fields do not match', async () => {
+    mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult(null);
     mockRawItemFindOneResult({
@@ -500,8 +553,8 @@ describe('NewsAggregatorService personalization order', () => {
       confidence: 0.86,
       matchedUrl: 'https://example.com/Story/?utm_source=legacy',
     });
-    expect(mockRawItemFindOne).toHaveBeenCalledTimes(3);
-    expect(mockRawItemFindOne.mock.calls[2]?.[0]).toMatchObject({
+    expect(mockRawItemFindOne).toHaveBeenCalledTimes(4);
+    expect(mockRawItemFindOne.mock.calls[3]?.[0]).toMatchObject({
       'payload.url': {
         $regex: expect.stringContaining('^https://example\\.com/Story'),
         $options: 'i',

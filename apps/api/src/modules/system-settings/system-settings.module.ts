@@ -31,6 +31,8 @@ import { LiteLlmProxyGovernanceService } from "./litellm-proxy-governance.servic
 import { LiteLlmProxyLoadBalancingSettingsService } from "./litellm-proxy-lb-settings.service";
 import { ModelServiceSettingsController } from "./model-service-settings.controller";
 import { ModelServiceSettingsService } from "./model-service-settings.service";
+import { MultiTenantSchedulerSettingsController } from "./multi-tenant-scheduler-settings.controller";
+import { MultiTenantSchedulerSettingsService } from "./multi-tenant-scheduler-settings.service";
 import { NewsSourceRuntimeSecretsController } from "./news-source-runtime-secrets.controller";
 import { NewsSourceRuntimeSecretsService } from "./news-source-runtime-secrets.service";
 import { NewsSourceSchedulerSettingsController } from "./news-source-scheduler-settings.controller";
@@ -87,6 +89,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     OpenAiKeysInternalController,
     SystemSecuritySettingsController,
     ModelServiceSettingsController,
+    MultiTenantSchedulerSettingsController,
     LlmRequestLogSettingsController,
     NewsSourceRuntimeSecretsController,
     NewsSourceSchedulerSettingsController,
@@ -116,6 +119,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,
@@ -148,6 +152,7 @@ import { ObservabilitySnapshotService } from "../observability/observability-sna
     SystemSecuritySettingsService,
     EntityImpactGraphSettingsService,
     ModelServiceSettingsService,
+    MultiTenantSchedulerSettingsService,
     LlmRequestLogSettingsService,
     NewsSourceRuntimeSecretsService,
     NewsSourceSchedulerSettingsService,

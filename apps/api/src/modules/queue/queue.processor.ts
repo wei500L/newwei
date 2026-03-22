@@ -410,6 +410,7 @@ export class QueueProcessor implements OnModuleInit, OnModuleDestroy {
       ...(options.error ? { error: options.error } : {}),
     };
     const unset: Record<string, 1> = {
+      hasLocation: 1,
       result: 1,
       duplicateOf: 1,
       duplicateSimilarity: 1,

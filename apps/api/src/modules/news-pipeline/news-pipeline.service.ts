@@ -1,4 +1,5 @@
 import {
+  processedItemHasLocation,
   CrawlResultContentModel,
   ItemReadModelModel,
   ProcessedItemModel,
@@ -395,7 +396,12 @@ export class NewsPipelineService implements OnModuleDestroy {
 
       await ProcessedItemModel.updateOne(
         { _id: processedItemId, orgId },
-        { $set: { result: updated } },
+        {
+          $set: {
+            result: updated,
+            hasLocation: processedItemHasLocation(updated),
+          },
+        },
       );
       updatedCount += 1;
     }
@@ -4097,6 +4103,7 @@ export class NewsPipelineService implements OnModuleDestroy {
         ...(options?.ingestedAt ? { ingestedAt: options.ingestedAt } : {}),
         ...(options?.sortAt ? { sortAt: options.sortAt } : {}),
         status: document.status,
+        hasLocation: processedItemHasLocation(document.result),
         tags: document.tags,
         result: document.result,
         llm: document.llm,

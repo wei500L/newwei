@@ -27,11 +27,7 @@ import { Agent as HttpsAgent } from "https";
 import type { LookupFunction } from "net";
 import { firstValueFrom } from "rxjs";
 
-import {
-  hasMembershipPermission,
-  type MembershipRoleWithPermissions,
-  type MembershipWithRoles,
-} from "../../common/authz/membership-permissions";
+import { hasMembershipPermission } from "../../common/authz/membership-permissions";
 import {
   toPrismaJsonValue,
   toPrismaJsonValueOrUndefined,
@@ -116,16 +112,11 @@ export type AlertJobPayload =
 const logger = createLogger({ name: "alerts" });
 const NOTIFICATION_BACKOFF_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
 const FILTERED_RECIPIENT_SAMPLE_LIMIT = 20;
+const ALERT_RULE_ORG_MAINTENANCE_CONCURRENCY = 8;
+const ALERT_RULE_TASK_CONCURRENCY = 16;
 const normalizeMetricSlug = (value: unknown): string =>
   normalizeRealtimeSignalMetricSlug(value);
 const ALERTS_READ_PERMISSION = "alerts.read";
-
-interface InAppRecipientRoleRecord extends MembershipRoleWithPermissions {}
-
-interface InAppRecipientMembershipRecord
-  extends MembershipWithRoles<InAppRecipientRoleRecord> {
-  userId: string;
-}
 
 interface InAppRecipientResolution {
   candidateUserIds: string[];
@@ -133,7 +124,7 @@ interface InAppRecipientResolution {
   missingPermissionUserIds: string[];
 }
 
-const DEFAULT_CRAWL_QUALITY_RULES: Array<{
+const DEFAULT_CRAWL_QUALITY_RULES: {
   key:
     | "preflight_failure_rate"
     | "http_304_hit_rate"
@@ -144,7 +135,7 @@ const DEFAULT_CRAWL_QUALITY_RULES: Array<{
   operator: AlertOperator;
   thresholdValue: number;
   severity: AlertSeverity;
-}> = [
+}[] = [
   {
     key: "preflight_failure_rate",
     name: "Crawl Quality: Preflight Failure Rate High",
@@ -297,8 +288,7 @@ export class AlertsService {
   }
 
   async listRules(orgId: string) {
-    await this.ensureDefaultCrawlQualityRules(orgId);
-    await this.ensureDefaultRealtimeSignalRules(orgId);
+    await this.ensureDefaultRules(orgId);
     const rules = await this.prisma.alertRule.findMany({
       where: { orgId },
       include: {
@@ -313,87 +303,84 @@ export class AlertsService {
     }));
   }
 
-  private async ensureDefaultCrawlQualityRules(orgId: string) {
-    const existing = await this.prisma.alertRule.findMany({
-      where: {
-        orgId,
-        metricProvider: AlertMetricProvider.crawl_task,
-      },
-      select: {
-        metricSlug: true,
-      },
-    });
-    const existingSlugSet = new Set(
-      existing
-        .map((entry) => normalizeMetricSlug(entry.metricSlug))
-        .filter((slug) => slug.length > 0),
-    );
-
-    for (const definition of DEFAULT_CRAWL_QUALITY_RULES) {
-      if (existingSlugSet.has(definition.metricSlug)) {
-        continue;
-      }
-
-      try {
-        const created = await this.prisma.alertRule.create({
-          data: {
-            id: this.buildDefaultCrawlQualityRuleId(orgId, definition.key),
-            orgId,
-            name: definition.name,
-            description: definition.description,
-            severity: definition.severity,
-            status: AlertStatus.active,
-            metricProvider: AlertMetricProvider.crawl_task,
-            metricSlug: definition.metricSlug,
-            operator: definition.operator,
-            thresholdValue: new Prisma.Decimal(definition.thresholdValue),
-            thresholdLower: null,
-            thresholdUpper: null,
-            changeWindowMin: 60,
-            cooldownSeconds: 3600,
-            checkIntervalSec: 300,
-            metadata: toPrismaJsonValue({
-              systemDefault: true,
-              defaultRuleKey: definition.key,
-              version: 1,
-            }),
-            dataItemId: null,
-          },
-        });
-        existingSlugSet.add(definition.metricSlug);
-        await this.ensureRuleSchedule(created);
-        await this.enqueueRuleCheck(created.id, created.orgId);
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          logger.debug(
-            { orgId, metricSlug: definition.metricSlug },
-            "Default crawl quality alert rule already exists",
-          );
-          existingSlugSet.add(definition.metricSlug);
-          continue;
-        }
-        throw error;
-      }
-    }
+  private async ensureDefaultRules(orgId: string) {
+    await Promise.all([
+      this.ensureDefaultCrawlQualityRules(orgId),
+      this.ensureDefaultRealtimeSignalRules(orgId),
+    ]);
   }
 
-  private async ensureDefaultCrawlQualityRulesForAllOrgs() {
+  private async ensureDefaultRulesForAllOrgs() {
     const orgs = await this.prisma.org.findMany({
       select: { id: true },
     });
-    for (const org of orgs) {
-      await this.ensureDefaultCrawlQualityRules(org.id);
-    }
+    await this.executeWithConcurrencyLimit(
+      orgs,
+      async (org) => {
+        await this.ensureDefaultRules(org.id);
+      },
+      ALERT_RULE_ORG_MAINTENANCE_CONCURRENCY,
+    );
+  }
+
+  private async ensureDefaultCrawlQualityRules(orgId: string) {
+    await this.ensureMetricProviderDefaultRules({
+      orgId,
+      metricProvider: AlertMetricProvider.crawl_task,
+      definitions: DEFAULT_CRAWL_QUALITY_RULES,
+      buildRuleId: (definition) =>
+        this.buildDefaultCrawlQualityRuleId(orgId, definition.key),
+      cooldownSeconds: 3600,
+      duplicateLogMessage: "Default crawl quality alert rule already exists",
+      buildMetadata: (definition) => ({
+        systemDefault: true,
+        defaultRuleKey: definition.key,
+        version: 1,
+      }),
+    });
   }
 
   private async ensureDefaultRealtimeSignalRules(orgId: string) {
+    await this.ensureMetricProviderDefaultRules({
+      orgId,
+      metricProvider: AlertMetricProvider.realtime_signal,
+      definitions: DEFAULT_REALTIME_SIGNAL_RULES,
+      buildRuleId: (definition) =>
+        this.buildDefaultRealtimeSignalRuleId(orgId, definition.key),
+      cooldownSeconds: 1800,
+      duplicateLogMessage:
+        "Default realtime signal alert rule already exists",
+      buildMetadata: (definition) => ({
+        systemDefault: true,
+        defaultRuleKey: definition.key,
+        version: 1,
+      }),
+    });
+  }
+
+  private async ensureMetricProviderDefaultRules<
+    TDefinition extends {
+      key: string;
+      name: string;
+      description: string;
+      metricSlug: string;
+      operator: AlertOperator;
+      thresholdValue: number;
+      severity: AlertSeverity;
+    },
+  >(input: {
+    orgId: string;
+    metricProvider: AlertMetricProvider;
+    definitions: TDefinition[];
+    buildRuleId: (definition: TDefinition) => string;
+    cooldownSeconds: number;
+    duplicateLogMessage: string;
+    buildMetadata: (definition: TDefinition) => Record<string, unknown>;
+  }) {
     const existing = await this.prisma.alertRule.findMany({
       where: {
-        orgId,
-        metricProvider: AlertMetricProvider.realtime_signal,
+        orgId: input.orgId,
+        metricProvider: input.metricProvider,
       },
       select: {
         metricSlug: true,
@@ -404,65 +391,58 @@ export class AlertsService {
         .map((entry) => normalizeMetricSlug(entry.metricSlug))
         .filter((slug) => slug.length > 0),
     );
+    const missingDefinitions = input.definitions.filter(
+      (definition) =>
+        !existingSlugSet.has(normalizeMetricSlug(definition.metricSlug)),
+    );
 
-    for (const definition of DEFAULT_REALTIME_SIGNAL_RULES) {
-      if (existingSlugSet.has(definition.metricSlug)) {
-        continue;
-      }
+    await this.executeWithConcurrencyLimit(
+      missingDefinitions,
+      async (definition) => {
+        const metricSlug = normalizeMetricSlug(definition.metricSlug);
 
-      try {
-        const created = await this.prisma.alertRule.create({
-          data: {
-            id: this.buildDefaultRealtimeSignalRuleId(orgId, definition.key),
-            orgId,
-            name: definition.name,
-            description: definition.description,
-            severity: definition.severity,
-            status: AlertStatus.active,
-            metricProvider: AlertMetricProvider.realtime_signal,
-            metricSlug: definition.metricSlug,
-            operator: definition.operator,
-            thresholdValue: new Prisma.Decimal(definition.thresholdValue),
-            thresholdLower: null,
-            thresholdUpper: null,
-            changeWindowMin: 60,
-            cooldownSeconds: 1800,
-            checkIntervalSec: 300,
-            metadata: toPrismaJsonValue({
-              systemDefault: true,
-              defaultRuleKey: definition.key,
-              version: 1,
-            }),
-            dataItemId: null,
-          },
-        });
-        existingSlugSet.add(definition.metricSlug);
-        await this.ensureRuleSchedule(created);
-        await this.enqueueRuleCheck(created.id, created.orgId);
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === "P2002"
-        ) {
-          logger.debug(
-            { orgId, metricSlug: definition.metricSlug },
-            "Default realtime signal alert rule already exists",
-          );
-          existingSlugSet.add(definition.metricSlug);
-          continue;
+        try {
+          const created = await this.prisma.alertRule.create({
+            data: {
+              id: input.buildRuleId(definition),
+              orgId: input.orgId,
+              name: definition.name,
+              description: definition.description,
+              severity: definition.severity,
+              status: AlertStatus.active,
+              metricProvider: input.metricProvider,
+              metricSlug,
+              operator: definition.operator,
+              thresholdValue: new Prisma.Decimal(definition.thresholdValue),
+              thresholdLower: null,
+              thresholdUpper: null,
+              changeWindowMin: 60,
+              cooldownSeconds: input.cooldownSeconds,
+              checkIntervalSec: 300,
+              metadata: toPrismaJsonValue(input.buildMetadata(definition)),
+              dataItemId: null,
+            },
+          });
+          await Promise.all([
+            this.ensureRuleSchedule(created),
+            this.enqueueRuleCheck(created.id, created.orgId),
+          ]);
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            logger.debug(
+              { orgId: input.orgId, metricSlug },
+              input.duplicateLogMessage,
+            );
+            return;
+          }
+          throw error;
         }
-        throw error;
-      }
-    }
-  }
-
-  private async ensureDefaultRealtimeSignalRulesForAllOrgs() {
-    const orgs = await this.prisma.org.findMany({
-      select: { id: true },
-    });
-    for (const org of orgs) {
-      await this.ensureDefaultRealtimeSignalRules(org.id);
-    }
+      },
+      ALERT_RULE_TASK_CONCURRENCY,
+    );
   }
 
   private buildDefaultCrawlQualityRuleId(
@@ -1154,25 +1134,36 @@ export class AlertsService {
   }
 
   async enqueueActiveRuleChecks() {
-    await this.ensureDefaultCrawlQualityRulesForAllOrgs();
-    await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
+    await this.ensureDefaultRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active },
+      select: { id: true, orgId: true },
     });
-    for (const rule of activeRules) {
-      await this.enqueueRuleCheck(rule.id, rule.orgId);
-    }
+    await this.executeWithConcurrencyLimit(
+      activeRules,
+      async (rule) => {
+        await this.enqueueRuleCheck(rule.id, rule.orgId);
+      },
+      ALERT_RULE_TASK_CONCURRENCY,
+    );
   }
 
   async ensureAllSchedules() {
-    await this.ensureDefaultCrawlQualityRulesForAllOrgs();
-    await this.ensureDefaultRealtimeSignalRulesForAllOrgs();
+    await this.ensureDefaultRulesForAllOrgs();
     const activeRules = await this.prisma.alertRule.findMany({
       where: { status: AlertStatus.active },
+      select: { id: true, orgId: true, checkIntervalSec: true },
     });
-    for (const rule of activeRules) {
-      await this.ensureRuleSchedule(rule);
-    }
+    await this.executeWithConcurrencyLimit(
+      activeRules,
+      async (rule) => {
+        await this.ensureRuleSchedule({
+          ...rule,
+          status: AlertStatus.active,
+        });
+      },
+      ALERT_RULE_TASK_CONCURRENCY,
+    );
   }
 
   async evaluateRule(ruleId: string) {
@@ -2254,8 +2245,8 @@ export class AlertsService {
     const normalizedExpectedHostname = expectedHostname.toLowerCase();
     return ((
       hostname: string,
-      options: any,
-      callback: (...args: unknown[]) => void,
+      options: Parameters<LookupFunction>[1],
+      callback: Parameters<LookupFunction>[2],
     ) => {
       if (hostname.toLowerCase() !== normalizedExpectedHostname) {
         callback(
@@ -2357,6 +2348,34 @@ export class AlertsService {
 
   private buildDeliveryJobName(deliveryId: string) {
     return `deliver-notification:${deliveryId}`;
+  }
+
+  private async executeWithConcurrencyLimit<T, R>(
+    items: T[],
+    fn: (item: T, index: number) => Promise<R>,
+    concurrency: number,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const results: R[] = new Array(items.length);
+    let index = 0;
+
+    const worker = async () => {
+      while (index < items.length) {
+        const currentIndex = index++;
+        results[currentIndex] = await fn(items[currentIndex]!, currentIndex);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }, () =>
+        worker(),
+      ),
+    );
+
+    return results;
   }
 
   private async removeJob(ruleId: string, includeRepeats = true) {

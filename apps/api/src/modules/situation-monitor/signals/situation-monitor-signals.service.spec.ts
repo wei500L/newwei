@@ -1,3 +1,10 @@
+import { AlertMetricProvider, Prisma } from '@prisma/client';
+
+import {
+  SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES,
+  SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG,
+} from '../signal-metrics.constants';
+
 import { SituationMonitorSignalsService } from './situation-monitor-signals.service';
 
 describe('SituationMonitorSignalsService', () => {
@@ -44,7 +51,7 @@ describe('SituationMonitorSignalsService', () => {
       prisma,
     );
 
-    return { service };
+    return { service, prisma };
   }
 
   it('returns global telegram feed metadata', async () => {
@@ -274,6 +281,65 @@ describe('SituationMonitorSignalsService', () => {
 
     expect(bootstrapSpy).toHaveBeenCalledTimes(2);
     expect((service as any).orefBootstrapped).toBe(true);
+  });
+
+  it('loads existing OREF defaults in one batch query and only creates missing rules', async () => {
+    const { service, prisma } = createService();
+    prisma.org.findMany.mockResolvedValue([{ id: 'org-1' }, { id: 'org-2' }]);
+    prisma.alertRule.findMany.mockResolvedValue([
+      {
+        orgId: 'org-1',
+        metricSlug: SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG,
+      },
+    ]);
+    prisma.alertRule.create.mockResolvedValue(undefined);
+
+    await (service as any).ensureOrefDefaultRules();
+
+    expect(prisma.alertRule.findMany).toHaveBeenCalledWith({
+      where: {
+        orgId: { in: ['org-1', 'org-2'] },
+        metricProvider: AlertMetricProvider.system_metric,
+        metricSlug: {
+          in: SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.map((rule) => rule.slug),
+        },
+      },
+      select: {
+        orgId: true,
+        metricSlug: true,
+      },
+    });
+    expect(prisma.alertRule.findFirst).not.toHaveBeenCalled();
+    expect(prisma.alertRule.create).toHaveBeenCalledTimes(3);
+    expect(prisma.alertRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          id: expect.stringMatching(/^default-oref-alert-/),
+        }),
+      }),
+    );
+  });
+
+  it('ignores duplicate OREF default-rule creates after switching to deterministic ids', async () => {
+    const { service, prisma } = createService();
+    prisma.org.findMany.mockResolvedValue([{ id: 'org-1' }]);
+    prisma.alertRule.findMany.mockResolvedValue([]);
+    prisma.alertRule.create.mockImplementation(async ({ data }: { data: any }) => {
+      if (data.metricSlug === SITUATION_MONITOR_OREF_ACTIVE_ALERTS_METRIC_SLUG) {
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+          code: 'P2002',
+          clientVersion: '0',
+          meta: { target: ['PRIMARY'] },
+        });
+      }
+      return undefined;
+    });
+
+    await expect((service as any).ensureOrefDefaultRules()).resolves.toBeUndefined();
+
+    expect(prisma.alertRule.create).toHaveBeenCalledTimes(
+      SITUATION_MONITOR_DEFAULT_OREF_ALERT_RULES.length,
+    );
   });
 
   it('triggers OREF alert checks even when upstream payload is unchanged', async () => {

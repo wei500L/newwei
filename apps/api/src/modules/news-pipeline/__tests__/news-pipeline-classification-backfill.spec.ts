@@ -18,6 +18,10 @@ jest.mock(
 );
 
 jest.mock("@modular/mongo", () => ({
+  processedItemHasLocation: jest.fn(
+    (result?: { location?: unknown } | null) =>
+      typeof result?.location === "string" && result.location.trim().length > 0,
+  ),
   CrawlResultContentModel: {
     findById: jest.fn(),
   },
@@ -162,6 +166,7 @@ describe("NewsPipelineService classification backfill", () => {
       { _id: processedItemId, orgId: "org-1" },
       expect.objectContaining({
         $set: expect.objectContaining({
+          hasLocation: false,
           result: expect.objectContaining({
             content_type: "news_fact",
             category_path: "intel/osint/analysis",

@@ -4,7 +4,10 @@ import { Injectable } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import type { PipelineStage } from "mongoose";
 
+import { settleWithConcurrency } from "../../common/multi-tenant-scheduler";
+import { CacheService } from "../cache/cache.service";
 import { PrismaService } from "../config/prisma.service";
+import { MultiTenantSchedulerSettingsService } from "../system-settings/multi-tenant-scheduler-settings.service";
 
 const logger = createLogger({ name: "sentiment-snapshot" });
 
@@ -12,6 +15,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const REBUILD_DAYS = 2;
 const MIN_ENTITY_CONFIDENCE = 0.5;
 const MAX_ROWS_PER_BUCKET = 5_000;
+const SENTIMENT_SNAPSHOT_ORG_LOCK_TTL_MS = 5 * 60_000;
+
+type SentimentSnapshotSchedulerOrgRunStatus = "completed" | "skipped";
 
 interface SentimentAggregateRow {
   name: string;
@@ -34,7 +40,11 @@ interface TopicAggregateRow {
 
 @Injectable()
 export class SentimentSnapshotIngestionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly cache: CacheService,
+    private readonly prisma: PrismaService,
+    private readonly schedulerSettings: MultiTenantSchedulerSettingsService,
+  ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
   async rebuildRecentSnapshots() {
@@ -43,13 +53,65 @@ export class SentimentSnapshotIngestionService {
       select: { id: true }
     });
 
-    for (const org of orgs) {
-      try {
-        await this.rebuildOrg(org.id);
-      } catch (error) {
-        logger.warn({ err: error, orgId: org.id }, "Sentiment snapshot rebuild failed");
+    if (orgs.length === 0) {
+      return;
+    }
+
+    const runtime = await this.schedulerSettings.getRuntimeSettings();
+    const concurrency = runtime.sentimentSnapshotOrgConcurrency;
+    logger.info(
+      { orgCount: orgs.length, concurrency },
+      "Sentiment snapshot scheduler tick started",
+    );
+
+    const results = await settleWithConcurrency(orgs, concurrency, async (org) =>
+      await this.rebuildOrgWithLock(org.id),
+    );
+
+    let failedOrgs = 0;
+    let skippedOrgs = 0;
+    for (const result of results) {
+      if (result.status === "rejected") {
+        failedOrgs += 1;
+        logger.warn(
+          { err: result.reason, orgId: result.item.id },
+          "Sentiment snapshot rebuild failed",
+        );
+        continue;
+      }
+
+      if (result.value === "skipped") {
+        skippedOrgs += 1;
       }
     }
+
+    logger.info(
+      { orgCount: orgs.length, concurrency, failedOrgs, skippedOrgs },
+      "Sentiment snapshot scheduler tick completed",
+    );
+  }
+
+  private async rebuildOrgWithLock(
+    orgId: string,
+  ): Promise<SentimentSnapshotSchedulerOrgRunStatus> {
+    const locked = await this.cache.withLock(
+      `cron:sentiment-snapshot:org:${orgId}`,
+      SENTIMENT_SNAPSHOT_ORG_LOCK_TTL_MS,
+      async () => {
+        await this.rebuildOrg(orgId);
+        return "completed" as const;
+      },
+    );
+
+    if (locked !== null) {
+      return locked;
+    }
+
+    logger.info(
+      { orgId },
+      "Skipped sentiment snapshot rebuild because previous org run is still in progress",
+    );
+    return "skipped";
   }
 
   private async rebuildOrg(orgId: string) {

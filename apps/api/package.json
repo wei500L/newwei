@@ -15,6 +15,7 @@
     "generate:schema": "cross-env TS_NODE_PREFER_TS_EXTS=true NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/generate-graphql-schema.ts",
     "economic:fetch": "cross-env TS_NODE_PREFER_TS_EXTS=true NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/fetch-economic-data.ts",
     "mongo:indexes": "cross-env TS_NODE_PREFER_TS_EXTS=true NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/ensure-mongo-indexes.ts",
+    "processed-item-location:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-processed-item-has-location.ts",
     "raw-item-urls:backfill": "cross-env TS_NODE_PREFER_TS_EXTS=true NODE_PATH=./node_modules node -r ts-node/register/transpile-only -r tsconfig-paths/register ./scripts/backfill-raw-item-comparable-urls.ts",
     "copy:email-templates": "node ./scripts/copy-email-templates.js",
     "vector:backfill": "cross-env NODE_PATH=./node_modules tsx ./scripts/backfill-vector-index.ts",

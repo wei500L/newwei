@@ -1,3 +1,32 @@
+const mockTaskLogFindOneChain = {
+  select: jest.fn().mockReturnThis(),
+  sort: jest.fn().mockReturnThis(),
+  lean: jest.fn().mockResolvedValue(null),
+};
+
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
+
+jest.mock("@modular/mongo", () => ({
+  CrawlResultContentModel: {},
+  TaskLogModel: {
+    findOne: jest.fn(() => mockTaskLogFindOneChain),
+  },
+}));
+
+import { TaskLogModel } from "@modular/mongo";
+
 import { CrawlResultService } from "../crawl-result.service";
 
 describe("CrawlResultService", () => {
@@ -6,18 +35,86 @@ describe("CrawlResultService", () => {
     overrides?: {
       prisma?: any;
       moduleRef?: any;
-    }
+    },
   ) =>
     new CrawlResultService(
       (overrides?.prisma ?? {}) as any,
       {
         crawl4aiConfig: {
-          media: { fetchTimeoutMs: 1000, maxBytes, maxPerResult: 10 }
-        }
+          media: { fetchTimeoutMs: 1000, maxBytes, maxPerResult: 10 },
+        },
       } as any,
       {} as any,
-      (overrides?.moduleRef ?? { get: jest.fn() }) as any
+      (overrides?.moduleRef ?? { get: jest.fn() }) as any,
     );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockTaskLogFindOneChain.lean.mockResolvedValue(null);
+  });
+
+  it("reads the latest complete task log once with a targeted projection", async () => {
+    const service = createService(128);
+    mockTaskLogFindOneChain.lean.mockResolvedValue({
+      data: {
+        inserted: 3,
+        skipped: 1,
+        itemsQueued: 2,
+        itemsQueueFailed: 1,
+        lastFetchedAt: "2026-03-22T01:02:03.000Z",
+        memory: {
+          serverMemoryMb: 512,
+          peakMemoryMb: 768,
+          efficiencyPercent: 67,
+        },
+        retryableFailures: 4,
+        reusedResultId: " reused-result ",
+        runId: "run-123",
+      },
+    });
+
+    const result = await service.getLatestRunDetails("org-1", "task-1");
+
+    expect(TaskLogModel.findOne).toHaveBeenCalledTimes(1);
+    expect(TaskLogModel.findOne).toHaveBeenCalledWith({
+      queue: "crawl4ai",
+      jobId: "task-1",
+      orgId: "org-1",
+      stage: "complete",
+    });
+    expect(mockTaskLogFindOneChain.select).toHaveBeenCalledWith({
+      _id: 0,
+      "data.inserted": 1,
+      "data.itemsQueued": 1,
+      "data.itemsQueueFailed": 1,
+      "data.lastFetchedAt": 1,
+      "data.memory": 1,
+      "data.retryableFailures": 1,
+      "data.reusedResultId": 1,
+      "data.runId": 1,
+      "data.skipped": 1,
+    });
+    expect(mockTaskLogFindOneChain.sort).toHaveBeenCalledWith({
+      createdAt: -1,
+    });
+    expect(result).toEqual({
+      memoryStats: {
+        serverMemoryMb: 512,
+        peakMemoryMb: 768,
+        efficiencyPercent: 67,
+      },
+      lastRunSummary: {
+        inserted: 3,
+        skipped: 1,
+        itemsQueued: 2,
+        itemsQueueFailed: 1,
+        lastFetchedAt: new Date("2026-03-22T01:02:03.000Z"),
+        retryableFailures: 4,
+        reusedResultId: "reused-result",
+        runId: "run-123",
+      },
+    });
+  });
 
   it("skips inline assets when the Data URI is too long", () => {
     const service = createService(8);
@@ -57,15 +154,19 @@ describe("CrawlResultService", () => {
         bytes: 5,
         contentType: "image/png",
         sourceUrl: "data-uri:inline",
-        data: Buffer.from("hello")
-      })
+        data: Buffer.from("hello"),
+      }),
     );
   });
 
   it("ignores non-base64 data URIs", () => {
     const service = createService(128);
 
-    const asset = (service as any).buildInlineMediaAsset("data:image/png,hello", "image", {});
+    const asset = (service as any).buildInlineMediaAsset(
+      "data:image/png,hello",
+      "image",
+      {},
+    );
 
     expect(asset).toBeUndefined();
   });
@@ -78,11 +179,14 @@ describe("CrawlResultService", () => {
       raw_markdown: "# Menu\n- Home\n- World\n- Markets",
       markdown_with_citations:
         "# Headline[^1]\n\nThis is a full article body with multiple sentences and context.\n\nAnother paragraph with additional details.[^2]",
-      references_markdown: "[^1]: https://example.com/a\n[^2]: https://example.com/b"
+      references_markdown:
+        "[^1]: https://example.com/a\n[^2]: https://example.com/b",
     });
 
     expect(result.primary).toBe(result.citations);
-    expect((result.primary ?? "").length).toBeGreaterThan((result.fit ?? "").length);
+    expect((result.primary ?? "").length).toBeGreaterThan(
+      (result.fit ?? "").length,
+    );
   });
 
   it("removes citation reference list from primary markdown body", () => {
@@ -91,10 +195,13 @@ describe("CrawlResultService", () => {
     const result = service.extractMarkdownResult({
       markdown_with_citations:
         "# Headline[^1]\n\nBody paragraph with context and details.[^2]\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b",
-      references_markdown: "[^1]: https://example.com/a\n[^2]: https://example.com/b"
+      references_markdown:
+        "[^1]: https://example.com/a\n[^2]: https://example.com/b",
     });
 
-    expect(result.primary).toContain("Body paragraph with context and details.");
+    expect(result.primary).toContain(
+      "Body paragraph with context and details.",
+    );
     expect(result.primary).not.toContain("[^1]: https://example.com/a");
     expect(result.citations).toContain("[^1]: https://example.com/a");
   });
@@ -107,21 +214,26 @@ describe("CrawlResultService", () => {
       markdown_with_citations:
         "# Reuters World[^1]\n\nDetailed paragraph one with meaningful context and numbers.\n\nDetailed paragraph two with more context and quotes.[^2]\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b\n[^3]: https://example.com/c\n[^4]: https://example.com/d",
       raw_markdown:
-        "# Reuters World\n\nDetailed paragraph one with meaningful context and numbers.\n\nDetailed paragraph two with more context and quotes."
+        "# Reuters World\n\nDetailed paragraph one with meaningful context and numbers.\n\nDetailed paragraph two with more context and quotes.",
     });
 
     expect(result.primary).not.toBe(result.fit);
-    expect((result.primary ?? "").length).toBeGreaterThan((result.fit ?? "").length);
+    expect((result.primary ?? "").length).toBeGreaterThan(
+      (result.fit ?? "").length,
+    );
   });
 
   it("prefers richer raw markdown when fit markdown is too short", () => {
     const service = createService(128);
 
-    const longBody = "Paragraph with detailed article context about diplomacy, markets, and policy changes.\n".repeat(90);
+    const longBody =
+      "Paragraph with detailed article context about diplomacy, markets, and policy changes.\n".repeat(
+        90,
+      );
 
     const result = service.extractMarkdownResult({
       fit_markdown: "# Digest\n- bullet one\n- bullet two",
-      raw_markdown: `# Full Article\n\n${longBody}`
+      raw_markdown: `# Full Article\n\n${longBody}`,
     });
 
     expect(result.primary).toBe(result.raw);
@@ -133,13 +245,16 @@ describe("CrawlResultService", () => {
     const service = createService(128);
 
     expect(
-      service.isLikelyBotChallengeMarkdown("Verification Required\nPlease enable JS and disable any ad blocker")
+      service.isLikelyBotChallengeMarkdown(
+        "Verification Required\nPlease enable JS and disable any ad blocker",
+      ),
     ).toBe(true);
 
     const result = service.extractMarkdownResult({
-      markdown_with_citations: "Verification Required\nPlease enable JS and disable any ad blocker",
+      markdown_with_citations:
+        "Verification Required\nPlease enable JS and disable any ad blocker",
       raw_markdown:
-        "# Legitimate content\n\nThis paragraph contains actual article context and should win over challenge text."
+        "# Legitimate content\n\nThis paragraph contains actual article context and should win over challenge text.",
     });
 
     expect(result.primary).toContain("Legitimate content");
@@ -151,8 +266,8 @@ describe("CrawlResultService", () => {
     expect(service.isLowSignalMarkdown("## References")).toBe(true);
     expect(
       service.isLowSignalMarkdown(
-        "## References\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b"
-      )
+        "## References\n\n[^1]: https://example.com/a\n[^2]: https://example.com/b",
+      ),
     ).toBe(true);
   });
 
@@ -175,7 +290,9 @@ describe("CrawlResultService", () => {
 
     const result = service.extractMarkdownResult(raw);
 
-    expect(result.primary).toBe("# Title\n\nParagraph one.\n\nMenu\nMenu\n\nParagraph two.");
+    expect(result.primary).toBe(
+      "# Title\n\nParagraph one.\n\nMenu\nMenu\n\nParagraph two.",
+    );
   });
 
   it("removes common ad and subscription noise while preserving article body", () => {
@@ -195,10 +312,16 @@ describe("CrawlResultService", () => {
     const result = service.extractMarkdownResult(raw);
 
     expect(result.primary).toContain("# Headline");
-    expect(result.primary).toContain("Paragraph one with policy context and details.");
-    expect(result.primary).toContain("Paragraph two with background and quotes.");
+    expect(result.primary).toContain(
+      "Paragraph one with policy context and details.",
+    );
+    expect(result.primary).toContain(
+      "Paragraph two with background and quotes.",
+    );
     expect(result.primary).not.toContain("Advertisement");
-    expect(result.primary).not.toContain("Free article usually reserved for subscribers");
+    expect(result.primary).not.toContain(
+      "Free article usually reserved for subscribers",
+    );
     expect(result.primary).not.toContain("AI generated Text-to-speech");
   });
 
@@ -242,36 +365,36 @@ describe("CrawlResultService", () => {
 
   it("continues crawl flow when media persistence fails", async () => {
     const mediaService = {
-      storeAsset: jest.fn().mockRejectedValue(new Error("S3 unavailable"))
+      storeAsset: jest.fn().mockRejectedValue(new Error("S3 unavailable")),
     };
     const moduleRef = {
-      get: jest.fn().mockReturnValue(mediaService)
+      get: jest.fn().mockReturnValue(mediaService),
     };
     const service = createService(1024, { moduleRef });
     const task = {
       id: "task-1",
       orgId: "org-1",
-      targetUrl: "https://example.com"
+      targetUrl: "https://example.com",
     } as any;
     const mediaDataUri = `data:image/png;base64,${Buffer.from("hello").toString("base64")}`;
     const media = {
-      images: [{ src: mediaDataUri }]
+      images: [{ src: mediaDataUri }],
     } as any;
 
     await expect(
-      (service as any).collectMediaAssets(task, "result-1", media)
+      (service as any).collectMediaAssets(task, "result-1", media),
     ).resolves.toBeUndefined();
 
     expect(mediaService.storeAsset).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
         taskId: "task-1",
-        resultId: "result-1"
-      })
+        resultId: "result-1",
+      }),
     );
     expect(mediaService.storeAsset).toHaveBeenCalledTimes(1);
     expect(moduleRef.get).toHaveBeenCalledWith(expect.any(Function), {
-      strict: false
+      strict: false,
     });
   });
 
@@ -341,10 +464,10 @@ describe("CrawlResultService", () => {
               contentHash:
                 "e2fb560b07cdf3c190ed574bf91209df9ee32938f47adad70cbfacfca19de981",
               metadata: {},
-              createdAt: now
-            }
-          ])
-      }
+              createdAt: now,
+            },
+          ]),
+      },
     };
     const service = createService(128, { prisma });
     const task = {
@@ -353,8 +476,8 @@ describe("CrawlResultService", () => {
       targetUrl: "https://example.com/story?id=1&utm_source=x",
       config: {
         orgContentDedupeWindowHours: 24,
-        urlQueryParamAllowlist: ["id"]
-      }
+        urlQueryParamAllowlist: ["id"],
+      },
     } as any;
 
     const summary = await service.persistResults(
@@ -362,10 +485,10 @@ describe("CrawlResultService", () => {
       [
         {
           url: "https://example.com/story?utm_source=x&id=1",
-          markdown: "# Headline\n\nBody paragraph"
-        } as any
+          markdown: "# Headline\n\nBody paragraph",
+        } as any,
       ],
-      {}
+      {},
     );
 
     expect(summary).toEqual(
@@ -373,10 +496,9 @@ describe("CrawlResultService", () => {
         inserted: 0,
         skipped: 1,
         reusedResultId: "result-existing-org",
-        lastFetchedAt: now
-      })
+        lastFetchedAt: now,
+      }),
     );
     expect(prisma.crawlResult.findMany).toHaveBeenCalledTimes(2);
   });
-
 });

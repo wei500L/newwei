@@ -96,6 +96,7 @@ const RawItemSchema = new Schema(
     payload: { type: RawItemPayloadSchema, required: true },
     source: { type: String, default: "manual" },
     urlComparableFull: { type: String, default: null, trim: true },
+    urlComparableFullHash: { type: String, default: null, trim: true },
     urlComparableBase: { type: String, default: null, trim: true }
   },
   {
@@ -107,16 +108,18 @@ RawItemSchema.pre("validate", function (next) {
   const doc = this as unknown as {
     payload?: { url?: unknown };
     urlComparableFull?: string | null;
+    urlComparableFullHash?: string | null;
     urlComparableBase?: string | null;
   };
   const url = typeof doc.payload?.url === "string" ? doc.payload.url : "";
   const comparable = buildComparableUrlVariants(url);
   doc.urlComparableFull = comparable?.full ?? null;
+  doc.urlComparableFullHash = comparable?.fullHash ?? null;
   doc.urlComparableBase = comparable?.base ?? null;
   next();
 });
 
-RawItemSchema.index({ urlComparableFull: 1, createdAt: -1 });
+RawItemSchema.index({ urlComparableFullHash: 1, createdAt: -1 });
 RawItemSchema.index({ urlComparableBase: 1, createdAt: -1 });
 
 export type RawItem = InferSchemaType<typeof RawItemSchema>;

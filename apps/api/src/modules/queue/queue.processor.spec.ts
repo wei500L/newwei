@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 jest.mock("@modular/mongo", () => ({
+  processedItemHasLocation: jest.fn(
+    (result?: { location?: unknown } | null) =>
+      typeof result?.location === "string" && result.location.trim().length > 0,
+  ),
   ProcessedItemModel: {
     updateOne: jest.fn().mockResolvedValue({ acknowledged: true }),
   },
@@ -27,6 +31,20 @@ jest.mock("@modular/utils", () => {
     ),
   };
 });
+
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
 
 jest.mock("bullmq", () => {
   const mockWorkerInstance = {
@@ -667,6 +685,9 @@ describe("QueueProcessor", () => {
         expect.objectContaining({
           $set: expect.objectContaining({
             status: ItemStatus.Processing,
+          }),
+          $unset: expect.objectContaining({
+            hasLocation: 1,
           }),
         }),
         { upsert: true },

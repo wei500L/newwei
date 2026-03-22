@@ -470,6 +470,14 @@ describe("ItemsService personalized pagination cap", () => {
     return { service };
   };
 
+  const asSortedLeanResult = <T>(value: T) => ({
+    sort: jest.fn().mockReturnValue({
+      limit: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(value),
+      }),
+    }),
+  });
+
   it("caps page-mode total to the personalized candidate window", async () => {
     const { service } = buildService();
 
@@ -505,6 +513,172 @@ describe("ItemsService personalized pagination cap", () => {
     expect(result.items).toEqual([]);
     expect(result.hasNextPage).toBe(false);
     expect(result.totalCount).toBe(1600);
+  });
+
+  it("fetches additional Prisma candidates incrementally and ranks once", async () => {
+    const baseMs = Date.parse("2024-01-01T00:00:00.000Z");
+    const firstBatch = Array.from({ length: 800 }, (_, index) => ({
+      id: `meta-${(index % 80) + 1}`,
+      createdAt: new Date(baseMs - index * 60_000),
+      sortAt: new Date(baseMs - index * 60_000),
+    }));
+    const secondBatch = Array.from({ length: 800 }, (_, index) => ({
+      id: `meta-${81 + index}`,
+      createdAt: new Date(baseMs - (800 + index) * 60_000),
+      sortAt: new Date(baseMs - (800 + index) * 60_000),
+    }));
+    const prisma = {
+      itemMeta: {
+        count: jest.fn().mockResolvedValue(1600),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(firstBatch)
+          .mockResolvedValueOnce(secondBatch),
+      },
+    };
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any,
+    );
+    const where = {
+      orgId: "org-1",
+      status: { not: ItemStatus.Duplicate },
+    };
+    const rankPersonalizedCandidates = jest
+      .fn()
+      .mockImplementation(async (input: { candidates: { id: string }[] }) =>
+        input.candidates.map((candidate, index) => ({
+          id: candidate.id,
+          score: 1,
+          rankOffset: index,
+        })),
+      );
+
+    (service as any).loadItemPersonalizationProfile = jest.fn().mockResolvedValue({
+      sources: {},
+      topics: {},
+      entities: {},
+      items: {},
+      events: {},
+      domains: {},
+    });
+    (service as any).rankPersonalizedCandidates = rankPersonalizedCandidates;
+
+    const result = await (service as any).getPersonalizedRanking({
+      orgId: "org-1",
+      userId: "user-1",
+      where,
+      requiredCount: 100,
+    });
+
+    expect(prisma.itemMeta.findMany).toHaveBeenCalledTimes(2);
+    expect(prisma.itemMeta.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where,
+        orderBy: [{ sortAt: "desc" }, { id: "desc" }],
+        take: 800,
+      }),
+    );
+    expect(prisma.itemMeta.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          AND: [
+            where,
+            {
+              OR: [
+                { sortAt: { lt: firstBatch[799].sortAt } },
+                { sortAt: firstBatch[799].sortAt, id: { lt: firstBatch[799].id } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ sortAt: "desc" }, { id: "desc" }],
+        take: 800,
+      }),
+    );
+    expect(rankPersonalizedCandidates).toHaveBeenCalledTimes(1);
+    const rankedCandidates = rankPersonalizedCandidates.mock.calls[0][0].candidates as Array<{
+      id: string;
+    }>;
+    expect(rankedCandidates).toHaveLength(880);
+    expect(new Set(rankedCandidates.map((candidate) => candidate.id)).size).toBe(
+      rankedCandidates.length,
+    );
+    expect(result.total).toBe(1600);
+  });
+
+  it("applies a keyset cursor when fetching read-model personalized candidates", async () => {
+    const cursorSortAt = new Date("2024-01-02T00:00:00.000Z");
+    mockItemReadModelFind.mockReturnValueOnce(
+      asSortedLeanResult([
+        {
+          itemMetaId: "meta-11",
+          createdAt: new Date("2024-01-01T23:59:00.000Z"),
+          sortAt: new Date("2024-01-01T23:59:00.000Z"),
+        },
+        {
+          itemMetaId: "meta-10",
+          createdAt: new Date("2024-01-01T23:58:00.000Z"),
+          sortAt: new Date("2024-01-01T23:58:00.000Z"),
+        },
+      ]),
+    );
+
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {}, itemsReadModelEnabled: true } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await (service as any).fetchPersonalizedCandidateBatch({
+      orgId: "org-1",
+      where: {},
+      take: 2,
+      cursor: {
+        id: "meta-12",
+        sortAt: cursorSortAt,
+      },
+    });
+
+    expect(mockItemReadModelFind).toHaveBeenCalledWith(
+      {
+        $and: [
+          {
+            orgId: "org-1",
+            status: { $ne: ItemStatus.Duplicate },
+          },
+          {
+            $or: [
+              { sortAt: { $lt: cursorSortAt } },
+              { sortAt: cursorSortAt, itemMetaId: { $lt: "meta-12" } },
+            ],
+          },
+        ],
+      },
+      {
+        itemMetaId: 1,
+        createdAt: 1,
+        sortAt: 1,
+      },
+    );
+    expect(result.candidates.map((candidate: { id: string }) => candidate.id)).toEqual([
+      "meta-11",
+      "meta-10",
+    ]);
+    expect(result.nextCursor).toEqual({
+      id: "meta-10",
+      sortAt: new Date("2024-01-01T23:58:00.000Z"),
+    });
+    expect(result.exhausted).toBe(false);
   });
 });
 
@@ -722,6 +896,68 @@ describe("ItemsService filters", () => {
     expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
   });
 
+  it("skips ProcessedArticle search for prefix queries", async () => {
+    const prisma = {
+      processedArticle: {
+        findMany: jest.fn(),
+      },
+      $queryRaw: jest.fn(),
+    };
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveProcessedArticleSearchIds("org-1", {
+      type: "prefix",
+      term: "ai",
+    });
+
+    expect(ids).toEqual([]);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.processedArticle.findMany).not.toHaveBeenCalled();
+    expect(mockProcessedItemFind).not.toHaveBeenCalled();
+  });
+
+  it("uses ProcessedArticle fulltext matches when a boolean query is available", async () => {
+    mockProcessedItemFind.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([{ itemMetaId: "meta-fulltext-1" }])
+    });
+
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        { cleanedMarkdownRef: "507f1f77bcf86cd799439011", score: 4.2 },
+        { cleanedMarkdownRef: null, score: 1.1 },
+        { cleanedMarkdownRef: "not-an-object-id", score: 0.8 }
+      ])
+    };
+
+    const service = new ItemsService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    const ids = await (service as any).resolveProcessedArticleSearchIds("org-1", {
+      type: "fulltext",
+      query: "federal* policy*",
+    });
+
+    expect(ids).toEqual(["meta-fulltext-1"]);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(mockProcessedItemFind).toHaveBeenCalledTimes(1);
+  });
+
   it("builds facets from the latest processed snapshot per item", async () => {
     mockProcessedItemFind.mockReturnValueOnce({
       sort: jest.fn().mockReturnThis(),
@@ -801,6 +1037,25 @@ describe("ItemsService filters", () => {
       { value: "analysis", count: 1 },
       { value: "news_fact", count: 1 },
     ]);
+  });
+
+  it("keeps merging non-ProcessedArticle sources for short queries", async () => {
+    const service = new ItemsService(
+      {} as any,
+      {} as any,
+      {} as any,
+      { liteLlmConfig: {} } as any,
+      {} as any,
+      {} as any
+    );
+
+    (service as any).resolveMetaSearchIds = jest.fn().mockResolvedValue(["meta-a"]);
+    (service as any).resolveProcessedSearchIds = jest.fn().mockResolvedValue(["meta-b"]);
+    (service as any).resolveVectorSearchIds = jest.fn().mockResolvedValue(["meta-b", "meta-c"]);
+
+    const ids = await (service as any).resolveSearchIds("org-1", "ai");
+
+    expect(ids).toEqual(["meta-b", "meta-c", "meta-a"]);
   });
 
   it("ranks merged search ids before recall truncation", async () => {

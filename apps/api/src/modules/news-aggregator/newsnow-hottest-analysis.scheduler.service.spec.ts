@@ -1,4 +1,29 @@
+jest.mock("./newsnow-hottest-analysis.service", () => ({
+  NewsnowHottestAnalysisService: class NewsnowHottestAnalysisService {},
+}));
+
 import { NewsnowHottestAnalysisSchedulerService } from './newsnow-hottest-analysis.scheduler.service';
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+}
 
 describe('NewsnowHottestAnalysisSchedulerService', () => {
   const prisma = {
@@ -6,8 +31,8 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
       findMany: jest.fn(),
     },
   };
-  const cache = {
-    withLock: jest.fn(),
+  const schedulerSettings = {
+    getRuntimeSettings: jest.fn(),
   };
   const globalSnapshot = {
     signature: 'signature-1',
@@ -38,31 +63,26 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
       { id: 'org-1' },
       { id: 'org-2' },
     ]);
-    cache.withLock.mockImplementation(
-      async (_key: string, _ttlMs: number, runner: () => Promise<unknown>) =>
-        await runner(),
-    );
+    schedulerSettings.getRuntimeSettings.mockResolvedValue({
+      newsnowHottestAnalysisOrgConcurrency: 2,
+    });
     hottestAnalysis.ensureGlobalSnapshot.mockResolvedValue(globalSnapshot);
     hottestAnalysis.refreshProjectionForOrg.mockResolvedValue(undefined);
     service = new NewsnowHottestAnalysisSchedulerService(
       prisma as never,
-      cache as never,
+      schedulerSettings as never,
       hottestAnalysis as never,
     );
   });
 
-  it('builds one global snapshot and refreshes each org projection inside a scheduler lock', async () => {
+  it('builds one global snapshot and refreshes each org projection without an outer scheduler lock', async () => {
     await service.refreshScheduled();
 
     expect(prisma.org.findMany).toHaveBeenCalledWith({
       where: { isActive: true },
       select: { id: true },
     });
-    expect(cache.withLock).toHaveBeenCalledWith(
-      'cron:newsnow-hottest-analysis',
-      expect.any(Number),
-      expect.any(Function),
-    );
+    expect(schedulerSettings.getRuntimeSettings).toHaveBeenCalledTimes(1);
     expect(hottestAnalysis.ensureGlobalSnapshot).toHaveBeenCalledTimes(1);
     expect(hottestAnalysis.refreshProjectionForOrg).toHaveBeenCalledTimes(2);
     expect(hottestAnalysis.refreshProjectionForOrg).toHaveBeenNthCalledWith(1, {
@@ -75,6 +95,50 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
       allowAutoBridge: false,
       globalSnapshot,
     });
+  });
+
+  it('fans out org refreshes with configured concurrency', async () => {
+    prisma.org.findMany.mockResolvedValue([
+      { id: 'org-1' },
+      { id: 'org-2' },
+      { id: 'org-3' },
+    ]);
+    schedulerSettings.getRuntimeSettings.mockResolvedValue({
+      newsnowHottestAnalysisOrgConcurrency: 2,
+    });
+
+    const releases = new Map(
+      ['org-1', 'org-2', 'org-3'].map((orgId) => [orgId, createDeferred<void>()]),
+    );
+    const startedTwo = createDeferred<void>();
+    let active = 0;
+    let maxActive = 0;
+    let started = 0;
+
+    hottestAnalysis.refreshProjectionForOrg.mockImplementation(
+      async ({ orgId }: { orgId: string }) => {
+        started += 1;
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (started === 2) {
+          startedTwo.resolve();
+        }
+
+        await releases.get(orgId)!.promise;
+        active -= 1;
+      },
+    );
+
+    const runPromise = service.refreshScheduled();
+
+    await startedTwo.promise;
+    expect(maxActive).toBe(2);
+
+    releases.get('org-1')!.resolve();
+    releases.get('org-2')!.resolve();
+    releases.get('org-3')!.resolve();
+
+    await runPromise;
   });
 
   it('continues refreshing remaining orgs when one org fails', async () => {
@@ -92,7 +156,7 @@ describe('NewsnowHottestAnalysisSchedulerService', () => {
 
     await service.refreshScheduled();
 
-    expect(cache.withLock).not.toHaveBeenCalled();
+    expect(schedulerSettings.getRuntimeSettings).not.toHaveBeenCalled();
     expect(hottestAnalysis.ensureGlobalSnapshot).not.toHaveBeenCalled();
     expect(hottestAnalysis.refreshProjectionForOrg).not.toHaveBeenCalled();
   });

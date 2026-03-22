@@ -31,6 +31,9 @@ import {
   ModelServiceSettingsPanel,
 } from '@/components/settings/model-service-settings-panel';
 import {
+  MultiTenantSchedulerSettingsPanel,
+} from '@/components/settings/multi-tenant-scheduler-settings-panel';
+import {
   NewsClassificationSettingsPanel,
 } from '@/components/settings/news-classification-settings-panel';
 import { NewsDedupeSettingsPanel } from '@/components/settings/news-dedupe-settings-panel';
@@ -99,6 +102,7 @@ const PANEL_COMPONENTS: Record<WorkspacePanelId, ComponentType> = {
   'audit-log': AuditLogRetentionPanel,
   'crawl-client': CrawlClientSettingsPanel,
   'archive-preparation': ArchivePreparationSettingsPanel,
+  'multi-tenant-schedulers': MultiTenantSchedulerSettingsPanel,
   'news-source-scheduler': NewsSourceSchedulerSettingsPanel,
   'news-source-runtime-secrets': NewsSourceRuntimeSecretsPanel,
   storage: StorageSettingsContent,

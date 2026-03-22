@@ -1,5 +1,19 @@
 import { MongoOutboxStatus, MongoOutboxType } from "@prisma/client";
 
+jest.mock(
+  "@modular/vector-client",
+  () => ({
+    VectorBadResponseError: class VectorBadResponseError extends Error {},
+    VectorClient: class VectorClient {
+      search = jest.fn();
+      upsert = jest.fn();
+    },
+    VectorServiceUnavailableError: class VectorServiceUnavailableError extends Error {},
+    VectorUnauthorizedError: class VectorUnauthorizedError extends Error {},
+  }),
+  { virtual: true },
+);
+
 import { CrawlTaskService } from "../crawl-task.service";
 
 describe("CrawlTaskService", () => {
@@ -8,7 +22,7 @@ describe("CrawlTaskService", () => {
       crawlResult: { deleteMany: jest.fn().mockResolvedValue(undefined) },
       crawlTask: { delete: jest.fn().mockResolvedValue(undefined) },
       auditLog: { create: jest.fn().mockResolvedValue(undefined) },
-      mongoOutbox: { create: jest.fn().mockResolvedValue(undefined) }
+      mongoOutbox: { create: jest.fn().mockResolvedValue(undefined) },
     };
 
     const prismaMock = {
@@ -16,18 +30,18 @@ describe("CrawlTaskService", () => {
         findFirst: jest.fn().mockResolvedValue({
           id: "task-1",
           orgId: "org-1",
-          results: [{ id: "r1" }, { id: "r2" }]
-        })
+          results: [{ id: "r1" }, { id: "r2" }],
+        }),
       },
-      $transaction: jest.fn(async (cb: any) => cb(tx))
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
     const queueServiceMock = {
-      removeQueuedJobs: jest.fn().mockResolvedValue(undefined)
+      removeQueuedJobs: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const resultServiceMock = {
-      deleteTaskResults: jest.fn().mockResolvedValue(undefined)
+      deleteTaskResults: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new CrawlTaskService(
@@ -36,7 +50,7 @@ describe("CrawlTaskService", () => {
       {} as any,
       queueServiceMock,
       resultServiceMock,
-      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
     );
 
     const result = await service.deleteTask("org-1", "user-1", "task-1");
@@ -51,9 +65,9 @@ describe("CrawlTaskService", () => {
         payload: {
           type: MongoOutboxType.cleanup_crawl_results,
           taskId: "task-1",
-          orgId: "org-1"
-        }
-      })
+          orgId: "org-1",
+        },
+      }),
     });
     expect(resultServiceMock.deleteTaskResults).not.toHaveBeenCalled();
     expect(result).toEqual({ taskId: "task-1", deletedResultCount: 2 });
@@ -64,22 +78,24 @@ describe("CrawlTaskService", () => {
       membership: {
         findUnique: jest.fn().mockResolvedValue({
           role: { name: "manager" },
-          roles: []
-        })
+          roles: [],
+        }),
       },
       crawlTask: {
-        create: jest.fn().mockResolvedValue({ id: "task-1", _count: { results: 0 } }),
-        update: jest.fn().mockResolvedValue(undefined)
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: "task-1", _count: { results: 0 } }),
+        update: jest.fn().mockResolvedValue(undefined),
       },
-      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     } as any;
 
     const executionServiceMock = {
-      normalizeOptions: jest.fn().mockReturnValue({})
+      normalizeOptions: jest.fn().mockReturnValue({}),
     } as any;
 
     const queueServiceMock = {
-      enqueueTask: jest.fn().mockResolvedValue(undefined)
+      enqueueTask: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new CrawlTaskService(
@@ -88,7 +104,7 @@ describe("CrawlTaskService", () => {
       executionServiceMock,
       queueServiceMock,
       {} as any,
-      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
     );
     jest.spyOn(service, "toView").mockReturnValue({ id: "task-1" } as any);
 
@@ -102,15 +118,16 @@ describe("CrawlTaskService", () => {
             urls: ["https://example.com/a"],
             options: {
               jsCode: ["console.log('nested')"],
-              jsOnly: true
-            }
-          }
-        ]
-      }
+              jsOnly: true,
+            },
+          },
+        ],
+      },
     } as any);
 
     expect(prismaMock.membership.findUnique).toHaveBeenCalledTimes(1);
-    const normalizeArg = executionServiceMock.normalizeOptions.mock.calls[0]?.[0];
+    const normalizeArg =
+      executionServiceMock.normalizeOptions.mock.calls[0]?.[0];
     expect(normalizeArg.jsCode).toBeUndefined();
     expect(normalizeArg.jsOnly).toBeUndefined();
     expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsCode).toBeUndefined();
@@ -122,18 +139,18 @@ describe("CrawlTaskService", () => {
       membership: {
         findUnique: jest.fn().mockResolvedValue({
           role: { name: "admin" },
-          roles: []
-        })
+          roles: [],
+        }),
       },
       crawlTask: {
         create: jest.fn(),
-        update: jest.fn()
+        update: jest.fn(),
       },
-      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     } as any;
 
     const executionServiceMock = {
-      normalizeOptions: jest.fn().mockReturnValue({})
+      normalizeOptions: jest.fn().mockReturnValue({}),
     } as any;
 
     const service = new CrawlTaskService(
@@ -142,22 +159,18 @@ describe("CrawlTaskService", () => {
       executionServiceMock,
       { enqueueTask: jest.fn().mockResolvedValue(undefined) } as any,
       {} as any,
-      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
     );
 
     await expect(
-      service.createTask(
-        "org-1",
-        "user-1",
-        {
-          url: "https://example.com",
-          options: {
-            markdownStrategy: {
-              type: "LLMExtractionStrategy"
-            }
-          }
-        } as any
-      )
+      service.createTask("org-1", "user-1", {
+        url: "https://example.com",
+        options: {
+          markdownStrategy: {
+            type: "LLMExtractionStrategy",
+          },
+        },
+      } as any),
     ).rejects.toThrow("crawl stage must only fetch and store cleaned markdown");
 
     expect(executionServiceMock.normalizeOptions).not.toHaveBeenCalled();
@@ -169,22 +182,24 @@ describe("CrawlTaskService", () => {
       membership: {
         findUnique: jest.fn().mockResolvedValue({
           role: { name: "admin" },
-          roles: []
-        })
+          roles: [],
+        }),
       },
       crawlTask: {
-        create: jest.fn().mockResolvedValue({ id: "task-1", _count: { results: 0 } }),
-        update: jest.fn().mockResolvedValue(undefined)
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: "task-1", _count: { results: 0 } }),
+        update: jest.fn().mockResolvedValue(undefined),
       },
-      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     } as any;
 
     const executionServiceMock = {
-      normalizeOptions: jest.fn().mockReturnValue({})
+      normalizeOptions: jest.fn().mockReturnValue({}),
     } as any;
 
     const queueServiceMock = {
-      enqueueTask: jest.fn().mockResolvedValue(undefined)
+      enqueueTask: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new CrawlTaskService(
@@ -193,7 +208,7 @@ describe("CrawlTaskService", () => {
       executionServiceMock,
       queueServiceMock,
       {} as any,
-      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
     );
     jest.spyOn(service, "toView").mockReturnValue({ id: "task-1" } as any);
 
@@ -207,18 +222,21 @@ describe("CrawlTaskService", () => {
             urls: ["https://example.com/a"],
             options: {
               jsCode: ["console.log('nested')"],
-              jsOnly: true
-            }
-          }
-        ]
-      }
+              jsOnly: true,
+            },
+          },
+        ],
+      },
     } as any);
 
     expect(prismaMock.membership.findUnique).toHaveBeenCalledTimes(1);
-    const normalizeArg = executionServiceMock.normalizeOptions.mock.calls[0]?.[0];
+    const normalizeArg =
+      executionServiceMock.normalizeOptions.mock.calls[0]?.[0];
     expect(normalizeArg.jsCode).toEqual(["console.log('allowed')"]);
     expect(normalizeArg.jsOnly).toBe(true);
-    expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsCode).toEqual(["console.log('nested')"]);
+    expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsCode).toEqual([
+      "console.log('nested')",
+    ]);
     expect(normalizeArg.multiUrlConfigs?.[0]?.options?.jsOnly).toBe(true);
   });
 
@@ -228,21 +246,21 @@ describe("CrawlTaskService", () => {
       orgId: "org-1",
       config: {
         crawlPriorityClass: "hot",
-        sourcePriority: 88
+        sourcePriority: 88,
       },
-      _count: { results: 0 }
+      _count: { results: 0 },
     };
 
     const prismaMock = {
       crawlTask: {
         findFirst: jest.fn().mockResolvedValue(task),
-        update: jest.fn().mockResolvedValue(undefined)
+        update: jest.fn().mockResolvedValue(undefined),
       },
-      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     } as any;
 
     const queueServiceMock = {
-      enqueueTask: jest.fn().mockResolvedValue(undefined)
+      enqueueTask: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new CrawlTaskService(
@@ -252,7 +270,7 @@ describe("CrawlTaskService", () => {
       queueServiceMock,
       {} as any,
       { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
-      { get: jest.fn() } as any
+      { get: jest.fn() } as any,
     );
     jest.spyOn(service, "toView").mockReturnValue({ id: "task-1" } as any);
 
@@ -264,8 +282,8 @@ describe("CrawlTaskService", () => {
       "user-1",
       {
         priorityClass: "hot",
-        sourcePriority: 88
-      }
+        sourcePriority: 88,
+      },
     );
   });
 
@@ -274,21 +292,21 @@ describe("CrawlTaskService", () => {
       id: "task-2",
       orgId: "org-1",
       config: {
-        sourcePriority: 10
+        sourcePriority: 10,
       },
-      _count: { results: 0 }
+      _count: { results: 0 },
     };
 
     const prismaMock = {
       crawlTask: {
         findFirst: jest.fn().mockResolvedValue(task),
-        update: jest.fn().mockResolvedValue(undefined)
+        update: jest.fn().mockResolvedValue(undefined),
       },
-      auditLog: { create: jest.fn().mockResolvedValue(undefined) }
+      auditLog: { create: jest.fn().mockResolvedValue(undefined) },
     } as any;
 
     const queueServiceMock = {
-      enqueueTask: jest.fn().mockResolvedValue(undefined)
+      enqueueTask: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     const service = new CrawlTaskService(
@@ -298,7 +316,7 @@ describe("CrawlTaskService", () => {
       queueServiceMock,
       {} as any,
       { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
-      { get: jest.fn() } as any
+      { get: jest.fn() } as any,
     );
     jest.spyOn(service, "toView").mockReturnValue({ id: "task-2" } as any);
 
@@ -310,8 +328,69 @@ describe("CrawlTaskService", () => {
       "user-1",
       {
         priorityClass: "normal",
-        sourcePriority: 10
-      }
+        sourcePriority: 10,
+      },
     );
+  });
+
+  it("loads latest run details with a single result-service call when building task detail", async () => {
+    const prismaMock = {
+      crawlTask: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "task-1",
+          orgId: "org-1",
+          _count: { results: 0 },
+        }),
+      },
+      crawlResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as any;
+
+    const resultServiceMock = {
+      attachResultContent: jest.fn().mockResolvedValue([]),
+      getLatestRunDetails: jest.fn().mockResolvedValue({
+        memoryStats: {
+          serverMemoryMb: 128,
+          peakMemoryMb: 256,
+          efficiencyPercent: 50,
+        },
+        lastRunSummary: {
+          inserted: 2,
+          skipped: 1,
+        },
+      }),
+      getLatestMemoryStats: jest.fn(),
+      getLatestExecutionSummary: jest.fn(),
+    } as any;
+
+    const service = new CrawlTaskService(
+      prismaMock,
+      { crawl4aiConfig: { maxConcurrency: 1 } } as any,
+      {} as any,
+      {} as any,
+      resultServiceMock,
+      { enforceCrawlTaskCreate: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: jest.fn() } as any,
+    );
+    jest.spyOn(service, "toView").mockReturnValue({ id: "task-1" } as any);
+
+    const result = await service.getTask("org-1", "task-1", {} as any);
+
+    expect(resultServiceMock.getLatestRunDetails).toHaveBeenCalledWith(
+      "org-1",
+      "task-1",
+    );
+    expect(resultServiceMock.getLatestMemoryStats).not.toHaveBeenCalled();
+    expect(resultServiceMock.getLatestExecutionSummary).not.toHaveBeenCalled();
+    expect(result.task.memoryStats).toEqual({
+      serverMemoryMb: 128,
+      peakMemoryMb: 256,
+      efficiencyPercent: 50,
+    });
+    expect(result.task.lastRunSummary).toEqual({
+      inserted: 2,
+      skipped: 1,
+    });
   });
 });

@@ -20,6 +20,7 @@ import { CrawlMediaAssetController } from "./crawl-media-asset.controller";
 import { CrawlMediaAssetService } from "./crawl-media-asset.service";
 import { CrawlMetadataService } from "./crawl-metadata.service";
 import { CrawlQualityMetricsService } from "./crawl-quality-metrics.service";
+import { CrawlQualityTaskSnapshotService } from "./crawl-quality-task-snapshot.service";
 import { CrawlQualityStrategyService } from "./crawl-quality.strategy";
 import { CrawlQueueCleanupService } from "./crawl-queue-cleanup.service";
 import { CrawlQueueEventPublisher } from "./crawl-queue-event.publisher";
@@ -116,6 +117,7 @@ import { JsCodeAuditService } from "./services/js-code-audit.service";
     CrawlResultService,
     CrawlMediaAssetService,
     CrawlQualityMetricsService,
+    CrawlQualityTaskSnapshotService,
     ObservabilitySnapshotService,
     CrawlQualityStrategyService,
     NewsSourceOpmlService,

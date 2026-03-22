@@ -1,78 +1,71 @@
-jest.mock("@modular/mongo", () => ({
-  CrawlResultContentModel: {
-    find: jest.fn(),
-  },
-  TaskLogModel: {
-    find: jest.fn(),
-  },
-}));
-
-import { CrawlResultContentModel, TaskLogModel } from "@modular/mongo";
-
 import { CrawlQualityMetricsService } from "../crawl-quality-metrics.service";
 
-const mockedTaskLogFind = TaskLogModel.find as jest.Mock;
-const mockedCrawlResultFind = CrawlResultContentModel.find as jest.Mock;
-
-function mockFindChain(findMock: jest.Mock, docs: unknown[]) {
-  findMock.mockReturnValue({
-    select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue(docs),
-    }),
-  });
-}
-
-function mockTaskLogFindByStage(logs: {
-  expansion?: unknown[];
-  preflight?: unknown[];
-  dedupe?: unknown[];
-}) {
-  mockedTaskLogFind.mockImplementation(() => {
-    const docs = [
-      ...(logs.expansion ?? []).map((entry) => ({
-        stage: "expansion",
-        ...((entry ?? {}) as object),
-      })),
-      ...(logs.preflight ?? []).map((entry) => ({
-        stage: "preflight",
-        ...((entry ?? {}) as object),
-      })),
-      ...(logs.dedupe ?? []).map((entry) => ({
-        stage: "dedupe",
-        ...((entry ?? {}) as object),
-      })),
-    ];
-    return {
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue(docs),
-      }),
-    };
-  });
+function createAggregates() {
+  return {
+    taskCount: 2,
+    lowSignalRatio: 0.5,
+    emptyMarkdownRate: 0.25,
+    expansionTriggerRate: 0.5,
+    expansionSuccessRate: 1,
+    avgMarkdownChars: 120,
+    candidateRejects: {
+      includePattern: 2,
+      excludePattern: 3,
+      publishConfidence: 4,
+    },
+    publishConfidenceBuckets: {
+      lt04: 1,
+      from04To06: 2,
+      from06To08: 3,
+      gte08: 4,
+    },
+    fitMarkdownPreferenceRate: 0.5,
+    headSignalSuccessRate: 0.75,
+    headSignalSoftFailureRate: 0.25,
+    headSignalTruncatedRate: 0.25,
+    headSignalNoPublishSignalRate: 0.25,
+    http304HitRate: 0.5,
+    orgHashDedupeHitRate: 0.2,
+    preflightFailureRate: 0.25,
+    groupedBySource: [
+      {
+        sourceId: "source-1",
+        taskCount: 2,
+        lowSignalRatio: 0.5,
+        expansionSuccessRate: 1,
+        avgMarkdownChars: 120,
+        candidateRejects: {
+          includePattern: 2,
+          excludePattern: 3,
+          publishConfidence: 4,
+        },
+        publishConfidenceBuckets: {
+          lt04: 1,
+          from04To06: 2,
+          from06To08: 3,
+          gte08: 4,
+        },
+        fitMarkdownPreferenceRate: 0.5,
+        headSignalSuccessRate: 0.75,
+        headSignalSoftFailureRate: 0.25,
+        headSignalTruncatedRate: 0.25,
+        headSignalNoPublishSignalRate: 0.25,
+        http304HitRate: 0.5,
+        orgHashDedupeHitRate: 0.2,
+        preflightFailureRate: 0.25,
+      },
+    ],
+  };
 }
 
 describe("CrawlQualityMetricsService", () => {
-  beforeEach(() => {
-    jest.resetAllMocks();
-    mockFindChain(mockedCrawlResultFind, []);
-  });
-
-  function createServiceWithTaskLogs(logs: {
-    expansion?: unknown[];
-    preflight?: unknown[];
-    dedupe?: unknown[];
-    alertRules?: unknown[];
-  }) {
-    mockTaskLogFindByStage(logs);
+  function createService() {
     const prisma = {
       crawlTask: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([
-            { id: "task-1", displayName: null, config: null },
-          ]),
+        findMany: jest.fn(),
       },
       alertRule: {
-        findMany: jest.fn().mockResolvedValue(logs.alertRules ?? []),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     } as any;
     const snapshots = {
@@ -82,129 +75,86 @@ describe("CrawlQualityMetricsService", () => {
         }),
       ),
     } as any;
-    return new CrawlQualityMetricsService(prisma, snapshots);
+    const taskSnapshots = {
+      ensureSnapshotsForWindow: jest.fn().mockResolvedValue(undefined),
+      readAggregates: jest.fn().mockResolvedValue(createAggregates()),
+    } as any;
+
+    return {
+      prisma,
+      snapshots,
+      taskSnapshots,
+      service: new CrawlQualityMetricsService(prisma, snapshots, taskSnapshots),
+    };
   }
 
-  function createServiceWithLogs(expansionLogs: unknown[]) {
-    return createServiceWithTaskLogs({ expansion: expansionLogs });
-  }
-
-  it("reads candidate rejects from *Rejected fields in expansion logs", async () => {
-    const service = createServiceWithLogs([
+  it("hydrates task snapshots before reading aggregate metrics", async () => {
+    const { prisma, taskSnapshots, service } = createService();
+    const updatedAt = new Date("2026-03-22T10:00:00.000Z");
+    prisma.crawlTask.findMany.mockResolvedValue([
       {
-        jobId: "task-1",
-        status: "processing",
-        data: {
-          candidateRejects: {
-            includePatternRejected: 2,
-            excludePatternRejected: 3,
-            publishConfidenceRejected: 4,
-          },
-        },
+        id: "task-1",
+        status: "completed",
+        updatedAt,
+      },
+      {
+        id: "task-2",
+        status: "running",
+        updatedAt,
+      },
+    ]);
+    prisma.alertRule.findMany.mockResolvedValue([
+      {
+        metricSlug: "crawl_quality.preflight_failure_rate",
+        operator: "gte",
+        thresholdValue: 0.2,
+      },
+      {
+        metricSlug: "crawl_quality.http_304_hit_rate",
+        operator: "lte",
+        thresholdValue: 0.06,
+      },
+      {
+        metricSlug: "crawl_quality.org_hash_dedupe_hit_rate",
+        operator: "gte",
+        thresholdValue: 0.35,
       },
     ]);
 
     const snapshot = await service.getSnapshot("org-1");
 
-    expect(snapshot.candidateRejects).toEqual({
-      includePattern: 2,
-      excludePattern: 3,
-      publishConfidence: 4,
-    });
-    expect(snapshot.groupedBySource[0]?.candidateRejects).toEqual({
-      includePattern: 2,
-      excludePattern: 3,
-      publishConfidence: 4,
-    });
-  });
-
-  it("falls back to legacy candidate reject field names", async () => {
-    const service = createServiceWithLogs([
-      {
-        jobId: "task-1",
-        status: "processing",
-        data: {
-          candidateRejects: {
-            includePattern: 5,
-            excludePattern: 6,
-            publishConfidence: 7,
-          },
-        },
-      },
-    ]);
-
-    const snapshot = await service.getSnapshot("org-1");
-
-    expect(snapshot.candidateRejects).toEqual({
-      includePattern: 5,
-      excludePattern: 6,
-      publishConfidence: 7,
-    });
-  });
-
-  it("aggregates preflight and org-hash dedupe rates", async () => {
-    const service = createServiceWithTaskLogs({
-      expansion: [],
-      preflight: [
-        {
-          jobId: "task-1",
-          status: "completed",
-          data: { status: 304 },
-        },
-        {
-          jobId: "task-1",
-          status: "failed",
-          data: {},
-        },
+    expect(taskSnapshots.ensureSnapshotsForWindow).toHaveBeenCalledWith(
+      "org-1",
+      expect.any(Date),
+      expect.any(Date),
+      [
+        { id: "task-1", status: "completed", updatedAt },
+        { id: "task-2", status: "running", updatedAt },
       ],
-      dedupe: [
-        {
-          jobId: "task-1",
-          status: "completed",
-          data: { evaluatedCount: 20, orgReuseCount: 5 },
-        },
-      ],
-    });
-
-    const snapshot = await service.getSnapshot("org-1");
-
-    expect(snapshot.http304HitRate).toBe(0.5);
-    expect(snapshot.preflightFailureRate).toBe(0.5);
-    expect(snapshot.orgHashDedupeHitRate).toBe(0.25);
-    expect(snapshot.groupedBySource[0]?.http304HitRate).toBe(0.5);
-    expect(snapshot.groupedBySource[0]?.preflightFailureRate).toBe(0.5);
-    expect(snapshot.groupedBySource[0]?.orgHashDedupeHitRate).toBe(0.25);
-  });
-
-  it("reads crawl quality alert thresholds from active alert rules", async () => {
-    const service = createServiceWithTaskLogs({
-      expansion: [],
-      preflight: [],
-      dedupe: [],
-      alertRules: [
-        {
-          metricSlug: "crawl_quality.preflight_failure_rate",
-          operator: "gte",
-          thresholdValue: 0.2,
-        },
-        {
-          metricSlug: "crawl_quality.http_304_hit_rate",
-          operator: "lte",
-          thresholdValue: 0.06,
-        },
-        {
-          metricSlug: "crawl_quality.org_hash_dedupe_hit_rate",
-          operator: "gte",
-          thresholdValue: 0.35,
-        },
-      ],
-    });
-
-    const snapshot = await service.getSnapshot("org-1");
+      expect.any(Date),
+    );
+    expect(taskSnapshots.readAggregates).toHaveBeenCalledWith(
+      "org-1",
+      expect.any(Date),
+      expect.any(Date),
+    );
+    expect(snapshot.taskCount).toBe(2);
     expect(snapshot.alertThresholds).toEqual({
       preflightFailureRateHigh: 0.2,
       http304HitRateLow: 0.06,
       orgHashDedupeHitRateHigh: 0.35,
     });
+  });
+
+  it("returns an empty snapshot when no tasks match the lookback window", async () => {
+    const { prisma, taskSnapshots, service } = createService();
+    prisma.crawlTask.findMany.mockResolvedValue([]);
+
+    const snapshot = await service.getSnapshot("org-1");
+
+    expect(taskSnapshots.ensureSnapshotsForWindow).not.toHaveBeenCalled();
+    expect(taskSnapshots.readAggregates).not.toHaveBeenCalled();
+    expect(snapshot.taskCount).toBe(0);
+    expect(snapshot.groupedBySource).toEqual([]);
   });
 });

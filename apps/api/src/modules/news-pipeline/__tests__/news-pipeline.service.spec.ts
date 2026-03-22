@@ -1,4 +1,9 @@
-import { ItemReadModelModel, RawItemModel, TaskLogModel, ProcessedItemModel } from "@modular/mongo";
+import {
+  ItemReadModelModel,
+  RawItemModel,
+  TaskLogModel,
+  ProcessedItemModel,
+} from "@modular/mongo";
 import { createHash } from "crypto";
 
 import type { NewsPipelineConfig } from "../news-pipeline.config";
@@ -26,6 +31,10 @@ jest.mock(
 );
 
 jest.mock("@modular/mongo", () => ({
+  processedItemHasLocation: jest.fn(
+    (result?: { location?: unknown } | null) =>
+      typeof result?.location === "string" && result.location.trim().length > 0,
+  ),
   TaskLogModel: {
     create: jest.fn().mockResolvedValue(undefined),
   },
@@ -116,7 +125,7 @@ const baseConfig: NewsPipelineConfig = {
 
 describe("NewsPipelineService", () => {
   const promptBuilder = new NewsPromptBuilder();
-  const createDeferred = <T,>() => {
+  const createDeferred = <T>() => {
     let resolve!: (value: T | PromiseLike<T>) => void;
     let reject!: (reason?: unknown) => void;
     const promise = new Promise<T>((res, rej) => {
@@ -1128,27 +1137,30 @@ describe("NewsPipelineService", () => {
       reject: (reason?: unknown) => void;
     }[] = [];
 
-    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
-      if (args?.metadata?.stage !== "dedupe") {
-        return buildCleanCompletion();
-      }
+    liteLlm.acompletion.mockImplementation(
+      async (args?: { metadata?: { stage?: string } }) => {
+        if (args?.metadata?.stage !== "dedupe") {
+          return buildCleanCompletion();
+        }
 
-      judgeStarted += 1;
-      inFlight += 1;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      if (judgeStarted === 2) {
-        startedTwo.resolve();
-      }
-      if (judgeStarted === 4) {
-        startedFour.resolve();
-      }
+        judgeStarted += 1;
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        if (judgeStarted === 2) {
+          startedTwo.resolve();
+        }
+        if (judgeStarted === 4) {
+          startedFour.resolve();
+        }
 
-      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
-      judgeDeferreds.push(deferred);
-      return deferred.promise.finally(() => {
-        inFlight -= 1;
-      });
-    });
+        const deferred =
+          createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+        judgeDeferreds.push(deferred);
+        return deferred.promise.finally(() => {
+          inFlight -= 1;
+        });
+      },
+    );
 
     const processPromise = service.process(job, raw);
 
@@ -1225,20 +1237,23 @@ describe("NewsPipelineService", () => {
       reject: (reason?: unknown) => void;
     }[] = [];
 
-    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
-      if (args?.metadata?.stage !== "dedupe") {
-        return buildCleanCompletion();
-      }
+    liteLlm.acompletion.mockImplementation(
+      async (args?: { metadata?: { stage?: string } }) => {
+        if (args?.metadata?.stage !== "dedupe") {
+          return buildCleanCompletion();
+        }
 
-      judgeStarted += 1;
-      if (judgeStarted === 2) {
-        startedTwo.resolve();
-      }
+        judgeStarted += 1;
+        if (judgeStarted === 2) {
+          startedTwo.resolve();
+        }
 
-      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
-      judgeDeferreds.push(deferred);
-      return deferred.promise;
-    });
+        const deferred =
+          createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+        judgeDeferreds.push(deferred);
+        return deferred.promise;
+      },
+    );
 
     const processPromise = service.process(job, raw);
 
@@ -1318,18 +1333,21 @@ describe("NewsPipelineService", () => {
       reject: (reason?: unknown) => void;
     }[] = [];
 
-    liteLlm.acompletion.mockImplementation(async (args?: { metadata?: { stage?: string } }) => {
-      if (args?.metadata?.stage !== "dedupe") {
-        return buildCleanCompletion();
-      }
+    liteLlm.acompletion.mockImplementation(
+      async (args?: { metadata?: { stage?: string } }) => {
+        if (args?.metadata?.stage !== "dedupe") {
+          return buildCleanCompletion();
+        }
 
-      const deferred = createDeferred<ReturnType<typeof buildJudgeCompletion>>();
-      judgeDeferreds.push(deferred);
-      if (judgeDeferreds.length === 2) {
-        startedTwo.resolve();
-      }
-      return deferred.promise;
-    });
+        const deferred =
+          createDeferred<ReturnType<typeof buildJudgeCompletion>>();
+        judgeDeferreds.push(deferred);
+        if (judgeDeferreds.length === 2) {
+          startedTwo.resolve();
+        }
+        return deferred.promise;
+      },
+    );
 
     const processPromise = service.process(job, raw);
 
@@ -1480,7 +1498,9 @@ describe("NewsPipelineService", () => {
       error: { message: "LLM unavailable" },
     });
 
-    const llmProcessingCall = (TaskLogModel.create as jest.Mock).mock.calls.find(
+    const llmProcessingCall = (
+      TaskLogModel.create as jest.Mock
+    ).mock.calls.find(
       ([entry]) => entry.stage === "llm" && entry.status === "processing",
     );
     expect(llmProcessingCall).toBeUndefined();
@@ -1594,6 +1614,7 @@ describe("NewsPipelineService", () => {
       | undefined;
     expect(updateArgs?.$set).toEqual(
       expect.objectContaining({
+        hasLocation: true,
         rawItemId: expect.anything(),
         result: expect.objectContaining({
           title: "Existing title",
@@ -1601,6 +1622,71 @@ describe("NewsPipelineService", () => {
         }),
       }),
     );
+  });
+
+  it("stores hasLocation=false when completed payload location is blank", async () => {
+    const staleLockedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const validPayload = {
+      type: "processed_item",
+      document: {
+        _id: "64b5f0c4f6e4b0495c3f4a11",
+        rawItemId,
+        itemMetaId: "meta-1",
+        orgId: "org-1",
+        status: "completed",
+        tags: ["breaking"],
+        result: {
+          title: "Existing title",
+          subtitle: null,
+          author: "Reporter",
+          source: "Example",
+          published_at: "2024-01-01T00:00:00Z",
+          language: "en",
+          location: "   ",
+          category: null,
+          topics: ["news"],
+          summary: "Existing summary",
+          key_points: ["Existing summary"],
+          entities: [{ name: "Reporter", type: "Person", confidence: 0.9 }],
+          cleaned_markdown: "Clean body from cache",
+          removed_noise_types: [],
+          quality_score: 0.9,
+          llm_model: "openai/gpt-4o-mini",
+          llm_prompt_version: "v1",
+        },
+        llm: {
+          model: "openai/gpt-4o-mini",
+          promptVersion: "v1",
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          costUsd: 0.01,
+          latencyMs: 80,
+        },
+      },
+    };
+
+    mongoOutbox.findMany.mockResolvedValueOnce([
+      {
+        id: "outbox-blank-location",
+        payload: validPayload,
+        status: "processing",
+        attempts: 1,
+        availableAt: new Date(),
+        lockedAt: staleLockedAt,
+      },
+    ]);
+    mongoOutbox.updateMany.mockResolvedValueOnce({ count: 1 });
+    mongoOutbox.findUnique.mockResolvedValueOnce({
+      id: "outbox-blank-location",
+      attempts: 1,
+    });
+
+    await service.retryPendingOutbox();
+
+    const updateArgs = (ProcessedItemModel.findOneAndUpdate as jest.Mock).mock
+      .calls[0]?.[1];
+    expect(updateArgs.$set.hasLocation).toBe(false);
   });
 
   it("sanitizes dirty outbox payload fields via schema parsing", async () => {
@@ -1717,7 +1803,9 @@ describe("NewsPipelineService", () => {
     };
 
     const vectorClient = {
-      upsertOrThrow: jest.fn().mockRejectedValue(new Error("vector unavailable")),
+      upsertOrThrow: jest
+        .fn()
+        .mockRejectedValue(new Error("vector unavailable")),
     };
     const serviceWithVector = new NewsPipelineService(
       liteLlm as any,

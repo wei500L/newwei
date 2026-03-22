@@ -1,7 +1,13 @@
+import { createHash } from "node:crypto";
+
 export interface ComparableUrlVariants {
   full: string;
   base: string;
+  fullHash: string;
 }
+
+export const hashComparableUrl = (value: string): string =>
+  createHash("sha256").update(value, "utf8").digest("hex");
 
 const normalizeComparableHttpUrl = (
   parsed: URL,
@@ -30,9 +36,11 @@ export const buildComparableUrlVariants = (
       return null;
     }
 
+    const full = normalizeComparableHttpUrl(new URL(parsed.toString()), { keepSearch: true });
     return {
-      full: normalizeComparableHttpUrl(new URL(parsed.toString()), { keepSearch: true }),
+      full,
       base: normalizeComparableHttpUrl(new URL(parsed.toString()), { keepSearch: false }),
+      fullHash: hashComparableUrl(full),
     };
   } catch {
     return null;

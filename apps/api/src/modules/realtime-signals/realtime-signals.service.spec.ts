@@ -1217,12 +1217,19 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
     });
   });
 
-  it("filters whitespace-only mongo locations from marker readiness counts", async () => {
+  it("uses one aggregate for mongo marker readiness without countDocuments or regex filters", async () => {
     const { service } = buildService();
-    const countDocumentsSpy = jest
-      .spyOn(ProcessedItemModel, "countDocuments")
-      .mockReturnValueOnce(6 as any)
-      .mockReturnValueOnce(0 as any);
+    const countDocumentsSpy = jest.spyOn(ProcessedItemModel, "countDocuments");
+    const aggregateExec = jest.fn().mockResolvedValue([
+      {
+        _id: null,
+        recentProcessedItems: 6,
+        recentProcessedItemsWithLocation: 0,
+      },
+    ]);
+    const aggregateSpy = jest
+      .spyOn(ProcessedItemModel, "aggregate")
+      .mockReturnValue({ exec: aggregateExec } as any);
     const exec = jest.fn().mockResolvedValue({
       sortAt: new Date("2026-03-12T09:00:00.000Z"),
     });
@@ -1235,11 +1242,26 @@ describe("RealtimeSignalsService runtime diagnostics", () => {
       new Date("2026-03-05T00:00:00.000Z"),
     );
 
-    expect(countDocumentsSpy).toHaveBeenCalledTimes(2);
-    expect(countDocumentsSpy.mock.calls[1]?.[0]?.["result.location"]).toEqual({
-      $type: "string",
-      $regex: /\S/,
+    expect(countDocumentsSpy).not.toHaveBeenCalled();
+    expect(aggregateSpy).toHaveBeenCalledTimes(1);
+    const pipeline = aggregateSpy.mock.calls[0]?.[0] as
+      | Array<Record<string, unknown>>
+      | undefined;
+    expect(pipeline?.[0]).toEqual({
+      $match: {
+        orgId: "org-1",
+        status: "completed",
+        duplicateOf: null,
+        $or: [
+          { sortAt: { $gte: new Date("2026-03-05T00:00:00.000Z") } },
+          { ingestedAt: { $gte: new Date("2026-03-05T00:00:00.000Z") } },
+          { createdAt: { $gte: new Date("2026-03-05T00:00:00.000Z") } },
+        ],
+      },
     });
+    expect(JSON.stringify(pipeline?.[1] ?? {})).toContain("$hasLocation");
+    expect(JSON.stringify(pipeline?.[1] ?? {})).toContain("$result.location");
+    expect(JSON.stringify(pipeline?.[1] ?? {})).not.toContain("$regex");
     expect(result).toEqual({
       recentProcessedItems: 6,
       recentProcessedItemsWithLocation: 0,

@@ -4,7 +4,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { Queue, JobsOptions, type Job } from "bullmq";
 import { Types } from "mongoose";
 
-import { QueueOrgStatsService, type TrackedJobStatus } from "./queue-org-stats.service";
+import {
+  QueueOrgStatsService,
+  type TrackedJobStatus,
+} from "./queue-org-stats.service";
 import { ITEM_PIPELINE_QUEUE_NAME, PIPELINE_QUEUE } from "./queue.constants";
 
 interface PipelineJobMeta {
@@ -16,6 +19,28 @@ interface PipelineJobMeta {
 interface EnqueueItemBehavior {
   retryIfFailed?: boolean;
 }
+
+export interface QueueRecentLog {
+  createdAt?: Date;
+  jobId?: string;
+  message?: string | null;
+  stage?: string;
+  status?: string;
+}
+
+export interface QueueStatsSnapshot {
+  counts: Record<TrackedJobStatus, number>;
+  recentLogs: QueueRecentLog[];
+}
+
+const RECENT_QUEUE_LOG_PROJECTION = {
+  _id: 0,
+  createdAt: 1,
+  jobId: 1,
+  message: 1,
+  stage: 1,
+  status: 1,
+} as const;
 
 @Injectable()
 export class QueueService {
@@ -29,7 +54,9 @@ export class QueueService {
   /**
    * BullMQ counters are global; we keep org-scoped counters in Redis via QueueEvents.
    */
-  private async getOrgJobCounts(orgId: string): Promise<Record<TrackedJobStatus, number>> {
+  private async getOrgJobCounts(
+    orgId: string,
+  ): Promise<Record<TrackedJobStatus, number>> {
     try {
       return await this.orgStats.getCounts(orgId);
     } catch (error) {
@@ -44,12 +71,13 @@ export class QueueService {
     rawItemId: string,
     opts: JobsOptions = {},
     meta: PipelineJobMeta = {},
-    behavior: EnqueueItemBehavior = {}
+    behavior: EnqueueItemBehavior = {},
   ) {
     const jobId = `${itemMetaId}-${rawItemId}`;
     const traceId = ensureTraceId(getCurrentTraceId());
     const processedItemId =
-      typeof meta.processedItemId === "string" && meta.processedItemId.length > 0
+      typeof meta.processedItemId === "string" &&
+      meta.processedItemId.length > 0
         ? meta.processedItemId
         : new Types.ObjectId().toHexString();
 
@@ -72,8 +100,8 @@ export class QueueService {
           removeOnFail: false,
           attempts: 5,
           backoff: { type: "exponential", delay: 2000 },
-          ...opts
-        }
+          ...opts,
+        },
       );
     } catch (error) {
       if (error instanceof Error && error.message.includes("already exists")) {
@@ -100,7 +128,10 @@ export class QueueService {
 
     const now = new Date();
     try {
-      if (Types.ObjectId.isValid(processedItemId) && Types.ObjectId.isValid(rawItemId)) {
+      if (
+        Types.ObjectId.isValid(processedItemId) &&
+        Types.ObjectId.isValid(rawItemId)
+      ) {
         await ProcessedItemModel.updateOne(
           { _id: new Types.ObjectId(processedItemId) },
           {
@@ -108,7 +139,7 @@ export class QueueService {
               traceId,
               pipelineJobId: meta.pipelineJobId ?? null,
               sourceId: meta.sourceId ?? null,
-              updatedAt: now
+              updatedAt: now,
             },
             $setOnInsert: {
               _id: new Types.ObjectId(processedItemId),
@@ -117,16 +148,16 @@ export class QueueService {
               orgId,
               status: "pending",
               tags: [],
-              createdAt: now
-            }
+              createdAt: now,
+            },
           },
-          { upsert: true }
+          { upsert: true },
         );
       }
     } catch (error) {
       this.logger.warn(
         { error, orgId, itemMetaId, rawItemId, processedItemId },
-        "Failed to upsert pending processed item"
+        "Failed to upsert pending processed item",
       );
     }
 
@@ -137,21 +168,31 @@ export class QueueService {
     const keepCompleted = removeOnComplete !== true;
     const keepFailed = removeOnFail !== true;
     try {
-      await this.orgStats.upsertJobMetaAndCount({ jobId, orgId, status, keepCompleted, keepFailed });
+      await this.orgStats.upsertJobMetaAndCount({
+        jobId,
+        orgId,
+        status,
+        keepCompleted,
+        keepFailed,
+      });
     } catch (error) {
-      this.logger.warn({ jobId, orgId, error }, "Failed to record initial org queue counters");
+      this.logger.warn(
+        { jobId, orgId, error },
+        "Failed to record initial org queue counters",
+      );
     }
 
     return job;
   }
 
-  async stats(orgId: string) {
+  async stats(orgId: string): Promise<QueueStatsSnapshot> {
     const [jobCounts, logs] = await Promise.all([
       this.getOrgJobCounts(orgId),
       TaskLogModel.find({ orgId, queue: ITEM_PIPELINE_QUEUE_NAME })
+        .select(RECENT_QUEUE_LOG_PROJECTION)
         .sort({ createdAt: -1 })
         .limit(10)
-        .lean()
+        .lean(),
     ]);
 
     return {
@@ -160,9 +201,9 @@ export class QueueService {
         active: jobCounts.active,
         completed: jobCounts.completed,
         failed: jobCounts.failed,
-        delayed: jobCounts.delayed
+        delayed: jobCounts.delayed,
       },
-      recentLogs: logs
+      recentLogs: logs,
     };
   }
 }

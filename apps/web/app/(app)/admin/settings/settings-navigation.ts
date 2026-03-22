@@ -24,6 +24,7 @@ export type AdminSettingsPanelId =
   | "audit-log"
   | "crawl-client"
   | "archive-preparation"
+  | "multi-tenant-schedulers"
   | "news-source-scheduler"
   | "news-source-runtime-secrets"
   | "storage"
@@ -181,6 +182,14 @@ export const ADMIN_SETTINGS_PAGE_DEFINITIONS: readonly AdminSettingsPageDefiniti
           defaultTitle: "Archive preparation",
           defaultDescription:
             "Configure archive packaging and retention preparation behavior.",
+          requiredPermission: MANAGE_PERMISSION,
+        },
+        {
+          id: "multi-tenant-schedulers",
+          titleKey: "systemSettings.tabs.multiTenantSchedulers",
+          defaultTitle: "Multi-tenant schedulers",
+          defaultDescription:
+            "Tune org fan-out concurrency for multi-tenant background cron jobs.",
           requiredPermission: MANAGE_PERMISSION,
         },
         {

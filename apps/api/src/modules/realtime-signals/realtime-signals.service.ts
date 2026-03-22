@@ -1,4 +1,5 @@
 import {
+  buildProcessedItemHasLocationExpression,
   MapTransportObjectStateModel,
   MapTransportTrackPointModel,
   ProcessedItemModel,
@@ -604,7 +605,10 @@ export class RealtimeSignalsService {
       return;
     }
 
-    const budgetSummary = await this.getOpenskyBudgetSummary(runtime, Date.now());
+    const budgetSummary = await this.getOpenskyBudgetSummary(
+      runtime,
+      Date.now(),
+    );
     if (budgetSummary.allModeBlocked) {
       return;
     }
@@ -3698,24 +3702,32 @@ export class RealtimeSignalsService {
           { createdAt: { $gte: since } },
         ],
       };
-      const [
-        recentProcessedItems,
-        recentProcessedItemsWithLocation,
-        latestDoc,
-      ] = await Promise.all([
-        ProcessedItemModel.countDocuments({
-          orgId,
-          status: "completed",
-          duplicateOf: null,
-          ...timeFilter,
-        }),
-        ProcessedItemModel.countDocuments({
-          orgId,
-          status: "completed",
-          duplicateOf: null,
-          "result.location": { $type: "string", $regex: /\S/ },
-          ...timeFilter,
-        }),
+      const [countRows, latestDoc] = await Promise.all([
+        ProcessedItemModel.aggregate<{
+          _id: null;
+          recentProcessedItems?: number;
+          recentProcessedItemsWithLocation?: number;
+        }>([
+          {
+            $match: {
+              orgId,
+              status: "completed",
+              duplicateOf: null,
+              ...timeFilter,
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              recentProcessedItems: { $sum: 1 },
+              recentProcessedItemsWithLocation: {
+                $sum: {
+                  $cond: [buildProcessedItemHasLocationExpression(), 1, 0],
+                },
+              },
+            },
+          },
+        ]).exec(),
         ProcessedItemModel.findOne(
           {
             orgId,
@@ -3732,6 +3744,17 @@ export class RealtimeSignalsService {
           .lean()
           .exec(),
       ]);
+      const countRow = countRows[0];
+      const recentProcessedItems = Math.max(
+        0,
+        Math.floor(this.toFiniteNumber(countRow?.recentProcessedItems) ?? 0),
+      );
+      const recentProcessedItemsWithLocation = Math.max(
+        0,
+        Math.floor(
+          this.toFiniteNumber(countRow?.recentProcessedItemsWithLocation) ?? 0,
+        ),
+      );
 
       const latestProcessedItemValue =
         latestDoc?.sortAt ?? latestDoc?.ingestedAt ?? latestDoc?.createdAt;
@@ -4631,7 +4654,8 @@ export class RealtimeSignalsService {
       return candidate;
     }
     const currentObservedMs = this.parseTimestampMs(current.observedAt) ?? 0;
-    const candidateObservedMs = this.parseTimestampMs(candidate.observedAt) ?? 0;
+    const candidateObservedMs =
+      this.parseTimestampMs(candidate.observedAt) ?? 0;
     if (candidateObservedMs >= currentObservedMs) {
       return {
         ...current,
@@ -4671,7 +4695,9 @@ export class RealtimeSignalsService {
       geoCell: this.buildTransportGeoCell(vessel.lat, vessel.lng),
       mmsi: vessel.mmsi,
       ...(vessel.name ? { name: vessel.name } : {}),
-      ...(typeof vessel.shipType === "number" ? { shipType: vessel.shipType } : {}),
+      ...(typeof vessel.shipType === "number"
+        ? { shipType: vessel.shipType }
+        : {}),
       ...(typeof vessel.heading === "number"
         ? { heading: this.normalizeHeading(vessel.heading) }
         : {}),
@@ -4722,8 +4748,9 @@ export class RealtimeSignalsService {
 
     for (const record of dedupedRecords) {
       const existing =
-        (existingByKey.get(record.objectKey) as Record<string, unknown> | undefined) ??
-        null;
+        (existingByKey.get(record.objectKey) as
+          | Record<string, unknown>
+          | undefined) ?? null;
       if (this.shouldPersistTransportTrackPoint(record, existing)) {
         trackPointsToInsert.push(record);
       }
@@ -4732,7 +4759,8 @@ export class RealtimeSignalsService {
       const recordObservedAtMs = this.readDateMs(record.observedAt);
       if (
         recordObservedAtMs !== null &&
-        (existingObservedAtMs === null || recordObservedAtMs >= existingObservedAtMs)
+        (existingObservedAtMs === null ||
+          recordObservedAtMs >= existingObservedAtMs)
       ) {
         statesToUpsert.push({ record, existing });
         existingByKey.set(record.objectKey, {
@@ -4805,7 +4833,10 @@ export class RealtimeSignalsService {
       if (candidateObservedAtMs < currentObservedAtMs) {
         continue;
       }
-      if (this.scoreTransportTelemetryRecord(record) >= this.scoreTransportTelemetryRecord(current)) {
+      if (
+        this.scoreTransportTelemetryRecord(record) >=
+        this.scoreTransportTelemetryRecord(current)
+      ) {
         deduped.set(record.objectKey, record);
       }
     }
@@ -4964,7 +4995,9 @@ export class RealtimeSignalsService {
     ) {
       return 0;
     }
-    const delta = Math.abs(this.normalizeHeading(left) - this.normalizeHeading(right));
+    const delta = Math.abs(
+      this.normalizeHeading(left) - this.normalizeHeading(right),
+    );
     return Math.min(delta, 360 - delta);
   }
 

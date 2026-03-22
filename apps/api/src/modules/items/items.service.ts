@@ -162,6 +162,11 @@ interface PersonalizedCandidateRow {
   sortAt: Date;
 }
 
+interface PersonalizedCandidateCursor {
+  id: string;
+  sortAt: Date;
+}
+
 interface RankedItem {
   id: string;
   score: number;
@@ -1743,7 +1748,7 @@ export class ItemsService {
     const total = Math.min(rawTotal, PERSONALIZED_CANDIDATE_MAX);
     const targetCount = Math.min(Math.max(input.requiredCount, 1), total);
 
-    let candidateTake = Math.min(
+    const candidateTake = Math.min(
       PERSONALIZED_CANDIDATE_MAX,
       Math.max(
         PERSONALIZED_CANDIDATE_MIN,
@@ -1751,69 +1756,203 @@ export class ItemsService {
       ),
     );
     const profile = await this.loadItemPersonalizationProfile(input.orgId, input.userId);
-    let ranked: RankedItem[] = [];
-
-    while (true) {
-      const candidates = this.isReadModelEnabled()
-        ? ((await ItemReadModelModel.find(
-            this.buildReadModelMatchFromItemMetaWhere(input.orgId, input.where),
-            {
-              itemMetaId: 1,
-              createdAt: 1,
-              sortAt: 1,
-            },
-          )
-            .sort({ sortAt: -1, itemMetaId: -1 })
-            .limit(candidateTake)
-            .lean()) as Array<{ itemMetaId?: string; createdAt?: Date; sortAt?: Date }>)
-        : await this.prisma.itemMeta.findMany({
-            where: input.where,
-            select: {
-              id: true,
-              createdAt: true,
-              sortAt: true,
-            },
-            orderBy: [{ sortAt: "desc" }, { id: "desc" }],
-            take: candidateTake,
-          });
-
-      const normalizedCandidates: PersonalizedCandidateRow[] = candidates
-        .map((candidate) => {
-          const id =
-            "id" in candidate && typeof candidate.id === "string"
-              ? candidate.id
-              : typeof (candidate as { itemMetaId?: unknown }).itemMetaId === "string"
-                ? ((candidate as { itemMetaId: string }).itemMetaId ?? "").trim()
-                : "";
-          const createdAt = candidate.createdAt instanceof Date ? candidate.createdAt : null;
-          if (!id || !createdAt) {
-            return null;
-          }
-          const sortAt = candidate.sortAt instanceof Date ? candidate.sortAt : createdAt;
-          return {
-            id,
-            createdAt,
-            sortAt,
-          } satisfies PersonalizedCandidateRow;
-        })
-        .filter((candidate): candidate is PersonalizedCandidateRow => Boolean(candidate));
-      ranked = await this.rankPersonalizedCandidates({
-        orgId: input.orgId,
-        candidates: normalizedCandidates,
-        profile,
-      });
-
-      if (
-        ranked.length >= targetCount ||
-        normalizedCandidates.length >= total ||
-        candidateTake >= PERSONALIZED_CANDIDATE_MAX
-      ) {
-        break;
-      }
-      candidateTake = Math.min(PERSONALIZED_CANDIDATE_MAX, candidateTake * 2);
-    }
+    const candidates = await this.collectPersonalizedCandidates({
+      orgId: input.orgId,
+      where: input.where,
+      total,
+      targetCount,
+      initialCandidateTake: candidateTake,
+    });
+    const ranked = await this.rankPersonalizedCandidates({
+      orgId: input.orgId,
+      candidates,
+      profile,
+    });
 
     return { total, ranked };
+  }
+
+  private async collectPersonalizedCandidates(input: {
+    orgId: string;
+    where: Prisma.ItemMetaWhereInput;
+    total: number;
+    targetCount: number;
+    initialCandidateTake: number;
+  }): Promise<PersonalizedCandidateRow[]> {
+    if (input.total <= 0 || input.targetCount <= 0) {
+      return [];
+    }
+
+    const collected: PersonalizedCandidateRow[] = [];
+    const seenIds = new Set<string>();
+    let cursor: PersonalizedCandidateCursor | null = null;
+    let exhausted = false;
+    let candidateTake = Math.min(input.initialCandidateTake, input.total);
+    let fetchedWindowSize = 0;
+
+    while (!exhausted && collected.length < input.targetCount && fetchedWindowSize < input.total) {
+      const targetWindowSize = Math.min(candidateTake, input.total);
+      const deltaTake = targetWindowSize - fetchedWindowSize;
+      if (deltaTake <= 0) {
+        break;
+      }
+
+      const batch = await this.fetchPersonalizedCandidateBatch({
+        orgId: input.orgId,
+        where: input.where,
+        take: deltaTake,
+        cursor,
+      });
+
+      fetchedWindowSize += batch.rawCount;
+      if (batch.nextCursor) {
+        cursor = batch.nextCursor;
+      }
+      exhausted = batch.exhausted;
+
+      for (const candidate of batch.candidates) {
+        if (seenIds.has(candidate.id)) {
+          continue;
+        }
+        seenIds.add(candidate.id);
+        collected.push(candidate);
+      }
+
+      if (collected.length >= input.targetCount || exhausted || targetWindowSize >= input.total) {
+        break;
+      }
+
+      candidateTake = Math.min(PERSONALIZED_CANDIDATE_MAX, targetWindowSize * 2);
+    }
+
+    return collected;
+  }
+
+  private async fetchPersonalizedCandidateBatch(input: {
+    orgId: string;
+    where: Prisma.ItemMetaWhereInput;
+    take: number;
+    cursor: PersonalizedCandidateCursor | null;
+  }): Promise<{
+    candidates: PersonalizedCandidateRow[];
+    nextCursor: PersonalizedCandidateCursor | null;
+    rawCount: number;
+    exhausted: boolean;
+  }> {
+    if (input.take <= 0) {
+      return {
+        candidates: [],
+        nextCursor: null,
+        rawCount: 0,
+        exhausted: true,
+      };
+    }
+
+    const rawCandidates = this.isReadModelEnabled()
+      ? ((await ItemReadModelModel.find(
+          input.cursor
+            ? {
+                $and: [
+                  this.buildReadModelMatchFromItemMetaWhere(input.orgId, input.where),
+                  {
+                    $or: [
+                      { sortAt: { $lt: input.cursor.sortAt } },
+                      { sortAt: input.cursor.sortAt, itemMetaId: { $lt: input.cursor.id } },
+                    ],
+                  },
+                ],
+              }
+            : this.buildReadModelMatchFromItemMetaWhere(input.orgId, input.where),
+          {
+            itemMetaId: 1,
+            createdAt: 1,
+            sortAt: 1,
+          },
+        )
+          .sort({ sortAt: -1, itemMetaId: -1 })
+          .limit(input.take)
+          .lean()) as Array<{ itemMetaId?: string; createdAt?: Date; sortAt?: Date }>)
+      : await this.prisma.itemMeta.findMany({
+          where: input.cursor
+            ? {
+                AND: [
+                  input.where,
+                  {
+                    OR: [
+                      { sortAt: { lt: input.cursor.sortAt } },
+                      { sortAt: input.cursor.sortAt, id: { lt: input.cursor.id } },
+                    ],
+                  },
+                ],
+              }
+            : input.where,
+          select: {
+            id: true,
+            createdAt: true,
+            sortAt: true,
+          },
+          orderBy: [{ sortAt: "desc" }, { id: "desc" }],
+          take: input.take,
+        });
+
+    const normalizedCandidates = rawCandidates
+      .map((candidate) => this.normalizePersonalizedCandidate(candidate))
+      .filter((candidate): candidate is PersonalizedCandidateRow => Boolean(candidate));
+    const nextCursor =
+      rawCandidates.length < input.take
+        ? null
+        : this.resolvePersonalizedCandidateCursor(rawCandidates);
+
+    return {
+      candidates: normalizedCandidates,
+      nextCursor,
+      rawCount: rawCandidates.length,
+      exhausted: rawCandidates.length < input.take || !nextCursor,
+    };
+  }
+
+  private normalizePersonalizedCandidate(candidate: {
+    id?: string;
+    itemMetaId?: string;
+    createdAt?: Date;
+    sortAt?: Date;
+  }): PersonalizedCandidateRow | null {
+    const id =
+      typeof candidate.id === "string"
+        ? candidate.id.trim()
+        : typeof candidate.itemMetaId === "string"
+          ? candidate.itemMetaId.trim()
+          : "";
+    const createdAt = candidate.createdAt instanceof Date ? candidate.createdAt : null;
+    if (!id || !createdAt) {
+      return null;
+    }
+    const sortAt = candidate.sortAt instanceof Date ? candidate.sortAt : createdAt;
+    return {
+      id,
+      createdAt,
+      sortAt,
+    };
+  }
+
+  private resolvePersonalizedCandidateCursor(
+    candidates: Array<{ id?: string; itemMetaId?: string; createdAt?: Date; sortAt?: Date }>,
+  ): PersonalizedCandidateCursor | null {
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      const candidate = candidates[index];
+      if (!candidate) {
+        continue;
+      }
+      const normalized = this.normalizePersonalizedCandidate(candidate);
+      if (!normalized) {
+        continue;
+      }
+      return {
+        id: normalized.id,
+        sortAt: normalized.sortAt,
+      };
+    }
+    return null;
   }
 
   private async rankPersonalizedCandidates(input: {
@@ -4947,43 +5086,27 @@ export class ItemsService {
   }
 
   private async resolveProcessedArticleSearchIds(orgId: string, strategy: SearchStrategy) {
-    if (strategy.type === "none") {
+    if (strategy.type !== "fulltext") {
       return [];
     }
 
-    let refs: string[] = [];
-    if (strategy.type === "fulltext") {
-      const rows = await this.prisma.$queryRaw<
-        { cleanedMarkdownRef: string | null; score: number }[]
-      >`
-        SELECT
-          pa.cleanedMarkdownRef,
-          MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE) AS \`score\`
-        FROM \`ProcessedArticle\` pa
-        INNER JOIN \`Article\` a ON a.id = pa.articleId
-        WHERE a.orgId = ${orgId}
-          AND pa.cleanedMarkdownRef IS NOT NULL
-          AND MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE)
-        ORDER BY \`score\` DESC, pa.updatedAt DESC, pa.id DESC
-        LIMIT ${MAX_SEARCH_MATCHES}
-      `;
-      refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
-    } else {
-      const rows = await this.prisma.processedArticle.findMany({
-        where: {
-          article: { orgId },
-          cleanedMarkdownRef: { not: null },
-          OR: [
-            { title: { contains: strategy.term } },
-            { summary: { contains: strategy.term } }
-          ]
-        },
-        select: { cleanedMarkdownRef: true },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        take: MAX_SEARCH_MATCHES
-      });
-      refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
-    }
+    // ProcessedArticle only has a fulltext index on title/summary, so prefix fallback
+    // must not degrade into contains/LIKE scans here.
+    const rows = await this.prisma.$queryRaw<
+      { cleanedMarkdownRef: string | null; score: number }[]
+    >`
+      SELECT
+        pa.cleanedMarkdownRef,
+        MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE) AS \`score\`
+      FROM \`ProcessedArticle\` pa
+      INNER JOIN \`Article\` a ON a.id = pa.articleId
+      WHERE a.orgId = ${orgId}
+        AND pa.cleanedMarkdownRef IS NOT NULL
+        AND MATCH(pa.title, pa.summary) AGAINST (${strategy.query} IN BOOLEAN MODE)
+      ORDER BY \`score\` DESC, pa.updatedAt DESC, pa.id DESC
+      LIMIT ${MAX_SEARCH_MATCHES}
+    `;
+    const refs = rows.map((row) => row.cleanedMarkdownRef ?? "").filter(Boolean);
 
     const objectIds = refs
       .filter((ref) => Types.ObjectId.isValid(ref))

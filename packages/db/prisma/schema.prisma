@@ -241,10 +241,51 @@ model CrawlTask {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  results CrawlResult[]
+  results         CrawlResult[]
+  qualitySnapshot CrawlQualityTaskSnapshot?
 
   @@index([orgId, status, updatedAt])
   @@index([orgId, newsSourceId, status, updatedAt])
+  @@index([orgId, createdAt], map: "CrawlTask_org_createdAt_idx")
+}
+
+model CrawlQualityTaskSnapshot {
+  taskId                            String   @id
+  task                              CrawlTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  orgId                             String
+  sourceId                          String
+  taskCreatedAt                     DateTime
+  taskUpdatedAt                     DateTime
+  rolledAt                          DateTime
+  lowSignalTaskCount                Int      @default(0)
+  expansionTriggeredTaskCount       Int      @default(0)
+  expansionImprovedTaskCount        Int      @default(0)
+  markdownCount                     Int      @default(0)
+  markdownCharsTotal                Int      @default(0)
+  emptyMarkdownCount                Int      @default(0)
+  candidateRejectIncludePatternCount Int     @default(0)
+  candidateRejectExcludePatternCount Int     @default(0)
+  candidateRejectPublishConfidenceCount Int  @default(0)
+  publishConfidenceLt04Count        Int      @default(0)
+  publishConfidenceFrom04To06Count  Int      @default(0)
+  publishConfidenceFrom06To08Count  Int      @default(0)
+  publishConfidenceGte08Count       Int      @default(0)
+  fitMarkdownPreferenceTaskCount    Int      @default(0)
+  headSignalAttemptedCount          Int      @default(0)
+  headSignalSucceededCount          Int      @default(0)
+  headSignalSoftFailureCount        Int      @default(0)
+  headSignalTruncatedCount          Int      @default(0)
+  headSignalNoPublishSignalCount    Int      @default(0)
+  preflightRunCount                 Int      @default(0)
+  preflightFailureCount             Int      @default(0)
+  preflight304HitCount              Int      @default(0)
+  dedupeEvaluatedCount              Int      @default(0)
+  dedupeOrgReuseCount               Int      @default(0)
+  createdAt                         DateTime @default(now())
+  updatedAt                         DateTime @updatedAt
+
+  @@index([orgId, taskCreatedAt], map: "CrawlQualityTaskSnapshot_org_created_idx")
+  @@index([orgId, sourceId, taskCreatedAt], map: "CrawlQualityTaskSnapshot_org_source_created_idx")
 }
 
 model CrawlResult {
@@ -1264,7 +1305,8 @@ model AlertRule {
   events   AlertEvent[]
   channels AlertRuleChannel[]
 
-  @@index([orgId, status, severity])
+  @@index([orgId, metricProvider, metricSlug], map: "AlertRule_org_provider_slug_idx")
+  @@index([status, metricProvider, metricSlug, orgId, checkIntervalSec], map: "AlertRule_active_scan_idx")
 }
 
 model AlertEvent {
